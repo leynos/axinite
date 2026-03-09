@@ -106,179 +106,170 @@ struct PreparedHttpRequest {
     headers: HashMap<String, String>,
 }
 
-impl StoreData {
-    fn new(
-        memory_limit: u64,
-        capabilities: Capabilities,
-        credentials: HashMap<String, String>,
-        host_credentials: Vec<ResolvedHostCredential>,
-    ) -> Self {
-        // Minimal WASI context: no filesystem, no env vars (security)
-        let wasi = WasiCtxBuilder::new().build();
-
-        Self {
-            limiter: WasmResourceLimiter::new(memory_limit),
-            host_state: HostState::new(capabilities),
-            wasi,
-            table: ResourceTable::new(),
-            credentials,
-            host_credentials,
-            http_runtime: None,
-        }
+impl near::agent::host::Host for StoreData {
+    fn log(&mut self, level: near::agent::host::LogLevel, message: String) {
+        let log_level = match level {
+            near::agent::host::LogLevel::Trace => LogLevel::Trace,
+            near::agent::host::LogLevel::Debug => LogLevel::Debug,
+            near::agent::host::LogLevel::Info => LogLevel::Info,
+            near::agent::host::LogLevel::Warn => LogLevel::Warn,
+            near::agent::host::LogLevel::Error => LogLevel::Error,
+        };
+        let _ = self.host_state.log(log_level, message);
     }
 
-    /// Inject credentials into a string by replacing placeholders.
-    ///
-    /// Replaces patterns like `{GOOGLE_ACCESS_TOKEN}` with actual values.
-    /// WASM tools reference credentials by placeholder, never seeing real values.
-    fn inject_credentials(&self, input: &str, context: &str) -> String {
-        let mut result = input.to_string();
-
-        for (name, value) in &self.credentials {
-            let placeholder = format!("{{{}}}", name);
-            if result.contains(&placeholder) {
-                tracing::debug!(
-                    placeholder = %placeholder,
-                    context = %context,
-                    "Replacing credential placeholder in tool request"
-                );
-                result = result.replace(&placeholder, value);
-            }
-        }
-
-        result
+    fn now_millis(&mut self) -> u64 {
+        self.host_state.now_millis()
     }
 
-    /// Replace injected credential values with `[REDACTED]` in text.
-    ///
-    /// Prevents credentials from leaking through error messages or logs.
-    /// reqwest::Error includes the full URL in its Display output, so any
-    /// error from an injected-URL request will contain the raw credential
-    /// unless we scrub it.
-    fn redact_credentials(&self, text: &str) -> String {
-        let mut result = text.to_string();
-        for (name, value) in &self.credentials {
-            if !value.is_empty() {
-                result = result.replace(value, &format!("[REDACTED:{}]", name));
-            }
-        }
-        for cred in &self.host_credentials {
-            if !cred.secret_value.is_empty() {
-                result = result.replace(&cred.secret_value, "[REDACTED:host_credential]");
-            }
-        }
-        result
+    fn workspace_read(&mut self, path: String) -> Option<String> {
+        self.host_state.workspace_read(&path).ok().flatten()
     }
 
-    /// Inject pre-resolved host credentials into the request.
-    ///
-    /// Matches the URL host against each resolved credential's host_patterns.
-    /// Matching credentials have their headers merged and query params appended.
-    fn inject_host_credentials(
-        &self,
-        url_host: &str,
-        headers: &mut HashMap<String, String>,
-        url: &mut String,
-    ) {
-        for cred in &self.host_credentials {
-            let matches = cred
-                .host_patterns
-                .iter()
-                .any(|pattern| host_matches_pattern(url_host, pattern));
-
-            if !matches {
-                continue;
-            }
-
-            // Merge injected headers (host credentials take precedence)
-            for (key, value) in &cred.headers {
-                headers.insert(key.clone(), value.clone());
-            }
-
-            // Append query parameters to URL (insert before fragment if present)
-            if !cred.query_params.is_empty() {
-                let (base, fragment) = match url.find('#') {
-                    Some(i) => (url[..i].to_string(), Some(url[i..].to_string())),
-                    None => (url.clone(), None),
-                };
-                *url = base;
-
-                let separator = if url.contains('?') { '&' } else { '?' };
-                for (i, (name, value)) in cred.query_params.iter().enumerate() {
-                    if i == 0 {
-                        url.push(separator);
-                    } else {
-                        url.push('&');
-                    }
-                    url.push_str(&urlencoding::encode(name));
-                    url.push('=');
-                    url.push_str(&urlencoding::encode(value));
-                }
-
-                if let Some(frag) = fragment {
-                    url.push_str(&frag);
-                }
-            }
-        }
-    }
-
-    fn prepare_http_request(
+    fn http_request(
         &mut self,
-        method: &str,
-        url: &str,
-        headers_json: &str,
-        body: Option<&[u8]>,
-    ) -> Result<PreparedHttpRequest, String> {
-        // Inject credentials into URL (e.g., replace {TELEGRAM_BOT_TOKEN})
-        let injected_url = self.inject_credentials(url, "url");
-
-        // Check HTTP allowlist
-        self.host_state
-            .check_http_allowed(&injected_url, method)
-            .map_err(|e| format!("HTTP not allowed: {}", e))?;
-
-        // Record for rate limiting
-        self.host_state
-            .record_http_request()
-            .map_err(|e| format!("Rate limit exceeded: {}", e))?;
-
-        // Parse headers and inject credentials into header values
-        let raw_headers: HashMap<String, String> =
-            serde_json::from_str(headers_json).unwrap_or_default();
-
-        let mut headers: HashMap<String, String> = raw_headers
-            .into_iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    self.inject_credentials(&v, &format!("header:{}", k)),
-                )
-            })
-            .collect();
-
-        let mut url = injected_url;
-
-        // Leak scan runs on WASM-provided values BEFORE host credential injection.
-        // This prevents false positives where the host-injected Bearer token
-        // (e.g. a GitHub PAT) triggers the leak detector even though the WASM
-        // tool never saw or supplied the real secret value.
+        method: String,
+        url: String,
+        headers_json: String,
+        body: Option<Vec<u8>>,
+        timeout_ms: Option<u32>,
+    ) -> Result<near::agent::host::HttpResponse, String> {
+        let PreparedHttpRequest { url, headers } =
+            self.prepare_http_request(&method, &url, &headers_json, body.as_deref())?;
         let leak_detector = LeakDetector::new();
-        let header_vec: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
 
-        leak_detector
-            .scan_http_request(&url, &header_vec, body)
-            .map_err(|e| format!("Potential secret leak blocked: {}", e))?;
+        // Get the max response size from capabilities (default 10MB).
+        let max_response_bytes = self
+            .host_state
+            .capabilities()
+            .http
+            .as_ref()
+            .map(|h| h.max_response_bytes)
+            .unwrap_or(10 * 1024 * 1024);
 
-        // Inject pre-resolved host credentials (Bearer tokens, API keys, etc.)
-        // after the leak scan so host-injected secrets don't trigger false positives.
-        if let Some(host) = extract_host_from_url(&url) {
-            self.inject_host_credentials(&host, &mut headers, &mut url);
+        // Resolve hostname and reject private/internal IPs to prevent DNS rebinding.
+        reject_private_ip(&url)?;
+
+        // Make HTTP request using a dedicated single-threaded runtime.
+        // We're inside spawn_blocking, so we can't rely on the main runtime's
+        // I/O driver (it may be busy with WASM compilation or other startup work).
+        // A dedicated runtime gives us our own I/O driver and avoids contention.
+        // The runtime is lazily created and reused across calls within one execution.
+        if self.http_runtime.is_none() {
+            self.http_runtime = Some(
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|e| format!("Failed to create HTTP runtime: {e}"))?,
+            );
         }
+        let rt = self.http_runtime.as_ref().expect("just initialized");
+        let result = rt.block_on(async {
+            let client = reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
-        Ok(PreparedHttpRequest { url, headers })
+            let mut request = match method.to_uppercase().as_str() {
+                "GET" => client.get(&url),
+                "POST" => client.post(&url),
+                "PUT" => client.put(&url),
+                "DELETE" => client.delete(&url),
+                "PATCH" => client.patch(&url),
+                "HEAD" => client.head(&url),
+                _ => return Err(format!("Unsupported HTTP method: {}", method)),
+            };
+
+            for (key, value) in headers {
+                request = request.header(&key, &value);
+            }
+
+            if let Some(body_bytes) = body {
+                request = request.body(body_bytes);
+            }
+
+            // Caller-specified timeout (default 30s, max 5min)
+            let timeout_ms = timeout_ms.unwrap_or(30_000).min(300_000) as u64;
+            let timeout = Duration::from_millis(timeout_ms);
+            let response = request.timeout(timeout).send().await.map_err(|e| {
+                // Walk the full error chain for the actual root cause
+                let mut chain = format!("HTTP request failed: {}", e);
+                let mut source = std::error::Error::source(&e);
+                while let Some(cause) = source {
+                    chain.push_str(&format!(" -> {}", cause));
+                    source = cause.source();
+                }
+                chain
+            })?;
+
+            let status = response.status().as_u16();
+            let response_headers: HashMap<String, String> = response
+                .headers()
+                .iter()
+                .filter_map(|(k, v)| {
+                    v.to_str()
+                        .ok()
+                        .map(|v| (k.as_str().to_string(), v.to_string()))
+                })
+                .collect();
+            let headers_json = serde_json::to_string(&response_headers).unwrap_or_default();
+
+            // Check Content-Length header for early rejection of oversized responses.
+            let max_response = max_response_bytes;
+            if let Some(cl) = response.content_length()
+                && cl as usize > max_response
+            {
+                return Err(format!(
+                    "Response body too large: {} bytes exceeds limit of {} bytes",
+                    cl, max_response
+                ));
+            }
+
+            // Read body with a size cap to prevent memory exhaustion.
+            let body = response
+                .bytes()
+                .await
+                .map_err(|e| format!("Failed to read response body: {}", e))?;
+            if body.len() > max_response {
+                return Err(format!(
+                    "Response body too large: {} bytes exceeds limit of {} bytes",
+                    body.len(),
+                    max_response
+                ));
+            }
+            let body = body.to_vec();
+
+            // Leak detection on response body
+            if let Ok(body_str) = std::str::from_utf8(&body) {
+                leak_detector
+                    .scan_and_clean(body_str)
+                    .map_err(|e| format!("Potential secret leak in response: {}", e))?;
+            }
+
+            Ok(near::agent::host::HttpResponse {
+                status,
+                headers_json,
+                body,
+            })
+        });
+
+        // Redact credentials from error messages before returning to WASM
+        result.map_err(|e| self.redact_credentials(&e))
+    }
+
+    fn tool_invoke(&mut self, alias: String, _params_json: String) -> Result<String, String> {
+        // Validate capability and resolve alias
+        let _real_name = self.host_state.check_tool_invoke_allowed(&alias)?;
+        self.host_state.record_tool_invoke()?;
+
+        // Tool invocation requires async context and access to the tool registry,
+        // which aren't available inside a synchronous WASM callback.
+        Err("Tool invocation from WASM tools is not yet supported".to_string())
+    }
+
+    fn secret_exists(&mut self, name: String) -> bool {
+        self.host_state.secret_exists(&name)
     }
 }
 
@@ -489,184 +480,13 @@ pub struct WasmToolWrapper {
     oauth_refresh: Option<OAuthRefreshConfig>,
 }
 
-impl WasmToolWrapper {
-    /// Create a new WASM tool wrapper.
-    pub fn new(
-        runtime: Arc<WasmToolRuntime>,
-        prepared: Arc<PreparedModule>,
-        capabilities: Capabilities,
-    ) -> Self {
-        Self {
-            description: prepared.description.clone(),
-            schema: prepared.schema.clone(),
-            runtime,
-            prepared,
-            capabilities,
-            credentials: HashMap::new(),
-            secrets_store: None,
-            oauth_refresh: None,
-        }
-    }
-
-    /// Override the tool description.
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
-        self.description = description.into();
-        self
-    }
-
-    /// Override the parameter schema.
-    pub fn with_schema(mut self, schema: serde_json::Value) -> Self {
-        self.schema = schema;
-        self
-    }
-
-    /// Set credentials for HTTP request placeholder injection.
-    pub fn with_credentials(mut self, credentials: HashMap<String, String>) -> Self {
-        self.credentials = credentials;
-        self
-    }
-
-    /// Set the secrets store for host-based credential injection.
-    ///
-    /// When set, credentials declared in the tool's capabilities are
-    /// automatically decrypted and injected into HTTP requests based
-    /// on the target host (e.g., Bearer token for www.googleapis.com).
-    pub fn with_secrets_store(mut self, store: Arc<dyn SecretsStore + Send + Sync>) -> Self {
-        self.secrets_store = Some(store);
-        self
-    }
-
-    /// Set OAuth refresh configuration for auto-refreshing expired tokens.
-    ///
-    /// When set, `execute()` checks the access token's `expires_at` before
-    /// each call and silently refreshes it using the stored refresh token.
-    pub fn with_oauth_refresh(mut self, config: OAuthRefreshConfig) -> Self {
-        self.oauth_refresh = Some(config);
-        self
-    }
-
-    /// Get the resource limits for this tool.
-    pub fn limits(&self) -> &ResourceLimits {
-        &self.prepared.limits
-    }
-
-    /// Add all host functions to the linker using generated bindings.
-    ///
-    /// Uses the bindgen-generated `add_to_linker` function to properly register
-    /// all host functions with correct component model signatures under the
-    /// `near:agent/host` namespace.
-    fn add_host_functions(linker: &mut Linker<StoreData>) -> Result<(), WasmError> {
-        // Add WASI support (required by components built with wasm32-wasip2)
-        wasmtime_wasi::add_to_linker_sync(linker)
-            .map_err(|e| WasmError::ConfigError(format!("Failed to add WASI functions: {}", e)))?;
-
-        // Add our custom host interface using the generated add_to_linker
-        near::agent::host::add_to_linker(linker, |state| state)
-            .map_err(|e| WasmError::ConfigError(format!("Failed to add host functions: {}", e)))?;
-
-        Ok(())
-    }
-
-    /// Execute the WASM tool synchronously (called from spawn_blocking).
-    fn execute_sync(
-        &self,
-        params: serde_json::Value,
-        context_json: Option<String>,
-        host_credentials: Vec<ResolvedHostCredential>,
-    ) -> Result<(String, Vec<crate::tools::wasm::host::LogEntry>), WasmError> {
-        let engine = self.runtime.engine();
-        let limits = &self.prepared.limits;
-
-        // Create store with fresh state (NEAR pattern: fresh instance per call)
-        let store_data = StoreData::new(
-            limits.memory_bytes,
-            self.capabilities.clone(),
-            self.credentials.clone(),
-            host_credentials,
-        );
-        let mut store = Store::new(engine, store_data);
-
-        // Configure fuel if enabled
-        if self.runtime.config().fuel_config.enabled {
-            store
-                .set_fuel(limits.fuel)
-                .map_err(|e| WasmError::ConfigError(format!("Failed to set fuel: {}", e)))?;
-        }
-
-        // Configure epoch deadline as a hard timeout backup.
-        // The epoch ticker thread increments the engine epoch every EPOCH_TICK_INTERVAL.
-        // Setting deadline to N means "trap after N ticks", so we compute the number
-        // of ticks that fit in the tool's timeout. Minimum 1 to always have a backstop.
-        store.epoch_deadline_trap();
-        let ticks = (limits.timeout.as_millis() / EPOCH_TICK_INTERVAL.as_millis()).max(1) as u64;
-        store.set_epoch_deadline(ticks);
-
-        // Set up resource limiter
-        store.limiter(|data| &mut data.limiter);
-
-        // Use the pre-compiled component (no recompilation needed)
-        let component = self.prepared.component().clone();
-
-        // Create linker with all host functions properly namespaced
-        let mut linker = Linker::new(engine);
-        Self::add_host_functions(&mut linker)?;
-
-        // Instantiate using the generated bindings
-        let instance =
-            SandboxedTool::instantiate(&mut store, &component, &linker).map_err(|e| {
-                let msg = e.to_string();
-                if msg.contains("near:agent") || msg.contains("import") {
-                    WasmError::InstantiationFailed(format!(
-                        "{msg}. This usually means the extension was compiled against \
-                         a different WIT version than the host supports. \
-                         Rebuild the extension against the current WIT (host: {}).",
-                        crate::tools::wasm::WIT_TOOL_VERSION
-                    ))
-                } else {
-                    WasmError::InstantiationFailed(msg)
-                }
-            })?;
-
-        // Coerce string-encoded values to their schema-declared types.
-        // LLMs frequently pass numeric values as strings (e.g. "5" instead of 5).
-        let params = coerce_params_to_schema(params, &self.schema);
-
-        // Prepare the request
-        let params_json = serde_json::to_string(&params)
-            .map_err(|e| WasmError::InvalidResponseJson(e.to_string()))?;
-
-        let request = wit_tool::Request {
-            params: params_json,
-            context: context_json,
-        };
-
-        // Call execute using the generated typed interface
-        let tool_iface = instance.near_agent_tool();
-        let response = tool_iface.call_execute(&mut store, &request).map_err(|e| {
-            let error_str = e.to_string();
-            if error_str.contains("out of fuel") {
-                WasmError::FuelExhausted { limit: limits.fuel }
-            } else if error_str.contains("unreachable") {
-                WasmError::Trapped("unreachable code executed".to_string())
-            } else {
-                WasmError::Trapped(error_str)
-            }
-        })?;
-
-        // Get logs from host state
-        let logs = store.data_mut().host_state.take_logs();
-
-        // Check for tool-level error — on failure, call the WASM module's
-        // description() and schema() exports so the LLM can retry with the
-        // correct parameters without us having to include the (large) schema
-        // in every request's tools array.
-        if let Some(err) = response.error {
-            let hint = build_tool_hint(tool_iface, &mut store);
-            return Err(WasmError::ToolReturnedError { message: err, hint });
-        }
-
-        // Return result (or empty string if none)
-        Ok((response.output.unwrap_or_default(), logs))
+impl std::fmt::Debug for WasmToolWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WasmToolWrapper")
+            .field("name", &self.prepared.name)
+            .field("description", &self.description)
+            .field("limits", &self.prepared.limits)
+            .finish()
     }
 }
 
@@ -713,7 +533,26 @@ fn build_tool_hint(tool_iface: &wit_tool::Guest, store: &mut Store<StoreData>) -
     hint
 }
 
-#[async_trait]
+fn parse_tool_hint(hint: &str) -> Option<(String, serde_json::Value)> {
+    let desc_prefix = "Description: ";
+    let schema_prefix = "Parameters schema: ";
+
+    let mut description = None;
+    let mut schema = None;
+
+    for line in hint.lines() {
+        if let Some(value) = line.strip_prefix(desc_prefix) {
+            description = Some(value.to_string());
+        } else if let Some(value) = line.strip_prefix(schema_prefix) {
+            schema = serde_json::from_str(value).ok();
+        }
+    }
+
+    match (description, schema) {
+        (Some(description), Some(schema)) => Some((description, schema)),
+        _ => None,
+    }
+}
 impl Tool for WasmToolWrapper {
     fn name(&self) -> &str {
         &self.prepared.name
@@ -1233,16 +1072,6 @@ fn coerce_params_to_schema(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use crate::testing::credentials::{
-        TEST_BEARER_TOKEN_123, TEST_GOOGLE_OAUTH_FRESH, TEST_GOOGLE_OAUTH_LEGACY,
-        TEST_GOOGLE_OAUTH_TOKEN, TEST_OAUTH_CLIENT_ID, TEST_OAUTH_CLIENT_SECRET,
-        test_secrets_store,
-    };
-    use crate::tools::wasm::capabilities::Capabilities;
-    use crate::tools::wasm::runtime::{WasmRuntimeConfig, WasmToolRuntime};
-
     #[test]
     fn test_wrapper_creation() {
         // This test verifies the runtime can be created
@@ -1984,6 +1813,115 @@ mod tests {
         assert!(
             post_result.is_err(),
             "Leak scan on post-injection headers should block the Slack token"
+        );
+    }
+
+    fn find_wasm_artifact(source_dir: &Path, crate_name: &str) -> Option<PathBuf> {
+        let artifact_name = crate_name.replace('-', "_");
+
+        for target_triple in &["wasm32-wasip2"] {
+            let candidate = source_dir
+                .join("target")
+                .join(target_triple)
+                .join("release")
+                .join(format!("{artifact_name}.wasm"));
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+
+        if let Ok(shared) = std::env::var("CARGO_TARGET_DIR") {
+            for target_triple in &["wasm32-wasip2"] {
+                let candidate = Path::new(&shared)
+                    .join(target_triple)
+                    .join("release")
+                    .join(format!("{artifact_name}.wasm"));
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn github_wasm_artifact() -> Option<PathBuf> {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        find_wasm_artifact(&repo_root.join("tools-src/github"), "github-tool")
+    }
+
+    fn metadata_test_runtime() -> Arc<WasmToolRuntime> {
+        let config = WasmRuntimeConfig {
+            default_limits: ResourceLimits::default()
+                .with_memory(8 * 1024 * 1024)
+                .with_fuel(100_000)
+                .with_timeout(Duration::from_secs(5)),
+            ..WasmRuntimeConfig::for_testing()
+        };
+        Arc::new(WasmToolRuntime::new(config).unwrap())
+    }
+
+    #[tokio::test]
+    async fn test_exported_metadata_from_real_github_component() {
+        let Some(wasm_path) = github_wasm_artifact() else {
+            eprintln!("Skipping exported metadata regression: github WASM artifact not built");
+            return;
+        };
+
+        let runtime = metadata_test_runtime();
+        let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm artifact");
+        let prepared = runtime
+            .prepare("github", &wasm_bytes, None)
+            .await
+            .expect("prepare github wasm component");
+        let wrapper = WasmToolWrapper::new(runtime, prepared, Capabilities::default());
+
+        let (description, schema) = wrapper
+            .exported_metadata()
+            .expect("extract exported metadata");
+
+        assert!(
+            description.contains("GitHub integration"),
+            "expected real description, got: {description}"
+        );
+        assert_eq!(schema["type"], serde_json::json!("object"));
+        assert!(
+            schema["required"]
+                .as_array()
+                .expect("required array")
+                .iter()
+                .any(|value| value == "action"),
+            "expected required action field in schema: {schema}"
+        );
+        let first_variant = schema["oneOf"]
+            .as_array()
+            .and_then(|variants| variants.first())
+            .expect("oneOf variants");
+        assert_eq!(
+            first_variant["properties"]["action"]["const"],
+            serde_json::json!("get_repo")
+        );
+        assert_eq!(
+            first_variant["properties"]["owner"]["type"],
+            serde_json::json!("string")
+        );
+    }
+
+    #[test]
+    fn test_parse_tool_hint_extracts_description_and_schema() {
+        let hint = concat!(
+            "Description: GitHub integration for repos\n",
+            "Parameters schema: {\"type\":\"object\",\"required\":[\"action\"],",
+            "\"oneOf\":[{\"properties\":{\"action\":{\"const\":\"get_repo\"}}}]}"
+        );
+
+        let (description, schema) = super::parse_tool_hint(hint).expect("parse tool hint");
+
+        assert_eq!(description, "GitHub integration for repos");
+        assert_eq!(schema["required"][0], serde_json::json!("action"));
+        assert_eq!(
+            schema["oneOf"][0]["properties"]["action"]["const"],
+            serde_json::json!("get_repo")
         );
     }
 }

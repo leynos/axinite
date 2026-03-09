@@ -7,7 +7,11 @@
 //! See: <https://github.com/nearai/ironclaw/issues/352> (QA plan, item 1.1)
 
 use ironclaw::tools::validate_tool_schema;
+use ironclaw::tools::wasm::{WasmRuntimeConfig, WasmToolLoader, WasmToolRuntime};
 use ironclaw::tools::{Tool, ToolRegistry};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
 fn test_extension_manager() -> std::sync::Arc<ironclaw::extensions::ExtensionManager> {
     use ironclaw::secrets::{InMemorySecretsStore, SecretsCrypto};
@@ -243,4 +247,103 @@ async fn all_core_tools_work_in_multi_thread_runtime() {
         let _ = tool.requires_sanitization();
         let _ = tool.domain();
     }
+}
+
+async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
+    let Some((wasm_path, caps_path)) = github_artifact_paths() else {
+        eprintln!("Skipping GitHub schema regression: github WASM artifact not built");
+        return;
+    };
+
+    let registry = Arc::new(ToolRegistry::new());
+    let runtime = wasm_metadata_test_runtime();
+    let loader = WasmToolLoader::new(runtime, Arc::clone(&registry));
+
+    loader
+        .load_from_files("github", &wasm_path, Some(&caps_path))
+        .await
+        .expect("load github wasm tool");
+
+    let defs = registry.tool_definitions().await;
+    let github = defs
+        .iter()
+        .find(|def| def.name == "github")
+        .expect("github tool definition");
+
+    assert_eq!(github.parameters["type"], serde_json::json!("object"));
+    assert!(
+        github.parameters["required"]
+            .as_array()
+            .expect("required array")
+            .iter()
+            .any(|value| value == "action"),
+        "expected required action in tool definition: {}",
+        github.parameters
+    );
+    let first_variant = github.parameters["oneOf"]
+        .as_array()
+        .and_then(|variants| variants.first())
+        .expect("oneOf variants");
+    assert!(
+        first_variant["properties"]["owner"].is_object(),
+        "expected owner property in tool definition: {}",
+        github.parameters
+    );
+    assert_eq!(
+        first_variant["properties"]["action"]["const"],
+        serde_json::json!("get_repo")
+    );
+    assert!(
+        github.description.contains("GitHub integration"),
+        "expected real github description, got: {}",
+        github.description
+    );
+}
+
+fn find_wasm_artifact(source_dir: &Path, crate_name: &str) -> Option<PathBuf> {
+    let artifact_name = crate_name.replace('-', "_");
+
+    for target_triple in &["wasm32-wasip2"] {
+        let candidate = source_dir
+            .join("target")
+            .join(target_triple)
+            .join("release")
+            .join(format!("{artifact_name}.wasm"));
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    if let Ok(shared) = std::env::var("CARGO_TARGET_DIR") {
+        for target_triple in &["wasm32-wasip2"] {
+            let candidate = Path::new(&shared)
+                .join(target_triple)
+                .join("release")
+                .join(format!("{artifact_name}.wasm"));
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+fn wasm_metadata_test_runtime() -> Arc<WasmToolRuntime> {
+    let config = WasmRuntimeConfig {
+        default_limits: ironclaw::tools::wasm::ResourceLimits::default()
+            .with_memory(8 * 1024 * 1024)
+            .with_fuel(100_000)
+            .with_timeout(Duration::from_secs(5)),
+        ..WasmRuntimeConfig::for_testing()
+    };
+    Arc::new(WasmToolRuntime::new(config).expect("create wasm runtime"))
+}
+
+fn github_artifact_paths() -> Option<(PathBuf, PathBuf)> {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let source_dir = repo_root.join("tools-src/github");
+    let wasm_path = find_wasm_artifact(&source_dir, "github-tool")?;
+    let caps_path = source_dir.join("github-tool.capabilities.json");
+    caps_path.exists().then_some((wasm_path, caps_path))
 }

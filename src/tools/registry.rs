@@ -150,6 +150,55 @@ impl std::fmt::Debug for ToolRegistry {
 mod tests {
     use super::*;
     use crate::tools::registry::EchoTool;
+    use std::path::{Path, PathBuf};
+    use std::time::Duration;
+
+    use crate::tools::wasm::{ResourceLimits, WasmRuntimeConfig};
+
+    fn find_wasm_artifact(source_dir: &Path, crate_name: &str) -> Option<PathBuf> {
+        let artifact_name = crate_name.replace('-', "_");
+
+        for target_triple in &["wasm32-wasip2"] {
+            let candidate = source_dir
+                .join("target")
+                .join(target_triple)
+                .join("release")
+                .join(format!("{artifact_name}.wasm"));
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+
+        if let Ok(shared) = std::env::var("CARGO_TARGET_DIR") {
+            for target_triple in &["wasm32-wasip2"] {
+                let candidate = Path::new(&shared)
+                    .join(target_triple)
+                    .join("release")
+                    .join(format!("{artifact_name}.wasm"));
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn github_wasm_artifact() -> Option<PathBuf> {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        find_wasm_artifact(&repo_root.join("tools-src/github"), "github-tool")
+    }
+
+    fn wasm_metadata_test_runtime() -> Arc<WasmToolRuntime> {
+        let config = WasmRuntimeConfig {
+            default_limits: ResourceLimits::default()
+                .with_memory(8 * 1024 * 1024)
+                .with_fuel(100_000)
+                .with_timeout(Duration::from_secs(5)),
+            ..WasmRuntimeConfig::for_testing()
+        };
+        Arc::new(WasmToolRuntime::new(config).expect("create wasm runtime"))
+    }
 
     fn test_extension_manager() -> Arc<ExtensionManager> {
         use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
@@ -208,6 +257,50 @@ mod tests {
         let defs = registry.tool_definitions().await;
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].name, "echo");
+    }
+
+    #[tokio::test]
+    async fn test_explicit_wasm_schema_override_wins_over_exported_metadata() {
+        let Some(wasm_path) = github_wasm_artifact() else {
+            eprintln!("Skipping override precedence regression: github WASM artifact not built");
+            return;
+        };
+
+        let registry = ToolRegistry::new();
+        let runtime = wasm_metadata_test_runtime();
+        let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm");
+        let override_schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "forced": { "type": "string" }
+            },
+            "required": ["forced"],
+            "additionalProperties": false
+        });
+
+        registry
+            .register_wasm(WasmToolRegistration {
+                name: "github_override",
+                wasm_bytes: &wasm_bytes,
+                runtime: &runtime,
+                capabilities: Capabilities::default(),
+                limits: None,
+                description: Some("forced description"),
+                schema: Some(override_schema.clone()),
+                secrets_store: None,
+                oauth_refresh: None,
+            })
+            .await
+            .expect("register wasm with schema override");
+
+        let defs = registry.tool_definitions().await;
+        let github = defs
+            .iter()
+            .find(|def| def.name == "github_override")
+            .expect("github_override tool definition");
+
+        assert_eq!(github.parameters, override_schema);
+        assert_eq!(github.description, "forced description");
     }
 
     #[tokio::test]
