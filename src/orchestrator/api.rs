@@ -15,15 +15,19 @@ use tokio::sync::{Mutex, broadcast};
 use uuid::Uuid;
 
 use crate::channels::web::types::SseEvent;
+use crate::context::JobContext;
 use crate::db::Database;
 use crate::llm::{CompletionRequest, LlmProvider, ToolCompletionRequest};
 use crate::orchestrator::auth::{TokenStore, worker_auth_middleware};
 use crate::orchestrator::job_manager::ContainerJobManager;
 use crate::secrets::SecretsStore;
+use crate::tools::ToolRegistry;
+use crate::tools::builtin::extension_tools::ExtensionToolKind;
 use crate::worker::api::JobEventPayload;
 use crate::worker::api::{
     CompletionReport, CredentialResponse, JobDescription, ProxyCompletionRequest,
-    ProxyCompletionResponse, ProxyToolCompletionRequest, ProxyToolCompletionResponse, StatusUpdate,
+    ProxyCompletionResponse, ProxyExtensionToolRequest, ProxyExtensionToolResponse,
+    ProxyToolCompletionRequest, ProxyToolCompletionResponse, StatusUpdate,
 };
 
 /// A follow-up prompt queued for a Claude Code bridge.
@@ -37,6 +41,7 @@ pub struct PendingPrompt {
 #[derive(Clone)]
 pub struct OrchestratorState {
     pub llm: Arc<dyn LlmProvider>,
+    pub tools: Arc<ToolRegistry>,
     pub job_manager: Arc<ContainerJobManager>,
     pub token_store: TokenStore,
     /// Broadcast channel for job events (consumed by the web gateway SSE).
@@ -64,6 +69,10 @@ impl OrchestratorApi {
             .route(
                 "/worker/{job_id}/llm/complete_with_tools",
                 post(llm_complete_with_tools),
+            )
+            .route(
+                "/worker/{job_id}/extension_tool",
+                post(execute_extension_tool),
             )
             .route("/worker/{job_id}/status", post(report_status))
             .route("/worker/{job_id}/complete", post(report_complete))
@@ -196,6 +205,59 @@ async fn llm_complete_with_tools(
     }))
 }
 
+async fn execute_extension_tool(
+    State(state): State<OrchestratorState>,
+    Path(job_id): Path<Uuid>,
+    Json(req): Json<ProxyExtensionToolRequest>,
+) -> Result<Json<ProxyExtensionToolResponse>, StatusCode> {
+    let Some(kind) = ExtensionToolKind::ALL
+        .iter()
+        .find(|kind| kind.name() == req.tool_name)
+        .copied()
+    else {
+        tracing::warn!(
+            job_id = %job_id,
+            tool = %req.tool_name,
+            "Worker attempted non-extension tool proxy execution"
+        );
+        return Err(StatusCode::BAD_REQUEST);
+    };
+
+    let tool = state
+        .tools
+        .get(&req.tool_name)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    if tool.requires_approval(&req.params).is_required() {
+        tracing::warn!(
+            job_id = %job_id,
+            tool = %kind.name(),
+            "Worker attempted approval-gated extension proxy execution"
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let mut ctx = JobContext::with_user(
+        state.user_id.clone(),
+        "Hosted extension tool",
+        format!("Hosted execution of {}", req.tool_name),
+    );
+    ctx.job_id = job_id;
+    let output = tool.execute(req.params, &ctx).await.map_err(|e| {
+        tracing::warn!(
+            job_id = %job_id,
+            tool = %tool.name(),
+            error = %e,
+            "Extension tool proxy execution failed"
+        );
+        StatusCode::BAD_GATEWAY
+    })?;
+
+    Ok(Json(ProxyExtensionToolResponse {
+        result: output.result,
+    }))
+}
 async fn report_status(
     State(state): State<OrchestratorState>,
     Path(job_id): Path<Uuid>,
@@ -449,6 +511,7 @@ fn format_finish_reason(reason: crate::llm::FinishReason) -> String {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::time::Duration;
 
     use axum::body::Body;
     use axum::http::Request;
@@ -458,6 +521,7 @@ mod tests {
     use crate::orchestrator::auth::TokenStore;
     use crate::orchestrator::job_manager::{ContainerJobConfig, ContainerJobManager};
     use crate::testing::StubLlm;
+    use crate::tools::{Tool, ToolOutput};
 
     use super::*;
 
@@ -466,6 +530,7 @@ mod tests {
         let jm = ContainerJobManager::new(ContainerJobConfig::default(), token_store.clone());
         OrchestratorState {
             llm: Arc::new(StubLlm::default()),
+            tools: Arc::new(ToolRegistry::new()),
             job_manager: Arc::new(jm),
             token_store,
             job_event_tx: None,
@@ -695,6 +760,7 @@ mod tests {
 
         let state = OrchestratorState {
             llm: Arc::new(StubLlm::default()),
+            tools: Arc::new(ToolRegistry::new()),
             job_manager: Arc::new(jm),
             token_store,
             job_event_tx: None,
@@ -721,6 +787,90 @@ mod tests {
         assert_eq!(json[0]["value"], "supersecretvalue");
     }
 
+    #[tokio::test]
+    async fn extension_tool_proxy_rejects_non_extension_tool_names() {
+        let state = test_state();
+        let job_id = Uuid::new_v4();
+        let token = state.token_store.create_token(job_id).await;
+        let router = OrchestratorApi::router(state);
+
+        let payload = serde_json::json!({
+            "tool_name": "shell",
+            "params": {"command": "ls"}
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/worker/{}/extension_tool", job_id))
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn extension_tool_proxy_executes_registered_extension_tool() {
+        struct FakeToolList;
+
+        #[async_trait::async_trait]
+        impl Tool for FakeToolList {
+            fn name(&self) -> &str {
+                "tool_list"
+            }
+
+            fn description(&self) -> &str {
+                "fake tool_list"
+            }
+
+            fn parameters_schema(&self) -> serde_json::Value {
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {}
+                })
+            }
+
+            async fn execute(
+                &self,
+                _params: serde_json::Value,
+                _ctx: &JobContext,
+            ) -> Result<ToolOutput, crate::tools::ToolError> {
+                Ok(ToolOutput::success(
+                    serde_json::json!({"extensions": ["telegram"]}),
+                    Duration::from_millis(5),
+                ))
+            }
+        }
+
+        let state = test_state();
+        state.tools.register_sync(Arc::new(FakeToolList));
+        let job_id = Uuid::new_v4();
+        let token = state.token_store.create_token(job_id).await;
+        let router = OrchestratorApi::router(state);
+
+        let payload = serde_json::json!({
+            "tool_name": "tool_list",
+            "params": {"include_available": true}
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/worker/{}/extension_tool", job_id))
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["result"]["extensions"][0], "telegram");
+    }
+
     // -- Job event handler tests --
 
     #[tokio::test]
@@ -730,6 +880,7 @@ mod tests {
         let jm = ContainerJobManager::new(ContainerJobConfig::default(), token_store.clone());
         let state = OrchestratorState {
             llm: Arc::new(StubLlm::default()),
+            tools: Arc::new(ToolRegistry::new()),
             job_manager: Arc::new(jm),
             token_store: token_store.clone(),
             job_event_tx: Some(tx),
@@ -785,6 +936,7 @@ mod tests {
         let jm = ContainerJobManager::new(ContainerJobConfig::default(), token_store.clone());
         let state = OrchestratorState {
             llm: Arc::new(StubLlm::default()),
+            tools: Arc::new(ToolRegistry::new()),
             job_manager: Arc::new(jm),
             token_store: token_store.clone(),
             job_event_tx: Some(tx),
@@ -833,6 +985,7 @@ mod tests {
         let jm = ContainerJobManager::new(ContainerJobConfig::default(), token_store.clone());
         let state = OrchestratorState {
             llm: Arc::new(StubLlm::default()),
+            tools: Arc::new(ToolRegistry::new()),
             job_manager: Arc::new(jm),
             token_store: token_store.clone(),
             job_event_tx: Some(tx),

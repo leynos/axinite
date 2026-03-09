@@ -9,6 +9,35 @@
 use ironclaw::tools::validate_tool_schema;
 use ironclaw::tools::{Tool, ToolRegistry};
 
+fn test_extension_manager() -> std::sync::Arc<ironclaw::extensions::ExtensionManager> {
+    use ironclaw::secrets::{InMemorySecretsStore, SecretsCrypto};
+    use ironclaw::tools::mcp::session::McpSessionManager;
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let tools_dir = dir.path().join("tools");
+    let channels_dir = dir.path().join("channels");
+    std::fs::create_dir_all(&tools_dir).expect("create tools dir");
+    std::fs::create_dir_all(&channels_dir).expect("create channels dir");
+
+    let master_key = secrecy::SecretString::from("0123456789abcdef0123456789abcdef".to_string());
+    let crypto = std::sync::Arc::new(SecretsCrypto::new(master_key).expect("crypto"));
+
+    std::sync::Arc::new(ironclaw::extensions::ExtensionManager::new(
+        std::sync::Arc::new(McpSessionManager::new()),
+        std::sync::Arc::new(ironclaw::tools::mcp::process::McpProcessManager::new()),
+        std::sync::Arc::new(InMemorySecretsStore::new(crypto)),
+        std::sync::Arc::new(ToolRegistry::new()),
+        None,
+        None,
+        tools_dir,
+        channels_dir,
+        None,
+        "test".to_string(),
+        None,
+        Vec::new(),
+    ))
+}
+
 /// Validate schemas of all tools registered via `register_builtin_tools()` and
 /// `register_dev_tools()` (echo, time, json, http, shell, file tools).
 ///
@@ -74,6 +103,57 @@ async fn core_registration_covers_expected_tools() {
     assert_eq!(
         names, expected,
         "Core tool set changed. Update this test and ensure new tools have valid schemas."
+    );
+}
+
+#[tokio::test]
+async fn extension_registration_covers_expected_tools() {
+    let registry = ToolRegistry::new();
+    registry.register_extension_tools(test_extension_manager());
+
+    let mut names = registry.list().await;
+    names.sort();
+
+    let expected = &[
+        "extension_info",
+        "tool_activate",
+        "tool_auth",
+        "tool_install",
+        "tool_list",
+        "tool_remove",
+        "tool_search",
+        "tool_upgrade",
+    ];
+
+    assert_eq!(
+        names, expected,
+        "Extension tool set changed. Update this test and ensure new tools have schema coverage."
+    );
+}
+
+#[tokio::test]
+async fn extension_tool_schemas_are_valid() {
+    let registry = ToolRegistry::new();
+    registry.register_extension_tools(test_extension_manager());
+
+    let tools = registry.all().await;
+    let mut all_errors = Vec::new();
+    for tool in &tools {
+        let schema = tool.parameters_schema();
+        let errors = validate_tool_schema(&schema, tool.name());
+        if !errors.is_empty() {
+            all_errors.push(format!(
+                "Tool '{}' has schema errors:\n  {}",
+                tool.name(),
+                errors.join("\n  ")
+            ));
+        }
+    }
+
+    assert!(
+        all_errors.is_empty(),
+        "Extension tool schema validation failures:\n{}",
+        all_errors.join("\n\n")
     );
 }
 

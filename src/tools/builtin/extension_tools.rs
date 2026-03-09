@@ -11,6 +11,173 @@ use crate::context::JobContext;
 use crate::extensions::{ExtensionKind, ExtensionManager};
 use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput, require_str};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ExtensionToolKind {
+    Search,
+    Install,
+    Auth,
+    Activate,
+    List,
+    Remove,
+    Upgrade,
+    Info,
+}
+
+impl ExtensionToolKind {
+    pub const ALL: [Self; 8] = [
+        Self::Search,
+        Self::Install,
+        Self::Auth,
+        Self::Activate,
+        Self::List,
+        Self::Remove,
+        Self::Upgrade,
+        Self::Info,
+    ];
+
+    pub const HOSTED_WORKER_PROXY_SAFE: [Self; 4] =
+        [Self::Search, Self::Activate, Self::List, Self::Info];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Search => "tool_search",
+            Self::Install => "tool_install",
+            Self::Auth => "tool_auth",
+            Self::Activate => "tool_activate",
+            Self::List => "tool_list",
+            Self::Remove => "tool_remove",
+            Self::Upgrade => "tool_upgrade",
+            Self::Info => "extension_info",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Search => {
+                "Search for available extensions to add new capabilities. Extensions include \
+                 channels (Telegram, Slack, Discord — for messaging), tools, and MCP servers. \
+                 Use discover:true to search online if the built-in registry has no results."
+            }
+            Self::Install => {
+                "Install an extension (channel, tool, or MCP server). \
+                 Use the name from tool_search results, or provide an explicit URL."
+            }
+            Self::Auth => {
+                "Initiate authentication for an extension. For OAuth, returns a URL. \
+                 For manual auth, returns instructions. The user provides their token \
+                 through a secure channel, never through this tool."
+            }
+            Self::Activate => {
+                "Activate an installed extension — starts channels, loads tools, or connects to MCP servers."
+            }
+            Self::List => {
+                "List extensions with their authentication and activation status. \
+                 Set include_available:true to also show registry entries not yet installed."
+            }
+            Self::Remove => {
+                "Permanently remove an installed extension (channel, tool, or MCP server) from disk. \
+                 This action cannot be undone - the WASM binary and configuration files will be deleted."
+            }
+            Self::Upgrade => {
+                "Upgrade installed WASM extensions (channels and tools) to match the current \
+                 host WIT version. If name is omitted, checks and upgrades all installed WASM \
+                 extensions. Authentication and secrets are preserved."
+            }
+            Self::Info => {
+                "Show detailed information about an installed extension, including version \
+                 and WIT version compatibility."
+            }
+        }
+    }
+
+    pub fn parameters_schema(self) -> serde_json::Value {
+        match self {
+            Self::Search => serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (name, keyword, or description fragment)"
+                    },
+                    "discover": {
+                        "type": "boolean",
+                        "description": "If true, also search online (slower, 5-15s). Try without first.",
+                        "default": false
+                    }
+                },
+                "required": ["query"]
+            }),
+            Self::Install => serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Extension name (from search results or custom)"
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "Explicit URL (for extensions not in the registry)"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": ["mcp_server", "wasm_tool", "wasm_channel"],
+                        "description": "Extension type (auto-detected if omitted)"
+                    }
+                },
+                "required": ["name"]
+            }),
+            Self::Auth | Self::Activate | Self::Remove | Self::Info => serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": match self {
+                            Self::Auth => "Extension name to authenticate",
+                            Self::Activate => "Extension name to activate",
+                            Self::Remove => "Extension name to remove",
+                            Self::Info => "Extension name to get info about",
+                            _ => unreachable!(),
+                        }
+                    }
+                },
+                "required": ["name"]
+            }),
+            Self::List => serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["mcp_server", "wasm_tool", "wasm_channel"],
+                        "description": "Filter by extension type (omit to list all)"
+                    },
+                    "include_available": {
+                        "type": "boolean",
+                        "description": "If true, also include registry entries that are not yet installed",
+                        "default": false
+                    }
+                }
+            }),
+            Self::Upgrade => serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Extension name to upgrade (omit to upgrade all)"
+                    }
+                }
+            }),
+        }
+    }
+
+    pub fn approval_requirement(self) -> ApprovalRequirement {
+        match self {
+            Self::Search | Self::Activate | Self::List | Self::Info => ApprovalRequirement::Never,
+            Self::Install | Self::Auth | Self::Upgrade => ApprovalRequirement::UnlessAutoApproved,
+            Self::Remove => ApprovalRequirement::Always,
+        }
+    }
+}
+
 // ── tool_search ──────────────────────────────────────────────────────────
 
 pub struct ToolSearchTool {
@@ -26,31 +193,15 @@ impl ToolSearchTool {
 #[async_trait]
 impl Tool for ToolSearchTool {
     fn name(&self) -> &str {
-        "tool_search"
+        ExtensionToolKind::Search.name()
     }
 
     fn description(&self) -> &str {
-        "Search for available extensions to add new capabilities. Extensions include \
-         channels (Telegram, Slack, Discord — for messaging), tools, and MCP servers. \
-         Use discover:true to search online if the built-in registry has no results."
+        ExtensionToolKind::Search.description()
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query (name, keyword, or description fragment)"
-                },
-                "discover": {
-                    "type": "boolean",
-                    "description": "If true, also search online (slower, 5-15s). Try without first.",
-                    "default": false
-                }
-            },
-            "required": ["query"]
-        })
+        ExtensionToolKind::Search.parameters_schema()
     }
 
     async fn execute(
@@ -97,34 +248,15 @@ impl ToolInstallTool {
 #[async_trait]
 impl Tool for ToolInstallTool {
     fn name(&self) -> &str {
-        "tool_install"
+        ExtensionToolKind::Install.name()
     }
 
     fn description(&self) -> &str {
-        "Install an extension (channel, tool, or MCP server). \
-         Use the name from tool_search results, or provide an explicit URL."
+        ExtensionToolKind::Install.description()
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Extension name (from search results or custom)"
-                },
-                "url": {
-                    "type": "string",
-                    "description": "Explicit URL (for extensions not in the registry)"
-                },
-                "kind": {
-                    "type": "string",
-                    "enum": ["mcp_server", "wasm_tool", "wasm_channel"],
-                    "description": "Extension type (auto-detected if omitted)"
-                }
-            },
-            "required": ["name"]
-        })
+        ExtensionToolKind::Install.parameters_schema()
     }
 
     async fn execute(
@@ -161,7 +293,7 @@ impl Tool for ToolInstallTool {
     }
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-        ApprovalRequirement::UnlessAutoApproved
+        ExtensionToolKind::Install.approval_requirement()
     }
 }
 
@@ -180,26 +312,15 @@ impl ToolAuthTool {
 #[async_trait]
 impl Tool for ToolAuthTool {
     fn name(&self) -> &str {
-        "tool_auth"
+        ExtensionToolKind::Auth.name()
     }
 
     fn description(&self) -> &str {
-        "Initiate authentication for an extension. For OAuth, returns a URL. \
-         For manual auth, returns instructions. The user provides their token \
-         through a secure channel, never through this tool."
+        ExtensionToolKind::Auth.description()
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Extension name to authenticate"
-                }
-            },
-            "required": ["name"]
-        })
+        ExtensionToolKind::Auth.parameters_schema()
     }
 
     async fn execute(
@@ -256,7 +377,7 @@ impl Tool for ToolAuthTool {
     }
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-        ApprovalRequirement::UnlessAutoApproved
+        ExtensionToolKind::Auth.approval_requirement()
     }
 }
 
@@ -275,24 +396,15 @@ impl ToolActivateTool {
 #[async_trait]
 impl Tool for ToolActivateTool {
     fn name(&self) -> &str {
-        "tool_activate"
+        ExtensionToolKind::Activate.name()
     }
 
     fn description(&self) -> &str {
-        "Activate an installed extension — starts channels, loads tools, or connects to MCP servers."
+        ExtensionToolKind::Activate.description()
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Extension name to activate"
-                }
-            },
-            "required": ["name"]
-        })
+        ExtensionToolKind::Activate.parameters_schema()
     }
 
     async fn execute(
@@ -369,30 +481,15 @@ impl ToolListTool {
 #[async_trait]
 impl Tool for ToolListTool {
     fn name(&self) -> &str {
-        "tool_list"
+        ExtensionToolKind::List.name()
     }
 
     fn description(&self) -> &str {
-        "List extensions with their authentication and activation status. \
-         Set include_available:true to also show registry entries not yet installed."
+        ExtensionToolKind::List.description()
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "kind": {
-                    "type": "string",
-                    "enum": ["mcp_server", "wasm_tool", "wasm_channel"],
-                    "description": "Filter by extension type (omit to list all)"
-                },
-                "include_available": {
-                    "type": "boolean",
-                    "description": "If true, also include registry entries that are not yet installed",
-                    "default": false
-                }
-            }
-        })
+        ExtensionToolKind::List.parameters_schema()
     }
 
     async fn execute(
@@ -447,25 +544,15 @@ impl ToolRemoveTool {
 #[async_trait]
 impl Tool for ToolRemoveTool {
     fn name(&self) -> &str {
-        "tool_remove"
+        ExtensionToolKind::Remove.name()
     }
 
     fn description(&self) -> &str {
-        "Permanently remove an installed extension (channel, tool, or MCP server) from disk. \
-         This action cannot be undone — the WASM binary and configuration files will be deleted."
+        ExtensionToolKind::Remove.description()
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Extension name to remove"
-                }
-            },
-            "required": ["name"]
-        })
+        ExtensionToolKind::Remove.parameters_schema()
     }
 
     async fn execute(
@@ -492,7 +579,7 @@ impl Tool for ToolRemoveTool {
     }
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-        ApprovalRequirement::Always
+        ExtensionToolKind::Remove.approval_requirement()
     }
 }
 
@@ -511,25 +598,15 @@ impl ToolUpgradeTool {
 #[async_trait]
 impl Tool for ToolUpgradeTool {
     fn name(&self) -> &str {
-        "tool_upgrade"
+        ExtensionToolKind::Upgrade.name()
     }
 
     fn description(&self) -> &str {
-        "Upgrade installed WASM extensions (channels and tools) to match the current \
-         host WIT version. If name is omitted, checks and upgrades all installed WASM \
-         extensions. Authentication and secrets are preserved."
+        ExtensionToolKind::Upgrade.description()
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Extension name to upgrade (omit to upgrade all)"
-                }
-            }
-        })
+        ExtensionToolKind::Upgrade.parameters_schema()
     }
 
     async fn execute(
@@ -554,7 +631,7 @@ impl Tool for ToolUpgradeTool {
     }
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-        ApprovalRequirement::UnlessAutoApproved
+        ExtensionToolKind::Upgrade.approval_requirement()
     }
 }
 
@@ -573,25 +650,15 @@ impl ExtensionInfoTool {
 #[async_trait]
 impl Tool for ExtensionInfoTool {
     fn name(&self) -> &str {
-        "extension_info"
+        ExtensionToolKind::Info.name()
     }
 
     fn description(&self) -> &str {
-        "Show detailed information about an installed extension, including version \
-         and WIT version compatibility."
+        ExtensionToolKind::Info.description()
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Extension name to get info about"
-                }
-            },
-            "required": ["name"]
-        })
+        ExtensionToolKind::Info.parameters_schema()
     }
 
     async fn execute(
@@ -616,6 +683,11 @@ impl Tool for ExtensionInfoTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    use crate::context::JobContext;
+    use crate::extensions::{AuthHint, ExtensionSource, RegistryEntry};
+    use crate::tools::tool::ToolError;
 
     #[test]
     fn test_tool_search_schema() {
@@ -657,7 +729,6 @@ mod tests {
         );
         let schema = tool.parameters_schema();
         assert!(schema["properties"].get("name").is_some());
-        // token param must NOT be in schema (security: tokens never go through LLM)
         assert!(
             schema["properties"].get("token").is_none(),
             "tool_auth must not have a token parameter"
@@ -745,7 +816,6 @@ mod tests {
             ApprovalRequirement::UnlessAutoApproved
         );
         let schema = tool.parameters_schema();
-        // name is optional (omit to upgrade all)
         assert!(schema["properties"].get("name").is_some());
         assert!(
             schema.get("required").is_none(),
@@ -765,29 +835,154 @@ mod tests {
         assert!(required.iter().any(|v| v.as_str() == Some("name")));
     }
 
-    /// Create a stub manager for schema tests (these don't call execute).
+    #[tokio::test]
+    async fn test_tool_search_execute_returns_registry_results() {
+        let (_temp_dir, manager) = test_manager_with_catalog(vec![test_registry_entry(
+            "quasar-sync",
+            ExtensionKind::WasmTool,
+            vec!["quasar".into(), "sync".into()],
+        )]);
+        let tool = ToolSearchTool::new(manager);
+        let ctx = JobContext::with_user("test", "chat", "test-session");
+
+        let output = tool
+            .execute(serde_json::json!({ "query": "quasar" }), &ctx)
+            .await
+            .expect("search should succeed");
+
+        assert_eq!(output.result["searched_online"], serde_json::json!(false));
+        let results = output.result["results"]
+            .as_array()
+            .expect("results should be an array");
+        assert!(
+            results.iter().any(|entry| {
+                entry.get("name").and_then(|value| value.as_str()) == Some("quasar-sync")
+                    && entry.get("source").and_then(|value| value.as_str()) == Some("registry")
+            }),
+            "expected quasar-sync registry result, got: {results:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tool_list_execute_includes_available_registry_entries() {
+        let (_temp_dir, manager) = test_manager_with_catalog(vec![test_registry_entry(
+            "quasar-sync",
+            ExtensionKind::WasmTool,
+            vec!["quasar".into(), "sync".into()],
+        )]);
+        let tool = ToolListTool::new(manager);
+        let ctx = JobContext::with_user("test", "chat", "test-session");
+
+        let output = tool
+            .execute(
+                serde_json::json!({
+                    "kind": "wasm_tool",
+                    "include_available": true
+                }),
+                &ctx,
+            )
+            .await
+            .expect("list should succeed");
+
+        let extensions = output.result["extensions"]
+            .as_array()
+            .expect("extensions should be an array");
+        let entry = extensions
+            .iter()
+            .find(|extension| {
+                extension.get("name").and_then(|value| value.as_str()) == Some("quasar-sync")
+            })
+            .expect("quasar-sync should be included");
+
+        assert_eq!(entry["kind"], serde_json::json!("wasm_tool"));
+        assert_eq!(entry["installed"], serde_json::json!(false));
+        assert_eq!(entry["display_name"], serde_json::json!("Quasar Sync"));
+        assert_eq!(output.result["count"], serde_json::json!(extensions.len()));
+    }
+
+    #[tokio::test]
+    async fn test_tool_auth_execute_requires_name_param() {
+        let tool = ToolAuthTool::new(test_manager_stub());
+        let ctx = JobContext::with_user("test", "chat", "test-session");
+
+        let err = tool
+            .execute(serde_json::json!({}), &ctx)
+            .await
+            .expect_err("tool_auth should reject missing name");
+
+        assert!(matches!(err, ToolError::InvalidParameters(_)));
+    }
+
+    #[tokio::test]
+    async fn test_tool_activate_execute_requires_name_param() {
+        let tool = ToolActivateTool::new(test_manager_stub());
+        let ctx = JobContext::with_user("test", "chat", "test-session");
+
+        let err = tool
+            .execute(serde_json::json!({}), &ctx)
+            .await
+            .expect_err("tool_activate should reject missing name");
+
+        assert!(matches!(err, ToolError::InvalidParameters(_)));
+    }
+
     fn test_manager_stub() -> Arc<ExtensionManager> {
+        test_manager_with_catalog(Vec::new()).1
+    }
+
+    fn test_manager_with_catalog(
+        catalog_entries: Vec<RegistryEntry>,
+    ) -> (TempDir, Arc<ExtensionManager>) {
         use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
-        use crate::testing::credentials::TEST_CRYPTO_KEY;
         use crate::tools::ToolRegistry;
         use crate::tools::mcp::session::McpSessionManager;
 
-        let master_key = secrecy::SecretString::from(TEST_CRYPTO_KEY.to_string());
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let tools_dir = temp_dir.path().join("tools");
+        let channels_dir = temp_dir.path().join("channels");
+        std::fs::create_dir_all(&tools_dir).expect("create tools dir");
+        std::fs::create_dir_all(&channels_dir).expect("create channels dir");
+
+        let master_key =
+            secrecy::SecretString::from("0123456789abcdef0123456789abcdef".to_string());
         let crypto = Arc::new(SecretsCrypto::new(master_key).unwrap());
 
-        Arc::new(ExtensionManager::new(
-            Arc::new(McpSessionManager::new()),
-            Arc::new(crate::tools::mcp::process::McpProcessManager::new()),
-            Arc::new(InMemorySecretsStore::new(crypto)),
-            Arc::new(ToolRegistry::new()),
-            None,
-            None,
-            std::env::temp_dir().join("ironclaw-test-tools"),
-            std::env::temp_dir().join("ironclaw-test-channels"),
-            None,
-            "test".to_string(),
-            None,
-            Vec::new(),
-        ))
+        (
+            temp_dir,
+            Arc::new(ExtensionManager::new(
+                Arc::new(McpSessionManager::new()),
+                Arc::new(crate::tools::mcp::process::McpProcessManager::new()),
+                Arc::new(InMemorySecretsStore::new(crypto)),
+                Arc::new(ToolRegistry::new()),
+                None,
+                None,
+                tools_dir,
+                channels_dir,
+                None,
+                "test".to_string(),
+                None,
+                catalog_entries,
+            )),
+        )
+    }
+
+    fn test_registry_entry(
+        name: &str,
+        kind: ExtensionKind,
+        keywords: Vec<String>,
+    ) -> RegistryEntry {
+        RegistryEntry {
+            name: name.to_string(),
+            display_name: "Quasar Sync".to_string(),
+            kind,
+            description: "Synthetic extension used for deterministic tool tests".to_string(),
+            keywords,
+            source: ExtensionSource::Discovered {
+                url: format!("https://example.com/{name}"),
+            },
+            fallback_source: None,
+            auth_hint: AuthHint::None,
+            version: Some("1.2.3".to_string()),
+        }
     }
 }

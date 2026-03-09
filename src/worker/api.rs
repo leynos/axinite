@@ -81,7 +81,17 @@ pub struct ProxyToolCompletionResponse {
     pub cache_creation_input_tokens: u32,
 }
 
-/// Completion result for the worker to report when done.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProxyExtensionToolRequest {
+    pub tool_name: String,
+    pub params: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProxyExtensionToolResponse {
+    pub result: serde_json::Value,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompletionReport {
     pub success: bool,
@@ -267,6 +277,24 @@ impl WorkerHttpClient {
             cache_read_input_tokens: proxy_resp.cache_read_input_tokens,
             cache_creation_input_tokens: proxy_resp.cache_creation_input_tokens,
         })
+    }
+
+    /// Execute an extension-management tool against the orchestrator-side app state.
+    pub async fn execute_extension_tool(
+        &self,
+        tool_name: &str,
+        params: &serde_json::Value,
+    ) -> Result<serde_json::Value, WorkerError> {
+        let proxy_req = ProxyExtensionToolRequest {
+            tool_name: tool_name.to_string(),
+            params: params.clone(),
+        };
+
+        let proxy_resp: ProxyExtensionToolResponse = self
+            .post_json("extension_tool", &proxy_req, "Extension tool execution")
+            .await?;
+
+        Ok(proxy_resp.result)
     }
 
     /// Report status to the orchestrator.

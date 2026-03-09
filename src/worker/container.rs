@@ -24,6 +24,7 @@ use crate::error::WorkerError;
 use crate::llm::{ChatMessage, LlmProvider, Reasoning, ReasoningContext};
 use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
+use crate::tools::builtin::worker_extension_proxy::register_worker_extension_proxy_tools;
 use crate::tools::execute::{execute_tool_simple, process_tool_result};
 use crate::worker::api::{CompletionReport, JobEventPayload, StatusUpdate, WorkerHttpClient};
 use crate::worker::proxy_llm::ProxyLlmProvider;
@@ -75,6 +76,10 @@ impl WorkerRuntime {
             config.job_id,
         )?);
 
+        Ok(Self::from_client(config, client))
+    }
+
+    fn from_client(config: WorkerConfig, client: Arc<WorkerHttpClient>) -> Self {
         let llm: Arc<dyn LlmProvider> = Arc::new(ProxyLlmProvider::new(
             Arc::clone(&client),
             "proxied".to_string(),
@@ -85,18 +90,23 @@ impl WorkerRuntime {
             injection_check_enabled: true,
         }));
 
-        let tools = Arc::new(ToolRegistry::new());
-        // Register only container-safe tools
-        tools.register_container_tools();
+        let tools = Self::build_tools(Arc::clone(&client));
 
-        Ok(Self {
+        Self {
             config,
             client,
             llm,
             safety,
             tools,
             extra_env: Arc::new(HashMap::new()),
-        })
+        }
+    }
+
+    fn build_tools(client: Arc<WorkerHttpClient>) -> Arc<ToolRegistry> {
+        let tools = Arc::new(ToolRegistry::new());
+        tools.register_container_tools();
+        register_worker_extension_proxy_tools(&tools, client);
+        tools
     }
 
     /// Run the worker until the job is complete or an error occurs.
@@ -150,7 +160,7 @@ impl WorkerRuntime {
 Job: {}
 Description: {}
 
-You have tools for shell commands, file operations, and code editing.
+You have tools for shell commands, file operations, code editing, and extension management.
 Work independently to complete this job. Report when done."#,
             job.title, job.description
         )));
@@ -511,7 +521,13 @@ impl LoopDelegate for ContainerDelegate {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use uuid::Uuid;
+
     use crate::agent::agentic_loop::truncate_for_preview;
+    use crate::worker::api::WorkerHttpClient;
+    use crate::worker::container::{WorkerConfig, WorkerRuntime};
 
     #[test]
     fn test_truncate_within_limit() {
@@ -535,5 +551,74 @@ mod tests {
         let result = truncate_for_preview("é is fancy", 1);
         // Should truncate to 0 chars (can't fit "é" in 1 byte)
         assert_eq!(result, "...");
+    }
+
+    #[tokio::test]
+    async fn test_worker_runtime_build_tools_includes_safe_extension_meta_tools() {
+        let client = Arc::new(WorkerHttpClient::new(
+            "http://localhost:50051".to_string(),
+            Uuid::nil(),
+            "test".to_string(),
+        ));
+        let tools = WorkerRuntime::build_tools(client);
+        let mut names = tools.list().await;
+        names.sort();
+
+        for expected in [
+            "apply_patch",
+            "extension_info",
+            "list_dir",
+            "read_file",
+            "shell",
+            "tool_activate",
+            "tool_list",
+            "tool_search",
+            "write_file",
+        ] {
+            assert!(
+                names.iter().any(|name| name == expected),
+                "expected hosted worker tool set to include {expected}, got {names:?}"
+            );
+        }
+
+        for omitted in ["tool_auth", "tool_install", "tool_remove", "tool_upgrade"] {
+            assert!(
+                !names.iter().any(|name| name == omitted),
+                "hosted worker proxy should exclude approval-gated tool {omitted}, got {names:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_worker_runtime_new_advertises_safe_meta_tools() {
+        let client = Arc::new(WorkerHttpClient::new(
+            "http://localhost:50051".to_string(),
+            Uuid::nil(),
+            "test".to_string(),
+        ));
+        let runtime = WorkerRuntime::from_client(
+            WorkerConfig {
+                job_id: Uuid::nil(),
+                orchestrator_url: "http://localhost:50051".to_string(),
+                ..WorkerConfig::default()
+            },
+            client,
+        );
+        let defs = runtime.tools.tool_definitions().await;
+        let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
+
+        for expected in ["tool_list", "tool_search", "tool_activate", "extension_info"] {
+            assert!(
+                names.contains(&expected),
+                "expected advertised tools to include {expected}, got {names:?}"
+            );
+        }
+
+        for omitted in ["tool_auth", "tool_install", "tool_remove", "tool_upgrade"] {
+            assert!(
+                !names.contains(&omitted),
+                "approval-gated tool {omitted} should not be advertised to hosted workers"
+            );
+        }
     }
 }
