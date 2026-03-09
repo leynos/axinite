@@ -310,7 +310,7 @@ CREATE TABLE IF NOT EXISTS wasm_tools (
     user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     version TEXT NOT NULL DEFAULT '1.0.0',
-    wit_version TEXT NOT NULL DEFAULT '0.1.0',
+    wit_version TEXT NOT NULL DEFAULT '0.3.0',
     description TEXT NOT NULL,
     wasm_binary BLOB NOT NULL,
     binary_hash BLOB NOT NULL,
@@ -334,7 +334,7 @@ CREATE TABLE IF NOT EXISTS wasm_channels (
     user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     version TEXT NOT NULL DEFAULT '0.1.0',
-    wit_version TEXT NOT NULL DEFAULT '0.1.0',
+    wit_version TEXT NOT NULL DEFAULT '0.3.0',
     description TEXT NOT NULL DEFAULT '',
     wasm_binary BLOB NOT NULL,
     binary_hash BLOB NOT NULL,
@@ -647,6 +647,90 @@ END;
 "#,
     ),
     (
+        10,
+        "wasm_wit_default_0_3_0",
+        // Update existing databases that still default newly inserted wasm tool
+        // and channel rows to the historical 0.1.0 WIT version. This rebuilds
+        // the affected tables because SQLite cannot ALTER COLUMN defaults.
+        //
+        // `legacy_alter_table=ON` is required so child foreign keys keep pointing
+        // at `wasm_tools` while we rename the old table out of the way.
+        r#"
+PRAGMA legacy_alter_table=ON;
+PRAGMA foreign_keys=OFF;
+BEGIN IMMEDIATE;
+
+ALTER TABLE wasm_tools RENAME TO wasm_tools_old;
+
+CREATE TABLE wasm_tools (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT '1.0.0',
+    wit_version TEXT NOT NULL DEFAULT '0.3.0',
+    description TEXT NOT NULL,
+    wasm_binary BLOB NOT NULL,
+    binary_hash BLOB NOT NULL,
+    parameters_schema TEXT NOT NULL,
+    source_url TEXT,
+    trust_level TEXT NOT NULL DEFAULT 'user',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (user_id, name, version)
+);
+
+INSERT INTO wasm_tools (
+    id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
+    parameters_schema, source_url, trust_level, status, created_at, updated_at
+)
+SELECT
+    id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
+    parameters_schema, source_url, trust_level, status, created_at, updated_at
+FROM wasm_tools_old;
+
+DROP TABLE wasm_tools_old;
+
+CREATE INDEX IF NOT EXISTS idx_wasm_tools_user ON wasm_tools(user_id);
+CREATE INDEX IF NOT EXISTS idx_wasm_tools_name ON wasm_tools(user_id, name);
+CREATE INDEX IF NOT EXISTS idx_wasm_tools_status ON wasm_tools(status);
+CREATE INDEX IF NOT EXISTS idx_wasm_tools_trust ON wasm_tools(trust_level);
+
+ALTER TABLE wasm_channels RENAME TO wasm_channels_old;
+
+CREATE TABLE wasm_channels (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT '0.1.0',
+    wit_version TEXT NOT NULL DEFAULT '0.3.0',
+    description TEXT NOT NULL DEFAULT '',
+    wasm_binary BLOB NOT NULL,
+    binary_hash BLOB NOT NULL,
+    capabilities_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (user_id, name)
+);
+
+INSERT INTO wasm_channels (
+    id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
+    capabilities_json, status, created_at, updated_at
+)
+SELECT
+    id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
+    capabilities_json, status, created_at, updated_at
+FROM wasm_channels_old;
+
+DROP TABLE wasm_channels_old;
+
+COMMIT;
+PRAGMA foreign_keys=ON;
+PRAGMA legacy_alter_table=OFF;
+"#,
+    ),
+    (
         12,
         "job_token_budget",
         // Add token budget tracking columns to agent_jobs.
@@ -665,7 +749,6 @@ ALTER TABLE agent_jobs ADD COLUMN total_tokens_used INTEGER NOT NULL DEFAULT 0;
 pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::error::DatabaseError> {
     use crate::error::DatabaseError;
 
-    let mut applied_count = 0;
     for &(version, name, sql) in INCREMENTAL_MIGRATIONS {
         // Check if already applied
         let mut rows = conn
@@ -680,6 +763,17 @@ pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::err
 
         if rows.next().await.ok().flatten().is_some() {
             continue; // Already applied
+        }
+
+        tracing::info!(version, name, "libSQL: applying incremental migration");
+
+        // V10 contains its own `BEGIN IMMEDIATE`/`COMMIT` block and sets
+        // PRAGMAs that must execute outside a transaction, so bypass the
+        // outer transaction wrapper.
+        if version == 10 {
+            apply_non_transactional_migration(conn, version, name, sql).await?;
+            tracing::info!(version, name, "libSQL: migration applied successfully");
+            continue;
         }
 
         // Wrap migration + recording in a transaction for atomicity.
@@ -713,13 +807,87 @@ pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::err
             ))
         })?;
 
-        applied_count += 1;
-        tracing::debug!(version, name, "libSQL: migration applied");
-    }
-
-    if applied_count > 0 {
-        tracing::info!("libSQL: applied {} incremental migrations", applied_count);
+        tracing::info!(version, name, "libSQL: migration applied successfully");
     }
 
     Ok(())
+}
+
+async fn apply_non_transactional_migration(
+    conn: &libsql::Connection,
+    version: i64,
+    name: &str,
+    sql: &str,
+) -> Result<(), crate::error::DatabaseError> {
+    use crate::error::DatabaseError;
+
+    if let Err(e) = conn.execute_batch(sql).await {
+        if let Err(cleanup_error) = conn
+            .execute_batch("ROLLBACK; PRAGMA foreign_keys=ON; PRAGMA legacy_alter_table=OFF;")
+            .await
+        {
+            tracing::warn!(
+                version,
+                name,
+                error = %cleanup_error,
+                "libSQL non-transactional migration cleanup failed"
+            );
+        }
+        return Err(DatabaseError::Migration(format!(
+            "libSQL migration V{version} ({name}) failed: {e}"
+        )));
+    }
+
+    conn.execute(
+        "INSERT INTO _migrations (version, name) VALUES (?1, ?2)",
+        libsql::params![version, name],
+    )
+    .await
+    .map_err(|e| {
+        DatabaseError::Migration(format!(
+            "Failed to record non-transactional migration V{version} ({name}): {e}"
+        ))
+    })?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{INCREMENTAL_MIGRATIONS, SCHEMA};
+
+    #[test]
+    fn schema_uses_current_wit_defaults_for_new_wasm_records() {
+        let expected = "wit_version TEXT NOT NULL DEFAULT '0.3.0'";
+        let count = SCHEMA.matches(expected).count();
+        assert_eq!(
+            count, 2,
+            "expected fresh libSQL schema to declare {expected} for both wasm tables"
+        );
+        assert!(
+            !SCHEMA.contains("wit_version TEXT NOT NULL DEFAULT '0.1.0'"),
+            "fresh libSQL schema should not default new wasm records to the historical 0.1.0 WIT version"
+        );
+    }
+
+    #[test]
+    fn incremental_migrations_upgrade_existing_wasm_wit_defaults_to_0_3_0() {
+        let (_, _, sql) = INCREMENTAL_MIGRATIONS
+            .iter()
+            .find(|(version, _, _)| *version == 10)
+            .expect("expected a V10 libSQL migration for stale wasm wit_version defaults");
+
+        assert!(
+            sql.contains("0.3.0"),
+            "expected V10 libSQL migration to set wasm wit_version defaults to 0.3.0"
+        );
+        assert!(
+            !sql.contains("wit_version TEXT NOT NULL DEFAULT '0.1.0'"),
+            "expected V10 libSQL migration to remove stale 0.1.0 wit_version defaults"
+        );
+        assert!(
+            !sql.contains("INSERT INTO _migrations"),
+            "non-transactional migration SQL should not manage _migrations rows itself"
+        );
+    }
 }
