@@ -223,21 +223,29 @@ async fn execute_extension_tool(
         return Err(StatusCode::BAD_REQUEST);
     };
 
-    let tool = state
-        .tools
-        .get(&req.tool_name)
-        .await
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    if tool.requires_approval(&req.params).is_required() {
+    if !ExtensionToolKind::HOSTED_WORKER_PROXY_SAFE.contains(&kind) {
         tracing::warn!(
             job_id = %job_id,
             tool = %kind.name(),
+            "Worker attempted restricted extension proxy execution"
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    if kind.approval_requirement().is_required() {
+        tracing::warn!(
+            job_id = %job_id,
+            tool = %req.tool_name,
             "Worker attempted approval-gated extension proxy execution"
         );
         return Err(StatusCode::FORBIDDEN);
     }
 
+    let tool = state
+        .tools
+        .get(&req.tool_name)
+        .await
+        .ok_or(StatusCode::NOT_FOUND)?;
     let mut ctx = JobContext::with_user(
         state.user_id.clone(),
         "Hosted extension tool",
@@ -804,7 +812,9 @@ mod tests {
             .uri(format!("/worker/{}/extension_tool", job_id))
             .header("Authorization", format!("Bearer {}", token))
             .header("Content-Type", "application/json")
-            .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+            .body(Body::from(
+                serde_json::to_vec(&payload).expect("serialize proxy extension tool payload"),
+            ))
             .unwrap();
 
         let resp = router.oneshot(req).await.unwrap();
@@ -812,8 +822,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn extension_tool_proxy_executes_registered_extension_tool() {
-        struct FakeToolList;
+    async fn extension_tool_proxy_rejects_approval_gated_extension_tools() {
+        let state = test_state();
+        let job_id = Uuid::new_v4();
+        let token = state.token_store.create_token(job_id).await;
+        let router = OrchestratorApi::router(state);
+
+        let payload = serde_json::json!({
+            "tool_name": "tool_install",
+            "params": {"name": "telegram"}
+        });
+
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/worker/{}/extension_tool", job_id))
+            .header("Authorization", format!("Bearer {}", token))
+            .header("Content-Type", "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&payload).expect("serialize approval-gated proxy payload"),
+            ))
+            .unwrap();
+
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn extension_tool_proxy_executes_registered_extension_tool_with_request_job_id() {
+        struct FakeToolList {
+            seen_job_id: Arc<tokio::sync::Mutex<Option<Uuid>>>,
+        }
 
         #[async_trait::async_trait]
         impl Tool for FakeToolList {
@@ -835,8 +873,9 @@ mod tests {
             async fn execute(
                 &self,
                 _params: serde_json::Value,
-                _ctx: &JobContext,
+                ctx: &JobContext,
             ) -> Result<ToolOutput, crate::tools::ToolError> {
+                *self.seen_job_id.lock().await = Some(ctx.job_id);
                 Ok(ToolOutput::success(
                     serde_json::json!({"extensions": ["telegram"]}),
                     Duration::from_millis(5),
@@ -845,7 +884,10 @@ mod tests {
         }
 
         let state = test_state();
-        state.tools.register_sync(Arc::new(FakeToolList));
+        let seen_job_id = Arc::new(tokio::sync::Mutex::new(None));
+        state.tools.register_sync(Arc::new(FakeToolList {
+            seen_job_id: Arc::clone(&seen_job_id),
+        }));
         let job_id = Uuid::new_v4();
         let token = state.token_store.create_token(job_id).await;
         let router = OrchestratorApi::router(state);
@@ -860,7 +902,9 @@ mod tests {
             .uri(format!("/worker/{}/extension_tool", job_id))
             .header("Authorization", format!("Bearer {}", token))
             .header("Content-Type", "application/json")
-            .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+            .body(Body::from(
+                serde_json::to_vec(&payload).expect("serialize registered proxy payload"),
+            ))
             .unwrap();
 
         let resp = router.oneshot(req).await.unwrap();
@@ -869,6 +913,7 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["result"]["extensions"][0], "telegram");
+        assert_eq!(*seen_job_id.lock().await, Some(job_id));
     }
 
     // -- Job event handler tests --
