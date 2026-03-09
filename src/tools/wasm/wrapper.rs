@@ -101,6 +101,11 @@ struct StoreData {
     http_runtime: Option<tokio::runtime::Runtime>,
 }
 
+struct PreparedHttpRequest {
+    url: String,
+    headers: HashMap<String, String>,
+}
+
 impl StoreData {
     fn new(
         memory_limit: u64,
@@ -216,6 +221,65 @@ impl StoreData {
             }
         }
     }
+
+    fn prepare_http_request(
+        &mut self,
+        method: &str,
+        url: &str,
+        headers_json: &str,
+        body: Option<&[u8]>,
+    ) -> Result<PreparedHttpRequest, String> {
+        // Inject credentials into URL (e.g., replace {TELEGRAM_BOT_TOKEN})
+        let injected_url = self.inject_credentials(url, "url");
+
+        // Check HTTP allowlist
+        self.host_state
+            .check_http_allowed(&injected_url, method)
+            .map_err(|e| format!("HTTP not allowed: {}", e))?;
+
+        // Record for rate limiting
+        self.host_state
+            .record_http_request()
+            .map_err(|e| format!("Rate limit exceeded: {}", e))?;
+
+        // Parse headers and inject credentials into header values
+        let raw_headers: HashMap<String, String> =
+            serde_json::from_str(headers_json).unwrap_or_default();
+
+        let mut headers: HashMap<String, String> = raw_headers
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    self.inject_credentials(&v, &format!("header:{}", k)),
+                )
+            })
+            .collect();
+
+        let mut url = injected_url;
+
+        // Leak scan runs on WASM-provided values BEFORE host credential injection.
+        // This prevents false positives where the host-injected Bearer token
+        // (e.g. a GitHub PAT) triggers the leak detector even though the WASM
+        // tool never saw or supplied the real secret value.
+        let leak_detector = LeakDetector::new();
+        let header_vec: Vec<(String, String)> = headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        leak_detector
+            .scan_http_request(&url, &header_vec, body)
+            .map_err(|e| format!("Potential secret leak blocked: {}", e))?;
+
+        // Inject pre-resolved host credentials (Bearer tokens, API keys, etc.)
+        // after the leak scan so host-injected secrets don't trigger false positives.
+        if let Some(host) = extract_host_from_url(&url) {
+            self.inject_host_credentials(&host, &mut headers, &mut url);
+        }
+
+        Ok(PreparedHttpRequest { url, headers })
+    }
 }
 
 // Provide WASI context for the WASM component.
@@ -262,61 +326,9 @@ impl near::agent::host::Host for StoreData {
         body: Option<Vec<u8>>,
         timeout_ms: Option<u32>,
     ) -> Result<near::agent::host::HttpResponse, String> {
-        // Inject credentials into URL (e.g., replace {TELEGRAM_BOT_TOKEN})
-        let injected_url = self.inject_credentials(&url, "url");
-
-        // Check HTTP allowlist
-        self.host_state
-            .check_http_allowed(&injected_url, &method)
-            .map_err(|e| format!("HTTP not allowed: {}", e))?;
-
-        // Record for rate limiting
-        self.host_state
-            .record_http_request()
-            .map_err(|e| format!("Rate limit exceeded: {}", e))?;
-
-        // Parse headers and inject credentials into header values
-        let raw_headers: HashMap<String, String> =
-            serde_json::from_str(&headers_json).unwrap_or_default();
-
-        // Leak scan runs on WASM-provided values BEFORE host credential injection.
-        // This prevents false positives where the host-injected Bearer token
-        // (e.g., xoxb- Slack token) triggers the leak detector — WASM never saw
-        // the real value, so scanning the pre-injection state is correct.
-        // Inline the scan to avoid allocating a Vec of cloned headers.
+        let PreparedHttpRequest { url, headers } =
+            self.prepare_http_request(&method, &url, &headers_json, body.as_deref())?;
         let leak_detector = LeakDetector::new();
-        leak_detector
-            .scan_and_clean(&injected_url)
-            .map_err(|e| format!("Potential secret leak in URL blocked: {}", e))?;
-        for (name, value) in &raw_headers {
-            leak_detector.scan_and_clean(value).map_err(|e| {
-                format!("Potential secret leak in header '{}' blocked: {}", name, e)
-            })?;
-        }
-        if let Some(body_bytes) = body.as_deref() {
-            let body_str = String::from_utf8_lossy(body_bytes);
-            leak_detector
-                .scan_and_clean(&body_str)
-                .map_err(|e| format!("Potential secret leak in body blocked: {}", e))?;
-        }
-
-        let mut headers: HashMap<String, String> = raw_headers
-            .into_iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    self.inject_credentials(&v, &format!("header:{}", k)),
-                )
-            })
-            .collect();
-
-        let mut url = injected_url;
-
-        // Inject pre-resolved host credentials (Bearer tokens, API keys, etc.)
-        // based on the request's target host.
-        if let Some(host) = extract_host_from_url(&url) {
-            self.inject_host_credentials(&host, &mut headers, &mut url);
-        }
 
         // Get the max response size from capabilities (default 10MB).
         let max_response_bytes = self
@@ -1379,6 +1391,144 @@ mod tests {
         let redacted = store_data.redact_credentials(text);
         assert!(!redacted.contains("super-secret-token"));
         assert!(redacted.contains("[REDACTED:host_credential]"));
+    }
+
+    fn test_github_pat() -> String {
+        format!("github_pat_{}_{}", "A".repeat(22), "B".repeat(59))
+    }
+
+    fn test_prepare_request_capabilities(host: &str) -> Capabilities {
+        use crate::tools::wasm::capabilities::{EndpointPattern, HttpCapability};
+
+        Capabilities {
+            http: Some(HttpCapability::new(vec![
+                EndpointPattern::host(host.to_string())
+                    .with_path_prefix("/")
+                    .with_methods(vec!["GET".to_string()]),
+            ])),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_prepare_http_request_allows_host_injected_github_pat() {
+        use crate::tools::wasm::wrapper::{ResolvedHostCredential, StoreData};
+        use std::collections::HashMap;
+
+        let pat = test_github_pat();
+        let host = "api.github.invalid";
+        let host_credentials = vec![ResolvedHostCredential {
+            host_patterns: vec![host.to_string()],
+            headers: {
+                let mut h = HashMap::new();
+                h.insert("Authorization".to_string(), format!("Bearer {pat}"));
+                h
+            },
+            query_params: HashMap::new(),
+            secret_value: pat.clone(),
+        }];
+
+        let mut store_data = StoreData::new(
+            1024 * 1024,
+            test_prepare_request_capabilities(host),
+            HashMap::new(),
+            host_credentials,
+        );
+
+        let prepared = store_data
+            .prepare_http_request(
+                "GET",
+                &format!("https://{host}/repos/leynos/mxd"),
+                "{}",
+                None,
+            )
+            .expect("host-injected PAT should not trip leak scanning");
+
+        assert_eq!(
+            prepared.headers.get("Authorization"),
+            Some(&format!("Bearer {pat}"))
+        );
+        assert_eq!(prepared.url, format!("https://{host}/repos/leynos/mxd"));
+    }
+
+    #[test]
+    fn test_prepare_http_request_blocks_wasm_supplied_github_pat() {
+        use crate::tools::wasm::wrapper::StoreData;
+        use std::collections::HashMap;
+
+        let pat = test_github_pat();
+        let host = "api.github.invalid";
+        let mut store_data = StoreData::new(
+            1024 * 1024,
+            test_prepare_request_capabilities(host),
+            HashMap::new(),
+            Vec::new(),
+        );
+
+        let headers_json = serde_json::json!({
+            "Authorization": format!("Bearer {pat}")
+        })
+        .to_string();
+
+        let err = match store_data.prepare_http_request(
+            "GET",
+            &format!("https://{host}/repos/leynos/mxd"),
+            &headers_json,
+            None,
+        ) {
+            Ok(_) => panic!("WASM-supplied PAT must still be blocked"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("Potential secret leak blocked"));
+        assert!(err.contains("header:Authorization"));
+        assert!(err.contains("github_fine_grained_pat"));
+    }
+
+    #[test]
+    fn test_http_request_progresses_past_leak_scan_for_host_injected_github_pat() {
+        use crate::tools::wasm::wrapper::near::agent::host;
+        use crate::tools::wasm::wrapper::{ResolvedHostCredential, StoreData};
+        use std::collections::HashMap;
+
+        let pat = test_github_pat();
+        let host = "api.github.invalid";
+        let host_credentials = vec![ResolvedHostCredential {
+            host_patterns: vec![host.to_string()],
+            headers: {
+                let mut h = HashMap::new();
+                h.insert("Authorization".to_string(), format!("Bearer {pat}"));
+                h
+            },
+            query_params: HashMap::new(),
+            secret_value: pat,
+        }];
+
+        let mut store_data = StoreData::new(
+            1024 * 1024,
+            test_prepare_request_capabilities(host),
+            HashMap::new(),
+            host_credentials,
+        );
+
+        let err = <StoreData as host::Host>::http_request(
+            &mut store_data,
+            "GET".to_string(),
+            format!("https://{host}/repos/leynos/mxd"),
+            "{}".to_string(),
+            None,
+            Some(1000),
+        )
+        .expect_err("invalid public hostname should fail after request preparation");
+
+        assert!(
+            !err.contains("Potential secret leak blocked"),
+            "request should progress past leak scanning, got: {err}"
+        );
+        assert!(
+            err.contains("DNS resolution failed"),
+            "expected later-stage DNS failure, got: {err}"
+        );
     }
 
     #[tokio::test]
