@@ -533,6 +533,7 @@ fn build_tool_hint(tool_iface: &wit_tool::Guest, store: &mut Store<StoreData>) -
     hint
 }
 
+/// Parse a wrapper retry hint into a `(description, schema)` pair.
 fn parse_tool_hint(hint: &str) -> Option<(String, serde_json::Value)> {
     let desc_prefix = "Description: ";
     let schema_prefix = "Parameters schema: ";

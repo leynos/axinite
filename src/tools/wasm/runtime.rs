@@ -320,6 +320,7 @@ impl WasmToolRuntime {
     }
 }
 
+/// Return the placeholder description cached during compile-only preparation.
 fn extract_tool_description(
     _engine: &Engine,
     _component: &wasmtime::component::Component,
@@ -327,6 +328,7 @@ fn extract_tool_description(
     Ok("WASM sandboxed tool".to_string())
 }
 
+/// Return the placeholder schema cached during compile-only preparation.
 fn extract_tool_schema(
     _engine: &Engine,
     _component: &wasmtime::component::Component,
