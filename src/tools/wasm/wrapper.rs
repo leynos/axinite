@@ -29,28 +29,6 @@ use crate::tools::wasm::host::{HostState, LogLevel};
 use crate::tools::wasm::limits::{ResourceLimits, WasmResourceLimiter};
 use crate::tools::wasm::runtime::{EPOCH_TICK_INTERVAL, PreparedModule, WasmToolRuntime};
 
-// Generate component model bindings from the WIT file.
-//
-// This creates:
-// - `near::agent::host::Host` trait + `add_to_linker()` for the import interface
-// - `SandboxedTool` struct with `instantiate()` for the world
-// - `exports::near::agent::tool::*` types for the export interface
-wasmtime::component::bindgen!({
-    path: "wit/tool.wit",
-    world: "sandboxed-tool",
-    async: false,
-    with: {},
-});
-
-// Alias the export interface types for convenience.
-use exports::near::agent::tool as wit_tool;
-
-/// Configuration needed to refresh an expired OAuth access token.
-///
-/// Extracted at tool load time from the capabilities file's `auth.oauth` section.
-/// Passed into `resolve_host_credentials()` so it can transparently refresh
-/// tokens before WASM execution.
-#[derive(Debug, Clone)]
 pub struct OAuthRefreshConfig {
     /// OAuth token exchange URL (e.g., "https://oauth2.googleapis.com/token").
     pub token_url: String,
@@ -487,71 +465,6 @@ impl std::fmt::Debug for WasmToolWrapper {
             .field("description", &self.description)
             .field("limits", &self.prepared.limits)
             .finish()
-    }
-}
-
-/// Maximum characters for the description portion of a tool hint.
-const HINT_DESC_MAX: usize = 500;
-/// Maximum characters for the schema portion of a tool hint.
-const HINT_SCHEMA_MAX: usize = 3000;
-
-/// Call the WASM module's `description()` and `schema()` exports to build a
-/// hint string.  Returns an empty string if both calls fail or return empty.
-/// Description is capped at [`HINT_DESC_MAX`] chars, schema at
-/// [`HINT_SCHEMA_MAX`] chars.
-fn build_tool_hint(tool_iface: &wit_tool::Guest, store: &mut Store<StoreData>) -> String {
-    let desc = tool_iface
-        .call_description(&mut *store)
-        .ok()
-        .unwrap_or_default();
-    let schema = tool_iface.call_schema(&mut *store).ok().unwrap_or_default();
-    if desc.is_empty() && schema.is_empty() {
-        return String::new();
-    }
-    let mut hint = String::new();
-    if !desc.is_empty() {
-        hint.push_str("Description: ");
-        if desc.len() > HINT_DESC_MAX {
-            let end = crate::util::floor_char_boundary(&desc, HINT_DESC_MAX);
-            hint.push_str(&desc[..end]);
-            hint.push('…');
-        } else {
-            hint.push_str(&desc);
-        }
-        hint.push('\n');
-    }
-    if !schema.is_empty() {
-        hint.push_str("Parameters schema: ");
-        if schema.len() > HINT_SCHEMA_MAX {
-            let end = crate::util::floor_char_boundary(&schema, HINT_SCHEMA_MAX);
-            hint.push_str(&schema[..end]);
-            hint.push('…');
-        } else {
-            hint.push_str(&schema);
-        }
-    }
-    hint
-}
-
-/// Parse a wrapper retry hint into a `(description, schema)` pair.
-fn parse_tool_hint(hint: &str) -> Option<(String, serde_json::Value)> {
-    let desc_prefix = "Description: ";
-    let schema_prefix = "Parameters schema: ";
-
-    let mut description = None;
-    let mut schema = None;
-
-    for line in hint.lines() {
-        if let Some(value) = line.strip_prefix(desc_prefix) {
-            description = Some(value.to_string());
-        } else if let Some(value) = line.strip_prefix(schema_prefix) {
-            schema = serde_json::from_str(value).ok();
-        }
-    }
-
-    match (description, schema) {
-        (Some(description), Some(schema)) => Some((description, schema)),
-        _ => None,
     }
 }
 impl Tool for WasmToolWrapper {
@@ -1078,7 +991,7 @@ mod tests {
         // This test verifies the runtime can be created
         // Actual execution tests require a valid WASM component
         let config = WasmRuntimeConfig::for_testing();
-        let runtime = Arc::new(WasmToolRuntime::new(config).unwrap());
+        let runtime = Arc::new(WasmToolRuntime::new(config).expect("create wasm runtime"));
 
         // Runtime was created successfully
         assert!(runtime.config().fuel_config.enabled);
@@ -1816,113 +1729,6 @@ mod tests {
             "Leak scan on post-injection headers should block the Slack token"
         );
     }
-
-    fn find_wasm_artifact(source_dir: &Path, crate_name: &str) -> Option<PathBuf> {
-        let artifact_name = crate_name.replace('-', "_");
-
-        for target_triple in &["wasm32-wasip2"] {
-            let candidate = source_dir
-                .join("target")
-                .join(target_triple)
-                .join("release")
-                .join(format!("{artifact_name}.wasm"));
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-
-        if let Ok(shared) = std::env::var("CARGO_TARGET_DIR") {
-            for target_triple in &["wasm32-wasip2"] {
-                let candidate = Path::new(&shared)
-                    .join(target_triple)
-                    .join("release")
-                    .join(format!("{artifact_name}.wasm"));
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-        }
-
-        None
-    }
-
-    fn github_wasm_artifact() -> Option<PathBuf> {
-        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        find_wasm_artifact(&repo_root.join("tools-src/github"), "github-tool")
-    }
-
-    fn metadata_test_runtime() -> Arc<WasmToolRuntime> {
-        let config = WasmRuntimeConfig {
-            default_limits: ResourceLimits::default()
-                .with_memory(8 * 1024 * 1024)
-                .with_fuel(100_000)
-                .with_timeout(Duration::from_secs(5)),
-            ..WasmRuntimeConfig::for_testing()
-        };
-        Arc::new(WasmToolRuntime::new(config).unwrap())
-    }
-
-    #[tokio::test]
-    async fn test_exported_metadata_from_real_github_component() {
-        let Some(wasm_path) = github_wasm_artifact() else {
-            eprintln!("Skipping exported metadata regression: github WASM artifact not built");
-            return;
-        };
-
-        let runtime = metadata_test_runtime();
-        let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm artifact");
-        let prepared = runtime
-            .prepare("github", &wasm_bytes, None)
-            .await
-            .expect("prepare github wasm component");
-        let wrapper = WasmToolWrapper::new(runtime, prepared, Capabilities::default());
-
-        let (description, schema) = wrapper
-            .exported_metadata()
-            .expect("extract exported metadata");
-
-        assert!(
-            description.contains("GitHub integration"),
-            "expected real description, got: {description}"
-        );
-        assert_eq!(schema["type"], serde_json::json!("object"));
-        assert!(
-            schema["required"]
-                .as_array()
-                .expect("required array")
-                .iter()
-                .any(|value| value == "action"),
-            "expected required action field in schema: {schema}"
-        );
-        let first_variant = schema["oneOf"]
-            .as_array()
-            .and_then(|variants| variants.first())
-            .expect("oneOf variants");
-        assert_eq!(
-            first_variant["properties"]["action"]["const"],
-            serde_json::json!("get_repo")
-        );
-        assert_eq!(
-            first_variant["properties"]["owner"]["type"],
-            serde_json::json!("string")
-        );
-    }
-
-    #[test]
-    fn test_parse_tool_hint_extracts_description_and_schema() {
-        let hint = concat!(
-            "Description: GitHub integration for repos\n",
-            "Parameters schema: {\"type\":\"object\",\"required\":[\"action\"],",
-            "\"oneOf\":[{\"properties\":{\"action\":{\"const\":\"get_repo\"}}}]}"
-        );
-
-        let (description, schema) = super::parse_tool_hint(hint).expect("parse tool hint");
-
-        assert_eq!(description, "GitHub integration for repos");
-        assert_eq!(schema["required"][0], serde_json::json!("action"));
-        assert_eq!(
-            schema["oneOf"][0]["properties"]["action"]["const"],
-            serde_json::json!("get_repo")
-        );
-    }
 }
+
+mod metadata;
