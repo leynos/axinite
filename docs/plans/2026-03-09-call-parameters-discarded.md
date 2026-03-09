@@ -14,14 +14,22 @@ Success is observable in two complementary ways. First, a focused regression tes
 
 The relevant code paths are:
 
-- `src/tools/wasm/runtime.rs`, which prepares WASM components and currently extracts placeholder metadata through `extract_tool_description(...)` and `extract_tool_schema(...)`.
+- `src/tools/wasm/runtime.rs`, which now prepares WASM components without
+  caching tool metadata and leaves metadata recovery to the wrapper-side
+  registration path.
 - `src/tools/registry.rs`, which builds `ToolDefinition` objects from `tool.parameters_schema()` and also has two different WASM registration paths: direct registration and storage-backed registration.
 - `src/tools/wasm/loader.rs`, which loads tools from `.wasm` files and sidecar capabilities files, then calls `register_wasm(...)` with `schema: None`.
 - `src/tools/wasm/storage.rs`, which persists `parameters_schema` and lets `register_wasm_from_storage(...)` override the wrapper schema from storage.
 - `tools-src/github/src/lib.rs`, which exports the real JSON schema string for the GitHub tool.
 - `tests/tool_schema_validation.rs` and `src/tools/schema_validator.rs`, which validate schema shapes today but do not currently prove that file-loaded real WASM tools surface their exported schema through the external tool-definition path.
 
-The key asymmetry is already visible in code. Storage-backed activation uses `register_wasm_from_storage(...)` and passes `schema: Some(tool_with_binary.tool.parameters_schema.clone())`, so that path can override runtime placeholders. File-based loading through `WasmToolLoader::load_from_files(...)` passes `schema: None`, which leaves the `WasmToolWrapper` using whatever schema the runtime extracted during preparation.
+The key asymmetry was initially visible in code. Storage-backed activation used
+`register_wasm_from_storage(...)` and passed
+`schema: Some(tool_with_binary.tool.parameters_schema.clone())`, so that path
+could override placeholder metadata. File-based loading through
+`WasmToolLoader::load_from_files(...)` passed `schema: None`, which left the
+`WasmToolWrapper` publishing placeholder metadata until registration-side
+recovery was added.
 
 ## Change history and likely intention
 
@@ -33,7 +41,7 @@ There is also a later comparison point that narrows blast radius. Storage-backed
 
 ## Constraints
 
-- This plan file must live at `docs/plans/2026-03-09-call-parmeters-discarded.md`.
+- This plan file must live at `docs/plans/2026-03-09-call-parameters-discarded.md`.
 - The public tool-calling interface must remain stable. Tool names, descriptions, and JSON parameter schemas should become more accurate, not structurally redefined beyond what the WASM guest already exports.
 - The fix must preserve both file-loaded and storage-loaded WASM tool paths. Do not repair one path by regressing the other.
 - Avoid changing the WIT host contract unless the investigation proves that proper metadata extraction is impossible without it. The current evidence points to registration/metadata plumbing, not WIT surface mismatch.
@@ -214,11 +222,20 @@ nl -ba src/tools/registry.rs | sed -n '643,675p'
 - 2026-03-09 21:42Z: Chose not to assume the fix belongs only in `runtime.rs`. Rationale: the right repair could be either real runtime extraction or a safer registration override path, and the tests should decide which narrow fix is most defensible.
 - 2026-03-09 22:16Z: Rejected the `prepare(...)`-time metadata extraction approach after testing it against the real GitHub component. Rationale: it added complexity in the wrong layer and was brittle on a minimal metadata-only host.
 - 2026-03-09 22:24Z: Chose wrapper-side metadata recovery in `register_wasm(...)`. Rationale: it uses the same linker/runtime limits as real execution, fixes the file-loader path generically, and keeps explicit registration overrides as the final authority.
-- 2026-03-09 22:31Z: Kept runtime placeholder metadata in `PreparedModule`. Rationale: the bug is the publication path, not compile-time caching, and moving extraction later reduced risk while solving the observed symptom.
+- 2026-03-09 22:31Z: Initially kept runtime placeholder metadata in
+  `PreparedModule` because the bug appeared to be only in the publication path.
+- 2026-03-09 23:58Z: Removed placeholder metadata fields from
+  `PreparedModule` and moved metadata recovery into a dedicated
+  `src/tools/wasm/wrapper/metadata.rs` module. Rationale: this made the
+  wrapper-side path the only authoritative metadata source and eliminated the
+  stale cached placeholder state flagged in review.
 
 ## Outcomes & Retrospective
 
-Call parameters were not being discarded during guest execution. They were being lost earlier because file-loaded WASM tools were published with the runtime placeholder schema instead of the guest-exported schema, so the model saw an effectively empty function definition and called the tool with `{}`.
+Call parameters were not being discarded during guest execution. They were
+being lost earlier because file-loaded WASM tools were published with
+placeholder metadata instead of the guest-exported schema, so the model saw an
+effectively empty function definition and called the tool with `{}`.
 
 The implemented fix is in the registration path, not the compile path. `ToolRegistry::register_wasm(...)` now creates the wrapper, asks it for exported metadata when no explicit overrides were provided, and then applies the recovered description/schema before the tool is registered. `WasmToolWrapper::exported_metadata()` first tries direct export calls on a fully wired wrapper instance and falls back to parsing the guest’s retry hint if direct export calls are unavailable on the real component. This keeps the fix generic for file-loaded WASM tools while preserving the existing override precedence for storage-backed or explicitly registered tools.
 

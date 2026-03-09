@@ -9,9 +9,10 @@ Status: IN PROGRESS
 
 ## Purpose / big picture
 
-The target WIT version for this work is `0.3.0`, not `3.0.0`.
+The target WebAssembly Interface Types (WIT) version for this work is
+`0.3.0`, not `3.0.0`.
 
-IronClaw already publishes both WASM host contracts as
+IronClaw already publishes both WebAssembly (WASM) host contracts as
 `package near:agent@0.3.0;` in `wit/tool.wit` and `wit/channel.wit`, and the
 curated in-tree extension matrix already declares `wit_version: "0.3.0"` in
 its sidecar capabilities files and registry manifests. This means the task is

@@ -6,6 +6,7 @@
 //!
 //! See: <https://github.com/nearai/ironclaw/issues/352> (QA plan, item 1.1)
 
+use ironclaw::tools::builtin::extension_tools::ExtensionToolKind;
 use ironclaw::tools::validate_tool_schema;
 use ironclaw::tools::wasm::{WasmRuntimeConfig, WasmToolLoader, WasmToolRuntime};
 use ironclaw::tools::{Tool, ToolRegistry};
@@ -13,7 +14,60 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-fn test_extension_manager() -> std::sync::Arc<ironclaw::extensions::ExtensionManager> {
+struct ExtensionManagerFixture {
+    _dir: tempfile::TempDir,
+    manager: Arc<ironclaw::extensions::ExtensionManager>,
+}
+
+fn find_wasm_artifact(source_dir: &Path, crate_name: &str) -> Option<PathBuf> {
+    let artifact_name = crate_name.replace('-', "_");
+
+    for target_triple in &["wasm32-wasip2"] {
+        let candidate = source_dir
+            .join("target")
+            .join(target_triple)
+            .join("release")
+            .join(format!("{artifact_name}.wasm"));
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    if let Ok(shared) = std::env::var("CARGO_TARGET_DIR") {
+        for target_triple in &["wasm32-wasip2"] {
+            let candidate = Path::new(&shared)
+                .join(target_triple)
+                .join("release")
+                .join(format!("{artifact_name}.wasm"));
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+fn github_artifact_paths() -> Option<(PathBuf, PathBuf)> {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let source_dir = repo_root.join("tools-src/github");
+    let wasm_path = find_wasm_artifact(&source_dir, "github-tool")?;
+    let caps_path = source_dir.join("github-tool.capabilities.json");
+    caps_path.exists().then_some((wasm_path, caps_path))
+}
+
+fn wasm_metadata_test_runtime() -> Arc<WasmToolRuntime> {
+    let config = WasmRuntimeConfig {
+        default_limits: ironclaw::tools::wasm::ResourceLimits::default()
+            .with_memory(8 * 1024 * 1024)
+            .with_fuel(100_000)
+            .with_timeout(Duration::from_secs(5)),
+        ..WasmRuntimeConfig::for_testing()
+    };
+    Arc::new(WasmToolRuntime::new(config).expect("create wasm runtime"))
+}
+
+fn test_extension_manager() -> ExtensionManagerFixture {
     use ironclaw::secrets::{InMemorySecretsStore, SecretsCrypto};
     use ironclaw::tools::mcp::session::McpSessionManager;
 
@@ -26,20 +80,23 @@ fn test_extension_manager() -> std::sync::Arc<ironclaw::extensions::ExtensionMan
     let master_key = secrecy::SecretString::from("0123456789abcdef0123456789abcdef".to_string());
     let crypto = std::sync::Arc::new(SecretsCrypto::new(master_key).expect("crypto"));
 
-    std::sync::Arc::new(ironclaw::extensions::ExtensionManager::new(
-        std::sync::Arc::new(McpSessionManager::new()),
-        std::sync::Arc::new(ironclaw::tools::mcp::process::McpProcessManager::new()),
-        std::sync::Arc::new(InMemorySecretsStore::new(crypto)),
-        std::sync::Arc::new(ToolRegistry::new()),
-        None,
-        None,
-        tools_dir,
-        channels_dir,
-        None,
-        "test".to_string(),
-        None,
-        Vec::new(),
-    ))
+    ExtensionManagerFixture {
+        _dir: dir,
+        manager: std::sync::Arc::new(ironclaw::extensions::ExtensionManager::new(
+            std::sync::Arc::new(McpSessionManager::new()),
+            std::sync::Arc::new(ironclaw::tools::mcp::process::McpProcessManager::new()),
+            std::sync::Arc::new(InMemorySecretsStore::new(crypto)),
+            std::sync::Arc::new(ToolRegistry::new()),
+            None,
+            None,
+            tools_dir,
+            channels_dir,
+            None,
+            "test".to_string(),
+            None,
+            Vec::new(),
+        )),
+    }
 }
 
 /// Validate schemas of all tools registered via `register_builtin_tools()` and
@@ -112,22 +169,18 @@ async fn core_registration_covers_expected_tools() {
 
 #[tokio::test]
 async fn extension_registration_covers_expected_tools() {
+    let fixture = test_extension_manager();
     let registry = ToolRegistry::new();
-    registry.register_extension_tools(test_extension_manager());
+    registry.register_extension_tools(Arc::clone(&fixture.manager));
 
     let mut names = registry.list().await;
     names.sort();
 
-    let expected = &[
-        "extension_info",
-        "tool_activate",
-        "tool_auth",
-        "tool_install",
-        "tool_list",
-        "tool_remove",
-        "tool_search",
-        "tool_upgrade",
-    ];
+    let mut expected: Vec<&str> = ExtensionToolKind::ALL
+        .into_iter()
+        .map(ExtensionToolKind::name)
+        .collect();
+    expected.sort_unstable();
 
     assert_eq!(
         names, expected,
@@ -137,8 +190,9 @@ async fn extension_registration_covers_expected_tools() {
 
 #[tokio::test]
 async fn extension_tool_schemas_are_valid() {
+    let fixture = test_extension_manager();
     let registry = ToolRegistry::new();
-    registry.register_extension_tools(test_extension_manager());
+    registry.register_extension_tools(Arc::clone(&fixture.manager));
 
     let tools = registry.all().await;
     let mut all_errors = Vec::new();
@@ -298,52 +352,4 @@ async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
         "expected real github description, got: {}",
         github.description
     );
-}
-
-fn find_wasm_artifact(source_dir: &Path, crate_name: &str) -> Option<PathBuf> {
-    let artifact_name = crate_name.replace('-', "_");
-
-    for target_triple in &["wasm32-wasip2"] {
-        let candidate = source_dir
-            .join("target")
-            .join(target_triple)
-            .join("release")
-            .join(format!("{artifact_name}.wasm"));
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    if let Ok(shared) = std::env::var("CARGO_TARGET_DIR") {
-        for target_triple in &["wasm32-wasip2"] {
-            let candidate = Path::new(&shared)
-                .join(target_triple)
-                .join("release")
-                .join(format!("{artifact_name}.wasm"));
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-    }
-
-    None
-}
-
-fn wasm_metadata_test_runtime() -> Arc<WasmToolRuntime> {
-    let config = WasmRuntimeConfig {
-        default_limits: ironclaw::tools::wasm::ResourceLimits::default()
-            .with_memory(8 * 1024 * 1024)
-            .with_fuel(100_000)
-            .with_timeout(Duration::from_secs(5)),
-        ..WasmRuntimeConfig::for_testing()
-    };
-    Arc::new(WasmToolRuntime::new(config).expect("create wasm runtime"))
-}
-
-fn github_artifact_paths() -> Option<(PathBuf, PathBuf)> {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let source_dir = repo_root.join("tools-src/github");
-    let wasm_path = find_wasm_artifact(&source_dir, "github-tool")?;
-    let caps_path = source_dir.join("github-tool.capabilities.json");
-    caps_path.exists().then_some((wasm_path, caps_path))
 }

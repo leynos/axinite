@@ -179,7 +179,7 @@ web UI and registry flows care about the archive.
 
 ## Testing: Prove The Right Thing At The Right Layer
 
-One "E2E test" is not enough for WebAssembly extensions.
+One end-to-end (E2E) test is not enough for WebAssembly extensions.
 
 At minimum, prove two separate things:
 

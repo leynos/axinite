@@ -6,7 +6,13 @@ Status: COMPLETE
 
 ## Purpose / big picture
 
-After this work, a hosted worker in IronClaw will advertise and use the same extension-management tools that the normal in-process agent already has for extension discovery and control: `tool_search`, `tool_install`, `tool_auth`, `tool_activate`, `tool_list`, `tool_remove`, `tool_upgrade`, and `extension_info`. A user should be able to ask a hosted agent whether an extension such as Telegram is installed or connected and see a real `tool_list` or `tool_search` call happen instead of the capability being absent.
+After this work, a hosted worker in IronClaw will advertise and use the safe
+extension-management tools it can execute without bypassing approval:
+`tool_search`, `tool_activate`, `tool_list`, and `extension_info`. A user
+should be able to ask a hosted agent whether an extension such as Telegram is
+installed or connected and see a real `tool_list` or `tool_search` call happen
+instead of the capability being absent, while approval-gated operations remain
+orchestrator-only.
 
 The change must be observable in three ways. First, a focused regression test must fail before the fix and pass after it by proving the hosted worker now advertises the meta tools. Second, surrounding unit and integration coverage must pin the registration and behavior changes so the gap does not reappear in a different layer. Third, the normal in-process agent path must continue to behave exactly as it does today.
 
@@ -108,9 +114,29 @@ The change must be observable in three ways. First, a focused regression test mu
 
 ## Outcomes & retrospective
 
-Hosted workers now advertise and can execute the extension-management tool surface that was previously only available to the normal in-process app path. The fix keeps `register_container_tools()` scoped to container-local development tools and adds a separate hosted-worker registration path that layers orchestrator-backed extension-tool proxies on top of the existing worker tool set. The orchestrator now exposes a narrow `POST /worker/{job_id}/extension_tool` endpoint that accepts only known extension-management tool names and dispatches them through the existing orchestrator-owned `ToolRegistry`, so extension state remains single-sourced in the main app process.
+Hosted workers now advertise and can execute the non-mutating
+extension-management tool surface that was previously only available to the
+normal in-process app path. The fix keeps `register_container_tools()` scoped
+to container-local development tools and adds a separate hosted-worker
+registration path that layers orchestrator-backed extension-tool proxies on top
+of the existing worker tool set. The orchestrator now exposes a narrow
+`POST /worker/{job_id}/extension_tool` endpoint that accepts only known
+extension-management tool names, rejects approval-gated operations, and
+dispatches safe calls through the existing orchestrator-owned `ToolRegistry`,
+so extension state remains single-sourced in the main app process.
 
-Coverage landed at three levels. First, `src/worker/runtime.rs` now has regression tests that assert the hosted-worker registry and advertised tool schemas include `tool_list`, `tool_search`, `tool_activate`, and the rest of the extension-management surface. Second, `src/tools/registry.rs`, `tests/tool_schema_validation.rs`, and `src/tools/builtin/extension_tools.rs` now pin exact registration sets, schema validity, and deterministic `tool_search` / `tool_list` execution behavior plus parameter-validation execution paths for `tool_auth` and `tool_activate`. Third, `src/tools/builtin/worker_extension_proxy.rs` and `src/orchestrator/api.rs` now have proxy round-trip tests that prove the worker-facing proxy only accepts extension tools and can execute them through orchestrator-owned tool implementations.
+Coverage landed at three levels. First, `src/worker/runtime.rs` now has
+regression tests that assert the hosted-worker registry and advertised tool
+schemas include the safe proxy surface `tool_list`, `tool_search`,
+`tool_activate`, and `extension_info`, while excluding approval-gated tools.
+Second, `src/tools/registry.rs`, `tests/tool_schema_validation.rs`, and
+`src/tools/builtin/extension_tools.rs` now pin exact registration sets, schema
+validity, and deterministic `tool_search` / `tool_list` execution behavior plus
+parameter-validation execution paths for `tool_auth` and `tool_activate`.
+Third, `src/tools/builtin/worker_extension_proxy.rs` and
+`src/orchestrator/api.rs` now have proxy round-trip tests that prove the
+worker-facing proxy only accepts safe extension tools and executes them through
+orchestrator-owned tool implementations.
 
 Validation completed with the repository’s local Linux-equivalent gates. `cargo fmt --all -- --check` passed. `cargo clippy --all --benches --tests --examples -- -D warnings`, `cargo clippy --all --benches --tests --examples --no-default-features --features libsql -- -D warnings`, and `cargo clippy --all --benches --tests --examples --all-features -- -D warnings` all passed. `cargo test -- --nocapture`, `cargo test --no-default-features --features libsql -- --nocapture`, and `cargo test --features postgres,libsql,html-to-markdown -- --nocapture` all passed, as did the focused regression suites recorded in `/tmp/test-ironclaw-tool-list-breakage-*.out`.
 
