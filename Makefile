@@ -20,8 +20,8 @@ lint:
 	$(CARGO) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
 
 test:
-	$(CARGO) test -- --nocapture
-	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
+	$(CARGO) test
+	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)
 
 test-matrix:
 	$(CARGO) test -- --nocapture

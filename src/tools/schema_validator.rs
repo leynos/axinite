@@ -272,24 +272,45 @@ mod tests {
     }
 
     #[test]
-    fn test_top_level_one_of_fails() {
-        let schema = serde_json::json!({
-            "type": "object",
-            "oneOf": [
-                {
-                    "properties": {
-                        "action": { "const": "get_repo" }
-                    },
-                    "required": ["action"]
+    fn test_forbidden_top_level_keywords_fail() {
+        for keyword in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+            let mut schema = serde_json::json!({
+                "type": "object"
+            });
+            let root = schema
+                .as_object_mut()
+                .expect("top-level schema should be an object");
+
+            match keyword {
+                "enum" => {
+                    root.insert(keyword.to_string(), serde_json::json!(["get_repo"]));
                 }
-            ]
-        });
-        let err = validate_strict_schema(&schema, "test").unwrap_err();
-        assert!(
-            err.iter()
-                .any(|message| message.contains("top-level \"oneOf\" is not allowed")),
-            "expected top-level oneOf failure, got: {err:?}"
-        );
+                "not" => {
+                    root.insert(keyword.to_string(), serde_json::json!({ "type": "null" }));
+                }
+                _ => {
+                    root.insert(
+                        keyword.to_string(),
+                        serde_json::json!([
+                            {
+                                "properties": {
+                                    "action": { "const": "get_repo" }
+                                },
+                                "required": ["action"]
+                            }
+                        ]),
+                    );
+                }
+            };
+
+            let err = validate_strict_schema(&schema, "test").unwrap_err();
+            assert!(
+                err.iter().any(|message| {
+                    message.contains(&format!("top-level \"{keyword}\" is not allowed"))
+                }),
+                "expected top-level {keyword} failure, got: {err:?}"
+            );
+        }
     }
 
     #[test]

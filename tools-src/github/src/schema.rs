@@ -1,3 +1,9 @@
+//! Exported GitHub tool schema used by [`SCHEMA`].
+//!
+//! The large embedded JSON lives in this companion module so `lib.rs` stays
+//! focused on tool logic while tests and reviewers can inspect the schema
+//! independently.
+
 pub(super) const SCHEMA: &str = r#"{
     "type": "object",
     "additionalProperties": false,

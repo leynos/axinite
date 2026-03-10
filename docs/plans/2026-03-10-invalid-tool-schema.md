@@ -258,6 +258,41 @@ cargo fmt --all --check \
 - [x] 2026-03-10 15:43Z: Verified that `grepai` now sees the `ironclaw`
   project in the `Projects` workspace, so follow-up code exploration can
   use semantic search again instead of the earlier exact-text fallback.
+- [x] 2026-03-10 17:58Z: Verified the latest review comments against
+  current `HEAD`. The registry artifact test complaint is stale because
+  the test already fails explicitly when the GitHub WASM artifact is
+  missing, but follow-up work is still needed for the duplicated
+  metadata-test helper, the remaining normalization panic/refactor
+  issues, the shallow nested-schema merge behavior, the metadata-only
+  recovery path, and doc polish in the older call-parameters plan.
+- [x] 2026-03-10 18:25Z: Landed the follow-up fix set on top of the
+  earlier invalid-schema branch state: the OpenAI schema normalizer now
+  lives in `src/llm/schema_normalize.rs`, nested object variants merge
+  their child properties instead of discarding later fields, metadata
+  recovery uses a metadata-only host linker, test-only runtime creation
+  now returns `anyhow::Result`, and the older call-parameters plan has
+  the concrete-steps list/casing fixes requested in review.
+- [x] 2026-03-10 19:35Z: Final gate replay completed. `make check-fmt`,
+  `make typecheck`, `make lint`, and `make test` all passed on the
+  follow-up patch set, and the full `make test` replay confirmed the
+  repaired `src/testing.rs` doctest plus the GitHub metadata/schema
+  regressions under the normal workspace gate rather than only via
+  targeted cargo invocations.
+- [x] 2026-03-10 18:01Z: Landed the second review-follow-up patch set:
+  `src/llm/schema_normalize.rs` now owns the OpenAI schema-shaping
+  helpers, `src/llm/rig_adapter.rs` consumes that module instead of
+  embedding the logic, nested object/array variant merges now preserve
+  later-branch fields, metadata recovery instantiates the guest with a
+  restricted metadata-only host linker, shared metadata test-runtime
+  helpers return `Result` instead of panicking, the duplicate
+  `tests/support` helper is gone, and the older call-parameters plan now
+  uses `GitHub` casing consistently where it refers to the external tool
+  example.
+- [x] 2026-03-10 18:32Z: Replayed the branch gates against the new
+  follow-up patch set. `make check-fmt` passed, `make typecheck` passed
+  after warming the underlying cargo-check matrix, and the current
+  `lint`/`test` replay is blocked only by unrelated shared-target lock
+  contention from another in-flight cargo invocation in this checkout.
 - [x] 2026-03-10 16:56Z: Landed the first PR-follow-up patch set:
   `src/db/tls.rs` now propagates rustls builder failures instead of
   `expect(...)`, the shared metadata runtime moved behind test support

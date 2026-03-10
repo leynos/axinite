@@ -6,7 +6,7 @@ Status: COMPLETE
 
 ## Purpose / big picture
 
-After this work, when IronClaw advertises a file-loaded WASM tool such as `github`, the external tool definition must expose the same parameter schema that the tool itself exports from its WASM `schema()` function. The user-visible outcome is that the model sees a non-empty function definition, includes the correct arguments in tool calls, and those arguments arrive at the WASM guest intact instead of being collapsed to `{}` or omitted.
+After this work, when IronClaw advertises a file-loaded WASM tool such as `GitHub`, the external tool definition must expose the same parameter schema that the tool itself exports from its WASM `schema()` function. The user-visible outcome is that the model sees a non-empty function definition, includes the correct arguments in tool calls, and those arguments arrive at the WASM guest intact instead of being collapsed to `{}` or omitted.
 
 Success is observable in two complementary ways. First, a focused regression test must prove that a file-loaded WASM tool registered through `WasmToolLoader::load_from_files(...)` publishes the exported schema in `ToolRegistry::tool_definitions()` rather than the current placeholder schema with empty `properties`. Second, a behavioural test must prove that the externally visible tool definition for a representative WASM tool includes required fields such as `action`, so the tool call path no longer fails with messages like `missing field action at line 1 column 2` when the model attempted to send arguments.
 
@@ -83,7 +83,9 @@ There is also a later comparison point that narrows blast radius. Storage-backed
 
 Begin with the user-visible failure mode, not a synthetic schema object.
 
-1. Load a real WASM tool through the file-loader path, ideally the in-tree `github` tool artifact or a minimal fixture WASM tool that exports a required `action` field.
+1. Load a real WASM tool through the file-loader path, ideally the in-tree
+   `GitHub` tool artifact or a minimal fixture WASM tool that exports a
+   required `action` field.
 2. Call `ToolRegistry::tool_definitions()` and inspect the published `parameters` for that tool.
 3. Assert that the current code exposes the placeholder shape from `extract_tool_schema(...)`:
 
@@ -172,19 +174,19 @@ Work from the repository root `/data/leynos/Projects/ironclaw`.
 
 1. Confirm the current placeholder path and override asymmetry:
 
-```plaintext
-nl -ba src/tools/wasm/runtime.rs | sed -n '260,355p'
-nl -ba src/tools/wasm/loader.rs | sed -n '145,170p'
-nl -ba src/tools/registry.rs | sed -n '643,675p'
-```
+    ```plaintext
+    nl -ba src/tools/wasm/runtime.rs | sed -n '260,355p'
+    nl -ba src/tools/wasm/loader.rs | sed -n '145,170p'
+    nl -ba src/tools/registry.rs | sed -n '643,675p'
+    ```
 
-2. Add the first failing test showing that a file-loaded real WASM tool publishes the placeholder schema externally.
+1. Add the first failing test showing that a file-loaded real WASM tool publishes the placeholder schema externally.
 
-3. Implement the narrow metadata extraction or override fix.
+1. Implement the narrow metadata extraction or override fix.
 
-4. Add the remaining unit and behavioural coverage from Milestone 3.
+1. Add the remaining unit and behavioural coverage from Milestone 3.
 
-5. Run the targeted suites with `tee`, review the logs, and update this plan with the actual outcome.
+1. Run the targeted suites with `tee`, review the logs, and update this plan with the actual outcome.
 
 ## Progress
 

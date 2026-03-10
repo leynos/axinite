@@ -77,7 +77,6 @@ pub mod util;
 pub mod worker;
 pub mod workspace;
 
-#[cfg(test)]
 pub mod testing;
 
 pub use config::Config;

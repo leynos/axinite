@@ -217,13 +217,11 @@ mod tests {
     #[tokio::test]
     async fn test_explicit_wasm_schema_override_wins_over_exported_metadata() {
         let source_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools-src/github");
-        let Some(wasm_path) = find_wasm_artifact(&source_dir, "github-tool", "release") else {
-            eprintln!("Skipping override precedence regression: github WASM artifact not built");
-            return;
-        };
+        let wasm_path = find_wasm_artifact(&source_dir, "github-tool", "release")
+            .expect("github WASM artifact not built: build github-tool release first");
 
         let registry = ToolRegistry::new();
-        let runtime = metadata_test_runtime();
+        let runtime = metadata_test_runtime().expect("create metadata test runtime");
         let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm");
         let override_schema = serde_json::json!({
             "type": "object",

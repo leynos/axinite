@@ -276,7 +276,7 @@ async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
     );
 
     let registry = Arc::new(ToolRegistry::new());
-    let runtime = support::metadata_test_runtime();
+    let runtime = support::metadata_test_runtime().expect("create metadata test runtime");
     let loader = WasmToolLoader::new(runtime, Arc::clone(&registry));
 
     loader

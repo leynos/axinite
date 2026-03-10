@@ -46,6 +46,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "mul
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tempfile = "3"
 
 # Database - PostgreSQL (default, feature-gated)
 deadpool-postgres = { version = "0.14", optional = true }
@@ -194,7 +195,6 @@ tracing-test = "0.2"
 tokio-tungstenite = "0.26"
 testcontainers-modules = { version = "0.11", features = ["postgres"] }
 pretty_assertions = "1"
-tempfile = "3"
 insta = "1.46.3"
 rstest = "0.26.1"
 
