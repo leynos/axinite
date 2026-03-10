@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -283,7 +283,9 @@ cargo fmt --all --check \
   command ceiling, so the wrapper was adjusted back to normal parallel
   test execution while the broader multi-config matrix remains available
   as `make test-matrix`.
-- [ ] Stage, commit, and push the verified change set.
+- [x] 2026-03-10 17:24Z: Staged, committed, and pushed the follow-up
+  review fixes as `9c10940` (`Address invalid tool schema review
+  feedback`).
 
 ## Surprises & Discoveries
 
