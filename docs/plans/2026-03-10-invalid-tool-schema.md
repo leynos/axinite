@@ -224,10 +224,29 @@ cargo fmt --all --check \
 - [x] 2026-03-10 09:46Z: Used `git blame`, `git show`, and `sem diff`
   to identify the interaction between `c18f673` (OpenAI strict
   normalization) and `91b18ea` (real WASM metadata recovery).
-- [ ] Add failing normalization and validator regression tests.
-- [ ] Implement the provider-bound root-schema fix.
-- [ ] Run targeted gates, update this plan with actual results, and
-  commit.
+- [x] 2026-03-10 09:54Z: Detected in-progress worktree changes in the
+  exact investigation files and verified that they were directly related
+  to this task rather than unrelated user edits.
+- [x] 2026-03-10 09:57Z: Confirmed the current red state. The new
+  rig-adapter unit test already passed, but the real GitHub artifact
+  still failed both `test_exported_metadata_from_real_github_component`
+  and `file_loaded_github_wasm_tool_definitions_publish_real_schema`
+  because the built WASM artifact still exported the old top-level
+  `oneOf` schema.
+- [x] 2026-03-10 09:59Z: Verified the source-level fix in
+  `tools-src/github/src/lib.rs` with
+  `test_exported_schema_is_openai_root_compatible`.
+- [x] 2026-03-10 10:00Z: Rebuilt the GitHub WASM artifact with
+  `cargo component build --release --target wasm32-wasip2 --manifest-path tools-src/github/Cargo.toml`.
+- [x] 2026-03-10 10:01Z: Re-ran the artifact-backed metadata and registry
+  tests; both passed once the rebuilt artifact matched the updated
+  source schema.
+- [x] 2026-03-10 10:04Z: Cleared `cargo fmt --all --check`,
+  `cargo fmt --manifest-path tools-src/github/Cargo.toml --all -- --check`,
+  `cargo clippy --all --tests --examples --all-features -- -D warnings`,
+  and `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`.
+- [ ] Stage the verified code changes, commit them, and summarize the
+  provenance and gate evidence.
 
 ## Surprises & Discoveries
 
@@ -243,6 +262,16 @@ cargo fmt --all --check \
   WASM schemas “strict-mode” coverage, but it does not test or reject
   forbidden root-level combinators. That explains why CI could stay
   green while OpenAI rejects the request.
+- The repository now contains two distinct fix layers. The provider
+  boundary defensively flattens root-level combinators in
+  `src/llm/rig_adapter.rs`, but the real GitHub tool source was also
+  updated to export a flat top-level schema directly. The latter matters
+  because users can still hit stale artifacts or other non-rig schema
+  consumers.
+- The decisive red/green pivot was not a source-code logic change inside
+  the host. It was rebuilding the GitHub WASM artifact after updating
+  the tool’s `SCHEMA` constant, which proved that the stale built
+  artifact was still exporting the old `oneOf` shape.
 
 ## Decision Log
 
@@ -257,7 +286,52 @@ cargo fmt --all --check \
 - 2026-03-10 09:46Z: Recorded both `c18f673` and `91b18ea` as
   provenance. Rationale: the regression only exists because those two
   correct-in-isolation changes now interact.
+- 2026-03-10 09:58Z: Recorded `61a123a` as the earlier source-level
+  provenance for the invalid GitHub schema. Rationale: that commit added
+  the GitHub tool with a top-level `oneOf` model of per-action variants;
+  `91b18ea` later made that schema visible to the host by recovering
+  real guest metadata.
+- 2026-03-10 10:00Z: Kept both fix layers instead of choosing only one.
+  Rationale: flattening the GitHub tool source fixes the tool at origin,
+  while the provider-bound flattening in `rig_adapter` remains a useful
+  generic safeguard for other externally sourced schemas.
 
 ## Outcomes & Retrospective
 
-Pending implementation.
+The invalid schema was not being fabricated by the OpenAI client. It was
+originating from the GitHub WASM tool’s real exported schema. Commit
+`61a123a` introduced the GitHub tool with a top-level `oneOf` to model
+action-specific parameter sets. Commit `91b18ea` later corrected a
+different bug by recovering guest-exported metadata for file-loaded WASM
+tools, which exposed that older schema directly to the host. The
+provider error appears when the stale built GitHub artifact still
+exports that old `oneOf` shape.
+
+The fix is intentionally layered. `tools-src/github/src/lib.rs` now
+exports a flat top-level object schema that is directly acceptable to
+OpenAI, with a new unit test proving the source schema is root-safe.
+`src/llm/rig_adapter.rs` also flattens forbidden root-level combinators
+before strict normalization so other external schemas do not reproduce
+the same provider failure. `src/tools/schema_validator.rs`,
+`src/tools/wasm/wrapper/metadata.rs`, and
+`tests/tool_schema_validation.rs` now enforce the root-safe contract
+with both unit and artifact-backed behavioral coverage.
+
+Validation evidence:
+
+- `cargo test test_normalize_schema_strict_flattens_top_level_oneof --lib -- --nocapture`
+- `cargo test test_top_level_one_of_fails --lib -- --nocapture`
+- `cargo test --manifest-path tools-src/github/Cargo.toml
+  test_exported_schema_is_openai_root_compatible -- --nocapture`
+- `cargo component build --release --target wasm32-wasip2
+  --manifest-path tools-src/github/Cargo.toml`
+- `cargo test test_exported_metadata_from_real_github_component --lib -- --nocapture`
+- `cargo test file_loaded_github_wasm_tool_definitions_publish_real_schema
+  --test tool_schema_validation -- --nocapture`
+- `cargo test
+  test_convert_tools_rewrites_github_style_schema_before_provider_submission
+  --lib -- --nocapture`
+- `cargo fmt --all --check`
+- `cargo fmt --manifest-path tools-src/github/Cargo.toml --all -- --check`
+- `cargo clippy --all --tests --examples --all-features -- -D warnings`
+- `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`

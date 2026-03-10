@@ -124,10 +124,32 @@ impl<M: CompletionModel> RigAdapter<M> {
 /// original tool definitions remain unchanged for other providers.
 fn normalize_schema_strict(schema: &JsonValue) -> JsonValue {
     let mut schema = schema.clone();
+    flatten_top_level_forbidden_keywords(&mut schema);
     normalize_schema_recursive(&mut schema);
     schema
 }
 
+fn flatten_top_level_forbidden_keywords(schema: &mut JsonValue) {
+    let Some(obj) = schema.as_object_mut() else {
+        return;
+    };
+
+    if let Some(one_of) = obj.remove("oneOf") {
+        merge_top_level_variants(obj, &one_of, false);
+    }
+    if let Some(any_of) = obj.remove("anyOf") {
+        merge_top_level_variants(obj, &any_of, false);
+    }
+    if let Some(all_of) = obj.remove("allOf") {
+        merge_top_level_variants(obj, &all_of, true);
+    }
+
+    // OpenAI rejects these keywords at the top-level tool schema. When they
+    // appear here, the safest provider-boundary fallback is to drop them and
+    // keep the normalized object properties that the model can still use.
+    obj.remove("enum");
+    obj.remove("not");
+}
 fn normalize_schema_recursive(schema: &mut JsonValue) {
     let obj = match schema.as_object_mut() {
         Some(o) => o,
@@ -863,6 +885,85 @@ mod tests {
         assert_eq!(rig_tools[0].description, "Search the web");
     }
 
+    fn github_style_schema() -> JsonValue {
+        serde_json::json!({
+            "type": "object",
+            "required": ["action"],
+            "oneOf": [
+                {
+                    "properties": {
+                        "action": { "const": "get_repo" },
+                        "owner": { "type": "string" },
+                        "repo": { "type": "string" }
+                    },
+                    "required": ["action", "owner", "repo"]
+                },
+                {
+                    "properties": {
+                        "action": { "const": "create_issue" },
+                        "owner": { "type": "string" },
+                        "repo": { "type": "string" },
+                        "title": { "type": "string" }
+                    },
+                    "required": ["action", "owner", "repo", "title"]
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn test_normalize_schema_strict_flattens_top_level_oneof() {
+        let normalized = normalize_schema_strict(&github_style_schema());
+
+        assert_eq!(normalized["type"], serde_json::json!("object"));
+        assert!(
+            normalized.get("oneOf").is_none(),
+            "top-level oneOf must be removed for OpenAI compatibility: {normalized}"
+        );
+        assert!(
+            normalized.get("anyOf").is_none(),
+            "top-level anyOf must be removed for OpenAI compatibility: {normalized}"
+        );
+        assert_eq!(
+            normalized["properties"]["action"]["enum"],
+            serde_json::json!(["create_issue", "get_repo"])
+        );
+        assert_eq!(
+            normalized["properties"]["owner"]["type"],
+            serde_json::json!("string")
+        );
+        assert_eq!(
+            normalized["properties"]["title"]["type"],
+            serde_json::json!(["string", "null"])
+        );
+    }
+
+    #[test]
+    fn test_convert_tools_rewrites_github_style_schema_before_provider_submission() {
+        let tools = vec![IronToolDefinition {
+            name: "github".to_string(),
+            description: "GitHub integration".to_string(),
+            parameters: github_style_schema(),
+        }];
+
+        let rig_tools = convert_tools(&tools);
+        let parameters = &rig_tools[0].parameters;
+
+        assert_eq!(rig_tools[0].name, "github");
+        assert!(
+            parameters.get("oneOf").is_none(),
+            "provider-facing schema must not keep top-level oneOf: {parameters}"
+        );
+        assert_eq!(
+            parameters["required"],
+            serde_json::json!(["action", "owner", "repo", "title"])
+        );
+        assert_eq!(
+            parameters["properties"]["action"]["enum"],
+            serde_json::json!(["create_issue", "get_repo"])
+        );
+    }
+
     #[test]
     fn test_convert_tool_choice() {
         assert!(matches!(
@@ -1280,4 +1381,190 @@ mod tests {
 
         assert!(adapter.unsupported_params.is_empty());
     }
+}
+
+fn intersect_required_keys(
+    sets: &[std::collections::BTreeSet<String>],
+) -> std::collections::BTreeSet<String> {
+    let Some((first, rest)) = sets.split_first() else {
+        return std::collections::BTreeSet::new();
+    };
+    rest.iter().fold(first.clone(), |acc, set| {
+        acc.intersection(set).cloned().collect()
+    })
+}
+
+fn merge_top_level_variants(
+    root: &mut serde_json::Map<String, JsonValue>,
+    variants_value: &JsonValue,
+    require_across_all_variants: bool,
+) {
+    let Some(variants) = variants_value.as_array() else {
+        return;
+    };
+
+    let mut root_required = required_keys(root.get("required"));
+    let mut variant_required_sets: Vec<std::collections::BTreeSet<String>> = Vec::new();
+
+    let props_value = root
+        .entry("properties".to_string())
+        .or_insert_with(|| JsonValue::Object(serde_json::Map::new()));
+    if !props_value.is_object() {
+        *props_value = JsonValue::Object(serde_json::Map::new());
+    }
+    let props = props_value
+        .as_object_mut()
+        .expect("properties should be object after normalization");
+
+    for variant in variants {
+        let Some(variant_obj) = variant.as_object() else {
+            continue;
+        };
+        if let Some(variant_props) = variant_obj.get("properties").and_then(JsonValue::as_object) {
+            for (name, schema) in variant_props {
+                match props.get_mut(name) {
+                    Some(existing) => merge_property_schema(existing, schema),
+                    None => {
+                        props.insert(name.clone(), schema.clone());
+                    }
+                }
+            }
+        }
+        variant_required_sets.push(required_keys(variant_obj.get("required")));
+    }
+
+    let variant_required = if require_across_all_variants {
+        union_required_keys(&variant_required_sets)
+    } else {
+        intersect_required_keys(&variant_required_sets)
+    };
+    root_required.extend(variant_required);
+
+    if root_required.is_empty() {
+        root.remove("required");
+    } else {
+        root.insert(
+            "required".to_string(),
+            JsonValue::Array(root_required.into_iter().map(JsonValue::String).collect()),
+        );
+    }
+}
+
+fn union_required_keys(
+    sets: &[std::collections::BTreeSet<String>],
+) -> std::collections::BTreeSet<String> {
+    sets.iter()
+        .fold(std::collections::BTreeSet::new(), |mut acc, set| {
+            acc.extend(set.iter().cloned());
+            acc
+        })
+}
+
+fn first_description(existing: &JsonValue, incoming: &JsonValue) -> Option<String> {
+    existing
+        .get("description")
+        .and_then(JsonValue::as_str)
+        .or_else(|| incoming.get("description").and_then(JsonValue::as_str))
+        .map(ToOwned::to_owned)
+}
+
+fn merge_string_literal_property(existing: &JsonValue, incoming: &JsonValue) -> Option<JsonValue> {
+    let mut values = string_literal_values(existing)?;
+    values.extend(string_literal_values(incoming)?);
+
+    let mut merged = serde_json::Map::new();
+    merged.insert("type".to_string(), JsonValue::String("string".to_string()));
+    merged.insert(
+        "enum".to_string(),
+        JsonValue::Array(values.into_iter().map(JsonValue::String).collect()),
+    );
+    if let Some(description) = first_description(existing, incoming) {
+        merged.insert("description".to_string(), JsonValue::String(description));
+    }
+    Some(JsonValue::Object(merged))
+}
+
+fn merge_nested_any_of(existing: JsonValue, incoming: JsonValue) -> JsonValue {
+    let mut variants = Vec::new();
+    collect_any_of_variants(existing, &mut variants);
+    collect_any_of_variants(incoming, &mut variants);
+    JsonValue::Object(serde_json::Map::from_iter([(
+        "anyOf".to_string(),
+        JsonValue::Array(variants),
+    )]))
+}
+
+fn string_literal_values(schema: &JsonValue) -> Option<std::collections::BTreeSet<String>> {
+    let obj = schema.as_object()?;
+    let mut values = std::collections::BTreeSet::new();
+
+    if let Some(value) = obj.get("const").and_then(JsonValue::as_str) {
+        values.insert(value.to_string());
+    }
+
+    if let Some(items) = obj.get("enum").and_then(JsonValue::as_array) {
+        for item in items {
+            let value = item.as_str()?;
+            values.insert(value.to_string());
+        }
+    }
+
+    (!values.is_empty()).then_some(values)
+}
+
+fn collect_any_of_variants(value: JsonValue, variants: &mut Vec<JsonValue>) {
+    if let Some(existing_any_of) = value.get("anyOf").and_then(JsonValue::as_array) {
+        for variant in existing_any_of {
+            if !variants.iter().any(|candidate| candidate == variant) {
+                variants.push(variant.clone());
+            }
+        }
+        return;
+    }
+
+    if !variants.iter().any(|candidate| candidate == &value) {
+        variants.push(value);
+    }
+}
+
+fn required_keys(value: Option<&JsonValue>) -> std::collections::BTreeSet<String> {
+    value
+        .and_then(JsonValue::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(ToOwned::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn merge_property_schema(existing: &mut JsonValue, incoming: &JsonValue) {
+    if existing == incoming {
+        return;
+    }
+
+    if let Some(merged) = merge_string_literal_property(existing, incoming) {
+        *existing = merged;
+        return;
+    }
+
+    if let (Some(existing_obj), Some(incoming_obj)) =
+        (existing.as_object_mut(), incoming.as_object())
+        && existing_obj.get("type") == incoming_obj.get("type")
+    {
+        if !existing_obj.contains_key("description")
+            && let Some(description) = incoming_obj.get("description")
+        {
+            existing_obj.insert("description".to_string(), description.clone());
+        }
+        if !existing_obj.contains_key("default")
+            && let Some(default) = incoming_obj.get("default")
+        {
+            existing_obj.insert("default".to_string(), default.clone());
+        }
+        return;
+    }
+
+    *existing = merge_nested_any_of(existing.clone(), incoming.clone());
 }

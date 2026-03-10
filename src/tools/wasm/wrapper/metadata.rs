@@ -191,16 +191,16 @@ mod tests {
                 .any(|value| value == "action"),
             "expected required action field in schema: {schema}"
         );
-        let first_variant = schema["oneOf"]
-            .as_array()
-            .and_then(|variants| variants.first())
-            .expect("oneOf variants");
+        assert!(
+            schema.get("oneOf").is_none(),
+            "top-level oneOf should not be exported for OpenAI compatibility: {schema}"
+        );
         assert_eq!(
-            first_variant["properties"]["action"]["const"],
+            schema["properties"]["action"]["enum"][0],
             serde_json::json!("get_repo")
         );
         assert_eq!(
-            first_variant["properties"]["owner"]["type"],
+            schema["properties"]["owner"]["type"],
             serde_json::json!("string")
         );
     }

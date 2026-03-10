@@ -683,125 +683,99 @@ fn get_workflow_runs(
 
 const SCHEMA: &str = r#"{
     "type": "object",
-    "required": ["action"],
-    "oneOf": [
-        {
-            "properties": {
-                "action": { "const": "get_repo" },
-                "owner": { "type": "string", "description": "Repository owner (user or org)" },
-                "repo": { "type": "string", "description": "Repository name" }
-            },
-            "required": ["action", "owner", "repo"]
+    "additionalProperties": false,
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": [
+                "get_repo",
+                "list_issues",
+                "create_issue",
+                "get_issue",
+                "list_pull_requests",
+                "get_pull_request",
+                "get_pull_request_files",
+                "create_pr_review",
+                "list_repos",
+                "get_file_content",
+                "trigger_workflow",
+                "get_workflow_runs"
+            ],
+            "description": "GitHub action to execute. Repository actions use owner/repo, list_repos uses username, create_pr_review needs pr_number/body/event, get_file_content needs path, and trigger_workflow needs workflow_id/ref."
         },
-        {
-            "properties": {
-                "action": { "const": "list_issues" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "state": { "type": "string", "enum": ["open", "closed", "all"], "default": "open" },
-                "limit": { "type": "integer", "default": 30 }
-            },
-            "required": ["action", "owner", "repo"]
+        "owner": {
+            "type": "string",
+            "description": "Repository owner or organization. Required for repository, issue, pull request, and workflow actions."
         },
-        {
-            "properties": {
-                "action": { "const": "create_issue" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "title": { "type": "string" },
-                "body": { "type": "string" },
-                "labels": { "type": "array", "items": { "type": "string" } }
-            },
-            "required": ["action", "owner", "repo", "title"]
+        "repo": {
+            "type": "string",
+            "description": "Repository name. Required for repository, issue, pull request, and workflow actions."
         },
-        {
-            "properties": {
-                "action": { "const": "get_issue" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "issue_number": { "type": "integer" }
-            },
-            "required": ["action", "owner", "repo", "issue_number"]
+        "username": {
+            "type": "string",
+            "description": "GitHub username whose repositories should be listed. Used by action=list_repos."
         },
-        {
-            "properties": {
-                "action": { "const": "list_pull_requests" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "state": { "type": "string", "enum": ["open", "closed", "all"], "default": "open" },
-                "limit": { "type": "integer", "default": 30 }
-            },
-            "required": ["action", "owner", "repo"]
+        "title": {
+            "type": "string",
+            "description": "Issue title. Used by action=create_issue."
         },
-        {
-            "properties": {
-                "action": { "const": "get_pull_request" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "pr_number": { "type": "integer" }
-            },
-            "required": ["action", "owner", "repo", "pr_number"]
+        "body": {
+            "type": "string",
+            "description": "Issue body or pull-request review comment."
         },
-        {
-            "properties": {
-                "action": { "const": "get_pull_request_files" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "pr_number": { "type": "integer" }
-            },
-            "required": ["action", "owner", "repo", "pr_number"]
+        "labels": {
+            "type": "array",
+            "description": "Issue labels for action=create_issue.",
+            "items": { "type": "string" }
         },
-        {
-            "properties": {
-                "action": { "const": "create_pr_review" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "pr_number": { "type": "integer" },
-                "body": { "type": "string", "description": "Review comment" },
-                "event": { "type": "string", "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"] }
-            },
-            "required": ["action", "owner", "repo", "pr_number", "body", "event"]
+        "issue_number": {
+            "type": "integer",
+            "description": "Issue number. Used by action=get_issue."
         },
-        {
-            "properties": {
-                "action": { "const": "list_repos" },
-                "username": { "type": "string" },
-                "limit": { "type": "integer", "default": 30 }
-            },
-            "required": ["action", "username"]
+        "state": {
+            "type": "string",
+            "enum": ["open", "closed", "all"],
+            "default": "open",
+            "description": "Issue or pull-request state filter."
         },
-        {
-            "properties": {
-                "action": { "const": "get_file_content" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "path": { "type": "string", "description": "File path in repo" },
-                "ref": { "type": "string", "description": "Branch/commit (default: default branch)" }
-            },
-            "required": ["action", "owner", "repo", "path"]
+        "page": {
+            "type": "integer",
+            "description": "1-based results page for list actions."
         },
-        {
-            "properties": {
-                "action": { "const": "trigger_workflow" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "workflow_id": { "type": "string", "description": "Workflow filename or ID" },
-                "ref": { "type": "string", "description": "Branch to run on" },
-                "inputs": { "type": "object" }
-            },
-            "required": ["action", "owner", "repo", "workflow_id", "ref"]
+        "limit": {
+            "type": "integer",
+            "default": 30,
+            "description": "Maximum items to return for list actions."
         },
-        {
-            "properties": {
-                "action": { "const": "get_workflow_runs" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "workflow_id": { "type": "string" },
-                "limit": { "type": "integer", "default": 30 }
-            },
-            "required": ["action", "owner", "repo"]
+        "pr_number": {
+            "type": "integer",
+            "description": "Pull request number."
+        },
+        "event": {
+            "type": "string",
+            "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"],
+            "description": "Review event for action=create_pr_review."
+        },
+        "path": {
+            "type": "string",
+            "description": "Repository file path for action=get_file_content."
+        },
+        "ref": {
+            "type": "string",
+            "description": "Branch, tag, or commit ref. Required by action=trigger_workflow and optional for action=get_file_content."
+        },
+        "workflow_id": {
+            "type": "string",
+            "description": "Workflow filename or numeric ID."
+        },
+        "inputs": {
+            "type": "object",
+            "description": "Workflow dispatch inputs for action=trigger_workflow.",
+            "additionalProperties": { "type": "string" }
         }
-    ]
+    },
+    "required": ["action"],
+    "description": "Parameters for the GitHub tool. The required combination of fields depends on the selected action."
 }"#;
 
 export!(GitHubTool);
@@ -809,6 +783,7 @@ export!(GitHubTool);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn test_url_encode_path() {
@@ -841,5 +816,40 @@ mod tests {
 
         let long = "a".repeat(MAX_TEXT_LENGTH + 1);
         assert!(validate_input_length(&long, "test").is_err());
+    }
+
+    #[test]
+    fn test_exported_schema_is_openai_root_compatible() {
+        let schema: Value = serde_json::from_str(SCHEMA).expect("parse github schema");
+
+        assert_eq!(schema["type"], "object");
+        assert!(
+            schema.get("oneOf").is_none(),
+            "top-level oneOf is rejected by OpenAI tool schemas: {schema}"
+        );
+        assert!(
+            schema.get("anyOf").is_none(),
+            "top-level anyOf is rejected by OpenAI tool schemas: {schema}"
+        );
+        assert!(
+            schema.get("allOf").is_none(),
+            "top-level allOf is rejected by OpenAI tool schemas: {schema}"
+        );
+        assert!(
+            schema.get("not").is_none(),
+            "top-level not is rejected by OpenAI tool schemas: {schema}"
+        );
+        assert!(
+            schema["properties"]["action"]["enum"]
+                .as_array()
+                .expect("action enum")
+                .iter()
+                .any(|value| value == "get_repo"),
+            "expected action enum to include get_repo: {schema}"
+        );
+        assert!(
+            schema["properties"]["owner"].is_object(),
+            "expected top-level owner property for repository actions: {schema}"
+        );
     }
 }

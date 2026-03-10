@@ -30,6 +30,7 @@
 /// 6. Nested objects follow the same rules recursively
 /// 7. `"enum"` values must match the declared type
 /// 8. Array properties must have an `"items"` definition
+/// 9. Top-level schemas must not use `oneOf`/`anyOf`/`allOf`/`enum`/`not`
 pub fn validate_strict_schema(
     schema: &serde_json::Value,
     tool_name: &str,
@@ -45,6 +46,14 @@ pub fn validate_strict_schema(
 /// Recursively validate an object-typed schema node.
 fn check_object_schema(schema: &serde_json::Value, path: &str) -> Vec<String> {
     let mut errors = Vec::new();
+
+    for forbidden in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+        if schema.get(forbidden).is_some() {
+            errors.push(format!(
+                "{path}: top-level \"{forbidden}\" is not allowed in OpenAI tool schemas"
+            ));
+        }
+    }
 
     // Rule 1: must have "type": "object"
     match schema.get("type").and_then(|t| t.as_str()) {
@@ -260,6 +269,27 @@ mod tests {
             }
         });
         assert!(validate_strict_schema(&schema, "test").is_ok());
+    }
+
+    #[test]
+    fn test_top_level_one_of_fails() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "oneOf": [
+                {
+                    "properties": {
+                        "action": { "const": "get_repo" }
+                    },
+                    "required": ["action"]
+                }
+            ]
+        });
+        let err = validate_strict_schema(&schema, "test").unwrap_err();
+        assert!(
+            err.iter()
+                .any(|message| message.contains("top-level \"oneOf\" is not allowed")),
+            "expected top-level oneOf failure, got: {err:?}"
+        );
     }
 
     #[test]

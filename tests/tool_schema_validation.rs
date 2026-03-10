@@ -7,6 +7,7 @@
 //! See: <https://github.com/nearai/ironclaw/issues/352> (QA plan, item 1.1)
 
 use ironclaw::tools::builtin::extension_tools::ExtensionToolKind;
+use ironclaw::tools::schema_validator::validate_strict_schema;
 use ironclaw::tools::validate_tool_schema;
 use ironclaw::tools::wasm::WasmToolLoader;
 use ironclaw::tools::{Tool, ToolRegistry};
@@ -280,7 +281,15 @@ async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
         .find(|def| def.name == "github")
         .expect("github tool definition");
 
+    if let Err(errors) = validate_strict_schema(&github.parameters, "github") {
+        panic!("github tool definition must satisfy strict validation: {errors:#?}");
+    }
     assert_eq!(github.parameters["type"], serde_json::json!("object"));
+    assert!(
+        github.parameters.get("oneOf").is_none(),
+        "top-level oneOf is rejected by OpenAI tool schemas: {}",
+        github.parameters
+    );
     assert!(
         github.parameters["required"]
             .as_array()
@@ -290,18 +299,19 @@ async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
         "expected required action in tool definition: {}",
         github.parameters
     );
-    let first_variant = github.parameters["oneOf"]
-        .as_array()
-        .and_then(|variants| variants.first())
-        .expect("oneOf variants");
     assert!(
-        first_variant["properties"]["owner"].is_object(),
+        github.parameters["properties"]["owner"].is_object(),
         "expected owner property in tool definition: {}",
         github.parameters
     );
-    assert_eq!(
-        first_variant["properties"]["action"]["const"],
-        serde_json::json!("get_repo")
+    assert!(
+        github.parameters["properties"]["action"]["enum"]
+            .as_array()
+            .expect("action enum")
+            .iter()
+            .any(|value| value == "get_repo"),
+        "expected get_repo action enum in tool definition: {}",
+        github.parameters
     );
     assert!(
         github.description.contains("GitHub integration"),
