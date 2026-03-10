@@ -23,8 +23,8 @@ use crate::tools::wasm::{ResourceLimits, WasmRuntimeConfig, WasmToolRuntime};
 
 /// WASM target triples to search, in priority order.
 const WASM_TRIPLES: &[&str] = &[
-    "wasm32-wasip1",
     "wasm32-wasip2",
+    "wasm32-wasip1",
     "wasm32-wasi",
     "wasm32-unknown-unknown",
 ];
@@ -328,6 +328,26 @@ mod tests {
     }
 
     #[test]
+    fn test_find_wasm_artifact_prefers_wasip2_over_wasip1() {
+        let dir = TempDir::new().unwrap();
+        let target_base = resolve_target_dir(dir.path());
+        let wasip1_dir = target_base.join("wasm32-wasip1/release");
+        let wasip2_dir = target_base.join("wasm32-wasip2/release");
+        std::fs::create_dir_all(&wasip1_dir).unwrap();
+        std::fs::create_dir_all(&wasip2_dir).unwrap();
+        std::fs::File::create(wasip1_dir.join("my_tool.wasm")).unwrap();
+        std::fs::File::create(wasip2_dir.join("my_tool.wasm")).unwrap();
+
+        let result = find_wasm_artifact(dir.path(), "my_tool", "release")
+            .expect("should find wasm artifact");
+        assert!(
+            result.ends_with("wasm32-wasip2/release/my_tool.wasm"),
+            "expected wasm32-wasip2 artifact, got {}",
+            result.display()
+        );
+    }
+
+    #[test]
     fn test_find_any_wasm_artifact_found() {
         let dir = TempDir::new().unwrap();
         let target_base = resolve_target_dir(dir.path());
@@ -401,8 +421,8 @@ mod tests {
     #[test]
     fn test_wasm_triples_order() {
         // Verify the order is as documented
-        assert_eq!(WASM_TRIPLES[0], "wasm32-wasip1");
-        assert_eq!(WASM_TRIPLES[1], "wasm32-wasip2");
+        assert_eq!(WASM_TRIPLES[0], "wasm32-wasip2");
+        assert_eq!(WASM_TRIPLES[1], "wasm32-wasip1");
         assert_eq!(WASM_TRIPLES[2], "wasm32-wasi");
         assert_eq!(WASM_TRIPLES[3], "wasm32-unknown-unknown");
     }

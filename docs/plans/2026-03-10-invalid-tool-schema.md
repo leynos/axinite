@@ -248,6 +248,9 @@ cargo fmt --all --check \
 - [x] 2026-03-10 10:07Z: Staged the verified source, adapter,
   validator, metadata, behavioral test, and plan changes as commit
   `79dca9d` (`Fix invalid GitHub tool schemas for OpenAI`).
+- [x] 2026-03-10 10:14Z: Verified and adopted the
+  `src/registry/artifacts.rs` follow-up that prefers `wasm32-wasip2`
+  artifacts over `wasm32-wasip1`, with a dedicated regression test.
 
 ## Surprises & Discoveries
 
@@ -273,6 +276,10 @@ cargo fmt --all --check \
   the host. It was rebuilding the GitHub WASM artifact after updating
   the tool’s `SCHEMA` constant, which proved that the stale built
   artifact was still exporting the old `oneOf` shape.
+- Artifact lookup order is part of the fix. Preferring `wasm32-wasip2`
+  over `wasm32-wasip1` removes a second failure mode where a freshly
+  rebuilt `wasip2` artifact could still be masked by an older `wasip1`
+  build on disk.
 
 ## Decision Log
 
@@ -314,9 +321,10 @@ OpenAI, with a new unit test proving the source schema is root-safe.
 `src/llm/rig_adapter.rs` also flattens forbidden root-level combinators
 before strict normalization so other external schemas do not reproduce
 the same provider failure. `src/tools/schema_validator.rs`,
-`src/tools/wasm/wrapper/metadata.rs`, and
-`tests/tool_schema_validation.rs` now enforce the root-safe contract
-with both unit and artifact-backed behavioral coverage.
+`src/tools/wasm/wrapper/metadata.rs`,
+`tests/tool_schema_validation.rs`, and `src/registry/artifacts.rs` now
+enforce the root-safe contract with both unit and artifact-backed
+behavioral coverage.
 
 Validation evidence:
 
@@ -335,4 +343,5 @@ Validation evidence:
 - `cargo fmt --all --check`
 - `cargo fmt --manifest-path tools-src/github/Cargo.toml --all -- --check`
 - `cargo clippy --all --tests --examples --all-features -- -D warnings`
+- `cargo test test_find_wasm_artifact_prefers_wasip2_over_wasip1 --lib -- --nocapture`
 - `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`
