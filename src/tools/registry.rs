@@ -149,46 +149,20 @@ impl std::fmt::Debug for ToolRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::registry::artifacts::find_wasm_artifact;
     use crate::tools::registry::EchoTool;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::time::Duration;
 
     use crate::tools::wasm::{ResourceLimits, WasmRuntimeConfig};
 
-    fn find_wasm_artifact(source_dir: &Path, crate_name: &str) -> Option<PathBuf> {
-        let artifact_name = crate_name.replace('-', "_");
-
-        {
-            let target_triple = "wasm32-wasip2";
-            let candidate = source_dir
-                .join("target")
-                .join(target_triple)
-                .join("release")
-                .join(format!("{artifact_name}.wasm"));
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-
-        if let Ok(shared) = std::env::var("CARGO_TARGET_DIR") {
-            {
-                let target_triple = "wasm32-wasip2";
-                let candidate = Path::new(&shared)
-                    .join(target_triple)
-                    .join("release")
-                    .join(format!("{artifact_name}.wasm"));
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-        }
-
-        None
-    }
-
     fn github_wasm_artifact() -> Option<PathBuf> {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        find_wasm_artifact(&repo_root.join("tools-src/github"), "github-tool")
+        find_wasm_artifact(
+            &repo_root.join("tools-src/github"),
+            "github-tool",
+            "release",
+        )
     }
 
     fn wasm_metadata_test_runtime() -> Arc<WasmToolRuntime> {

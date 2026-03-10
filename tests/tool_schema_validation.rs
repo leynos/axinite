@@ -10,7 +10,7 @@ use ironclaw::tools::builtin::extension_tools::ExtensionToolKind;
 use ironclaw::tools::validate_tool_schema;
 use ironclaw::tools::wasm::{WasmRuntimeConfig, WasmToolLoader, WasmToolRuntime};
 use ironclaw::tools::{Tool, ToolRegistry};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,42 +18,11 @@ struct ExtensionManagerFixture {
     _dir: tempfile::TempDir,
     manager: Arc<ironclaw::extensions::ExtensionManager>,
 }
-
-fn find_wasm_artifact(source_dir: &Path, crate_name: &str) -> Option<PathBuf> {
-    let artifact_name = crate_name.replace('-', "_");
-
-    {
-        let target_triple = "wasm32-wasip2";
-        let candidate = source_dir
-            .join("target")
-            .join(target_triple)
-            .join("release")
-            .join(format!("{artifact_name}.wasm"));
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    if let Ok(shared) = std::env::var("CARGO_TARGET_DIR") {
-        {
-            let target_triple = "wasm32-wasip2";
-            let candidate = Path::new(&shared)
-                .join(target_triple)
-                .join("release")
-                .join(format!("{artifact_name}.wasm"));
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-    }
-
-    None
-}
-
 fn github_artifact_paths() -> Option<(PathBuf, PathBuf)> {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let source_dir = repo_root.join("tools-src/github");
-    let wasm_path = find_wasm_artifact(&source_dir, "github-tool")?;
+    let wasm_path =
+        ironclaw::registry::artifacts::find_wasm_artifact(&source_dir, "github-tool", "release")?;
     let caps_path = source_dir.join("github-tool.capabilities.json");
     caps_path.exists().then_some((wasm_path, caps_path))
 }

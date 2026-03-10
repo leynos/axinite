@@ -5,7 +5,8 @@ This document is adapted from
 match the IronClaw repository as it exists on 2026-03-09.
 
 The most important correction is versioning: new or rebuilt IronClaw
-extensions must target WIT `0.3.0`. This is not a speculative future version.
+extensions must target WebAssembly Interface Types (WIT) `0.3.0`. This is not
+a speculative future version.
 It is the current host contract used by both `wit/tool.wit` and
 `wit/channel.wit`.
 
