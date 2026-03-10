@@ -14,8 +14,12 @@
 //! - [`install_wasm_files`] — copy `.wasm` + optional `.capabilities.json` to install dir
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::fs;
+
+use crate::tools::wasm::{ResourceLimits, WasmRuntimeConfig, WasmToolRuntime};
 
 /// WASM target triples to search, in priority order.
 const WASM_TRIPLES: &[&str] = &[
@@ -90,6 +94,34 @@ pub fn find_any_wasm_artifact(crate_dir: &Path, profile: &str) -> Option<PathBuf
     }
 
     None
+}
+
+/// Build the shared WASM runtime used by metadata extraction regressions.
+///
+/// Tests that inspect real guest-exported metadata need a small, deterministic
+/// runtime configuration so they can prepare and instantiate WASM components
+/// without depending on the default production limits.
+///
+/// # Returns
+///
+/// Returns a reference-counted [`WasmToolRuntime`] configured for metadata and
+/// schema extraction tests.
+///
+/// # Examples
+///
+/// ```ignore
+/// let runtime = ironclaw::registry::artifacts::metadata_test_runtime();
+/// let prepared = runtime.prepare("github", &wasm_bytes, None).await?;
+/// ```
+pub fn metadata_test_runtime() -> Arc<WasmToolRuntime> {
+    let config = WasmRuntimeConfig {
+        default_limits: ResourceLimits::default()
+            .with_memory(8 * 1024 * 1024)
+            .with_fuel(100_000)
+            .with_timeout(Duration::from_secs(5)),
+        ..WasmRuntimeConfig::for_testing()
+    };
+    Arc::new(WasmToolRuntime::new(config).expect("create wasm runtime"))
 }
 
 /// Build a WASM component using `cargo-component` (async).

@@ -8,36 +8,15 @@
 
 use ironclaw::tools::builtin::extension_tools::ExtensionToolKind;
 use ironclaw::tools::validate_tool_schema;
-use ironclaw::tools::wasm::{WasmRuntimeConfig, WasmToolLoader, WasmToolRuntime};
+use ironclaw::tools::wasm::WasmToolLoader;
 use ironclaw::tools::{Tool, ToolRegistry};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 struct ExtensionManagerFixture {
     _dir: tempfile::TempDir,
     manager: Arc<ironclaw::extensions::ExtensionManager>,
 }
-fn github_artifact_paths() -> Option<(PathBuf, PathBuf)> {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let source_dir = repo_root.join("tools-src/github");
-    let wasm_path =
-        ironclaw::registry::artifacts::find_wasm_artifact(&source_dir, "github-tool", "release")?;
-    let caps_path = source_dir.join("github-tool.capabilities.json");
-    caps_path.exists().then_some((wasm_path, caps_path))
-}
-
-fn wasm_metadata_test_runtime() -> Arc<WasmToolRuntime> {
-    let config = WasmRuntimeConfig {
-        default_limits: ironclaw::tools::wasm::ResourceLimits::default()
-            .with_memory(8 * 1024 * 1024)
-            .with_fuel(100_000)
-            .with_timeout(Duration::from_secs(5)),
-        ..WasmRuntimeConfig::for_testing()
-    };
-    Arc::new(WasmToolRuntime::new(config).expect("create wasm runtime"))
-}
-
 fn test_extension_manager() -> ExtensionManagerFixture {
     use ironclaw::secrets::{InMemorySecretsStore, SecretsCrypto};
     use ironclaw::tools::mcp::session::McpSessionManager;
@@ -275,11 +254,19 @@ async fn all_core_tools_work_in_multi_thread_runtime() {
 }
 
 async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
-    let (wasm_path, caps_path) =
-        github_artifact_paths().expect("github WASM artifact must be built for schema tests");
+    let source_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools-src/github");
+    let wasm_path =
+        ironclaw::registry::artifacts::find_wasm_artifact(&source_dir, "github-tool", "release")
+            .expect("github WASM artifact must be built for schema tests");
+    let caps_path = source_dir.join("github-tool.capabilities.json");
+    assert!(
+        caps_path.exists(),
+        "github capabilities sidecar must exist for schema tests: {}",
+        caps_path.display()
+    );
 
     let registry = Arc::new(ToolRegistry::new());
-    let runtime = wasm_metadata_test_runtime();
+    let runtime = ironclaw::registry::artifacts::metadata_test_runtime();
     let loader = WasmToolLoader::new(runtime, Arc::clone(&registry));
 
     loader

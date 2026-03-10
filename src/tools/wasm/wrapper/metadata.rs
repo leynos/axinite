@@ -154,40 +154,17 @@ pub(super) fn build_tool_hint(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::sync::Arc;
-    use std::time::Duration;
 
-    use crate::registry::artifacts::find_wasm_artifact;
+    use crate::registry::artifacts::{find_wasm_artifact, metadata_test_runtime};
     use crate::tools::wasm::capabilities::Capabilities;
-    use crate::tools::wasm::limits::ResourceLimits;
-    use crate::tools::wasm::runtime::{WasmRuntimeConfig, WasmToolRuntime};
 
     use super::super::WasmToolWrapper;
 
-    fn github_wasm_artifact() -> Option<PathBuf> {
-        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        find_wasm_artifact(
-            &repo_root.join("tools-src/github"),
-            "github-tool",
-            "release",
-        )
-    }
-
-    fn metadata_test_runtime() -> Arc<WasmToolRuntime> {
-        let config = WasmRuntimeConfig {
-            default_limits: ResourceLimits::default()
-                .with_memory(8 * 1024 * 1024)
-                .with_fuel(100_000)
-                .with_timeout(Duration::from_secs(5)),
-            ..WasmRuntimeConfig::for_testing()
-        };
-        Arc::new(WasmToolRuntime::new(config).expect("create wasm runtime for metadata tests"))
-    }
-
     #[tokio::test]
     async fn test_exported_metadata_from_real_github_component() {
-        let wasm_path =
-            github_wasm_artifact().expect("github WASM artifact must be built for metadata tests");
+        let source_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools-src/github");
+        let wasm_path = find_wasm_artifact(&source_dir, "github-tool", "release")
+            .expect("github WASM artifact must be built for metadata tests");
 
         let runtime = metadata_test_runtime();
         let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm artifact");

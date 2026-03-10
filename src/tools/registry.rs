@@ -148,33 +148,11 @@ impl std::fmt::Debug for ToolRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::registry::artifacts::find_wasm_artifact;
-    use crate::tools::registry::EchoTool;
     use std::path::PathBuf;
-    use std::time::Duration;
 
-    use crate::tools::wasm::{ResourceLimits, WasmRuntimeConfig};
-
-    fn github_wasm_artifact() -> Option<PathBuf> {
-        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        find_wasm_artifact(
-            &repo_root.join("tools-src/github"),
-            "github-tool",
-            "release",
-        )
-    }
-
-    fn wasm_metadata_test_runtime() -> Arc<WasmToolRuntime> {
-        let config = WasmRuntimeConfig {
-            default_limits: ResourceLimits::default()
-                .with_memory(8 * 1024 * 1024)
-                .with_fuel(100_000)
-                .with_timeout(Duration::from_secs(5)),
-            ..WasmRuntimeConfig::for_testing()
-        };
-        Arc::new(WasmToolRuntime::new(config).expect("create wasm runtime"))
-    }
+    use super::*;
+    use crate::registry::artifacts::{find_wasm_artifact, metadata_test_runtime};
+    use crate::tools::registry::EchoTool;
 
     fn test_extension_manager() -> Arc<ExtensionManager> {
         use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
@@ -237,13 +215,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_explicit_wasm_schema_override_wins_over_exported_metadata() {
-        let Some(wasm_path) = github_wasm_artifact() else {
+        let source_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools-src/github");
+        let Some(wasm_path) = find_wasm_artifact(&source_dir, "github-tool", "release") else {
             eprintln!("Skipping override precedence regression: github WASM artifact not built");
             return;
         };
 
         let registry = ToolRegistry::new();
-        let runtime = wasm_metadata_test_runtime();
+        let runtime = metadata_test_runtime();
         let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm");
         let override_schema = serde_json::json!({
             "type": "object",
