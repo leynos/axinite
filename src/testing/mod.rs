@@ -23,6 +23,7 @@ pub mod credentials;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use rust_decimal::Decimal;
@@ -39,6 +40,7 @@ use crate::llm::{
     ToolCompletionResponse,
 };
 use crate::tools::ToolRegistry;
+use crate::tools::wasm::{ResourceLimits, WasmRuntimeConfig, WasmToolRuntime};
 
 /// Create a libSQL-backed test database in a temporary directory.
 ///
@@ -1453,4 +1455,16 @@ mod tests {
         .await
         .expect("update actuals");
     }
+}
+
+/// Shared WASM runtime for metadata extraction and schema publication regressions.
+pub fn metadata_test_runtime() -> Arc<WasmToolRuntime> {
+    let config = WasmRuntimeConfig {
+        default_limits: ResourceLimits::default()
+            .with_memory(8 * 1024 * 1024)
+            .with_fuel(100_000)
+            .with_timeout(Duration::from_secs(5)),
+        ..WasmRuntimeConfig::for_testing()
+    };
+    Arc::new(WasmToolRuntime::new(config).expect("create wasm runtime"))
 }

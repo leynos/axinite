@@ -35,7 +35,15 @@ pub fn validate_strict_schema(
     schema: &serde_json::Value,
     tool_name: &str,
 ) -> Result<(), Vec<String>> {
-    let errors = check_object_schema(schema, tool_name);
+    let mut errors = Vec::new();
+    for forbidden in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+        if schema.get(forbidden).is_some() {
+            errors.push(format!(
+                "{tool_name}: top-level \"{forbidden}\" is not allowed in OpenAI tool schemas"
+            ));
+        }
+    }
+    errors.extend(check_object_schema(schema, tool_name));
     if errors.is_empty() {
         Ok(())
     } else {
@@ -46,14 +54,6 @@ pub fn validate_strict_schema(
 /// Recursively validate an object-typed schema node.
 fn check_object_schema(schema: &serde_json::Value, path: &str) -> Vec<String> {
     let mut errors = Vec::new();
-
-    for forbidden in ["oneOf", "anyOf", "allOf", "enum", "not"] {
-        if schema.get(forbidden).is_some() {
-            errors.push(format!(
-                "{path}: top-level \"{forbidden}\" is not allowed in OpenAI tool schemas"
-            ));
-        }
-    }
 
     // Rule 1: must have "type": "object"
     match schema.get("type").and_then(|t| t.as_str()) {
@@ -289,6 +289,35 @@ mod tests {
             err.iter()
                 .any(|message| message.contains("top-level \"oneOf\" is not allowed")),
             "expected top-level oneOf failure, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_nested_one_of_is_allowed() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "action": { "type": "string" },
+                "inputs": {
+                    "type": "object",
+                    "properties": {
+                        "mode": {
+                            "oneOf": [
+                                { "type": "string" },
+                                { "type": "integer" }
+                            ]
+                        }
+                    },
+                    "required": ["mode"],
+                    "additionalProperties": false
+                }
+            },
+            "required": ["action"]
+        });
+
+        assert!(
+            validate_strict_schema(&schema, "test").is_ok(),
+            "nested combinators should not be rejected by root-only validation"
         );
     }
 

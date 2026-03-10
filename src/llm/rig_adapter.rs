@@ -115,10 +115,12 @@ impl<M: CompletionModel> RigAdapter<M> {
 /// Normalize a JSON Schema for OpenAI strict mode compliance.
 ///
 /// OpenAI strict function calling requires:
-/// - Every object must have `"additionalProperties": false`
+/// - Every fixed-shape object must have `"additionalProperties": false`
 /// - `"required"` must list ALL property keys
 /// - Optional fields use `"type": ["<original>", "null"]` instead of being omitted from `required`
 /// - Nested objects and array items are recursively normalized
+/// - Typed map objects keep their `"additionalProperties"` schema instead of
+///   being rewritten into fixed-shape objects
 ///
 /// This is applied as a clone-and-transform at the provider boundary so the
 /// original tool definitions remain unchanged for other providers.
@@ -177,6 +179,12 @@ fn normalize_schema_recursive(schema: &mut JsonValue) {
         }
     }
 
+    if let Some(additional) = obj.get_mut("additionalProperties")
+        && additional.is_object()
+    {
+        normalize_schema_recursive(additional);
+    }
+
     // Only apply object-level normalization if this schema has "properties"
     // (explicit object schema) or type == "object"
     let is_object = obj
@@ -190,12 +198,21 @@ fn normalize_schema_recursive(schema: &mut JsonValue) {
         return;
     }
 
+    let is_map_object = obj
+        .get("additionalProperties")
+        .is_some_and(JsonValue::is_object)
+        && !has_properties;
+
+    if is_map_object {
+        return;
+    }
+
     // Ensure "type": "object" is present
     if !obj.contains_key("type") && has_properties {
         obj.insert("type".to_string(), JsonValue::String("object".to_string()));
     }
 
-    // Force additionalProperties: false (overwrite any existing value)
+    // Fixed-shape objects need additionalProperties: false for OpenAI strict mode.
     obj.insert("additionalProperties".to_string(), JsonValue::Bool(false));
 
     // Ensure "properties" exists
@@ -961,6 +978,32 @@ mod tests {
         assert_eq!(
             parameters["properties"]["action"]["enum"],
             serde_json::json!(["create_issue", "get_repo"])
+        );
+    }
+
+    #[test]
+    fn test_normalize_schema_strict_preserves_typed_map_objects() {
+        let normalized = normalize_schema_strict(&serde_json::json!({
+            "type": "object",
+            "properties": {
+                "action": { "type": "string" },
+                "inputs": {
+                    "type": "object",
+                    "additionalProperties": { "type": "string" }
+                }
+            },
+            "required": ["action"]
+        }));
+
+        assert_eq!(
+            normalized["properties"]["inputs"]["additionalProperties"],
+            serde_json::json!({ "type": "string" })
+        );
+        assert!(
+            normalized["properties"]["inputs"]
+                .get("properties")
+                .is_none(),
+            "typed map objects should not be rewritten into empty fixed-shape objects: {normalized}"
         );
     }
 

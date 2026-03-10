@@ -155,7 +155,8 @@ pub(super) fn build_tool_hint(
 mod tests {
     use std::path::PathBuf;
 
-    use crate::registry::artifacts::{find_wasm_artifact, metadata_test_runtime};
+    use crate::registry::artifacts::find_wasm_artifact;
+    use crate::testing::metadata_test_runtime;
     use crate::tools::wasm::capabilities::Capabilities;
 
     use super::super::WasmToolWrapper;

@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: COMPLETE
+Status: IN PROGRESS
 
 ## Purpose / big picture
 
@@ -142,7 +142,7 @@ provider complaint: the normalized schema still has a root-level
 forbidden keyword or lacks a rooted object-shaped parameter contract
 acceptable to OpenAI.
 
-Also add a complementary validator regression that proves our current
+Also add a complementary validator regression that proves the current
 strict schema checks do not catch this case even though OpenAI rejects
 it. This closes the current blind spot where
 `tests/tool_schema_validation.rs` can pass while the provider request
@@ -251,6 +251,38 @@ cargo fmt --all --check \
 - [x] 2026-03-10 10:15Z: Re-ran `cargo test rig_adapter --lib` and
   `cargo test test_top_level_one_of_fails --lib -- --nocapture`; the
   provider-bound guard and strict-validator regression both passed.
+- [x] 2026-03-10 15:41Z: Re-opened the PR review thread for
+  `https://github.com/leynos/ironclaw/pull/1`, verified the unresolved
+  comments cluster into schema normalization, test/helper cleanup, and
+  docs polish, and switched this plan back to active follow-up status.
+- [x] 2026-03-10 15:43Z: Verified that `grepai` now sees the `ironclaw`
+  project in the `Projects` workspace, so follow-up code exploration can
+  use semantic search again instead of the earlier exact-text fallback.
+- [x] 2026-03-10 16:56Z: Landed the first PR-follow-up patch set:
+  `src/db/tls.rs` now propagates rustls builder failures instead of
+  `expect(...)`, the shared metadata runtime moved behind test support
+  (`src/testing.rs` with integration-test re-export via
+  `tests/support/mod.rs`), `tests/tool_schema_validation.rs` now uses
+  an `rstest` fixture for extension-manager setup, and
+  `docs/plans/2026-03-09-call-parameters-discarded.md` now uses proper
+  fenced code blocks.
+- [x] 2026-03-10 17:08Z: Landed the schema-focused follow-up patch set:
+  `src/tools/schema_validator.rs` now rejects forbidden combinators only
+  at the root, `src/llm/rig_adapter.rs` preserves typed
+  `additionalProperties` maps such as GitHub workflow `inputs`, and the
+  GitHub schema blob moved into `tools-src/github/src/schema.rs` with a
+  regression asserting that the exported `inputs` field stays a string
+  map.
+- [x] 2026-03-10 17:10Z: Added a root `Makefile` exposing
+  `check-fmt`, `typecheck`, `lint`, and `test` wrappers so the
+  requested commit gates exist in the repository instead of being an
+  out-of-band command list.
+- [x] 2026-03-10 17:21Z: Cleared the requested gate set:
+  `make check-fmt`, `make typecheck`, `make lint`, and `make test`.
+  The initial serialized `make test` wrapper hit the environment's
+  command ceiling, so the wrapper was adjusted back to normal parallel
+  test execution while the broader multi-config matrix remains available
+  as `make test-matrix`.
 - [ ] Stage, commit, and push the verified change set.
 
 ## Surprises & Discoveries
@@ -273,6 +305,11 @@ cargo fmt --all --check \
   updated to export a flat top-level schema directly. The latter matters
   because users can still hit stale artifacts or other non-rig schema
   consumers.
+- The follow-up review confirmed that “strict” cannot mean “rewrite
+  every object into a closed record.” Some tool parameters are genuine
+  typed maps, such as GitHub workflow dispatch `inputs`, and the
+  provider-bound normalizer has to preserve those map contracts instead
+  of flattening them into empty closed objects.
 - The decisive red/green pivot was not a source-code logic change inside
   the host. It was rebuilding the GitHub WASM artifact after updating
   the tool’s `SCHEMA` constant, which proved that the stale built
@@ -281,6 +318,11 @@ cargo fmt --all --check \
   over `wasm32-wasip1` removes a second failure mode where a freshly
   rebuilt `wasip2` artifact could still be masked by an older `wasip1`
   build on disk.
+- The follow-up review clarified another provider-boundary rule:
+  OpenAI’s keyword restriction is only about the exported schema root.
+  Applying it recursively turns valid nested combinators and typed map
+  schemas into false positives, which is why the strict validator now
+  treats root-level and nested checks differently.
 
 ## Decision Log
 
@@ -304,6 +346,20 @@ cargo fmt --all --check \
   Rationale: flattening the GitHub tool source fixes the tool at origin,
   while the provider-bound flattening in `rig_adapter` remains a useful
   generic safeguard for other externally sourced schemas.
+- 2026-03-10 15:42Z: Kept the follow-up scope constrained to the review
+  comments instead of reopening the underlying design. Rationale: the
+  comments point at concrete correctness and maintainability issues in
+  the landed fix, not a contradictory root-cause theory.
+- 2026-03-10 17:17Z: Split the new test wrapper into a user-requested
+  fast gate (`make test`) and an explicit exhaustive matrix
+  (`make test-matrix`). Rationale: the aggregate serialized matrix
+  exceeded the environment's command lifetime, but the branch still
+  needed a reliable `make test` entrypoint that can pass deterministically.
+- 2026-03-10 17:09Z: Added a small root `Makefile` rather than treating
+  the user-requested `make check-fmt/typecheck/lint/test` commands as
+  implied aliases. Rationale: the repository had no root make targets,
+  so the narrowest honest way to satisfy the requested gate surface was
+  to codify the existing Rust checks in a minimal wrapper.
 
 ## Outcomes & Retrospective
 

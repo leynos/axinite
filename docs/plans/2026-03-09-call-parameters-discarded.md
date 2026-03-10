@@ -87,13 +87,13 @@ Begin with the user-visible failure mode, not a synthetic schema object.
 2. Call `ToolRegistry::tool_definitions()` and inspect the published `parameters` for that tool.
 3. Assert that the current code exposes the placeholder shape from `extract_tool_schema(...)`:
 
-    ```json
-    {
-      "type": "object",
-      "properties": {},
-      "additionalProperties": true
-    }
-    ```
+```json
+{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": true
+}
+```
 
 4. Assert that this differs materially from the guest-exported schema, which should include required fields such as `action`.
 
@@ -101,19 +101,19 @@ This must be a failing test before the fix. It should demonstrate the exact symp
 
 Suggested command:
 
-    ```bash
-    set -o pipefail
-    BRANCH=$(git branch --show)
-    cargo test file_loaded_wasm_tool_exposes_exported_schema -- --nocapture \
-      2>&1 | tee /tmp/test-wasm-file-schema-red-ironclaw-${BRANCH}.out
-    ```
+```bash
+set -o pipefail
+BRANCH=$(git branch --show)
+cargo test file_loaded_wasm_tool_exposes_exported_schema -- --nocapture \
+  2>&1 | tee /tmp/test-wasm-file-schema-red-ironclaw-${BRANCH}.out
+```
 
 Expected pre-fix evidence:
 
-    ```plaintext
-    assertion failed: published schema contains required field "action"
-    published schema was {"type":"object","properties":{},"additionalProperties":true}
-    ```
+```plaintext
+assertion failed: published schema contains required field "action"
+published schema was {"type":"object","properties":{},"additionalProperties":true}
+```
 
 ## Milestone 2: Identify and implement the narrow metadata-plumbing fix
 
@@ -155,16 +155,16 @@ After the fix and tests land:
 
 Suggested commands:
 
-    ```bash
-    set -o pipefail
-    BRANCH=$(git branch --show)
-    cargo test tool_schema_validation --test -- --nocapture \
-      2>&1 | tee /tmp/test-tool-schema-ironclaw-${BRANCH}.out
-    set -o pipefail
-    BRANCH=$(git branch --show)
-    cargo test wasm_tool_schemas --lib -- --nocapture \
-      2>&1 | tee /tmp/test-wasm-schema-validator-ironclaw-${BRANCH}.out
-    ```
+```bash
+set -o pipefail
+BRANCH=$(git branch --show)
+cargo test tool_schema_validation --test -- --nocapture \
+  2>&1 | tee /tmp/test-tool-schema-ironclaw-${BRANCH}.out
+set -o pipefail
+BRANCH=$(git branch --show)
+cargo test wasm_tool_schemas --lib -- --nocapture \
+  2>&1 | tee /tmp/test-wasm-schema-validator-ironclaw-${BRANCH}.out
+```
 
 ## Concrete steps
 
@@ -172,11 +172,11 @@ Work from the repository root `/data/leynos/Projects/ironclaw`.
 
 1. Confirm the current placeholder path and override asymmetry:
 
-    ```plaintext
-    nl -ba src/tools/wasm/runtime.rs | sed -n '260,355p'
-    nl -ba src/tools/wasm/loader.rs | sed -n '145,170p'
-    nl -ba src/tools/registry.rs | sed -n '643,675p'
-    ```
+```plaintext
+nl -ba src/tools/wasm/runtime.rs | sed -n '260,355p'
+nl -ba src/tools/wasm/loader.rs | sed -n '145,170p'
+nl -ba src/tools/registry.rs | sed -n '643,675p'
+```
 
 2. Add the first failing test showing that a file-loaded real WASM tool publishes the placeholder schema externally.
 

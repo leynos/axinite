@@ -151,7 +151,8 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::registry::artifacts::{find_wasm_artifact, metadata_test_runtime};
+    use crate::registry::artifacts::find_wasm_artifact;
+    use crate::testing::metadata_test_runtime;
     use crate::tools::registry::EchoTool;
 
     fn test_extension_manager() -> Arc<ExtensionManager> {

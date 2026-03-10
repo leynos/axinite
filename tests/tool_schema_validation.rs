@@ -1,24 +1,9 @@
-//! Validates that all built-in tool schemas conform to OpenAI strict-mode rules.
-//!
-//! This catches the class of bugs where `required` keys aren't in `properties`,
-//! properties are missing `type` (intentional freeform is allowed), or nested
-//! objects/arrays are malformed.
-//!
-//! See: <https://github.com/nearai/ironclaw/issues/352> (QA plan, item 1.1)
-
-use ironclaw::tools::builtin::extension_tools::ExtensionToolKind;
-use ironclaw::tools::schema_validator::validate_strict_schema;
-use ironclaw::tools::validate_tool_schema;
-use ironclaw::tools::wasm::WasmToolLoader;
-use ironclaw::tools::{Tool, ToolRegistry};
-use std::path::PathBuf;
-use std::sync::Arc;
-
 struct ExtensionManagerFixture {
     _dir: tempfile::TempDir,
     manager: Arc<ironclaw::extensions::ExtensionManager>,
 }
-fn test_extension_manager() -> ExtensionManagerFixture {
+
+fn extension_manager_fixture() -> ExtensionManagerFixture {
     use ironclaw::secrets::{InMemorySecretsStore, SecretsCrypto};
     use ironclaw::tools::mcp::session::McpSessionManager;
 
@@ -49,15 +34,37 @@ fn test_extension_manager() -> ExtensionManagerFixture {
         )),
     }
 }
+fn extension_manager_fixture() -> ExtensionManagerFixture {
+    use ironclaw::secrets::{InMemorySecretsStore, SecretsCrypto};
+    use ironclaw::tools::mcp::session::McpSessionManager;
 
-/// Validate schemas of all tools registered via `register_builtin_tools()` and
-/// `register_dev_tools()` (echo, time, json, http, shell, file tools).
-///
-/// These tools can be constructed without external dependencies (no DB, no
-/// workspace, no extension manager). Tools requiring dependencies (memory, job,
-/// skill, extension, routine) are validated individually below where test
-/// construction helpers exist.
-#[tokio::test]
+    let dir = tempfile::tempdir().expect("temp dir");
+    let tools_dir = dir.path().join("tools");
+    let channels_dir = dir.path().join("channels");
+    std::fs::create_dir_all(&tools_dir).expect("create tools dir");
+    std::fs::create_dir_all(&channels_dir).expect("create channels dir");
+
+    let master_key = secrecy::SecretString::from("0123456789abcdef0123456789abcdef".to_string());
+    let crypto = std::sync::Arc::new(SecretsCrypto::new(master_key).expect("crypto"));
+
+    ExtensionManagerFixture {
+        _dir: dir,
+        manager: std::sync::Arc::new(ironclaw::extensions::ExtensionManager::new(
+            std::sync::Arc::new(McpSessionManager::new()),
+            std::sync::Arc::new(ironclaw::tools::mcp::process::McpProcessManager::new()),
+            std::sync::Arc::new(InMemorySecretsStore::new(crypto)),
+            std::sync::Arc::new(ToolRegistry::new()),
+            None,
+            None,
+            tools_dir,
+            channels_dir,
+            None,
+            "test".to_string(),
+            None,
+            Vec::new(),
+        )),
+    }
+}
 async fn all_core_builtin_tool_schemas_are_valid() {
     let registry = ToolRegistry::new();
     registry.register_builtin_tools();
@@ -118,11 +125,13 @@ async fn core_registration_covers_expected_tools() {
     );
 }
 
+#[rstest]
 #[tokio::test]
-async fn extension_registration_covers_expected_tools() {
-    let fixture = test_extension_manager();
+async fn extension_registration_covers_expected_tools(
+    extension_manager_fixture: ExtensionManagerFixture,
+) {
     let registry = ToolRegistry::new();
-    registry.register_extension_tools(Arc::clone(&fixture.manager));
+    registry.register_extension_tools(Arc::clone(&extension_manager_fixture.manager));
 
     let mut names = registry.list().await;
     names.sort();
@@ -139,11 +148,11 @@ async fn extension_registration_covers_expected_tools() {
     );
 }
 
+#[rstest]
 #[tokio::test]
-async fn extension_tool_schemas_are_valid() {
-    let fixture = test_extension_manager();
+async fn extension_tool_schemas_are_valid(extension_manager_fixture: ExtensionManagerFixture) {
     let registry = ToolRegistry::new();
-    registry.register_extension_tools(Arc::clone(&fixture.manager));
+    registry.register_extension_tools(Arc::clone(&extension_manager_fixture.manager));
 
     let tools = registry.all().await;
     let mut all_errors = Vec::new();
@@ -267,7 +276,7 @@ async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
     );
 
     let registry = Arc::new(ToolRegistry::new());
-    let runtime = ironclaw::registry::artifacts::metadata_test_runtime();
+    let runtime = support::metadata_test_runtime();
     let loader = WasmToolLoader::new(runtime, Arc::clone(&registry));
 
     loader
@@ -319,3 +328,13 @@ async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
         github.description
     );
 }
+
+//! Validates that all built-in tool schemas conform to OpenAI strict-mode rules.
+//!
+//! This catches the class of bugs where `required` keys aren't in `properties`,
+//! properties are missing `type` (intentional freeform is allowed), or nested
+//! objects/arrays are malformed.
+//!
+//! See: <https://github.com/nearai/ironclaw/issues/352> (QA plan, item 1.1)
+
+mod support;
