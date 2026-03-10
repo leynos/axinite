@@ -87,13 +87,13 @@ Begin with the user-visible failure mode, not a synthetic schema object.
 2. Call `ToolRegistry::tool_definitions()` and inspect the published `parameters` for that tool.
 3. Assert that the current code exposes the placeholder shape from `extract_tool_schema(...)`:
 
-```json
-{
-  "type": "object",
-  "properties": {},
-  "additionalProperties": true
-}
-```
+    ```json
+    {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": true
+    }
+    ```
 
 4. Assert that this differs materially from the guest-exported schema, which should include required fields such as `action`.
 
