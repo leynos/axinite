@@ -12,6 +12,8 @@ use crate::config::SslMode;
 
 /// Build a rustls-based TLS connector using the platform's root certificate store.
 fn make_rustls_connector() -> MakeRustlsConnect {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let mut root_store = rustls::RootCertStore::empty();
     let native = rustls_native_certs::load_native_certs();
     for e in &native.errors {

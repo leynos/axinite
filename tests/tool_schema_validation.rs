@@ -22,7 +22,8 @@ struct ExtensionManagerFixture {
 fn find_wasm_artifact(source_dir: &Path, crate_name: &str) -> Option<PathBuf> {
     let artifact_name = crate_name.replace('-', "_");
 
-    for target_triple in &["wasm32-wasip2"] {
+    {
+        let target_triple = "wasm32-wasip2";
         let candidate = source_dir
             .join("target")
             .join(target_triple)
@@ -34,7 +35,8 @@ fn find_wasm_artifact(source_dir: &Path, crate_name: &str) -> Option<PathBuf> {
     }
 
     if let Ok(shared) = std::env::var("CARGO_TARGET_DIR") {
-        for target_triple in &["wasm32-wasip2"] {
+        {
+            let target_triple = "wasm32-wasip2";
             let candidate = Path::new(&shared)
                 .join(target_triple)
                 .join("release")
