@@ -1227,6 +1227,32 @@ mod tests {
     }
 
     #[test]
+    fn test_prepare_http_request_rejects_invalid_headers_json() {
+        use crate::tools::wasm::wrapper::StoreData;
+        use std::collections::HashMap;
+
+        let host = "api.github.invalid";
+        let mut store_data = StoreData::new(
+            1024 * 1024,
+            test_prepare_request_capabilities(host),
+            HashMap::new(),
+            Vec::new(),
+        );
+
+        let err = match store_data.prepare_http_request(
+            "GET",
+            &format!("https://{host}/repos/leynos/mxd"),
+            "{invalid",
+            None,
+        ) {
+            Ok(_) => panic!("invalid header JSON must fail deterministically"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("Invalid HTTP headers JSON"));
+    }
+
+    #[test]
     fn test_http_request_progresses_past_leak_scan_for_host_injected_github_pat() {
         use crate::tools::wasm::wrapper::near::agent::host;
         use crate::tools::wasm::wrapper::{ResolvedHostCredential, StoreData};

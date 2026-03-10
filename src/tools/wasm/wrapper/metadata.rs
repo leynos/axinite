@@ -1,3 +1,11 @@
+//! Placeholder metadata defaults, guest export recovery, and tool-hint helpers
+//! for WASM tool wrappers.
+//!
+//! This module centralises the metadata path used while a wrapper is being
+//! constructed: placeholder description/schema values, recovery of the guest's
+//! exported `description()` and `schema()`, and generation of compact retry
+//! hints for schema-aware failures.
+
 use wasmtime::Store;
 use wasmtime::component::Linker;
 
@@ -178,10 +186,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_exported_metadata_from_real_github_component() {
-        let Some(wasm_path) = github_wasm_artifact() else {
-            eprintln!("Skipping exported metadata regression: github WASM artifact not built");
-            return;
-        };
+        let wasm_path =
+            github_wasm_artifact().expect("github WASM artifact must be built for metadata tests");
 
         let runtime = metadata_test_runtime();
         let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm artifact");

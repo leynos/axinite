@@ -232,20 +232,21 @@ async fn execute_extension_tool(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    if kind.approval_requirement().is_required() {
-        tracing::warn!(
-            job_id = %job_id,
-            tool = %req.tool_name,
-            "Worker attempted approval-gated extension proxy execution"
-        );
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     let tool = state
         .tools
         .get(&req.tool_name)
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
+
+    if tool.requires_approval(&req.params).is_required() {
+        tracing::warn!(
+            job_id = %job_id,
+            tool = %kind.name(),
+            "Worker attempted approval-gated extension proxy execution"
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let mut ctx = JobContext::with_user(
         state.user_id.clone(),
         "Hosted extension tool",
@@ -822,15 +823,57 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn extension_tool_proxy_rejects_approval_gated_extension_tools() {
+    async fn extension_tool_proxy_rejects_extension_tools_that_require_approval_for_params() {
+        struct ApprovalAwareToolList;
+
+        #[async_trait::async_trait]
+        impl Tool for ApprovalAwareToolList {
+            fn name(&self) -> &str {
+                "tool_list"
+            }
+
+            fn description(&self) -> &str {
+                "approval-aware tool_list"
+            }
+
+            fn parameters_schema(&self) -> serde_json::Value {
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "require_approval": { "type": "boolean" }
+                    }
+                })
+            }
+
+            async fn execute(
+                &self,
+                _params: serde_json::Value,
+                _ctx: &JobContext,
+            ) -> Result<ToolOutput, crate::tools::ToolError> {
+                panic!("approval-gated proxy requests must not execute")
+            }
+
+            fn requires_approval(
+                &self,
+                params: &serde_json::Value,
+            ) -> crate::tools::ApprovalRequirement {
+                if params["require_approval"].as_bool() == Some(true) {
+                    crate::tools::ApprovalRequirement::Always
+                } else {
+                    crate::tools::ApprovalRequirement::Never
+                }
+            }
+        }
+
         let state = test_state();
+        state.tools.register(Arc::new(ApprovalAwareToolList)).await;
         let job_id = Uuid::new_v4();
         let token = state.token_store.create_token(job_id).await;
         let router = OrchestratorApi::router(state);
 
         let payload = serde_json::json!({
-            "tool_name": "tool_install",
-            "params": {"name": "telegram"}
+            "tool_name": "tool_list",
+            "params": {"require_approval": true}
         });
 
         let req = Request::builder()

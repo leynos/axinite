@@ -275,10 +275,8 @@ async fn all_core_tools_work_in_multi_thread_runtime() {
 }
 
 async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
-    let Some((wasm_path, caps_path)) = github_artifact_paths() else {
-        eprintln!("Skipping GitHub schema regression: github WASM artifact not built");
-        return;
-    };
+    let (wasm_path, caps_path) =
+        github_artifact_paths().expect("github WASM artifact must be built for schema tests");
 
     let registry = Arc::new(ToolRegistry::new());
     let runtime = wasm_metadata_test_runtime();
