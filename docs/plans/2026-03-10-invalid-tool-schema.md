@@ -283,9 +283,10 @@ cargo fmt --all --check \
   command ceiling, so the wrapper was adjusted back to normal parallel
   test execution while the broader multi-config matrix remains available
   as `make test-matrix`.
-- [x] 2026-03-10 17:24Z: Staged, committed, and pushed the follow-up
-  review fixes as `9c10940` (`Address invalid tool schema review
-  feedback`).
+- [x] 2026-03-10 17:35Z: Corrected this plan after the review-fix
+  commit sequence so the document again matches the branch state. The
+  concrete gate logs and final push details are captured in the session
+  output rather than hard-coded here.
 
 ## Surprises & Discoveries
 
