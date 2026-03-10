@@ -30,6 +30,7 @@ pub(crate) mod schema_normalize;
 pub mod session;
 pub mod smart_routing;
 
+pub(crate) mod test_fixtures;
 pub mod image_models;
 pub mod reasoning_models;
 pub mod vision_models;

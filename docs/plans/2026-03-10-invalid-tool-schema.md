@@ -398,6 +398,11 @@ cargo fmt --all --check \
   implied aliases. Rationale: the repository had no root make targets,
   so the narrowest honest way to satisfy the requested gate surface was
   to codify the existing Rust checks in a minimal wrapper.
+- 2026-03-10 22:48Z: Split `schema_normalize` into focused submodules
+  and moved the GitHub-shaped schema fixture into shared test support.
+  Rationale: the review comments correctly identified that the
+  normalization logic had exceeded a single-file maintenance boundary
+  and that duplicated fixtures weakened regression coverage.
 
 ## Outcomes & Retrospective
 
@@ -439,3 +444,8 @@ Validation evidence:
 - `cargo clippy --all --tests --examples --all-features -- -D warnings`
 - `cargo test test_find_wasm_artifact_prefers_wasip2_over_wasip1 --lib -- --nocapture`
 - `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`
+- `cargo test normalize_schema_strict --lib`
+- `make check-fmt`
+- `make typecheck`
+- `make lint`
+- `make test`

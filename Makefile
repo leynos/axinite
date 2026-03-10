@@ -1,7 +1,9 @@
 CARGO ?= cargo
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 
-.PHONY: check-fmt typecheck lint test test-matrix
+.PHONY: all check-fmt typecheck lint test test-matrix clean
+
+all: check-fmt typecheck lint test
 
 check-fmt:
 	$(CARGO) fmt --all -- --check
@@ -28,3 +30,6 @@ test-matrix:
 	$(CARGO) test --no-default-features --features libsql -- --nocapture
 	$(CARGO) test --features postgres,libsql,html-to-markdown -- --nocapture
 	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
+
+clean:
+	$(CARGO) clean

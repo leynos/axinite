@@ -590,6 +590,9 @@ fn normalize_tool_name(name: &str, known_tools: &HashSet<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm::test_fixtures::github_style_schema;
+    use rstest::rstest;
+    use serde_json::Value as JsonValue;
 
     #[test]
     fn test_convert_messages_system_to_preamble() {
@@ -701,6 +704,34 @@ mod tests {
         assert_eq!(rig_tools.len(), 1);
         assert_eq!(rig_tools[0].name, "search");
         assert_eq!(rig_tools[0].description, "Search the web");
+    }
+
+    #[rstest]
+    fn test_convert_tools_rewrites_github_style_schema_before_provider_submission(
+        github_style_schema: JsonValue,
+    ) {
+        let tools = vec![IronToolDefinition {
+            name: "github".to_string(),
+            description: "GitHub integration".to_string(),
+            parameters: github_style_schema,
+        }];
+
+        let rig_tools = convert_tools(&tools);
+        let parameters = &rig_tools[0].parameters;
+
+        assert_eq!(rig_tools[0].name, "github");
+        assert!(
+            parameters.get("oneOf").is_none(),
+            "provider-facing schema must not keep top-level oneOf: {parameters}"
+        );
+        assert_eq!(
+            parameters["required"],
+            serde_json::json!(["action", "owner", "repo", "title"])
+        );
+        assert_eq!(
+            parameters["properties"]["action"]["enum"],
+            serde_json::json!(["create_issue", "get_repo"])
+        );
     }
 
     #[test]
@@ -1121,4 +1152,3 @@ mod tests {
         assert!(adapter.unsupported_params.is_empty());
     }
 }
-
