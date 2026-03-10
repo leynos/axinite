@@ -237,20 +237,21 @@ cargo fmt --all --check \
   `tools-src/github/src/lib.rs` with
   `test_exported_schema_is_openai_root_compatible`.
 - [x] 2026-03-10 10:00Z: Rebuilt the GitHub WASM artifact with
-  `cargo component build --release --target wasm32-wasip2 --manifest-path tools-src/github/Cargo.toml`.
-- [x] 2026-03-10 10:01Z: Re-ran the artifact-backed metadata and registry
-  tests; both passed once the rebuilt artifact matched the updated
-  source schema.
+  `cargo build --manifest-path tools-src/github/Cargo.toml --release --target wasm32-wasip2`.
+- [x] 2026-03-10 10:01Z: Re-ran the artifact-backed metadata and
+  behavioral regressions; both passed once the rebuilt artifact matched
+  the updated source schema and the resolver preferred `wasm32-wasip2`.
 - [x] 2026-03-10 10:04Z: Cleared `cargo fmt --all --check`,
   `cargo fmt --manifest-path tools-src/github/Cargo.toml --all -- --check`,
   `cargo clippy --all --tests --examples --all-features -- -D warnings`,
   and `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`.
-- [x] 2026-03-10 10:07Z: Staged the verified source, adapter,
-  validator, metadata, behavioral test, and plan changes as commit
-  `79dca9d` (`Fix invalid GitHub tool schemas for OpenAI`).
 - [x] 2026-03-10 10:14Z: Verified and adopted the
   `src/registry/artifacts.rs` follow-up that prefers `wasm32-wasip2`
   artifacts over `wasm32-wasip1`, with a dedicated regression test.
+- [x] 2026-03-10 10:15Z: Re-ran `cargo test rig_adapter --lib` and
+  `cargo test test_top_level_one_of_fails --lib -- --nocapture`; the
+  provider-bound guard and strict-validator regression both passed.
+- [ ] Stage, commit, and push the verified change set.
 
 ## Surprises & Discoveries
 
@@ -312,8 +313,8 @@ originating from the GitHub WASM tool’s real exported schema. Commit
 action-specific parameter sets. Commit `91b18ea` later corrected a
 different bug by recovering guest-exported metadata for file-loaded WASM
 tools, which exposed that older schema directly to the host. The
-provider error appears when the stale built GitHub artifact still
-exports that old `oneOf` shape.
+provider error appeared when the stale built GitHub artifact still
+exported that old `oneOf` shape.
 
 The fix is intentionally layered. `tools-src/github/src/lib.rs` now
 exports a flat top-level object schema that is directly acceptable to
@@ -332,8 +333,7 @@ Validation evidence:
 - `cargo test test_top_level_one_of_fails --lib -- --nocapture`
 - `cargo test --manifest-path tools-src/github/Cargo.toml
   test_exported_schema_is_openai_root_compatible -- --nocapture`
-- `cargo component build --release --target wasm32-wasip2
-  --manifest-path tools-src/github/Cargo.toml`
+- `cargo build --manifest-path tools-src/github/Cargo.toml --release --target wasm32-wasip2`
 - `cargo test test_exported_metadata_from_real_github_component --lib -- --nocapture`
 - `cargo test file_loaded_github_wasm_tool_definitions_publish_real_schema
   --test tool_schema_validation -- --nocapture`
