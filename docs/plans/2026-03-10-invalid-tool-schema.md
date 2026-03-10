@@ -323,8 +323,9 @@ cargo fmt --all --check \
   concrete gate logs and final push details are captured in the session
   output rather than hard-coded here.
 - [x] 2026-03-10 21:45Z: Closed the latest out-of-diff review
-  comments. `src/tools/registry.rs` now protects `tool_upgrade` and
-  `extension_info` against dynamic shadowing, and
+  comments. `src/tools/registry.rs` now adds `tool_upgrade` and
+  `extension_info` to `PROTECTED_TOOL_NAMES` so those extension
+  management entry points stay protected against dynamic shadowing, and
   `src/tools/schema_validator.rs::test_inline_schemas_for_complex_tools`
   now loads its canary schemas from dedicated fixture files under
   `tests/fixtures/schemas/` instead of embedding the large JSON blobs
@@ -414,8 +415,9 @@ cargo fmt --all --check \
 - 2026-03-10 22:58Z: Added a second follow-up pass for extension-tool
   shadow protection and schema-validator fixture extraction. Rationale:
   the new review comments pointed out one live correctness gap
-  (`tool_upgrade`/`extension_info` were not protected from dynamic
-  shadowing) and one maintainability gap (large inline JSON fixtures in
+  (`tool_upgrade`/`extension_info` were not yet listed in
+  `PROTECTED_TOOL_NAMES`, so dynamic tools could shadow them) and one
+  maintainability gap (large inline JSON fixtures in
   `schema_validator.rs`).
 
 ## Outcomes & Retrospective
