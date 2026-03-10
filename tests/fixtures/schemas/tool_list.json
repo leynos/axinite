@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "mcp_server",
+        "wasm_tool",
+        "wasm_channel"
+      ],
+      "description": "Filter by extension type"
+    },
+    "include_available": {
+      "type": "boolean",
+      "description": "Include not-yet-installed entries",
+      "default": false
+    }
+  }
+}

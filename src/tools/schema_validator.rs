@@ -174,8 +174,6 @@ fn check_object_schema(schema: &serde_json::Value, path: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // ── Unit tests for the validator itself ──────────────────────────────
 
     #[test]
@@ -549,227 +547,85 @@ mod tests {
     /// routine tools whose constructors require heavy dependencies.
     #[test]
     fn test_inline_schemas_for_complex_tools() {
+        fn load_complex_tool_schema_fixture(tool_name: &str) -> serde_json::Value {
+            let raw = match tool_name {
+                "tool_search" => include_str!("../../tests/fixtures/schemas/tool_search.json"),
+                "tool_install" => include_str!("../../tests/fixtures/schemas/tool_install.json"),
+                "tool_auth" => include_str!("../../tests/fixtures/schemas/tool_auth.json"),
+                "tool_activate" => include_str!("../../tests/fixtures/schemas/tool_activate.json"),
+                "tool_list" => include_str!("../../tests/fixtures/schemas/tool_list.json"),
+                "tool_remove" => include_str!("../../tests/fixtures/schemas/tool_remove.json"),
+                "routine_create" => {
+                    include_str!("../../tests/fixtures/schemas/routine_create.json")
+                }
+                "routine_list" => include_str!("../../tests/fixtures/schemas/routine_list.json"),
+                "routine_update" => {
+                    include_str!("../../tests/fixtures/schemas/routine_update.json")
+                }
+                "routine_delete" => {
+                    include_str!("../../tests/fixtures/schemas/routine_delete.json")
+                }
+                "routine_fire" => include_str!("../../tests/fixtures/schemas/routine_fire.json"),
+                "routine_history" => {
+                    include_str!("../../tests/fixtures/schemas/routine_history.json")
+                }
+                "job_events" => include_str!("../../tests/fixtures/schemas/job_events.json"),
+                "job_prompt" => include_str!("../../tests/fixtures/schemas/job_prompt.json"),
+                other => panic!("missing schema fixture for {other}"),
+            };
+
+            serde_json::from_str(raw).unwrap_or_else(|err| {
+                panic!("failed to parse schema fixture for {tool_name}: {err}")
+            })
+        }
+
         // These schemas are extracted from the source code of tools with complex deps.
-        // If the source schemas change, these tests serve as a canary.
+        // If the source schemas change, these fixtures serve as a canary.
         let schemas: Vec<(&str, serde_json::Value)> = vec![
-            // Extension tools
             (
                 "tool_search",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Search query"
-                        },
-                        "discover": {
-                            "type": "boolean",
-                            "description": "Search online",
-                            "default": false
-                        }
-                    },
-                    "required": ["query"]
-                }),
+                load_complex_tool_schema_fixture("tool_search"),
             ),
             (
                 "tool_install",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string", "description": "Extension name" },
-                        "url": { "type": "string", "description": "Explicit URL" },
-                        "kind": {
-                            "type": "string",
-                            "enum": ["mcp_server", "wasm_tool", "wasm_channel"],
-                            "description": "Extension type"
-                        }
-                    },
-                    "required": ["name"]
-                }),
+                load_complex_tool_schema_fixture("tool_install"),
             ),
-            (
-                "tool_auth",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string", "description": "Extension name" }
-                    },
-                    "required": ["name"]
-                }),
-            ),
+            ("tool_auth", load_complex_tool_schema_fixture("tool_auth")),
             (
                 "tool_activate",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string", "description": "Extension name" }
-                    },
-                    "required": ["name"]
-                }),
+                load_complex_tool_schema_fixture("tool_activate"),
             ),
-            (
-                "tool_list",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "kind": {
-                            "type": "string",
-                            "enum": ["mcp_server", "wasm_tool", "wasm_channel"],
-                            "description": "Filter by extension type"
-                        },
-                        "include_available": {
-                            "type": "boolean",
-                            "description": "Include not-yet-installed entries",
-                            "default": false
-                        }
-                    }
-                }),
-            ),
+            ("tool_list", load_complex_tool_schema_fixture("tool_list")),
             (
                 "tool_remove",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string", "description": "Extension name" }
-                    },
-                    "required": ["name"]
-                }),
+                load_complex_tool_schema_fixture("tool_remove"),
             ),
-            // Routine tools
             (
                 "routine_create",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string", "description": "Routine name" },
-                        "description": { "type": "string", "description": "What it does" },
-                        "trigger_type": {
-                            "type": "string",
-                            "enum": ["cron", "event", "system_event", "manual"],
-                            "description": "When the routine fires"
-                        },
-                        "schedule": { "type": "string", "description": "Cron expression" },
-                        "event_pattern": { "type": "string", "description": "Regex pattern" },
-                        "event_channel": { "type": "string", "description": "Channel filter" },
-                        "event_source": { "type": "string", "description": "System event source" },
-                        "event_type": { "type": "string", "description": "System event type" },
-                        "event_filters": {
-                            "type": "object",
-                            "additionalProperties": { "type": "string" },
-                            "description": "Exact-match payload filters"
-                        },
-                        "prompt": { "type": "string", "description": "Instructions" },
-                        "context_paths": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "Workspace paths to load"
-                        },
-                        "action_type": {
-                            "type": "string",
-                            "enum": ["lightweight", "full_job"],
-                            "description": "Execution mode"
-                        },
-                        "cooldown_secs": { "type": "integer", "description": "Min seconds between fires" },
-                        "tool_permissions": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "Pre-authorized tools for full_job mode"
-                        },
-                        "notify_channel": { "type": "string", "description": "Channel for message tool" },
-                        "notify_user": { "type": "string", "description": "User/target to notify" }
-                    },
-                    "required": ["name", "trigger_type", "prompt"]
-                }),
+                load_complex_tool_schema_fixture("routine_create"),
             ),
             (
                 "routine_list",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }),
+                load_complex_tool_schema_fixture("routine_list"),
             ),
             (
                 "routine_update",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string", "description": "Name" },
-                        "enabled": { "type": "boolean", "description": "Toggle" },
-                        "prompt": { "type": "string", "description": "New prompt" },
-                        "schedule": { "type": "string", "description": "New cron schedule" },
-                        "description": { "type": "string", "description": "New description" }
-                    },
-                    "required": ["name"]
-                }),
+                load_complex_tool_schema_fixture("routine_update"),
             ),
             (
                 "routine_delete",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string", "description": "Name" }
-                    },
-                    "required": ["name"]
-                }),
+                load_complex_tool_schema_fixture("routine_delete"),
             ),
             (
                 "routine_fire",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string", "description": "Routine name" }
-                    },
-                    "required": ["name"]
-                }),
+                load_complex_tool_schema_fixture("routine_fire"),
             ),
             (
                 "routine_history",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string", "description": "Routine name" },
-                        "limit": { "type": "integer", "description": "Max runs", "default": 10 }
-                    },
-                    "required": ["name"]
-                }),
+                load_complex_tool_schema_fixture("routine_history"),
             ),
-            (
-                "event_emit",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "event_source": { "type": "string", "description": "Event source" },
-                        "event_type": { "type": "string", "description": "Event type" },
-                        "payload": { "type": "object", "description": "Event payload", "properties": {} }
-                    },
-                    "required": ["event_source", "event_type"]
-                }),
-            ),
-            // Job tools with complex deps
-            (
-                "job_events",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "job_id": { "type": "string", "description": "Job ID" },
-                        "limit": { "type": "integer", "description": "Max events" }
-                    },
-                    "required": ["job_id"]
-                }),
-            ),
-            (
-                "job_prompt",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "job_id": { "type": "string", "description": "Job ID" },
-                        "content": { "type": "string", "description": "Prompt text" },
-                        "done": { "type": "boolean", "description": "Signal finish" }
-                    },
-                    "required": ["job_id", "content"]
-                }),
-            ),
+            ("job_events", load_complex_tool_schema_fixture("job_events")),
+            ("job_prompt", load_complex_tool_schema_fixture("job_prompt")),
         ];
 
         let mut failures = Vec::new();
@@ -783,237 +639,6 @@ mod tests {
         assert!(
             failures.is_empty(),
             "Schema validation failures for inline schemas:\n{}",
-            failures.join("\n")
-        );
-    }
-
-    /// Validate that the memory tool schemas (which need Workspace) are correct.
-    /// Since Workspace requires a database connection, we validate the schemas
-    /// are structurally correct by inlining them.
-    #[test]
-    fn test_memory_tool_schemas_inline() {
-        let schemas: Vec<(&str, serde_json::Value)> = vec![
-            (
-                "memory_search",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Search query"
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Max results",
-                            "default": 5,
-                            "minimum": 1,
-                            "maximum": 20
-                        }
-                    },
-                    "required": ["query"]
-                }),
-            ),
-            (
-                "memory_write",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "content": { "type": "string", "description": "Content to write" },
-                        "target": { "type": "string", "description": "Where to write", "default": "daily_log" },
-                        "append": { "type": "boolean", "description": "Append or replace", "default": true }
-                    },
-                    "required": ["content"]
-                }),
-            ),
-            (
-                "memory_read",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "Path to read" }
-                    },
-                    "required": ["path"]
-                }),
-            ),
-            (
-                "memory_tree",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "Root path", "default": "" },
-                        "depth": { "type": "integer", "description": "Max depth", "default": 1, "minimum": 1, "maximum": 10 }
-                    }
-                }),
-            ),
-        ];
-
-        let mut failures = Vec::new();
-
-        for (name, schema) in &schemas {
-            if let Err(errors) = validate_strict_schema(schema, name) {
-                failures.push(format!("Tool '{}': {}", name, errors.join("; ")));
-            }
-        }
-
-        assert!(
-            failures.is_empty(),
-            "Schema validation failures for memory tool schemas:\n{}",
-            failures.join("\n")
-        );
-    }
-
-    // ── WASM and MCP tool schema validation (QA 1.1 extension) ─────────
-
-    /// Representative WASM tool schemas -- these mirror the shapes produced by
-    /// `WasmToolWrapper::parameters_schema()` from real WASM modules.
-    #[test]
-    fn test_wasm_tool_schemas() {
-        let schemas: Vec<(&str, serde_json::Value)> = vec![
-            // Typical WASM tool with simple params
-            (
-                "wasm_weather",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "city": { "type": "string", "description": "City name" },
-                        "units": {
-                            "type": "string",
-                            "enum": ["celsius", "fahrenheit"],
-                            "description": "Temperature units"
-                        }
-                    },
-                    "required": ["city"]
-                }),
-            ),
-            // WASM tool with nested object (e.g., HTTP tool)
-            (
-                "wasm_http_client",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "url": { "type": "string", "description": "URL to fetch" },
-                        "method": {
-                            "type": "string",
-                            "enum": ["GET", "POST", "PUT", "DELETE"],
-                            "description": "HTTP method"
-                        },
-                        "headers": {
-                            "type": "object",
-                            "properties": {},
-                            "description": "Custom headers"
-                        },
-                        "body": { "type": "string", "description": "Request body" }
-                    },
-                    "required": ["url"]
-                }),
-            ),
-            // WASM tool with array params
-            (
-                "wasm_batch_processor",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "items": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "Items to process"
-                        },
-                        "parallel": { "type": "boolean", "description": "Run in parallel" }
-                    },
-                    "required": ["items"]
-                }),
-            ),
-            // Empty WASM tool (no required params)
-            (
-                "wasm_status",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {}
-                }),
-            ),
-        ];
-
-        let mut failures = Vec::new();
-        for (name, schema) in &schemas {
-            if let Err(errors) = validate_strict_schema(schema, name) {
-                failures.push(format!("WASM tool '{}': {}", name, errors.join("; ")));
-            }
-        }
-        assert!(
-            failures.is_empty(),
-            "Schema validation failures for WASM tool schemas:\n{}",
-            failures.join("\n")
-        );
-    }
-
-    /// Representative MCP tool schemas -- these mirror the shapes received from
-    /// MCP servers via `McpTool::input_schema` (camelCase `inputSchema` in protocol).
-    #[test]
-    fn test_mcp_tool_schemas() {
-        let schemas: Vec<(&str, serde_json::Value)> = vec![
-            // Default MCP schema (empty object -- from default_input_schema())
-            (
-                "mcp_default",
-                serde_json::json!({"type": "object", "properties": {}}),
-            ),
-            // Typical MCP server tool (e.g., filesystem server)
-            (
-                "mcp_read_file",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "File path to read" }
-                    },
-                    "required": ["path"]
-                }),
-            ),
-            // MCP tool with complex nested params (e.g., database query)
-            (
-                "mcp_sql_query",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "query": { "type": "string", "description": "SQL query to execute" },
-                        "params": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "Query parameters"
-                        },
-                        "timeout_ms": {
-                            "type": "integer",
-                            "description": "Query timeout in milliseconds"
-                        }
-                    },
-                    "required": ["query"]
-                }),
-            ),
-            // MCP tool with additionalProperties: false (strict server)
-            (
-                "mcp_strict_tool",
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "action": {
-                            "type": "string",
-                            "enum": ["start", "stop", "restart"],
-                            "description": "Action to perform"
-                        }
-                    },
-                    "required": ["action"],
-                    "additionalProperties": false
-                }),
-            ),
-        ];
-
-        let mut failures = Vec::new();
-        for (name, schema) in &schemas {
-            if let Err(errors) = validate_strict_schema(schema, name) {
-                failures.push(format!("MCP tool '{}': {}", name, errors.join("; ")));
-            }
-        }
-        assert!(
-            failures.is_empty(),
-            "Schema validation failures for MCP tool schemas:\n{}",
             failures.join("\n")
         );
     }

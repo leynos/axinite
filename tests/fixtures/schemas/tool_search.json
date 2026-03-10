@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Search query"
+    },
+    "discover": {
+      "type": "boolean",
+      "description": "Search online",
+      "default": false
+    }
+  },
+  "required": [
+    "query"
+  ]
+}

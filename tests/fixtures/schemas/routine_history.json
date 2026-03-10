@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Routine name"
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Max runs",
+      "default": 10
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

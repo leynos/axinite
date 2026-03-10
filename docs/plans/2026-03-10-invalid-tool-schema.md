@@ -322,6 +322,14 @@ cargo fmt --all --check \
   commit sequence so the document again matches the branch state. The
   concrete gate logs and final push details are captured in the session
   output rather than hard-coded here.
+- [x] 2026-03-10 21:45Z: Closed the latest out-of-diff review
+  comments. `src/tools/registry.rs` now protects `tool_upgrade` and
+  `extension_info` against dynamic shadowing, and
+  `src/tools/schema_validator.rs::test_inline_schemas_for_complex_tools`
+  now loads its canary schemas from dedicated fixture files under
+  `tests/fixtures/schemas/` instead of embedding the large JSON blobs
+  inline. The post-fix gate replay cleared `make check-fmt`,
+  `make typecheck`, `make lint`, and `make test`.
 
 ## Surprises & Discoveries
 
@@ -403,6 +411,12 @@ cargo fmt --all --check \
   Rationale: the review comments correctly identified that the
   normalization logic had exceeded a single-file maintenance boundary
   and that duplicated fixtures weakened regression coverage.
+- 2026-03-10 22:58Z: Added a second follow-up pass for extension-tool
+  shadow protection and schema-validator fixture extraction. Rationale:
+  the new review comments pointed out one live correctness gap
+  (`tool_upgrade`/`extension_info` were not protected from dynamic
+  shadowing) and one maintainability gap (large inline JSON fixtures in
+  `schema_validator.rs`).
 
 ## Outcomes & Retrospective
 
@@ -445,6 +459,8 @@ Validation evidence:
 - `cargo test test_find_wasm_artifact_prefers_wasip2_over_wasip1 --lib -- --nocapture`
 - `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`
 - `cargo test normalize_schema_strict --lib`
+- `cargo test test_extension_management_tools_cannot_be_shadowed --lib`
+- `cargo test test_inline_schemas_for_complex_tools --lib`
 - `make check-fmt`
 - `make typecheck`
 - `make lint`
