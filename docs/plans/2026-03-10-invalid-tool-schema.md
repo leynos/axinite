@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -245,8 +245,9 @@ cargo fmt --all --check \
   `cargo fmt --manifest-path tools-src/github/Cargo.toml --all -- --check`,
   `cargo clippy --all --tests --examples --all-features -- -D warnings`,
   and `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`.
-- [ ] Stage the verified code changes, commit them, and summarize the
-  provenance and gate evidence.
+- [x] 2026-03-10 10:07Z: Staged the verified source, adapter,
+  validator, metadata, behavioral test, and plan changes as commit
+  `79dca9d` (`Fix invalid GitHub tool schemas for OpenAI`).
 
 ## Surprises & Discoveries
 
