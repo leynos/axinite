@@ -5,19 +5,25 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value as JsonValue};
 
+#[derive(Clone, Copy)]
+enum RequiredMergeMode {
+    Intersect,
+    Union,
+}
+
 pub(super) fn flatten_top_level_forbidden_keywords(schema: &mut JsonValue) {
     let Some(obj) = schema.as_object_mut() else {
         return;
     };
 
     if let Some(one_of) = obj.remove("oneOf") {
-        merge_top_level_variants(obj, &one_of, false);
+        merge_top_level_variants(obj, &one_of, RequiredMergeMode::Intersect);
     }
     if let Some(any_of) = obj.remove("anyOf") {
-        merge_top_level_variants(obj, &any_of, false);
+        merge_top_level_variants(obj, &any_of, RequiredMergeMode::Intersect);
     }
     if let Some(all_of) = obj.remove("allOf") {
-        merge_top_level_variants(obj, &all_of, true);
+        merge_top_level_variants(obj, &all_of, RequiredMergeMode::Union);
     }
 
     // OpenAI rejects these keywords at the top-level tool schema. When they
@@ -30,7 +36,7 @@ pub(super) fn flatten_top_level_forbidden_keywords(schema: &mut JsonValue) {
 fn merge_top_level_variants(
     root: &mut Map<String, JsonValue>,
     variants_value: &JsonValue,
-    require_across_all_variants: bool,
+    required_merge_mode: RequiredMergeMode,
 ) {
     let Some(variants) = variants_value.as_array() else {
         return;
@@ -56,7 +62,9 @@ fn merge_top_level_variants(
         if let Some(variant_props) = variant_obj.get("properties").and_then(JsonValue::as_object) {
             for (name, schema) in variant_props {
                 match props.get_mut(name) {
-                    Some(existing) => merge_property_schema(existing, schema),
+                    Some(existing) => {
+                        merge_property_schema(existing, schema, required_merge_mode);
+                    }
                     None => {
                         props.insert(name.clone(), schema.clone());
                     }
@@ -66,10 +74,9 @@ fn merge_top_level_variants(
         variant_required_sets.push(required_keys(variant_obj.get("required")));
     }
 
-    let variant_required = if require_across_all_variants {
-        union_required_keys(&variant_required_sets)
-    } else {
-        intersect_required_keys(&variant_required_sets)
+    let variant_required = match required_merge_mode {
+        RequiredMergeMode::Union => union_required_keys(&variant_required_sets),
+        RequiredMergeMode::Intersect => intersect_required_keys(&variant_required_sets),
     };
     root_required.extend(variant_required);
 
@@ -111,7 +118,11 @@ fn union_required_keys(sets: &[BTreeSet<String>]) -> BTreeSet<String> {
     })
 }
 
-fn merge_property_schema(existing: &mut JsonValue, incoming: &JsonValue) {
+fn merge_property_schema(
+    existing: &mut JsonValue,
+    incoming: &JsonValue,
+    required_merge_mode: RequiredMergeMode,
+) {
     if existing == incoming {
         return;
     }
@@ -129,12 +140,12 @@ fn merge_property_schema(existing: &mut JsonValue, incoming: &JsonValue) {
 
         match existing_obj.get("type").and_then(JsonValue::as_str) {
             Some("object") => {
-                if merge_object_property_schema(existing_obj, incoming_obj) {
+                if merge_object_property_schema(existing_obj, incoming_obj, required_merge_mode) {
                     return;
                 }
             }
             Some("array") => {
-                if merge_array_property_schema(existing_obj, incoming_obj) {
+                if merge_array_property_schema(existing_obj, incoming_obj, required_merge_mode) {
                     return;
                 }
             }
@@ -164,6 +175,7 @@ fn merge_common_schema_metadata(
 fn merge_object_property_schema(
     existing_obj: &mut Map<String, JsonValue>,
     incoming_obj: &Map<String, JsonValue>,
+    required_merge_mode: RequiredMergeMode,
 ) -> bool {
     match (
         existing_obj.get_mut("properties"),
@@ -178,7 +190,9 @@ fn merge_object_property_schema(
             };
             for (name, schema) in incoming_props {
                 match existing_props.get_mut(name) {
-                    Some(existing_schema) => merge_property_schema(existing_schema, schema),
+                    Some(existing_schema) => {
+                        merge_property_schema(existing_schema, schema, required_merge_mode);
+                    }
                     None => {
                         existing_props.insert(name.clone(), schema.clone());
                     }
@@ -194,9 +208,14 @@ fn merge_object_property_schema(
         _ => {}
     }
 
-    merge_object_required(existing_obj, incoming_obj);
+    merge_object_required(existing_obj, incoming_obj, required_merge_mode);
 
-    if !merge_schema_field(existing_obj, incoming_obj, "additionalProperties") {
+    if !merge_schema_field(
+        existing_obj,
+        incoming_obj,
+        "additionalProperties",
+        required_merge_mode,
+    ) {
         return false;
     }
 
@@ -206,15 +225,22 @@ fn merge_object_property_schema(
 fn merge_object_required(
     existing_obj: &mut Map<String, JsonValue>,
     incoming_obj: &Map<String, JsonValue>,
+    required_merge_mode: RequiredMergeMode,
 ) {
     if !existing_obj.contains_key("required") && !incoming_obj.contains_key("required") {
         return;
     }
 
-    let required = intersect_required_keys(&[
-        required_keys(existing_obj.get("required")),
-        required_keys(incoming_obj.get("required")),
-    ]);
+    let required = match required_merge_mode {
+        RequiredMergeMode::Intersect => intersect_required_keys(&[
+            required_keys(existing_obj.get("required")),
+            required_keys(incoming_obj.get("required")),
+        ]),
+        RequiredMergeMode::Union => union_required_keys(&[
+            required_keys(existing_obj.get("required")),
+            required_keys(incoming_obj.get("required")),
+        ]),
+    };
 
     if required.is_empty() {
         existing_obj.remove("required");
@@ -230,19 +256,21 @@ fn merge_object_required(
 fn merge_array_property_schema(
     existing_obj: &mut Map<String, JsonValue>,
     incoming_obj: &Map<String, JsonValue>,
+    required_merge_mode: RequiredMergeMode,
 ) -> bool {
-    merge_schema_field(existing_obj, incoming_obj, "items")
+    merge_schema_field(existing_obj, incoming_obj, "items", required_merge_mode)
 }
 
 fn merge_schema_field(
     existing_obj: &mut Map<String, JsonValue>,
     incoming_obj: &Map<String, JsonValue>,
     key: &str,
+    required_merge_mode: RequiredMergeMode,
 ) -> bool {
     match (existing_obj.get_mut(key), incoming_obj.get(key)) {
         (Some(existing_value), Some(incoming_value)) => {
             if existing_value.is_object() && incoming_value.is_object() {
-                merge_property_schema(existing_value, incoming_value);
+                merge_property_schema(existing_value, incoming_value, required_merge_mode);
             } else if existing_value != incoming_value {
                 *existing_value =
                     merge_nested_any_of(existing_value.clone(), incoming_value.clone());

@@ -129,3 +129,56 @@ fn test_normalize_schema_strict_merges_shared_nested_object_properties() {
         "expected later nested property to survive merge: {normalized}"
     );
 }
+
+#[test]
+fn test_normalize_schema_strict_preserves_nested_required_keys_across_allof() {
+    let normalized = normalize_schema_strict(&serde_json::json!({
+        "type": "object",
+        "allOf": [
+            {
+                "properties": {
+                    "action": { "const": "create_issue" },
+                    "inputs": {
+                        "type": "object",
+                        "properties": {
+                            "owner": { "type": "string" }
+                        },
+                        "required": ["owner"],
+                        "additionalProperties": false
+                    }
+                },
+                "required": ["action", "inputs"]
+            },
+            {
+                "properties": {
+                    "inputs": {
+                        "type": "object",
+                        "properties": {
+                            "repo": { "type": "string" }
+                        },
+                        "required": ["repo"],
+                        "additionalProperties": false
+                    }
+                },
+                "required": ["inputs"]
+            }
+        ]
+    }));
+
+    assert_eq!(
+        normalized["required"],
+        serde_json::json!(["action", "inputs"])
+    );
+    assert_eq!(
+        normalized["properties"]["inputs"]["required"],
+        serde_json::json!(["owner", "repo"])
+    );
+    assert_eq!(
+        normalized["properties"]["inputs"]["properties"]["owner"]["type"],
+        serde_json::json!("string")
+    );
+    assert_eq!(
+        normalized["properties"]["inputs"]["properties"]["repo"]["type"],
+        serde_json::json!("string")
+    );
+}
