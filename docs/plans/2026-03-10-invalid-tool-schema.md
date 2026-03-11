@@ -331,6 +331,18 @@ cargo fmt --all --check \
   `tests/fixtures/schemas/` instead of embedding the large JSON blobs
   inline. The post-fix gate replay cleared `make check-fmt`,
   `make typecheck`, `make lint`, and `make test`.
+- [x] 2026-03-10 23:43Z: Closed the follow-up `Makefile` review note.
+  The root `clean` target now runs both `$(CARGO) clean` and
+  `$(CARGO) clean --manifest-path $(GITHUB_TOOL_MANIFEST)` so the
+  workspace and the standalone GitHub tool manifest are cleaned by the
+  same entry point before gate replay.
+- [x] 2026-03-11 00:42Z: Closed the cold-tree regression uncovered by
+  the new `clean` behavior. After `make clean`, `make test` failed
+  because two metadata/registry tests still depended on a prebuilt
+  GitHub release artifact under the standalone tool manifest. The root
+  `Makefile` now rebuilds the GitHub WASM artifact before both `test`
+  and `test-matrix`, so the user-facing test entry points remain
+  green after a full clean.
 
 ## Surprises & Discoveries
 

@@ -1,5 +1,6 @@
 CARGO ?= cargo
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
+GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 
 .PHONY: all check-fmt typecheck lint test test-matrix clean
 
@@ -22,10 +23,12 @@ lint:
 	$(CARGO) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
 
 test:
+	$(CARGO) build --manifest-path $(GITHUB_TOOL_MANIFEST) --release --target $(GITHUB_TOOL_WASM_TARGET)
 	$(CARGO) test
 	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)
 
 test-matrix:
+	$(CARGO) build --manifest-path $(GITHUB_TOOL_MANIFEST) --release --target $(GITHUB_TOOL_WASM_TARGET)
 	$(CARGO) test -- --nocapture
 	$(CARGO) test --no-default-features --features libsql -- --nocapture
 	$(CARGO) test --features postgres,libsql,html-to-markdown -- --nocapture
@@ -33,3 +36,4 @@ test-matrix:
 
 clean:
 	$(CARGO) clean
+	$(CARGO) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
