@@ -1587,7 +1587,7 @@ async fn memory_search_handler(
     let hits: Vec<SearchHit> = results
         .iter()
         .map(|r| SearchHit {
-            path: r.document_id.to_string(),
+            path: r.document_path.clone(),
             content: r.content.clone(),
             score: r.score as f64,
         })
@@ -2668,12 +2668,15 @@ mod tests {
 
     // --- OAuth callback handler tests ---
 
-    /// Build a minimal `GatewayState` for testing the OAuth callback handler.
-    fn test_gateway_state(ext_mgr: Option<Arc<ExtensionManager>>) -> Arc<GatewayState> {
+    /// Build a minimal `GatewayState` for tests.
+    fn test_gateway_state(
+        ext_mgr: Option<Arc<ExtensionManager>>,
+        workspace: Option<Arc<Workspace>>,
+    ) -> Arc<GatewayState> {
         Arc::new(GatewayState {
             msg_tx: tokio::sync::RwLock::new(None),
             sse: SseManager::new(),
-            workspace: None,
+            workspace,
             session_manager: None,
             log_broadcaster: None,
             log_level_handle: None,
@@ -2705,12 +2708,73 @@ mod tests {
             .with_state(state)
     }
 
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_memory_search_results_round_trip_via_read_path() {
+        use axum::body::Body;
+        use tower::ServiceExt;
+
+        let (db, _temp_dir) = crate::testing::test_db().await;
+        let workspace = Arc::new(Workspace::new_with_db("test", db));
+        workspace
+            .write("notes/test.md", "alpha needle beta")
+            .await
+            .expect("write workspace doc");
+
+        let state = test_gateway_state(None, Some(workspace));
+        let app = Router::new()
+            .route("/api/memory/search", post(memory_search_handler))
+            .route("/api/memory/read", get(memory_read_handler))
+            .with_state(state);
+
+        let search_req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/memory/search")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"query":"needle","limit":10}"#))
+            .expect("request");
+
+        let search_resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app.clone(), search_req)
+            .await
+            .expect("response");
+        assert_eq!(search_resp.status(), StatusCode::OK);
+
+        let search_body = axum::body::to_bytes(search_resp.into_body(), 1024 * 64)
+            .await
+            .expect("body");
+        let search_json: serde_json::Value =
+            serde_json::from_slice(&search_body).expect("search json");
+        let result_path = search_json["results"][0]["path"]
+            .as_str()
+            .expect("search result path");
+        assert_eq!(result_path, "notes/test.md");
+
+        let read_req = axum::http::Request::builder()
+            .uri(format!(
+                "/api/memory/read?path={}",
+                urlencoding::encode(result_path)
+            ))
+            .body(Body::empty())
+            .expect("request");
+
+        let read_resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app, read_req)
+            .await
+            .expect("response");
+        assert_eq!(read_resp.status(), StatusCode::OK);
+
+        let read_body = axum::body::to_bytes(read_resp.into_body(), 1024 * 64)
+            .await
+            .expect("body");
+        let read_json: serde_json::Value = serde_json::from_slice(&read_body).expect("read json");
+        assert_eq!(read_json["content"], "alpha needle beta");
+    }
+
     #[tokio::test]
     async fn test_oauth_callback_missing_params() {
         use axum::body::Body;
         use tower::ServiceExt;
 
-        let state = test_gateway_state(None);
+        let state = test_gateway_state(None, None);
         let app = test_oauth_router(state);
 
         let req = axum::http::Request::builder()
@@ -2735,7 +2799,7 @@ mod tests {
         use axum::body::Body;
         use tower::ServiceExt;
 
-        let state = test_gateway_state(None);
+        let state = test_gateway_state(None, None);
         let app = test_oauth_router(state);
 
         let req = axum::http::Request::builder()
@@ -2785,7 +2849,7 @@ mod tests {
             vec![],
         ));
 
-        let state = test_gateway_state(Some(ext_mgr));
+        let state = test_gateway_state(Some(ext_mgr), None);
         let app = test_oauth_router(state);
 
         let req = axum::http::Request::builder()
@@ -2864,7 +2928,7 @@ mod tests {
             .await
             .insert("expired_state".to_string(), flow);
 
-        let state = test_gateway_state(Some(ext_mgr));
+        let state = test_gateway_state(Some(ext_mgr), None);
         let app = test_oauth_router(state);
 
         let req = axum::http::Request::builder()
@@ -2891,7 +2955,7 @@ mod tests {
         use tower::ServiceExt;
 
         // No extension manager set → graceful error
-        let state = test_gateway_state(None);
+        let state = test_gateway_state(None, None);
         let app = test_oauth_router(state);
 
         let req = axum::http::Request::builder()
@@ -2974,7 +3038,7 @@ mod tests {
             .await
             .insert("test_nonce".to_string(), flow);
 
-        let state = test_gateway_state(Some(ext_mgr.clone()));
+        let state = test_gateway_state(Some(ext_mgr.clone()), None);
         let app = test_oauth_router(state);
 
         // Send callback with instance prefix: "myinstance:test_nonce"
