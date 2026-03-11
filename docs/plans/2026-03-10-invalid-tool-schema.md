@@ -343,6 +343,29 @@ cargo fmt --all --check \
   `Makefile` now rebuilds the GitHub WASM artifact before both `test`
   and `test-matrix`, so the user-facing test entry points remain
   green after a full clean.
+- [x] 2026-03-11 10:18Z: Verified the latest structure-and-doc review
+  comments against the current branch. `src/llm/schema_normalize`
+  submodules still lacked `//!` docs, `src/tools/registry.rs` and
+  `src/tools/schema_validator.rs` still kept their large test modules
+  inline, `load_complex_tool_schema_fixture` still hardcoded every
+  fixture with `include_str!`, and the `job_prompt`,
+  `routine_create`, and `routine_delete` schema fixtures still needed
+  the requested contract tightening.
+- [x] 2026-03-11 10:46Z: Added the missing module docs, moved
+  `WasmRegistrationError` and `WasmToolRegistration` into
+  `src/tools/registry/wasm_registration.rs`, extracted the registry and
+  schema-validator tests into dedicated submodules, switched the complex
+  schema fixture loader to derive runtime paths from the tool name, and
+  tightened the three JSON fixtures (`additionalProperties: false` for
+  `job_prompt`, `minimum: 0` for `routine_create.cooldown_secs`, and
+  `Routine name` in `routine_delete`). Targeted validation passed with
+  `cargo test registry --lib -- --nocapture` and
+  `cargo test schema_validator --lib -- --nocapture`.
+- [x] 2026-03-11 02:25Z: Replayed the required gates on the final tree:
+  `make check-fmt`, `make typecheck`, `make lint`, `make test`, plus
+  `bunx markdownlint-cli2 docs/plans/2026-03-10-invalid-tool-schema.md`.
+  `make test` stayed green after a long but successful
+  `tests/support_unit_tests.rs` link step.
 
 ## Surprises & Discoveries
 

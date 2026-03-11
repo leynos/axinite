@@ -52,7 +52,8 @@
     },
     "cooldown_secs": {
       "type": "integer",
-      "description": "Min seconds between fires"
+      "description": "Min seconds between fires",
+      "minimum": 0
     },
     "tool_permissions": {
       "type": "array",

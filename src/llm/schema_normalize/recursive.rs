@@ -1,3 +1,6 @@
+//! Recursive JSON Schema normalization for nested properties, combinators, and
+//! array items before strict validation and top-level variant merging.
+
 use std::collections::HashSet;
 
 use serde_json::{Map, Value as JsonValue};

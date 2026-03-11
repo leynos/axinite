@@ -1,3 +1,6 @@
+//! Schema-merging utilities that flatten top-level variant keywords and
+//! consolidate property metadata across `oneOf`/`anyOf`/`allOf` branches.
+
 use std::collections::BTreeSet;
 
 use serde_json::{Map, Value as JsonValue};

@@ -3,7 +3,7 @@
   "properties": {
     "name": {
       "type": "string",
-      "description": "Name"
+      "description": "Routine name"
     }
   },
   "required": [
