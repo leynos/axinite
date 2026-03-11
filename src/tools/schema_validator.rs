@@ -173,5 +173,4 @@ fn check_object_schema(schema: &serde_json::Value, path: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-mod tests {
-}
+mod tests {}

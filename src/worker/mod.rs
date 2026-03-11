@@ -28,9 +28,9 @@
 
 pub mod api;
 pub mod claude_bridge;
+pub mod container;
 pub mod job;
 pub mod proxy_llm;
-pub mod container;
 
 pub use api::WorkerHttpClient;
 pub use claude_bridge::ClaudeBridgeRuntime;

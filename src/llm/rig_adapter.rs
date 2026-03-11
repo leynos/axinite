@@ -108,6 +108,8 @@ impl<M: CompletionModel> RigAdapter<M> {
     fn strip_unsupported_tool_params(&self, req: &mut ToolCompletionRequest) {
         strip_unsupported_tool_params(&self.unsupported_params, req);
     }
+}
+
 /// Convert IronClaw messages to rig-core format.
 ///
 /// Returns `(preamble, chat_history)` where preamble is extracted from

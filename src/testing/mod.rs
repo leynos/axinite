@@ -486,6 +486,18 @@ impl Default for TestHarnessBuilder {
     }
 }
 
+/// Shared WASM runtime for metadata extraction and schema publication regressions.
+pub fn metadata_test_runtime() -> anyhow::Result<Arc<WasmToolRuntime>> {
+    let config = WasmRuntimeConfig {
+        default_limits: ResourceLimits::default()
+            .with_memory(8 * 1024 * 1024)
+            .with_fuel(100_000)
+            .with_timeout(Duration::from_secs(5)),
+        ..WasmRuntimeConfig::for_testing()
+    };
+    Ok(Arc::new(WasmToolRuntime::new(config)?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1467,16 +1479,4 @@ mod tests {
         .await
         .expect("update actuals");
     }
-}
-
-/// Shared WASM runtime for metadata extraction and schema publication regressions.
-pub fn metadata_test_runtime() -> anyhow::Result<Arc<WasmToolRuntime>> {
-    let config = WasmRuntimeConfig {
-        default_limits: ResourceLimits::default()
-            .with_memory(8 * 1024 * 1024)
-            .with_fuel(100_000)
-            .with_timeout(Duration::from_secs(5)),
-        ..WasmRuntimeConfig::for_testing()
-    };
-    Ok(Arc::new(WasmToolRuntime::new(config)?))
 }

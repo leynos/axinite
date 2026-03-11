@@ -262,6 +262,7 @@ async fn all_core_tools_work_in_multi_thread_runtime() {
     }
 }
 
+#[tokio::test]
 async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
     let source_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools-src/github");
     let wasm_path =
@@ -327,13 +328,3 @@ async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
         github.description
     );
 }
-
-//! Validates that all built-in tool schemas conform to OpenAI strict-mode rules.
-//!
-//! This catches the class of bugs where `required` keys aren't in `properties`,
-//! properties are missing `type` (intentional freeform is allowed), or nested
-//! objects/arrays are malformed.
-//!
-//! See: <https://github.com/nearai/ironclaw/issues/352> (QA plan, item 1.1)
-
-mod support;

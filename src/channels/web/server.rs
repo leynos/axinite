@@ -3127,7 +3127,7 @@ mod tests {
 
         let secrets = test_secrets_store();
         let ext_mgr = test_ext_mgr(secrets);
-        let state = test_gateway_state(Some(ext_mgr));
+        let state = test_gateway_state(Some(ext_mgr), None);
         let app = test_relay_oauth_router(state);
 
         // Callback without state param should be rejected
@@ -3171,7 +3171,7 @@ mod tests {
             .expect("store nonce");
 
         let ext_mgr = test_ext_mgr(secrets);
-        let state = test_gateway_state(Some(ext_mgr));
+        let state = test_gateway_state(Some(ext_mgr), None);
         let app = test_relay_oauth_router(state);
 
         // Callback with wrong state param
@@ -3216,7 +3216,7 @@ mod tests {
             .expect("store nonce");
 
         let ext_mgr = test_ext_mgr(secrets.clone());
-        let state = test_gateway_state(Some(ext_mgr));
+        let state = test_gateway_state(Some(ext_mgr), None);
         let app = test_relay_oauth_router(state);
 
         // Callback with correct state param — will pass CSRF check

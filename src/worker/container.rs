@@ -607,7 +607,12 @@ mod tests {
         let defs = runtime.tools.tool_definitions().await;
         let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
 
-        for expected in ["tool_list", "tool_search", "tool_activate", "extension_info"] {
+        for expected in [
+            "tool_list",
+            "tool_search",
+            "tool_activate",
+            "extension_info",
+        ] {
             assert!(
                 names.contains(&expected),
                 "expected advertised tools to include {expected}, got {names:?}"
