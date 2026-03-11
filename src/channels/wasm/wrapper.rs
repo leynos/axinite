@@ -308,8 +308,10 @@ impl near::agent::channel_host::Host for ChannelStoreData {
             "WASM http_request called"
         );
 
-        // Inject credentials into URL (e.g., replace {TELEGRAM_BOT_TOKEN} with actual token)
-        let injected_url = self.inject_credentials(&url, "url");
+        // Preserve the raw request for leak scanning before any host-side
+        // placeholder resolution. WASM only sees placeholders, not real secrets.
+        let raw_url = url.clone();
+        let injected_url = self.inject_credentials(&raw_url, "url");
 
         // Log whether injection happened (without revealing the token)
         let url_changed = injected_url != url;
@@ -329,10 +331,22 @@ impl near::agent::channel_host::Host for ChannelStoreData {
             format!("Rate limit exceeded: {}", e)
         })?;
 
-        // Parse headers and inject credentials into header values
-        // This allows patterns like "Authorization": "Bearer {WHATSAPP_ACCESS_TOKEN}"
+        // Parse the raw header values supplied by WASM.
         let raw_headers: std::collections::HashMap<String, String> =
             serde_json::from_str(&headers_json).unwrap_or_default();
+
+        // Leak scan runs on WASM-provided values before any host-side
+        // credential injection. This prevents false positives where the
+        // resolved secret value would otherwise be attributed to the channel.
+        let leak_detector = LeakDetector::new();
+        let raw_header_vec: Vec<(String, String)> = raw_headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        leak_detector
+            .scan_http_request(&raw_url, &raw_header_vec, body.as_deref())
+            .map_err(|e| format!("Potential secret leak blocked: {}", e))?;
 
         let mut headers: std::collections::HashMap<String, String> = raw_headers
             .into_iter()
@@ -354,20 +368,6 @@ impl near::agent::channel_host::Host for ChannelStoreData {
         );
 
         let mut url = injected_url;
-
-        // Leak scan runs on WASM-provided values BEFORE host credential injection.
-        // This prevents false positives where the host-injected Bearer token
-        // (e.g., xoxb- Slack token) triggers the leak detector — WASM never saw
-        // the real value, so scanning the pre-injection state is correct.
-        let leak_detector = LeakDetector::new();
-        let header_vec: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        leak_detector
-            .scan_http_request(&url, &header_vec, body.as_deref())
-            .map_err(|e| format!("Potential secret leak blocked: {}", e))?;
 
         // Inject pre-resolved host credentials (Bearer tokens, API keys, etc.)
         // after the leak scan so host-injected secrets don't trigger false positives.
@@ -4286,6 +4286,62 @@ mod tests {
         let msg = rx.try_recv().expect("Should receive message");
         assert_eq!(msg.content, "Just text, no attachments");
         assert!(msg.attachments.is_empty());
+    }
+
+    fn test_channel_http_capabilities(host: &str) -> ChannelCapabilities {
+        use crate::tools::wasm::{Capabilities, EndpointPattern, HttpCapability};
+
+        ChannelCapabilities::for_channel("test").with_tool_capabilities(
+            Capabilities::default().with_http(HttpCapability::new(vec![
+                EndpointPattern::host(host.to_string())
+                    .with_path_prefix("/")
+                    .with_methods(vec!["GET".to_string()]),
+            ])),
+        )
+    }
+
+    #[test]
+    fn test_channel_http_request_allows_placeholder_header_injection() {
+        use crate::channels::wasm::wrapper::ChannelStoreData;
+        use crate::channels::wasm::wrapper::near::agent::channel_host;
+        use std::collections::HashMap;
+
+        let host = "slack.invalid";
+        let slack_bot_token = "xoxb-1234567890-abcdefghij".to_string();
+        let mut credentials = HashMap::new();
+        credentials.insert("SLACK_BOT_TOKEN".to_string(), slack_bot_token);
+
+        let mut store = ChannelStoreData::new(
+            1024 * 1024,
+            "test",
+            test_channel_http_capabilities(host),
+            credentials,
+            Vec::new(),
+            Arc::new(PairingStore::new()),
+        );
+
+        let err = <ChannelStoreData as channel_host::Host>::http_request(
+            &mut store,
+            "GET".to_string(),
+            format!("https://{host}/api/chat.postMessage"),
+            serde_json::json!({
+                "Authorization": "Bearer {SLACK_BOT_TOKEN}",
+                "Content-Type": "application/json"
+            })
+            .to_string(),
+            None,
+            Some(1000),
+        )
+        .expect_err("invalid public hostname should fail after request preparation");
+
+        assert!(
+            !err.contains("Potential secret leak blocked"),
+            "placeholder-based auth header should progress past leak scanning, got: {err}"
+        );
+        assert!(
+            err.contains("HTTP request failed") || err.contains("dns error"),
+            "expected later-stage HTTP/DNS failure, got: {err}"
+        );
     }
 
     #[test]

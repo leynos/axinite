@@ -231,8 +231,10 @@ impl StoreData {
         headers_json: &str,
         body: Option<&[u8]>,
     ) -> Result<PreparedHttpRequest, String> {
-        // Inject credentials into URL (e.g., replace {TELEGRAM_BOT_TOKEN})
-        let injected_url = self.inject_credentials(url, "url");
+        // Preserve the raw request for leak scanning before any host-side
+        // placeholder resolution. WASM only sees placeholders, not real secrets.
+        let raw_url = url;
+        let injected_url = self.inject_credentials(raw_url, "url");
 
         // Check HTTP allowlist
         self.host_state
@@ -244,9 +246,22 @@ impl StoreData {
             .record_http_request()
             .map_err(|e| format!("Rate limit exceeded: {}", e))?;
 
-        // Parse headers and inject credentials into header values
+        // Parse the raw header values supplied by WASM.
         let raw_headers: HashMap<String, String> =
             serde_json::from_str(headers_json).unwrap_or_default();
+
+        // Leak scan runs on WASM-provided values before any host-side
+        // credential injection. This prevents false positives where the
+        // resolved secret value would otherwise be attributed to the tool.
+        let leak_detector = LeakDetector::new();
+        let raw_header_vec: Vec<(String, String)> = raw_headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        leak_detector
+            .scan_http_request(raw_url, &raw_header_vec, body)
+            .map_err(|e| format!("Potential secret leak blocked: {}", e))?;
 
         let mut headers: HashMap<String, String> = raw_headers
             .into_iter()
@@ -259,20 +274,6 @@ impl StoreData {
             .collect();
 
         let mut url = injected_url;
-
-        // Leak scan runs on WASM-provided values BEFORE host credential injection.
-        // This prevents false positives where the host-injected Bearer token
-        // (e.g. a GitHub PAT) triggers the leak detector even though the WASM
-        // tool never saw or supplied the real secret value.
-        let leak_detector = LeakDetector::new();
-        let header_vec: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        leak_detector
-            .scan_http_request(&url, &header_vec, body)
-            .map_err(|e| format!("Potential secret leak blocked: {}", e))?;
 
         // Inject pre-resolved host credentials (Bearer tokens, API keys, etc.)
         // after the leak scan so host-injected secrets don't trigger false positives.
@@ -1442,6 +1443,44 @@ mod tests {
         assert!(err.contains("Potential secret leak blocked"));
         assert!(err.contains("header:Authorization"));
         assert!(err.contains("github_fine_grained_pat"));
+    }
+
+    #[test]
+    fn test_prepare_http_request_allows_placeholder_header_injection() {
+        use crate::tools::wasm::wrapper::StoreData;
+        use std::collections::HashMap;
+
+        let host = "slack.invalid";
+        let slack_bot_token = "xoxb-1234567890-abcdefghij".to_string();
+        let mut credentials = HashMap::new();
+        credentials.insert("SLACK_BOT_TOKEN".to_string(), slack_bot_token.clone());
+
+        let mut store_data = StoreData::new(
+            1024 * 1024,
+            test_prepare_request_capabilities(host),
+            credentials,
+            Vec::new(),
+        );
+
+        let headers_json = serde_json::json!({
+            "Authorization": "Bearer {SLACK_BOT_TOKEN}",
+            "Content-Type": "application/json"
+        })
+        .to_string();
+
+        let prepared = store_data
+            .prepare_http_request(
+                "GET",
+                &format!("https://{host}/api/chat.postMessage"),
+                &headers_json,
+                None,
+            )
+            .expect("placeholder-based auth header should pass leak scanning");
+
+        assert_eq!(
+            prepared.headers.get("Authorization"),
+            Some(&format!("Bearer {slack_bot_token}"))
+        );
     }
 
     #[test]
