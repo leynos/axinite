@@ -11,6 +11,7 @@ use crate::llm::{
     ChatMessage, CompletionRequest, CompletionResponse, FinishReason, ToolCall,
     ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
 };
+use crate::tools::ToolOutput;
 
 /// HTTP client that a container worker uses to talk to the orchestrator.
 pub struct WorkerHttpClient {
@@ -89,7 +90,7 @@ pub struct ProxyExtensionToolRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProxyExtensionToolResponse {
-    pub result: serde_json::Value,
+    pub output: ToolOutput,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -284,7 +285,7 @@ impl WorkerHttpClient {
         &self,
         tool_name: &str,
         params: &serde_json::Value,
-    ) -> Result<serde_json::Value, WorkerError> {
+    ) -> Result<ToolOutput, WorkerError> {
         let proxy_req = ProxyExtensionToolRequest {
             tool_name: tool_name.to_string(),
             params: params.clone(),
@@ -294,7 +295,7 @@ impl WorkerHttpClient {
             .post_json("extension_tool", &proxy_req, "Extension tool execution")
             .await?;
 
-        Ok(proxy_resp.result)
+        Ok(proxy_resp.output)
     }
 
     /// Report status to the orchestrator.

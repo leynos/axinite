@@ -20,6 +20,8 @@
 
 pub mod credentials;
 
+use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -496,6 +498,57 @@ pub fn metadata_test_runtime() -> anyhow::Result<Arc<WasmToolRuntime>> {
         ..WasmRuntimeConfig::for_testing()
     };
     Ok(Arc::new(WasmToolRuntime::new(config)?))
+}
+
+/// Source directory for the bundled GitHub WASM test tool.
+pub fn github_tool_source_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools-src/github")
+}
+
+/// Locate the GitHub WASM artifact, building it on demand for tests.
+pub fn github_wasm_artifact() -> anyhow::Result<PathBuf> {
+    static BUILD_LOCK: Mutex<()> = Mutex::new(());
+
+    let source_dir = github_tool_source_dir();
+    if let Some(path) =
+        crate::registry::artifacts::find_wasm_artifact(&source_dir, "github-tool", "release")
+    {
+        return Ok(path);
+    }
+
+    let _guard = BUILD_LOCK
+        .lock()
+        .expect("github wasm build lock should not be poisoned");
+
+    if let Some(path) =
+        crate::registry::artifacts::find_wasm_artifact(&source_dir, "github-tool", "release")
+    {
+        return Ok(path);
+    }
+
+    let status = Command::new("cargo")
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(source_dir.join("Cargo.toml"))
+        .arg("--release")
+        .arg("--target")
+        .arg("wasm32-wasip2")
+        .status()?;
+
+    if !status.success() {
+        anyhow::bail!(
+            "failed to build GitHub WASM artifact via cargo build (status: {})",
+            status
+        );
+    }
+
+    crate::registry::artifacts::find_wasm_artifact(&source_dir, "github-tool", "release")
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "GitHub WASM artifact still missing after build in {}",
+                source_dir.display()
+            )
+        })
 }
 
 #[cfg(test)]

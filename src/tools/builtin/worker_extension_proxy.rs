@@ -44,14 +44,10 @@ impl Tool for WorkerExtensionProxyTool {
         params: serde_json::Value,
         _ctx: &JobContext,
     ) -> Result<ToolOutput, ToolError> {
-        let start = std::time::Instant::now();
-        let result = self
-            .client
+        self.client
             .execute_extension_tool(self.kind.name(), &params)
             .await
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-
-        Ok(ToolOutput::success(result, start.elapsed()))
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
@@ -76,6 +72,7 @@ mod tests {
     use axum::extract::{Path, State};
     use axum::routing::post;
     use axum::{Json, Router};
+    use rust_decimal::Decimal;
     use uuid::Uuid;
 
     use super::*;
@@ -90,11 +87,16 @@ mod tests {
         Json(req): Json<ProxyExtensionToolRequest>,
     ) -> Json<ProxyExtensionToolResponse> {
         Json(ProxyExtensionToolResponse {
-            result: serde_json::json!({
-                "job_id": job_id,
-                "tool_name": req.tool_name,
-                "params": req.params,
-            }),
+            output: ToolOutput::success(
+                serde_json::json!({
+                    "job_id": job_id,
+                    "tool_name": req.tool_name,
+                    "params": req.params,
+                }),
+                std::time::Duration::from_millis(7),
+            )
+            .with_cost(Decimal::new(125, 2))
+            .with_raw("proxy raw output"),
         })
     }
 
@@ -135,6 +137,9 @@ mod tests {
         assert_eq!(output.result["tool_name"], "tool_list");
         assert_eq!(output.result["job_id"], job_id.to_string());
         assert_eq!(output.result["params"]["include_available"], true);
+        assert_eq!(output.cost, Some(Decimal::new(125, 2)));
+        assert_eq!(output.raw.as_deref(), Some("proxy raw output"));
+        assert_eq!(output.duration, std::time::Duration::from_millis(7));
 
         server.abort();
         let _ = server.await;

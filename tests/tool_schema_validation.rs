@@ -14,7 +14,6 @@ use ironclaw::tools::validate_tool_schema;
 use ironclaw::tools::wasm::WasmToolLoader;
 use ironclaw::tools::{Tool, ToolRegistry};
 use rstest::{fixture, rstest};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 struct ExtensionManagerFixture {
@@ -264,10 +263,8 @@ async fn all_core_tools_work_in_multi_thread_runtime() {
 
 #[tokio::test]
 async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
-    let source_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools-src/github");
-    let wasm_path =
-        ironclaw::registry::artifacts::find_wasm_artifact(&source_dir, "github-tool", "release")
-            .expect("github WASM artifact must be built for schema tests");
+    let source_dir = support::github_tool_source_dir();
+    let wasm_path = support::github_wasm_artifact().expect("build or find github WASM artifact");
     let caps_path = source_dir.join("github-tool.capabilities.json");
     assert!(
         caps_path.exists(),

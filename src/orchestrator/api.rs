@@ -263,9 +263,7 @@ async fn execute_extension_tool(
         StatusCode::BAD_GATEWAY
     })?;
 
-    Ok(Json(ProxyExtensionToolResponse {
-        result: output.result,
-    }))
+    Ok(Json(ProxyExtensionToolResponse { output }))
 }
 async fn report_status(
     State(state): State<OrchestratorState>,
@@ -954,8 +952,11 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
 
         let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
-        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(json["result"]["extensions"][0], "telegram");
+        let proxy_resp: ProxyExtensionToolResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(proxy_resp.output.result["extensions"][0], "telegram");
+        assert_eq!(proxy_resp.output.duration, Duration::from_millis(5));
+        assert_eq!(proxy_resp.output.cost, None);
+        assert_eq!(proxy_resp.output.raw, None);
         assert_eq!(*seen_job_id.lock().await, Some(job_id));
     }
 

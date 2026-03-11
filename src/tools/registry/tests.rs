@@ -1,11 +1,9 @@
 //! Tests for tool-registry ordering, protection, and WASM metadata behavior.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::*;
-use crate::registry::artifacts::find_wasm_artifact;
-use crate::testing::metadata_test_runtime;
+use crate::testing::{github_wasm_artifact, metadata_test_runtime};
 use crate::tools::builtin::EchoTool;
 use crate::tools::wasm::Capabilities;
 
@@ -70,9 +68,7 @@ async fn test_tool_definitions() {
 
 #[tokio::test]
 async fn test_explicit_wasm_schema_override_wins_over_exported_metadata() {
-    let source_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools-src/github");
-    let wasm_path = find_wasm_artifact(&source_dir, "github-tool", "release")
-        .expect("github WASM artifact not built: build github-tool release first");
+    let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
 
     let registry = ToolRegistry::new();
     let runtime = metadata_test_runtime().expect("create metadata test runtime");
