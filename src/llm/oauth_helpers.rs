@@ -101,9 +101,11 @@ fn bind_error(e: std::io::Error) -> OAuthCallbackError {
 /// When `OAUTH_CALLBACK_HOST` is set to a remote address, binds to that
 /// specific address so only connections directed to it are accepted.
 pub async fn bind_callback_listener() -> Result<TcpListener, OAuthCallbackError> {
-    let host = callback_host();
+    bind_callback_listener_for_host(&callback_host()).await
+}
 
-    if is_wildcard_host(&host) {
+async fn bind_callback_listener_for_host(host: &str) -> Result<TcpListener, OAuthCallbackError> {
+    if is_wildcard_host(host) {
         return Err(OAuthCallbackError::Io(format!(
             "OAUTH_CALLBACK_HOST={host} is a wildcard address — this would accept \
              connections on all interfaces, exposing the session token. \
@@ -111,7 +113,7 @@ pub async fn bind_callback_listener() -> Result<TcpListener, OAuthCallbackError>
         )));
     }
 
-    if is_loopback_host(&host) {
+    if is_loopback_host(host) {
         // Local mode: prefer IPv4 loopback, fall back to IPv6.
         let ipv4_addr = format!("127.0.0.1:{}", OAUTH_CALLBACK_PORT);
         match TcpListener::bind(&ipv4_addr).await {
@@ -388,10 +390,7 @@ mod tests {
 
     #[tokio::test]
     async fn bind_rejects_wildcard_ipv4() {
-        // SAFETY: test is single-threaded; env var is restored immediately after.
-        unsafe { std::env::set_var("OAUTH_CALLBACK_HOST", "0.0.0.0") };
-        let result = bind_callback_listener().await;
-        unsafe { std::env::remove_var("OAUTH_CALLBACK_HOST") };
+        let result = bind_callback_listener_for_host("0.0.0.0").await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
@@ -402,10 +401,7 @@ mod tests {
 
     #[tokio::test]
     async fn bind_rejects_wildcard_ipv6() {
-        // SAFETY: test is single-threaded; env var is restored immediately after.
-        unsafe { std::env::set_var("OAUTH_CALLBACK_HOST", "::") };
-        let result = bind_callback_listener().await;
-        unsafe { std::env::remove_var("OAUTH_CALLBACK_HOST") };
+        let result = bind_callback_listener_for_host("::").await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(

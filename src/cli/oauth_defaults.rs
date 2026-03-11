@@ -564,14 +564,10 @@ pub async fn exchange_via_proxy(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use crate::cli::oauth_defaults::{
         builtin_credentials, callback_host, callback_url, is_loopback_host, landing_html,
     };
-
-    /// Serializes env-mutating tests to prevent parallel races.
-    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+    use crate::config::helpers::ENV_MUTEX;
 
     #[test]
     fn test_is_loopback_host() {

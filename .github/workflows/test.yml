@@ -34,6 +34,8 @@ jobs:
           key: ${{ matrix.name }}
       - name: Install cargo-component
         run: cargo install cargo-component --locked || true
+      - name: Build GitHub WASM tool (for metadata/schema tests)
+        run: make build-github-tool-wasm
       - name: Build WASM channels (for integration tests)
         run: ./scripts/build-wasm-extensions.sh --channels
       - name: Run Tests
