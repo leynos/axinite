@@ -366,6 +366,17 @@ cargo fmt --all --check \
   `bunx markdownlint-cli2 docs/plans/2026-03-10-invalid-tool-schema.md`.
   `make test` stayed green after a long but successful
   `tests/support_unit_tests.rs` link step.
+- [x] 2026-03-11 09:48Z: Rebasing the branch onto `upstream/main`
+  surfaced two real post-replay drifts rather than invalidating the
+  underlying fix set. `src/orchestrator/mod.rs` needed the current
+  `OrchestratorState.tools` field threaded through
+  `setup_orchestrator(...)`, and the extracted test helpers in
+  `src/tools/registry/tests.rs` plus `tests/tool_schema_validation.rs`
+  needed the current `ExtensionManager::new(...)` constructor shape
+  with `McpProcessManager`.
+- [x] 2026-03-11 09:59Z: Re-ran the required post-rebase gates after
+  those repairs. `make check-fmt`, `make test`, and `make lint` all
+  passed on the rebased tree before the force-push step.
 
 ## Surprises & Discoveries
 
@@ -454,6 +465,13 @@ cargo fmt --all --check \
   `PROTECTED_TOOL_NAMES`, so dynamic tools could shadow them) and one
   maintainability gap (large inline JSON fixtures in
   `schema_validator.rs`).
+- 2026-03-11 09:44Z: Kept the rebased branch commits and repaired the
+  interface drift locally instead of dropping them as already-upstream.
+  Rationale: `upstream/main` had absorbed adjacent refactors such as the
+  `setup_orchestrator(...)` helper and `OrchestratorState.tools`, but it
+  had not subsumed the invalid-schema or hosted-worker fix payload from
+  this branch. The rebase failures were compatibility repairs, not
+  evidence that the branch had become redundant.
 
 ## Outcomes & Retrospective
 

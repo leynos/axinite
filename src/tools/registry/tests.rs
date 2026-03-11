@@ -11,7 +11,7 @@ use crate::tools::wasm::Capabilities;
 
 fn test_extension_manager() -> Arc<ExtensionManager> {
     use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
-    use crate::tools::mcp::process::McpProcessManager;
+    use crate::tools::mcp::McpProcessManager;
     use crate::tools::mcp::session::McpSessionManager;
 
     let dir = tempfile::tempdir().expect("temp dir");
