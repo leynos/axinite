@@ -464,7 +464,11 @@ Where:
 
 - `endpoint-name` is an opaque configured endpoint name such as
   `jmap-default`,
-- `path` is relative to the hidden stored endpoint,
+- `path` must be a strict relative-path reference. The runtime must reject
+  absolute URLs, authority-form references such as `//host/path`, dot-segment
+  traversal (`.` or `..`), and encoded traversal forms that would escape the
+  stored endpoint or any configured `path_prefixes` before reconstructing the
+  final URL,
 - `query-json` is a JSON object string or structured map equivalent,
 - the extension never supplies the full absolute URL.
 

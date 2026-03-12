@@ -15,8 +15,8 @@ a classic line-oriented REPL.
 The proposed surface is three operations:
 
 1. `save_script(name, code, allowed_tools, entrypoint="main")`
-2. `run_script(name, params, state=None)`
-3. `exec_code(code, params=None, state=None, allowed_tools=[...])`
+2. `run_script(name, params, allowed_tools, state=None)`
+3. `exec_code(code, allowed_tools, params=None, state=None)`
 
 Saved scripts give IronClaw a durable, reviewable automation format. `exec_code`
 covers ephemeral scratch execution. Both run through the same host-mediated tool
@@ -27,7 +27,7 @@ Monty is a strong fit because it is designed to run code written by agents,
 supports host-controlled external functions, type checking, resource limits, and
 pause/resume snapshots at external calls. It is a weaker fit for a persistent
 live REPL because the upstream REPL surface is still moving and current open
-issues show both missing ergonomics and panic-related stability risks.[1][2][3]
+issues show both missing ergonomics and panic-related stability risks.[^1][^2][^3]
 
 ## Problem
 
@@ -41,7 +41,7 @@ That gap shows up in three places:
    conditional multi-step tool use.
 2. Pre-written automations are currently forced into either free-form prompt
    text or bespoke Rust/WASM tools.
-3. A full containerised Python runtime would duplicate existing safety layers
+3. A full containerized Python runtime would duplicate existing safety layers
    while adding significant startup cost, image management, and operational
    complexity.
 
@@ -80,18 +80,18 @@ execution surface is a small Python environment that:
 
 Monty matches the desired execution model unusually well:
 
-- It is explicitly built to run code written by agents.[1]
+- It is explicitly built to run code written by agents.[^1]
 - Filesystem, environment variables, and network access are mediated through
-  external functions the host chooses to expose.[1]
+  external functions the host chooses to expose.[^1]
 - It supports host callbacks and iterative pause/resume at external calls via
-  `start()` and `resume()`.[1]
-- It supports serialization of compiled programs and in-flight snapshots.[1]
+  `start()` and `resume()`.[^1]
+- It supports serialization of compiled programs and in-flight snapshots.[^1]
 - It supports resource limits covering memory, allocations, stack depth, and
-  execution time.[1]
+  execution time.[^1]
 - Its examples already use async host functions and `list[dict[str, Any]]`
-  values, which is the right shape for IronClaw tool results.[1]
+  values, which is the right shape for IronClaw tool results.[^1]
 
-This is a better fit than introducing Bun, Deno, or a full containerised Python
+This is a better fit than introducing Bun, Deno, or a full containerized Python
 stack just to gain structured tool calls, loops, and control flow.
 
 ## Upstream Constraints
@@ -102,7 +102,7 @@ reality rather than its best-case future.
 ### 1. Upstream still calls Monty experimental
 
 The README currently describes Monty as experimental and not ready for prime
-time.[1]
+time.[^1]
 
 That is acceptable for a narrow, brokered integration. It is not enough to
 justify optimistic availability claims.
@@ -115,11 +115,11 @@ REPL first" design:
 - Issue [#190](https://github.com/pydantic/monty/issues/190) requests
   suspendable `feed` support plus dynamic per-call external functions for REPL
   mode because the Python binding currently exposes synchronous `feed()` rather
-  than the same pause/resume loop available in one-shot execution.[2]
+  than the same pause/resume loop available in one-shot execution.[^2]
 - Issue [#239](https://github.com/pydantic/monty/issues/239) requests external
   function support for `MontyRepl`; a maintainer comment says it "should be
   fixed by #235", but the issue remained open on 2026-03-11 and the next release
-  status was not resolved in the visible thread.[3]
+  status was not resolved in the visible thread.[^3]
 
 That means a classic REPL may become viable, but it is not the safest foundation
 for IronClaw phase one.
@@ -130,10 +130,10 @@ Two open issues matter directly for host reliability:
 
 - Issue [#208](https://github.com/pydantic/monty/issues/208) reports that a VM
   panic can crash the whole server; the maintainer response does not claim a
-  host-side workaround beyond fixing the panic upstream.[4]
+  host-side workaround beyond fixing the panic upstream.[^4]
 - Issue [#240](https://github.com/pydantic/monty/issues/240) reports another
   Rust panic path around future snapshots, with a proposed fix under
-  PR [#251](https://github.com/pydantic/monty/pull/251).[5]
+  PR [#251](https://github.com/pydantic/monty/pull/251).[^5]
 
 These issues do not kill the proposal. They do rule out an in-process-only
 integration as the default safety posture.
@@ -202,6 +202,8 @@ Behaviour:
 - Validates the script name.
 - Stores the source and manifest in the workspace.
 - Records an allowlist ceiling for future runs.
+- Requires an explicit `allowed_tools` allowlist. Callers that want no tool
+  access must pass an empty list so the API stays fail-closed.
 - Optionally compiles and type-checks up front so errors are caught at save time.
 
 Recommended workspace layout:
@@ -230,8 +232,8 @@ Manifest fields:
 run_script(
   name,
   params,
+  allowed_tools,
   state=None,
-  allowed_tools_override=None,
   limits=None,
 )
 ```
@@ -240,21 +242,21 @@ Behaviour:
 
 - Loads the saved script and manifest.
 - Computes the effective allowlist as the intersection of the saved allowlist
-  and any per-run override.
+  and the explicit per-run `allowed_tools` request.
 - Runs the script with named `params` and `state`.
 - Returns structured output plus the updated `state`.
 
-`allowed_tools_override` may narrow the script's rights. It must never widen the
-saved allowlist.
+`allowed_tools` is mandatory at call time. Pass an empty list to request no
+tool access. The effective allowlist must never widen the saved allowlist.
 
 #### `exec_code`
 
 ```text
 exec_code(
   code,
+  allowed_tools,
   params=None,
   state=None,
-  allowed_tools=[...],
   entrypoint="main",
   limits=None,
 )
@@ -263,6 +265,8 @@ exec_code(
 Behaviour:
 
 - Compiles and runs ad hoc code without persisting the source by default.
+- Requires an explicit `allowed_tools` allowlist. Callers that want no tool
+  access must pass an empty list so scratch execution also stays fail-closed.
 - Uses the same tool broker and ABI as `run_script`.
 - Returns structured output plus the updated `state`.
 
@@ -275,7 +279,7 @@ The guest contract should stay narrow and unsurprising.
 
 ### Entrypoint
 
-The design should standardise on a simple async entrypoint:
+The design should standardize on a simple async entrypoint:
 
 ```python
 from typing import Any
@@ -489,11 +493,11 @@ The safety claim should be precise, not theatrical.
 This integration can credibly claim:
 
 - guest code has no direct filesystem, environment, or network access unless
-  IronClaw exposes host functions for those capabilities,[1]
-- guest code can call only the external functions published for that run,[1]
+  IronClaw exposes host functions for those capabilities,[^1]
+- guest code can call only the external functions published for that run,[^1]
 - every effectful operation still passes through IronClaw's host-side approval
   and policy path,
-- execution is bounded by Monty limits plus parent-process kill switches.[1]
+- execution is bounded by Monty limits plus parent-process kill switches.[^1]
 
 The RFC should not claim:
 
@@ -592,7 +596,7 @@ Rejected for phase one.
 
 Reason:
 
-- upstream REPL support is still shifting,[2][3]
+- upstream REPL support is still shifting,[^2][^3]
 - persistent hidden state is harder to reason about,
 - approvals and snapshots become more complex,
 - it encourages "keep poking at the session" behaviour instead of explicit,
@@ -608,7 +612,7 @@ Reason:
 - larger blast radius,
 - more moving parts than this feature needs for structured tool calling,
 - weaker fit for explicit capability brokerage than Monty's external function
-  model.[1]
+  model.[^1]
 
 IronClaw already uses Docker workers where needed. That does not mean every
 structured code execution feature should itself require a full Python container
@@ -631,7 +635,7 @@ Rejected as the default.
 
 Reason:
 
-- open panic issues currently create avoidable availability risk.[4][5]
+- open panic issues currently create avoidable availability risk.[^4][^5]
 
 It may still be acceptable later behind a developer-only fast path once Monty
 stability is better understood.
@@ -698,13 +702,8 @@ importing the complexity and fragility of a broader Python runtime story.
 
 ## References
 
-[1]: https://github.com/pydantic/monty/blob/main/README.md
-  "Monty README"
-[2]: https://github.com/pydantic/monty/issues/190
-  "Support suspendable feed with dynamic external functions for REPL mode"
-[3]: https://github.com/pydantic/monty/issues/239
-  "Feature request: External function support for MontyRepl"
-[4]: https://github.com/pydantic/monty/issues/208
-  "VM Panic crashes whole server"
-[5]: https://github.com/pydantic/monty/issues/240
-  "FutureSnapshot triggers Rust Panic, PR Available"
+[^1]: [Monty README](https://github.com/pydantic/monty/blob/main/README.md)
+[^2]: [Support suspendable feed with dynamic external functions for REPL mode](https://github.com/pydantic/monty/issues/190)
+[^3]: [Feature request: External function support for MontyRepl](https://github.com/pydantic/monty/issues/239)
+[^4]: [VM Panic crashes whole server](https://github.com/pydantic/monty/issues/208)
+[^5]: [FutureSnapshot triggers Rust Panic, PR Available](https://github.com/pydantic/monty/issues/240)
