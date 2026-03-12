@@ -1,3 +1,10 @@
+//! API-facing worker transport types shared with the orchestrator.
+//!
+//! This module defines the serialized request/response shapes used for worker
+//! chat completions, extension-tool proxying, status updates, and credential
+//! delivery, including shared types such as [`ChatMessage`], [`ToolCall`],
+//! [`ToolDefinition`], and [`ToolOutput`].
+
 use serde::{Deserialize, Serialize};
 
 use crate::llm::{ChatMessage, ToolCall, ToolDefinition};

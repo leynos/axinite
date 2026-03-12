@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use tokio::sync::RwLock;
 
-use super::oauth_flow::OAuthTokenResponse;
+use super::oauth_flow::{OAuthTokenResponse, format_bounded_body};
 use crate::llm::oauth_helpers::OAuthCallbackError;
 use crate::secrets::SecretsStore;
 
@@ -99,8 +99,9 @@ pub async fn exchange_via_proxy(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
+        let preview = format_bounded_body(&body);
         return Err(OAuthCallbackError::Io(format!(
-            "Token exchange proxy failed: {status} - {body}"
+            "Token exchange proxy failed: {status} - {preview}"
         )));
     }
 

@@ -74,7 +74,8 @@ sync_matching_wasm_artifacts() {
 
 sync_tools() {
     sync_matching_wasm_artifacts "tools" "tools-src" "_tool" \
-        "-tool.capabilities.json"
+        "-tool.capabilities.json" \
+        ".capabilities.json"
 }
 
 sync_channels() {

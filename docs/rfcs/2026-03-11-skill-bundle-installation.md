@@ -20,8 +20,9 @@ This RFC proposes a first-class multi-file skill bundle format:
 4. Expose a dedicated read-only interface so the model can read bundled files
    from an installed skill without requiring general filesystem access.
 5. Mirror the progressive-discovery model used by the codex harness: advertise
-   the `SKILL.md` path, inject only `SKILL.md` content when a skill is active,
-   and load ancillary files lazily when they are actually needed.
+   the skill identifier plus bundle-relative entrypoint, inject only
+   `SKILL.md` content when a skill is active, and load ancillary files lazily
+   when they are actually needed.
 
 Phase 1 explicitly does not support bundled scripts or executables.
 
@@ -58,11 +59,12 @@ even though it relies on local file tools rather than a dedicated skill-file
 API:
 
 1. Skills are discovered by locating `SKILL.md` files and recording their
-   canonical paths.
-2. The global instructions list each available skill with the `SKILL.md` path
-   and tell the model to resolve relative references from there.
+   canonical skill identifiers plus bundle-relative roots.
+2. The global instructions list each available skill with its identifier and
+   bundle-relative entrypoint, and tell the model to resolve relative
+   references through the dedicated skill-file interface.
 3. When a skill is explicitly selected, the harness injects the full
-   `SKILL.md` contents plus the skill path.
+   `SKILL.md` contents plus the logical skill identifier.
 4. Ancillary files are read lazily only when the skill instructions point to
    them.
 
@@ -174,6 +176,56 @@ IronClaw should keep one logical install endpoint that accepts exactly one of:
 This keeps UI and API behaviour aligned while preserving current single-file
 installs.
 
+### 4. Canonical skill names and conflict handling
+
+Every install flow must finalize one canonical `skill-name`. That value is used
+for both the install path:
+
+```text
+<install-root>/<skill-name>/...
+```
+
+and the runtime tool contract:
+
+```json
+{ "skill": "<skill-name>", "path": "references/usage.md" }
+```
+
+Name derivation must be deterministic per input mode:
+
+1. Inline installs must accept an explicit `name` field. If it is omitted, the
+   installer falls back to the top-level `id` metadata in `SKILL.md`, then to
+   the top-level `title`.
+2. URL installs derive the name from `SKILL.md` metadata when present, and
+   otherwise fall back to a sanitized filename stem from the fetched resource.
+3. Uploaded archives derive the name from the archive root folder when one is
+   present, and otherwise fall back to `SKILL.md` metadata using the same
+   `id` then `title` precedence.
+
+After derivation, the installer must normalize the name:
+
+1. lowercase ASCII
+2. only `[a-z0-9_-]`
+3. consecutive separators collapsed
+4. no leading or trailing separators
+5. maximum length 64 bytes after normalization
+
+Duplicate handling must also be deterministic:
+
+1. If the canonical `skill-name` does not exist, install normally.
+2. If it exists and the incoming artifact has a higher semantic version, or the
+   same version with an explicit `upgrade: true` flag, perform an in-place
+   upgrade by replacing files and updating stored metadata.
+3. If the name collides without upgrade intent, reject the install with a
+   typed error that includes the existing skill metadata.
+4. If `force: true` is set, overwrite the existing skill in place regardless of
+   version comparison.
+5. If `auto_rename: true` is set, append `-2`, `-3`, and so on until a unique
+   canonical name is found.
+
+The finalized canonical `skill-name` must be returned in the install result and
+must be the exact `skill` value exposed through `skill_read_file`.
+
 ## Validation And Extraction
 
 ### Validation rules
@@ -210,28 +262,30 @@ with an explicit read-only skill-file tool.
 ### 1. Discovery surface
 
 The general skill instructions shown to the model should continue to list
-available skills by name, description, and canonical `SKILL.md` path.
+available skills by name, description, and a logical skill identifier plus the
+bundle-relative entrypoint.
 
 The usage rules should be updated so that when `SKILL.md` references
-`references/...` or `assets/...`, the model is told to use the skill-file tool
-to retrieve only the specific files it needs.
+`references/...` or `assets/...`, the model is told to use
+`skill_read_file` with the advertised `skill` identifier and a bundle-relative
+`path` to retrieve only the specific files it needs.
 
 ### 2. Active-skill injection
 
 When a skill is activated, IronClaw should inject:
 
 1. the skill name
-2. the canonical `SKILL.md` path
+2. the canonical skill identifier and bundle-relative entrypoint
 3. the full `SKILL.md` contents
 
 This is the same progressive-discovery shape used by the codex harness. The
-model gets the main instructions and the root path, but not the entire bundle
-eagerly.
+model gets the main instructions and the stable skill identifier, but not the
+entire bundle eagerly.
 
 An illustrative injected block:
 
 ```xml
-<skill name="openai-docs" path="/home/user/.ironclaw/skills/openai-docs/SKILL.md">
+<skill name="openai-docs" skill="openai-docs" root="." entry="SKILL.md">
 ...contents of SKILL.md...
 </skill>
 ```
@@ -275,9 +329,71 @@ Suggested error shape:
 
 ```json
 {
-  "error": "File is not available for reading",
+  "error": {
+    "code": "path_not_readable",
+    "message": "File is not available for reading"
+  },
   "skill": "openai-docs",
   "path": "scripts/install.sh"
+}
+```
+
+For binary assets or oversized text files, `skill_read_file` must use one
+deterministic phase-1 response: a typed non-inline error payload. It must not
+return base64 data, and it must not switch between error and metadata-only
+success variants.
+
+Required schema for non-inline phase-1 responses:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "skill": { "type": "string" },
+    "path": { "type": "string" },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": ["non_inline_asset", "file_too_large"]
+        },
+        "message": { "type": "string" },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "size": { "type": "integer", "minimum": 0 },
+            "mime_type": { "type": "string" },
+            "fetch_hint": { "type": "string" }
+          },
+          "required": ["size", "mime_type", "fetch_hint"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["code", "message", "metadata"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["skill", "path", "error"],
+  "additionalProperties": false
+}
+```
+
+Example response for a bundled image:
+
+```json
+{
+  "skill": "openai-docs",
+  "path": "assets/logo.png",
+  "error": {
+    "code": "non_inline_asset",
+    "message": "Phase 1 does not return binary or oversized assets inline.",
+    "metadata": {
+      "size": 18231,
+      "mime_type": "image/png",
+      "fetch_hint": "Treat this as a passive asset; request only referenced text files in phase 1."
+    }
+  }
 }
 ```
 
@@ -290,11 +406,17 @@ Suggested error shape:
 3. allow only `SKILL.md`, `references/**`, and `assets/**`
 4. enforce a maximum returned file size
 5. return text content only in phase 1
+6. return the typed non-inline error schema above for binary assets or oversized
+   files under `assets/`
 
-For binary assets under `assets/`, the tool should return a typed error or a
-non-inline metadata result rather than base64-encoding large blobs into the
-prompt path. Phase 1 should optimize for text references, not bulk binary
-transport.
+Validation rules for the typed non-inline error:
+
+1. `error.code` must be `non_inline_asset` for binary assets and
+   `file_too_large` for oversized text files.
+2. `error.metadata.size` must report the on-disk byte length.
+3. `error.metadata.mime_type` must be the detected or inferred media type.
+4. `error.metadata.fetch_hint` must be a stable human-readable instruction that
+   explains that phase 1 supports text references only.
 
 ## Why A Dedicated Tool Instead Of Raw File Paths
 
@@ -314,13 +436,13 @@ A dedicated `skill_read_file` tool has cleaner boundaries:
 
 IronClaw should extend the loaded skill model so the runtime retains:
 
-1. the canonical path to `SKILL.md`
-2. the canonical skill root directory
+1. the canonical skill identifier exposed to the model
+2. the canonical skill root directory on disk
 3. whether the skill was installed as a single file or as a bundle
 
 The existing prompt-only `prompt_content` field is not sufficient for
-progressive file access because the runtime also needs a canonical root for
-`skill_read_file`.
+progressive file access because the runtime also needs the canonical root plus
+the finalized `skill-name` used by `skill_read_file`.
 
 ## UI Changes
 
@@ -366,6 +488,9 @@ Add coverage for:
 5. rejection of executable extensions
 6. `skill_read_file` success for `SKILL.md` and `references/...`
 7. `skill_read_file` rejection for files outside the allowed roots
+8. canonical skill-name derivation for inline, URL, and archive installs
+9. collision handling for upgrade, force overwrite, and auto-rename
+10. typed non-inline error responses for `assets/...`
 
 ### Behavioural tests
 
@@ -373,7 +498,8 @@ Add end-to-end coverage for:
 
 1. install by upload
 2. install by HTTPS URL
-3. activated skill prompt includes canonical `SKILL.md` path
+3. activated skill prompt includes the canonical skill identifier and
+   bundle-relative entrypoint
 4. model can read a referenced bundled text file through `skill_read_file`
 5. plain `SKILL.md` installs still work
 

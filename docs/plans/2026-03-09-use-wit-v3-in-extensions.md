@@ -252,7 +252,7 @@ set -o pipefail && \
   docs/plans/2026-03-09-use-wit-v3-in-extensions.md 2>&1 | \
   tee /tmp/markdownlint-ironclaw-${BRANCH}.out
 set -o pipefail && \
-  cargo test --all-features --test wit_compat_all_registry_extensions_have_source \
+  cargo test --all-features wit_compat_all_registry_extensions_have_source \
   -- --nocapture 2>&1 | \
   tee /tmp/test-registry-sources-ironclaw-${BRANCH}.out
 ```

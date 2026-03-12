@@ -1,3 +1,5 @@
+//! Unit tests for the container worker runtime and its tool-advertising paths.
+
 use std::sync::Arc;
 
 use rstest::rstest;

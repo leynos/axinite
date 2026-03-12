@@ -14,8 +14,8 @@ It is the current host contract used by both `wit/tool.wit` and
 
 Three facts shape almost every extension design decision:
 
-1. The authoritative contracts are [wit/tool.wit](/data/leynos/Projects/ironclaw/wit/tool.wit)
-   and [wit/channel.wit](/data/leynos/Projects/ironclaw/wit/channel.wit).
+1. The authoritative contracts are [wit/tool.wit](wit/tool.wit)
+   and [wit/channel.wit](wit/channel.wit).
 1. The package line for both contracts is `package near:agent@0.3.0;`.
 1. IronClaw installs WebAssembly extensions from named `.tar.gz` bundles, not
    from loose build directories.
@@ -188,7 +188,7 @@ At minimum, prove two separate things:
 1. the extension behavior is correct at the protocol or feature level
 
 IronClaw's current repo-level guardrail for the first point is
-[tests/wit_compat.rs](../tests/wit_compat.rs). If the WIT shape,
+[tests/wit_compat.rs](tests/wit_compat.rs). If the WIT shape,
 versioning, or extension packaging changes, that matrix should be
 rerun.
 
@@ -210,8 +210,8 @@ if the mock hides the integration boundary that matters.
 
 ## Related Repo Docs
 
-- [docs/BUILDING_CHANNELS.md](/data/leynos/Projects/ironclaw/docs/BUILDING_CHANNELS.md)
-- [src/tools/README.md](/data/leynos/Projects/ironclaw/src/tools/README.md)
-- [wit/tool.wit](/data/leynos/Projects/ironclaw/wit/tool.wit)
-- [wit/channel.wit](/data/leynos/Projects/ironclaw/wit/channel.wit)
-- [tests/wit_compat.rs](../tests/wit_compat.rs)
+- [docs/BUILDING_CHANNELS.md](./docs/BUILDING_CHANNELS.md)
+- [src/tools/README.md](./src/tools/README.md)
+- [wit/tool.wit](./wit/tool.wit)
+- [wit/channel.wit](./wit/channel.wit)
+- [tests/wit_compat.rs](./tests/wit_compat.rs)

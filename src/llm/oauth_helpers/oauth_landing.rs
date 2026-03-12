@@ -1,3 +1,8 @@
+//! HTML helpers for the OAuth callback landing page.
+//!
+//! This module renders the small success or failure page shown after an OAuth
+//! callback completes, including basic escaping for provider names.
+
 fn html_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {

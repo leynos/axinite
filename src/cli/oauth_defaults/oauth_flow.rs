@@ -4,6 +4,7 @@ use std::time::Duration;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
+use url::Url;
 
 use crate::llm::oauth_helpers::OAuthCallbackError;
 use crate::secrets::{CreateSecretParams, SecretsStore};
@@ -37,7 +38,7 @@ pub fn build_oauth_url(
     scopes: &[String],
     use_pkce: bool,
     extra_params: &HashMap<String, String>,
-) -> OAuthUrlResult {
+) -> Result<OAuthUrlResult, OAuthCallbackError> {
     let (code_verifier, code_challenge) = if use_pkce {
         let mut verifier_bytes = [0u8; 32];
         rand::rngs::OsRng.fill_bytes(&mut verifier_bytes);
@@ -56,41 +57,54 @@ pub fn build_oauth_url(
     rand::rngs::OsRng.fill_bytes(&mut state_bytes);
     let state = URL_SAFE_NO_PAD.encode(state_bytes);
 
-    let mut auth_url = format!(
-        "{}?client_id={}&response_type=code&redirect_uri={}&state={}",
-        authorization_url,
-        urlencoding::encode(client_id),
-        urlencoding::encode(redirect_uri),
-        urlencoding::encode(&state),
-    );
+    let mut auth_url = Url::parse(authorization_url).map_err(|e| {
+        OAuthCallbackError::Io(format!(
+            "Invalid OAuth authorization URL '{authorization_url}': {e}"
+        ))
+    })?;
+    {
+        let mut query = auth_url.query_pairs_mut();
+        query.append_pair("client_id", client_id);
+        query.append_pair("response_type", "code");
+        query.append_pair("redirect_uri", redirect_uri);
+        query.append_pair("state", &state);
 
-    if !scopes.is_empty() {
-        auth_url.push_str(&format!(
-            "&scope={}",
-            urlencoding::encode(&scopes.join(" "))
-        ));
+        if !scopes.is_empty() {
+            query.append_pair("scope", &scopes.join(" "));
+        }
+
+        if let Some(ref challenge) = code_challenge {
+            query.append_pair("code_challenge", challenge);
+            query.append_pair("code_challenge_method", "S256");
+        }
+
+        for (key, value) in extra_params {
+            query.append_pair(key, value);
+        }
     }
 
-    if let Some(ref challenge) = code_challenge {
-        auth_url.push_str(&format!(
-            "&code_challenge={}&code_challenge_method=S256",
-            challenge
-        ));
-    }
-
-    for (key, value) in extra_params {
-        auth_url.push_str(&format!(
-            "&{}={}",
-            urlencoding::encode(key),
-            urlencoding::encode(value)
-        ));
-    }
-
-    OAuthUrlResult {
-        url: auth_url,
+    Ok(OAuthUrlResult {
+        url: auth_url.to_string(),
         code_verifier,
         state,
+    })
+}
+
+pub(super) fn format_bounded_body(body: &str) -> String {
+    let normalized = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return "<empty body>".to_string();
     }
+
+    if normalized.len() <= 200 {
+        return normalized;
+    }
+
+    let mut end = 200;
+    while end > 0 && !normalized.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}...", &normalized[..end])
 }
 
 /// Exchange an OAuth authorization code for tokens.
@@ -135,8 +149,9 @@ pub async fn exchange_oauth_code(
     if !token_response.status().is_success() {
         let status = token_response.status();
         let body = token_response.text().await.unwrap_or_default();
+        let preview = format_bounded_body(&body);
         return Err(OAuthCallbackError::Io(format!(
-            "Token exchange failed: {status} - {body}"
+            "Token exchange failed: {status} - {preview}"
         )));
     }
 
@@ -222,7 +237,9 @@ pub async fn store_oauth_tokens(
         let scopes_name = format!("{secret_name}_scopes");
         let scopes_value = scopes.join(" ");
         let scopes_params = CreateSecretParams::new(&scopes_name, &scopes_value);
-        let _ = store.create(user_id, scopes_params).await;
+        store.create(user_id, scopes_params).await.map_err(|e| {
+            OAuthCallbackError::Io(format!("Failed to save token scopes metadata: {e}"))
+        })?;
     }
 
     Ok(())
@@ -260,15 +277,7 @@ pub async fn validate_oauth_token(
 
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
-    let truncated: String = if body.len() > 200 {
-        let mut end = 200;
-        while end > 0 && !body.is_char_boundary(end) {
-            end -= 1;
-        }
-        format!("{}...", &body[..end])
-    } else {
-        body
-    };
+    let truncated = format_bounded_body(&body);
 
     Err(OAuthCallbackError::Io(format!(
         "Token validation failed: HTTP {status} (expected {}): {truncated}",

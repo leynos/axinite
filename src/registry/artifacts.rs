@@ -256,24 +256,15 @@ pub async fn install_wasm_files(
 
 #[cfg(test)]
 mod tests {
-    use crate::config::helpers::ENV_MUTEX;
+    use crate::testing::test_utils::EnvVarsGuard;
     use tempfile::TempDir;
 
     use super::*;
 
     fn with_cleared_target_dir<T>(f: impl FnOnce() -> T) -> T {
-        let _guard = ENV_MUTEX.lock().expect("env mutex poisoned");
-        let original = std::env::var("CARGO_TARGET_DIR").ok();
-        unsafe {
-            std::env::remove_var("CARGO_TARGET_DIR");
-        }
-        let result = f();
-        unsafe {
-            if let Some(value) = original {
-                std::env::set_var("CARGO_TARGET_DIR", value);
-            }
-        }
-        result
+        let guard = EnvVarsGuard::new(&["CARGO_TARGET_DIR"]);
+        guard.remove("CARGO_TARGET_DIR");
+        f()
     }
 
     #[test]

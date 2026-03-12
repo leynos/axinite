@@ -1,10 +1,14 @@
+//! Shared conversion and normalization helpers for the rig adapter.
+//!
+//! These helpers keep provider-facing request and response shaping consistent
+//! across the adapter implementation and its tests.
+
 use super::*;
 
-/// Convert IronClaw messages to rig-core format.
+/// Normalize an optional raw tool-call ID into a non-empty identifier.
 ///
-/// Returns `(preamble, chat_history)` where preamble is extracted from
-/// any System message and chat_history contains the rest.
-/// Responses-style providers require a non-empty tool call ID.
+/// Returns the trimmed `raw` value when it is present and non-empty. Otherwise,
+/// generates a deterministic fallback string using `seed`.
 pub(super) fn normalized_tool_call_id(raw: Option<&str>, seed: usize) -> String {
     match raw.map(str::trim).filter(|id| !id.is_empty()) {
         Some(id) => id.to_string(),

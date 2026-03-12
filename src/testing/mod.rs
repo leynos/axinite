@@ -19,6 +19,8 @@
 //! ```
 
 pub mod credentials;
+#[cfg(test)]
+pub mod test_utils;
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -46,7 +48,7 @@ use crate::llm::{
 use crate::tools::ToolRegistry;
 use crate::tools::wasm::{ResourceLimits, WasmRuntimeConfig, WasmToolRuntime};
 
-static METADATA_TEST_RUNTIME: OnceLock<Arc<WasmToolRuntime>> = OnceLock::new();
+static METADATA_TEST_RUNTIME: OnceLock<Result<Arc<WasmToolRuntime>, String>> = OnceLock::new();
 
 /// Create a libSQL-backed test database in a temporary directory.
 ///
@@ -493,20 +495,23 @@ impl Default for TestHarnessBuilder {
 
 /// Shared WASM runtime for metadata extraction and schema publication regressions.
 pub fn metadata_test_runtime() -> anyhow::Result<Arc<WasmToolRuntime>> {
-    if let Some(runtime) = METADATA_TEST_RUNTIME.get() {
-        return Ok(Arc::clone(runtime));
-    }
+    let runtime = METADATA_TEST_RUNTIME.get_or_init(|| {
+        let config = WasmRuntimeConfig {
+            default_limits: ResourceLimits::default()
+                .with_memory(8 * 1024 * 1024)
+                .with_fuel(100_000)
+                .with_timeout(Duration::from_secs(5)),
+            ..WasmRuntimeConfig::for_testing()
+        };
+        WasmToolRuntime::new(config)
+            .map(Arc::new)
+            .map_err(|err| err.to_string())
+    });
 
-    let config = WasmRuntimeConfig {
-        default_limits: ResourceLimits::default()
-            .with_memory(8 * 1024 * 1024)
-            .with_fuel(100_000)
-            .with_timeout(Duration::from_secs(5)),
-        ..WasmRuntimeConfig::for_testing()
-    };
-    let runtime = Arc::new(WasmToolRuntime::new(config)?);
-    let _ = METADATA_TEST_RUNTIME.set(Arc::clone(&runtime));
-    Ok(runtime)
+    match runtime {
+        Ok(runtime) => Ok(Arc::clone(runtime)),
+        Err(err) => Err(anyhow::anyhow!(err.clone())),
+    }
 }
 
 /// Source directory for the bundled GitHub WASM test tool.

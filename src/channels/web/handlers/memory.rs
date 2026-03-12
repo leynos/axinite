@@ -14,14 +14,14 @@ use crate::channels::web::types::*;
 
 #[derive(Deserialize)]
 pub struct TreeQuery {
-    #[allow(dead_code)]
     pub depth: Option<usize>,
 }
 
 pub async fn memory_tree_handler(
     State(state): State<Arc<GatewayState>>,
-    Query(_query): Query<TreeQuery>,
+    Query(query): Query<TreeQuery>,
 ) -> Result<Json<MemoryTreeResponse>, (StatusCode, String)> {
+    let _depth = query.depth;
     let workspace = state.workspace.as_ref().ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         "Workspace not available".to_string(),

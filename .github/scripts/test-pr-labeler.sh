@@ -21,18 +21,21 @@ case "$*" in
   pr\ list\ --repo\ test/ironclaw\ --state\ merged\ --author\ contributor\ --limit\ 100\ --json\ number\ --jq\ length)
     printf '0\n'
     ;;
-  pr\ edit\ 1\ --repo\ test/ironclaw\ --add-label\ size:\ XL)
-    printf 'ADD:%s\n' "size: XL" >>"$GH_LOG"
-    ;;
-  pr\ edit\ 1\ --repo\ test/ironclaw\ --add-label\ risk:\ low)
-    printf 'ADD:%s\n' "risk: low" >>"$GH_LOG"
-    ;;
-  pr\ edit\ 1\ --repo\ test/ironclaw\ --add-label\ contributor:\ new)
-    printf 'ADD:%s\n' "contributor: new" >>"$GH_LOG"
-    ;;
   *)
-    printf 'unexpected gh invocation: %s\n' "$*" >&2
-    exit 1
+    if [[ $# -eq 7 && "$1" == "pr" && "$2" == "edit" && "$3" == "1" && "$4" == "--repo" && "$5" == "test/ironclaw" && "$6" == "--add-label" ]]; then
+      case "$7" in
+        "size: XL"|"risk: low"|"contributor: new")
+          printf 'ADD:%s\n' "$7" >>"$GH_LOG"
+          ;;
+        *)
+          printf 'unexpected gh invocation: %s\n' "$*" >&2
+          exit 1
+          ;;
+      esac
+    else
+      printf 'unexpected gh invocation: %s\n' "$*" >&2
+      exit 1
+    fi
     ;;
 esac
 EOF
@@ -44,7 +47,10 @@ export GH_LOG
 export PR_NUMBER=1
 export REPO=test/ironclaw
 
-output="$("$repo_root/.github/scripts/pr-labeler.sh" 2>&1)"
+if ! output="$("$repo_root/.github/scripts/pr-labeler.sh" 2>&1)"; then
+    printf '%s\n' "$output"
+    exit 1
+fi
 
 printf '%s\n' "$output"
 

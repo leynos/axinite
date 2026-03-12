@@ -1,3 +1,5 @@
+//! Metadata definitions for extension-management tools and their approval rules.
+
 use crate::tools::tool::ApprovalRequirement;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

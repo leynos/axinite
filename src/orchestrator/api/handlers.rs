@@ -1,3 +1,9 @@
+//! Handlers for the orchestrator's internal worker HTTP API.
+//!
+//! These endpoints proxy LLM/tool requests, surface job state, serve approved
+//! credentials to workers, and translate worker events into persisted records
+//! plus web-facing SSE notifications.
+
 use std::sync::Arc;
 
 use axum::Json;
@@ -383,10 +389,15 @@ pub(super) async fn get_credentials_handler(
         });
     }
 
-    Ok((
-        StatusCode::OK,
-        Json(serde_json::to_value(&credentials).unwrap_or(serde_json::Value::Null)),
-    ))
+    let body = serde_json::to_value(&credentials).map_err(|e| {
+        tracing::error!(
+            job_id = %job_id,
+            "Failed to serialize credential response payload: {}", e
+        );
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok((StatusCode::OK, Json(body)))
 }
 
 fn format_finish_reason(reason: crate::llm::FinishReason) -> String {

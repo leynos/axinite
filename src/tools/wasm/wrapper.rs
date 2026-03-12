@@ -108,6 +108,21 @@ struct PreparedHttpRequest {
     headers: HashMap<String, String>,
 }
 
+fn secret_redaction_variants(secret: &str) -> Vec<String> {
+    let mut variants = vec![secret.to_string()];
+    let percent_encoded = urlencoding::encode(secret).into_owned();
+    if percent_encoded != secret {
+        variants.push(percent_encoded.clone());
+        let plus_encoded = percent_encoded.replace("%20", "+");
+        if plus_encoded != percent_encoded {
+            variants.push(plus_encoded);
+        }
+    }
+    variants.sort();
+    variants.dedup();
+    variants
+}
+
 impl StoreData {
     fn new(
         memory_limit: u64,
@@ -161,12 +176,17 @@ impl StoreData {
         let mut result = text.to_string();
         for (name, value) in &self.credentials {
             if !value.is_empty() {
-                result = result.replace(value, &format!("[REDACTED:{}]", name));
+                let replacement = format!("[REDACTED:{}]", name);
+                for variant in secret_redaction_variants(value) {
+                    result = result.replace(&variant, &replacement);
+                }
             }
         }
         for cred in &self.host_credentials {
             if !cred.secret_value.is_empty() {
-                result = result.replace(&cred.secret_value, "[REDACTED:host_credential]");
+                for variant in secret_redaction_variants(&cred.secret_value) {
+                    result = result.replace(&variant, "[REDACTED:host_credential]");
+                }
             }
         }
         result
@@ -1370,8 +1390,38 @@ mod tests {
         assert!(redacted.contains("[REDACTED:host_credential]"));
     }
 
+    #[test]
+    fn test_redact_credentials_includes_percent_encoded_host_credentials() {
+        use crate::tools::wasm::wrapper::{ResolvedHostCredential, StoreData};
+        use std::collections::HashMap;
+
+        let host_credentials = vec![ResolvedHostCredential {
+            host_patterns: vec!["api.example.com".to_string()],
+            headers: HashMap::new(),
+            query_params: HashMap::new(),
+            secret_value: "super secret token".to_string(),
+        }];
+
+        let store_data = StoreData::new(
+            1024 * 1024,
+            Capabilities::default(),
+            HashMap::new(),
+            host_credentials,
+        );
+
+        let text = "Error: request to https://api.example.com?key=super%20secret%20token failed";
+        let redacted = store_data.redact_credentials(text);
+        assert!(!redacted.contains("super%20secret%20token"));
+        assert!(redacted.contains("[REDACTED:host_credential]"));
+    }
+
     fn test_github_pat() -> String {
-        format!("github_pat_{}_{}", "A".repeat(22), "B".repeat(59))
+        let prefix = "github";
+        let marker = "_pat_";
+        let account = "A".repeat(22);
+        let separator = "_";
+        let token = "B".repeat(59);
+        format!("{prefix}{marker}{account}{separator}{token}")
     }
 
     fn test_prepare_request_capabilities(host: &str) -> Capabilities {

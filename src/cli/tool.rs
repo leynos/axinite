@@ -769,7 +769,7 @@ async fn auth_tool_oauth(
         &oauth.scopes,
         oauth.use_pkce,
         &oauth.extra_params,
-    );
+    )?;
     let code_verifier = oauth_result.code_verifier;
 
     println!("  Opening browser for {} login...", display_name);

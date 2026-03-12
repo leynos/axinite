@@ -1,3 +1,5 @@
+//! Fixture-backed schema test groups used by the strict tool schema validator.
+
 use super::*;
 
 pub(crate) fn load_complex_tool_schema_fixture(tool_name: &str) -> serde_json::Value {

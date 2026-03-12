@@ -217,6 +217,9 @@ impl LoopDelegate for ContainerDelegate {
     }
 
     async fn after_iteration(&self, _iteration: usize) {
+        // Sleep for 100ms between iterations so the delegate does not busy-loop
+        // while still yielding frequently enough for event delivery and other
+        // runtime tasks to make progress.
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
