@@ -9,14 +9,15 @@
 //! 3. When owner_id is set, only that user can interact
 //! 4. Authorization works correctly for both private and group chats
 
+mod support;
+
 use std::collections::HashMap;
+
+use ironclaw::channels::wasm::{ChannelCapabilities, WasmChannel, WasmChannelRuntime};
+use ironclaw::pairing::PairingStore;
 use std::sync::Arc;
 
-use ironclaw::channels::wasm::{
-    ChannelCapabilities, PreparedChannelModule, WasmChannel, WasmChannelRuntime,
-    WasmChannelRuntimeConfig,
-};
-use ironclaw::pairing::PairingStore;
+use crate::support::telegram::{create_test_runtime, load_telegram_module, telegram_wasm_path};
 
 /// Skip the test if the Telegram WASM module hasn't been built.
 /// In CI (detected via the `CI` env var), panic instead of skipping so a
@@ -24,7 +25,10 @@ use ironclaw::pairing::PairingStore;
 macro_rules! require_telegram_wasm {
     () => {
         if let Err(msg) = telegram_wasm_path() {
-            let msg = format!("{}. Build with: ./channels-src/telegram/build.sh", msg);
+            let msg = format!(
+                "{}. Build with: cd channels-src/telegram && cargo build --target wasm32-wasip2 --release",
+                msg
+            );
             if std::env::var("CI").is_ok() {
                 panic!("{}", msg);
             }
@@ -33,57 +37,6 @@ macro_rules! require_telegram_wasm {
         }
     };
 }
-/// Path to the built Telegram WASM module
-fn telegram_wasm_path() -> Result<std::path::PathBuf, String> {
-    let channel_dir =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("channels-src/telegram");
-
-    // `build.rs` writes a flat component artifact for the host to load. Prefer
-    // that output, then fall back to the raw build artifact across shared or
-    // per-crate target directories.
-    let bundled_component = channel_dir.join("telegram.wasm");
-    if bundled_component.exists() {
-        return Ok(bundled_component);
-    }
-
-    ironclaw::registry::artifacts::find_wasm_artifact(&channel_dir, "telegram_channel", "release")
-        .ok_or_else(|| {
-            let expected = ironclaw::registry::artifacts::resolve_target_dir(&channel_dir)
-                .join("wasm32-wasip2/release/telegram_channel.wasm");
-            format!(
-                "Telegram WASM module not found. Checked {} and {}",
-                bundled_component.display(),
-                expected.display()
-            )
-        })
-}
-
-/// Create a test runtime for WASM channel operations.
-fn create_test_runtime() -> Arc<WasmChannelRuntime> {
-    let config = WasmChannelRuntimeConfig::for_testing();
-    Arc::new(WasmChannelRuntime::new(config).expect("Failed to create runtime"))
-}
-
-/// Load the real Telegram WASM module.
-async fn load_telegram_module(
-    runtime: &Arc<WasmChannelRuntime>,
-) -> Result<Arc<PreparedChannelModule>, Box<dyn std::error::Error>> {
-    let path = telegram_wasm_path().map_err(std::io::Error::other)?;
-    let wasm_bytes = std::fs::read(&path)
-        .map_err(|e| format!("Failed to read WASM module at {}: {}", path.display(), e))?;
-
-    let module = runtime
-        .prepare(
-            "telegram",
-            &wasm_bytes,
-            None,
-            Some("Telegram Bot API channel".to_string()),
-        )
-        .await?;
-
-    Ok(module)
-}
-
 /// Create a Telegram channel instance with configuration.
 async fn create_telegram_channel(
     runtime: Arc<WasmChannelRuntime>,
