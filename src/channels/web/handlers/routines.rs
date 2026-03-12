@@ -3,9 +3,10 @@
 use std::sync::Arc;
 
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
+    routing::{delete, get, post},
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -13,6 +14,17 @@ use uuid::Uuid;
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
 use crate::error::RoutineError;
+
+pub fn routes() -> Router<Arc<GatewayState>> {
+    Router::new()
+        .route("/api/routines", get(routines_list_handler))
+        .route("/api/routines/summary", get(routines_summary_handler))
+        .route("/api/routines/{id}", get(routines_detail_handler))
+        .route("/api/routines/{id}/trigger", post(routines_trigger_handler))
+        .route("/api/routines/{id}/toggle", post(routines_toggle_handler))
+        .route("/api/routines/{id}", delete(routines_delete_handler))
+        .route("/api/routines/{id}/runs", get(routines_runs_handler))
+}
 
 pub async fn routines_list_handler(
     State(state): State<Arc<GatewayState>>,

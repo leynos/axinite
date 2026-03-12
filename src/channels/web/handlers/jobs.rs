@@ -4,15 +4,29 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
+    routing::{get, post},
 };
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
+
+pub fn routes() -> Router<Arc<GatewayState>> {
+    Router::new()
+        .route("/api/jobs", get(jobs_list_handler))
+        .route("/api/jobs/summary", get(jobs_summary_handler))
+        .route("/api/jobs/{id}", get(jobs_detail_handler))
+        .route("/api/jobs/{id}/cancel", post(jobs_cancel_handler))
+        .route("/api/jobs/{id}/restart", post(jobs_restart_handler))
+        .route("/api/jobs/{id}/prompt", post(jobs_prompt_handler))
+        .route("/api/jobs/{id}/events", get(jobs_events_handler))
+        .route("/api/jobs/{id}/files/list", get(job_files_list_handler))
+        .route("/api/jobs/{id}/files/read", get(job_files_read_handler))
+}
 
 pub async fn jobs_list_handler(
     State(state): State<Arc<GatewayState>>,

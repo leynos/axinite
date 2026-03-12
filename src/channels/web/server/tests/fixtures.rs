@@ -5,6 +5,9 @@ use axum::{Router, routing::get};
 use rstest::fixture;
 
 use super::super::*;
+use crate::channels::web::handlers::oauth::{
+    oauth_callback_handler, slack_relay_oauth_callback_handler,
+};
 use crate::testing::credentials::TEST_GATEWAY_CRYPTO_KEY;
 
 #[derive(Clone, Copy, Debug, Default)]

@@ -3,10 +3,11 @@
 use std::sync::Arc;
 
 use axum::{
-    Json,
+    Json, Router,
     extract::{Query, State, WebSocketUpgrade},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
+    routing::{get, post},
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -16,10 +17,81 @@ use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
 use crate::channels::web::util::{build_turns_from_db_messages, truncate_preview};
 
+pub fn routes() -> Router<Arc<GatewayState>> {
+    Router::new()
+        .route("/api/chat/send", post(chat_send_handler))
+        .route("/api/chat/approval", post(chat_approval_handler))
+        .route("/api/chat/auth-token", post(chat_auth_token_handler))
+        .route("/api/chat/auth-cancel", post(chat_auth_cancel_handler))
+        .route("/api/chat/events", get(chat_events_handler))
+        .route("/api/chat/ws", get(chat_ws_handler))
+        .route("/api/chat/history", get(chat_history_handler))
+        .route("/api/chat/threads", get(chat_threads_handler))
+        .route("/api/chat/thread/new", post(chat_new_thread_handler))
+}
+
+/// Convert web gateway `ImageData` to `IncomingAttachment` objects.
+pub(crate) fn images_to_attachments(
+    images: &[ImageData],
+) -> Vec<crate::channels::IncomingAttachment> {
+    use base64::Engine;
+
+    images
+        .iter()
+        .enumerate()
+        .filter_map(|(i, img)| {
+            if !img.media_type.starts_with("image/") {
+                tracing::warn!(
+                    "Skipping image {i}: invalid media type '{}' (must start with 'image/')",
+                    img.media_type
+                );
+                return None;
+            }
+            let data = match base64::engine::general_purpose::STANDARD.decode(&img.data) {
+                Ok(d) => d,
+                Err(e) => {
+                    tracing::warn!("Skipping image {i}: invalid base64 data: {e}");
+                    return None;
+                }
+            };
+            Some(crate::channels::IncomingAttachment {
+                id: format!("web-image-{i}"),
+                kind: crate::channels::AttachmentKind::Image,
+                mime_type: img.media_type.clone(),
+                filename: Some(format!("image-{i}.{}", mime_to_ext(&img.media_type))),
+                size_bytes: Some(data.len() as u64),
+                source_url: None,
+                storage_key: None,
+                extracted_text: None,
+                data,
+                duration_secs: None,
+            })
+        })
+        .collect()
+}
+
+/// Map MIME type to file extension.
+fn mime_to_ext(mime: &str) -> &str {
+    match mime {
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/svg+xml" => "svg",
+        _ => "jpg",
+    }
+}
+
 pub async fn chat_send_handler(
     State(state): State<Arc<GatewayState>>,
+    headers: HeaderMap,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<(StatusCode, Json<SendMessageResponse>), (StatusCode, String)> {
+    tracing::trace!(
+        "[chat_send_handler] Received message: content_len={}, thread_id={:?}",
+        req.content.len(),
+        req.thread_id
+    );
+
     if !state.chat_rate_limiter.check() {
         return Err((
             StatusCode::TOO_MANY_REQUESTS,
@@ -28,14 +100,33 @@ pub async fn chat_send_handler(
     }
 
     let mut msg = IncomingMessage::new("gateway", &state.user_id, &req.content);
+    // Prefer timezone from JSON body, fall back to X-Timezone header
+    let tz = req
+        .timezone
+        .as_deref()
+        .or_else(|| headers.get("X-Timezone").and_then(|v| v.to_str().ok()));
+    if let Some(tz) = tz {
+        msg = msg.with_timezone(tz);
+    }
 
     if let Some(ref thread_id) = req.thread_id {
         msg = msg.with_thread(thread_id);
         msg = msg.with_metadata(serde_json::json!({"thread_id": thread_id}));
     }
 
+    // Convert uploaded images to IncomingAttachments
+    if !req.images.is_empty() {
+        let attachments = images_to_attachments(&req.images);
+        msg = msg.with_attachments(attachments);
+    }
+
     let msg_id = msg.id;
-    let thread_id = msg.thread_id.clone();
+    tracing::trace!(
+        "[chat_send_handler] Created message id={}, content_len={}, images={}",
+        msg_id,
+        req.content.len(),
+        req.images.len()
+    );
 
     let tx_guard = state.msg_tx.read().await;
     let tx = tx_guard.as_ref().ok_or((
@@ -43,6 +134,7 @@ pub async fn chat_send_handler(
         "Channel not started".to_string(),
     ))?;
 
+    tracing::debug!("[chat_send_handler] Sending message through channel");
     tx.send(msg).await.map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -50,12 +142,7 @@ pub async fn chat_send_handler(
         )
     })?;
 
-    tracing::debug!(
-        message_id = %msg_id,
-        thread_id = ?thread_id,
-        content_len = req.content.len(),
-        "Message queued to agent loop"
-    );
+    tracing::debug!("[chat_send_handler] Message sent successfully, returning 202 ACCEPTED");
 
     Ok((
         StatusCode::ACCEPTED,
@@ -216,18 +303,24 @@ pub async fn clear_auth_mode(state: &GatewayState) {
 pub async fn chat_events_handler(
     State(state): State<Arc<GatewayState>>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    state.sse.subscribe().ok_or((
+    let sse = state.sse.subscribe().ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         "Too many connections".to_string(),
+    ))?;
+    Ok((
+        [("X-Accel-Buffering", "no"), ("Cache-Control", "no-cache")],
+        sse,
     ))
 }
 
 pub async fn chat_ws_handler(
-    headers: axum::http::HeaderMap,
+    headers: HeaderMap,
     ws: WebSocketUpgrade,
     State(state): State<Arc<GatewayState>>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     // Validate Origin header to prevent cross-site WebSocket hijacking.
+    // Require the header outright; browsers always send it for WS upgrades,
+    // so a missing Origin means a non-browser client trying to bypass the check.
     let origin = headers
         .get("origin")
         .and_then(|v| v.to_str().ok())
@@ -238,6 +331,9 @@ pub async fn chat_ws_handler(
             )
         })?;
 
+    // Extract the host from the origin and compare exactly, so that
+    // crafted origins like "http://localhost.evil.com" are rejected.
+    // Origin format is "scheme://host[:port]".
     let host = origin
         .strip_prefix("http://")
         .or_else(|| origin.strip_prefix("https://"))
@@ -271,6 +367,7 @@ pub async fn chat_history_handler(
     ))?;
 
     let session = session_manager.get_or_create_session(&state.user_id).await;
+    let sess = session.lock().await;
 
     let limit = query.limit.unwrap_or(50);
     let before_cursor = query
@@ -288,17 +385,18 @@ pub async fn chat_history_handler(
         })
         .transpose()?;
 
-    // Find the thread (lock only briefly to get active_thread if needed)
+    // Find the thread
     let thread_id = if let Some(ref tid) = query.thread_id {
         Uuid::parse_str(tid)
             .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid thread_id".to_string()))?
     } else {
-        let sess = session.lock().await;
         sess.active_thread
             .ok_or((StatusCode::NOT_FOUND, "No active thread".to_string()))?
     };
 
     // Verify the thread belongs to the authenticated user before returning any data.
+    // In-memory threads are already scoped by user via session_manager, but DB
+    // lookups could expose another user's conversation if the UUID is guessed.
     if query.thread_id.is_some()
         && let Some(ref store) = state.store
     {
@@ -306,11 +404,8 @@ pub async fn chat_history_handler(
             .conversation_belongs_to_user(thread_id, &state.user_id)
             .await
             .unwrap_or(false);
-        if !owned {
-            let sess = session.lock().await;
-            if !sess.threads.contains_key(&thread_id) {
-                return Err((StatusCode::NOT_FOUND, "Thread not found".to_string()));
-            }
+        if !owned && !sess.threads.contains_key(&thread_id) {
+            return Err((StatusCode::NOT_FOUND, "Thread not found".to_string()));
         }
     }
 
@@ -335,60 +430,56 @@ pub async fn chat_history_handler(
     }
 
     // Try in-memory first (freshest data for active threads)
-    // Lock only when checking in-memory state
+    if let Some(thread) = sess.threads.get(&thread_id)
+        && (!thread.turns.is_empty() || thread.pending_approval.is_some())
     {
-        let sess = session.lock().await;
-        if let Some(thread) = sess.threads.get(&thread_id)
-            && (!thread.turns.is_empty() || thread.pending_approval.is_some())
-        {
-            let turns: Vec<TurnInfo> = thread
-                .turns
-                .iter()
-                .map(|t| TurnInfo {
-                    turn_number: t.turn_number,
-                    user_input: t.user_input.clone(),
-                    response: t.response.clone(),
-                    state: format!("{:?}", t.state),
-                    started_at: t.started_at.to_rfc3339(),
-                    completed_at: t.completed_at.map(|dt| dt.to_rfc3339()),
-                    tool_calls: t
-                        .tool_calls
-                        .iter()
-                        .map(|tc| ToolCallInfo {
-                            name: tc.name.clone(),
-                            has_result: tc.result.is_some(),
-                            has_error: tc.error.is_some(),
-                            result_preview: tc.result.as_ref().map(|r| {
-                                let s = match r {
-                                    serde_json::Value::String(s) => s.clone(),
-                                    other => other.to_string(),
-                                };
-                                truncate_preview(&s, 500)
-                            }),
-                            error: tc.error.clone(),
-                        })
-                        .collect(),
-                })
-                .collect();
+        let turns: Vec<TurnInfo> = thread
+            .turns
+            .iter()
+            .map(|t| TurnInfo {
+                turn_number: t.turn_number,
+                user_input: t.user_input.clone(),
+                response: t.response.clone(),
+                state: format!("{:?}", t.state),
+                started_at: t.started_at.to_rfc3339(),
+                completed_at: t.completed_at.map(|dt| dt.to_rfc3339()),
+                tool_calls: t
+                    .tool_calls
+                    .iter()
+                    .map(|tc| ToolCallInfo {
+                        name: tc.name.clone(),
+                        has_result: tc.result.is_some(),
+                        has_error: tc.error.is_some(),
+                        result_preview: tc.result.as_ref().map(|r| {
+                            let s = match r {
+                                serde_json::Value::String(s) => s.clone(),
+                                other => other.to_string(),
+                            };
+                            truncate_preview(&s, 500)
+                        }),
+                        error: tc.error.clone(),
+                    })
+                    .collect(),
+            })
+            .collect();
 
-            let pending_approval = thread
-                .pending_approval
-                .as_ref()
-                .map(|pa| PendingApprovalInfo {
-                    request_id: pa.request_id.to_string(),
-                    tool_name: pa.tool_name.clone(),
-                    description: pa.description.clone(),
-                    parameters: serde_json::to_string_pretty(&pa.parameters).unwrap_or_default(),
-                });
+        let pending_approval = thread
+            .pending_approval
+            .as_ref()
+            .map(|pa| PendingApprovalInfo {
+                request_id: pa.request_id.to_string(),
+                tool_name: pa.tool_name.clone(),
+                description: pa.description.clone(),
+                parameters: serde_json::to_string_pretty(&pa.parameters).unwrap_or_default(),
+            });
 
-            return Ok(Json(HistoryResponse {
-                thread_id,
-                turns,
-                has_more: false,
-                oldest_timestamp: None,
-                pending_approval,
-            }));
-        }
+        return Ok(Json(HistoryResponse {
+            thread_id,
+            turns,
+            has_more: false,
+            oldest_timestamp: None,
+            pending_approval,
+        }));
     }
 
     // Fall back to DB for historical threads not in memory (paginated)
@@ -430,6 +521,7 @@ pub async fn chat_threads_handler(
     ))?;
 
     let session = session_manager.get_or_create_session(&state.user_id).await;
+    let sess = session.lock().await;
 
     // Try DB first for persistent thread list
     if let Some(ref store) = state.store {
@@ -479,22 +571,15 @@ pub async fn chat_threads_handler(
                 });
             }
 
-            // Read active thread while holding minimal lock (just before return)
-            let active_thread = {
-                let sess = session.lock().await;
-                sess.active_thread
-            };
-
             return Ok(Json(ThreadListResponse {
                 assistant_thread,
                 threads,
-                active_thread,
+                active_thread: sess.active_thread,
             }));
         }
     }
 
     // Fallback: in-memory only (no assistant thread without DB)
-    let sess = session.lock().await;
     let mut sorted_threads: Vec<_> = sess.threads.values().collect();
     sorted_threads.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     let threads: Vec<ThreadInfo> = sorted_threads
@@ -511,13 +596,10 @@ pub async fn chat_threads_handler(
         })
         .collect();
 
-    let active_thread = sess.active_thread;
-    drop(sess); // Explicit drop to release lock
-
     Ok(Json(ThreadListResponse {
         assistant_thread: None,
         threads,
-        active_thread,
+        active_thread: sess.active_thread,
     }))
 }
 

@@ -3,14 +3,24 @@
 use std::sync::Arc;
 
 use axum::{
-    Json,
+    Json, Router,
     extract::{Query, State},
     http::StatusCode,
+    routing::{get, post},
 };
 use serde::Deserialize;
 
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
+
+pub fn routes() -> Router<Arc<GatewayState>> {
+    Router::new()
+        .route("/api/memory/tree", get(memory_tree_handler))
+        .route("/api/memory/list", get(memory_list_handler))
+        .route("/api/memory/read", get(memory_read_handler))
+        .route("/api/memory/write", post(memory_write_handler))
+        .route("/api/memory/search", post(memory_search_handler))
+}
 
 #[derive(Deserialize)]
 pub struct TreeQuery {

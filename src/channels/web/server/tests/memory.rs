@@ -5,8 +5,13 @@ use rstest::rstest;
 #[cfg(feature = "libsql")]
 use tower::ServiceExt;
 
-use super::super::*;
 use super::fixtures::{TestGatewayStateFactory, test_gateway_state};
+#[cfg(feature = "libsql")]
+use crate::channels::web::handlers::memory::{memory_read_handler, memory_search_handler};
+#[cfg(feature = "libsql")]
+use crate::workspace::Workspace;
+#[cfg(feature = "libsql")]
+use axum::http::StatusCode;
 
 #[cfg(feature = "libsql")]
 #[rstest]

@@ -7,13 +7,13 @@ Browser-facing HTTP API and SSE/WebSocket real-time streaming. Axum-based, singl
 | File | Role |
 |------|------|
 | `mod.rs` | Gateway builder, startup, `WebChannel` implementation, `with_*` builder methods |
-| `server.rs` | `GatewayState`, `start_server()`, all Axum route registrations, inline handlers |
+| `server.rs` | `GatewayState`, `start_server()`, rate limiting, and top-level router composition |
 | `types.rs` | Request/response DTOs and `SseEvent` enum (source of truth for SSE contract) |
 | `sse.rs` | `SseManager` — broadcast channel that fans out `SseEvent` to all connected SSE clients |
 | `ws.rs` | WebSocket handler (`handle_ws_connection`) + `WsConnectionTracker` |
 | `auth.rs` | Bearer token middleware (`Authorization: Bearer <GATEWAY_AUTH_TOKEN>`) |
 | `log_layer.rs` | Tracing layer that tees log lines to the `/api/logs/events` SSE stream |
-| `handlers/` | Handler functions split by domain: `chat`, `extensions`, `jobs`, `memory`, `routines`, `settings`, `skills`, `static_files` |
+| `handlers/` | Handler functions split by domain: `chat`, `extensions`, `jobs`, `memory`, `oauth`, `pairing`, `routines`, `settings`, `skills`, `static_files` |
 | `openai_compat.rs` | OpenAI-compatible proxy (`/v1/chat/completions`, `/v1/models`) |
 | `util.rs` | Shared helpers (`build_turns_from_db_messages`, `truncate_preview`) |
 | `static/` | Single-page app (HTML/CSS/JS) — embedded at compile time via `include_str!`/`include_bytes!` |
@@ -206,7 +206,7 @@ Tool approval state is **in-memory only** (not persisted to DB). Server restart 
 ## Adding a New API Endpoint
 
 1. Define request/response types in `types.rs`.
-2. Implement the handler in the appropriate `handlers/*.rs` file (or inline in `server.rs` for simple handlers).
-3. Register the route in `start_server()` in `server.rs` under the correct router (`public`, `protected`, or `statics`).
+2. Implement the handler in the appropriate `handlers/*.rs` file.
+3. Register the route in that module's `routes()`/`public_routes()`/`protected_routes()` helper, then merge it from `start_server()` in `server.rs`.
 4. If it is an SSE or WebSocket endpoint, add its path to `allows_query_token_auth()` in `auth.rs`.
 5. If it requires a new `GatewayState` field, add it to the struct and to both the `GatewayChannel::new()` initializer and `rebuild_state()` in `mod.rs`, then add a `with_*` builder method.

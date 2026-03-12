@@ -2,11 +2,11 @@ use axum::body::Body;
 use rstest::rstest;
 use tower::ServiceExt;
 
-use super::super::*;
 use super::fixtures::{
     TestGatewayStateFactory, TestRelayOAuthRouterFactory, build_test_ext_mgr,
     build_test_secrets_store, test_gateway_state, test_relay_oauth_router,
 };
+use crate::channels::relay::DEFAULT_RELAY_NAME;
 
 #[rstest]
 #[tokio::test]
