@@ -44,8 +44,8 @@ The main paths for this effort are:
   points, uses `cargo-nextest` for the root crate host path, and keeps
   explicit `cargo test` fallbacks for comparison and standalone WASM
   crates.
-- `build.rs`, which embeds registry metadata and also forces a nested
-  Telegram WASM build during normal host compilation.
+- `build.rs`, which now embeds registry metadata only and no longer
+  forces a nested Telegram WASM build during normal host compilation.
 - `scripts/build-wasm-extensions.sh`, which loops over registry
   manifests and builds each extension crate independently.
 - `.github/workflows/test.yml`,
@@ -420,7 +420,22 @@ Work from the repository root
   then ran `3186` tests across `43` binaries with `3186 passed` and
   `6 skipped`; the follow-on `tools-src/github` suite also passed with
   `5` tests.
-- [ ] Implement Milestone 2 and record fresh evidence.
+- [x] 2026-03-12 11:30Z: Removed the Telegram build from `build.rs` and
+  moved the remaining release-oriented behavior to explicit scripts and
+  documentation. `scripts/build-all.sh` now rebuilds channels
+  explicitly, and the developer-facing docs no longer claim that
+  `cargo build` auto-bundles Telegram.
+- [x] 2026-03-12 11:30Z: Cleaned the host and Telegram build outputs,
+  then re-ran the `libsql` timing path. The post-change command
+  finished in `1:25.45`, peaked at `2351212` KB RSS, and wrote
+  `target/cargo-timings/cargo-timing-20260312T111017.842651318Z.html`
+  without triggering a nested channel build.
+- [x] 2026-03-12 11:30Z: Proved the explicit artifact path still works
+  with `./scripts/build-wasm-extensions.sh --channels`, which rebuilt
+  `discord`, `slack`, `telegram`, and `whatsapp` successfully after the
+  clean. Re-ran the full gate set afterward, including `make test`,
+  with all tests still passing.
+- [ ] Implement Milestone 3 and record fresh evidence.
 
 ## Surprises & Discoveries
 
@@ -439,6 +454,10 @@ Work from the repository root
   this branch. Both the `libsql` slice and the default-feature
   `make test` path passed cleanly once the GitHub WASM artifact was
   prebuilt.
+- `src/channels/wasm/bundled.rs` already treats channels as explicit
+  on-disk artifacts and falls back to the normal build tree. The flat
+  `channels-src/telegram/telegram.wasm` file from `build.rs` was not
+  required for normal host compilation.
 - The representative `libsql` timing path still spends significant time
   in `wasmtime`, `wasmtime-wasi`, `cranelift-codegen`, and the main
   `ironclaw` crate, which means linker improvements alone will not solve
@@ -450,6 +469,11 @@ Work from the repository root
   the single large `ironclaw` test crate compile, not nextest
   execution. The actual `nextest` runtime was about `30.7s` after a
   `6m 22s` compile.
+- Removing the hidden Telegram build reduced the representative
+  `libsql` check command from `1m 58.05s` to `1m 25.45s` on this branch
+  after cleaning the host and Telegram build outputs. Peak RSS stayed
+  roughly flat, which implies the win is mostly removed build work
+  rather than lower memory pressure.
 
 ## Decision Log
 
@@ -483,11 +507,21 @@ Work from the repository root
   Rationale: local parity was proven for both the `libsql` slice and
   the default-feature `make test` path, while the separate manifest
   still benefits from the simpler legacy harness and explicit fallback.
+- 2026-03-12 11:30Z: Removed the Telegram build from `build.rs`
+  entirely instead of hiding it behind a new env var or feature gate.
+  Rationale: the runtime, CI, and release paths already consume explicit
+  channel artifacts, so keeping any implicit build-script packaging path
+  would preserve the wrong default and the wrong rebuild triggers.
+- 2026-03-12 11:30Z: Changed `scripts/build-all.sh` to call
+  `./scripts/build-wasm-extensions.sh --channels` instead of a
+  Telegram-only helper. Rationale: once the build script no longer
+  manufactures a flat Telegram artifact, the explicit release-oriented
+  path should rebuild the registered channels consistently.
 
 ## Outcomes & Retrospective
 
-This plan is now in implementation. Milestone 0 is complete, and
-Milestone 1 now has working code plus local gate evidence.
+This plan is now in implementation. Milestones 0, 1, and 2 have
+working code plus local gate evidence.
 
 The important framing decision is that the compile-time reduction effort
 should not start by changing many unrelated systems at once. The
@@ -495,11 +529,12 @@ prerequisite state was normalized first: document the local `mold`
 setup, install the agreed measurement tools, and adopt
 `cargo-nextest` in a controlled way. That migration is now in place for
 the root crate host path and the main Linux test workflow. After that,
-the biggest likely wins are to remove hidden packaging work from
-`build.rs`, share more work across extension builds, and reduce
+the hidden packaging work in `build.rs` was removed, which turned the
+Telegram channel back into an explicit artifact concern and cut the
+representative `libsql` check path materially. The next biggest likely
+wins are to share more work across extension builds and reduce
 duplicated CI compilation.
 
-The immediate next step is Milestone 2: remove Telegram packaging work
-from normal host compilation so `cargo check`, `cargo nextest`, Docker
-builds, and CI stop paying for hidden channel artifacts unless the user
-explicitly asks for them.
+The immediate next step is Milestone 3: share more work across the
+standalone extension builds, starting with a shared `CARGO_TARGET_DIR`
+experiment for `./scripts/build-wasm-extensions.sh`.

@@ -205,8 +205,12 @@ reduction effort should reuse elsewhere.
 
 ## WASM-specific notes
 
-The repository contains standalone WASM tool and channel crates. Common
-host-only commands can still trigger WASM-related prerequisites because:
+The repository contains standalone WASM tool and channel crates. Normal
+host commands such as `cargo check`, `make typecheck`, and `make test`
+no longer auto-build Telegram or other channels from `build.rs`.
+
+You still need the WASM toolchain when you intentionally build
+extensions because:
 
 - the GitHub WASM tool is built explicitly by `make build-github-tool-wasm`,
 - channel build scripts rely on `cargo-component` and `wasm-tools`,
@@ -215,7 +219,12 @@ host-only commands can still trigger WASM-related prerequisites because:
 
 If you change WIT files, standalone extension crates, or channel code,
 expect the WASM toolchain requirements to apply even if your main focus
-is the Rust host crate.
+is the Rust host crate. Common explicit commands are:
+
+- `./scripts/build-wasm-extensions.sh --channels` for all registered
+  channels,
+- `./channels-src/telegram/build.sh` for a deployable Telegram channel
+  artifact with `telegram.wasm`.
 
 ## When to use cargo test versus cargo-nextest
 
@@ -254,9 +263,9 @@ For the compile-time reduction effort:
 ## Expected follow-up changes
 
 This guide documents the environment as of the current branch. The
-compile-time reduction plan is expected to change some of the standard
-commands, especially around `cargo-nextest`, hidden Telegram channel
-builds, and CI duplication.
+compile-time reduction plan is still expected to change some of the
+standard commands further, especially around shared extension build
+artifacts and CI duplication.
 
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
