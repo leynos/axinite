@@ -1518,7 +1518,9 @@ mod tests {
         use std::collections::HashMap;
 
         let host = "slack.invalid";
-        let slack_bot_token = "xoxb-1234567890-abcdefghij".to_string();
+        let slack_bot_token_prefix = "xoxb-1234567890";
+        let slack_bot_token_suffix = "-abcdefghij";
+        let slack_bot_token = format!("{slack_bot_token_prefix}{slack_bot_token_suffix}");
         let mut credentials = HashMap::new();
         credentials.insert("SLACK_BOT_TOKEN".to_string(), slack_bot_token.clone());
 

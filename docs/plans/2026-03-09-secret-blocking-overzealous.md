@@ -233,6 +233,7 @@ nl -ba tools-src/github/github-tool.capabilities.json | sed -n '1,30p'
 - [x] 2026-03-12 17:55Z: Verified that `src/db/libsql_migrations.rs` still treated `rows.next().await` read errors as “not applied”, then changed the incremental migration loop to return `DatabaseError::Migration` on any read failure so transient state-check errors stop the run instead of retrying migrations.
 - [x] 2026-03-12 19:35Z: Verified that `src/cli/tool.rs` still exceeded the file-size cap at 1139 lines, then split the CLI implementation into focused `auth`, `install`, `listing`, `printing`, and `setup` submodules while keeping `run_tool_command` and `init_secrets_store` in the top-level module. This follow-up keeps the CLI entry point small without changing command behaviour.
 - [x] 2026-03-12 20:42Z: Verified that `docs/writing-web-assembly-tools-for-ironclaw.md` still had broken markdown links resolving relative to `docs/`, then rewrote the WIT, source, and test references to correct doc-relative targets so they open properly on GitHub. This follow-up keeps the extension authoring guide usable without changing its technical guidance.
+- [x] 2026-03-12 20:50Z: Verified that `src/tools/wasm/wrapper.rs` still embedded a token-shaped Slack bot token literal in the placeholder-header injection test, then rebuilt that runtime value from fragments before inserting it into the test credential map. This follow-up keeps scanner-facing source free of obvious token literals without changing the exercised auth path.
 
 ## Surprises & Discoveries
 
