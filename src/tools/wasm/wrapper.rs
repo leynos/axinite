@@ -224,12 +224,25 @@ impl StoreData {
         }
     }
 
+    #[cfg(test)]
     fn prepare_http_request(
         &mut self,
         method: &str,
         url: &str,
         headers_json: &str,
         body: Option<&[u8]>,
+    ) -> Result<PreparedHttpRequest, String> {
+        let leak_detector = LeakDetector::new();
+        self.prepare_http_request_with_detector(method, url, headers_json, body, &leak_detector)
+    }
+
+    fn prepare_http_request_with_detector(
+        &mut self,
+        method: &str,
+        url: &str,
+        headers_json: &str,
+        body: Option<&[u8]>,
+        leak_detector: &LeakDetector,
     ) -> Result<PreparedHttpRequest, String> {
         // Preserve the raw request for leak scanning before any host-side
         // placeholder resolution. WASM only sees placeholders, not real secrets.
@@ -253,7 +266,6 @@ impl StoreData {
         // Leak scan runs on WASM-provided values before any host-side
         // credential injection. This prevents false positives where the
         // resolved secret value would otherwise be attributed to the tool.
-        let leak_detector = LeakDetector::new();
         let raw_header_vec: Vec<(String, String)> = raw_headers
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
@@ -329,8 +341,14 @@ impl near::agent::host::Host for StoreData {
         body: Option<Vec<u8>>,
         timeout_ms: Option<u32>,
     ) -> Result<near::agent::host::HttpResponse, String> {
-        let PreparedHttpRequest { url, headers } =
-            self.prepare_http_request(&method, &url, &headers_json, body.as_deref())?;
+        let leak_detector = LeakDetector::new();
+        let PreparedHttpRequest { url, headers } = self.prepare_http_request_with_detector(
+            &method,
+            &url,
+            &headers_json,
+            body.as_deref(),
+            &leak_detector,
+        )?;
 
         // Get the max response size from capabilities (default 10MB).
         let max_response_bytes = self
@@ -436,7 +454,6 @@ impl near::agent::host::Host for StoreData {
 
             // Leak detection on response body
             if let Ok(body_str) = std::str::from_utf8(&body) {
-                let leak_detector = LeakDetector::new();
                 leak_detector
                     .scan_and_clean(body_str)
                     .map_err(|e| format!("Potential secret leak in response: {}", e))?;

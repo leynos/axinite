@@ -5,10 +5,10 @@
 #
 # This is useful when you have already installed a local override and want to
 # refresh it from the latest build output without touching extensions that are
-# not currently installed. The script scans wasm32-wasip1 release artifacts for
-# tools and channels, replaces only matching installed overrides, and updates
-# the adjacent capabilities manifests at the same time so the host metadata
-# stays aligned with the deployed WASM binary.
+# not currently installed. The script prefers `wasm32-wasip2` release artifacts
+# and falls back to `wasm32-wasip1`, replaces only matching installed
+# overrides, and updates the adjacent capabilities manifests at the same time so
+# the host metadata stays aligned with the deployed WASM binary.
 
 set -euo pipefail
 shopt -s nullglob
@@ -33,53 +33,54 @@ resolve_installed_wasm() {
     return 1
 }
 
-sync_tools() {
-    local wasm_path
-    for wasm_path in tools-src/*/target/wasm32-wasip1/release/*_tool.wasm; do
-        local wasm_file toolname source_name target_wasm source_capabilities target_capabilities
+sync_matching_wasm_artifacts() {
+    local kind_dir="$1"
+    local source_root="$2"
+    local suffix="$3"
+    local primary_capabilities_suffix="$4"
+    local fallback_capabilities_suffix="${5:-}"
+    local target_name source_name wasm_path
+    declare -A synced_items=()
 
-        wasm_file=$(basename "$wasm_path")
-        toolname=${wasm_file%_tool.wasm}
-        source_name="${toolname//_/-}"
+    for target_name in wasm32-wasip2 wasm32-wasip1; do
+        for wasm_path in "${source_root}"/*/target/"${target_name}"/release/*"${suffix}.wasm"; do
+            local wasm_file item_name target_wasm source_capabilities target_capabilities
 
-        if ! target_wasm=$(resolve_installed_wasm "tools" "$toolname"); then
-            continue
-        fi
+            wasm_file=$(basename "$wasm_path")
+            item_name=${wasm_file%"${suffix}.wasm"}
+            if [[ -n "${synced_items[$item_name]:-}" ]]; then
+                continue
+            fi
+            source_name="${item_name//_/-}"
 
-        source_capabilities="tools-src/${source_name}/${source_name}-tool.capabilities.json"
-        target_capabilities="${target_wasm%.wasm}.capabilities.json"
+            if ! target_wasm=$(resolve_installed_wasm "$kind_dir" "$item_name"); then
+                continue
+            fi
 
-        cp -v "$wasm_path" "$target_wasm"
-        if [[ -f "$source_capabilities" ]]; then
-            cp -v "$source_capabilities" "$target_capabilities"
-        fi
+            source_capabilities="${source_root}/${source_name}/${source_name}${primary_capabilities_suffix}"
+            if [[ -n "$fallback_capabilities_suffix" && ! -f "$source_capabilities" ]]; then
+                source_capabilities="${source_root}/${source_name}/${source_name}${fallback_capabilities_suffix}"
+            fi
+            target_capabilities="${target_wasm%.wasm}.capabilities.json"
+
+            cp -v "$wasm_path" "$target_wasm"
+            if [[ -f "$source_capabilities" ]]; then
+                cp -v "$source_capabilities" "$target_capabilities"
+            fi
+            synced_items["$item_name"]=1
+        done
     done
 }
 
+sync_tools() {
+    sync_matching_wasm_artifacts "tools" "tools-src" "_tool" \
+        "-tool.capabilities.json"
+}
+
 sync_channels() {
-    local wasm_path
-    for wasm_path in channels-src/*/target/wasm32-wasip1/release/*_channel.wasm; do
-        local wasm_file channelname source_name target_wasm source_capabilities target_capabilities
-
-        wasm_file=$(basename "$wasm_path")
-        channelname=${wasm_file%_channel.wasm}
-        source_name="${channelname//_/-}"
-
-        if ! target_wasm=$(resolve_installed_wasm "channels" "$channelname"); then
-            continue
-        fi
-
-        source_capabilities="channels-src/${source_name}/${source_name}-channel.capabilities.json"
-        if [[ ! -f "$source_capabilities" ]]; then
-            source_capabilities="channels-src/${source_name}/${source_name}.capabilities.json"
-        fi
-        target_capabilities="${target_wasm%.wasm}.capabilities.json"
-
-        cp -v "$wasm_path" "$target_wasm"
-        if [[ -f "$source_capabilities" ]]; then
-            cp -v "$source_capabilities" "$target_capabilities"
-        fi
-    done
+    sync_matching_wasm_artifacts "channels" "channels-src" "_channel" \
+        "-channel.capabilities.json" \
+        ".capabilities.json"
 }
 
 sync_tools

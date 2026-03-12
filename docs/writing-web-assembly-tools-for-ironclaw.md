@@ -188,8 +188,9 @@ At minimum, prove two separate things:
 1. the extension behavior is correct at the protocol or feature level
 
 IronClaw's current repo-level guardrail for the first point is
-[tests/wit_compat.rs](/data/leynos/Projects/ironclaw/tests/wit_compat.rs). If
-you change WIT shape, versioning, or extension packaging, rerun that matrix.
+[tests/wit_compat.rs](../tests/wit_compat.rs). If the WIT shape,
+versioning, or extension packaging changes, that matrix should be
+rerun.
 
 For the second point, use behavior tests that exercise the real request and
 response semantics your extension depends on. Mock-only coverage is not enough
@@ -213,4 +214,4 @@ if the mock hides the integration boundary that matters.
 - [src/tools/README.md](/data/leynos/Projects/ironclaw/src/tools/README.md)
 - [wit/tool.wit](/data/leynos/Projects/ironclaw/wit/tool.wit)
 - [wit/channel.wit](/data/leynos/Projects/ironclaw/wit/channel.wit)
-- [tests/wit_compat.rs](/data/leynos/Projects/ironclaw/tests/wit_compat.rs)
+- [tests/wit_compat.rs](../tests/wit_compat.rs)

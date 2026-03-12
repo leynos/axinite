@@ -268,6 +268,17 @@ cargo fmt --all --check \
 - [x] 2026-03-10 18:25Z: Landed the follow-up fix set on top of the
   earlier invalid-schema branch state: the OpenAI schema normalizer now
   lives in `src/llm/schema_normalize.rs`, nested object variants merge
+  shared properties correctly, metadata-export helpers are consolidated,
+  and the first pass of review-driven docs/tests cleanup is complete.
+- [x] 2026-03-12 11:34Z: Cleared the remaining review nits tied to this
+  branch: removed the redundant per-request `LeakDetector` allocation in
+  `StoreData::http_request(...)`, factored the libSQL V10 wasm table
+  rebuild SQL into shared helpers/constants, added top-level `enum` and
+  `not` normalization regressions, updated `sync-local-wasm-overrides`
+  to prefer `wasm32-wasip2`, consolidated WASM metadata export string
+  reads, replaced the targeted bare `.unwrap()` calls in
+  `report_status_updates_handle`, and applied the cited RFC/plan/user
+  guide wording fixes.
   their child properties instead of discarding later fields, metadata
   recovery uses a metadata-only host linker, test-only runtime creation
   now returns `anyhow::Result`, and the older call-parameters plan has

@@ -6,13 +6,14 @@
 
 ## Summary
 
-IronClaw already has the machinery to recover real WASM tool descriptions and
-schemas from guest exports. The registry can therefore publish correct
-`ToolDefinition` values for active WASM tools.
+IronClaw already has the machinery to recover real WebAssembly (WASM) tool
+descriptions and schemas from guest exports. The registry can therefore
+publish correct `ToolDefinition` values for active WASM tools.
 
 However, the current WASM execution path still carries an older assumption:
 schema disclosure is treated as a reactive retry hint on error rather than the
-normal interface the LLM should receive before its first call. In
+normal interface the large language model (LLM) should receive before its
+first call. In
 `src/tools/wasm/wrapper.rs`, tool failures still call `description()` and
 `schema()` so the model can retry "without us having to include the (large)
 schema in every request's tools array."
@@ -214,7 +215,7 @@ to "required interface guarantee."
 
 ### 4. Reuse the remote-tool catalog for orchestrator-owned WASM tools
 
-The companion RFC [2026-03-11-expose-mcp-tool-definitions.md](/data/leynos/Projects/ironclaw/docs/rfcs/2026-03-11-expose-mcp-tool-definitions.md)
+The companion RFC [2026-03-11-expose-mcp-tool-definitions.md](2026-03-11-expose-mcp-tool-definitions.md)
 proposes a worker-authenticated hosted tool catalog plus generic remote tool
 execution endpoint.
 
@@ -364,7 +365,7 @@ This change needs both interface tests and behavioral tests.
 4. Retry hints remain available on tool failure but are no longer the only
    place the schema can be observed.
 
-### Behavioral tests
+### Behavioural tests
 
 1. A reasoning request including an active WASM tool sends a non-placeholder
    `parameters` schema to the provider before any call is made.

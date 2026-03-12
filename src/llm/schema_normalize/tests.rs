@@ -61,6 +61,33 @@ fn test_normalize_schema_strict_preserves_typed_map_objects() {
 }
 
 #[test]
+fn test_normalize_schema_strict_removes_top_level_enum() {
+    let normalized = normalize_schema_strict(&serde_json::json!({
+        "type": "string",
+        "enum": ["a", "b"]
+    }));
+
+    assert!(
+        normalized.get("enum").is_none(),
+        "top-level enum must be removed: {normalized}"
+    );
+}
+
+#[test]
+fn test_normalize_schema_strict_removes_top_level_not() {
+    let normalized = normalize_schema_strict(&serde_json::json!({
+        "type": "object",
+        "properties": { "x": { "type": "string" } },
+        "not": { "type": "null" }
+    }));
+
+    assert!(
+        normalized.get("not").is_none(),
+        "top-level not must be removed: {normalized}"
+    );
+}
+
+#[test]
 fn test_normalize_schema_strict_treats_empty_properties_as_fixed_shape_object() {
     let normalized = normalize_schema_strict(&serde_json::json!({
         "type": "object",

@@ -622,13 +622,21 @@ async fn report_status_updates_handle() {
         .uri(format!("/worker/{}/status", job_id))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&update).unwrap()))
-        .unwrap();
+        .body(Body::from(
+            serde_json::to_vec(&update).expect("serialize worker status update"),
+        ))
+        .expect("build worker status update request");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send worker status update request");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let handle = jm.get_handle(job_id).await.unwrap();
+    let handle = jm
+        .get_handle(job_id)
+        .await
+        .expect("retrieve updated container handle");
     assert_eq!(handle.worker_iteration, 5);
     assert_eq!(handle.last_worker_status.as_deref(), Some("Iteration 5"));
 }

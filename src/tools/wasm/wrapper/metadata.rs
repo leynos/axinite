@@ -158,7 +158,26 @@ fn add_metadata_host_functions(linker: &mut Linker<MetadataStoreData>) -> Result
     Ok(())
 }
 
-/// Read metadata directly from the guest's `description()` and `schema()` exports.
+/// Read metadata strings directly from the guest's `description()` and
+/// `schema()` exports.
+fn exported_metadata_strings<T>(
+    tool_iface: &wit_tool::Guest,
+    store: &mut Store<T>,
+) -> Result<(String, String), WasmError>
+where
+    T: WasiView + near::agent::host::Host,
+{
+    let description = tool_iface
+        .call_description(&mut *store)
+        .map_err(|e| WasmError::InstantiationFailed(e.to_string()))?;
+    let schema = tool_iface
+        .call_schema(&mut *store)
+        .map_err(|e| WasmError::InstantiationFailed(e.to_string()))?;
+    Ok((description, schema))
+}
+
+/// Read metadata directly from the guest's `description()` and `schema()`
+/// exports.
 fn read_metadata_exports<T>(
     tool_iface: &wit_tool::Guest,
     store: &mut Store<T>,
@@ -166,12 +185,7 @@ fn read_metadata_exports<T>(
 where
     T: WasiView + near::agent::host::Host,
 {
-    let description = tool_iface
-        .call_description(&mut *store)
-        .map_err(|e| WasmError::InstantiationFailed(e.to_string()))?;
-    let schema_str = tool_iface
-        .call_schema(&mut *store)
-        .map_err(|e| WasmError::InstantiationFailed(e.to_string()))?;
+    let (description, schema_str) = exported_metadata_strings(tool_iface, store)?;
     let schema = serde_json::from_str(&schema_str)
         .map_err(|e| WasmError::InvalidResponseJson(e.to_string()))?;
     Ok((description, schema))
@@ -182,11 +196,9 @@ pub(super) fn build_tool_hint(
     tool_iface: &wit_tool::Guest,
     store: &mut Store<StoreData>,
 ) -> String {
-    let desc = tool_iface
-        .call_description(&mut *store)
+    let (desc, schema) = exported_metadata_strings(tool_iface, store)
         .ok()
         .unwrap_or_default();
-    let schema = tool_iface.call_schema(&mut *store).ok().unwrap_or_default();
     if desc.is_empty() && schema.is_empty() {
         return String::new();
     }

@@ -46,12 +46,7 @@ pub(super) fn normalize_schema_recursive(schema: &mut JsonValue) {
         return;
     }
 
-    let is_map_object = obj
-        .get("additionalProperties")
-        .is_some_and(JsonValue::is_object)
-        && !has_properties;
-
-    if is_map_object {
+    if is_map_object(obj, has_properties) {
         return;
     }
 
@@ -65,70 +60,73 @@ pub(super) fn normalize_schema_recursive(schema: &mut JsonValue) {
         obj.insert("properties".to_string(), JsonValue::Object(Map::new()));
     }
 
-    let current_required: HashSet<String> = obj
+    let current_required_values: Vec<String> = obj
         .get("required")
         .and_then(|r| r.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
+                .filter_map(JsonValue::as_str)
+                .map(ToOwned::to_owned)
                 .collect()
         })
         .unwrap_or_default();
-
-    let all_keys: Vec<String> = obj
-        .get("properties")
-        .and_then(|p| p.as_object())
-        .map(|props| {
-            let mut keys: Vec<String> = props.keys().cloned().collect();
-            keys.sort();
-            keys
-        })
-        .unwrap_or_default();
+    let current_required: HashSet<&str> =
+        current_required_values.iter().map(String::as_str).collect();
 
     if let Some(JsonValue::Object(props)) = obj.get_mut("properties") {
-        for key in &all_keys {
-            if let Some(prop_schema) = props.get_mut(key) {
-                normalize_schema_recursive(prop_schema);
-            }
-            if !current_required.contains(key)
-                && let Some(prop_schema) = props.get_mut(key)
-            {
+        let mut all_keys = Vec::with_capacity(props.len());
+        for (key, prop_schema) in props.iter_mut() {
+            all_keys.push(key.clone());
+            normalize_schema_recursive(prop_schema);
+            if !current_required.contains(key.as_str()) {
                 make_nullable(prop_schema);
             }
         }
-    }
 
-    let required_value: Vec<JsonValue> = all_keys.into_iter().map(JsonValue::String).collect();
-    obj.insert("required".to_string(), JsonValue::Array(required_value));
+        all_keys.sort();
+        let required_value: Vec<JsonValue> = all_keys.into_iter().map(JsonValue::String).collect();
+        obj.insert("required".to_string(), JsonValue::Array(required_value));
+    }
+}
+
+fn is_map_object(obj: &Map<String, JsonValue>, has_properties: bool) -> bool {
+    obj.get("additionalProperties")
+        .is_some_and(JsonValue::is_object)
+        && !has_properties
 }
 
 fn make_nullable(schema: &mut JsonValue) {
-    let obj = match schema.as_object_mut() {
-        Some(o) => o,
-        None => return,
+    let Some(obj) = schema.as_object_mut() else {
+        return;
     };
 
-    if let Some(type_val) = obj.get("type").cloned() {
-        match type_val {
-            JsonValue::String(ref t) if t != "null" => {
-                obj.insert("type".to_string(), serde_json::json!([t, "null"]));
-            }
-            JsonValue::Array(ref arr) => {
-                let has_null = arr.iter().any(|v| v.as_str() == Some("null"));
-                if !has_null {
-                    let mut new_arr = arr.clone();
-                    new_arr.push(JsonValue::String("null".to_string()));
-                    obj.insert("type".to_string(), JsonValue::Array(new_arr));
-                }
-            }
-            _ => {}
-        }
-    } else {
+    let Some(type_val) = obj.get_mut("type") else {
         let existing = JsonValue::Object(obj.clone());
         obj.clear();
         obj.insert(
             "anyOf".to_string(),
             serde_json::json!([existing, {"type": "null"}]),
         );
+        return;
+    };
+
+    match type_val {
+        JsonValue::String(t) => {
+            if t == "null" {
+                return;
+            }
+            let current = std::mem::take(t);
+            *type_val = JsonValue::Array(vec![
+                JsonValue::String(current),
+                JsonValue::String("null".to_string()),
+            ]);
+        }
+        JsonValue::Array(arr) => {
+            if arr.iter().any(|v| v.as_str() == Some("null")) {
+                return;
+            }
+            arr.push(JsonValue::String("null".to_string()));
+        }
+        _ => {}
     }
 }

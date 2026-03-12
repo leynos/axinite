@@ -7,9 +7,10 @@
 ## Summary
 
 Hosted workers currently expose only their local tool registry plus a small set
-of extension-management proxy tools. That means the hosted LLM does not see the
-real `ToolDefinition`s for user-configured MCP tools, even when those tools are
-already installed, activated, and available in the main IronClaw process.
+of extension-management proxy tools. That means the hosted large language model
+(LLM) does not see the real `ToolDefinition`s for user-configured Model Context
+Protocol (MCP) tools, even when those tools are already installed, activated,
+and available in the main IronClaw process.
 
 The result is predictable: the model either cannot discover those tools at all,
 or it sees only high-level extension-management tools rather than the real call
@@ -415,7 +416,7 @@ The change needs both transport tests and behavioral tests.
    `ToolDefinition` exactly.
 4. Generic remote execution dispatches to the requested orchestrator-owned tool.
 
-### Behavioral tests
+### Behavioural tests
 
 1. Hosted worker with an active MCP tool advertises that tool in
    `available_tools`.

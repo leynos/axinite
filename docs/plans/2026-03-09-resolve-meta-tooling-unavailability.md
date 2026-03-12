@@ -20,7 +20,7 @@ The change must be observable in three ways. First, a focused regression test mu
 
 - This plan file must live at `docs/plans/2026-03-09-resolve-meta-tooling-unavailability.md` because the user requested that exact path.
 - The public tool names and their parameter schemas must remain stable. Existing prompts, traces, and UI affordances refer to `tool_search`, `tool_auth`, `tool_activate`, `tool_list`, and the other extension-management tools by those exact names.
-- The existing meaning of `crate::tools::ToolRegistry::register_container_tools` in `src/tools/registry.rs` must not be broadened casually. That helper currently means container-local development tools. If hosted worker needs more than that, add a separate hosted-worker registration path rather than silently changing the meaning of the existing function.
+- The existing meaning of `crate::tools::ToolRegistry::register_container_tools` in `src/tools/registry.rs` must not be broadened casually. That helper currently means container-local development tools. If the hosted worker needs more than that, add a separate hosted-worker registration path rather than silently changing the meaning of the existing function.
 - The normal in-process application bootstrap in `src/app.rs` must keep working without behavioural regression. Existing recorded traces such as `tests/fixtures/llm_traces/recorded/telegram_check.json` must remain valid.
 - Tests added by this work must be deterministic and must not require live network calls, real OAuth flows, or mutable external services.
 - No new third-party dependency may be introduced to implement the fix or its tests.

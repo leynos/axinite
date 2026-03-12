@@ -21,6 +21,47 @@
 /// - PL/pgSQL functions -> SQLite triggers
 pub const SCHEMA: &str = include_str!("../../migrations/libsql_schema.sql");
 
+const V10_WASM_TOOLS_COLUMNS: &str = r#"    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT '1.0.0',
+    wit_version TEXT NOT NULL DEFAULT '0.3.0',
+    description TEXT NOT NULL,
+    wasm_binary BLOB NOT NULL,
+    binary_hash BLOB NOT NULL,
+    parameters_schema TEXT NOT NULL,
+    source_url TEXT,
+    trust_level TEXT NOT NULL DEFAULT 'user',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (user_id, name, version)"#;
+
+const V10_WASM_TOOLS_COPY_COLUMNS: &str = r#"id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
+    parameters_schema, source_url, trust_level, status, created_at, updated_at"#;
+
+const V10_WASM_TOOLS_POST_REBUILD_SQL: &str = r#"CREATE INDEX IF NOT EXISTS idx_wasm_tools_user ON wasm_tools(user_id);
+CREATE INDEX IF NOT EXISTS idx_wasm_tools_name ON wasm_tools(user_id, name);
+CREATE INDEX IF NOT EXISTS idx_wasm_tools_status ON wasm_tools(status);
+CREATE INDEX IF NOT EXISTS idx_wasm_tools_trust ON wasm_tools(trust_level);"#;
+
+const V10_WASM_CHANNELS_COLUMNS: &str = r#"    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT '0.1.0',
+    wit_version TEXT NOT NULL DEFAULT '0.3.0',
+    description TEXT NOT NULL DEFAULT '',
+    wasm_binary BLOB NOT NULL,
+    binary_hash BLOB NOT NULL,
+    capabilities_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (user_id, name)"#;
+
+const V10_WASM_CHANNELS_COPY_COLUMNS: &str = r#"id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
+    capabilities_json, status, created_at, updated_at"#;
+
 /// Incremental migrations applied after the base schema.
 ///
 /// Each entry is `(version, name, sql)`. Migrations are idempotent: the
@@ -97,80 +138,7 @@ END;
         //
         // `legacy_alter_table=ON` is required so child foreign keys keep pointing
         // at `wasm_tools` while we rename the old table out of the way.
-        r#"
-PRAGMA legacy_alter_table=ON;
-PRAGMA foreign_keys=OFF;
-BEGIN IMMEDIATE;
-
-ALTER TABLE wasm_tools RENAME TO wasm_tools_old;
-
-CREATE TABLE wasm_tools (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    version TEXT NOT NULL DEFAULT '1.0.0',
-    wit_version TEXT NOT NULL DEFAULT '0.3.0',
-    description TEXT NOT NULL,
-    wasm_binary BLOB NOT NULL,
-    binary_hash BLOB NOT NULL,
-    parameters_schema TEXT NOT NULL,
-    source_url TEXT,
-    trust_level TEXT NOT NULL DEFAULT 'user',
-    status TEXT NOT NULL DEFAULT 'active',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    UNIQUE (user_id, name, version)
-);
-
-INSERT INTO wasm_tools (
-    id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
-    parameters_schema, source_url, trust_level, status, created_at, updated_at
-)
-SELECT
-    id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
-    parameters_schema, source_url, trust_level, status, created_at, updated_at
-FROM wasm_tools_old;
-
-DROP TABLE wasm_tools_old;
-
-CREATE INDEX IF NOT EXISTS idx_wasm_tools_user ON wasm_tools(user_id);
-CREATE INDEX IF NOT EXISTS idx_wasm_tools_name ON wasm_tools(user_id, name);
-CREATE INDEX IF NOT EXISTS idx_wasm_tools_status ON wasm_tools(status);
-CREATE INDEX IF NOT EXISTS idx_wasm_tools_trust ON wasm_tools(trust_level);
-
-ALTER TABLE wasm_channels RENAME TO wasm_channels_old;
-
-CREATE TABLE wasm_channels (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    version TEXT NOT NULL DEFAULT '0.1.0',
-    wit_version TEXT NOT NULL DEFAULT '0.3.0',
-    description TEXT NOT NULL DEFAULT '',
-    wasm_binary BLOB NOT NULL,
-    binary_hash BLOB NOT NULL,
-    capabilities_json TEXT NOT NULL DEFAULT '{}',
-    status TEXT NOT NULL DEFAULT 'active',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    UNIQUE (user_id, name)
-);
-
-INSERT INTO wasm_channels (
-    id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
-    capabilities_json, status, created_at, updated_at
-)
-SELECT
-    id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
-    capabilities_json, status, created_at, updated_at
-FROM wasm_channels_old;
-
-DROP TABLE wasm_channels_old;
-
-COMMIT;
-PRAGMA foreign_keys=ON;
-PRAGMA legacy_alter_table=OFF;
-"#,
+        "-- generated by v10_wasm_wit_default_migration_sql()",
     ),
     (
         12,
@@ -213,7 +181,8 @@ pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::err
         // PRAGMAs that must execute outside a transaction, so bypass the
         // outer transaction wrapper.
         if version == 10 {
-            apply_non_transactional_migration(conn, version, name, sql).await?;
+            let sql = v10_wasm_wit_default_migration_sql();
+            apply_non_transactional_migration(conn, version, name, &sql).await?;
             tracing::info!(version, name, "libSQL: migration applied successfully");
             continue;
         }
@@ -294,9 +263,68 @@ async fn apply_non_transactional_migration(
     Ok(())
 }
 
+fn append_table_rebuild_sql(
+    sql: &mut String,
+    table_name: &str,
+    columns: &str,
+    copy_columns: &str,
+    post_rebuild_sql: Option<&str>,
+) {
+    use std::fmt::Write as _;
+
+    let old_table_name = format!("{table_name}_old");
+    writeln!(sql, "ALTER TABLE {table_name} RENAME TO {old_table_name};").expect("write SQL");
+    writeln!(sql).expect("write SQL newline");
+    writeln!(sql, "CREATE TABLE {table_name} (").expect("write SQL");
+    writeln!(sql, "{columns}").expect("write SQL");
+    writeln!(sql, ");").expect("write SQL");
+    writeln!(sql).expect("write SQL newline");
+    writeln!(sql, "INSERT INTO {table_name} (").expect("write SQL");
+    writeln!(sql, "    {copy_columns}").expect("write SQL");
+    writeln!(sql, ")").expect("write SQL");
+    writeln!(sql, "SELECT").expect("write SQL");
+    writeln!(sql, "    {copy_columns}").expect("write SQL");
+    writeln!(sql, "FROM {old_table_name};").expect("write SQL");
+    writeln!(sql).expect("write SQL newline");
+    writeln!(sql, "DROP TABLE {old_table_name};").expect("write SQL");
+
+    if let Some(post_rebuild_sql) = post_rebuild_sql {
+        writeln!(sql).expect("write SQL newline");
+        writeln!(sql).expect("write SQL newline");
+        writeln!(sql, "{post_rebuild_sql}").expect("write SQL");
+    }
+
+    writeln!(sql).expect("write SQL newline");
+    writeln!(sql).expect("write SQL newline");
+}
+
+fn v10_wasm_wit_default_migration_sql() -> String {
+    let mut sql = String::from(
+        "PRAGMA legacy_alter_table=ON;\nPRAGMA foreign_keys=OFF;\nBEGIN IMMEDIATE;\n\n",
+    );
+
+    append_table_rebuild_sql(
+        &mut sql,
+        "wasm_tools",
+        V10_WASM_TOOLS_COLUMNS,
+        V10_WASM_TOOLS_COPY_COLUMNS,
+        Some(V10_WASM_TOOLS_POST_REBUILD_SQL),
+    );
+    append_table_rebuild_sql(
+        &mut sql,
+        "wasm_channels",
+        V10_WASM_CHANNELS_COLUMNS,
+        V10_WASM_CHANNELS_COPY_COLUMNS,
+        None,
+    );
+
+    sql.push_str("COMMIT;\nPRAGMA foreign_keys=ON;\nPRAGMA legacy_alter_table=OFF;\n");
+    sql
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{INCREMENTAL_MIGRATIONS, SCHEMA};
+    use super::{INCREMENTAL_MIGRATIONS, SCHEMA, v10_wasm_wit_default_migration_sql};
 
     #[test]
     fn schema_uses_current_wit_defaults_for_new_wasm_records() {
@@ -314,10 +342,16 @@ mod tests {
 
     #[test]
     fn incremental_migrations_upgrade_existing_wasm_wit_defaults_to_0_3_0() {
-        let (_, _, sql) = INCREMENTAL_MIGRATIONS
+        let (_, _, sql_marker) = INCREMENTAL_MIGRATIONS
             .iter()
             .find(|(version, _, _)| *version == 10)
             .expect("expected a V10 libSQL migration for stale wasm wit_version defaults");
+        assert_eq!(
+            *sql_marker, "-- generated by v10_wasm_wit_default_migration_sql()",
+            "expected V10 migration entry to use the shared SQL builder"
+        );
+
+        let sql = v10_wasm_wit_default_migration_sql();
 
         assert!(
             sql.contains("0.3.0"),
