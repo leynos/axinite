@@ -142,6 +142,8 @@ The current `Makefile` also includes:
 - `make test-cargo` and `make test-matrix-cargo` to keep the old
   `cargo test` path available when you need a harness comparison for
   the root crate.
+- `./scripts/build-wasm-extensions.sh --channels` to rebuild all
+  registered channels into the shared `target/wasm-extensions/` cache.
 - `make clean` to remove Cargo build outputs for the root crate and the
   GitHub tool crate.
 
@@ -222,7 +224,8 @@ expect the WASM toolchain requirements to apply even if your main focus
 is the Rust host crate. Common explicit commands are:
 
 - `./scripts/build-wasm-extensions.sh --channels` for all registered
-  channels,
+  channels; by default it reuses the shared
+  `target/wasm-extensions/` target dir,
 - `./channels-src/telegram/build.sh` for a deployable Telegram channel
   artifact with `telegram.wasm`.
 

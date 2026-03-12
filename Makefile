@@ -53,3 +53,4 @@ test-matrix-cargo:
 clean:
 	$(CARGO) clean
 	$(CARGO) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
+	rm -rf target/wasm-extensions

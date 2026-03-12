@@ -15,6 +15,8 @@ shopt -s nullglob
 
 cd "$(dirname "$0")/.."
 
+SHARED_WASM_TARGET_DIR="${CARGO_TARGET_DIR:-target/wasm-extensions}"
+
 resolve_installed_wasm() {
     local kind_dir="$1"
     local raw_name="$2"
@@ -44,6 +46,32 @@ sync_matching_wasm_artifacts() {
 
     for target_name in wasm32-wasip2 wasm32-wasip1; do
         for wasm_path in "${source_root}"/*/target/"${target_name}"/release/*"${suffix}.wasm"; do
+            local wasm_file item_name target_wasm source_capabilities target_capabilities
+
+            wasm_file=$(basename "$wasm_path")
+            item_name=${wasm_file%"${suffix}.wasm"}
+            if [[ -n "${synced_items[$item_name]:-}" ]]; then
+                continue
+            fi
+            source_name="${item_name//_/-}"
+
+            if ! target_wasm=$(resolve_installed_wasm "$kind_dir" "$item_name"); then
+                continue
+            fi
+
+            source_capabilities="${source_root}/${source_name}/${source_name}${primary_capabilities_suffix}"
+            if [[ -n "$fallback_capabilities_suffix" && ! -f "$source_capabilities" ]]; then
+                source_capabilities="${source_root}/${source_name}/${source_name}${fallback_capabilities_suffix}"
+            fi
+            target_capabilities="${target_wasm%.wasm}.capabilities.json"
+
+            cp -v "$wasm_path" "$target_wasm"
+            if [[ -f "$source_capabilities" ]]; then
+                cp -v "$source_capabilities" "$target_capabilities"
+            fi
+            synced_items["$item_name"]=1
+        done
+        for wasm_path in "${SHARED_WASM_TARGET_DIR}/${target_name}/release/"*"${suffix}.wasm"; do
             local wasm_file item_name target_wasm source_capabilities target_capabilities
 
             wasm_file=$(basename "$wasm_path")

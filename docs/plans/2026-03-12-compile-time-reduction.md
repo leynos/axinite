@@ -47,7 +47,8 @@ The main paths for this effort are:
 - `build.rs`, which now embeds registry metadata only and no longer
   forces a nested Telegram WASM build during normal host compilation.
 - `scripts/build-wasm-extensions.sh`, which loops over registry
-  manifests and builds each extension crate independently.
+  manifests and now uses a shared `target/wasm-extensions/` cache for
+  standalone extension builds.
 - `.github/workflows/test.yml`,
   `.github/workflows/code_style.yml`,
   `.github/workflows/coverage.yml`, and
@@ -435,7 +436,21 @@ Work from the repository root
   `discord`, `slack`, `telegram`, and `whatsapp` successfully after the
   clean. Re-ran the full gate set afterward, including `make test`,
   with all tests still passing.
-- [ ] Implement Milestone 3 and record fresh evidence.
+- [x] 2026-03-12 11:53Z: Switched
+  `./scripts/build-wasm-extensions.sh` to a shared
+  `target/wasm-extensions/` target dir and taught the artifact resolver
+  plus local override sync script to find that cache without requiring
+  `CARGO_TARGET_DIR` to stay exported in later shells.
+- [x] 2026-03-12 11:53Z: Measured the shared extension cache directly.
+  After deleting `target/wasm-extensions/`, a cold
+  `./scripts/build-wasm-extensions.sh --channels` run finished in
+  `56.14s` with `526136` KB RSS. The immediate warm rerun finished in
+  `0.99s` with `34560` KB RSS.
+- [x] 2026-03-12 11:53Z: Re-ran the full gate set after the shared
+  target-dir change. `make test` now passes with `3187` root-crate
+  tests and `6` skips, plus the `tools-src/github` suite with `5`
+  passing tests.
+- [ ] Implement Milestone 4 and record fresh evidence.
 
 ## Surprises & Discoveries
 
@@ -474,6 +489,15 @@ Work from the repository root
   after cleaning the host and Telegram build outputs. Peak RSS stayed
   roughly flat, which implies the win is mostly removed build work
   rather than lower memory pressure.
+- A shared extension target dir only helps if the discovery side can
+  find it later. The artifact resolver and local override sync script
+  both needed to learn about `target/wasm-extensions/` before the build
+  script change would be durable outside the build shell.
+- The best lookup order is not "shared first." Developers can still
+  build a single channel directly into its own crate-local `target/`
+  tree, so artifact discovery now checks `CARGO_TARGET_DIR` first, then
+  the per-crate `target/`, then the repo-shared
+  `target/wasm-extensions/` cache.
 
 ## Decision Log
 
@@ -517,10 +541,19 @@ Work from the repository root
   Telegram-only helper. Rationale: once the build script no longer
   manufactures a flat Telegram artifact, the explicit release-oriented
   path should rebuild the registered channels consistently.
+- 2026-03-12 11:53Z: Adopted `target/wasm-extensions/` as the default
+  shared target dir for `./scripts/build-wasm-extensions.sh`, while
+  still honoring an explicit `CARGO_TARGET_DIR` override. Rationale:
+  this captures cross-crate dependency reuse without moving the
+  standalone extension crates back into the root workspace.
+- 2026-03-12 11:53Z: Kept crate-local `target/` lookup ahead of the
+  repo-shared cache when no env override is present. Rationale: direct
+  one-off channel builds should remain immediately discoverable even if
+  a shared cache from an earlier bulk build also exists.
 
 ## Outcomes & Retrospective
 
-This plan is now in implementation. Milestones 0, 1, and 2 have
+This plan is now in implementation. Milestones 0, 1, 2, and 3 have
 working code plus local gate evidence.
 
 The important framing decision is that the compile-time reduction effort
@@ -531,10 +564,11 @@ setup, install the agreed measurement tools, and adopt
 the root crate host path and the main Linux test workflow. After that,
 the hidden packaging work in `build.rs` was removed, which turned the
 Telegram channel back into an explicit artifact concern and cut the
-representative `libsql` check path materially. The next biggest likely
-wins are to share more work across extension builds and reduce
-duplicated CI compilation.
+representative `libsql` check path materially. Extension builds now
+also share a repo-local target cache, which cut the cold channel-build
+path materially and made the warm rerun effectively instant. The next
+biggest likely win is to reduce duplicated CI compilation.
 
-The immediate next step is Milestone 3: share more work across the
-standalone extension builds, starting with a shared `CARGO_TARGET_DIR`
-experiment for `./scripts/build-wasm-extensions.sh`.
+The immediate next step is Milestone 4: collapse duplicated CI
+compilation so the explicit channel builds and host test surfaces are
+compiled once per workflow and then fanned out where practical.

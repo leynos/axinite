@@ -25,24 +25,15 @@ const WASM_TRIPLES: &[&str] = &[
     "wasm32-unknown-unknown",
 ];
 
+const SHARED_WASM_TARGET_DIR: &str = "target/wasm-extensions";
 /// Resolve the cargo target directory for a crate.
 ///
 /// Checks (in order):
 /// 1. `CARGO_TARGET_DIR` env var (shared target dir)
 /// 2. `<crate_dir>/target/` (default per-crate layout)
 pub fn resolve_target_dir(crate_dir: &Path) -> PathBuf {
-    if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
-        let p = PathBuf::from(dir);
-        // Resolve relative CARGO_TARGET_DIR against the process cwd, which
-        // matches Cargo's interpretation for workspace-shared target dirs.
-        // Fall back to the crate directory only if cwd lookup fails.
-        if p.is_relative() {
-            if let Ok(cwd) = std::env::current_dir() {
-                return cwd.join(p);
-            }
-            return crate_dir.join(p);
-        }
-        return p;
+    if let Some(dir) = resolve_env_target_dir() {
+        return dir;
     }
     crate_dir.join("target")
 }
@@ -53,19 +44,20 @@ pub fn resolve_target_dir(crate_dir: &Path) -> PathBuf {
 /// then falls back to searching in whichever target directory exists.
 /// `profile` is `"release"` or `"debug"`.
 pub fn find_wasm_artifact(crate_dir: &Path, crate_name: &str, profile: &str) -> Option<PathBuf> {
-    let target_base = resolve_target_dir(crate_dir);
     let snake_name = crate_name.replace('-', "_");
 
-    // Try exact name match in each target triple directory
-    for triple in WASM_TRIPLES {
-        let dir = target_base.join(triple).join(profile);
-        let candidates = [
-            dir.join(format!("{}.wasm", crate_name)),
-            dir.join(format!("{}.wasm", snake_name)),
-        ];
-        for candidate in &candidates {
-            if candidate.exists() {
-                return Some(candidate.clone());
+    for target_base in candidate_target_dirs(crate_dir) {
+        // Try exact name match in each target triple directory
+        for triple in WASM_TRIPLES {
+            let dir = target_base.join(triple).join(profile);
+            let candidates = [
+                dir.join(format!("{}.wasm", crate_name)),
+                dir.join(format!("{}.wasm", snake_name)),
+            ];
+            for candidate in &candidates {
+                if candidate.exists() {
+                    return Some(candidate.clone());
+                }
             }
         }
     }
@@ -77,18 +69,18 @@ pub fn find_wasm_artifact(crate_dir: &Path, crate_name: &str, profile: &str) -> 
 ///
 /// Returns the first `.wasm` found across target triples.
 pub fn find_any_wasm_artifact(crate_dir: &Path, profile: &str) -> Option<PathBuf> {
-    let target_base = resolve_target_dir(crate_dir);
-
-    for triple in WASM_TRIPLES {
-        let dir = target_base.join(triple).join(profile);
-        if !dir.is_dir() {
-            continue;
-        }
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map(|ext| ext == "wasm").unwrap_or(false) {
-                    return Some(path);
+    for target_base in candidate_target_dirs(crate_dir) {
+        for triple in WASM_TRIPLES {
+            let dir = target_base.join(triple).join(profile);
+            if !dir.is_dir() {
+                continue;
+            }
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().map(|ext| ext == "wasm").unwrap_or(false) {
+                        return Some(path);
+                    }
                 }
             }
         }
@@ -278,6 +270,27 @@ mod tests {
     }
 
     #[test]
+    fn test_find_wasm_artifact_falls_back_to_repo_shared_target_dir() {
+        with_cleared_target_dir(|| {
+            let repo = TempDir::new().expect("create temp dir");
+            let crate_dir = repo.path().join("channels-src/demo");
+            let shared_target = repo.path().join(SHARED_WASM_TARGET_DIR);
+            let wasm_dir = shared_target.join("wasm32-wasip2/release");
+
+            std::fs::create_dir_all(&crate_dir).expect("create crate dir");
+            std::fs::create_dir_all(&wasm_dir).expect("create shared wasm dir");
+            std::fs::File::create(wasm_dir.join("demo_channel.wasm"))
+                .expect("create shared wasm artifact");
+
+            let result = find_wasm_artifact(&crate_dir, "demo-channel", "release");
+            assert_eq!(
+                result.expect("find demo-channel artifact"),
+                wasm_dir.join("demo_channel.wasm")
+            );
+        });
+    }
+
+    #[test]
     fn test_find_wasm_artifact_not_found() {
         let dir = TempDir::new().expect("create temp dir");
         assert!(find_wasm_artifact(dir.path(), "nonexistent", "release").is_none());
@@ -428,4 +441,45 @@ mod tests {
         assert_eq!(WASM_TRIPLES[2], "wasm32-wasi");
         assert_eq!(WASM_TRIPLES[3], "wasm32-unknown-unknown");
     }
+}
+
+fn resolve_env_target_dir() -> Option<PathBuf> {
+    let dir = std::env::var("CARGO_TARGET_DIR").ok()?;
+    let p = PathBuf::from(dir);
+    if p.is_relative()
+        && let Ok(cwd) = std::env::current_dir()
+    {
+        return Some(cwd.join(p));
+    }
+    Some(p)
+}
+
+fn candidate_target_dirs(crate_dir: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Some(dir) = resolve_env_target_dir() {
+        candidates.push(dir);
+    }
+
+    candidates.push(crate_dir.join("target"));
+
+    if let Some(dir) = repo_shared_target_dir(crate_dir)
+        && !candidates.iter().any(|candidate| candidate == &dir)
+    {
+        candidates.push(dir);
+    }
+
+    candidates
+}
+
+fn repo_shared_target_dir(crate_dir: &Path) -> Option<PathBuf> {
+    let source_root = crate_dir.parent()?;
+    let source_root_name = source_root.file_name()?.to_str()?;
+    if !matches!(source_root_name, "channels-src" | "tools-src") {
+        return None;
+    }
+
+    let repo_root = source_root.parent()?;
+    let shared = repo_root.join(SHARED_WASM_TARGET_DIR);
+    shared.exists().then_some(shared)
 }
