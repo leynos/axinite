@@ -23,11 +23,10 @@ use ironclaw::pairing::PairingStore;
 /// broken WASM build step doesn't silently produce green tests.
 macro_rules! require_telegram_wasm {
     () => {
-        if !telegram_wasm_path().exists() {
+        if let Err(msg) = telegram_wasm_path() {
             let msg = format!(
-                "Telegram WASM module not found at {:?}. \
-                 Build with: cd channels-src/telegram && cargo build --target wasm32-wasip2 --release",
-                telegram_wasm_path()
+                "{}. Build with: cd channels-src/telegram && cargo build --target wasm32-wasip2 --release",
+                msg
             );
             if std::env::var("CI").is_ok() {
                 panic!("{}", msg);
@@ -39,9 +38,28 @@ macro_rules! require_telegram_wasm {
 }
 
 /// Path to the built Telegram WASM module
-fn telegram_wasm_path() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("channels-src/telegram/target/wasm32-wasip2/release/telegram_channel.wasm")
+fn telegram_wasm_path() -> Result<std::path::PathBuf, String> {
+    let channel_dir =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("channels-src/telegram");
+
+    // `build.rs` writes a flat component artifact for the host to load. Prefer
+    // that output, then fall back to the raw build artifact across shared or
+    // per-crate target directories.
+    let bundled_component = channel_dir.join("telegram.wasm");
+    if bundled_component.exists() {
+        return Ok(bundled_component);
+    }
+
+    ironclaw::registry::artifacts::find_wasm_artifact(&channel_dir, "telegram_channel", "release")
+        .ok_or_else(|| {
+            let expected = ironclaw::registry::artifacts::resolve_target_dir(&channel_dir)
+                .join("wasm32-wasip2/release/telegram_channel.wasm");
+            format!(
+                "Telegram WASM module not found. Checked {} and {}",
+                bundled_component.display(),
+                expected.display()
+            )
+        })
 }
 
 /// Create a test runtime for WASM channel operations.
@@ -54,7 +72,7 @@ fn create_test_runtime() -> Arc<WasmChannelRuntime> {
 async fn load_telegram_module(
     runtime: &Arc<WasmChannelRuntime>,
 ) -> Result<Arc<PreparedChannelModule>, Box<dyn std::error::Error>> {
-    let path = telegram_wasm_path();
+    let path = telegram_wasm_path().map_err(std::io::Error::other)?;
     let wasm_bytes = std::fs::read(&path)
         .map_err(|e| format!("Failed to read WASM module at {}: {}", path.display(), e))?;
 

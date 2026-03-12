@@ -62,7 +62,8 @@ fn main() {
         return;
     }
 
-    let raw_wasm = channel_dir.join("target/wasm32-wasip2/release/telegram_channel.wasm");
+    let raw_wasm = resolve_channel_target_dir(&channel_dir)
+        .join("wasm32-wasip2/release/telegram_channel.wasm");
     if !raw_wasm.exists() {
         eprintln!(
             "cargo:warning=Telegram WASM output not found at {:?}",
@@ -108,6 +109,21 @@ fn main() {
             let _ = std::fs::rename(&stripped, &wasm_out);
         }
     }
+}
+
+fn resolve_channel_target_dir(channel_dir: &Path) -> PathBuf {
+    if let Ok(dir) = env::var("CARGO_TARGET_DIR") {
+        let path = PathBuf::from(dir);
+        if path.is_relative() {
+            if let Ok(cwd) = env::current_dir() {
+                return cwd.join(path);
+            }
+            return channel_dir.join(path);
+        }
+        return path;
+    }
+
+    channel_dir.join("target")
 }
 
 /// Collect all registry manifests into a single JSON blob at compile time.
