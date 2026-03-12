@@ -230,6 +230,8 @@ nl -ba tools-src/github/github-tool.capabilities.json | sed -n '1,30p'
 - [x] 2026-03-09 21:27Z: Ran `cargo test --test tool_schema_validation -- --nocapture`; all 9 schema/registration tests passed.
 - [x] 2026-03-12 16:50Z: Verified that `src/channels/web/server.rs` still carried live inline handler implementations despite existing `handlers/` modules, then moved the source-of-truth chat, extension, static/log/status, OAuth, and pairing handlers into `src/channels/web/handlers/*` and reduced `server.rs` to router composition plus shared state. This branch note keeps the later web-gateway refactor discoverable even though it is outside the original secret-blocking fix scope.
 - [x] 2026-03-12 17:20Z: Verified that `src/registry/artifacts.rs` still embedded its full `#[cfg(test)]` block at 532 lines, then extracted that suite to `src/registry/artifacts/tests.rs` and left `artifacts.rs` as the production helper module. This follow-up keeps the registry artifact logic under the file-size cap without changing the tested behaviour.
+- [x] 2026-03-12 17:55Z: Verified that `src/db/libsql_migrations.rs` still treated `rows.next().await` read errors as “not applied”, then changed the incremental migration loop to return `DatabaseError::Migration` on any read failure so transient state-check errors stop the run instead of retrying migrations.
+- [x] 2026-03-12 19:35Z: Verified that `src/cli/tool.rs` still exceeded the file-size cap at 1139 lines, then split the CLI implementation into focused `auth`, `install`, `listing`, `printing`, and `setup` submodules while keeping `run_tool_command` and `init_secrets_store` in the top-level module. This follow-up keeps the CLI entry point small without changing command behaviour.
 
 ## Surprises & Discoveries
 
@@ -241,6 +243,7 @@ nl -ba tools-src/github/github-tool.capabilities.json | sed -n '1,30p'
 - The new behavioural test can avoid live GitHub access by targeting a reserved invalid public hostname. After the fix, the host function now gets past leak scanning and fails later with DNS resolution, which is the exact evidence needed to prove the false positive is gone without introducing an external network dependency.
 - `src/channels/web/server.rs` had already accumulated extracted handler modules, but several of them were stale copies. The safe migration path was to treat `server.rs` as the source of truth, sync those modules from the live implementations, and then switch routing over; simply wiring the existing modules would have regressed image uploads, OAuth callback behavior, extension install flows, and gateway status responses.
 - `src/registry/artifacts.rs` had a clean test-only tail: production code ended immediately after `install_wasm_files(...)`, so moving the rest into `src/registry/artifacts/tests.rs` was a pure file-layout change rather than a logic refactor.
+- `libsql_migrations.rs` was still failing open during migration-state reads: `rows.next().await.ok().flatten()` quietly converted libSQL cursor errors into “migration missing”, which means transient metadata-read failures could re-enter the migration path instead of aborting with context.
 
 ## Decision Log
 
