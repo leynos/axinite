@@ -90,10 +90,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Install cargo-component
-        run: |
-          if ! command -v cargo-component >/dev/null 2>&1; then
-            cargo install cargo-component --locked
-          fi
+        uses: taiki-e/install-action@cargo-component
 
       - name: Build GitHub WASM tool (for metadata/schema tests)
         run: make build-github-tool-wasm
@@ -165,10 +162,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Install cargo-component
-        run: |
-          if ! command -v cargo-component >/dev/null 2>&1; then
-            cargo install cargo-component --locked
-          fi
+        uses: taiki-e/install-action@cargo-component
 
       - name: Build WASM channels
         run: ./scripts/build-wasm-extensions.sh --channels

@@ -450,6 +450,15 @@ Work from the repository root
   target-dir change. `make test` now passes with `3187` root-crate
   tests and `6` skips, plus the `tools-src/github` suite with `5`
   passing tests.
+- [x] 2026-03-12 11:57Z: Aligned workflow tool installation with the
+  new branch reality. `test.yml`, `coverage.yml`, and the release WASM
+  packaging job now install the required `cargo-nextest` or
+  `cargo-component` tools explicitly instead of relying on runner state
+  or ad hoc shell checks.
+- [x] 2026-03-12 11:57Z: Updated the release WASM packaging job to use
+  the shared `target/wasm-extensions/` cache when resolving built
+  artifacts, while keeping a legacy per-crate `target/` fallback so the
+  workflow stays compatible during the transition.
 - [ ] Implement Milestone 4 and record fresh evidence.
 
 ## Surprises & Discoveries
@@ -498,6 +507,10 @@ Work from the repository root
   tree, so artifact discovery now checks `CARGO_TARGET_DIR` first, then
   the per-crate `target/`, then the repo-shared
   `target/wasm-extensions/` cache.
+- CI had the same problem in a different form: the release packaging job
+  still searched only `source_dir/target/...` even after the bulk build
+  path moved to a shared target dir. Tool-install consistency and
+  artifact lookup consistency have to move together.
 
 ## Decision Log
 
@@ -550,6 +563,12 @@ Work from the repository root
   repo-shared cache when no env override is present. Rationale: direct
   one-off channel builds should remain immediately discoverable even if
   a shared cache from an earlier bulk build also exists.
+- 2026-03-12 11:57Z: Switched the workflow tool installs to
+  `taiki-e/install-action` where appropriate and updated the release
+  WASM job to use the shared target dir. Rationale: workflow
+  prerequisites should be declarative and consistent across jobs,
+  especially once build behavior depends on `cargo-nextest` and
+  `cargo-component` rather than ambient runner state.
 
 ## Outcomes & Retrospective
 

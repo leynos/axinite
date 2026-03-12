@@ -40,9 +40,9 @@ jobs:
         with:
           key: ${{ matrix.name }}
       - name: Install cargo-nextest
-        run: cargo install cargo-nextest --locked || true
+        uses: taiki-e/install-action@cargo-nextest
       - name: Install cargo-component
-        run: cargo install cargo-component --locked || true
+        uses: taiki-e/install-action@cargo-component
       - name: Build GitHub WASM tool (for metadata/schema tests)
         run: make build-github-tool-wasm
       - name: Build WASM channels (for integration tests)
@@ -123,7 +123,7 @@ jobs:
         with:
           key: wasm-extensions
       - name: Install cargo-component
-        run: cargo install cargo-component --locked || true
+        uses: taiki-e/install-action@cargo-component
       - name: Build all WASM extensions against current WIT
         run: ./scripts/build-wasm-extensions.sh
       - name: Instantiation test (host linker compatibility)

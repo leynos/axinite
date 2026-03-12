@@ -252,6 +252,7 @@ jobs:
     if: ${{ needs.plan.outputs.publishing == 'true' }}
     runs-on: "ubuntu-22.04"
     env:
+      CARGO_TARGET_DIR: target/wasm-extensions
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -259,9 +260,11 @@ jobs:
           persist-credentials: false
           submodules: recursive
       - name: Install Rust toolchain + wasm target
-        run: |
-          rustup target add wasm32-wasip2
-          cargo install cargo-component --locked || true
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - name: Install cargo-component
+        uses: taiki-e/install-action@cargo-component
       - uses: swatinem/rust-cache@v2
         with:
           key: wasm-extensions
@@ -317,9 +320,14 @@ jobs:
             wasm_artifact="${crate_name//-/_}"
             wasm_path=""
             for target_dir in wasm32-wasip2 wasm32-wasip1 wasm32-wasi; do
-              candidate="$source_dir/target/$target_dir/release/${wasm_artifact}.wasm"
-              if [ -f "$candidate" ]; then
-                wasm_path="$candidate"
+              shared_candidate="$CARGO_TARGET_DIR/$target_dir/release/${wasm_artifact}.wasm"
+              legacy_candidate="$source_dir/target/$target_dir/release/${wasm_artifact}.wasm"
+              if [ -f "$shared_candidate" ]; then
+                wasm_path="$shared_candidate"
+                break
+              fi
+              if [ -f "$legacy_candidate" ]; then
+                wasm_path="$legacy_candidate"
                 break
               fi
             done
