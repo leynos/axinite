@@ -1,5 +1,6 @@
+---
 name: Code Style
-on:
+"on":
   pull_request:
 
 jobs:
@@ -7,18 +8,22 @@ jobs:
     name: Formatting
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt
-    - name: Check formatting
-      run: cargo fmt --all -- --check
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
   clippy:
     name: Clippy (${{ matrix.name }})
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
     strategy:
       fail-fast: false
       matrix:
@@ -30,17 +35,21 @@ jobs:
           - name: libsql-only
             flags: "--no-default-features --features libsql"
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: clippy
-    - uses: Swatinem/rust-cache@v2
-      with:
-        key: clippy-${{ matrix.name }}
-    - name: Check lints
-      run: cargo clippy --all --benches --tests --examples ${{ matrix.flags }} -- -D warnings
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: clippy-${{ matrix.name }}
+      - name: Check lints
+        run: >-
+          cargo clippy --all --benches --tests --examples ${{ matrix.flags }}
+          -- -D warnings
 
   clippy-windows:
     name: Clippy Windows (${{ matrix.name }})
@@ -57,17 +66,19 @@ jobs:
           - name: libsql-only
             flags: "--no-default-features --features libsql"
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: clippy
-    - uses: Swatinem/rust-cache@v2
-      with:
-        key: clippy-windows-${{ matrix.name }}
-    - name: Check lints
-      run: cargo clippy --all --benches --tests --examples ${{ matrix.flags }} -- -D warnings
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: clippy-windows-${{ matrix.name }}
+      - name: Check lints
+        run: >-
+          cargo clippy --all --benches --tests --examples ${{ matrix.flags }}
+          -- -D warnings
 
   # Roll-up job for branch protection
   code-style:
@@ -77,11 +88,13 @@ jobs:
     needs: [format, clippy, clippy-windows]
     steps:
       - run: |
-          if [[ "${{ needs.format.result }}" != "success" || "${{ needs.clippy.result }}" != "success" ]]; then
+          if [[ "${{ needs.format.result }}" != "success" || \
+            "${{ needs.clippy.result }}" != "success" ]]; then
             echo "One or more jobs failed"
             exit 1
           fi
-          # clippy-windows only runs on main PRs, so skip/success are both acceptable
+          # clippy-windows only runs on main PRs.
+          # Skip and success are both acceptable.
           if [[ "${{ needs.clippy-windows.result }}" == "failure" ]]; then
             echo "Windows clippy failed"
             exit 1
