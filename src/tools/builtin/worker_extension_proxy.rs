@@ -1,4 +1,4 @@
-//! Worker-local proxies for safe extension-management reads and activation.
+//! Worker-local proxies for safe extension-management reads.
 //!
 //! Hosted workers cannot consume interactive approval grants, so this module
 //! only exposes the non-mutating extension tools that can be proxied through
@@ -159,14 +159,6 @@ mod tests {
         let mut names = registry.list().await;
         names.sort();
 
-        assert_eq!(
-            names,
-            vec![
-                "extension_info",
-                "tool_activate",
-                "tool_list",
-                "tool_search"
-            ]
-        );
+        assert_eq!(names, vec!["extension_info", "tool_list", "tool_search"]);
     }
 }

@@ -331,7 +331,6 @@ impl near::agent::host::Host for StoreData {
     ) -> Result<near::agent::host::HttpResponse, String> {
         let PreparedHttpRequest { url, headers } =
             self.prepare_http_request(&method, &url, &headers_json, body.as_deref())?;
-        let leak_detector = LeakDetector::new();
 
         // Get the max response size from capabilities (default 10MB).
         let max_response_bytes = self
@@ -437,6 +436,7 @@ impl near::agent::host::Host for StoreData {
 
             // Leak detection on response body
             if let Ok(body_str) = std::str::from_utf8(&body) {
+                let leak_detector = LeakDetector::new();
                 leak_detector
                     .scan_and_clean(body_str)
                     .map_err(|e| format!("Potential secret leak in response: {}", e))?;

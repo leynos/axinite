@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as
 work proceeds.
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -146,7 +146,7 @@ Begin by proving the current state rather than editing files immediately.
    registry manifest already advertise `0.3.0`.
 2. Rebuild the full extension matrix with
    `./scripts/build-wasm-extensions.sh`.
-3. Run `cargo test --all-features wit_compat -- --nocapture` to prove the built
+3. Run `cargo test --all-features --test wit_compat -- --nocapture` to prove the built
    matrix instantiates against the current host linker.
 4. Record which surfaces are already aligned and which ones still leak older
    values such as `0.1.0`.
@@ -159,16 +159,17 @@ touching every extension directory.
 Suggested commands:
 
 ```bash
+BRANCH=$(git branch --show-current | tr '/' '-')
 set -o pipefail && \
   rg -n 'near:agent@0\.3\.0|"wit_version"\s*:\s*"0\.3\.0"' \
   wit src/tools/wasm/mod.rs tools-src channels-src registry 2>&1 | \
-  tee /tmp/audit-wit-versions-ironclaw-$(git branch --show).out
+  tee /tmp/audit-wit-versions-ironclaw-${BRANCH}.out
 set -o pipefail && \
   ./scripts/build-wasm-extensions.sh 2>&1 | \
-  tee /tmp/build-wasm-extensions-ironclaw-$(git branch --show).out
+  tee /tmp/build-wasm-extensions-ironclaw-${BRANCH}.out
 set -o pipefail && \
-  cargo test --all-features wit_compat -- --nocapture 2>&1 | \
-  tee /tmp/test-wit-compat-ironclaw-$(git branch --show).out
+  cargo test --all-features --test wit_compat -- --nocapture 2>&1 | \
+  tee /tmp/test-wit-compat-ironclaw-${BRANCH}.out
 ```
 
 Commit boundary after this milestone: only if files needed to change because
@@ -202,17 +203,18 @@ to that value unless there is a documented backward-compatibility reason.
 Suggested commands:
 
 ```bash
+BRANCH=$(git branch --show-current | tr '/' '-')
 set -o pipefail && \
   rg -n '0\.1\.0|0\.3\.0' \
   migrations src/db src/extensions src/tools/wasm src/channels/wasm 2>&1 | \
-  tee /tmp/audit-stale-wit-defaults-ironclaw-$(git branch --show).out
+  tee /tmp/audit-stale-wit-defaults-ironclaw-${BRANCH}.out
 set -o pipefail && \
   cargo test --all-features test_upgrade_up_to_date_extension -- --nocapture \
-  2>&1 | tee /tmp/test-upgrade-up-to-date-ironclaw-$(git branch --show).out
+  2>&1 | tee /tmp/test-upgrade-up-to-date-ironclaw-${BRANCH}.out
 set -o pipefail && \
   cargo test --all-features test_upgrade_outdated_not_in_registry -- \
   --nocapture 2>&1 | \
-  tee /tmp/test-upgrade-outdated-ironclaw-$(git branch --show).out
+  tee /tmp/test-upgrade-outdated-ironclaw-${BRANCH}.out
 ```
 
 Commit boundary after this milestone: one commit for default, reporting, and
@@ -243,15 +245,16 @@ create motion.
 Suggested commands:
 
 ```bash
+BRANCH=$(git branch --show-current | tr '/' '-')
 set -o pipefail && \
   bunx markdownlint-cli2 \
   docs/BUILDING_CHANNELS.md \
   docs/plans/2026-03-09-use-wit-v3-in-extensions.md 2>&1 | \
-  tee /tmp/markdownlint-ironclaw-$(git branch --show).out
+  tee /tmp/markdownlint-ironclaw-${BRANCH}.out
 set -o pipefail && \
-  cargo test --all-features wit_compat_all_registry_extensions_have_source \
+  cargo test --all-features --test wit_compat_all_registry_extensions_have_source \
   -- --nocapture 2>&1 | \
-  tee /tmp/test-registry-sources-ironclaw-$(git branch --show).out
+  tee /tmp/test-registry-sources-ironclaw-${BRANCH}.out
 ```
 
 Commit boundary after this milestone: one docs-and-tests commit if files
@@ -275,9 +278,10 @@ milestone was skipped because the curated matrix was already at WIT `0.3.0`.
 Suggested commands:
 
 ```bash
+BRANCH=$(git branch --show-current | tr '/' '-')
 set -o pipefail && \
   ./scripts/build-wasm-extensions.sh 2>&1 | \
-  tee /tmp/build-release-bundles-ironclaw-$(git branch --show).out
+  tee /tmp/build-release-bundles-ironclaw-${BRANCH}.out
 ```
 
 Commit boundary after this milestone: one release-artifact sync commit if and
@@ -293,7 +297,7 @@ following:
 2. Every curated in-tree sidecar and registry manifest still reports
    `wit_version: "0.3.0"`.
 3. `./scripts/build-wasm-extensions.sh` succeeds for the curated matrix.
-4. `cargo test --all-features wit_compat -- --nocapture` succeeds.
+4. `cargo test --all-features --test wit_compat -- --nocapture` succeeds.
 5. Any stale host-default or info-path `0.1.0` values that were misleading for
    new records have been removed or documented.
 6. If any shipped extension artifacts changed, the registry checksums come from
@@ -318,7 +322,7 @@ Record the exact log paths in the final implementation summary.
   wrote evidence to
   `/tmp/build-wasm-extensions-ironclaw-use-wit-v3-in-extensions.out`.
 - [x] 2026-03-09T17:18:00+00:00 Re-ran
-  `cargo test --all-features wit_compat -- --nocapture` after the full matrix
+  `cargo test --all-features --test wit_compat -- --nocapture` after the full matrix
   build. All three compatibility tests passed, including the WhatsApp channel,
   with evidence in
   `/tmp/test-wit-compat-rerun-ironclaw-use-wit-v3-in-extensions.out`.

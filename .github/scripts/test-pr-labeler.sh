@@ -54,3 +54,4 @@ grep -Fq 'Contributor: contributor has 0 merged PRs -> contributor: new' <<<"$ou
 grep -Fq 'ADD:size: XL' "$GH_LOG"
 grep -Fq 'ADD:risk: low' "$GH_LOG"
 grep -Fq 'ADD:contributor: new' "$GH_LOG"
+echo "labeler test: success"

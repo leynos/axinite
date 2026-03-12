@@ -1440,7 +1440,7 @@ async fn chat_new_thread_handler(
 
 #[derive(Deserialize)]
 struct TreeQuery {
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "preserved for future query depth support")]
     depth: Option<usize>,
 }
 

@@ -1,3 +1,6 @@
+//! Integration tests covering `LibSqlBackend` and `Database` handling of
+//! historical WASM WIT defaults under the `libsql` feature.
+
 #![cfg(feature = "libsql")]
 
 use ironclaw::db::{Database, libsql::LibSqlBackend};

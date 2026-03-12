@@ -33,6 +33,13 @@ pub(super) fn flatten_top_level_forbidden_keywords(schema: &mut JsonValue) {
     obj.remove("not");
 }
 
+/// `merge_top_level_variants` preserves the parent combinator's required-key
+/// semantics while flattening top-level variant branches.
+///
+/// When `required_merge_mode` is `RequiredMergeMode::Union` (`allOf`), required
+/// keys are unioned because every branch must be satisfied. When
+/// `required_merge_mode` is `RequiredMergeMode::Intersect` (`oneOf`/`anyOf`),
+/// required keys are intersected because any single branch may apply.
 fn merge_top_level_variants(
     root: &mut Map<String, JsonValue>,
     variants_value: &JsonValue,

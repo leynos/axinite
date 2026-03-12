@@ -48,7 +48,7 @@ IronClaw's skill runtime currently injects only the parsed prompt body from
 `SKILL.md`. It does not inject the on-disk skill path, and it does not provide
 any skill-scoped file-reading interface.
 
-As a result, even if we preserved `references/` or `assets/` during install,
+As a result, even if `references/` or `assets/` were preserved during install,
 the model would not have a safe, explicit way to retrieve them.
 
 ## Reference Model
@@ -158,7 +158,7 @@ directory.
 
 The existing URL install flow should be extended so the URL may point to either:
 
-1. a raw `SKILL.md`, preserving current behavior
+1. a raw `SKILL.md`, preserving current behaviour
 2. a `.skill` ZIP archive
 
 The existing HTTPS-only and SSRF protections should remain in force.
@@ -171,7 +171,7 @@ IronClaw should keep one logical install endpoint that accepts exactly one of:
 2. `url` for remote `SKILL.md` or `.skill`
 3. uploaded file data for local `.skill`
 
-This keeps UI and API behavior aligned while preserving current single-file
+This keeps UI and API behaviour aligned while preserving current single-file
 installs.
 
 ## Validation And Extraction
@@ -329,7 +329,7 @@ The Skills page should support two install inputs:
 1. HTTPS URL
 2. local `.skill` upload
 
-Recommended UI behavior:
+Recommended UI behaviour:
 
 1. keep the current URL field
 2. add a file picker for `.skill`
@@ -367,7 +367,7 @@ Add coverage for:
 6. `skill_read_file` success for `SKILL.md` and `references/...`
 7. `skill_read_file` rejection for files outside the allowed roots
 
-### Behavioral tests
+### Behavioural tests
 
 Add end-to-end coverage for:
 

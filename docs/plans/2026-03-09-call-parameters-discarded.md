@@ -105,7 +105,7 @@ Suggested command:
 
 ```bash
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test file_loaded_wasm_tool_exposes_exported_schema -- --nocapture \
   2>&1 | tee /tmp/test-wasm-file-schema-red-ironclaw-${BRANCH}.out
 ```
@@ -159,11 +159,11 @@ Suggested commands:
 
 ```bash
 set -o pipefail
-BRANCH=$(git branch --show)
-cargo test tool_schema_validation --test -- --nocapture \
+BRANCH=$(git branch --show-current | tr '/' '-')
+cargo test --test tool_schema_validation -- --nocapture \
   2>&1 | tee /tmp/test-tool-schema-ironclaw-${BRANCH}.out
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test wasm_tool_schemas --lib -- --nocapture \
   2>&1 | tee /tmp/test-wasm-schema-validator-ironclaw-${BRANCH}.out
 ```
@@ -255,4 +255,4 @@ Final precedence rule after the fix:
 
 1. If `register_wasm(...)` receives explicit `description`/`schema` overrides, those win.
 2. Otherwise, the wrapper recovers the guest-exported metadata and publishes that externally.
-3. Runtime placeholder metadata remains only as a compile-time fallback and is no longer what file-loaded tools expose to the model under normal registration.
+3. Runtime placeholder metadata was removed from the normal registration path; `PreparedModule` no longer carries it as a fallback for file-loaded registration. The authoritative source for normal registration is the wrapper-side recovery flow that reads guest-exported metadata during `register_wasm(...)`.

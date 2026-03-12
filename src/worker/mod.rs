@@ -8,22 +8,22 @@
 //! - Reports status and completion back to the orchestrator
 //!
 //! ```text
-//! ┌────────────────────────────────┐
-//! │        Docker Container         │
-//! │                                 │
-//! │  ironclaw worker                │
-//! │    ├─ ProxyLlmProvider ─────────┼──▶ Orchestrator /worker/{id}/llm/complete
-//! │    ├─ SafetyLayer               │
-//! │    ├─ ToolRegistry              │
-//! │    │   ├─ shell                 │
-//! │    │   ├─ read_file             │
-//! │    │   ├─ write_file            │
-//! │    │   ├─ list_dir              │
-//! │    │   ├─ apply_patch           │
-//! │    │   └─ tool_list / tool_search / ... (proxied) │
-//! │    └─ WorkerHttpClient ─────────┼──▶ Orchestrator /worker/{id}/status
-//! │                                 │
-//! └────────────────────────────────┘
+//! ┌──────────────────────────────────────────────────────────────────────────────┐
+//! │                              Docker Container                               │
+//! │                                                                              │
+//! │  ironclaw worker                                                             │
+//! │    ├─ ProxyLlmProvider ─────────┼──▶ Orchestrator /worker/{id}/llm/complete │
+//! │    ├─ SafetyLayer               │                                            │
+//! │    ├─ ToolRegistry              │                                            │
+//! │    │   ├─ shell                 │                                            │
+//! │    │   ├─ read_file             │                                            │
+//! │    │   ├─ write_file            │                                            │
+//! │    │   ├─ list_dir              │                                            │
+//! │    │   ├─ apply_patch           │                                            │
+//! │    │   └─ tool_list / tool_search / ... (proxied)                           │
+//! │    └─ WorkerHttpClient ─────────┼──▶ Orchestrator /worker/{id}/status       │
+//! │                                                                              │
+//! └──────────────────────────────────────────────────────────────────────────────┘
 //! ```
 
 pub mod api;

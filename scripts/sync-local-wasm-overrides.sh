@@ -50,7 +50,9 @@ sync_tools() {
         target_capabilities="${target_wasm%.wasm}.capabilities.json"
 
         cp -v "$wasm_path" "$target_wasm"
-        cp -v "$source_capabilities" "$target_capabilities"
+        if [[ -f "$source_capabilities" ]]; then
+            cp -v "$source_capabilities" "$target_capabilities"
+        fi
     done
 }
 
@@ -74,7 +76,9 @@ sync_channels() {
         target_capabilities="${target_wasm%.wasm}.capabilities.json"
 
         cp -v "$wasm_path" "$target_wasm"
-        cp -v "$source_capabilities" "$target_capabilities"
+        if [[ -f "$source_capabilities" ]]; then
+            cp -v "$source_capabilities" "$target_capabilities"
+        fi
     done
 }
 

@@ -1,6 +1,7 @@
 //! Built-in tools that come with the agent.
 
 mod echo;
+pub(crate) mod extension_tool_metadata;
 pub mod extension_tools;
 mod file;
 mod http;

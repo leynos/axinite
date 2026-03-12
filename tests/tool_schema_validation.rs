@@ -77,8 +77,7 @@ async fn all_core_builtin_tool_schemas_are_valid() {
     let mut all_errors = Vec::new();
     for tool in &tools {
         let schema = tool.parameters_schema();
-        let errors = validate_tool_schema(&schema, tool.name());
-        if !errors.is_empty() {
+        if let Err(errors) = validate_strict_schema(&schema, tool.name()) {
             all_errors.push(format!(
                 "Tool '{}' has schema errors:\n  {}",
                 tool.name(),
@@ -156,8 +155,7 @@ async fn extension_tool_schemas_are_valid(extension_manager_fixture: ExtensionMa
     let mut all_errors = Vec::new();
     for tool in &tools {
         let schema = tool.parameters_schema();
-        let errors = validate_tool_schema(&schema, tool.name());
-        if !errors.is_empty() {
+        if let Err(errors) = validate_strict_schema(&schema, tool.name()) {
             all_errors.push(format!(
                 "Tool '{}' has schema errors:\n  {}",
                 tool.name(),

@@ -116,7 +116,7 @@ For example:
 
 Historical artifacts may still declare older values, and IronClaw's
 compatibility tests intentionally keep some legacy coverage. That is not a
-license to ship new sidecars with `0.1.0` or `0.2.0`.
+licence to ship new sidecars with `0.1.0` or `0.2.0`.
 
 One subtle point from the repository tests:
 
@@ -204,7 +204,7 @@ if the mock hides the integration boundary that matters.
 1. Declare a truthful `wit_version: "0.3.0"` in the sidecar.
 1. Keep secrets at the host boundary and pass non-secret guest-consumed values
    as normal request parameters.
-1. Package a `.tar.gz` with names that match the install name exactly.
+1. Package a `.tar.gz` with names that match the installation name exactly.
 1. Run component compatibility tests and behavior tests before shipping.
 
 ## Related Repo Docs

@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
@@ -44,6 +45,8 @@ use crate::llm::{
 };
 use crate::tools::ToolRegistry;
 use crate::tools::wasm::{ResourceLimits, WasmRuntimeConfig, WasmToolRuntime};
+
+static METADATA_TEST_RUNTIME: OnceLock<Arc<WasmToolRuntime>> = OnceLock::new();
 
 /// Create a libSQL-backed test database in a temporary directory.
 ///
@@ -490,6 +493,10 @@ impl Default for TestHarnessBuilder {
 
 /// Shared WASM runtime for metadata extraction and schema publication regressions.
 pub fn metadata_test_runtime() -> anyhow::Result<Arc<WasmToolRuntime>> {
+    if let Some(runtime) = METADATA_TEST_RUNTIME.get() {
+        return Ok(Arc::clone(runtime));
+    }
+
     let config = WasmRuntimeConfig {
         default_limits: ResourceLimits::default()
             .with_memory(8 * 1024 * 1024)
@@ -497,7 +504,9 @@ pub fn metadata_test_runtime() -> anyhow::Result<Arc<WasmToolRuntime>> {
             .with_timeout(Duration::from_secs(5)),
         ..WasmRuntimeConfig::for_testing()
     };
-    Ok(Arc::new(WasmToolRuntime::new(config)?))
+    let runtime = Arc::new(WasmToolRuntime::new(config)?);
+    let _ = METADATA_TEST_RUNTIME.set(Arc::clone(&runtime));
+    Ok(runtime)
 }
 
 /// Source directory for the bundled GitHub WASM test tool.

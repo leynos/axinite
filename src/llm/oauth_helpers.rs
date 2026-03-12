@@ -11,6 +11,10 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
+mod oauth_landing;
+
+pub use oauth_landing::landing_html;
+
 /// Fixed port for the OAuth callback listener.
 pub const OAUTH_CALLBACK_PORT: u16 = 9876;
 
@@ -94,9 +98,9 @@ fn bind_error(e: std::io::Error) -> OAuthCallbackError {
 
 /// Bind the OAuth callback listener on the fixed port.
 ///
-/// When `OAUTH_CALLBACK_HOST` is a loopback address (the default `127.0.0.1`),
-/// binds to `127.0.0.1` first and falls back to `[::1]` so local-only auth
-/// flows remain restricted to the local machine.
+/// When `OAUTH_CALLBACK_HOST` is a loopback address, binds to the configured
+/// loopback host first. IPv6 loopback hosts also get a bracketed fallback so
+/// callback URLs and listener binds stay aligned.
 ///
 /// When `OAUTH_CALLBACK_HOST` is set to a remote address, binds to that
 /// specific address so only connections directed to it are accepted.
@@ -114,9 +118,8 @@ async fn bind_callback_listener_for_host(host: &str) -> Result<TcpListener, OAut
     }
 
     if is_loopback_host(host) {
-        // Local mode: prefer IPv4 loopback, fall back to IPv6.
-        let ipv4_addr = format!("127.0.0.1:{}", OAUTH_CALLBACK_PORT);
-        match TcpListener::bind(&ipv4_addr).await {
+        let preferred_addr = format!("{host}:{}", OAUTH_CALLBACK_PORT);
+        match TcpListener::bind(&preferred_addr).await {
             Ok(listener) => return Ok(listener),
             Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
                 return Err(OAuthCallbackError::PortInUse(
@@ -124,18 +127,21 @@ async fn bind_callback_listener_for_host(host: &str) -> Result<TcpListener, OAut
                     e.to_string(),
                 ));
             }
-            Err(_) => {
-                // IPv4 not available, fall back to IPv6
+            Err(e) => {
+                if host.parse::<std::net::Ipv6Addr>().is_err() {
+                    return Err(bind_error(e));
+                }
             }
         }
-        TcpListener::bind(format!("[::1]:{}", OAUTH_CALLBACK_PORT))
-            .await
-            .map_err(bind_error)
+
+        let ipv6_addr = format!("[{host}]:{}", OAUTH_CALLBACK_PORT);
+        TcpListener::bind(ipv6_addr).await.map_err(bind_error)
+    } else if host.contains(':') {
+        let addr = format!("[{host}]:{}", OAUTH_CALLBACK_PORT);
+        TcpListener::bind(addr).await.map_err(bind_error)
     } else {
-        // Remote mode: bind to the specific configured host address only,
-        // not 0.0.0.0, to limit exposure to the intended interface.
-        let addr = format!("{}:{}", host, OAUTH_CALLBACK_PORT);
-        TcpListener::bind(&addr).await.map_err(bind_error)
+        let addr = format!("{host}:{}", OAUTH_CALLBACK_PORT);
+        TcpListener::bind(addr).await.map_err(bind_error)
     }
 }
 
@@ -259,110 +265,10 @@ pub async fn wait_for_callback(
     .map_err(|_| OAuthCallbackError::Timeout)?
 }
 
-/// Escape a string for safe interpolation into HTML content.
-fn html_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#x27;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
-/// Generate a branded HTML landing page for the OAuth callback result.
-pub fn landing_html(provider_name: &str, success: bool) -> String {
-    let safe_name = html_escape(provider_name);
-    let (icon, heading, subtitle, accent) = if success {
-        (
-            r##"<div style="width:64px;height:64px;border-radius:50%;background:#22c55e;display:flex;align-items:center;justify-content:center;margin:0 auto 24px">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              </div>"##,
-            format!("{} Connected", safe_name),
-            "You can close this window and return to your terminal.",
-            "#22c55e",
-        )
-    } else {
-        (
-            r##"<div style="width:64px;height:64px;border-radius:50%;background:#ef4444;display:flex;align-items:center;justify-content:center;margin:0 auto 24px">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </div>"##,
-            "Authorization Failed".to_string(),
-            "The request was denied. You can close this window and try again.",
-            "#ef4444",
-        )
-    };
-
-    format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>IronClaw - {heading}</title>
-<style>
-  * {{ margin:0; padding:0; box-sizing:border-box }}
-  body {{
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: #0a0a0a;
-    color: #e5e5e5;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-  }}
-  .card {{
-    text-align: center;
-    padding: 48px 40px;
-    max-width: 420px;
-    border: 1px solid #262626;
-    border-radius: 16px;
-    background: #141414;
-  }}
-  h1 {{
-    font-size: 22px;
-    font-weight: 600;
-    margin-bottom: 8px;
-    color: #fafafa;
-  }}
-  p {{
-    font-size: 14px;
-    color: #a3a3a3;
-    line-height: 1.5;
-  }}
-  .accent {{ color: {accent}; }}
-  .brand {{
-    margin-top: 32px;
-    font-size: 12px;
-    color: #525252;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-  }}
-</style>
-</head>
-<body>
-  <div class="card">
-    {icon}
-    <h1>{heading}</h1>
-    <p>{subtitle}</p>
-    <div class="brand">IronClaw</div>
-  </div>
-</body>
-</html>"#,
-        heading = heading,
-        icon = icon,
-        subtitle = subtitle,
-        accent = accent,
-    )
-}
-
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     #[test]
@@ -388,24 +294,16 @@ mod tests {
         assert!(!is_wildcard_host("localhost"));
     }
 
+    #[rstest]
+    #[case("0.0.0.0")]
+    #[case("::")]
     #[tokio::test]
-    async fn bind_rejects_wildcard_ipv4() {
-        let result = bind_callback_listener_for_host("0.0.0.0").await;
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
+    async fn bind_rejects_wildcard_hosts(#[case] host: &str) {
+        let err = bind_callback_listener_for_host(host)
+            .await
+            .expect_err("wildcard hosts must be rejected");
         assert!(
-            err.contains("wildcard"),
-            "error should mention wildcard: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn bind_rejects_wildcard_ipv6() {
-        let result = bind_callback_listener_for_host("::").await;
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("wildcard"),
+            err.to_string().contains("wildcard"),
             "error should mention wildcard: {err}"
         );
     }

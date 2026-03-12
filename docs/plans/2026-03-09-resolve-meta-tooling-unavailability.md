@@ -14,17 +14,17 @@ installed or connected and see a real `tool_list` or `tool_search` call happen
 instead of the capability being absent, while approval-gated operations remain
 orchestrator-only.
 
-The change must be observable in three ways. First, a focused regression test must fail before the fix and pass after it by proving the hosted worker now advertises the meta tools. Second, surrounding unit and integration coverage must pin the registration and behavior changes so the gap does not reappear in a different layer. Third, the normal in-process agent path must continue to behave exactly as it does today.
+The change must be observable in three ways. First, a focused regression test must fail before the fix and pass after it by proving the hosted worker now advertises the meta tools. Second, surrounding unit and integration coverage must pin the registration and behaviour changes so the gap does not reappear in a different layer. Third, the normal in-process agent path must continue to behave exactly as it does today.
 
 ## Constraints
 
 - This plan file must live at `docs/plans/2026-03-09-resolve-meta-tooling-unavailability.md` because the user requested that exact path.
 - The public tool names and their parameter schemas must remain stable. Existing prompts, traces, and UI affordances refer to `tool_search`, `tool_auth`, `tool_activate`, `tool_list`, and the other extension-management tools by those exact names.
 - The existing meaning of `crate::tools::ToolRegistry::register_container_tools` in `src/tools/registry.rs` must not be broadened casually. That helper currently means container-local development tools. If hosted worker needs more than that, add a separate hosted-worker registration path rather than silently changing the meaning of the existing function.
-- The normal in-process application bootstrap in `src/app.rs` must keep working without behavioral regression. Existing recorded traces such as `tests/fixtures/llm_traces/recorded/telegram_check.json` must remain valid.
+- The normal in-process application bootstrap in `src/app.rs` must keep working without behavioural regression. Existing recorded traces such as `tests/fixtures/llm_traces/recorded/telegram_check.json` must remain valid.
 - Tests added by this work must be deterministic and must not require live network calls, real OAuth flows, or mutable external services.
 - No new third-party dependency may be introduced to implement the fix or its tests.
-- The fix must preserve a single source of truth for extension state unless a prototype proves that a worker-local copy is behaviorally identical and cannot drift. The default assumption for this plan is that extension state should remain owned by the orchestrator-side application, not duplicated inside the worker container.
+- The fix must preserve a single source of truth for extension state unless a prototype proves that a worker-local copy is behaviourally identical and cannot drift. The default assumption for this plan is that extension state should remain owned by the orchestrator-side application, not duplicated inside the worker container.
 
 ## Tolerances (exception triggers)
 
@@ -32,15 +32,15 @@ The change must be observable in three ways. First, a focused regression test mu
 - Interface: if the fix requires a generic remote tool-execution API rather than a narrow extension-management proxy, stop and escalate before implementing the broader interface.
 - Dependencies: if the chosen test harness or fix requires a new crate or a new external service, stop and escalate.
 - Iterations: if a deterministic red test for hosted-worker meta tooling still does not exist after three harness attempts, stop and document the alternatives in `Decision Log`.
-- Time: if the worker feature-behavior test harness takes more than four hours to make deterministic, stop and escalate before expanding the harness further.
+- Time: if the worker feature-behaviour test harness takes more than four hours to make deterministic, stop and escalate before expanding the harness further.
 - Ambiguity: if it becomes unclear whether hosted worker should act on orchestrator-owned extension state or container-local extension state, stop and escalate instead of guessing.
 
 ## Risks
 
-- Risk: The worker currently has only a concrete `WorkerHttpClient`, so testing real hosted-worker behavior may require extracting a small seam before any regression test can be written.
+- Risk: The worker currently has only a concrete `WorkerHttpClient`, so testing real hosted-worker behaviour may require extracting a small seam before any regression test can be written.
   Severity: medium
   Likelihood: high
-  Mitigation: Make the first implementation step a pure or test-only bootstrap helper so the tool inventory can be asserted without network setup. Add the full behavior harness only after the seam is in place.
+  Mitigation: Make the first implementation step a pure or test-only bootstrap helper so the tool inventory can be asserted without network setup. Add the full behaviour harness only after the seam is in place.
 
 - Risk: A worker-local `ExtensionManager` would create a second source of truth for installed extensions, authentication state, and registry-backed discovery.
   Severity: high
@@ -50,12 +50,12 @@ The change must be observable in three ways. First, a focused regression test mu
 - Risk: Existing worker-focused tests do not instantiate `WorkerRuntime`, so adding more tests to `tests/e2e_worker_coverage.rs` alone could create a false sense of coverage.
   Severity: high
   Likelihood: high
-  Mitigation: Add a dedicated hosted-worker inventory or behavior test that constructs `WorkerRuntime` or a directly extracted hosted-worker bootstrap path.
+  Mitigation: Add a dedicated hosted-worker inventory or behaviour test that constructs `WorkerRuntime` or a directly extracted hosted-worker bootstrap path.
 
-- Risk: Extension-management tools have approval and auth behavior that is more complex than their current schema-only coverage suggests.
+- Risk: Extension-management tools have approval and auth behaviour that is more complex than their current schema-only coverage suggests.
   Severity: medium
   Likelihood: medium
-  Mitigation: Separate inventory coverage from execution-behavior coverage. Use deterministic temp-dir and stub-backed tests for `tool_list`, `tool_search`, `tool_activate`, and `tool_auth` before relying on a worker end-to-end trace.
+  Mitigation: Separate inventory coverage from execution-behaviour coverage. Use deterministic temp-dir and stub-backed tests for `tool_list`, `tool_search`, `tool_activate`, and `tool_auth` before relying on a worker end-to-end trace.
 
 ## Progress
 
@@ -64,7 +64,7 @@ The change must be observable in three ways. First, a focused regression test mu
 - [x] (2026-03-09 12:57Z) Drafted the execution plan, including the preferred fix direction and validation strategy.
 - [x] (2026-03-09 13:01Z) Began implementation and confirmed the first code seam is the hosted-worker bootstrap in `src/worker/runtime.rs` plus the registration helpers in `src/tools/registry.rs`.
 - [x] (2026-03-09 14:11Z) Added hosted-worker regression coverage in `src/worker/runtime.rs` to assert the worker inventory and advertised tool set now include extension-management tools.
-- [x] (2026-03-09 14:14Z) Added surrounding registry, schema, and behavior coverage in `src/tools/registry.rs`, `tests/tool_schema_validation.rs`, and `src/tools/builtin/extension_tools.rs`.
+- [x] (2026-03-09 14:14Z) Added surrounding registry, schema, and behaviour coverage in `src/tools/registry.rs`, `tests/tool_schema_validation.rs`, and `src/tools/builtin/extension_tools.rs`.
 - [x] (2026-03-09 14:16Z) Implemented the hosted-worker fix with an orchestrator-backed extension-tool proxy in `src/tools/builtin/worker_extension_proxy.rs`, `src/worker/api.rs`, `src/worker/runtime.rs`, and `src/orchestrator/api.rs`.
 - [x] (2026-03-09 14:41Z) Ran targeted validation plus the broader Rust/clippy matrices that match local Linux CI expectations.
 
@@ -78,7 +78,7 @@ The change must be observable in three ways. First, a focused regression test mu
   Evidence: `src/tools/builtin/extension_tools.rs` tests only tool names, approval requirements, and schema presence; `src/extensions/manager.rs` has test helpers such as `make_test_manager`.
   Impact: The fastest surrounding-coverage gains are to extend registry and extension-tool tests rather than inventing all fixtures from scratch.
 
-- Observation: The normal in-process agent path already proves `tool_list` behavior through the recorded Telegram check trace.
+- Observation: The normal in-process agent path already proves `tool_list` behaviour through the recorded Telegram check trace.
   Evidence: `tests/e2e_recorded_trace.rs` replays `telegram_check.json`, and that fixture expects `tool_list`.
   Impact: The fix must preserve the normal app path while closing only the hosted-worker gap.
 
@@ -100,7 +100,7 @@ The change must be observable in three ways. First, a focused regression test mu
   Rationale: Repository guidance prefers `docs/execplans/...`, but the user explicitly requested the `docs/plans/...` location, which takes priority.
   Date/Author: 2026-03-09 12:57Z / Codex
 
-- Decision: Treat the work as three separate coverage layers: hosted-worker inventory regression, surrounding registration and tool-behavior coverage, and hosted feature behavior.
+- Decision: Treat the work as three separate coverage layers: hosted-worker inventory regression, surrounding registration and tool-behaviour coverage, and hosted feature behaviour.
   Rationale: The current regression exists because no test covers the middle layer between isolated tool schemas and the full app-path trace harness.
   Date/Author: 2026-03-09 12:57Z / Codex
 
@@ -131,7 +131,7 @@ schemas include the safe proxy surface `tool_list`, `tool_search`,
 `tool_activate`, and `extension_info`, while excluding approval-gated tools.
 Second, `src/tools/registry.rs`, `tests/tool_schema_validation.rs`, and
 `src/tools/builtin/extension_tools.rs` now pin exact registration sets, schema
-validity, and deterministic `tool_search` / `tool_list` execution behavior plus
+validity, and deterministic `tool_search` / `tool_list` execution behaviour plus
 parameter-validation execution paths for `tool_auth` and `tool_activate`.
 Third, `src/tools/builtin/worker_extension_proxy.rs` and
 `src/orchestrator/api.rs` now have proxy round-trip tests that prove the
@@ -152,7 +152,7 @@ The files that matter most are:
 - `src/worker/runtime.rs`, where the hosted worker is bootstrapped and where a small test seam should be introduced.
 - `src/tools/registry.rs`, which defines the registration helpers and already has registry-level tests.
 - `src/tools/builtin/extension_tools.rs`, which implements the actual extension-management tools and currently only checks schemas and approval metadata.
-- `src/extensions/manager.rs`, which contains most of the actual extension behavior and already has temp-dir test helpers that can be reused.
+- `src/extensions/manager.rs`, which contains most of the actual extension behaviour and already has temp-dir test helpers that can be reused.
 - `tests/tool_schema_validation.rs`, which validates only built-in plus dev-tool schemas today.
 - `tests/e2e_recorded_trace.rs` and `tests/fixtures/llm_traces/recorded/telegram_check.json`, which already prove the normal app path can call `tool_list`.
 - `tests/e2e_worker_coverage.rs`, which is useful for worker-like tool-loop coverage but is not a direct hosted-worker bootstrap harness.
@@ -162,15 +162,15 @@ In this document, “meta tooling” means the extension-management tools that l
 
 ## Plan of work
 
-Stage A is a pure bootstrap and regression stage. Extract the hosted-worker tool bootstrap into a testable helper without changing behavior yet. The helper should live either in `src/tools/registry.rs` as a new function such as `register_hosted_worker_tools(...)` or in `src/worker/runtime.rs` as a small builder that returns the worker registry before networking begins. The first red test must assert that the hosted-worker path should advertise extension-management tools in addition to the existing development tools. This test should fail against the current code. A second test should assert that the development tools remain present, because the fix must not remove shell, file, or patch capabilities.
+Stage A is a pure bootstrap and regression stage. Extract the hosted-worker tool bootstrap into a testable helper without changing behaviour yet. The helper should live either in `src/tools/registry.rs` as a new function such as `register_hosted_worker_tools(...)` or in `src/worker/runtime.rs` as a small builder that returns the worker registry before networking begins. The first red test must assert that the hosted-worker path should advertise extension-management tools in addition to the existing development tools. This test should fail against the current code. A second test should assert that the development tools remain present, because the fix must not remove shell, file, or patch capabilities.
 
-Stage B adds surrounding coverage before the fix is merged. Extend `src/tools/registry.rs` tests so registration behavior is pinned explicitly: the hosted-worker registration path must include the extension-management tool names and preserve deterministic ordering, and `register_extension_tools(...)` itself must have an exact-set test rather than relying on downstream schema tests. Extend `tests/tool_schema_validation.rs` so extension-tool schemas are validated under a temp-backed `ExtensionManager`. Extend `src/tools/builtin/extension_tools.rs` with deterministic behavior tests for `tool_search`, `tool_list`, `tool_activate`, and `tool_auth`, using temp directories and test helpers rather than live network or OAuth.
+Stage B adds surrounding coverage before the fix is merged. Extend `src/tools/registry.rs` tests so registration behaviour is pinned explicitly: the hosted-worker registration path must include the extension-management tool names and preserve deterministic ordering, and `register_extension_tools(...)` itself must have an exact-set test rather than relying on downstream schema tests. Extend `tests/tool_schema_validation.rs` so extension-tool schemas are validated under a temp-backed `ExtensionManager`. Extend `src/tools/builtin/extension_tools.rs` with deterministic behaviour tests for `tool_search`, `tool_list`, `tool_activate`, and `tool_auth`, using temp directories and test helpers rather than live network or OAuth.
 
-Stage C implements the fix. The preferred implementation is to add a narrow extension-tool proxy that lets the worker advertise the same tool names and schemas as the normal app path while executing the actual extension-management operations against orchestrator-owned state. Concretely, add a worker-side registration helper that composes the existing dev tools with proxy implementations of the extension-management tools. Add a narrow orchestrator endpoint that accepts only those tool names and parameters, dispatches to the existing extension tool implementations, and returns the same JSON tool result shape the worker already expects. Add matching request and response types in `src/worker/api.rs` and matching client helpers in `WorkerHttpClient`. Keep the current `register_container_tools()` behavior untouched.
+Stage C implements the fix. The preferred implementation is to add a narrow extension-tool proxy that lets the worker advertise the same tool names and schemas as the normal app path while executing the actual extension-management operations against orchestrator-owned state. Concretely, add a worker-side registration helper that composes the existing dev tools with proxy implementations of the extension-management tools. Add a narrow orchestrator endpoint that accepts only those tool names and parameters, dispatches to the existing extension tool implementations, and returns the same JSON tool result shape the worker already expects. Add matching request and response types in `src/worker/api.rs` and matching client helpers in `WorkerHttpClient`. Keep the current `register_container_tools()` behaviour untouched.
 
-Stage D adds hosted feature-behavior coverage. Build a dedicated integration test, for example in `tests/hosted_worker_extension_tools.rs`, that drives a real `WorkerRuntime` against a small fake orchestrator server. The fake server should expose only the endpoints needed by `WorkerRuntime`: job description, completion with tools, status, event, prompt, completion report, and the new extension-tool proxy endpoint. Configure the fake LLM response so it chooses `tool_list` only when the incoming advertised tool set contains `tool_list`. Before the fix, the test should fail because the worker never advertises that tool. After the fix, it should pass and assert that `tool_list` was invoked and its result was turned into a user-visible answer. If this harness becomes too large within the stated tolerances, stop and escalate rather than silently replacing it with another normal app-path trace.
+Stage D adds hosted feature-behaviour coverage. Build a dedicated integration test, for example in `tests/hosted_worker_extension_tools.rs`, that drives a real `WorkerRuntime` against a small fake orchestrator server. The fake server should expose only the endpoints needed by `WorkerRuntime`: job description, completion with tools, status, event, prompt, completion report, and the new extension-tool proxy endpoint. Configure the fake LLM response so it chooses `tool_list` only when the incoming advertised tool set contains `tool_list`. Before the fix, the test should fail because the worker never advertises that tool. After the fix, it should pass and assert that `tool_list` was invoked and its result was turned into a user-visible answer. If this harness becomes too large within the stated tolerances, stop and escalate rather than silently replacing it with another normal app-path trace.
 
-Stage E is validation and cleanup. Run the new red tests first to prove they fail before the fix, then rerun them after the fix, then run the surrounding schema and behavior tests, then the existing normal app-path trace, and finally the broader Rust suite. Update this plan’s `Progress`, `Decision Log`, `Surprises & Discoveries`, and `Outcomes & Retrospective` sections with what was actually required.
+Stage E is validation and cleanup. Run the new red tests first to prove they fail before the fix, then rerun them after the fix, then run the surrounding schema and behaviour tests, then the existing normal app-path trace, and finally the broader Rust suite. Update this plan’s `Progress`, `Decision Log`, `Surprises & Discoveries`, and `Outcomes & Retrospective` sections with what was actually required.
 
 ## Concrete steps
 
@@ -185,11 +185,11 @@ sed -n '620,730p' src/tools/builtin/extension_tools.rs
 sed -n '3540,3815p' src/extensions/manager.rs
 ```
 
-2. Add the first failing tests without changing behavior yet.
+2. Add the first failing tests without changing behaviour yet.
 
 ```plaintext
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --lib test_register_hosted_worker_tools_includes_extension_management_tools -- --nocapture \
   | tee /tmp/test-ironclaw-${BRANCH}.out
 ```
@@ -202,11 +202,11 @@ test ... FAILED
 assertion failed: hosted worker tools contain "tool_list"
 ```
 
-3. Add the surrounding coverage for registry sets, extension-tool schemas, and extension-tool behavior.
+3. Add the surrounding coverage for registry sets, extension-tool schemas, and extension-tool behaviour.
 
 ```plaintext
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --lib test_register_extension_tools_registers_expected_names -- --nocapture \
   | tee /tmp/test-ironclaw-${BRANCH}.out
 cargo test --test tool_schema_validation -- --nocapture \
@@ -223,11 +223,11 @@ sed -n '220,340p' src/worker/api.rs
 sed -n '1,220p' src/worker/runtime.rs
 ```
 
-5. Add the hosted feature-behavior integration test.
+5. Add the hosted feature-behaviour integration test.
 
 ```plaintext
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --features libsql --test hosted_worker_extension_tools -- --nocapture \
   | tee /tmp/test-ironclaw-${BRANCH}.out
 ```
@@ -243,7 +243,7 @@ test hosted_worker_can_call_tool_list ... ok
 
 ```plaintext
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --lib test_register_hosted_worker_tools_includes_extension_management_tools -- --nocapture \
   | tee /tmp/test-ironclaw-${BRANCH}.out
 cargo test --lib test_worker_runtime_advertises_meta_tooling -- --nocapture \
@@ -260,17 +260,17 @@ cargo test --features libsql -- --nocapture \
 
 ## Validation and acceptance
 
-Acceptance is behavioral, not structural.
+Acceptance is behavioural, not structural.
 
 - The new regression test fails before the fix and passes after it by proving that the hosted-worker tool inventory now includes the extension-management tools.
 - A deterministic hosted-worker integration test proves that a real `WorkerRuntime` can advertise `tool_list`, receive a `tool_list` selection from the fake orchestrator-backed model, execute the tool through the narrow proxy, and surface the result back into the worker response loop.
 - Registry and schema tests prove that hosted-worker registration and extension-tool schemas are now explicitly covered.
-- Existing normal app-path behavior still works: `cargo test --features libsql --test e2e_recorded_trace recorded_telegram_check -- --nocapture` passes unchanged.
+- Existing normal app-path behaviour still works: `cargo test --features libsql --test e2e_recorded_trace recorded_telegram_check -- --nocapture` passes unchanged.
 - The broader `cargo test --features libsql -- --nocapture` suite passes from the repository root.
 
 Quality criteria:
 
-- Tests: all new regression, inventory, schema, and behavior tests pass.
+- Tests: all new regression, inventory, schema, and behaviour tests pass.
 - Lint and typecheck: if the repository has separate lint commands in CI beyond `cargo test`, run the relevant Rust checks that already exist in the repository workflow for touched files. If no separate local lint entry point is available, record that limitation in `Outcomes & Retrospective`.
 - Security: the fix must not create a generic remote-execution backchannel from worker to orchestrator. The proxy endpoint must accept only the known extension-management tool names and must reuse existing tool implementations.
 
