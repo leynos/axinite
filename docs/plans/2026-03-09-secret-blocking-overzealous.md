@@ -232,6 +232,7 @@ nl -ba tools-src/github/github-tool.capabilities.json | sed -n '1,30p'
 - [x] 2026-03-12 17:20Z: Verified that `src/registry/artifacts.rs` still embedded its full `#[cfg(test)]` block at 532 lines, then extracted that suite to `src/registry/artifacts/tests.rs` and left `artifacts.rs` as the production helper module. This follow-up keeps the registry artifact logic under the file-size cap without changing the tested behaviour.
 - [x] 2026-03-12 17:55Z: Verified that `src/db/libsql_migrations.rs` still treated `rows.next().await` read errors as “not applied”, then changed the incremental migration loop to return `DatabaseError::Migration` on any read failure so transient state-check errors stop the run instead of retrying migrations.
 - [x] 2026-03-12 19:35Z: Verified that `src/cli/tool.rs` still exceeded the file-size cap at 1139 lines, then split the CLI implementation into focused `auth`, `install`, `listing`, `printing`, and `setup` submodules while keeping `run_tool_command` and `init_secrets_store` in the top-level module. This follow-up keeps the CLI entry point small without changing command behaviour.
+- [x] 2026-03-12 20:42Z: Verified that `docs/writing-web-assembly-tools-for-ironclaw.md` still had broken markdown links resolving relative to `docs/`, then rewrote the WIT, source, and test references to correct doc-relative targets so they open properly on GitHub. This follow-up keeps the extension authoring guide usable without changing its technical guidance.
 
 ## Surprises & Discoveries
 
