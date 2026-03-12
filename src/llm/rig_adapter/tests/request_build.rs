@@ -1,7 +1,13 @@
 use super::*;
 
-#[test]
-fn test_build_rig_request_injects_cache_control_short() {
+#[rstest]
+#[case(CacheRetention::Short, None)]
+#[case(CacheRetention::Long, Some("1h"))]
+#[case(CacheRetention::None, None)]
+fn test_build_rig_request_cache_control(
+    #[case] retention: CacheRetention,
+    #[case] expected_ttl: Option<&str>,
+) {
     let req = build_rig_request(
         Some("You are helpful.".to_string()),
         vec![RigMessage::user("Hello")],
@@ -9,55 +15,31 @@ fn test_build_rig_request_injects_cache_control_short() {
         None,
         None,
         None,
-        CacheRetention::Short,
+        retention,
     )
-    .unwrap();
+    .unwrap_or_else(|_| {
+        panic!("build_rig_request should succeed for cache retention {retention:?}")
+    });
 
-    let params = req
-        .additional_params
-        .expect("should have additional_params for Short retention");
-    assert_eq!(params["cache_control"]["type"], "ephemeral");
-    assert!(
-        params["cache_control"].get("ttl").is_none(),
-        "Short retention should not include ttl"
-    );
-}
+    match retention {
+        CacheRetention::None => assert!(
+            req.additional_params.is_none(),
+            "additional_params should be None when cache is disabled"
+        ),
+        CacheRetention::Short | CacheRetention::Long => {
+            let params = req.additional_params.unwrap_or_else(|| {
+                panic!("should have additional_params for cache retention {retention:?}")
+            });
+            assert_eq!(params["cache_control"]["type"], "ephemeral");
 
-#[test]
-fn test_build_rig_request_injects_cache_control_long() {
-    let req = build_rig_request(
-        Some("You are helpful.".to_string()),
-        vec![RigMessage::user("Hello")],
-        Vec::new(),
-        None,
-        None,
-        None,
-        CacheRetention::Long,
-    )
-    .unwrap();
-
-    let params = req
-        .additional_params
-        .expect("should have additional_params for Long retention");
-    assert_eq!(params["cache_control"]["type"], "ephemeral");
-    assert_eq!(params["cache_control"]["ttl"], "1h");
-}
-
-#[test]
-fn test_build_rig_request_no_cache_control_when_none() {
-    let req = build_rig_request(
-        Some("You are helpful.".to_string()),
-        vec![RigMessage::user("Hello")],
-        Vec::new(),
-        None,
-        None,
-        None,
-        CacheRetention::None,
-    )
-    .unwrap();
-
-    assert!(
-        req.additional_params.is_none(),
-        "additional_params should be None when cache is disabled"
-    );
+            if let Some(expected_ttl) = expected_ttl {
+                assert_eq!(params["cache_control"]["ttl"], expected_ttl);
+            } else {
+                assert!(
+                    params["cache_control"].get("ttl").is_none(),
+                    "Short retention should not include ttl"
+                );
+            }
+        }
+    }
 }
