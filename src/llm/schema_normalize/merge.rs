@@ -217,14 +217,12 @@ fn merge_object_property_schema(
 
     merge_object_required(existing_obj, incoming_obj, required_merge_mode);
 
-    if !merge_schema_field(
+    merge_schema_field(
         existing_obj,
         incoming_obj,
         "additionalProperties",
         required_merge_mode,
-    ) {
-        return false;
-    }
+    );
 
     true
 }
@@ -265,7 +263,8 @@ fn merge_array_property_schema(
     incoming_obj: &Map<String, JsonValue>,
     required_merge_mode: RequiredMergeMode,
 ) -> bool {
-    merge_schema_field(existing_obj, incoming_obj, "items", required_merge_mode)
+    merge_schema_field(existing_obj, incoming_obj, "items", required_merge_mode);
+    true
 }
 
 fn merge_schema_field(
@@ -273,7 +272,7 @@ fn merge_schema_field(
     incoming_obj: &Map<String, JsonValue>,
     key: &str,
     required_merge_mode: RequiredMergeMode,
-) -> bool {
+) {
     match (existing_obj.get_mut(key), incoming_obj.get(key)) {
         (Some(existing_value), Some(incoming_value)) => {
             if existing_value.is_object() && incoming_value.is_object() {
@@ -288,7 +287,6 @@ fn merge_schema_field(
         }
         _ => {}
     }
-    true
 }
 
 fn merge_string_literal_property(existing: &JsonValue, incoming: &JsonValue) -> Option<JsonValue> {
@@ -346,6 +344,10 @@ fn merge_nested_any_of(existing: JsonValue, incoming: JsonValue) -> JsonValue {
 fn collect_any_of_variants(value: JsonValue, variants: &mut Vec<JsonValue>) {
     if let Some(existing_any_of) = value.get("anyOf").and_then(JsonValue::as_array) {
         for variant in existing_any_of {
+            // These linear scans keep the logic simple, but the duplicate
+            // checks are O(n^2) overall. If profiling ever shows large variant
+            // arrays or this becomes a hot path, switch to HashSet-backed
+            // deduplication instead of repeated `iter().any(...)` checks.
             if !variants.iter().any(|candidate| candidate == variant) {
                 variants.push(variant.clone());
             }
