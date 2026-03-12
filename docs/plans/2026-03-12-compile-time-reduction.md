@@ -41,7 +41,9 @@ The main paths for this effort are:
 - `Cargo.toml`, which defines features, the `dist` profile, and the
   current workspace exclusions for standalone WASM crates.
 - `Makefile`, which now provides the standard local verification entry
-  points and still uses `cargo test` directly.
+  points, uses `cargo-nextest` for the root crate host path, and keeps
+  explicit `cargo test` fallbacks for comparison and standalone WASM
+  crates.
 - `build.rs`, which embeds registry metadata and also forces a nested
   Telegram WASM build during normal host compilation.
 - `scripts/build-wasm-extensions.sh`, which loops over registry
@@ -206,11 +208,11 @@ documentation exists.
 Replace ad hoc reliance on `cargo test` for the common Rust host test
 path with `cargo-nextest`, while keeping exceptions explicit.
 
-The current repository uses `cargo test` directly in `Makefile` and in
-CI workflows. `cargo-nextest` should become the default host-side test
-runner for the root crate because it is faster, has better failure
-reporting, and makes it easier to control concurrency and retries where
-needed.
+The repository started this effort with `cargo test` directly in
+`Makefile` and in CI workflows. `cargo-nextest` should become the
+default host-side test runner for the root crate because it is faster,
+has better failure reporting, and makes it easier to control
+concurrency and retries where needed.
 
 This milestone does not require every Rust-related test in the
 repository to use `cargo-nextest` immediately. Standalone WASM tool
@@ -404,7 +406,21 @@ Work from the repository root
 - [x] 2026-03-12 08:49Z: Ran `make typecheck` with the checked-in
   linker config. The root crate and `tools-src/github` check targets
   both passed under the new local `mold` setup.
-- [ ] Implement Milestone 0 validation runs and record fresh evidence.
+- [x] 2026-03-12 11:04Z: Proved `cargo-nextest` compatibility for the
+  root crate `libsql` slice with
+  `cargo nextest run --workspace --no-default-features --features libsql`.
+  The run compiled in `2m 20s`, then ran `3166` tests across `42`
+  binaries with `3166 passed` and `4 skipped`.
+- [x] 2026-03-12 11:04Z: Updated `Makefile`,
+  `.github/workflows/test.yml`, and `docs/developers-guide.md` so the
+  root crate host path now uses `cargo-nextest`, while the standalone
+  GitHub WASM tool crate remains on `cargo test`.
+- [x] 2026-03-12 11:04Z: Re-ran `make test` after the migration. The
+  new default path compiled the default-feature root crate in `6m 22s`,
+  then ran `3186` tests across `43` binaries with `3186 passed` and
+  `6 skipped`; the follow-on `tools-src/github` suite also passed with
+  `5` tests.
+- [ ] Implement Milestone 2 and record fresh evidence.
 
 ## Surprises & Discoveries
 
@@ -419,6 +435,10 @@ Work from the repository root
 - The checked-in Linux linker configuration works cleanly with the
   existing repository `typecheck` gate, including the separate GitHub
   WASM tool crate.
+- `cargo-nextest` did not require targeted fixes for the root crate on
+  this branch. Both the `libsql` slice and the default-feature
+  `make test` path passed cleanly once the GitHub WASM artifact was
+  prebuilt.
 - The representative `libsql` timing path still spends significant time
   in `wasmtime`, `wasmtime-wasi`, `cranelift-codegen`, and the main
   `ironclaw` crate, which means linker improvements alone will not solve
@@ -426,6 +446,10 @@ Work from the repository root
 - The standalone WASM tool and channel crates still declare their own
   `[workspace]` roots, which preserves release isolation but also limits
   dependency reuse.
+- The expensive part of the current default-feature test path is still
+  the single large `ironclaw` test crate compile, not nextest
+  execution. The actual `nextest` runtime was about `30.7s` after a
+  `6m 22s` compile.
 
 ## Decision Log
 
@@ -453,20 +477,29 @@ Work from the repository root
   `x86_64-unknown-linux-gnu` so local Linux or WSL builds use the same
   `clang` plus `mold` setup as Linux CI. Rationale: this removes shell
   profile drift and makes follow-up measurements reproducible.
+- 2026-03-12 11:04Z: Switched the root crate host test path to
+  `cargo-nextest` in `Makefile` and the Linux `tests` workflow, but
+  kept the standalone GitHub WASM tool crate on `cargo test`.
+  Rationale: local parity was proven for both the `libsql` slice and
+  the default-feature `make test` path, while the separate manifest
+  still benefits from the simpler legacy harness and explicit fallback.
 
 ## Outcomes & Retrospective
 
-This plan is now in implementation. Milestone 0 has started, and later
-sections will be updated as evidence is gathered.
+This plan is now in implementation. Milestone 0 is complete, and
+Milestone 1 now has working code plus local gate evidence.
 
 The important framing decision is that the compile-time reduction effort
 should not start by changing many unrelated systems at once. The
-prerequisite state should be normalized first: document the local
-`mold` setup, install the agreed measurement tools, and adopt
-`cargo-nextest` in a controlled way. After that, the biggest likely
-wins are to remove hidden packaging work from `build.rs`, share more
-work across extension builds, and reduce duplicated CI compilation.
+prerequisite state was normalized first: document the local `mold`
+setup, install the agreed measurement tools, and adopt
+`cargo-nextest` in a controlled way. That migration is now in place for
+the root crate host path and the main Linux test workflow. After that,
+the biggest likely wins are to remove hidden packaging work from
+`build.rs`, share more work across extension builds, and reduce
+duplicated CI compilation.
 
-The immediate next step is to finish Milestone 0 validation runs using
-the checked-in `.cargo/config.toml` and `docs/developers-guide.md` as
-the source of truth for local prerequisites.
+The immediate next step is Milestone 2: remove Telegram packaging work
+from normal host compilation so `cargo check`, `cargo nextest`, Docker
+builds, and CI stop paying for hidden channel artifacts unless the user
+explicitly asks for them.

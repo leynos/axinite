@@ -32,9 +32,10 @@ Install these tools before running the standard repository commands:
 4. The `wasm32-wasip2` Rust target.
 5. `wasm-tools`.
 6. `cargo-component`.
-7. `jq`.
-8. `make`.
-9. Git.
+7. `cargo-nextest`.
+8. `jq`.
+9. `make`.
+10. Git.
 
 The root crate declares `rust-version = "1.92"` in `Cargo.toml`. The
 repository also includes standalone WASM tool and channel crates, so
@@ -45,13 +46,11 @@ WASM tooling is required for more than release-only workflows.
 Install these extra tools if you are working on the compile-time
 reduction plan:
 
-1. `cargo-nextest`.
-2. `/usr/bin/time` or an equivalent timing tool.
+1. `/usr/bin/time` or an equivalent timing tool.
 
-`cargo-nextest` is not yet the repository-wide default test runner on
-this branch, but the compile-time reduction plan adopts it as the
-intended faster host-side test runner. Install it now if you are
-validating that migration.
+`cargo-nextest` is now part of the standard local test path on this
+branch because `make test` uses it for the root crate. The timing tool
+remains specific to the compile-time reduction work.
 
 ## Optional tools by workflow
 
@@ -140,6 +139,9 @@ The current `Makefile` also includes:
 - `make build-github-tool-wasm` to build the GitHub WASM tool used by
   schema and metadata tests.
 - `make test-matrix` to run the broader host test combinations.
+- `make test-cargo` and `make test-matrix-cargo` to keep the old
+  `cargo test` path available when you need a harness comparison for
+  the root crate.
 - `make clean` to remove Cargo build outputs for the root crate and the
   GitHub tool crate.
 
@@ -155,8 +157,7 @@ set -o pipefail
   2>&1 | tee /tmp/check-ironclaw-$(git branch --show).out
 ```
 
-If you are validating the future `cargo-nextest` path from the
-compile-time reduction plan, use:
+The standard fast host-side test path is now:
 
 ```bash
 set -o pipefail
@@ -164,9 +165,8 @@ cargo nextest run --workspace --no-default-features --features libsql \
   2>&1 | tee /tmp/nextest-ironclaw-$(git branch --show).out
 ```
 
-If `cargo-nextest` exposes test incompatibilities, keep using the
-current repository targets for day-to-day work until the migration is
-completed.
+If you need to compare behavior against the legacy harness, use
+`make test-cargo` or `make test-matrix-cargo`.
 
 ## Database-backed work
 
@@ -221,14 +221,20 @@ is the Rust host crate.
 
 Today:
 
-- repository defaults such as `make test` still use `cargo test`,
-- focused standalone WASM crate checks also use `cargo test`.
+- repository defaults such as `make test` and `make test-matrix` use
+  `cargo-nextest` for the root crate,
+- focused standalone WASM crate checks still use `cargo test`,
+- the GitHub WASM tool crate still uses `cargo test` from the standard
+  repository targets.
 
 For the compile-time reduction effort:
 
-- install `cargo-nextest` now,
-- use it for compatibility testing and migration work on the root crate,
-- do not assume every current test path has already been migrated.
+- treat `cargo-nextest` as the normal host-side runner for the root
+  crate,
+- use `make test-cargo` or `make test-matrix-cargo` when you need to
+  compare results against the old harness,
+- do not assume standalone WASM crates or every focused test path has
+  migrated away from `cargo test`.
 
 ## Troubleshooting
 

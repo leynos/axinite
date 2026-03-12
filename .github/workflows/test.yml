@@ -39,6 +39,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.name }}
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked || true
       - name: Install cargo-component
         run: cargo install cargo-component --locked || true
       - name: Build GitHub WASM tool (for metadata/schema tests)
@@ -46,7 +48,7 @@ jobs:
       - name: Build WASM channels (for integration tests)
         run: ./scripts/build-wasm-extensions.sh --channels
       - name: Run Tests
-        run: cargo test ${{ matrix.flags }} -- --nocapture
+        run: cargo nextest run --workspace ${{ matrix.flags }}
 
   telegram-tests:
     name: Telegram Channel Tests
