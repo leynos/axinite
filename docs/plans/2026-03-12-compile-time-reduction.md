@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: DRAFT
+Status: IN PROGRESS
 
 ## Purpose / big picture
 
@@ -15,12 +15,12 @@ changes and usable feedback. The target is not a single trick. It is a
 stack of improvements that make the common check, test, and package
 paths rebuild less duplicated state.
 
-This plan treats `mold` as a prerequisite that is already partially
-adopted. Linux CI on this branch uses `clang` with `-fuse-ld=mold`, so
-subsequent measurements must preserve that setup instead of comparing
-future work against a slower linker. The plan also makes
-`cargo-nextest` the intended high-throughput test runner for the root
-crate once compatibility has been proven.
+This plan treats `mold` as a prerequisite that is already adopted for
+Linux CI and local x86_64 development on this branch. Subsequent
+measurements must preserve that setup instead of comparing future work
+against a slower linker. The plan also makes `cargo-nextest` the
+intended high-throughput test runner for the root crate once
+compatibility has been proven.
 
 Observable success has four parts:
 
@@ -54,6 +54,8 @@ The main paths for this effort are:
 - `Dockerfile`, `Dockerfile.test`, and `Dockerfile.worker`, which
   rebuild the application in container contexts with different cache
   invalidation patterns.
+- `.cargo/config.toml`, which now carries the Linux `clang` plus
+  `mold` linker configuration for local x86_64 builds.
 - `docs/developers-guide.md`, which must stay aligned with the real
   prerequisites needed to reproduce local build and test timings.
 
@@ -189,9 +191,9 @@ Implementation steps:
    WASM target, and the extra tools needed for WASM extensions and
    optional test suites.
 2. Add a small section documenting how a developer verifies the linker
-   path locally. Use the same environment variables already used in
-   Linux CI unless the repository later chooses to check in a
-   `.cargo/config.toml`.
+   path locally. Prefer a checked-in Cargo configuration over shell
+   profile instructions when the target-specific setup is portable
+   enough to keep in the repo.
 3. Record one Linux or WSL baseline command for `cargo check --timings`
    and one command for the test suite baseline after the guide is in
    place.
@@ -394,20 +396,29 @@ Work from the repository root
 - [x] 2026-03-12 08:27Z: Created `docs/developers-guide.md` and aligned
   it with the prerequisite assumptions in this plan, including local
   `mold`, WASM tooling, and `cargo-nextest`.
-- [ ] Get user approval for this plan before implementation begins.
-- [ ] Implement Milestone 0 and record fresh evidence with the new guide
-  in place.
+- [x] 2026-03-12 08:39Z: Added `.cargo/config.toml` so Linux and WSL
+  contributors use the same `clang` plus `mold` linker setup as Linux
+  CI without extra shell exports.
+- [x] 2026-03-12 08:41Z: Received plan approval and started
+  implementation.
+- [x] 2026-03-12 08:49Z: Ran `make typecheck` with the checked-in
+  linker config. The root crate and `tools-src/github` check targets
+  both passed under the new local `mold` setup.
+- [ ] Implement Milestone 0 validation runs and record fresh evidence.
 
 ## Surprises & Discoveries
 
 - The rebased branch already contains Linux CI-side `mold` adoption,
-  but the repository still lacks a checked-in `.cargo/config.toml`, so
-  local developers do not get the same setup automatically.
+  and this implementation now mirrors that setup for local
+  `x86_64-unknown-linux-gnu` builds through `.cargo/config.toml`.
 - The repository now has a `Makefile`, which gives a better anchor for
   future standardization than the earlier script-only baseline.
 - `cargo-nextest` is absent from both the current `Makefile` and
   existing docs, so adoption will need both tooling work and
   documentation in the same change.
+- The checked-in Linux linker configuration works cleanly with the
+  existing repository `typecheck` gate, including the separate GitHub
+  WASM tool crate.
 - The representative `libsql` timing path still spends significant time
   in `wasmtime`, `wasmtime-wasi`, `cranelift-codegen`, and the main
   `ironclaw` crate, which means linker improvements alone will not solve
@@ -422,11 +433,10 @@ Work from the repository root
   optimization project. Rationale: the user explicitly stated the
   branch has already been rebased onto the `mold` work, and the current
   Linux CI workflows confirm that fact.
-- 2026-03-12 08:19Z: Chose `docs/developers-guide.md` as the
-  prerequisite anchor for local environment setup instead of assuming a
-  checked-in Cargo configuration. Rationale: the repository has CI-side
-  linker wiring but no local config file, so documentation is the
-  smallest truthful bridge for contributors.
+- 2026-03-12 08:19Z: Started with `docs/developers-guide.md` as the
+  prerequisite anchor because the repository had CI-side linker wiring
+  but no local config file yet. Rationale: documentation was the
+  smallest truthful bridge while the plan was still in draft.
 - 2026-03-12 08:20Z: Placed `cargo-nextest` adoption ahead of
   build-graph surgery. Rationale: test-runner improvements can reduce
   feedback time early and provide better measurement loops for later
@@ -439,11 +449,15 @@ Work from the repository root
   and current branch truth, not future-state promises. Rationale:
   contributors need a truthful environment guide now, while the
   ExecPlan carries the future migration steps.
+- 2026-03-12 08:39Z: Checked in `.cargo/config.toml` for
+  `x86_64-unknown-linux-gnu` so local Linux or WSL builds use the same
+  `clang` plus `mold` setup as Linux CI. Rationale: this removes shell
+  profile drift and makes follow-up measurements reproducible.
 
 ## Outcomes & Retrospective
 
-This plan is still in draft. No implementation work has started under it
-yet.
+This plan is now in implementation. Milestone 0 has started, and later
+sections will be updated as evidence is gathered.
 
 The important framing decision is that the compile-time reduction effort
 should not start by changing many unrelated systems at once. The
@@ -453,6 +467,6 @@ prerequisite state should be normalized first: document the local
 wins are to remove hidden packaging work from `build.rs`, share more
 work across extension builds, and reduce duplicated CI compilation.
 
-The immediate next step is plan approval followed by Milestone 0
-validation runs using the newly created `docs/developers-guide.md` as
+The immediate next step is to finish Milestone 0 validation runs using
+the checked-in `.cargo/config.toml` and `docs/developers-guide.md` as
 the source of truth for local prerequisites.

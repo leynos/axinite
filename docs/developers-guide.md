@@ -100,31 +100,27 @@ cargo install cargo-llvm-cov --locked
 
 ## Local mold configuration
 
-Linux CI currently sets the linker through environment variables instead
-of a checked-in `.cargo/config.toml`. Use the same approach locally when
-you want results that match CI:
+The repository now checks in Linux linker settings in
+`.cargo/config.toml`:
 
-```bash
-export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang
-export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-fuse-ld=mold"
+```toml
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 ```
 
-You can place those exports in your shell profile for a persistent
-local setup, but keep in mind that they are Linux and WSL specific. Do
-not assume they apply on macOS or Windows.
+That means Linux and WSL contributors only need to install `clang` and
+`mold` locally. Cargo will pick up the linker configuration
+automatically for `x86_64-unknown-linux-gnu`.
+
+You do not need matching shell exports unless you want to override the
+checked-in defaults. Do not assume this setting applies on macOS or
+Windows.
 
 A quick verification command is:
 
 ```bash
-echo "$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER"
-echo "$CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS"
-```
-
-Expected output on Linux or WSL:
-
-```plaintext
-clang
--C link-arg=-fuse-ld=mold
+sed -n '1,40p' .cargo/config.toml
 ```
 
 ## Repository bootstrap
@@ -241,8 +237,8 @@ For the compile-time reduction effort:
 - If builds fail because `wasm-tools` or `cargo-component` is missing,
   reinstall them with `cargo install ... --locked`.
 - If local Linux or WSL timings look much slower than CI, verify that
-  the `clang` and `mold` environment variables are set before drawing
-  conclusions.
+  `clang` and `mold` are installed and that `.cargo/config.toml` is
+  present before drawing conclusions.
 - If PostgreSQL-backed tests fail on connection, rerun them with
   `--no-default-features --features libsql` until your local database is
   ready.
