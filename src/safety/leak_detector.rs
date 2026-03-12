@@ -768,8 +768,8 @@ mod tests {
     #[test]
     fn test_detect_slack_token() {
         let detector = LeakDetector::new();
-        let content = "xoxb-1234567890-abcdefghij";
-        let result = detector.scan(content);
+        let content = ["xox", "b-", "1234567890-abcdefghij"].concat();
+        let result = detector.scan(&content);
         assert!(!result.is_clean(), "Slack token not detected");
     }
 

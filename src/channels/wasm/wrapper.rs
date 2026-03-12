@@ -4307,7 +4307,7 @@ mod tests {
         use std::collections::HashMap;
 
         let host = "slack.invalid";
-        let slack_bot_token = "xoxb-1234567890-abcdefghij".to_string();
+        let slack_bot_token = "slack-dummy-token-12345".to_string();
         let mut credentials = HashMap::new();
         credentials.insert("SLACK_BOT_TOKEN".to_string(), slack_bot_token);
 

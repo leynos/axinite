@@ -1518,9 +1518,7 @@ mod tests {
         use std::collections::HashMap;
 
         let host = "slack.invalid";
-        let slack_bot_token_prefix = "xoxb-1234567890";
-        let slack_bot_token_suffix = "-abcdefghij";
-        let slack_bot_token = format!("{slack_bot_token_prefix}{slack_bot_token_suffix}");
+        let slack_bot_token = "slack-dummy-token-12345".to_string();
         let mut credentials = HashMap::new();
         credentials.insert("SLACK_BOT_TOKEN".to_string(), slack_bot_token.clone());
 
@@ -2003,8 +2001,8 @@ mod tests {
 
     /// Regression test: leak scan must run on raw headers (before credential
     /// injection), not after. If it ran post-injection, the host-injected
-    /// Slack bot token (`xoxb-...`) would trigger a Block and reject the
-    /// tool's own legitimate outbound request.
+    /// Slack bot token would trigger a Block and reject the tool's own
+    /// legitimate outbound request.
     #[test]
     fn test_leak_scan_runs_before_credential_injection() {
         use crate::safety::LeakDetector;
@@ -2033,10 +2031,11 @@ mod tests {
         );
 
         // Post-injection headers would contain a real Slack token.
+        let post_injection_token = ["xox", "b-", "1234567890-abcdefghij"].concat();
         let post_injection_headers: Vec<(String, String)> = vec![
             (
                 "Authorization".to_string(),
-                "Bearer xoxb-1234567890-abcdefghij".to_string(),
+                format!("Bearer {post_injection_token}"),
             ),
             ("Content-Type".to_string(), "application/json".to_string()),
         ];
