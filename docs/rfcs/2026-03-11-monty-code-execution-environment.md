@@ -468,7 +468,7 @@ Handling rules:
 2. A helper panic, signal exit, or invalid JSON message should be surfaced to
    the caller as `runtime_crash`, with the run marked failed and the child
    discarded.
-3. A tool result that cannot be normalised to the JSON ABI should fail the run
+3. A tool result that cannot be normalized to the JSON ABI should fail the run
    as `tool_contract_error`; the parent should not attempt a best-effort resume.
 4. Child-side guest exceptions should be returned as `script_error`, with a
    redacted traceback summary suitable for logs and operator inspection.
@@ -665,7 +665,7 @@ stability is better understood.
 
 ### Phase 4: Re-evaluate REPL mode
 
-Only after upstream REPL support and crash behaviour have stabilised:
+Only after upstream REPL support and crash behaviour have stabilized:
 
 - assess whether `MontyRepl` deserves a product surface,
 - decide whether dynamic tool rebinding is mature enough,
