@@ -96,7 +96,7 @@ sync_matching_wasm_artifacts() {
     declare -A synced_items=()
 
     for target_name in wasm32-wasip2 wasm32-wasip1; do
-        for wasm_path in "${source_root}"/*/target/"${target_name}"/release/*"${suffix}.wasm"; do
+        for wasm_path in "${SHARED_WASM_TARGET_DIR}/${target_name}/release/"*"${suffix}.wasm"; do
             sync_wasm_artifact \
                 synced_items \
                 "$kind_dir" \
@@ -106,7 +106,7 @@ sync_matching_wasm_artifacts() {
                 "$fallback_capabilities_suffix" \
                 "$wasm_path"
         done
-        for wasm_path in "${SHARED_WASM_TARGET_DIR}/${target_name}/release/"*"${suffix}.wasm"; do
+        for wasm_path in "${source_root}"/*/target/"${target_name}"/release/*"${suffix}.wasm"; do
             sync_wasm_artifact \
                 synced_items \
                 "$kind_dir" \

@@ -248,8 +248,6 @@ pub async fn install_wasm_files(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     fn with_cleared_target_dir<T>(f: impl FnOnce() -> T) -> T {
         let guard = EnvVarsGuard::new(&["CARGO_TARGET_DIR"]);
         guard.remove("CARGO_TARGET_DIR");
@@ -434,24 +432,32 @@ mod tests {
     }
 
     #[rstest]
-
+    fn test_find_wasm_artifact_prefers_repo_shared_target_dir_over_crate_target(
+        _cleared_target_dir: ClearedTargetDirGuard,
     ) {
-        let dir = TempDir::new().expect("temp dir");
-        let target_base = resolve_target_dir(dir.path());
-        let wasip1_dir = target_base.join("wasm32-wasip1/release");
-        let wasip2_dir = target_base.join("wasm32-wasip2/release");
-        std::fs::create_dir_all(&wasip1_dir).expect("create wasip1 dir");
-        std::fs::create_dir_all(&wasip2_dir).expect("create wasip2 dir");
-        std::fs::File::create(wasip1_dir.join("my_tool.wasm")).expect("create wasip1 wasm");
-        std::fs::File::create(wasip2_dir.join("my_tool.wasm")).expect("create wasip2 wasm");
+        let repo = TempDir::new().expect("create temp dir");
+        let crate_dir = repo.path().join("channels-src/demo");
+        let shared_wasm_dir = repo
+            .path()
+            .join(SHARED_WASM_TARGET_DIR)
+            .join("wasm32-wasip2/release");
+        let crate_wasm_dir = crate_dir.join("target/wasm32-wasip2/release");
 
-        let result = find_wasm_artifact(dir.path(), "my_tool", "release")
-            .expect("should find wasm artifact");
-        assert!(
-            result.ends_with("wasm32-wasip2/release/my_tool.wasm"),
-            "expected wasm32-wasip2 artifact, got {}",
-            result.display()
+        std::fs::create_dir_all(&crate_wasm_dir).expect("create crate wasm dir");
+        std::fs::create_dir_all(&shared_wasm_dir).expect("create shared wasm dir");
+        std::fs::write(crate_wasm_dir.join("demo_channel.wasm"), b"crate-local")
+            .expect("write crate-local wasm");
+        std::fs::write(shared_wasm_dir.join("demo_channel.wasm"), b"shared")
+            .expect("write shared wasm");
+
+        let result = find_wasm_artifact(&crate_dir, "demo-channel", "release")
+            .expect("find demo-channel artifact");
+        assert_eq!(result, shared_wasm_dir.join("demo_channel.wasm"));
+        assert_eq!(
+            std::fs::read(&result).expect("read resolved wasm"),
+            b"shared"
         );
+    }
     }
 
     #[rstest]
@@ -478,13 +484,13 @@ fn candidate_target_dirs(crate_dir: &Path) -> Vec<PathBuf> {
         candidates.push(dir);
     }
 
-    candidates.push(crate_dir.join("target"));
-
     if let Some(dir) = repo_shared_target_dir(crate_dir)
         && !candidates.iter().any(|candidate| candidate == &dir)
     {
         candidates.push(dir);
     }
+
+    candidates.push(crate_dir.join("target"));
 
     candidates
 }
