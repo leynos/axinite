@@ -41,12 +41,12 @@ That gap shows up in three places:
    conditional multi-step tool use.
 2. Pre-written automations are currently forced into either free-form prompt
    text or bespoke Rust/WASM tools.
-3. A full containerized Python runtime would duplicate existing safety layers
+3. A full containerised Python runtime would duplicate existing safety layers
    while adding significant startup cost, image management, and operational
    complexity.
 
-What we want is narrower than "general Python support". We want a small Python
-execution surface that:
+The desired scope is narrower than "general Python support". The intended
+execution surface is a small Python environment that:
 
 - runs agent-authored or user-authored scripts,
 - can call a selected subset of IronClaw tools,
@@ -91,7 +91,7 @@ Monty matches the desired execution model unusually well:
 - Its examples already use async host functions and `list[dict[str, Any]]`
   values, which is the right shape for IronClaw tool results.[1]
 
-This is a better fit than introducing Bun, Deno, or a full containerized Python
+This is a better fit than introducing Bun, Deno, or a full containerised Python
 stack just to gain structured tool calls, loops, and control flow.
 
 ## Upstream Constraints
@@ -107,7 +107,7 @@ time.[1]
 That is acceptable for a narrow, brokered integration. It is not enough to
 justify optimistic availability claims.
 
-### 2. REPL support is not the stable center of gravity
+### 2. REPL support is not the stable centre of gravity
 
 The most important current upstream evidence points away from a "persistent live
 REPL first" design:
@@ -138,7 +138,7 @@ Two open issues matter directly for host reliability:
 These issues do not kill the proposal. They do rule out an in-process-only
 integration as the default safety posture.
 
-## Existing IronClaw Primitives We Should Reuse
+## Existing IronClaw Primitives to Reuse
 
 IronClaw already has most of the host-side machinery this integration needs.
 
@@ -180,8 +180,8 @@ Phase one should ship a codemode runner with two execution modes:
 1. Saved script execution for reusable automations.
 2. Ephemeral code execution for one-off scratch work.
 
-We should explicitly defer a classic persistent REPL until upstream REPL support
-and crash behavior are mature enough to justify the surface area.
+A classic persistent REPL should be explicitly deferred until upstream REPL
+support and crash behaviour are mature enough to justify the surface area.
 
 ### Public operations
 
@@ -197,7 +197,7 @@ save_script(
 )
 ```
 
-Behavior:
+Behaviour:
 
 - Validates the script name.
 - Stores the source and manifest in the workspace.
@@ -236,7 +236,7 @@ run_script(
 )
 ```
 
-Behavior:
+Behaviour:
 
 - Loads the saved script and manifest.
 - Computes the effective allowlist as the intersection of the saved allowlist
@@ -260,7 +260,7 @@ exec_code(
 )
 ```
 
-Behavior:
+Behaviour:
 
 - Compiles and runs ad hoc code without persisting the source by default.
 - Uses the same tool broker and ABI as `run_script`.
@@ -275,7 +275,7 @@ The guest contract should stay narrow and unsurprising.
 
 ### Entrypoint
 
-We should standardize on a simple async entrypoint:
+The design should standardise on a simple async entrypoint:
 
 ```python
 from typing import Any
@@ -408,7 +408,7 @@ This is the right compromise between performance and blast-radius control.
 - It preserves the parent as the owner of approvals, policy, credentials, and
   tool execution.
 - It allows the parent to enforce kill-on-timeout and kill-on-memory-pressure
-  behavior independently of Monty's internal accounting.
+  behaviour independently of Monty's internal accounting.
 
 ### Placement
 
@@ -436,11 +436,57 @@ The subprocess protocol should be boring:
 Messages should be JSON only. The child should never execute tools directly. It
 should only request host callbacks.
 
+### Error and timeout semantics
+
+The helper protocol should classify failures explicitly so every worker reports
+them the same way.
+
+Recommended child-to-parent terminal outcomes:
+
+- `completed`: the script returned a valid JSON-ABI result.
+- `script_error`: guest code raised an exception or returned a contract-invalid
+  value such as a non-object top-level result or missing `state`.
+- `tool_error`: a host callback failed because the underlying IronClaw tool was
+  denied, timed out, or returned a normal tool error.
+- `tool_contract_error`: the host callback result could not be converted to the
+  JSON ABI, or the child resumed with malformed callback data.
+- `resource_limit_exceeded`: Monty reported an internal execution or memory
+  limit failure.
+- `execution_timeout`: the parent-side deadline expired and the helper was
+  terminated.
+- `runtime_crash`: the helper exited unexpectedly, panicked, or emitted
+  malformed protocol frames.
+
+Handling rules:
+
+1. Parent-enforced wall-clock deadlines should be authoritative, even if Monty
+   also has its own execution-time limit.
+2. A helper panic, signal exit, or invalid JSON message should be surfaced to
+   the caller as `runtime_crash`, with the run marked failed and the child
+   discarded.
+3. A tool result that cannot be normalised to the JSON ABI should fail the run
+   as `tool_contract_error`; the parent should not attempt a best-effort resume.
+4. Child-side guest exceptions should be returned as `script_error`, with a
+   redacted traceback summary suitable for logs and operator inspection.
+5. Tool denials, approval rejections, and ordinary tool execution failures
+   should remain distinct from guest exceptions and be returned as
+   `tool_error`.
+
+Logging rules:
+
+- Every run should emit a `run_id`, script identity, worker identity, terminal
+  status, and elapsed time.
+- `runtime_crash` and `execution_timeout` events should be logged at error
+  level.
+- `script_error`, `tool_error`, and `tool_contract_error` should include the
+  failing tool name or guest frame summary when available, but never raw secret
+  values or unredacted host-only data.
+
 ## Safety Model
 
 The safety claim should be precise, not theatrical.
 
-We can credibly claim:
+This integration can credibly claim:
 
 - guest code has no direct filesystem, environment, or network access unless
   IronClaw exposes host functions for those capabilities,[1]
@@ -449,7 +495,7 @@ We can credibly claim:
   and policy path,
 - execution is bounded by Monty limits plus parent-process kill switches.[1]
 
-We should not claim:
+The RFC should not claim:
 
 - that Monty is production-hardened in the general case,
 - that in-process execution is safe against host availability loss,
@@ -477,9 +523,9 @@ If the caller wants durable state for a saved script, the runner may offer an
 opt-in helper that reads and writes `scripts/<safe_name>/state.json` in the
 workspace. That should be explicit and visible, not magic.
 
-### What we are avoiding
+### Avoided persistence models
 
-We are intentionally not depending on:
+This design intentionally avoids:
 
 - hidden interpreter globals,
 - ambient variables that survive unrelated runs,
@@ -549,7 +595,7 @@ Reason:
 - upstream REPL support is still shifting,[2][3]
 - persistent hidden state is harder to reason about,
 - approvals and snapshots become more complex,
-- it encourages "keep poking at the session" behavior instead of explicit,
+- it encourages "keep poking at the session" behaviour instead of explicit,
   reviewable scripts.
 
 ### 2. Full CPython in Docker or a sandbox service
@@ -560,7 +606,7 @@ Reason:
 
 - much higher startup and operational cost,
 - larger blast radius,
-- more moving parts than we need for structured tool calling,
+- more moving parts than this feature needs for structured tool calling,
 - weaker fit for explicit capability brokerage than Monty's external function
   model.[1]
 
@@ -615,7 +661,7 @@ stability is better understood.
 
 ### Phase 4: Re-evaluate REPL mode
 
-Only after upstream REPL support and crash behavior have stabilized:
+Only after upstream REPL support and crash behaviour have stabilised:
 
 - assess whether `MontyRepl` deserves a product surface,
 - decide whether dynamic tool rebinding is mature enough,
@@ -632,7 +678,7 @@ Only after upstream REPL support and crash behavior have stabilized:
 4. Should `run_script` be exposed only as a tool first, or also as a CLI/API
    primitive in the first delivery?
 5. Should durable suspended-run snapshots be a first-class database concept, or
-   should we wait until a real use case appears?
+   should that wait until a real use case appears?
 
 ## Recommendation
 

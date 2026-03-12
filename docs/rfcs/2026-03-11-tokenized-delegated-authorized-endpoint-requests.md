@@ -7,7 +7,8 @@
 
 ## Summary
 
-IronClaw should add a new delegated endpoint model for WASM extensions so a
+IronClaw should add a new delegated endpoint model for WebAssembly (WASM)
+extensions so a
 user can configure a service endpoint in the extension management page without
 exposing that endpoint URL to either:
 
@@ -15,10 +16,11 @@ exposing that endpoint URL to either:
 - the extension code,
 - or the extension's static HTTP allowlist.
 
-The motivating example is a hypothetical JMAP WASM extension. A user should be
-able to configure a JMAP endpoint once in the web UI. The extension should then
-receive only an opaque endpoint identity such as `primary` or
-`jmap-default`. When the tool needs to check email, it should call a new
+The motivating example is a hypothetical JSON Meta Application Protocol (JMAP)
+WASM extension. A user should be able to configure a JMAP endpoint once in the
+web UI. The extension should then receive only an opaque endpoint identity such
+as `primary` or `jmap-default`. When the tool needs to check email, it should
+call a new
 host-managed authorized request service using that identity. IronClaw should
 then:
 
@@ -32,7 +34,8 @@ This RFC proposes:
 
 - a typed extension setup schema instead of the current secret-only setup model,
 - a new endpoint binding store and service layer,
-- a new WASM capability and WIT host call for delegated endpoint requests,
+- a new WASM capability and WebAssembly Interface Types (WIT) host call for
+  delegated endpoint requests,
 - redaction and approval changes so endpoint URLs remain confidential,
 - compatibility rules so existing raw URL `http_request` users continue working.
 
@@ -46,7 +49,8 @@ authorized against a guest-visible raw URL.
 That assumption is visible in four places:
 
 1. tool setup schemas expose only `setup.required_secrets`,
-2. the web extension setup DTOs accept and return only `secrets`,
+2. the web extension setup data transfer objects (DTOs) accept and return only
+   `secrets`,
 3. the frontend renders every setup field as a password input,
 4. the WASM HTTP host call accepts a raw `url` and authorizes via
    `http.allowlist` plus credential `host_patterns`.
@@ -67,7 +71,7 @@ If the extension must not know the JMAP endpoint URL:
 - the current setup UI is unusable, because it only knows how to store secrets,
   not host-owned delegated endpoint bindings.
 
-What we need instead is a split between:
+The required model instead splits between:
 
 - guest authority: "use authorized endpoint `jmap-default`",
 - transport authority: "IronClaw resolved that to
@@ -127,7 +131,7 @@ Introduce a new delegated endpoint model with four coordinated changes:
 1. typed extension setup fields,
 2. endpoint binding persistence and service APIs,
 3. delegated authorized request capability for WASM,
-4. endpoint-confidential logging and approval behavior.
+4. endpoint-confidential logging and approval behaviour.
 
 ## Design Overview
 
@@ -139,7 +143,7 @@ User configures JMAP endpoint in Extensions UI
     -> Extension marked configured, but URL is never surfaced back
 
 Agent asks JMAP tool to check email
-    -> Tool calls delegated host request with endpoint_id = "jmap-default"
+    -> Tool calls delegated host request with endpoint_name = "jmap-default"
     -> IronClaw resolves endpoint binding internally
     -> IronClaw injects credentials and enforces internal policy
     -> Request executes
@@ -154,10 +158,24 @@ Keep two outbound request surfaces:
    For existing extensions that use explicit raw URLs and explicit
    `http.allowlist`.
 
-2. `authorized_endpoint_request(endpoint_id, request_spec)`
+2. `authorized_endpoint_request(endpoint_name, request_spec)`
    For extensions that must not see the endpoint URL.
 
 The second path is additive, not a breaking replacement.
+
+### Identifier terminology
+
+This RFC should use `endpoint_name` as the single caller-visible identifier for
+delegated endpoints.
+
+- The setup schema defines an `endpoint_name`.
+- Capability grants authorize an `endpoint_name`.
+- Credential bindings attach to an `endpoint_name`.
+- The WIT host call receives an `endpoint-name`.
+- Storage persists an `endpoint_name` on the binding record.
+
+The word `binding` should refer only to the host-owned stored record, not to a
+second identifier type.
 
 ## Frontend and Web API Changes
 
@@ -200,7 +218,7 @@ SecretField {
 }
 
 DelegatedEndpointField {
-  key,
+  endpoint_name,
   label,
   endpoint_kind,      // e.g. "jmap"
   optional,
@@ -217,7 +235,7 @@ ExtensionSetupValue =
   | { type: "delegated_endpoint", url: "https://..." }
 ```
 
-### UI behavior
+### UI behaviour
 
 The extensions page should stop assuming that all setup fields are password
 inputs.
@@ -282,7 +300,7 @@ Proposed direction:
     "fields": [
       {
         "type": "delegated_endpoint",
-        "name": "jmap-default",
+        "endpoint_name": "jmap-default",
         "prompt": "JMAP endpoint URL",
         "endpoint_kind": "jmap"
       }
@@ -299,7 +317,7 @@ And for mixed cases:
     "fields": [
       {
         "type": "delegated_endpoint",
-        "name": "jmap-default",
+        "endpoint_name": "jmap-default",
         "prompt": "JMAP endpoint URL",
         "endpoint_kind": "jmap"
       },
@@ -349,7 +367,7 @@ AuthorizedEndpointBinding {
   id: uuid,
   user_id: string,
   extension_name: string,
-  binding_name: string,          // e.g. "jmap-default"
+  endpoint_name: string,         // e.g. "jmap-default"
   endpoint_kind: string,         // e.g. "jmap"
   endpoint_url_encrypted: bytes,
   normalized_origin: string,     // optional searchable/indexed projection
@@ -377,11 +395,11 @@ Add a service interface such as:
 
 ```text
 EndpointBindingStore {
-  get(user_id, extension_name, binding_name) -> Option<AuthorizedEndpointBinding>
+  get(user_id, extension_name, endpoint_name) -> Option<AuthorizedEndpointBinding>
   put(binding)
-  delete(user_id, extension_name, binding_name)
+  delete(user_id, extension_name, endpoint_name)
   validate(binding) -> ValidationResult
-  exists_ready(user_id, extension_name, binding_name) -> bool
+  exists_ready(user_id, extension_name, endpoint_name) -> bool
 }
 ```
 
@@ -408,7 +426,7 @@ authorized_endpoints {
 }
 
 AuthorizedEndpointGrant {
-  binding_name: string,       // e.g. "jmap-default"
+  endpoint_name: string,      // e.g. "jmap-default"
   endpoint_kind: string,      // e.g. "jmap"
   methods: Vec<string>,       // optional ceiling
   path_prefixes: Vec<string>, // optional ceiling
@@ -433,7 +451,7 @@ Proposed additive host call:
 ```text
 authorized-endpoint-request(
   method,
-  endpoint-id,
+  endpoint-name,
   path,
   query-json,
   headers-json,
@@ -444,7 +462,8 @@ authorized-endpoint-request(
 
 Where:
 
-- `endpoint-id` is an opaque configured binding such as `jmap-default`,
+- `endpoint-name` is an opaque configured endpoint name such as
+  `jmap-default`,
 - `path` is relative to the hidden stored endpoint,
 - `query-json` is a JSON object string or structured map equivalent,
 - the extension never supplies the full absolute URL.
@@ -477,7 +496,7 @@ IronClaw should add a runtime service that handles delegated endpoint requests:
 
 ```text
 AuthorizedEndpointRequestService {
-  resolve_binding(user_id, extension_name, endpoint_id)
+  resolve_binding(user_id, extension_name, endpoint_name)
   authorize_request(binding, method, path)
   inject_credentials(binding, headers, query, body)
   execute(binding, request_spec)
@@ -489,7 +508,7 @@ AuthorizedEndpointRequestService {
 Proposed runtime pipeline:
 
 ```text
-WASM guest passes endpoint_id + relative request
+WASM guest passes endpoint_name + relative request
     -> host checks delegated-endpoint capability grant
     -> host loads binding from EndpointBindingStore
     -> host reconstructs concrete URL internally
@@ -500,7 +519,7 @@ WASM guest passes endpoint_id + relative request
     -> host returns response
 ```
 
-### Keep SSRF and network hardening
+### Keep server-side request forgery (SSRF) and network hardening
 
 Delegated endpoints should not bypass outbound hardening.
 
@@ -641,7 +660,7 @@ design to leave room for either:
   "authorized_endpoints": {
     "bindings": [
       {
-        "binding_name": "jmap-default",
+        "endpoint_name": "jmap-default",
         "endpoint_kind": "jmap",
         "methods": ["POST"]
       }
@@ -651,7 +670,7 @@ design to leave room for either:
     "fields": [
       {
         "type": "delegated_endpoint",
-        "name": "jmap-default",
+        "endpoint_name": "jmap-default",
         "prompt": "JMAP endpoint URL",
         "endpoint_kind": "jmap"
       }
@@ -750,7 +769,7 @@ Reason:
 
 - Add delegated endpoint capability schema.
 - Add `authorized-endpoint-request` to WIT and runtime wrapper plumbing.
-- Add endpoint-aware redaction and audit behavior.
+- Add endpoint-aware redaction and audit behaviour.
 
 ### Phase 3: JMAP pilot
 
