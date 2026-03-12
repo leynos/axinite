@@ -301,8 +301,12 @@ cargo test
 cargo test test_name
 ```
 
-- **Telegram channel**: See [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md) for setup and DM pairing.
-- **Changing channel sources**: Run `./channels-src/telegram/build.sh` before `cargo build` so the updated WASM is bundled.
+- **Telegram channel**: See [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md)
+  for setup and DM pairing.
+- **Changing channel sources**: Run
+  `./scripts/build-wasm-extensions.sh --channels` or
+  `./channels-src/telegram/build.sh` before release packaging or
+  onboarding so the updated channel artifacts are available on disk.
 
 ## OpenClaw Heritage
 

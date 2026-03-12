@@ -25,24 +25,59 @@ const WASM_TRIPLES: &[&str] = &[
     "wasm32-unknown-unknown",
 ];
 
+const SHARED_WASM_TARGET_DIR: &str = "target/wasm-extensions";
+
+fn resolve_env_target_dir() -> Option<PathBuf> {
+    let dir = std::env::var("CARGO_TARGET_DIR").ok()?;
+    if dir.is_empty() {
+        return None;
+    }
+    let p = PathBuf::from(dir);
+    if p.is_relative()
+        && let Ok(cwd) = std::env::current_dir()
+    {
+        return Some(cwd.join(p));
+    }
+    Some(p)
+}
+
+fn repo_shared_target_dir(crate_dir: &Path) -> Option<PathBuf> {
+    let source_root = crate_dir.parent()?;
+    let source_root_name = source_root.file_name()?.to_str()?;
+    if !matches!(source_root_name, "channels-src" | "tools-src") {
+        return None;
+    }
+
+    let repo_root = source_root.parent()?;
+    let shared = repo_root.join(SHARED_WASM_TARGET_DIR);
+    shared.exists().then_some(shared)
+}
+
+fn candidate_target_dirs(crate_dir: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Some(dir) = resolve_env_target_dir() {
+        candidates.push(dir);
+    }
+
+    if let Some(dir) = repo_shared_target_dir(crate_dir)
+        && !candidates.iter().any(|candidate| candidate == &dir)
+    {
+        candidates.push(dir);
+    }
+
+    candidates.push(crate_dir.join("target"));
+
+    candidates
+}
 /// Resolve the cargo target directory for a crate.
 ///
 /// Checks (in order):
 /// 1. `CARGO_TARGET_DIR` env var (shared target dir)
 /// 2. `<crate_dir>/target/` (default per-crate layout)
 pub fn resolve_target_dir(crate_dir: &Path) -> PathBuf {
-    if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
-        let p = PathBuf::from(dir);
-        // Resolve relative CARGO_TARGET_DIR against the process cwd, which
-        // matches Cargo's interpretation for workspace-shared target dirs.
-        // Fall back to the crate directory only if cwd lookup fails.
-        if p.is_relative() {
-            if let Ok(cwd) = std::env::current_dir() {
-                return cwd.join(p);
-            }
-            return crate_dir.join(p);
-        }
-        return p;
+    if let Some(dir) = resolve_env_target_dir() {
+        return dir;
     }
     crate_dir.join("target")
 }
@@ -53,19 +88,20 @@ pub fn resolve_target_dir(crate_dir: &Path) -> PathBuf {
 /// then falls back to searching in whichever target directory exists.
 /// `profile` is `"release"` or `"debug"`.
 pub fn find_wasm_artifact(crate_dir: &Path, crate_name: &str, profile: &str) -> Option<PathBuf> {
-    let target_base = resolve_target_dir(crate_dir);
     let snake_name = crate_name.replace('-', "_");
 
-    // Try exact name match in each target triple directory
-    for triple in WASM_TRIPLES {
-        let dir = target_base.join(triple).join(profile);
-        let candidates = [
-            dir.join(format!("{}.wasm", crate_name)),
-            dir.join(format!("{}.wasm", snake_name)),
-        ];
-        for candidate in &candidates {
-            if candidate.exists() {
-                return Some(candidate.clone());
+    for target_base in candidate_target_dirs(crate_dir) {
+        // Try exact name match in each target triple directory
+        for triple in WASM_TRIPLES {
+            let dir = target_base.join(triple).join(profile);
+            let candidates = [
+                dir.join(format!("{}.wasm", crate_name)),
+                dir.join(format!("{}.wasm", snake_name)),
+            ];
+            for candidate in &candidates {
+                if candidate.exists() {
+                    return Some(candidate.clone());
+                }
             }
         }
     }
@@ -77,18 +113,18 @@ pub fn find_wasm_artifact(crate_dir: &Path, crate_name: &str, profile: &str) -> 
 ///
 /// Returns the first `.wasm` found across target triples.
 pub fn find_any_wasm_artifact(crate_dir: &Path, profile: &str) -> Option<PathBuf> {
-    let target_base = resolve_target_dir(crate_dir);
-
-    for triple in WASM_TRIPLES {
-        let dir = target_base.join(triple).join(profile);
-        if !dir.is_dir() {
-            continue;
-        }
-        if let Ok(entries) = std::fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map(|ext| ext == "wasm").unwrap_or(false) {
-                    return Some(path);
+    for target_base in candidate_target_dirs(crate_dir) {
+        for triple in WASM_TRIPLES {
+            let dir = target_base.join(triple).join(profile);
+            if !dir.is_dir() {
+                continue;
+            }
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().map(|ext| ext == "wasm").unwrap_or(false) {
+                        return Some(path);
+                    }
                 }
             }
         }
@@ -256,25 +292,98 @@ pub async fn install_wasm_files(
 
 #[cfg(test)]
 mod tests {
-    use crate::testing::test_utils::EnvVarsGuard;
+    use crate::config::helpers::ENV_MUTEX;
+    use rstest::{fixture, rstest};
     use tempfile::TempDir;
 
     use super::*;
 
-    fn with_cleared_target_dir<T>(f: impl FnOnce() -> T) -> T {
-        let guard = EnvVarsGuard::new(&["CARGO_TARGET_DIR"]);
-        guard.remove("CARGO_TARGET_DIR");
-        f()
+    struct ClearedTargetDirGuard {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        original: Option<String>,
     }
 
-    #[test]
-    fn test_resolve_target_dir_default() {
+    impl Drop for ClearedTargetDirGuard {
+        fn drop(&mut self) {
+            unsafe {
+                if let Some(value) = &self.original {
+                    std::env::set_var("CARGO_TARGET_DIR", value);
+                } else {
+                    std::env::remove_var("CARGO_TARGET_DIR");
+                }
+            }
+        }
+    }
+
+    #[fixture]
+    fn cleared_target_dir() -> ClearedTargetDirGuard {
+        let guard = ENV_MUTEX.lock().expect("env mutex poisoned");
+        let original = std::env::var("CARGO_TARGET_DIR").ok();
+        unsafe {
+            std::env::remove_var("CARGO_TARGET_DIR");
+        }
+
+        ClearedTargetDirGuard {
+            _guard: guard,
+            original,
+        }
+    }
+
+    #[rstest]
+    fn test_resolve_target_dir_default(_cleared_target_dir: ClearedTargetDirGuard) {
         // When CARGO_TARGET_DIR is not set, should return <crate_dir>/target
-        with_cleared_target_dir(|| {
-            let dir = Path::new("/some/crate");
-            let result = resolve_target_dir(dir);
-            assert_eq!(result, dir.join("target"));
-        });
+        let dir = Path::new("/some/crate");
+        let result = resolve_target_dir(dir);
+        assert_eq!(result, dir.join("target"));
+    }
+
+    #[rstest]
+    fn test_find_wasm_artifact_falls_back_to_repo_shared_target_dir(
+        _cleared_target_dir: ClearedTargetDirGuard,
+    ) {
+        let repo = TempDir::new().expect("create temp dir");
+        let crate_dir = repo.path().join("channels-src/demo");
+        let shared_target = repo.path().join(SHARED_WASM_TARGET_DIR);
+        let wasm_dir = shared_target.join("wasm32-wasip2/release");
+
+        std::fs::create_dir_all(&crate_dir).expect("create crate dir");
+        std::fs::create_dir_all(&wasm_dir).expect("create shared wasm dir");
+        std::fs::File::create(wasm_dir.join("demo_channel.wasm"))
+            .expect("create shared wasm artifact");
+
+        let result = find_wasm_artifact(&crate_dir, "demo-channel", "release");
+        assert_eq!(
+            result.expect("find demo-channel artifact"),
+            wasm_dir.join("demo_channel.wasm")
+        );
+    }
+
+    #[rstest]
+    fn test_find_wasm_artifact_prefers_repo_shared_target_dir_over_crate_target(
+        _cleared_target_dir: ClearedTargetDirGuard,
+    ) {
+        let repo = TempDir::new().expect("create temp dir");
+        let crate_dir = repo.path().join("channels-src/demo");
+        let shared_wasm_dir = repo
+            .path()
+            .join(SHARED_WASM_TARGET_DIR)
+            .join("wasm32-wasip2/release");
+        let crate_wasm_dir = crate_dir.join("target/wasm32-wasip2/release");
+
+        std::fs::create_dir_all(&crate_wasm_dir).expect("create crate wasm dir");
+        std::fs::create_dir_all(&shared_wasm_dir).expect("create shared wasm dir");
+        std::fs::write(crate_wasm_dir.join("demo_channel.wasm"), b"crate-local")
+            .expect("write crate-local wasm");
+        std::fs::write(shared_wasm_dir.join("demo_channel.wasm"), b"shared")
+            .expect("write shared wasm");
+
+        let result = find_wasm_artifact(&crate_dir, "demo-channel", "release")
+            .expect("find demo-channel artifact");
+        assert_eq!(result, shared_wasm_dir.join("demo_channel.wasm"));
+        assert_eq!(
+            std::fs::read(&result).expect("read resolved wasm"),
+            b"shared"
+        );
     }
 
     #[test]
@@ -283,82 +392,74 @@ mod tests {
         assert!(find_wasm_artifact(dir.path(), "nonexistent", "release").is_none());
     }
 
-    #[test]
-    fn test_find_wasm_artifact_found() {
-        with_cleared_target_dir(|| {
-            let dir = TempDir::new().expect("create temp dir");
-            let target_base = resolve_target_dir(dir.path());
-            let wasm_dir = target_base.join("wasm32-wasip2/release");
-            std::fs::create_dir_all(&wasm_dir).expect("create wasm32-wasip2 dir");
-            std::fs::File::create(wasm_dir.join("my_tool.wasm")).expect("create wasm artifact");
+    #[rstest]
+    fn test_find_wasm_artifact_found(_cleared_target_dir: ClearedTargetDirGuard) {
+        let dir = TempDir::new().expect("create temp dir");
+        let target_base = resolve_target_dir(dir.path());
+        let wasm_dir = target_base.join("wasm32-wasip2/release");
+        std::fs::create_dir_all(&wasm_dir).expect("create wasm32-wasip2 dir");
+        std::fs::File::create(wasm_dir.join("my_tool.wasm")).expect("create wasm artifact");
 
-            let result = find_wasm_artifact(dir.path(), "my_tool", "release");
-            assert!(result.is_some());
-            assert!(
-                result
-                    .expect("find my_tool artifact")
-                    .ends_with("my_tool.wasm")
-            );
-        });
+        let result = find_wasm_artifact(dir.path(), "my_tool", "release");
+        assert!(result.is_some());
+        assert!(
+            result
+                .expect("find my_tool artifact")
+                .ends_with("my_tool.wasm")
+        );
     }
 
-    #[test]
-    fn test_find_wasm_artifact_hyphen_to_underscore() {
-        with_cleared_target_dir(|| {
-            let dir = TempDir::new().expect("create temp dir");
-            let target_base = resolve_target_dir(dir.path());
-            let wasm_dir = target_base.join("wasm32-wasip1/release");
-            std::fs::create_dir_all(&wasm_dir).expect("create wasm32-wasip1 dir");
-            std::fs::File::create(wasm_dir.join("my_tool.wasm")).expect("create wasm artifact");
+    #[rstest]
+    fn test_find_wasm_artifact_hyphen_to_underscore(_cleared_target_dir: ClearedTargetDirGuard) {
+        let dir = TempDir::new().expect("create temp dir");
+        let target_base = resolve_target_dir(dir.path());
+        let wasm_dir = target_base.join("wasm32-wasip1/release");
+        std::fs::create_dir_all(&wasm_dir).expect("create wasm32-wasip1 dir");
+        std::fs::File::create(wasm_dir.join("my_tool.wasm")).expect("create wasm artifact");
 
-            // Search with hyphens, should find underscore version
-            let result = find_wasm_artifact(dir.path(), "my-tool", "release");
-            assert!(result.is_some());
-        });
+        // Search with hyphens, should find underscore version
+        let result = find_wasm_artifact(dir.path(), "my-tool", "release");
+        assert!(result.is_some());
     }
 
-    #[test]
-    fn test_find_wasm_artifact_prefers_wasip2_over_wasip1() {
-        with_cleared_target_dir(|| {
-            let dir = TempDir::new().expect("temp dir");
-            let target_base = resolve_target_dir(dir.path());
-            let wasip1_dir = target_base.join("wasm32-wasip1/release");
-            let wasip2_dir = target_base.join("wasm32-wasip2/release");
-            std::fs::create_dir_all(&wasip1_dir).expect("create wasip1 dir");
-            std::fs::create_dir_all(&wasip2_dir).expect("create wasip2 dir");
-            std::fs::File::create(wasip1_dir.join("my_tool.wasm")).expect("create wasip1 wasm");
-            std::fs::File::create(wasip2_dir.join("my_tool.wasm")).expect("create wasip2 wasm");
+    #[rstest]
+    fn test_find_wasm_artifact_prefers_wasip2_over_wasip1(
+        _cleared_target_dir: ClearedTargetDirGuard,
+    ) {
+        let dir = TempDir::new().expect("temp dir");
+        let target_base = resolve_target_dir(dir.path());
+        let wasip1_dir = target_base.join("wasm32-wasip1/release");
+        let wasip2_dir = target_base.join("wasm32-wasip2/release");
+        std::fs::create_dir_all(&wasip1_dir).expect("create wasip1 dir");
+        std::fs::create_dir_all(&wasip2_dir).expect("create wasip2 dir");
+        std::fs::File::create(wasip1_dir.join("my_tool.wasm")).expect("create wasip1 wasm");
+        std::fs::File::create(wasip2_dir.join("my_tool.wasm")).expect("create wasip2 wasm");
 
-            let result = find_wasm_artifact(dir.path(), "my_tool", "release")
-                .expect("should find wasm artifact");
-            assert!(
-                result.ends_with("wasm32-wasip2/release/my_tool.wasm"),
-                "expected wasm32-wasip2 artifact, got {}",
-                result.display()
-            );
-        });
+        let result = find_wasm_artifact(dir.path(), "my_tool", "release")
+            .expect("should find wasm artifact");
+        assert!(
+            result.ends_with("wasm32-wasip2/release/my_tool.wasm"),
+            "expected wasm32-wasip2 artifact, got {}",
+            result.display()
+        );
     }
 
-    #[test]
-    fn test_find_any_wasm_artifact_found() {
-        with_cleared_target_dir(|| {
-            let dir = TempDir::new().expect("create temp dir");
-            let target_base = resolve_target_dir(dir.path());
-            let wasm_dir = target_base.join("wasm32-wasip2/release");
-            std::fs::create_dir_all(&wasm_dir).expect("create wasm dir");
-            std::fs::File::create(wasm_dir.join("something.wasm")).expect("create wasm artifact");
+    #[rstest]
+    fn test_find_any_wasm_artifact_found(_cleared_target_dir: ClearedTargetDirGuard) {
+        let dir = TempDir::new().expect("create temp dir");
+        let target_base = resolve_target_dir(dir.path());
+        let wasm_dir = target_base.join("wasm32-wasip2/release");
+        std::fs::create_dir_all(&wasm_dir).expect("create wasm dir");
+        std::fs::File::create(wasm_dir.join("something.wasm")).expect("create wasm artifact");
 
-            let result = find_any_wasm_artifact(dir.path(), "release");
-            assert!(result.is_some());
-        });
+        let result = find_any_wasm_artifact(dir.path(), "release");
+        assert!(result.is_some());
     }
 
-    #[test]
-    fn test_find_any_wasm_artifact_not_found() {
-        with_cleared_target_dir(|| {
-            let dir = TempDir::new().expect("create temp dir");
-            assert!(find_any_wasm_artifact(dir.path(), "release").is_none());
-        });
+    #[rstest]
+    fn test_find_any_wasm_artifact_not_found(_cleared_target_dir: ClearedTargetDirGuard) {
+        let dir = TempDir::new().expect("create temp dir");
+        assert!(find_any_wasm_artifact(dir.path(), "release").is_none());
     }
 
     #[tokio::test]

@@ -24,10 +24,7 @@ use ironclaw::pairing::PairingStore;
 macro_rules! require_telegram_wasm {
     () => {
         if let Err(msg) = telegram_wasm_path() {
-            let msg = format!(
-                "{}. Build with: cd channels-src/telegram && cargo build --target wasm32-wasip2 --release",
-                msg
-            );
+            let msg = format!("{}. Build with: ./channels-src/telegram/build.sh", msg);
             if std::env::var("CI").is_ok() {
                 panic!("{}", msg);
             }
@@ -36,7 +33,6 @@ macro_rules! require_telegram_wasm {
         }
     };
 }
-
 /// Path to the built Telegram WASM module
 fn telegram_wasm_path() -> Result<std::path::PathBuf, String> {
     let channel_dir =

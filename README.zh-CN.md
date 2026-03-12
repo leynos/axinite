@@ -297,8 +297,12 @@ cargo test
 cargo test test_name
 ```
 
-- **Telegram 渠道**：参见 [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md) 了解设置和私信配对。
-- **修改渠道源码**：在 `cargo build` 之前运行 `./channels-src/telegram/build.sh` 以便打包更新后的 WASM。
+- **Telegram 渠道**：参见
+  [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md)
+  了解设置和私信配对。
+- **修改渠道源码**：在发布打包或运行向导安装前，先运行
+  `./scripts/build-wasm-extensions.sh --channels` 或
+  `./channels-src/telegram/build.sh`，确保更新后的渠道制品已生成到磁盘上。
 
 ## OpenClaw 传承
 
