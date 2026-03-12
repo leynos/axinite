@@ -570,10 +570,17 @@ Work from the repository root
   still honoring an explicit `CARGO_TARGET_DIR` override. Rationale:
   this captures cross-crate dependency reuse without moving the
   standalone extension crates back into the root workspace.
-- 2026-03-12 11:53Z: Kept crate-local `target/` lookup ahead of the
-  repo-shared cache when no env override is present. Rationale: direct
-  one-off channel builds should remain immediately discoverable even if
-  a shared cache from an earlier bulk build also exists.
+- 2026-03-12 11:53Z: Initially kept crate-local `target/` lookup ahead
+  of the repo-shared cache when no env override was present. Rationale:
+  direct one-off channel builds should remain immediately discoverable
+  even if a shared cache from an earlier bulk build also exists.
+- 2026-03-12 14:08Z: Reversed that lookup priority so the repo-shared
+  `target/wasm-extensions/` cache wins over crate-local `target/`
+  outputs when both are present. Rationale: once
+  `scripts/build-wasm-extensions.sh` defaults to the shared target dir,
+  stale per-crate artefacts become the more dangerous fallback because
+  they can shadow a fresh bulk build during local tests and override
+  refreshes.
 - 2026-03-12 11:57Z: Switched the workflow tool installs to
   `taiki-e/install-action` where appropriate and updated the release
   WASM job to use the shared target dir. Rationale: workflow
