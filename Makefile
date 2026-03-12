@@ -1,5 +1,6 @@
 CARGO ?= cargo
 NEXTEST ?= cargo nextest
+WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 
@@ -53,4 +54,4 @@ test-matrix-cargo:
 clean:
 	$(CARGO) clean
 	$(CARGO) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
-	rm -rf target/wasm-extensions
+	rm -rf $(WASM_SHARED_TARGET_DIR)

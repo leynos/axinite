@@ -5,7 +5,8 @@ reproducing the build and test workflows on this branch.
 
 ## Purpose
 
-Linux CI on this branch now uses `mold` to reduce linker time. The
+Linux continuous integration (CI) on this branch now uses `mold` to
+reduce linker time. The
 compile-time reduction plan assumes local contributors can reproduce
 that setup before they measure anything or change build defaults.
 
@@ -15,12 +16,12 @@ through a build.
 
 ## Supported environments
 
-The repository builds on Linux, macOS, Windows, and WSL. The fastest
-documented path today is Linux or WSL because the current branch already
-uses `mold` in Linux CI.
+The repository builds on Linux, macOS, Windows, and Windows Subsystem
+for Linux (WSL). The fastest documented path today is Linux or WSL
+because the current branch already uses `mold` in Linux CI.
 
-If you are working on compile-time or CI changes, prefer Linux or WSL
-so your local results line up with the current CI setup.
+For compile-time or CI changes, prefer Linux or WSL so local results
+line up with the current CI setup.
 
 ## Required tools
 
@@ -38,13 +39,13 @@ Install these tools before running the standard repository commands:
 10. Git.
 
 The root crate declares `rust-version = "1.92"` in `Cargo.toml`. The
-repository also includes standalone WASM tool and channel crates, so
-WASM tooling is required for more than release-only workflows.
+repository also includes standalone WebAssembly (WASM) tool and channel
+crates, so WASM tooling is required for more than release-only
+workflows.
 
 ## Extra tools for the compile-time reduction effort
 
-Install these extra tools if you are working on the compile-time
-reduction plan:
+Install these extra tools for work on the compile-time reduction plan:
 
 1. `/usr/bin/time` or an equivalent timing tool.
 
@@ -57,18 +58,18 @@ remains specific to the compile-time reduction work.
 These tools are not required for every contributor, but they are needed
 for specific work:
 
-- PostgreSQL 15 or newer with `pgvector` if you are working on the
-  default feature set, integration tests, or coverage jobs that use the
+- PostgreSQL 15 or newer with `pgvector` for work on the default
+  feature set, integration tests, or coverage jobs that use the
   PostgreSQL-backed configuration.
-- Docker if you are working on container builds, worker-mode changes,
+- Docker for container builds, worker-mode changes,
   or Docker-based validation.
-- Python 3.12 plus Playwright if you are working on `tests/e2e` or the
-  E2E coverage workflow.
-- `cargo-llvm-cov` if you are working on coverage locally.
+- Python 3.12 plus Playwright for work on `tests/e2e` or the end-to-end
+  (E2E) coverage workflow.
+- `cargo-llvm-cov` for local coverage work.
 
 ## Linux and WSL setup
 
-On Linux or WSL, install the system packages you need first. The exact
+On Linux or WSL, install the required system packages first. The exact
 package manager varies by distribution, but the important pieces are:
 
 - `clang`
@@ -91,7 +92,7 @@ cargo install cargo-component --locked
 cargo install cargo-nextest --locked
 ```
 
-If you also want local coverage support:
+For local coverage support:
 
 ```bash
 cargo install cargo-llvm-cov --locked
@@ -112,9 +113,8 @@ That means Linux and WSL contributors only need to install `clang` and
 `mold` locally. Cargo will pick up the linker configuration
 automatically for `x86_64-unknown-linux-gnu`.
 
-You do not need matching shell exports unless you want to override the
-checked-in defaults. Do not assume this setting applies on macOS or
-Windows.
+Matching shell exports are only needed to override the checked-in
+defaults. Do not assume this setting applies on macOS or Windows.
 
 A quick verification command is:
 
@@ -140,7 +140,7 @@ The current `Makefile` also includes:
   schema and metadata tests.
 - `make test-matrix` to run the broader host test combinations.
 - `make test-cargo` and `make test-matrix-cargo` to keep the old
-  `cargo test` path available when you need a harness comparison for
+  `cargo test` path available when a harness comparison is needed for
   the root crate.
 - `./scripts/build-wasm-extensions.sh --channels` to rebuild all
   registered channels into the shared `target/wasm-extensions/` cache.
@@ -167,13 +167,13 @@ cargo nextest run --workspace --no-default-features --features libsql \
   2>&1 | tee /tmp/nextest-ironclaw-$(git branch --show).out
 ```
 
-If you need to compare behavior against the legacy harness, use
-`make test-cargo` or `make test-matrix-cargo`.
+To compare behaviour against the legacy harness, use `make test-cargo`
+or `make test-matrix-cargo`.
 
 ## Database-backed work
 
-If you are working on the default feature set or PostgreSQL-backed
-tests, prepare a local database with `pgvector` enabled:
+For work on the default feature set or PostgreSQL-backed tests, prepare
+a local database with `pgvector` enabled:
 
 ```bash
 createdb ironclaw
@@ -186,12 +186,12 @@ Then set:
 export DATABASE_URL=postgres://localhost/ironclaw
 ```
 
-Adjust the connection string if your local PostgreSQL instance requires
-a different host, user, or password.
+Adjust the connection string if the local PostgreSQL instance requires a
+different host, user, or password.
 
-## E2E prerequisites
+## End-to-end (E2E) prerequisites
 
-If you are working on browser-based tests:
+For browser-based tests:
 
 ```bash
 python3 --version
@@ -211,7 +211,7 @@ The repository contains standalone WASM tool and channel crates. Normal
 host commands such as `cargo check`, `make typecheck`, and `make test`
 no longer auto-build Telegram or other channels from `build.rs`.
 
-You still need the WASM toolchain when you intentionally build
+The WASM toolchain is still required when intentionally building
 extensions because:
 
 - the GitHub WASM tool is built explicitly by `make build-github-tool-wasm`,
@@ -219,8 +219,8 @@ extensions because:
 - some CI and release paths rebuild channels or tools as part of
   validation.
 
-If you change WIT files, standalone extension crates, or channel code,
-expect the WASM toolchain requirements to apply even if your main focus
+When WIT files, standalone extension crates, or channel code change,
+expect the WASM toolchain requirements to apply even if the main focus
 is the Rust host crate. Common explicit commands are:
 
 - `./scripts/build-wasm-extensions.sh --channels` for all registered
@@ -243,8 +243,8 @@ For the compile-time reduction effort:
 
 - treat `cargo-nextest` as the normal host-side runner for the root
   crate,
-- use `make test-cargo` or `make test-matrix-cargo` when you need to
-  compare results against the old harness,
+- use `make test-cargo` or `make test-matrix-cargo` when comparison
+  against the old harness is needed,
 - do not assume standalone WASM crates or every focused test path has
   migrated away from `cargo test`.
 
@@ -258,7 +258,7 @@ For the compile-time reduction effort:
   `clang` and `mold` are installed and that `.cargo/config.toml` is
   present before drawing conclusions.
 - If PostgreSQL-backed tests fail on connection, rerun them with
-  `--no-default-features --features libsql` until your local database is
+  `--no-default-features --features libsql` until the local database is
   ready.
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.

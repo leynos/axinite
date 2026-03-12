@@ -10,7 +10,8 @@ Status: IN PROGRESS
 ## Purpose / big picture
 
 After this effort, IronClaw developers should be able to edit the Rust
-host, WASM extensions, and CI workflows with less waiting between
+host, WebAssembly (WASM) extensions, and continuous integration (CI)
+workflows with less waiting between
 changes and usable feedback. The target is not a single trick. It is a
 stack of improvements that make the common check, test, and package
 paths rebuild less duplicated state.
@@ -24,8 +25,9 @@ compatibility has been proven.
 
 Observable success has four parts:
 
-1. Linux and WSL contributors have a documented local `mold` setup and
-   can verify it before measuring anything else.
+1. Linux and Windows Subsystem for Linux (WSL) contributors have a
+   documented local `mold` setup and can verify it before measuring
+   anything else.
 2. The root crate adopts `cargo-nextest` for the fast host-side test
    path, with any exceptions documented instead of hidden.
 3. Normal host compilation stops paying packaging costs such as
@@ -89,10 +91,11 @@ in the main crate:
 - `libsql`: `3.38s`
 - `ironclaw` library check: `63.82s`
 
-The current `libsql` path also pulls duplicate generations of key HTTP
-and async stacks, including `axum 0.6` and `0.8`, `tower-http 0.4` and
-`0.6`, and `tokio-rustls 0.25` and `0.26`. Those duplicates are not
-automatically wrong, but they are part of the compile volume.
+The current `libsql` path also pulls duplicate generations of key
+Hypertext Transfer Protocol (HTTP) and async stacks, including
+`axum 0.6` and `0.8`, `tower-http 0.4` and `0.6`, and
+`tokio-rustls 0.25` and `0.26`. Those duplicates are not automatically
+wrong, but they are part of the compile volume.
 
 ## Constraints
 
@@ -105,7 +108,7 @@ automatically wrong, but they are part of the compile volume.
   `mold`; Windows and macOS must continue to build without requiring
   it.
 - No change in this effort may alter released WASM artifact formats,
-  registry manifest semantics, or runtime feature behavior unless that
+  registry manifest semantics, or runtime feature behaviour unless that
   change is separately documented and approved.
 - `cargo-nextest` adoption must preserve the semantic coverage of the
   current Rust test suites. If any test path cannot run under
@@ -122,8 +125,9 @@ automatically wrong, but they are part of the compile volume.
 - Scope: if the first implementation pass requires more than 14 files
   or more than 700 net lines, stop and split the work into smaller
   milestones.
-- Interface: if reducing compile time requires changing public CLI
-  behavior, public configuration keys, or registry manifest schemas,
+- Interface: if reducing compile time requires changing public
+  command-line interface (CLI) behaviour, public configuration keys, or
+  registry manifest schemas,
   stop and escalate.
 - Tooling: if adopting `cargo-nextest` leaves more than 5 existing Rust
   tests failing or unsupported after targeted fixes and clear grouping,
@@ -217,7 +221,7 @@ concurrency and retries where needed.
 
 This milestone does not require every Rust-related test in the
 repository to use `cargo-nextest` immediately. Standalone WASM tool
-crates, tests that rely on unsupported harness behavior, or specific
+crates, tests that rely on unsupported harness behaviour, or specific
 serialized suites may retain `cargo test` temporarily, but the fallback
 must be intentional and documented.
 
@@ -284,7 +288,7 @@ Right now the repository excludes those crates from the root workspace
 and builds them one manifest at a time. That keeps packaging boundaries
 clear, but it also means repeated dependency compilation. This milestone
 should compare two concrete strategies and pick the smallest one that
-preserves release behavior:
+preserves release behaviour:
 
 1. Keep standalone crates, but set a shared `CARGO_TARGET_DIR` for
    `scripts/build-wasm-extensions.sh` and related CI jobs.
@@ -313,8 +317,9 @@ where practical.
 
 The most obvious duplication today is that Linux tests, coverage, and
 release packaging all rebuild channel artifacts, and some workflows
-rebuild the same Rust target shapes independently. Use the E2E workflow
-as the model: build the binary or WASM artifacts once, upload them, and
+rebuild the same Rust target shapes independently. Use the end-to-end
+(E2E) workflow as the model: build the binary or WASM artifacts once,
+upload them, and
 run downstream jobs from those artifacts when the downstream jobs do not
 need to recompile.
 
@@ -422,7 +427,7 @@ Work from the repository root
   `6 skipped`; the follow-on `tools-src/github` suite also passed with
   `5` tests.
 - [x] 2026-03-12 11:30Z: Removed the Telegram build from `build.rs` and
-  moved the remaining release-oriented behavior to explicit scripts and
+  moved the remaining release-oriented behaviour to explicit scripts and
   documentation. `scripts/build-all.sh` now rebuilds channels
   explicitly, and the developer-facing docs no longer claim that
   `cargo build` auto-bundles Telegram.
@@ -459,6 +464,12 @@ Work from the repository root
   the shared `target/wasm-extensions/` cache when resolving built
   artifacts, while keeping a legacy per-crate `target/` fallback so the
   workflow stays compatible during the transition.
+- [x] 2026-03-12 13:31Z: Applied review follow-up fixes across the
+  artifact resolver, local override sync script, `Makefile`, and docs.
+  The follow-up now treats an empty `CARGO_TARGET_DIR` as unset, uses
+  an `rstest` fixture for the shared target-dir tests, keeps the shell
+  sync logic DRY, and aligns the plan and developer guide with acronym,
+  pronoun, and en-GB wording rules.
 - [ ] Implement Milestone 4 and record fresh evidence.
 
 ## Surprises & Discoveries
@@ -567,7 +578,7 @@ Work from the repository root
   `taiki-e/install-action` where appropriate and updated the release
   WASM job to use the shared target dir. Rationale: workflow
   prerequisites should be declarative and consistent across jobs,
-  especially once build behavior depends on `cargo-nextest` and
+  especially once build behaviour depends on `cargo-nextest` and
   `cargo-component` rather than ambient runner state.
 
 ## Outcomes & Retrospective
