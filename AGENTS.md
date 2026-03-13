@@ -187,6 +187,133 @@ management.
 - When consuming fallible fixtures in `rstest`, have the test return `Result`
   and use `?`.
 
+## Build, Run, and Debug
+
+- Use these commands when a task specifically needs direct build or runtime
+  access outside the `Makefile` gates:
+  - `cargo fmt`
+  - `cargo clippy --all --benches --tests --examples --all-features`
+  - `cargo test`
+  - `cargo test --features integration`
+  - `RUST_LOG=ironclaw=debug cargo run`
+- For debugging, these logging patterns are the default entry points:
+  - `RUST_LOG=ironclaw=trace cargo run`
+  - `RUST_LOG=ironclaw::agent=debug cargo run`
+  - `RUST_LOG=ironclaw=debug,tower_http=debug cargo run`
+- For end-to-end coverage, refer to `tests/e2e/CLAUDE.md`.
+
+## Architecture and Extensibility
+
+- Prefer generic and extensible architectures over hardcoded one-off
+  integrations.
+- If an implementation choice materially affects the abstraction surface, ask a
+  clarifying question rather than baking in an overly narrow design.
+- Key extensibility traits in this codebase include:
+  - `Database`
+  - `Channel`
+  - `Tool`
+  - `LlmProvider`
+  - `SuccessEvaluator`
+  - `EmbeddingProvider`
+  - `NetworkPolicyDecider`
+  - `Hook`
+  - `Observer`
+  - `Tunnel`
+- All I/O is async with Tokio. Use `Arc<T>` for shared state and `RwLock`
+  where concurrent read-heavy access is warranted.
+- Prefer strong types over strings, especially for domain values, state
+  transitions, identifiers, and configuration boundaries.
+- Prefer `crate::` for cross-module imports. `super::` is fine for tests and
+  tightly local intra-module references.
+- Avoid `pub use` re-exports unless you are deliberately exposing an API to
+  downstream consumers.
+- Comments should explain non-obvious logic, invariants, or trade-offs, not
+  restate the code.
+
+## Module Specs and Ownership
+
+- When modifying a module with its own spec, read that spec first. The spec is
+  the tiebreaker when code and assumptions drift apart.
+- Module-specific initialization logic belongs in the owning module as a public
+  factory function, not in `main.rs` or `app.rs`.
+- Feature-flag branching should stay inside the module that owns the
+  abstraction.
+- Current module-spec map:
+  - `src/agent/` -> `src/agent/CLAUDE.md`
+  - `src/channels/web/` -> `src/channels/web/CLAUDE.md`
+  - `src/db/` -> `src/db/CLAUDE.md`
+  - `src/llm/` -> `src/llm/CLAUDE.md`
+  - `src/setup/` -> `src/setup/README.md`
+  - `src/tools/` -> `src/tools/README.md`
+  - `src/workspace/` -> `src/workspace/README.md`
+  - `tests/e2e/` -> `tests/e2e/CLAUDE.md`
+
+## Repository Structure
+
+- Use `docs/repostory-layout.md` as the source of truth for the repository
+  layout and high-level directory responsibilities.
+- When adding or moving code, preserve the ownership boundaries documented
+  there unless the task explicitly requires a structural refactor.
+
+## Database and Persistence Policy
+
+- axinite supports PostgreSQL and libSQL/Turso. New persistence features must
+  support both backends unless the user explicitly scopes the change otherwise.
+- Read `src/db/CLAUDE.md` before making non-trivial database changes.
+- Do not assume backend parity without verifying both implementations.
+- Workspace memory and retrieval are part of the core product surface; treat
+  persistence, indexing, and hybrid search changes as architectural work, not
+  incidental plumbing.
+
+## Channels, Tools, and Skills
+
+- To add a new channel:
+  - create `src/channels/my_channel.rs`
+  - implement the `Channel` trait
+  - add configuration in `src/config/channels.rs`
+  - wire it in the channel setup path in `src/app.rs`
+- Treat channels, tools, hooks, tunnels, and observers as extension surfaces.
+  Prefer composing through their traits over adding special cases to core
+  orchestration.
+- The skills system extends the agent prompt through `SKILL.md` files. See
+  `.claude/rules/skills.md` for detailed skill-loading and trust-model rules.
+- Skills currently distinguish trusted versus installed sources and apply tool
+  attenuation based on trust and budget. Do not bypass that model casually.
+- Workspace identity files such as `AGENTS.md`, `SOUL.md`, `USER.md`,
+  `IDENTITY.md`, and related control documents may be injected into model
+  context. Treat them as part of the prompt surface.
+
+## Runtime Model and Operations
+
+- The application uses a job state machine with these expected transitions:
+  `Pending -> InProgress -> Completed -> Submitted -> Accepted`, with failure
+  and stuck-state exits as additional branches.
+- Hooks exist at multiple lifecycle points, including inbound, tool-call,
+  outbound, session-start, session-end, and response-transformation phases.
+  Respect those extension points when changing the interaction pipeline.
+- The tunnel subsystem abstracts public exposure through providers such as
+  Cloudflare, ngrok, Tailscale, custom commands, and local-only operation.
+- The observability subsystem is pluggable, but current live backends are
+  intentionally limited. Do not document or imply unsupported observability
+  behaviour.
+- Current known platform limitations from the inherited project guidance:
+  - several domain-specific tools remain stubs
+  - integration tests need testcontainers-backed PostgreSQL coverage
+  - MCP is request-response only and does not yet support streaming
+  - automatic WASM tool-schema extraction remains incomplete
+  - built tools still need better capabilities UX
+  - tool versioning and rollback are not yet implemented
+  - observability backends remain limited
+
+## Configuration Guidance
+
+- Use `.env.example` as the operator-facing index for environment variables.
+- For model-provider configuration, read `src/llm/CLAUDE.md` before changing
+  provider wiring, defaults, or provider-specific environment handling.
+- For workspace and memory behaviour, read `src/workspace/README.md`.
+- For setup and onboarding flows, read `src/setup/README.md`.
+- For tool runtime details, read `src/tools/README.md`.
+
 ## Markdown Guidance
 
 - Validate changed Markdown files with `bunx markdownlint-cli2 <paths>` unless
