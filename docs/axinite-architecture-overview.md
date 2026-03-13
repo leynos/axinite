@@ -179,6 +179,10 @@ the agent. `ChannelManager` multiplexes REPL, HTTP, Signal, web, and
 WASM-backed channels, then the agent consumes unified `IncomingMessage`
 records. The web gateway is not a separate service: it is just another channel
 with extra state such as server-sent events, tool metadata, and runtime logs.
+The detailed message lifecycle for the browser and other session-backed chat
+paths lives in `docs/chat-model.md`, which covers ingress normalization,
+attachment mutation, approvals, auth interruptions, persistence, and browser
+status sinks in more depth.
 
 The main runtime also supports hot activation of persisted WASM channels.
 Startup loads the set of active channels from disk or registry state, wires the
@@ -205,6 +209,8 @@ The main process injects a large `AgentDeps` bundle rather than constructing
 dependencies lazily inside the agent. That makes runtime boundaries explicit,
 but it also means the boot sequence must assemble most infrastructure before
 the agent can start.
+`docs/chat-model.md` is the detailed subsystem reference for how those
+dependencies are used once a normalized chat message enters the agent loop.
 
 ### 4.3 Persistence, configuration, and memory
 
