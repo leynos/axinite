@@ -1,3 +1,5 @@
+//! Tests for rig adapter helper functions and cache-related utilities.
+
 use super::*;
 
 #[test]

@@ -1,3 +1,5 @@
+//! Shared CLI formatting helpers for tool output.
+
 use crate::tools::wasm::CapabilitiesFile;
 
 /// Print a brief capabilities summary.

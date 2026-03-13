@@ -1,16 +1,24 @@
+//! Authentication flows for installed WASM tools.
+//!
+//! This module handles environment-backed, manual, and OAuth-driven tool
+//! credential setup while delegating the browser-based OAuth mechanics to a
+//! focused submodule.
+
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use tokio::fs;
 
 use crate::secrets::SecretsStore;
-use crate::tools::wasm::{
-    AuthCapabilitySchema, CapabilitiesFile, OAuthConfigSchema, ValidationEndpointSchema,
-};
+use crate::tools::wasm::{AuthCapabilitySchema, CapabilitiesFile, ValidationEndpointSchema};
 
 use super::default_tools_dir;
 use super::init_secrets_store;
 use super::printing::validate_tool_name;
+
+mod oauth;
+
+use self::oauth::{auth_tool_oauth, combine_provider_scopes};
 
 /// Configure authentication for a tool.
 pub(super) async fn auth_tool(
@@ -75,31 +83,7 @@ pub(super) async fn auth_tool(
         println!();
     }
 
-    if let Some(ref env_var) = auth.env_var
-        && let Ok(token) = std::env::var(env_var)
-        && !token.is_empty()
-    {
-        println!("  Found {} in environment.", env_var);
-        println!();
-
-        if let Some(ref validation) = auth.validation_endpoint {
-            print!("  Validating token...");
-            std::io::stdout().flush()?;
-
-            match validate_token(&token, validation, &auth.secret_name).await {
-                Ok(()) => println!(" ✓"),
-                Err(e) => {
-                    println!(" ✗");
-                    println!("  Validation failed: {}", e);
-                    println!();
-                    println!("  Falling back to manual entry...");
-                    return auth_tool_manual(secrets_store.as_ref(), &user_id, &auth).await;
-                }
-            }
-        }
-
-        save_token(secrets_store.as_ref(), &user_id, &auth, &token, None, None).await?;
-        print_success(display_name);
+    if try_auth_from_env(secrets_store.as_ref(), &user_id, &auth, display_name).await? {
         return Ok(());
     }
 
@@ -119,165 +103,44 @@ pub(super) async fn auth_tool(
     auth_tool_manual(secrets_store.as_ref(), &user_id, &auth).await
 }
 
-/// Scan the tools directory for all capabilities files sharing the same secret name
-/// and combine their OAuth scopes.
-async fn combine_provider_scopes(
-    tools_dir: &Path,
-    secret_name: &str,
-    base_oauth: &OAuthConfigSchema,
-) -> OAuthConfigSchema {
-    let mut all_scopes: std::collections::HashSet<String> =
-        base_oauth.scopes.iter().cloned().collect();
+async fn try_auth_from_env(
+    store: &(dyn SecretsStore + Send + Sync),
+    user_id: &str,
+    auth: &AuthCapabilitySchema,
+    display_name: &str,
+) -> anyhow::Result<bool> {
+    let Some(env_var) = auth.env_var.as_ref() else {
+        return Ok(false);
+    };
+    let Ok(token) = std::env::var(env_var) else {
+        return Ok(false);
+    };
+    if token.is_empty() {
+        return Ok(false);
+    }
 
-    if let Ok(mut entries) = tokio::fs::read_dir(tools_dir).await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                continue;
-            }
-            let name = path
-                .file_name()
-                .and_then(|file_name| file_name.to_str())
-                .unwrap_or_default();
-            if !name.ends_with(".capabilities.json") {
-                continue;
-            }
+    println!("  Found {} in environment.", env_var);
+    println!();
 
-            if let Ok(content) = tokio::fs::read_to_string(&path).await
-                && let Ok(caps) = CapabilitiesFile::from_json(&content)
-                && let Some(auth) = &caps.auth
-                && auth.secret_name == secret_name
-                && let Some(oauth) = &auth.oauth
-            {
-                all_scopes.extend(oauth.scopes.iter().cloned());
+    if let Some(ref validation) = auth.validation_endpoint {
+        print!("  Validating token...");
+        std::io::stdout().flush()?;
+
+        match validate_token(&token, validation, &auth.secret_name).await {
+            Ok(()) => println!(" ✓"),
+            Err(e) => {
+                println!(" ✗");
+                println!("  Validation failed: {}", e);
+                println!();
+                println!("  Falling back to manual entry...");
+                return auth_tool_manual(store, user_id, auth).await.map(|_| true);
             }
         }
     }
 
-    let mut combined = base_oauth.clone();
-    combined.scopes = all_scopes.into_iter().collect();
-    combined.scopes.sort();
-    combined
-}
-
-/// OAuth browser-based login flow.
-async fn auth_tool_oauth(
-    store: &(dyn SecretsStore + Send + Sync),
-    user_id: &str,
-    auth: &AuthCapabilitySchema,
-    oauth: &OAuthConfigSchema,
-) -> anyhow::Result<()> {
-    use crate::cli::oauth_defaults;
-
-    let display_name = auth.display_name.as_deref().unwrap_or(&auth.secret_name);
-    let builtin = oauth_defaults::builtin_credentials(&auth.secret_name);
-
-    let client_id = oauth
-        .client_id
-        .clone()
-        .or_else(|| {
-            oauth
-                .client_id_env
-                .as_ref()
-                .and_then(|env| std::env::var(env).ok())
-        })
-        .or_else(|| {
-            builtin
-                .as_ref()
-                .map(|credentials| credentials.client_id.to_string())
-        })
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "OAuth client_id not configured.\n\
-                 Set {} env var, or build with IRONCLAW_GOOGLE_CLIENT_ID.",
-                oauth.client_id_env.as_deref().unwrap_or("the client_id")
-            )
-        })?;
-
-    let client_secret = oauth
-        .client_secret
-        .clone()
-        .or_else(|| {
-            oauth
-                .client_secret_env
-                .as_ref()
-                .and_then(|env| std::env::var(env).ok())
-        })
-        .or_else(|| {
-            builtin
-                .as_ref()
-                .map(|credentials| credentials.client_secret.to_string())
-        });
-
-    println!("  Starting OAuth authentication...");
-    println!();
-
-    let listener = oauth_defaults::bind_callback_listener().await?;
-    let redirect_uri = format!("{}/callback", oauth_defaults::callback_url());
-
-    let oauth_result = oauth_defaults::build_oauth_url(
-        &oauth.authorization_url,
-        &client_id,
-        &redirect_uri,
-        &oauth.scopes,
-        oauth.use_pkce,
-        &oauth.extra_params,
-    )?;
-    let code_verifier = oauth_result.code_verifier;
-
-    println!("  Opening browser for {} login...", display_name);
-    println!();
-
-    if let Err(e) = open::that(&oauth_result.url) {
-        println!("  Could not open browser: {}", e);
-        println!("  Please open this URL manually:");
-        println!("  {}", oauth_result.url);
-    }
-
-    println!("  Waiting for authorization...");
-
-    let code = oauth_defaults::wait_for_callback(
-        listener,
-        "/callback",
-        "code",
-        display_name,
-        Some(&oauth_result.state),
-    )
-    .await?;
-
-    println!();
-    println!("  Exchanging code for token...");
-
-    let token_response = oauth_defaults::exchange_oauth_code(
-        &oauth.token_url,
-        &client_id,
-        client_secret.as_deref(),
-        &code,
-        &redirect_uri,
-        code_verifier.as_deref(),
-        &oauth.access_token_field,
-    )
-    .await?;
-
-    oauth_defaults::store_oauth_tokens(
-        store,
-        user_id,
-        &auth.secret_name,
-        auth.provider.as_deref(),
-        &token_response.access_token,
-        token_response.refresh_token.as_deref(),
-        token_response.expires_in,
-        &oauth.scopes,
-    )
-    .await?;
-
-    println!();
-    println!("  ✓ {} connected!", display_name);
-    println!();
-    println!("  The tool can now access the API.");
-    println!();
-
-    Ok(())
+    save_token(store, user_id, auth, &token, None, None).await?;
+    print_success(display_name);
+    Ok(true)
 }
 
 /// Manual token entry flow.
@@ -367,8 +230,17 @@ pub(super) fn read_hidden_input() -> anyhow::Result<String> {
         terminal,
     };
 
+    struct RawModeGuard;
+
+    impl Drop for RawModeGuard {
+        fn drop(&mut self) {
+            let _ = terminal::disable_raw_mode();
+        }
+    }
+
     let mut input = String::new();
     terminal::enable_raw_mode()?;
+    let _raw_mode_guard = RawModeGuard;
 
     loop {
         if let Event::Key(key_event) = event::read()? {
@@ -382,7 +254,6 @@ pub(super) fn read_hidden_input() -> anyhow::Result<String> {
                     }
                 }
                 KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    terminal::disable_raw_mode()?;
                     return Err(anyhow::anyhow!("Interrupted"));
                 }
                 KeyCode::Char(c) => {
@@ -395,7 +266,6 @@ pub(super) fn read_hidden_input() -> anyhow::Result<String> {
         }
     }
 
-    terminal::disable_raw_mode()?;
     Ok(input)
 }
 

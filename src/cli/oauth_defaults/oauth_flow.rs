@@ -1,3 +1,5 @@
+//! OAuth flow helpers for URL construction, token exchange, and persistence.
+
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -121,7 +123,11 @@ pub async fn exchange_oauth_code(
     code_verifier: Option<&str>,
     access_token_field: &str,
 ) -> Result<OAuthTokenResponse, OAuthCallbackError> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| OAuthCallbackError::Io(format!("Failed to build HTTP client: {e}")))?;
     let mut token_params = vec![
         ("grant_type", "authorization_code".to_string()),
         ("code", code.to_string()),
@@ -252,6 +258,7 @@ pub async fn validate_oauth_token(
 ) -> Result<(), OAuthCallbackError> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| OAuthCallbackError::Io(format!("Failed to build HTTP client: {e}")))?;
 

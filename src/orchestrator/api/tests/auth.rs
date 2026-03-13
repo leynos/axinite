@@ -1,3 +1,5 @@
+//! Tests for worker route authentication middleware.
+
 use rstest::rstest;
 
 use super::fixtures::test_state;
@@ -11,9 +13,12 @@ async fn health_requires_no_auth(test_state: OrchestratorState) {
     let req = Request::builder()
         .uri("/health")
         .body(Body::empty())
-        .unwrap();
+        .expect("build health check request");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send health check request");
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -26,9 +31,12 @@ async fn worker_route_rejects_missing_token(test_state: OrchestratorState) {
     let req = Request::builder()
         .uri(format!("/worker/{}/job", job_id))
         .body(Body::empty())
-        .unwrap();
+        .expect("build worker job request without auth");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send worker job request without auth");
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
@@ -42,9 +50,12 @@ async fn worker_route_rejects_wrong_token(test_state: OrchestratorState) {
         .uri(format!("/worker/{}/job", job_id))
         .header("Authorization", "Bearer totally-bogus")
         .body(Body::empty())
-        .unwrap();
+        .expect("build worker job request with invalid token");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send worker job request with invalid token");
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
@@ -60,9 +71,12 @@ async fn worker_route_accepts_valid_token(test_state: OrchestratorState) {
         .uri(format!("/worker/{}/job", job_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
-        .unwrap();
+        .expect("build worker job request with valid token");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send worker job request with valid token");
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
@@ -79,8 +93,11 @@ async fn token_for_job_a_rejected_on_job_b(test_state: OrchestratorState) {
         .uri(format!("/worker/{}/job", job_b))
         .header("Authorization", format!("Bearer {}", token_a))
         .body(Body::empty())
-        .unwrap();
+        .expect("build worker job request with mismatched token");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send worker job request with mismatched token");
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }

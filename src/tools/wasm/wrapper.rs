@@ -118,7 +118,7 @@ fn secret_redaction_variants(secret: &str) -> Vec<String> {
             variants.push(plus_encoded);
         }
     }
-    variants.sort();
+    variants.sort_by_key(|variant| std::cmp::Reverse(variant.len()));
     variants.dedup();
     variants
 }
@@ -280,8 +280,8 @@ impl StoreData {
             .map_err(|e| format!("Rate limit exceeded: {}", e))?;
 
         // Parse the raw header values supplied by WASM.
-        let raw_headers: HashMap<String, String> =
-            serde_json::from_str(headers_json).unwrap_or_default();
+        let raw_headers: HashMap<String, String> = serde_json::from_str(headers_json)
+            .map_err(|e| format!("invalid headers_json payload: {e}"))?;
 
         // Leak scan runs on WASM-provided values before any host-side
         // credential injection. This prevents false positives where the

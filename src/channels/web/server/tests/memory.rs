@@ -1,3 +1,5 @@
+//! Tests for the web gateway memory search and read routes.
+
 #[cfg(feature = "libsql")]
 use axum::{Router, body::Body, routing::get, routing::post};
 #[cfg(feature = "libsql")]
@@ -5,6 +7,7 @@ use rstest::rstest;
 #[cfg(feature = "libsql")]
 use tower::ServiceExt;
 
+#[cfg(feature = "libsql")]
 use super::fixtures::{TestGatewayStateFactory, test_gateway_state};
 #[cfg(feature = "libsql")]
 use crate::channels::web::handlers::memory::{memory_read_handler, memory_search_handler};

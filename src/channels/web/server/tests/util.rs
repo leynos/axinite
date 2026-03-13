@@ -1,3 +1,5 @@
+//! Tests for gateway utility helpers shared by web route handlers.
+
 use crate::channels::web::util::build_turns_from_db_messages;
 
 #[test]

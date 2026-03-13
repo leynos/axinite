@@ -1,3 +1,5 @@
+//! Tests for rig request construction and cache-control shaping.
+
 use super::*;
 
 #[rstest]

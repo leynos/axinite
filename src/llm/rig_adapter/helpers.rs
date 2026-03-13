@@ -1,11 +1,11 @@
-//! Shared conversion and normalization helpers for the rig adapter.
+//! Shared conversion and normalisation helpers for the rig adapter.
 //!
 //! These helpers keep provider-facing request and response shaping consistent
 //! across the adapter implementation and its tests.
 
 use super::*;
 
-/// Normalize an optional raw tool-call ID into a non-empty identifier.
+/// Normalise an optional raw tool-call ID into a non-empty identifier.
 ///
 /// Returns the trimmed `raw` value when it is present and non-empty. Otherwise,
 /// generates a deterministic fallback string using `seed`.
@@ -18,7 +18,7 @@ pub(super) fn normalized_tool_call_id(raw: Option<&str>, seed: usize) -> String 
 
 /// Convert IronClaw tool definitions to rig-core format.
 ///
-/// Applies OpenAI strict-mode schema normalization to ensure all tool
+/// Applies OpenAI strict-mode schema normalisation to ensure all tool
 /// parameter schemas comply with OpenAI's function calling requirements.
 pub(super) fn convert_tools(tools: &[IronToolDefinition]) -> Vec<RigToolDefinition> {
     tools
@@ -117,7 +117,7 @@ pub(super) fn extract_cache_creation<T: Serialize>(raw: &T) -> u32 {
         .unwrap_or(0)
 }
 
-/// Normalize a tool call name returned by an OpenAI-compatible provider.
+/// Normalise a tool call name returned by an OpenAI-compatible provider.
 ///
 /// Some proxies (e.g. VibeProxy) prepend `proxy_` to tool names.
 /// If the returned name doesn't match any known tool but stripping a

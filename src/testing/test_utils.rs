@@ -1,5 +1,6 @@
 //! Shared test-only utilities for env-mutation guards and similar fixtures.
 
+use std::collections::HashMap;
 use std::sync::MutexGuard;
 
 use crate::config::helpers::ENV_MUTEX;
@@ -8,16 +9,18 @@ use crate::config::helpers::ENV_MUTEX;
 /// [`ENV_MUTEX`], and restores the original values on drop.
 pub struct EnvVarsGuard {
     _lock: MutexGuard<'static, ()>,
-    originals: Vec<(&'static str, Option<String>)>,
+    originals: HashMap<String, Option<String>>,
 }
 
 impl EnvVarsGuard {
     /// Lock env access for the duration of the guard and snapshot the keys.
     pub fn new(keys: &[&'static str]) -> Self {
-        let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
+        let lock = ENV_MUTEX
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let originals = keys
             .iter()
-            .map(|key| (*key, std::env::var(key).ok()))
+            .map(|key| ((*key).to_string(), std::env::var(key).ok()))
             .collect();
         Self {
             _lock: lock,
@@ -25,8 +28,15 @@ impl EnvVarsGuard {
         }
     }
 
+    fn snapshot_key_if_needed(&mut self, key: &str) {
+        self.originals
+            .entry(key.to_string())
+            .or_insert_with(|| std::env::var(key).ok());
+    }
+
     /// Set an env var while the shared env lock is held.
-    pub fn set(&self, key: &str, value: &str) {
+    pub fn set(&mut self, key: &str, value: &str) {
+        self.snapshot_key_if_needed(key);
         // SAFETY: EnvVarsGuard holds ENV_MUTEX for its entire lifetime.
         unsafe {
             std::env::set_var(key, value);
@@ -34,7 +44,8 @@ impl EnvVarsGuard {
     }
 
     /// Remove an env var while the shared env lock is held.
-    pub fn remove(&self, key: &str) {
+    pub fn remove(&mut self, key: &str) {
+        self.snapshot_key_if_needed(key);
         // SAFETY: EnvVarsGuard holds ENV_MUTEX for its entire lifetime.
         unsafe {
             std::env::remove_var(key);

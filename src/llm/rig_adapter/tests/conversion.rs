@@ -1,3 +1,5 @@
+//! Tests for message conversion into rig-core request and response types.
+
 use super::*;
 
 #[test]

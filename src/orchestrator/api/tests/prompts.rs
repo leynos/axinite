@@ -1,3 +1,5 @@
+//! Tests for the worker prompt polling endpoint.
+
 use rstest::rstest;
 
 use super::fixtures::test_state;
@@ -14,9 +16,12 @@ async fn prompt_returns_204_when_queue_empty(test_state: OrchestratorState) {
         .uri(format!("/worker/{}/prompt", job_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
-        .unwrap();
+        .expect("build empty prompt poll request");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send empty prompt poll request");
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 }
 
@@ -39,13 +44,19 @@ async fn prompt_returns_queued_prompt(test_state: OrchestratorState) {
         .uri(format!("/worker/{}/prompt", job_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
-        .unwrap();
+        .expect("build queued prompt poll request");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send queued prompt poll request");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 4096)
+        .await
+        .expect("read queued prompt response body");
+    let json: serde_json::Value =
+        serde_json::from_slice(&body).expect("parse queued prompt response JSON");
     assert_eq!(json["content"], "What is the status?");
     assert_eq!(json["done"], false);
 }

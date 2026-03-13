@@ -1,3 +1,5 @@
+//! Tests for the worker credentials endpoint.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -20,9 +22,12 @@ async fn credentials_returns_204_when_no_grants(test_state: OrchestratorState) {
         .uri(format!("/worker/{}/credentials", job_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
-        .unwrap();
+        .expect("build credentials request without grants");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send credentials request without grants");
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 }
 
@@ -48,9 +53,12 @@ async fn credentials_returns_503_when_no_secrets_store(test_state: OrchestratorS
         .uri(format!("/worker/{}/credentials", job_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
-        .unwrap();
+        .expect("build credentials request without secrets store");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send credentials request without secrets store");
     assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
@@ -68,7 +76,7 @@ async fn credentials_returns_secrets_when_store_configured() {
             },
         )
         .await
-        .unwrap();
+        .expect("store test secret for credentials response");
 
     let token_store = TokenStore::new();
     let jm = ContainerJobManager::new(ContainerJobConfig::default(), token_store.clone());
@@ -101,13 +109,19 @@ async fn credentials_returns_secrets_when_store_configured() {
         .uri(format!("/worker/{}/credentials", job_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
-        .unwrap();
+        .expect("build credentials request with configured store");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send credentials request with configured store");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
-    let json: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 4096)
+        .await
+        .expect("read credentials response body");
+    let json: Vec<serde_json::Value> =
+        serde_json::from_slice(&body).expect("parse credentials response JSON");
     assert_eq!(json.len(), 1);
     assert_eq!(json[0]["env_var"], "MY_SECRET");
     assert_eq!(json[0]["value"], "supersecretvalue");

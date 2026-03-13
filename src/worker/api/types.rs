@@ -107,8 +107,17 @@ pub struct PromptResponse {
 /// A single credential delivered from the orchestrator to a container worker.
 ///
 /// Shared between the orchestrator endpoint and the worker client.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct CredentialResponse {
     pub env_var: String,
     pub value: String,
+}
+
+impl std::fmt::Debug for CredentialResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialResponse")
+            .field("env_var", &self.env_var)
+            .field("value", &"[REDACTED]")
+            .finish()
+    }
 }

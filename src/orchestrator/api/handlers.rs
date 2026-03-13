@@ -12,12 +12,13 @@ use axum::http::StatusCode;
 use uuid::Uuid;
 
 use super::OrchestratorState;
+use super::handler_support::format_finish_reason;
 use crate::channels::web::types::SseEvent;
 use crate::context::JobContext;
 use crate::llm::{CompletionRequest, ToolCompletionRequest};
 use crate::tools::builtin::extension_tools::ExtensionToolKind;
 use crate::worker::api::{
-    CompletionReport, CredentialResponse, JobDescription, JobEventPayload, ProxyCompletionRequest,
+    CompletionReport, JobDescription, JobEventPayload, ProxyCompletionRequest,
     ProxyCompletionResponse, ProxyExtensionToolRequest, ProxyExtensionToolResponse,
     ProxyToolCompletionRequest, ProxyToolCompletionResponse, StatusUpdate,
 };
@@ -161,7 +162,10 @@ pub(super) async fn execute_extension_tool(
             error = %e,
             "Extension tool proxy execution failed"
         );
-        StatusCode::BAD_GATEWAY
+        match e {
+            crate::tools::ToolError::InvalidParameters(_) => StatusCode::BAD_REQUEST,
+            _ => StatusCode::BAD_GATEWAY,
+        }
     })?;
 
     Ok(Json(ProxyExtensionToolResponse { output }))
@@ -312,100 +316,4 @@ pub(super) async fn job_event_handler(
     }
 
     Ok(StatusCode::OK)
-}
-
-/// Return the next queued follow-up prompt for a Claude Code bridge.
-/// Returns 204 No Content if no prompt is available.
-pub(super) async fn get_prompt_handler(
-    State(state): State<OrchestratorState>,
-    Path(job_id): Path<Uuid>,
-) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
-    let mut queue = state.prompt_queue.lock().await;
-    if let Some(prompts) = queue.get_mut(&job_id)
-        && let Some(prompt) = prompts.pop_front()
-    {
-        return Ok((
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "content": prompt.content,
-                "done": prompt.done,
-            })),
-        ));
-    }
-
-    Ok((StatusCode::NO_CONTENT, Json(serde_json::Value::Null)))
-}
-
-/// Serve decrypted credentials for a job's granted secrets.
-///
-/// Returns 204 if no grants exist, 503 if no secrets store is configured,
-/// or a JSON array of `{ env_var, value }` pairs.
-pub(super) async fn get_credentials_handler(
-    State(state): State<OrchestratorState>,
-    Path(job_id): Path<Uuid>,
-) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
-    let grants = match state.token_store.get_grants(job_id).await {
-        Some(g) if !g.is_empty() => g,
-        _ => return Ok((StatusCode::NO_CONTENT, Json(serde_json::Value::Null))),
-    };
-
-    let secrets = state.secrets_store.as_ref().ok_or_else(|| {
-        tracing::error!("Credentials requested but no secrets store configured");
-        StatusCode::SERVICE_UNAVAILABLE
-    })?;
-
-    let mut credentials: Vec<CredentialResponse> = Vec::with_capacity(grants.len());
-
-    for grant in &grants {
-        let decrypted = secrets
-            .get_decrypted(&state.user_id, &grant.secret_name)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    job_id = %job_id,
-                    "Failed to decrypt secret for credential grant: {}", e
-                );
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
-
-        if let Ok(secret) = secrets.get(&state.user_id, &grant.secret_name).await
-            && let Err(e) = secrets.record_usage(secret.id).await
-        {
-            tracing::warn!(
-                job_id = %job_id,
-                "Failed to record credential usage: {}", e
-            );
-        }
-
-        tracing::debug!(
-            job_id = %job_id,
-            env_var = %grant.env_var,
-            "Serving credential to container"
-        );
-
-        credentials.push(CredentialResponse {
-            env_var: grant.env_var.clone(),
-            value: decrypted.expose().to_string(),
-        });
-    }
-
-    let body = serde_json::to_value(&credentials).map_err(|e| {
-        tracing::error!(
-            job_id = %job_id,
-            "Failed to serialize credential response payload: {}", e
-        );
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    Ok((StatusCode::OK, Json(body)))
-}
-
-fn format_finish_reason(reason: crate::llm::FinishReason) -> String {
-    match reason {
-        crate::llm::FinishReason::Stop => "stop".to_string(),
-        crate::llm::FinishReason::Length => "length".to_string(),
-        crate::llm::FinishReason::ToolUse => "tool_use".to_string(),
-        crate::llm::FinishReason::ContentFilter => "content_filter".to_string(),
-        crate::llm::FinishReason::Unknown => "unknown".to_string(),
-    }
 }

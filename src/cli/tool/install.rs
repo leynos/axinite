@@ -1,3 +1,8 @@
+//! Tool-installation helpers for the CLI.
+//!
+//! This module handles source-directory and standalone-WASM installs,
+//! capabilities discovery, and crate-name extraction for the install command.
+
 use std::path::{Path, PathBuf};
 
 use tokio::fs;
@@ -66,12 +71,10 @@ pub(super) async fn install_tool(
         });
 
         let caps_path = capabilities.or_else(|| {
-            let candidates = [
-                path.with_extension("capabilities.json"),
-                path.parent()
-                    .map(|parent| parent.join(format!("{}.capabilities.json", tool_name)))
-                    .unwrap_or_default(),
-            ];
+            let mut candidates = vec![path.with_extension("capabilities.json")];
+            if let Some(parent) = path.parent() {
+                candidates.push(parent.join(format!("{}.capabilities.json", tool_name)));
+            }
             candidates.into_iter().find(|candidate| candidate.exists())
         });
 
@@ -132,15 +135,14 @@ pub(super) async fn install_tool(
 /// Extract crate name from Cargo.toml.
 pub(super) async fn extract_crate_name(cargo_toml: &Path) -> anyhow::Result<String> {
     let content = fs::read_to_string(cargo_toml).await?;
-
-    for line in content.lines() {
-        let line = line.trim();
-        if line.starts_with("name")
-            && let Some((_, value)) = line.split_once('=')
-        {
-            let name = value.trim().trim_matches('"').trim_matches('\'');
-            return Ok(name.to_string());
-        }
+    let parsed: toml::Value = toml::from_str(&content)
+        .map_err(|e| anyhow::anyhow!("Invalid Cargo.toml {}: {}", cargo_toml.display(), e))?;
+    if let Some(name) = parsed
+        .get("package")
+        .and_then(|package| package.get("name"))
+        .and_then(toml::Value::as_str)
+    {
+        return Ok(name.to_string());
     }
 
     anyhow::bail!(

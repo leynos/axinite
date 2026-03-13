@@ -32,6 +32,18 @@ pub fn routes() -> Router<Arc<GatewayState>> {
         )
 }
 
+async fn maybe_extension_auth_url(
+    ext_mgr: &crate::extensions::ExtensionManager,
+    name: &str,
+) -> Option<String> {
+    match ext_mgr.auth(name, None).await {
+        Ok(auth_result) if auth_result.auth_url().is_some() => {
+            auth_result.auth_url().map(String::from)
+        }
+        _ => None,
+    }
+}
+
 pub async fn extensions_list_handler(
     State(state): State<Arc<GatewayState>>,
 ) -> Result<Json<ExtensionListResponse>, (StatusCode, String)> {
@@ -171,13 +183,7 @@ pub async fn extensions_install_handler(
                 // expansion and for first-time auth when credentials are already
                 // configured (e.g., built-in providers). We only surface an auth_url
                 // when the extension reports it is awaiting authorization.
-                match ext_mgr.auth(&req.name, None).await {
-                    Ok(auth_result) if auth_result.auth_url().is_some() => {
-                        // Scope expansion or initial OAuth: user needs to authorize
-                        resp.auth_url = auth_result.auth_url().map(String::from);
-                    }
-                    _ => {}
-                }
+                resp.auth_url = maybe_extension_auth_url(ext_mgr, &req.name).await;
             }
 
             Ok(Json(resp))
@@ -202,11 +208,7 @@ pub async fn extensions_activate_handler(
             // already has a token but missing the documents scope).
             // Initial OAuth setup is triggered via save_setup_secrets.
             let mut resp = ActionResponse::ok(result.message);
-            if let Ok(auth_result) = ext_mgr.auth(&name, None).await
-                && auth_result.auth_url().is_some()
-            {
-                resp.auth_url = auth_result.auth_url().map(String::from);
-            }
+            resp.auth_url = maybe_extension_auth_url(ext_mgr, &name).await;
             Ok(Json(resp))
         }
         Err(activate_err) => {

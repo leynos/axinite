@@ -1,3 +1,5 @@
+//! Tests for unsupported-parameter stripping in provider-backed rig adapters.
+
 use super::*;
 use rig::completion::CompletionModel;
 use rstest::fixture;

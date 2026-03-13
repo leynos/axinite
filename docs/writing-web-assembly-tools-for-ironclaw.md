@@ -28,7 +28,7 @@ That leads to a practical authoring checklist:
   surface
 - package `{name}.wasm` and `{name}.capabilities.json` inside a `.tar.gz`
   archive
-- prove both component compatibility and runtime behavior in tests
+- prove both component compatibility and runtime behaviour in tests
 
 ## The Current WIT Format
 
@@ -185,14 +185,14 @@ One end-to-end (E2E) test is not enough for WebAssembly extensions.
 At minimum, prove two separate things:
 
 1. the built component instantiates against the current host linker
-1. the extension behavior is correct at the protocol or feature level
+1. the extension behaviour is correct at the protocol or feature level
 
 IronClaw's current repo-level guardrail for the first point is
 [tests/wit_compat.rs](../tests/wit_compat.rs). If the WIT shape,
 versioning, or extension packaging changes, that matrix should be
 rerun.
 
-For the second point, use behavior tests that exercise the real request and
+For the second point, use behaviour tests that exercise the real request and
 response semantics your extension depends on. Mock-only coverage is not enough
 if the mock hides the integration boundary that matters.
 
@@ -206,7 +206,7 @@ if the mock hides the integration boundary that matters.
 1. Keep secrets at the host boundary and pass non-secret guest-consumed values
    as normal request parameters.
 1. Package a `.tar.gz` with names that match the installation name exactly.
-1. Run component compatibility tests and behavior tests before shipping.
+1. Run component compatibility tests and behaviour tests before shipping.
 
 ## Related Repo Docs
 

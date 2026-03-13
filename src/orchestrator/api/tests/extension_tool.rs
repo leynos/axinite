@@ -1,3 +1,5 @@
+//! Tests for hosted worker proxy execution of extension-management tools.
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -26,9 +28,12 @@ async fn extension_tool_proxy_rejects_non_extension_tool_names(test_state: Orche
         .body(Body::from(
             serde_json::to_vec(&payload).expect("serialize proxy extension tool payload"),
         ))
-        .unwrap();
+        .expect("build proxy extension tool request");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send proxy extension tool request");
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -168,14 +173,19 @@ async fn extension_tool_proxy_executes_registered_extension_tool_with_request_jo
         .body(Body::from(
             serde_json::to_vec(&payload).expect("serialize registered proxy payload"),
         ))
-        .unwrap();
+        .expect("build registered proxy extension tool request");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send registered proxy extension tool request");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 4096)
+        .await
+        .expect("read registered proxy extension tool response body");
     let proxy_resp: crate::worker::api::ProxyExtensionToolResponse =
-        serde_json::from_slice(&body).unwrap();
+        serde_json::from_slice(&body).expect("parse registered proxy extension tool response");
     assert_eq!(proxy_resp.output.result["extensions"][0], "telegram");
     assert_eq!(proxy_resp.output.duration, Duration::from_millis(5));
     assert_eq!(proxy_resp.output.cost, None);

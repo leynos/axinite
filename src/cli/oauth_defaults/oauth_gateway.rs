@@ -1,3 +1,5 @@
+//! Hosted gateway helpers for pending OAuth flows and proxy token exchange.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -78,6 +80,7 @@ pub async fn exchange_via_proxy(
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| OAuthCallbackError::Io(format!("Failed to build HTTP client: {e}")))?;
     let mut params = vec![

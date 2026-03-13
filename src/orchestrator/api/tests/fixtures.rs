@@ -1,3 +1,5 @@
+//! Shared test fixtures for orchestrator API endpoint tests.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 

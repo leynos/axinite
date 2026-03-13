@@ -1,13 +1,15 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+//! Tests for the worker event reporting endpoint and SSE fan-out.
 
-use tokio::sync::{Mutex, broadcast};
+use rstest::{fixture, rstest};
 
 use super::*;
 
-#[tokio::test]
-async fn job_event_broadcasts_message() {
-    let (tx, mut rx) = broadcast::channel(16);
+#[fixture]
+fn event_test_state() -> (
+    OrchestratorState,
+    broadcast::Receiver<(Uuid, crate::channels::web::types::SseEvent)>,
+) {
+    let (tx, rx) = broadcast::channel(16);
     let token_store = TokenStore::new();
     let jm = ContainerJobManager::new(ContainerJobConfig::default(), token_store.clone());
     let state = OrchestratorState {
@@ -21,9 +23,20 @@ async fn job_event_broadcasts_message() {
         secrets_store: None,
         user_id: "default".to_string(),
     };
+    (state, rx)
+}
 
+#[rstest]
+#[tokio::test]
+async fn job_event_broadcasts_message(
+    event_test_state: (
+        OrchestratorState,
+        broadcast::Receiver<(Uuid, crate::channels::web::types::SseEvent)>,
+    ),
+) {
+    let (state, mut rx) = event_test_state;
     let job_id = Uuid::new_v4();
-    let token = token_store.create_token(job_id).await;
+    let token = state.token_store.create_token(job_id).await;
     let router = OrchestratorApi::router(state);
 
     let payload = serde_json::json!({
@@ -39,13 +52,18 @@ async fn job_event_broadcasts_message() {
         .uri(format!("/worker/{}/event", job_id))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-        .unwrap();
+        .body(Body::from(
+            serde_json::to_vec(&payload).expect("serialize job message event payload"),
+        ))
+        .expect("build job message event request");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send job message event request");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let (recv_id, event) = rx.recv().await.unwrap();
+    let (recv_id, event) = rx.recv().await.expect("receive job message SSE event");
     assert_eq!(recv_id, job_id);
     match event {
         crate::channels::web::types::SseEvent::JobMessage {
@@ -61,25 +79,17 @@ async fn job_event_broadcasts_message() {
     }
 }
 
+#[rstest]
 #[tokio::test]
-async fn job_event_handles_tool_use() {
-    let (tx, mut rx) = broadcast::channel(16);
-    let token_store = TokenStore::new();
-    let jm = ContainerJobManager::new(ContainerJobConfig::default(), token_store.clone());
-    let state = OrchestratorState {
-        llm: Arc::new(StubLlm::default()),
-        tools: Arc::new(ToolRegistry::new()),
-        job_manager: Arc::new(jm),
-        token_store: token_store.clone(),
-        job_event_tx: Some(tx),
-        prompt_queue: Arc::new(Mutex::new(HashMap::new())),
-        store: None,
-        secrets_store: None,
-        user_id: "default".to_string(),
-    };
-
+async fn job_event_handles_tool_use(
+    event_test_state: (
+        OrchestratorState,
+        broadcast::Receiver<(Uuid, crate::channels::web::types::SseEvent)>,
+    ),
+) {
+    let (state, mut rx) = event_test_state;
     let job_id = Uuid::new_v4();
-    let token = token_store.create_token(job_id).await;
+    let token = state.token_store.create_token(job_id).await;
     let router = OrchestratorApi::router(state);
 
     let payload = serde_json::json!({
@@ -95,13 +105,18 @@ async fn job_event_handles_tool_use() {
         .uri(format!("/worker/{}/event", job_id))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-        .unwrap();
+        .body(Body::from(
+            serde_json::to_vec(&payload).expect("serialize tool-use event payload"),
+        ))
+        .expect("build tool-use event request");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send tool-use event request");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let (_recv_id, event) = rx.recv().await.unwrap();
+    let (_recv_id, event) = rx.recv().await.expect("receive tool-use SSE event");
     match event {
         crate::channels::web::types::SseEvent::JobToolUse { tool_name, .. } => {
             assert_eq!(tool_name, "shell");
@@ -110,25 +125,17 @@ async fn job_event_handles_tool_use() {
     }
 }
 
+#[rstest]
 #[tokio::test]
-async fn job_event_handles_unknown_type() {
-    let (tx, mut rx) = broadcast::channel(16);
-    let token_store = TokenStore::new();
-    let jm = ContainerJobManager::new(ContainerJobConfig::default(), token_store.clone());
-    let state = OrchestratorState {
-        llm: Arc::new(StubLlm::default()),
-        tools: Arc::new(ToolRegistry::new()),
-        job_manager: Arc::new(jm),
-        token_store: token_store.clone(),
-        job_event_tx: Some(tx),
-        prompt_queue: Arc::new(Mutex::new(HashMap::new())),
-        store: None,
-        secrets_store: None,
-        user_id: "default".to_string(),
-    };
-
+async fn job_event_handles_unknown_type(
+    event_test_state: (
+        OrchestratorState,
+        broadcast::Receiver<(Uuid, crate::channels::web::types::SseEvent)>,
+    ),
+) {
+    let (state, mut rx) = event_test_state;
     let job_id = Uuid::new_v4();
-    let token = token_store.create_token(job_id).await;
+    let token = state.token_store.create_token(job_id).await;
     let router = OrchestratorApi::router(state);
 
     let payload = serde_json::json!({
@@ -141,13 +148,18 @@ async fn job_event_handles_unknown_type() {
         .uri(format!("/worker/{}/event", job_id))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-        .unwrap();
+        .body(Body::from(
+            serde_json::to_vec(&payload).expect("serialize unknown-type event payload"),
+        ))
+        .expect("build unknown-type event request");
 
-    let resp = router.oneshot(req).await.unwrap();
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send unknown-type event request");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let (_recv_id, event) = rx.recv().await.unwrap();
+    let (_recv_id, event) = rx.recv().await.expect("receive unknown-type SSE event");
     assert!(matches!(
         event,
         crate::channels::web::types::SseEvent::JobStatus { .. }

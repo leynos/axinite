@@ -1,3 +1,5 @@
+//! Interactive setup helpers for tool-required secrets.
+
 use std::io::Write;
 use std::path::PathBuf;
 

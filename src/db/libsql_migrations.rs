@@ -171,7 +171,13 @@ pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::err
                 DatabaseError::Migration(format!("Failed to check migration {version}: {e}"))
             })?;
 
-        if rows.next().await.ok().flatten().is_some() {
+        if (rows.next().await.map_err(|e| {
+            DatabaseError::Migration(format!(
+                "Failed to read migration {version} application state: {e}"
+            ))
+        })?)
+        .is_some()
+        {
             continue; // Already applied
         }
 
@@ -270,32 +276,26 @@ fn append_table_rebuild_sql(
     copy_columns: &str,
     post_rebuild_sql: Option<&str>,
 ) {
-    use std::fmt::Write as _;
-
     let old_table_name = format!("{table_name}_old");
-    writeln!(sql, "ALTER TABLE {table_name} RENAME TO {old_table_name};").expect("write SQL");
-    writeln!(sql).expect("write SQL newline");
-    writeln!(sql, "CREATE TABLE {table_name} (").expect("write SQL");
-    writeln!(sql, "{columns}").expect("write SQL");
-    writeln!(sql, ");").expect("write SQL");
-    writeln!(sql).expect("write SQL newline");
-    writeln!(sql, "INSERT INTO {table_name} (").expect("write SQL");
-    writeln!(sql, "    {copy_columns}").expect("write SQL");
-    writeln!(sql, ")").expect("write SQL");
-    writeln!(sql, "SELECT").expect("write SQL");
-    writeln!(sql, "    {copy_columns}").expect("write SQL");
-    writeln!(sql, "FROM {old_table_name};").expect("write SQL");
-    writeln!(sql).expect("write SQL newline");
-    writeln!(sql, "DROP TABLE {old_table_name};").expect("write SQL");
+    sql.push_str(&format!(
+        "ALTER TABLE {table_name} RENAME TO {old_table_name};\n\n"
+    ));
+    sql.push_str(&format!("CREATE TABLE {table_name} (\n"));
+    sql.push_str(columns);
+    sql.push_str("\n);\n\n");
+    sql.push_str(&format!("INSERT INTO {table_name} (\n"));
+    sql.push_str(&format!("    {copy_columns}\n"));
+    sql.push_str(")\nSELECT\n");
+    sql.push_str(&format!("    {copy_columns}\n"));
+    sql.push_str(&format!("FROM {old_table_name};\n\n"));
+    sql.push_str(&format!("DROP TABLE {old_table_name};"));
 
     if let Some(post_rebuild_sql) = post_rebuild_sql {
-        writeln!(sql).expect("write SQL newline");
-        writeln!(sql).expect("write SQL newline");
-        writeln!(sql, "{post_rebuild_sql}").expect("write SQL");
+        sql.push_str("\n\n");
+        sql.push_str(post_rebuild_sql);
     }
 
-    writeln!(sql).expect("write SQL newline");
-    writeln!(sql).expect("write SQL newline");
+    sql.push_str("\n\n");
 }
 
 fn v10_wasm_wit_default_migration_sql() -> String {

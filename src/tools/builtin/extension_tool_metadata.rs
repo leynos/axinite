@@ -26,7 +26,8 @@ impl ExtensionToolKind {
         Self::Info,
     ];
 
-    pub const HOSTED_WORKER_PROXY_SAFE: [Self; 3] = [Self::Search, Self::List, Self::Info];
+    pub const HOSTED_WORKER_PROXY_SAFE: [Self; 4] =
+        [Self::Search, Self::Activate, Self::List, Self::Info];
 
     pub fn name(self) -> &'static str {
         match self {

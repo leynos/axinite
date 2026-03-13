@@ -28,12 +28,12 @@ Observable success has four parts:
 1. Linux and Windows Subsystem for Linux (WSL) contributors have a
    documented local `mold` setup and can verify it before measuring
    anything else.
-2. The root crate adopts `cargo-nextest` for the fast host-side test
+1. The root crate adopts `cargo-nextest` for the fast host-side test
    path, with any exceptions documented instead of hidden.
-3. Normal host compilation stops paying packaging costs such as
+1. Normal host compilation stops paying packaging costs such as
    Telegram channel builds unless the user explicitly requests those
    artifacts.
-4. CI stops rebuilding the same WASM and Rust surfaces across multiple
+1. CI stops rebuilding the same WASM and Rust surfaces across multiple
    jobs when a compile-once, fan-out model would work.
 
 ## Repository orientation
@@ -197,11 +197,11 @@ Implementation steps:
    Linux and WSL, including `clang`, `mold`, the Rust toolchain, the
    WASM target, and the extra tools needed for WASM extensions and
    optional test suites.
-2. Add a small section documenting how a developer verifies the linker
+1. Add a small section documenting how a developer verifies the linker
    path locally. Prefer a checked-in Cargo configuration over shell
    profile instructions when the target-specific setup is portable
    enough to keep in the repo.
-3. Record one Linux or WSL baseline command for `cargo check --timings`
+1. Record one Linux or WSL baseline command for `cargo check --timings`
    and one command for the test suite baseline after the guide is in
    place.
 
@@ -229,14 +229,14 @@ Implementation steps:
 
 1. Install `cargo-nextest` as a documented developer prerequisite in
    `docs/developers-guide.md`.
-2. Inventory the current root-crate test entry points in `Makefile`,
+1. Inventory the current root-crate test entry points in `Makefile`,
    `.github/workflows/test.yml`, and any focused scripts.
-3. Run the current host test matrix with `cargo-nextest` and document
+1. Run the current host test matrix with `cargo-nextest` and document
    any incompatible tests or required filters.
-4. Update `Makefile` so the default host test target uses
+1. Update `Makefile` so the default host test target uses
    `cargo nextest run` for the root crate, while preserving clear
    fallbacks for any paths that must stay on `cargo test`.
-5. Update at least one Linux CI workflow to use `cargo-nextest` after
+1. Update at least one Linux CI workflow to use `cargo-nextest` after
    parity is proven locally.
 
 Acceptance evidence should include:
@@ -267,12 +267,12 @@ Implementation steps:
 
 1. Trace every consumer of `channels-src/telegram/telegram.wasm` and
    every assumption that the file already exists.
-2. Introduce a narrow gate so normal host compilation skips Telegram
+1. Introduce a narrow gate so normal host compilation skips Telegram
    artifact production unless explicitly requested.
-3. Move the required Telegram or channel build into explicit commands
+1. Move the required Telegram or channel build into explicit commands
    such as `scripts/build-all.sh`, release packaging, or onboarding
    preparation.
-4. Update developer documentation so contributors know when they do and
+1. Update developer documentation so contributors know when they do and
    do not need to build channels.
 
 Acceptance evidence should include before-and-after
@@ -292,7 +292,7 @@ preserves release behaviour:
 
 1. Keep standalone crates, but set a shared `CARGO_TARGET_DIR` for
    `scripts/build-wasm-extensions.sh` and related CI jobs.
-2. Move some or all extension crates into the root workspace while
+1. Move some or all extension crates into the root workspace while
    preserving artifact discovery and packaging semantics.
 
 The preferred order is to try shared target directories first because it
@@ -327,11 +327,11 @@ Implementation steps:
 
 1. Build channel artifacts once per relevant Linux workflow and upload
    them.
-2. Remove redundant per-matrix channel rebuild steps.
-3. Revisit the PR matrix so broader feature combinations move to
+1. Remove redundant per-matrix channel rebuild steps.
+1. Revisit the PR matrix so broader feature combinations move to
    `push: main`, nightly, or other non-PR gates if branch protection
    does not need them.
-4. Standardize cache usage so Rust jobs do not mix incompatible caching
+1. Standardize cache usage so Rust jobs do not mix incompatible caching
    patterns without justification.
 
 Acceptance evidence should include workflow diffs plus a summary of the
@@ -352,10 +352,10 @@ Implementation steps:
 
 1. Replace `COPY . .` in `Dockerfile.worker` with selective copies or a
    dependency-planning stage.
-2. Remove `tests/`, `channels-src/`, `registry/`, or `wit/` from the
+1. Remove `tests/`, `channels-src/`, `registry/`, or `wit/` from the
    main image build contexts if they are no longer needed by normal
    compilation.
-3. Consider a shared builder base or other reuse strategy for repeated
+1. Consider a shared builder base or other reuse strategy for repeated
    Rust and WASM tool installation.
 
 Acceptance evidence should include at least one cache-aware rebuild
@@ -364,8 +364,7 @@ invalidates the worker compile layer.
 
 ## Concrete steps
 
-Work from the repository root
-`/data/leynos/Projects/axinite.worktrees/build-performance`.
+Work from the repository root.
 
 1. Confirm the current prerequisite state and the local baseline:
 
@@ -379,14 +378,14 @@ Work from the repository root
      2>&1 | tee /tmp/check-ironclaw-build-performance.out
    ```
 
-2. Create and keep `docs/developers-guide.md` current before changing
+1. Create and keep `docs/developers-guide.md` current before changing
    build or test defaults.
-3. Prototype `cargo-nextest` locally and document any incompatibilities
+1. Prototype `cargo-nextest` locally and document any incompatibilities
    before updating `Makefile` or CI.
-4. Remove or gate the hidden Telegram build from `build.rs`, then
+1. Remove or gate the hidden Telegram build from `build.rs`, then
    remeasure.
-5. Evaluate shared extension build artifacts, then remeasure.
-6. Simplify CI and Docker only after the local fast path has been
+1. Evaluate shared extension build artifacts, then remeasure.
+1. Simplify CI and Docker only after the local fast path has been
    improved and documented.
 
 ## Progress

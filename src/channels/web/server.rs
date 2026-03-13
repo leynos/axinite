@@ -32,10 +32,9 @@ use crate::orchestrator::job_manager::ContainerJobManager;
 use crate::tools::ToolRegistry;
 use crate::workspace::Workspace;
 
-pub use crate::channels::web::handlers::chat::clear_auth_mode;
-pub use crate::channels::web::handlers::oauth::{
-    oauth_callback_handler, slack_relay_oauth_callback_handler,
-};
+pub use crate::channels::web::handlers::chat_auth::clear_auth_mode;
+pub use crate::channels::web::handlers::oauth::oauth_callback_handler;
+pub use crate::channels::web::handlers::oauth_slack::slack_relay_oauth_callback_handler;
 
 /// Shared prompt queue: maps job IDs to pending follow-up prompts for Claude Code bridges.
 pub type PromptQueue = Arc<

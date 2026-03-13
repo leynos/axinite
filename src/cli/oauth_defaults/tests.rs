@@ -1,3 +1,5 @@
+//! Tests for OAuth defaults: callback resolution, credentials, and URL building.
+
 use std::collections::HashMap;
 
 use rstest::{fixture, rstest};
@@ -33,13 +35,13 @@ fn test_is_loopback_host() {
 }
 
 #[rstest]
-fn test_callback_host_default(oauth_env_guard: EnvVarsGuard) {
+fn test_callback_host_default(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.remove("OAUTH_CALLBACK_HOST");
     assert_eq!(callback_host(), "127.0.0.1");
 }
 
 #[rstest]
-fn test_callback_host_env_override(oauth_env_guard: EnvVarsGuard) {
+fn test_callback_host_env_override(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.set("OAUTH_CALLBACK_HOST", "203.0.113.10");
     oauth_env_guard.remove("IRONCLAW_OAUTH_CALLBACK_URL");
     assert_eq!(callback_host(), "203.0.113.10");
@@ -48,14 +50,14 @@ fn test_callback_host_env_override(oauth_env_guard: EnvVarsGuard) {
 }
 
 #[rstest]
-fn test_callback_url_default(oauth_env_guard: EnvVarsGuard) {
+fn test_callback_url_default(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.remove("IRONCLAW_OAUTH_CALLBACK_URL");
     oauth_env_guard.remove("OAUTH_CALLBACK_HOST");
     assert_eq!(callback_url(), "http://127.0.0.1:9876");
 }
 
 #[rstest]
-fn test_callback_url_env_override(oauth_env_guard: EnvVarsGuard) {
+fn test_callback_url_env_override(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.set(
         "IRONCLAW_OAUTH_CALLBACK_URL",
         "https://myserver.example.com:9876",
@@ -219,13 +221,13 @@ fn test_build_oauth_url_state_is_unique() {
 }
 
 #[rstest]
-fn test_use_gateway_callback_false_by_default(oauth_env_guard: EnvVarsGuard) {
+fn test_use_gateway_callback_false_by_default(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.remove("IRONCLAW_OAUTH_CALLBACK_URL");
     assert!(!use_gateway_callback());
 }
 
 #[rstest]
-fn test_use_gateway_callback_true_for_hosted(oauth_env_guard: EnvVarsGuard) {
+fn test_use_gateway_callback_true_for_hosted(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.set(
         "IRONCLAW_OAUTH_CALLBACK_URL",
         "https://kind-deer.agent1.near.ai",
@@ -234,39 +236,39 @@ fn test_use_gateway_callback_true_for_hosted(oauth_env_guard: EnvVarsGuard) {
 }
 
 #[rstest]
-fn test_use_gateway_callback_false_for_localhost(oauth_env_guard: EnvVarsGuard) {
+fn test_use_gateway_callback_false_for_localhost(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.set("IRONCLAW_OAUTH_CALLBACK_URL", "http://127.0.0.1:3001");
     assert!(!use_gateway_callback());
 }
 
 #[rstest]
-fn test_use_gateway_callback_false_for_empty(oauth_env_guard: EnvVarsGuard) {
+fn test_use_gateway_callback_false_for_empty(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.set("IRONCLAW_OAUTH_CALLBACK_URL", "");
     assert!(!use_gateway_callback());
 }
 
 #[rstest]
-fn test_build_platform_state_with_instance(oauth_env_guard: EnvVarsGuard) {
+fn test_build_platform_state_with_instance(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.set("IRONCLAW_INSTANCE_NAME", "kind-deer");
     assert_eq!(build_platform_state("abc123"), "kind-deer:abc123");
 }
 
 #[rstest]
-fn test_build_platform_state_without_instance(oauth_env_guard: EnvVarsGuard) {
+fn test_build_platform_state_without_instance(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.remove("IRONCLAW_INSTANCE_NAME");
     oauth_env_guard.remove("OPENCLAW_INSTANCE_NAME");
     assert_eq!(build_platform_state("abc123"), "abc123");
 }
 
 #[rstest]
-fn test_build_platform_state_with_openclaw_instance(oauth_env_guard: EnvVarsGuard) {
+fn test_build_platform_state_with_openclaw_instance(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.remove("IRONCLAW_INSTANCE_NAME");
     oauth_env_guard.set("OPENCLAW_INSTANCE_NAME", "quiet-lion");
     assert_eq!(build_platform_state("xyz789"), "quiet-lion:xyz789");
 }
 
 #[rstest]
-fn test_build_platform_state_falls_back_when_new_name_is_empty(oauth_env_guard: EnvVarsGuard) {
+fn test_build_platform_state_falls_back_when_new_name_is_empty(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.set("IRONCLAW_INSTANCE_NAME", "");
     oauth_env_guard.set("OPENCLAW_INSTANCE_NAME", "quiet-lion");
     assert_eq!(build_platform_state("xyz789"), "quiet-lion:xyz789");

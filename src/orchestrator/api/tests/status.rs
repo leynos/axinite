@@ -1,3 +1,5 @@
+//! Tests for the worker status reporting endpoint.
+
 use std::sync::Arc;
 
 use rstest::rstest;

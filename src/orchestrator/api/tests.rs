@@ -1,13 +1,7 @@
 //! Tests for the orchestrator API.
 
-#![allow(
-    unused_imports,
-    reason = "test submodules share this prelude via super::*"
-)]
-
 pub(super) use std::collections::HashMap;
 pub(super) use std::sync::Arc;
-pub(super) use std::time::Duration;
 
 pub(super) use axum::body::Body;
 pub(super) use axum::http::{Request, StatusCode};

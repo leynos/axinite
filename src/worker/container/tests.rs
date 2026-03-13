@@ -83,6 +83,7 @@ async fn worker_runtime_advertises_safe_meta_tools(#[case] source: WorkerToolSet
         "list_dir",
         "read_file",
         "shell",
+        "tool_activate",
         "tool_list",
         "tool_search",
         "write_file",
@@ -93,16 +94,10 @@ async fn worker_runtime_advertises_safe_meta_tools(#[case] source: WorkerToolSet
         );
     }
 
-    for omitted in [
-        "tool_activate",
-        "tool_auth",
-        "tool_install",
-        "tool_remove",
-        "tool_upgrade",
-    ] {
+    for omitted in ["tool_auth", "tool_install", "tool_remove", "tool_upgrade"] {
         assert!(
             !names.iter().any(|name| name == omitted),
-            "hosted worker proxy should exclude approval-gated tool {omitted}, got {names:?}"
+            "hosted worker proxy should exclude non-safe tool {omitted}, got {names:?}"
         );
     }
 }

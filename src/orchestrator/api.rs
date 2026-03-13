@@ -20,11 +20,13 @@ use crate::orchestrator::job_manager::ContainerJobManager;
 use crate::secrets::SecretsStore;
 use crate::tools::ToolRegistry;
 
+mod handler_support;
 mod handlers;
 
+use handler_support::{get_credentials_handler, get_prompt_handler};
 use handlers::{
-    execute_extension_tool, get_credentials_handler, get_job, get_prompt_handler, health_check,
-    job_event_handler, llm_complete, llm_complete_with_tools, report_complete, report_status,
+    execute_extension_tool, get_job, health_check, job_event_handler, llm_complete,
+    llm_complete_with_tools, report_complete, report_status,
 };
 
 /// A follow-up prompt queued for a Claude Code bridge.

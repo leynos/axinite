@@ -147,16 +147,15 @@ fn merge_property_schema(
 
         match existing_obj.get("type").and_then(JsonValue::as_str) {
             Some("object") => {
-                if merge_object_property_schema(existing_obj, incoming_obj, required_merge_mode) {
-                    return;
-                }
+                merge_object_property_schema(existing_obj, incoming_obj, required_merge_mode);
+                return;
             }
             Some("array") => {
                 if merge_array_property_schema(existing_obj, incoming_obj, required_merge_mode) {
                     return;
                 }
             }
-            _ => return,
+            _ => {}
         }
     }
 
@@ -302,6 +301,9 @@ fn merge_string_literal_property(existing: &JsonValue, incoming: &JsonValue) -> 
     if let Some(description) = first_description(existing, incoming) {
         merged.insert("description".to_string(), JsonValue::String(description));
     }
+    if let Some(default) = first_default(existing, incoming) {
+        merged.insert("default".to_string(), default);
+    }
     Some(JsonValue::Object(merged))
 }
 
@@ -329,6 +331,13 @@ fn first_description(existing: &JsonValue, incoming: &JsonValue) -> Option<Strin
         .and_then(JsonValue::as_str)
         .or_else(|| incoming.get("description").and_then(JsonValue::as_str))
         .map(ToOwned::to_owned)
+}
+
+fn first_default(existing: &JsonValue, incoming: &JsonValue) -> Option<JsonValue> {
+    existing
+        .get("default")
+        .cloned()
+        .or_else(|| incoming.get("default").cloned())
 }
 
 fn merge_nested_any_of(existing: JsonValue, incoming: JsonValue) -> JsonValue {

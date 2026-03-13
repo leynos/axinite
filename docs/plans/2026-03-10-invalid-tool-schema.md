@@ -18,7 +18,7 @@ HTTP 400 `invalid_function_parameters`.
 
 Success is observable in three ways. First, a failing regression test
 must demonstrate that the current GitHub WASM schema normalization path
-still emits a root-level `oneOf`. Second, a focused behavioral test must
+still emits a root-level `oneOf`. Second, a focused behavioural test must
 prove that the provider-bound schema keeps the GitHub tool’s action
 variants while no longer exposing forbidden root-level combinators.
 Third, the targeted Rust test suites and formatting checks must pass
@@ -120,7 +120,7 @@ to keep pace with the richer real schema.
   `owner`, and `repo` in tests.
 
 - Risk: Tightening CI validation without aligning the provider normalizer
-  would create noisy failures without fixing runtime behavior.
+  would create noisy failures without fixing runtime behaviour.
   Severity: medium
   Likelihood: medium
   Mitigation: Land red tests for the provider-bound transformation and
@@ -168,7 +168,7 @@ Add tests at two layers.
 1. Unit-level tests in `src/llm/rig_adapter.rs` for raw schema
    normalization, including a GitHub-style root `oneOf` input and at
    least one non-WASM control schema that must remain stable.
-2. Behavioral coverage in `tests/tool_schema_validation.rs` or another
+1. Behavioural coverage in `tests/tool_schema_validation.rs` or another
    integration-style Rust test that loads the real GitHub WASM tool,
    passes its published schema through the provider normalization path,
    and verifies that the provider-bound result is root-safe while still
@@ -239,7 +239,7 @@ cargo fmt --all --check \
 - [x] 2026-03-10 10:00Z: Rebuilt the GitHub WASM artifact with
   `cargo build --manifest-path tools-src/github/Cargo.toml --release --target wasm32-wasip2`.
 - [x] 2026-03-10 10:01Z: Re-ran the artifact-backed metadata and
-  behavioral regressions; both passed once the rebuilt artifact matched
+  behavioural regressions; both passed once the rebuilt artifact matched
   the updated source schema and the resolver preferred `wasm32-wasip2`.
 - [x] 2026-03-10 10:04Z: Cleared `cargo fmt --all --check`,
   `cargo fmt --manifest-path tools-src/github/Cargo.toml --all -- --check`,
@@ -263,7 +263,7 @@ cargo fmt --all --check \
   the test already fails explicitly when the GitHub WASM artifact is
   missing, but follow-up work is still needed for the duplicated
   metadata-test helper, the remaining normalization panic/refactor
-  issues, the shallow nested-schema merge behavior, the metadata-only
+  issues, the shallow nested-schema merge behaviour, the metadata-only
   recovery path, and doc polish in the older call-parameters plan.
 - [x] 2026-03-10 18:25Z: Landed the follow-up fix set on top of the
   earlier invalid-schema branch state: the OpenAI schema normalizer now
@@ -279,10 +279,6 @@ cargo fmt --all --check \
   reads, replaced the targeted bare `.unwrap()` calls in
   `report_status_updates_handle`, and applied the cited RFC/plan/user
   guide wording fixes.
-  their child properties instead of discarding later fields, metadata
-  recovery uses a metadata-only host linker, test-only runtime creation
-  now returns `anyhow::Result`, and the older call-parameters plan has
-  the concrete-steps list/casing fixes requested in review.
 - [x] 2026-03-10 19:35Z: Final gate replay completed. `make check-fmt`,
   `make typecheck`, `make lint`, and `make test` all passed on the
   follow-up patch set, and the full `make test` replay confirmed the
@@ -348,7 +344,7 @@ cargo fmt --all --check \
   workspace and the standalone GitHub tool manifest are cleaned by the
   same entry point before gate replay.
 - [x] 2026-03-11 00:42Z: Closed the cold-tree regression uncovered by
-  the new `clean` behavior. After `make clean`, `make test` failed
+  the new `clean` behaviour. After `make clean`, `make test` failed
   because two metadata/registry tests still depended on a prebuilt
   GitHub release artifact under the standalone tool manifest. The root
   `Makefile` now rebuilds the GitHub WASM artifact before both `test`
@@ -391,7 +387,7 @@ cargo fmt --all --check \
 
 ## Surprises & Discoveries
 
-- The current behavioral test added for the previous WASM fix explicitly
+- The current behavioural test added for the previous WASM fix explicitly
   asserts that the real GitHub tool definition still has a top-level
   `oneOf`. That is valid evidence for “real metadata recovered” but
   invalid evidence for “OpenAI-compatible”.
@@ -504,7 +500,7 @@ the same provider failure. `src/tools/schema_validator.rs`,
 `src/tools/wasm/wrapper/metadata.rs`,
 `tests/tool_schema_validation.rs`, and `src/registry/artifacts.rs` now
 enforce the root-safe contract with both unit and artifact-backed
-behavioral coverage.
+behavioural coverage.
 
 Validation evidence:
 

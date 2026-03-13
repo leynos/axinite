@@ -1,3 +1,5 @@
+//! Listing, inspection, and removal helpers for installed tools.
+
 use std::path::PathBuf;
 
 use tokio::fs;

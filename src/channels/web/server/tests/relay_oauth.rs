@@ -1,3 +1,5 @@
+//! Tests for the Slack relay OAuth callback handler.
+
 use axum::body::Body;
 use rstest::rstest;
 use tower::ServiceExt;
@@ -21,19 +23,19 @@ async fn test_relay_oauth_callback_missing_state_param(
     let req = axum::http::Request::builder()
         .uri("/oauth/slack/callback?stream_token=tok123&team_id=T123&provider=slack")
         .body(Body::empty())
-        .expect("request");
+        .expect("build Slack relay callback request without state");
 
     let resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app, req)
         .await
-        .expect("response");
+        .expect("send Slack relay callback request without state");
 
     let body = axum::body::to_bytes(resp.into_body(), 1024 * 64)
         .await
-        .expect("body");
+        .expect("read Slack relay callback response body without state");
     let html = String::from_utf8_lossy(&body);
     assert!(
-        html.contains("Invalid or expired authorization"),
-        "Expected CSRF error, got: {}",
+        html.contains("Authorization Failed"),
+        "Expected shared OAuth failure page, got: {}",
         &html[..html.len().min(300)]
     );
 }
@@ -63,19 +65,19 @@ async fn test_relay_oauth_callback_wrong_state_param(
     let req = axum::http::Request::builder()
         .uri("/oauth/slack/callback?stream_token=tok123&team_id=T123&provider=slack&state=wrong-nonce")
         .body(Body::empty())
-        .expect("request");
+        .expect("build Slack relay callback request with wrong nonce");
 
     let resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app, req)
         .await
-        .expect("response");
+        .expect("send Slack relay callback request with wrong nonce");
 
     let body = axum::body::to_bytes(resp.into_body(), 1024 * 64)
         .await
-        .expect("body");
+        .expect("read Slack relay callback wrong-nonce response body");
     let html = String::from_utf8_lossy(&body);
     assert!(
-        html.contains("Invalid or expired authorization"),
-        "Expected CSRF error for wrong nonce, got: {}",
+        html.contains("Authorization Failed"),
+        "Expected shared OAuth failure page for wrong nonce, got: {}",
         &html[..html.len().min(300)]
     );
 }
@@ -110,15 +112,15 @@ async fn test_relay_oauth_callback_correct_state_proceeds(
             nonce
         ))
         .body(Body::empty())
-        .expect("request");
+        .expect("build Slack relay callback request with valid nonce");
 
     let resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app, req)
         .await
-        .expect("response");
+        .expect("send Slack relay callback request with valid nonce");
 
     let body = axum::body::to_bytes(resp.into_body(), 1024 * 64)
         .await
-        .expect("body");
+        .expect("read Slack relay callback success response body");
     let html = String::from_utf8_lossy(&body);
     assert!(
         !html.contains("Invalid or expired authorization"),
@@ -127,6 +129,9 @@ async fn test_relay_oauth_callback_correct_state_proceeds(
     );
 
     let state_key = format!("relay:{}:oauth_state", DEFAULT_RELAY_NAME);
-    let exists = secrets.exists("test", &state_key).await.unwrap_or(true);
+    let exists = secrets
+        .exists("test", &state_key)
+        .await
+        .expect("check relay OAuth nonce deletion");
     assert!(!exists, "CSRF nonce should be deleted after use");
 }

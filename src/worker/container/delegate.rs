@@ -1,3 +1,9 @@
+//! Loop-delegate implementation for worker containers.
+//!
+//! This module bridges the agentic loop to the worker HTTP API, posting events,
+//! polling follow-up prompts, executing tools, and pacing iterations so the
+//! runtime remains responsive.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;

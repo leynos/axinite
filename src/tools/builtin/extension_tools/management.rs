@@ -1,3 +1,5 @@
+//! Extension-management tool implementations backed by `ExtensionManager`.
+
 use super::*;
 
 // ── tool_list ────────────────────────────────────────────────────────────
@@ -23,20 +25,34 @@ impl Tool for ToolListTool {
     ) -> Result<ToolOutput, ToolError> {
         let start = std::time::Instant::now();
 
-        let kind_filter = params
-            .get("kind")
-            .and_then(|v| v.as_str())
-            .and_then(|k| match k {
-                "mcp_server" => Some(ExtensionKind::McpServer),
-                "wasm_tool" => Some(ExtensionKind::WasmTool),
-                "wasm_channel" => Some(ExtensionKind::WasmChannel),
-                _ => None,
-            });
+        let kind_filter = match params.get("kind") {
+            Some(serde_json::Value::String(kind)) => Some(match kind.as_str() {
+                "mcp_server" => ExtensionKind::McpServer,
+                "wasm_tool" => ExtensionKind::WasmTool,
+                "wasm_channel" => ExtensionKind::WasmChannel,
+                other => {
+                    return Err(ToolError::InvalidParameters(format!(
+                        "invalid 'kind' parameter '{other}': expected mcp_server, wasm_tool, or wasm_channel"
+                    )));
+                }
+            }),
+            Some(_) => {
+                return Err(ToolError::InvalidParameters(
+                    "'kind' parameter must be a string".to_string(),
+                ));
+            }
+            None => None,
+        };
 
-        let include_available = params
-            .get("include_available")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let include_available = match params.get("include_available") {
+            Some(serde_json::Value::Bool(include_available)) => *include_available,
+            Some(_) => {
+                return Err(ToolError::InvalidParameters(
+                    "'include_available' parameter must be a boolean".to_string(),
+                ));
+            }
+            None => false,
+        };
 
         let extensions = self
             .manager
@@ -116,7 +132,15 @@ impl Tool for ToolUpgradeTool {
     ) -> Result<ToolOutput, ToolError> {
         let start = std::time::Instant::now();
 
-        let name = params.get("name").and_then(|v| v.as_str());
+        let name = match params.get("name") {
+            Some(serde_json::Value::String(name)) => Some(name.as_str()),
+            Some(_) => {
+                return Err(ToolError::InvalidParameters(
+                    "'name' parameter must be a string when provided".to_string(),
+                ));
+            }
+            None => None,
+        };
 
         let result = self
             .manager
@@ -124,8 +148,9 @@ impl Tool for ToolUpgradeTool {
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
-        let output = serde_json::to_value(&result)
-            .unwrap_or_else(|_| serde_json::json!({"error": "serialization failed"}));
+        let output = serde_json::to_value(&result).map_err(|e| {
+            ToolError::ExecutionFailed(format!("failed to serialise upgrade result: {e}"))
+        })?;
 
         Ok(ToolOutput::success(output, start.elapsed()))
     }

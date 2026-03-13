@@ -174,7 +174,7 @@ Stage E is validation and cleanup. Run the new red tests first to prove they fai
 
 ## Concrete steps
 
-Work from the repository root `/data/leynos/Projects/ironclaw`.
+Work from the repository root.
 
 1. Inspect the current hosted-worker bootstrap and registry helpers.
 
@@ -185,7 +185,7 @@ sed -n '620,730p' src/tools/builtin/extension_tools.rs
 sed -n '3540,3815p' src/extensions/manager.rs
 ```
 
-2. Add the first failing tests without changing behaviour yet.
+1. Add the first failing tests without changing behaviour yet.
 
 ```plaintext
 set -o pipefail
@@ -202,7 +202,7 @@ test ... FAILED
 assertion failed: hosted worker tools contain "tool_list"
 ```
 
-3. Add the surrounding coverage for registry sets, extension-tool schemas, and extension-tool behaviour.
+1. Add the surrounding coverage for registry sets, extension-tool schemas, and extension-tool behaviour.
 
 ```plaintext
 set -o pipefail
@@ -215,7 +215,7 @@ cargo test extension_tools --lib -- --nocapture \
   | tee /tmp/test-ironclaw-${BRANCH}.out
 ```
 
-4. Implement the hosted-worker registration helper and the narrow orchestrator proxy path.
+1. Implement the hosted-worker registration helper and the narrow orchestrator proxy path.
 
 ```plaintext
 sed -n '160,220p' src/orchestrator/api.rs
@@ -223,7 +223,7 @@ sed -n '220,340p' src/worker/api.rs
 sed -n '1,220p' src/worker/runtime.rs
 ```
 
-5. Add the hosted feature-behaviour integration test.
+1. Add the hosted feature-behaviour integration test.
 
 ```plaintext
 set -o pipefail
@@ -239,7 +239,7 @@ running 1 test
 test hosted_worker_can_call_tool_list ... ok
 ```
 
-6. Run the targeted regression and surrounding suites, then the broader suite.
+1. Run the targeted regression and surrounding suites, then the broader suite.
 
 ```plaintext
 set -o pipefail
@@ -320,7 +320,7 @@ pub fn register_hosted_worker_tools(&self, proxy: Arc<dyn HostedExtensionToolExe
 or an equivalent builder that composes:
 
 1. the existing container-local development tools, and
-2. proxy-backed implementations of the extension-management tools.
+1. proxy-backed implementations of the extension-management tools.
 
 If a trait-based executor is used, keep it narrow and extension-specific. Do not create a generic “execute any orchestrator tool by name” interface unless the user explicitly approves that broader scope.
 

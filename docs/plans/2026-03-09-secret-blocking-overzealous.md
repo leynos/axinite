@@ -8,7 +8,7 @@ Status: COMPLETE
 
 After this work, a hosted or in-process IronClaw agent should be able to call the curated `github` WASM tool with a real `github_token` secret stored in IronClaw and have the host inject that credential into the outbound request without the request being blocked as a secret leak. The observable success case is simple: a call such as `{"action":"get_repo","owner":"leynos","repo":"mxd"}` reaches `api.github.com` and either returns real GitHub data or a real GitHub API error, but it must not fail with `Potential secret leak blocked` merely because IronClaw injected its own bearer token.
 
-The current failure is specific and already reproducible. The `github` tool declares `github_token` as a bearer credential for `api.github.com` in `tools-src/github/github-tool.capabilities.json`, the tool implementation relies on host-side automatic injection rather than constructing the `Authorization` header itself in `tools-src/github/src/lib.rs`, and the tool-side WASM wrapper currently performs leak scanning after host credential injection in `src/tools/wasm/wrapper.rs`. The leak detector in `src/safety/leak_detector.rs` correctly blocks real GitHub PAT patterns, so scanning the post-injection request treats the legitimate host-managed credential as if the WASM module were exfiltrating it. The channel-side WASM wrapper in `src/channels/wasm/wrapper.rs` already has the correct ordering and comments explaining why leak scanning must happen before host credential injection. This plan exists to align the tool-side path with that already-correct channel-side behavior, add regression coverage, and verify that the fix remains narrow.
+The current failure is specific and already reproducible. The `github` tool declares `github_token` as a bearer credential for `api.github.com` in `tools-src/github/github-tool.capabilities.json`, the tool implementation relies on host-side automatic injection rather than constructing the `Authorization` header itself in `tools-src/github/src/lib.rs`, and the tool-side WASM wrapper currently performs leak scanning after host credential injection in `src/tools/wasm/wrapper.rs`. The leak detector in `src/safety/leak_detector.rs` correctly blocks real GitHub PAT patterns, so scanning the post-injection request treats the legitimate host-managed credential as if the WASM module were exfiltrating it. The channel-side WASM wrapper in `src/channels/wasm/wrapper.rs` already has the correct ordering and comments explaining why leak scanning must happen before host credential injection. This plan exists to align the tool-side path with that already-correct channel-side behaviour, add regression coverage, and verify that the fix remains narrow.
 
 ## Repository orientation
 
@@ -31,7 +31,7 @@ The change that introduced the current tool-side ordering appears to be commit `
 
 The commit message for `a53b2c10` strongly suggests the intention was to add host-based credential injection and runtime reuse for WASM tools, not to weaken or redefine the leak-scanning model. The relevant description is about fixing schemas, making WASM HTTP requests reliable during startup, adding OAuth refresh support, and resolving capability-declared credentials before synchronous host calls. There is no stated intention to treat host-injected credentials as exfiltration candidates; the ordering change looks like an integration detail that was not revisited when host-based injection was added to a request path that already had leak scanning.
 
-There is also a strong control case. Commit `dc7d9cce34868f5f1083dbf8c0acf78640fc9ab1` (`fix(channels): add host-based credential injection to WASM channel wrapper (#421)`) added the same broad capability to the channel wrapper later, but its commit message explicitly calls out the correct leak-scan ordering: “scan runs on WASM-provided values BEFORE host credential injection, preventing false-positive blocks on injected Bearer tokens.” That makes the safe intention clearer. The channel-side author had the same feature goal, recognized the false-positive risk, and fixed the order there. Taken together, the most likely interpretation is that the tool-side regression was an unintended consequence of adding host-based credential injection into an existing request pipeline, not a deliberate security-policy choice. That increases confidence that aligning the tool wrapper to the later channel behavior is a correction back to intended semantics rather than a new behavioral expansion.
+There is also a strong control case. Commit `dc7d9cce34868f5f1083dbf8c0acf78640fc9ab1` (`fix(channels): add host-based credential injection to WASM channel wrapper (#421)`) added the same broad capability to the channel wrapper later, but its commit message explicitly calls out the correct leak-scan ordering: “scan runs on WASM-provided values BEFORE host credential injection, preventing false-positive blocks on injected Bearer tokens.” That makes the safe intention clearer. The channel-side author had the same feature goal, recognized the false-positive risk, and fixed the order there. Taken together, the most likely interpretation is that the tool-side regression was an unintended consequence of adding host-based credential injection into an existing request pipeline, not a deliberate security-policy choice. That increases confidence that aligning the tool wrapper to the later channel behaviour is a correction back to intended semantics rather than a new behavioural expansion.
 
 ## Constraints
 
@@ -39,7 +39,7 @@ There is also a strong control case. Commit `dc7d9cce34868f5f1083dbf8c0acf78640f
 - The security goal of outbound leak scanning must remain intact. This work must not create a blanket bypass that allows WASM-provided secrets to flow into URLs, headers, or bodies undetected.
 - The `github` tool contract must remain unchanged. It should continue relying on host-managed credential injection rather than reading the secret value directly inside WASM.
 - The fix must preserve the existing curated capability model in `tools-src/github/github-tool.capabilities.json` and other tool capabilities files. Do not special-case GitHub in the registry when the real problem sits in the generic WASM tool host.
-- The tool-side and channel-side wrappers should not drift further apart on this behavior. If the correct fix is a shared helper or near-identical ordering, prefer that over duplicating divergent logic again.
+- The tool-side and channel-side wrappers should not drift further apart on this behaviour. If the correct fix is a shared helper or near-identical ordering, prefer that over duplicating divergent logic again.
 - No new third-party dependency may be introduced for the fix or its tests.
 - The work must use repository-native command patterns with `set -o pipefail` and `tee` logs under `/tmp/...` for any validation run.
 
@@ -93,12 +93,12 @@ Inspect and capture the current order in:
 Then add a focused failing regression test at the tool-wrapper level that demonstrates the bug shape:
 
 1. Prepare a `Capabilities` instance with an HTTP credential mapping that injects a bearer token for a specific host.
-2. Resolve that host credential into the wrapper’s `host_credentials`.
-3. Exercise the actual tool-side request-preparation path, not only `LeakDetector::scan_http_request(...)` in isolation. If necessary, extract a small helper from `StoreData::http_request(...)` so the test can run the same ordering as production code without needing a full component invocation.
-4. Use a PAT-shaped secret value such as a synthetic `github_pat_...` token so the test matches the real failure mode, with a clean WASM-provided URL, headers, and body.
-5. Assert that the current code fails with `Potential secret leak blocked` and a nested `header:Authorization` / GitHub PAT match.
+1. Resolve that host credential into the wrapper’s `host_credentials`.
+1. Exercise the actual tool-side request-preparation path, not only `LeakDetector::scan_http_request(...)` in isolation. If necessary, extract a small helper from `StoreData::http_request(...)` so the test can run the same ordering as production code without needing a full component invocation.
+1. Use a PAT-shaped secret value such as a synthetic `github_pat_...` token so the test matches the real failure mode, with a clean WASM-provided URL, headers, and body.
+1. Assert that the current code fails with `Potential secret leak blocked` and a nested `header:Authorization` / GitHub PAT match.
 
-This test must fail against the current code if it executes the existing ordering. If the current helper seams are too narrow, first extract the smallest possible helper that makes the request-preparation order testable without changing behavior. The failing testcase from this milestone becomes the permanent regression test used to verify the fix.
+This test must fail against the current code if it executes the existing ordering. If the current helper seams are too narrow, first extract the smallest possible helper that makes the request-preparation order testable without changing behaviour. The failing testcase from this milestone becomes the permanent regression test used to verify the fix.
 
 Suggested commands:
 
@@ -122,14 +122,14 @@ Implement the smallest fix in `src/tools/wasm/wrapper.rs`.
 The current tool wrapper does this:
 
 1. Inject placeholder credentials into URL and headers.
-2. Inject pre-resolved host credentials based on the request host.
-3. Run `LeakDetector::scan_http_request(...)`.
+1. Inject pre-resolved host credentials based on the request host.
+1. Run `LeakDetector::scan_http_request(...)`.
 
 The channel wrapper does this instead:
 
 1. Inject placeholder credentials into URL and headers.
-2. Run `LeakDetector::scan_http_request(...)` on the WASM-visible request.
-3. Inject pre-resolved host credentials after the scan.
+1. Run `LeakDetector::scan_http_request(...)` on the WASM-visible request.
+1. Inject pre-resolved host credentials after the scan.
 
 Unless new evidence disproves it, the tool wrapper should adopt the channel wrapper’s ordering and explanatory comments. The core invariant is that leak scanning should inspect only data the WASM module could have supplied. Host-managed credentials that the module never sees should still be redacted on error paths, but they should not cause an outbound request to be rejected as exfiltration.
 
@@ -142,11 +142,11 @@ Add tests that prove the fix is narrow, security-preserving, and adequately cove
 Required coverage:
 
 1. Unit coverage in `src/tools/wasm/wrapper.rs` for the fixed request pipeline, using the failing testcase from Milestone 1 and keeping it as a post-fix passing regression.
-2. Unit coverage in `src/tools/wasm/wrapper.rs` showing that a host-injected GitHub-style PAT or bearer token does not trip the outbound leak detector when the original WASM request is clean.
-3. Unit coverage in `src/tools/wasm/wrapper.rs` or `src/safety/leak_detector.rs` showing that if WASM itself provides a GitHub token pattern in a header, URL, or body, the request is still blocked.
-4. Unit coverage for any helper extracted while making the pipeline testable, especially if request preparation is split into a new method or struct.
-5. Behavioural coverage for the wrapper execution path: a deterministic local HTTP test using a loopback server or request-capture seam that proves a clean request with host-injected credentials progresses far enough to attempt the outbound request instead of failing locally in IronClaw. This does not need live GitHub access; it must only demonstrate that the wrapper now passes the host-injected credential through the request execution path.
-6. If practical within scope, a parity test or mirrored assertion showing that both the tool and channel wrappers follow the same ordering rule for host credential injection versus leak scanning.
+1. Unit coverage in `src/tools/wasm/wrapper.rs` showing that a host-injected GitHub-style PAT or bearer token does not trip the outbound leak detector when the original WASM request is clean.
+1. Unit coverage in `src/tools/wasm/wrapper.rs` or `src/safety/leak_detector.rs` showing that if WASM itself provides a GitHub token pattern in a header, URL, or body, the request is still blocked.
+1. Unit coverage for any helper extracted while making the pipeline testable, especially if request preparation is split into a new method or struct.
+1. Behavioural coverage for the wrapper execution path: a deterministic local HTTP test using a loopback server or request-capture seam that proves a clean request with host-injected credentials progresses far enough to attempt the outbound request instead of failing locally in IronClaw. This does not need live GitHub access; it must only demonstrate that the wrapper now passes the host-injected credential through the request execution path.
+1. If practical within scope, a parity test or mirrored assertion showing that both the tool and channel wrappers follow the same ordering rule for host credential injection versus leak scanning.
 
 Current coverage gap to close explicitly:
 
@@ -176,9 +176,9 @@ Once the narrow wrapper fix passes, validate that the `github` extension path no
 Validation should include:
 
 1. Re-running the focused regression tests.
-2. Running any existing schema or extension-tool tests that cover curated tool capabilities.
-3. If there is an existing deterministic GitHub tool test harness, re-running it.
-4. If there is no such harness, using the wrapper-level proof plus capability-file inspection as the primary evidence and calling out the remaining end-to-end gap honestly.
+1. Running any existing schema or extension-tool tests that cover curated tool capabilities.
+1. If there is an existing deterministic GitHub tool test harness, re-running it.
+1. If there is no such harness, using the wrapper-level proof plus capability-file inspection as the primary evidence and calling out the remaining end-to-end gap honestly.
 
 If an end-to-end hosted-worker test already exists or can be extended cheaply, use it. If not, do not balloon scope just to prove what the narrow wrapper tests already demonstrate.
 
@@ -193,7 +193,7 @@ cargo test --test tool_schema_validation -- --nocapture \
 
 ## Concrete steps
 
-Work from the repository root `/data/leynos/Projects/ironclaw`.
+Work from the repository root.
 
 1. Confirm the current bug shape in the source:
 
@@ -206,13 +206,13 @@ nl -ba tools-src/github/src/lib.rs | sed -n '274,300p'
 nl -ba tools-src/github/github-tool.capabilities.json | sed -n '1,30p'
 ```
 
-2. Add the first failing regression test around the tool wrapper ordering.
+1. Add the first failing regression test around the tool wrapper ordering.
 
-3. Make the minimal ordering fix in `src/tools/wasm/wrapper.rs`, using the channel wrapper as the behavioral reference.
+1. Make the minimal ordering fix in `src/tools/wasm/wrapper.rs`, using the channel wrapper as the behavioural reference.
 
-4. Add the unit and behavioural coverage required in Milestone 3, including the negative security regression test proving WASM-provided GitHub secrets still block.
+1. Add the unit and behavioural coverage required in Milestone 3, including the negative security regression test proving WASM-provided GitHub secrets still block.
 
-5. Run the targeted suites with `tee`, review the logs, and update this plan’s living sections with actual outcomes.
+1. Run the targeted suites with `tee`, review the logs, and update this plan’s living sections with actual outcomes.
 
 ## Progress
 
@@ -242,19 +242,19 @@ nl -ba tools-src/github/github-tool.capabilities.json | sed -n '1,30p'
 ## Surprises & Discoveries
 
 - `grepai` could not be used for this turn because the local Qdrant service on `127.0.0.1:6334` was unavailable. That did not block the investigation because the relevant paths were easy to locate with exact search.
-- The channel-side WASM wrapper already documents the correct ordering and its security rationale, which makes the tool-side behavior look like an inconsistency rather than a deliberate GitHub-specific safeguard.
+- The channel-side WASM wrapper already documents the correct ordering and its security rationale, which makes the tool-side behaviour look like an inconsistency rather than a deliberate GitHub-specific safeguard.
 - The user-visible error chain includes both `header:Authorization` and the matched pattern name such as `github_fine_grained_pat`, which is consistent with `LeakDetector::scan_http_request(...)` wrapping lower-level pattern matches while scanning individual header values.
 - Semantic history narrows the regression to a specific integration point: the leak scan in the tool wrapper already existed, and commit `a53b2c10` inserted host-based credential injection ahead of it while adding a larger host-credential feature set. The later channel commit `dc7d9cce` repeated the feature work but explicitly placed leak scanning first to avoid false positives.
 - Existing tool-wrapper tests are helper-centric. They validate host credential injection, credential resolution, and redaction separately, but there is no current test that executes the production request-ordering path where this regression lives.
 - The new behavioural test can avoid live GitHub access by targeting a reserved invalid public hostname. After the fix, the host function now gets past leak scanning and fails later with DNS resolution, which is the exact evidence needed to prove the false positive is gone without introducing an external network dependency.
-- `src/channels/web/server.rs` had already accumulated extracted handler modules, but several of them were stale copies. The safe migration path was to treat `server.rs` as the source of truth, sync those modules from the live implementations, and then switch routing over; simply wiring the existing modules would have regressed image uploads, OAuth callback behavior, extension install flows, and gateway status responses.
+- `src/channels/web/server.rs` had already accumulated extracted handler modules, but several of them were stale copies. The safe migration path was to treat `server.rs` as the source of truth, sync those modules from the live implementations, and then switch routing over; simply wiring the existing modules would have regressed image uploads, OAuth callback behaviour, extension install flows, and gateway status responses.
 - `src/registry/artifacts.rs` had a clean test-only tail: production code ended immediately after `install_wasm_files(...)`, so moving the rest into `src/registry/artifacts/tests.rs` was a pure file-layout change rather than a logic refactor.
 - `libsql_migrations.rs` was still failing open during migration-state reads: `rows.next().await.ok().flatten()` quietly converted libSQL cursor errors into “migration missing”, which means transient metadata-read failures could re-enter the migration path instead of aborting with context.
 
 ## Decision Log
 
 - 2026-03-09 20:49Z: Chose a narrow wrapper-level investigation rather than a full hosted-worker trace first. Rationale: the reported error string already points to outbound request scanning, and the hosted-worker meta-tooling and WIT plans show that the `github` tool is now reachable and WIT-aligned.
-- 2026-03-09 20:53Z: Chose the channel-side wrapper as the behavioral reference for the intended fix. Rationale: it already explains why host-injected credentials must be added after leak scanning to avoid false positives.
+- 2026-03-09 20:53Z: Chose the channel-side wrapper as the behavioural reference for the intended fix. Rationale: it already explains why host-injected credentials must be added after leak scanning to avoid false positives.
 - 2026-03-09 20:54Z: Chose not to propose secret-pattern exemptions for `Authorization` headers. Rationale: the security model should continue blocking WASM-provided secrets; the safe fix is to stop scanning host-injected values as if they were WASM output.
 - 2026-03-09 21:04Z: Recorded `a53b2c10` as the introducing change and `dc7d9cce` as the corrective comparison point. Rationale: this gives a stronger basis for judging intent and fallout than line diff alone. The evidence indicates the intention was to add host-based credential injection and runtime reliability, while the later channel work shows the intended safe ordering for leak scanning.
 

@@ -1,3 +1,5 @@
+//! Shared fixtures and router factories for web gateway route tests.
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -5,9 +7,8 @@ use axum::{Router, routing::get};
 use rstest::fixture;
 
 use super::super::*;
-use crate::channels::web::handlers::oauth::{
-    oauth_callback_handler, slack_relay_oauth_callback_handler,
-};
+use crate::channels::web::handlers::oauth::oauth_callback_handler;
+use crate::channels::web::handlers::oauth_slack::slack_relay_oauth_callback_handler;
 use crate::testing::credentials::TEST_GATEWAY_CRYPTO_KEY;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -93,7 +94,7 @@ pub(super) fn build_test_secrets_store() -> Arc<dyn crate::secrets::SecretsStore
         crate::secrets::SecretsCrypto::new(secrecy::SecretString::from(
             TEST_GATEWAY_CRYPTO_KEY.to_string(),
         ))
-        .expect("crypto"),
+        .expect("construct test gateway secrets crypto"),
     )))
 }
 
@@ -117,4 +118,30 @@ pub(super) fn build_test_ext_mgr(
         None,
         vec![],
     ))
+}
+
+pub(super) fn expired_pending_oauth_flow(
+    secrets: Arc<dyn crate::secrets::SecretsStore + Send + Sync>,
+) -> crate::cli::oauth_defaults::PendingOAuthFlow {
+    crate::cli::oauth_defaults::PendingOAuthFlow {
+        extension_name: "test_tool".to_string(),
+        display_name: "Test Tool".to_string(),
+        token_url: "https://example.com/token".to_string(),
+        client_id: "client123".to_string(),
+        client_secret: None,
+        redirect_uri: "https://example.com/oauth/callback".to_string(),
+        code_verifier: None,
+        access_token_field: "access_token".to_string(),
+        secret_name: "test_token".to_string(),
+        provider: None,
+        validation_endpoint: None,
+        scopes: vec![],
+        user_id: "test".to_string(),
+        secrets,
+        sse_sender: None,
+        gateway_token: None,
+        created_at: std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(600))
+            .expect("system uptime is too low to run expired OAuth flow tests"),
+    }
 }

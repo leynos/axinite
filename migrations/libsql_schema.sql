@@ -526,7 +526,6 @@ CREATE INDEX IF NOT EXISTS idx_tool_failures_unrepaired ON tool_failures(tool_na
 
 -- routines
 CREATE INDEX IF NOT EXISTS idx_routines_next_fire ON routines(next_fire_at);
-CREATE INDEX IF NOT EXISTS idx_routines_event_triggers ON routines(user_id);
 
 -- routine_runs
 CREATE INDEX IF NOT EXISTS idx_routine_runs_status ON routine_runs(status);
