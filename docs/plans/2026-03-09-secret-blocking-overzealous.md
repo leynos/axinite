@@ -216,6 +216,7 @@ nl -ba tools-src/github/github-tool.capabilities.json | sed -n '1,30p'
 
 ## Progress
 
+- [x] 2026-03-13 01:34Z: Added `target-codex-*/` to `.gitignore` so generated per-task target directories stop polluting follow-up review-fix work on this branch.
 - [x] 2026-03-09 20:47Z: Confirmed branch is `secret-blocking-overzealous` and gathered the governing repo instructions plus relevant skill guidance.
 - [x] 2026-03-09 20:48Z: Investigated the current failure path and confirmed that `grepai` was unavailable locally, so exact search and symbol lookup were used instead.
 - [x] 2026-03-09 20:50Z: Confirmed that `tools-src/github/github-tool.capabilities.json` injects `github_token` as bearer auth for `api.github.com` and that `tools-src/github/src/lib.rs` intentionally relies on host injection rather than setting `Authorization` itself.

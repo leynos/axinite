@@ -13,6 +13,7 @@
 .todos/
 
 target/
+target-codex-*/
 
 # Benchmark results (local runs, not committed)
 bench-results/
