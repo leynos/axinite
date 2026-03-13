@@ -145,7 +145,7 @@ Required coverage:
 1. Unit coverage in `src/tools/wasm/wrapper.rs` showing that a host-injected GitHub-style PAT or bearer token does not trip the outbound leak detector when the original WASM request is clean.
 1. Unit coverage in `src/tools/wasm/wrapper.rs` or `src/safety/leak_detector.rs` showing that if WASM itself provides a GitHub token pattern in a header, URL, or body, the request is still blocked.
 1. Unit coverage for any helper extracted while making the pipeline testable, especially if request preparation is split into a new method or struct.
-1. Behavioural coverage for the wrapper execution path: a deterministic local HTTP test using a loopback server or request-capture seam that proves a clean request with host-injected credentials progresses far enough to attempt the outbound request instead of failing locally in IronClaw. This does not need live GitHub access; it must only demonstrate that the wrapper now passes the host-injected credential through the request execution path.
+1. Behavioural coverage for the wrapper execution path: a deterministic local HTTP test using a loopback server or request-capture seam that proves a clean request with host-injected credentials progresses far enough to attempt the outbound request instead of failing locally in IronClaw. This does not need live access to GitHub; it must only demonstrate that the wrapper now passes the host-injected credential through the request execution path.
 1. If practical within scope, a parity test or mirrored assertion showing that both the tool and channel wrappers follow the same ordering rule for host credential injection versus leak scanning.
 
 Current coverage gap to close explicitly:
