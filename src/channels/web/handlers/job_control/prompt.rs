@@ -32,7 +32,13 @@ pub async fn jobs_prompt_handler(
         ))?
         .to_string();
 
-    let done = body.get("done").and_then(|v| v.as_bool()).unwrap_or(false);
+    let done = match body.get("done") {
+        Some(value) => value.as_bool().ok_or((
+            StatusCode::BAD_REQUEST,
+            "'done' must be a boolean".to_string(),
+        ))?,
+        None => false,
+    };
 
     if let Some(job) = super::load_sandbox_job(store, job_id).await? {
         let mode = super::load_sandbox_job_mode(store, job_id).await?;
@@ -71,14 +77,17 @@ pub async fn jobs_prompt_handler(
         StatusCode::NOT_IMPLEMENTED,
         "Agent job prompts require the scheduler to be configured".to_string(),
     ))?;
-    let scheduler_guard = slot.read().await;
-    if let Some(ref scheduler) = *scheduler_guard
+    let scheduler = {
+        let scheduler_guard = slot.read().await;
+        scheduler_guard.as_ref().cloned()
+    };
+    if let Some(scheduler) = scheduler
         && scheduler.is_running(job_id).await
     {
         scheduler
             .send_message(job_id, content)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|e| super::internal_error("Failed to forward job prompt", e))?;
         return Ok(Json(serde_json::json!({
             "status": "sent",
             "job_id": job_id.to_string(),

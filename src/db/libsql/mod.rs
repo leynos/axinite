@@ -319,9 +319,21 @@ impl Database for LibSqlBackend {
         conn.query("PRAGMA journal_mode=WAL", ())
             .await
             .map_err(|e| DatabaseError::Migration(format!("Failed to enable WAL mode: {}", e)))?;
-        conn.execute_batch(libsql_migrations::SCHEMA)
+        let tx = conn.transaction().await.map_err(|e| {
+            DatabaseError::Migration(format!(
+                "Failed to start bootstrap schema transaction: {}",
+                e
+            ))
+        })?;
+        tx.execute_batch(libsql_migrations::SCHEMA)
             .await
             .map_err(|e| DatabaseError::Migration(format!("libSQL migration failed: {}", e)))?;
+        tx.commit().await.map_err(|e| {
+            DatabaseError::Migration(format!(
+                "Failed to commit bootstrap schema transaction: {}",
+                e
+            ))
+        })?;
         // Apply incremental migrations (V9+) tracked in _migrations table.
         libsql_migrations::run_incremental(&conn).await?;
         Ok(())
@@ -545,6 +557,27 @@ mod tests {
         let row = rows.next().await.unwrap().unwrap();
         let count: i64 = row.get(0).unwrap();
         assert_eq!(count, 20);
+    }
+
+    #[tokio::test]
+    async fn test_conversations_metadata_must_be_valid_json() {
+        let backend = LibSqlBackend::new_memory().await.unwrap();
+        backend.run_migrations().await.unwrap();
+
+        let conn = backend.connect().await.unwrap();
+        let result = conn
+            .execute(
+                "INSERT INTO conversations (id, channel, user_id, metadata) VALUES (?1, ?2, ?3, ?4)",
+                libsql::params![
+                    uuid::Uuid::new_v4().to_string(),
+                    "web",
+                    "test-user",
+                    "not-json"
+                ],
+            )
+            .await;
+
+        assert!(result.is_err(), "invalid JSON metadata must be rejected");
     }
 
     #[tokio::test]

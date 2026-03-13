@@ -212,6 +212,35 @@ fn test_normalize_schema_strict_preserves_nested_required_keys_across_allof() {
 }
 
 #[test]
+fn test_normalize_schema_strict_prefers_merged_string_default_that_matches_enum() {
+    let normalized = normalize_schema_strict(&serde_json::json!({
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "action": { "const": "create_issue", "default": "obsolete" }
+                }
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "action": { "const": "get_repo", "default": "get_repo" }
+                }
+            }
+        ]
+    }));
+
+    assert_eq!(
+        normalized["properties"]["action"]["enum"],
+        serde_json::json!(["create_issue", "get_repo"])
+    );
+    assert_eq!(
+        normalized["properties"]["action"]["default"],
+        serde_json::json!("get_repo")
+    );
+}
+
+#[test]
 fn test_normalize_schema_strict_marks_non_object_anyof_fields_nullable() {
     let normalized = normalize_schema_strict(&serde_json::json!({
         "anyOf": [

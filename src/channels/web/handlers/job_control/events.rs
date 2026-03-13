@@ -26,7 +26,7 @@ pub async fn jobs_events_handler(
     let events = store
         .list_job_events(job_id, None)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| super::internal_error("Failed to load job events", e))?;
 
     let events_json: Vec<serde_json::Value> = events
         .into_iter()

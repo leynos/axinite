@@ -31,6 +31,14 @@ fn database_unavailable() -> (StatusCode, String) {
     )
 }
 
+pub(super) fn internal_error(
+    context: &'static str,
+    error: impl std::fmt::Display,
+) -> (StatusCode, String) {
+    tracing::error!(error = %error, "{context}");
+    (StatusCode::INTERNAL_SERVER_ERROR, context.to_string())
+}
+
 fn sandbox_job_accepts_prompts(status: &str) -> bool {
     matches!(status, "creating" | "running")
 }
@@ -42,7 +50,7 @@ async fn load_sandbox_job(
     store
         .get_sandbox_job(job_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(|e| internal_error("Failed to load sandbox job", e))
 }
 
 async fn load_agent_job(
@@ -52,7 +60,7 @@ async fn load_agent_job(
     store
         .get_job(job_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(|e| internal_error("Failed to load agent job", e))
 }
 
 async fn load_sandbox_job_mode(
@@ -62,7 +70,7 @@ async fn load_sandbox_job_mode(
     store
         .get_sandbox_job_mode(job_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(|e| internal_error("Failed to load sandbox job mode", e))
 }
 
 async fn mark_sandbox_restart_failed(
@@ -80,7 +88,7 @@ async fn mark_sandbox_restart_failed(
             Some(chrono::Utc::now()),
         )
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(|e| internal_error("Failed to update sandbox job status", e))
 }
 
 async fn cancel_sandbox_job(
@@ -108,7 +116,7 @@ async fn cancel_sandbox_job(
             Some(chrono::Utc::now()),
         )
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(|e| internal_error("Failed to update sandbox job status", e))
 }
 
 async fn cancel_agent_job(
@@ -120,11 +128,13 @@ async fn cancel_agent_job(
         StatusCode::SERVICE_UNAVAILABLE,
         "Scheduler not available".to_string(),
     ))?;
-    let scheduler_guard = scheduler_slot.read().await;
-    let scheduler = scheduler_guard.as_ref().ok_or((
-        StatusCode::SERVICE_UNAVAILABLE,
-        "Agent scheduler not started".to_string(),
-    ))?;
+    let scheduler = {
+        let scheduler_guard = scheduler_slot.read().await;
+        scheduler_guard.as_ref().cloned().ok_or((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Agent scheduler not started".to_string(),
+        ))?
+    };
     scheduler.stop(job_id).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -138,7 +148,7 @@ async fn cancel_agent_job(
             Some("Cancelled by user"),
         )
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(|e| internal_error("Failed to update agent job status", e))
 }
 
 async fn restart_sandbox_job(
@@ -193,7 +203,7 @@ async fn restart_sandbox_job(
     store
         .save_sandbox_job(&record)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| internal_error("Failed to save restarted sandbox job", e))?;
 
     let credential_grants: Vec<crate::orchestrator::auth::CredentialGrant> =
         serde_json::from_str(&old_job.credential_grants_json).unwrap_or_else(|e| {
@@ -246,7 +256,10 @@ async fn restart_sandbox_job(
             format!("Failed to persist running sandbox state: {error}"),
         )
         .await?;
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, error.to_string()));
+        return Err(internal_error(
+            "Failed to persist running sandbox state",
+            error,
+        ));
     }
 
     Ok(Json(serde_json::json!({
@@ -273,16 +286,18 @@ async fn restart_agent_job(
         StatusCode::SERVICE_UNAVAILABLE,
         "Scheduler not available".to_string(),
     ))?;
-    let scheduler_guard = slot.read().await;
-    let scheduler = scheduler_guard.as_ref().ok_or((
-        StatusCode::SERVICE_UNAVAILABLE,
-        "Agent not started yet".to_string(),
-    ))?;
+    let scheduler = {
+        let scheduler_guard = slot.read().await;
+        scheduler_guard.as_ref().cloned().ok_or((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Agent not started yet".to_string(),
+        ))?
+    };
 
     let failure_reason = store
         .get_agent_job_failure_reason(old_job_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| internal_error("Failed to load agent job failure reason", e))?
         .unwrap_or_default();
 
     let title = if !failure_reason.is_empty() {

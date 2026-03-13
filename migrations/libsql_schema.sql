@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     thread_id TEXT,
     started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     last_activity TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    metadata TEXT NOT NULL DEFAULT '{}'
+    metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata))
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversations_channel ON conversations(channel);
@@ -122,7 +122,6 @@ CREATE TABLE IF NOT EXISTS dynamic_tools (
 );
 
 CREATE INDEX IF NOT EXISTS idx_dynamic_tools_status ON dynamic_tools(status);
-CREATE INDEX IF NOT EXISTS idx_dynamic_tools_name ON dynamic_tools(name);
 
 -- ==================== LLM Calls ====================
 

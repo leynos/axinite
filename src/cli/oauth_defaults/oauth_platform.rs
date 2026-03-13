@@ -18,17 +18,20 @@ pub fn use_gateway_callback() -> bool {
         .unwrap_or(false)
 }
 
-/// Prepend instance name to CSRF state for platform routing.
-pub fn build_platform_state(nonce: &str) -> String {
-    let instance = std::env::var("IRONCLAW_INSTANCE_NAME")
+fn platform_instance_name() -> Option<String> {
+    std::env::var("IRONCLAW_INSTANCE_NAME")
         .ok()
-        .filter(|v| !v.is_empty())
+        .filter(|v| !v.is_empty() && !v.contains(':'))
         .or_else(|| {
             std::env::var("OPENCLAW_INSTANCE_NAME")
                 .ok()
-                .filter(|v| !v.is_empty())
-        });
-    match instance {
+                .filter(|v| !v.is_empty() && !v.contains(':'))
+        })
+}
+
+/// Prepend instance name to CSRF state for platform routing.
+pub fn build_platform_state(nonce: &str) -> String {
+    match platform_instance_name() {
         Some(name) => format!("{name}:{nonce}"),
         None => nonce.to_string(),
     }

@@ -288,6 +288,7 @@ fn merge_schema_field(
 fn merge_string_literal_property(existing: &JsonValue, incoming: &JsonValue) -> Option<JsonValue> {
     let mut values = string_literal_values(existing)?;
     values.extend(string_literal_values(incoming)?);
+    let default = first_default(existing, incoming, &values);
 
     let mut merged = Map::new();
     merged.insert("type".to_string(), JsonValue::String("string".to_string()));
@@ -298,7 +299,7 @@ fn merge_string_literal_property(existing: &JsonValue, incoming: &JsonValue) -> 
     if let Some(description) = first_description(existing, incoming) {
         merged.insert("description".to_string(), JsonValue::String(description));
     }
-    if let Some(default) = first_default(existing, incoming) {
+    if let Some(default) = default {
         merged.insert("default".to_string(), default);
     }
     Some(JsonValue::Object(merged))
@@ -330,11 +331,16 @@ fn first_description(existing: &JsonValue, incoming: &JsonValue) -> Option<Strin
         .map(ToOwned::to_owned)
 }
 
-fn first_default(existing: &JsonValue, incoming: &JsonValue) -> Option<JsonValue> {
-    existing
-        .get("default")
-        .cloned()
-        .or_else(|| incoming.get("default").cloned())
+fn first_default(
+    existing: &JsonValue,
+    incoming: &JsonValue,
+    values: &BTreeSet<String>,
+) -> Option<JsonValue> {
+    [existing, incoming].into_iter().find_map(|schema| {
+        let default = schema.get("default")?;
+        let value = default.as_str()?;
+        values.contains(value).then(|| default.clone())
+    })
 }
 
 fn merge_nested_any_of(existing: JsonValue, incoming: JsonValue) -> JsonValue {

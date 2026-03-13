@@ -274,6 +274,20 @@ fn test_build_platform_state_falls_back_when_new_name_is_empty(mut oauth_env_gua
     assert_eq!(build_platform_state("xyz789"), "quiet-lion:xyz789");
 }
 
+#[rstest]
+fn test_build_platform_state_ignores_colon_in_new_name(mut oauth_env_guard: EnvVarsGuard) {
+    oauth_env_guard.set("IRONCLAW_INSTANCE_NAME", "kind:deer");
+    oauth_env_guard.set("OPENCLAW_INSTANCE_NAME", "quiet-lion");
+    assert_eq!(build_platform_state("xyz789"), "quiet-lion:xyz789");
+}
+
+#[rstest]
+fn test_build_platform_state_ignores_colon_in_legacy_name(mut oauth_env_guard: EnvVarsGuard) {
+    oauth_env_guard.remove("IRONCLAW_INSTANCE_NAME");
+    oauth_env_guard.set("OPENCLAW_INSTANCE_NAME", "quiet:lion");
+    assert_eq!(build_platform_state("xyz789"), "xyz789");
+}
+
 #[test]
 fn test_strip_instance_prefix_with_colon() {
     assert_eq!(strip_instance_prefix("kind-deer:abc123"), "abc123");
