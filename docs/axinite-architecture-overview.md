@@ -220,9 +220,11 @@ database settings, then defaults. During startup Axinite first builds config
 without the database, then rehydrates it from the settings store after the
 database is reachable. The operator-facing reference for the current command
 and environment surface lives in `docs/configuration-guide.md`.
-database is connected, and then re-resolves provider credentials after secret
-injection. The repeated resolution passes are intentional because some values
-are only available after later bootstrap stages.
+The backend-specific reference for PostgreSQL, `pgvector`, and libSQL lives in
+`docs/database-integrations.md`. After the database is connected, startup
+re-resolves provider credentials after secret injection. The repeated
+resolution passes are intentional because some values are only available after
+later bootstrap stages.
 
 Persistence is organised behind the `Database` supertrait. The database layer
 groups behaviour into narrower traits such as conversation storage, job
@@ -238,7 +240,10 @@ and the storage layer behind agentic context features such as seeded runbooks
 and memory search tools. The same bootstrap path also uses backend-specific
 handles to build the encrypted secrets store, because secret persistence still
 needs direct access to concrete PostgreSQL or libSQL resources even though the
-rest of the host prefers the generic database abstraction.
+rest of the host prefers the generic database abstraction. The new database
+integration reference is the place to look for backend-specific trade-offs such
+as pooled PostgreSQL access, libSQL replica modes, and the current search-path
+differences between `pgvector` and libSQL FTS.
 
 ### 4.4 Extensions and tooling
 
