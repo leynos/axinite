@@ -355,6 +355,33 @@ navigability:
 - Tasks (execution units) – Small, measurable pieces of work with clear
   acceptance criteria. How it gets done.
 
+This hierarchy should align with the GIST framework:
+
+- Phases correspond to strategic themes or milestones.
+- Steps correspond to GIST-style workstreams. A step must describe a coherent
+  body of delivery work with one clear objective, explicit sequencing value,
+  and a practical learning loop. A step is not just a heading used to group
+  unrelated tasks.
+- Tasks correspond to implementation-level execution units. A task should be a
+  concrete build activity, not an aspiration, research topic, or status label.
+
+### Writing GIST-aligned steps
+
+When writing a roadmap step, make it function as a real workstream:
+
+- Give the step a concrete objective that describes what will exist when the
+  workstream is complete.
+- State the learning opportunity for the step when that learning affects later
+  sequencing or design choices.
+- Group only tasks that serve the same delivery objective. If the tasks do not
+  share one operational purpose, split the step.
+- Sequence steps so each workstream either unlocks the next one or reduces a
+  specific class of delivery risk.
+
+Avoid using steps as passive document structure. Headings such as “Backend
+changes”, “Frontend work”, or “Other tasks” are not sufficient unless they are
+framed as real workstreams with a defined outcome.
+
 ______________________________________________________________________
 
 [^1]: A linter that enforces consistent Markdown formatting.
