@@ -93,16 +93,19 @@ pub(super) fn print_capabilities_detail(caps: &CapabilitiesFile) {
 
 /// Validate a tool name to prevent path traversal.
 pub(super) fn validate_tool_name(name: &str) -> anyhow::Result<()> {
-    if name.is_empty()
-        || name.contains('/')
-        || name.contains('\\')
-        || name.contains("..")
-        || name.contains('\0')
-    {
+    if is_invalid_tool_name(name) {
         anyhow::bail!(
             "Invalid tool name '{}': must not contain path separators or '..'",
             name
         );
     }
     Ok(())
+}
+
+fn is_invalid_tool_name(name: &str) -> bool {
+    name.is_empty()
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains("..")
+        || name.contains('\0')
 }

@@ -11,6 +11,85 @@ use crate::tools::wasm::{CapabilitiesFile, compute_binary_hash};
 
 use super::default_tools_dir;
 
+async fn find_existing_path(candidates: Vec<PathBuf>) -> anyhow::Result<Option<PathBuf>> {
+    for candidate in candidates {
+        if fs::try_exists(&candidate).await? {
+            return Ok(Some(candidate));
+        }
+    }
+    Ok(None)
+}
+
+async fn resolve_directory_install(
+    path: &Path,
+    name: Option<String>,
+    capabilities: Option<PathBuf>,
+    release: bool,
+    skip_build: bool,
+) -> anyhow::Result<(PathBuf, String, Option<PathBuf>)> {
+    let cargo_toml = path.join("Cargo.toml");
+    if !fs::try_exists(&cargo_toml).await? {
+        anyhow::bail!(
+            "No Cargo.toml found in {}. Expected a Rust WASM tool source directory.",
+            path.display()
+        );
+    }
+
+    let tool_name = match name {
+        Some(name) => name,
+        None => extract_crate_name(&cargo_toml).await?,
+    };
+    let profile = if release { "release" } else { "debug" };
+    let wasm_path = if skip_build {
+        crate::registry::artifacts::find_wasm_artifact(path, &tool_name, profile)
+            .or_else(|| crate::registry::artifacts::find_any_wasm_artifact(path, profile))
+            .ok_or_else(|| {
+                anyhow::anyhow!("No .wasm artifact found. Run without --skip-build to build first.")
+            })?
+    } else {
+        crate::registry::artifacts::build_wasm_component_sync(path, release)?
+    };
+    let caps_path = match capabilities {
+        Some(path) => Some(path),
+        None => {
+            find_existing_path(vec![
+                path.join(format!("{tool_name}.capabilities.json")),
+                path.join("capabilities.json"),
+            ])
+            .await?
+        }
+    };
+
+    Ok((wasm_path, tool_name, caps_path))
+}
+
+async fn resolve_wasm_install(
+    path: &Path,
+    name: Option<String>,
+    capabilities: Option<PathBuf>,
+) -> anyhow::Result<(PathBuf, String, Option<PathBuf>)> {
+    let tool_name = match name {
+        Some(name) => name,
+        None => path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("unknown")
+            .to_string(),
+    };
+    let caps_path = match capabilities {
+        Some(path) => Some(path),
+        None => {
+            let mut candidates = vec![path.with_extension("capabilities.json")];
+            if let Some(parent) = path.parent() {
+                candidates.push(parent.join(format!("{tool_name}.capabilities.json")));
+            }
+            find_existing_path(candidates).await?
+        }
+    };
+
+    Ok((path.to_path_buf(), tool_name, caps_path))
+}
+
 /// Install a WASM tool.
 pub(super) async fn install_tool(
     path: PathBuf,
@@ -26,59 +105,9 @@ pub(super) async fn install_tool(
     let metadata = fs::metadata(&path).await?;
 
     let (wasm_path, tool_name, caps_path) = if metadata.is_dir() {
-        let cargo_toml = path.join("Cargo.toml");
-        if !cargo_toml.exists() {
-            anyhow::bail!(
-                "No Cargo.toml found in {}. Expected a Rust WASM tool source directory.",
-                path.display()
-            );
-        }
-
-        let tool_name = if let Some(n) = name {
-            n
-        } else {
-            extract_crate_name(&cargo_toml).await?
-        };
-
-        let profile = if release { "release" } else { "debug" };
-        let wasm_path = if skip_build {
-            crate::registry::artifacts::find_wasm_artifact(&path, &tool_name, profile)
-                .or_else(|| crate::registry::artifacts::find_any_wasm_artifact(&path, profile))
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "No .wasm artifact found. Run without --skip-build to build first."
-                    )
-                })?
-        } else {
-            crate::registry::artifacts::build_wasm_component_sync(&path, release)?
-        };
-
-        let caps_path = capabilities.or_else(|| {
-            let candidates = [
-                path.join(format!("{}.capabilities.json", tool_name)),
-                path.join("capabilities.json"),
-            ];
-            candidates.into_iter().find(|candidate| candidate.exists())
-        });
-
-        (wasm_path, tool_name, caps_path)
+        resolve_directory_install(&path, name, capabilities, release, skip_build).await?
     } else if path.extension().map(|e| e == "wasm").unwrap_or(false) {
-        let tool_name = name.unwrap_or_else(|| {
-            path.file_stem()
-                .and_then(|stem| stem.to_str())
-                .unwrap_or("unknown")
-                .to_string()
-        });
-
-        let caps_path = capabilities.or_else(|| {
-            let mut candidates = vec![path.with_extension("capabilities.json")];
-            if let Some(parent) = path.parent() {
-                candidates.push(parent.join(format!("{}.capabilities.json", tool_name)));
-            }
-            candidates.into_iter().find(|candidate| candidate.exists())
-        });
-
-        (path, tool_name, caps_path)
+        resolve_wasm_install(&path, name, capabilities).await?
     } else {
         anyhow::bail!(
             "Expected a directory with Cargo.toml or a .wasm file, got: {}",
@@ -91,7 +120,7 @@ pub(super) async fn install_tool(
     let target_wasm = target_dir.join(format!("{}.wasm", tool_name));
     let target_caps = target_dir.join(format!("{}.capabilities.json", tool_name));
 
-    if target_wasm.exists() && !force {
+    if fs::try_exists(&target_wasm).await? && !force {
         anyhow::bail!(
             "Tool '{}' already exists at {}. Use --force to overwrite.",
             tool_name,
@@ -125,7 +154,7 @@ pub(super) async fn install_tool(
     println!("  Size: {} bytes", wasm_bytes.len());
     println!("  Hash: {}", &hash_hex[..16]);
 
-    if target_caps.exists() {
+    if fs::try_exists(&target_caps).await? {
         println!("  Caps: {}", target_caps.display());
     }
 

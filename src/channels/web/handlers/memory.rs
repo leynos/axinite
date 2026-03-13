@@ -31,11 +31,11 @@ pub async fn memory_tree_handler(
     State(state): State<Arc<GatewayState>>,
     Query(query): Query<TreeQuery>,
 ) -> Result<Json<MemoryTreeResponse>, (StatusCode, String)> {
-    let _depth = query.depth;
     let workspace = state.workspace.as_ref().ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         "Workspace not available".to_string(),
     ))?;
+    let max_depth = query.depth;
 
     // Build tree from list_all (flat list of all paths)
     let all_paths = workspace
@@ -52,6 +52,9 @@ pub async fn memory_tree_handler(
         let parts: Vec<&str> = path.split('/').collect();
         for i in 0..parts.len().saturating_sub(1) {
             let dir_path = parts[..=i].join("/");
+            if !within_tree_depth(&dir_path, max_depth) {
+                continue;
+            }
             if seen_dirs.insert(dir_path.clone()) {
                 entries.push(TreeEntry {
                     path: dir_path,
@@ -60,15 +63,21 @@ pub async fn memory_tree_handler(
             }
         }
         // Add the file itself
-        entries.push(TreeEntry {
-            path: path.clone(),
-            is_dir: false,
-        });
+        if within_tree_depth(path, max_depth) {
+            entries.push(TreeEntry {
+                path: path.clone(),
+                is_dir: false,
+            });
+        }
     }
 
     entries.sort_by(|a, b| a.path.cmp(&b.path));
 
     Ok(Json(MemoryTreeResponse { entries }))
+}
+
+fn within_tree_depth(path: &str, max_depth: Option<usize>) -> bool {
+    max_depth.is_none_or(|depth| path.split('/').count() <= depth)
 }
 
 #[derive(Deserialize)]

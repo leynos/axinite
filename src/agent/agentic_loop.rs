@@ -225,6 +225,7 @@ mod tests {
     use super::*;
     use crate::llm::{RespondOutput, TokenUsage, ToolCall};
     use crate::testing::StubLlm;
+    use rstest::rstest;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::sync::Mutex;
@@ -568,20 +569,16 @@ mod tests {
         assert!(delegate.iterations_seen.lock().await.is_empty());
     }
 
-    #[test]
-    fn test_truncate_short_string_unchanged() {
-        assert_eq!(truncate_for_preview("hello", 10), "hello");
-    }
-
-    #[test]
-    fn test_truncate_long_string_adds_ellipsis() {
-        let result = truncate_for_preview("hello world", 5);
-        assert_eq!(result, "hello...");
-    }
-
-    #[test]
-    fn test_truncate_multibyte_safe() {
-        let result = truncate_for_preview("café", 4);
-        assert_eq!(result, "caf...");
+    #[rstest]
+    #[case("hello", 10, "hello")]
+    #[case("hello", 5, "hello")]
+    #[case("hello world", 5, "hello...")]
+    #[case("é is fancy", 1, "...")]
+    fn test_truncate_for_preview_cases(
+        #[case] input: &str,
+        #[case] max: usize,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(truncate_for_preview(input, max), expected);
     }
 }

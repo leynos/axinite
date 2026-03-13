@@ -10,11 +10,3 @@ mod conversion;
 mod helpers;
 mod request_build;
 mod unsupported_params;
-
-pub(super) fn cache_write_multiplier_for(retention: CacheRetention) -> rust_decimal::Decimal {
-    match retention {
-        CacheRetention::None => rust_decimal::Decimal::ONE,
-        CacheRetention::Short => rust_decimal::Decimal::new(125, 2),
-        CacheRetention::Long => rust_decimal::Decimal::TWO,
-    }
-}

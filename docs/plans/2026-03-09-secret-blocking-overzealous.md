@@ -216,6 +216,9 @@ nl -ba tools-src/github/github-tool.capabilities.json | sed -n '1,30p'
 
 ## Progress
 
+- [x] 2026-03-13 13:18Z: Closed the current PR-review correctness fixes across the web gateway and worker path: extension install/registry handlers now surface activation and install-state lookup failures, delegate job events now emit the sanitized tool-result payload, and the memory tree depth query now applies an actual depth filter with regression coverage.
+- [x] 2026-03-13 13:18Z: Reduced duplicate and stale test coverage called out in review by consolidating schema-normalization, OAuth failure-path, rig-adapter helper, and truncation assertions, moving `truncate_for_preview` coverage back next to `agentic_loop`, and removing duplicate gateway util tests in favor of the dedicated chat-history helper suite.
+- [x] 2026-03-13 13:18Z: Hardened the reviewed CLI/tooling paths by decomposing `tool install`/`tool list`/`tool setup`, replacing blocking `exists()` calls with async checks, validating tool names before joining paths, rejecting empty required secret values, and range-checking OAuth `expires_in` before storing token expiry metadata.
 - [x] 2026-03-13 02:06Z: Refactored `src/llm/schema_normalize/recursive.rs` so combinator traversal, object-shape normalization, and required/nullable rewriting now live in separate helpers, and preserved explicit object-valued `additionalProperties` schemas instead of overwriting them with `false`.
 - [x] 2026-03-13 01:34Z: Added `target-codex-*/` to `.gitignore` so generated per-task target directories stop polluting follow-up review-fix work on this branch.
 - [x] 2026-03-09 20:47Z: Confirmed branch is `secret-blocking-overzealous` and gathered the governing repo instructions plus relevant skill guidance.
@@ -278,3 +281,5 @@ Validation evidence:
 - `cargo test --test tool_schema_validation -- --nocapture`
 
 All targeted validation passed. The remaining gap is that there is still no live GitHub end-to-end test in this repo, but the wrapper-level behavioural test now covers the precise local failure mode that previously prevented any real outbound attempt.
+
+Follow-up note, 2026-03-13 11:48Z: The remaining PR review failure was in `src/worker/container/tests.rs`, not production code. `WorkerRuntime::build_tools(...).list()` reads unsorted `HashMap` keys, so it has no stable order guarantee, while `tool_definitions()` intentionally sorts by tool name. The test now preserves the real runtime-definition ordering contract without sorting it away, but only checks set equality for the build-tools path. A focused `cargo test worker_runtime_advertises_safe_meta_tools --lib` rerun passed after that change.

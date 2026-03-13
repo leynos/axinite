@@ -44,6 +44,31 @@ async fn maybe_extension_auth_url(
     }
 }
 
+async fn activation_required_response(
+    ext_mgr: &crate::extensions::ExtensionManager,
+    name: &str,
+    fallback_message: String,
+) -> ActionResponse {
+    match ext_mgr.auth(name, None).await {
+        Ok(auth_result) => {
+            let mut resp = ActionResponse::fail(
+                auth_result
+                    .instructions()
+                    .map(String::from)
+                    .unwrap_or(fallback_message),
+            );
+            resp.auth_url = auth_result.auth_url().map(String::from);
+            resp.awaiting_token = Some(auth_result.is_awaiting_token());
+            resp.instructions = auth_result.instructions().map(String::from);
+            resp
+        }
+        Err(auth_err) => ActionResponse::fail(format!(
+            "Installed '{}' but authentication setup failed: {}",
+            name, auth_err
+        )),
+    }
+}
+
 pub async fn extensions_list_handler(
     State(state): State<Arc<GatewayState>>,
 ) -> Result<Json<ExtensionListResponse>, (StatusCode, String)> {
@@ -171,12 +196,27 @@ pub async fn extensions_install_handler(
 
             // Auto-activate WASM tools after install (install = active).
             if result.kind == crate::extensions::ExtensionKind::WasmTool {
-                if let Err(e) = ext_mgr.activate(&req.name).await {
-                    tracing::debug!(
-                        extension = %req.name,
-                        error = %e,
-                        "Auto-activation after install failed"
-                    );
+                match ext_mgr.activate(&req.name).await {
+                    Ok(_) => {}
+                    Err(crate::extensions::ExtensionError::AuthRequired) => {
+                        return Ok(Json(
+                            activation_required_response(
+                                ext_mgr,
+                                &req.name,
+                                format!(
+                                    "Installed '{}' but activation requires authentication.",
+                                    req.name
+                                ),
+                            )
+                            .await,
+                        ));
+                    }
+                    Err(e) => {
+                        return Ok(Json(ActionResponse::fail(format!(
+                            "Installed '{}' but activation failed: {}",
+                            req.name, e
+                        ))));
+                    }
                 }
 
                 // Check auth after activation. This may initiate OAuth both for scope
@@ -270,7 +310,7 @@ pub async fn extensions_remove_handler(
 pub async fn extensions_registry_handler(
     State(state): State<Arc<GatewayState>>,
     Query(params): Query<RegistrySearchQuery>,
-) -> Json<RegistrySearchResponse> {
+) -> Result<Json<RegistrySearchResponse>, (StatusCode, String)> {
     let query = params.query.unwrap_or_default();
     let query_lower = query.to_lowercase();
     let tokens: Vec<&str> = query_lower.split_whitespace().collect();
@@ -303,7 +343,7 @@ pub async fn extensions_registry_handler(
             ext_mgr
                 .list(None, false)
                 .await
-                .unwrap_or_default()
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
                 .into_iter()
                 .map(|ext| (ext.name, ext.kind.to_string()))
                 .collect()
@@ -327,7 +367,7 @@ pub async fn extensions_registry_handler(
         })
         .collect();
 
-    Json(RegistrySearchResponse { entries })
+    Ok(Json(RegistrySearchResponse { entries }))
 }
 
 pub async fn extensions_setup_handler(

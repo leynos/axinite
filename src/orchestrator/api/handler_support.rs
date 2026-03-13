@@ -18,6 +18,10 @@ pub(super) async fn get_prompt_handler(
     if let Some(prompts) = queue.get_mut(&job_id)
         && let Some(prompt) = prompts.pop_front()
     {
+        let should_prune = prompts.is_empty();
+        if should_prune {
+            queue.remove(&job_id);
+        }
         return Ok((
             StatusCode::OK,
             Json(serde_json::json!({
@@ -60,13 +64,21 @@ pub(super) async fn get_credentials_handler(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
-        if let Ok(secret) = secrets.get(&state.user_id, &grant.secret_name).await
-            && let Err(e) = secrets.record_usage(secret.id).await
-        {
-            tracing::warn!(
-                job_id = %job_id,
-                "Failed to record credential usage: {}", e
-            );
+        match secrets.get(&state.user_id, &grant.secret_name).await {
+            Ok(secret) => {
+                if let Err(e) = secrets.record_usage(secret.id).await {
+                    tracing::warn!(
+                        job_id = %job_id,
+                        "Failed to record credential usage: {}", e
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    job_id = %job_id,
+                    "Failed to read credential metadata before usage recording: {}", e
+                );
+            }
         }
 
         tracing::debug!(

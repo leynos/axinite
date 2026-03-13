@@ -10,6 +10,7 @@ use axum::{
     routing::get,
 };
 
+use crate::channels::web::handlers::chat_auth::clear_auth_mode;
 use crate::channels::web::handlers::oauth_slack::slack_relay_oauth_callback_handler;
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::SseEvent;
@@ -115,6 +116,7 @@ pub async fn oauth_callback_handler(
 
     match &result {
         Ok(()) => {
+            clear_auth_mode(state.as_ref()).await;
             tracing::info!(
                 extension = %flow.extension_name,
                 "OAuth completed successfully via gateway callback"

@@ -10,7 +10,9 @@ use tower::ServiceExt;
 #[cfg(feature = "libsql")]
 use super::fixtures::{TestGatewayStateFactory, test_gateway_state};
 #[cfg(feature = "libsql")]
-use crate::channels::web::handlers::memory::{memory_read_handler, memory_search_handler};
+use crate::channels::web::handlers::memory::{
+    memory_read_handler, memory_search_handler, memory_tree_handler,
+};
 #[cfg(feature = "libsql")]
 use crate::workspace::Workspace;
 #[cfg(feature = "libsql")]
@@ -74,4 +76,48 @@ async fn test_memory_search_results_round_trip_via_read_path(
         .expect("body");
     let read_json: serde_json::Value = serde_json::from_slice(&read_body).expect("read json");
     assert_eq!(read_json["content"], "alpha needle beta");
+}
+
+#[cfg(feature = "libsql")]
+#[rstest]
+#[tokio::test]
+async fn test_memory_tree_honours_depth_query(test_gateway_state: TestGatewayStateFactory) {
+    let (db, _temp_dir) = crate::testing::test_db().await;
+    let workspace = std::sync::Arc::new(Workspace::new_with_db("test", db));
+    workspace
+        .write("notes/deep/test.md", "nested content")
+        .await
+        .expect("write nested workspace doc");
+
+    let state = test_gateway_state.build(None, Some(workspace));
+    let app = Router::new()
+        .route("/api/memory/tree", get(memory_tree_handler))
+        .with_state(state);
+
+    let req = axum::http::Request::builder()
+        .uri("/api/memory/tree?depth=2")
+        .body(Body::empty())
+        .expect("build memory tree request with depth");
+
+    let resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app, req)
+        .await
+        .expect("send memory tree request with depth");
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 64)
+        .await
+        .expect("read memory tree response body");
+    let json: serde_json::Value = serde_json::from_slice(&body).expect("memory tree json");
+    let entries = json["entries"].as_array().expect("tree entries array");
+    let paths: Vec<&str> = entries
+        .iter()
+        .map(|entry| entry["path"].as_str().expect("tree path"))
+        .collect();
+
+    assert!(paths.contains(&"notes"));
+    assert!(paths.contains(&"notes/deep"));
+    assert!(
+        !paths.contains(&"notes/deep/test.md"),
+        "depth-limited tree should omit deeper file entries: {paths:?}"
+    );
 }

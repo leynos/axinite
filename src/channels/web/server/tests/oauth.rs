@@ -9,82 +9,61 @@ use super::fixtures::{
     expired_pending_oauth_flow, test_gateway_state, test_oauth_router,
 };
 
-#[rstest]
-#[tokio::test]
-async fn test_oauth_callback_missing_params(
-    test_gateway_state: TestGatewayStateFactory,
-    test_oauth_router: TestOAuthRouterFactory,
-) {
-    let state = test_gateway_state.build(None, None);
-    let app = test_oauth_router.build(state);
-
+async fn oauth_failure_html(app: axum::Router, uri: &str, context: &str) -> String {
     let req = axum::http::Request::builder()
-        .uri("/oauth/callback")
+        .uri(uri)
         .body(Body::empty())
-        .expect("build OAuth callback request without query params");
+        .expect(context);
 
     let resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app, req)
         .await
-        .expect("send OAuth callback request without query params");
+        .expect("send OAuth callback failure-path request");
     assert_eq!(resp.status(), axum::http::StatusCode::OK);
 
     let body = axum::body::to_bytes(resp.into_body(), 1024 * 64)
         .await
-        .expect("read OAuth callback response body without query params");
-    let html = String::from_utf8_lossy(&body);
+        .expect("read OAuth callback failure-path response body");
+    String::from_utf8_lossy(&body).into_owned()
+}
+
+#[rstest]
+#[case::missing_params("/oauth/callback")]
+#[case::provider_error("/oauth/callback?error=access_denied&error_description=access_denied")]
+#[tokio::test]
+async fn test_oauth_callback_basic_failure_paths(
+    test_gateway_state: TestGatewayStateFactory,
+    test_oauth_router: TestOAuthRouterFactory,
+    #[case] uri: &str,
+) {
+    let state = test_gateway_state.build(None, None);
+    let app = test_oauth_router.build(state);
+    let html = oauth_failure_html(app, uri, "build OAuth callback failure-path request").await;
     assert!(html.contains("Authorization Failed"));
 }
 
 #[rstest]
+#[case::unknown_state("/oauth/callback?code=test_code&state=unknown_state_value", false)]
+#[case::no_extension_manager("/oauth/callback?code=test_code&state=some_state", true)]
 #[tokio::test]
-async fn test_oauth_callback_error_from_provider(
+async fn test_oauth_callback_stateful_failure_paths(
     test_gateway_state: TestGatewayStateFactory,
     test_oauth_router: TestOAuthRouterFactory,
+    #[case] uri: &str,
+    #[case] without_extension_manager: bool,
 ) {
-    let state = test_gateway_state.build(None, None);
+    let extension_manager = if without_extension_manager {
+        None
+    } else {
+        Some(build_test_ext_mgr(build_test_secrets_store()))
+    };
+    let state = test_gateway_state.build(extension_manager, None);
     let app = test_oauth_router.build(state);
-
-    let req = axum::http::Request::builder()
-        .uri("/oauth/callback?error=access_denied&error_description=access_denied")
-        .body(Body::empty())
-        .expect("build OAuth callback request with provider error");
-
-    let resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app, req)
-        .await
-        .expect("send OAuth callback request with provider error");
-    assert_eq!(resp.status(), axum::http::StatusCode::OK);
-
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 64)
-        .await
-        .expect("read OAuth callback provider error response body");
-    let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Authorization Failed"));
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_oauth_callback_unknown_state(
-    test_gateway_state: TestGatewayStateFactory,
-    test_oauth_router: TestOAuthRouterFactory,
-) {
-    let ext_mgr = build_test_ext_mgr(build_test_secrets_store());
-    let state = test_gateway_state.build(Some(ext_mgr), None);
-    let app = test_oauth_router.build(state);
-
-    let req = axum::http::Request::builder()
-        .uri("/oauth/callback?code=test_code&state=unknown_state_value")
-        .body(Body::empty())
-        .expect("build OAuth callback request with unknown state");
-
-    let resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app, req)
-        .await
-        .expect("send OAuth callback request with unknown state");
-    assert_eq!(resp.status(), axum::http::StatusCode::OK);
-
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 64)
-        .await
-        .expect("read OAuth callback unknown-state response body");
-    let html = String::from_utf8_lossy(&body);
+    let html = oauth_failure_html(
+        app,
+        uri,
+        "build OAuth callback stateful failure-path request",
+    )
+    .await;
     assert!(html.contains("Authorization Failed"));
 }
 
@@ -108,46 +87,12 @@ async fn test_oauth_callback_expired_flow(
     let state = test_gateway_state.build(Some(ext_mgr), None);
     let app = test_oauth_router.build(state);
 
-    let req = axum::http::Request::builder()
-        .uri("/oauth/callback?code=test_code&state=expired_state")
-        .body(Body::empty())
-        .expect("build OAuth callback request for expired flow");
-
-    let resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app, req)
-        .await
-        .expect("send OAuth callback request for expired flow");
-    assert_eq!(resp.status(), axum::http::StatusCode::OK);
-
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 64)
-        .await
-        .expect("read OAuth callback expired-flow response body");
-    let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Authorization Failed"));
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_oauth_callback_no_extension_manager(
-    test_gateway_state: TestGatewayStateFactory,
-    test_oauth_router: TestOAuthRouterFactory,
-) {
-    let state = test_gateway_state.build(None, None);
-    let app = test_oauth_router.build(state);
-
-    let req = axum::http::Request::builder()
-        .uri("/oauth/callback?code=test_code&state=some_state")
-        .body(Body::empty())
-        .expect("build OAuth callback request without extension manager");
-
-    let resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app, req)
-        .await
-        .expect("send OAuth callback request without extension manager");
-    assert_eq!(resp.status(), axum::http::StatusCode::OK);
-
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 64)
-        .await
-        .expect("read OAuth callback no-manager response body");
-    let html = String::from_utf8_lossy(&body);
+    let html = oauth_failure_html(
+        app,
+        "/oauth/callback?code=test_code&state=expired_state",
+        "build OAuth callback request for expired flow",
+    )
+    .await;
     assert!(html.contains("Authorization Failed"));
 }
 

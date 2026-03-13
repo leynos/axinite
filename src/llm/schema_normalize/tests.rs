@@ -1,5 +1,5 @@
 //! Tests for `normalize_schema_strict`, including GitHub-shaped fixtures and
-//! OpenAI strict-mode normalization behavior across merged schema variants.
+//! OpenAI strict-mode normalisation behaviour across merged schema variants.
 
 use rstest::rstest;
 use serde_json::Value as JsonValue;
@@ -60,30 +60,31 @@ fn test_normalize_schema_strict_preserves_typed_map_objects() {
     );
 }
 
-#[test]
-fn test_normalize_schema_strict_removes_top_level_enum() {
-    let normalized = normalize_schema_strict(&serde_json::json!({
+#[rstest]
+#[case(
+    "enum",
+    serde_json::json!({
         "type": "string",
         "enum": ["a", "b"]
-    }));
-
-    assert!(
-        normalized.get("enum").is_none(),
-        "top-level enum must be removed: {normalized}"
-    );
-}
-
-#[test]
-fn test_normalize_schema_strict_removes_top_level_not() {
-    let normalized = normalize_schema_strict(&serde_json::json!({
+    })
+)]
+#[case(
+    "not",
+    serde_json::json!({
         "type": "object",
         "properties": { "x": { "type": "string" } },
         "not": { "type": "null" }
-    }));
+    })
+)]
+fn test_normalize_schema_strict_removes_forbidden_root_keywords(
+    #[case] keyword: &str,
+    #[case] schema: JsonValue,
+) {
+    let normalized = normalize_schema_strict(&schema);
 
     assert!(
-        normalized.get("not").is_none(),
-        "top-level not must be removed: {normalized}"
+        normalized.get(keyword).is_none(),
+        "top-level {keyword} must be removed: {normalized}"
     );
 }
 

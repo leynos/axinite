@@ -9,6 +9,7 @@ use axum::{
 };
 
 use crate::channels::relay::DEFAULT_RELAY_NAME;
+use crate::channels::web::handlers::chat_auth::clear_auth_mode;
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::SseEvent;
 
@@ -44,6 +45,8 @@ pub async fn slack_relay_oauth_callback_handler(
     let success = result.is_ok();
     if let Err(error) = result {
         tracing::error!(error = %error, "Slack relay OAuth callback failed");
+    } else {
+        clear_auth_mode(state.as_ref()).await;
     }
 
     state.sse.broadcast(SseEvent::AuthCompleted {
@@ -67,6 +70,8 @@ fn validate_slack_callback_params(
         _ => return None,
     };
 
+    // Slack omits `team_id` for some callback shapes, so empty means
+    // "no team context provided" rather than "invalid team identifier".
     let team_id = params.get("team_id").cloned().unwrap_or_default();
     if !is_valid_team_id(&team_id) {
         return None;
@@ -129,7 +134,14 @@ async fn complete_slack_relay_oauth(
         .ok_or_else(|| "Extension manager not available".to_string())?;
 
     let token_key = format!("relay:{}:stream_token", DEFAULT_RELAY_NAME);
-    let _ = ext_mgr.secrets().delete(&state.user_id, &token_key).await;
+    if let Err(error) = ext_mgr.secrets().delete(&state.user_id, &token_key).await {
+        tracing::warn!(
+            user_id = %state.user_id,
+            secret_name = %token_key,
+            error = %error,
+            "Failed to delete previous Slack relay stream token"
+        );
+    }
     ext_mgr
         .secrets()
         .create(

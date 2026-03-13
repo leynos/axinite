@@ -65,13 +65,23 @@ pub async fn job_files_list_handler(
         .await
         .map_err(|_| (StatusCode::NOT_FOUND, "Cannot read directory".to_string()))?;
 
-    while let Ok(Some(entry)) = read_dir.next_entry().await {
+    while let Some(entry) = read_dir.next_entry().await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to read directory entry".to_string(),
+        )
+    })? {
         let name = entry.file_name().to_string_lossy().to_string();
         let is_dir = entry
             .file_type()
             .await
-            .map(|ft| ft.is_dir())
-            .unwrap_or(false);
+            .map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to read directory entry metadata".to_string(),
+                )
+            })?
+            .is_dir();
         let rel = if rel_path.is_empty() {
             name.clone()
         } else {

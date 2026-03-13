@@ -289,9 +289,8 @@ fn test_assistant_and_tool_result_missing_ids_share_generated_id() {
         !tool_result_call_id.is_empty(),
         "tool result call_id must not be empty"
     );
-    assert_ne!(
+    assert_eq!(
         assistant_call_id, tool_result_call_id,
-        "Current impl generates different IDs for assistant call and tool result \
-             because seeds differ; this documents the known limitation"
+        "generated fallback ids must match across assistant tool calls and tool results"
     );
 }

@@ -185,15 +185,14 @@ impl LoopDelegate for ContainerDelegate {
             let result =
                 execute_tool_simple(&self.tools, &self.safety, &tc.name, &tc.arguments, &job_ctx)
                     .await;
+            let (tool_result_content, message) =
+                process_tool_result(&self.safety, &tc.name, &tc.id, &result);
 
             self.post_event(
                 "tool_result",
                 serde_json::json!({
                     "tool_name": tc.name,
-                    "output": match &result {
-                        Ok(output) => truncate_for_preview(output, 2000),
-                        Err(e) => format!("Error: {}", truncate_for_preview(e, 500)),
-                    },
+                    "output": truncate_for_preview(&tool_result_content, 2000),
                     "success": result.is_ok(),
                 }),
             )
@@ -203,7 +202,6 @@ impl LoopDelegate for ContainerDelegate {
                 *self.last_output.lock().await = output.clone();
             }
 
-            let (_, message) = process_tool_result(&self.safety, &tc.name, &tc.id, &result);
             reason_ctx.messages.push(message);
         }
 

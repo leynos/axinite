@@ -412,8 +412,6 @@ CREATE TABLE IF NOT EXISTS tool_failures (
     repair_attempts INTEGER DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_tool_failures_name ON tool_failures(tool_name);
-
 -- ==================== Job Events ====================
 
 CREATE TABLE IF NOT EXISTS job_events (
@@ -486,8 +484,6 @@ CREATE TABLE IF NOT EXISTS settings (
     PRIMARY KEY (user_id, key)
 );
 
-CREATE INDEX IF NOT EXISTS idx_settings_user ON settings(user_id);
-
 -- ==================== Missing indexes (parity with PostgreSQL) ====================
 
 -- agent_jobs
@@ -522,7 +518,6 @@ CREATE INDEX IF NOT EXISTS idx_leak_events_created ON leak_detection_events(crea
 
 -- tool_failures
 CREATE INDEX IF NOT EXISTS idx_tool_failures_count ON tool_failures(error_count DESC);
-CREATE INDEX IF NOT EXISTS idx_tool_failures_unrepaired ON tool_failures(tool_name);
 
 -- routines
 CREATE INDEX IF NOT EXISTS idx_routines_next_fire ON routines(next_fire_at);

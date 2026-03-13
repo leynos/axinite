@@ -218,7 +218,12 @@ pub async fn store_oauth_tokens(
     }
 
     if let Some(secs) = expires_in {
-        let expires_at = chrono::Utc::now() + chrono::Duration::seconds(secs as i64);
+        let secs = i64::try_from(secs).map_err(|_| {
+            OAuthCallbackError::Io(format!(
+                "Token expiry value is too large to store safely: {secs}"
+            ))
+        })?;
+        let expires_at = chrono::Utc::now() + chrono::Duration::seconds(secs);
         params = params.with_expiry(expires_at);
     }
 

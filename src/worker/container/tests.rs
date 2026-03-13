@@ -1,48 +1,40 @@
 //! Unit tests for the container worker runtime and its tool-advertising paths.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use rstest::rstest;
 use uuid::Uuid;
 
 use super::*;
-use crate::agent::agentic_loop::truncate_for_preview;
 
-#[test]
-fn test_truncate_within_limit() {
-    assert_eq!(truncate_for_preview("hello", 10), "hello");
-}
-
-#[test]
-fn test_truncate_at_limit() {
-    assert_eq!(truncate_for_preview("hello", 5), "hello");
-}
-
-#[test]
-fn test_truncate_beyond_limit() {
-    let result = truncate_for_preview("hello world", 5);
-    assert_eq!(result, "hello...");
-}
-
-#[test]
-fn test_truncate_multibyte_safe() {
-    // "é" is 2 bytes in UTF-8; slicing at byte 1 would panic without safety
-    let result = truncate_for_preview("é is fancy", 1);
-    // Should truncate to 0 chars (can't fit "é" in 1 byte)
-    assert_eq!(result, "...");
-}
-
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum WorkerToolSetSource {
     BuildTools,
     RuntimeDefinitions,
 }
 
 #[rstest]
-#[case(WorkerToolSetSource::BuildTools)]
-#[case(WorkerToolSetSource::RuntimeDefinitions)]
+#[case(WorkerToolSetSource::BuildTools, None)]
+#[case(
+    WorkerToolSetSource::RuntimeDefinitions,
+    Some(vec![
+        "apply_patch",
+        "extension_info",
+        "list_dir",
+        "read_file",
+        "shell",
+        "tool_activate",
+        "tool_list",
+        "tool_search",
+        "write_file",
+    ])
+)]
 #[tokio::test]
-async fn worker_runtime_advertises_safe_meta_tools(#[case] source: WorkerToolSetSource) {
+async fn worker_runtime_advertises_safe_meta_tools(
+    #[case] source: WorkerToolSetSource,
+    #[case] expected_order: Option<Vec<&str>>,
+) {
     let client = Arc::new(WorkerHttpClient::new(
         "http://localhost:50051".to_string(),
         Uuid::nil(),
@@ -51,10 +43,7 @@ async fn worker_runtime_advertises_safe_meta_tools(#[case] source: WorkerToolSet
 
     let names: Vec<String> = match source {
         WorkerToolSetSource::BuildTools => {
-            let tools = WorkerRuntime::build_tools(Arc::clone(&client));
-            let mut names = tools.list().await;
-            names.sort();
-            names
+            WorkerRuntime::build_tools(Arc::clone(&client)).list().await
         }
         WorkerToolSetSource::RuntimeDefinitions => {
             let runtime = WorkerRuntime::from_client(
@@ -65,19 +54,18 @@ async fn worker_runtime_advertises_safe_meta_tools(#[case] source: WorkerToolSet
                 },
                 client,
             );
-            let mut names: Vec<String> = runtime
+            let names: Vec<String> = runtime
                 .tools
                 .tool_definitions()
                 .await
                 .into_iter()
                 .map(|def| def.name)
                 .collect();
-            names.sort();
             names
         }
     };
 
-    for expected in [
+    let expected_safe_names = [
         "apply_patch",
         "extension_info",
         "list_dir",
@@ -87,7 +75,27 @@ async fn worker_runtime_advertises_safe_meta_tools(#[case] source: WorkerToolSet
         "tool_list",
         "tool_search",
         "write_file",
-    ] {
+    ];
+
+    if let Some(expected_order) = expected_order {
+        assert_eq!(
+            names,
+            expected_order
+                .into_iter()
+                .map(str::to_string)
+                .collect::<Vec<_>>(),
+            "worker tool order drifted for {source:?}"
+        );
+    } else {
+        let expected_name_set: HashSet<&str> = expected_safe_names.iter().copied().collect();
+        let actual_name_set: HashSet<&str> = names.iter().map(String::as_str).collect();
+        assert_eq!(
+            actual_name_set, expected_name_set,
+            "worker tool set drifted for {source:?}"
+        );
+    }
+
+    for expected in expected_safe_names {
         assert!(
             names.iter().any(|name| name == expected),
             "expected hosted worker tool set to include {expected}, got {names:?}"

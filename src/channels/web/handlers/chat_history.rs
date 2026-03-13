@@ -15,6 +15,7 @@ use crate::channels::web::handlers::chat_threads;
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::{HistoryResponse, PendingApprovalInfo, ToolCallInfo, TurnInfo};
 use crate::channels::web::util::{build_turns_from_db_messages, truncate_preview};
+use crate::db::Database;
 
 pub fn routes() -> Router<Arc<GatewayState>> {
     Router::new()
@@ -27,6 +28,28 @@ pub struct HistoryQuery {
     pub thread_id: Option<String>,
     pub limit: Option<usize>,
     pub before: Option<String>,
+}
+
+async fn load_stored_history(
+    store: &Arc<dyn Database>,
+    thread_id: Uuid,
+    before_cursor: Option<chrono::DateTime<chrono::Utc>>,
+    limit: usize,
+) -> Result<HistoryResponse, (StatusCode, String)> {
+    let (messages, has_more) = store
+        .list_conversation_messages_paginated(thread_id, before_cursor, limit as i64)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let oldest_timestamp = messages.first().map(|m| m.created_at.to_rfc3339());
+    let turns = build_turns_from_db_messages(&messages);
+
+    Ok(HistoryResponse {
+        thread_id,
+        turns,
+        has_more,
+        oldest_timestamp,
+        pending_approval: None,
+    })
 }
 
 pub async fn chat_history_handler(
@@ -80,20 +103,9 @@ pub async fn chat_history_handler(
     if before_cursor.is_some()
         && let Some(ref store) = state.store
     {
-        let (messages, has_more) = store
-            .list_conversation_messages_paginated(thread_id, before_cursor, limit as i64)
+        return load_stored_history(store, thread_id, before_cursor, limit)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-        let oldest_timestamp = messages.first().map(|m| m.created_at.to_rfc3339());
-        let turns = build_turns_from_db_messages(&messages);
-        return Ok(Json(HistoryResponse {
-            thread_id,
-            turns,
-            has_more,
-            oldest_timestamp,
-            pending_approval: None,
-        }));
+            .map(Json);
     }
 
     if let Some(thread) = sess.threads.get(&thread_id)
@@ -151,21 +163,9 @@ pub async fn chat_history_handler(
     }
 
     if let Some(ref store) = state.store {
-        let (messages, has_more) = store
-            .list_conversation_messages_paginated(thread_id, None, limit as i64)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-        if !messages.is_empty() {
-            let oldest_timestamp = messages.first().map(|m| m.created_at.to_rfc3339());
-            let turns = build_turns_from_db_messages(&messages);
-            return Ok(Json(HistoryResponse {
-                thread_id,
-                turns,
-                has_more,
-                oldest_timestamp,
-                pending_approval: None,
-            }));
+        let history = load_stored_history(store, thread_id, None, limit).await?;
+        if !history.turns.is_empty() {
+            return Ok(Json(history));
         }
     }
 

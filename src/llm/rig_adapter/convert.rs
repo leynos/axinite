@@ -9,6 +9,7 @@ use super::*;
 pub(super) fn convert_messages(messages: &[ChatMessage]) -> (Option<String>, Vec<RigMessage>) {
     let mut preamble: Option<String> = None;
     let mut history = Vec::new();
+    let mut pending_tool_call_ids = std::collections::VecDeque::new();
 
     for msg in messages {
         match msg.role {
@@ -69,6 +70,7 @@ pub(super) fn convert_messages(messages: &[ChatMessage]) -> (Option<String>, Vec
                     for (idx, tc) in tool_calls.iter().enumerate() {
                         let tool_call_id =
                             normalized_tool_call_id(Some(tc.id.as_str()), history.len() + idx);
+                        pending_tool_call_ids.push_back(tool_call_id.clone());
                         contents.push(AssistantContent::ToolCall(
                             rig::message::ToolCall::new(
                                 tool_call_id.clone(),
@@ -92,7 +94,12 @@ pub(super) fn convert_messages(messages: &[ChatMessage]) -> (Option<String>, Vec
             }
             crate::llm::Role::Tool => {
                 // Tool result message: wrap as User { ToolResult }
-                let tool_id = normalized_tool_call_id(msg.tool_call_id.as_deref(), history.len());
+                let tool_id = msg
+                    .tool_call_id
+                    .as_deref()
+                    .map(|id| normalized_tool_call_id(Some(id), history.len()))
+                    .or_else(|| pending_tool_call_ids.pop_front())
+                    .unwrap_or_else(|| normalized_tool_call_id(None, history.len()));
                 history.push(RigMessage::User {
                     content: OneOrMany::one(UserContent::ToolResult(RigToolResult {
                         id: tool_id.clone(),
