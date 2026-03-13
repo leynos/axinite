@@ -213,6 +213,8 @@ the agent can start.
 dependencies are used once a normalized chat message enters the agent loop.
 `docs/jobs-and-routines.md` covers the scheduler, job model, routines engine,
 heartbeat runner, and the shared jobs and routines control surfaces.
+`docs/agent-skills-support.md` covers how skill artifacts are loaded, selected,
+attenuated, and injected into model context on the interactive chat path.
 
 ### 4.3 Persistence, configuration, and memory
 
