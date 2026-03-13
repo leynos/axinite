@@ -197,14 +197,14 @@ Work from the repository root.
 
 1. Confirm the current bug shape in the source:
 
-```plaintext
-nl -ba src/tools/wasm/wrapper.rs | sed -n '270,320p'
-nl -ba src/channels/wasm/wrapper.rs | sed -n '350,385p'
-nl -ba src/safety/leak_detector.rs | sed -n '300,325p'
-nl -ba src/safety/leak_detector.rs | sed -n '438,520p'
-nl -ba tools-src/github/src/lib.rs | sed -n '274,300p'
-nl -ba tools-src/github/github-tool.capabilities.json | sed -n '1,30p'
-```
+    ```plaintext
+    nl -ba src/tools/wasm/wrapper.rs | sed -n '270,320p'
+    nl -ba src/channels/wasm/wrapper.rs | sed -n '350,385p'
+    nl -ba src/safety/leak_detector.rs | sed -n '300,325p'
+    nl -ba src/safety/leak_detector.rs | sed -n '438,520p'
+    nl -ba tools-src/github/src/lib.rs | sed -n '274,300p'
+    nl -ba tools-src/github/github-tool.capabilities.json | sed -n '1,30p'
+    ```
 
 1. Add the first failing regression test around the tool wrapper ordering.
 
