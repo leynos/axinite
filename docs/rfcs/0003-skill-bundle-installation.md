@@ -1,8 +1,10 @@
-# Skill Bundle Installation And Bundled File Access
+# RFC 0003: Skill bundle installation and bundled file access
 
-**Status:** Proposed
-**Author:** Codex
-**Date:** 2026-03-11
+## Preamble
+
+- **RFC number:** 0003
+- **Status:** Proposed
+- **Created:** 2026-03-11
 
 ## Summary
 
