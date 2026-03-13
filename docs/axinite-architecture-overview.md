@@ -218,6 +218,8 @@ Configuration is layered rather than singular. The config module documents the
 effective priority as environment variables, optional TOML overlay, persisted
 database settings, then defaults. During startup Axinite first builds config
 without the database, then rehydrates it from the settings store after the
+database is reachable. The operator-facing reference for the current command
+and environment surface lives in `docs/configuration-guide.md`.
 database is connected, and then re-resolves provider credentials after secret
 injection. The repeated resolution passes are intentional because some values
 are only available after later bootstrap stages.

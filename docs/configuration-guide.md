@@ -244,6 +244,7 @@ Table 17. Bootstrap and configuration-source environment variables.
 | `IRONCLAW_BASE_DIR` | Override the per-user base directory. | Defaults to `~/.ironclaw`. An empty string is treated as unset. |
 | `DATABASE_BACKEND` | Select the database backend. | Accepted values include `postgres`, `postgresql`, `pg`, `libsql`, `turso`, and `sqlite`. Defaults to `postgres` unless libSQL auto-detection triggers. |
 | `DATABASE_URL` | PostgreSQL connection string. | Required unless the effective backend is `libsql`. |
+| `ONBOARD_COMPLETED` | Mark onboarding as complete for first-run checks. | Written to `~/.ironclaw/.env` by the setup wizard. The first-run check treats `true` as complete. |
 | `WORKSPACE_IMPORT_DIR` | Import workspace files from a directory before built-in seeding. | Optional. Files are imported only when they do not already exist in the workspace store. |
 | `OBSERVABILITY_BACKEND` | Select the observer backend. | `none` or `noop` discard events; `log` emits them via `tracing`. Unknown values currently fall back to `noop`. |
 
@@ -321,7 +322,7 @@ Table 20. Channel, gateway, tunnel, and relay environment variables.
 | `CLI_ENABLED` | Enable the CLI channel. | Truthy by default; `false` or `0` disables it. |
 | `HTTP_HOST` | Bind address for the HTTP and webhook channel. | Only enabling HTTP when `HTTP_HOST` or `HTTP_PORT` is set. Defaults to `0.0.0.0` once enabled. |
 | `HTTP_PORT` | Port for the HTTP and webhook channel. | Enables HTTP when set; defaults to `8080` once enabled. |
-| `HTTP_WEBHOOK_SECRET` | Shared secret for validating webhook traffic. | Optional. |
+| `HTTP_WEBHOOK_SECRET` | Shared secret for validating webhook traffic. | Optional, and by itself does not enable the HTTP listener. |
 | `HTTP_USER_ID` | User ID associated with the HTTP channel. | Defaults to `http`. |
 | `GATEWAY_ENABLED` | Enable the browser gateway channel. | Boolean, default `true`. |
 | `GATEWAY_HOST` | Bind address for the web gateway. | Defaults to `127.0.0.1`. |
@@ -346,7 +347,7 @@ Table 20. Channel, gateway, tunnel, and relay environment variables.
 | `TUNNEL_TS_FUNNEL` | Enable Tailscale Funnel mode. | Accepts `true` or `1`; otherwise false. |
 | `TUNNEL_TS_HOSTNAME` | Tailscale hostname. | Optional. |
 | `TUNNEL_NGROK_DOMAIN` | Reserved ngrok domain. | Optional. |
-| `TUNNEL_NGROK_TOKEN` | ngrok auth token. | Optional. |
+| `TUNNEL_NGROK_TOKEN` | ngrok auth token. | Optional. Passed to the ngrok child process as `NGROK_AUTHTOKEN`. |
 | `TUNNEL_CUSTOM_HEALTH_URL` | Health probe URL for a custom tunnel launcher. | Optional. |
 | `TUNNEL_CUSTOM_URL_PATTERN` | Pattern for extracting the public URL from custom tunnel output. | Optional. |
 | `TUNNEL_CUSTOM_COMMAND` | Command used to launch a custom tunnel. | Optional. |
@@ -369,6 +370,7 @@ Table 21. LLM routing and provider-selection environment variables.
 | `LLM_REQUEST_TIMEOUT_SECS` | End-to-end request timeout for LLM calls. | Defaults to `120`. |
 | `NEARAI_AUTH_URL` | OAuth or auth base URL for the NEAR AI session manager. | Defaults to `https://private.near.ai`. |
 | `NEARAI_SESSION_PATH` | Session file path for NEAR AI auth state. | Defaults to `~/.ironclaw/session.json`. |
+| `NEARAI_SESSION_TOKEN` | Inject a NEAR AI session token directly through the environment. | Optional. Takes precedence over any token loaded from `NEARAI_SESSION_PATH`. |
 | `NEARAI_API_KEY` | NEAR AI API key. | Optional. When present, the default NEAR AI base URL switches to the cloud endpoint. |
 | `NEARAI_MODEL` | Primary NEAR AI model. | Defaults to `zai-org/GLM-latest`. |
 | `NEARAI_CHEAP_MODEL` | Lower-cost NEAR AI model for routing. | Optional. |
@@ -461,6 +463,9 @@ Table 23. WASM, sandbox, and development-override environment variables.
 | `CLAUDE_CODE_ALLOWED_TOOLS` | Comma-separated allowlist for Claude Code auto-approved tools. | Defaults to a built-in list covering read, write, edit, bash, task, and web tools. |
 | `IRONCLAW_TOOLS_SRC` | Override the development `tools-src/` directory. | Intended for development or packaging flows, not normal runtime configuration. |
 | `IRONCLAW_CHANNELS_SRC` | Override the development `channels-src/` directory. | Intended for development or packaging flows, not normal runtime configuration. |
+| `CARGO_TARGET_DIR` | Override the shared Cargo target directory used when locating dev-built WASM artefacts. | Development-only. |
+| `CLAWHUB_REGISTRY` | Override the skill-catalog registry base URL. | Development or staging override. |
+| `CLAWDHUB_REGISTRY` | Legacy fallback for `CLAWHUB_REGISTRY`. | Kept for backward compatibility. |
 
 ### 4.8 OAuth, tracing, relay quirks, and internal-only switches
 
@@ -469,6 +474,7 @@ Table 24. Advanced, internal, and debug-oriented environment variables.
 | Variable | Meaning | Default or rule |
 |----------|---------|-----------------|
 | `IRONCLAW_OAUTH_EXCHANGE_URL` | Proxy URL used by gateway OAuth completion to exchange the authorization code through another service. | Optional. When unset, the gateway exchanges directly with the upstream token endpoint. |
+| `OAUTH_CALLBACK_HOST` | Host used by the local OAuth callback listener. | Defaults to `127.0.0.1`. Wildcard addresses such as `0.0.0.0` and `::` are rejected. |
 | `IRONCLAW_INSTANCE_NAME` | Prefix applied to OAuth CSRF state for platform routing. | Optional. |
 | `OPENCLAW_INSTANCE_NAME` | Legacy fallback for `IRONCLAW_INSTANCE_NAME`. | Optional, kept for backwards compatibility. |
 | `IRONCLAW_USER_ID` | Override the relay-auth user UUID derivation. | Optional. |
@@ -485,6 +491,12 @@ Table 24. Advanced, internal, and debug-oriented environment variables.
 | `IRONCLAW_E2E_DOCKER_TESTS` | Enable Docker-backed end-to-end tests for the reaper. | Test-only. |
 | `RUST_LOG` | Standard `tracing` filter used by the web log layer. | Defaults internally to `ironclaw=info,tower_http=warn` when the variable is unset. |
 
+The runtime also consults platform variables such as `HOME`,
+`XDG_RUNTIME_DIR`, and `UID` for home-directory resolution and rootless Docker
+socket discovery. Those are normal operating-system inputs rather than
+axinite-specific configuration knobs, but they still affect startup behaviour
+in container-heavy environments.
+
 ## 5. Validation rules and operational gotchas
 
 Several settings have behaviour that is easy to miss if the guide only lists
@@ -496,6 +508,9 @@ names.
    looser parsing.
 1. `HTTP_HOST` and `HTTP_PORT` do not merely change values on an always-on HTTP
    listener. The listener is created only when one of those variables is set.
+1. `HTTP_WEBHOOK_SECRET` secures webhook traffic, but setting it alone does
+   not start the HTTP listener. One of `HTTP_HOST` or `HTTP_PORT` must also be
+   set.
 1. `GATEWAY_ENABLED=false` disables the web gateway entirely, even if
    `GATEWAY_HOST` and `GATEWAY_PORT` are also set.
 1. `LIBSQL_URL` requires `LIBSQL_AUTH_TOKEN`. Setting only the URL is treated
