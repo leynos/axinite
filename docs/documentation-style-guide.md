@@ -151,6 +151,27 @@ the existing system, not as the place for the project's primary design document.
 - Keep the document synchronized with decision records, roadmap items, and the
   codebase. A stale developer's guide is worse than a shorter one.
 
+### Design document, ADR, and RFC
+
+Use these document types for different jobs. Do not collapse them into one
+catch-all "design note".
+
+- A **design document** explains the shape of a system or subsystem: its
+  architecture, constraints, data flow, rationale, and intended evolution. It
+  is usually a living document and may describe the current implementation, the
+  target implementation, or both.
+- An **Architecture Decision Record (ADR)** captures one accepted decision. It
+  should be narrow, stable, and explicit about context, decision, consequences,
+  and status. Use an ADR when the important thing to preserve is the outcome,
+  not the full exploratory discussion that led to it.
+- A **Request for Comments (RFC)** proposes a change before acceptance. It is
+  the right format for changes that need review, alternatives analysis,
+  migration planning, or cross-team discussion. An RFC may later be accepted,
+  rejected, superseded, or distilled into one or more ADRs.
+
+In short: use a design document to explain the system, an ADR to record a
+decision, and an RFC to propose a change.
+
 ### Design document
 
 Use a dedicated design document, conventionally named
@@ -186,54 +207,283 @@ user's guide or developer's guide.
   implemented system. If the code or the governing decision changes, update the
   design or mark the divergence explicitly.
 
-### Design document, ADR, and RFC
-
-Use these document types for different jobs. Do not collapse them into one
-catch-all "design note".
-
-- A **design document** explains the shape of a system or subsystem: its
-  architecture, constraints, data flow, rationale, and intended evolution. It
-  is usually a living document and may describe the current implementation, the
-  target implementation, or both.
-- An **Architecture Decision Record (ADR)** captures one accepted decision. It
-  should be narrow, stable, and explicit about context, decision, consequences,
-  and status. Use an ADR when the important thing to preserve is the outcome,
-  not the full exploratory discussion that led to it.
-- A **Request for Comments (RFC)** proposes a change before acceptance. It is
-  the right format for changes that need review, alternatives analysis,
-  migration planning, or cross-team discussion. An RFC may later be accepted,
-  rejected, superseded, or distilled into one or more ADRs.
-
-In short: use a design document to explain the system, an ADR to record a
-decision, and an RFC to propose a change.
-
 ### Request for Comments (RFC)
 
 Use RFCs for proposed changes that need technical review before they become
 binding. Store them under `docs/rfcs/`.
 
-- Use numbered filenames in the form `docs/rfcs/0001-short-topic.md`.
+### Naming convention
+
+Name RFC files using the pattern `0001-short-topic.md`, where `0001` is a
+zero-padded sequence number. Place RFCs in the `docs/rfcs/` directory.
+
 - Number RFCs sequentially in allocation order rather than by date.
 - Do not renumber existing RFCs after publication. Gaps are acceptable when
   numbers are reserved, drafted on another branch, or intentionally skipped.
-- Start the document with a numbered title in this form:
+
+### Required sections
+
+Every RFC must include the following sections in order:
+
+- **Title:** Start the document with a numbered title in this form:
   `# RFC 0001: Concise subject`.
-- Follow the title with a dedicated `## Preamble` section.
-- Use the same three preamble fields in every RFC:
-  - `RFC number`
-  - `Status`
-  - `Created`
-- Keep the first substantive section near the top. `## Summary`,
-  `## Executive summary`, or `## Problem` are all acceptable if used
-  consistently within the document.
-- Use numbered major sections for long RFCs so review comments can cite stable
-  anchors.
-- State the problem, the proposed change, the main trade-offs, and the open
-  questions explicitly.
-- Describe compatibility impact, migration expectations, and rejected
-  alternatives when they materially affect adoption.
+- **Preamble:** Follow the title with a dedicated `## Preamble` section.
+- **RFC number:** Include the allocated sequence number.
+- **Status:** State the document status. Use `Proposed` unless a later process
+  explicitly promotes, rejects, withdraws, or supersedes the RFC.
+- **Created:** The date the RFC was created (format: YYYY-MM-DD).
+- **Opening section:** Keep the first substantive section near the top.
+  `## Summary`, `## Executive summary`, or `## Problem` are all acceptable if
+  used consistently within the document.
+
+### Conditional sections
+
+Include these sections as appropriate to the scope and complexity of the
+proposal:
+
+- **Problem:** Describe the deficiency, risk, or missing capability that
+  motivates the RFC.
+- **Current State:** Explain the relevant current behaviour or architecture when
+  the proposal depends on existing constraints.
+- **Goals and Non-goals:** Clarify what the RFC intends to change and what it
+  deliberately leaves out of scope.
+- **Proposed Design / Proposed Change:** Describe the recommended design with
+  enough detail to support implementation review.
+- **Requirements:** Separate functional, technical, safety, or operational
+  requirements when the proposal has multiple kinds of constraints.
+- **Compatibility and Migration:** Explain rollout expectations, compatibility
+  impact, and migration sequencing when adoption is not trivial.
+- **Alternatives Considered:** Record rejected options and the reasons they
+  were not chosen.
+- **Open Questions / Outstanding Decisions:** Identify unresolved issues that
+  still need review before the proposal can be treated as settled.
+- **Recommendation:** End with a clear statement of the preferred direction
+  when the preceding analysis presents multiple viable choices.
+
+### Formatting guidance
+
+- Use second-level headings (`##`) for major sections.
+- Use third-level headings (`###`) for subsections such as phases, options,
+  requirements groupings, or rollout stages.
+- Use numbered major sections for long RFCs when stable review anchors will
+  help discussion.
+- Use tables to compare design alternatives, rollout paths, or capability
+  trade-offs when multiple dimensions matter.
+- Include code snippets with language identifiers when illustrating interfaces,
+  payloads, or implementation seams.
+- Add screen reader descriptions before complex diagrams or code blocks.
 - Update links when RFC filenames change, especially cross-references from one
   RFC to another.
+
+### RFC template
+
+```markdown
+# RFC 0001: <title>
+
+## Preamble
+
+- **RFC number:** 0001
+- **Status:** Proposed
+- **Created:** YYYY-MM-DD
+
+## Summary
+
+<Concise statement of the proposal and why it matters.>
+
+## Problem
+
+<Describe the current deficiency, risk, or missing capability.>
+
+## Current state
+
+<Summarize the relevant current implementation or constraints.>
+
+## Goals and non-goals
+
+- Goals:
+  - <Goal 1>
+  - <Goal 2>
+- Non-goals:
+  - <Non-goal 1>
+  - <Non-goal 2>
+
+## Proposed design
+
+<Describe the recommended design in enough detail for technical review.>
+
+## Requirements
+
+### Functional requirements
+
+- <Functional requirement 1>
+- <Functional requirement 2>
+
+### Technical requirements
+
+- <Technical requirement 1>
+- <Technical requirement 2>
+
+## Compatibility and migration
+
+<Describe compatibility impact, rollout constraints, and migration sequencing.>
+
+## Alternatives considered
+
+### Option A: <Name>
+
+<Description, consequences, and trade-offs.>
+
+### Option B: <Name>
+
+<Description, consequences, and trade-offs.>
+
+## Open questions
+
+- <Open question 1>
+- <Open question 2>
+
+## Recommendation
+
+<State the preferred direction and why it should be adopted.>
+```
+
+## Architectural decision records (ADRs)
+
+Use ADRs to document significant architectural and design decisions. ADRs
+capture the context, options considered, and rationale behind decisions,
+providing a historical record for future maintainers.
+
+### Naming convention
+
+Name ADR files using the pattern `adr-NNN-short-description.md`, where `NNN` is
+a zero-padded sequence number (e.g. `adr-001-async-fixtures-and-tests.md`).
+Place ADRs in the `docs/` directory.
+
+### Required sections
+
+Every ADR must include the following sections in order:
+
+- **Status:** One of `Proposed`, `Accepted`, `Superseded`, or `Deprecated`. For
+  `Accepted` status, include the date and a brief summary of what was decided.
+- **Date:** The date the ADR was created or last updated (format: YYYY-MM-DD).
+- **Context and Problem Statement:** Describe the situation, constraints, and
+  the problem or question that prompted the decision. Include enough background
+  for readers unfamiliar with the history.
+
+### Conditional sections
+
+Include these sections as appropriate to the decision's complexity:
+
+- **Decision Drivers:** Key factors, requirements, or constraints that
+  influenced the decision. Use bullet points.
+- **Requirements:** For complex decisions, separate functional and technical
+  requirements into subsections.
+- **Options Considered:** Describe the alternatives evaluated. Use a comparison
+  table when contrasting multiple options across several dimensions.
+- **Decision Outcome / Proposed Direction:** State the chosen approach and
+  summarize the rationale. For `Proposed` ADRs, describe the recommended
+  direction.
+- **Goals and Non-Goals:** Clarify what the decision aims to achieve and what
+  is explicitly out of scope.
+- **Migration Plan:** For decisions requiring phased implementation, break the
+  work into numbered phases with clear goals and deliverables.
+- **Known Risks and Limitations:** Document trade-offs, potential issues, and
+  constraints of the chosen approach.
+- **Outstanding Decisions:** For `Proposed` ADRs, list open questions that must
+  be resolved before acceptance.
+- **Architectural Rationale:** Explain how the decision aligns with broader
+  architectural principles and project goals.
+
+### Formatting guidance
+
+- Use second-level headings (`##`) for major sections.
+- Use third-level headings (`###`) for subsections (e.g. phases, option names).
+- Use tables to compare options when multiple dimensions are relevant. Include
+  a caption below the table (e.g. “_Table 1: Trade-offs between X and Y._”).
+- Include code snippets with language identifiers when illustrating technical
+  approaches. Use `no_run` for illustrative Rust code that should not be
+  executed.
+- Add screen reader descriptions before complex diagrams or code blocks.
+- Reference external sources using inline links or footnotes.
+
+### ADR template
+
+```markdown
+# Architectural decision record (ADR) NNN: <title>
+
+## Status
+
+<Proposed | Accepted | Superseded | Deprecated>.
+
+## Date
+
+YYYY-MM-DD.
+
+## Context and problem statement
+
+<Describe the situation, constraints, and the question being addressed.>
+
+## Decision Drivers
+
+- <Driver 1>
+- <Driver 2>
+
+## Requirements
+
+### Functional requirements
+
+- <Functional requirement 1>
+- <Functional requirement 2>
+
+### Technical requirements
+
+- <Technical requirement 1>
+- <Technical requirement 2>
+
+## Options considered
+
+### Option A: <Name>
+
+<Description, consequences, and trade-offs.>
+
+### Option B: <Name>
+
+<Description, consequences, and trade-offs.>
+
+| Topic     | Option A | Option B |
+| --------- | -------- | -------- |
+| <Factor>  | <Value>  | <Value>  |
+
+_Table 1: Comparison of options._
+
+## Decision outcome / proposed direction
+
+<State the chosen or recommended approach and summarize the rationale.>
+
+## Goals and non-goals
+
+- Goals:
+  - <Goal 1>
+  - <Goal 2>
+- Non-goals:
+  - <Non-goal 1>
+  - <Non-goal 2>
+
+## Migration plan
+
+<Use numbered phases with clear goals and deliverables where phased
+implementation is required.>
+
+## Known risks and limitations
+
+- <Risk or limitation 1>
+- <Risk or limitation 2>
+
+## Outstanding decisions
+
+- <Open question 1>
+- <Open question 2>
+```
 
 ### Repository layout document
 
@@ -364,6 +614,46 @@ This hierarchy should align with the GIST framework:
   unrelated tasks.
 - Tasks correspond to implementation-level execution units. A task should be a
   concrete build activity, not an aspiration, research topic, or status label.
+
+### Roadmap formatting conventions
+
+- **Dotted numbering:** Number phases, steps, and headline tasks using dotted
+  notation:
+  - Phases: 1, 2, 3, …
+  - Steps: 1.1, 1.2, 1.3, …
+  - Headline tasks: 1.1.1, 1.1.2, 1.1.3, …
+- **Checkboxes:** Precede task and sub-task items with a GitHub Flavored
+  Markdown (GFM) checkbox (`[ ]`) to track completion status.
+- **Dependencies:** Note non-linear dependencies explicitly. Where a task
+  depends on another task outside its immediate sequence, cite the dependency
+  using dotted notation (e.g. “Requires 2.3.1”).
+- **Success criteria:** Include explicit success criteria only where not
+  immediately obvious from the task description.
+- **Design document citations:** Where applicable, cite the relevant design
+  document section for each task (e.g. “See design-doc.md §3.2”).
+
+### Roadmap example
+
+```markdown
+## 1. Core infrastructure
+
+### 1.1. Logging subsystem
+
+- [ ] 1.1.1. Introduce central logging service
+  - Define log message schema. See design-doc.md §2.1.
+  - Implement log collector daemon.
+  - Add structured logging to API layer.
+- [ ] 1.1.2. Add error dashboards. Requires 1.1.1.
+  - Deploy Grafana instance.
+  - Create error rate dashboard (target: <1% error rate visible within 5 min).
+
+### 1.2. Authentication
+
+- [ ] 1.2.1. Implement role-based access control (RBAC). Requires 1.1.1.
+  - Define role hierarchy. See design-doc.md §4.3.
+  - Add RBAC middleware to API endpoints.
+  - Write integration tests for permission boundaries.
+```
 
 ### Writing GIST-aligned steps
 
