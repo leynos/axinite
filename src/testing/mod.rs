@@ -1423,15 +1423,26 @@ mod tests {
         .expect("save event 3");
 
         // List all events
-        let events = db.list_job_events(job_id, None).await.expect("list events");
+        let events = db
+            .list_job_events(job_id, None, None)
+            .await
+            .expect("list events");
         assert_eq!(events.len(), 3);
 
         // List with limit
         let events = db
-            .list_job_events(job_id, Some(2))
+            .list_job_events(job_id, None, Some(2))
             .await
             .expect("list events limited");
         assert_eq!(events.len(), 2);
+
+        // List older events before the oldest event in the limited page.
+        let events = db
+            .list_job_events(job_id, Some(events[0].id), Some(2))
+            .await
+            .expect("list events before cursor");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "tool_call");
     }
 
     #[cfg(feature = "libsql")]

@@ -266,8 +266,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
-      - name: Install mold
-        uses: rui314/setup-mold@v1
       - name: Install cargo-component
         uses: taiki-e/install-action@v2
         with:

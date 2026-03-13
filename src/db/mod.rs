@@ -342,9 +342,15 @@ pub trait SandboxStore: Send + Sync {
         event_type: &str,
         data: &serde_json::Value,
     ) -> Result<(), DatabaseError>;
+    /// Load job events ordered by ascending id.
+    ///
+    /// When `before_id` is set, only events with ids strictly smaller than the
+    /// cursor are returned. When `limit` is set, at most that many events are
+    /// returned.
     async fn list_job_events(
         &self,
         job_id: Uuid,
+        before_id: Option<i64>,
         limit: Option<i64>,
     ) -> Result<Vec<JobEventRecord>, DatabaseError>;
 }

@@ -7,15 +7,23 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
+use serde::Deserialize;
 
 use crate::channels::web::server::GatewayState;
 
 const MAX_PENDING_PROMPTS_PER_JOB: usize = 100;
 
+#[derive(Deserialize)]
+pub(super) struct JobPromptRequest {
+    content: String,
+    #[serde(default)]
+    done: bool,
+}
+
 pub async fn jobs_prompt_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<JobPromptRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let store = state
         .store
@@ -25,22 +33,7 @@ pub async fn jobs_prompt_handler(
         .parse()
         .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid job ID".to_string()))?;
 
-    let content = body
-        .get("content")
-        .and_then(|v| v.as_str())
-        .ok_or((
-            StatusCode::BAD_REQUEST,
-            "Missing 'content' field".to_string(),
-        ))?
-        .to_string();
-
-    let done = match body.get("done") {
-        Some(value) => value.as_bool().ok_or((
-            StatusCode::BAD_REQUEST,
-            "'done' must be a boolean".to_string(),
-        ))?,
-        None => false,
-    };
+    let JobPromptRequest { content, done } = body;
 
     if let Some(job) = super::load_sandbox_job(store, job_id).await? {
         let mode = super::load_sandbox_job_mode(store, job_id).await?;

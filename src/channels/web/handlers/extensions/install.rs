@@ -10,8 +10,23 @@ use axum::{
 
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::{ActionResponse, InstallExtensionRequest};
+use crate::extensions::ExtensionKind;
 
 use super::common::{activation_required_response, maybe_extension_auth_url};
+
+fn parse_extension_kind(kind: &str) -> Result<ExtensionKind, (StatusCode, String)> {
+    match kind {
+        "mcp_server" => Ok(ExtensionKind::McpServer),
+        "wasm_tool" => Ok(ExtensionKind::WasmTool),
+        "wasm_channel" => Ok(ExtensionKind::WasmChannel),
+        _ => Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "invalid extension kind '{kind}': expected mcp_server, wasm_tool, or wasm_channel"
+            ),
+        )),
+    }
+}
 
 pub async fn extensions_install_handler(
     State(state): State<Arc<GatewayState>>,
@@ -40,12 +55,7 @@ pub async fn extensions_install_handler(
         )));
     };
 
-    let kind_hint = req.kind.as_deref().and_then(|k| match k {
-        "mcp_server" => Some(crate::extensions::ExtensionKind::McpServer),
-        "wasm_tool" => Some(crate::extensions::ExtensionKind::WasmTool),
-        "wasm_channel" => Some(crate::extensions::ExtensionKind::WasmChannel),
-        _ => None,
-    });
+    let kind_hint = req.kind.as_deref().map(parse_extension_kind).transpose()?;
 
     match ext_mgr
         .install(&req.name, req.url.as_deref(), kind_hint)
@@ -116,6 +126,15 @@ pub async fn extensions_activate_handler(
             {
                 return match ext_mgr.activate(&name).await {
                     Ok(result) => Ok(Json(ActionResponse::ok(result.message))),
+                    Err(crate::extensions::ExtensionError::AuthRequired) => Ok(Json(
+                        activation_required_response(
+                            ext_mgr,
+                            &name,
+                            format!("'{}' requires authentication.", name),
+                            "Authentication failed".to_string(),
+                        )
+                        .await,
+                    )),
                     Err(e) => Ok(Json(ActionResponse::fail(e.to_string()))),
                 };
             }
