@@ -9,6 +9,9 @@
   its current direction, and the main documents to read next.
 - [Developer's guide](developers-guide.md) is the maintainer-facing operating
   manual for building, testing, debugging, and extending axinite.
+- [Testing strategy](testing-strategy.md) explains how the repository designs
+  tests, runs them locally, exercises them in CI, and supports periodic or ad
+  hoc validation.
 - [Repository layout](repository-layout.md) maps the repository structure and
   shows where major subsystems, assets, and support files live.
 - [Documentation style guide](documentation-style-guide.md) defines the
