@@ -42,7 +42,9 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@cargo-nextest
       - name: Install cargo-component
-        uses: taiki-e/install-action@cargo-component
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-component
       - name: Build GitHub WASM tool (for metadata/schema tests)
         run: make build-github-tool-wasm
       - name: Build WASM channels (for integration tests)
@@ -123,7 +125,9 @@ jobs:
         with:
           key: wasm-extensions
       - name: Install cargo-component
-        uses: taiki-e/install-action@cargo-component
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-component
       - name: Build all WASM extensions against current WIT
         run: ./scripts/build-wasm-extensions.sh
       - name: Instantiation test (host linker compatibility)

@@ -90,7 +90,9 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Install cargo-component
-        uses: taiki-e/install-action@cargo-component
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-component
 
       - name: Build GitHub WASM tool (for metadata/schema tests)
         run: make build-github-tool-wasm
@@ -162,7 +164,9 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Install cargo-component
-        uses: taiki-e/install-action@cargo-component
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-component
 
       - name: Build WASM channels
         run: ./scripts/build-wasm-extensions.sh --channels

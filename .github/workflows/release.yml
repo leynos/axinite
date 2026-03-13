@@ -271,7 +271,9 @@ jobs:
       - name: Install mold
         uses: rui314/setup-mold@v1
       - name: Install cargo-component
-        uses: taiki-e/install-action@cargo-component
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-component
       - uses: swatinem/rust-cache@v2
         with:
           key: wasm-extensions
