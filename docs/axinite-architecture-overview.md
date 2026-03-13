@@ -211,6 +211,8 @@ but it also means the boot sequence must assemble most infrastructure before
 the agent can start.
 `docs/chat-model.md` is the detailed subsystem reference for how those
 dependencies are used once a normalized chat message enters the agent loop.
+`docs/jobs-and-routines.md` covers the scheduler, job model, routines engine,
+heartbeat runner, and the shared jobs and routines control surfaces.
 
 ### 4.3 Persistence, configuration, and memory
 
