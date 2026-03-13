@@ -216,8 +216,6 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - name: Install mold
-        uses: rui314/setup-mold@v1
       - name: Install cached dist
         uses: actions/download-artifact@v4
         with:

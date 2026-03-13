@@ -10,6 +10,8 @@ use axum::{
 
 use crate::channels::web::server::GatewayState;
 
+const MAX_PENDING_PROMPTS_PER_JOB: usize = 100;
+
 pub async fn jobs_prompt_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
@@ -59,7 +61,16 @@ pub async fn jobs_prompt_handler(
             let prompt = crate::orchestrator::api::PendingPrompt { content, done };
             {
                 let mut queue = prompt_queue.lock().await;
-                queue.entry(job_id).or_default().push_back(prompt);
+                let pending = queue.entry(job_id).or_default();
+                if pending.len() >= MAX_PENDING_PROMPTS_PER_JOB {
+                    return Err((
+                        StatusCode::TOO_MANY_REQUESTS,
+                        format!(
+                            "Prompt queue is full for job {job_id}; try again after pending prompts are processed"
+                        ),
+                    ));
+                }
+                pending.push_back(prompt);
             }
             return Ok(Json(serde_json::json!({
                 "status": "queued",

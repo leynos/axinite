@@ -18,6 +18,7 @@ pub async fn activation_required_response(
     ext_mgr: &crate::extensions::ExtensionManager,
     name: &str,
     fallback_message: String,
+    auth_error_context: String,
 ) -> ActionResponse {
     match ext_mgr.auth(name, None).await {
         Ok(auth_result) => {
@@ -32,9 +33,6 @@ pub async fn activation_required_response(
             resp.instructions = auth_result.instructions().map(String::from);
             resp
         }
-        Err(auth_err) => ActionResponse::fail(format!(
-            "Installed '{}' but authentication setup failed: {}",
-            name, auth_err
-        )),
+        Err(auth_err) => ActionResponse::fail(format!("{auth_error_context}: {auth_err}")),
     }
 }

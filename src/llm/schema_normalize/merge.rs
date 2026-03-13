@@ -203,9 +203,6 @@ fn merge_object_property_schema(
                 } else {
                     *existing_props_value = incoming_props_value.clone();
                 }
-            } else if existing_props_value != incoming_props_value {
-                *existing_props_value =
-                    merge_nested_any_of(existing_props_value.clone(), incoming_props_value.clone());
             }
         }
         (None, Some(incoming_props_value)) => {

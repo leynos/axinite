@@ -561,10 +561,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversations_metadata_must_be_valid_json() {
-        let backend = LibSqlBackend::new_memory().await.unwrap();
-        backend.run_migrations().await.unwrap();
+        let backend = LibSqlBackend::new_memory()
+            .await
+            .expect("create in-memory libsql backend for metadata JSON validation");
+        backend
+            .run_migrations()
+            .await
+            .expect("run migrations before metadata JSON validation");
 
-        let conn = backend.connect().await.unwrap();
+        let conn = backend
+            .connect()
+            .await
+            .expect("connect to libsql backend for metadata JSON validation");
         let result = conn
             .execute(
                 "INSERT INTO conversations (id, channel, user_id, metadata) VALUES (?1, ?2, ?3, ?4)",

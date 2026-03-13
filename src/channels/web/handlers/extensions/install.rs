@@ -66,6 +66,7 @@ pub async fn extensions_install_handler(
                                     "Installed '{}' but activation requires authentication.",
                                     req.name
                                 ),
+                                format!("Installed '{}' but authentication setup failed", req.name),
                             )
                             .await,
                         ));
@@ -103,39 +104,31 @@ pub async fn extensions_activate_handler(
             Ok(Json(resp))
         }
         Err(activate_err) => {
-            let needs_auth = matches!(
+            if !matches!(
                 &activate_err,
                 crate::extensions::ExtensionError::AuthRequired
-            );
-
-            if !needs_auth {
+            ) {
                 return Ok(Json(ActionResponse::fail(activate_err.to_string())));
             }
 
-            match ext_mgr.auth(&name, None).await {
-                Ok(auth_result) if auth_result.is_authenticated() => {
-                    match ext_mgr.activate(&name).await {
-                        Ok(result) => Ok(Json(ActionResponse::ok(result.message))),
-                        Err(e) => Ok(Json(ActionResponse::fail(e.to_string()))),
-                    }
-                }
-                Ok(auth_result) => {
-                    let mut resp = ActionResponse::fail(
-                        auth_result
-                            .instructions()
-                            .map(String::from)
-                            .unwrap_or_else(|| format!("'{}' requires authentication.", name)),
-                    );
-                    resp.auth_url = auth_result.auth_url().map(String::from);
-                    resp.awaiting_token = Some(auth_result.is_awaiting_token());
-                    resp.instructions = auth_result.instructions().map(String::from);
-                    Ok(Json(resp))
-                }
-                Err(auth_err) => Ok(Json(ActionResponse::fail(format!(
-                    "Authentication failed: {}",
-                    auth_err
-                )))),
+            if let Ok(auth_result) = ext_mgr.auth(&name, None).await
+                && auth_result.is_authenticated()
+            {
+                return match ext_mgr.activate(&name).await {
+                    Ok(result) => Ok(Json(ActionResponse::ok(result.message))),
+                    Err(e) => Ok(Json(ActionResponse::fail(e.to_string()))),
+                };
             }
+
+            Ok(Json(
+                activation_required_response(
+                    ext_mgr,
+                    &name,
+                    format!("'{}' requires authentication.", name),
+                    "Authentication failed".to_string(),
+                )
+                .await,
+            ))
         }
     }
 }

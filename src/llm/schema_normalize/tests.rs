@@ -263,35 +263,60 @@ fn test_normalize_schema_strict_marks_non_object_anyof_fields_nullable() {
     );
 }
 
-#[test]
-fn test_normalize_schema_strict_preserves_incoming_properties_after_shape_mismatch() {
+#[rstest]
+#[case(
+    serde_json::json!({
+        "properties": {
+            "inputs": {
+                "type": "object",
+                "properties": false
+            }
+        }
+    }),
+    serde_json::json!({
+        "properties": {
+            "inputs": {
+                "type": "object",
+                "properties": {
+                    "owner": { "type": "string" }
+                },
+                "additionalProperties": false
+            }
+        }
+    })
+)]
+#[case(
+    serde_json::json!({
+        "properties": {
+            "inputs": {
+                "type": "object",
+                "properties": {
+                    "owner": { "type": "string" }
+                },
+                "additionalProperties": false
+            }
+        }
+    }),
+    serde_json::json!({
+        "properties": {
+            "inputs": {
+                "type": "object",
+                "properties": false
+            }
+        }
+    })
+)]
+fn test_normalize_schema_strict_preserves_object_properties_after_shape_mismatch(
+    #[case] first_branch: JsonValue,
+    #[case] second_branch: JsonValue,
+) {
     let normalized = normalize_schema_strict(&serde_json::json!({
         "type": "object",
-        "oneOf": [
-            {
-                "properties": {
-                    "inputs": {
-                        "type": "object",
-                        "properties": false
-                    }
-                }
-            },
-            {
-                "properties": {
-                    "inputs": {
-                        "type": "object",
-                        "properties": {
-                            "owner": { "type": "string" }
-                        },
-                        "additionalProperties": false
-                    }
-                }
-            }
-        ]
+        "oneOf": [first_branch, second_branch]
     }));
 
     assert!(
         normalized["properties"]["inputs"]["properties"]["owner"].is_object(),
-        "incoming object properties should survive mismatched earlier branches: {normalized}"
+        "object-shaped properties should survive mismatched branches: {normalized}"
     );
 }
