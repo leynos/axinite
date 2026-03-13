@@ -35,8 +35,8 @@ jobs:
 
             1. Use a Haiku agent to find relevant instruction files: the root
                AGENTS.md, the compatibility root CLAUDE.md, and any scoped
-               AGENTS.md or CLAUDE.md files in directories whose files this PR
-               modifies.
+               AGENTS.md or CLAUDE.md files in each modified file's directory
+               and every ancestor directory up to repository root.
 
             2. Use a Haiku agent to summarize the PR change (use `gh pr diff`).
 

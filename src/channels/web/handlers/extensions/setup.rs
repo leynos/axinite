@@ -13,6 +13,20 @@ use crate::channels::web::types::{
     ActionResponse, ExtensionSetupRequest, ExtensionSetupResponse, SseEvent,
 };
 
+fn internal_error(context: &'static str, error: impl std::fmt::Display) -> (StatusCode, String) {
+    tracing::error!(error = %error, "{context}");
+    (StatusCode::INTERNAL_SERVER_ERROR, context.to_string())
+}
+
+fn logged_failure(
+    message: String,
+    context: &'static str,
+    error: impl std::fmt::Display,
+) -> ActionResponse {
+    tracing::error!(error = %error, "{context}");
+    ActionResponse::fail(message)
+}
+
 pub async fn extensions_setup_handler(
     State(state): State<Arc<GatewayState>>,
     Path(name): Path<String>,
@@ -25,14 +39,12 @@ pub async fn extensions_setup_handler(
     let secrets = ext_mgr
         .get_setup_schema(&name)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| internal_error("Failed to load extension setup schema", e))?;
 
-    let installed = ext_mgr.list(None, false).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("failed to list installed extensions: {e}"),
-        )
-    })?;
+    let installed = ext_mgr
+        .list(None, false)
+        .await
+        .map_err(|e| internal_error("Failed to list installed extensions", e))?;
 
     let kind = installed
         .into_iter()
@@ -69,6 +81,18 @@ pub async fn extensions_setup_submit_handler(
             resp.auth_url = result.auth_url;
             Ok(Json(resp))
         }
-        Err(e) => Ok(Json(ActionResponse::fail(e.to_string()))),
+        Err(e) => {
+            let message = format!("Failed to save setup secrets for '{}'", name);
+            state.sse.broadcast(SseEvent::AuthCompleted {
+                extension_name: name.clone(),
+                success: false,
+                message: message.clone(),
+            });
+            Ok(Json(logged_failure(
+                message,
+                "Failed to save extension setup secrets",
+                e,
+            )))
+        }
     }
 }

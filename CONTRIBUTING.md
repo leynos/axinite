@@ -32,8 +32,8 @@ See `AGENTS.md` for the canonical style and contributor guidelines. The root
 
 ## Feature Parity Requirement
 
-When your change affects a tracked capability, update `FEATURE_PARITY.md` in
-the same branch.
+Changes that affect a tracked capability must update `FEATURE_PARITY.md` in the
+same branch.
 
 ### Required before opening a PR
 
@@ -53,8 +53,8 @@ All PRs follow a risk-based review process:
 | **C** | Security (`src/safety/`, `src/secrets/`), runtime (`src/agent/`, `src/worker/`), database schema, CI workflows | 2 approvals + rollback plan documented |
 <!-- markdownlint-enable MD013 MD060 -->
 
-Select the appropriate track in the PR template based on what your changes
-touch.
+Select the appropriate track in the PR template based on the files and behaviour
+the change touches.
 
 ## Database Changes
 
@@ -63,5 +63,5 @@ persistence features must support both backends. See `src/db/CLAUDE.md`.
 
 ## Adding Dependencies
 
-Run `cargo deny check` before adding new dependencies to verify license
+Run `cargo deny check` before adding new dependencies to verify licence
 compatibility and check for known advisories.

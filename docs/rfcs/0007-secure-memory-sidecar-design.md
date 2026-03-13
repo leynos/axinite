@@ -8,38 +8,38 @@
 
 ## Executive summary
 
-Axinite’s IronClaw already has a coherent, security-first architecture and a functioning “workspace & memory system” built on PostgreSQL tables (`memory_documents`, `memory_chunks`) and hybrid retrieval (full-text + vector) fused via Reciprocal Rank Fusion (RRF). citeturn4view0turn4view1turn6view1turn15view2 That existing system is valuable (especially for “explicit write it down” durable memory), but it is not structured as an event-driven, consolidation-capable, entity/fact memory layer. citeturn4view1turn5view0
+Axinite’s IronClaw already has a coherent, security-first architecture and a functioning “workspace & memory system” built on PostgreSQL tables (`memory_documents`, `memory_chunks`) and hybrid retrieval (full-text + vector) fused via Reciprocal Rank Fusion (RRF). [^1] That existing system is valuable (especially for “explicit write it down” durable memory), but it is not structured as an event-driven, consolidation-capable, entity/fact memory layer. [^2]
 
 This report proposes a **security-minded memory sidecar** (“memoryd”) that:
 
-- **Adds a transactional outbox** in PostgreSQL, populated by IronClaw at key persistence boundaries (conversation messages; workspace document mutations), with explicit idempotency and retention. citeturn14view3turn15view2turn11view0  
-- Runs a **local-only Rust sidecar** that consumes outbox events, performs extraction with **Ollama** structured outputs + embeddings, stores retrieval vectors in **Qdrant**, and stores normalized facts/relations in **Oxigraph** (embedded; no SPARQL HTTP server). citeturn29search1turn29search2turn33search1turn28search0turn28search1  
-- Uses a **capability-token enforcement model** over a **Unix Domain Socket (UDS)** RPC surface with narrow, auditable scopes; tokens are minted by IronClaw per job/workspace and validated by memoryd. The design intentionally minimises network surfaces (UDS for memoryd; no Oxigraph network exposure; Qdrant/Ollama bound to loopback with keys and OS controls). citeturn7view0turn17view0turn27search0turn29search0  
-- Delegates consolidation and heavyweight reconciliation to **Apalis** workers (embedded into memoryd), enabling retries, timeouts, concurrency limits, and a reliable Postgres-backed queue. citeturn30search0turn30search1  
+- **Adds a transactional outbox** in PostgreSQL, populated by IronClaw at key persistence boundaries (conversation messages; workspace document mutations), with explicit idempotency and retention. [^3]
+- Runs a **local-only Rust sidecar** that consumes outbox events, performs extraction with **Ollama** structured outputs + embeddings, stores retrieval vectors in **Qdrant**, and stores normalized facts/relations in **Oxigraph** (embedded; no SPARQL HTTP server). [^4]
+- Uses a **capability-token enforcement model** over a **Unix Domain Socket (UDS)** RPC surface with narrow, auditable scopes; tokens are minted by IronClaw per job/workspace and validated by memoryd. The design intentionally minimizes network surfaces (UDS for memoryd; no Oxigraph network exposure; Qdrant/Ollama bound to loopback with keys and OS controls). [^5]
+- Delegates consolidation and heavyweight reconciliation to **Apalis** workers (embedded into memoryd), enabling retries, timeouts, concurrency limits, and a reliable Postgres-backed queue. [^6]
 
-Open choices (explicit “no constraint” per your request):
+Open choices (explicit “no constraint” for this request):
 
-- Embedding model(s) (must be consistent for ingest vs recall), extraction model, and whether to add sparse vectors; these remain configurable. Axinite already exposes a unified embeddings config supporting OpenAI / NEAR AI / Ollama and model-dependent vector dimensions. citeturn20view0turn20view4  
+- Embedding model(s) (must be consistent for ingest vs recall), extraction model, and whether to add sparse vectors; these remain configurable. Axinite already exposes a unified embeddings config supporting OpenAI / NEAR AI / Ollama and model-dependent vector dimensions. [^7]
 - Whether to structure Qdrant as collection-per-workspace (strong isolation, easy purge) or shared collections filtered by payload (fewer collections, more reliance on correct filters). This report recommends **collection-per-workspace** for security and deletion correctness.
 
 ## Baseline architecture and constraints from Axinite
 
-IronClaw’s README and internal development guide describe an architecture built around: multi-channel inputs → agent loop → tools (built-in, MCP, WASM) → PostgreSQL persistence; with explicit defence-in-depth (WASM sandbox with capabilities, prompt-injection defences, secret protection). citeturn4view0turn3view0
+IronClaw’s README and internal development guide describe an architecture built around: multi-channel inputs → agent loop → tools (built-in, MCP, WASM) → PostgreSQL persistence; with explicit defence-in-depth (WASM sandbox with capabilities, prompt-injection defences, secret protection). [^8]
 
 The existing workspace subsystem:
 
-- Stores documents in `memory_documents` and chunks in `memory_chunks`. citeturn6view0turn15view0turn15view2  
-- Implements hybrid search by combining PostgreSQL FTS and pgvector cosine similarity with an RRF fusion function. citeturn4view1turn6view0turn6view1  
-- Reindexes chunks after writes/append (so “durable memory” stays searchable). citeturn5view2turn6view0  
-- Already constrains risky memory mutations: built-in `memory_write` blocks overwriting “identity files” loaded into the system prompt to mitigate prompt-injection persistence attacks. citeturn8view0  
+- Stores documents in `memory_documents` and chunks in `memory_chunks`. [^9]
+- Implements hybrid search by combining PostgreSQL FTS and pgvector cosine similarity with an RRF fusion function. [^10]
+- Reindexes chunks after writes/append (so “durable memory” stays searchable). [^11]
+- Already constrains risky memory mutations: built-in `memory_write` blocks overwriting “identity files” loaded into the system prompt to mitigate prompt-injection persistence attacks. [^12]
 
 Security primitives we can reuse:
 
-- A job-scoped bearer-token store exists for worker↔orchestrator HTTP authentication (random 32-byte tokens, constant-time compare, per-job scoping). citeturn7view0  
-- A capability system exists for WASM tools where *all permissions are opt-in* (workspace read prefixes, HTTP allowlists, tool invocation aliases, secret existence checks). citeturn17view0turn7view1  
-- A leak detector exists that can redact or block outputs containing secret-like patterns (Aho–Corasick + regex; actions include Block/Redact/Warn). citeturn36view0turn36view1  
+- A job-scoped bearer-token store exists for worker↔orchestrator HTTP authentication (random 32-byte tokens, constant-time compare, per-job scoping). [^13]
+- A capability system exists for WASM tools where *all permissions are opt-in* (workspace read prefixes, HTTP allowlists, tool invocation aliases, secret existence checks). [^14]
+- A leak detector exists that can redact or block outputs containing secret-like patterns (Aho–Corasick + regex; actions include Block/Redact/Warn). [^15]
 
-Design constraint: Axinite’s Postgres schema includes `conversation_messages`, `memory_documents`, and `memory_chunks`, with indexes (e.g. `idx_memory_chunks_tsv`, HNSW on embeddings in V1; later dropped for variable-dimension embeddings). citeturn14view3turn15view2turn16view0 The sidecar must not assume a fixed embedding dimension in the primary DB, and should treat embedding dimension as a configuration contract. citeturn20view2turn16view0  
+Design constraint: Axinite’s Postgres schema includes `conversation_messages`, `memory_documents`, and `memory_chunks`, with indexes (e.g. `idx_memory_chunks_tsv`, HNSW on embeddings in V1; later dropped for variable-dimension embeddings). [^16] The sidecar must not assume a fixed embedding dimension in the primary DB, and should treat embedding dimension as a configuration contract. [^17]
 
 ## Required IronClaw code changes
 
@@ -47,7 +47,7 @@ This section lists concrete changes to Axinite’s IronClaw codebase to integrat
 
 **Add a memory-sidecar config block**
 
-Introduce `MemorySidecarConfig` in `src/config/` and add it into the top-level `Config` struct (see existing pattern in `src/config/mod.rs`). citeturn19view0
+Introduce `MemorySidecarConfig` in `src/config/` and add it into the top-level `Config` struct (see existing pattern in `src/config/mod.rs`). [^18]
 
 Key fields:
 
@@ -59,16 +59,16 @@ Key fields:
 - `cap_ttl_seconds: u32` (short-lived, e.g. 60–300s depending on method)
 - `outbox_poll_ms: u32` (if IronClaw also runs a notifier; optional)
 - `qdrant_url`, `qdrant_api_key_secret_ref` (if IronClaw needs to provision; otherwise memoryd owns)
-- `ollama_base_url` (already present globally for embeddings; reuse) citeturn20view1  
+- `ollama_base_url` (already present globally for embeddings; reuse) [^19]
 
 **Capability minting module**
 
-Add `src/memory_sidecar/capability.rs` in IronClaw to mint capability tokens for memoryd calls. Use the same philosophy as WASM capabilities (explicit, opt-in, narrow) but expressed as signed tokens. citeturn17view0  
+Add `src/memory_sidecar/capability.rs` in IronClaw to mint capability tokens for memoryd calls. Use the same philosophy as WASM capabilities (explicit, opt-in, narrow) but expressed as signed tokens. [^20]
 
 Minimum minting call sites:
 
-- When executing built-in memory tools (current `memory_search`, `memory_read`, `memory_write`) to call memoryd in **Shadow/Active** modes. citeturn8view0turn23view0  
-- When persisting conversation messages (into `conversation_messages`) to produce outbox events, and optionally when persisting workspace docs to produce outbox events. citeturn14view3turn15view0  
+- When executing built-in memory tools (current `memory_search`, `memory_read`, `memory_write`) to call memoryd in **Shadow/Active** modes. [^21]
+- When persisting conversation messages (into `conversation_messages`) to produce outbox events, and optionally when persisting workspace docs to produce outbox events. [^22]
 
 **UDS client plumbing**
 
@@ -77,14 +77,14 @@ Add a `MemorydClient` with:
 - `connect(uds_path) -> UnixStream`
 - `call(method, request) -> response` with length-delimited framing and timeouts.
 
-Keep it in the orchestrator domain (do not expose it to WASM; do not allow arbitrary untrusted tools to talk to it). This matches the established separation between orchestrator-only tools vs container tools. citeturn17view2  
+Keep it in the orchestrator domain (do not expose it to WASM; do not allow arbitrary untrusted tools to talk to it). This matches the established separation between orchestrator-only tools vs container tools. [^23]
 
 **Dual-write hooks**
 
 Implement dual-write into **Postgres outbox** at these boundaries:
 
-- **Conversation writes**: whenever IronClaw inserts into `conversation_messages`, insert an outbox event in the same transaction. citeturn14view3turn11view0  
-- **Workspace document mutations**: whenever `memory_documents` changes materially (insert/update/delete), insert an outbox event. The existing repository already centralises document writes (`update_document`, delete, create). citeturn6view0turn5view2  
+- **Conversation writes**: whenever IronClaw inserts into `conversation_messages`, insert an outbox event in the same transaction. [^24]
+- **Workspace document mutations**: whenever `memory_documents` changes materially (insert/update/delete), insert an outbox event. The existing repository already centralizes document writes (`update_document`, delete, create). [^25]
 
 Strong recommendation: implement outbox writes **inside the same DB transaction** as the primary write to avoid “message without state” or “state without message” failure modes.
 
@@ -94,15 +94,15 @@ Strong recommendation: implement outbox writes **inside the same DB transaction*
 - **Shadow**: write outbox + call memoryd for ingestion, but do not use memoryd results for user-visible answers (log only and collect metrics).
 - **Active**: memory tools call memoryd for recall (and may still fall back to workspace RRF search).
 
-This integrates cleanly with `AppBuilder::init_tools()` where tools and workspace are registered once DB exists. citeturn23view0  
+This integrates cleanly with `AppBuilder::init_tools()` where tools and workspace are registered once DB exists. [^26]
 
 ## Postgres outbox schema and event types
 
-Axinite’s V1 schema already defines the core persistence tables (`conversations`, `conversation_messages`, workspace tables). citeturn14view3turn15view2 The outbox adds a durable, ordered stream of events for memory projection and consolidation.
+Axinite’s V1 schema already defines the core persistence tables (`conversations`, `conversation_messages`, workspace tables). [^27] The outbox adds a durable, ordered stream of events for memory projection and consolidation.
 
 ### Migration SQL
 
-Create a new migration (e.g. `V13__memory_outbox.sql`) alongside existing refinery migrations. citeturn11view0turn12view1
+Create a new migration (e.g. `V13__memory_outbox.sql`) alongside existing refinery migrations. [^28]
 
 ```sql
 -- V13__memory_outbox.sql
@@ -172,24 +172,24 @@ CREATE INDEX IF NOT EXISTS ix_memory_outbox_inserted_at
 The schema intentionally supports:
 
 - **Sequential consumption** (offset table) for high-throughput projection.
-- **Idempotent “seen” tracking** for job-style consumers (useful if you ever shard processing or reprocess selectively).
+- **Idempotent “seen” tracking** for job-style consumers (useful when processing is ever sharded or selectively replayed).
 - **Retention** keyed on `inserted_at` plus deletion policies in memoryd.
 
 ### Event types
 
-Event types should be stable string constants. Keep payloads small; store IDs and minimal redacted text, not entire raw transcripts (raw text already exists in `conversation_messages.content`). citeturn14view3
+Event types should be stable string constants. Keep payloads small; store IDs and minimal redacted text, not entire raw transcripts (raw text already exists in `conversation_messages.content`). [^29]
 
 | Event type | Producer boundary | Payload fields (minimum) | Idempotency key |
 |---|---|---|---|
-| `conversation.message.appended` | INSERT into `conversation_messages` citeturn14view3 | `message_id`, `role`, `content_hash`, `content_redacted?`, `created_at` | `conversation_message:{message_id}` |
-| `workspace.document.upserted` | INSERT/UPDATE `memory_documents` citeturn15view0turn15view1 | `document_id`, `path`, `content_hash`, `updated_at` | `memory_document:{document_id}:{updated_at}` |
-| `workspace.document.deleted` | DELETE `memory_documents` citeturn6view0 | `document_id`, `path`, `deleted_at` | `memory_document_deleted:{document_id}` |
+| `conversation.message.appended` | INSERT into `conversation_messages` [^30] | `message_id`, `role`, `content_hash`, `content_redacted?`, `created_at` | `conversation_message:{message_id}` |
+| `workspace.document.upserted` | INSERT/UPDATE `memory_documents` [^31] | `document_id`, `path`, `content_hash`, `updated_at` | `memory_document:{document_id}:{updated_at}` |
+| `workspace.document.deleted` | DELETE `memory_documents` [^32] | `document_id`, `path`, `deleted_at` | `memory_document_deleted:{document_id}` |
 | `memory.reinforcement.recorded` | IronClaw tool → memoryd Reinforce | `target_type`, `target_id`, `delta`, `source` | `reinforce:{job_id}:{target_type}:{target_id}` |
 | `workspace.purged` | CLI/admin | `reason`, `requested_by` | `purge:{workspace_id}:{occurred_at_bucket}` |
 
 Retention policy:
 
-- Keep at least **7–30 days** of outbox events by default (align with memory hygiene defaults: conversations retention 7 days, daily logs 30 days). citeturn34view0turn35view2  
+- Keep at least **7–30 days** of outbox events by default (align with memory hygiene defaults: conversations retention 7 days, daily logs 30 days). [^33]
 - Allow memoryd to delete from `memory_outbox` when:
   - `inserted_at < now() - retention_interval`, and
   - all active consumers’ `last_outbox_id` exceed the candidate rows.
@@ -276,11 +276,11 @@ flowchart LR
   Outbox --> OC
 ```
 
-This structure matches IronClaw’s existing “in-proc orchestrator” philosophy: sensitive operations (capabilities, secrets, durable storage) happen at the host boundary, not inside sandboxed tools. citeturn4view0turn17view2turn23view0
+This structure matches IronClaw’s existing “in-proc orchestrator” philosophy: sensitive operations (capabilities, secrets, durable storage) happen at the host boundary, not inside sandboxed tools. [^34]
 
 ### RPC surface over UDS
 
-To minimise attack surface, use a **single UDS endpoint** and expose only a small set of typed methods:
+To minimize attack surface, use a **single UDS endpoint** and expose only a small set of typed methods:
 
 - `IngestEpisode`
 - `Recall`
@@ -460,7 +460,7 @@ This keeps the “RPC surface” small, auditable, and easy to fuzz.
 
 ### Capability token format and enforcement model
 
-IronClaw already uses job-scoped bearer authentication for internal worker calls. citeturn7view0 For memoryd, use a **JWT-like signed token** carrying explicit scopes and resource bindings.
+IronClaw already uses job-scoped bearer authentication for internal worker calls. [^35] For memoryd, use a **JWT-like signed token** carrying explicit scopes and resource bindings.
 
 #### Token structure (JWT-like)
 
@@ -468,7 +468,7 @@ IronClaw already uses job-scoped bearer authentication for internal worker calls
 - `payload` (claims):
   - `iss`: issuer, e.g. `ironclaw`
   - `aud`: audience, e.g. `memoryd`
-  - `sub`: workspace principal (`default` in Axinite’s current single-user pattern) citeturn23view0
+  - `sub`: workspace principal (`default` in Axinite’s current single-user pattern) [^36]
   - `ws`: workspace_id (must match request)
   - `job`: job_id (optional, but recommended for auditing)
   - `scp`: array of scopes (see table below)
@@ -493,19 +493,19 @@ IronClaw already uses job-scoped bearer authentication for internal worker calls
 
 For each request:
 
-1. **UDS peer verification**: ensure the connecting peer UID matches the memoryd UID; reject otherwise. (Linux can enforce via peer-credentials; on macOS use equivalent where available.)  
+1. **UDS peer verification**: ensure the connecting peer UID matches the memoryd UID; reject otherwise. (Linux can enforce via peer-credentials; on macOS use equivalent where available.)
 2. **Token verification**: check signature (public key), `aud`, `iss`, `exp`, and `ws` claim equality with request workspace.
 3. **Scope check**: map method → required scope(s).
 4. **Request validation**: reject oversized payloads; validate IDs; enforce “no network exposure” policy (memoryd must not provide any network API itself).
 5. **Audit log**: record `job_id`, method, workspace, target ids, and decision outcome.
 
-Redaction and leak detection: before IronClaw sends an episode text to memoryd, run the existing leak detector and either block or redact secret-like content. citeturn36view0turn36view1 This avoids “remembering secrets” as retrievable embeddings.
+Redaction and leak detection: before IronClaw sends an episode text to memoryd, run the existing leak detector and either block or redact secret-like content. [^37] This avoids “remembering secrets” as retrievable embeddings.
 
 ## Storage schemas in Qdrant and Oxigraph
 
 ### Qdrant: episodes and concepts collections
 
-Qdrant’s data model uses “collections” containing “points” (id + vectors + payload). Collections can use **named vectors** to attach multiple vector spaces with distinct dimensions and distance metrics. citeturn33search1turn33search9 Payload indexing improves filtered search performance. citeturn33search6
+Qdrant’s data model uses “collections” containing “points” (id + vectors + payload). Collections can use **named vectors** to attach multiple vector spaces with distinct dimensions and distance metrics. [^38] Payload indexing improves filtered search performance. [^39]
 
 #### Collection-per-workspace mapping (recommended)
 
@@ -514,19 +514,19 @@ Create two collections per workspace:
 - `icw_{workspace_id}_episodes`
 - `icw_{workspace_id}_concepts`
 
-Rationale: simplifies purge, reduces risk of cross-tenant filter mistakes, and makes deletion propagation crisp (drop collections). This is consistent with the “capabilities must be explicit” philosophy in IronClaw’s WASM model. citeturn17view0
+Rationale: simplifies purge, reduces risk of cross-tenant filter mistakes, and makes deletion propagation crisp (drop collections). This is consistent with the “capabilities must be explicit” philosophy in IronClaw’s WASM model. [^40]
 
 #### Episodes collection schema
 
 Vectors (named):
 
 - `dense`: the embedding vector for episode summaries / chunks
-  - `size`: derived from the configured embedding model. Axinite already supports dimensions per model (e.g. `nomic-embed-text`→768, `mxbai-embed-large`→1024, OpenAI 1536/3072). citeturn20view3turn16view0  
-  - `distance`: `Cosine` (typical for text embeddings). citeturn33search1turn33search0
+  - `size`: derived from the configured embedding model. Axinite already supports dimensions per model (e.g. `nomic-embed-text`→768, `mxbai-embed-large`→1024, OpenAI 1536/3072). [^41]
+  - `distance`: `Cosine` (typical for text embeddings). [^42]
 
 Optional future vectors:
 
-- `sparse`: if you add a sparse retriever; enables Qdrant hybrid queries with RRF or formula fusion. citeturn26search2turn33search4  
+- `sparse`: optional sparse retriever support; enables Qdrant hybrid queries with RRF or formula fusion. [^43]
 
 Payload fields:
 
@@ -535,7 +535,7 @@ Payload fields:
 - `conversation_id` (UUID string)
 - `occurred_at` (datetime)
 - `summary` (string, redacted; short)
-- `content_redacted` (string, optional; may omit to minimise sensitive storage)
+- `content_redacted` (string, optional; may omit to minimize sensitive storage)
 - `content_hash` (string)
 - `evidence` (array of `{source,source_id,start,end}`)
 - reinforcement signals:
@@ -548,7 +548,7 @@ Payload fields:
 
 Indexes:
 
-- payload index on `occurred_at` (datetime) for time-based reranking and filtering. citeturn33search6turn31search1  
+- payload index on `occurred_at` (datetime) for time-based reranking and filtering. [^44]
 - payload index on `retracted` (bool)
 - payload index on `conversation_id` (keyword)
 
@@ -575,7 +575,7 @@ This supports “associative” recall: concept search → related episodes and 
 
 ### Qdrant reranking and “dopamine-like” reinforcement
 
-Qdrant’s query API supports hybrid retrieval and fusion, including an RRF query option. citeturn26search2turn4view1 It also supports formula-based reranking with decay functions (e.g. exponential decay on timestamps) and requires payload variables used in formulas to be indexed. citeturn31search1turn33search6
+Qdrant’s query API supports hybrid retrieval and fusion, including an RRF query option. [^45] It also supports formula-based reranking with decay functions (e.g. exponential decay on timestamps) and requires payload variables used in formulas to be indexed. [^46]
 
 A practical reranking formula for episodes could combine:
 
@@ -610,11 +610,11 @@ Example (conceptual JSON; keep in memoryd as a builder):
 
 This approximates a “dopamine reward” mechanism: reinforcement raises future retrieval probability, while recency decays naturally.
 
-Security caution: Qdrant’s own security guide notes that internal communication channels (e.g. internal gRPC in distributed mode) are not protected by API keys; you must keep those ports private. citeturn27search0 For a local single-node setup, run Qdrant bound to loopback with API keys, and ensure only memoryd can reach it (local firewall / OS sandboxing).
+Security caution: Qdrant’s own security guide notes that internal communication channels (e.g. internal gRPC in distributed mode) are not protected by API keys; those ports must remain private. [^47] For a local single-node setup, run Qdrant bound to loopback with API keys, and ensure that only memoryd can reach it (local firewall / OS sandboxing).
 
 ### Oxigraph named-graph schema, predicates, provenance, SPARQL patterns
 
-Oxigraph is a Rust graph database implementing SPARQL; its Store API enforces that only one read-write store can be open simultaneously for a given path (read-only stores can be opened separately). citeturn28search0turn28search1 This makes it well-suited as an embedded, non-networked store inside memoryd, with a single writer (Apalis worker) and optional read-only handles for query execution.
+Oxigraph is a Rust graph database implementing SPARQL; its Store API enforces that only one read-write store can be open simultaneously for a given path (read-only stores can be opened separately). [^48] This makes it well-suited as an embedded, non-networked store inside memoryd, with a single writer (Apalis worker) and optional read-only handles for query execution.
 
 #### Named graph layout
 
@@ -630,7 +630,7 @@ Use a minimal internal vocabulary (do not depend on remote ontologies):
 
 - `ic:Fact` (class)
 - `ic:Concept` (class)
-- `ic:predicate` (property – if you model facts as reified nodes)
+- `ic:predicate` (property – if facts are modelled as reified nodes)
 - `ic:subject`, `ic:object`
 - `ic:confidence` (xsd:double)
 - `ic:firstSeen`, `ic:lastSeen` (xsd:dateTime)
@@ -672,7 +672,7 @@ Avoid spinning up Oxigraph’s HTTP server; keep access strictly in-process.
 
 ### Ollama extraction with structured outputs
 
-Ollama supports **structured outputs** by providing a JSON schema to a `format` field (and recommends also embedding the schema in the prompt). citeturn29search1turn29search4 It also provides an embeddings endpoint where vector dimension depends on the embedding model. citeturn29search2turn29search5 For strict locality, disable cloud features via config or `OLLAMA_NO_CLOUD=1`. citeturn29search0
+Ollama supports **structured outputs** by providing a JSON schema to a `format` field (and recommends also embedding the schema in the prompt). [^49] It also provides an embeddings endpoint where vector dimension depends on the embedding model. [^50] For strict locality, disable cloud features via config or `OLLAMA_NO_CLOUD=1`. [^51]
 
 #### Extraction contract (JSON schema)
 
@@ -748,15 +748,15 @@ This contract standardises what memoryd expects from the extraction model and ke
 
 Ingest flow should:
 
-- Redact secrets before sending text to Ollama using IronClaw’s leak detector rules. citeturn36view1turn36view0  
+- Redact secrets before sending text to Ollama using IronClaw’s leak detector rules. [^52]
 - Keep embeddings consistent: use the same embedding model for:
   - Episode vectors at ingestion,
   - Query vectors at recall.
-  Axinite already records and configures an embedding provider + dimension. citeturn20view4turn20view5  
+  Axinite already records and configures an embedding provider + dimension. [^53]
 
 ### Apalis workers: jobs, retries, heuristics, reconciliation
 
-Apalis provides middleware-like features (retry, timeout, concurrency limiting) and apalis-postgres provides a reliable Postgres-backed backend with heartbeats and orphan re-enqueueing. citeturn30search0turn30search1turn30search19
+Apalis provides middleware-like features (retry, timeout, concurrency limiting) and apalis-postgres provides a reliable Postgres-backed backend with heartbeats and orphan re-enqueueing. [^54]
 
 #### Job types (embedded in memoryd)
 
@@ -781,12 +781,12 @@ A minimal, implementable rule-set:
   - recency-weighted support,
   - reinforcement,
   - explicit curated source.
-- **Decay**: reduce `strength` by exponential decay over time; Qdrant reranking can incorporate `exp_decay` on timestamps. citeturn31search1turn27search0  
+- **Decay**: reduce `strength` by exponential decay over time; Qdrant reranking can incorporate `exp_decay` on timestamps. [^55]
 - **Retraction propagation**: `Retract` marks `retracted=true` in Qdrant payload and inserts a triple in Oxigraph retractions graph (do not hard-delete immediately unless `PurgeWorkspace`).
 
 Retries:
 
-- Use Apalis retry middleware for transient failures (Ollama not ready; Qdrant connection). citeturn30search0  
+- Use Apalis retry middleware for transient failures (Ollama not ready; Qdrant connection). [^56]
 - Treat extraction as retryable; treat graph corruption as non-retryable (surface as Health degraded).
 
 ## Security considerations, rollout plan, tests, monitoring
@@ -796,9 +796,9 @@ Retries:
 **Minimise exposure**
 
 - memoryd listens only on a UDS socket (0600 permissions; owned by the user running IronClaw).
-- Do not expose Oxigraph over HTTP; embed it in memoryd only. citeturn28search1  
-- Ensure Ollama and Qdrant bind to loopback; disable Ollama cloud features for strict locality. citeturn29search0turn29search7  
-- Configure Qdrant API keys; keep internal ports inaccessible (especially if distributed mode ever enabled). citeturn27search0  
+- Do not expose Oxigraph over HTTP; embed it in memoryd only. [^57]
+- Ensure Ollama and Qdrant bind to loopback; disable Ollama cloud features for strict locality. [^58]
+- Configure Qdrant API keys; keep internal ports inaccessible (especially if distributed mode ever enabled). [^59]
 
 **Least privilege / capability grants**
 
@@ -814,17 +814,17 @@ Store in Postgres (append-only) or in IronClaw’s existing history/audit tables
 - decision: allow/deny, reason
 - latency and error codes
 
-Axinite already persists job history and tool actions (tool_name, inputs/outputs). citeturn11view0 Use the same “structured event” conventions.
+Axinite already persists job history and tool actions (tool_name, inputs/outputs). [^60] Use the same “structured event” conventions.
 
 **Redaction**
 
-- Reuse the existing leak detector logic to redact/block secret-like content before ingestion. citeturn36view1turn36view0  
-- Never store raw secrets in Qdrant payloads or Oxigraph literals.  
+- Reuse the existing leak detector logic to redact/block secret-like content before ingestion. [^61]
+- Never store raw secrets in Qdrant payloads or Oxigraph literals.
 - Prefer storing only hashes + short summaries where possible.
 
 **Deletion propagation**
 
-- Existing workspace hygiene deletes old `daily/` and `conversations/` docs based on retention settings. citeturn35view2turn34view0  
+- Existing workspace hygiene deletes old `daily/` and `conversations/` docs based on retention settings. [^62]
 - When those deletions occur, emit outbox events so memoryd can:
   - retract corresponding facts (provenance-based),
   - delete Qdrant points, and
@@ -837,7 +837,7 @@ Axinite already persists job history and tool actions (tool_name, inputs/outputs
 - **Disabled (default)**: ship schema and code behind flags; no behavioural change.
 - **Shadow**:
   - Start memoryd, write outbox events, run extraction, populate Qdrant/Oxigraph.
-  - Keep user-facing retrieval using the current workspace hybrid search only. citeturn4view1turn6view0  
+  - Keep user-facing retrieval using the current workspace hybrid search only. [^63]
   - Record metrics: recall overlap vs baseline, latency, errors.
 - **Active**:
   - `memory_search` first calls memoryd `Recall`, then optionally falls back to existing workspace search if memoryd is unavailable or returns empty.
@@ -861,7 +861,7 @@ Axinite already persists job history and tool actions (tool_name, inputs/outputs
 
 **Data safety**
 
-- Redaction tests: feed known token patterns into ingestion; assert leak detector redacts/blocks. citeturn36view1turn36view0  
+- Redaction tests: feed known token patterns into ingestion; assert leak detector redacts/blocks. [^64]
 - Purge tests: invoke `PurgeWorkspace`; assert Qdrant collections gone, Oxigraph graphs deleted, and outbox offsets reset.
 
 **Benchmarks**
@@ -878,10 +878,213 @@ Use IronClaw’s observability hooks (currently supports noop/log backends) and 
 - outbox lag (max(outbox_id) - offset)
 - extraction success/failure counts
 - Qdrant query latency
-- Apalis queue depth, retries, orphan re-enqueues citeturn30search1turn30search19  
+- Apalis queue depth, retries, orphan re-enqueues [^65]
 
-If you later add Prometheus, Apalis already has a `prometheus` feature flag. citeturn30search0  
+If Prometheus is added later, Apalis already has a `prometheus` feature flag. [^66]
 
 ---
 
-**Primary sources used**: Axinite/IronClaw repository docs and code for architecture, workspace, tooling, migrations, and safety; Qdrant official docs for collections/named vectors/hybrid queries/security and payload indexing; Oxigraph docs for embedded store constraints; Ollama docs for structured output and embeddings APIs and for disabling cloud features; Apalis docs for worker/job-queue features and Postgres backend behaviour. citeturn4view0turn4view1turn15view2turn17view0turn36view0turn33search1turn26search2turn27search0turn28search0turn29search1turn29search5turn30search1
+**Primary sources used**: Axinite/IronClaw repository docs and code for architecture, workspace, tooling, migrations, and safety; Qdrant official docs for collections/named vectors/hybrid queries/security and payload indexing; Oxigraph docs for embedded store constraints; Ollama docs for structured output and embeddings APIs and for disabling cloud features; Apalis docs for worker/job-queue features and Postgres backend behaviour. [^67]
+
+## References
+
+[^1]: Research note token bundle:
+    `turn4view0`, `turn4view1`, `turn6view1`, `turn15view2`.
+
+[^2]: Research note token bundle:
+    `turn4view1`, `turn5view0`.
+
+[^3]: Research note token bundle:
+    `turn14view3`, `turn15view2`, `turn11view0`.
+
+[^4]: Research note token bundle:
+    `turn29search1`, `turn29search2`, `turn33search1`, `turn28search0`, `turn28search1`.
+
+[^5]: Research note token bundle:
+    `turn7view0`, `turn17view0`, `turn27search0`, `turn29search0`.
+
+[^6]: Research note token bundle:
+    `turn30search0`, `turn30search1`.
+
+[^7]: Research note token bundle:
+    `turn20view0`, `turn20view4`.
+
+[^8]: Research note token bundle:
+    `turn4view0`, `turn3view0`.
+
+[^9]: Research note token bundle:
+    `turn6view0`, `turn15view0`, `turn15view2`.
+
+[^10]: Research note token bundle:
+    `turn4view1`, `turn6view0`, `turn6view1`.
+
+[^11]: Research note token bundle:
+    `turn5view2`, `turn6view0`.
+
+[^12]: Research note token bundle:
+    `turn8view0`.
+
+[^13]: Research note token bundle:
+    `turn7view0`.
+
+[^14]: Research note token bundle:
+    `turn17view0`, `turn7view1`.
+
+[^15]: Research note token bundle:
+    `turn36view0`, `turn36view1`.
+
+[^16]: Research note token bundle:
+    `turn14view3`, `turn15view2`, `turn16view0`.
+
+[^17]: Research note token bundle:
+    `turn20view2`, `turn16view0`.
+
+[^18]: Research note token bundle:
+    `turn19view0`.
+
+[^19]: Research note token bundle:
+    `turn20view1`.
+
+[^20]: Research note token bundle:
+    `turn17view0`.
+
+[^21]: Research note token bundle:
+    `turn8view0`, `turn23view0`.
+
+[^22]: Research note token bundle:
+    `turn14view3`, `turn15view0`.
+
+[^23]: Research note token bundle:
+    `turn17view2`.
+
+[^24]: Research note token bundle:
+    `turn14view3`, `turn11view0`.
+
+[^25]: Research note token bundle:
+    `turn6view0`, `turn5view2`.
+
+[^26]: Research note token bundle:
+    `turn23view0`.
+
+[^27]: Research note token bundle:
+    `turn14view3`, `turn15view2`.
+
+[^28]: Research note token bundle:
+    `turn11view0`, `turn12view1`.
+
+[^29]: Research note token bundle:
+    `turn14view3`.
+
+[^30]: Research note token bundle:
+    `turn14view3`.
+
+[^31]: Research note token bundle:
+    `turn15view0`, `turn15view1`.
+
+[^32]: Research note token bundle:
+    `turn6view0`.
+
+[^33]: Research note token bundle:
+    `turn34view0`, `turn35view2`.
+
+[^34]: Research note token bundle:
+    `turn4view0`, `turn17view2`, `turn23view0`.
+
+[^35]: Research note token bundle:
+    `turn7view0`.
+
+[^36]: Research note token bundle:
+    `turn23view0`.
+
+[^37]: Research note token bundle:
+    `turn36view0`, `turn36view1`.
+
+[^38]: Research note token bundle:
+    `turn33search1`, `turn33search9`.
+
+[^39]: Research note token bundle:
+    `turn33search6`.
+
+[^40]: Research note token bundle:
+    `turn17view0`.
+
+[^41]: Research note token bundle:
+    `turn20view3`, `turn16view0`.
+
+[^42]: Research note token bundle:
+    `turn33search1`, `turn33search0`.
+
+[^43]: Research note token bundle:
+    `turn26search2`, `turn33search4`.
+
+[^44]: Research note token bundle:
+    `turn33search6`, `turn31search1`.
+
+[^45]: Research note token bundle:
+    `turn26search2`, `turn4view1`.
+
+[^46]: Research note token bundle:
+    `turn31search1`, `turn33search6`.
+
+[^47]: Research note token bundle:
+    `turn27search0`.
+
+[^48]: Research note token bundle:
+    `turn28search0`, `turn28search1`.
+
+[^49]: Research note token bundle:
+    `turn29search1`, `turn29search4`.
+
+[^50]: Research note token bundle:
+    `turn29search2`, `turn29search5`.
+
+[^51]: Research note token bundle:
+    `turn29search0`.
+
+[^52]: Research note token bundle:
+    `turn36view1`, `turn36view0`.
+
+[^53]: Research note token bundle:
+    `turn20view4`, `turn20view5`.
+
+[^54]: Research note token bundle:
+    `turn30search0`, `turn30search1`, `turn30search19`.
+
+[^55]: Research note token bundle:
+    `turn31search1`, `turn27search0`.
+
+[^56]: Research note token bundle:
+    `turn30search0`.
+
+[^57]: Research note token bundle:
+    `turn28search1`.
+
+[^58]: Research note token bundle:
+    `turn29search0`, `turn29search7`.
+
+[^59]: Research note token bundle:
+    `turn27search0`.
+
+[^60]: Research note token bundle:
+    `turn11view0`.
+
+[^61]: Research note token bundle:
+    `turn36view1`, `turn36view0`.
+
+[^62]: Research note token bundle:
+    `turn35view2`, `turn34view0`.
+
+[^63]: Research note token bundle:
+    `turn4view1`, `turn6view0`.
+
+[^64]: Research note token bundle:
+    `turn36view1`, `turn36view0`.
+
+[^65]: Research note token bundle:
+    `turn30search1`, `turn30search19`.
+
+[^66]: Research note token bundle:
+    `turn30search0`.
+
+[^67]: Research note token bundle:
+    `turn4view0`, `turn4view1`, `turn15view2`, `turn17view0`, `turn36view0`, `turn33search1`, `turn26search2`, `turn27search0`, `turn28search0`, `turn29search1`, `turn29search5`, `turn30search1`.

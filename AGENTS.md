@@ -2,11 +2,10 @@
 
 ## Feature Parity Update Policy
 
-- If you change implementation status for any feature tracked in
-  `FEATURE_PARITY.md`, update that file in the same branch.
-- Do not open a PR that changes feature behaviour without checking
-  `FEATURE_PARITY.md` for needed status updates (`❌`, `🚧`, `✅`, notes, and
-  priorities).
+- Changes to implementation status for any feature tracked in
+  `FEATURE_PARITY.md` must update that file in the same branch.
+- A PR that changes feature behaviour must check `FEATURE_PARITY.md` for needed
+  status updates (`❌`, `🚧`, `✅`, notes, and priorities).
 
 ## Code Style and Structure
 
@@ -72,7 +71,7 @@
 ## Refactoring Heuristics and Workflow
 
 - Regularly assess the codebase for refactoring opportunities, especially when
-  you encounter:
+  work encounters:
   - long functions or methods
   - duplicated code
   - deeply nested or complex conditionals

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use axum::{
     Json,
+    extract::rejection::JsonRejection,
     extract::{Path, State},
     http::StatusCode,
 };
@@ -23,7 +24,7 @@ pub(super) struct JobPromptRequest {
 pub async fn jobs_prompt_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
-    Json(body): Json<JobPromptRequest>,
+    body: Result<Json<JobPromptRequest>, JsonRejection>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let store = state
         .store
@@ -33,17 +34,22 @@ pub async fn jobs_prompt_handler(
         .parse()
         .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid job ID".to_string()))?;
 
+    let Json(body) = body.map_err(|error| {
+        tracing::warn!(error = %error, "Rejected invalid job prompt request body");
+        (StatusCode::BAD_REQUEST, "Invalid request body".to_string())
+    })?;
+
     let JobPromptRequest { content, done } = body;
 
     if let Some(job) = super::load_sandbox_job(store, job_id).await? {
         let mode = super::load_sandbox_job_mode(store, job_id).await?;
-        if mode.as_deref() == Some("claude_code") {
-            if !super::sandbox_job_accepts_prompts(&job.status) {
+        if mode == Some(super::SandboxJobMode::ClaudeCode) {
+            if !super::sandbox_job_accepts_prompts(job.status) {
                 return Err((
                     StatusCode::CONFLICT,
                     format!(
                         "Cannot queue prompts for sandbox job in state '{}'",
-                        job.status
+                        job.record.status
                     ),
                 ));
             }
@@ -87,8 +93,8 @@ pub async fn jobs_prompt_handler(
     };
     let Some(scheduler) = scheduler else {
         return Err((
-            StatusCode::NOT_IMPLEMENTED,
-            "Scheduler not configured".to_string(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Scheduler not started".to_string(),
         ));
     };
 

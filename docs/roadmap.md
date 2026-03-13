@@ -243,7 +243,7 @@ on after 2.3 and 3.2 settle.
     [RFC 0005 §Goals](./rfcs/2026-03-11-monty-code-execution-environment.md#goals)
     and
     [RFC 0005 §Rollout Plan](./rfcs/2026-03-11-monty-code-execution-environment.md#rollout-plan).
-  - Success: cross-boundary data is normalised to JSON-shaped values only, and
+  - Success: cross-boundary data is normalized to JSON-shaped values only, and
     host callback approval plus attenuation rules are shared with existing tool
     execution paths.
 - [ ] 2.2.3. Add saved-script persistence with `save_script` and `run_script`.
@@ -285,8 +285,8 @@ expected to use these tools safely at scale.
 
 - [ ] 2.3.1. Add `execution_model` plumbing and disable placeholder-based
   secret placement for zero-knowledge tools.
-  - See [RFC 0006 §Migration checklist and prioritised
-    plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritised-plan)
+  - See [RFC 0006 §Migration checklist and prioritized
+    plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritized-plan)
     and [RFC 0006 §Current IronClaw components and APIs relevant to an intent
     model](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#current-ironclaw-components-and-apis-relevant-to-an-intent-model).
   - Success: capability loading and registry state distinguish legacy and
@@ -297,8 +297,8 @@ expected to use these tools safely at scale.
   selection. Requires 2.3.1.
   - See [RFC 0006 §Design target: WIT-based intent ABI with provenance
     tokens](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#design-target-wit-based-intent-abi-with-provenance-tokens)
-    and [RFC 0006 §Migration checklist and prioritised
-    plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritised-plan).
+    and [RFC 0006 §Migration checklist and prioritized
+    plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritized-plan).
   - Success: the runtime can load and instantiate intent-capable components
     alongside legacy WASM tools, and intent declarations are versioned
     independently from the existing `sandboxed-tool` world.
@@ -306,8 +306,8 @@ expected to use these tools safely at scale.
   and 2.3.2.
   - See [RFC 0006 §Design target: WIT-based intent ABI with provenance
     tokens](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#design-target-wit-based-intent-abi-with-provenance-tokens)
-    and [RFC 0006 §Migration checklist and prioritised
-    plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritised-plan).
+    and [RFC 0006 §Migration checklist and prioritized
+    plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritized-plan).
   - Success: plugins declare semantic operations rather than raw HTTP requests,
     and the host can assemble a concrete request, inject credentials, and apply
     redaction obligations at send time.
@@ -315,25 +315,25 @@ expected to use these tools safely at scale.
   Requires 2.3.2 and 2.3.3.
   - See [RFC 0006 §Executive
     summary](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#executive-summary)
-    and [RFC 0006 §Migration checklist and prioritised
-    plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritised-plan).
+    and [RFC 0006 §Migration checklist and prioritized
+    plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritized-plan).
   - Success: the host can track provenance classes across intent execution and
     enforce allow or deny decisions through Rego, while policy outputs can
     require approval or redaction before a result reaches a public sink.
 - [ ] 2.3.5. Deliver one concrete service profile on the intent path. Requires
   2.3.3 and 2.3.4.
-  - See [RFC 0006 §Migration checklist and prioritised
-    plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritised-plan).
+  - See [RFC 0006 §Migration checklist and prioritized
+    plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritized-plan).
   - Success: the pilot profile proves that authentication and templated
     transport can be handled without guest-visible secrets or endpoints, and
     integration tests cover both successful execution and blocked exfiltration
     attempts.
 - [ ] 2.3.6. Add fuzzing and differential tests for noninterference
   constraints. Requires 2.3.4 and 2.3.5.
-  - See [RFC 0006 §Migration checklist and prioritised
-    plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritised-plan).
+  - See [RFC 0006 §Migration checklist and prioritized
+    plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritized-plan).
   - Success: tests exercise derived-data exfiltration paths rather than only
-    literal token leakage, and failures localise whether the break occurred in
+    literal token leakage, and failures localize whether the break occurred in
     template assembly, provenance tracking, or policy evaluation.
 
 ## 3. Move retrieval and conversation state onto durable boundaries
@@ -441,14 +441,14 @@ rather than bypassing the memory path it introduces.
     tasks](./rfcs/0008-websocket-responses-api.md#stepwise-tasks).
   - Success: tool turns store OpenAI `call_id` values and continuation
     identifiers, and continuation requests can emit `function_call_output`
-    items without synthesising incompatible identifiers later.
+    items without synthesizing incompatible identifiers later.
 - [ ] 3.2.5. Integrate server-side compaction and retry controls. Requires
   3.1.5, 3.2.2, and 3.2.4.
   - See [RFC 0008 §Requirements](./rfcs/0008-websocket-responses-api.md#requirements)
     and [RFC 0008 §CI checks and rollout
     checklist](./rfcs/0008-websocket-responses-api.md#ci-checks-and-rollout-checklist).
   - Success: the delegate can enable Responses compaction without fighting the
-    existing summarisation path, and retry plus backoff rules handle rate
+    existing summarization path, and retry plus backoff rules handle rate
     limits, reconnects, and `previous_response_not_found` failures explicitly.
 - [ ] 3.2.6. Add mock WebSocket tests and feature-flagged rollout controls.
   Requires 3.2.3, 3.2.4, and 3.2.5.
@@ -654,7 +654,7 @@ and a companion RFC for compaction-provider semantics before 5.2.2 and 5.2.3.
   selection. Requires 5.2.1.
   - See future RFC: compaction model override RFC §Problem, §Requirements, and
     §Rollout Plan. See FEATURE_PARITY.md §Agent System.
-  - Success: summarisation and compaction can run on a dedicated provider/model
+  - Success: summarization and compaction can run on a dedicated provider/model
     path, and cost attribution plus failure handling stay separate from the
     primary response model.
 - [ ] 5.2.3. Expose model and compaction override inspection/edit surfaces
@@ -776,7 +776,7 @@ before 6.2.2-6.2.4.
   - See future RFC: advanced media handling RFC §Summary, §Requirements, and
     §Rollout Plan. See FEATURE_PARITY.md §Media handling, §Channel Features,
     and §Automation.
-  - Success: media items are normalised into one cached attachment model with
+  - Success: media items are normalized into one cached attachment model with
     provenance, size, and channel metadata, and forwarded or embedded media can
     be fetched without bespoke per-channel storage code.
 - [ ] 6.2.2. Implement media transformation paths for image manipulation,

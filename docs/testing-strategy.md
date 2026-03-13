@@ -97,7 +97,7 @@ The repository therefore distinguishes between:
 
 - default suites that should run in normal development and CI;
 - optional focused suites for subsystem work;
-- manual or ignored tests for specialised validation.
+- manual or ignored tests for specialized validation.
 
 ## 3. Local test execution
 
@@ -242,7 +242,7 @@ outside the narrow set of pull requests that touch web code or E2E fixtures.
 Coverage runs on pushes to `main`, but it is not currently scheduled as a
 time-based periodic workflow.
 
-## 6. Ad hoc and specialised validation
+## 6. Ad hoc and specialized validation
 
 The repository also provides focused validation tools that are useful outside
 the main PR gates.

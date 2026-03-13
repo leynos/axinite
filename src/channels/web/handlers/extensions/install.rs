@@ -14,6 +14,15 @@ use crate::extensions::ExtensionKind;
 
 use super::common::{activation_required_response, maybe_extension_auth_url};
 
+fn logged_failure(
+    message: String,
+    context: &'static str,
+    error: impl std::fmt::Display,
+) -> ActionResponse {
+    tracing::error!(error = %error, "{context}");
+    ActionResponse::fail(message)
+}
+
 fn parse_extension_kind(kind: &str) -> Result<ExtensionKind, (StatusCode, String)> {
     match kind {
         "mcp_server" => Ok(ExtensionKind::McpServer),
@@ -85,10 +94,11 @@ pub async fn extensions_install_handler(
                         ));
                     }
                     Err(e) => {
-                        return Ok(Json(ActionResponse::fail(format!(
-                            "Installed '{}' but activation failed: {}",
-                            req.name, e
-                        ))));
+                        return Ok(Json(logged_failure(
+                            format!("Installed '{}' but activation failed", req.name),
+                            "Failed to activate extension after installation",
+                            e,
+                        )));
                     }
                 }
 
@@ -97,7 +107,11 @@ pub async fn extensions_install_handler(
 
             Ok(Json(resp))
         }
-        Err(e) => Ok(Json(ActionResponse::fail(e.to_string()))),
+        Err(e) => Ok(Json(logged_failure(
+            format!("Failed to install '{}'", req.name),
+            "Failed to install extension",
+            e,
+        ))),
     }
 }
 
@@ -121,7 +135,11 @@ pub async fn extensions_activate_handler(
                 &activate_err,
                 crate::extensions::ExtensionError::AuthRequired
             ) {
-                return Ok(Json(ActionResponse::fail(activate_err.to_string())));
+                return Ok(Json(logged_failure(
+                    format!("Failed to activate '{}'", name),
+                    "Failed to activate extension",
+                    activate_err,
+                )));
             }
 
             if let Ok(auth_result) = ext_mgr.auth(&name, None).await
@@ -138,7 +156,11 @@ pub async fn extensions_activate_handler(
                         )
                         .await,
                     )),
-                    Err(e) => Ok(Json(ActionResponse::fail(e.to_string()))),
+                    Err(e) => Ok(Json(logged_failure(
+                        format!("Failed to activate '{}'", name),
+                        "Failed to activate extension after authentication",
+                        e,
+                    ))),
                 };
             }
 
@@ -166,6 +188,10 @@ pub async fn extensions_remove_handler(
 
     match ext_mgr.remove(&name).await {
         Ok(message) => Ok(Json(ActionResponse::ok(message))),
-        Err(e) => Ok(Json(ActionResponse::fail(e.to_string()))),
+        Err(e) => Ok(Json(logged_failure(
+            format!("Failed to remove '{}'", name),
+            "Failed to remove extension",
+            e,
+        ))),
     }
 }

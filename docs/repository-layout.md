@@ -1,9 +1,8 @@
 # Repository layout
 
-This document explains the current repository shape for axinite on the
-`new-docs` branch. It is for contributors who need to find source code, tests,
-runtime extension artefacts, operational documentation, and generated output
-quickly before making changes.
+This document explains the current repository shape for axinite. It is for
+contributors who need to find source code, tests, runtime extension artefacts,
+operational documentation, and generated output quickly before making changes.
 
 ## Top-level tree
 
@@ -68,7 +67,7 @@ Table 1. Major repository paths and their current responsibilities.
 
 ## Source tree guide
 
-The `src/` tree is the main host application and is organised by subsystem
+The `src/` tree is the main host application and is organized by subsystem
 rather than by technical layer alone.
 
 Table 2. Key `src/` paths and why they matter.
@@ -77,7 +76,7 @@ Table 2. Key `src/` paths and why they matter.
 | Path | Purpose |
 |------|---------|
 | `src/main.rs` | Process entry point, CLI dispatch, service bootstrap, channel wiring, and agent startup |
-| `src/app.rs` | Mechanical bootstrap through `AppBuilder`, including database, secrets, LLM, tools, workspace, and extension initialisation |
+| `src/app.rs` | Mechanical bootstrap through `AppBuilder`, including database, secrets, LLM, tools, workspace, and extension initialization |
 | `src/agent/` | Core agent runtime, scheduling, routines, heartbeats, session state, compaction, and self-repair |
 | `src/channels/` | REPL, HTTP, Signal, web gateway, relay, webhook, and WASM-backed channel integrations |
 | `src/cli/` | Public and internal command definitions, onboarding helpers, diagnostics, and subcommand execution |

@@ -636,7 +636,7 @@ The smallest useful JMAP shape is:
 - one delegated request path to the JMAP session endpoint,
 - optional bearer token or other credential injected by the host.
 
-That is enough for "check my email" workflows that operate through the primary
+That is enough for "check email" workflows that operate through the primary
 JMAP endpoint.
 
 ### Likely follow-up question

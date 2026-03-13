@@ -4,7 +4,7 @@
 
 - **Status:** Draft implementation reference for the currently shipped
   database backends.
-- **Scope:** How axinite selects, initialises, migrates, and uses PostgreSQL
+- **Scope:** How axinite selects, initializes, migrates, and uses PostgreSQL
   with pgvector and libSQL in this repository.
 - **Primary audience:** Maintainers and operators who need to understand the
   persistence backends before changing storage behaviour or choosing a
@@ -168,7 +168,7 @@ libSQL uses Turso's SQLite fork and supports three distinct modes in the code:
 - in-memory mode via `LibSqlBackend::new_memory()` for tests
 
 Remote replica mode still uses a local file path. The backend opens an
-embedded replica at `LIBSQL_PATH`, then synchronises it with `LIBSQL_URL`
+embedded replica at `LIBSQL_PATH`, then synchronizes it with `LIBSQL_URL`
 using `LIBSQL_AUTH_TOKEN`.
 
 ### 4.2 Connection model

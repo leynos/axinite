@@ -38,6 +38,16 @@ else
     cargo install wasm-tools --locked
 fi
 
+echo "[3.5/6] Checking SQLite development headers for all-features builds..."
+if pkg-config --exists sqlite3; then
+    echo "  sqlite3 development headers detected"
+else
+    echo "  NOTE: sqlite3 development headers were not detected."
+    echo "        The default build still works, but the import feature and"
+    echo "        --all-features validation need a package such as"
+    echo "        libsqlite3-dev or sqlite-devel."
+fi
+
 # 4. Verify the project compiles
 echo "[4/6] Running cargo check..."
 cargo check

@@ -51,7 +51,7 @@ Table 1. Major runtime layers and their responsibilities.
 | Layer | Responsibilities | Primary evidence |
 |------|------------------|------------------|
 | CLI and bootstrap | Parse commands, load early env files, guard single-process startup, and decide whether to run the agent | `src/main.rs`, `src/cli/mod.rs` |
-| Application builder | Initialise database, secrets, language model providers, tools, workspace memory, and extension managers | `src/app.rs` |
+| Application builder | Initialize database, secrets, language model providers, tools, workspace memory, and extension managers | `src/app.rs` |
 | Interaction surfaces | Provide REPL, HTTP, Signal, web gateway, webhook, and WASM-backed channel entry points | `src/channels/mod.rs`, `src/main.rs` |
 | Agent core | Route messages, schedule jobs, run tools safely, compact context, handle routines, and support self-repair | `src/agent/mod.rs` |
 | Persistence and memory | Provide backend-agnostic storage, settings, conversation history, job records, and searchable workspace memory | `src/db/mod.rs`, `src/workspace/mod.rs`, `src/config/mod.rs` |
@@ -126,7 +126,7 @@ before channels and background services start.
 1. `Config::from_env_with_toml()` builds the initial configuration from
    environment variables, optional TOML, and defaults. The database is not yet
    required at this point.
-1. `AppBuilder::build_all()` executes the mechanical initialisation phases in a
+1. `AppBuilder::build_all()` executes the mechanical initialization phases in a
    fixed order: database, secrets, language model providers, tools and
    workspace, then extensions.
 1. After core components exist, `async_main()` starts optional tunnel support,
@@ -139,7 +139,7 @@ before channels and background services start.
 
 `AppBuilder` is the mechanical centre of the system. It exists to keep startup
 side effects out of `main.rs`, make the sequence testable, and let tests build
-fully initialised `AppComponents` without emulating every channel.
+fully initialized `AppComponents` without emulating every channel.
 
 Table 2. AppBuilder phases and the state they add.
 
@@ -230,7 +230,7 @@ re-resolves provider credentials after secret injection. The repeated
 resolution passes are intentional because some values are only available after
 later bootstrap stages.
 
-Persistence is organised behind the `Database` supertrait. The database layer
+Persistence is organized behind the `Database` supertrait. The database layer
 groups behaviour into narrower traits such as conversation storage, job
 storage, sandbox-job storage, routine storage, settings storage, and workspace
 document storage. Feature flags choose the backend implementation, but most of

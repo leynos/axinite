@@ -90,8 +90,8 @@ Table 5. `ironclaw config` subcommands.
 
 | Command | Syntax | Meaning |
 |---------|--------|---------|
-| `init` | `ironclaw config init [-o|--output PATH] [--force]` | Emit a starter configuration file. |
-| `list` | `ironclaw config list [-f|--filter PREFIX]` | List known configuration paths, optionally filtered by prefix. |
+| `init` | `ironclaw config init [-o\|--output PATH] [--force]` | Emit a starter configuration file. |
+| `list` | `ironclaw config list [-f\|--filter PREFIX]` | List known configuration paths, optionally filtered by prefix. |
 | `get` | `ironclaw config get <path>` | Print one configuration value. |
 | `set` | `ironclaw config set <path> <value>` | Persist one configuration value. |
 | `reset` | `ironclaw config reset <path>` | Remove a persisted override for one configuration path. |
@@ -111,12 +111,12 @@ Table 7. `ironclaw tool` subcommands and options.
 
 | Command | Syntax | Meaning |
 |---------|--------|---------|
-| `install` | `ironclaw tool install <path> [-n|--name NAME] [--capabilities PATH] [-t|--target PATH] [--release <BOOL>] [--skip-build] [-f|--force]` | Install a WASM tool from a file or a crate directory. |
-| `list` | `ironclaw tool list [-d|--dir PATH] [-v|--verbose]` | List installed tools. |
-| `remove` | `ironclaw tool remove <name> [-d|--dir PATH]` | Remove an installed tool. |
-| `info` | `ironclaw tool info <name-or-path> [-d|--dir PATH]` | Show metadata for a tool. |
-| `auth` | `ironclaw tool auth <name> [-d|--dir PATH] [-u|--user USER]` | Trigger tool authentication for one user. |
-| `setup` | `ironclaw tool setup <name> [-d|--dir PATH] [-u|--user USER]` | Run tool setup without a full install. |
+| `install` | `ironclaw tool install <path> [-n\|--name NAME] [--capabilities PATH] [-t\|--target PATH] [--release <BOOL>] [--skip-build] [-f\|--force]` | Install a WASM tool from a file or a crate directory. |
+| `list` | `ironclaw tool list [-d\|--dir PATH] [-v\|--verbose]` | List installed tools. |
+| `remove` | `ironclaw tool remove <name> [-d\|--dir PATH]` | Remove an installed tool. |
+| `info` | `ironclaw tool info <name-or-path> [-d\|--dir PATH]` | Show metadata for a tool. |
+| `auth` | `ironclaw tool auth <name> [-d\|--dir PATH] [-u\|--user USER]` | Trigger tool authentication for one user. |
+| `setup` | `ironclaw tool setup <name> [-d\|--dir PATH] [-u\|--user USER]` | Run tool setup without a full install. |
 
 Table 8. `ironclaw tool` option meanings.
 
@@ -138,10 +138,10 @@ Table 9. `ironclaw registry` subcommands and options.
 
 | Command | Syntax | Meaning |
 |---------|--------|---------|
-| `list` | `ironclaw registry list [-k|--kind KIND] [-t|--tag TAG] [-v|--verbose]` | List registry entries. |
+| `list` | `ironclaw registry list [-k\|--kind KIND] [-t\|--tag TAG] [-v\|--verbose]` | List registry entries. |
 | `info` | `ironclaw registry info <name>` | Show one registry entry. |
-| `install` | `ironclaw registry install <name> [-f|--force] [--build]` | Install one registry entry. |
-| `install-defaults` | `ironclaw registry install-defaults [-f|--force] [--build]` | Install the default registry set. |
+| `install` | `ironclaw registry install <name> [-f\|--force] [--build]` | Install one registry entry. |
+| `install-defaults` | `ironclaw registry install-defaults [-f\|--force] [--build]` | Install the default registry set. |
 
 Table 10. `ironclaw registry` option meanings.
 
@@ -159,18 +159,18 @@ Table 11. `ironclaw mcp` subcommands.
 
 | Command | Syntax | Meaning |
 |---------|--------|---------|
-| `add` | `ironclaw mcp add <name> [url] [--transport http|stdio|unix] [--command CMD] [--arg ARG ...] [--env KEY=VALUE ...] [--socket PATH] [--header KEY:VALUE ...] [--client-id ID] [--auth-url URL] [--token-url URL] [--scopes CSV] [--description TEXT]` | Register an MCP server definition. |
+| `add` | `ironclaw mcp add <name> [url] [--transport http\|stdio\|unix] [--command CMD] [--arg ARG ...] [--env KEY=VALUE ...] [--socket PATH] [--header KEY:VALUE ...] [--client-id ID] [--auth-url URL] [--token-url URL] [--scopes CSV] [--description TEXT]` | Register an MCP server definition. |
 | `remove` | `ironclaw mcp remove <name>` | Remove an MCP server definition. |
-| `list` | `ironclaw mcp list [-v|--verbose]` | List registered MCP servers. |
-| `auth` | `ironclaw mcp auth <name> [-u|--user USER]` | Authenticate one MCP server for one user. |
-| `test` | `ironclaw mcp test <name> [-u|--user USER]` | Test one MCP server for one user. |
+| `list` | `ironclaw mcp list [-v\|--verbose]` | List registered MCP servers. |
+| `auth` | `ironclaw mcp auth <name> [-u\|--user USER]` | Authenticate one MCP server for one user. |
+| `test` | `ironclaw mcp test <name> [-u\|--user USER]` | Test one MCP server for one user. |
 | `toggle` | `ironclaw mcp toggle <name> [--enable|--disable]` | Enable or disable one MCP server definition. |
 
 Table 12. `ironclaw mcp` option meanings.
 
 | Option | Meaning | Notes |
 |--------|---------|-------|
-| `--transport <http|stdio|unix>` | Select the transport kind. | Defaults to `http` when omitted. |
+| `--transport <http\|stdio\|unix>` | Select the transport kind. | Defaults to `http` when omitted. |
 | `--command <CMD>` | Executable to launch for stdio transport. | `mcp add` only. |
 | `--arg <ARG>` | One or more command arguments. | `mcp add` only, repeatable. |
 | `--env <KEY=VALUE>` | Environment variable to inject into the child process. | `mcp add` only, repeatable. |
@@ -192,10 +192,10 @@ Table 13. `ironclaw memory` subcommands and options.
 
 | Command | Syntax | Meaning |
 |---------|--------|---------|
-| `search` | `ironclaw memory search <query> [-l|--limit N]` | Search workspace memory. |
+| `search` | `ironclaw memory search <query> [-l\|--limit N]` | Search workspace memory. |
 | `read` | `ironclaw memory read <path>` | Read one memory document. |
-| `write` | `ironclaw memory write <path> [content] [-a|--append]` | Write or append a memory document. |
-| `tree` | `ironclaw memory tree [path] [-d|--depth N]` | Print a tree view of memory paths. |
+| `write` | `ironclaw memory write <path> [content] [-a\|--append]` | Write or append a memory document. |
+| `tree` | `ironclaw memory tree [path] [-d\|--depth N]` | Print a tree view of memory paths. |
 | `status` | `ironclaw memory status` | Show memory subsystem status. |
 
 Table 14. `ironclaw memory` option meanings.
@@ -219,7 +219,7 @@ Table 15. Remaining user-facing commands.
 | `service stop` | `ironclaw service stop` | Stop the service. |
 | `service status` | `ironclaw service status` | Show service status. |
 | `service uninstall` | `ironclaw service uninstall` | Remove the service. |
-| `completion` | `ironclaw completion --shell <bash|elvish|fish|powershell|zsh>` | Generate shell completions. |
+| `completion` | `ironclaw completion --shell <bash\|elvish\|fish\|powershell\|zsh>` | Generate shell completions. |
 | `doctor` | `ironclaw doctor` | Run dependency and configuration diagnostics. |
 | `status` | `ironclaw status` | Show runtime status and diagnostics. |
 

@@ -90,7 +90,7 @@ memory is in-process: PostgreSQL tables with hybrid full-text and
 vector search fused via Reciprocal Rank Fusion. Axinite proposes a
 local-only Rust sidecar (`memoryd`) that consumes a transactional
 outbox from PostgreSQL, performs extraction via Ollama structured
-outputs, stores vectors in Qdrant, stores normalised facts and
+outputs, stores vectors in Qdrant, stores normalized facts and
 relations in Oxigraph (embedded, no network exposure), and runs
 consolidation jobs through Apalis workers. The sidecar communicates
 over a Unix domain socket with capability-token authentication.
@@ -226,7 +226,7 @@ The memoryd RFC specifies a concrete architecture:
 - A **local sidecar process** that consumes outbox events, performs
   entity/fact extraction via Ollama structured outputs, stores
   retrieval vectors in **Qdrant** (collection-per-workspace for
-  isolation and deletion correctness), and stores normalised facts and
+  isolation and deletion correctness), and stores normalized facts and
   relations in **Oxigraph** (embedded as a library crate – no SPARQL
   HTTP server, no network exposure).
 - **Capability-token enforcement** over a Unix domain socket RPC
@@ -266,7 +266,7 @@ disconnection.
 
 **Tool lifecycle fidelity.** The Responses API uses `call_id` as the
 join key for `function_call_output` items. IronClaw currently
-synthesises tool IDs when serialising turns (`turn{n}_{i}`), which
+synthesizes tool IDs when serializing turns (`turn{n}_{i}`), which
 works for Chat Completions but fails for Responses because OpenAI
 validates the linkage. The RFC requires storing provider-owned call
 identifiers per tool call, not reconstructing them later.
@@ -277,7 +277,7 @@ into the response stream. These items must be persisted as-is and
 included in subsequent requests when chaining statelessly. When using
 `previous_response_id`, manual pruning is forbidden. The RFC
 explicitly addresses the interaction between server-side compaction
-and Axinite's existing native summarisation, recommending that native
+and Axinite's existing native summarization, recommending that native
 compaction be disabled or demoted to fallback when the Responses
 backend is active.
 
@@ -385,7 +385,7 @@ resource limits let Axinite offer rich control flow without becoming a
 general-purpose scripting host with an unbounded attack surface.
 
 **Accessibility is product quality, not polish.** WCAG compliance,
-keyboard navigation, and localisation are planned from day one. A
+keyboard navigation, and localization are planned from day one. A
 PWA-first UI that fails accessibility review has failed its mission.
 
 **Scope expands only when it strengthens the core.** Ancillary
@@ -431,7 +431,7 @@ Axinite doesn't exist in isolation. Knowing the neighbours helps.
 - **Oxigraph** is a SPARQL-compliant graph database written in Rust,
   backed by RocksDB. It implements RDF 1.2 and SPARQL 1.2 and embeds
   as a library crate. The memoryd sidecar uses Oxigraph for
-  normalised fact and relation storage with named graphs per
+  normalized fact and relation storage with named graphs per
   workspace.
 - **Agent Skills** is an open standard (originated by Anthropic, now
   adopted by OpenAI, Microsoft, GitHub, Cursor, and others) defining
