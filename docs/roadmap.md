@@ -24,6 +24,7 @@ reserved numbers:
 ## Source documents
 
 - [welcome-to-axinite.md](./welcome-to-axinite.md)
+- [FEATURE_PARITY.md](../FEATURE_PARITY.md)
 - [RFC 0001](./rfcs/0001-expose-mcp-tool-definitions.md)
 - [RFC 0002](./rfcs/0002-expose-wasm-tool-definitions.md)
 - [RFC 0003](./rfcs/0003-skill-bundle-installation.md)
@@ -453,6 +454,348 @@ rather than bypassing the memory path it introduces.
     or model with dashboards for reconnect, compaction, and rate-limit failure
     rates.
 
+## 4. Harden operator lifecycle and control surfaces
+
+Phase objective: make axinite operable as a long-running service and expose the
+remaining control-plane capabilities through stable operator surfaces.
+
+### 4.1. Service lifecycle and health supervision
+
+Objective: turn axinite into a well-behaved long-running service under systemd
+with explicit health aggregation, restart policy, and operator inspection.
+
+Learning opportunity: determine which runtime states belong in readiness,
+liveness, and restart logic once memoryd, hosted workers, and channels all run
+concurrently.
+
+Dependencies: builds on 3.1 and 3.2 so service health can include memory and
+provider state instead of only HTTP reachability.
+
+Outstanding design decisions: requires a companion ADR for user-vs-system
+service ownership, unit override policy, and environment-file management before
+4.1.2 and 4.1.3; requires a companion RFC for restart semantics and health
+aggregation before 4.1.2.
+
+- [ ] 4.1.1. Implement systemd unit generation, install, upgrade, and removal
+  flows, and record the ownership model in a companion ADR.
+  - See future RFC: systemd integration RFC §Summary, §Requirements, and
+    §Rollout Plan. Companion ADR: service ownership and override policy.
+  - Success: axinite can install and remove user-service units, write the
+    required environment/config references, and preserve operator overrides
+    without manual unit editing.
+- [ ] 4.1.2. Implement runtime health aggregation and supervised restart
+  policies for channels, workers, and sidecars. Requires 4.1.1 and 3.1.5.
+  - See future RFC: health monitoring RFC §Problem, §Requirements, and
+    §Rollout Plan.
+  - Success: health state distinguishes degraded vs failed subsystems, channel
+    health monitoring can restart configured components on policy, and restart
+    storms are throttled with bounded backoff.
+- [ ] 4.1.3. Expose service state, readiness, and restart history through the
+  gateway and operator-facing surfaces. Requires 4.1.1 and 4.1.2.
+  - See future RFC: health monitoring RFC §Compatibility and Migration.
+  - Success: operators can inspect service health, readiness reasons, and
+    restart history through stable APIs and CLI output rather than only logs.
+
+### 4.2. Hook execution expansion and inspection
+
+Objective: complete the remaining lifecycle and payload-inspection hook points
+without letting hook behaviour drift across agent loops, routines, and gateway
+surfaces.
+
+Learning opportunity: determine how much mutability and failure handling the
+hook system can support before it becomes non-deterministic across execution
+paths.
+
+Dependencies: builds on 2.3 for safer tool and message boundaries, and informs
+5.3 because reasoning-trace capture should reuse the same inspection seams.
+
+Outstanding design decisions: requires a companion RFC for hook ordering,
+timeout policy, payload mutability, and redaction before 4.2.2 and 4.2.3.
+
+- [ ] 4.2.1. Implement the missing `before_agent_start`,
+  `before_message_write`, `llm_input`, and `llm_output` hook points across the
+  conversational dispatcher, routines, and Responses session path.
+  - See future RFC: hook execution RFC §Summary, §Requirements, and §Rollout
+    Plan.
+  - Success: the missing hook types fire consistently across the supported
+    execution paths, and hook registration plus attenuation rules stay aligned
+    with existing bundled, plugin, and workspace hooks.
+- [ ] 4.2.2. Implement hook failure policy, timeout enforcement, and payload
+  redaction controls. Requires 4.2.1.
+  - See future RFC: hook execution RFC §Requirements and §Alternatives
+    Considered.
+  - Success: hook failures can be configured as fail-open or fail-closed per
+    hook class, timeouts are enforced consistently, and sensitive payload fields
+    are redacted before hook inspection or audit storage.
+- [ ] 4.2.3. Implement hook inspection, replay, and operator tooling for the
+  expanded hook surface. Requires 4.2.1 and 4.2.2.
+  - See future RFC: hook execution RFC §Compatibility and Migration.
+  - Success: operators can list, inspect, dry-run, and debug hook behaviour
+    across bundled, plugin, and workspace hooks without editing files blindly.
+
+### 4.3. Enhanced operator CLI
+
+Objective: promote the CLI from a small admin subset to a full control-plane
+surface that matches the parity matrix command set.
+
+Learning opportunity: find a command taxonomy that stays scriptable and
+discoverable while spanning service control, state inspection, and chat-driven
+actions.
+
+Dependencies: builds on 4.1 for service state, on 4.2 for hook inspection, and
+on 5.2 for model-management verbs.
+
+Outstanding design decisions: requires a companion ADR for command taxonomy,
+output modes, and stability promises before 4.3.2-4.3.4.
+
+- [ ] 4.3.1. Implement the shared CLI output and command taxonomy needed for an
+  expanded control plane, and record the contract in a companion ADR.
+  - See future ADR: enhanced CLI command taxonomy. See FEATURE_PARITY.md §CLI
+    Commands.
+  - Success: the CLI supports stable list/detail/status output modes and a
+    coherent command hierarchy that future command families can reuse without
+    re-litigating naming or output shape.
+- [ ] 4.3.2. Implement the missing service and management command families:
+  `gateway start/stop`, `channels`, `agents`, `sessions`, `nodes`, and
+  `plugins`. Requires 4.3.1 and 4.1.3.
+  - See future RFC: enhanced CLI RFC §Requirements and §Rollout Plan. See
+    FEATURE_PARITY.md §CLI Commands.
+  - Success: operators can manage gateway lifecycle, channels, agents,
+    sessions, nodes, and plugins through the CLI with parity-grade inspection
+    output and non-interactive scripting support.
+- [ ] 4.3.3. Implement the missing automation and inspection command families:
+  `cron`, `webhooks`, `logs`, improved `doctor`, and richer `models` output.
+  Requires 4.3.1, 4.1.3, and 4.2.3.
+  - See future RFC: enhanced CLI RFC §Requirements, §Compatibility and
+    Migration, and §Rollout Plan. See FEATURE_PARITY.md §CLI Commands.
+  - Success: operators can manage scheduled jobs, webhook config, log queries,
+    health diagnostics, and model inventory from the CLI without falling back
+    to direct database or config-file edits.
+- [ ] 4.3.4. Implement the missing action workflows: `message send`, `browser`,
+  `backup`, `update`, `/subagents spawn`, and `/export-session`. Requires 4.3.1
+  and 4.3.3.
+  - See future RFC: enhanced CLI RFC §Requirements and §Open Questions. See
+    FEATURE_PARITY.md §CLI Commands.
+  - Success: the CLI can trigger outbound channel sends, browser automation,
+    local backups, self-update flows, subagent spawn, and session export with
+    stable flags and audit-friendly output.
+
+## 5. Add model, reasoning, and citation control
+
+Phase objective: expose model discovery, model choice, compaction control,
+reasoning visibility, and citations as first-class runtime controls.
+
+### 5.1. Provider discovery and GLM-5 support
+
+Objective: reduce manual model metadata upkeep while expanding provider support
+to the missing GLM-5 family.
+
+Learning opportunity: determine how discovered provider metadata should be
+trusted, cached, and overridden when the runtime also carries a built-in model
+registry.
+
+Dependencies: informs 5.2 because in-app model switching needs richer model
+metadata than the current static surface provides.
+
+Outstanding design decisions: requires a companion RFC for `llms.txt`
+discovery trust, cache invalidation, override precedence, and provider-capacity
+mapping before 5.1.2 and 5.1.3.
+
+- [ ] 5.1.1. Implement `llms.txt` discovery, caching, and operator controls,
+  and record the trust model in a companion RFC.
+  - See future RFC: `llms.txt` discovery RFC §Summary, §Requirements, and
+    §Rollout Plan. See FEATURE_PARITY.md §Agent System and §Model & Provider
+    Support.
+  - Success: axinite can fetch and cache `llms.txt` metadata, operators can
+    inspect or disable discovered metadata, and discovery failures do not
+    silently corrupt the provider registry.
+- [ ] 5.1.2. Integrate discovered metadata into the provider registry and model
+  capability surface. Requires 5.1.1.
+  - See future RFC: `llms.txt` discovery RFC §Compatibility and Migration.
+  - Success: discovered metadata can augment provider capability views and
+    model selection without overriding explicit local configuration by accident.
+- [ ] 5.1.3. Add GLM-5 support with provider wiring, model metadata, and
+  fallback tests. Requires 5.1.2.
+  - See future RFC: GLM-5 support RFC §Summary, §Requirements, and §Rollout
+    Plan. See FEATURE_PARITY.md §Model & Provider Support.
+  - Success: GLM-5 models can be selected, tested, and fail over through the
+    existing provider abstractions without provider-specific hacks leaking into
+    unrelated code paths.
+
+### 5.2. Runtime model selection and compaction control
+
+Objective: let users and operators choose models at the right scope without
+making override precedence or compaction behaviour ambiguous.
+
+Learning opportunity: clarify the boundary between global defaults, per-session
+selection, per-surface overrides, and compaction-only provider choice.
+
+Dependencies: builds on 5.1 for richer model metadata and on 3.2 if the
+Responses backend becomes one of the selectable model surfaces.
+
+Outstanding design decisions: requires a companion ADR for override precedence
+and a companion RFC for compaction-provider semantics before 5.2.2 and 5.2.3.
+
+- [ ] 5.2.1. Implement persisted in-app model switching for the web control UI
+  and WebChat surfaces, and record precedence rules in a companion ADR.
+  - See future ADR: model override precedence. See FEATURE_PARITY.md §Web
+    Interface and §Model Features.
+  - Success: users can change the active model in-app, the chosen scope is
+    persisted correctly, and the resulting effective model is visible rather
+    than implicit.
+- [ ] 5.2.2. Implement compaction model override and compaction-only provider
+  selection. Requires 5.2.1.
+  - See future RFC: compaction model override RFC §Problem, §Requirements, and
+    §Rollout Plan. See FEATURE_PARITY.md §Agent System.
+  - Success: summarisation and compaction can run on a dedicated provider/model
+    path, and cost attribution plus failure handling stay separate from the
+    primary response model.
+- [ ] 5.2.3. Expose model and compaction override inspection/edit surfaces
+  through the gateway and CLI. Requires 5.2.1 and 5.2.2.
+  - See future ADR: model override precedence. See future RFC: compaction model
+    override RFC §Compatibility and Migration.
+  - Success: operators can inspect, set, and clear model overrides from the
+    UI, API, and CLI without guessing which layer currently wins.
+
+### 5.3. Reasoning traces and citations
+
+Objective: make reasoning output inspectable and attributable without leaking
+unsafe internals or turning trace storage into an uncontrolled data sink.
+
+Learning opportunity: balance transparency, privacy, and token cost when
+capturing internal traces and surfacing citations to end users.
+
+Dependencies: builds on 4.2 because trace capture should reuse the payload
+inspection seams, and on 3.1 because citations should align with memory and
+workspace provenance rather than inventing a second source model.
+
+Outstanding design decisions: requires a companion RFC for trace retention,
+redaction, and visibility policy before 5.3.2; requires a companion RFC for
+citation provenance and rendering semantics before 5.3.3 and 5.3.4.
+
+- [ ] 5.3.1. Implement the reasoning trace event model, retention controls, and
+  redaction pipeline, and record the policy in a companion RFC.
+  - See future RFC: reasoning traces RFC §Summary, §Requirements, and §Known
+    Risks. See FEATURE_PARITY.md §Agent System.
+  - Success: trace events are captured in one schema, sensitive fields can be
+    redacted or disabled by policy, and trace storage does not grow without
+    retention bounds.
+- [ ] 5.3.2. Implement visible and configurable reasoning trace surfaces across
+  the UI, API, and CLI. Requires 4.2.3 and 5.3.1.
+  - See future RFC: reasoning traces RFC §Compatibility and Migration.
+  - Success: operators and users can opt into or out of trace visibility at the
+    supported scopes, and the active trace policy is obvious in each surface.
+- [ ] 5.3.3. Implement citation capture across provider responses, tool
+  outputs, and workspace-backed context. Requires 3.1.5 and 5.3.1.
+  - See future RFC: citation support RFC §Requirements, §Proposed Design, and
+    §Alternatives Considered. See FEATURE_PARITY.md §Agent System.
+  - Success: citations preserve enough provenance to show where a claim came
+    from, distinguish retrieved context from model synthesis, and survive
+    session export or replay.
+- [ ] 5.3.4. Implement citation rendering and export surfaces in chat, web UI,
+  and CLI transcripts. Requires 5.3.2 and 5.3.3.
+  - See future RFC: citation support RFC §Compatibility and Migration.
+  - Success: citations render consistently across text outputs, exports, and
+    debugging surfaces, and degrade gracefully when a provider or tool does not
+    emit citation-ready provenance.
+
+## 6. Deliver rich interaction and media surfaces
+
+Phase objective: add the missing interactive UI and media-handling features
+without splintering attachment semantics or weakening gateway boundaries.
+
+### 6.1. Canvas hosting
+
+Objective: add agent-driven canvas hosting with placement, resizing, and
+runtime mutation support inside the existing web control surface.
+
+Learning opportunity: validate how much agent-controlled UI can be exposed
+without giving runtime code ambient authority over the host page.
+
+Dependencies: benefits from 5.3.4 if citations and reasoning traces are later
+rendered inside canvas surfaces, but can land independently of provider
+selection work.
+
+Outstanding design decisions: requires a companion RFC for canvas authority,
+widget transport, placement persistence, asset loading, and isolation
+boundaries before 6.1.2-6.1.4.
+
+- [ ] 6.1.1. Implement the canvas session contract, event model, and placement
+  persistence, and record the contract in a companion RFC.
+  - See future RFC: canvas hosting RFC §Summary, §Requirements, and §Rollout
+    Plan. See FEATURE_PARITY.md §Gateway & Control Plane and §Web Interface.
+  - Success: axinite can persist canvas instances, placement state, and canvas
+    lifecycle events without embedding canvas-specific assumptions into the
+    generic chat thread model.
+- [ ] 6.1.2. Implement the control UI canvas host with placement, resizing, and
+  lifecycle management. Requires 6.1.1.
+  - See future RFC: canvas hosting RFC §Proposed Design and §Compatibility and
+    Migration.
+  - Success: the web UI can host multiple canvases, preserve placement changes,
+    and recover cleanly after reload or reconnect.
+- [ ] 6.1.3. Implement agent/runtime canvas mutation APIs and gateway auth
+  boundaries. Requires 6.1.1 and 6.1.2.
+  - See future RFC: canvas hosting RFC §Requirements and §Known Risks.
+  - Success: agents can update canvas content through explicit APIs, and the
+    gateway enforces capability and origin boundaries instead of trusting raw
+    client-side mutation requests.
+- [ ] 6.1.4. Add end-to-end canvas tests and asset-resolution handling.
+  Requires 6.1.2 and 6.1.3.
+  - See future RFC: canvas hosting RFC §Rollout Plan.
+  - Success: automated tests cover placement, resize, reconnect, and asset
+    loading behaviour, and the canvas host resolves runtime assets without
+    broken relative-path assumptions.
+
+### 6.2. Advanced media handling
+
+Objective: unify richer media ingest, transformation, caching, and rendering so
+channels, tools, and UI surfaces stop growing ad hoc media code paths.
+
+Learning opportunity: determine what one attachment contract must preserve
+across caching, image manipulation, audio transcription, PDF handling, TTS, and
+sticker-to-image conversion.
+
+Dependencies: informs 4.2 because `transcribeAudio` hooks need a stable media
+contract, and benefits from 6.1 if canvas surfaces are later used to present
+rich media results.
+
+Outstanding design decisions: requires a companion RFC for attachment caching,
+provenance, transformation policy, and per-channel capability negotiation
+before 6.2.2-6.2.4.
+
+- [ ] 6.2.1. Implement a unified media ingest and caching pipeline covering
+  images, PDFs, forwarded attachment downloads, and rich-text embedded media,
+  and record the contract in a companion RFC.
+  - See future RFC: advanced media handling RFC §Summary, §Requirements, and
+    §Rollout Plan. See FEATURE_PARITY.md §Media handling, §Channel Features,
+    and §Automation.
+  - Success: media items are normalised into one cached attachment model with
+    provenance, size, and channel metadata, and forwarded or embedded media can
+    be fetched without bespoke per-channel storage code.
+- [ ] 6.2.2. Implement media transformation paths for image manipulation,
+  sticker-to-image conversion, PDF parsing/analysis, and multiple images per
+  tool call. Requires 6.2.1.
+  - See future RFC: advanced media handling RFC §Proposed Design and
+    §Alternatives Considered.
+  - Success: the runtime can apply the required transformations through one
+    media service layer, and tool or channel paths can emit multiple images or
+    PDF-derived assets without inventing one-off payload formats.
+- [ ] 6.2.3. Implement audio transcription, `transcribeAudio` hook integration,
+  TTS generation, and streaming-friendly audio surfaces. Requires 4.2.1 and
+  6.2.1.
+  - See future RFC: advanced media handling RFC §Requirements and §Compatibility
+    and Migration. See FEATURE_PARITY.md §Automation and §Media handling.
+  - Success: audio inputs can be transcribed through a stable pipeline, TTS can
+    produce cached output artefacts, and hook integrations receive consistent
+    media metadata instead of transport-specific payloads.
+- [ ] 6.2.4. Implement per-channel media limits, fallback rendering, and media
+  inspection tests. Requires 6.2.1, 6.2.2, and 6.2.3.
+  - See future RFC: advanced media handling RFC §Rollout Plan and §Known
+    Risks.
+  - Success: per-channel limits and capability negotiation are enforced in one
+    place, unsupported media falls back predictably, and automated tests cover
+    preview, cache reuse, transcription, TTS, and transformed-media flows.
+
 ## Appendix: Completion criteria
 
 The roadmap is complete when every step has shipped its headline tasks and the
@@ -463,4 +806,9 @@ resulting runtime satisfies the following product-level outcomes:
 - extension packaging, delegated endpoints, codemode execution, and
   provenance-based intents all preserve explicit capability boundaries;
 - memory and long-running provider state can be rolled out behind opt-in or
-  shadow-mode controls rather than replacing current behaviour blindly.
+  shadow-mode controls rather than replacing current behaviour blindly;
+- operators can install, supervise, inspect, and control axinite through first
+  class service, health, hook, and CLI workflows;
+- model choice, compaction policy, reasoning visibility, citations, canvas
+  hosting, and rich media handling are explicit runtime capabilities rather than
+  implicit or surface-specific behaviour.
