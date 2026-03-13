@@ -1,3 +1,5 @@
+//! Helpers for platform-aware OAuth callback routing and state handling.
+
 use crate::llm::oauth_helpers::is_loopback_host;
 
 /// Returns `true` if OAuth callbacks should be routed through the web gateway

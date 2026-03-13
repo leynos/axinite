@@ -1,6 +1,7 @@
 //! Fixture-backed schema test groups used by the strict tool schema validator.
 
 use super::*;
+use rstest::rstest;
 
 pub(crate) fn load_complex_tool_schema_fixture(tool_name: &str) -> serde_json::Value {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -13,8 +14,7 @@ pub(crate) fn load_complex_tool_schema_fixture(tool_name: &str) -> serde_json::V
         .unwrap_or_else(|err| panic!("failed to parse schema fixture for {tool_name}: {err}"))
 }
 
-#[test]
-fn test_all_simple_tool_schemas() {
+fn simple_tool_schemas() -> Vec<(String, serde_json::Value)> {
     use crate::tools::Tool;
     use crate::tools::builtin::{
         ApplyPatchTool, EchoTool, HttpTool, JsonTool, ListDirTool, ReadFileTool, ShellTool,
@@ -33,24 +33,13 @@ fn test_all_simple_tool_schemas() {
         Box::new(ApplyPatchTool::new()),
     ];
 
-    let mut failures = Vec::new();
-
-    for tool in &tools {
-        let schema = tool.parameters_schema();
-        if let Err(errors) = validate_strict_schema(&schema, tool.name()) {
-            failures.push(format!("Tool '{}': {}", tool.name(), errors.join("; ")));
-        }
-    }
-
-    assert!(
-        failures.is_empty(),
-        "Schema validation failures:\n{}",
-        failures.join("\n")
-    );
+    tools
+        .into_iter()
+        .map(|tool| (tool.name().to_string(), tool.parameters_schema()))
+        .collect()
 }
 
-#[test]
-fn test_job_tool_schemas() {
+fn job_tool_schemas() -> Vec<(String, serde_json::Value)> {
     use std::sync::Arc;
 
     use crate::context::ContextManager;
@@ -66,24 +55,13 @@ fn test_job_tool_schemas() {
         Box::new(CancelJobTool::new(Arc::clone(&ctx_mgr))),
     ];
 
-    let mut failures = Vec::new();
-
-    for tool in &tools {
-        let schema = tool.parameters_schema();
-        if let Err(errors) = validate_strict_schema(&schema, tool.name()) {
-            failures.push(format!("Tool '{}': {}", tool.name(), errors.join("; ")));
-        }
-    }
-
-    assert!(
-        failures.is_empty(),
-        "Schema validation failures:\n{}",
-        failures.join("\n")
-    );
+    tools
+        .into_iter()
+        .map(|tool| (tool.name().to_string(), tool.parameters_schema()))
+        .collect()
 }
 
-#[test]
-fn test_skill_tool_schemas() {
+fn skill_tool_schemas() -> Vec<(String, serde_json::Value)> {
     use std::sync::Arc;
 
     use crate::skills::catalog::SkillCatalog;
@@ -111,87 +89,102 @@ fn test_skill_tool_schemas() {
         Box::new(SkillRemoveTool::new(Arc::clone(&registry))),
     ];
 
-    let mut failures = Vec::new();
-
-    for tool in &tools {
-        let schema = tool.parameters_schema();
-        if let Err(errors) = validate_strict_schema(&schema, tool.name()) {
-            failures.push(format!("Tool '{}': {}", tool.name(), errors.join("; ")));
-        }
-    }
-
-    assert!(
-        failures.is_empty(),
-        "Schema validation failures:\n{}",
-        failures.join("\n")
-    );
+    tools
+        .into_iter()
+        .map(|tool| (tool.name().to_string(), tool.parameters_schema()))
+        .collect()
 }
 
 /// Validate schemas from tools that cannot be easily constructed by
 /// inlining the JSON schema directly. This covers the extension tools and
 /// routine tools whose constructors require heavy dependencies.
-#[test]
-fn test_inline_schemas_for_complex_tools() {
-    let schemas: Vec<(&str, serde_json::Value)> = vec![
+fn complex_tool_schemas() -> Vec<(String, serde_json::Value)> {
+    vec![
         (
-            "tool_search",
+            "tool_search".to_string(),
             load_complex_tool_schema_fixture("tool_search"),
         ),
         (
-            "tool_install",
+            "tool_install".to_string(),
             load_complex_tool_schema_fixture("tool_install"),
         ),
-        ("tool_auth", load_complex_tool_schema_fixture("tool_auth")),
         (
-            "tool_activate",
+            "tool_auth".to_string(),
+            load_complex_tool_schema_fixture("tool_auth"),
+        ),
+        (
+            "tool_activate".to_string(),
             load_complex_tool_schema_fixture("tool_activate"),
         ),
-        ("tool_list", load_complex_tool_schema_fixture("tool_list")),
         (
-            "tool_remove",
+            "tool_list".to_string(),
+            load_complex_tool_schema_fixture("tool_list"),
+        ),
+        (
+            "tool_remove".to_string(),
             load_complex_tool_schema_fixture("tool_remove"),
         ),
         (
-            "routine_create",
+            "routine_create".to_string(),
             load_complex_tool_schema_fixture("routine_create"),
         ),
         (
-            "routine_list",
+            "routine_list".to_string(),
             load_complex_tool_schema_fixture("routine_list"),
         ),
         (
-            "routine_update",
+            "routine_update".to_string(),
             load_complex_tool_schema_fixture("routine_update"),
         ),
         (
-            "routine_delete",
+            "routine_delete".to_string(),
             load_complex_tool_schema_fixture("routine_delete"),
         ),
         (
-            "routine_fire",
+            "routine_fire".to_string(),
             load_complex_tool_schema_fixture("routine_fire"),
         ),
         (
-            "routine_history",
+            "routine_history".to_string(),
             load_complex_tool_schema_fixture("routine_history"),
         ),
-        ("job_events", load_complex_tool_schema_fixture("job_events")),
-        ("job_prompt", load_complex_tool_schema_fixture("job_prompt")),
-    ];
+        (
+            "job_events".to_string(),
+            load_complex_tool_schema_fixture("job_events"),
+        ),
+        (
+            "job_prompt".to_string(),
+            load_complex_tool_schema_fixture("job_prompt"),
+        ),
+    ]
+}
 
+fn validate_named_schemas(schemas: Vec<(String, serde_json::Value)>, context: &str) {
     let mut failures = Vec::new();
 
-    for (name, schema) in &schemas {
-        if let Err(errors) = validate_strict_schema(schema, name) {
+    for (name, schema) in schemas {
+        if let Err(errors) = validate_strict_schema(&schema, &name) {
             failures.push(format!("Tool '{}': {}", name, errors.join("; ")));
         }
     }
 
     assert!(
         failures.is_empty(),
-        "Schema validation failures for inline schemas:\n{}",
+        "Schema validation failures for {context}:\n{}",
         failures.join("\n")
     );
+}
+
+#[rstest]
+#[case::simple(simple_tool_schemas(), "simple tool schemas")]
+#[case::jobs(job_tool_schemas(), "job tool schemas")]
+#[case::skills(skill_tool_schemas(), "skill tool schemas")]
+#[case::complex(complex_tool_schemas(), "inline schemas")]
+fn test_schema_fixture_groups(
+    #[case] schemas: Vec<(String, serde_json::Value)>,
+    #[case] context: &str,
+) {
+    validate_named_schemas(schemas, context);
 }
 
 /// Verify the validator catches common issues in externally-sourced schemas.

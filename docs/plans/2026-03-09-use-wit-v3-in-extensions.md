@@ -100,8 +100,9 @@ files to inspect are:
 - Keep release packaging truthful. If any extension artifacts or registry
   metadata change, rebuild bundles and refresh checksums from the rebuilt
   archives.
-- Use the repository’s existing validation style: direct scripts and cargo
-  commands logged through `tee`. There is no top-level `Makefile` in this repo.
+- Use the repository’s existing validation style: prefer the top-level
+  `Makefile` targets where they exist, and fall back to direct scripts and
+  cargo commands logged through `tee` when no target covers the check.
 
 ## Tolerances
 
@@ -376,8 +377,8 @@ Record the exact log paths in the final implementation summary.
   a major-version migration plan.
 - The curated in-tree extension matrix already advertises `0.3.0` in its
   sidecar capabilities files and registry manifests.
-- The repo has no top-level `Makefile`, so validation is script-first and
-  cargo-first.
+- The repo has a top-level `Makefile`, but some validation is still script-first
+  and cargo-first when no matching make target exists.
 - All in-tree tools and channels import the shared WIT files directly with
   `wit_bindgen::generate!`, which makes the matrix audit meaningful across the
   full curated set.

@@ -287,4 +287,6 @@ Follow-up note, 2026-03-13 11:48Z: The remaining PR review failure was in `src/w
 
 Follow-up note, 2026-03-13 12:06Z: `src/channels/web/handlers/chat.rs` still relied on the wildcard branch for `image/jpeg` in `mime_to_ext`. Added the explicit JPEG match arm returning `jpg`, then reran `make check-fmt`, `make typecheck`, `make lint`, and `make test` to keep the tiny web-handler fix gated like the larger review passes.
 
-Follow-up note, 2026-03-13 12:17Z: `.env.example` still used mixed Slack placeholders (`xapp-...` and `...`) alongside the explicit `slack-bot-token-EXAMPLE` form. Standardised the Slack app-token and signing-secret examples to the same explicit-example style, then reran the standard gate stack before publishing the doc-only cleanup.
+Follow-up note, 2026-03-13 12:17Z: `.env.example` still used mixed Slack placeholders (`xapp-...` and `...`) alongside the explicit `slack-bot-token-EXAMPLE` form. Standardized the Slack app-token and signing-secret examples to the same explicit-example style, then reran the standard gate stack before publishing the doc-only cleanup.
+
+Follow-up note, 2026-03-13 13:35Z: The remaining live PR threads were all small review cleanups. Added the missing module doc comment in `src/cli/oauth_defaults/oauth_platform.rs`, reused fixture-backed orchestrator state setup for the configured-secrets credentials test, consolidated the repeated schema-validator fixture loops under one `rstest`, and corrected the stale Makefile wording in the WIT-alignment plan before replaying the full gate stack.

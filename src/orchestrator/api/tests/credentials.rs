@@ -1,15 +1,21 @@
 //! Tests for the worker credentials endpoint.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use rstest::rstest;
 use secrecy::SecretString;
-use tokio::sync::Mutex;
 
 use super::fixtures::test_state;
 use super::*;
 use crate::testing::credentials::test_secrets_store;
+
+fn with_secrets_store(
+    mut state: OrchestratorState,
+    secrets_store: Arc<dyn crate::secrets::SecretsStore + Send + Sync>,
+) -> OrchestratorState {
+    state.secrets_store = Some(secrets_store);
+    state
+}
 
 #[rstest]
 #[tokio::test]
@@ -62,8 +68,9 @@ async fn credentials_returns_503_when_no_secrets_store(test_state: OrchestratorS
     assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
+#[rstest]
 #[tokio::test]
-async fn credentials_returns_secrets_when_store_configured() {
+async fn credentials_returns_secrets_when_store_configured(test_state: OrchestratorState) {
     let secrets_store = Arc::new(test_secrets_store());
     secrets_store
         .create(
@@ -78,11 +85,10 @@ async fn credentials_returns_secrets_when_store_configured() {
         .await
         .expect("store test secret for credentials response");
 
-    let token_store = TokenStore::new();
-    let jm = ContainerJobManager::new(ContainerJobConfig::default(), token_store.clone());
     let job_id = Uuid::new_v4();
-    let token = token_store.create_token(job_id).await;
-    token_store
+    let token = test_state.token_store.create_token(job_id).await;
+    test_state
+        .token_store
         .store_grants(
             job_id,
             vec![crate::orchestrator::auth::CredentialGrant {
@@ -92,17 +98,7 @@ async fn credentials_returns_secrets_when_store_configured() {
         )
         .await;
 
-    let state = OrchestratorState {
-        llm: Arc::new(StubLlm::default()),
-        tools: Arc::new(ToolRegistry::new()),
-        job_manager: Arc::new(jm),
-        token_store,
-        job_event_tx: None,
-        prompt_queue: Arc::new(Mutex::new(HashMap::new())),
-        store: None,
-        secrets_store: Some(secrets_store),
-        user_id: "default".to_string(),
-    };
+    let state = with_secrets_store(test_state, secrets_store);
 
     let router = OrchestratorApi::router(state);
     let req = Request::builder()
