@@ -193,7 +193,7 @@ versioning, or extension packaging changes, that matrix should be
 rerun.
 
 For the second point, use behaviour tests that exercise the real request and
-response semantics your extension depends on. Mock-only coverage is not enough
+response semantics the extension depends on. Mock-only coverage is not enough
 if the mock hides the integration boundary that matters.
 
 ## Recommended Author Workflow

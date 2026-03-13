@@ -181,21 +181,21 @@ for the commit.
 
 ```bash
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test rig_adapter --lib -- --nocapture \
   2>&1 | tee /tmp/test-rig-adapter-ironclaw-${BRANCH}.out
 ```
 
 ```bash
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --test tool_schema_validation -- --nocapture \
   2>&1 | tee /tmp/test-tool-schema-validation-ironclaw-${BRANCH}.out
 ```
 
 ```bash
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo fmt --all --check \
   2>&1 | tee /tmp/fmt-check-ironclaw-${BRANCH}.out
 ```

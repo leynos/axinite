@@ -104,7 +104,7 @@ Suggested commands:
 
 ```bash
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test tools::wasm::wrapper --lib -- --nocapture \
   | tee /tmp/test-tools-wrapper-order-ironclaw-${BRANCH}.out
 ```
@@ -160,11 +160,11 @@ Suggested commands:
 
 ```bash
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test tools::wasm::wrapper --lib -- --nocapture \
   | tee /tmp/test-tools-wrapper-ironclaw-${BRANCH}.out
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test safety::leak_detector --lib -- --nocapture \
   | tee /tmp/test-leak-detector-ironclaw-${BRANCH}.out
 ```
@@ -186,7 +186,7 @@ Suggested commands:
 
 ```bash
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --test tool_schema_validation -- --nocapture \
   | tee /tmp/test-tool-schema-ironclaw-${BRANCH}.out
 ```
@@ -220,6 +220,7 @@ Work from the repository root.
 - [x] 2026-03-13 13:18Z: Reduced duplicate and stale test coverage called out in review by consolidating schema-normalization, OAuth failure-path, rig-adapter helper, and truncation assertions, moving `truncate_for_preview` coverage back next to `agentic_loop`, and removing duplicate gateway util tests in favor of the dedicated chat-history helper suite.
 - [x] 2026-03-13 13:18Z: Hardened the reviewed CLI/tooling paths by decomposing `tool install`/`tool list`/`tool setup`, replacing blocking `exists()` calls with async checks, validating tool names before joining paths, rejecting empty required secret values, and range-checking OAuth `expires_in` before storing token expiry metadata.
 - [x] 2026-03-13 02:06Z: Refactored `src/llm/schema_normalize/recursive.rs` so combinator traversal, object-shape normalization, and required/nullable rewriting now live in separate helpers, and preserved explicit object-valued `additionalProperties` schemas instead of overwriting them with `false`.
+- [x] 2026-03-13 13:05Z: Verified the latest PR review state from `vk pr`, then fixed the still-live web handler, CLI, migration, test-fixture, and docs findings. The active follow-up set was narrower than the raw review history: several older comments were already resolved in-tree, while the remaining live work was in `chat_history`, `job_control`, `job_files`, `oauth_slack`, CLI tool setup/install, nullable-`agent_id` uniqueness in `migrations/libsql_schema.sql`, `build.rs` error propagation, and stale command/documentation snippets.
 - [x] 2026-03-13 01:34Z: Added `target-codex-*/` to `.gitignore` so generated per-task target directories stop polluting follow-up review-fix work on this branch.
 - [x] 2026-03-09 20:47Z: Confirmed branch is `secret-blocking-overzealous` and gathered the governing repo instructions plus relevant skill guidance.
 - [x] 2026-03-09 20:48Z: Investigated the current failure path and confirmed that `grepai` was unavailable locally, so exact search and symbol lookup were used instead.

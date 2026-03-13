@@ -269,7 +269,8 @@ async fn handle_client_message(
                                 extension_name, e
                             ),
                         };
-                        crate::channels::web::server::clear_auth_mode(state).await;
+                        crate::channels::web::server::clear_auth_mode(state, Some(&extension_name))
+                            .await;
                         state
                             .sse
                             .broadcast(crate::channels::web::types::SseEvent::AuthCompleted {
@@ -304,8 +305,8 @@ async fn handle_client_message(
                     .await;
             }
         }
-        WsClientMessage::AuthCancel { .. } => {
-            crate::channels::web::server::clear_auth_mode(state).await;
+        WsClientMessage::AuthCancel { extension_name } => {
+            crate::channels::web::server::clear_auth_mode(state, Some(&extension_name)).await;
         }
         WsClientMessage::Ping => {
             let _ = direct_tx.send(WsServerMessage::Pong).await;

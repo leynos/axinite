@@ -188,13 +188,18 @@ CREATE TABLE IF NOT EXISTS memory_documents (
     content TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    metadata TEXT NOT NULL DEFAULT '{}',
-    UNIQUE (user_id, agent_id, path)
+    metadata TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE INDEX IF NOT EXISTS idx_memory_documents_user ON memory_documents(user_id);
 CREATE INDEX IF NOT EXISTS idx_memory_documents_path ON memory_documents(user_id, path);
 CREATE INDEX IF NOT EXISTS idx_memory_documents_updated ON memory_documents(updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_documents_user_agent_path_nonnull
+    ON memory_documents(user_id, agent_id, path)
+    WHERE agent_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_documents_user_path_null_agent
+    ON memory_documents(user_id, path)
+    WHERE agent_id IS NULL;
 
 -- Trigger to auto-update updated_at on memory_documents
 CREATE TRIGGER IF NOT EXISTS update_memory_documents_updated_at
@@ -258,11 +263,16 @@ CREATE TABLE IF NOT EXISTS heartbeat_state (
     interval_seconds INTEGER NOT NULL DEFAULT 1800,
     enabled INTEGER NOT NULL DEFAULT 1,
     consecutive_failures INTEGER NOT NULL DEFAULT 0,
-    last_checks TEXT NOT NULL DEFAULT '{}',
-    UNIQUE (user_id, agent_id)
+    last_checks TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE INDEX IF NOT EXISTS idx_heartbeat_user ON heartbeat_state(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_heartbeat_user_agent_nonnull
+    ON heartbeat_state(user_id, agent_id)
+    WHERE agent_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_heartbeat_user_null_agent
+    ON heartbeat_state(user_id)
+    WHERE agent_id IS NULL;
 
 -- ==================== Secrets ====================
 

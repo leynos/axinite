@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{State, WebSocketUpgrade},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, Uri},
     response::IntoResponse,
     routing::{get, post},
 };
@@ -164,12 +164,15 @@ pub async fn chat_ws_handler(
         })?;
 
     let host = origin
-        .strip_prefix("http://")
-        .or_else(|| origin.strip_prefix("https://"))
-        .and_then(|rest| rest.split(':').next()?.split('/').next())
-        .unwrap_or("");
+        .parse::<Uri>()
+        .ok()
+        .and_then(|uri| {
+            uri.authority()
+                .map(|authority| authority.host().to_string())
+        })
+        .unwrap_or_default();
 
-    let is_local = matches!(host, "localhost" | "127.0.0.1" | "[::1]");
+    let is_local = matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]");
     if !is_local {
         return Err((
             StatusCode::FORBIDDEN,

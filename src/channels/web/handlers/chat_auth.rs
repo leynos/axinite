@@ -109,7 +109,7 @@ pub async fn chat_auth_token_handler(
             ),
         };
 
-        clear_auth_mode(&state).await;
+        clear_auth_mode(&state, Some(&req.extension_name)).await;
 
         state.sse.broadcast(SseEvent::AuthCompleted {
             extension_name: req.extension_name,
@@ -136,20 +136,25 @@ pub async fn chat_auth_token_handler(
 
 pub async fn chat_auth_cancel_handler(
     State(state): State<Arc<GatewayState>>,
-    Json(_req): Json<AuthCancelRequest>,
+    Json(req): Json<AuthCancelRequest>,
 ) -> Result<Json<ActionResponse>, (StatusCode, String)> {
-    clear_auth_mode(&state).await;
+    clear_auth_mode(&state, Some(&req.extension_name)).await;
     Ok(Json(ActionResponse::ok("Auth cancelled")))
 }
 
-pub async fn clear_auth_mode(state: &GatewayState) {
+pub async fn clear_auth_mode(state: &GatewayState, extension_name: Option<&str>) {
     if let Some(ref sm) = state.session_manager {
         let session = sm.get_or_create_session(&state.user_id).await;
         let mut sess = session.lock().await;
-        if let Some(thread_id) = sess.active_thread
-            && let Some(thread) = sess.threads.get_mut(&thread_id)
-        {
-            thread.pending_auth = None;
+        for thread in sess.threads.values_mut() {
+            let should_clear = match (extension_name, thread.pending_auth.as_ref()) {
+                (None, Some(_)) => true,
+                (Some(extension_name), Some(pending)) => pending.extension_name == extension_name,
+                _ => false,
+            };
+            if should_clear {
+                thread.pending_auth = None;
+            }
         }
     }
 }

@@ -27,65 +27,102 @@ pub struct FilePathQuery {
     pub path: Option<String>,
 }
 
-pub async fn job_files_list_handler(
-    State(state): State<Arc<GatewayState>>,
-    Path(id): Path<String>,
-    Query(query): Query<FilePathQuery>,
-) -> Result<Json<ProjectFilesResponse>, (StatusCode, String)> {
+struct ResolvedJobPath {
+    requested_path: String,
+    canonical_path: std::path::PathBuf,
+}
+
+async fn resolve_job_path(
+    state: &GatewayState,
+    id: &str,
+    requested_path: Option<&str>,
+    missing_path_message: &'static str,
+    missing_target_message: &'static str,
+) -> Result<ResolvedJobPath, (StatusCode, String)> {
     let store = state.store.as_ref().ok_or((
         StatusCode::SERVICE_UNAVAILABLE,
         "Database not available".to_string(),
     ))?;
 
-    let job_id = Uuid::parse_str(&id)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid job ID".to_string()))?;
+    let job_id =
+        Uuid::parse_str(id).map_err(|_| (StatusCode::BAD_REQUEST, "Invalid job ID".to_string()))?;
 
     let job = store
         .get_sandbox_job(job_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load job: {e}"),
+            )
+        })?
         .ok_or((StatusCode::NOT_FOUND, "Job not found".to_string()))?;
 
-    let base = std::path::PathBuf::from(&job.project_dir);
-    let rel_path = query.path.as_deref().unwrap_or("");
-    let target = base.join(rel_path);
+    let requested_path = requested_path
+        .ok_or((StatusCode::BAD_REQUEST, missing_path_message.to_string()))?
+        .to_string();
 
-    let canonical = target
-        .canonicalize()
-        .map_err(|_| (StatusCode::NOT_FOUND, "Path not found".to_string()))?;
+    let base = std::path::PathBuf::from(&job.project_dir);
     let base_canonical = base
         .canonicalize()
-        .map_err(|_| (StatusCode::NOT_FOUND, "Project dir not found".to_string()))?;
-    if !canonical.starts_with(&base_canonical) {
+        .map_err(|e| (StatusCode::NOT_FOUND, format!("Project dir not found: {e}")))?;
+    let target = base.join(&requested_path);
+    let canonical_path = target.canonicalize().map_err(|e| {
+        (
+            StatusCode::NOT_FOUND,
+            format!("{missing_target_message}: {e}"),
+        )
+    })?;
+    if !canonical_path.starts_with(&base_canonical) {
         return Err((StatusCode::FORBIDDEN, "Forbidden".to_string()));
     }
 
-    let mut entries = Vec::new();
-    let mut read_dir = tokio::fs::read_dir(&canonical)
-        .await
-        .map_err(|_| (StatusCode::NOT_FOUND, "Cannot read directory".to_string()))?;
+    Ok(ResolvedJobPath {
+        requested_path,
+        canonical_path,
+    })
+}
 
-    while let Some(entry) = read_dir.next_entry().await.map_err(|_| {
+pub async fn job_files_list_handler(
+    State(state): State<Arc<GatewayState>>,
+    Path(id): Path<String>,
+    Query(query): Query<FilePathQuery>,
+) -> Result<Json<ProjectFilesResponse>, (StatusCode, String)> {
+    let resolved = resolve_job_path(
+        state.as_ref(),
+        &id,
+        Some(query.path.as_deref().unwrap_or("")),
+        "path parameter required",
+        "Path not found",
+    )
+    .await?;
+
+    let mut entries = Vec::new();
+    let mut read_dir = tokio::fs::read_dir(&resolved.canonical_path)
+        .await
+        .map_err(|e| (StatusCode::NOT_FOUND, format!("Cannot read directory: {e}")))?;
+
+    while let Some(entry) = read_dir.next_entry().await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to read directory entry".to_string(),
+            format!("Failed to read directory entry: {e}"),
         )
     })? {
         let name = entry.file_name().to_string_lossy().to_string();
         let is_dir = entry
             .file_type()
             .await
-            .map_err(|_| {
+            .map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to read directory entry metadata".to_string(),
+                    format!("Failed to read directory entry metadata: {e}"),
                 )
             })?
             .is_dir();
-        let rel = if rel_path.is_empty() {
+        let rel = if resolved.requested_path.is_empty() {
             name.clone()
         } else {
-            format!("{rel_path}/{name}")
+            format!("{}/{name}", resolved.requested_path)
         };
         entries.push(ProjectFileEntry {
             name,
@@ -104,44 +141,21 @@ pub async fn job_files_read_handler(
     Path(id): Path<String>,
     Query(query): Query<FilePathQuery>,
 ) -> Result<Json<ProjectFileReadResponse>, (StatusCode, String)> {
-    let store = state.store.as_ref().ok_or((
-        StatusCode::SERVICE_UNAVAILABLE,
-        "Database not available".to_string(),
-    ))?;
+    let resolved = resolve_job_path(
+        state.as_ref(),
+        &id,
+        query.path.as_deref(),
+        "path parameter required",
+        "File not found",
+    )
+    .await?;
 
-    let job_id = Uuid::parse_str(&id)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid job ID".to_string()))?;
-
-    let job = store
-        .get_sandbox_job(job_id)
+    let content = tokio::fs::read_to_string(&resolved.canonical_path)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or((StatusCode::NOT_FOUND, "Job not found".to_string()))?;
-
-    let path = query.path.as_deref().ok_or((
-        StatusCode::BAD_REQUEST,
-        "path parameter required".to_string(),
-    ))?;
-
-    let base = std::path::PathBuf::from(&job.project_dir);
-    let file_path = base.join(path);
-
-    let canonical = file_path
-        .canonicalize()
-        .map_err(|_| (StatusCode::NOT_FOUND, "File not found".to_string()))?;
-    let base_canonical = base
-        .canonicalize()
-        .map_err(|_| (StatusCode::NOT_FOUND, "Project dir not found".to_string()))?;
-    if !canonical.starts_with(&base_canonical) {
-        return Err((StatusCode::FORBIDDEN, "Forbidden".to_string()));
-    }
-
-    let content = tokio::fs::read_to_string(&canonical)
-        .await
-        .map_err(|_| (StatusCode::NOT_FOUND, "Cannot read file".to_string()))?;
+        .map_err(|e| (StatusCode::NOT_FOUND, format!("Cannot read file: {e}")))?;
 
     Ok(Json(ProjectFileReadResponse {
-        path: path.to_string(),
+        path: resolved.requested_path,
         content,
     }))
 }

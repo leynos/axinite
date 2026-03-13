@@ -3,7 +3,9 @@
 #[cfg(feature = "libsql")]
 use axum::{Router, body::Body, routing::get, routing::post};
 #[cfg(feature = "libsql")]
-use rstest::rstest;
+use rstest::{fixture, rstest};
+#[cfg(feature = "libsql")]
+use tempfile::TempDir;
 #[cfg(feature = "libsql")]
 use tower::ServiceExt;
 
@@ -19,13 +21,37 @@ use crate::workspace::Workspace;
 use axum::http::StatusCode;
 
 #[cfg(feature = "libsql")]
+type TestWorkspaceFixture = (std::sync::Arc<Workspace>, TempDir);
+
+#[cfg(feature = "libsql")]
+#[derive(Clone, Copy, Debug, Default)]
+struct TestWorkspaceFactory;
+
+#[cfg(feature = "libsql")]
+impl TestWorkspaceFactory {
+    async fn build(self) -> TestWorkspaceFixture {
+        let (db, temp_dir) = crate::testing::test_db().await;
+        (
+            std::sync::Arc::new(Workspace::new_with_db("test", db)),
+            temp_dir,
+        )
+    }
+}
+
+#[cfg(feature = "libsql")]
+#[fixture]
+fn test_workspace() -> TestWorkspaceFactory {
+    TestWorkspaceFactory
+}
+
+#[cfg(feature = "libsql")]
 #[rstest]
 #[tokio::test]
 async fn test_memory_search_results_round_trip_via_read_path(
     test_gateway_state: TestGatewayStateFactory,
+    test_workspace: TestWorkspaceFactory,
 ) {
-    let (db, _temp_dir) = crate::testing::test_db().await;
-    let workspace = std::sync::Arc::new(Workspace::new_with_db("test", db));
+    let (workspace, _temp_dir) = test_workspace.build().await;
     workspace
         .write("notes/test.md", "alpha needle beta")
         .await
@@ -81,9 +107,11 @@ async fn test_memory_search_results_round_trip_via_read_path(
 #[cfg(feature = "libsql")]
 #[rstest]
 #[tokio::test]
-async fn test_memory_tree_honours_depth_query(test_gateway_state: TestGatewayStateFactory) {
-    let (db, _temp_dir) = crate::testing::test_db().await;
-    let workspace = std::sync::Arc::new(Workspace::new_with_db("test", db));
+async fn test_memory_tree_honours_depth_query(
+    test_gateway_state: TestGatewayStateFactory,
+    test_workspace: TestWorkspaceFactory,
+) {
+    let (workspace, _temp_dir) = test_workspace.build().await;
     workspace
         .write("notes/deep/test.md", "nested content")
         .await

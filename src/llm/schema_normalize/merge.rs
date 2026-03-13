@@ -151,9 +151,8 @@ fn merge_property_schema(
                 return;
             }
             Some("array") => {
-                if merge_array_property_schema(existing_obj, incoming_obj, required_merge_mode) {
-                    return;
-                }
+                merge_array_property_schema(existing_obj, incoming_obj, required_merge_mode);
+                return;
             }
             _ => {}
         }
@@ -182,17 +181,17 @@ fn merge_object_property_schema(
     existing_obj: &mut Map<String, JsonValue>,
     incoming_obj: &Map<String, JsonValue>,
     required_merge_mode: RequiredMergeMode,
-) -> bool {
+) {
     match (
         existing_obj.get_mut("properties"),
         incoming_obj.get("properties"),
     ) {
         (Some(existing_props_value), Some(incoming_props_value)) => {
             let Some(existing_props) = existing_props_value.as_object_mut() else {
-                return false;
+                return;
             };
             let Some(incoming_props) = incoming_props_value.as_object() else {
-                return false;
+                return;
             };
             for (name, schema) in incoming_props {
                 match existing_props.get_mut(name) {
@@ -206,10 +205,9 @@ fn merge_object_property_schema(
             }
         }
         (None, Some(incoming_props_value)) => {
-            if !incoming_props_value.is_object() {
-                return false;
+            if incoming_props_value.is_object() {
+                existing_obj.insert("properties".to_string(), incoming_props_value.clone());
             }
-            existing_obj.insert("properties".to_string(), incoming_props_value.clone());
         }
         _ => {}
     }
@@ -222,8 +220,6 @@ fn merge_object_property_schema(
         "additionalProperties",
         required_merge_mode,
     );
-
-    true
 }
 
 fn merge_object_required(
@@ -261,9 +257,8 @@ fn merge_array_property_schema(
     existing_obj: &mut Map<String, JsonValue>,
     incoming_obj: &Map<String, JsonValue>,
     required_merge_mode: RequiredMergeMode,
-) -> bool {
+) {
     merge_schema_field(existing_obj, incoming_obj, "items", required_merge_mode);
-    true
 }
 
 fn merge_schema_field(

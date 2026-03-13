@@ -26,6 +26,20 @@ fn test_resolve_target_dir_default(_cleared_target_dir: EnvVarsGuard) {
     assert_eq!(result, dir.join("target"));
 }
 
+#[test]
+fn test_resolve_target_dir_relative_env_path() {
+    let mut guard = EnvVarsGuard::new(&["CARGO_TARGET_DIR"]);
+    guard.set("CARGO_TARGET_DIR", "target-relative");
+    let dir = Path::new("/some/crate");
+    let result = resolve_target_dir(dir);
+    assert_eq!(
+        result,
+        std::env::current_dir()
+            .expect("resolve current directory")
+            .join("target-relative")
+    );
+}
+
 #[rstest]
 fn test_find_wasm_artifact_falls_back_to_repo_shared_target_dir(_cleared_target_dir: EnvVarsGuard) {
     let repo = TempDir::new().expect("create temp dir");

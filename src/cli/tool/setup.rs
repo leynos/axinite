@@ -40,7 +40,7 @@ fn print_setup_banner(display_name: &str) {
     println!();
 }
 
-fn should_prompt_for_secret(prompt: &str, already_exists: bool) -> anyhow::Result<bool> {
+fn should_prompt_for_secret_blocking(prompt: &str, already_exists: bool) -> anyhow::Result<bool> {
     if already_exists {
         println!("  ✓ {} (already configured)", prompt);
 
@@ -55,7 +55,11 @@ fn should_prompt_for_secret(prompt: &str, already_exists: bool) -> anyhow::Resul
     }
 }
 
-fn prompt_secret_value(prompt: &str, optional: bool, secret_name: &str) -> anyhow::Result<String> {
+fn prompt_secret_value_blocking(
+    prompt: &str,
+    optional: bool,
+    secret_name: &str,
+) -> anyhow::Result<Option<String>> {
     if optional {
         print!("  {} (optional, Enter to skip): ", prompt);
     } else {
@@ -68,12 +72,34 @@ fn prompt_secret_value(prompt: &str, optional: bool, secret_name: &str) -> anyho
     if value.is_empty() {
         if optional {
             println!("    Skipped.");
+            return Ok(None);
         } else {
             anyhow::bail!("Required secret '{}' cannot be empty.", secret_name);
         }
     }
 
-    Ok(value)
+    Ok(Some(value))
+}
+
+async fn should_prompt_for_secret(prompt: &str, already_exists: bool) -> anyhow::Result<bool> {
+    let prompt = prompt.to_string();
+    tokio::task::spawn_blocking(move || should_prompt_for_secret_blocking(&prompt, already_exists))
+        .await
+        .map_err(|e| anyhow::anyhow!("interactive prompt task failed: {e}"))?
+}
+
+async fn prompt_secret_value(
+    prompt: &str,
+    optional: bool,
+    secret_name: &str,
+) -> anyhow::Result<Option<String>> {
+    let prompt = prompt.to_string();
+    let secret_name = secret_name.to_string();
+    tokio::task::spawn_blocking(move || {
+        prompt_secret_value_blocking(&prompt, optional, &secret_name)
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("interactive secret input task failed: {e}"))?
 }
 
 /// Configure required secrets for a tool via its `setup.required_secrets` schema.
@@ -118,10 +144,14 @@ pub(super) async fn setup_tool(
             .await
             .map_err(|e| anyhow::anyhow!("Failed to check whether secret exists: {e}"))?;
 
-        if !should_prompt_for_secret(&secret.prompt, already_exists)? {
+        if !should_prompt_for_secret(&secret.prompt, already_exists).await? {
             continue;
         }
-        let value = prompt_secret_value(&secret.prompt, secret.optional, &secret.name)?;
+        let Some(value) =
+            prompt_secret_value(&secret.prompt, secret.optional, &secret.name).await?
+        else {
+            continue;
+        };
 
         let params = CreateSecretParams::new(&secret.name, &value).with_provider(name.to_string());
         secrets_store

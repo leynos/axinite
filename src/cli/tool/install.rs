@@ -47,7 +47,12 @@ async fn resolve_directory_install(
                 anyhow::anyhow!("No .wasm artifact found. Run without --skip-build to build first.")
             })?
     } else {
-        crate::registry::artifacts::build_wasm_component_sync(path, release)?
+        let source_dir = path.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            crate::registry::artifacts::build_wasm_component_sync(&source_dir, release)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("tool build task failed: {e}"))??
     };
     let caps_path = match capabilities {
         Some(path) => Some(path),

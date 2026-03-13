@@ -127,7 +127,7 @@ sed -n '1,40p' .cargo/config.toml
 From the repository root:
 
 ```bash
-git branch --show
+git branch --show-current
 make check-fmt
 make typecheck
 make lint
@@ -156,7 +156,7 @@ assumptions:
 set -o pipefail
 /usr/bin/time -f 'ELAPSED %E\nMAXRSS_KB %M' \
   cargo check --no-default-features --features libsql --timings \
-  2>&1 | tee /tmp/check-ironclaw-$(git branch --show).out
+  2>&1 | tee /tmp/check-ironclaw-$(git branch --show-current | tr '/' '-').out
 ```
 
 The standard fast host-side test path is now:
@@ -164,7 +164,7 @@ The standard fast host-side test path is now:
 ```bash
 set -o pipefail
 cargo nextest run --workspace --no-default-features --features libsql \
-  2>&1 | tee /tmp/nextest-ironclaw-$(git branch --show).out
+  2>&1 | tee /tmp/nextest-ironclaw-$(git branch --show-current | tr '/' '-').out
 ```
 
 To compare behaviour against the legacy harness, use `make test-cargo`

@@ -116,7 +116,7 @@ pub async fn oauth_callback_handler(
 
     match &result {
         Ok(()) => {
-            clear_auth_mode(state.as_ref()).await;
+            clear_auth_mode(state.as_ref(), Some(&flow.extension_name)).await;
             tracing::info!(
                 extension = %flow.extension_name,
                 "OAuth completed successfully via gateway callback"

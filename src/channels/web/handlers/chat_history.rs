@@ -30,6 +30,9 @@ pub struct HistoryQuery {
     pub before: Option<String>,
 }
 
+const DEFAULT_HISTORY_LIMIT: usize = 50;
+const MAX_HISTORY_LIMIT: usize = 200;
+
 async fn load_stored_history(
     store: &Arc<dyn Database>,
     thread_id: Uuid,
@@ -62,9 +65,10 @@ pub async fn chat_history_handler(
     ))?;
 
     let session = session_manager.get_or_create_session(&state.user_id).await;
-    let sess = session.lock().await;
-
-    let limit = query.limit.unwrap_or(50);
+    let limit = query
+        .limit
+        .unwrap_or(DEFAULT_HISTORY_LIMIT)
+        .clamp(1, MAX_HISTORY_LIMIT);
     let before_cursor = query
         .before
         .as_deref()
@@ -80,22 +84,33 @@ pub async fn chat_history_handler(
         })
         .transpose()?;
 
-    let thread_id = if let Some(ref tid) = query.thread_id {
+    let requested_thread_id = if let Some(ref tid) = query.thread_id {
         Uuid::parse_str(tid)
             .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid thread_id".to_string()))?
     } else {
+        let sess = session.lock().await;
         sess.active_thread
             .ok_or((StatusCode::NOT_FOUND, "No active thread".to_string()))?
+    };
+
+    let session_thread = {
+        let sess = session.lock().await;
+        sess.threads.get(&requested_thread_id).cloned()
     };
 
     if query.thread_id.is_some()
         && let Some(ref store) = state.store
     {
         let owned = store
-            .conversation_belongs_to_user(thread_id, &state.user_id)
+            .conversation_belongs_to_user(requested_thread_id, &state.user_id)
             .await
-            .unwrap_or(false);
-        if !owned && !sess.threads.contains_key(&thread_id) {
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to verify thread ownership: {e}"),
+                )
+            })?;
+        if !owned && session_thread.is_none() {
             return Err((StatusCode::NOT_FOUND, "Thread not found".to_string()));
         }
     }
@@ -103,12 +118,12 @@ pub async fn chat_history_handler(
     if before_cursor.is_some()
         && let Some(ref store) = state.store
     {
-        return load_stored_history(store, thread_id, before_cursor, limit)
+        return load_stored_history(store, requested_thread_id, before_cursor, limit)
             .await
             .map(Json);
     }
 
-    if let Some(thread) = sess.threads.get(&thread_id)
+    if let Some(thread) = session_thread.as_ref()
         && (!thread.turns.is_empty() || thread.pending_approval.is_some())
     {
         let turns = thread
@@ -154,7 +169,7 @@ pub async fn chat_history_handler(
                 });
 
         return Ok(Json(HistoryResponse {
-            thread_id,
+            thread_id: requested_thread_id,
             turns,
             has_more: false,
             oldest_timestamp: None,
@@ -163,14 +178,14 @@ pub async fn chat_history_handler(
     }
 
     if let Some(ref store) = state.store {
-        let history = load_stored_history(store, thread_id, None, limit).await?;
+        let history = load_stored_history(store, requested_thread_id, None, limit).await?;
         if !history.turns.is_empty() {
             return Ok(Json(history));
         }
     }
 
     Ok(Json(HistoryResponse {
-        thread_id,
+        thread_id: requested_thread_id,
         turns: Vec::new(),
         has_more: false,
         oldest_timestamp: None,

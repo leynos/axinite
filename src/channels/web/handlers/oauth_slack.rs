@@ -46,7 +46,7 @@ pub async fn slack_relay_oauth_callback_handler(
     if let Err(error) = result {
         tracing::error!(error = %error, "Slack relay OAuth callback failed");
     } else {
-        clear_auth_mode(state.as_ref()).await;
+        clear_auth_mode(state.as_ref(), Some(DEFAULT_RELAY_NAME)).await;
     }
 
     state.sse.broadcast(SseEvent::AuthCompleted {
@@ -120,8 +120,7 @@ async fn csrf_state_matches(
         return false;
     }
 
-    let _ = secrets.delete(user_id, &state_key).await;
-    true
+    secrets.delete(user_id, &state_key).await.is_ok()
 }
 
 async fn complete_slack_relay_oauth(
@@ -158,13 +157,14 @@ async fn complete_slack_relay_oauth(
 
     if let Some(ref store) = state.store {
         let team_id_key = format!("relay:{}:team_id", DEFAULT_RELAY_NAME);
-        let _ = store
+        store
             .set_setting(
                 &state.user_id,
                 &team_id_key,
                 &serde_json::json!(callback.team_id),
             )
-            .await;
+            .await
+            .map_err(|e| format!("Failed to store relay team ID: {e}"))?;
     }
 
     ext_mgr

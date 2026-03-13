@@ -243,7 +243,7 @@ Acceptance evidence should include:
 
 ```bash
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 cargo nextest run --workspace --no-default-features --features libsql \
   2>&1 | tee /tmp/nextest-libsql-ironclaw-${BRANCH}.out
 ```
@@ -302,7 +302,7 @@ Acceptance evidence should include repeated runs of:
 
 ```bash
 set -o pipefail
-BRANCH=$(git branch --show)
+BRANCH=$(git branch --show-current | tr '/' '-')
 ./scripts/build-wasm-extensions.sh --channels \
   2>&1 | tee /tmp/build-wasm-channels-ironclaw-${BRANCH}.out
 ```
@@ -369,7 +369,7 @@ Work from the repository root.
 1. Confirm the current prerequisite state and the local baseline:
 
    ```bash
-   git branch --show
+   git branch --show-current
    rg -n "mold|cargo-nextest|nextest|link-arg=-fuse-ld=mold" \
      .github Makefile Cargo.toml docs scripts
    set -o pipefail
@@ -512,11 +512,10 @@ Work from the repository root.
   find it later. The artifact resolver and local override sync script
   both needed to learn about `target/wasm-extensions/` before the build
   script change would be durable outside the build shell.
-- The best lookup order is not "shared first." Developers can still
-  build a single channel directly into its own crate-local `target/`
-  tree, so artifact discovery now checks `CARGO_TARGET_DIR` first, then
-  the per-crate `target/`, then the repo-shared
-  `target/wasm-extensions/` cache.
+- The lookup order now checks `CARGO_TARGET_DIR` first, then the
+  repo-shared `target/wasm-extensions/` cache, then the per-crate
+  `target/` tree. That matches the current resolver behaviour and keeps
+  fresh shared-cache outputs ahead of stale crate-local artifacts.
 - CI had the same problem in a different form: the release packaging job
   still searched only `source_dir/target/...` even after the bulk build
   path moved to a shared target dir. Tool-install consistency and

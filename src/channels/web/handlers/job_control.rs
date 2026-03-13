@@ -28,6 +28,10 @@ fn database_unavailable() -> (StatusCode, String) {
     )
 }
 
+fn sandbox_job_accepts_prompts(status: &str) -> bool {
+    matches!(status, "creating" | "running")
+}
+
 async fn load_sandbox_job(
     store: &Arc<dyn Database>,
     job_id: Uuid,
@@ -163,6 +167,12 @@ async fn restart_sandbox_job(
 
     let new_job_id = Uuid::new_v4();
     let now = chrono::Utc::now();
+    let mode = match load_sandbox_job_mode(store, old_job_id).await? {
+        Some(mode) if mode == "claude_code" => {
+            crate::orchestrator::job_manager::JobMode::ClaudeCode
+        }
+        _ => crate::orchestrator::job_manager::JobMode::Worker,
+    };
 
     let record = crate::history::SandboxJobRecord {
         id: new_job_id,
@@ -181,13 +191,6 @@ async fn restart_sandbox_job(
         .save_sandbox_job(&record)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let mode = match load_sandbox_job_mode(store, old_job_id).await? {
-        Some(mode) if mode == "claude_code" => {
-            crate::orchestrator::job_manager::JobMode::ClaudeCode
-        }
-        _ => crate::orchestrator::job_manager::JobMode::Worker,
-    };
 
     let credential_grants: Vec<crate::orchestrator::auth::CredentialGrant> =
         serde_json::from_str(&old_job.credential_grants_json).unwrap_or_else(|e| {
@@ -227,11 +230,12 @@ async fn restart_sandbox_job(
         .await
     {
         if let Err(stop_error) = job_manager.stop_job(new_job_id).await {
-            tracing::warn!(
-                job_id = %new_job_id,
-                error = %stop_error,
-                "Failed to stop sandbox job after status-update failure"
-            );
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "Failed to persist running sandbox state: {error}; failed to stop restarted sandbox job: {stop_error}"
+                ),
+            ));
         }
         mark_sandbox_restart_failed(
             store,
@@ -371,9 +375,18 @@ pub async fn jobs_prompt_handler(
 
     let done = body.get("done").and_then(|v| v.as_bool()).unwrap_or(false);
 
-    if load_sandbox_job(store, job_id).await?.is_some() {
+    if let Some(job) = load_sandbox_job(store, job_id).await? {
         let mode = load_sandbox_job_mode(store, job_id).await?;
         if mode.as_deref() == Some("claude_code") {
+            if !sandbox_job_accepts_prompts(&job.status) {
+                return Err((
+                    StatusCode::CONFLICT,
+                    format!(
+                        "Cannot queue prompts for sandbox job in state '{}'",
+                        job.status
+                    ),
+                ));
+            }
             let prompt_queue = state.prompt_queue.as_ref().ok_or((
                 StatusCode::NOT_IMPLEMENTED,
                 "Claude Code not configured".to_string(),
@@ -423,10 +436,7 @@ pub async fn jobs_events_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let store = state.store.as_ref().ok_or((
-        StatusCode::NOT_IMPLEMENTED,
-        "Database not available".to_string(),
-    ))?;
+    let store = state.store.as_ref().ok_or_else(database_unavailable)?;
 
     let job_id: uuid::Uuid = id
         .parse()
