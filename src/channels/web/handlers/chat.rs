@@ -67,6 +67,7 @@ pub(crate) fn images_to_attachments(
 fn mime_to_ext(mime: &str) -> &str {
     match mime {
         "image/png" => "png",
+        "image/jpeg" => "jpg",
         "image/gif" => "gif",
         "image/webp" => "webp",
         "image/svg+xml" => "svg",

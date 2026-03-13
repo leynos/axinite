@@ -283,3 +283,5 @@ Validation evidence:
 All targeted validation passed. The remaining gap is that there is still no live GitHub end-to-end test in this repo, but the wrapper-level behavioural test now covers the precise local failure mode that previously prevented any real outbound attempt.
 
 Follow-up note, 2026-03-13 11:48Z: The remaining PR review failure was in `src/worker/container/tests.rs`, not production code. `WorkerRuntime::build_tools(...).list()` reads unsorted `HashMap` keys, so it has no stable order guarantee, while `tool_definitions()` intentionally sorts by tool name. The test now preserves the real runtime-definition ordering contract without sorting it away, but only checks set equality for the build-tools path. A focused `cargo test worker_runtime_advertises_safe_meta_tools --lib` rerun passed after that change.
+
+Follow-up note, 2026-03-13 12:06Z: `src/channels/web/handlers/chat.rs` still relied on the wildcard branch for `image/jpeg` in `mime_to_ext`. Added the explicit JPEG match arm returning `jpg`, then reran `make check-fmt`, `make typecheck`, `make lint`, and `make test` to keep the tiny web-handler fix gated like the larger review passes.
