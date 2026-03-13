@@ -243,7 +243,9 @@ needs direct access to concrete PostgreSQL or libSQL resources even though the
 rest of the host prefers the generic database abstraction. The new database
 integration reference is the place to look for backend-specific trade-offs such
 as pooled PostgreSQL access, libSQL replica modes, and the current search-path
-differences between `pgvector` and libSQL FTS.
+differences between `pgvector` and libSQL FTS. The provider matrix, config
+rules, and workspace-level embedding flow live in
+`docs/embedding-integrations.md`.
 
 ### 4.4 Extensions and tooling
 
