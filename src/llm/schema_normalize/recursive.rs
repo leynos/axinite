@@ -6,6 +6,33 @@ use std::collections::HashSet;
 use serde_json::{Map, Value as JsonValue};
 
 pub(super) fn normalize_schema_recursive(schema: &mut JsonValue) {
+    walk_combinators(schema);
+
+    let obj = match schema.as_object_mut() {
+        Some(o) => o,
+        None => return,
+    };
+
+    let is_object = obj
+        .get("type")
+        .and_then(|t| t.as_str())
+        .map(|t| t == "object")
+        .unwrap_or(false);
+    let has_properties = obj.contains_key("properties");
+
+    if !is_object && !has_properties {
+        return;
+    }
+
+    if is_map_object(obj, has_properties) {
+        return;
+    }
+
+    normalize_object_shape(obj);
+    rewrite_required_and_nullable(obj);
+}
+
+fn walk_combinators(schema: &mut JsonValue) {
     let obj = match schema.as_object_mut() {
         Some(o) => o,
         None => return,
@@ -34,28 +61,28 @@ pub(super) fn normalize_schema_recursive(schema: &mut JsonValue) {
     {
         normalize_schema_recursive(additional);
     }
+}
 
-    let is_object = obj
-        .get("type")
-        .and_then(|t| t.as_str())
-        .map(|t| t == "object")
-        .unwrap_or(false);
+fn normalize_object_shape(obj: &mut Map<String, JsonValue>) {
     let has_properties = obj.contains_key("properties");
-
-    if !is_object && !has_properties {
-        return;
-    }
-
-    if is_map_object(obj, has_properties) {
-        return;
-    }
 
     if !obj.contains_key("type") && has_properties {
         obj.insert("type".to_string(), JsonValue::String("object".to_string()));
     }
 
-    obj.insert("additionalProperties".to_string(), JsonValue::Bool(false));
+    let props_value = obj
+        .entry("properties".to_string())
+        .or_insert_with(|| JsonValue::Object(Map::new()));
+    if !props_value.is_object() {
+        *props_value = JsonValue::Object(Map::new());
+    }
 
+    if obj.get("additionalProperties").is_none() {
+        obj.insert("additionalProperties".to_string(), JsonValue::Bool(false));
+    }
+}
+
+fn rewrite_required_and_nullable(obj: &mut Map<String, JsonValue>) {
     let existing_required = obj.remove("required");
     let current_required: HashSet<&str> = existing_required
         .as_ref()
@@ -64,13 +91,8 @@ pub(super) fn normalize_schema_recursive(schema: &mut JsonValue) {
         .flatten()
         .filter_map(JsonValue::as_str)
         .collect();
-    let props_value = obj
-        .entry("properties".to_string())
-        .or_insert_with(|| JsonValue::Object(Map::new()));
-    if !props_value.is_object() {
-        *props_value = JsonValue::Object(Map::new());
-    }
-    let Some(props) = props_value.as_object_mut() else {
+
+    let Some(props) = obj.get_mut("properties").and_then(JsonValue::as_object_mut) else {
         return;
     };
 

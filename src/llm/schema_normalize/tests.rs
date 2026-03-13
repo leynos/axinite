@@ -88,7 +88,7 @@ fn test_normalize_schema_strict_removes_top_level_not() {
 }
 
 #[test]
-fn test_normalize_schema_strict_treats_empty_properties_as_fixed_shape_object() {
+fn test_normalize_schema_strict_preserves_typed_additional_properties_on_fixed_shape_object() {
     let normalized = normalize_schema_strict(&serde_json::json!({
         "type": "object",
         "properties": {
@@ -102,7 +102,7 @@ fn test_normalize_schema_strict_treats_empty_properties_as_fixed_shape_object() 
 
     assert_eq!(
         normalized["properties"]["inputs"]["additionalProperties"],
-        serde_json::json!(false)
+        serde_json::json!({ "type": "string" })
     );
     assert_eq!(
         normalized["properties"]["inputs"]["properties"],
