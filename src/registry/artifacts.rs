@@ -70,6 +70,7 @@ fn candidate_target_dirs(crate_dir: &Path) -> Vec<PathBuf> {
 
     candidates
 }
+
 /// Resolve the cargo target directory for a crate.
 ///
 /// Checks (in order):
