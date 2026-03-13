@@ -1,8 +1,10 @@
-# Expose WASM Tool Definitions To LLMs
+# RFC 0002: Expose WASM tool definitions to LLMs
 
-**Status:** Proposed
-**Author:** Codex
-**Date:** 2026-03-11
+## Preamble
+
+- **RFC number:** 0002
+- **Status:** Proposed
+- **Created:** 2026-03-11
 
 ## Summary
 
@@ -215,7 +217,7 @@ to "required interface guarantee."
 
 ### 4. Reuse the remote-tool catalog for orchestrator-owned WASM tools
 
-The companion RFC [2026-03-11-expose-mcp-tool-definitions.md](2026-03-11-expose-mcp-tool-definitions.md)
+The companion RFC [0001-expose-mcp-tool-definitions.md](0001-expose-mcp-tool-definitions.md)
 proposes a worker-authenticated hosted tool catalog plus generic remote tool
 execution endpoint.
 

@@ -27,6 +27,9 @@ bench-results/
 # Traces
 trace_*.json
 
+# Windows alternate data stream sidecars
+*:Zone.Identifier
+
 # Local Claude Code settings (machine-specific, should not be committed)
 .claude/settings.local.json
 .worktrees/

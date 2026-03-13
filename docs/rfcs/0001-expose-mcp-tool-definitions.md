@@ -1,8 +1,10 @@
-# Expose MCP Tool Definitions To Hosted LLMs
+# RFC 0001: Expose MCP tool definitions to hosted LLMs
 
-**Status:** Proposed
-**Author:** Codex
-**Date:** 2026-03-11
+## Preamble
+
+- **RFC number:** 0001
+- **Status:** Proposed
+- **Created:** 2026-03-11
 
 ## Summary
 

@@ -33,8 +33,10 @@ jobs:
           prompt: |
             Code review this pull request. Follow these steps precisely:
 
-            1. Use a Haiku agent to find relevant CLAUDE.md files: the root CLAUDE.md
-               and any CLAUDE.md files in directories whose files this PR modifies.
+            1. Use a Haiku agent to find relevant instruction files: the root
+               AGENTS.md, the compatibility root CLAUDE.md, and any scoped
+               AGENTS.md or CLAUDE.md files in directories whose files this PR
+               modifies.
 
             2. Use a Haiku agent to summarize the PR change (use `gh pr diff`).
 
@@ -49,7 +51,8 @@ jobs:
 
                Agent 2 — Architecture & Patterns
                Check for: extensible design (traits/enums over nested conditionals),
-               clean abstractions, proper error types (thiserror), CLAUDE.md compliance,
+               clean abstractions, proper error types (thiserror), instruction-file
+               compliance,
                type-driven design over stringly-typed code, DRY violations.
 
                Agent 3 — Bug Scan
@@ -71,10 +74,11 @@ jobs:
                   - LOW: documentation gaps, naming suggestions
                b. Score confidence 0-100 (give this rubric verbatim):
                   0: False positive, doesn't stand up to scrutiny, or pre-existing issue.
-                  25: Might be real, but may be false positive. Stylistic issues not in CLAUDE.md.
+                  25: Might be real, but may be false positive. Stylistic issues not in the
+                      applicable instruction files.
                   50: Real issue but nitpick or rare in practice. Not very important.
                   75: Verified real issue, will be hit in practice. Directly impacts functionality
-                      or explicitly mentioned in CLAUDE.md.
+                      or explicitly mentioned in the applicable instruction files.
                   100: Certain, confirmed, will happen frequently. Evidence directly confirms.
 
             5. Post a single comment on the PR using `gh pr comment` with this format.
