@@ -3,6 +3,9 @@
 This guide explains the local prerequisites for working on IronClaw and
 reproducing the build and test workflows on this branch.
 
+For the current system architecture and subsystem boundaries, see
+[`docs/axinite-architecture-overview.md`](axinite-architecture-overview.md).
+
 ## Purpose
 
 Linux continuous integration (CI) on this branch now uses `mold` to
