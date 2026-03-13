@@ -250,7 +250,7 @@ management.
 
 ## Repository Structure
 
-- Use `docs/repostory-layout.md` as the source of truth for the repository
+- Use `docs/repository-layout.md` as the source of truth for the repository
   layout and high-level directory responsibilities.
 - When adding or moving code, preserve the ownership boundaries documented
   there unless the task explicitly requires a structural refactor.

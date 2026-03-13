@@ -42,6 +42,7 @@ easy to scan.
 
 Table 1. Major repository paths and their current responsibilities.
 
+<!-- markdownlint-disable MD013 MD060 -->
 | Path | Purpose | Notable conventions and constraints |
 |------|---------|-------------------------------------|
 | `.cargo/` | Checked-in Cargo configuration for local and Continuous Integration (CI) builds | Includes Linux linker configuration for `clang` and `mold` |
@@ -63,6 +64,7 @@ Table 1. Major repository paths and their current responsibilities.
 | `wix/` | Windows installer packaging assets | Relevant when changing release packaging on Windows |
 | `image_out/` | Generated local image output | Treat as generated output rather than hand-maintained source material |
 | `target/` | Cargo build output and shared generated artefacts such as cached WASM builds | Generated directory; do not treat contents as authoritative source |
+<!-- markdownlint-enable MD013 MD060 -->
 
 ## Source tree guide
 
@@ -71,6 +73,7 @@ rather than by technical layer alone.
 
 Table 2. Key `src/` paths and why they matter.
 
+<!-- markdownlint-disable MD013 MD060 -->
 | Path | Purpose |
 |------|---------|
 | `src/main.rs` | Process entry point, CLI dispatch, service bootstrap, channel wiring, and agent startup |
@@ -91,6 +94,7 @@ Table 2. Key `src/` paths and why they matter.
 | `src/worker/` | Container worker runtime and orchestrator-facing HTTP client logic |
 | `src/workspace/` | Persistent memory documents, chunking, embeddings, and hybrid search support |
 | `src/NETWORK_SECURITY.md` | Authoritative security reference for network-facing surfaces and trust boundaries |
+<!-- markdownlint-enable MD013 MD060 -->
 
 ## Documentation and planning paths
 
@@ -100,11 +104,13 @@ system, a proposed design, or active execution work.
 
 Table 3. Documentation subtrees and their roles.
 
+<!-- markdownlint-disable MD013 MD060 -->
 | Path | Role |
 |------|------|
 | `docs/*.md` | Stable guides, specifications, and overview documents for the current repository state |
 | `docs/plans/` | Execution plans and implementation tracking documents that may describe in-flight work |
 | `docs/rfcs/` | Request for Comments (RFC) documents for proposed or recently accepted changes |
+<!-- markdownlint-enable MD013 MD060 -->
 
 ## Extension packaging paths
 

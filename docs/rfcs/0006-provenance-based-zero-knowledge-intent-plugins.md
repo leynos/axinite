@@ -8,7 +8,12 @@
 
 ## Executive summary
 
-You can use WIT to declare “intents” in a way that lets a WASM plugin “call its shots” while the harness retains exclusive control of network I/O and secret material. WIT is explicitly a contract language for component interfaces and worlds, and it supports handle-like “resources” that map neatly to opaque provenance tokens. citeturn6search0turn6search1
+WebAssembly Interface Types (WIT) can be used to declare “intents” in a way
+that lets a WebAssembly (WASM) plugin “call its shots” while the harness
+retains exclusive control of network I/O and secret material. WIT is
+explicitly a contract language for component interfaces and worlds, and it
+supports handle-like “resources” that map neatly to opaque provenance tokens.
+citeturn6search0turn6search1
 
 In Axinite’s IronClaw harness today, the WASM boundary already enforces a deny-by-default capability model: tools call WIT-imported host functions such as `host.http-request`, and the host validates an allowlist, injects credentials at the boundary, and runs a leak detector before/after requests. That gives you a strong base to extend into an intent-first model, but you must change two things to hit “zero-knowledge plugin” semantics reliably:
 
@@ -544,6 +549,8 @@ To make the “zero-knowledge” claim credible, implement a layered defence:
 
 These steps align with the broader literature: confinement/noninterference is not purely about “no read-access”; it’s about eliminating covert channels and controlling observable outputs. citeturn7search1turn8search1turn7search48
 
+<!-- markdownlint-disable MD013 MD060 -->
+
 ### Testing for noninterference-like properties
 
 You cannot *prove* full noninterference for a rich, stateful, networked system, but you can build strong evidence with the right tests.
@@ -628,3 +635,5 @@ Yes—WIT not only can declare them, it is one of the cleanest ways to do it in 
 - it gives you a stable ABI surface that plugin authors can target while you evolve the harness internally.
 
 The hard part isn’t “can WIT express it?”—it can. The hard part is agreeing a template vocabulary that remains (a) expressive enough for plugin authors, (b) legible for users, and (c) restrictable by policy. That’s why splitting “template IDs” (stable vocabulary) from “policy rules” (site-specific constraints) and “service profiles” (YTMusic auth/allowlist) makes the model realistic instead of brittle.
+
+<!-- markdownlint-enable MD013 MD060 -->

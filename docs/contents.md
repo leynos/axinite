@@ -9,7 +9,7 @@
   its current direction, and the main documents to read next.
 - [Developer's guide](developers-guide.md) is the maintainer-facing operating
   manual for building, testing, debugging, and extending axinite.
-- [Repository layout](repostory-layout.md) maps the repository structure and
+- [Repository layout](repository-layout.md) maps the repository structure and
   shows where major subsystems, assets, and support files live.
 - [Documentation style guide](documentation-style-guide.md) defines the
   repository's conventions for document types, formatting, RFCs, ADRs, and
