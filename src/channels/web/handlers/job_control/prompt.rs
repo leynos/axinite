@@ -85,9 +85,14 @@ pub async fn jobs_prompt_handler(
         let scheduler_guard = slot.read().await;
         scheduler_guard.as_ref().cloned()
     };
-    if let Some(scheduler) = scheduler
-        && scheduler.is_running(job_id).await
-    {
+    let Some(scheduler) = scheduler else {
+        return Err((
+            StatusCode::NOT_IMPLEMENTED,
+            "Scheduler not configured".to_string(),
+        ));
+    };
+
+    if scheduler.is_running(job_id).await {
         scheduler
             .send_message(job_id, content)
             .await

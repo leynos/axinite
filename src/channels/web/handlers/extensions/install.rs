@@ -55,7 +55,10 @@ pub async fn extensions_install_handler(
         )));
     };
 
-    let kind_hint = req.kind.as_deref().map(parse_extension_kind).transpose()?;
+    let kind_hint = match req.kind.as_deref().map(parse_extension_kind).transpose() {
+        Ok(kind_hint) => kind_hint,
+        Err((_, message)) => return Ok(Json(ActionResponse::fail(message))),
+    };
 
     match ext_mgr
         .install(&req.name, req.url.as_deref(), kind_hint)

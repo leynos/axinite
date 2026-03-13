@@ -1875,17 +1875,7 @@ impl Store {
 
 #[cfg(feature = "postgres")]
 fn parse_job_state(s: &str) -> JobState {
-    match s {
-        "pending" => JobState::Pending,
-        "in_progress" => JobState::InProgress,
-        "completed" => JobState::Completed,
-        "submitted" => JobState::Submitted,
-        "accepted" => JobState::Accepted,
-        "failed" => JobState::Failed,
-        "stuck" => JobState::Stuck,
-        "cancelled" => JobState::Cancelled,
-        _ => JobState::Pending,
-    }
+    s.parse().unwrap_or(JobState::Pending)
 }
 
 // ==================== Tool Failures ====================

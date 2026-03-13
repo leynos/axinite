@@ -65,6 +65,24 @@ impl JobState {
     }
 }
 
+impl std::str::FromStr for JobState {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(Self::Pending),
+            "in_progress" => Ok(Self::InProgress),
+            "completed" => Ok(Self::Completed),
+            "submitted" => Ok(Self::Submitted),
+            "accepted" => Ok(Self::Accepted),
+            "failed" => Ok(Self::Failed),
+            "stuck" => Ok(Self::Stuck),
+            "cancelled" => Ok(Self::Cancelled),
+            _ => Err(()),
+        }
+    }
+}
+
 impl std::fmt::Display for JobState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
@@ -336,6 +354,35 @@ mod tests {
         assert!(JobState::Failed.is_terminal());
         assert!(JobState::Cancelled.is_terminal());
         assert!(!JobState::InProgress.is_terminal());
+    }
+
+    #[test]
+    fn test_job_state_from_str_parses_known_values() {
+        assert_eq!("pending".parse::<JobState>().unwrap(), JobState::Pending);
+        assert_eq!(
+            "in_progress".parse::<JobState>().unwrap(),
+            JobState::InProgress
+        );
+        assert_eq!(
+            "completed".parse::<JobState>().unwrap(),
+            JobState::Completed
+        );
+        assert_eq!(
+            "submitted".parse::<JobState>().unwrap(),
+            JobState::Submitted
+        );
+        assert_eq!("accepted".parse::<JobState>().unwrap(), JobState::Accepted);
+        assert_eq!("failed".parse::<JobState>().unwrap(), JobState::Failed);
+        assert_eq!("stuck".parse::<JobState>().unwrap(), JobState::Stuck);
+        assert_eq!(
+            "cancelled".parse::<JobState>().unwrap(),
+            JobState::Cancelled
+        );
+    }
+
+    #[test]
+    fn test_job_state_from_str_rejects_unknown_values() {
+        assert!("unknown".parse::<JobState>().is_err());
     }
 
     #[test]

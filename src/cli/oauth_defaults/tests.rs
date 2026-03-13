@@ -221,30 +221,21 @@ fn test_build_oauth_url_state_is_unique() {
 }
 
 #[rstest]
-fn test_use_gateway_callback_false_by_default(mut oauth_env_guard: EnvVarsGuard) {
-    oauth_env_guard.remove("IRONCLAW_OAUTH_CALLBACK_URL");
-    assert!(!use_gateway_callback());
-}
+#[case(None, false)]
+#[case(Some("https://kind-deer.agent1.near.ai"), true)]
+#[case(Some("http://127.0.0.1:3001"), false)]
+#[case(Some(""), false)]
+fn test_use_gateway_callback(
+    mut oauth_env_guard: EnvVarsGuard,
+    #[case] callback_url: Option<&str>,
+    #[case] expected: bool,
+) {
+    match callback_url {
+        Some(callback_url) => oauth_env_guard.set("IRONCLAW_OAUTH_CALLBACK_URL", callback_url),
+        None => oauth_env_guard.remove("IRONCLAW_OAUTH_CALLBACK_URL"),
+    }
 
-#[rstest]
-fn test_use_gateway_callback_true_for_hosted(mut oauth_env_guard: EnvVarsGuard) {
-    oauth_env_guard.set(
-        "IRONCLAW_OAUTH_CALLBACK_URL",
-        "https://kind-deer.agent1.near.ai",
-    );
-    assert!(use_gateway_callback());
-}
-
-#[rstest]
-fn test_use_gateway_callback_false_for_localhost(mut oauth_env_guard: EnvVarsGuard) {
-    oauth_env_guard.set("IRONCLAW_OAUTH_CALLBACK_URL", "http://127.0.0.1:3001");
-    assert!(!use_gateway_callback());
-}
-
-#[rstest]
-fn test_use_gateway_callback_false_for_empty(mut oauth_env_guard: EnvVarsGuard) {
-    oauth_env_guard.set("IRONCLAW_OAUTH_CALLBACK_URL", "");
-    assert!(!use_gateway_callback());
+    assert_eq!(use_gateway_callback(), expected);
 }
 
 #[rstest]

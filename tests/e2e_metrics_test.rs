@@ -14,13 +14,33 @@ mod tests {
     use crate::support::cleanup::CleanupGuard;
     use crate::support::metrics::{RunResult, ScenarioResult, compare_runs};
     use crate::support::test_rig::TestRigBuilder;
-    use crate::support::trace_llm::LlmTrace;
+    use crate::support::trace_llm::{LlmTrace, TraceResponse};
 
     const TEST_DIR: &str = "/tmp/ironclaw_metrics_test";
+    const TEST_FILE: &str = "/tmp/ironclaw_metrics_test/hello.txt";
 
     fn setup_test_dir() {
         let _ = std::fs::remove_dir_all(TEST_DIR);
         std::fs::create_dir_all(TEST_DIR).expect("failed to create test directory");
+    }
+
+    fn localize_file_tool_paths(trace: &mut LlmTrace, path: &str) {
+        for turn in &mut trace.turns {
+            for step in &mut turn.steps {
+                if let TraceResponse::ToolCalls { tool_calls, .. } = &mut step.response {
+                    for tool_call in tool_calls {
+                        if matches!(tool_call.name.as_str(), "write_file" | "read_file")
+                            && let Some(arguments) = tool_call.arguments.as_object_mut()
+                        {
+                            arguments.insert(
+                                "path".to_string(),
+                                serde_json::Value::String(path.to_string()),
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Verify that metrics are collected from a simple text-only trace.
@@ -89,11 +109,12 @@ mod tests {
         setup_test_dir();
         let _cleanup = CleanupGuard::new().dir(TEST_DIR);
 
-        let trace = LlmTrace::from_file(concat!(
+        let mut trace = LlmTrace::from_file(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/llm_traces/file_write_read.json"
         ))
         .expect("failed to load file_write_read.json");
+        localize_file_tool_paths(&mut trace, TEST_FILE);
 
         let rig = TestRigBuilder::new().with_trace(trace).build().await;
 

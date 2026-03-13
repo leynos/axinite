@@ -36,6 +36,15 @@ pub(super) struct JobEventsResponse {
     next_before_id: Option<i64>,
 }
 
+fn trim_events_page(events: &mut Vec<crate::history::JobEventRecord>, limit: usize) -> Option<i64> {
+    if events.len() > limit {
+        let removed_event = events.remove(0);
+        Some(removed_event.id)
+    } else {
+        None
+    }
+}
+
 pub async fn jobs_events_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
@@ -71,12 +80,7 @@ pub async fn jobs_events_handler(
         .map_err(|e| super::internal_error("Failed to load job events", e))?;
 
     let mut events = events;
-    let next_before_id = if events.len() > limit {
-        events.remove(0);
-        events.first().map(|event| event.id)
-    } else {
-        None
-    };
+    let next_before_id = trim_events_page(&mut events, limit);
 
     let events = events
         .into_iter()
@@ -93,4 +97,48 @@ pub async fn jobs_events_handler(
         events,
         next_before_id,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    use crate::history::JobEventRecord;
+
+    #[test]
+    fn trim_uses_removed_event_as_next_cursor() {
+        let job_id = Uuid::new_v4();
+        let mut events = vec![
+            JobEventRecord {
+                id: 10,
+                job_id,
+                event_type: "oldest".to_string(),
+                data: serde_json::json!({}),
+                created_at: Utc::now(),
+            },
+            JobEventRecord {
+                id: 11,
+                job_id,
+                event_type: "middle".to_string(),
+                data: serde_json::json!({}),
+                created_at: Utc::now(),
+            },
+            JobEventRecord {
+                id: 12,
+                job_id,
+                event_type: "newest".to_string(),
+                data: serde_json::json!({}),
+                created_at: Utc::now(),
+            },
+        ];
+
+        let next_before_id = super::trim_events_page(&mut events, 2);
+
+        assert_eq!(next_before_id, Some(10));
+        assert_eq!(
+            events.into_iter().map(|event| event.id).collect::<Vec<_>>(),
+            vec![11, 12]
+        );
+    }
 }

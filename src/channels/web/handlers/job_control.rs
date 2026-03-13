@@ -100,12 +100,10 @@ async fn cancel_sandbox_job(
         StatusCode::SERVICE_UNAVAILABLE,
         "Sandbox job manager not available".to_string(),
     ))?;
-    job_manager.stop_job(job_id).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to stop sandbox job: {e}"),
-        )
-    })?;
+    job_manager
+        .stop_job(job_id)
+        .await
+        .map_err(|e| internal_error("Failed to stop sandbox job", e))?;
     store
         .update_sandbox_job_status(
             job_id,
@@ -135,12 +133,10 @@ async fn cancel_agent_job(
             "Agent scheduler not started".to_string(),
         ))?
     };
-    scheduler.stop(job_id).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to stop agent job: {e}"),
-        )
-    })?;
+    scheduler
+        .stop(job_id)
+        .await
+        .map_err(|e| internal_error("Failed to stop agent job", e))?;
     store
         .update_job_status(
             job_id,
@@ -226,16 +222,9 @@ async fn restart_sandbox_job(
         )
         .await
     {
-        mark_sandbox_restart_failed(
-            store,
-            new_job_id,
-            format!("Failed to create container: {error}"),
-        )
-        .await?;
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to create container: {error}"),
-        ));
+        mark_sandbox_restart_failed(store, new_job_id, "Failed to create container".to_string())
+            .await?;
+        return Err(internal_error("Failed to create container", error));
     }
 
     if let Err(error) = store
@@ -243,17 +232,21 @@ async fn restart_sandbox_job(
         .await
     {
         if let Err(stop_error) = job_manager.stop_job(new_job_id).await {
+            tracing::error!(
+                %error,
+                stop_error = %stop_error,
+                job_id = %new_job_id,
+                "Failed to persist running sandbox state and stop restarted sandbox job"
+            );
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!(
-                    "Failed to persist running sandbox state: {error}; failed to stop restarted sandbox job: {stop_error}"
-                ),
+                "Failed to persist running sandbox state".to_string(),
             ));
         }
         mark_sandbox_restart_failed(
             store,
             new_job_id,
-            format!("Failed to persist running sandbox state: {error}"),
+            "Failed to persist running sandbox state".to_string(),
         )
         .await?;
         return Err(internal_error(
@@ -312,7 +305,7 @@ async fn restart_agent_job(
     let new_job_id = scheduler
         .dispatch_job(&old_job.user_id, &title, &old_job.description, None)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| internal_error("Failed to restart agent job", e))?;
 
     Ok(Json(serde_json::json!({
         "status": "restarted",

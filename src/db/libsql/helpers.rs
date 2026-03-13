@@ -2,6 +2,7 @@
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
+use uuid::Uuid;
 
 use crate::context::JobState;
 
@@ -48,17 +49,39 @@ pub(crate) fn fmt_opt_ts(dt: &Option<DateTime<Utc>>) -> libsql::Value {
 }
 
 pub(crate) fn parse_job_state(s: &str) -> JobState {
-    match s {
-        "pending" => JobState::Pending,
-        "in_progress" => JobState::InProgress,
-        "completed" => JobState::Completed,
-        "submitted" => JobState::Submitted,
-        "accepted" => JobState::Accepted,
-        "failed" => JobState::Failed,
-        "stuck" => JobState::Stuck,
-        "cancelled" => JobState::Cancelled,
-        _ => JobState::Pending,
+    s.parse().unwrap_or(JobState::Pending)
+}
+
+pub(crate) fn parse_uuid_or_nil(raw: &str, idx: i32, field: &str) -> Uuid {
+    match raw.parse() {
+        Ok(uuid) => uuid,
+        Err(error) => {
+            tracing::warn!(
+                column = idx,
+                field,
+                value = %raw,
+                error = %error,
+                "UUID parse failure; defaulting to nil UUID"
+            );
+            Uuid::nil()
+        }
     }
+}
+
+pub(crate) fn parse_opt_uuid(raw: Option<String>, idx: i32, field: &str) -> Option<Uuid> {
+    raw.and_then(|value| match value.parse() {
+        Ok(uuid) => Some(uuid),
+        Err(error) => {
+            tracing::warn!(
+                column = idx,
+                field,
+                value = %value,
+                error = %error,
+                "UUID parse failure; dropping invalid optional UUID"
+            );
+            None
+        }
+    })
 }
 
 /// Extract a text column from a libsql Row, returning empty string for NULL.

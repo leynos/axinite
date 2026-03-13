@@ -177,7 +177,7 @@ ed25519-dalek = { version = "2.2.0", features = ["std"] }
 hex = "0.4.3"
 
 # OpenClaw import (feature gated)
-rusqlite = { version = "0.32", optional = true, features = ["bundled"] }
+rusqlite = { version = "0.32", optional = true }
 json5 = { version = "0.4", optional = true }
 
 # macOS keychain

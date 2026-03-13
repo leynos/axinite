@@ -6,13 +6,19 @@ use crate::agent::routine::{
 use crate::error::DatabaseError;
 use crate::workspace::MemoryDocument;
 
-use super::helpers::{get_i64, get_json, get_opt_text, get_opt_ts, get_text, get_ts};
+use super::helpers::{
+    get_i64, get_json, get_opt_text, get_opt_ts, get_text, get_ts, parse_opt_uuid,
+    parse_uuid_or_nil,
+};
 
 pub(crate) fn row_to_memory_document(row: &libsql::Row) -> MemoryDocument {
+    let id_raw = get_text(row, 0);
+    let agent_id_raw = get_opt_text(row, 2);
+
     MemoryDocument {
-        id: get_text(row, 0).parse().unwrap_or_default(),
+        id: parse_uuid_or_nil(&id_raw, 0, "memory_documents.id"),
         user_id: get_text(row, 1),
-        agent_id: get_opt_text(row, 2).and_then(|s| s.parse().ok()),
+        agent_id: parse_opt_uuid(agent_id_raw, 2, "memory_documents.agent_id"),
         path: get_text(row, 3),
         content: get_text(row, 4),
         created_at: get_ts(row, 5),
@@ -34,9 +40,10 @@ pub(crate) fn row_to_routine_libsql(row: &libsql::Row) -> Result<Routine, Databa
         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
     let action = RoutineAction::from_db(&action_type, action_config)
         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+    let id_raw = get_text(row, 0);
 
     Ok(Routine {
-        id: get_text(row, 0).parse().unwrap_or_default(),
+        id: parse_uuid_or_nil(&id_raw, 0, "routines.id"),
         name: get_text(row, 1),
         description: get_text(row, 2),
         user_id: get_text(row, 3),
@@ -70,10 +77,12 @@ pub(crate) fn row_to_routine_run_libsql(row: &libsql::Row) -> Result<RoutineRun,
     let status: RunStatus = status_str
         .parse()
         .map_err(|e: crate::error::RoutineError| DatabaseError::Serialization(e.to_string()))?;
+    let id_raw = get_text(row, 0);
+    let routine_id_raw = get_text(row, 1);
 
     Ok(RoutineRun {
-        id: get_text(row, 0).parse().unwrap_or_default(),
-        routine_id: get_text(row, 1).parse().unwrap_or_default(),
+        id: parse_uuid_or_nil(&id_raw, 0, "routine_runs.id"),
+        routine_id: parse_uuid_or_nil(&routine_id_raw, 1, "routine_runs.routine_id"),
         trigger_type: get_text(row, 2),
         trigger_detail: get_opt_text(row, 3),
         started_at: get_ts(row, 4),

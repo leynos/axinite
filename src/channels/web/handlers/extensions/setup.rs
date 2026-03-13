@@ -27,11 +27,16 @@ pub async fn extensions_setup_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let kind = ext_mgr
-        .list(None, false)
-        .await
-        .ok()
-        .and_then(|list| list.into_iter().find(|e| e.name == name))
+    let installed = ext_mgr.list(None, false).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to list installed extensions: {e}"),
+        )
+    })?;
+
+    let kind = installed
+        .into_iter()
+        .find(|e| e.name == name)
         .map(|e| e.kind.to_string())
         .unwrap_or_default();
 

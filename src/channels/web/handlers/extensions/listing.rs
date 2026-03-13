@@ -32,10 +32,12 @@ pub async fn extensions_list_handler(
                 } else if !ext.authenticated {
                     "installed".to_string()
                 } else if ext.active {
-                    let has_paired = pairing_store
-                        .read_allow_from(&ext.name)
-                        .map(|list| !list.is_empty())
-                        .unwrap_or(false);
+                    let has_paired = tokio::task::block_in_place(|| {
+                        pairing_store
+                            .read_allow_from(&ext.name)
+                            .map(|list| !list.is_empty())
+                            .unwrap_or(false)
+                    });
                     if has_paired {
                         "active".to_string()
                     } else {
