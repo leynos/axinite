@@ -11,6 +11,11 @@ use crate::tools::wasm::{CapabilitiesFile, compute_binary_hash};
 
 use super::default_tools_dir;
 
+enum InstallSourceKind {
+    SourceDirectory,
+    WasmFile,
+}
+
 async fn find_existing_path(candidates: Vec<PathBuf>) -> anyhow::Result<Option<PathBuf>> {
     for candidate in candidates {
         if fs::try_exists(&candidate).await? {
@@ -18,6 +23,49 @@ async fn find_existing_path(candidates: Vec<PathBuf>) -> anyhow::Result<Option<P
         }
     }
     Ok(None)
+}
+
+fn classify_install_source(
+    path: &Path,
+    metadata: &std::fs::Metadata,
+) -> anyhow::Result<InstallSourceKind> {
+    if metadata.is_dir() {
+        return Ok(InstallSourceKind::SourceDirectory);
+    }
+    if path.extension().is_some_and(|ext| ext == "wasm") {
+        return Ok(InstallSourceKind::WasmFile);
+    }
+    anyhow::bail!(
+        "Expected a directory with Cargo.toml or a .wasm file, got: {}",
+        path.display()
+    );
+}
+
+fn wasm_file_tool_name(path: &Path) -> anyhow::Result<String> {
+    path.file_stem()
+        .ok_or_else(|| anyhow::anyhow!("WASM filename has no stem: {}", path.display()))?
+        .to_str()
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| anyhow::anyhow!("WASM filename is not valid UTF-8: {}", path.display()))
+}
+
+async fn find_existing_wasm_artifact(
+    path: &Path,
+    tool_name: &str,
+    profile: &str,
+) -> anyhow::Result<PathBuf> {
+    let path = path.to_path_buf();
+    let tool_name = tool_name.to_string();
+    let profile = profile.to_string();
+    tokio::task::spawn_blocking(move || {
+        crate::registry::artifacts::find_wasm_artifact(&path, &tool_name, &profile)
+            .or_else(|| crate::registry::artifacts::find_any_wasm_artifact(&path, &profile))
+            .ok_or_else(|| {
+                anyhow::anyhow!("No .wasm artifact found. Run without --skip-build to build first.")
+            })
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("tool artifact lookup task failed: {e}"))?
 }
 
 async fn resolve_directory_install(
@@ -41,11 +89,7 @@ async fn resolve_directory_install(
     };
     let profile = if release { "release" } else { "debug" };
     let wasm_path = if skip_build {
-        crate::registry::artifacts::find_wasm_artifact(path, &tool_name, profile)
-            .or_else(|| crate::registry::artifacts::find_any_wasm_artifact(path, profile))
-            .ok_or_else(|| {
-                anyhow::anyhow!("No .wasm artifact found. Run without --skip-build to build first.")
-            })?
+        find_existing_wasm_artifact(path, &tool_name, profile).await?
     } else {
         let source_dir = path.to_path_buf();
         tokio::task::spawn_blocking(move || {
@@ -75,11 +119,7 @@ async fn resolve_wasm_install(
 ) -> anyhow::Result<(PathBuf, String, Option<PathBuf>)> {
     let tool_name = match name {
         Some(name) => name,
-        None => path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .unwrap_or("unknown")
-            .to_string(),
+        None => wasm_file_tool_name(path)?,
     };
     let caps_path = match capabilities {
         Some(path) => Some(path),
@@ -108,16 +148,13 @@ pub(super) async fn install_tool(
     let target_dir = target.unwrap_or_else(default_tools_dir);
 
     let metadata = fs::metadata(&path).await?;
+    let source_kind = classify_install_source(&path, &metadata)?;
 
-    let (wasm_path, tool_name, caps_path) = if metadata.is_dir() {
-        resolve_directory_install(&path, name, capabilities, release, skip_build).await?
-    } else if path.extension().map(|e| e == "wasm").unwrap_or(false) {
-        resolve_wasm_install(&path, name, capabilities).await?
-    } else {
-        anyhow::bail!(
-            "Expected a directory with Cargo.toml or a .wasm file, got: {}",
-            path.display()
-        );
+    let (wasm_path, tool_name, caps_path) = match source_kind {
+        InstallSourceKind::SourceDirectory => {
+            resolve_directory_install(&path, name, capabilities, release, skip_build).await?
+        }
+        InstallSourceKind::WasmFile => resolve_wasm_install(&path, name, capabilities).await?,
     };
 
     fs::create_dir_all(&target_dir).await?;
@@ -146,6 +183,13 @@ pub(super) async fn install_tool(
         println!("  Copying capabilities from {}", caps.display());
         fs::copy(&caps, &target_caps).await?;
     } else {
+        if fs::try_exists(&target_caps).await? {
+            println!(
+                "  Removing stale capabilities from {}",
+                target_caps.display()
+            );
+            fs::remove_file(&target_caps).await?;
+        }
         println!("  Warning: No capabilities file found. Tool will have no permissions.");
     }
 

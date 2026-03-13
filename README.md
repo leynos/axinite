@@ -305,11 +305,11 @@ cargo test test_name
   for setup and DM pairing.
 - **Changing all channels**: Run
   `./scripts/build-wasm-extensions.sh --channels` before release
-  packaging or onboarding so the updated registered channel artifacts
+  packaging or onboarding so the updated registered channel artefacts
   are available on disk.
 - **Changing the Telegram channel only**: Run
   `./channels-src/telegram/build.sh` when only the deployable Telegram
-  artifact needs rebuilding on disk.
+  artefact needs rebuilding on disk.
 
 ## OpenClaw Heritage
 

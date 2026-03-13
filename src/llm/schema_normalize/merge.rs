@@ -64,6 +64,7 @@ fn merge_top_level_variants(
 
     for variant in variants {
         let Some(variant_obj) = variant.as_object() else {
+            variant_required_sets.push(BTreeSet::new());
             continue;
         };
         if let Some(variant_props) = variant_obj.get("properties").and_then(JsonValue::as_object) {
@@ -187,27 +188,28 @@ fn merge_object_property_schema(
         incoming_obj.get("properties"),
     ) {
         (Some(existing_props_value), Some(incoming_props_value)) => {
-            let Some(existing_props) = existing_props_value.as_object_mut() else {
-                return;
-            };
-            let Some(incoming_props) = incoming_props_value.as_object() else {
-                return;
-            };
-            for (name, schema) in incoming_props {
-                match existing_props.get_mut(name) {
-                    Some(existing_schema) => {
-                        merge_property_schema(existing_schema, schema, required_merge_mode);
+            if let Some(incoming_props) = incoming_props_value.as_object() {
+                if let Some(existing_props) = existing_props_value.as_object_mut() {
+                    for (name, schema) in incoming_props {
+                        match existing_props.get_mut(name) {
+                            Some(existing_schema) => {
+                                merge_property_schema(existing_schema, schema, required_merge_mode);
+                            }
+                            None => {
+                                existing_props.insert(name.clone(), schema.clone());
+                            }
+                        }
                     }
-                    None => {
-                        existing_props.insert(name.clone(), schema.clone());
-                    }
+                } else {
+                    *existing_props_value = incoming_props_value.clone();
                 }
+            } else if existing_props_value != incoming_props_value {
+                *existing_props_value =
+                    merge_nested_any_of(existing_props_value.clone(), incoming_props_value.clone());
             }
         }
         (None, Some(incoming_props_value)) => {
-            if incoming_props_value.is_object() {
-                existing_obj.insert("properties".to_string(), incoming_props_value.clone());
-            }
+            existing_obj.insert("properties".to_string(), incoming_props_value.clone());
         }
         _ => {}
     }

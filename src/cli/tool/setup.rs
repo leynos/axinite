@@ -33,9 +33,10 @@ async fn load_tool_setup(
 }
 
 fn print_setup_banner(display_name: &str) {
+    let title: String = format!("{display_name} Setup").chars().take(62).collect();
     println!();
     println!("╔════════════════════════════════════════════════════════════════╗");
-    println!("║  {:^62}║", format!("{display_name} Setup"));
+    println!("║  {:^62}║", title);
     println!("╚════════════════════════════════════════════════════════════════╝");
     println!();
 }
@@ -142,7 +143,12 @@ pub(super) async fn setup_tool(
         let already_exists = secrets_store
             .exists(&user_id, &secret.name)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to check whether secret exists: {e}"))?;
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to check whether secret '{}' exists: {e}",
+                    secret.name
+                )
+            })?;
 
         if !should_prompt_for_secret(&secret.prompt, already_exists).await? {
             continue;
@@ -157,7 +163,7 @@ pub(super) async fn setup_tool(
         secrets_store
             .create(&user_id, params)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to save secret: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to save secret '{}': {}", secret.name, e))?;
 
         println!("    ✓ Saved.");
         any_saved = true;

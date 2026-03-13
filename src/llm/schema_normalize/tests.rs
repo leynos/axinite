@@ -210,3 +210,59 @@ fn test_normalize_schema_strict_preserves_nested_required_keys_across_allof() {
         serde_json::json!("string")
     );
 }
+
+#[test]
+fn test_normalize_schema_strict_marks_non_object_anyof_fields_nullable() {
+    let normalized = normalize_schema_strict(&serde_json::json!({
+        "anyOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "owner": { "type": "string" }
+                },
+                "required": ["owner"]
+            },
+            {
+                "type": "string"
+            }
+        ]
+    }));
+
+    assert_eq!(
+        normalized["properties"]["owner"]["type"],
+        serde_json::json!(["string", "null"])
+    );
+}
+
+#[test]
+fn test_normalize_schema_strict_preserves_incoming_properties_after_shape_mismatch() {
+    let normalized = normalize_schema_strict(&serde_json::json!({
+        "type": "object",
+        "oneOf": [
+            {
+                "properties": {
+                    "inputs": {
+                        "type": "object",
+                        "properties": false
+                    }
+                }
+            },
+            {
+                "properties": {
+                    "inputs": {
+                        "type": "object",
+                        "properties": {
+                            "owner": { "type": "string" }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            }
+        ]
+    }));
+
+    assert!(
+        normalized["properties"]["inputs"]["properties"]["owner"].is_object(),
+        "incoming object properties should survive mismatched earlier branches: {normalized}"
+    );
+}

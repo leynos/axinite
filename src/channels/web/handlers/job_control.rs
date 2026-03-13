@@ -13,12 +13,15 @@ use uuid::Uuid;
 use crate::channels::web::server::GatewayState;
 use crate::db::Database;
 
+mod events;
+mod prompt;
+
 pub fn routes() -> Router<Arc<GatewayState>> {
     Router::new()
         .route("/api/jobs/{id}/cancel", post(jobs_cancel_handler))
         .route("/api/jobs/{id}/restart", post(jobs_restart_handler))
-        .route("/api/jobs/{id}/prompt", post(jobs_prompt_handler))
-        .route("/api/jobs/{id}/events", get(jobs_events_handler))
+        .route("/api/jobs/{id}/prompt", post(prompt::jobs_prompt_handler))
+        .route("/api/jobs/{id}/events", get(events::jobs_events_handler))
 }
 
 fn database_unavailable() -> (StatusCode, String) {
@@ -352,115 +355,4 @@ pub async fn jobs_restart_handler(
     }
 
     Err((StatusCode::NOT_FOUND, "Job not found".to_string()))
-}
-
-pub async fn jobs_prompt_handler(
-    State(state): State<Arc<GatewayState>>,
-    Path(id): Path<String>,
-    Json(body): Json<serde_json::Value>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let store = state.store.as_ref().ok_or_else(database_unavailable)?;
-    let job_id: uuid::Uuid = id
-        .parse()
-        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid job ID".to_string()))?;
-
-    let content = body
-        .get("content")
-        .and_then(|v| v.as_str())
-        .ok_or((
-            StatusCode::BAD_REQUEST,
-            "Missing 'content' field".to_string(),
-        ))?
-        .to_string();
-
-    let done = body.get("done").and_then(|v| v.as_bool()).unwrap_or(false);
-
-    if let Some(job) = load_sandbox_job(store, job_id).await? {
-        let mode = load_sandbox_job_mode(store, job_id).await?;
-        if mode.as_deref() == Some("claude_code") {
-            if !sandbox_job_accepts_prompts(&job.status) {
-                return Err((
-                    StatusCode::CONFLICT,
-                    format!(
-                        "Cannot queue prompts for sandbox job in state '{}'",
-                        job.status
-                    ),
-                ));
-            }
-            let prompt_queue = state.prompt_queue.as_ref().ok_or((
-                StatusCode::NOT_IMPLEMENTED,
-                "Claude Code not configured".to_string(),
-            ))?;
-            let prompt = crate::orchestrator::api::PendingPrompt { content, done };
-            {
-                let mut queue = prompt_queue.lock().await;
-                queue.entry(job_id).or_default().push_back(prompt);
-            }
-            return Ok(Json(serde_json::json!({
-                "status": "queued",
-                "job_id": job_id.to_string(),
-            })));
-        }
-
-        return Err((
-            StatusCode::NOT_IMPLEMENTED,
-            "Follow-up prompts are not supported for worker-mode sandbox jobs".to_string(),
-        ));
-    }
-
-    let slot = state.scheduler.as_ref().ok_or((
-        StatusCode::NOT_IMPLEMENTED,
-        "Agent job prompts require the scheduler to be configured".to_string(),
-    ))?;
-    let scheduler_guard = slot.read().await;
-    if let Some(ref scheduler) = *scheduler_guard
-        && scheduler.is_running(job_id).await
-    {
-        scheduler
-            .send_message(job_id, content)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        return Ok(Json(serde_json::json!({
-            "status": "sent",
-            "job_id": job_id.to_string(),
-        })));
-    }
-
-    Err((
-        StatusCode::NOT_FOUND,
-        "Job not found or not running".to_string(),
-    ))
-}
-
-pub async fn jobs_events_handler(
-    State(state): State<Arc<GatewayState>>,
-    Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let store = state.store.as_ref().ok_or_else(database_unavailable)?;
-
-    let job_id: uuid::Uuid = id
-        .parse()
-        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid job ID".to_string()))?;
-
-    let events = store
-        .list_job_events(job_id, None)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let events_json: Vec<serde_json::Value> = events
-        .into_iter()
-        .map(|e| {
-            serde_json::json!({
-                "id": e.id,
-                "event_type": e.event_type,
-                "data": e.data,
-                "created_at": e.created_at.to_rfc3339(),
-            })
-        })
-        .collect();
-
-    Ok(Json(serde_json::json!({
-        "job_id": job_id.to_string(),
-        "events": events_json,
-    })))
 }

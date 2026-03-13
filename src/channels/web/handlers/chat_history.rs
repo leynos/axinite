@@ -156,17 +156,26 @@ pub async fn chat_history_handler(
             })
             .collect();
 
-        let pending_approval =
-            thread
-                .pending_approval
-                .as_ref()
-                .map(|approval| PendingApprovalInfo {
-                    request_id: approval.request_id.to_string(),
-                    tool_name: approval.tool_name.clone(),
-                    description: approval.description.clone(),
-                    parameters: serde_json::to_string_pretty(&approval.parameters)
-                        .unwrap_or_default(),
-                });
+        let pending_approval = thread
+            .pending_approval
+            .as_ref()
+            .map(|approval| {
+                serde_json::to_string_pretty(&approval.parameters).map(|parameters| {
+                    PendingApprovalInfo {
+                        request_id: approval.request_id.to_string(),
+                        tool_name: approval.tool_name.clone(),
+                        description: approval.description.clone(),
+                        parameters,
+                    }
+                })
+            })
+            .transpose()
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to serialize pending approval parameters: {e}"),
+                )
+            })?;
 
         return Ok(Json(HistoryResponse {
             thread_id: requested_thread_id,

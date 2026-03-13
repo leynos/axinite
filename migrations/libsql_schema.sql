@@ -506,9 +506,6 @@ CREATE INDEX IF NOT EXISTS idx_secrets_expires ON secrets(expires_at);
 -- wasm_tools
 CREATE INDEX IF NOT EXISTS idx_wasm_tools_trust ON wasm_tools(trust_level);
 
--- tool_capabilities
-CREATE INDEX IF NOT EXISTS idx_tool_capabilities_tool ON tool_capabilities(wasm_tool_id);
-
 -- leak_detection_patterns
 CREATE INDEX IF NOT EXISTS idx_leak_patterns_enabled ON leak_detection_patterns(enabled);
 

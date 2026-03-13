@@ -79,9 +79,14 @@ async fn test_memory_search_results_round_trip_via_read_path(
         .await
         .expect("body");
     let search_json: serde_json::Value = serde_json::from_slice(&search_body).expect("search json");
-    let result_path = search_json["results"][0]["path"]
-        .as_str()
-        .expect("search result path");
+    let results = search_json["results"]
+        .as_array()
+        .expect("search results should be an array");
+    assert!(
+        !results.is_empty(),
+        "search should return at least one result: {search_json}"
+    );
+    let result_path = results[0]["path"].as_str().expect("search result path");
     assert_eq!(result_path, "notes/test.md");
 
     let read_req = axum::http::Request::builder()
