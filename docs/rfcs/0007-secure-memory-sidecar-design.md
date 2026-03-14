@@ -679,7 +679,8 @@ Ollama supports **structured outputs** by providing a JSON schema to a `format` 
 
 #### Extraction contract (JSON schema)
 
-This contract standardises what memoryd expects from the extraction model and keeps the rest of the pipeline deterministic.
+This contract standardizes what memoryd expects from the extraction model and
+keeps the rest of the pipeline deterministic.
 
 ```json
 {
@@ -796,7 +797,7 @@ Retries:
 
 ### Security posture
 
-**Minimise exposure**
+**Minimize exposure**
 
 - memoryd listens only on a UDS socket (0600 permissions; owned by the user running IronClaw).
 - Do not expose Oxigraph over HTTP; embed it in memoryd only. [^57]

@@ -9,7 +9,7 @@ use axum::{
 
 use crate::channels::web::server::GatewayState;
 
-mod common;
+pub(crate) mod common;
 mod install;
 mod listing;
 mod registry;

@@ -1345,6 +1345,8 @@ impl From<TaskOutput> for Result<String, Error> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use crate::llm::ToolSelection;
 
     use super::*;
@@ -1361,6 +1363,8 @@ mod tests {
     struct SlowTool {
         tool_name: String,
         delay: Duration,
+        current_active: Arc<AtomicUsize>,
+        max_active: Arc<AtomicUsize>,
     }
 
     #[async_trait::async_trait]
@@ -1379,8 +1383,11 @@ mod tests {
             _params: serde_json::Value,
             _ctx: &JobContext,
         ) -> Result<ToolOutput, ToolExecError> {
+            let active = self.current_active.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_active.fetch_max(active, Ordering::SeqCst);
             let start = std::time::Instant::now();
             tokio::time::sleep(self.delay).await;
+            self.current_active.fetch_sub(1, Ordering::SeqCst);
             Ok(ToolOutput::text(
                 format!("done_{}", self.tool_name),
                 start.elapsed(),
@@ -1468,11 +1475,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_parallel_speedup() {
+        let current_active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
         let tools: Vec<Arc<dyn Tool>> = (0..3)
             .map(|i| {
                 Arc::new(SlowTool {
                     tool_name: format!("slow_{}", i),
                     delay: Duration::from_millis(200),
+                    current_active: Arc::clone(&current_active),
+                    max_active: Arc::clone(&max_active),
                 }) as Arc<dyn Tool>
             })
             .collect();
@@ -1489,35 +1500,41 @@ mod tests {
             })
             .collect();
 
-        let start = std::time::Instant::now();
         let results = worker.execute_tools_parallel(&selections).await;
-        let elapsed = start.elapsed();
 
         assert_eq!(results.len(), 3);
         for r in &results {
             assert!(r.result.is_ok(), "Tool should succeed");
         }
         assert!(
-            elapsed < Duration::from_millis(800),
-            "Parallel execution took {:?}, expected < 800ms (sequential would be ~600ms)",
-            elapsed
+            max_active.load(Ordering::SeqCst) > 1,
+            "Expected parallel tool execution to overlap, but max concurrency was {}",
+            max_active.load(Ordering::SeqCst)
         );
     }
 
     #[tokio::test]
     async fn test_result_ordering_preserved() {
+        let current_active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
         let tools: Vec<Arc<dyn Tool>> = vec![
             Arc::new(SlowTool {
                 tool_name: "tool_a".into(),
                 delay: Duration::from_millis(300),
+                current_active: Arc::clone(&current_active),
+                max_active: Arc::clone(&max_active),
             }),
             Arc::new(SlowTool {
                 tool_name: "tool_b".into(),
                 delay: Duration::from_millis(100),
+                current_active: Arc::clone(&current_active),
+                max_active: Arc::clone(&max_active),
             }),
             Arc::new(SlowTool {
                 tool_name: "tool_c".into(),
                 delay: Duration::from_millis(200),
+                current_active: Arc::clone(&current_active),
+                max_active: Arc::clone(&max_active),
             }),
         ];
 

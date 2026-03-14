@@ -109,9 +109,9 @@ CREATE TABLE IF NOT EXISTS dynamic_tools (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     description TEXT NOT NULL,
-    parameters_schema TEXT NOT NULL,
+    parameters_schema TEXT NOT NULL CHECK (json_valid(parameters_schema)),
     code TEXT NOT NULL,
-    sandbox_config TEXT NOT NULL,
+    sandbox_config TEXT NOT NULL CHECK (json_valid(sandbox_config)),
     created_by_job_id TEXT REFERENCES agent_jobs(id),
     success_count INTEGER NOT NULL DEFAULT 0,
     failure_count INTEGER NOT NULL DEFAULT 0,
@@ -313,7 +313,6 @@ CREATE TABLE IF NOT EXISTS wasm_tools (
 );
 
 CREATE INDEX IF NOT EXISTS idx_wasm_tools_user ON wasm_tools(user_id);
-CREATE INDEX IF NOT EXISTS idx_wasm_tools_name ON wasm_tools(user_id, name);
 CREATE INDEX IF NOT EXISTS idx_wasm_tools_status ON wasm_tools(status);
 
 -- ==================== WASM Channel Extensions ====================

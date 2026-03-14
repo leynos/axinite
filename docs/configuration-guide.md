@@ -164,7 +164,7 @@ Table 11. `ironclaw mcp` subcommands.
 | `list` | `ironclaw mcp list [-v\|--verbose]` | List registered MCP servers. |
 | `auth` | `ironclaw mcp auth <name> [-u\|--user USER]` | Authenticate one MCP server for one user. |
 | `test` | `ironclaw mcp test <name> [-u\|--user USER]` | Test one MCP server for one user. |
-| `toggle` | `ironclaw mcp toggle <name> [--enable|--disable]` | Enable or disable one MCP server definition. |
+| `toggle` | `ironclaw mcp toggle <name> [--enable\|--disable]` | Enable or disable one MCP server definition. |
 
 Table 12. `ironclaw mcp` option meanings.
 
