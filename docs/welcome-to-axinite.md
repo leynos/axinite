@@ -134,7 +134,7 @@ tool catalogue (`GET /worker/{job_id}/tools/catalog`) that exposes
 real `ToolDefinition` values – name, description, and JSON Schema –
 for every active MCP tool. Hosted workers register proxy wrappers
 locally and execute through a generic orchestrator endpoint
-(`POST /worker/{job_id}/tools/execute`). The LLM receives the
+(`POST /worker/{job_id}/tools/execute`). The language model (LLM) receives the
 original tool description and schema, not a lossy summary or a
 post-failure hint.
 
