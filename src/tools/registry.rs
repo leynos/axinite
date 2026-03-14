@@ -95,6 +95,11 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
+    /// Whether a tool name belongs to the protected built-in namespace.
+    pub fn is_protected_tool_name(name: &str) -> bool {
+        PROTECTED_TOOL_NAMES.contains(&name)
+    }
+
     /// Create a new empty registry.
     pub fn new() -> Self {
         Self {

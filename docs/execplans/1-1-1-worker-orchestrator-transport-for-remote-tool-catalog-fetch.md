@@ -41,9 +41,9 @@ special-cased for this roadmap step.
   module name improves clarity.
 - `src/worker/api.rs` is the worker-side HTTP adapter. It constructs URLs by
   joining a typed shared-path fragment onto `/worker/{job_id}/...`, and it now
-  exposes remote catalog fetch plus generic remote-tool execution calls.
+  exposes remote catalogue fetch plus generic remote-tool execution calls.
 - `src/orchestrator/api.rs` owns the worker-facing routes. The current router
-  exposes the hosted remote-tool catalog and generic execution routes.
+  exposes the hosted remote-tool catalogue and generic execution routes.
 - `src/orchestrator/api/handlers.rs` contains the worker-facing HTTP handlers,
   while `src/orchestrator/api/remote_tools.rs` now owns the hosted remote-tool
   policy and execution helpers.
@@ -57,7 +57,7 @@ special-cased for this roadmap step.
   describe the pre-catalogue transport and must be kept synchronized when the
   new shared boundary lands.
 - `src/tools/builtin/worker_remote_tool_proxy.rs` owns the generic worker-side
-  proxy wrapper for catalog-backed remote tools.
+  proxy wrapper for catalogue-backed remote tools.
 - `src/orchestrator/api/tests/remote_tools.rs`,
   `src/worker/api/tests.rs`, and `src/worker/container/tests.rs` are the
   nearest existing unit-test seams for the new transport and startup changes.
@@ -391,8 +391,8 @@ Expected evidence:
 - [x] 2026-03-14 11:27Z: Drafted this ExecPlan and recorded the expected code,
   test, and documentation touch points for roadmap item `1.1.1`.
 - [x] 2026-03-14 12:43Z: Implemented the shared transport contract, the
-  orchestrator catalog and generic execute endpoints, the worker startup
-  catalog fetch, and the generic worker-side proxy registration path.
+  orchestrator catalogue and generic execute endpoints, the worker startup
+  catalogue fetch, and the generic worker-side proxy registration path.
 - [x] 2026-03-14 12:43Z: Replaced the extension-only hosted proxy route with
   the generic hosted remote-tool path in unit and startup coverage.
 - [x] 2026-03-14 12:43Z: Updated architecture, RFC, roadmap, and user-facing
@@ -446,13 +446,13 @@ Implemented in this branch:
 - shared hosted remote-tool route and payload ownership in `src/worker/api/`
 - orchestrator `GET /worker/{job_id}/tools/catalog`
 - orchestrator `POST /worker/{job_id}/tools/execute`
-- worker startup catalog fetch and proxy registration using the shared
+- worker startup catalogue fetch and proxy registration using the shared
   `ToolDefinition` values unchanged
 - focused unit coverage for the worker HTTP client, worker startup, worker
-  proxy execution, and orchestrator catalog or execution policy
+  proxy execution, and orchestrator catalogue or execution policy
 
 The implementation intentionally keeps `toolset_instructions` empty for now and
-uses a stable hashed `catalog_version` derived from the current catalog
+uses a stable hashed `catalog_version` derived from the current catalogue
 contents. That leaves `1.1.2` to refine the hosted-visible filter and leaves
-`1.1.3` to decide how any catalog-level instructions should be merged into the
+`1.1.3` to decide how any catalogue-level instructions should be merged into the
 reasoning context.

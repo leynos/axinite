@@ -144,7 +144,13 @@ impl WorkerRuntime {
             );
         }
 
-        self.register_remote_tools().await?;
+        if let Err(error) = self.register_remote_tools().await {
+            tracing::warn!(
+                job_id = %self.config.job_id,
+                error = %error,
+                "Failed to fetch hosted remote-tool catalogue; continuing with container-local tools only"
+            );
+        }
 
         // Report that we're starting
         self.client
