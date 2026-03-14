@@ -39,10 +39,10 @@ else
 fi
 
 echo "[3.5/6] Checking SQLite development headers for all-features builds..."
-if pkg-config --exists sqlite3; then
+if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists sqlite3 2>/dev/null; then
     echo "  sqlite3 development headers detected"
 else
-    echo "  NOTE: sqlite3 development headers were not detected."
+    echo "  NOTE: sqlite3 development headers were not detected (or pkg-config is unavailable)."
     echo "        The default build still works, but the import feature and"
     echo "        --all-features validation need a package such as"
     echo "        libsqlite3-dev or sqlite-devel."
