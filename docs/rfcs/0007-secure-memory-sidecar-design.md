@@ -36,7 +36,7 @@ The existing workspace subsystem:
 - Reindexes chunks after writes/append (so “durable memory” stays searchable). [^11]
 - Already constrains risky memory mutations: built-in `memory_write` blocks overwriting “identity files” loaded into the system prompt to mitigate prompt-injection persistence attacks. [^12]
 
-Security primitives we can reuse:
+Reusable security primitives:
 
 - A job-scoped bearer-token store exists for worker↔orchestrator HTTP authentication (random 32-byte tokens, constant-time compare, per-job scoping). [^13]
 - A capability system exists for WASM tools where *all permissions are opt-in* (workspace read prefixes, HTTP allowlists, tool invocation aliases, secret existence checks). [^14]
