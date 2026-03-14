@@ -49,6 +49,8 @@ const PROTECTED_TOOL_NAMES: &[&str] = &[
     "job_events",
     "job_prompt",
     "job_status",
+    "job_events",
+    "job_prompt",
     "cancel_job",
     "build_software",
     "tool_search",

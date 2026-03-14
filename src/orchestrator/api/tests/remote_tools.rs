@@ -106,6 +106,34 @@ impl Tool for ProtectedOrchestrationTool {
     }
 }
 
+struct ProtectedJobEventsTool;
+
+#[async_trait::async_trait]
+impl Tool for ProtectedJobEventsTool {
+    fn name(&self) -> &str {
+        "job_events"
+    }
+
+    fn description(&self) -> &str {
+        "Protected job-events tool"
+    }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        serde_json::json!({"type": "object", "properties": {}})
+    }
+
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+        _ctx: &crate::context::JobContext,
+    ) -> Result<ToolOutput, ToolError> {
+        Ok(ToolOutput::success(
+            serde_json::json!({"events": []}),
+            Duration::from_millis(5),
+        ))
+    }
+}
+
 struct ApprovalGatedTool;
 
 #[async_trait::async_trait]
@@ -280,6 +308,10 @@ async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: Or
         .tools
         .register(Arc::new(ProtectedOrchestrationTool))
         .await;
+    test_state
+        .tools
+        .register(Arc::new(ProtectedJobEventsTool))
+        .await;
     test_state.tools.register(Arc::new(ApprovalGatedTool)).await;
     test_state.tools.register(Arc::new(ContainerOnlyTool)).await;
     let job_id = Uuid::new_v4();
@@ -323,6 +355,24 @@ async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: Or
             },
             "required": ["query"]
         })
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn remote_tool_catalog_excludes_job_events_named_tools() {
+    let registry = Arc::new(ToolRegistry::new());
+    registry.register(Arc::new(HostedCatalogTool)).await;
+    registry.register(Arc::new(ProtectedJobEventsTool)).await;
+
+    let (tools, _instructions, _version) = hosted_remote_tool_catalog(&registry).await;
+
+    assert_eq!(
+        tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["remote_tool_catalog_fixture"]
     );
 }
 
