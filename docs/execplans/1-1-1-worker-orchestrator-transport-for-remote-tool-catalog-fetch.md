@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: DRAFT
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -40,14 +40,13 @@ special-cased for this roadmap step.
   shared boundary, although it may be renamed or extracted if a more neutral
   module name improves clarity.
 - `src/worker/api.rs` is the worker-side HTTP adapter. It constructs URLs by
-  joining a free-form path string onto `/worker/{job_id}/...`, and it exposes
-  the current special-case `execute_extension_tool(...)` call.
+  joining a typed shared-path fragment onto `/worker/{job_id}/...`, and it now
+  exposes remote catalog fetch plus generic remote-tool execution calls.
 - `src/orchestrator/api.rs` owns the worker-facing routes. The current router
-  exposes `/worker/{job_id}/extension_tool`, but there is no catalogue route
-  and no generic remote tool execution route.
-- `src/orchestrator/api/handlers.rs` contains the current extension-only proxy
-  policy and execution logic. It hard-codes `ExtensionToolKind` as the only
-  remotely executable orchestrator-owned tool family.
+  exposes the hosted remote-tool catalog and generic execution routes.
+- `src/orchestrator/api/handlers.rs` contains the worker-facing HTTP handlers,
+  while `src/orchestrator/api/remote_tools.rs` now owns the hosted remote-tool
+  policy and execution helpers.
 - `src/worker/container.rs` constructs `WorkerHttpClient` with
   `WorkerHttpClient::from_env(...)` inside `WorkerRuntime::new(...)`, builds
   the worker tool registry, and loads `reason_ctx.available_tools` from that
@@ -57,10 +56,9 @@ special-cased for this roadmap step.
   route sketches for the current worker-orchestrator seam. Those docs still
   describe the pre-catalogue transport and must be kept synchronized when the
   new shared boundary lands.
-- `src/tools/builtin/worker_extension_proxy.rs` demonstrates the current
-  worker-local proxy pattern. It is useful as a reference for local `Tool`
-  wrappers, but the feature must not deepen this extension-only special case.
-- `src/orchestrator/api/tests/extension_tool.rs`,
+- `src/tools/builtin/worker_remote_tool_proxy.rs` owns the generic worker-side
+  proxy wrapper for catalog-backed remote tools.
+- `src/orchestrator/api/tests/remote_tools.rs`,
   `src/worker/api/tests.rs`, and `src/worker/container/tests.rs` are the
   nearest existing unit-test seams for the new transport and startup changes.
 
@@ -204,10 +202,8 @@ The orchestrator must do three things.
    unknown, missing, approval-gated, or otherwise ineligible tools with clear
    status codes.
 
-The existing `execute_extension_tool(...)` path should either be removed or
-reduced to a thin compatibility wrapper that delegates into the new generic
-execution service. Leaving two independent remote execution paths would violate
-the roadmap objective.
+The old extension-only execution path has now been removed in favour of the
+generic hosted remote-tool execution service.
 
 Keep the hosted-executable predicate separate from HTTP concerns. A small
 helper such as `HostedRemoteToolPolicy` or `is_hosted_remote_tool(...)` is
@@ -227,11 +223,10 @@ The likely shape is:
 5. `WorkerRuntime` registers one local `RemoteToolProxy` per catalogue entry.
 6. `reason_ctx.available_tools` comes from the combined registry.
 
-Model the worker-side proxy after the current `worker_extension_proxy` wrapper,
-but make it generic over the shared transport contract rather than hard-coding
-`ExtensionToolKind`. The proxy must report the orchestrator-supplied
-`ToolDefinition` data unchanged and execute by calling the shared generic
-remote execution endpoint.
+The worker-side proxy now lives in
+`src/tools/builtin/worker_remote_tool_proxy.rs`. It reports the
+orchestrator-supplied `ToolDefinition` data unchanged and executes by calling
+the shared generic remote execution endpoint.
 
 Preserve the worker’s existing local container tools. This milestone should
 replace the extension-only remote registration path, not remove local file,
@@ -270,7 +265,7 @@ MCP infrastructure.
 ### Worker startup and proxy tests
 
 Extend `src/worker/container/tests.rs` and, if needed,
-`src/tools/builtin/worker_extension_proxy.rs` tests so the worker runtime proves
+`src/tools/builtin/worker_remote_tool_proxy.rs` tests so the worker runtime proves
 that:
 
 - a fake remote catalogue adds remote tools to the worker-visible definitions
@@ -387,15 +382,21 @@ Expected evidence:
 - [x] 2026-03-14 11:27Z: Traced the current transport seam through
   `src/worker/api/types.rs`, `src/worker/api.rs`, `src/orchestrator/api.rs`,
   `src/orchestrator/api/handlers.rs`, and `src/worker/container.rs`.
-- [x] 2026-03-14 11:27Z: Confirmed that the current hosted path still depends
-  on extension-only worker proxies in
-  `src/tools/builtin/worker_extension_proxy.rs`.
+- [x] 2026-03-14 11:27Z: Confirmed that the previous hosted path depended on
+  extension-only worker proxies before this generic remote-tool transport
+  change.
 - [x] 2026-03-14 11:27Z: Confirmed that `docs/axinite-architecture-summary.md`
   and `docs/users-guide.md` are absent in this checkout and must be handled
   explicitly by the implementation.
 - [x] 2026-03-14 11:27Z: Drafted this ExecPlan and recorded the expected code,
   test, and documentation touch points for roadmap item `1.1.1`.
-- [ ] Await user approval before implementation begins.
+- [x] 2026-03-14 12:43Z: Implemented the shared transport contract, the
+  orchestrator catalog and generic execute endpoints, the worker startup
+  catalog fetch, and the generic worker-side proxy registration path.
+- [x] 2026-03-14 12:43Z: Replaced the extension-only hosted proxy route with
+  the generic hosted remote-tool path in unit and startup coverage.
+- [x] 2026-03-14 12:43Z: Updated architecture, RFC, roadmap, and user-facing
+  documentation for the new worker-orchestrator transport.
 
 ## Surprises & Discoveries
 
@@ -440,6 +441,18 @@ Expected evidence:
 
 ## Outcomes & Retrospective
 
-This section is intentionally blank until implementation begins. On completion,
-record what landed, what changed from the draft, which risks materialized, and
-what `1.1.2` can now build on safely.
+Implemented in this branch:
+
+- shared hosted remote-tool route and payload ownership in `src/worker/api/`
+- orchestrator `GET /worker/{job_id}/tools/catalog`
+- orchestrator `POST /worker/{job_id}/tools/execute`
+- worker startup catalog fetch and proxy registration using the shared
+  `ToolDefinition` values unchanged
+- focused unit coverage for the worker HTTP client, worker startup, worker
+  proxy execution, and orchestrator catalog or execution policy
+
+The implementation intentionally keeps `toolset_instructions` empty for now and
+uses a stable hashed `catalog_version` derived from the current catalog
+contents. That leaves `1.1.2` to refine the hosted-visible filter and leaves
+`1.1.3` to decide how any catalog-level instructions should be merged into the
+reasoning context.

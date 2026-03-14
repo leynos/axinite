@@ -12,6 +12,8 @@
 - [Testing strategy](testing-strategy.md) explains how the repository designs
   tests, runs them locally, exercises them in CI, and supports periodic or ad
   hoc validation.
+- [User's guide](users-guide.md) explains current operator-visible behaviour
+  and day-to-day usage expectations for the shipped runtime.
 - [Repository layout](repository-layout.md) maps the repository structure and
   shows where major subsystems, assets, and support files live.
 - [Documentation style guide](documentation-style-guide.md) defines the

@@ -20,7 +20,7 @@ use crate::error::WorkerError;
 use crate::llm::{ChatMessage, LlmProvider, Reasoning, ReasoningContext};
 use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
-use crate::tools::builtin::worker_extension_proxy::register_worker_extension_proxy_tools;
+use crate::tools::builtin::worker_remote_tool_proxy::register_worker_remote_tool_proxies;
 use crate::worker::api::{CompletionReport, JobEventPayload, StatusUpdate, WorkerHttpClient};
 use crate::worker::proxy_llm::ProxyLlmProvider;
 
@@ -96,7 +96,7 @@ impl WorkerRuntime {
             injection_check_enabled: true,
         }));
 
-        let tools = Self::build_tools(Arc::clone(&client));
+        let tools = Self::build_tools();
 
         Self {
             config,
@@ -108,10 +108,9 @@ impl WorkerRuntime {
         }
     }
 
-    fn build_tools(client: Arc<WorkerHttpClient>) -> Arc<ToolRegistry> {
+    fn build_tools() -> Arc<ToolRegistry> {
         let tools = Arc::new(ToolRegistry::new());
         tools.register_container_tools();
-        register_worker_extension_proxy_tools(&tools, client);
         tools
     }
 
@@ -144,6 +143,8 @@ impl WorkerRuntime {
                 credentials.len()
             );
         }
+
+        self.register_remote_tools().await?;
 
         // Report that we're starting
         self.client
@@ -303,6 +304,23 @@ Work independently to complete this job. Report when done."#,
                 data,
             })
             .await;
+    }
+
+    async fn register_remote_tools(&self) -> Result<(), WorkerError> {
+        let remote_catalog = self.client.get_remote_tool_catalog().await?;
+        let remote_tool_count = remote_catalog.tools.len();
+        register_worker_remote_tool_proxies(
+            &self.tools,
+            Arc::clone(&self.client),
+            remote_catalog.tools,
+        );
+        tracing::info!(
+            job_id = %self.config.job_id,
+            catalog_version = remote_catalog.catalog_version,
+            remote_tool_count,
+            "Registered hosted remote tools from orchestrator catalog"
+        );
+        Ok(())
     }
 }
 

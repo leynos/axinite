@@ -13,14 +13,14 @@ use uuid::Uuid;
 
 use super::OrchestratorState;
 use super::handler_support::format_finish_reason;
+use super::remote_tools::{execute_hosted_remote_tool, hosted_remote_tool_catalog};
 use crate::channels::web::types::SseEvent;
-use crate::context::JobContext;
 use crate::llm::{CompletionRequest, ToolCompletionRequest};
-use crate::tools::builtin::extension_tools::ExtensionToolKind;
 use crate::worker::api::{
     CompletionReport, JobDescription, JobEventPayload, ProxyCompletionRequest,
-    ProxyCompletionResponse, ProxyExtensionToolRequest, ProxyExtensionToolResponse,
-    ProxyToolCompletionRequest, ProxyToolCompletionResponse, StatusUpdate,
+    ProxyCompletionResponse, ProxyToolCompletionRequest, ProxyToolCompletionResponse,
+    RemoteToolCatalogResponse, RemoteToolExecutionRequest, RemoteToolExecutionResponse,
+    StatusUpdate,
 };
 
 // All /worker/ handlers below are behind the worker_auth_middleware route_layer,
@@ -107,68 +107,35 @@ pub(super) async fn llm_complete_with_tools(
     }))
 }
 
-pub(super) async fn execute_extension_tool(
+pub(super) async fn get_remote_tool_catalog(
+    State(state): State<OrchestratorState>,
+    Path(_job_id): Path<Uuid>,
+) -> Result<Json<RemoteToolCatalogResponse>, StatusCode> {
+    let (tools, toolset_instructions, catalog_version) =
+        hosted_remote_tool_catalog(&state.tools).await;
+
+    Ok(Json(RemoteToolCatalogResponse {
+        tools,
+        toolset_instructions,
+        catalog_version,
+    }))
+}
+
+pub(super) async fn execute_remote_tool(
     State(state): State<OrchestratorState>,
     Path(job_id): Path<Uuid>,
-    Json(req): Json<ProxyExtensionToolRequest>,
-) -> Result<Json<ProxyExtensionToolResponse>, StatusCode> {
-    let Some(kind) = ExtensionToolKind::ALL
-        .iter()
-        .find(|kind| kind.name() == req.tool_name)
-        .copied()
-    else {
-        tracing::warn!(
-            job_id = %job_id,
-            tool = %req.tool_name,
-            "Worker attempted non-extension tool proxy execution"
-        );
-        return Err(StatusCode::BAD_REQUEST);
-    };
+    Json(req): Json<RemoteToolExecutionRequest>,
+) -> Result<Json<RemoteToolExecutionResponse>, StatusCode> {
+    let output = execute_hosted_remote_tool(
+        &state.tools,
+        &state.user_id,
+        job_id,
+        &req.tool_name,
+        req.params,
+    )
+    .await?;
 
-    if !ExtensionToolKind::HOSTED_WORKER_PROXY_SAFE.contains(&kind) {
-        tracing::warn!(
-            job_id = %job_id,
-            tool = %kind.name(),
-            "Worker attempted restricted extension proxy execution"
-        );
-        return Err(StatusCode::FORBIDDEN);
-    }
-
-    let tool = state
-        .tools
-        .get(&req.tool_name)
-        .await
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    if tool.requires_approval(&req.params).is_required() {
-        tracing::warn!(
-            job_id = %job_id,
-            tool = %kind.name(),
-            "Worker attempted approval-gated extension proxy execution"
-        );
-        return Err(StatusCode::FORBIDDEN);
-    }
-
-    let mut ctx = JobContext::with_user(
-        state.user_id.clone(),
-        "Hosted extension tool",
-        format!("Hosted execution of {}", req.tool_name),
-    );
-    ctx.job_id = job_id;
-    let output = tool.execute(req.params, &ctx).await.map_err(|e| {
-        tracing::warn!(
-            job_id = %job_id,
-            tool = %tool.name(),
-            error = %e,
-            "Extension tool proxy execution failed"
-        );
-        match e {
-            crate::tools::ToolError::InvalidParameters(_) => StatusCode::BAD_REQUEST,
-            _ => StatusCode::BAD_GATEWAY,
-        }
-    })?;
-
-    Ok(Json(ProxyExtensionToolResponse { output }))
+    Ok(Json(RemoteToolExecutionResponse { output }))
 }
 
 pub(super) async fn report_status(

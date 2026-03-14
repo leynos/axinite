@@ -53,7 +53,7 @@ Dependencies: unlocks 1.2 and reduces integration risk for 3.2. No separate
 architecture-prerequisite stream is required before this step; the
 worker-orchestrator contract hardening belongs inside 1.1.1.
 
-- [ ] 1.1.1. Add worker-orchestrator transport for remote tool catalog fetch
+- [x] 1.1.1. Add worker-orchestrator transport for remote tool catalog fetch
   and generic remote tool execution.
   - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
   - Tracks [Issue #12](https://github.com/leynos/axinite/issues/12).
