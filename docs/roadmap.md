@@ -56,6 +56,7 @@ worker-orchestrator contract hardening belongs inside 1.1.1.
 - [ ] 1.1.1. Add worker-orchestrator transport for remote tool catalog fetch
   and generic remote tool execution.
   - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
+  - Tracks [Issue #12](https://github.com/leynos/axinite/issues/12).
   - Define the catalog and generic execution transport through one shared
     worker-orchestrator boundary module or equivalent typed contract, rather
     than duplicating route fragments and payload shapes independently in the
@@ -83,6 +84,8 @@ worker-orchestrator contract hardening belongs inside 1.1.1.
 - [ ] 1.1.4. Add hosted-mode tests for schema fidelity and execution routing.
   Requires 1.1.3.
   - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
+  - Tracks the worker-orchestrator parity portion of
+    [Issue #16](https://github.com/leynos/axinite/issues/16).
   - Success: tests fail if required MCP fields disappear or are rewritten
     incorrectly, and prove that advertised remote tools execute through the
     orchestrator rather than a local stub.
@@ -308,6 +311,8 @@ expected to use these tools safely at scale.
     tokens](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#design-target-wit-based-intent-abi-with-provenance-tokens)
     and [RFC 0006 §Migration checklist and prioritized
     plan](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md#migration-checklist-and-prioritized-plan).
+  - Tracks the WIT migration coordination in
+    [Issue #8](https://github.com/leynos/axinite/issues/8).
   - Success: the runtime can load and instantiate intent-capable components
     alongside legacy WASM tools, and intent declarations are versioned
     independently from the existing `sandboxed-tool` world.
@@ -394,6 +399,9 @@ sessions.
     plan](./rfcs/0007-secure-memory-sidecar-design.md#rollout-plan)
     and [RFC 0007 §Test
     plan](./rfcs/0007-secure-memory-sidecar-design.md#test-plan).
+  - Tracks the current libSQL search regression in
+    [Issue #5](https://github.com/leynos/axinite/issues/5), which must be
+    understood before shadow-mode comparisons are treated as trustworthy.
   - Success: shadow mode records recall overlap, latency, and error metrics,
     and deletion propagation retracts facts plus vectors when source content is
     removed.
@@ -511,6 +519,46 @@ aggregation before 4.1.2.
   - See future RFC: health monitoring RFC §Compatibility and Migration.
   - Success: operators can inspect service health, readiness reasons, and
     restart history through stable APIs and CLI output rather than only logs.
+- [ ] 4.1.4. Extract config bootstrap and hot-reload orchestration into
+  explicit runtime services. Requires 4.1.1.
+  - See [Axinite architecture overview §3.1 Boot
+    sequence](./axinite-architecture-overview.md#31-boot-sequence),
+    [Axinite architecture overview §4.3 Persistence, configuration, and
+    memory](./axinite-architecture-overview.md#43-persistence-configuration-and-memory),
+    and [Webhook server design §6 Relationship to hot
+    reload](./webhook-server-design.md#6-relationship-to-hot-reload).
+  - Tracks [Issue #9](https://github.com/leynos/axinite/issues/9),
+    [Issue #13](https://github.com/leynos/axinite/issues/13), and the SIGHUP
+    test gap in [Issue #16](https://github.com/leynos/axinite/issues/16).
+  - Success: bootstrap consumes an explicit startup context rather than ambient
+    process state, reload policy can be exercised without booting the full
+    runtime, and `WebhookServer` keeps its rollback-focused restart semantics
+    while caller-side reload logic becomes simpler and more observable.
+- [ ] 4.1.5. Separate runtime assembly from activation side effects and narrow
+  extension lifecycle orchestration. Requires 4.1.4.
+  - See [Axinite architecture overview §3.2 AppBuilder
+    phases](./axinite-architecture-overview.md#32-appbuilder-phases) and
+    [Axinite architecture overview §4.4 Extensions and
+    tooling](./axinite-architecture-overview.md#44-extensions-and-tooling).
+  - Tracks [Issue #10](https://github.com/leynos/axinite/issues/10) and
+    [Issue #11](https://github.com/leynos/axinite/issues/11).
+  - Success: `AppBuilder` composition can be exercised without starting
+    unrelated background work, and extension discovery plus activation policy
+    stop accumulating unrelated adapters in one manager-level choke point.
+- [ ] 4.1.6. Make job lifecycle persistence and self-repair policy durable,
+  observable, and testable. Requires 4.1.2 and 4.1.4.
+  - See [Axinite architecture overview §3.3 Long-running
+    services](./axinite-architecture-overview.md#33-long-running-services) and
+    [Axinite architecture overview §4.2 Agent
+    runtime](./axinite-architecture-overview.md#42-agent-runtime).
+  - Tracks [Issue #14](https://github.com/leynos/axinite/issues/14),
+    [Issue #15](https://github.com/leynos/axinite/issues/15), and the terminal
+    lifecycle coverage gap in
+    [Issue #16](https://github.com/leynos/axinite/issues/16).
+  - Success: terminal job transitions are durably persisted before they are
+    treated as complete, self-repair thresholds affect real behaviour rather
+    than inert configuration, and automated tests cover repair policy plus
+    terminal-state persistence.
 
 ### 4.2. Hook execution expansion and inspection
 
