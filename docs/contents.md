@@ -98,6 +98,9 @@
   - [Monty code execution environment](rfcs/2026-03-11-monty-code-execution-environment.md)
     captures a pending RFC for the Monty execution environment that has not yet
     been renumbered.
+  - [RFC 0009: Feature flags for the web front end](rfcs/0009-feature-flags-frontend.md)
+    proposes a mechanism for passing feature flags from the backend to the
+    browser front end.
   - [Tokenized delegated authorized endpoint requests](rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md)
     captures a pending RFC for delegated endpoint requests that has not yet
     been renumbered.
