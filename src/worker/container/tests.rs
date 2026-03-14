@@ -378,7 +378,8 @@ async fn worker_runtime_sanitizes_failure_messages(
 #[rstest]
 #[tokio::test]
 async fn worker_runtime_build_tools_preserves_container_local_tools() {
-    let names = WorkerRuntime::build_tools().list().await;
+    let mut names = WorkerRuntime::build_tools().list().await;
+    names.sort();
 
     assert_eq!(
         names,
