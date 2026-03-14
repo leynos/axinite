@@ -63,7 +63,7 @@ Table 1. Main test forms and where they fit.
 | Integration tests | `tests/*.rs` | Exercise public runtime behaviour across modules |
 | Feature-gated integration tests | `tests/*.rs` with PostgreSQL or other external dependencies | Exercise paths that require backend-specific or service-specific setup |
 | Browser E2E tests | `tests/e2e/` | Validate the web gateway and user-visible flows against a live binary |
-| Trace-driven end-to-end tests | Rust tests backed by `tests/fixtures/llm_traces/` | Replay deterministic agent loops without calling a live LLM |
+| Trace-driven end-to-end tests | Rust tests backed by `tests/fixtures/llm_traces/` | Replay deterministic agent loops without calling a live large language model (LLM) |
 | Channel/tool-specific tests | standalone crates such as `channels-src/telegram/` | Verify extension and channel behaviour outside the root crate |
 <!-- markdownlint-enable MD013 -->
 
@@ -110,7 +110,7 @@ Table 2. Core local validation commands.
 <!-- markdownlint-disable MD013 -->
 | Command | Purpose |
 | ------- | ------- |
-| `make check-fmt` | Check Rust formatting for the root workspace and the GitHub WASM tool crate |
+| `make check-fmt` | Check Rust formatting for the root workspace and the GitHub WebAssembly (WASM) tool crate |
 | `make typecheck` | Run `cargo check` across default, libSQL-only, and all-features host configurations |
 | `make lint` | Run `cargo clippy` with warnings denied across the same feature matrix |
 | `make test` | Build the GitHub WASM tool, run `cargo nextest run --workspace`, and run the GitHub tool crate tests |
@@ -145,8 +145,7 @@ attention.
 - `cargo test test_name` runs a specific Rust test by name.
 - `cargo test --manifest-path channels-src/telegram/Cargo.toml -- --nocapture`
   exercises the Telegram channel crate directly.
-- `cargo test --all-features wit_compat -- --nocapture` exercises WIT
-  compatibility and host-linking behaviour.
+- `cargo test --all-features wit_compat -- --nocapture` exercises WebAssembly Interface Types (WIT) compatibility and host-linking behaviour.
 - `pytest tests/e2e/ -v` runs the browser E2E suite locally.
 - `pytest tests/e2e/scenarios/test_chat.py -v` or another single scenario path
   narrows browser debugging to one flow.
