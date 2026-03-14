@@ -366,7 +366,8 @@ The following section covers how to store/manage SecretAuth and inject `SAPISIDH
   - client credentials if needed
 - Inject as `Authorization: Bearer …` at send time. [^14]
 
-Google’s docs emphasise correct flow selection (installed apps with PKCE, etc.) and explain token acquisition/refresh patterns. [^15]
+Google’s docs emphasize correct flow selection (installed apps with PKCE,
+etc.) and explain token acquisition/refresh patterns. [^15]
 
 #### Allowed hosts and paths
 
