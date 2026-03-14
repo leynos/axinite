@@ -38,7 +38,14 @@ pub async fn extensions_list_handler(
                     crate::pairing::PairingStore::new()
                         .read_allow_from(&name)
                         .map(|list| !list.is_empty())
-                        .unwrap_or(false)
+                        .unwrap_or_else(|error| {
+                            tracing::error!(
+                                extension_name = %name,
+                                error = %error,
+                                "Failed to read pairing allowlist"
+                            );
+                            false
+                        })
                 }
             });
             (name, handle)
