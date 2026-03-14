@@ -391,7 +391,9 @@ That is the contract that removes first-call guesswork.
    `ToolDefinition.parameters`.
 2. Audit registration paths to ensure they all satisfy that rule.
 3. Extend the hosted remote-tool catalog to include orchestrator-owned WASM
-   tools.
+   tools, reusing the same shared worker-orchestrator transport contract
+   introduced for RFC 0001 rather than defining a second hosted-catalog
+   boundary.
 4. Reframe WASM retry hints as supplemental diagnostics in code comments,
    behavior, and tests.
 5. Add explicit end-to-end tests for proactive schema exposure.
@@ -434,7 +436,7 @@ That means:
 
 - active WASM tools must expose `parameters` before first use
 - hosted workers must receive orchestrator-owned WASM tool definitions through
-  the remote-tool catalog
+  the remote-tool catalog using the same shared transport boundary as MCP tools
 - provider shaping may adjust the schema, but it must still be present
 - execution-time hints should help recovery, not teach the tool for the first
   time

@@ -49,14 +49,23 @@ instead of only local proxy tools.
 Learning opportunity: determine whether one remote catalog contract can support
 both model-facing schema fidelity and later observability needs.
 
-Dependencies: unlocks 1.2 and reduces integration risk for 3.2.
+Dependencies: unlocks 1.2 and reduces integration risk for 3.2. No separate
+architecture-prerequisite stream is required before this step; the
+worker-orchestrator contract hardening belongs inside 1.1.1.
 
 - [ ] 1.1.1. Add worker-orchestrator transport for remote tool catalog fetch
   and generic remote tool execution.
   - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
+  - Define the catalog and generic execution transport through one shared
+    worker-orchestrator boundary module or equivalent typed contract, rather
+    than duplicating route fragments and payload shapes independently in the
+    worker and orchestrator.
+  - Keep worker startup injectable at the transport boundary so the hosted
+    catalog path does not deepen the current env-only client coupling.
   - Success: the orchestrator exposes a hosted-visible catalog endpoint for
-    active executable tools, and the worker can execute orchestrator-owned
-    tools through one generic proxy path.
+    active executable tools, the worker can execute orchestrator-owned tools
+    through one generic proxy path, and the transport shape is owned in one
+    place rather than mirrored as stringly typed route assembly on both sides.
 - [ ] 1.1.2. Filter the hosted-visible catalog from the canonical
   `ToolRegistry`. Requires 1.1.1.
   - See [RFC 0001 §Goals](./rfcs/0001-expose-mcp-tool-definitions.md#goals)

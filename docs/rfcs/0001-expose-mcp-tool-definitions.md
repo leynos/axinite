@@ -125,6 +125,9 @@ That causes:
    run it.
 5. Server-level MCP instructions may supplement the interface, but they must
    not replace per-tool descriptions and schemas.
+6. The worker-orchestrator transport contract for hosted tool catalog fetch
+   and proxy execution must be owned in one shared boundary, not duplicated as
+   parallel route fragments and payload conventions.
 
 ## Proposal
 
@@ -170,6 +173,12 @@ The `tools` array is the LLM-facing contract. `toolset_instructions` is
 optional supplemental context synthesized from server-level metadata such as MCP
 `initialize` instructions. `catalog_version` exists for caching and refresh
 decisions; it is not exposed to the LLM.
+
+The important implementation constraint is that this route and its payload
+types should be introduced through one shared worker-orchestrator transport
+module or equivalent typed boundary. The hosted-catalog fix should not add a
+second copy of route strings, request bodies, and response bodies that must be
+kept in sync by convention alone.
 
 ### 2. Filter the catalog to hosted-executable tools
 
@@ -338,8 +347,10 @@ pub struct ProxyToolExecutionResponse {
 }
 ```
 
-These types are worker/orchestrator transport concerns. Only `ToolDefinition`
-is exposed to the LLM.
+These types are worker-orchestrator transport concerns. Only
+`ToolDefinition` is exposed to the LLM. The route names and payloads should be
+defined once at this boundary and reused by both the orchestrator and worker
+implementations.
 
 ### LLM-visible interface
 
@@ -441,11 +452,14 @@ That is the contract that fixes malformed tool calls.
 ## Migration Plan
 
 1. Add worker/orchestrator transport types for the hosted tool catalog and
-   generic remote tool execution.
+   generic remote tool execution, with one shared contract owner for route
+   builders and payload shapes.
 2. Add orchestrator-side catalog filtering against the canonical `ToolRegistry`.
-3. Add worker-side remote proxy registration.
+3. Add worker-side remote proxy registration using the shared transport
+   contract rather than worker-local path reconstruction.
 4. Merge remote tool definitions into the worker reasoning context.
-5. Add targeted tests for definition fidelity and execution routing.
+5. Add targeted tests for definition fidelity, execution routing, and
+   contract parity between worker and orchestrator.
 6. Optionally inject supplemental server-level instructions into the system
    prompt once the basic catalog path is stable.
 
@@ -470,6 +484,13 @@ worker to fetch and register remote tool definitions at all.
 It is not the recommended first step because the catalog-plus-proxy design is a
 smaller change that fits the current worker architecture and can be adopted
 incrementally.
+
+### Alternative 4: Stop for a separate worker-orchestrator architecture cleanup
+
+Rejected. The contract duplication is real, but it sits directly on the path of
+hosted tool catalog delivery. The right response is to make the shared
+transport boundary part of this RFC's first implementation step, not to block
+the work behind a separate prerequisite stream.
 
 ## Open Questions
 
