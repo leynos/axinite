@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "description": "Job ID"
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Max events"
+    }
+  },
+  "required": [
+    "job_id"
+  ]
+}

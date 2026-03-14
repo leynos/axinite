@@ -1160,7 +1160,7 @@ impl Tool for JobEventsTool {
 
         let events = self
             .store
-            .list_job_events(job_id, Some(limit))
+            .list_job_events(job_id, None, Some(limit))
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("failed to load job events: {}", e)))?;
 

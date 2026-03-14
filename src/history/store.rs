@@ -908,42 +908,77 @@ impl Store {
 
     /// Load job events for a job, ordered by id.
     ///
-    /// When `limit` is `Some(n)`, returns the **most recent** `n` events
-    /// (ordered ascending by id). When `None`, returns all events.
+    /// When `before_id` is `Some(cursor)`, only events with ids smaller than
+    /// that cursor are returned. When `limit` is `Some(n)`, returns the
+    /// **most recent** `n` matching events (ordered ascending by id). When
+    /// `None`, returns all matching events.
     pub async fn list_job_events(
         &self,
         job_id: Uuid,
+        before_id: Option<i64>,
         limit: Option<i64>,
     ) -> Result<Vec<JobEventRecord>, DatabaseError> {
         let conn = self.conn().await?;
-        let rows = if let Some(n) = limit {
-            // Sub-select the last N rows by id DESC, then re-sort ASC.
-            conn.query(
-                r#"
-                SELECT id, job_id, event_type, data, created_at
-                FROM (
+        let rows = match (before_id, limit) {
+            (Some(before_id), Some(n)) => {
+                conn.query(
+                    r#"
+                    SELECT id, job_id, event_type, data, created_at
+                    FROM (
+                        SELECT id, job_id, event_type, data, created_at
+                        FROM job_events
+                        WHERE job_id = $1 AND id < $2
+                        ORDER BY id DESC
+                        LIMIT $3
+                    ) sub
+                    ORDER BY id ASC
+                    "#,
+                    &[&job_id, &before_id, &n],
+                )
+                .await?
+            }
+            (Some(before_id), None) => {
+                conn.query(
+                    r#"
+                    SELECT id, job_id, event_type, data, created_at
+                    FROM job_events
+                    WHERE job_id = $1 AND id < $2
+                    ORDER BY id ASC
+                    "#,
+                    &[&job_id, &before_id],
+                )
+                .await?
+            }
+            (None, Some(n)) => {
+                // Sub-select the last N rows by id DESC, then re-sort ASC.
+                conn.query(
+                    r#"
+                    SELECT id, job_id, event_type, data, created_at
+                    FROM (
+                        SELECT id, job_id, event_type, data, created_at
+                        FROM job_events
+                        WHERE job_id = $1
+                        ORDER BY id DESC
+                        LIMIT $2
+                    ) sub
+                    ORDER BY id ASC
+                    "#,
+                    &[&job_id, &n],
+                )
+                .await?
+            }
+            (None, None) => {
+                conn.query(
+                    r#"
                     SELECT id, job_id, event_type, data, created_at
                     FROM job_events
                     WHERE job_id = $1
-                    ORDER BY id DESC
-                    LIMIT $2
-                ) sub
-                ORDER BY id ASC
-                "#,
-                &[&job_id, &n],
-            )
-            .await?
-        } else {
-            conn.query(
-                r#"
-                SELECT id, job_id, event_type, data, created_at
-                FROM job_events
-                WHERE job_id = $1
-                ORDER BY id ASC
-                "#,
-                &[&job_id],
-            )
-            .await?
+                    ORDER BY id ASC
+                    "#,
+                    &[&job_id],
+                )
+                .await?
+            }
         };
         Ok(rows
             .iter()
@@ -1840,17 +1875,7 @@ impl Store {
 
 #[cfg(feature = "postgres")]
 fn parse_job_state(s: &str) -> JobState {
-    match s {
-        "pending" => JobState::Pending,
-        "in_progress" => JobState::InProgress,
-        "completed" => JobState::Completed,
-        "submitted" => JobState::Submitted,
-        "accepted" => JobState::Accepted,
-        "failed" => JobState::Failed,
-        "stuck" => JobState::Stuck,
-        "cancelled" => JobState::Cancelled,
-        _ => JobState::Pending,
-    }
+    s.parse().unwrap_or(JobState::Pending)
 }
 
 // ==================== Tool Failures ====================

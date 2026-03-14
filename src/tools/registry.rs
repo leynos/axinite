@@ -57,6 +57,8 @@ const PROTECTED_TOOL_NAMES: &[&str] = &[
     "tool_auth",
     "tool_activate",
     "tool_list",
+    "tool_upgrade",
+    "extension_info",
     "tool_remove",
     "routine_create",
     "routine_list",
@@ -590,6 +592,26 @@ impl ToolRegistry {
 
         // Create the wrapper
         let mut wrapper = WasmToolWrapper::new(Arc::clone(reg.runtime), prepared, reg.capabilities);
+
+        if reg.description.is_none() || reg.schema.is_none() {
+            match wrapper.exported_metadata() {
+                Ok((description, schema)) => {
+                    if reg.description.is_none() {
+                        wrapper = wrapper.with_description(description);
+                    }
+                    if reg.schema.is_none() {
+                        wrapper = wrapper.with_schema(schema);
+                    }
+                }
+                Err(error) => {
+                    tracing::debug!(
+                        name = reg.name,
+                        %error,
+                        "Failed to recover exported WASM metadata; using placeholders or overrides"
+                    );
+                }
+            }
+        }
 
         // Apply overrides if provided
         if let Some(desc) = reg.description {

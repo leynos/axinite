@@ -3,25 +3,27 @@
 //! When `ironclaw worker` is invoked, the binary starts in worker mode:
 //! - Connects to the orchestrator over HTTP
 //! - Uses a `ProxyLlmProvider` that routes LLM calls through the orchestrator
-//! - Runs container-safe tools (shell, file ops, patch)
+//! - Runs container-safe tools plus orchestrator-backed non-mutating
+//!   extension-management tools
 //! - Reports status and completion back to the orchestrator
 //!
 //! ```text
-//! ┌────────────────────────────────┐
-//! │        Docker Container         │
-//! │                                 │
-//! │  ironclaw worker                │
-//! │    ├─ ProxyLlmProvider ─────────┼──▶ Orchestrator /worker/{id}/llm/complete
-//! │    ├─ SafetyLayer               │
-//! │    ├─ ToolRegistry              │
-//! │    │   ├─ shell                 │
-//! │    │   ├─ read_file             │
-//! │    │   ├─ write_file            │
-//! │    │   ├─ list_dir              │
-//! │    │   └─ apply_patch           │
-//! │    └─ WorkerHttpClient ─────────┼──▶ Orchestrator /worker/{id}/status
-//! │                                 │
-//! └────────────────────────────────┘
+//! ┌──────────────────────────────────────────────────────────────────────────────┐
+//! │                              Docker Container                               │
+//! │                                                                              │
+//! │  ironclaw worker                                                             │
+//! │    ├─ ProxyLlmProvider ─────────┼──▶ Orchestrator /worker/{id}/llm/complete │
+//! │    ├─ SafetyLayer               │                                            │
+//! │    ├─ ToolRegistry              │                                            │
+//! │    │   ├─ shell                 │                                            │
+//! │    │   ├─ read_file             │                                            │
+//! │    │   ├─ write_file            │                                            │
+//! │    │   ├─ list_dir              │                                            │
+//! │    │   ├─ apply_patch           │                                            │
+//! │    │   └─ tool_list / tool_search / ... (proxied)                           │
+//! │    └─ WorkerHttpClient ─────────┼──▶ Orchestrator /worker/{id}/status       │
+//! │                                                                              │
+//! └──────────────────────────────────────────────────────────────────────────────┘
 //! ```
 
 pub mod api;

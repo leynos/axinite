@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Name"
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "Toggle"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "New prompt"
+    },
+    "schedule": {
+      "type": "string",
+      "description": "New cron schedule"
+    },
+    "description": {
+      "type": "string",
+      "description": "New description"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

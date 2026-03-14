@@ -78,7 +78,7 @@ IronClaw is the AI assistant you can actually trust with your personal and profe
 
 ### Prerequisites
 
-- Rust 1.85+
+- Rust 1.92+
 - PostgreSQL 15+ with [pgvector](https://github.com/pgvector/pgvector) extension
 - NEAR AI account (authentication handled via setup wizard)
 
@@ -301,8 +301,15 @@ cargo test
 cargo test test_name
 ```
 
-- **Telegram channel**: See [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md) for setup and DM pairing.
-- **Changing channel sources**: Run `./channels-src/telegram/build.sh` before `cargo build` so the updated WASM is bundled.
+- **Telegram channel**: See [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md)
+  for setup and DM pairing.
+- **Changing all channels**: Run
+  `./scripts/build-wasm-extensions.sh --channels` before release
+  packaging or onboarding so the updated registered channel artefacts
+  are available on disk.
+- **Changing the Telegram channel only**: Run
+  `./channels-src/telegram/build.sh` when only the deployable Telegram
+  artefact needs rebuilding on disk.
 
 ## OpenClaw Heritage
 

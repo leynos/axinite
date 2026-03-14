@@ -115,16 +115,12 @@ impl WasmRuntimeConfig {
 
 /// A compiled WASM component ready for instantiation.
 ///
-/// Contains the pre-compiled component plus cached metadata extracted
-/// from the component during preparation. Stores the compiled `Component`
-/// directly so instantiation doesn't require recompilation.
+/// Contains the pre-compiled component and execution limits. Stores the
+/// compiled `Component` directly so instantiation doesn't require
+/// recompilation.
 pub struct PreparedModule {
     /// Tool name.
     pub name: String,
-    /// Tool description (cached from component).
-    pub description: String,
-    /// Parameter schema JSON (cached from component).
-    pub schema: serde_json::Value,
     /// Pre-compiled component (cheaply cloneable via internal Arc).
     component: wasmtime::component::Component,
     /// Resource limits for this tool.
@@ -142,7 +138,6 @@ impl std::fmt::Debug for PreparedModule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PreparedModule")
             .field("name", &self.name)
-            .field("description", &self.description)
             .field("limits", &self.limits)
             .finish()
     }
@@ -241,8 +236,8 @@ impl WasmToolRuntime {
 
     /// Prepare a WASM component for execution.
     ///
-    /// This validates and compiles the component, extracting metadata.
-    /// The compiled component is cached for fast instantiation.
+    /// This validates and compiles the component. The compiled component is
+    /// cached for fast instantiation.
     pub async fn prepare(
         &self,
         name: &str,
@@ -265,16 +260,8 @@ impl WasmToolRuntime {
             let component = wasmtime::component::Component::new(&engine, &wasm_bytes)
                 .map_err(|e| WasmError::CompilationFailed(e.to_string()))?;
 
-            // We need to instantiate briefly to extract metadata.
-            // In a full implementation, we'd use WIT bindgen to get typed access.
-            // For now, we extract what we can from the component.
-            let description = extract_tool_description(&engine, &component)?;
-            let schema = extract_tool_schema(&engine, &component)?;
-
             Ok::<_, WasmError>(PreparedModule {
                 name: name.clone(),
-                description,
-                schema,
                 component,
                 limits: limits.unwrap_or(default_limits),
             })
@@ -319,36 +306,6 @@ impl WasmToolRuntime {
     pub async fn clear(&self) {
         self.modules.write().await.clear();
     }
-}
-
-/// Extract tool description from a compiled component.
-///
-/// In a full implementation, this would use WIT bindgen to call the description() export.
-/// For now, we return a placeholder since we can't easily introspect without more setup.
-fn extract_tool_description(
-    _engine: &Engine,
-    _component: &wasmtime::component::Component,
-) -> Result<String, WasmError> {
-    // TODO: Use WIT bindgen to properly extract description
-    // This requires instantiating with a linker, which needs host functions.
-    // For now, tools should have their description set externally.
-    Ok("WASM sandboxed tool".to_string())
-}
-
-/// Extract tool schema from a compiled component.
-///
-/// In a full implementation, this would use WIT bindgen to call the schema() export.
-fn extract_tool_schema(
-    _engine: &Engine,
-    _component: &wasmtime::component::Component,
-) -> Result<serde_json::Value, WasmError> {
-    // TODO: Use WIT bindgen to properly extract schema
-    // For now, return a minimal schema that accepts any object.
-    Ok(serde_json::json!({
-        "type": "object",
-        "properties": {},
-        "additionalProperties": true
-    }))
 }
 
 impl std::fmt::Debug for WasmToolRuntime {

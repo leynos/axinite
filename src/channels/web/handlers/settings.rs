@@ -3,13 +3,24 @@
 use std::sync::Arc;
 
 use axum::{
-    Json,
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
+    routing::{delete, get, post, put},
 };
 
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
+
+pub fn routes() -> Router<Arc<GatewayState>> {
+    Router::new()
+        .route("/api/settings", get(settings_list_handler))
+        .route("/api/settings/export", get(settings_export_handler))
+        .route("/api/settings/import", post(settings_import_handler))
+        .route("/api/settings/{key}", get(settings_get_handler))
+        .route("/api/settings/{key}", put(settings_set_handler))
+        .route("/api/settings/{key}", delete(settings_delete_handler))
+}
 
 pub async fn settings_list_handler(
     State(state): State<Arc<GatewayState>>,

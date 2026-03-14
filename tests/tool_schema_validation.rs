@@ -6,8 +6,54 @@
 //!
 //! See: <https://github.com/nearai/ironclaw/issues/352> (QA plan, item 1.1)
 
+mod support;
+
+use ironclaw::tools::builtin::extension_tools::ExtensionToolKind;
+use ironclaw::tools::schema_validator::validate_strict_schema;
 use ironclaw::tools::validate_tool_schema;
+use ironclaw::tools::wasm::WasmToolLoader;
 use ironclaw::tools::{Tool, ToolRegistry};
+use rstest::{fixture, rstest};
+use std::sync::Arc;
+
+struct ExtensionManagerFixture {
+    _dir: tempfile::TempDir,
+    manager: Arc<ironclaw::extensions::ExtensionManager>,
+}
+
+#[fixture]
+fn extension_manager_fixture() -> ExtensionManagerFixture {
+    use ironclaw::secrets::{InMemorySecretsStore, SecretsCrypto};
+    use ironclaw::tools::mcp::McpProcessManager;
+    use ironclaw::tools::mcp::session::McpSessionManager;
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let tools_dir = dir.path().join("tools");
+    let channels_dir = dir.path().join("channels");
+    std::fs::create_dir_all(&tools_dir).expect("create tools dir");
+    std::fs::create_dir_all(&channels_dir).expect("create channels dir");
+
+    let master_key = secrecy::SecretString::from("0123456789abcdef0123456789abcdef".to_string());
+    let crypto = std::sync::Arc::new(SecretsCrypto::new(master_key).expect("crypto"));
+
+    ExtensionManagerFixture {
+        _dir: dir,
+        manager: std::sync::Arc::new(ironclaw::extensions::ExtensionManager::new(
+            std::sync::Arc::new(McpSessionManager::new()),
+            std::sync::Arc::new(McpProcessManager::new()),
+            std::sync::Arc::new(InMemorySecretsStore::new(crypto)),
+            std::sync::Arc::new(ToolRegistry::new()),
+            None,
+            None,
+            tools_dir,
+            channels_dir,
+            None,
+            "test".to_string(),
+            None,
+            Vec::new(),
+        )),
+    }
+}
 
 /// Validate schemas of all tools registered via `register_builtin_tools()` and
 /// `register_dev_tools()` (echo, time, json, http, shell, file tools).
@@ -31,8 +77,7 @@ async fn all_core_builtin_tool_schemas_are_valid() {
     let mut all_errors = Vec::new();
     for tool in &tools {
         let schema = tool.parameters_schema();
-        let errors = validate_tool_schema(&schema, tool.name());
-        if !errors.is_empty() {
+        if let Err(errors) = validate_strict_schema(&schema, tool.name()) {
             all_errors.push(format!(
                 "Tool '{}' has schema errors:\n  {}",
                 tool.name(),
@@ -74,6 +119,55 @@ async fn core_registration_covers_expected_tools() {
     assert_eq!(
         names, expected,
         "Core tool set changed. Update this test and ensure new tools have valid schemas."
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn extension_registration_covers_expected_tools(
+    extension_manager_fixture: ExtensionManagerFixture,
+) {
+    let registry = ToolRegistry::new();
+    registry.register_extension_tools(Arc::clone(&extension_manager_fixture.manager));
+
+    let mut names = registry.list().await;
+    names.sort();
+
+    let mut expected: Vec<&str> = ExtensionToolKind::ALL
+        .into_iter()
+        .map(ExtensionToolKind::name)
+        .collect();
+    expected.sort_unstable();
+
+    assert_eq!(
+        names, expected,
+        "Extension tool set changed. Update this test and ensure new tools have schema coverage."
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn extension_tool_schemas_are_valid(extension_manager_fixture: ExtensionManagerFixture) {
+    let registry = ToolRegistry::new();
+    registry.register_extension_tools(Arc::clone(&extension_manager_fixture.manager));
+
+    let tools = registry.all().await;
+    let mut all_errors = Vec::new();
+    for tool in &tools {
+        let schema = tool.parameters_schema();
+        if let Err(errors) = validate_strict_schema(&schema, tool.name()) {
+            all_errors.push(format!(
+                "Tool '{}' has schema errors:\n  {}",
+                tool.name(),
+                errors.join("\n  ")
+            ));
+        }
+    }
+
+    assert!(
+        all_errors.is_empty(),
+        "Extension tool schema validation failures:\n{}",
+        all_errors.join("\n\n")
     );
 }
 
@@ -163,4 +257,69 @@ async fn all_core_tools_work_in_multi_thread_runtime() {
         let _ = tool.requires_sanitization();
         let _ = tool.domain();
     }
+}
+
+#[tokio::test]
+async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
+    let source_dir = support::github_tool_source_dir();
+    let wasm_path = support::github_wasm_artifact().expect("build or find github WASM artifact");
+    let caps_path = source_dir.join("github-tool.capabilities.json");
+    assert!(
+        caps_path.exists(),
+        "github capabilities sidecar must exist for schema tests: {}",
+        caps_path.display()
+    );
+
+    let registry = Arc::new(ToolRegistry::new());
+    let runtime = support::metadata_test_runtime().expect("create metadata test runtime");
+    let loader = WasmToolLoader::new(runtime, Arc::clone(&registry));
+
+    loader
+        .load_from_files("github", &wasm_path, Some(&caps_path))
+        .await
+        .expect("load github wasm tool");
+
+    let defs = registry.tool_definitions().await;
+    let github = defs
+        .iter()
+        .find(|def| def.name == "github")
+        .expect("github tool definition");
+
+    if let Err(errors) = validate_strict_schema(&github.parameters, "github") {
+        panic!("github tool definition must satisfy strict validation: {errors:#?}");
+    }
+    assert_eq!(github.parameters["type"], serde_json::json!("object"));
+    assert!(
+        github.parameters.get("oneOf").is_none(),
+        "top-level oneOf is rejected by OpenAI tool schemas: {}",
+        github.parameters
+    );
+    assert!(
+        github.parameters["required"]
+            .as_array()
+            .expect("required array")
+            .iter()
+            .any(|value| value == "action"),
+        "expected required action in tool definition: {}",
+        github.parameters
+    );
+    assert!(
+        github.parameters["properties"]["owner"].is_object(),
+        "expected owner property in tool definition: {}",
+        github.parameters
+    );
+    assert!(
+        github.parameters["properties"]["action"]["enum"]
+            .as_array()
+            .expect("action enum")
+            .iter()
+            .any(|value| value == "get_repo"),
+        "expected get_repo action enum in tool definition: {}",
+        github.parameters
+    );
+    assert!(
+        github.description.contains("GitHub integration"),
+        "expected real github description, got: {}",
+        github.description
+    );
 }

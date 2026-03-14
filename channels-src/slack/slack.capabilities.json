@@ -8,7 +8,7 @@
     "required_secrets": [
       {
         "name": "slack_bot_token",
-        "prompt": "Enter your Slack Bot User OAuth Token (starts with xoxb-). Find it under OAuth & Permissions in your Slack App settings.",
+        "prompt": "Enter your Slack Bot User OAuth Token (starts with the Slack bot token prefix). Find it under OAuth & Permissions in your Slack App settings.",
         "optional": false
       },
       {

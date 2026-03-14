@@ -355,35 +355,63 @@ impl SandboxStore for LibSqlBackend {
     async fn list_job_events(
         &self,
         job_id: Uuid,
+        before_id: Option<i64>,
         limit: Option<i64>,
     ) -> Result<Vec<JobEventRecord>, DatabaseError> {
         let conn = self.connect().await?;
-        let mut rows = if let Some(n) = limit {
-            conn.query(
-                r#"
-                SELECT id, job_id, event_type, data, created_at
-                FROM (
+        let mut rows = match (before_id, limit) {
+            (Some(before_id), Some(n)) => conn
+                .query(
+                    r#"
                     SELECT id, job_id, event_type, data, created_at
-                    FROM job_events WHERE job_id = ?1
-                    ORDER BY id DESC
-                    LIMIT ?2
+                    FROM (
+                        SELECT id, job_id, event_type, data, created_at
+                        FROM job_events WHERE job_id = ?1 AND id < ?2
+                        ORDER BY id DESC
+                        LIMIT ?3
+                    )
+                    ORDER BY id ASC
+                    "#,
+                    params![job_id.to_string(), before_id, n],
                 )
-                ORDER BY id ASC
-                "#,
-                params![job_id.to_string(), n],
-            )
-            .await
-            .map_err(|e| DatabaseError::Query(e.to_string()))?
-        } else {
-            conn.query(
-                r#"
-                SELECT id, job_id, event_type, data, created_at
-                FROM job_events WHERE job_id = ?1 ORDER BY id ASC
-                "#,
-                params![job_id.to_string()],
-            )
-            .await
-            .map_err(|e| DatabaseError::Query(e.to_string()))?
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?,
+            (Some(before_id), None) => conn
+                .query(
+                    r#"
+                    SELECT id, job_id, event_type, data, created_at
+                    FROM job_events WHERE job_id = ?1 AND id < ?2 ORDER BY id ASC
+                    "#,
+                    params![job_id.to_string(), before_id],
+                )
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?,
+            (None, Some(n)) => conn
+                .query(
+                    r#"
+                    SELECT id, job_id, event_type, data, created_at
+                    FROM (
+                        SELECT id, job_id, event_type, data, created_at
+                        FROM job_events WHERE job_id = ?1
+                        ORDER BY id DESC
+                        LIMIT ?2
+                    )
+                    ORDER BY id ASC
+                    "#,
+                    params![job_id.to_string(), n],
+                )
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?,
+            (None, None) => conn
+                .query(
+                    r#"
+                    SELECT id, job_id, event_type, data, created_at
+                    FROM job_events WHERE job_id = ?1 ORDER BY id ASC
+                    "#,
+                    params![job_id.to_string()],
+                )
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?,
         };
 
         let mut events = Vec::new();

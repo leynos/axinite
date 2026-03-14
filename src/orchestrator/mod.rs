@@ -50,6 +50,7 @@ use crate::channels::web::types::SseEvent;
 use crate::db::Database;
 use crate::llm::LlmProvider;
 use crate::secrets::SecretsStore;
+use crate::tools::ToolRegistry;
 
 /// Result of orchestrator setup, containing all handles needed by the agent.
 pub struct OrchestratorSetup {
@@ -64,6 +65,7 @@ pub struct OrchestratorSetup {
 pub async fn setup_orchestrator(
     config: &crate::config::Config,
     llm: &Arc<dyn LlmProvider>,
+    tools: &Arc<ToolRegistry>,
     db: Option<&Arc<dyn Database>>,
     secrets_store: Option<&Arc<dyn SecretsStore + Send + Sync>>,
 ) -> OrchestratorSetup {
@@ -117,6 +119,7 @@ pub async fn setup_orchestrator(
 
         let orchestrator_state = api::OrchestratorState {
             llm: Arc::clone(llm),
+            tools: Arc::clone(tools),
             job_manager: Arc::clone(&jm),
             token_store,
             job_event_tx: job_event_tx.clone(),

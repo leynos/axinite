@@ -13,9 +13,32 @@ mod import_integration_tests {
     use ironclaw::import::openclaw::reader::OpenClawReader;
     use ironclaw::import::{ImportOptions, ImportStats};
     use std::path::PathBuf;
-    use std::sync::Arc;
+    use std::sync::{Arc, OnceLock};
     use tempfile::TempDir;
+    use tokio::sync::{Mutex, OnceCell};
     use uuid::Uuid;
+
+    fn libsql_test_mutex() -> &'static Mutex<()> {
+        static LIBSQL_TEST_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+        LIBSQL_TEST_MUTEX.get_or_init(|| Mutex::new(()))
+    }
+
+    async fn ensure_libsql_initialised() {
+        static LIBSQL_INIT: OnceCell<()> = OnceCell::const_new();
+        LIBSQL_INIT
+            .get_or_init(|| async {
+                let temp_dir = TempDir::new().expect("temp dir failed");
+                let db_path = temp_dir.path().join("libsql-init.db");
+                let backend = LibSqlBackend::new_local(&db_path)
+                    .await
+                    .expect("libsql init failed");
+                backend
+                    .run_migrations()
+                    .await
+                    .expect("libsql migration failed");
+            })
+            .await;
+    }
 
     /// Helper: Create a test database and return both the DB and temp dir
     async fn create_test_db()
@@ -145,6 +168,8 @@ mod import_integration_tests {
 
     #[tokio::test]
     async fn test_full_import_with_database_writes() {
+        ensure_libsql_initialised().await;
+        let _guard = libsql_test_mutex().lock().await;
         let (db, _db_temp) = create_test_db().await.expect("DB creation failed");
         let (_openclaw_temp, openclaw_path) =
             create_test_openclaw().expect("OpenClaw creation failed");
@@ -192,6 +217,8 @@ mod import_integration_tests {
 
     #[tokio::test]
     async fn test_import_command_execution() {
+        ensure_libsql_initialised().await;
+        let _guard = libsql_test_mutex().lock().await;
         let (_openclaw_temp, openclaw_path) =
             create_test_openclaw().expect("OpenClaw creation failed");
         let (_db, _db_temp) = create_test_db().await.expect("DB creation failed");
@@ -221,6 +248,8 @@ mod import_integration_tests {
 
     #[tokio::test]
     async fn test_dry_run_prevents_database_writes() {
+        ensure_libsql_initialised().await;
+        let _guard = libsql_test_mutex().lock().await;
         let (db, _db_temp) = create_test_db().await.expect("DB creation failed");
         let (_openclaw_temp, openclaw_path) =
             create_test_openclaw().expect("OpenClaw creation failed");
@@ -265,6 +294,8 @@ mod import_integration_tests {
 
     #[tokio::test]
     async fn test_import_idempotency_no_duplicates_on_reimport() {
+        ensure_libsql_initialised().await;
+        let _guard = libsql_test_mutex().lock().await;
         let (_db, _db_temp) = create_test_db().await.expect("DB creation failed");
         let (_openclaw_temp, openclaw_path) =
             create_test_openclaw().expect("OpenClaw creation failed");
@@ -330,6 +361,8 @@ mod import_integration_tests {
 
     #[tokio::test]
     async fn test_embedding_dimension_mismatch_queues_reembedding() {
+        ensure_libsql_initialised().await;
+        let _guard = libsql_test_mutex().lock().await;
         let (_openclaw_temp, openclaw_path) =
             create_test_openclaw().expect("OpenClaw creation failed");
 
@@ -450,6 +483,8 @@ mod import_integration_tests {
 
     #[tokio::test]
     async fn test_embedding_same_dimension_no_reembedding() {
+        ensure_libsql_initialised().await;
+        let _guard = libsql_test_mutex().lock().await;
         let temp_dir = TempDir::new().expect("temp dir failed");
         let openclaw_path = temp_dir.path().to_path_buf();
 

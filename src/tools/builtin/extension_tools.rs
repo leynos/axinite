@@ -9,7 +9,32 @@ use async_trait::async_trait;
 
 use crate::context::JobContext;
 use crate::extensions::{ExtensionKind, ExtensionManager};
+pub use crate::tools::builtin::extension_tool_metadata::ExtensionToolKind;
 use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput, require_str};
+
+macro_rules! delegate_extension_tool_metadata {
+    ($kind:expr) => {
+        fn name(&self) -> &str {
+            $kind.name()
+        }
+
+        fn description(&self) -> &str {
+            $kind.description()
+        }
+
+        fn parameters_schema(&self) -> serde_json::Value {
+            $kind.parameters_schema()
+        }
+
+        fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
+            $kind.approval_requirement()
+        }
+    };
+}
+
+mod management;
+
+pub use management::{ExtensionInfoTool, ToolListTool, ToolRemoveTool, ToolUpgradeTool};
 
 // ── tool_search ──────────────────────────────────────────────────────────
 
@@ -25,33 +50,7 @@ impl ToolSearchTool {
 
 #[async_trait]
 impl Tool for ToolSearchTool {
-    fn name(&self) -> &str {
-        "tool_search"
-    }
-
-    fn description(&self) -> &str {
-        "Search for available extensions to add new capabilities. Extensions include \
-         channels (Telegram, Slack, Discord — for messaging), tools, and MCP servers. \
-         Use discover:true to search online if the built-in registry has no results."
-    }
-
-    fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query (name, keyword, or description fragment)"
-                },
-                "discover": {
-                    "type": "boolean",
-                    "description": "If true, also search online (slower, 5-15s). Try without first.",
-                    "default": false
-                }
-            },
-            "required": ["query"]
-        })
-    }
+    delegate_extension_tool_metadata!(ExtensionToolKind::Search);
 
     async fn execute(
         &self,
@@ -96,36 +95,7 @@ impl ToolInstallTool {
 
 #[async_trait]
 impl Tool for ToolInstallTool {
-    fn name(&self) -> &str {
-        "tool_install"
-    }
-
-    fn description(&self) -> &str {
-        "Install an extension (channel, tool, or MCP server). \
-         Use the name from tool_search results, or provide an explicit URL."
-    }
-
-    fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Extension name (from search results or custom)"
-                },
-                "url": {
-                    "type": "string",
-                    "description": "Explicit URL (for extensions not in the registry)"
-                },
-                "kind": {
-                    "type": "string",
-                    "enum": ["mcp_server", "wasm_tool", "wasm_channel"],
-                    "description": "Extension type (auto-detected if omitted)"
-                }
-            },
-            "required": ["name"]
-        })
-    }
+    delegate_extension_tool_metadata!(ExtensionToolKind::Install);
 
     async fn execute(
         &self,
@@ -159,10 +129,6 @@ impl Tool for ToolInstallTool {
 
         Ok(ToolOutput::success(output, start.elapsed()))
     }
-
-    fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-        ApprovalRequirement::UnlessAutoApproved
-    }
 }
 
 // ── tool_auth ────────────────────────────────────────────────────────────
@@ -179,28 +145,7 @@ impl ToolAuthTool {
 
 #[async_trait]
 impl Tool for ToolAuthTool {
-    fn name(&self) -> &str {
-        "tool_auth"
-    }
-
-    fn description(&self) -> &str {
-        "Initiate authentication for an extension. For OAuth, returns a URL. \
-         For manual auth, returns instructions. The user provides their token \
-         through a secure channel, never through this tool."
-    }
-
-    fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Extension name to authenticate"
-                }
-            },
-            "required": ["name"]
-        })
-    }
+    delegate_extension_tool_metadata!(ExtensionToolKind::Auth);
 
     async fn execute(
         &self,
@@ -254,10 +199,6 @@ impl Tool for ToolAuthTool {
 
         Ok(ToolOutput::success(output, start.elapsed()))
     }
-
-    fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-        ApprovalRequirement::UnlessAutoApproved
-    }
 }
 
 // ── tool_activate ────────────────────────────────────────────────────────
@@ -274,26 +215,7 @@ impl ToolActivateTool {
 
 #[async_trait]
 impl Tool for ToolActivateTool {
-    fn name(&self) -> &str {
-        "tool_activate"
-    }
-
-    fn description(&self) -> &str {
-        "Activate an installed extension — starts channels, loads tools, or connects to MCP servers."
-    }
-
-    fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Extension name to activate"
-                }
-            },
-            "required": ["name"]
-        })
-    }
+    delegate_extension_tool_metadata!(ExtensionToolKind::Activate);
 
     async fn execute(
         &self,
@@ -354,440 +276,5 @@ impl Tool for ToolActivateTool {
     }
 }
 
-// ── tool_list ────────────────────────────────────────────────────────────
-
-pub struct ToolListTool {
-    manager: Arc<ExtensionManager>,
-}
-
-impl ToolListTool {
-    pub fn new(manager: Arc<ExtensionManager>) -> Self {
-        Self { manager }
-    }
-}
-
-#[async_trait]
-impl Tool for ToolListTool {
-    fn name(&self) -> &str {
-        "tool_list"
-    }
-
-    fn description(&self) -> &str {
-        "List extensions with their authentication and activation status. \
-         Set include_available:true to also show registry entries not yet installed."
-    }
-
-    fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "kind": {
-                    "type": "string",
-                    "enum": ["mcp_server", "wasm_tool", "wasm_channel"],
-                    "description": "Filter by extension type (omit to list all)"
-                },
-                "include_available": {
-                    "type": "boolean",
-                    "description": "If true, also include registry entries that are not yet installed",
-                    "default": false
-                }
-            }
-        })
-    }
-
-    async fn execute(
-        &self,
-        params: serde_json::Value,
-        _ctx: &JobContext,
-    ) -> Result<ToolOutput, ToolError> {
-        let start = std::time::Instant::now();
-
-        let kind_filter = params
-            .get("kind")
-            .and_then(|v| v.as_str())
-            .and_then(|k| match k {
-                "mcp_server" => Some(ExtensionKind::McpServer),
-                "wasm_tool" => Some(ExtensionKind::WasmTool),
-                "wasm_channel" => Some(ExtensionKind::WasmChannel),
-                _ => None,
-            });
-
-        let include_available = params
-            .get("include_available")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        let extensions = self
-            .manager
-            .list(kind_filter, include_available)
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-
-        let output = serde_json::json!({
-            "extensions": extensions,
-            "count": extensions.len(),
-        });
-
-        Ok(ToolOutput::success(output, start.elapsed()))
-    }
-}
-
-// ── tool_remove ──────────────────────────────────────────────────────────
-
-pub struct ToolRemoveTool {
-    manager: Arc<ExtensionManager>,
-}
-
-impl ToolRemoveTool {
-    pub fn new(manager: Arc<ExtensionManager>) -> Self {
-        Self { manager }
-    }
-}
-
-#[async_trait]
-impl Tool for ToolRemoveTool {
-    fn name(&self) -> &str {
-        "tool_remove"
-    }
-
-    fn description(&self) -> &str {
-        "Permanently remove an installed extension (channel, tool, or MCP server) from disk. \
-         This action cannot be undone — the WASM binary and configuration files will be deleted."
-    }
-
-    fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Extension name to remove"
-                }
-            },
-            "required": ["name"]
-        })
-    }
-
-    async fn execute(
-        &self,
-        params: serde_json::Value,
-        _ctx: &JobContext,
-    ) -> Result<ToolOutput, ToolError> {
-        let start = std::time::Instant::now();
-
-        let name = require_str(&params, "name")?;
-
-        let message = self
-            .manager
-            .remove(name)
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-
-        let output = serde_json::json!({
-            "name": name,
-            "message": message,
-        });
-
-        Ok(ToolOutput::success(output, start.elapsed()))
-    }
-
-    fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-        ApprovalRequirement::Always
-    }
-}
-
-// ── tool_upgrade ─────────────────────────────────────────────────────
-
-pub struct ToolUpgradeTool {
-    manager: Arc<ExtensionManager>,
-}
-
-impl ToolUpgradeTool {
-    pub fn new(manager: Arc<ExtensionManager>) -> Self {
-        Self { manager }
-    }
-}
-
-#[async_trait]
-impl Tool for ToolUpgradeTool {
-    fn name(&self) -> &str {
-        "tool_upgrade"
-    }
-
-    fn description(&self) -> &str {
-        "Upgrade installed WASM extensions (channels and tools) to match the current \
-         host WIT version. If name is omitted, checks and upgrades all installed WASM \
-         extensions. Authentication and secrets are preserved."
-    }
-
-    fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Extension name to upgrade (omit to upgrade all)"
-                }
-            }
-        })
-    }
-
-    async fn execute(
-        &self,
-        params: serde_json::Value,
-        _ctx: &JobContext,
-    ) -> Result<ToolOutput, ToolError> {
-        let start = std::time::Instant::now();
-
-        let name = params.get("name").and_then(|v| v.as_str());
-
-        let result = self
-            .manager
-            .upgrade(name)
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-
-        let output = serde_json::to_value(&result)
-            .unwrap_or_else(|_| serde_json::json!({"error": "serialization failed"}));
-
-        Ok(ToolOutput::success(output, start.elapsed()))
-    }
-
-    fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-        ApprovalRequirement::UnlessAutoApproved
-    }
-}
-
-// ── extension_info ────────────────────────────────────────────────────
-
-pub struct ExtensionInfoTool {
-    manager: Arc<ExtensionManager>,
-}
-
-impl ExtensionInfoTool {
-    pub fn new(manager: Arc<ExtensionManager>) -> Self {
-        Self { manager }
-    }
-}
-
-#[async_trait]
-impl Tool for ExtensionInfoTool {
-    fn name(&self) -> &str {
-        "extension_info"
-    }
-
-    fn description(&self) -> &str {
-        "Show detailed information about an installed extension, including version \
-         and WIT version compatibility."
-    }
-
-    fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Extension name to get info about"
-                }
-            },
-            "required": ["name"]
-        })
-    }
-
-    async fn execute(
-        &self,
-        params: serde_json::Value,
-        _ctx: &JobContext,
-    ) -> Result<ToolOutput, ToolError> {
-        let start = std::time::Instant::now();
-
-        let name = require_str(&params, "name")?;
-
-        let info = self
-            .manager
-            .extension_info(name)
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-
-        Ok(ToolOutput::success(info, start.elapsed()))
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_tool_search_schema() {
-        let tool = ToolSearchTool {
-            manager: test_manager_stub(),
-        };
-        assert_eq!(tool.name(), "tool_search");
-        let schema = tool.parameters_schema();
-        assert!(schema.get("properties").is_some());
-        assert!(schema["properties"].get("query").is_some());
-    }
-
-    #[test]
-    fn test_tool_install_schema() {
-        use crate::tools::tool::ApprovalRequirement;
-        let tool = ToolInstallTool {
-            manager: test_manager_stub(),
-        };
-        assert_eq!(tool.name(), "tool_install");
-        assert_eq!(
-            tool.requires_approval(&serde_json::json!({})),
-            ApprovalRequirement::UnlessAutoApproved
-        );
-        let schema = tool.parameters_schema();
-        assert!(schema["properties"].get("name").is_some());
-        assert!(schema["properties"].get("url").is_some());
-    }
-
-    #[test]
-    fn test_tool_auth_schema() {
-        use crate::tools::tool::ApprovalRequirement;
-        let tool = ToolAuthTool {
-            manager: test_manager_stub(),
-        };
-        assert_eq!(tool.name(), "tool_auth");
-        assert_eq!(
-            tool.requires_approval(&serde_json::json!({})),
-            ApprovalRequirement::UnlessAutoApproved
-        );
-        let schema = tool.parameters_schema();
-        assert!(schema["properties"].get("name").is_some());
-        // token param must NOT be in schema (security: tokens never go through LLM)
-        assert!(
-            schema["properties"].get("token").is_none(),
-            "tool_auth must not have a token parameter"
-        );
-    }
-
-    #[test]
-    fn test_tool_activate_schema() {
-        use crate::tools::tool::ApprovalRequirement;
-        let tool = ToolActivateTool {
-            manager: test_manager_stub(),
-        };
-        assert_eq!(tool.name(), "tool_activate");
-        assert_eq!(
-            tool.requires_approval(&serde_json::json!({})),
-            ApprovalRequirement::Never
-        );
-    }
-
-    #[test]
-    fn test_tool_list_schema() {
-        use crate::tools::tool::ApprovalRequirement;
-        let tool = ToolListTool {
-            manager: test_manager_stub(),
-        };
-        assert_eq!(tool.name(), "tool_list");
-        assert_eq!(
-            tool.requires_approval(&serde_json::json!({})),
-            ApprovalRequirement::Never
-        );
-        let schema = tool.parameters_schema();
-        assert!(schema["properties"].get("kind").is_some());
-    }
-
-    #[test]
-    fn test_tool_remove_schema() {
-        use crate::tools::tool::ApprovalRequirement;
-        let tool = ToolRemoveTool {
-            manager: test_manager_stub(),
-        };
-        assert_eq!(tool.name(), "tool_remove");
-        assert_eq!(
-            tool.requires_approval(&serde_json::json!({})),
-            ApprovalRequirement::Always
-        );
-    }
-
-    #[test]
-    fn tool_remove_always_requires_approval_regardless_of_params() {
-        use crate::tools::tool::ApprovalRequirement;
-        let tool = ToolRemoveTool {
-            manager: test_manager_stub(),
-        };
-
-        let test_cases = vec![
-            ("no params", serde_json::json!({})),
-            ("empty name", serde_json::json!({"name": ""})),
-            ("slack", serde_json::json!({"name": "slack"})),
-            ("github-cli", serde_json::json!({"name": "github-cli"})),
-            (
-                "with extra fields",
-                serde_json::json!({"name": "tool", "extra": "field"}),
-            ),
-        ];
-
-        for (case_name, params) in test_cases {
-            assert_eq!(
-                tool.requires_approval(&params),
-                ApprovalRequirement::Always,
-                "tool_remove must always require approval for case: {}",
-                case_name
-            );
-        }
-    }
-
-    #[test]
-    fn test_tool_upgrade_schema() {
-        use crate::tools::tool::ApprovalRequirement;
-        let tool = ToolUpgradeTool {
-            manager: test_manager_stub(),
-        };
-        assert_eq!(tool.name(), "tool_upgrade");
-        assert_eq!(
-            tool.requires_approval(&serde_json::json!({})),
-            ApprovalRequirement::UnlessAutoApproved
-        );
-        let schema = tool.parameters_schema();
-        // name is optional (omit to upgrade all)
-        assert!(schema["properties"].get("name").is_some());
-        assert!(
-            schema.get("required").is_none(),
-            "tool_upgrade should have no required params"
-        );
-    }
-
-    #[test]
-    fn test_extension_info_schema() {
-        let tool = ExtensionInfoTool {
-            manager: test_manager_stub(),
-        };
-        assert_eq!(tool.name(), "extension_info");
-        let schema = tool.parameters_schema();
-        assert!(schema["properties"].get("name").is_some());
-        let required = schema["required"].as_array().unwrap();
-        assert!(required.iter().any(|v| v.as_str() == Some("name")));
-    }
-
-    /// Create a stub manager for schema tests (these don't call execute).
-    fn test_manager_stub() -> Arc<ExtensionManager> {
-        use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
-        use crate::testing::credentials::TEST_CRYPTO_KEY;
-        use crate::tools::ToolRegistry;
-        use crate::tools::mcp::session::McpSessionManager;
-
-        let master_key = secrecy::SecretString::from(TEST_CRYPTO_KEY.to_string());
-        let crypto = Arc::new(SecretsCrypto::new(master_key).unwrap());
-
-        Arc::new(ExtensionManager::new(
-            Arc::new(McpSessionManager::new()),
-            Arc::new(crate::tools::mcp::process::McpProcessManager::new()),
-            Arc::new(InMemorySecretsStore::new(crypto)),
-            Arc::new(ToolRegistry::new()),
-            None,
-            None,
-            std::env::temp_dir().join("ironclaw-test-tools"),
-            std::env::temp_dir().join("ironclaw-test-channels"),
-            None,
-            "test".to_string(),
-            None,
-            Vec::new(),
-        ))
-    }
-}
+mod tests;

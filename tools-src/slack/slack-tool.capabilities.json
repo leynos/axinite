@@ -44,9 +44,9 @@
       ],
       "use_pkce": false
     },
-    "instructions": "1. Create a Slack App at https://api.slack.com/apps\n2. Add Bot Token Scopes under OAuth & Permissions:\n   chat:write, channels:read, channels:history, groups:read,\n   groups:history, reactions:write, users:read\n3. Install the app to your workspace\n4. Copy the Bot User OAuth Token (starts with xoxb-)",
+    "instructions": "1. Create a Slack App at https://api.slack.com/apps\n2. Add Bot Token Scopes under OAuth & Permissions:\n   chat:write, channels:read, channels:history, groups:read,\n   groups:history, reactions:write, users:read\n3. Install the app to your workspace\n4. Copy the Bot User OAuth Token (Slack bot token prefix (x o x b -))",
     "setup_url": "https://api.slack.com/apps",
-    "token_hint": "Starts with 'xoxb-'",
+    "token_hint": "Starts with the Slack bot token prefix",
     "env_var": "SLACK_BOT_TOKEN"
   },
   "setup": {
