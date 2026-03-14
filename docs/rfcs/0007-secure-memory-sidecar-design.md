@@ -24,7 +24,10 @@ Open choices (explicit “no constraint” for this request):
 
 ## Baseline architecture and constraints from Axinite
 
-IronClaw’s README and internal development guide describe an architecture built around: multi-channel inputs → agent loop → tools (built-in, MCP, WASM) → PostgreSQL persistence; with explicit defence-in-depth (WASM sandbox with capabilities, prompt-injection defences, secret protection). [^8]
+IronClaw’s README and internal development guide describe an architecture built
+around: multichannel inputs → agent loop → tools (built-in, MCP, WASM) →
+PostgreSQL persistence; with explicit defence-in-depth (WASM sandbox with
+capabilities, prompt-injection defences, secret protection). [^8]
 
 The existing workspace subsystem:
 
