@@ -41,7 +41,6 @@ const V10_WASM_TOOLS_COPY_COLUMNS: &str = r#"id, user_id, name, version, wit_ver
     parameters_schema, source_url, trust_level, status, created_at, updated_at"#;
 
 const V10_WASM_TOOLS_POST_REBUILD_SQL: &str = r#"CREATE INDEX IF NOT EXISTS idx_wasm_tools_user ON wasm_tools(user_id);
-CREATE INDEX IF NOT EXISTS idx_wasm_tools_name ON wasm_tools(user_id, name);
 CREATE INDEX IF NOT EXISTS idx_wasm_tools_status ON wasm_tools(status);
 CREATE INDEX IF NOT EXISTS idx_wasm_tools_trust ON wasm_tools(trust_level);"#;
 
@@ -149,6 +148,11 @@ END;
 ALTER TABLE agent_jobs ADD COLUMN max_tokens INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE agent_jobs ADD COLUMN total_tokens_used INTEGER NOT NULL DEFAULT 0;
 "#,
+    ),
+    (
+        13,
+        "drop_redundant_wasm_tools_name_index",
+        include_str!("../../migrations/V13__drop_redundant_wasm_tools_name_index.sql"),
     ),
 ];
 
