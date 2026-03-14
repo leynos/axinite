@@ -53,6 +53,10 @@ special-cased for this roadmap step.
   the worker tool registry, and loads `reason_ctx.available_tools` from that
   registry. This is the main startup coupling point that must become
   injectable.
+- `src/worker/mod.rs` and `src/orchestrator/mod.rs` both include module-level
+  route sketches for the current worker-orchestrator seam. Those docs still
+  describe the pre-catalogue transport and must be kept synchronized when the
+  new shared boundary lands.
 - `src/tools/builtin/worker_extension_proxy.rs` demonstrates the current
   worker-local proxy pattern. It is useful as a reference for local `Tool`
   wrappers, but the feature must not deepen this extension-only special case.
@@ -301,6 +305,9 @@ Update the design and user-facing documents in the same change.
   how much catalogue policy belongs in `1.1.1` versus `1.1.2`.
 - Update `docs/axinite-architecture-overview.md` so the orchestrator and
   worker sections describe the new catalogue and generic execution routes.
+- Update the module-level `//!` documentation in `src/orchestrator/mod.rs` and
+  `src/worker/mod.rs` so the internal route inventory and worker-runtime
+  sketches remain accurate for contributors.
 - Update `docs/users-guide.md`. If the file still does not exist, create it as
   the canonical user guide and include a section explaining that hosted workers
   now advertise hosted-visible orchestrator-owned tools, while approval-gated
