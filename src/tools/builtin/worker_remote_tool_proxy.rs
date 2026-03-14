@@ -10,33 +10,21 @@ use async_trait::async_trait;
 
 use crate::context::JobContext;
 use crate::tools::ToolRegistry;
-use crate::tools::builtin::extension_tools::ExtensionToolKind;
 use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput};
 use crate::worker::api::WorkerHttpClient;
+use crate::llm::ToolDefinition;
 
-struct WorkerExtensionProxyTool {
-    kind: ExtensionToolKind,
-    client: Arc<WorkerHttpClient>,
-}
-
-impl WorkerExtensionProxyTool {
-    fn new(kind: ExtensionToolKind, client: Arc<WorkerHttpClient>) -> Self {
-        Self { kind, client }
-    }
-}
-
-#[async_trait]
-impl Tool for WorkerExtensionProxyTool {
+impl Tool for WorkerRemoteToolProxy {
     fn name(&self) -> &str {
-        self.kind.name()
+        &self.definition.name
     }
 
     fn description(&self) -> &str {
-        self.kind.description()
+        &self.definition.description
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        self.kind.parameters_schema()
+        self.definition.parameters.clone()
     }
 
     async fn execute(
@@ -45,29 +33,28 @@ impl Tool for WorkerExtensionProxyTool {
         _ctx: &JobContext,
     ) -> Result<ToolOutput, ToolError> {
         self.client
-            .execute_extension_tool(self.kind.name(), &params)
+            .execute_remote_tool(&self.definition.name, &params)
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-        self.kind.approval_requirement()
+        ApprovalRequirement::Never
     }
 }
 
-pub(crate) fn register_worker_extension_proxy_tools(
+pub(crate) fn register_worker_remote_tool_proxies(
     registry: &ToolRegistry,
     client: Arc<WorkerHttpClient>,
+    definitions: Vec<ToolDefinition>,
 ) {
-    for kind in ExtensionToolKind::HOSTED_WORKER_PROXY_SAFE {
-        registry.register_sync(Arc::new(WorkerExtensionProxyTool::new(
-            kind,
+    for definition in definitions {
+        registry.register_sync(Arc::new(WorkerRemoteToolProxy::new(
+            definition,
             Arc::clone(&client),
         )));
     }
 }
-
-#[cfg(test)]
 mod tests {
     use axum::extract::{Path, State};
     use axum::routing::post;
@@ -76,7 +63,9 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::worker::api::{ProxyExtensionToolRequest, ProxyExtensionToolResponse};
+    use crate::worker::api::{
+        REMOTE_TOOL_EXECUTE_ROUTE, RemoteToolExecutionRequest, RemoteToolExecutionResponse,
+    };
 
     #[derive(Clone)]
     struct TestState;
@@ -84,9 +73,9 @@ mod tests {
     async fn execute_tool(
         State(_state): State<TestState>,
         Path(job_id): Path<Uuid>,
-        Json(req): Json<ProxyExtensionToolRequest>,
-    ) -> Json<ProxyExtensionToolResponse> {
-        Json(ProxyExtensionToolResponse {
+        Json(req): Json<RemoteToolExecutionRequest>,
+    ) -> Json<RemoteToolExecutionResponse> {
+        Json(RemoteToolExecutionResponse {
             output: ToolOutput::success(
                 serde_json::json!({
                     "job_id": job_id,
@@ -101,13 +90,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn proxy_tool_round_trips_extension_calls() {
+    async fn remote_tool_execute_round_trips_catalog_tools() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind listener");
         let addr = listener.local_addr().expect("listener addr");
         let router = Router::new()
-            .route("/worker/{job_id}/extension_tool", post(execute_tool))
+            .route(REMOTE_TOOL_EXECUTE_ROUTE, post(execute_tool))
             .with_state(TestState);
         let server = tokio::spawn(async move {
             axum::serve(listener, router).await.expect("serve router");
@@ -120,23 +109,40 @@ mod tests {
             "test-token".to_string(),
         ));
         let registry = ToolRegistry::new();
-        register_worker_extension_proxy_tools(&registry, client);
+        register_worker_remote_tool_proxies(
+            &registry,
+            client,
+            vec![ToolDefinition {
+                name: "github_search".to_string(),
+                description: "Search repositories".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"}
+                    },
+                    "required": ["query"]
+                }),
+            }],
+        );
 
         let tool = registry
-            .get("tool_list")
+            .get("github_search")
             .await
-            .expect("tool_list proxy must be registered");
+            .expect("github_search proxy must be registered");
         let output = tool
             .execute(
-                serde_json::json!({"include_available": true}),
+                serde_json::json!({"query": "axinite"}),
                 &JobContext::default(),
             )
             .await
             .expect("proxy execution should succeed");
 
-        assert_eq!(output.result["tool_name"], "tool_list");
+        assert_eq!(tool.name(), "github_search");
+        assert_eq!(tool.description(), "Search repositories");
+        assert_eq!(tool.parameters_schema()["required"][0], "query");
+        assert_eq!(output.result["tool_name"], "github_search");
         assert_eq!(output.result["job_id"], job_id.to_string());
-        assert_eq!(output.result["params"]["include_available"], true);
+        assert_eq!(output.result["params"]["query"], "axinite");
         assert_eq!(output.cost, Some(Decimal::new(125, 2)));
         assert_eq!(output.raw.as_deref(), Some("proxy raw output"));
         assert_eq!(output.duration, std::time::Duration::from_millis(7));
@@ -144,29 +150,15 @@ mod tests {
         server.abort();
         let _ = server.await;
     }
+}
 
-    #[tokio::test]
-    async fn register_worker_extension_proxy_tools_excludes_approval_gated_tools() {
-        let client = Arc::new(WorkerHttpClient::new(
-            "http://127.0.0.1:1".to_string(),
-            Uuid::new_v4(),
-            "test-token".to_string(),
-        ));
-        let registry = ToolRegistry::new();
+struct WorkerRemoteToolProxy {
+    definition: ToolDefinition,
+    client: Arc<WorkerHttpClient>,
+}
 
-        register_worker_extension_proxy_tools(&registry, client);
-
-        let mut names = registry.list().await;
-        names.sort();
-
-        assert_eq!(
-            names,
-            vec![
-                "extension_info",
-                "tool_activate",
-                "tool_list",
-                "tool_search"
-            ]
-        );
+impl WorkerRemoteToolProxy {
+    fn new(definition: ToolDefinition, client: Arc<WorkerHttpClient>) -> Self {
+        Self { definition, client }
     }
 }

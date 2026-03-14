@@ -17,10 +17,11 @@ mod types;
 pub use types::{
     CompletionReport, CredentialResponse, FinishReason as ProxyFinishReason, JobDescription,
     JobEventPayload, JobEventType, PromptResponse, ProxyCompletionRequest, ProxyCompletionResponse,
-    ProxyExtensionToolRequest, ProxyExtensionToolResponse, ProxyToolCompletionRequest,
-    ProxyToolCompletionResponse, StatusUpdate, WorkerState,
+    ProxyToolCompletionRequest, ProxyToolCompletionResponse, REMOTE_TOOL_CATALOG_PATH,
+    REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_PATH, REMOTE_TOOL_EXECUTE_ROUTE,
+    RemoteToolCatalogResponse, RemoteToolExecutionRequest, RemoteToolExecutionResponse,
+    StatusUpdate, WorkerState,
 };
-
 /// HTTP client that a container worker uses to talk to the orchestrator.
 pub struct WorkerHttpClient {
     client: reqwest::Client,
@@ -185,19 +186,29 @@ impl WorkerHttpClient {
         })
     }
 
-    /// Execute an extension-management tool against the orchestrator-side app state.
-    pub async fn execute_extension_tool(
+    /// Fetch the hosted-visible orchestrator-owned remote tool catalog.
+    pub async fn get_remote_tool_catalog(&self) -> Result<RemoteToolCatalogResponse, WorkerError> {
+        self.get_json(REMOTE_TOOL_CATALOG_PATH, "GET /tools/catalog")
+            .await
+    }
+
+    /// Execute an orchestrator-owned hosted remote tool.
+    pub async fn execute_remote_tool(
         &self,
         tool_name: &str,
         params: &serde_json::Value,
     ) -> Result<ToolOutput, WorkerError> {
-        let proxy_req = ProxyExtensionToolRequest {
+        let proxy_req = RemoteToolExecutionRequest {
             tool_name: tool_name.to_string(),
             params: params.clone(),
         };
 
-        let proxy_resp: ProxyExtensionToolResponse = self
-            .post_json("extension_tool", &proxy_req, "Extension tool execution")
+        let proxy_resp: RemoteToolExecutionResponse = self
+            .post_json(
+                REMOTE_TOOL_EXECUTE_PATH,
+                &proxy_req,
+                "Remote tool execution",
+            )
             .await?;
 
         Ok(proxy_resp.output)

@@ -5,6 +5,11 @@
 - **RFC number:** 0001
 - **Status:** Proposed
 - **Created:** 2026-03-11
+- **Implementation status:** Roadmap item `1.1.1` is implemented in this
+  branch through the shared `src/worker/api/` transport types, the worker
+  catalog-fetch startup path, and the orchestrator generic remote-tool
+  execution endpoint. Later roadmap items still own broader filtering,
+  reasoning-context, and end-to-end parity work.
 
 ## Summary
 
@@ -331,19 +336,19 @@ POST /worker/{job_id}/tools/execute
 New data types:
 
 ```rust
-pub struct HostedToolCatalogResponse {
+pub struct RemoteToolCatalogResponse {
     pub tools: Vec<ToolDefinition>,
     pub toolset_instructions: Vec<String>,
     pub catalog_version: u64,
 }
 
-pub struct ProxyToolExecutionRequest {
+pub struct RemoteToolExecutionRequest {
     pub tool_name: String,
     pub params: serde_json::Value,
 }
 
-pub struct ProxyToolExecutionResponse {
-    pub result: serde_json::Value,
+pub struct RemoteToolExecutionResponse {
+    pub output: ToolOutput,
 }
 ```
 
@@ -357,7 +362,7 @@ implementations.
 The hosted LLM should see a single merged tool list:
 
 1. worker-local container tools
-2. worker-local extension-management proxies
+2. worker-local proxies registered from the orchestrator catalog
 3. orchestrator-owned hosted-visible tools, including active MCP tools
 
 The LLM should not need to know which side owns execution. Ownership stays an

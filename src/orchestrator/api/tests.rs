@@ -19,7 +19,7 @@ use super::*;
 mod auth;
 mod credentials;
 mod events;
-mod extension_tool;
 mod fixtures;
 mod prompts;
+mod remote_tools;
 mod status;

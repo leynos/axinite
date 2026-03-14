@@ -1,9 +1,9 @@
 //! Unit tests for the container worker runtime and its tool-advertising paths.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -17,110 +17,11 @@ use uuid::Uuid;
 
 use super::*;
 use crate::error::{Error, ToolError};
+use crate::llm::ToolDefinition;
 use crate::worker::api::{
-    CompletionReport, CredentialResponse, JobDescription, StatusUpdate, WorkerState,
+    CompletionReport, CredentialResponse, JobDescription, REMOTE_TOOL_CATALOG_ROUTE,
+    RemoteToolCatalogResponse, StatusUpdate, WorkerState,
 };
-
-#[derive(Clone, Copy, Debug)]
-enum WorkerToolSetSource {
-    BuildTools,
-    RuntimeDefinitions,
-}
-
-#[rstest]
-#[case(WorkerToolSetSource::BuildTools, None)]
-#[case(
-    WorkerToolSetSource::RuntimeDefinitions,
-    Some(vec![
-        "apply_patch",
-        "extension_info",
-        "list_dir",
-        "read_file",
-        "shell",
-        "tool_activate",
-        "tool_list",
-        "tool_search",
-        "write_file",
-    ])
-)]
-#[tokio::test]
-async fn worker_runtime_advertises_safe_meta_tools(
-    #[case] source: WorkerToolSetSource,
-    #[case] expected_order: Option<Vec<&str>>,
-) {
-    let client = Arc::new(WorkerHttpClient::new(
-        "http://localhost:50051".to_string(),
-        Uuid::nil(),
-        "test".to_string(),
-    ));
-
-    let names: Vec<String> = match source {
-        WorkerToolSetSource::BuildTools => {
-            WorkerRuntime::build_tools(Arc::clone(&client)).list().await
-        }
-        WorkerToolSetSource::RuntimeDefinitions => {
-            let runtime = WorkerRuntime::from_client(
-                WorkerConfig {
-                    job_id: Uuid::nil(),
-                    orchestrator_url: "http://localhost:50051".to_string(),
-                    ..WorkerConfig::default()
-                },
-                client,
-            );
-            runtime
-                .tools
-                .tool_definitions()
-                .await
-                .into_iter()
-                .map(|def| def.name)
-                .collect()
-        }
-    };
-
-    let expected_safe_names = [
-        "apply_patch",
-        "extension_info",
-        "list_dir",
-        "read_file",
-        "shell",
-        "tool_activate",
-        "tool_list",
-        "tool_search",
-        "write_file",
-    ];
-
-    if let Some(expected_order) = expected_order {
-        assert_eq!(
-            names,
-            expected_order
-                .into_iter()
-                .map(str::to_string)
-                .collect::<Vec<_>>(),
-            "worker tool order drifted for {source:?}"
-        );
-    } else {
-        let expected_name_set: HashSet<&str> = expected_safe_names.iter().copied().collect();
-        let actual_name_set: HashSet<&str> = names.iter().map(String::as_str).collect();
-        assert_eq!(
-            actual_name_set, expected_name_set,
-            "worker tool set drifted for {source:?}"
-        );
-    }
-
-    for expected in expected_safe_names {
-        assert!(
-            names.iter().any(|name| name == expected),
-            "expected hosted worker tool set to include {expected}, got {names:?}"
-        );
-    }
-
-    for omitted in ["tool_auth", "tool_install", "tool_remove", "tool_upgrade"] {
-        assert!(
-            !names.iter().any(|name| name == omitted),
-            "hosted worker proxy should exclude non-safe tool {omitted}, got {names:?}"
-        );
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 enum PreLoopFailureCase {
@@ -472,4 +373,113 @@ async fn worker_runtime_sanitizes_failure_messages(
     );
 
     Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn worker_runtime_build_tools_preserves_container_local_tools() {
+    let names = WorkerRuntime::build_tools().list().await;
+
+    assert_eq!(
+        names,
+        vec![
+            "apply_patch",
+            "list_dir",
+            "read_file",
+            "shell",
+            "write_file"
+        ]
+    );
+}
+
+async fn remote_tool_catalog(
+    State(_state): State<TestState>,
+    Path(_job_id): Path<Uuid>,
+) -> Json<RemoteToolCatalogResponse> {
+    Json(RemoteToolCatalogResponse {
+        tools: vec![ToolDefinition {
+            name: "hosted_worker_remote_tool_fixture".to_string(),
+            description: "Remote tool from orchestrator catalog".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"}
+                },
+                "required": ["query"]
+            }),
+        }],
+        toolset_instructions: vec![],
+        catalog_version: 42,
+    })
+}
+
+#[derive(Clone)]
+struct TestState;
+
+#[rstest]
+#[tokio::test]
+async fn hosted_worker_remote_tool_catalog_registers_remote_tools() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind listener");
+    let addr = listener.local_addr().expect("listener addr");
+    let router = Router::new()
+        .route(REMOTE_TOOL_CATALOG_ROUTE, get(remote_tool_catalog))
+        .with_state(TestState);
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.expect("serve router");
+    });
+
+    let client = Arc::new(WorkerHttpClient::new(
+        format!("http://{}", addr),
+        Uuid::nil(),
+        "test".to_string(),
+    ));
+    let runtime = WorkerRuntime::from_client(
+        WorkerConfig {
+            job_id: Uuid::nil(),
+            orchestrator_url: format!("http://{}", addr),
+            ..WorkerConfig::default()
+        },
+        client,
+    );
+
+    runtime
+        .register_remote_tools()
+        .await
+        .expect("register hosted remote tools");
+
+    let names: Vec<String> = runtime
+        .tools
+        .tool_definitions()
+        .await
+        .into_iter()
+        .map(|def| def.name)
+        .collect();
+
+    assert_eq!(
+        names,
+        vec![
+            "apply_patch",
+            "hosted_worker_remote_tool_fixture",
+            "list_dir",
+            "read_file",
+            "shell",
+            "write_file",
+        ]
+    );
+
+    let remote_tool = runtime
+        .tools
+        .get("hosted_worker_remote_tool_fixture")
+        .await
+        .expect("hosted remote tool should be registered");
+    assert_eq!(
+        remote_tool.description(),
+        "Remote tool from orchestrator catalog"
+    );
+    assert_eq!(remote_tool.parameters_schema()["required"][0], "query");
+
+    server.abort();
+    let _ = server.await;
 }

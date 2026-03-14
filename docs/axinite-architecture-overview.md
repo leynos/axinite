@@ -297,17 +297,18 @@ external content as untrusted before it reaches the language model.
 
 For code execution and high-risk tools, Axinite uses a Docker-backed sandbox
 system plus an orchestrator-worker split. The orchestrator runs inside the main
-process, owns the worker-facing HTTP API, creates per-job bearer tokens, and
-tracks credential grants. Workers run the same binary through the hidden
-`ironclaw worker` or `ironclaw claude-bridge` subcommands, but with a
-restricted runtime that proxies language model access and reports status back to
-the orchestrator.
+process, owns the worker-facing HTTP API, creates per-job bearer tokens, tracks
+credential grants, serves `GET /worker/{job_id}/tools/catalog`, and executes
+hosted-visible orchestrator-owned tools through
+`POST /worker/{job_id}/tools/execute`. Workers run the same binary through the
+hidden `ironclaw worker` or `ironclaw claude-bridge` subcommands, but with a
+restricted runtime that proxies language model access, fetches the remote-tool
+catalog during startup, and reports status back to the orchestrator.
 
-The current worker-orchestrator seam is still more duplicated than it should
-be. The near-term design direction for the hosted tool-catalog work is to fold
-transport contract hardening into that delivery itself: shared route and
-payload ownership should be part of the first catalog-and-proxy step, rather
-than treated as a separate prerequisite architecture project.
+The worker-orchestrator seam now owns its hosted remote-tool route fragments
+and payload shapes in one shared transport module under `src/worker/api/`.
+That keeps the worker HTTP adapter and the orchestrator router aligned while
+later roadmap work extends filtering and reasoning-context behaviour.
 
 The WASM execution path adds another boundary inside the host process. Before
 the host injects any credentials into outbound requests, it validates endpoint
@@ -349,9 +350,9 @@ Other edges are more muddled and currently create avoidable maintenance cost.
 - `ExtensionManager` points outward to many adapters at once, including
   discovery, MCP, WASM runtime, channel activation, secrets, database-backed
   state, and gateway callback machinery.
-- The worker-orchestrator seam is duplicated as concrete HTTP route fragments
-  and client path builders rather than being expressed through one shared
-  protocol boundary.
+- The worker-orchestrator seam now shares its hosted remote-tool contract, but
+  later roadmap work still needs to tighten catalog filtering and refresh
+  behaviour.
 - Job lifecycle semantics are split between in-memory context transitions and
   best-effort persistence paths, which makes cancellation and terminal status
   handling harder to reason about under failure.

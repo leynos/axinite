@@ -22,11 +22,13 @@ use crate::tools::ToolRegistry;
 
 mod handler_support;
 mod handlers;
+mod remote_tools;
 
+use crate::worker::api::{REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_ROUTE};
 use handler_support::{get_credentials_handler, get_prompt_handler};
 use handlers::{
-    execute_extension_tool, get_job, health_check, job_event_handler, llm_complete,
-    llm_complete_with_tools, report_complete, report_status,
+    execute_remote_tool, get_job, get_remote_tool_catalog, health_check, job_event_handler,
+    llm_complete, llm_complete_with_tools, report_complete, report_status,
 };
 
 /// A follow-up prompt queued for a Claude Code bridge.
@@ -69,10 +71,8 @@ impl OrchestratorApi {
                 "/worker/{job_id}/llm/complete_with_tools",
                 post(llm_complete_with_tools),
             )
-            .route(
-                "/worker/{job_id}/extension_tool",
-                post(execute_extension_tool),
-            )
+            .route(REMOTE_TOOL_CATALOG_ROUTE, get(get_remote_tool_catalog))
+            .route(REMOTE_TOOL_EXECUTE_ROUTE, post(execute_remote_tool))
             .route("/worker/{job_id}/status", post(report_status))
             .route("/worker/{job_id}/complete", post(report_complete))
             .route("/worker/{job_id}/event", post(job_event_handler))

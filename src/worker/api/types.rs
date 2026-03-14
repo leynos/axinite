@@ -1,9 +1,9 @@
 //! API-facing worker transport types shared with the orchestrator.
 //!
-//! This module defines the serialized request/response shapes used for worker
-//! chat completions, extension-tool proxying, status updates, and credential
-//! delivery, including shared types such as [`ChatMessage`], [`ToolCall`],
-//! [`ToolDefinition`], and [`ToolOutput`].
+//! This module defines the serialized request and response shapes used for
+//! worker chat completions, hosted remote-tool catalog fetch and execution,
+//! status updates, and credential delivery, including shared types such as
+//! [`ChatMessage`], [`ToolCall`], [`ToolDefinition`], and [`ToolOutput`].
 
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +39,15 @@ impl std::fmt::Display for WorkerState {
         f.write_str(self.as_wire())
     }
 }
+
+/// Relative worker path for the hosted remote-tool catalog endpoint.
+pub const REMOTE_TOOL_CATALOG_PATH: &str = "tools/catalog";
+/// Relative worker path for hosted remote-tool execution.
+pub const REMOTE_TOOL_EXECUTE_PATH: &str = "tools/execute";
+/// Axum route for the hosted remote-tool catalog endpoint.
+pub const REMOTE_TOOL_CATALOG_ROUTE: &str = "/worker/{job_id}/tools/catalog";
+/// Axum route for hosted remote-tool execution.
+pub const REMOTE_TOOL_EXECUTE_ROUTE: &str = "/worker/{job_id}/tools/execute";
 
 /// Status update sent from worker to orchestrator.
 #[derive(Debug, Serialize, Deserialize)]
@@ -175,23 +184,31 @@ pub struct ProxyToolCompletionResponse {
     pub cache_creation_input_tokens: u32,
 }
 
-/// Request body sent by a worker to execute a hosted extension-management tool.
+/// Request body sent by a worker to execute a hosted remote tool.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ProxyExtensionToolRequest {
-    /// Stable extension-management tool identifier known to both worker and orchestrator.
+pub struct RemoteToolExecutionRequest {
+    /// Stable hosted remote-tool identifier known to both worker and orchestrator.
     pub tool_name: String,
     /// JSON parameters passed through to the tool implementation.
     pub params: serde_json::Value,
 }
 
-/// Response body returned after hosted extension-management tool execution.
+/// Response body returned after hosted remote-tool execution.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ProxyExtensionToolResponse {
+pub struct RemoteToolExecutionResponse {
     /// Tool execution output returned by the orchestrator.
     pub output: ToolOutput,
 }
 
 /// Completion status reported by a worker once it finishes a job.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RemoteToolCatalogResponse {
+    pub tools: Vec<ToolDefinition>,
+    #[serde(default)]
+    pub toolset_instructions: Vec<String>,
+    pub catalog_version: u64,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompletionReport {
     /// Whether the worker completed the job successfully.

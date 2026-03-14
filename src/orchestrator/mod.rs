@@ -13,6 +13,8 @@
 //! │    POST /worker/{id}/llm/complete               │
 //! │    POST /worker/{id}/llm/complete_with_tools    │
 //! │    GET  /worker/{id}/job                        │
+//! │    GET  /worker/{id}/tools/catalog              │
+//! │    POST /worker/{id}/tools/execute              │
 //! │    GET  /worker/{id}/credentials                │
 //! │    POST /worker/{id}/status                     │
 //! │    POST /worker/{id}/complete                   │

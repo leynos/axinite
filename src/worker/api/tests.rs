@@ -11,6 +11,9 @@ use uuid::Uuid;
 #[rstest]
 #[case("llm/complete")]
 #[case("credentials")]
+use axum::extract::{Path, State};
+use axum::routing::{get, post};
+use axum::{Json, Router};
 fn test_url_construction(#[case] path: &str) {
     let client = WorkerHttpClient::new(
         "http://host.docker.internal:50051".to_string(),
@@ -75,6 +78,22 @@ fn test_job_description_deserialization() {
     assert!(job.project_dir.is_none());
 }
 
+fn remote_tool_catalog_url_construction() {
+    let client = WorkerHttpClient::new(
+        "http://host.docker.internal:50051".to_string(),
+        Uuid::nil(),
+        TEST_BEARER_TOKEN.to_string(),
+    );
+
+    assert_eq!(
+        client.url(REMOTE_TOOL_CATALOG_PATH),
+        format!(
+            "http://host.docker.internal:50051{}",
+            REMOTE_TOOL_CATALOG_ROUTE.replace("{job_id}", &Uuid::nil().to_string())
+        )
+    );
+}
+
 #[test]
 fn test_status_update_new_serializes_worker_state() {
     let update = StatusUpdate::new(WorkerState::InProgress, Some("Iteration 1".to_string()), 1);
@@ -99,4 +118,80 @@ fn test_status_update_deserializes_worker_state() {
     assert_eq!(update.state, WorkerState::Failed);
     assert_eq!(update.message.as_deref(), Some("boom"));
     assert_eq!(update.iteration, 7);
+}
+
+async fn reject_catalog(
+    State(_state): State<TestState>,
+    Path(_job_id): Path<Uuid>,
+) -> (axum::http::StatusCode, &'static str) {
+    (axum::http::StatusCode::FORBIDDEN, "nope")
+}
+
+async fn remote_tool_catalog_reports_non_success_statuses() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind listener");
+    let addr = listener.local_addr().expect("listener addr");
+    let router = Router::new()
+        .route(REMOTE_TOOL_CATALOG_ROUTE, get(reject_catalog))
+        .with_state(TestState);
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.expect("serve router");
+    });
+
+    let client = WorkerHttpClient::new(
+        format!("http://{}", addr),
+        Uuid::new_v4(),
+        TEST_BEARER_TOKEN.to_string(),
+    );
+
+    let err = client
+        .get_remote_tool_catalog()
+        .await
+        .expect_err("catalog fetch should fail on non-success status");
+    assert!(err.to_string().contains("GET /tools/catalog returned 403"));
+
+    server.abort();
+    let _ = server.await;
+}
+
+struct TestState;
+
+async fn reject_execute(
+    State(_state): State<TestState>,
+    Path(_job_id): Path<Uuid>,
+    Json(_req): Json<RemoteToolExecutionRequest>,
+) -> (axum::http::StatusCode, &'static str) {
+    (axum::http::StatusCode::BAD_REQUEST, "bad params")
+}
+
+async fn remote_tool_execute_reports_non_success_statuses() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind listener");
+    let addr = listener.local_addr().expect("listener addr");
+    let router = Router::new()
+        .route(REMOTE_TOOL_EXECUTE_ROUTE, post(reject_execute))
+        .with_state(TestState);
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.expect("serve router");
+    });
+
+    let client = WorkerHttpClient::new(
+        format!("http://{}", addr),
+        Uuid::new_v4(),
+        TEST_BEARER_TOKEN.to_string(),
+    );
+
+    let err = client
+        .execute_remote_tool("github_search", &serde_json::json!({"query": 7}))
+        .await
+        .expect_err("remote-tool execute should fail on non-success status");
+    assert!(
+        err.to_string()
+            .contains("Remote tool execution: orchestrator returned 400")
+    );
+
+    server.abort();
+    let _ = server.await;
 }
