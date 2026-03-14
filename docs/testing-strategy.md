@@ -145,7 +145,8 @@ attention.
 - `cargo test test_name` runs a specific Rust test by name.
 - `cargo test --manifest-path channels-src/telegram/Cargo.toml -- --nocapture`
   exercises the Telegram channel crate directly.
-- `cargo test --all-features wit_compat -- --nocapture` exercises WebAssembly Interface Types (WIT) compatibility and host-linking behaviour.
+- `cargo test --all-features wit_compat -- --nocapture` exercises
+  WebAssembly Interface Types (WIT) compatibility and host-linking behaviour.
 - `pytest tests/e2e/ -v` runs the browser E2E suite locally.
 - `pytest tests/e2e/scenarios/test_chat.py -v` or another single scenario path
   narrows browser debugging to one flow.
@@ -251,7 +252,7 @@ the main PR gates.
 `scripts/coverage.sh` provides a local coverage path based on
 `cargo-llvm-cov`.
 
-- By default it runs library tests only for speed.
+- By default, it runs library tests only for speed.
 - It can filter to specific tests or modules.
 - It supports HTML, text, JSON, and LCOV output.
 - `COV_ALL_TARGETS=1` expands from the fast library-only path to include
@@ -306,5 +307,5 @@ Table 3. Suggested validation depth by change type.
 
 The important pattern is not "run everything, every time". The strategy is to
 keep the default path fast enough for normal work, keep higher-confidence paths
-available for risky changes, and preserve deterministic suites so failures are
+available for risky changes, and preserve deterministic suites, so failures are
 actionable rather than noisy.
