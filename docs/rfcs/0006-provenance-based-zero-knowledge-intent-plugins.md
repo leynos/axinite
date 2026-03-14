@@ -635,7 +635,9 @@ Yes—WIT not only can declare them, it is one of the cleanest ways to do it in 
 - it supports resource handles that map directly to opaque provenance tokens, [^35]
 - it provides a stable ABI surface that plugin authors can target while the harness evolves internally.
 
-The hard part isn’t “can WIT express it?”—it can. The hard part is agreeing a template vocabulary that remains (a) expressive enough for plugin authors, (b) legible for users, and (c) restrictable by policy. That’s why splitting “template IDs” (stable vocabulary) from “policy rules” (site-specific constraints) and “service profiles” (YTMusic auth/allowlist) makes the model realistic instead of brittle.
+The hard part isn’t “can WIT express it?”—it can. The hard part is reaching agreement on a template vocabulary that remains (a) expressive enough for plugin authors, (b) legible for users, and (c) restrictable by policy. That’s why splitting “template IDs” (stable vocabulary) from “policy rules”
+(site-specific constraints) and “service profiles” (YTMusic auth/allowlist)
+makes the model realistic instead of brittle.
 
 <!-- markdownlint-enable MD013 MD060 -->
 
