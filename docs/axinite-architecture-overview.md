@@ -313,6 +313,41 @@ validation, and webhook authentication are already documented in
 `src/NETWORK_SECURITY.md`. This overview relies on that document rather than
 duplicating its full inventory.
 
+### 4.6 Dependency and boundary map
+
+The current codebase has a practical layered shape even though it does not use
+formal hexagonal vocabulary throughout.
+
+- bootstrap and configuration in `src/bootstrap.rs` and `src/config/`
+- composition roots in `src/main.rs` and `src/app.rs`
+- runtime services in `src/agent/`, `src/channels/`, `src/extensions/`,
+  `src/worker/`, and `src/orchestrator/`
+- persistence and memory in `src/db/`, `src/workspace/`, and `src/history/`
+
+Some dependency directions are healthy and worth preserving.
+
+- The runtime still exposes meaningful extensibility seams such as
+  `Database`, `Channel`, `Tool`, and `LlmProvider`.
+- `AppBuilder` is a reasonable composition root for the mechanical bootstrap
+  phases.
+- `WebhookServer` isolates listener restart mechanics better than the
+  higher-level hot-reload caller in `src/main.rs` that decides when and why a
+  restart should happen.
+
+Other edges are more muddled and currently create avoidable maintenance cost.
+
+- `src/main.rs` reaches deep into config reload, secret injection, transport
+  restart, and lifecycle mutation during the SIGHUP hot-reload path.
+- `ExtensionManager` points outward to many adapters at once, including
+  discovery, MCP, WASM runtime, channel activation, secrets, database-backed
+  state, and gateway callback machinery.
+- The worker-orchestrator seam is duplicated as concrete HTTP route fragments
+  and client path builders rather than being expressed through one shared
+  protocol boundary.
+- Job lifecycle semantics are split between in-memory context transitions and
+  best-effort persistence paths, which makes cancellation and terminal status
+  handling harder to reason about under failure.
+
 ## 5. Repository structure that supports the architecture
 
 The repository layout mirrors the runtime split rather than hiding everything
