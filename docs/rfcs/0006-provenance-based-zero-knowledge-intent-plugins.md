@@ -389,6 +389,7 @@ Keep the path prefix narrow and explicitly exclude other Google hosts unless the
 - `src/integrations/ytmusic/rpc.rs` (optional; if typed semantic ops are desired)
 
 **AuthScheme:**
+
 ```rust
 pub enum AuthScheme {
     YtMusicSapisidHash { origin: String, cookie_secret: String },
