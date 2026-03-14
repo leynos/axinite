@@ -107,6 +107,7 @@ Table 3. Documentation subtrees and their roles.
 | Path | Role |
 |------|------|
 | `docs/*.md` | Stable guides, specifications, and overview documents for the current repository state |
+| `docs/execplans/` | Approval-gated execution plans written in the Codex ExecPlan format |
 | `docs/plans/` | Execution plans and implementation tracking documents that may describe in-flight work |
 | `docs/rfcs/` | Request for Comments (RFC) documents for proposed or recently accepted changes |
 <!-- markdownlint-enable MD013 MD060 -->
