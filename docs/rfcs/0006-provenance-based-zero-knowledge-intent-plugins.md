@@ -584,7 +584,7 @@ Both can work, but they optimize for different priorities.
 
 | Criterion | Rego (OPA) | Starlark |
 |---|---|---|
-| Primary design goal | Policy over structured input (authorisation, admission, filtering) [^22] | Deterministic, hermetic configuration/scripting [^23] |
+| Primary design goal | Policy over structured input (authorization, admission, filtering) [^22] | Deterministic, hermetic configuration/scripting [^23] |
 | Evaluation model | Declarative, Datalog-inspired; “what should hold” [^24] | General-purpose language (Python-like) albeit constrained [^25] |
 | Embedding story | OPA can compile policies to WASM; also in-process interpreters exist (e.g. Regorus) [^26] | Multiple implementations; embedding typically straightforward |
 | Auditability | Usually high (rules read like constraints) | Varies; tends to drift into ad-hoc logic |
