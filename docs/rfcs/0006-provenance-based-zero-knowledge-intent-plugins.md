@@ -543,7 +543,7 @@ To make the “zero-knowledge” claim credible, implement a layered defence:
   - per time window per tool (capabilities rate limit)
   - per intent type (e.g. “no more than N playlist creations per hour”).
 - **Deterministic rendering checks**:
-  - canonicalise JSON and headers before showing the user.
+  - canonicalize JSON and headers before showing the user.
   - ensure the displayed intent matches what the assembler will actually send (no “stringly typed” surprises).
 - **Redaction before any user-facing UI**:
   - even if no secrets are expected, treat all error text as untrusted; scrub any host-injected secret values.
