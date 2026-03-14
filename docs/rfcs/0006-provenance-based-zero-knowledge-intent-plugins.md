@@ -614,7 +614,7 @@ Small/medium/large are used here as relative engineering-effort estimates within
 - Add tests (property + fuzz + integration).
 - Add UI rendering hooks for intents and approvals.
 
-### Prioritised implementation plan
+### Prioritized implementation plan
 
 | Task | Size | Why it comes first |
 |---|---|---|
