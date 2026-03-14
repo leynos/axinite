@@ -48,6 +48,7 @@ loop.
 
 Table 1. Major runtime layers and their responsibilities.
 
+<!-- markdownlint-disable MD013 MD060 -->
 | Layer | Responsibilities | Primary evidence |
 |------|------------------|------------------|
 | CLI and bootstrap | Parse commands, load early env files, guard single-process startup, and decide whether to run the agent | `src/main.rs`, `src/cli/mod.rs` |
@@ -57,6 +58,7 @@ Table 1. Major runtime layers and their responsibilities.
 | Persistence and memory | Provide backend-agnostic storage, settings, conversation history, job records, and searchable workspace memory | `src/db/mod.rs`, `src/workspace/mod.rs`, `src/config/mod.rs` |
 | Extension runtime | Discover, install, authenticate, and activate WASM tools, WASM channels, MCP servers, and relay-backed integrations | `src/extensions/mod.rs`, `src/registry/mod.rs`, `src/app.rs` |
 | Safety and sandbox | Sanitize model inputs and outputs, block secret leakage, and isolate untrusted execution in Docker-backed workers | `src/safety/mod.rs`, `src/sandbox/mod.rs`, `src/orchestrator/mod.rs`, `src/worker/mod.rs` |
+<!-- markdownlint-enable MD013 MD060 -->
 
 Figure 1. High-level architecture and trust boundaries.
 
@@ -143,6 +145,7 @@ fully initialized `AppComponents` without emulating every channel.
 
 Table 2. AppBuilder phases and the state they add.
 
+<!-- markdownlint-disable MD013 MD060 -->
 | Phase | Behaviour | Notes |
 |------|-----------|-------|
 | Database | Connects to PostgreSQL or libSQL, runs migrations, reloads configuration from persisted settings, attaches the session store, and schedules stale sandbox cleanup | Database config is allowed to override env defaults after connection |
@@ -150,6 +153,7 @@ Table 2. AppBuilder phases and the state they add.
 | LLM | Builds the provider chain and any recording wrapper used for tracing | The chain is responsible for retry, failover, and routing decorators |
 | Tools and workspace | Creates the safety layer, tool registry, embedding provider, workspace memory, and optional image or builder tools | Workspace memory only exists when a database backend is active |
 | Extensions | Starts MCP session and process managers, creates the WASM runtime, loads runtime extensions, loads registry metadata, and creates the extension manager | The extension manager is registered back into the tool system so the agent can discover and manage extensions in chat |
+<!-- markdownlint-enable MD013 MD060 -->
 
 ### 3.3 Long-running services
 
@@ -179,6 +183,9 @@ the agent. `ChannelManager` multiplexes REPL, HTTP, Signal, web, and
 WASM-backed channels, then the agent consumes unified `IncomingMessage`
 records. The web gateway is not a separate service: it is just another channel
 with extra state such as server-sent events, tool metadata, and runtime logs.
+`docs/front-end-architecture.md` is the browser-specific design reference for
+how that gateway serves the UI, generates the client-side interface, and
+connects browser actions back into the runtime.
 The detailed message lifecycle for the browser and other session-backed chat
 paths lives in `docs/chat-model.md`, which covers ingress normalization,
 attachment mutation, approvals, auth interruptions, persistence, and browser
@@ -313,6 +320,7 @@ behind one crate root.
 
 Table 3. Top-level paths that matter most for the current architecture.
 
+<!-- markdownlint-disable MD013 MD060 -->
 | Path | Purpose |
 |------|---------|
 | `src/` | Host application code, including the agent, channels, sandbox, database, config, and extension systems |
@@ -324,6 +332,7 @@ Table 3. Top-level paths that matter most for the current architecture.
 | `docs/` | Maintainer, provider, setup, and architecture-facing documentation |
 | `tests/` | Host integration coverage such as WIT compatibility and end-to-end tests |
 | `scripts/` | Build, validation, and repository utility scripts |
+<!-- markdownlint-enable MD013 MD060 -->
 
 The repository also reflects a practical packaging decision: not every runtime
 extension is compiled as part of the main workspace member set. Some channel

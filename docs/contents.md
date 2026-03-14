@@ -25,6 +25,9 @@
 - [axinite architecture overview](axinite-architecture-overview.md) explains
   the top-level runtime shape, major subsystems, and how the pieces fit
   together.
+- [Front-end architecture](front-end-architecture.md) explains how the web
+  gateway serves the browser UI, generates the interface, and connects browser
+  actions to the runtime subsystems.
 - [Chat model](chat-model.md) traces the chat pipeline from ingress through
   context assembly, tool execution, approvals, and outbound sinks.
 - [Database integrations](database-integrations.md) explains the PostgreSQL,
