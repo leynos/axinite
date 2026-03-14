@@ -172,7 +172,9 @@ means the main binary is responsible for both synchronous command dispatch and
 asynchronous service hosting. It also means HTTP routes from the built-in HTTP
 channel and from WASM channels are co-hosted behind one `WebhookServer`, so
 newly activated channels can begin handling webhook traffic without a separate
-host process.
+host process. `docs/webhook-server-design.md` documents that unified webhook
+architecture in more detail, including the current rollback-focused
+`WebhookServer` restart behaviour.
 
 ## 4. Core runtime subsystems
 

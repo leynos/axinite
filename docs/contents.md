@@ -25,6 +25,9 @@
 - [axinite architecture overview](axinite-architecture-overview.md) explains
   the top-level runtime shape, major subsystems, and how the pieces fit
   together.
+- [Webhook server design](webhook-server-design.md) describes the unified
+  webhook listener, route composition model, and rollback-focused restart
+  behaviour.
 - [Front-end architecture](front-end-architecture.md) explains how the web
   gateway serves the browser UI, generates the interface, and connects browser
   actions to the runtime subsystems.
