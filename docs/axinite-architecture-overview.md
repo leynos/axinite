@@ -119,22 +119,22 @@ before channels and background services start.
 1. `main()` loads `.env` files and the per-user `~/.ironclaw/.env` bootstrap
    file before starting Tokio. This avoids mutating process environment after
    worker threads exist.
-1. `async_main()` parses `Cli`, routes standalone subcommands, and only falls
+2. `async_main()` parses `Cli`, routes standalone subcommands, and only falls
    through to the agent runtime for `ironclaw run` or no subcommand.
-1. The host acquires a PID lock to prevent accidental double-starts of the main
+3. The host acquires a PID lock to prevent accidental double-starts of the main
    process.
-1. If onboarding is still required and onboarding has not been suppressed, the
+4. If onboarding is still required and onboarding has not been suppressed, the
    setup wizard runs before the rest of the runtime is built.
-1. `Config::from_env_with_toml()` builds the initial configuration from
+5. `Config::from_env_with_toml()` builds the initial configuration from
    environment variables, optional TOML, and defaults. The database is not yet
    required at this point.
-1. `AppBuilder::build_all()` executes the mechanical initialization phases in a
+6. `AppBuilder::build_all()` executes the mechanical initialization phases in a
    fixed order: database, secrets, language model providers, tools and
    workspace, then extensions.
-1. After core components exist, `async_main()` starts optional tunnel support,
+7. After core components exist, `async_main()` starts optional tunnel support,
    configures the sandbox orchestrator, wires interaction channels, registers
    hooks, and creates the agent.
-1. The process finally enters `agent.run()`, while background tasks such as the
+8. The process finally enters `agent.run()`, while background tasks such as the
    sandbox reaper and Unix `SIGHUP` config reloader run alongside it.
 
 ### 3.2 AppBuilder phases
@@ -302,6 +302,12 @@ tracks credential grants. Workers run the same binary through the hidden
 `ironclaw worker` or `ironclaw claude-bridge` subcommands, but with a
 restricted runtime that proxies language model access and reports status back to
 the orchestrator.
+
+The current worker-orchestrator seam is still more duplicated than it should
+be. The near-term design direction for the hosted tool-catalog work is to fold
+transport contract hardening into that delivery itself: shared route and
+payload ownership should be part of the first catalog-and-proxy step, rather
+than treated as a separate prerequisite architecture project.
 
 The WASM execution path adds another boundary inside the host process. Before
 the host injects any credentials into outbound requests, it validates endpoint
