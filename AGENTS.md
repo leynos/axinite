@@ -41,6 +41,10 @@
 
 - Use the Markdown files within `docs/` as a knowledge base and source of
   truth for requirements, dependency choices, and architectural decisions.
+- Start documentation discovery from `docs/contents.md`, then read
+  `docs/welcome-to-axinite.md` for product direction and
+  `docs/axinite-architecture-overview.md` for the current runtime shape before
+  making broad changes.
 - When decisions change, requirements evolve, libraries are added or removed,
   or architectural patterns shift, proactively update the relevant documents in
   `docs/`.
