@@ -44,6 +44,25 @@
 - [Smart routing spec](smart-routing-spec.md) captures the current design for
   routing requests across models and providers.
 
+
+## Implementation and testing references
+
+- [Navigating code complexity](complexity-antipatterns-and-refactoring-strategies.md)
+  explains complexity metrics, the bumpy-road antipattern, and practical
+  refactoring strategies for maintainers.
+- [Reliable testing in Rust via dependency injection](reliable-testing-in-rust-via-dependency-injection.md)
+  explains how to avoid global-state coupling in tests by injecting
+  environment, clock, and other system dependencies.
+- [`rstest-bdd` user's guide](rstest-bdd-users-guide.md) documents how to use
+  the current `rstest-bdd` implementation from Gherkin features through step
+  definitions and scenario execution.
+- [A systematic guide to effective, ergonomic, and DRY doctests in Rust](rust-doctest-dry-guide.md)
+  explains the `rustdoc` compilation model and practical doctest patterns for
+  public API documentation.
+- [Mastering test fixtures in Rust with `rstest`](rust-testing-with-rstest-fixtures.md)
+  explains fixture-based and parameterized testing with `rstest` for Rust
+  contributors.
+
 ## Operator and integration references
 
 - [Configuration guide](configuration-guide.md) is the reference for command
