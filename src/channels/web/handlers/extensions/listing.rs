@@ -47,8 +47,18 @@ pub async fn extensions_list_handler(
 
     let mut paired_names = HashSet::new();
     for (name, handle) in pairing_tasks {
-        if handle.await.unwrap_or(false) {
-            paired_names.insert(name);
+        match handle.await {
+            Ok(true) => {
+                paired_names.insert(name);
+            }
+            Ok(false) => {}
+            Err(error) => {
+                tracing::error!(
+                    extension_name = %name,
+                    error = %error,
+                    "Failed to join pairing lookup task"
+                );
+            }
         }
     }
 
