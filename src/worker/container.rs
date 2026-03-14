@@ -140,7 +140,11 @@ impl WorkerRuntime {
             return self.fail_pre_loop("hydrate credentials", error).await;
         }
         if let Err(error) = self.register_remote_tools().await {
-            return self.fail_pre_loop("register remote tools", error).await;
+            tracing::warn!(
+                job_id = %self.config.job_id,
+                error = %error,
+                "Failed to fetch hosted remote-tool catalogue; continuing with container-local tools only"
+            );
         }
         if let Err(error) = self
             .report_worker_status(

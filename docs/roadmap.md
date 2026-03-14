@@ -46,181 +46,33 @@ The roadmap follows the current documentation style guidance:
 Phase objective: ensure axinite advertises accurate tool interfaces before it
 widens the runtime surface.
 
-
-### 1.1. Hosted Model Context Protocol (MCP) tool catalog parity
+### 1.1. Hosted MCP tool catalogue parity
 
 Objective: make hosted workers advertise the real orchestrator-owned MCP tools
 instead of only local proxy tools.
 
-Learning opportunity: determine whether one remote catalog contract can support
+Learning opportunity: determine whether one remote catalogue contract can support
 both model-facing schema fidelity and later observability needs.
 
 Dependencies: unlocks 1.2 and reduces integration risk for 3.2. No separate
 architecture-prerequisite stream is required before this step; the
 worker-orchestrator contract hardening belongs inside 1.1.1.
 
-- [x] 1.1.1. Add worker-orchestrator transport for remote tool catalog fetch
+- [x] 1.1.1. Add worker-orchestrator transport for remote tool catalogue fetch
   and generic remote tool execution.
   - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
   - Tracks [Issue #12](https://github.com/leynos/axinite/issues/12).
-  - Define the catalog and generic execution transport through one shared
+  - Define the catalogue and generic execution transport through one shared
     worker-orchestrator boundary module or equivalent typed contract, rather
     than duplicating route fragments and payload shapes independently in the
     worker and orchestrator.
   - Keep worker startup injectable at the transport boundary so the hosted
-    catalog path does not deepen the current env-only client coupling.
-  - Success: the orchestrator exposes a hosted-visible catalog endpoint for
+    catalogue path does not deepen the current env-only client coupling.
+  - Success: the orchestrator exposes a hosted-visible catalogue endpoint for
     active executable tools, the worker can execute orchestrator-owned tools
     through one generic proxy path, and the transport shape is owned in one
     place rather than mirrored as stringly typed route assembly on both sides.
-- [ ] 1.1.2. Filter the hosted-visible catalog from the canonical
-  `ToolRegistry`. Requires 1.1.1.
-  - See [RFC 0001 §Goals](./rfcs/0001-expose-mcp-tool-definitions.md#goals)
-    and [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
-  - Success: only active MCP tools that are executable in hosted mode are
-    advertised, and unavailable or approval-incompatible tools are excluded
-    rather than described optimistically.
-- [ ] 1.1.3. Merge remote MCP tool definitions into the worker reasoning
-  context. Requires 1.1.1 and 1.1.2.
-  - See [RFC 0001 §Summary](./rfcs/0001-expose-mcp-tool-definitions.md#summary)
-    and [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
-  - Success: hosted model requests include the real tool descriptions and JSON
-    Schemas, and worker-local tools plus orchestrator-owned tools appear as one
-    unified tool surface.
-- [ ] 1.1.4. Add hosted-mode tests for schema fidelity and execution routing.
-  Requires 1.1.3.
-  - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
-  - Tracks the worker-orchestrator parity portion of
-    [Issue #16](https://github.com/leynos/axinite/issues/16).
-  - Success: tests fail if required MCP fields disappear or are rewritten
-    incorrectly, and prove that advertised remote tools execute through the
-    orchestrator rather than a local stub.
-
-### 1.1. Hosted Model Context Protocol (MCP) tool catalog parity
-
-Objective: make hosted workers advertise the real orchestrator-owned MCP tools
-instead of only local proxy tools.
-
-Learning opportunity: determine whether one remote catalog contract can support
-both model-facing schema fidelity and later observability needs.
-
-Dependencies: unlocks 1.2 and reduces integration risk for 3.2. No separate
-architecture-prerequisite stream is required before this step; the
-worker-orchestrator contract hardening belongs inside 1.1.1.
-
-- [x] 1.1.1. Add worker-orchestrator transport for remote tool catalog fetch
-  and generic remote tool execution.
-  - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
-  - Tracks [Issue #12](https://github.com/leynos/axinite/issues/12).
-  - Define the catalog and generic execution transport through one shared
-    worker-orchestrator boundary module or equivalent typed contract, rather
-    than duplicating route fragments and payload shapes independently in the
-    worker and orchestrator.
-  - Keep worker startup injectable at the transport boundary so the hosted
-    catalog path does not deepen the current env-only client coupling.
-  - Success: the orchestrator exposes a hosted-visible catalog endpoint for
-    active executable tools, the worker can execute orchestrator-owned tools
-    through one generic proxy path, and the transport shape is owned in one
-    place rather than mirrored as stringly typed route assembly on both sides.
-- [ ] 1.1.2. Filter the hosted-visible catalog from the canonical
-  `ToolRegistry`. Requires 1.1.1.
-  - See [RFC 0001 §Goals](./rfcs/0001-expose-mcp-tool-definitions.md#goals)
-    and [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
-  - Success: only active MCP tools that are executable in hosted mode are
-    advertised, and unavailable or approval-incompatible tools are excluded
-    rather than described optimistically.
-- [ ] 1.1.3. Merge remote MCP tool definitions into the worker reasoning
-  context. Requires 1.1.1 and 1.1.2.
-  - See [RFC 0001 §Summary](./rfcs/0001-expose-mcp-tool-definitions.md#summary)
-    and [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
-  - Success: hosted model requests include the real tool descriptions and JSON
-    Schemas, and worker-local tools plus orchestrator-owned tools appear as one
-    unified tool surface.
-- [ ] 1.1.4. Add hosted-mode tests for schema fidelity and execution routing.
-  Requires 1.1.3.
-  - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
-  - Tracks the worker-orchestrator parity portion of
-    [Issue #16](https://github.com/leynos/axinite/issues/16).
-  - Success: tests fail if required MCP fields disappear or are rewritten
-    incorrectly, and prove that advertised remote tools execute through the
-    orchestrator rather than a local stub.
-
-### 1.1. Hosted Model Context Protocol (MCP) tool catalog parity
-
-Objective: make hosted workers advertise the real orchestrator-owned MCP tools
-instead of only local proxy tools.
-
-Learning opportunity: determine whether one remote catalog contract can support
-both model-facing schema fidelity and later observability needs.
-
-Dependencies: unlocks 1.2 and reduces integration risk for 3.2. No separate
-architecture-prerequisite stream is required before this step; the
-worker-orchestrator contract hardening belongs inside 1.1.1.
-
-- [x] 1.1.1. Add worker-orchestrator transport for remote tool catalog fetch
-  and generic remote tool execution.
-  - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
-  - Tracks [Issue #12](https://github.com/leynos/axinite/issues/12).
-  - Define the catalog and generic execution transport through one shared
-    worker-orchestrator boundary module or equivalent typed contract, rather
-    than duplicating route fragments and payload shapes independently in the
-    worker and orchestrator.
-  - Keep worker startup injectable at the transport boundary so the hosted
-    catalog path does not deepen the current env-only client coupling.
-  - Success: the orchestrator exposes a hosted-visible catalog endpoint for
-    active executable tools, the worker can execute orchestrator-owned tools
-    through one generic proxy path, and the transport shape is owned in one
-    place rather than mirrored as stringly typed route assembly on both sides.
-- [ ] 1.1.2. Filter the hosted-visible catalog from the canonical
-  `ToolRegistry`. Requires 1.1.1.
-  - See [RFC 0001 §Goals](./rfcs/0001-expose-mcp-tool-definitions.md#goals)
-    and [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
-  - Success: only active MCP tools that are executable in hosted mode are
-    advertised, and unavailable or approval-incompatible tools are excluded
-    rather than described optimistically.
-- [ ] 1.1.3. Merge remote MCP tool definitions into the worker reasoning
-  context. Requires 1.1.1 and 1.1.2.
-  - See [RFC 0001 §Summary](./rfcs/0001-expose-mcp-tool-definitions.md#summary)
-    and [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
-  - Success: hosted model requests include the real tool descriptions and JSON
-    Schemas, and worker-local tools plus orchestrator-owned tools appear as one
-    unified tool surface.
-- [ ] 1.1.4. Add hosted-mode tests for schema fidelity and execution routing.
-  Requires 1.1.3.
-  - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
-  - Tracks the worker-orchestrator parity portion of
-    [Issue #16](https://github.com/leynos/axinite/issues/16).
-  - Success: tests fail if required MCP fields disappear or are rewritten
-    incorrectly, and prove that advertised remote tools execute through the
-    orchestrator rather than a local stub.
-
-### 1.1. Hosted Model Context Protocol (MCP) tool catalog parity
-
-Objective: make hosted workers advertise the real orchestrator-owned MCP tools
-instead of only local proxy tools.
-
-Learning opportunity: determine whether one remote catalog contract can support
-both model-facing schema fidelity and later observability needs.
-
-Dependencies: unlocks 1.2 and reduces integration risk for 3.2. No separate
-architecture-prerequisite stream is required before this step; the
-worker-orchestrator contract hardening belongs inside 1.1.1.
-
-- [x] 1.1.1. Add worker-orchestrator transport for remote tool catalog fetch
-  and generic remote tool execution.
-  - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
-  - Tracks [Issue #12](https://github.com/leynos/axinite/issues/12).
-  - Define the catalog and generic execution transport through one shared
-    worker-orchestrator boundary module or equivalent typed contract, rather
-    than duplicating route fragments and payload shapes independently in the
-    worker and orchestrator.
-  - Keep worker startup injectable at the transport boundary so the hosted
-    catalog path does not deepen the current env-only client coupling.
-  - Success: the orchestrator exposes a hosted-visible catalog endpoint for
-    active executable tools, the worker can execute orchestrator-owned tools
-    through one generic proxy path, and the transport shape is owned in one
-    place rather than mirrored as stringly typed route assembly on both sides.
-- [ ] 1.1.2. Filter the hosted-visible catalog from the canonical
+- [ ] 1.1.2. Filter the hosted-visible catalogue from the canonical
   `ToolRegistry`. Requires 1.1.1.
   - See [RFC 0001 §Goals](./rfcs/0001-expose-mcp-tool-definitions.md#goals)
     and [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
@@ -251,7 +103,7 @@ for active WASM tools.
 Learning opportunity: verify how much provider-specific schema shaping can be
 done without losing guest-defined semantics.
 
-Dependencies: depends on 1.1 for the shared remote-catalog shape and informs
+Dependencies: depends on 1.1 for the shared remote-catalogue shape and informs
 2.3 by tightening the contract around active WASM tools.
 
 - [ ] 1.2.1. Audit and fix WASM registration paths so every active tool
@@ -261,12 +113,12 @@ Dependencies: depends on 1.1 for the shared remote-catalog shape and informs
   - Success: guest-exported metadata or explicit host overrides are applied
     during registration, and active WASM tools never rely on a failure path to
     teach the model their arguments.
-- [ ] 1.2.2. Extend the remote tool catalog to include orchestrator-owned WASM
+- [ ] 1.2.2. Extend the remote tool catalogue to include orchestrator-owned WASM
   tools. Requires 1.1.1 and 1.2.1.
   - See [RFC 0002 §Problem](./rfcs/0002-expose-wasm-tool-definitions.md#problem)
     and [RFC 0002 §Migration Plan](./rfcs/0002-expose-wasm-tool-definitions.md#migration-plan).
   - Success: hosted workers receive proactive WASM definitions through the same
-    catalog path used for MCP tools, and hosted mode stops omitting
+    catalogue path used for MCP tools, and hosted mode stops omitting
     orchestrator-owned WASM tools from the tool array.
 - [ ] 1.2.3. Demote schema-bearing retry hints to fallback diagnostics.
   Requires 1.2.1.
