@@ -99,6 +99,10 @@
     investigation and fix plan for invalid tool-schema handling.
   - [Compile-time reduction](plans/2026-03-12-compile-time-reduction.md)
     tracks work to reduce build times and related tooling overhead.
+- [ExecPlans directory](execplans/) collects approval-gated execution plans
+  written in the Codex ExecPlan format for roadmap-scoped work.
+  - [Worker-orchestrator transport for hosted remote tool catalogue fetch](execplans/1-1-1-worker-orchestrator-transport-for-remote-tool-catalog-fetch.md)
+    plans roadmap item `1.1.1` for the shared hosted remote-tool transport.
 
 ## RFCs
 
