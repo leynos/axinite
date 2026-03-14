@@ -19,6 +19,9 @@ mod events;
 mod prompt;
 mod restart;
 
+use cancel::{cancel_agent_job, cancel_sandbox_job};
+use restart::{restart_agent_job, restart_sandbox_job};
+
 pub fn routes() -> Router<Arc<GatewayState>> {
     Router::new()
         .route("/api/jobs/{id}/cancel", post(jobs_cancel_handler))
@@ -86,22 +89,6 @@ fn sandbox_job_accepts_prompts(status: SandboxJobStatus) -> bool {
     )
 }
 
-fn strip_retry_prefix(value: &str) -> &str {
-    value
-        .strip_prefix("Previous attempt failed: ")
-        .and_then(|rest| rest.split_once(". Retry: ").map(|(_, base)| base))
-        .unwrap_or(value)
-}
-
-fn retry_label(base: &str, failure_reason: &str) -> String {
-    let base = strip_retry_prefix(base);
-    if failure_reason.is_empty() {
-        base.to_string()
-    } else {
-        format!("Previous attempt failed: {failure_reason}. Retry: {base}")
-    }
-}
-
 async fn load_sandbox_job(
     store: &Arc<dyn Database>,
     job_id: Uuid,
@@ -144,24 +131,6 @@ async fn load_sandbox_job_mode(
     .transpose()
 }
 
-async fn mark_sandbox_restart_failed(
-    store: &Arc<dyn Database>,
-    job_id: Uuid,
-    message: String,
-) -> Result<(), (StatusCode, String)> {
-    store
-        .update_sandbox_job_status(
-            job_id,
-            "failed",
-            Some(false),
-            Some(&message),
-            None,
-            Some(chrono::Utc::now()),
-        )
-        .await
-        .map_err(|e| internal_error("Failed to update sandbox job status", e))
-}
-
 pub async fn jobs_cancel_handler(
     State(state): State<Arc<GatewayState>>,
     Path(id): Path<String>,
@@ -175,7 +144,7 @@ pub async fn jobs_cancel_handler(
             job.status,
             SandboxJobStatus::Running | SandboxJobStatus::Creating
         ) {
-            cancel::cancel_sandbox_job(state.as_ref(), store, job_id).await?;
+            cancel_sandbox_job(state.as_ref(), store, job_id).await?;
         }
         return Ok(Json(serde_json::json!({
             "status": "cancelled",
@@ -185,7 +154,7 @@ pub async fn jobs_cancel_handler(
 
     if let Some(job) = load_agent_job(store, job_id).await? {
         if job.state.is_active() {
-            cancel::cancel_agent_job(state.as_ref(), store, job_id).await?;
+            cancel_agent_job(state.as_ref(), store, job_id).await?;
         }
         return Ok(Json(serde_json::json!({
             "status": "cancelled",
@@ -206,11 +175,11 @@ pub async fn jobs_restart_handler(
         .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid job ID".to_string()))?;
 
     if let Some(old_job) = load_sandbox_job(store, old_job_id).await? {
-        return restart::restart_sandbox_job(state.as_ref(), store, old_job_id, old_job).await;
+        return restart_sandbox_job(state.as_ref(), store, old_job_id, old_job).await;
     }
 
     if let Some(old_job) = load_agent_job(store, old_job_id).await? {
-        return restart::restart_agent_job(state.as_ref(), store, old_job_id, old_job).await;
+        return restart_agent_job(state.as_ref(), store, old_job_id, old_job).await;
     }
 
     Err((StatusCode::NOT_FOUND, "Job not found".to_string()))
