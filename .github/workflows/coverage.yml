@@ -125,7 +125,8 @@ jobs:
 
       - name: Generate coverage
         run: >-
-          cargo llvm-cov ${{ matrix.flags }} --workspace --lcov
+          cargo llvm-cov ${{ matrix.flags }} --features test-helpers
+          --workspace --lcov
           --output-path lcov.info
 
       - name: Upload to Codecov

@@ -21,7 +21,6 @@
 pub mod credentials;
 #[cfg(test)]
 pub mod test_utils;
-mod wasm;
 
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -42,8 +41,10 @@ use crate::llm::{
     CompletionRequest, CompletionResponse, FinishReason, LlmProvider, ToolCompletionRequest,
     ToolCompletionResponse,
 };
+pub use crate::testing_wasm::{
+    github_tool_source_dir, github_wasm_artifact, metadata_test_runtime,
+};
 use crate::tools::ToolRegistry;
-pub use wasm::{github_tool_source_dir, github_wasm_artifact, metadata_test_runtime};
 
 /// Create a libSQL-backed test database in a temporary directory.
 ///

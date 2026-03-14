@@ -50,7 +50,7 @@ jobs:
       - name: Build WASM channels (for integration tests)
         run: ./scripts/build-wasm-extensions.sh --channels
       - name: Run Tests
-        run: cargo nextest run --workspace ${{ matrix.flags }}
+        run: cargo nextest run --workspace ${{ matrix.flags }} --features test-helpers
 
   telegram-tests:
     name: Telegram Channel Tests
@@ -100,7 +100,9 @@ jobs:
         with:
           key: windows-${{ matrix.name }}
       - name: Check compilation
-        run: cargo check --all --benches --tests --examples ${{ matrix.flags }}
+        run: >-
+          cargo check --all --benches --tests --examples
+          ${{ matrix.flags }} --features test-helpers
 
   wasm-wit-compat:
     name: WASM WIT Compatibility
@@ -131,7 +133,7 @@ jobs:
       - name: Build all WASM extensions against current WIT
         run: ./scripts/build-wasm-extensions.sh
       - name: Instantiation test (host linker compatibility)
-        run: cargo test --all-features wit_compat -- --nocapture
+        run: cargo test --all-features --features test-helpers wit_compat -- --nocapture
 
   docker-build:
     name: Docker Build

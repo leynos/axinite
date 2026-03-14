@@ -12,7 +12,7 @@ pub mod test_channel;
 pub mod test_rig;
 pub mod trace_llm;
 
-pub(crate) use ironclaw::testing::{
+pub(crate) use ironclaw::testing_wasm::{
     github_tool_source_dir, github_wasm_artifact, metadata_test_runtime,
 };
 

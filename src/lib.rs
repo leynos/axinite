@@ -77,6 +77,9 @@ pub mod util;
 pub mod worker;
 pub mod workspace;
 
+pub mod testing_wasm;
+
+#[cfg(any(test, feature = "test-helpers"))]
 pub mod testing;
 
 pub use config::Config;
