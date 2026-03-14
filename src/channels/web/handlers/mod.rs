@@ -6,6 +6,7 @@ pub mod chat;
 pub mod chat_auth;
 pub mod chat_history;
 pub mod chat_threads;
+pub(crate) mod common;
 pub mod extensions;
 pub mod job_control;
 pub mod job_files;

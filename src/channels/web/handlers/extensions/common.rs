@@ -2,7 +2,7 @@
 
 use crate::channels::web::types::ActionResponse;
 
-pub async fn maybe_extension_auth_url(
+pub(crate) async fn maybe_extension_auth_url(
     ext_mgr: &crate::extensions::ExtensionManager,
     name: &str,
 ) -> Option<String> {
@@ -14,7 +14,7 @@ pub async fn maybe_extension_auth_url(
     }
 }
 
-pub async fn activation_required_response(
+pub(crate) async fn activation_required_response(
     ext_mgr: &crate::extensions::ExtensionManager,
     name: &str,
     fallback_message: String,

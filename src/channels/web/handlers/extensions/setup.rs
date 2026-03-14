@@ -8,24 +8,11 @@ use axum::{
     http::StatusCode,
 };
 
+use crate::channels::web::handlers::common::{internal_error, logged_failure};
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::{
     ActionResponse, ExtensionSetupRequest, ExtensionSetupResponse, SseEvent,
 };
-
-fn internal_error(context: &'static str, error: impl std::fmt::Display) -> (StatusCode, String) {
-    tracing::error!(error = %error, "{context}");
-    (StatusCode::INTERNAL_SERVER_ERROR, context.to_string())
-}
-
-fn logged_failure(
-    message: String,
-    context: &'static str,
-    error: impl std::fmt::Display,
-) -> ActionResponse {
-    tracing::error!(error = %error, "{context}");
-    ActionResponse::fail(message)
-}
 
 pub async fn extensions_setup_handler(
     State(state): State<Arc<GatewayState>>,

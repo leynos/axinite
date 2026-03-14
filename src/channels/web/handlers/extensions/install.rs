@@ -8,20 +8,12 @@ use axum::{
     http::StatusCode,
 };
 
+use crate::channels::web::handlers::common::logged_failure;
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::{ActionResponse, InstallExtensionRequest};
 use crate::extensions::ExtensionKind;
 
 use super::common::{activation_required_response, maybe_extension_auth_url};
-
-fn logged_failure(
-    message: String,
-    context: &'static str,
-    error: impl std::fmt::Display,
-) -> ActionResponse {
-    tracing::error!(error = %error, "{context}");
-    ActionResponse::fail(message)
-}
 
 fn parse_extension_kind(kind: &str) -> Result<ExtensionKind, (StatusCode, String)> {
     match kind {
