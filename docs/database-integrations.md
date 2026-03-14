@@ -57,7 +57,7 @@ The central contract is the `Database` supertrait in `src/db/mod.rs`. It
 groups narrower traits for:
 
 - conversations and durable chat history
-- agent jobs, job actions, and LLM call accounting
+- agent jobs, job actions, and LLM (large language model) call accounting
 - sandbox job tracking
 - routines and routine runs
 - settings storage
@@ -68,7 +68,8 @@ This design keeps most of the host backend-agnostic, but two categories still
 retain concrete backend handles:
 
 - the encrypted secrets store
-- the WASM tool and channel storage layers that want their own connections
+- the WASM (WebAssembly) tool and channel storage layers that use dedicated
+  connections
 
 That is why `connect_with_handles()` returns both the trait object and a
 `DatabaseHandles` bundle containing either a PostgreSQL pool or a shared
