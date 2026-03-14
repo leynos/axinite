@@ -1,5 +1,6 @@
 //! Listing handlers for installed extensions and registered tools.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use axum::{Json, extract::State, http::StatusCode};
@@ -22,7 +23,35 @@ pub async fn extensions_list_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let pairing_store = crate::pairing::PairingStore::new();
+    let pairing_tasks = installed
+        .iter()
+        .filter(|ext| {
+            ext.kind == crate::extensions::ExtensionKind::WasmChannel
+                && ext.authenticated
+                && ext.active
+        })
+        .map(|ext| {
+            let name = ext.name.clone();
+            let handle = tokio::task::spawn_blocking({
+                let name = name.clone();
+                move || {
+                    crate::pairing::PairingStore::new()
+                        .read_allow_from(&name)
+                        .map(|list| !list.is_empty())
+                        .unwrap_or(false)
+                }
+            });
+            (name, handle)
+        })
+        .collect::<Vec<_>>();
+
+    let mut paired_names = HashSet::new();
+    for (name, handle) in pairing_tasks {
+        if handle.await.unwrap_or(false) {
+            paired_names.insert(name);
+        }
+    }
+
     let extensions = installed
         .into_iter()
         .map(|ext| {
@@ -32,13 +61,7 @@ pub async fn extensions_list_handler(
                 } else if !ext.authenticated {
                     "installed".to_string()
                 } else if ext.active {
-                    let has_paired = tokio::task::block_in_place(|| {
-                        pairing_store
-                            .read_allow_from(&ext.name)
-                            .map(|list| !list.is_empty())
-                            .unwrap_or(false)
-                    });
-                    if has_paired {
+                    if paired_names.contains(&ext.name) {
                         "active".to_string()
                     } else {
                         "pairing".to_string()
