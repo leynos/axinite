@@ -19,7 +19,7 @@ cutting link time roughly in proportion.
 
 - Test coverage must not decrease.
 - Test isolation must not regress — tests that currently run in parallel via
-  nextest must continue to do so (nextest parallelises at the test-function
+  nextest must continue to do so (nextest parallelizes at the test-function
   level, not the binary level, so merging binaries is safe).
 - The shared `tests/support/` module must remain importable by all harnesses
   that need it.
@@ -30,6 +30,25 @@ cutting link time roughly in proportion.
   their gates inside the merged modules.
 
 ## Current Test File Inventory (40 files)
+
+
+### End-to-end (E2E) Trace Tests (15 files, all use `mod support;`)
+
+- `e2e_advanced_traces.rs`
+- `e2e_attachments.rs`
+- `e2e_builtin_tool_coverage.rs`
+- `e2e_metrics_test.rs`
+- `e2e_recorded_trace.rs`
+- `e2e_safety_layer.rs`
+- `e2e_spot_checks.rs`
+- `e2e_status_events.rs`
+- `e2e_thread_scheduling.rs`
+- `e2e_tool_coverage.rs`
+- `e2e_trace_error_path.rs`
+- `e2e_trace_file_tools.rs`
+- `e2e_trace_memory.rs`
+- `e2e_worker_coverage.rs`
+- `e2e_workspace_coverage.rs`
 
 ### End-to-end (E2E) Trace Tests (15 files, all use `mod support;`)
 
@@ -80,6 +99,15 @@ cutting link time roughly in proportion.
 - `trace_format.rs`
 - `tool_schema_validation.rs`
 - `wit_compat.rs`
+
+
+### Other (5 files)
+
+- `html_to_markdown.rs` (required-features gated, must stay separate)
+- `trace_llm_tests.rs`
+- `support_unit_tests.rs`
+- `libsql_wit_defaults_integration.rs`
+- `module_init_integration.rs`
 
 ### Other (5 files)
 

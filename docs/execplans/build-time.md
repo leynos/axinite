@@ -197,8 +197,11 @@ test: build-github-tool-wasm
 **Impact:** Dramatically speeds up clean builds after branch switches or
 `cargo clean`. Deps that haven't changed are fetched from cache rather than
 recompiled.
-**Effort:** Install sccache, set `RUSTC_WRAPPER=sccache` in
-`.cargo/config.toml` or shell profile.
+**Effort:** Install sccache, configure the environment variable:
+
+| Variable | Meaning | Default |
+|----------|---------|---------|
+| `RUSTC_WRAPPER` | rustc wrapper (e.g., `sccache`). | Unset. |
 
 ### Tier 2 — Medium Effort (test restructuring, feature gating)
 
@@ -310,3 +313,9 @@ pull in reqwest defaults, or unify TLS backend selection.
   without switching databases.
 - Feature-gating heavy optional dependencies (wasmtime, bollard, pdf) is a
   standard Rust practice that this project hasn't fully adopted.
+
+# Build time investigation and recommendations
+
+**Branch:** `build-time`
+**Date:** 2026-03-15
+**Status:** Investigation complete; recommendations ready for review
