@@ -2263,7 +2263,8 @@ impl ExtensionManager {
             &merged_scopes,
             oauth.use_pkce,
             &oauth.extra_params,
-        );
+        )
+        .map_err(|e| e.to_string())?;
         let auth_url = oauth_result.url.clone();
         let code_verifier = oauth_result.code_verifier;
         let expected_state = oauth_result.state;

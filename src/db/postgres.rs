@@ -388,9 +388,10 @@ impl SandboxStore for PgBackend {
     async fn list_job_events(
         &self,
         job_id: Uuid,
+        before_id: Option<i64>,
         limit: Option<i64>,
     ) -> Result<Vec<JobEventRecord>, DatabaseError> {
-        self.store.list_job_events(job_id, limit).await
+        self.store.list_job_events(job_id, before_id, limit).await
     }
 }
 

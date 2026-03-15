@@ -1,5 +1,6 @@
+---
 name: E2E Tests
-on:
+"on":
   workflow_call:
   schedule:
     - cron: "0 6 * * 1"  # Weekly Monday 6 AM UTC
@@ -15,10 +16,17 @@ jobs:
     name: Build ironclaw (libsql)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install mold
+        uses: rui314/setup-mold@v1
 
       - uses: actions/cache@v4
         with:
@@ -48,9 +56,15 @@ jobs:
       matrix:
         include:
           - group: core
-            files: "tests/e2e/scenarios/test_connection.py tests/e2e/scenarios/test_chat.py tests/e2e/scenarios/test_sse_reconnect.py tests/e2e/scenarios/test_html_injection.py"
+            files: >-
+              tests/e2e/scenarios/test_connection.py
+              tests/e2e/scenarios/test_chat.py
+              tests/e2e/scenarios/test_sse_reconnect.py
+              tests/e2e/scenarios/test_html_injection.py
           - group: features
-            files: "tests/e2e/scenarios/test_skills.py tests/e2e/scenarios/test_tool_approval.py"
+            files: >-
+              tests/e2e/scenarios/test_skills.py
+              tests/e2e/scenarios/test_tool_approval.py
           - group: extensions
             files: "tests/e2e/scenarios/test_extensions.py"
     steps:

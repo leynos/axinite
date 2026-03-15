@@ -235,6 +235,7 @@ async fn async_main() -> anyhow::Result<()> {
     let orch = ironclaw::orchestrator::setup_orchestrator(
         &config,
         &components.llm,
+        &components.tools,
         components.db.as_ref(),
         components.secrets_store.as_ref(),
     )

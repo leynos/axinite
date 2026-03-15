@@ -1,15 +1,14 @@
-//! Extension management API handlers.
+//! Listing handlers for installed extensions and registered tools.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
-use axum::{
-    Json,
-    extract::{Path, State},
-    http::StatusCode,
-};
+use axum::{Json, extract::State, http::StatusCode};
 
 use crate::channels::web::server::GatewayState;
-use crate::channels::web::types::*;
+use crate::channels::web::types::{
+    ExtensionInfo, ExtensionListResponse, ToolInfo, ToolListResponse,
+};
 
 pub async fn extensions_list_handler(
     State(state): State<Arc<GatewayState>>,
@@ -24,7 +23,52 @@ pub async fn extensions_list_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let pairing_store = crate::pairing::PairingStore::new();
+    let pairing_tasks = installed
+        .iter()
+        .filter(|ext| {
+            ext.kind == crate::extensions::ExtensionKind::WasmChannel
+                && ext.authenticated
+                && ext.active
+        })
+        .map(|ext| {
+            let name = ext.name.clone();
+            let handle = tokio::task::spawn_blocking({
+                let name = name.clone();
+                move || {
+                    crate::pairing::PairingStore::new()
+                        .read_allow_from(&name)
+                        .map(|list| !list.is_empty())
+                        .unwrap_or_else(|error| {
+                            tracing::error!(
+                                extension_name = %name,
+                                error = %error,
+                                "Failed to read pairing allowlist"
+                            );
+                            false
+                        })
+                }
+            });
+            (name, handle)
+        })
+        .collect::<Vec<_>>();
+
+    let mut paired_names = HashSet::new();
+    for (name, handle) in pairing_tasks {
+        match handle.await {
+            Ok(true) => {
+                paired_names.insert(name);
+            }
+            Ok(false) => {}
+            Err(error) => {
+                tracing::error!(
+                    extension_name = %name,
+                    error = %error,
+                    "Failed to join pairing lookup task"
+                );
+            }
+        }
+    }
+
     let extensions = installed
         .into_iter()
         .map(|ext| {
@@ -34,25 +78,13 @@ pub async fn extensions_list_handler(
                 } else if !ext.authenticated {
                     "installed".to_string()
                 } else if ext.active {
-                    let has_paired = pairing_store
-                        .read_allow_from(&ext.name)
-                        .map(|list| !list.is_empty())
-                        .unwrap_or(false);
-                    if has_paired {
+                    if paired_names.contains(&ext.name) {
                         "active".to_string()
                     } else {
                         "pairing".to_string()
                     }
                 } else {
                     "configured".to_string()
-                })
-            } else if ext.kind == crate::extensions::ExtensionKind::ChannelRelay {
-                Some(if ext.active {
-                    "active".to_string()
-                } else if ext.authenticated {
-                    "configured".to_string()
-                } else {
-                    "installed".to_string()
                 })
             } else {
                 None
@@ -96,45 +128,4 @@ pub async fn extensions_tools_handler(
         .collect();
 
     Ok(Json(ToolListResponse { tools }))
-}
-
-pub async fn extensions_install_handler(
-    State(state): State<Arc<GatewayState>>,
-    Json(req): Json<InstallExtensionRequest>,
-) -> Result<Json<ActionResponse>, (StatusCode, String)> {
-    let ext_mgr = state.extension_manager.as_ref().ok_or((
-        StatusCode::NOT_IMPLEMENTED,
-        "Extension manager not available (secrets store required)".to_string(),
-    ))?;
-
-    let kind_hint = req.kind.as_deref().and_then(|k| match k {
-        "mcp_server" => Some(crate::extensions::ExtensionKind::McpServer),
-        "wasm_tool" => Some(crate::extensions::ExtensionKind::WasmTool),
-        "wasm_channel" => Some(crate::extensions::ExtensionKind::WasmChannel),
-        "channel_relay" => Some(crate::extensions::ExtensionKind::ChannelRelay),
-        _ => None,
-    });
-
-    match ext_mgr
-        .install(&req.name, req.url.as_deref(), kind_hint)
-        .await
-    {
-        Ok(result) => Ok(Json(ActionResponse::ok(result.message))),
-        Err(e) => Ok(Json(ActionResponse::fail(e.to_string()))),
-    }
-}
-
-pub async fn extensions_remove_handler(
-    State(state): State<Arc<GatewayState>>,
-    Path(name): Path<String>,
-) -> Result<Json<ActionResponse>, (StatusCode, String)> {
-    let ext_mgr = state.extension_manager.as_ref().ok_or((
-        StatusCode::NOT_IMPLEMENTED,
-        "Extension manager not available (secrets store required)".to_string(),
-    ))?;
-
-    match ext_mgr.remove(&name).await {
-        Ok(message) => Ok(Json(ActionResponse::ok(message))),
-        Err(e) => Ok(Json(ActionResponse::fail(e.to_string()))),
-    }
 }

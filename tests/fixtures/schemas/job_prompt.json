@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "description": "Job ID"
+    },
+    "content": {
+      "type": "string",
+      "description": "Prompt text"
+    },
+    "done": {
+      "type": "boolean",
+      "description": "Signal finish"
+    }
+  },
+  "required": [
+    "job_id",
+    "content"
+  ]
+}

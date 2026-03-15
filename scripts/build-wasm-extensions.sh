@@ -17,6 +17,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target/wasm-extensions}"
+echo "Using shared CARGO_TARGET_DIR=$CARGO_TARGET_DIR"
+
 BUILD_TOOLS=true
 BUILD_CHANNELS=true
 FAILED=()

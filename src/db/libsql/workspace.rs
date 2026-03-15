@@ -124,7 +124,7 @@ impl WorkspaceStore for LibSqlBackend {
             r#"
                 INSERT INTO memory_documents (id, user_id, agent_id, path, content, metadata)
                 VALUES (?1, ?2, ?3, ?4, '', '{}')
-                ON CONFLICT (user_id, agent_id, path) DO NOTHING
+                ON CONFLICT DO NOTHING
                 "#,
             params![id.to_string(), user_id, agent_id_str.as_deref(), path],
         )

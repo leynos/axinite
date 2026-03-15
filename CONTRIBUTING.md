@@ -27,11 +27,13 @@ cargo test --features integration                            # + PostgreSQL test
 - Prefer `crate::` for cross-module imports
 - Comments for non-obvious logic only
 
-See `CLAUDE.md` for full style guidelines.
+See `AGENTS.md` for the canonical style and contributor guidelines. The root
+`CLAUDE.md` file remains only as a compatibility redirect for older workflows.
 
 ## Feature Parity Requirement
 
-When your change affects a tracked capability, update `FEATURE_PARITY.md` in the same branch.
+Changes that affect a tracked capability must update `FEATURE_PARITY.md` in the
+same branch.
 
 ### Required before opening a PR
 
@@ -43,18 +45,23 @@ When your change affects a tracked capability, update `FEATURE_PARITY.md` in the
 
 All PRs follow a risk-based review process:
 
+<!-- markdownlint-disable MD013 MD060 -->
 | Track | Scope | Requirements |
-|-------|-------|-------------|
+| ----- | ----- | ------------ |
 | **A** | Docs, tests, chore, dependency bumps | 1 approval + CI green |
 | **B** | Features, refactors, new tools/channels | 1 approval + CI green + test evidence |
 | **C** | Security (`src/safety/`, `src/secrets/`), runtime (`src/agent/`, `src/worker/`), database schema, CI workflows | 2 approvals + rollback plan documented |
+<!-- markdownlint-enable MD013 MD060 -->
 
-Select the appropriate track in the PR template based on what your changes touch.
+Select the appropriate track in the PR template based on the files and behaviour
+the change touches.
 
 ## Database Changes
 
-IronClaw uses dual-backend persistence (PostgreSQL + libSQL). All new persistence features must support both backends. See `src/db/CLAUDE.md`.
+IronClaw uses dual-backend persistence (PostgreSQL + libSQL). All new
+persistence features must support both backends. See `src/db/CLAUDE.md`.
 
 ## Adding Dependencies
 
-Run `cargo deny check` before adding new dependencies to verify license compatibility and check for known advisories.
+Run `cargo deny check` before adding new dependencies to verify licence
+compatibility and check for known advisories.

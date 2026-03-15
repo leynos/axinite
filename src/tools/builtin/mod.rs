@@ -1,6 +1,7 @@
 //! Built-in tools that come with the agent.
 
 mod echo;
+pub(crate) mod extension_tool_metadata;
 pub mod extension_tools;
 mod file;
 mod http;
@@ -15,6 +16,7 @@ pub mod secrets_tools;
 pub(crate) mod shell;
 pub mod skill_tools;
 mod time;
+pub(crate) mod worker_extension_proxy;
 
 pub use echo::EchoTool;
 pub use extension_tools::{

@@ -1,5 +1,6 @@
+---
 name: Run Tests
-on:
+"on":
   workflow_call:
   pull_request:
     branches:
@@ -12,6 +13,10 @@ jobs:
   tests:
     name: Tests (${{ matrix.name }})
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
     strategy:
       fail-fast: false
       matrix:
@@ -29,15 +34,23 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
+      - name: Install mold
+        uses: rui314/setup-mold@v1
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.name }}
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@cargo-nextest
       - name: Install cargo-component
-        run: cargo install cargo-component --locked || true
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-component
+      - name: Build GitHub WASM tool (for metadata/schema tests)
+        run: make build-github-tool-wasm
       - name: Build WASM channels (for integration tests)
         run: ./scripts/build-wasm-extensions.sh --channels
       - name: Run Tests
-        run: cargo test ${{ matrix.flags }} -- --nocapture
+        run: cargo nextest run --workspace ${{ matrix.flags }} --features test-helpers
 
   telegram-tests:
     name: Telegram Channel Tests
@@ -45,14 +58,22 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+      - name: Install mold
+        uses: rui314/setup-mold@v1
       - uses: Swatinem/rust-cache@v2
       - name: Run Telegram Channel Tests
-        run: cargo test --manifest-path channels-src/telegram/Cargo.toml -- --nocapture
+        run: >-
+          cargo test --manifest-path channels-src/telegram/Cargo.toml --
+          --nocapture
 
   windows-build:
     name: Windows Build (${{ matrix.name }})
@@ -79,7 +100,9 @@ jobs:
         with:
           key: windows-${{ matrix.name }}
       - name: Check compilation
-        run: cargo check --all --benches --tests --examples ${{ matrix.flags }}
+        run: >-
+          cargo check --all --benches --tests --examples
+          ${{ matrix.flags }} --features test-helpers
 
   wasm-wit-compat:
     name: WASM WIT Compatibility
@@ -87,6 +110,10 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -94,15 +121,19 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
+      - name: Install mold
+        uses: rui314/setup-mold@v1
       - uses: Swatinem/rust-cache@v2
         with:
           key: wasm-extensions
       - name: Install cargo-component
-        run: cargo install cargo-component --locked || true
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-component
       - name: Build all WASM extensions against current WIT
         run: ./scripts/build-wasm-extensions.sh
       - name: Instantiation test (host linker compatibility)
-        run: cargo test --all-features wit_compat -- --nocapture
+        run: cargo test --all-features --features test-helpers wit_compat -- --nocapture
 
   docker-build:
     name: Docker Build
@@ -135,7 +166,13 @@ jobs:
     name: Run Tests
     runs-on: ubuntu-latest
     if: always()
-    needs: [tests, telegram-tests, wasm-wit-compat, docker-build, windows-build, version-check]
+    needs:
+      - tests
+      - telegram-tests
+      - wasm-wit-compat
+      - docker-build
+      - windows-build
+      - version-check
     steps:
       - run: |
           # Unit tests must always pass
@@ -143,8 +180,11 @@ jobs:
             echo "Unit tests failed"
             exit 1
           fi
-          # Gated jobs: must pass on promotion PRs / push, skipped on developer PRs
-          for job in telegram-tests wasm-wit-compat docker-build windows-build version-check; do
+          # Gated jobs must pass on promotion PRs and push events.
+          # On developer PRs they may be skipped.
+          for job in \
+            telegram-tests wasm-wit-compat docker-build \
+            windows-build version-check; do
             case "$job" in
               telegram-tests) result="${{ needs.telegram-tests.result }}" ;;
               wasm-wit-compat) result="${{ needs.wasm-wit-compat.result }}" ;;

@@ -11,7 +11,7 @@
 //! so `cargo test` still passes without building extensions first.
 //! CI runs the build script before these tests.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
 
@@ -53,54 +53,6 @@ struct DiscoveredExtension {
     source_dir: PathBuf,
     crate_name: String,
     kind: ExtensionKind,
-}
-
-/// Search paths for WASM artifacts produced by cargo-component.
-fn find_wasm_artifact(source_dir: &Path, crate_name: &str) -> Option<PathBuf> {
-    let artifact_name = crate_name.replace('-', "_");
-
-    // Crate-local target dir (CI, default cargo)
-    for target_triple in &["wasm32-wasip2", "wasm32-wasip1", "wasm32-wasi"] {
-        let candidate = source_dir
-            .join("target")
-            .join(target_triple)
-            .join("release")
-            .join(format!("{artifact_name}.wasm"));
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    // Shared target dir (CARGO_TARGET_DIR env)
-    if let Ok(shared) = std::env::var("CARGO_TARGET_DIR") {
-        for target_triple in &["wasm32-wasip2", "wasm32-wasip1", "wasm32-wasi"] {
-            let candidate = Path::new(&shared)
-                .join(target_triple)
-                .join("release")
-                .join(format!("{artifact_name}.wasm"));
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-    }
-
-    // Common shared target location (~/.cargo/shared-target)
-    if let Some(home) = dirs::home_dir() {
-        let shared = home.join(".cargo/shared-target");
-        if shared.exists() {
-            for target_triple in &["wasm32-wasip2", "wasm32-wasip1", "wasm32-wasi"] {
-                let candidate = shared
-                    .join(target_triple)
-                    .join("release")
-                    .join(format!("{artifact_name}.wasm"));
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-        }
-    }
-
-    None
 }
 
 /// Parse registry manifests to discover all WASM extensions.
@@ -352,7 +304,11 @@ fn wit_compat_tool_components_compile_and_instantiate() {
     let mut failures: Vec<String> = Vec::new();
 
     for ext in &tool_extensions {
-        let wasm_path = match find_wasm_artifact(&ext.source_dir, &ext.crate_name) {
+        let wasm_path = match ironclaw::registry::artifacts::find_wasm_artifact(
+            &ext.source_dir,
+            &ext.crate_name,
+            "release",
+        ) {
             Some(p) => p,
             None => {
                 eprintln!(
@@ -413,7 +369,11 @@ fn wit_compat_channel_components_compile_and_instantiate() {
     let mut failures: Vec<String> = Vec::new();
 
     for ext in &channel_extensions {
-        let wasm_path = match find_wasm_artifact(&ext.source_dir, &ext.crate_name) {
+        let wasm_path = match ironclaw::registry::artifacts::find_wasm_artifact(
+            &ext.source_dir,
+            &ext.crate_name,
+            "release",
+        ) {
             Some(p) => p,
             None => {
                 eprintln!(

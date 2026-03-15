@@ -1,0 +1,189 @@
+//! Install, activate, and remove handlers for extensions.
+
+use std::sync::Arc;
+
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
+
+use crate::channels::web::handlers::common::logged_failure;
+use crate::channels::web::server::GatewayState;
+use crate::channels::web::types::{ActionResponse, InstallExtensionRequest};
+use crate::extensions::ExtensionKind;
+
+use super::common::{activation_required_response, maybe_extension_auth_url};
+
+fn parse_extension_kind(kind: &str) -> Result<ExtensionKind, (StatusCode, String)> {
+    match kind {
+        "mcp_server" => Ok(ExtensionKind::McpServer),
+        "wasm_tool" => Ok(ExtensionKind::WasmTool),
+        "wasm_channel" => Ok(ExtensionKind::WasmChannel),
+        _ => Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "invalid extension kind '{kind}': expected mcp_server, wasm_tool, or wasm_channel"
+            ),
+        )),
+    }
+}
+
+pub async fn extensions_install_handler(
+    State(state): State<Arc<GatewayState>>,
+    Json(req): Json<InstallExtensionRequest>,
+) -> Result<Json<ActionResponse>, (StatusCode, String)> {
+    let Some(ext_mgr) = state.extension_manager.as_ref() else {
+        if let Some(entry) = state.registry_entries.iter().find(|e| e.name == req.name) {
+            let msg = match &entry.source {
+                crate::extensions::ExtensionSource::WasmBuildable { .. } => {
+                    format!(
+                        "'{}' requires building from source. \
+                         Run `ironclaw registry install {}` from the CLI.",
+                        req.name, req.name
+                    )
+                }
+                _ => format!(
+                    "Extension manager not available (secrets store required). \
+                     Configure DATABASE_URL or a secrets backend to enable installation of '{}'.",
+                    req.name
+                ),
+            };
+            return Ok(Json(ActionResponse::fail(msg)));
+        }
+        return Ok(Json(ActionResponse::fail(
+            "Extension manager not available (secrets store required)".to_string(),
+        )));
+    };
+
+    let kind_hint = match req.kind.as_deref().map(parse_extension_kind).transpose() {
+        Ok(kind_hint) => kind_hint,
+        Err((_, message)) => return Ok(Json(ActionResponse::fail(message))),
+    };
+
+    match ext_mgr
+        .install(&req.name, req.url.as_deref(), kind_hint)
+        .await
+    {
+        Ok(result) => {
+            let mut resp = ActionResponse::ok(result.message);
+
+            if result.kind == crate::extensions::ExtensionKind::WasmTool {
+                match ext_mgr.activate(&req.name).await {
+                    Ok(_) => {}
+                    Err(crate::extensions::ExtensionError::AuthRequired) => {
+                        return Ok(Json(
+                            activation_required_response(
+                                ext_mgr,
+                                &req.name,
+                                format!(
+                                    "Installed '{}' but activation requires authentication.",
+                                    req.name
+                                ),
+                                format!("Installed '{}' but authentication setup failed", req.name),
+                            )
+                            .await,
+                        ));
+                    }
+                    Err(e) => {
+                        return Ok(Json(logged_failure(
+                            format!("Installed '{}' but activation failed", req.name),
+                            "Failed to activate extension after installation",
+                            e,
+                        )));
+                    }
+                }
+
+                resp.auth_url = maybe_extension_auth_url(ext_mgr, &req.name).await;
+            }
+
+            Ok(Json(resp))
+        }
+        Err(e) => Ok(Json(logged_failure(
+            format!("Failed to install '{}'", req.name),
+            "Failed to install extension",
+            e,
+        ))),
+    }
+}
+
+pub async fn extensions_activate_handler(
+    State(state): State<Arc<GatewayState>>,
+    Path(name): Path<String>,
+) -> Result<Json<ActionResponse>, (StatusCode, String)> {
+    let ext_mgr = state.extension_manager.as_ref().ok_or((
+        StatusCode::NOT_IMPLEMENTED,
+        "Extension manager not available (secrets store required)".to_string(),
+    ))?;
+
+    match ext_mgr.activate(&name).await {
+        Ok(result) => {
+            let mut resp = ActionResponse::ok(result.message);
+            resp.auth_url = maybe_extension_auth_url(ext_mgr, &name).await;
+            Ok(Json(resp))
+        }
+        Err(activate_err) => {
+            if !matches!(
+                &activate_err,
+                crate::extensions::ExtensionError::AuthRequired
+            ) {
+                return Ok(Json(logged_failure(
+                    format!("Failed to activate '{}'", name),
+                    "Failed to activate extension",
+                    activate_err,
+                )));
+            }
+
+            if let Ok(auth_result) = ext_mgr.auth(&name, None).await
+                && auth_result.is_authenticated()
+            {
+                return match ext_mgr.activate(&name).await {
+                    Ok(result) => Ok(Json(ActionResponse::ok(result.message))),
+                    Err(crate::extensions::ExtensionError::AuthRequired) => Ok(Json(
+                        activation_required_response(
+                            ext_mgr,
+                            &name,
+                            format!("'{}' requires authentication.", name),
+                            "Authentication failed".to_string(),
+                        )
+                        .await,
+                    )),
+                    Err(e) => Ok(Json(logged_failure(
+                        format!("Failed to activate '{}'", name),
+                        "Failed to activate extension after authentication",
+                        e,
+                    ))),
+                };
+            }
+
+            Ok(Json(
+                activation_required_response(
+                    ext_mgr,
+                    &name,
+                    format!("'{}' requires authentication.", name),
+                    "Authentication failed".to_string(),
+                )
+                .await,
+            ))
+        }
+    }
+}
+
+pub async fn extensions_remove_handler(
+    State(state): State<Arc<GatewayState>>,
+    Path(name): Path<String>,
+) -> Result<Json<ActionResponse>, (StatusCode, String)> {
+    let ext_mgr = state.extension_manager.as_ref().ok_or((
+        StatusCode::NOT_IMPLEMENTED,
+        "Extension manager not available (secrets store required)".to_string(),
+    ))?;
+
+    match ext_mgr.remove(&name).await {
+        Ok(message) => Ok(Json(ActionResponse::ok(message))),
+        Err(e) => Ok(Json(logged_failure(
+            format!("Failed to remove '{}'", name),
+            "Failed to remove extension",
+            e,
+        ))),
+    }
+}

@@ -18,6 +18,8 @@ wit_bindgen::generate!({
     path: "../../wit/tool.wit",
 });
 
+mod schema;
+
 use serde::Deserialize;
 
 const MAX_TEXT_LENGTH: usize = 65536;
@@ -167,7 +169,7 @@ impl exports::near::agent::tool::Guest for GitHubTool {
     }
 
     fn schema() -> String {
-        SCHEMA.to_string()
+        schema::SCHEMA.to_string()
     }
 
     fn description() -> String {
@@ -681,134 +683,12 @@ fn get_workflow_runs(
     github_request("GET", &path, None)
 }
 
-const SCHEMA: &str = r#"{
-    "type": "object",
-    "required": ["action"],
-    "oneOf": [
-        {
-            "properties": {
-                "action": { "const": "get_repo" },
-                "owner": { "type": "string", "description": "Repository owner (user or org)" },
-                "repo": { "type": "string", "description": "Repository name" }
-            },
-            "required": ["action", "owner", "repo"]
-        },
-        {
-            "properties": {
-                "action": { "const": "list_issues" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "state": { "type": "string", "enum": ["open", "closed", "all"], "default": "open" },
-                "limit": { "type": "integer", "default": 30 }
-            },
-            "required": ["action", "owner", "repo"]
-        },
-        {
-            "properties": {
-                "action": { "const": "create_issue" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "title": { "type": "string" },
-                "body": { "type": "string" },
-                "labels": { "type": "array", "items": { "type": "string" } }
-            },
-            "required": ["action", "owner", "repo", "title"]
-        },
-        {
-            "properties": {
-                "action": { "const": "get_issue" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "issue_number": { "type": "integer" }
-            },
-            "required": ["action", "owner", "repo", "issue_number"]
-        },
-        {
-            "properties": {
-                "action": { "const": "list_pull_requests" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "state": { "type": "string", "enum": ["open", "closed", "all"], "default": "open" },
-                "limit": { "type": "integer", "default": 30 }
-            },
-            "required": ["action", "owner", "repo"]
-        },
-        {
-            "properties": {
-                "action": { "const": "get_pull_request" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "pr_number": { "type": "integer" }
-            },
-            "required": ["action", "owner", "repo", "pr_number"]
-        },
-        {
-            "properties": {
-                "action": { "const": "get_pull_request_files" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "pr_number": { "type": "integer" }
-            },
-            "required": ["action", "owner", "repo", "pr_number"]
-        },
-        {
-            "properties": {
-                "action": { "const": "create_pr_review" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "pr_number": { "type": "integer" },
-                "body": { "type": "string", "description": "Review comment" },
-                "event": { "type": "string", "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"] }
-            },
-            "required": ["action", "owner", "repo", "pr_number", "body", "event"]
-        },
-        {
-            "properties": {
-                "action": { "const": "list_repos" },
-                "username": { "type": "string" },
-                "limit": { "type": "integer", "default": 30 }
-            },
-            "required": ["action", "username"]
-        },
-        {
-            "properties": {
-                "action": { "const": "get_file_content" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "path": { "type": "string", "description": "File path in repo" },
-                "ref": { "type": "string", "description": "Branch/commit (default: default branch)" }
-            },
-            "required": ["action", "owner", "repo", "path"]
-        },
-        {
-            "properties": {
-                "action": { "const": "trigger_workflow" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "workflow_id": { "type": "string", "description": "Workflow filename or ID" },
-                "ref": { "type": "string", "description": "Branch to run on" },
-                "inputs": { "type": "object" }
-            },
-            "required": ["action", "owner", "repo", "workflow_id", "ref"]
-        },
-        {
-            "properties": {
-                "action": { "const": "get_workflow_runs" },
-                "owner": { "type": "string" },
-                "repo": { "type": "string" },
-                "workflow_id": { "type": "string" },
-                "limit": { "type": "integer", "default": 30 }
-            },
-            "required": ["action", "owner", "repo"]
-        }
-    ]
-}"#;
-
 export!(GitHubTool);
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn test_url_encode_path() {
@@ -841,5 +721,45 @@ mod tests {
 
         let long = "a".repeat(MAX_TEXT_LENGTH + 1);
         assert!(validate_input_length(&long, "test").is_err());
+    }
+
+    #[test]
+    fn test_exported_schema_is_openai_root_compatible() {
+        let schema: Value = serde_json::from_str(schema::SCHEMA).expect("parse github schema");
+
+        assert_eq!(schema["type"], "object");
+        assert!(
+            schema.get("oneOf").is_none(),
+            "top-level oneOf is rejected by OpenAI tool schemas: {schema}"
+        );
+        assert!(
+            schema.get("anyOf").is_none(),
+            "top-level anyOf is rejected by OpenAI tool schemas: {schema}"
+        );
+        assert!(
+            schema.get("allOf").is_none(),
+            "top-level allOf is rejected by OpenAI tool schemas: {schema}"
+        );
+        assert!(
+            schema.get("not").is_none(),
+            "top-level not is rejected by OpenAI tool schemas: {schema}"
+        );
+        assert!(
+            schema["properties"]["action"]["enum"]
+                .as_array()
+                .expect("action enum")
+                .iter()
+                .any(|value| value == "get_repo"),
+            "expected action enum to include get_repo: {schema}"
+        );
+        assert!(
+            schema["properties"]["owner"].is_object(),
+            "expected top-level owner property for repository actions: {schema}"
+        );
+        assert_eq!(
+            schema["properties"]["inputs"]["additionalProperties"],
+            serde_json::json!({ "type": "string" }),
+            "workflow inputs should remain a typed string map: {schema}"
+        );
     }
 }

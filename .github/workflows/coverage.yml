@@ -1,3 +1,4 @@
+---
 # Code Coverage Workflow
 #
 # This workflow runs test coverage analysis and uploads reports to Codecov.
@@ -27,7 +28,7 @@
 # - E2E tests require Python 3.12 and Playwright
 
 name: Code Coverage
-on:
+"on":
   push:
     branches: [main]
 
@@ -39,6 +40,10 @@ jobs:
   coverage:
     name: Coverage (${{ matrix.name }})
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
     strategy:
       fail-fast: false
       matrix:
@@ -74,6 +79,9 @@ jobs:
           components: llvm-tools-preview
           targets: wasm32-wasip2
 
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+
       - uses: Swatinem/rust-cache@v2
         with:
           key: coverage-${{ matrix.name }}
@@ -82,10 +90,12 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Install cargo-component
-        run: |
-          if ! command -v cargo-component >/dev/null 2>&1; then
-            cargo install cargo-component --locked
-          fi
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-component
+
+      - name: Build GitHub WASM tool (for metadata/schema tests)
+        run: make build-github-tool-wasm
 
       - name: Build WASM channels (for integration tests)
         run: ./scripts/build-wasm-extensions.sh --channels
@@ -94,7 +104,9 @@ jobs:
         if: matrix.has_postgres
         run: |
           set -euo pipefail
-          readarray -t migration_files < <(printf '%s\n' migrations/V*.sql | sort -V)
+          readarray -t migration_files < <(
+            printf '%s\n' migrations/V*.sql | sort -V
+          )
           for f in "${migration_files[@]}"; do
             echo "Applying $f..."
             psql -v ON_ERROR_STOP=1 -f "$f"
@@ -107,10 +119,15 @@ jobs:
 
       - name: Set DATABASE_URL for postgres configs
         if: matrix.has_postgres
-        run: echo "DATABASE_URL=postgres://postgres:postgres@localhost/ironclaw_test" >> "$GITHUB_ENV"
+        run: |
+          database_url="postgres://postgres:postgres@localhost/ironclaw_test"
+          echo "DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
 
       - name: Generate coverage
-        run: cargo llvm-cov ${{ matrix.flags }} --workspace --lcov --output-path lcov.info
+        run: >-
+          cargo llvm-cov ${{ matrix.flags }} --features test-helpers
+          --workspace --lcov
+          --output-path lcov.info
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
@@ -125,6 +142,10 @@ jobs:
     name: E2E Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v6
 
@@ -132,6 +153,9 @@ jobs:
         with:
           components: llvm-tools-preview
           targets: wasm32-wasip2
+
+      - name: Install mold
+        uses: rui314/setup-mold@v1
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -141,10 +165,9 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Install cargo-component
-        run: |
-          if ! command -v cargo-component >/dev/null 2>&1; then
-            cargo install cargo-component --locked
-          fi
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-component
 
       - name: Build WASM channels
         run: ./scripts/build-wasm-extensions.sh --channels
@@ -154,7 +177,8 @@ jobs:
           # show-env outputs shell-quoted values (KEY='value') but GITHUB_ENV
           # expects unquoted KEY=value. Strip only the wrapping single quotes
           # from KEY='value' lines without altering any internal characters.
-          cargo llvm-cov show-env | sed -E "s/^([A-Za-z_][A-Za-z0-9_]*)='(.*)'$/\1=\2/" >> "$GITHUB_ENV"
+          cargo llvm-cov show-env | sed -E \
+            "s/^([A-Za-z_][A-Za-z0-9_]*)='(.*)'$/\1=\2/" >> "$GITHUB_ENV"
 
       - name: Clean coverage workspace
         run: cargo llvm-cov clean --workspace
@@ -188,7 +212,8 @@ jobs:
           echo "Found ${profraw_count} .profraw files under target/"
           find target/ -name '*.profraw' 2>/dev/null || true
           if [ "$profraw_count" -eq 0 ]; then
-            echo "::warning::No .profraw files found — coverage report will fail"
+            echo \
+              "::warning::No .profraw files found — coverage report will fail"
           fi
 
       - name: Generate coverage report
@@ -220,7 +245,8 @@ jobs:
     needs: [coverage, e2e-coverage]
     steps:
       - run: |
-          if [[ "${{ needs.coverage.result }}" != "success" || "${{ needs.e2e-coverage.result }}" != "success" ]]; then
+          if [[ "${{ needs.coverage.result }}" != "success" || \
+            "${{ needs.e2e-coverage.result }}" != "success" ]]; then
             echo "One or more coverage jobs failed"
             exit 1
           fi
