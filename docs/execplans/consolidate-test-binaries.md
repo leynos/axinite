@@ -1,4 +1,4 @@
-# Consolidate Integration Test Binaries
+# Consolidate integration test binaries
 
 **Branch:** (to be created from `build-time`)
 **Date:** 2026-03-15
@@ -31,24 +31,6 @@ cutting link time roughly in proportion.
 
 ## Current Test File Inventory (40 files)
 
-
-### End-to-end (E2E) Trace Tests (15 files, all use `mod support;`)
-
-- `e2e_advanced_traces.rs`
-- `e2e_attachments.rs`
-- `e2e_builtin_tool_coverage.rs`
-- `e2e_metrics_test.rs`
-- `e2e_recorded_trace.rs`
-- `e2e_safety_layer.rs`
-- `e2e_spot_checks.rs`
-- `e2e_status_events.rs`
-- `e2e_thread_scheduling.rs`
-- `e2e_tool_coverage.rs`
-- `e2e_trace_error_path.rs`
-- `e2e_trace_file_tools.rs`
-- `e2e_trace_memory.rs`
-- `e2e_worker_coverage.rs`
-- `e2e_workspace_coverage.rs`
 
 ### End-to-end (E2E) Trace Tests (15 files, all use `mod support;`)
 
