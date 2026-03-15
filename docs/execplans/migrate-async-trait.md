@@ -11,7 +11,7 @@ across 74 files)
 The `async-trait` proc macro is used 158 times across 74 source files.
 Each use generates boxing and dynamic dispatch boilerplate at compile time.
 Since the project targets Rust 1.92 (which supports native `async fn` in
-traits, stabilised in Rust 1.75), most uses can be migrated to native
+traits, stabilized in Rust 1.75), most uses can be migrated to native
 syntax, eliminating the proc-macro expansion overhead and reducing compile
 times.
 

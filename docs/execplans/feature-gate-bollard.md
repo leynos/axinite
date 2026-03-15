@@ -49,14 +49,19 @@ Table: Scope of files touched by the Bollard feature
 ### Phase 1: Cargo.toml changes
 
 - [ ] Make bollard optional:
+
   ```toml
   bollard = { version = "0.18", optional = true }
   ```
+
 - [ ] Add `docker` feature:
+
   ```toml
   docker = ["dep:bollard"]
   ```
+
 - [ ] Add `docker` to `default` features:
+
   ```toml
   default = ["postgres", "libsql", "html-to-markdown", "docker"]
   ```
@@ -69,11 +74,13 @@ Table: Scope of files touched by the Bollard feature
   (the module likely has non-Docker sandbox paths too — audit before
   blanket-gating)
 - [ ] In `src/sandbox/error.rs`: gate the `Docker` error variant:
+
   ```rust
   #[cfg(feature = "docker")]
   #[error("Docker API error: {0}")]
   Docker(#[from] bollard::errors::Error),
   ```
+
 - [ ] In `src/orchestrator/job_manager.rs`: gate Docker-specific code
   paths with `#[cfg(feature = "docker")]`
 - [ ] In `src/orchestrator/reaper.rs`: gate Docker-specific code paths

@@ -5,7 +5,7 @@
 **Status:** Plan ready; not yet started
 **Estimated impact:** 3–4 min saved on incremental `make test`
 
-## Big Picture
+## Big picture
 
 Reduce the number of integration test binaries from 43 to ~8–10 by
 grouping related test files into module trees under fewer top-level
@@ -29,10 +29,10 @@ cutting link time roughly in proportion.
 - Feature-gated tests (e.g., `#[cfg(feature = "libsql")]`) must retain
   their gates inside the merged modules.
 
-## Current Test File Inventory (40 files)
+## Current test file inventory (40 files)
 
 
-### End-to-end (E2E) Trace Tests (15 files, all use `mod support;`)
+### End-to-end (E2E) trace tests (15 files, all use `mod support;`)
 
 - `e2e_advanced_traces.rs`
 - `e2e_attachments.rs`
@@ -50,7 +50,7 @@ cutting link time roughly in proportion.
 - `e2e_worker_coverage.rs`
 - `e2e_workspace_coverage.rs`
 
-### Import Tests (6 files, standalone)
+### Import tests (6 files, standalone)
 
 - `import_openclaw.rs`
 - `import_openclaw_comprehensive.rs`
@@ -59,7 +59,7 @@ cutting link time roughly in proportion.
 - `import_openclaw_idempotency.rs`
 - `import_openclaw_integration.rs`
 
-### Channel/Network Tests (5 files, 1 uses `mod support;`)
+### Channel/network tests (5 files, 1 uses `mod support;`)
 
 - `openai_compat_integration.rs`
 - `relay_integration.rs`
@@ -67,7 +67,7 @@ cutting link time roughly in proportion.
 - `wasm_channel_integration.rs`
 - `ws_gateway_integration.rs`
 
-### Integration/Misc Tests (5 files, standalone)
+### Integration/misc tests (5 files, standalone)
 
 - `heartbeat_integration.rs`
 - `pairing_integration.rs`
@@ -75,7 +75,7 @@ cutting link time roughly in proportion.
 - `sighup_reload_integration.rs`
 - `workspace_integration.rs`
 
-### Config/Data/Tool Tests (4 files)
+### Config/data/tool tests (4 files)
 
 - `config_round_trip.rs`
 - `trace_format.rs`
@@ -91,15 +91,7 @@ cutting link time roughly in proportion.
 - `libsql_wit_defaults_integration.rs`
 - `module_init_integration.rs`
 
-### Other (5 files)
-
-- `html_to_markdown.rs` (required-features gated, must stay separate)
-- `trace_llm_tests.rs`
-- `support_unit_tests.rs`
-- `libsql_wit_defaults_integration.rs`
-- `module_init_integration.rs`
-
-## Target Structure (10 binaries)
+## Target structure (10 binaries)
 
 ```plaintext
 tests/
@@ -170,7 +162,7 @@ tests/
 
 **Result: 10 binaries** (down from 43).
 
-## Implementation Steps
+## Implementation steps
 
 ### Phase 1: Create harness structure
 

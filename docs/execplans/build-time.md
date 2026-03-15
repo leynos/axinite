@@ -199,9 +199,9 @@ test: build-github-tool-wasm
 recompiled.
 **Effort:** Install sccache, configure the environment variable:
 
-| Variable | Meaning | Default |
-|----------|---------|---------|
-| `RUSTC_WRAPPER` | rustc wrapper (e.g., `sccache`). | Unset. |
+| Variable name | Meaning | Default or rule |
+|---------------|---------|-----------------|
+| `RUSTC_WRAPPER` | `rustc` wrapper (for example, `sccache`) used by Cargo. | Unset by default. Set to the `sccache` path in `.cargo/config.toml` or the shell environment to enable compiler caching. |
 
 ### Tier 2 — Medium Effort (test restructuring, feature gating)
 
@@ -313,9 +313,3 @@ pull in reqwest defaults, or unify TLS backend selection.
   without switching databases.
 - Feature-gating heavy optional dependencies (wasmtime, bollard, pdf) is a
   standard Rust practice that this project hasn't fully adopted.
-
-# Build time investigation and recommendations
-
-**Branch:** `build-time`
-**Date:** 2026-03-15
-**Status:** Investigation complete; recommendations ready for review
