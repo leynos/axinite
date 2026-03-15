@@ -119,7 +119,7 @@ cutting link time roughly in proportion.
 
 ## Target Structure (10 binaries)
 
-```
+```plaintext
 tests/
 ├── support/                          # Shared module (unchanged)
 │   ├── mod.rs
