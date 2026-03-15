@@ -93,9 +93,11 @@ management.
 - Run `make all` before committing. It is the preferred aggregate gate for this
   repository and currently runs:
   - `make check-fmt`
-  - `make typecheck`
   - `make lint`
   - `make test`
+- `make typecheck` is available as a standalone quick smoke-check target but
+  is not part of `make all` because `cargo clippy` is a strict superset of
+  `cargo check`.
 - The underlying targets are:
   - `make check-fmt`
     - `cargo fmt --all -- --check`

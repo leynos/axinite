@@ -7,7 +7,7 @@ GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 
 .PHONY: all build-github-tool-wasm check-fmt typecheck lint test test-cargo test-matrix test-matrix-cargo clean
 
-all: check-fmt typecheck lint test
+all: check-fmt lint test
 
 build-github-tool-wasm:
 	$(CARGO) build --manifest-path $(GITHUB_TOOL_MANIFEST) --release --target $(GITHUB_TOOL_WASM_TARGET)
