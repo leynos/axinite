@@ -9,7 +9,7 @@
 
 The wasmtime ecosystem (wasmtime, wasmtime-wasi, wasmtime-cranelift,
 wasmparser, and ~300 transitive dependencies including the Cranelift
-compiler backend) is always compiled, even though WASM tool/channel
+compiler backend) is always compiled, even though WebAssembly (WASM) tool/channel
 execution is an optional capability. Feature-gating it behind a `wasm`
 feature (included in defaults) lets developers who are not working on WASM
 functionality skip ~300 crate compilations, saving ~42 s on clean builds.

@@ -12,7 +12,8 @@ actionable improvements to reduce overall build and test time.
 ## Constraints
 
 - Do not use `/tmp` as a build target (only 32 GB).
-- Changes must not break CI or existing developer workflows.
+- Changes must not break continuous integration (CI) or existing developer
+  workflows.
 - Recommendations must be ranked by effort/impact ratio.
 
 ## Baseline Measurements
@@ -33,17 +34,17 @@ actionable improvements to reduce overall build and test time.
 | Phase | Wall time | Notes |
 |-------|-----------|-------|
 | `check-fmt` | 2.4 s | Negligible |
-| `typecheck` | 6 min 27 s | First dep compilation + 4 cargo check |
+| `typecheck` | 6 min 27 s | First dep compilation + 4 cargo checks |
 | `lint` | 5 min 44 s | 4 cargo clippy (deps cached from typecheck) |
-| `test` | 9 min 18 s | WASM (18 s) + compile (8 m 11 s) + run (31 s) |
+| `test` | 9 min 18 s | WebAssembly (WASM) (18 s) + compile (8 m 11 s) + run (31 s) |
 
 ### Incremental Build Breakdown
 
 | Phase | Wall time | Notes |
 |-------|-----------|-------|
 | `check-fmt` | ~1 s | |
-| `typecheck` (3 combos + github) | ~51 s | ironclaw recompiled 3 times |
-| `lint` (3 combos + github) | ~108 s | ironclaw recompiled 3 more times |
+| `typecheck` (3 combos + GitHub) | ~51 s | ironclaw recompiled 3 times |
+| `lint` (3 combos + GitHub) | ~108 s | ironclaw recompiled 3 more times |
 | `test` compilation | **6 min 05 s** | Re-links 43 test binaries |
 | `test` execution | 21 s | Fast |
 | **Total** | **~9 min 16 s** | |
@@ -54,7 +55,7 @@ actionable improvements to reduce overall build and test time.
 |-------|-------------|-------|
 | ironclaw (lib) | 133.0 s | The project itself |
 | wasmtime-wasi | 17.8 s | WASM runtime |
-| rig-core | 16.6 s | LLM framework |
+| rig-core | 16.6 s | Large language model (LLM) framework |
 | wasmtime | 16.3 s | |
 | zbus | 13.7 s | Linux D-Bus |
 | ironclaw (bin) | 11.3 s | Binary linking |
@@ -109,7 +110,7 @@ causing ~15 major version duplicates:
 | pdf-extract | 50 | Yes (`pdf` feature) |
 | rustyline + crossterm + termimad | ~40 | Yes (`cli` feature) |
 
-### 5. Dual TLS stacks compiled
+### 5. Dual Transport Layer Security (TLS) stacks compiled
 
 reqwest is configured with `rustls-tls-native-roots` and
 `default-features = false`, but rig-core pulls in reqwest with default
@@ -141,29 +142,30 @@ Clippy is a strict superset of `cargo check`. CI already runs only clippy.
 Change `all: check-fmt typecheck lint test` to `all: check-fmt lint test`.
 Retain `typecheck` as a standalone target for quick smoke-checks.
 
-#### 1.2 Set `debug = "line-tables-only"` in `[profile.dev]`
+#### 1.2 Set `debug = "line-tables-only"` for dependencies
 
 **Impact:** Reduces debug info size, speeds up linking (affects all 43 test
 binary links).
 **Effort:** Add 2 lines to `Cargo.toml`.
 
-Full debug info is rarely needed for day-to-day development. Line tables
-are sufficient for backtraces and debugger stepping. Can be overridden with
-`CARGO_PROFILE_DEV_DEBUG=2` when full info is needed.
+Full debug info for dependencies is rarely needed for day-to-day
+development. Line tables are sufficient for backtraces. Scoping the
+override to `[profile.dev.package."*"]` preserves full debug info for
+workspace members (ironclaw itself), where diagnostics matter most.
 
 ```toml
-[profile.dev]
+[profile.dev.package."*"]
 debug = "line-tables-only"
 ```
 
-#### 1.3 Set `split-debuginfo = "unpacked"` in `[profile.dev]`
+#### 1.3 Set `split-debuginfo = "unpacked"` for dependencies
 
 **Impact:** Avoids `dsymutil` on macOS and may reduce link time. On Linux
 with mold, the effect is smaller but still positive.
 **Effort:** 1 line in `Cargo.toml`.
 
 ```toml
-[profile.dev]
+[profile.dev.package."*"]
 split-debuginfo = "unpacked"
 ```
 
@@ -209,7 +211,7 @@ related tests:
 - Keep `tests/support/` as a shared module
 
 This reduces link operations from 43 to ~8–10 while maintaining the same
-test coverage and organisation.
+test coverage and organization.
 
 #### 2.2 Feature-gate wasmtime (`wasm` feature)
 
@@ -278,7 +280,7 @@ pull in reqwest defaults, or unify TLS backend selection.
 - [x] Analyse dependency tree for heavy crates and compilation bottlenecks
 - [x] Audit Makefile pipeline for redundant compilation work
 - [x] Investigate workspace structure and crate splitting opportunities
-- [x] Synthesise findings into actionable recommendations
+- [x] Synthesize findings into actionable recommendations
 - [x] Implement Tier 1 quick wins (1.1, 1.2, 1.3)
 - [x] Write exec plans for Tier 2/3 changes:
   - `consolidate-test-binaries.md` (2.1)

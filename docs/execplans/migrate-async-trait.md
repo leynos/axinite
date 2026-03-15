@@ -15,8 +15,8 @@ traits, stabilised in Rust 1.75), most uses can be migrated to native
 syntax, eliminating the proc-macro expansion overhead and reducing compile
 times.
 
-However, native async traits are **not object-safe** — you cannot write
-`dyn MyAsyncTrait` without boxing the future yourself. This project uses
+However, native async traits are **not object-safe** — it is not possible
+to write `dyn MyAsyncTrait` without boxing the future. This project uses
 `dyn Trait` extensively (246 occurrences across 65 files for the core
 extensibility traits). This means the migration is **partial**: traits used
 as trait objects must either remain with `async-trait` or adopt a manual
