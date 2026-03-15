@@ -1,324 +1,91 @@
-<p align="center">
-  <img src="ironclaw.png?v=2" alt="IronClaw" width="200"/>
-</p>
+# Axinite
 
-<h1 align="center">IronClaw</h1>
+*一个承袭 IronClaw 血统的安全型个人 AI 助手，重点是让数据留在本地，
+让扩展能力掌握在你自己手里。*
 
-<p align="center">
-  <strong>安全可靠的个人 AI 助手，始终站在你这边</strong>
-</p>
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-<p align="center">
-  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache%202.0-blue.svg" alt="License: MIT OR Apache-2.0" /></a>
-  <a href="https://t.me/ironclawAI"><img src="https://img.shields.io/badge/Telegram-%40ironclawAI-26A5E4?style=flat&logo=telegram&logoColor=white" alt="Telegram: @ironclawAI" /></a>
-  <a href="https://www.reddit.com/r/ironclawAI/"><img src="https://img.shields.io/badge/Reddit-r%2FironclawAI-FF4500?style=flat&logo=reddit&logoColor=white" alt="Reddit: r/ironclawAI" /></a>
-</p>
+Axinite 继承了 IronClaw 相当多的运行时、CLI 入口和文档内容。这份传承
+是刻意保留的：这个分支沿用了上游的安全与自动化基础，同时把项目带往自
+己的方向。现阶段，编译出来的二进制、crate 名称，以及不少内部路径仍然
+使用 `ironclaw`。
 
-<p align="center">
-  <a href="README.md">English</a> |
-  <a href="README.zh-CN.md">简体中文</a>
-</p>
+______________________________________________________________________
 
-<p align="center">
-  <a href="#设计理念">设计理念</a> •
-  <a href="#功能特性">功能特性</a> •
-  <a href="#安装">安装</a> •
-  <a href="#配置">配置</a> •
-  <a href="#安全机制">安全机制</a> •
-  <a href="#系统架构">系统架构</a>
-</p>
+## 为什么选择 axinite？
 
----
+- **默认本地优先**：数据、密钥与审计痕迹都保留在你的机器上，而不是漂
+  到别人的服务里。
+- **安全不是附带品**：WASM 沙箱、宿主侧密钥注入、泄露检测与网络白名
+  单都是运行时的一部分。
+- **它不只是聊天框**：REPL、Web 网关、Webhook、定时任务、后台作业
+  与渠道集成都放在同一个助手里。
+- **能力可以继续生长**：你可以安装 MCP 服务器、加入 WASM 工具，并扩
+  展代理能力，而不必等供应商碰巧发布你需要的功能。
 
-## 设计理念
+______________________________________________________________________
 
-IronClaw 基于一个简单的原则：**你的 AI 助手应该为你服务，而不是与你为敌。**
+## 快速开始
 
-在 AI 系统对数据处理日益不透明、与企业利益捆绑的今天，IronClaw 选择了一条不同的路：
+### 安装
 
-- **数据归你所有** — 所有信息存储在本地，加密保护，始终在你掌控之下
-- **透明至上** — 完全开源，可审计，没有隐藏的遥测或数据收集
-- **自主扩展** — 随时构建新工具，无需等待供应商更新
-- **纵深防御** — 多层安全机制抵御提示注入和数据泄露
+Axinite 是这个分支的名称；当前的 crate、可执行文件与初始化命令仍然叫
+`ironclaw`。
 
-IronClaw 是一个你真正可以信赖的 AI 助手，无论是个人生活还是工作。
+```bash
+cargo build
+target/debug/ironclaw onboard --quick
+```
+
+### 基本用法
+
+```bash
+# 发送一条消息后退出
+target/debug/ironclaw --message "Summarize what this machine is ready to do."
+
+# 查看健康状态与已配置服务
+target/debug/ironclaw status
+
+# 检查工作空间记忆功能
+target/debug/ironclaw memory status
+```
+
+______________________________________________________________________
 
 ## 功能特性
 
-### 安全优先
+- 安全运行时：提供 WASM 沙箱、提示内容净化、凭据保护与网络白名单。
+- 多种入口：交互式 CLI、单消息模式、Web 网关、Webhook、定时任务，以
+  及系统服务支持。
+- 持久化工作空间记忆：可对笔记、日志与身份文件进行混合搜索。
+- 可扩展工具链：包含内建工具、MCP 服务器、注册表扩展，以及动态构建的
+  WASM 工具。
+- 灵活的模型提供方支持：初始化流程可配置 NEAR AI、OpenAI 兼容端点、
+  Ollama、Bedrock 等后端。
 
-- **WASM 沙箱** — 不受信任的工具在隔离的 WebAssembly 容器中运行，采用基于能力的权限模型
-- **凭据保护** — 密钥永远不会暴露给工具；在宿主边界注入并进行泄露检测
-- **提示注入防御** — 模式检测、内容清理和策略执行
-- **端点白名单** — HTTP 请求仅限于明确批准的主机和路径
+______________________________________________________________________
 
-### 随时可用
+## 延伸阅读
 
-- **多渠道接入** — REPL、HTTP webhook、WASM 渠道（Telegram、Slack）和 Web 网关
-- **Docker 沙箱** — 隔离的容器执行，支持每任务令牌和编排器/工作器模式
-- **Web 网关** — 浏览器 UI，支持实时 SSE/WebSocket 流式传输
-- **定时任务** — Cron 调度、事件触发器、Webhook 处理器，实现后台自动化
-- **心跳系统** — 主动后台执行，用于监控和维护任务
-- **并行任务** — 使用隔离上下文同时处理多个请求
-- **自修复** — 自动检测并恢复卡住的操作
+- [LLM 提供方指南](docs/LLM_PROVIDERS.md) — 提供方配置与环境变量说明。
+- [初始化规范](src/setup/README.md) — `ironclaw onboard` 实际会配置什么。
+- [工作空间与记忆](src/workspace/README.md) — 持久记忆布局与相关工具。
+- [构建渠道](docs/BUILDING_CHANNELS.md) — 如何重新构建随仓库分发的渠道
+  产物。
+- [贡献指南](CONTRIBUTING.md) — 开发流程与审查分级。
+- [变更日志](CHANGELOG.md) — 发布历史。
 
-### 自主扩展
+______________________________________________________________________
 
-- **动态工具构建** — 描述你的需求，IronClaw 会将其构建为 WASM 工具
-- **MCP 协议** — 连接模型上下文协议（Model Context Protocol）服务器以获取额外能力
-- **插件架构** — 无需重启即可加载新的 WASM 工具和渠道
+## 许可
 
-### 持久记忆
+本项目采用 MIT 或 Apache-2.0 双许可证。详情请见
+[LICENSE-MIT](LICENSE-MIT) 与 [LICENSE-APACHE](LICENSE-APACHE)。
 
-- **混合搜索** — 全文搜索 + 向量搜索，采用倒数排名融合（Reciprocal Rank Fusion）
-- **工作空间文件系统** — 灵活的基于路径的存储，用于笔记、日志和上下文
-- **身份文件** — 跨会话保持一致的个性和偏好设置
+______________________________________________________________________
 
-## 安装
+## 参与贡献
 
-### 前置要求
-
-- Rust 1.92+
-- PostgreSQL 15+，需安装 [pgvector](https://github.com/pgvector/pgvector) 扩展
-- NEAR AI 账户（通过设置向导进行身份验证）
-
-## 下载或编译
-
-访问 [Releases 页面](https://github.com/nearai/ironclaw/releases/) 查看最新版本。
-
-<details>
-  <summary>通过 Windows 安装程序安装 (Windows)</summary>
-
-下载 [Windows 安装程序](https://github.com/nearai/ironclaw/releases/latest/download/ironclaw-x86_64-pc-windows-msvc.msi) 并运行。
-
-</details>
-
-<details>
-  <summary>通过 PowerShell 脚本安装 (Windows)</summary>
-
-```sh
-irm https://github.com/nearai/ironclaw/releases/latest/download/ironclaw-installer.ps1 | iex
-```
-
-</details>
-
-<details>
-  <summary>通过 Shell 脚本安装 (macOS、Linux、Windows/WSL)</summary>
-
-```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/nearai/ironclaw/releases/latest/download/ironclaw-installer.sh | sh
-```
-</details>
-
-<details>
-  <summary>通过 Homebrew 安装 (macOS/Linux)</summary>
-
-```sh
-brew install ironclaw
-```
-
-</details>
-
-<details>
-  <summary>从源码编译 (Windows、Linux、macOS 上使用 Cargo)</summary>
-
-确保你已安装 [Rust](https://rustup.rs)。
-
-```bash
-# 克隆仓库
-git clone https://github.com/nearai/ironclaw.git
-cd ironclaw
-
-# 编译
-cargo build --release
-
-# 运行测试
-cargo test
-```
-
-如需进行**完整发布构建**（修改了渠道源码后），先运行 `./scripts/build-all.sh` 重新编译渠道。
-
-</details>
-
-### 数据库设置
-
-```bash
-# 创建数据库
-createdb ironclaw
-
-# 启用 pgvector 扩展
-psql ironclaw -c "CREATE EXTENSION IF NOT EXISTS vector;"
-```
-
-## 配置
-
-运行设置向导来配置 IronClaw：
-
-```bash
-ironclaw onboard
-```
-
-向导将引导你完成数据库连接、NEAR AI 身份验证（通过浏览器 OAuth）和密钥加密（使用系统钥匙串）。设置会保存在数据库中；引导变量（如 `DATABASE_URL`、`LLM_BACKEND`）写入 `~/.ironclaw/.env`，以便在数据库连接前可用。
-
-### 替代 LLM 提供商
-
-IronClaw 默认使用 NEAR AI，但兼容任何 OpenAI 兼容的端点。
-常用选项包括 **OpenRouter**（300+ 模型）、**Together AI**、**Fireworks AI**、**Ollama**（本地部署）以及自托管服务器如 **vLLM** 或 **LiteLLM**。
-
-在向导中选择 *"OpenAI-compatible"*，或直接设置环境变量：
-
-```env
-LLM_BACKEND=openai_compatible
-LLM_BASE_URL=https://openrouter.ai/api/v1
-LLM_API_KEY=sk-or-...
-LLM_MODEL=anthropic/claude-sonnet-4
-```
-
-详见 [docs/LLM_PROVIDERS.md](docs/LLM_PROVIDERS.md) 获取完整的提供商指南。
-
-## 安全机制
-
-IronClaw 实现了纵深防御策略来保护你的数据并防止滥用。
-
-### WASM 沙箱
-
-所有不受信任的工具都在隔离的 WebAssembly 容器中运行：
-
-- **基于能力的权限** — 明确授权 HTTP、密钥、工具调用等能力
-- **端点白名单** — HTTP 请求仅限已批准的主机和路径
-- **凭据注入** — 密钥在宿主边界注入，永远不会暴露给 WASM 代码
-- **泄露检测** — 扫描请求和响应以防止密钥外泄
-- **速率限制** — 每个工具独立的请求限制，防止滥用
-- **资源限制** — 内存、CPU 和执行时间约束
-
-```
-WASM ──► 白名单  ──► 泄露扫描 ──► 凭据  ──► 执行  ──► 泄露扫描 ──► WASM
-         验证器     (请求)      注入器    请求     (响应)
-```
-
-### 提示注入防御
-
-外部内容需通过多个安全层：
-
-- 基于模式的注入尝试检测
-- 内容清理和转义
-- 带严重级别的策略规则（阻止/警告/审核/清理）
-- 工具输出包装，确保安全的 LLM 上下文注入
-
-### 数据保护
-
-- 所有数据存储在本地 PostgreSQL 数据库中
-- 密钥使用 AES-256-GCM 加密
-- 无遥测、无分析、无数据共享
-- 所有工具执行的完整审计日志
-
-## 系统架构
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│                            渠道                                 │
-│  ┌──────┐  ┌──────┐   ┌─────────────┐  ┌─────────────┐         │
-│  │ REPL │  │ HTTP │   │ WASM 渠道   │  │  Web 网关   │         │
-│  └──┬───┘  └──┬───┘   └──────┬──────┘  │ (SSE + WS)  │         │
-│     │         │              │         └──────┬──────┘         │
-│     └─────────┴──────────────┴────────────────┘                │
-│                              │                                 │
-│                    ┌─────────▼─────────┐                       │
-│                    │    代理循环       │  意图路由              │
-│                    └────┬──────────┬───┘                       │
-│                         │          │                           │
-│              ┌──────────▼────┐  ┌──▼───────────────┐           │
-│              │    调度器      │  │   定时任务引擎    │           │
-│              │  (并行任务)    │  │(cron, 事件, wh)  │           │
-│              └──────┬────────┘  └────────┬─────────┘           │
-│                     │                    │                     │
-│       ┌─────────────┼────────────────────┘                     │
-│       │             │                                          │
-│   ┌───▼─────┐  ┌────▼────────────────┐                         │
-│   │  本地   │  │      编排器          │                         │
-│   │ 工作器  │  │  ┌───────────────┐  │                         │
-│   │(进程内) │  │  │ Docker 沙箱   │  │                         │
-│   └───┬─────┘  │  │     容器      │  │                         │
-│       │        │  │ ┌───────────┐ │  │                         │
-│       │        │  │ │工作器/CC  │ │  │                         │
-│       │        │  │ └───────────┘ │  │                         │
-│       │        │  └───────────────┘  │                         │
-│       │        └─────────┬───────────┘                         │
-│       └──────────────────┤                                     │
-│                          │                                     │
-│              ┌───────────▼──────────┐                          │
-│              │      工具注册表       │                          │
-│              │ 内置、MCP、WASM      │                          │
-│              └──────────────────────┘                          │
-└────────────────────────────────────────────────────────────────┘
-```
-
-### 核心组件
-
-| 组件 | 用途 |
-|------|------|
-| **代理循环** | 主消息处理和任务协调 |
-| **路由器** | 分类用户意图（命令、查询、任务） |
-| **调度器** | 管理带优先级的并行任务执行 |
-| **工作器** | 执行包含 LLM 推理和工具调用的任务 |
-| **编排器** | 容器生命周期、LLM 代理、每任务认证 |
-| **Web 网关** | 浏览器 UI，含聊天、记忆、任务、日志、扩展、定时任务 |
-| **定时任务引擎** | 定时（cron）和响应式（事件、webhook）后台任务 |
-| **工作空间** | 带混合搜索的持久记忆 |
-| **安全层** | 提示注入防御和内容清理 |
-
-## 使用方式
-
-```bash
-# 首次设置（配置数据库、认证等）
-ironclaw onboard
-
-# 启动交互式 REPL
-cargo run
-
-# 启用调试日志
-RUST_LOG=ironclaw=debug cargo run
-```
-
-## 开发
-
-```bash
-# 格式化代码
-cargo fmt
-
-# 代码检查
-cargo clippy --all --benches --tests --examples --all-features
-
-# 运行测试
-createdb ironclaw_test
-cargo test
-
-# 运行指定测试
-cargo test test_name
-```
-
-- **Telegram 渠道**：参见
-  [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md)
-  了解设置和私信配对。
-- **修改全部渠道源码**：在发布打包或运行向导安装前，先运行
-  `./scripts/build-wasm-extensions.sh --channels`，确保更新后的已注册渠道制品已生成到磁盘上。
-- **只修改 Telegram 渠道**：当只需要重建可部署的 Telegram 制品时，运行
-  `./channels-src/telegram/build.sh`。
-
-## OpenClaw 传承
-
-IronClaw 是受 [OpenClaw](https://github.com/openclaw/openclaw) 启发的 Rust 重新实现。参见 [FEATURE_PARITY.md](FEATURE_PARITY.md) 了解完整的功能追踪矩阵。
-
-主要差异：
-
-- **Rust vs TypeScript** — 原生性能、内存安全、单一二进制文件
-- **WASM 沙箱 vs Docker** — 轻量级、基于能力的安全机制
-- **PostgreSQL vs SQLite** — 生产级持久化存储
-- **安全优先设计** — 多层防御、凭据保护
-
-## 许可证
-
-可选择以下任一许可证：
-
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-- MIT License ([LICENSE-MIT](LICENSE-MIT))
+欢迎贡献。开始之前请先阅读 [AGENTS.md](AGENTS.md) 与
+[CONTRIBUTING.md](CONTRIBUTING.md)；这个仓库要求带门禁的提交、明确的
+审查分级，以及如实的状态汇报。
