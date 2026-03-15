@@ -1,4 +1,4 @@
-# Build Time Investigation and Recommendations
+# Build time investigation and recommendations
 
 **Branch:** `build-time`
 **Date:** 2026-03-15
@@ -20,6 +20,8 @@ actionable improvements to reduce overall build and test time.
 
 **Environment:** Rust 1.92.0, 32 cores, mold linker configured, no sccache.
 
+Table: Build baseline metrics
+
 | Metric | Value |
 |--------|-------|
 | Total unique crates | 810 |
@@ -31,6 +33,8 @@ actionable improvements to reduce overall build and test time.
 
 ### Clean Build Phase Breakdown
 
+Table: Clean build phase breakdown
+
 | Phase | Wall time | Notes |
 |-------|-----------|-------|
 | `check-fmt` | 2.4 s | Negligible |
@@ -39,6 +43,8 @@ actionable improvements to reduce overall build and test time.
 | `test` | 9 min 18 s | WebAssembly (WASM) (18 s) + compile (8 m 11 s) + run (31 s) |
 
 ### Incremental Build Breakdown
+
+Table: Incremental build phase breakdown
 
 | Phase | Wall time | Notes |
 |-------|-----------|-------|
@@ -50,6 +56,8 @@ actionable improvements to reduce overall build and test time.
 | **Total** | **~9 min 16 s** | |
 
 ### Heaviest Crates (clean build)
+
+Table: Heaviest crates by compile time
 
 | Crate | Compile time | Notes |
 |-------|-------------|-------|

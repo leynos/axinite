@@ -1,4 +1,4 @@
-# Feature-Gate wasmtime (`wasm` Feature)
+# Feature-gate wasmtime (`wasm` feature)
 
 **Branch:** (to be created from `build-time`)
 **Date:** 2026-03-15
@@ -29,6 +29,8 @@ functionality skip ~300 crate compilations, saving ~42 s on clean builds.
 wasmtime/wasmtime-wasi are used in **6 source files**, all confined to two
 module subtrees:
 
+Table: WASM source files using wasmtime
+
 | File | Module |
 |------|--------|
 | `src/tools/wasm/limits.rs` | Tools WASM runtime |
@@ -39,6 +41,8 @@ module subtrees:
 | `src/channels/wasm/wrapper.rs` | Channels WASM wrapper |
 
 wasmparser is used in **1 file**:
+
+Table: wasmparser usage
 
 | File | Module |
 |------|--------|

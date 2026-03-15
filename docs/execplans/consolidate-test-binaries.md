@@ -31,7 +31,7 @@ cutting link time roughly in proportion.
 
 ## Current Test File Inventory (40 files)
 
-### E2E Trace Tests (15 files, all use `mod support;`)
+### End-to-end (E2E) Trace Tests (15 files, all use `mod support;`)
 
 - `e2e_advanced_traces.rs`
 - `e2e_attachments.rs`
@@ -81,7 +81,7 @@ cutting link time roughly in proportion.
 - `tool_schema_validation.rs`
 - `wit_compat.rs`
 
-### Other (2 files)
+### Other (5 files)
 
 - `html_to_markdown.rs` (required-features gated, must stay separate)
 - `trace_llm_tests.rs`

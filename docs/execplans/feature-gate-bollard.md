@@ -26,6 +26,8 @@ skip those crates.
 bollard is used in **5 source files**, confined to the sandbox and
 orchestrator modules:
 
+Table: Scope of files touched by the Bollard feature
+
 | File | Lines | Purpose |
 |------|-------|---------|
 | `src/sandbox/container.rs` | ~636 | Container lifecycle (`ContainerRunner`) |

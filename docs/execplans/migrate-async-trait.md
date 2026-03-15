@@ -1,4 +1,4 @@
-# Migrate from async-trait to Native Async Traits
+# Migrate from async-trait to native async traits
 
 **Branch:** (to be created from `build-time`)
 **Date:** 2026-03-15
@@ -116,6 +116,8 @@ For each module, in separate commits:
 - [ ] If some uses remain, document which traits still require it and why
 
 ## Estimated Scope
+
+Table: Estimated scope of async-trait migration
 
 | Category | Uses | Migratable |
 |----------|------|------------|
