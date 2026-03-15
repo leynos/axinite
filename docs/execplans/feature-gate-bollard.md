@@ -26,7 +26,7 @@ skip those crates.
 bollard is used in **5 source files**, confined to the sandbox and
 orchestrator modules:
 
-Table: Scope of files touched by the Bollard feature
+Table 1. Files with direct bollard usage and primary purpose.
 
 | File | Lines | Purpose |
 |------|-------|---------|
