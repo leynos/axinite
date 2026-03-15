@@ -223,6 +223,10 @@ test-helpers = ["dep:tempfile"]
 name = "html_to_markdown"
 required-features = ["html-to-markdown"]
 
+[profile.dev.package."*"]
+debug = "line-tables-only"    # Faster linking; full info via CARGO_PROFILE_DEV_DEBUG=2
+split-debuginfo = "unpacked"  # Avoid bundling debug info into binaries
+
 [profile.release]
 strip = true          # Remove debug symbols from release binaries
 
