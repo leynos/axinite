@@ -199,6 +199,8 @@ test: build-github-tool-wasm
 recompiled.
 **Effort:** Install sccache, configure the environment variable:
 
+Table 5. Environment variables used during build.
+
 | Variable name | Meaning | Default or rule |
 |---------------|---------|-----------------|
 | `RUSTC_WRAPPER` | A `rustc` wrapper (for example, `sccache`) used by Cargo. | Unset by default; set to the `sccache` path in `.cargo/config.toml` or via the shell environment to enable compiler caching. |
