@@ -125,40 +125,42 @@ async fn routine_create_list() {
 // Test 4: routine_update_delete
 // -----------------------------------------------------------------------
 
-#[tokio::test]
-async fn routine_update_delete() {
-    let trace = LlmTrace::from_file(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/tools/routine_update_delete.json"
-    ))
-    .expect("failed to load routine_update_delete.json");
+async fn run_routine_started_test(fixture_path: &str, message: &str, expected_tools: &[&str]) {
+    let trace = LlmTrace::from_file(fixture_path)
+        .unwrap_or_else(|_| panic!("failed to load {fixture_path}"));
 
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
         .await;
 
-    rig.send_message("Create, update, and delete a routine")
-        .await;
+    rig.send_message(message).await;
     let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
 
     rig.verify_trace_expects(&trace, &responses);
 
     let started = rig.tool_calls_started();
-    assert!(
-        started.contains(&"routine_create".to_string()),
-        "routine_create not started"
-    );
-    assert!(
-        started.contains(&"routine_update".to_string()),
-        "routine_update not started"
-    );
-    assert!(
-        started.contains(&"routine_delete".to_string()),
-        "routine_delete not started"
-    );
+    for tool in expected_tools {
+        assert!(
+            started.contains(&(*tool).to_string()),
+            "{tool} not started: {started:?}"
+        );
+    }
 
     rig.shutdown();
+}
+
+#[tokio::test]
+async fn routine_update_delete() {
+    run_routine_started_test(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/llm_traces/tools/routine_update_delete.json"
+        ),
+        "Create, update, and delete a routine",
+        &["routine_create", "routine_update", "routine_delete"],
+    )
+    .await;
 }
 
 // -----------------------------------------------------------------------
@@ -167,34 +169,15 @@ async fn routine_update_delete() {
 
 #[tokio::test]
 async fn routine_history() {
-    let trace = LlmTrace::from_file(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/tools/routine_history.json"
-    ))
-    .expect("failed to load routine_history.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Create a routine and check its history")
-        .await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
-    rig.verify_trace_expects(&trace, &responses);
-
-    let started = rig.tool_calls_started();
-    assert!(
-        started.contains(&"routine_create".to_string()),
-        "routine_create missing"
-    );
-    assert!(
-        started.contains(&"routine_history".to_string()),
-        "routine_history missing"
-    );
-
-    rig.shutdown();
+    run_routine_started_test(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/llm_traces/tools/routine_history.json"
+        ),
+        "Create a routine and check its history",
+        &["routine_create", "routine_history"],
+    )
+    .await;
 }
 
 // -----------------------------------------------------------------------

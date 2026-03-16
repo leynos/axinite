@@ -71,6 +71,77 @@ fn make_routine(name: &str, trigger: Trigger, prompt: &str) -> Routine {
     }
 }
 
+/// Build a minimal IncomingMessage for event-trigger tests.
+fn make_test_incoming_message(content: &str) -> IncomingMessage {
+    IncomingMessage {
+        id: Uuid::new_v4(),
+        channel: "test".to_string(),
+        user_id: "default".to_string(),
+        user_name: None,
+        content: content.to_string(),
+        thread_id: None,
+        received_at: Utc::now(),
+        metadata: serde_json::json!({}),
+        timezone: None,
+        attachments: Vec::new(),
+    }
+}
+
+fn make_minimal_engine(
+    trace: LlmTrace,
+    db: Arc<dyn Database>,
+    ws: Arc<Workspace>,
+) -> Arc<RoutineEngine> {
+    let llm = Arc::new(TraceLlm::from_trace(trace));
+    let (notify_tx, _notify_rx) = tokio::sync::mpsc::channel(16);
+    let tools = Arc::new(ToolRegistry::new());
+    let safety = Arc::new(SafetyLayer::new(&SafetyConfig {
+        max_output_length: 100_000,
+        injection_check_enabled: true,
+    }));
+    Arc::new(RoutineEngine::new(
+        RoutineConfig::default(),
+        db,
+        llm,
+        ws,
+        notify_tx,
+        None,
+        tools,
+        safety,
+    ))
+}
+
+async fn register_github_issue_routine(db: &Arc<dyn Database>, engine: &RoutineEngine) -> Routine {
+    let mut filters = std::collections::HashMap::new();
+    filters.insert("repository".to_string(), "nearai/ironclaw".to_string());
+    let routine = make_routine(
+        "github-issue-opened",
+        Trigger::SystemEvent {
+            source: "github".to_string(),
+            event_type: "issue.opened".to_string(),
+            filters,
+        },
+        "Summarize the issue and propose an implementation plan.",
+    );
+    db.create_routine(&routine).await.expect("create_routine");
+    engine.refresh_event_cache().await;
+    routine
+}
+
+async fn assert_system_event_count(
+    engine: &RoutineEngine,
+    source: &str,
+    event_type: &str,
+    payload: &serde_json::Value,
+    expected: usize,
+    msg: &str,
+) {
+    let fired = engine
+        .emit_system_event(source, event_type, payload, Some("default"))
+        .await;
+    assert_eq!(fired, expected, "{msg}");
+}
+
 // -----------------------------------------------------------------------
 // Test 1: cron_routine_fires
 // -----------------------------------------------------------------------
@@ -172,27 +243,7 @@ async fn event_trigger_matches() {
             expected_tool_results: vec![],
         }],
     );
-    let llm = Arc::new(TraceLlm::from_trace(trace));
-    let (notify_tx, _notify_rx) = tokio::sync::mpsc::channel(16);
-
-    // Create minimal ToolRegistry and SafetyLayer for test.
-    let tools = Arc::new(ToolRegistry::new());
-    let safety_config = SafetyConfig {
-        max_output_length: 100_000,
-        injection_check_enabled: true,
-    };
-    let safety = Arc::new(SafetyLayer::new(&safety_config));
-
-    let engine = Arc::new(RoutineEngine::new(
-        RoutineConfig::default(),
-        db.clone(),
-        llm,
-        ws,
-        notify_tx,
-        None,
-        tools,
-        safety,
-    ));
+    let engine = make_minimal_engine(trace, db.clone(), ws);
 
     // Insert an event routine matching "deploy.*production".
     let routine = make_routine(
@@ -209,18 +260,7 @@ async fn event_trigger_matches() {
     engine.refresh_event_cache().await;
 
     // Positive match: message containing "deploy to production".
-    let matching_msg = IncomingMessage {
-        id: Uuid::new_v4(),
-        channel: "test".to_string(),
-        user_id: "default".to_string(),
-        user_name: None,
-        content: "deploy to production now".to_string(),
-        thread_id: None,
-        received_at: Utc::now(),
-        metadata: serde_json::json!({}),
-        timezone: None,
-        attachments: Vec::new(),
-    };
+    let matching_msg = make_test_incoming_message("deploy to production now");
     let fired = engine.check_event_triggers(&matching_msg).await;
     assert!(
         fired >= 1,
@@ -231,18 +271,7 @@ async fn event_trigger_matches() {
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Negative match: message that doesn't match.
-    let non_matching_msg = IncomingMessage {
-        id: Uuid::new_v4(),
-        channel: "test".to_string(),
-        user_id: "default".to_string(),
-        user_name: None,
-        content: "check the staging environment".to_string(),
-        thread_id: None,
-        received_at: Utc::now(),
-        metadata: serde_json::json!({}),
-        timezone: None,
-        attachments: Vec::new(),
-    };
+    let non_matching_msg = make_test_incoming_message("check the staging environment");
     let fired_neg = engine.check_event_triggers(&non_matching_msg).await;
     assert_eq!(fired_neg, 0, "Expected 0 routines fired on non-match");
 }
@@ -255,7 +284,6 @@ async fn event_trigger_matches() {
 async fn system_event_trigger_matches_and_filters() {
     let (db, _tmp) = create_test_db().await;
     let ws = create_workspace(&db);
-
     let trace = LlmTrace::single_turn(
         "test-system-event-match",
         "event",
@@ -269,59 +297,20 @@ async fn system_event_trigger_matches_and_filters() {
             expected_tool_results: vec![],
         }],
     );
-    let llm = Arc::new(TraceLlm::from_trace(trace));
-    let (notify_tx, _notify_rx) = tokio::sync::mpsc::channel(16);
+    let engine = make_minimal_engine(trace, db.clone(), ws);
+    let routine = register_github_issue_routine(&db, &engine).await;
 
-    // Create minimal ToolRegistry and SafetyLayer for test.
-    let tools = Arc::new(ToolRegistry::new());
-    let safety_config = SafetyConfig {
-        max_output_length: 100_000,
-        injection_check_enabled: true,
-    };
-    let safety = Arc::new(SafetyLayer::new(&safety_config));
-
-    let engine = Arc::new(RoutineEngine::new(
-        RoutineConfig::default(),
-        db.clone(),
-        llm,
-        ws,
-        notify_tx,
-        None,
-        tools,
-        safety,
-    ));
-
-    let mut filters = std::collections::HashMap::new();
-    filters.insert("repository".to_string(), "nearai/ironclaw".to_string());
-
-    let routine = make_routine(
-        "github-issue-opened",
-        Trigger::SystemEvent {
-            source: "github".to_string(),
-            event_type: "issue.opened".to_string(),
-            filters,
-        },
-        "Summarize the issue and propose an implementation plan.",
-    );
-    db.create_routine(&routine).await.expect("create_routine");
-    engine.refresh_event_cache().await;
-
-    // Matching event should fire.
-    let fired = engine
-        .emit_system_event(
-            "github",
-            "issue.opened",
-            &serde_json::json!({
-                "repository": "nearai/ironclaw",
-                "issue_number": 42
-            }),
-            Some("default"),
-        )
-        .await;
-    assert_eq!(fired, 1, "Expected one routine to fire for matching event");
-
+    // Matching event should fire and be recorded in run history.
+    assert_system_event_count(
+        &engine,
+        "github",
+        "issue.opened",
+        &serde_json::json!({"repository": "nearai/ironclaw", "issue_number": 42}),
+        1,
+        "Expected one routine to fire for matching event",
+    )
+    .await;
     tokio::time::sleep(Duration::from_millis(300)).await;
-
     let runs = db
         .list_routine_runs(routine.id, 10)
         .await
@@ -332,63 +321,48 @@ async fn system_event_trigger_matches_and_filters() {
     );
 
     // Wrong event type should not fire.
-    let fired_wrong_type = engine
-        .emit_system_event(
-            "github",
-            "issue.closed",
-            &serde_json::json!({"repository": "nearai/ironclaw"}),
-            Some("default"),
-        )
-        .await;
-    assert_eq!(
-        fired_wrong_type, 0,
-        "Expected no routine for wrong event type"
-    );
+    assert_system_event_count(
+        &engine,
+        "github",
+        "issue.closed",
+        &serde_json::json!({"repository": "nearai/ironclaw"}),
+        0,
+        "Expected no routine for wrong event type",
+    )
+    .await;
 
     // Wrong filter value should not fire.
-    let fired_wrong_filter = engine
-        .emit_system_event(
-            "github",
-            "issue.opened",
-            &serde_json::json!({"repository": "other/repo"}),
-            Some("default"),
-        )
-        .await;
-    assert_eq!(
-        fired_wrong_filter, 0,
-        "Expected no routine for filter mismatch"
-    );
+    assert_system_event_count(
+        &engine,
+        "github",
+        "issue.opened",
+        &serde_json::json!({"repository": "other/repo"}),
+        0,
+        "Expected no routine for filter mismatch",
+    )
+    .await;
 
     // Case-insensitive source/event_type should still match.
-    let fired_case = engine
-        .emit_system_event(
-            "GitHub",
-            "Issue.Opened",
-            &serde_json::json!({
-                "repository": "nearai/ironclaw",
-                "issue_number": 99
-            }),
-            Some("default"),
-        )
-        .await;
-    assert_eq!(
-        fired_case, 1,
-        "Expected case-insensitive match on source/event_type"
-    );
+    assert_system_event_count(
+        &engine,
+        "GitHub",
+        "Issue.Opened",
+        &serde_json::json!({"repository": "nearai/ironclaw", "issue_number": 99}),
+        1,
+        "Expected case-insensitive match on source/event_type",
+    )
+    .await;
 
     // Case-insensitive filter values should match.
-    let fired_filter_case = engine
-        .emit_system_event(
-            "github",
-            "issue.opened",
-            &serde_json::json!({"repository": "NearAI/IronClaw"}),
-            Some("default"),
-        )
-        .await;
-    assert_eq!(
-        fired_filter_case, 1,
-        "Expected case-insensitive match on filter values"
-    );
+    assert_system_event_count(
+        &engine,
+        "github",
+        "issue.opened",
+        &serde_json::json!({"repository": "NearAI/IronClaw"}),
+        1,
+        "Expected case-insensitive match on filter values",
+    )
+    .await;
 }
 
 // -----------------------------------------------------------------------
@@ -414,27 +388,7 @@ async fn routine_cooldown() {
             expected_tool_results: vec![],
         }],
     );
-    let llm = Arc::new(TraceLlm::from_trace(trace));
-    let (notify_tx, _notify_rx) = tokio::sync::mpsc::channel(16);
-
-    // Create minimal ToolRegistry and SafetyLayer for test.
-    let tools = Arc::new(ToolRegistry::new());
-    let safety_config = SafetyConfig {
-        max_output_length: 100_000,
-        injection_check_enabled: true,
-    };
-    let safety = Arc::new(SafetyLayer::new(&safety_config));
-
-    let engine = Arc::new(RoutineEngine::new(
-        RoutineConfig::default(),
-        db.clone(),
-        llm,
-        ws,
-        notify_tx,
-        None,
-        tools,
-        safety,
-    ));
+    let engine = make_minimal_engine(trace, db.clone(), ws);
 
     // Insert an event routine with 1-hour cooldown.
     let mut routine = make_routine(
@@ -450,18 +404,7 @@ async fn routine_cooldown() {
     engine.refresh_event_cache().await;
 
     // First fire should work.
-    let msg = IncomingMessage {
-        id: Uuid::new_v4(),
-        channel: "test".to_string(),
-        user_id: "default".to_string(),
-        user_name: None,
-        content: "test-cooldown trigger".to_string(),
-        thread_id: None,
-        received_at: Utc::now(),
-        metadata: serde_json::json!({}),
-        timezone: None,
-        attachments: Vec::new(),
-    };
+    let msg = make_test_incoming_message("test-cooldown trigger");
     let fired1 = engine.check_event_triggers(&msg).await;
     assert!(fired1 >= 1, "First fire should work");
 

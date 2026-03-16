@@ -254,14 +254,9 @@ async fn iteration_limit_stops_runaway() {
 //   http + memory_write + message (broadcast to test channel)
 // -----------------------------------------------------------------------
 
-#[tokio::test]
-async fn routine_news_digest() {
+fn build_news_api_http_exchanges() -> Vec<ironclaw::llm::recording::HttpExchange> {
     use ironclaw::llm::recording::{HttpExchange, HttpExchangeRequest, HttpExchangeResponse};
-
-    let trace = LlmTrace::from_file(format!("{FIXTURES}/routine_news_digest.json")).unwrap();
-
-    // Mock HTTP response for the news API call made by the routine worker.
-    let http_exchanges = vec![HttpExchange {
+    vec![HttpExchange {
         request: HttpExchangeRequest {
             method: "GET".to_string(),
             url: "https://news-api.example.com/v1/tech/headlines".to_string(),
@@ -280,12 +275,26 @@ async fn routine_news_digest() {
             })
             .to_string(),
         },
-    }];
+    }]
+}
+
+fn assert_routine_created(responses: &[ironclaw::channels::OutgoingResponse]) {
+    assert!(!responses.is_empty(), "Turn 1: no response");
+    let t1 = responses[0].content.to_lowercase();
+    assert!(
+        t1.contains("routine") || t1.contains("created"),
+        "Turn 1: expected routine/created, got: {t1}"
+    );
+}
+
+#[tokio::test]
+async fn routine_news_digest() {
+    let trace = LlmTrace::from_file(format!("{FIXTURES}/routine_news_digest.json")).unwrap();
 
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .with_routines()
-        .with_http_exchanges(http_exchanges)
+        .with_http_exchanges(build_news_api_http_exchanges())
         .build()
         .await;
 
@@ -296,23 +305,10 @@ async fn routine_news_digest() {
     )
     .await;
     let r1 = rig.wait_for_responses(1, TIMEOUT).await;
-    assert!(!r1.is_empty(), "Turn 1: no response");
-    let t1 = r1[0].content.to_lowercase();
-    assert!(
-        t1.contains("routine") || t1.contains("created"),
-        "Turn 1: expected routine/created, got: {t1}"
-    );
+    assert_routine_created(&r1);
 
     // Turn 2: Fire the routine. This dispatches a full_job through the scheduler.
-    // The routine worker runs autonomously and consumes TraceLlm steps for
-    // http, memory_write, and message tool calls. The http tool uses the
-    // ReplayingHttpInterceptor to return the mock news API response.
     rig.send_message("Fire it now.").await;
-
-    // Wait for:
-    //   - response 2: main conversation reply ("fired the routine")
-    //   - response 3: message tool broadcast from routine worker ("Tech News Digest: ...")
-    // The routine worker runs asynchronously, so we wait for 3 total responses.
     let responses = rig.wait_for_responses(3, Duration::from_secs(15)).await;
 
     // Find the main conversation reply (from turn 2) by content, since
