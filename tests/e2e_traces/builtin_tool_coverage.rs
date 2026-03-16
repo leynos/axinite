@@ -150,35 +150,37 @@ async fn run_routine_started_test(fixture_path: &str, message: &str, expected_to
     rig.shutdown();
 }
 
-#[tokio::test]
-async fn routine_update_delete() {
-    run_routine_started_test(
-        concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/llm_traces/tools/routine_update_delete.json"
-        ),
-        "Create, update, and delete a routine",
-        &["routine_create", "routine_update", "routine_delete"],
-    )
-    .await;
+macro_rules! routine_started_test {
+    ($name:ident, $fixture:literal, $message:literal, [$($tool:literal),+ $(,)?]) => {
+        #[tokio::test]
+        async fn $name() {
+            run_routine_started_test(
+                concat!(env!("CARGO_MANIFEST_DIR"), $fixture),
+                $message,
+                &[$($tool),+],
+            )
+            .await;
+        }
+    };
 }
+
+routine_started_test!(
+    routine_update_delete,
+    "/tests/fixtures/llm_traces/tools/routine_update_delete.json",
+    "Create, update, and delete a routine",
+    ["routine_create", "routine_update", "routine_delete"]
+);
 
 // -----------------------------------------------------------------------
 // Test 5: routine_history
 // -----------------------------------------------------------------------
 
-#[tokio::test]
-async fn routine_history() {
-    run_routine_started_test(
-        concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/llm_traces/tools/routine_history.json"
-        ),
-        "Create a routine and check its history",
-        &["routine_create", "routine_history"],
-    )
-    .await;
-}
+routine_started_test!(
+    routine_history,
+    "/tests/fixtures/llm_traces/tools/routine_history.json",
+    "Create a routine and check its history",
+    ["routine_create", "routine_history"]
+);
 
 // -----------------------------------------------------------------------
 // Test 6: routine_system_event_emit

@@ -22,6 +22,13 @@ use ironclaw::workspace::hygiene::HygieneConfig;
 
 use crate::support::trace_llm::{LlmTrace, TraceLlm, TraceResponse, TraceStep};
 
+/// Describes a system event to be emitted in tests.
+struct SystemEventSpec<'a> {
+    source: &'a str,
+    event_type: &'a str,
+    payload: serde_json::Value,
+}
+
 /// Create a temp libSQL database with migrations applied.
 async fn create_test_db() -> (Arc<dyn Database>, tempfile::TempDir) {
     use ironclaw::db::libsql::LibSqlBackend;
@@ -130,14 +137,12 @@ async fn register_github_issue_routine(db: &Arc<dyn Database>, engine: &RoutineE
 
 async fn assert_system_event_count(
     engine: &RoutineEngine,
-    source: &str,
-    event_type: &str,
-    payload: &serde_json::Value,
+    spec: SystemEventSpec<'_>,
     expected: usize,
     msg: &str,
 ) {
     let fired = engine
-        .emit_system_event(source, event_type, payload, Some("default"))
+        .emit_system_event(spec.source, spec.event_type, &spec.payload, Some("default"))
         .await;
     assert_eq!(fired, expected, "{msg}");
 }
@@ -303,9 +308,11 @@ async fn system_event_trigger_matches_and_filters() {
     // Matching event should fire and be recorded in run history.
     assert_system_event_count(
         &engine,
-        "github",
-        "issue.opened",
-        &serde_json::json!({"repository": "nearai/ironclaw", "issue_number": 42}),
+        SystemEventSpec {
+            source: "github",
+            event_type: "issue.opened",
+            payload: serde_json::json!({"repository": "nearai/ironclaw", "issue_number": 42}),
+        },
         1,
         "Expected one routine to fire for matching event",
     )
@@ -320,49 +327,48 @@ async fn system_event_trigger_matches_and_filters() {
         "Expected run history after matching event"
     );
 
-    // Wrong event type should not fire.
-    assert_system_event_count(
-        &engine,
-        "github",
-        "issue.closed",
-        &serde_json::json!({"repository": "nearai/ironclaw"}),
-        0,
-        "Expected no routine for wrong event type",
-    )
-    .await;
-
-    // Wrong filter value should not fire.
-    assert_system_event_count(
-        &engine,
-        "github",
-        "issue.opened",
-        &serde_json::json!({"repository": "other/repo"}),
-        0,
-        "Expected no routine for filter mismatch",
-    )
-    .await;
-
-    // Case-insensitive source/event_type should still match.
-    assert_system_event_count(
-        &engine,
-        "GitHub",
-        "Issue.Opened",
-        &serde_json::json!({"repository": "nearai/ironclaw", "issue_number": 99}),
-        1,
-        "Expected case-insensitive match on source/event_type",
-    )
-    .await;
-
-    // Case-insensitive filter values should match.
-    assert_system_event_count(
-        &engine,
-        "github",
-        "issue.opened",
-        &serde_json::json!({"repository": "NearAI/IronClaw"}),
-        1,
-        "Expected case-insensitive match on filter values",
-    )
-    .await;
+    // Table-driven checks for non-matching and case-insensitive scenarios.
+    let scenarios: Vec<(SystemEventSpec, usize, &str)> = vec![
+        (
+            SystemEventSpec {
+                source: "github",
+                event_type: "issue.closed",
+                payload: serde_json::json!({"repository": "nearai/ironclaw"}),
+            },
+            0,
+            "Expected no routine for wrong event type",
+        ),
+        (
+            SystemEventSpec {
+                source: "github",
+                event_type: "issue.opened",
+                payload: serde_json::json!({"repository": "other/repo"}),
+            },
+            0,
+            "Expected no routine for filter mismatch",
+        ),
+        (
+            SystemEventSpec {
+                source: "GitHub",
+                event_type: "Issue.Opened",
+                payload: serde_json::json!({"repository": "nearai/ironclaw", "issue_number": 99}),
+            },
+            1,
+            "Expected case-insensitive match on source/event_type",
+        ),
+        (
+            SystemEventSpec {
+                source: "github",
+                event_type: "issue.opened",
+                payload: serde_json::json!({"repository": "NearAI/IronClaw"}),
+            },
+            1,
+            "Expected case-insensitive match on filter values",
+        ),
+    ];
+    for (spec, expected, msg) in scenarios {
+        assert_system_event_count(&engine, spec, expected, msg).await;
+    }
 }
 
 // -----------------------------------------------------------------------
