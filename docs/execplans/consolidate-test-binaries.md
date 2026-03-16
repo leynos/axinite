@@ -1,9 +1,10 @@
 # Consolidate integration test binaries
 
-**Branch:** (to be created from `build-time`)
+**Branch:** docs-consolidate-test-binaries-0n9r99
 **Date:** 2026-03-15
-**Status:** Plan ready; not yet started
+**Status:** Complete
 **Estimated impact:** 3–4 min saved on incremental `make test`
+**Actual result:** Reduced from 43 test binaries to 9 test binaries
 
 ## Big picture
 
@@ -214,7 +215,32 @@ tests/
 
 ## Progress
 
-- [ ] Phase 1: Create harness structure
-- [ ] Phase 2: Fix module paths
-- [ ] Phase 3: Update Cargo.toml
-- [ ] Phase 4: Validate
+- [x] Phase 1: Create harness structure
+- [x] Phase 2: Fix module paths
+- [x] Phase 3: Update Cargo.toml
+- [x] Phase 4: Validate
+
+
+## Implementation notes
+
+The consolidation was completed successfully. Key changes:
+
+1. Created 6 new test harness files with `#[path]` attributes:
+   - `tests/e2e_traces.rs` (16 modules: 15 e2e tests + routine_heartbeat)
+   - `tests/import_openclaw.rs` (6 modules)
+   - `tests/channels.rs` (5 modules)
+   - `tests/infrastructure.rs` (5 modules)
+   - `tests/tools_and_config.rs` (4 modules)
+   - `tests/db_integration.rs` (2 modules)
+
+2. Moved test files into subdirectories matching harness names
+
+3. Removed wrapper `mod` blocks from moved files and adjusted indentation
+
+4. Added `#[path = "..."]` attributes to harness files to reference subdirectory modules
+
+5. Ensured `mod support;` is only declared in harnesses that need it (e2e_traces, channels, tools_and_config)
+
+6. No changes needed to Cargo.toml (html_to_markdown already had required-features gate)
+
+Final structure: **9 test binaries** (down from 43)

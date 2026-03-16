@@ -6,8 +6,6 @@
 //!
 //! See: <https://github.com/nearai/ironclaw/issues/352> (QA plan, item 1.1)
 
-mod support;
-
 use ironclaw::tools::builtin::extension_tools::ExtensionToolKind;
 use ironclaw::tools::schema_validator::validate_strict_schema;
 use ironclaw::tools::validate_tool_schema;
@@ -261,8 +259,9 @@ async fn all_core_tools_work_in_multi_thread_runtime() {
 
 #[tokio::test]
 async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
-    let source_dir = support::github_tool_source_dir();
-    let wasm_path = support::github_wasm_artifact().expect("build or find github WASM artifact");
+    let source_dir = crate::support::github_tool_source_dir();
+    let wasm_path =
+        crate::support::github_wasm_artifact().expect("build or find github WASM artifact");
     let caps_path = source_dir.join("github-tool.capabilities.json");
     assert!(
         caps_path.exists(),
@@ -271,7 +270,7 @@ async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
     );
 
     let registry = Arc::new(ToolRegistry::new());
-    let runtime = support::metadata_test_runtime().expect("create metadata test runtime");
+    let runtime = crate::support::metadata_test_runtime().expect("create metadata test runtime");
     let loader = WasmToolLoader::new(runtime, Arc::clone(&registry));
 
     loader

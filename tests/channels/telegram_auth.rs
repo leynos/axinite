@@ -9,8 +9,6 @@
 //! 3. When owner_id is set, only that user can interact
 //! 4. Authorization works correctly for both private and group chats
 
-mod support;
-
 use std::collections::HashMap;
 
 use ironclaw::channels::wasm::{ChannelCapabilities, WasmChannel, WasmChannelRuntime};

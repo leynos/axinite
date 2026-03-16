@@ -15,7 +15,6 @@ use ironclaw::secrets::{CreateSecretParams, SecretsCrypto, SecretsStore};
 // ---------------------------------------------------------------------------
 
 /// Build a libsql DatabaseConfig pointing at a temp file.
-#[cfg(feature = "libsql")]
 fn libsql_config(path: &std::path::Path) -> ironclaw::config::DatabaseConfig {
     ironclaw::config::DatabaseConfig {
         backend: ironclaw::config::DatabaseBackend::LibSql,
@@ -38,7 +37,6 @@ fn test_crypto() -> Arc<SecretsCrypto> {
 // connect_with_handles: returns Database + populated handles
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "libsql")]
 #[tokio::test]
 async fn connect_with_handles_returns_db_and_libsql_handle() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -63,7 +61,6 @@ async fn connect_with_handles_returns_db_and_libsql_handle() {
 // connect_from_config delegates to connect_with_handles
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "libsql")]
 #[tokio::test]
 async fn connect_from_config_produces_working_db() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -83,7 +80,6 @@ async fn connect_from_config_produces_working_db() {
 // secrets::create_secrets_store from DatabaseHandles
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "libsql")]
 #[tokio::test]
 async fn secrets_store_from_handles_round_trips() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -115,7 +111,6 @@ async fn secrets_store_from_handles_round_trips() {
 // db::create_secrets_store (standalone CLI factory)
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "libsql")]
 #[tokio::test]
 async fn db_create_secrets_store_standalone_round_trips() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -146,7 +141,6 @@ async fn db_create_secrets_store_standalone_round_trips() {
 // Both secrets factories produce equivalent stores
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "libsql")]
 #[tokio::test]
 async fn both_secrets_factories_produce_compatible_stores() {
     let dir = tempfile::tempdir().expect("tempdir");
