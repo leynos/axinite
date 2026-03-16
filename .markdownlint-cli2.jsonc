@@ -13,7 +13,6 @@
   "ignores": [
     // Local virtual environments and package installs
     "**/.venv/**",
-    ".node_modules/**",
     "**/node_modules/**",
 
     // Generated build output and local image artefacts
