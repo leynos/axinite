@@ -113,7 +113,7 @@ Table 4. Durable conversation record.
 |--------|---------------|-------|----------|
 | `ConversationSummary` | conversation metadata and timestamps | Used to enumerate stored conversations. | `src/history/store.rs` |
 | `ConversationMessage` | `id`, `role`, `content`, `created_at` | The durable history format is a flat role-tagged message stream. | `src/history/store.rs` |
-| Roles in practice | `user`, `tool_calls`, `assistant` | Tool results are not stored as full transcript messages; tool calls are summarised into one JSON record. | `src/agent/thread_ops.rs`, `src/channels/web/util.rs` |
+| Roles in practice | `user`, `tool_calls`, `assistant` | Tool results are not stored as full transcript messages; tool calls are summarized into one JSON record. | `src/agent/thread_ops.rs`, `src/channels/web/util.rs` |
 
 This means persisted history is strong enough for browser history and thread
 hydration, but not identical to the full reasoning transcript held in memory.
