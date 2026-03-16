@@ -8,8 +8,8 @@ use std::time::Duration;
 use crate::support::assertions::assert_all_tools_succeeded;
 use crate::support::cleanup::CleanupGuard;
 use crate::support::metrics::{RunResult, ScenarioResult, compare_runs};
-use crate::support::test_rig::TestRigBuilder;
-use crate::support::trace_llm::{LlmTrace, TraceResponse};
+use crate::support::test_rig::{TestRig, TestRigBuilder};
+use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceToolCall};
 
 const TEST_DIR: &str = "/tmp/ironclaw_metrics_test";
 const TEST_FILE: &str = "/tmp/ironclaw_metrics_test/hello.txt";
@@ -19,20 +19,26 @@ fn setup_test_dir() {
     std::fs::create_dir_all(TEST_DIR).expect("failed to create test directory");
 }
 
+fn localize_tool_call_path(tool_call: &mut TraceToolCall, path: &str) {
+    if !matches!(tool_call.name.as_str(), "write_file" | "read_file") {
+        return;
+    }
+    if let Some(arguments) = tool_call.arguments.as_object_mut() {
+        arguments.insert(
+            "path".to_string(),
+            serde_json::Value::String(path.to_string()),
+        );
+    }
+}
+
 fn localize_file_tool_paths(trace: &mut LlmTrace, path: &str) {
     for turn in &mut trace.turns {
         for step in &mut turn.steps {
-            if let TraceResponse::ToolCalls { tool_calls, .. } = &mut step.response {
-                for tool_call in tool_calls {
-                    if matches!(tool_call.name.as_str(), "write_file" | "read_file")
-                        && let Some(arguments) = tool_call.arguments.as_object_mut()
-                    {
-                        arguments.insert(
-                            "path".to_string(),
-                            serde_json::Value::String(path.to_string()),
-                        );
-                    }
-                }
+            let TraceResponse::ToolCalls { tool_calls, .. } = &mut step.response else {
+                continue;
+            };
+            for tool_call in tool_calls {
+                localize_tool_call_path(tool_call, path);
             }
         }
     }
@@ -269,6 +275,43 @@ async fn test_run_result_and_baseline_comparison() {
     rig.shutdown();
 }
 
+fn assert_rig_metrics_are_zero(rig: &TestRig) {
+    assert_eq!(rig.llm_call_count(), 0, "Expected llm_call_count to be 0");
+    assert_eq!(
+        rig.total_input_tokens(),
+        0,
+        "Expected total_input_tokens to be 0"
+    );
+    assert_eq!(
+        rig.total_output_tokens(),
+        0,
+        "Expected total_output_tokens to be 0"
+    );
+}
+
+fn assert_rig_metrics_are_populated(rig: &TestRig) {
+    assert!(
+        rig.llm_call_count() >= 1,
+        "Expected llm_call_count >= 1, got {}",
+        rig.llm_call_count()
+    );
+    assert!(
+        rig.total_input_tokens() > 0,
+        "Expected total_input_tokens > 0, got {}",
+        rig.total_input_tokens()
+    );
+    assert!(
+        rig.total_output_tokens() > 0,
+        "Expected total_output_tokens > 0, got {}",
+        rig.total_output_tokens()
+    );
+    assert!(
+        rig.elapsed_ms() > 0,
+        "Expected elapsed_ms > 0, got {}",
+        rig.elapsed_ms()
+    );
+}
+
 /// Verify that accessor methods on TestRig match InstrumentedLlm data.
 #[tokio::test]
 async fn test_rig_metric_accessors() {
@@ -281,18 +324,13 @@ async fn test_rig_metric_accessors() {
     let rig = TestRigBuilder::new().with_trace(trace).build().await;
 
     // Before sending any message, metrics should be zero.
-    assert_eq!(rig.llm_call_count(), 0);
-    assert_eq!(rig.total_input_tokens(), 0);
-    assert_eq!(rig.total_output_tokens(), 0);
+    assert_rig_metrics_are_zero(&rig);
 
     rig.send_message("hello").await;
     let _responses = rig.wait_for_responses(1, Duration::from_secs(10)).await;
 
     // After the agent processes, metrics should be populated.
-    assert!(rig.llm_call_count() >= 1);
-    assert!(rig.total_input_tokens() > 0);
-    assert!(rig.total_output_tokens() > 0);
-    assert!(rig.elapsed_ms() > 0);
+    assert_rig_metrics_are_populated(&rig);
 
     rig.shutdown();
 }

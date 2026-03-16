@@ -3,7 +3,48 @@
 //! These tests verify JSON deserialization and backward compatibility of the
 //! trace format. They do NOT require a rig, database, or the `libsql` feature.
 
-use crate::support::trace_llm::{LlmTrace, TraceExpects};
+use crate::support::trace_llm::{LlmTrace, TraceExpects, TraceTurn};
+
+/// Asserts turn properties at a specific index.
+fn assert_turn(turns: &[TraceTurn], idx: usize, input: &str, steps: usize) {
+    assert_eq!(turns[idx].user_input, input);
+    assert_eq!(turns[idx].steps.len(), steps);
+}
+
+/// Asserts empty trace defaults for backward compatibility.
+fn assert_empty_trace_defaults(trace: &LlmTrace) {
+    assert!(trace.memory_snapshot.is_empty());
+    assert!(trace.http_exchanges.is_empty());
+    assert!(trace.expects.is_empty());
+}
+
+/// Asserts core expect fields.
+fn assert_core_expects(
+    expects: &TraceExpects,
+    response_contains: &[&str],
+    tools_used: &[&str],
+    all_tools_succeeded: Option<bool>,
+    min_responses: Option<usize>,
+    echo_result: Option<&str>,
+) {
+    assert_eq!(
+        expects.response_contains,
+        response_contains
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        expects.tools_used,
+        tools_used.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+    );
+    assert_eq!(expects.all_tools_succeeded, all_tools_succeeded);
+    assert_eq!(expects.min_responses, min_responses);
+    assert_eq!(
+        expects.tool_results_contain.get("echo").map(|s| s.as_str()),
+        echo_result
+    );
+}
 
 /// A trace with only user_input steps and no playable steps deserializes.
 #[test]
@@ -38,9 +79,7 @@ fn backward_compat_no_memory_snapshot() {
         ]
     }"#;
     let trace: LlmTrace = serde_json::from_str(json).unwrap();
-    assert!(trace.memory_snapshot.is_empty());
-    assert!(trace.http_exchanges.is_empty());
-    assert!(trace.expects.is_empty());
+    assert_empty_trace_defaults(&trace);
     assert_eq!(trace.playable_steps().len(), 1);
 }
 
@@ -69,17 +108,13 @@ fn expects_deserialization() {
     }"#;
     let trace: LlmTrace = serde_json::from_str(json).unwrap();
     assert!(!trace.expects.is_empty());
-    assert_eq!(trace.expects.response_contains, vec!["hello", "world"]);
-    assert_eq!(trace.expects.tools_used, vec!["echo"]);
-    assert_eq!(trace.expects.all_tools_succeeded, Some(true));
-    assert_eq!(trace.expects.min_responses, Some(1));
-    assert_eq!(
-        trace
-            .expects
-            .tool_results_contain
-            .get("echo")
-            .map(|s| s.as_str()),
-        Some("greeting")
+    assert_core_expects(
+        &trace.expects,
+        &["hello", "world"],
+        &["echo"],
+        Some(true),
+        Some(1),
+        Some("greeting"),
     );
 
     // Round-trip: serialize back and deserialize again.
@@ -139,7 +174,6 @@ fn per_turn_expects() {
     }"#;
     let trace: LlmTrace = serde_json::from_str(json).unwrap();
     assert_eq!(trace.turns.len(), 1);
-    assert!(!trace.turns[0].expects.is_empty());
     assert_eq!(trace.turns[0].expects.response_contains, vec!["greeting"]);
     assert_eq!(trace.turns[0].expects.tools_not_used, vec!["shell"]);
 }
@@ -165,10 +199,8 @@ fn recorded_multi_turn_splits_at_user_input() {
     }"#;
     let trace: LlmTrace = serde_json::from_str(json).unwrap();
     assert_eq!(trace.turns.len(), 2);
-    assert_eq!(trace.turns[0].user_input, "hello");
-    assert_eq!(trace.turns[0].steps.len(), 1);
-    assert_eq!(trace.turns[1].user_input, "bye");
-    assert_eq!(trace.turns[1].steps.len(), 1);
+    assert_turn(&trace.turns, 0, "hello", 1);
+    assert_turn(&trace.turns, 1, "bye", 1);
 }
 
 /// Steps before the first UserInput get placeholder input.
@@ -184,8 +216,6 @@ fn steps_before_first_user_input_get_placeholder() {
     }"#;
     let trace: LlmTrace = serde_json::from_str(json).unwrap();
     assert_eq!(trace.turns.len(), 2);
-    assert_eq!(trace.turns[0].user_input, "(test input)");
-    assert_eq!(trace.turns[0].steps.len(), 1);
-    assert_eq!(trace.turns[1].user_input, "hello");
-    assert_eq!(trace.turns[1].steps.len(), 1);
+    assert_turn(&trace.turns, 0, "(test input)", 1);
+    assert_turn(&trace.turns, 1, "hello", 1);
 }
