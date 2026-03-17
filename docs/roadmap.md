@@ -2,8 +2,8 @@
 
 This roadmap turns the current axinite design set into a sequence of
 implementation activities. It is derived from the welcome guide, RFCs
-0001-0003 and 0006-0008 in this branch, and the two pending sibling-branch
-RFCs that will become RFC 0004 and RFC 0005 when merged.
+0001-0003, 0006-0009 in this branch, and the two pending sibling-branch RFCs
+that will become RFC 0004 and RFC 0005 when merged.
 
 The roadmap follows the current documentation style guidance:
 
@@ -35,6 +35,7 @@ reserved numbers:
 - [RFC 0006](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md)
 - [RFC 0007](./rfcs/0007-secure-memory-sidecar-design.md)
 - [RFC 0008](./rfcs/0008-websocket-responses-api.md)
+- [RFC 0009](./rfcs/0009-feature-flags-frontend.md)
 
 ## 1. Make tool contracts explicit
 
@@ -586,6 +587,49 @@ output modes, and stability promises before 4.3.2-4.3.4.
   - Success: the CLI can trigger outbound channel sends, browser automation,
     local backups, self-update flows, subagent spawn, and session export with
     stable flags and audit-friendly output.
+
+### 4.4. Feature flags for progressive front-end rollout
+
+Objective: add a lightweight feature-flag delivery mechanism so the backend
+can declare which front-end capabilities are enabled, and the browser can gate
+rendering accordingly.
+
+Learning opportunity: validate whether a minimal opaque string-set model is
+sufficient for progressive feature rollout without introducing complex
+targeting or percentage-based activation.
+
+Dependencies: independent of other Phase 4 work, but provides a foundation for
+Phase 6 front-end features (canvas hosting, advanced media handling) to roll
+out behind flags.
+
+- [ ] 4.4.1. Add feature-flag configuration input parsing in `GatewayConfig`.
+  - See [RFC 0009 §Configuration inputs](./rfcs/0009-feature-flags-frontend.md#1-configuration-inputs).
+  - Success: `FEATURE_FLAGS` environment variable and `[gateway] feature_flags`
+    TOML array are parsed into a `Vec<String>`, trimmed, deduplicated, and
+    stored in `GatewayConfig`.
+- [ ] 4.4.2. Add the `FeatureFlags` struct and `GatewayState` integration.
+  Requires 4.4.1.
+  - See [RFC 0009 §Data shape](./rfcs/0009-feature-flags-frontend.md#2-data-shape)
+    and [RFC 0009 §GatewayState integration](./rfcs/0009-feature-flags-frontend.md#3-gatewaystate-integration).
+  - Success: `GatewayState` holds a `FeatureFlags` value constructed from the
+    resolved configuration, and the value is immutable for the process lifetime.
+- [ ] 4.4.3. Implement the `GET /api/features` endpoint. Requires 4.4.2.
+  - See [RFC 0009 §API endpoint](./rfcs/0009-feature-flags-frontend.md#4-api-endpoint).
+  - Success: the endpoint returns `{ "flags": ["name_a", "name_b"] }` by
+    serializing the `FeatureFlags` value from `GatewayState`, with no database
+    query on the hot path.
+- [ ] 4.4.4. Add front-end `loadFeatureFlags()` integration in `app.js`.
+  Requires 4.4.3.
+  - See [RFC 0009 §Front-end consumption](./rfcs/0009-feature-flags-frontend.md#5-front-end-consumption).
+  - Success: the browser fetches `/api/features` after authentication, stores
+    the result in a `Set`, and provides `featureFlags.has(name)` checks for
+    gating UI rendering and behaviour.
+- [ ] 4.4.5. Add integration tests for flag resolution, endpoint contract, and
+  front-end consumption. Requires 4.4.3 and 4.4.4.
+  - See [RFC 0009 §Requirements](./rfcs/0009-feature-flags-frontend.md#requirements).
+  - Success: tests cover environment variable parsing, TOML overlay, empty-list
+    default, endpoint response shape, and front-end flag-set construction, and
+    prove that unknown flag names are forwarded without validation errors.
 
 ## 5. Add model, reasoning, and citation control
 
