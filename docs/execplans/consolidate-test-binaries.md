@@ -31,7 +31,6 @@ cutting link time roughly in proportion.
 
 ## Current test file inventory (40 files)
 
-
 ### End-to-end (E2E) trace tests (15 files, all use `mod support;`)
 
 - `e2e_advanced_traces.rs`
@@ -81,7 +80,6 @@ cutting link time roughly in proportion.
 - `trace_format.rs`
 - `tool_schema_validation.rs`
 - `wit_compat.rs`
-
 
 ### Other (5 files)
 

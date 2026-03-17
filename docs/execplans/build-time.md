@@ -20,7 +20,7 @@ actionable improvements to reduce overall build and test time.
 
 **Environment:** Rust 1.92.0, 32 cores, mold linker configured, no sccache.
 
-Table: Build baseline metrics
+Table 1. Baseline build and test metrics.
 
 | Metric | Value |
 |--------|-------|
@@ -33,7 +33,7 @@ Table: Build baseline metrics
 
 ### Clean Build Phase Breakdown
 
-Table: Clean build phase breakdown
+Table 2. Clean build phase breakdown.
 
 | Phase | Wall time | Notes |
 |-------|-----------|-------|
@@ -44,7 +44,7 @@ Table: Clean build phase breakdown
 
 ### Incremental Build Breakdown
 
-Table: Incremental build phase breakdown
+Table 3. Incremental build breakdown.
 
 | Phase | Wall time | Notes |
 |-------|-----------|-------|
@@ -57,7 +57,7 @@ Table: Incremental build phase breakdown
 
 ### Heaviest Crates (clean build)
 
-Table: Heaviest crates by compile time
+Table 4. Heaviest crates by compile time.
 
 | Crate | Compile time | Notes |
 |-------|-------------|-------|
@@ -199,9 +199,11 @@ test: build-github-tool-wasm
 recompiled.
 **Effort:** Install sccache, configure the environment variable:
 
+Table 5. Environment variables used during build.
+
 | Variable name | Meaning | Default or rule |
 |---------------|---------|-----------------|
-| `RUSTC_WRAPPER` | `rustc` wrapper (for example, `sccache`) used by Cargo. | Unset by default. Set to the `sccache` path in `.cargo/config.toml` or the shell environment to enable compiler caching. |
+| `RUSTC_WRAPPER` | A `rustc` wrapper (for example, `sccache`) used by Cargo. | Unset by default; set to the `sccache` path in `.cargo/config.toml` or via the shell environment to enable compiler caching. |
 
 ### Tier 2 — Medium Effort (test restructuring, feature gating)
 

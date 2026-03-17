@@ -117,7 +117,7 @@ For each module, in separate commits:
 
 ## Estimated Scope
 
-Table: Estimated scope of async-trait migration
+Table 1. Migration scope by async-trait category.
 
 | Category | Uses | Migratable |
 |----------|------|------------|
