@@ -68,6 +68,12 @@ async fn multi_turn_state() {
 // -----------------------------------------------------------------------
 // Needs interrupt signaling infrastructure in TestChannel.
 
+#[test]
+#[ignore]
+fn thread_interruption() {
+    // TODO: implement once interrupt signaling infrastructure is added to TestChannel
+}
+
 // -----------------------------------------------------------------------
 // Test 3: undo_redo_cycle
 // -----------------------------------------------------------------------
@@ -147,3 +153,9 @@ async fn concurrent_dispatch() {
 // Test 5: max_parallel_exceeded -- DEFERRED
 // -----------------------------------------------------------------------
 // Needs max_parallel config exposed through TestRigBuilder.
+
+#[test]
+#[ignore]
+fn max_parallel_exceeded() {
+    // TODO: implement once max_parallel config is exposed through TestRigBuilder
+}

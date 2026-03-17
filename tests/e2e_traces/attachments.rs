@@ -3,19 +3,12 @@
 //! Verifies that attachments on incoming messages are augmented into the user
 //! text and (for images) passed as multimodal content parts to the LLM.
 
-use std::time::Duration;
-
+use crate::support::fixtures::{DEFAULT_TIMEOUT, fixture_path};
 use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_llm::LlmTrace;
 
 use ironclaw::channels::{AttachmentKind, IncomingAttachment, IncomingMessage};
 use ironclaw::llm::ContentPart;
-
-const FIXTURES: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/llm_traces/spot"
-);
-const TIMEOUT: Duration = Duration::from_secs(15);
 
 fn make_attachment(kind: AttachmentKind) -> IncomingAttachment {
     IncomingAttachment {
@@ -35,8 +28,8 @@ fn make_attachment(kind: AttachmentKind) -> IncomingAttachment {
 /// Audio attachment with transcript reaches the LLM as augmented text.
 #[tokio::test]
 async fn attachment_audio_transcript_reaches_llm() {
-    let trace =
-        LlmTrace::from_file(format!("{FIXTURES}/attachment_audio_transcript.json")).unwrap();
+    let trace = LlmTrace::from_file(fixture_path("spot", "attachment_audio_transcript.json"))
+        .expect("failed to load fixture: spot/attachment_audio_transcript.json");
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
@@ -53,7 +46,7 @@ async fn attachment_audio_transcript_reaches_llm() {
     msg.attachments.push(att);
 
     rig.send_incoming(msg).await;
-    let responses = rig.wait_for_responses(1, TIMEOUT).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     // Verify the response was received
     assert!(
@@ -102,7 +95,8 @@ async fn attachment_audio_transcript_reaches_llm() {
 /// Image attachment with data reaches the LLM with multimodal content parts.
 #[tokio::test]
 async fn attachment_image_produces_content_parts() {
-    let trace = LlmTrace::from_file(format!("{FIXTURES}/attachment_image.json")).unwrap();
+    let trace = LlmTrace::from_file(fixture_path("spot", "attachment_image.json"))
+        .expect("failed to load fixture: spot/attachment_image.json");
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
@@ -119,7 +113,7 @@ async fn attachment_image_produces_content_parts() {
     msg.attachments.push(att);
 
     rig.send_incoming(msg).await;
-    let responses = rig.wait_for_responses(1, TIMEOUT).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     assert!(
         !responses.is_empty(),
@@ -171,14 +165,15 @@ async fn attachment_image_produces_content_parts() {
 /// Message without attachments should have no content_parts and no augmentation.
 #[tokio::test]
 async fn no_attachments_no_augmentation() {
-    let trace = LlmTrace::from_file(format!("{FIXTURES}/smoke_greeting.json")).unwrap();
+    let trace = LlmTrace::from_file(fixture_path("spot", "smoke_greeting.json"))
+        .expect("failed to load fixture: spot/smoke_greeting.json");
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
         .await;
 
     rig.send_message("Hello! Introduce yourself briefly.").await;
-    let responses = rig.wait_for_responses(1, TIMEOUT).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     let requests = rig.captured_llm_requests();
     let last_request = &requests[requests.len() - 1];

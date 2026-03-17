@@ -6,18 +6,13 @@
 use std::time::Duration;
 
 use crate::support::assertions::assert_all_tools_succeeded;
-use crate::support::cleanup::CleanupGuard;
+use crate::support::cleanup::{CleanupGuard, setup_test_dir};
 use crate::support::metrics::{RunResult, ScenarioResult, TraceMetrics, compare_runs};
 use crate::support::test_rig::{TestRig, TestRigBuilder};
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceToolCall};
 
 const TEST_DIR: &str = "/tmp/ironclaw_metrics_test";
 const TEST_FILE: &str = "/tmp/ironclaw_metrics_test/hello.txt";
-
-fn setup_test_dir() {
-    let _ = std::fs::remove_dir_all(TEST_DIR);
-    std::fs::create_dir_all(TEST_DIR).expect("failed to create test directory");
-}
 
 fn localize_tool_call_path(tool_call: &mut TraceToolCall, path: &str) {
     if !matches!(tool_call.name.as_str(), "write_file" | "read_file") {
@@ -143,7 +138,7 @@ fn assert_tool_trace_names(metrics: &TraceMetrics) {
 /// Verify that metrics capture tool calls from a file write/read flow.
 #[tokio::test]
 async fn test_metrics_collected_from_tool_trace() {
-    setup_test_dir();
+    setup_test_dir(TEST_DIR);
     let _cleanup = CleanupGuard::new().dir(TEST_DIR);
 
     let mut trace = LlmTrace::from_file(concat!(
@@ -211,7 +206,7 @@ async fn test_metrics_json_serialization() {
         response: responses
             .first()
             .map(|r| r.content.clone())
-            .unwrap_or_default(),
+            .expect("expected one response from the rig"),
         error: None,
         turn_metrics: Vec::new(),
     };
@@ -253,7 +248,7 @@ async fn test_run_result_and_baseline_comparison() {
         response: responses
             .first()
             .map(|r| r.content.clone())
-            .unwrap_or_default(),
+            .expect("expected one response from the rig"),
         error: None,
         turn_metrics: Vec::new(),
     };
@@ -279,11 +274,15 @@ async fn test_run_result_and_baseline_comparison() {
 
     // Compare should detect token regression (current uses more tokens than baseline).
     let deltas = compare_runs(&baseline_run, &current_run, 0.10);
-    let token_delta = deltas.iter().find(|d| d.metric == "total_tokens");
-    if let Some(d) = token_delta {
-        assert!(d.is_regression, "Expected token regression");
-        assert!(d.delta > 0.0, "Expected positive delta for regression");
-    }
+    let token_delta = deltas
+        .iter()
+        .find(|d| d.metric == "total_tokens")
+        .expect("expected compare_runs to emit a total_tokens delta");
+    assert!(token_delta.is_regression, "Expected token regression");
+    assert!(
+        token_delta.delta > 0.0,
+        "Expected positive delta for regression"
+    );
 
     rig.shutdown();
 }

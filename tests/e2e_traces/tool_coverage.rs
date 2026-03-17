@@ -5,18 +5,11 @@
 
 use std::time::Duration;
 
-use crate::support::cleanup::CleanupGuard;
+use crate::support::cleanup::{CleanupGuard, setup_test_dir_with_suffix};
 use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_llm::LlmTrace;
 
 const TEST_DIR_BASE: &str = "/tmp/ironclaw_coverage_test";
-
-fn setup_test_dir(suffix: &str) -> String {
-    let dir = format!("{TEST_DIR_BASE}_{suffix}");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("failed to create test directory");
-    dir
-}
 
 // -----------------------------------------------------------------------
 // json tool
@@ -89,7 +82,7 @@ async fn test_shell_echo() {
 
 #[tokio::test]
 async fn test_list_dir() {
-    let test_dir = setup_test_dir("list_dir");
+    let test_dir = setup_test_dir_with_suffix(TEST_DIR_BASE, "list_dir");
     let _cleanup = CleanupGuard::new().dir(&test_dir);
     std::fs::write(format!("{test_dir}/file_a.txt"), "content a").unwrap();
     std::fs::write(format!("{test_dir}/file_b.txt"), "content b").unwrap();
@@ -118,7 +111,7 @@ async fn test_list_dir() {
 
 #[tokio::test]
 async fn test_apply_patch_chain() {
-    let test_dir = setup_test_dir("apply_patch");
+    let test_dir = setup_test_dir_with_suffix(TEST_DIR_BASE, "apply_patch");
     let _cleanup = CleanupGuard::new().dir(&test_dir);
 
     let trace = LlmTrace::from_file(concat!(

@@ -4,22 +4,14 @@
 //! declarative `expects` from the JSON and any additional manual checks.
 
 use crate::support::test_rig::run_recorded_trace;
+use rstest::rstest;
 
-/// Recorded trace: telegram connection check.
+/// Recorded trace tests covering telegram check, weather query, and baseball stats.
+#[rstest]
+#[case("telegram_check.json")]
+#[case("weather_sf.json")]
+#[case("baseball_stats.json")]
 #[tokio::test]
-async fn recorded_telegram_check() {
-    run_recorded_trace("telegram_check.json").await;
-}
-
-/// Recorded trace: weather query for San Francisco.
-#[tokio::test]
-async fn recorded_weather_sf() {
-    run_recorded_trace("weather_sf.json").await;
-}
-
-/// Recorded trace: baseball stats with large HTTP response exercising
-/// tool_output_stash + source_tool_call_id for untruncated data access.
-#[tokio::test]
-async fn recorded_baseball_stats() {
-    run_recorded_trace("baseball_stats.json").await;
+async fn recorded_trace(#[case] fixture_name: &str) {
+    run_recorded_trace(fixture_name).await;
 }

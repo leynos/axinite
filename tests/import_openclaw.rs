@@ -1,6 +1,8 @@
 //! OpenClaw import tests covering basic, comprehensive, e2e, error handling,
 //! idempotency, and integration scenarios.
 
+#![cfg(feature = "import")]
+
 #[path = "import_openclaw/basic.rs"]
 mod basic;
 #[path = "import_openclaw/comprehensive.rs"]

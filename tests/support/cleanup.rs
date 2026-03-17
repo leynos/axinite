@@ -1,4 +1,5 @@
-//! RAII cleanup guard for test directories and files.
+//! RAII cleanup guard and directory-setup helpers for test directories and
+//! files.
 
 /// The kind of path registered for cleanup.
 enum PathKind {
@@ -44,4 +45,22 @@ impl Drop for CleanupGuard {
             }
         }
     }
+}
+
+/// Remove and recreate a test directory, ensuring a clean slate.
+#[allow(dead_code)]
+pub fn setup_test_dir(path: &str) {
+    // Ignore error: directory may not exist, removal failures are non-fatal in tests
+    let _ = std::fs::remove_dir_all(path);
+    std::fs::create_dir_all(path).expect("failed to create test directory");
+}
+
+/// Remove and recreate a suffixed test directory, returning the full path.
+///
+/// Useful when tests need isolated directories to avoid collisions.
+#[allow(dead_code)]
+pub fn setup_test_dir_with_suffix(base: &str, suffix: &str) -> String {
+    let dir = format!("{base}_{suffix}");
+    setup_test_dir(&dir);
+    dir
 }

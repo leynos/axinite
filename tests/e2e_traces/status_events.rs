@@ -41,13 +41,16 @@ fn assert_tool_event_ordering(tool_events: &[&StatusUpdate]) {
                 pending_starts.push(name.clone());
             }
             StatusUpdate::ToolCompleted { name, .. } => {
-                let pos = pending_starts.iter().rposition(|n| n == name);
-                assert!(
-                    pos.is_some(),
-                    "ToolCompleted for '{name}' without preceding ToolStarted. \
-                     Pending starts: {pending_starts:?}"
-                );
-                pending_starts.remove(pos.unwrap());
+                let pos = pending_starts
+                    .iter()
+                    .rposition(|n| n == name)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "ToolCompleted for '{name}' without preceding ToolStarted. \
+                             Pending starts: {pending_starts:?}"
+                        )
+                    });
+                pending_starts.remove(pos);
             }
             _ => {}
         }
@@ -141,7 +144,7 @@ async fn test_thinking_events_captured() {
         .iter()
         .any(|e| matches!(e, StatusUpdate::Thinking(_) | StatusUpdate::Status(_)));
 
-    if !has_processing_event {
+    if cfg!(debug_assertions) && !has_processing_event {
         eprintln!(
             "[INFO] No Thinking/Status events captured. \
              Agent may not emit these for simple text responses. \

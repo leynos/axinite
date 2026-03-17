@@ -140,8 +140,9 @@ fn expects_deserialization() {
     );
 
     // Round-trip: serialize back and deserialize again.
-    let serialized = serde_json::to_string(&trace).unwrap();
-    let trace2: LlmTrace = serde_json::from_str(&serialized).unwrap();
+    let serialized = serde_json::to_string(&trace).expect("failed to serialize LlmTrace");
+    let trace2: LlmTrace =
+        serde_json::from_str(&serialized).expect("failed to deserialize LlmTrace");
     assert_eq!(
         trace2.expects.response_contains,
         trace.expects.response_contains

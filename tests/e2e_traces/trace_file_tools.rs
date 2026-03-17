@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use crate::support::cleanup::CleanupGuard;
+use crate::support::cleanup::{CleanupGuard, setup_test_dir};
 use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_llm::LlmTrace;
 
@@ -11,14 +11,9 @@ const TEST_DIR: &str = "/tmp/ironclaw_e2e_test";
 const TEST_FILE: &str = "/tmp/ironclaw_e2e_test/hello.txt";
 const EXPECTED_CONTENT: &str = "Hello, E2E test!";
 
-fn setup_test_dir() {
-    let _ = std::fs::remove_dir_all(TEST_DIR);
-    std::fs::create_dir_all(TEST_DIR).expect("failed to create test directory");
-}
-
 #[tokio::test]
 async fn test_file_write_and_read_flow() {
-    setup_test_dir();
+    setup_test_dir(TEST_DIR);
     let _cleanup = CleanupGuard::new().dir(TEST_DIR);
 
     let fixture_path = concat!(

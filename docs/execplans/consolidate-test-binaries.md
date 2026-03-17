@@ -90,7 +90,8 @@ cutting link time roughly in proportion.
 - `libsql_wit_defaults_integration.rs`
 - `module_init_integration.rs`
 
-## Target structure (10 binaries)
+
+## Target structure (9 binaries)
 
 ```plaintext
 tests/
@@ -159,7 +160,7 @@ tests/
 └── e2e/                              # Python tests (unchanged)
 ```
 
-**Result: 10 binaries** (down from 43).
+**Result: 9 binaries** (down from 43).
 
 ## Implementation steps
 

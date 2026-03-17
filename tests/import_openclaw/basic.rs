@@ -2,10 +2,10 @@
 
 #![cfg(feature = "import")]
 
-#[cfg(feature = "import")]
 mod import_tests {
     use ironclaw::import::openclaw::reader::{OpenClawConfig, OpenClawMemoryChunk};
     use ironclaw::import::{ImportError, ImportStats};
+    use rstest::rstest;
 
     #[test]
     fn test_import_stats_is_empty() {
@@ -30,13 +30,12 @@ mod import_tests {
         assert_eq!(stats.total_imported(), 71);
     }
 
+    #[rstest]
+    #[case(ImportError::ConfigParse("test error".to_string()), "JSON5 parse error: test error")]
+    #[case(ImportError::Database("db error".to_string()), "Database error: db error")]
     #[test]
-    fn test_import_error_display() {
-        let err = ImportError::ConfigParse("test error".to_string());
-        assert_eq!(err.to_string(), "JSON5 parse error: test error");
-
-        let err = ImportError::Database("db error".to_string());
-        assert_eq!(err.to_string(), "Database error: db error");
+    fn test_import_error_display(#[case] err: ImportError, #[case] expected: &str) {
+        assert_eq!(err.to_string(), expected);
     }
 
     #[test]

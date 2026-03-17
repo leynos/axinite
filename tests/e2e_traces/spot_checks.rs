@@ -4,27 +4,21 @@
 //! the result using declarative `expects` from the fixture JSON plus any
 //! additional assertions that can't be expressed declaratively.
 
-use std::time::Duration;
-
 use crate::support::cleanup::CleanupGuard;
+use crate::support::fixtures::{DEFAULT_TIMEOUT, fixture_path};
 use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_llm::LlmTrace;
 
-const FIXTURES: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/llm_traces/spot"
-);
-const TIMEOUT: Duration = Duration::from_secs(15);
-
 async fn run_spot_test(fixture_file: &str, message: &str) {
-    let trace = LlmTrace::from_file(format!("{FIXTURES}/{fixture_file}")).unwrap();
+    let trace = LlmTrace::from_file(fixture_path("spot", fixture_file))
+        .unwrap_or_else(|_| panic!("failed to load fixture: spot/{fixture_file}"));
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
         .await;
 
     rig.send_message(message).await;
-    let responses = rig.wait_for_responses(1, TIMEOUT).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     rig.verify_trace_expects(&trace, &responses);
     rig.shutdown();
@@ -77,9 +71,11 @@ spot_test!(
 #[tokio::test]
 async fn spot_chain_write_read() {
     let _cleanup = CleanupGuard::new().file("/tmp/ironclaw_spot_test.txt");
+    // Ignore error: file may not exist yet, this is intentional cleanup
     let _ = std::fs::remove_file("/tmp/ironclaw_spot_test.txt");
 
-    let trace = LlmTrace::from_file(format!("{FIXTURES}/chain_write_read.json")).unwrap();
+    let trace = LlmTrace::from_file(fixture_path("spot", "chain_write_read.json"))
+        .expect("failed to load fixture: spot/chain_write_read.json");
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
@@ -90,7 +86,7 @@ async fn spot_chain_write_read() {
          using the write_file tool, then read it back using read_file.",
     )
     .await;
-    let responses = rig.wait_for_responses(1, TIMEOUT).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     rig.verify_trace_expects(&trace, &responses);
 
@@ -126,7 +122,8 @@ async fn spot_memory_save_recall() {
     let _cleanup = CleanupGuard::new().file("/tmp/bench-meeting.md");
     let _ = std::fs::remove_file("/tmp/bench-meeting.md");
 
-    let trace = LlmTrace::from_file(format!("{FIXTURES}/memory_save_recall.json")).unwrap();
+    let trace = LlmTrace::from_file(fixture_path("spot", "memory_save_recall.json"))
+        .expect("failed to load fixture: spot/memory_save_recall.json");
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
@@ -140,7 +137,7 @@ async fn spot_memory_save_recall() {
          Then read it back and tell me who owns the frontend and what the launch date is.",
     )
     .await;
-    let responses = rig.wait_for_responses(1, TIMEOUT).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     rig.verify_trace_expects(&trace, &responses);
     rig.shutdown();
