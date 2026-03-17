@@ -11,6 +11,53 @@ use ironclaw::channels::StatusUpdate;
 use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_llm::LlmTrace;
 
+/// Collect ToolStarted and ToolCompleted names from an ordered event slice,
+/// preserving event order. Returns `(starts, completions)`.
+fn extract_tool_event_names<'a>(tool_events: &[&'a StatusUpdate]) -> (Vec<&'a str>, Vec<&'a str>) {
+    let starts = tool_events
+        .iter()
+        .filter_map(|e| match e {
+            StatusUpdate::ToolStarted { name } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    let completions = tool_events
+        .iter()
+        .filter_map(|e| match e {
+            StatusUpdate::ToolCompleted { name, .. } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    (starts, completions)
+}
+
+/// Assert that every ToolCompleted is preceded by a ToolStarted for the same
+/// tool name, and that no ToolStarted is left unmatched at the end.
+fn assert_tool_event_ordering(tool_events: &[&StatusUpdate]) {
+    let mut pending_starts: Vec<String> = Vec::new();
+    for event in tool_events {
+        match event {
+            StatusUpdate::ToolStarted { name } => {
+                pending_starts.push(name.clone());
+            }
+            StatusUpdate::ToolCompleted { name, .. } => {
+                let pos = pending_starts.iter().rposition(|n| n == name);
+                assert!(
+                    pos.is_some(),
+                    "ToolCompleted for '{name}' without preceding ToolStarted. \
+                     Pending starts: {pending_starts:?}"
+                );
+                pending_starts.remove(pos.unwrap());
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        pending_starts.is_empty(),
+        "ToolStarted without matching ToolCompleted: {pending_starts:?}"
+    );
+}
+
 /// For a 3-tool chain (echo -> echo -> echo), verify that:
 /// 1. ToolStarted fires before ToolCompleted for each tool.
 /// 2. The total number of ToolStarted equals ToolCompleted.
@@ -30,11 +77,8 @@ async fn test_status_event_ordering() {
 
     rig.send_message("Run the tool chain").await;
     let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
-    // Declarative expects from fixture (tools_used, all_tools_succeeded, min_responses).
     rig.verify_trace_expects(&trace, &responses);
 
-    // Extra: event ordering checks (not expressible as expects).
     let events = rig.captured_status_events();
     let tool_events: Vec<&StatusUpdate> = events
         .iter()
@@ -46,21 +90,7 @@ async fn test_status_event_ordering() {
         })
         .collect();
 
-    let starts: Vec<&str> = tool_events
-        .iter()
-        .filter_map(|e| match e {
-            StatusUpdate::ToolStarted { name } => Some(name.as_str()),
-            _ => None,
-        })
-        .collect();
-    let completions: Vec<&str> = tool_events
-        .iter()
-        .filter_map(|e| match e {
-            StatusUpdate::ToolCompleted { name, .. } => Some(name.as_str()),
-            _ => None,
-        })
-        .collect();
-
+    let (starts, completions) = extract_tool_event_names(&tool_events);
     assert!(
         starts.len() >= 3,
         "Expected >= 3 ToolStarted events, got {}: {:?}",
@@ -75,33 +105,8 @@ async fn test_status_event_ordering() {
         completions.len()
     );
 
-    // Verify ordering: for each ToolCompleted, a ToolStarted for the same
-    // tool name must appear earlier in the event list.
-    let mut pending_starts: Vec<String> = Vec::new();
-    for event in &tool_events {
-        match event {
-            StatusUpdate::ToolStarted { name } => {
-                pending_starts.push(name.clone());
-            }
-            StatusUpdate::ToolCompleted { name, .. } => {
-                let pos = pending_starts.iter().rposition(|n| n == name);
-                assert!(
-                    pos.is_some(),
-                    "ToolCompleted for '{name}' without preceding ToolStarted. \
-                     Pending starts: {pending_starts:?}"
-                );
-                pending_starts.remove(pos.unwrap());
-            }
-            _ => {}
-        }
-    }
+    assert_tool_event_ordering(&tool_events);
 
-    assert!(
-        pending_starts.is_empty(),
-        "ToolStarted without matching ToolCompleted: {pending_starts:?}"
-    );
-
-    // Extra: metrics checks.
     let metrics = rig.collect_metrics().await;
     assert!(
         metrics.llm_calls >= 4,

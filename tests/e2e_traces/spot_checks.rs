@@ -16,76 +16,59 @@ const FIXTURES: &str = concat!(
 );
 const TIMEOUT: Duration = Duration::from_secs(15);
 
+async fn run_spot_test(fixture_file: &str, message: &str) {
+    let trace = LlmTrace::from_file(format!("{FIXTURES}/{fixture_file}")).unwrap();
+    let rig = TestRigBuilder::new()
+        .with_trace(trace.clone())
+        .build()
+        .await;
+
+    rig.send_message(message).await;
+    let responses = rig.wait_for_responses(1, TIMEOUT).await;
+
+    rig.verify_trace_expects(&trace, &responses);
+    rig.shutdown();
+}
+
+/// Generates a `#[tokio::test]` wrapper that delegates to `run_spot_test`.
+macro_rules! spot_test {
+    ($name:ident, $fixture:literal, $message:literal) => {
+        #[tokio::test]
+        async fn $name() {
+            run_spot_test($fixture, $message).await;
+        }
+    };
+}
+
 // -----------------------------------------------------------------------
 // Smoke tests -- no tools expected
 // -----------------------------------------------------------------------
 
-#[tokio::test]
-async fn spot_smoke_greeting() {
-    let trace = LlmTrace::from_file(format!("{FIXTURES}/smoke_greeting.json")).unwrap();
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Hello! Introduce yourself briefly.").await;
-    let responses = rig.wait_for_responses(1, TIMEOUT).await;
-
-    rig.verify_trace_expects(&trace, &responses);
-    rig.shutdown();
-}
-
-#[tokio::test]
-async fn spot_smoke_math() {
-    let trace = LlmTrace::from_file(format!("{FIXTURES}/smoke_math.json")).unwrap();
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("What is 47 * 23? Reply with just the number.")
-        .await;
-    let responses = rig.wait_for_responses(1, TIMEOUT).await;
-
-    rig.verify_trace_expects(&trace, &responses);
-    rig.shutdown();
-}
+spot_test!(
+    spot_smoke_greeting,
+    "smoke_greeting.json",
+    "Hello! Introduce yourself briefly."
+);
+spot_test!(
+    spot_smoke_math,
+    "smoke_math.json",
+    "What is 47 * 23? Reply with just the number."
+);
 
 // -----------------------------------------------------------------------
 // Tool tests -- verify correct tool selection
 // -----------------------------------------------------------------------
 
-#[tokio::test]
-async fn spot_tool_echo() {
-    let trace = LlmTrace::from_file(format!("{FIXTURES}/tool_echo.json")).unwrap();
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Use the echo tool to repeat the message: 'Spot check passed'")
-        .await;
-    let responses = rig.wait_for_responses(1, TIMEOUT).await;
-
-    rig.verify_trace_expects(&trace, &responses);
-    rig.shutdown();
-}
-
-#[tokio::test]
-async fn spot_tool_json() {
-    let trace = LlmTrace::from_file(format!("{FIXTURES}/tool_json.json")).unwrap();
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Parse this json for me: {\"key\": \"value\"}")
-        .await;
-    let responses = rig.wait_for_responses(1, TIMEOUT).await;
-
-    rig.verify_trace_expects(&trace, &responses);
-    rig.shutdown();
-}
+spot_test!(
+    spot_tool_echo,
+    "tool_echo.json",
+    "Use the echo tool to repeat the message: 'Spot check passed'"
+);
+spot_test!(
+    spot_tool_json,
+    "tool_json.json",
+    "Parse this json for me: {\"key\": \"value\"}"
+);
 
 // -----------------------------------------------------------------------
 // Chain tests -- multi-tool sequences
@@ -123,37 +106,16 @@ async fn spot_chain_write_read() {
 // Robustness tests -- correct behavior under constraints
 // -----------------------------------------------------------------------
 
-#[tokio::test]
-async fn spot_robust_no_tool() {
-    let trace = LlmTrace::from_file(format!("{FIXTURES}/robust_no_tool.json")).unwrap();
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("What is the capital of France? Answer directly without using any tools.")
-        .await;
-    let responses = rig.wait_for_responses(1, TIMEOUT).await;
-
-    rig.verify_trace_expects(&trace, &responses);
-    rig.shutdown();
-}
-
-#[tokio::test]
-async fn spot_robust_correct_tool() {
-    let trace = LlmTrace::from_file(format!("{FIXTURES}/robust_correct_tool.json")).unwrap();
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Please echo the word 'deterministic output'")
-        .await;
-    let responses = rig.wait_for_responses(1, TIMEOUT).await;
-
-    rig.verify_trace_expects(&trace, &responses);
-    rig.shutdown();
-}
+spot_test!(
+    spot_robust_no_tool,
+    "robust_no_tool.json",
+    "What is the capital of France? Answer directly without using any tools."
+);
+spot_test!(
+    spot_robust_correct_tool,
+    "robust_correct_tool.json",
+    "Please echo the word 'deterministic output'"
+);
 
 // -----------------------------------------------------------------------
 // Memory tests -- save and recall via file tools

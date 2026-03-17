@@ -5,6 +5,15 @@
 
 use crate::support::trace_llm::{LlmTrace, TraceExpects, TraceTurn};
 
+/// Bundles the expected values checked against a [`TraceExpects`] instance.
+struct CoreExpectsSpec<'a> {
+    response_contains: &'a [&'a str],
+    tools_used: &'a [&'a str],
+    all_tools_succeeded: Option<bool>,
+    min_responses: Option<usize>,
+    echo_result: Option<&'a str>,
+}
+
 /// Asserts turn properties at a specific index.
 fn assert_turn(turns: &[TraceTurn], idx: usize, input: &str, steps: usize) {
     assert_eq!(turns[idx].user_input, input);
@@ -18,46 +27,55 @@ fn assert_empty_trace_defaults(trace: &LlmTrace) {
     assert!(trace.expects.is_empty());
 }
 
+/// Parse a JSON string into an [`LlmTrace`], panicking on failure.
+fn parse_trace(json: &str) -> LlmTrace {
+    serde_json::from_str(json).expect("failed to parse LlmTrace from JSON")
+}
+
+/// Assert that a trace has exactly two turns with the given inputs and step counts.
+fn assert_two_turn_trace(trace: &LlmTrace, turn0: (&str, usize), turn1: (&str, usize)) {
+    assert_eq!(trace.turns.len(), 2);
+    assert_turn(&trace.turns, 0, turn0.0, turn0.1);
+    assert_turn(&trace.turns, 1, turn1.0, turn1.1);
+}
+
 /// Asserts core expect fields.
-fn assert_core_expects(
-    expects: &TraceExpects,
-    response_contains: &[&str],
-    tools_used: &[&str],
-    all_tools_succeeded: Option<bool>,
-    min_responses: Option<usize>,
-    echo_result: Option<&str>,
-) {
+fn assert_core_expects(expects: &TraceExpects, spec: CoreExpectsSpec<'_>) {
     assert_eq!(
         expects.response_contains,
-        response_contains
+        spec.response_contains
             .iter()
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
     );
     assert_eq!(
         expects.tools_used,
-        tools_used.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        spec.tools_used
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
     );
-    assert_eq!(expects.all_tools_succeeded, all_tools_succeeded);
-    assert_eq!(expects.min_responses, min_responses);
+    assert_eq!(expects.all_tools_succeeded, spec.all_tools_succeeded);
+    assert_eq!(expects.min_responses, spec.min_responses);
     assert_eq!(
         expects.tool_results_contain.get("echo").map(|s| s.as_str()),
-        echo_result
+        spec.echo_result
     );
 }
 
 /// A trace with only user_input steps and no playable steps deserializes.
 #[test]
 fn all_user_input_steps() {
-    let json = r#"{
+    let trace = parse_trace(
+        r#"{
         "model_name": "recorded-all-user-input",
         "memory_snapshot": [],
         "steps": [
             { "response": { "type": "user_input", "content": "hello" } },
             { "response": { "type": "user_input", "content": "world" } }
         ]
-    }"#;
-    let trace: LlmTrace = serde_json::from_str(json).unwrap();
+    }"#,
+    );
     assert_eq!(trace.steps.len(), 2);
     assert_eq!(trace.playable_steps().len(), 0);
 }
@@ -65,7 +83,8 @@ fn all_user_input_steps() {
 /// Backward compatibility: a trace without the new fields loads correctly.
 #[test]
 fn backward_compat_no_memory_snapshot() {
-    let json = r#"{
+    let trace = parse_trace(
+        r#"{
         "model_name": "old-format",
         "steps": [
             {
@@ -77,8 +96,8 @@ fn backward_compat_no_memory_snapshot() {
                 }
             }
         ]
-    }"#;
-    let trace: LlmTrace = serde_json::from_str(json).unwrap();
+    }"#,
+    );
     assert_empty_trace_defaults(&trace);
     assert_eq!(trace.playable_steps().len(), 1);
 }
@@ -86,7 +105,8 @@ fn backward_compat_no_memory_snapshot() {
 /// Expects round-trips through JSON serialization.
 #[test]
 fn expects_deserialization() {
-    let json = r#"{
+    let trace = parse_trace(
+        r#"{
         "model_name": "expects-test",
         "expects": {
             "response_contains": ["hello", "world"],
@@ -105,16 +125,18 @@ fn expects_deserialization() {
                 }
             }
         ]
-    }"#;
-    let trace: LlmTrace = serde_json::from_str(json).unwrap();
+    }"#,
+    );
     assert!(!trace.expects.is_empty());
     assert_core_expects(
         &trace.expects,
-        &["hello", "world"],
-        &["echo"],
-        Some(true),
-        Some(1),
-        Some("greeting"),
+        CoreExpectsSpec {
+            response_contains: &["hello", "world"],
+            tools_used: &["echo"],
+            all_tools_succeeded: Some(true),
+            min_responses: Some(1),
+            echo_result: Some("greeting"),
+        },
     );
 
     // Round-trip: serialize back and deserialize again.
@@ -130,7 +152,8 @@ fn expects_deserialization() {
 /// A trace without `expects` loads with empty defaults.
 #[test]
 fn expects_default_empty() {
-    let json = r#"{
+    let trace = parse_trace(
+        r#"{
         "model_name": "no-expects",
         "steps": [
             {
@@ -142,15 +165,16 @@ fn expects_default_empty() {
                 }
             }
         ]
-    }"#;
-    let trace: LlmTrace = serde_json::from_str(json).unwrap();
+    }"#,
+    );
     assert!(trace.expects.is_empty());
 }
 
 /// Per-turn expects deserializes correctly.
 #[test]
 fn per_turn_expects() {
-    let json = r#"{
+    let trace = parse_trace(
+        r#"{
         "model_name": "turn-expects",
         "turns": [
             {
@@ -171,8 +195,8 @@ fn per_turn_expects() {
                 ]
             }
         ]
-    }"#;
-    let trace: LlmTrace = serde_json::from_str(json).unwrap();
+    }"#,
+    );
     assert_eq!(trace.turns.len(), 1);
     assert_eq!(trace.turns[0].expects.response_contains, vec!["greeting"]);
     assert_eq!(trace.turns[0].expects.tools_not_used, vec!["shell"]);
@@ -188,7 +212,8 @@ fn trace_expects_is_empty() {
 /// Flat steps with UserInput markers are split into multiple turns.
 #[test]
 fn recorded_multi_turn_splits_at_user_input() {
-    let json = r#"{
+    let trace = parse_trace(
+        r#"{
         "model_name": "test",
         "steps": [
             { "response": { "type": "user_input", "content": "hello" } },
@@ -196,26 +221,23 @@ fn recorded_multi_turn_splits_at_user_input() {
             { "response": { "type": "user_input", "content": "bye" } },
             { "response": { "type": "text", "content": "goodbye", "input_tokens": 20, "output_tokens": 5 } }
         ]
-    }"#;
-    let trace: LlmTrace = serde_json::from_str(json).unwrap();
-    assert_eq!(trace.turns.len(), 2);
-    assert_turn(&trace.turns, 0, "hello", 1);
-    assert_turn(&trace.turns, 1, "bye", 1);
+    }"#,
+    );
+    assert_two_turn_trace(&trace, ("hello", 1), ("bye", 1));
 }
 
 /// Steps before the first UserInput get placeholder input.
 #[test]
 fn steps_before_first_user_input_get_placeholder() {
-    let json = r#"{
+    let trace = parse_trace(
+        r#"{
         "model_name": "test",
         "steps": [
             { "response": { "type": "text", "content": "preamble", "input_tokens": 5, "output_tokens": 3 } },
             { "response": { "type": "user_input", "content": "hello" } },
             { "response": { "type": "text", "content": "hi", "input_tokens": 10, "output_tokens": 5 } }
         ]
-    }"#;
-    let trace: LlmTrace = serde_json::from_str(json).unwrap();
-    assert_eq!(trace.turns.len(), 2);
-    assert_turn(&trace.turns, 0, "(test input)", 1);
-    assert_turn(&trace.turns, 1, "hello", 1);
+    }"#,
+    );
+    assert_two_turn_trace(&trace, ("(test input)", 1), ("hello", 1));
 }

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use crate::support::assertions::assert_all_tools_succeeded;
 use crate::support::cleanup::CleanupGuard;
-use crate::support::metrics::{RunResult, ScenarioResult, compare_runs};
+use crate::support::metrics::{RunResult, ScenarioResult, TraceMetrics, compare_runs};
 use crate::support::test_rig::{TestRig, TestRigBuilder};
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceToolCall};
 
@@ -44,6 +44,42 @@ fn localize_file_tool_paths(trace: &mut LlmTrace, path: &str) {
     }
 }
 
+fn assert_text_trace_llm_metrics(metrics: &TraceMetrics) {
+    assert!(
+        metrics.llm_calls >= 1,
+        "Expected >= 1 LLM call, got {}",
+        metrics.llm_calls
+    );
+    assert!(
+        metrics.input_tokens >= 50,
+        "Expected >= 50 input tokens, got {}",
+        metrics.input_tokens
+    );
+    assert!(
+        metrics.output_tokens >= 10,
+        "Expected >= 10 output tokens, got {}",
+        metrics.output_tokens
+    );
+}
+
+fn assert_text_trace_shape(metrics: &TraceMetrics) {
+    assert!(
+        metrics.wall_time_ms > 0,
+        "Expected wall_time_ms > 0, got {}",
+        metrics.wall_time_ms
+    );
+    assert!(
+        metrics.tool_calls.is_empty(),
+        "Expected no tool calls, got {:?}",
+        metrics.tool_calls
+    );
+    assert!(
+        metrics.turns >= 1,
+        "Expected >= 1 turn, got {}",
+        metrics.turns
+    );
+}
+
 /// Verify that metrics are collected from a simple text-only trace.
 #[tokio::test]
 async fn test_metrics_collected_from_text_trace() {
@@ -61,47 +97,47 @@ async fn test_metrics_collected_from_text_trace() {
     // Collect metrics.
     let metrics = rig.collect_metrics().await;
 
-    // Should have made at least 1 LLM call.
-    assert!(
-        metrics.llm_calls >= 1,
-        "Expected >= 1 LLM call, got {}",
-        metrics.llm_calls
-    );
-
-    // Token counts should match the fixture (50 input, 10 output).
-    assert!(
-        metrics.input_tokens >= 50,
-        "Expected >= 50 input tokens, got {}",
-        metrics.input_tokens
-    );
-    assert!(
-        metrics.output_tokens >= 10,
-        "Expected >= 10 output tokens, got {}",
-        metrics.output_tokens
-    );
-
-    // Wall time should be > 0 (we waited for a response).
-    assert!(
-        metrics.wall_time_ms > 0,
-        "Expected wall_time_ms > 0, got {}",
-        metrics.wall_time_ms
-    );
-
-    // No tools in this trace.
-    assert!(
-        metrics.tool_calls.is_empty(),
-        "Expected no tool calls, got {:?}",
-        metrics.tool_calls
-    );
-
-    // Should have at least 1 turn.
-    assert!(
-        metrics.turns >= 1,
-        "Expected >= 1 turn, got {}",
-        metrics.turns
-    );
+    assert_text_trace_llm_metrics(&metrics);
+    assert_text_trace_shape(&metrics);
 
     rig.shutdown();
+}
+
+fn assert_tool_trace_counts(metrics: &TraceMetrics) {
+    assert!(
+        metrics.llm_calls >= 3,
+        "Expected >= 3 LLM calls, got {}",
+        metrics.llm_calls
+    );
+    assert!(metrics.input_tokens > 0, "Expected input_tokens > 0");
+    assert!(metrics.output_tokens > 0, "Expected output_tokens > 0");
+}
+
+fn assert_tool_trace_invocations(metrics: &TraceMetrics) {
+    assert!(
+        metrics.total_tool_calls() >= 2,
+        "Expected >= 2 tool calls, got {}",
+        metrics.total_tool_calls()
+    );
+    assert_eq!(
+        metrics.failed_tool_calls(),
+        0,
+        "Expected 0 failed tool calls"
+    );
+}
+
+fn assert_tool_trace_names(metrics: &TraceMetrics) {
+    let tool_names: Vec<&str> = metrics.tool_calls.iter().map(|t| t.name.as_str()).collect();
+    assert!(
+        tool_names.contains(&"write_file"),
+        "Expected write_file in tool calls, got {:?}",
+        tool_names
+    );
+    assert!(
+        tool_names.contains(&"read_file"),
+        "Expected read_file in tool calls, got {:?}",
+        tool_names
+    );
 }
 
 /// Verify that metrics capture tool calls from a file write/read flow.
@@ -129,45 +165,26 @@ async fn test_metrics_collected_from_tool_trace() {
 
     let metrics = rig.collect_metrics().await;
 
-    // Should have made 3 LLM calls (write_file, read_file, final text).
-    assert!(
-        metrics.llm_calls >= 3,
-        "Expected >= 3 LLM calls, got {}",
-        metrics.llm_calls
-    );
-
-    // Token counts should be non-trivial.
-    assert!(metrics.input_tokens > 0, "Expected input_tokens > 0");
-    assert!(metrics.output_tokens > 0, "Expected output_tokens > 0");
-
-    // Should have captured tool invocations.
-    assert!(
-        metrics.total_tool_calls() >= 2,
-        "Expected >= 2 tool calls, got {}",
-        metrics.total_tool_calls()
-    );
-
-    // Both tools should have succeeded.
-    assert_eq!(
-        metrics.failed_tool_calls(),
-        0,
-        "Expected 0 failed tool calls"
-    );
-
-    // Verify specific tool names.
-    let tool_names: Vec<&str> = metrics.tool_calls.iter().map(|t| t.name.as_str()).collect();
-    assert!(
-        tool_names.contains(&"write_file"),
-        "Expected write_file in tool calls, got {:?}",
-        tool_names
-    );
-    assert!(
-        tool_names.contains(&"read_file"),
-        "Expected read_file in tool calls, got {:?}",
-        tool_names
-    );
+    assert_tool_trace_counts(&metrics);
+    assert_tool_trace_invocations(&metrics);
+    assert_tool_trace_names(&metrics);
 
     rig.shutdown();
+}
+
+fn assert_scenario_result_json_keys(json: &str) {
+    for key in &[
+        "scenario_id",
+        "wall_time_ms",
+        "llm_calls",
+        "input_tokens",
+        "output_tokens",
+    ] {
+        assert!(
+            json.contains(&format!("\"{key}\"")),
+            "JSON missing expected key: {key}"
+        );
+    }
 }
 
 /// Verify that metrics serialize to JSON correctly (for CI consumption).
@@ -201,11 +218,7 @@ async fn test_metrics_json_serialization() {
 
     // Should serialize to valid JSON.
     let json = serde_json::to_string_pretty(&scenario).expect("JSON serialization failed");
-    assert!(json.contains("\"scenario_id\""));
-    assert!(json.contains("\"wall_time_ms\""));
-    assert!(json.contains("\"llm_calls\""));
-    assert!(json.contains("\"input_tokens\""));
-    assert!(json.contains("\"output_tokens\""));
+    assert_scenario_result_json_keys(&json);
 
     // Should deserialize back.
     let deserialized: ScenarioResult =
@@ -289,7 +302,7 @@ fn assert_rig_metrics_are_zero(rig: &TestRig) {
     );
 }
 
-fn assert_rig_metrics_are_populated(rig: &TestRig) {
+fn assert_rig_token_metrics_populated(rig: &TestRig) {
     assert!(
         rig.llm_call_count() >= 1,
         "Expected llm_call_count >= 1, got {}",
@@ -305,11 +318,19 @@ fn assert_rig_metrics_are_populated(rig: &TestRig) {
         "Expected total_output_tokens > 0, got {}",
         rig.total_output_tokens()
     );
+}
+
+fn assert_rig_timing_populated(rig: &TestRig) {
     assert!(
         rig.elapsed_ms() > 0,
         "Expected elapsed_ms > 0, got {}",
         rig.elapsed_ms()
     );
+}
+
+fn assert_rig_metrics_are_populated(rig: &TestRig) {
+    assert_rig_token_metrics_populated(rig);
+    assert_rig_timing_populated(rig);
 }
 
 /// Verify that accessor methods on TestRig match InstrumentedLlm data.
