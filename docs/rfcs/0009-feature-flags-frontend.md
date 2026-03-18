@@ -9,14 +9,14 @@
 ## Summary
 
 Axinite's web front end currently has no mechanism for the backend to
-communicate feature availability to the browser. Every capability the
-UI exposes is unconditionally rendered, and toggling experimental or
+communicate feature availability to the browser. Every capability the UI
+exposes is unconditionally rendered, and toggling experimental or
 incomplete surfaces requires a code change, a rebuild, and a
 redeployment. This RFC proposes a lightweight feature-flag delivery
-mechanism that lets the backend declare which front-end capabilities
-are enabled, lets the browser gate rendering and behaviour accordingly,
-and fits into the existing configuration model (environment variables,
-TOML overlay, and compiled defaults).
+mechanism that lets the backend declare which front-end capabilities are
+enabled, lets the browser gate rendering and behaviour accordingly, and
+supports runtime toggles through operator overrides without requiring a
+process restart.
 
 ## Problem
 
@@ -65,35 +65,14 @@ Axinite resolves configuration through a layered precedence chain
 1. Database settings.
 1. Compiled defaults (lowest precedence).
 
-The TOML file deserializes directly into the `Settings` struct via
-`toml::from_str()`. The `merge_from()` method applies only values that
-differ from defaults, so the TOML overlay does not clobber
-previously-set database values.
-
-For list-valued configuration, the codebase already uses a
-comma-separated environment variable pattern (see
-`src/config/channels.rs`):
-
-```rust,no_run
-let items = optional_env("SIGNAL_ALLOW_FROM")?
-    .map(|s| {
-        s.split(',')
-            .map(|e| e.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    })
-    .unwrap_or_default();
-```
-
-The same values can be expressed as TOML arrays in the config file.
-
 ### Front-end boot sequence
 
 After successful authentication, `app.js` performs the following
 initialization:
 
 1. Store the token in `sessionStorage`.
-1. Connect to the chat SSE stream (`/api/chat/events`).
+1. Connect to the chat Server-Sent Events (SSE) stream
+   (`/api/chat/events`).
 1. Connect to the logs SSE stream (`/api/logs/events`).
 1. Start gateway-status polling (`/api/gateway/status`, 30-second
    interval).
@@ -107,11 +86,13 @@ sequence. The browser renders all tabs and controls unconditionally.
 
 - Goals:
   - Define a mechanism for the backend to declare a set of named
-    feature flags as enabled.
+    feature flags with boolean values.
   - Expose those flags to the browser through a dedicated API
     endpoint.
-  - Accept flags through the existing configuration inputs: a
-    comma-separated environment variable and a TOML array.
+  - Accept flags through per-flag environment variables and operator
+    overrides via the existing settings API.
+  - Support runtime flag updates through the settings API without
+    requiring a gateway restart.
   - Establish a front-end consumption pattern so `app.js` can gate
     UI rendering and behaviour on flag values.
 - Non-goals:
@@ -132,66 +113,88 @@ sequence. The browser renders all tabs and controls unconditionally.
 
 ### 1. Configuration inputs
 
-Operators declare which feature flags are enabled through two
-complementary configuration inputs, following the established
-patterns in `src/config/channels.rs` and `src/config/helpers.rs`.
+Operators declare individual feature flags through per-flag
+configuration inputs, following the established precedence pattern in
+`src/config/mod.rs`.
 
-#### Environment variable
+#### Per-flag environment variables
 
-A single comma-separated environment variable lists enabled flags:
+Each flag can be set through an environment variable of the form
+`FEATURE_FLAG_<UPPER_SNAKE_NAME>`:
 
 ```plaintext
-FEATURE_FLAGS=experimental_chat_ui,new_memory_search,dark_mode
+FEATURE_FLAG_EXPERIMENTAL_CHAT_UI=true
+FEATURE_FLAG_NEW_MEMORY_SEARCH=false
 ```
 
-Parsing follows the existing pattern: split on `,`, trim whitespace,
-discard empty segments.
+The value `true` (case-insensitive) enables the flag; any other value
+(including `false`, `0`, or an empty string) disables it. Unset
+variables fall through to the next precedence layer.
 
-#### TOML config file
+#### Operator overrides via settings API
 
-The same flags can be declared as an array in the TOML config file
-under a `[gateway]` section:
+Operators can set flags at runtime through the existing
+`/api/settings` endpoint using keys prefixed with `feature_flag:`:
 
-```toml
-[gateway]
-feature_flags = ["experimental_chat_ui", "new_memory_search", "dark_mode"]
+```plaintext
+PUT /api/settings/feature_flag:experimental_chat_ui
+{ "value": "true" }
 ```
+
+These overrides are persisted in the database `settings` table and
+take effect immediately without requiring a gateway restart. The
+settings handler notifies the feature-flag registry to re-resolve the
+affected flag.
+
+#### Subsystem availability defaults
+
+Certain flags may default based on whether a backing subsystem is
+available in `GatewayState`. For example, a flag controlling a jobs UI
+surface might default to `false` when `GatewayState::job_manager` is
+`None`. Subsystem defaults are applied when neither an environment
+variable nor an operator override is present.
+
+#### Compiled defaults
+
+When no environment variable, operator override, or subsystem default
+is present, the flag resolves to a compiled default value (typically
+`false` for new experimental features).
 
 #### Precedence
 
-The environment variable takes precedence over the TOML array, which
-takes precedence over the compiled default (an empty list). This
-matches the standard configuration resolution order. When the
-environment variable is set, it replaces the TOML value entirely
-rather than merging with it; this is consistent with how other
-list-valued configuration behaves in the codebase.
+Per-flag resolution follows this order:
+
+1. **Environment variable** (highest precedence): `FEATURE_FLAG_<NAME>`
+1. **Operator override**: `feature_flag:<name>` in the settings table
+1. **Subsystem availability**: Derived from `GatewayState` field
+   presence
+1. **Compiled default** (lowest precedence): Hardcoded fallback value
+
+When an operator writes a settings override, the feature-flag registry
+re-resolves that flag and subsequent `GET /api/features` requests
+reflect the updated value immediately.
 
 ### 2. Data shape
 
-Feature flags are modelled as a set of opaque string names. A flag
-is enabled if and only if it appears in the resolved set. This is
-deliberately minimal:
-
-- No boolean values: presence means enabled, absence means disabled.
-- No metadata, descriptions, or categories in the runtime
-  representation.
-- No schema validation against a compiled catalogue. Unknown flag
-  names are accepted and forwarded to the front end, which ignores
-  names it does not recognise.
+Feature flags are modelled as a mutable in-memory registry that
+resolves each flag to a boolean value on demand. The registry is held
+in `GatewayState` and can be updated at runtime when operator
+overrides change.
 
 #### Rust representation
 
 ```rust,no_run
-/// The resolved set of enabled feature flags for this gateway
-/// instance.
-#[derive(Debug, Clone, Default, serde::Serialize)]
-pub struct FeatureFlags {
-    flags: Vec<String>,
+/// A mutable registry of resolved feature flags for the current
+/// gateway instance.
+pub struct FeatureFlagRegistry {
+    /// Resolved flag states: name -> enabled
+    flags: Arc<RwLock<HashMap<String, bool>>>,
 }
 ```
 
-The struct is constructed once at gateway startup from the resolved
-configuration.
+The registry is constructed once at gateway startup with compiled
+defaults and subsystem-derived values, then updated when operator
+overrides are written through the settings API.
 
 ### 3. GatewayState integration
 
@@ -200,24 +203,28 @@ Add a `feature_flags` field to `GatewayState`:
 ```rust,no_run
 pub struct GatewayState {
     // ... existing fields ...
-    pub feature_flags: FeatureFlags,
+    pub feature_flags: Arc<FeatureFlagRegistry>,
 }
 ```
 
-The field is a plain value rather than an `Arc<RwLock<...>>` because
-flags are immutable for the lifetime of the process. An operator who
-changes the environment variable or TOML file restarts the gateway
-to pick up the change, which is consistent with how other
-configuration is applied.
+The field is wrapped in `Arc` so handlers can share the registry. The
+inner `RwLock<HashMap<...>>` allows runtime mutation when operator
+overrides change.
 
 Construction sequence:
 
-1. `GatewayConfig::resolve()` in `src/config/channels.rs` reads
-   `FEATURE_FLAGS` from the environment (or falls back to the TOML
-   overlay value, or falls back to an empty list).
-1. The resolved list is stored in `GatewayConfig`.
-1. `GatewayChannel::new()` copies the list into `FeatureFlags` and
-   sets it on the initial `GatewayState`.
+1. `GatewayConfig::resolve()` or a dedicated initialization function
+   reads per-flag environment variables (checking for names matching
+   `FEATURE_FLAG_<NAME>`).
+1. `GatewayChannel::new()` constructs the initial
+   `FeatureFlagRegistry` with compiled defaults and environment
+   variable overrides.
+1. After subsystems are wired through `with_*` builder methods, the
+   registry applies subsystem-derived defaults for relevant flags.
+1. The settings handler is extended to detect writes to keys prefixed
+   with `feature_flag:` and calls
+   `FeatureFlagRegistry::apply_override()` to update the affected
+   flag.
 
 ### 4. API endpoint
 
@@ -227,30 +234,29 @@ Expose a new authenticated endpoint:
 GET /api/features
 ```
 
-The response is a JSON object with a single `flags` field containing
-the list of enabled flag names:
+The response is a JSON object mapping flag names to boolean values:
 
 ```json
 {
-  "flags": [
-    "experimental_chat_ui",
-    "new_memory_search",
-    "dark_mode"
-  ]
+  "experimental_chat_ui": true,
+  "new_memory_search": false,
+  "dark_mode": false
 }
 ```
 
-The handler reads from the `FeatureFlags` value in `GatewayState` and
-serializes it directly. No database query is involved.
+The handler reads from the `FeatureFlagRegistry` in `GatewayState` and
+serializes the resolved flag map. No database query is involved on the
+hot path; the registry holds pre-resolved values that are updated only
+when operator overrides change.
 
-#### Why a list, not an object
+#### Why a boolean map
 
-The response uses an array of strings rather than an object mapping
-flag names to booleans. Since absence from the list means "disabled",
-a boolean map would always map every present key to `true`, which
-adds no information. The array representation is more compact and
-avoids the temptation to introduce tri-state semantics (`true` /
-`false` / absent) that the configuration model does not support.
+The response uses a flat object mapping names to booleans rather than
+an array of enabled names. This makes the contract explicit: each flag
+has a defined state (`true` or `false`), and the front end does not
+need to infer that absence means disabled. The boolean map also
+simplifies future extensions such as tri-state flags or metadata
+fields.
 
 ### 5. Front-end consumption
 
@@ -261,54 +267,58 @@ in `app.js`, between the `startGatewayStatusPolling()` call and the
 data-loading calls:
 
 ```javascript
-let featureFlags = new Set();
+let featureFlags = {};
 
 function loadFeatureFlags() {
     return apiFetch('/api/features').then(function (data) {
-        featureFlags = new Set(data.flags || []);
+        featureFlags = data;
     });
 }
 ```
 
-A `Set` gives constant-time membership tests.
+A plain object suffices since flag lookups are infrequent.
 
 #### 5.2 Guard feature-dependent rendering
 
-Code paths that depend on a feature flag check the set:
+Code paths that depend on a feature flag check the map:
 
 ```javascript
-if (featureFlags.has('experimental_chat_ui')) {
+if (featureFlags.experimental_chat_ui) {
     // Render experimental chat controls.
 }
 ```
 
 The front end ignores unknown flags and renders its default surfaces
-when no flags are present. This means a deployment that sets no
-`FEATURE_FLAGS` variable behaves identically to the current UI.
+when flags are absent from the map. This means a deployment that sets
+no feature flags behaves identically to the current UI.
 
 ## Requirements
 
 ### Functional requirements
 
 - The backend must expose a `GET /api/features` endpoint returning
-  the resolved set of enabled feature-flag names.
+  the resolved feature-flag map as a JSON object.
 - The front end must fetch and apply feature flags before rendering
   feature-dependent UI surfaces.
-- Flags must be configurable through a comma-separated environment
-  variable (`FEATURE_FLAGS`) and a TOML array
-  (`[gateway] feature_flags`).
+- Flags must be configurable through per-flag environment variables
+  (`FEATURE_FLAG_<NAME>`) and runtime operator overrides via
+  `/api/settings/feature_flag:<name>`.
+- When an operator writes a settings override, the flag must be
+  re-resolved immediately without requiring a gateway restart.
 - When no flags are configured, the endpoint must return an empty
-  list and the front end must render its default state.
+  object and the front end must render its default state.
 
 ### Technical requirements
 
-- `FeatureFlags` must be held in `GatewayState` so handlers can
-  access it through the standard Axum state extraction pattern.
+- `FeatureFlagRegistry` must be held in `GatewayState` so handlers
+  can access it through the standard Axum state extraction pattern.
 - The `GET /api/features` handler must not perform a database query;
-  it must read from the in-memory value.
+  it must read from the in-memory registry.
+- The registry must be safe for concurrent reads and writes from
+  multiple handler tasks.
 - Flag names must consist of lowercase ASCII letters, digits, and
-  underscores. The parser should reject or silently discard names
-  that do not match this pattern.
+  underscores. The parser must silently discard names that do not
+  match this pattern and log a warning with the invalid name.
 
 ## Compatibility and migration
 
@@ -316,11 +326,13 @@ This change is additive. No existing API contracts change.
 
 - The `GET /api/features` endpoint is new; older front-end assets
   that do not call it continue to work with all features visible.
-- The `FEATURE_FLAGS` environment variable is new and does not
-  conflict with any current variables.
-- The `GatewayConfig` struct gains a new field with a default of an
-  empty list, so existing configuration files and deployments are
-  unaffected.
+- Per-flag environment variables follow the `FEATURE_FLAG_` prefix
+  convention and do not conflict with any current variables.
+- The settings key prefix `feature_flag:` is a namespace convention
+  within the existing settings table; no schema migration is needed.
+- The `GatewayConfig` struct gains initialization logic for
+  per-flag environment variable parsing, with a default of no flags
+  enabled.
 - The `GatewayStatusResponse` struct is not modified; operational
   telemetry and feature negotiation remain separate concerns.
 
@@ -328,8 +340,8 @@ This change is additive. No existing API contracts change.
 
 ### Option A: Extend GatewayStatusResponse
 
-Add a `feature_flags` field directly to the existing
-`GatewayStatusResponse` returned by `GET /api/gateway/status`.
+Add feature flags directly to the existing `GatewayStatusResponse`
+returned by `GET /api/gateway/status`.
 
 This is the lowest-effort option but conflates operational telemetry
 with capability negotiation. The status endpoint is polled every
@@ -341,7 +353,7 @@ increasingly unwieldy as flags accumulate.
 ### Option B: Inject flags into HTML at serve time
 
 Replace `include_str!("index.html")` with a template that injects a
-`<script>` block containing the flag set as a global variable. The
+`<script>` block containing the flag map as a global variable. The
 browser would read flags synchronously from
 `window.__FEATURE_FLAGS__` at boot.
 
@@ -353,25 +365,26 @@ static-asset serving path would become more complex. The operational
 simplicity of the current approach — one binary, no templating — is
 worth preserving.
 
-### Option C: Boolean map instead of a string list
+### Option C: Comma-separated list instead of per-flag variables
 
-Return `{ "experimental_chat_ui": true, "dark_mode": false }` instead
-of a list of enabled names.
+Accept a single `FEATURE_FLAGS=a,b,c` environment variable and return
+a list of enabled flag names instead of a boolean map.
 
-A boolean map suggests that the backend knows the universe of all
-possible flags and can state whether each one is on or off. The
-proposed design avoids that: the backend forwards whatever the
-operator configured, and the front end decides which names it cares
-about. A string list is a better fit for this open-ended model.
+A list-based model is simpler for initial configuration but does not
+support per-flag environment variables, runtime overrides, or
+subsystem-derived defaults. The proposed per-flag model gives
+operators finer control and integrates naturally with the existing
+settings API.
 
 <!-- markdownlint-disable MD013 MD060 -->
-| Concern | Proposed (dedicated endpoint, string list) | Option A (extend status) | Option B (HTML injection) | Option C (boolean map) |
-|---------|----------------------------------------------|--------------------------|---------------------------|------------------------|
+| Concern | Proposed (per-flag, boolean map) | Option A (extend status) | Option B (HTML injection) | Option C (list-based) |
+|---------|----------------------------------|--------------------------|---------------------------|-----------------------|
 | Separation of concerns | Clean | Conflated with telemetry | Clean | Clean |
 | Extra HTTP round-trip | One, at boot | None (piggybacks on poll) | None | One, at boot |
 | Compile-time embedding | Preserved | Preserved | Broken | Preserved |
-| Open-ended flag model | Supported | Awkward | Supported | Implies closed universe |
-| Configuration complexity | Minimal (one env var, one TOML key) | Minimal | Moderate (templating) | Minimal |
+| Runtime overrides | Supported | Awkward | Awkward | Not supported |
+| Per-flag control | Supported | Supported | Supported | Not supported |
+| Configuration complexity | Moderate (one env var per flag) | Minimal | Moderate (templating) | Minimal (one env var total) |
 <!-- markdownlint-enable MD013 MD060 -->
 
 _Table 1: Comparison of alternatives._
@@ -379,21 +392,24 @@ _Table 1: Comparison of alternatives._
 ## Open questions
 
 - Should the `GET /api/features` response include the gateway
-  version alongside the flag list so the front end can correlate
+  version alongside the flag map so the front end can correlate
   flag availability with the host build?
-- Should the endpoint also accept `POST` to allow runtime flag
-  toggling without a restart, or is restart-to-apply sufficient for
-  deployment-level flags?
+- Should flag changes emit an SSE event so the browser can react
+  without a page reload? The current proposal defers this, but a
+  `feature_flags_changed` event could be added if operators need
+  near-instant propagation.
 - Should the front end re-fetch flags periodically or on SSE
-  reconnect, or is a single fetch at boot sufficient?
+  reconnect, or is a single fetch at boot sufficient given that
+  operator overrides update the registry immediately?
 
 ## Recommendation
 
 Adopt the proposed design: a dedicated `GET /api/features` endpoint
-backed by an immutable `FeatureFlags` value in `GatewayState`, with
-flags sourced from a comma-separated `FEATURE_FLAGS` environment
-variable or a `[gateway] feature_flags` TOML array. This approach
-preserves the existing compile-time asset model, separates feature
-negotiation from operational telemetry, reuses the established
-configuration patterns, and gives the front end a clean,
-single-purpose API to fetch the enabled flag set at boot.
+backed by a mutable `FeatureFlagRegistry` in `GatewayState`, with
+flags sourced from per-flag environment variables, runtime operator
+overrides via the settings API, subsystem availability defaults, and
+compiled defaults. This approach preserves the existing compile-time
+asset model, separates feature negotiation from operational
+telemetry, reuses the established settings infrastructure for runtime
+overrides, and gives the front end a clean, single-purpose API to
+fetch the effective flag state at boot and on reconnect.

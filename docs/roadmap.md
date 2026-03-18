@@ -591,45 +591,63 @@ output modes, and stability promises before 4.3.2-4.3.4.
 ### 4.4. Feature flags for progressive front-end rollout
 
 Objective: add a lightweight feature-flag delivery mechanism so the backend
-can declare which front-end capabilities are enabled, and the browser can gate
-rendering accordingly.
+can declare which front-end capabilities are enabled, the browser can gate
+rendering accordingly, and operators can toggle flags at runtime without
+restarting the gateway.
 
-Learning opportunity: validate whether a minimal opaque string-set model is
-sufficient for progressive feature rollout without introducing complex
-targeting or percentage-based activation.
+Learning opportunity: validate whether per-flag environment variables,
+operator overrides, and subsystem-derived defaults provide sufficient control
+for progressive feature rollout without introducing complex targeting or
+percentage-based activation.
 
 Dependencies: independent of other Phase 4 work, but provides a foundation for
 Phase 6 front-end features (canvas hosting, advanced media handling) to roll
 out behind flags.
 
-- [ ] 4.4.1. Add feature-flag configuration input parsing in `GatewayConfig`.
+- [ ] 4.4.1. Add per-flag environment variable parsing and registry
+  initialization in `GatewayChannel` or a dedicated config module.
   - See [RFC 0009 §Configuration inputs](./rfcs/0009-feature-flags-frontend.md#1-configuration-inputs).
-  - Success: `FEATURE_FLAGS` environment variable and `[gateway] feature_flags`
-    TOML array are parsed into a `Vec<String>`, trimmed, deduplicated, and
-    stored in `GatewayConfig`.
-- [ ] 4.4.2. Add the `FeatureFlags` struct and `GatewayState` integration.
-  Requires 4.4.1.
+  - Success: `FEATURE_FLAG_<NAME>` environment variables are parsed into a
+    mutable `FeatureFlagRegistry` with `Arc<RwLock<HashMap<String, bool>>>`,
+    invalid flag names are silently discarded with a warning, and compiled
+    defaults are applied for flags without environment overrides.
+- [ ] 4.4.2. Add the `FeatureFlagRegistry` struct and `GatewayState`
+  integration. Requires 4.4.1.
   - See [RFC 0009 §Data shape](./rfcs/0009-feature-flags-frontend.md#2-data-shape)
     and [RFC 0009 §GatewayState integration](./rfcs/0009-feature-flags-frontend.md#3-gatewaystate-integration).
-  - Success: `GatewayState` holds a `FeatureFlags` value constructed from the
-    resolved configuration, and the value is immutable for the process lifetime.
-- [ ] 4.4.3. Implement the `GET /api/features` endpoint. Requires 4.4.2.
+  - Success: `GatewayState` holds an `Arc<FeatureFlagRegistry>` that supports
+    runtime re-resolution when operator overrides change, and subsystem
+    availability defaults are applied during initialization based on
+    `GatewayState` field presence.
+- [ ] 4.4.3. Extend the settings handler to detect `feature_flag:` keys and
+  apply runtime overrides to the registry. Requires 4.4.2.
+  - See [RFC 0009 §Configuration inputs](./rfcs/0009-feature-flags-frontend.md#1-configuration-inputs).
+  - Success: `PUT /api/settings/feature_flag:<name>` writes persist to the
+    database and immediately update the `FeatureFlagRegistry`, and subsequent
+    `GET /api/features` requests reflect the updated flag state without a
+    gateway restart.
+- [ ] 4.4.4. Implement the `GET /api/features` endpoint. Requires 4.4.2.
   - See [RFC 0009 §API endpoint](./rfcs/0009-feature-flags-frontend.md#4-api-endpoint).
-  - Success: the endpoint returns `{ "flags": ["name_a", "name_b"] }` by
-    serializing the `FeatureFlags` value from `GatewayState`, with no database
-    query on the hot path.
-- [ ] 4.4.4. Add front-end `loadFeatureFlags()` integration in `app.js`.
-  Requires 4.4.3.
+  - Success: the endpoint returns a JSON object mapping flag names to booleans
+    (e.g. `{ "experimental_chat_ui": true, "dark_mode": false }`) by
+    serializing the resolved registry state from `GatewayState`, with no
+    database query on the hot path.
+- [ ] 4.4.5. Add front-end `loadFeatureFlags()` integration in `app.js`.
+  Requires 4.4.4.
   - See [RFC 0009 §Front-end consumption](./rfcs/0009-feature-flags-frontend.md#5-front-end-consumption).
   - Success: the browser fetches `/api/features` after authentication, stores
-    the result in a `Set`, and provides `featureFlags.has(name)` checks for
-    gating UI rendering and behaviour.
-- [ ] 4.4.5. Add integration tests for flag resolution, endpoint contract, and
-  front-end consumption. Requires 4.4.3 and 4.4.4.
+    the result in a plain object, and provides `featureFlags.experimental_chat_ui`
+    checks for gating UI rendering and behaviour.
+- [ ] 4.4.6. Add integration tests for per-flag resolution, operator overrides,
+  subsystem defaults, mutability, and endpoint contract. Requires 4.4.3, 4.4.4,
+  and 4.4.5.
   - See [RFC 0009 §Requirements](./rfcs/0009-feature-flags-frontend.md#requirements).
-  - Success: tests cover environment variable parsing, TOML overlay, empty-list
-    default, endpoint response shape, and front-end flag-set construction, and
-    prove that unknown flag names are forwarded without validation errors.
+  - Success: tests cover per-flag environment variable parsing (including
+    `FEATURE_FLAG_<NAME>` pattern matching), operator override persistence and
+    immediate registry updates, subsystem/default fallback behavior, concurrent
+    access to the mutable registry, endpoint response shape (boolean map), and
+    no hot-path database hits, and prove that invalid flag names are discarded
+    with warnings.
 
 ## 5. Add model, reasoning, and citation control
 
