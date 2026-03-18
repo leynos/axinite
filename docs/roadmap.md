@@ -644,7 +644,7 @@ out behind flags.
   - See [RFC 0009 §Requirements](./rfcs/0009-feature-flags-frontend.md#requirements).
   - Success: tests cover per-flag environment variable parsing (including
     `FEATURE_FLAG_<NAME>` pattern matching), operator override persistence and
-    immediate registry updates, subsystem/default fallback behavior, concurrent
+    immediate registry updates, subsystem/default fallback behaviour, concurrent
     access to the mutable registry, endpoint response shape (boolean map), and
     no hot-path database hits, and prove that invalid flag names are discarded
     with warnings.

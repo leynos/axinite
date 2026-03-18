@@ -122,14 +122,18 @@ configuration inputs, following the established precedence pattern in
 Each flag can be set through an environment variable of the form
 `FEATURE_FLAG_<UPPER_SNAKE_NAME>`:
 
+<!-- markdownlint-disable MD013 MD060 -->
+| Variable | Meaning | Default or rule |
+|----------|---------|-----------------|
+| `FEATURE_FLAG_<UPPER_SNAKE_NAME>` | Enable the named feature flag. | The value `true` (case-insensitive) enables the flag; any other value (including `false`, `0`, or an empty string) disables it. Unset variables fall through to the next precedence layer. |
+<!-- markdownlint-enable MD013 MD060 -->
+
+Examples:
+
 ```plaintext
 FEATURE_FLAG_EXPERIMENTAL_CHAT_UI=true
 FEATURE_FLAG_NEW_MEMORY_SEARCH=false
 ```
-
-The value `true` (case-insensitive) enables the flag; any other value
-(including `false`, `0`, or an empty string) disables it. Unset
-variables fall through to the next precedence layer.
 
 #### Operator overrides via settings API
 
