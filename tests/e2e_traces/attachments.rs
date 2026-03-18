@@ -175,6 +175,8 @@ async fn no_attachments_no_augmentation() {
     rig.send_message("Hello! Introduce yourself briefly.").await;
     let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
+    assert!(!responses.is_empty(), "LLM produced no response");
+
     let requests = rig.captured_llm_requests();
     let last_user_msg = last_user_message(&requests);
 

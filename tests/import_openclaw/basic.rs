@@ -5,6 +5,8 @@
 mod import_tests {
     //! Basic import functionality tests covering stats, error handling, and config construction.
 
+    use std::collections::HashMap;
+
     use ironclaw::import::openclaw::reader::{OpenClawConfig, OpenClawMemoryChunk};
     use ironclaw::import::{ImportError, ImportStats};
     use rstest::rstest;
@@ -29,7 +31,7 @@ mod import_tests {
         };
 
         assert!(!stats.is_empty());
-        assert_eq!(stats.total_imported(), 71);
+        assert_eq!(stats.total_imported(), 5 + 10 + 2 + 50 + 3 + 1);
     }
 
     #[rstest]
@@ -44,7 +46,7 @@ mod import_tests {
         let config = OpenClawConfig {
             llm: None,
             embeddings: None,
-            other_settings: std::collections::HashMap::new(),
+            other_settings: HashMap::new(),
         };
 
         assert!(config.llm.is_none());

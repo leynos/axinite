@@ -167,39 +167,39 @@ tests/
 
 ### Phase 1: Create harness structure
 
-- [ ] Create subdirectory for each harness group (e.g.,
+- [x] Create subdirectory for each harness group (e.g.,
   `tests/e2e_traces/`)
-- [ ] For each group, create the top-level harness file (e.g.,
+- [x] For each group, create the top-level harness file (e.g.,
   `tests/e2e_traces.rs`) containing `mod support;` (if needed) and `mod`
   declarations for each submodule
-- [ ] Move existing test files into the subdirectories, renaming as needed
-- [ ] Adjust `mod support;` imports — in the new structure, only the
+- [x] Move existing test files into the subdirectories, renaming as needed
+- [x] Adjust `mod support;` imports — in the new structure, only the
   top-level harness needs `mod support;`; submodules access it via
   `crate::support::*` or `super::support::*`
 
 ### Phase 2: Fix module paths
 
-- [ ] Update any `use crate::*` or `use super::*` imports in moved test
+- [x] Update any `use crate::*` or `use super::*` imports in moved test
   files
-- [ ] Ensure `#[cfg(feature = "...")]` gates are preserved on individual
+- [x] Ensure `#[cfg(feature = "...")]` gates are preserved on individual
   test functions or modules
-- [ ] Verify that `tests/support/` is still reachable from all harnesses
+- [x] Verify that `tests/support/` is still reachable from all harnesses
   that need it
 
 ### Phase 3: Update Cargo.toml
 
-- [ ] Remove the existing `[[test]]` entry for `html_to_markdown` only if
+- [x] Remove the existing `[[test]]` entry for `html_to_markdown` only if
   its path changes (it should not)
-- [ ] Verify no other `[[test]]` entries are needed for the new structure
+- [x] Verify no other `[[test]]` entries are needed for the new structure
   (Cargo auto-discovers `tests/*.rs`)
 
 ### Phase 4: Validate
 
-- [ ] Run `cargo nextest run --workspace --features test-helpers` — all
+- [x] Run `cargo nextest run --workspace --features test-helpers` — all
   3,209 tests must pass
-- [ ] Run `cargo test --manifest-path tools-src/github/Cargo.toml`
-- [ ] Verify test count matches pre-consolidation count
-- [ ] Time `make test` with a one-file touch to confirm link-time
+- [x] Run `cargo test --manifest-path tools-src/github/Cargo.toml`
+- [x] Verify test count matches pre-consolidation count
+- [x] Time `make test` with a one-file touch to confirm link-time
   improvement
 
 ## Risks
@@ -243,6 +243,6 @@ The consolidation was completed successfully. Key changes:
 
 5. Ensured `mod support;` is only declared in harnesses that need it (e2e_traces, channels, tools_and_config)
 
-6. No changes needed to Cargo.toml (html_to_markdown already had required-features gate)
+6. No changes were needed to Cargo.toml (html_to_markdown already had required-features gate)
 
 Final structure: **9 test binaries** (down from 40)
