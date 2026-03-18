@@ -639,9 +639,11 @@ out behind flags.
 - [ ] 4.4.5. Add front-end `loadFeatureFlags()` integration in `app.js`.
   Requires 4.4.4.
   - See [RFC 0009 §Front-end consumption](./rfcs/0009-feature-flags-frontend.md#5-front-end-consumption).
-  - Success: the browser fetches `/api/features` after authentication, stores
-    the result in a plain object, and provides `featureFlags.experimental_chat_ui`
-    checks for gating UI rendering and behaviour.
+  - Success: the browser fetches `GET /api/features` after authentication,
+    includes the deployment identifier required by the 4.4.4 API contract,
+    stores the result in a plain `featureFlags` object, and uses
+    `featureFlags.experimental_chat_ui` checks for gating UI rendering and
+    behaviour.
 - [ ] 4.4.6. Add integration tests for per-flag resolution, operator overrides,
   subsystem defaults, mutability, and endpoint contract. Requires 4.4.3, 4.4.4,
   and 4.4.5.

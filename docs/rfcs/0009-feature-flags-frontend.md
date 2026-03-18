@@ -216,12 +216,51 @@ overrides change.
 
 #### Rust representation
 
+The following Rust snippet defines the in-memory feature-flag registry
+used by the gateway, with deployment scope made explicit in the stored
+state and mutation methods.
+
 ```rust,no_run
+pub type DeploymentId = String;
+
 /// A mutable registry of resolved feature flags for the current
 /// gateway instance.
 pub struct FeatureFlagRegistry {
-    /// Resolved flag states: name -> enabled
-    flags: HashMap<String, bool>,
+    /// Resolved flag states: deployment -> (name -> enabled)
+    flags: HashMap<DeploymentId, HashMap<String, bool>>,
+}
+
+impl FeatureFlagRegistry {
+    pub fn get(
+        &self,
+        deployment_id: &DeploymentId,
+        name: &str,
+    ) -> Option<bool> {
+        self.flags
+            .get(deployment_id)
+            .and_then(|deployment_flags| deployment_flags.get(name).copied())
+    }
+
+    pub fn set(
+        &mut self,
+        deployment_id: DeploymentId,
+        name: String,
+        enabled: bool,
+    ) {
+        self.flags
+            .entry(deployment_id)
+            .or_default()
+            .insert(name, enabled);
+    }
+
+    pub fn apply_override(
+        &mut self,
+        deployment_id: DeploymentId,
+        name: String,
+        enabled: bool,
+    ) {
+        self.set(deployment_id, name, enabled);
+    }
 }
 ```
 
@@ -233,6 +272,10 @@ API. Resolution is keyed by deployment rather than by user.
 ### 3. GatewayState integration
 
 Add a `feature_flags` field to `GatewayState`:
+
+The following Rust snippet shows how the deployment-aware registry is
+held in shared gateway state so request handlers can read and update it
+for the active deployment.
 
 ```rust,no_run
 pub struct GatewayState {
@@ -263,6 +306,9 @@ Construction sequence:
 ### 4. API endpoint
 
 Expose a new authenticated endpoint:
+
+The following request example shows that the feature endpoint must be
+called with an explicit deployment identifier.
 
 ```plaintext
 GET /api/features
@@ -303,11 +349,19 @@ Add a `loadFeatureFlags()` call to the post-authentication sequence
 in `app.js`, between the `startGatewayStatusPolling()` call and the
 data-loading calls:
 
+The following JavaScript shows how the client loads feature flags via
+`GET /api/features` while passing the deployment identifier required by
+the API contract.
+
 ```javascript
 let featureFlags = {};
 
 function loadFeatureFlags() {
-    return apiFetch('/api/features').then(function (data) {
+    return apiFetch('/api/features', {
+        headers: {
+            'X-Deployment-Id': deploymentId,
+        },
+    }).then(function (data) {
         featureFlags = data;
     });
 }
