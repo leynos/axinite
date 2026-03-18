@@ -48,10 +48,16 @@ telemetry with capability negotiation.
 
 ### Existing settings are user-scoped preferences, not deployment flags
 
-The database-backed settings system (`/api/settings`) stores per-user
-key-value preferences. Feature flags are a different concern: they
-express deployment-level decisions about which capabilities are
-available, and should not be conflated with user preferences.
+The live database-backed settings system (`/api/settings`) currently
+stores per-user key-value preferences, keyed by `(user_id, key)`.
+Feature flags are a different concern: they express deployment-level
+decisions about which capabilities are available, and should not be
+conflated with user preferences.
+
+This RFC therefore requires `feature_flag:` entries to be treated as a
+deployment-scoped exception to the broader settings model. They must be
+stored and resolved using a deployment identifier, and user-scoped
+`feature_flag:` rows must be ignored.
 
 ## Current state
 
@@ -140,17 +146,34 @@ FEATURE_FLAG_NEW_MEMORY_SEARCH=false
 #### Operator overrides via settings API
 
 Operators can set flags at runtime through the existing
-`/api/settings` endpoint using keys prefixed with `feature_flag:`:
+`/api/settings` endpoint using keys prefixed with `feature_flag:`.
+Unlike ordinary settings, these writes are deployment-scoped and must
+include a deployment identifier so persistence and immediate-effect
+semantics are unambiguous:
+
+```plaintext
+PUT /api/settings/feature_flag:experimental_chat_ui
+X-Deployment-Id: production
+
+{ "value": "true" }
+```
+
+The settings handler must validate that any `feature_flag:` write is
+associated with a deployment identifier and must persist that row in
+the `settings` table as a deployment-scoped entry rather than a
+user-scoped preference. When a `feature_flag:` key is written, the
+handler re-resolves only the deployment-scoped value for the supplied
+deployment and ignores any user-scoped entry with the same key.
+
+Example failure case:
 
 ```plaintext
 PUT /api/settings/feature_flag:experimental_chat_ui
 { "value": "true" }
 ```
 
-These overrides are persisted in the database `settings` table and
-take effect immediately without requiring a gateway restart. The
-settings handler notifies the feature-flag registry to re-resolve the
-affected flag.
+This request must be rejected because it omits the deployment
+identifier required for deployment-scoped feature flags.
 
 #### Subsystem availability defaults
 
@@ -171,14 +194,18 @@ is present, the flag resolves to a compiled default value (typically
 Per-flag resolution follows this order:
 
 1. **Environment variable** (highest precedence): `FEATURE_FLAG_<NAME>`
-1. **Operator override**: `feature_flag:<name>` in the settings table
+1. **Operator override**: deployment-scoped
+   `feature_flag:<name>` in the settings table for the active
+   deployment
 1. **Subsystem availability**: Derived from `GatewayState` field
    presence
 1. **Compiled default** (lowest precedence): Hardcoded fallback value
 
-When an operator writes a settings override, the feature-flag registry
-re-resolves that flag and subsequent `GET /api/features` requests
-reflect the updated value immediately.
+When an operator writes a deployment-scoped settings override, the
+feature-flag registry re-resolves that flag for that deployment only,
+and subsequent `GET /api/features` requests for the same deployment
+reflect the updated value immediately. User-scoped `feature_flag:`
+entries must not affect resolution.
 
 ### 2. Data shape
 
@@ -199,8 +226,9 @@ pub struct FeatureFlagRegistry {
 ```
 
 The registry is constructed once at gateway startup with compiled
-defaults and subsystem-derived values, then updated when operator
-overrides are written through the settings API.
+defaults and subsystem-derived values, then updated when
+deployment-scoped operator overrides are written through the settings
+API. Resolution is keyed by deployment rather than by user.
 
 ### 3. GatewayState integration
 
@@ -227,9 +255,10 @@ Construction sequence:
 1. After subsystems are wired through `with_*` builder methods, the
    registry applies subsystem-derived defaults for relevant flags.
 1. The settings handler is extended to detect writes to keys prefixed
-   with `feature_flag:` and calls
-   `FeatureFlagRegistry::apply_override()` to update the affected
-   flag.
+   with `feature_flag:`, validate that the write includes a deployment
+   identifier, persist the row as a deployment-scoped `settings`
+   entry, and call `FeatureFlagRegistry::apply_override()` to update
+   the affected deployment-local flag state.
 
 ### 4. API endpoint
 
@@ -237,6 +266,7 @@ Expose a new authenticated endpoint:
 
 ```plaintext
 GET /api/features
+X-Deployment-Id: production
 ```
 
 The response is a JSON object mapping flag names to boolean values:
@@ -249,10 +279,12 @@ The response is a JSON object mapping flag names to boolean values:
 }
 ```
 
-The handler reads from the `FeatureFlagRegistry` in `GatewayState` and
-serializes the resolved flag map. No database query is involved on the
-hot path; the registry holds pre-resolved values that are updated only
-when operator overrides change.
+The handler requires a deployment identifier and reads from the
+`FeatureFlagRegistry` in `GatewayState` for that deployment. No
+database query is involved on the hot path; the registry holds
+pre-resolved values that are updated only when deployment-scoped
+operator overrides change. User-scoped `feature_flag:` entries are not
+consulted.
 
 #### Why a boolean map
 
@@ -312,6 +344,8 @@ no feature flags behaves identically to the current UI.
   re-resolved immediately without requiring a gateway restart.
 - When no flags are configured, the endpoint must return an empty
   object and the front end must render its default state.
+- Feature-flag writes and reads must include a deployment identifier;
+  feature flags are deployment-scoped, not user-scoped.
 
 ### Technical requirements
 
@@ -321,20 +355,28 @@ no feature flags behaves identically to the current UI.
   it must read from the in-memory registry.
 - The registry must be safe for concurrent reads and writes from
   multiple handler tasks.
+- The settings handler must reject `feature_flag:` writes that do not
+  include a deployment identifier and must persist accepted writes as
+  deployment-scoped `settings` rows.
+- The registry must resolve flags per deployment and ignore any
+  user-scoped `feature_flag:` entries.
 - Flag names must consist of lowercase ASCII letters, digits, and
   underscores. The parser must silently discard names that do not
   match this pattern and log a warning with the invalid name.
 
 ## Compatibility and migration
 
-This change is additive. No existing API contracts change.
+This change is additive for non-feature-flag settings, but it does
+introduce a scoped persistence change for feature flags.
 
 - The `GET /api/features` endpoint is new; older front-end assets
   that do not call it continue to work with all features visible.
 - Per-flag environment variables follow the `FEATURE_FLAG_` prefix
   convention and do not conflict with any current variables.
-- The settings key prefix `feature_flag:` is a namespace convention
-  within the existing settings table; no schema migration is needed.
+- The settings key prefix `feature_flag:` remains a namespace
+  convention, but deployment-scoped persistence requires extending the
+  `settings` table with deployment-aware storage so feature-flag rows
+  are not keyed only by `user_id`.
 - The `GatewayConfig` struct gains initialization logic for
   per-flag environment variable parsing, with a default of no flags
   enabled.

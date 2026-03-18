@@ -616,22 +616,26 @@ out behind flags.
   - See [RFC 0009 §Data shape](./rfcs/0009-feature-flags-frontend.md#2-data-shape)
     and [RFC 0009 §GatewayState integration](./rfcs/0009-feature-flags-frontend.md#3-gatewaystate-integration).
   - Success: `GatewayState` holds an `Arc<RwLock<FeatureFlagRegistry>>` that
-    supports runtime re-resolution when operator overrides change, and subsystem
-    availability defaults are applied during initialization based on
-    `GatewayState` field presence.
+    supports runtime re-resolution when deployment-scoped operator overrides
+    change, resolves flags per deployment while ignoring user-scoped
+    `feature_flag:` rows, and applies subsystem availability defaults during
+    initialization based on `GatewayState` field presence.
 - [ ] 4.4.3. Extend the settings handler to detect `feature_flag:` keys and
   apply runtime overrides to the registry. Requires 4.4.2.
   - See [RFC 0009 §Configuration inputs](./rfcs/0009-feature-flags-frontend.md#1-configuration-inputs).
-  - Success: `PUT /api/settings/feature_flag:<name>` writes persist to the
-    database and immediately update the `FeatureFlagRegistry`, and subsequent
+  - Success: `PUT /api/settings/feature_flag:<name>` requires a deployment
+    identifier, persists to the database as a deployment-scoped `settings`
+    entry, rejects writes that lack a deployment identifier, and immediately
+    updates the `FeatureFlagRegistry` for that deployment so subsequent
     `GET /api/features` requests reflect the updated flag state without a
     gateway restart.
 - [ ] 4.4.4. Implement the `GET /api/features` endpoint. Requires 4.4.2.
   - See [RFC 0009 §API endpoint](./rfcs/0009-feature-flags-frontend.md#4-api-endpoint).
   - Success: the endpoint returns a JSON object mapping flag names to booleans
     (e.g. `{ "experimental_chat_ui": true, "dark_mode": false }`) by
-    serializing the resolved registry state from `GatewayState`, with no
-    database query on the hot path.
+    serializing the resolved registry state from `GatewayState` for the
+    requested deployment, requires a deployment identifier in the request, and
+    performs no database query on the hot path.
 - [ ] 4.4.5. Add front-end `loadFeatureFlags()` integration in `app.js`.
   Requires 4.4.4.
   - See [RFC 0009 §Front-end consumption](./rfcs/0009-feature-flags-frontend.md#5-front-end-consumption).
