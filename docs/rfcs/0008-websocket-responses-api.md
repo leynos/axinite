@@ -277,7 +277,7 @@ A practical mapping for compatibility:
 
 | Axinite concept | Responses API representation | Notes |
 |---|---|---|
-| System/user/assistant message | `{"type":"message","role":"user|assistant|system","content":[{"type":"input_text","text":...}]}` | WebSocket examples show `message` items inside `input`. [^103] |
+| System/user/assistant message | `{"type":"message","role":"user\|assistant\|system","content":[{"type":"input_text","text":...}]}` | WebSocket examples show `message` items inside `input`. [^103] |
 | Tool call request from model | Output item `{"type":"function_call","call_id":...,"name":...,"arguments":"{...}"}` | `call_id` is the join key for outputs. [^104] |
 | Tool output back to model | Input item `{"type":"function_call_output","call_id":...,"output":"..."}` | WebSocket docs demonstrate this in continuation. [^105] |
 | Axinite compaction summary | Prefer: Responses “compaction item” emitted by server when `context_management` triggers | Compaction item is opaque and should be stored, not interpreted. [^106] |

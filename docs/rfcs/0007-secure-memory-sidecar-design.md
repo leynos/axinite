@@ -676,7 +676,24 @@ Avoid spinning up Oxigraph’s HTTP server; keep access strictly in-process.
 
 ### Ollama extraction with structured outputs
 
-Ollama supports **structured outputs** by providing a JSON schema to a `format` field (and recommends also embedding the schema in the prompt). [^49] It also provides an embeddings endpoint where vector dimension depends on the embedding model. [^50] For strict locality, disable cloud features via config or `OLLAMA_NO_CLOUD=1`. [^51]
+Ollama supports **structured outputs** by providing a JSON schema to a
+`format` field (and recommends also embedding the schema in the prompt). [^49]
+It also provides an embeddings endpoint where vector dimension depends on the
+embedding model. [^50]
+
+Environment variable entries:
+
+- Variable name: `OLLAMA_NO_CLOUD`
+- Meaning: Disables Ollama cloud-connected features so the extraction path
+  stays local-only.
+- Default or rule: Set to `1` when strict locality is required. [^51]
+
+- Variable name: `MEMORY_SIDECAR_MODE`
+- Meaning: Selects whether the memory sidecar is disabled or which operating
+  mode it uses.
+- Default or rule: Use `disabled`, `shadow`, or `active`; keep
+  `disabled` as the kill-switch default unless the sidecar is explicitly
+  enabled.
 
 #### Extraction contract (JSON schema)
 
