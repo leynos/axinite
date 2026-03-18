@@ -1,6 +1,8 @@
 //! RAII cleanup guard and directory-setup helpers for test directories and
 //! files.
 
+use std::path::Path;
+
 /// The kind of path registered for cleanup.
 #[allow(dead_code)]
 enum PathKind {
@@ -60,8 +62,8 @@ pub fn setup_test_dir(path: &str) {
 ///
 /// Useful when tests need isolated directories to avoid collisions.
 #[allow(dead_code)]
-pub fn setup_test_dir_with_suffix(base: &str, suffix: &str) -> String {
-    let dir = format!("{base}_{suffix}");
+pub fn setup_test_dir_with_suffix(base: &Path, suffix: &str) -> String {
+    let dir = format!("{}_{suffix}", base.to_string_lossy());
     setup_test_dir(&dir);
     dir
 }

@@ -5,32 +5,26 @@
 
 use std::time::Duration;
 
-use crate::support::test_rig::TestRigBuilder;
-use crate::support::trace_llm::LlmTrace;
+use ironclaw::channels::OutgoingResponse;
 
-// -----------------------------------------------------------------------
-// Test 1: time_parse_and_diff
-// -----------------------------------------------------------------------
+use crate::support::test_rig::{TestRig, TestRigBuilder};
+use crate::support::trace_llm::LlmTrace;
 
 #[tokio::test]
 async fn time_parse_and_diff() {
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/time_parse_diff.json"
-    ))
-    .expect("failed to load time_parse_diff.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .with_auto_approve_tools(true)
-        .with_skills()
-        .build()
-        .await;
-
-    rig.send_message("Parse a time and compute a diff").await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
-    rig.verify_trace_expects(&trace, &responses);
+    );
+    let (rig, _trace, _responses) = run_trace_test(
+        fixture_path,
+        "Parse a time and compute a diff",
+        RigConfig {
+            auto_approve: true,
+            skills: true,
+        },
+    )
+    .await;
 
     // Time tool should have been called twice (parse + diff).
     let started = rig.tool_calls_started();
@@ -43,29 +37,21 @@ async fn time_parse_and_diff() {
     rig.shutdown();
 }
 
-// -----------------------------------------------------------------------
-// Test 2: time_parse_invalid
-// -----------------------------------------------------------------------
-
 #[tokio::test]
 async fn time_parse_invalid() {
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/time_parse_invalid.json"
-    ))
-    .expect("failed to load time_parse_invalid.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .with_auto_approve_tools(true)
-        .with_skills()
-        .build()
-        .await;
-
-    rig.send_message("Parse an invalid timestamp").await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
-    rig.verify_trace_expects(&trace, &responses);
+    );
+    let (rig, _trace, _responses) = run_trace_test(
+        fixture_path,
+        "Parse an invalid timestamp",
+        RigConfig {
+            auto_approve: true,
+            skills: true,
+        },
+    )
+    .await;
 
     // The time tool call should have failed (invalid timestamp).
     let completed = rig.tool_calls_completed();
@@ -82,30 +68,21 @@ async fn time_parse_invalid() {
     rig.shutdown();
 }
 
-// -----------------------------------------------------------------------
-// Test 3: routine_create_list
-// -----------------------------------------------------------------------
-
 #[tokio::test]
 async fn routine_create_list() {
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/routine_create_list.json"
-    ))
-    .expect("failed to load routine_create_list.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .with_auto_approve_tools(true)
-        .with_skills()
-        .build()
-        .await;
-
-    rig.send_message("Create a daily routine and list all routines")
-        .await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
-    rig.verify_trace_expects(&trace, &responses);
+    );
+    let (rig, _trace, _responses) = run_trace_test(
+        fixture_path,
+        "Create a daily routine and list all routines",
+        RigConfig {
+            auto_approve: true,
+            skills: true,
+        },
+    )
+    .await;
 
     // Both routine_create and routine_list should have succeeded.
     let completed = rig.tool_calls_completed();
@@ -121,24 +98,48 @@ async fn routine_create_list() {
     rig.shutdown();
 }
 
-// -----------------------------------------------------------------------
-// Test 4: routine_update_delete
-// -----------------------------------------------------------------------
+#[derive(Default)]
+struct RigConfig {
+    auto_approve: bool,
+    skills: bool,
+}
 
-async fn run_routine_started_test(fixture_path: &str, message: &str, expected_tools: &[&str]) {
+async fn run_trace_test(
+    fixture_path: &str,
+    message: &str,
+    config: RigConfig,
+) -> (TestRig, LlmTrace, Vec<OutgoingResponse>) {
+    run_trace_test_with_timeout(fixture_path, message, config, Duration::from_secs(15)).await
+}
+
+async fn run_trace_test_with_timeout(
+    fixture_path: &str,
+    message: &str,
+    config: RigConfig,
+    timeout: Duration,
+) -> (TestRig, LlmTrace, Vec<OutgoingResponse>) {
     let trace = LlmTrace::from_file(fixture_path)
         .unwrap_or_else(|_| panic!("failed to load {fixture_path}"));
 
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
+    let mut builder = TestRigBuilder::new().with_trace(trace.clone());
+    if config.auto_approve {
+        builder = builder.with_auto_approve_tools(true);
+    }
+    if config.skills {
+        builder = builder.with_skills();
+    }
+    let rig = builder.build().await;
 
     rig.send_message(message).await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    let responses = rig.wait_for_responses(1, timeout).await;
 
     rig.verify_trace_expects(&trace, &responses);
+    (rig, trace, responses)
+}
 
+async fn run_routine_started_test(fixture_path: &str, message: &str, expected_tools: &[&str]) {
+    let (rig, _trace, _responses) =
+        run_trace_test(fixture_path, message, RigConfig::default()).await;
     let started = rig.tool_calls_started();
     for tool in expected_tools {
         assert!(
@@ -171,10 +172,6 @@ routine_started_test!(
     ["routine_create", "routine_update", "routine_delete"]
 );
 
-// -----------------------------------------------------------------------
-// Test 5: routine_history
-// -----------------------------------------------------------------------
-
 routine_started_test!(
     routine_history,
     "/tests/fixtures/llm_traces/tools/routine_history.json",
@@ -182,29 +179,21 @@ routine_started_test!(
     ["routine_create", "routine_history"]
 );
 
-// -----------------------------------------------------------------------
-// Test 6: routine_system_event_emit
-// -----------------------------------------------------------------------
-
 #[tokio::test]
 async fn routine_system_event_emit() {
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/routine_system_event_emit.json"
-    ))
-    .expect("failed to load routine_system_event_emit.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .with_auto_approve_tools(true)
-        .build()
-        .await;
-
-    rig.send_message("Create a system-event routine and emit an event")
-        .await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
-    rig.verify_trace_expects(&trace, &responses);
+    );
+    let (rig, _trace, _responses) = run_trace_test(
+        fixture_path,
+        "Create a system-event routine and emit an event",
+        RigConfig {
+            auto_approve: true,
+            skills: false,
+        },
+    )
+    .await;
 
     let completed = rig.tool_calls_completed();
     assert!(
@@ -234,29 +223,22 @@ async fn routine_system_event_emit() {
     rig.shutdown();
 }
 
-// -----------------------------------------------------------------------
-// Test 7: skill_install_routine_webhook_sim
-// -----------------------------------------------------------------------
-
 #[tokio::test]
 async fn skill_install_routine_webhook_sim() {
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/skill_install_routine_webhook_sim.json"
-    ))
-    .expect("failed to load skill_install_routine_webhook_sim.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .with_skills()
-        .with_auto_approve_tools(true)
-        .build()
-        .await;
-
-    rig.send_message("Install the workflow skill template and simulate a webhook routine run")
-        .await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(20)).await;
-    rig.verify_trace_expects(&trace, &responses);
+    );
+    let (rig, _trace, _responses) = run_trace_test_with_timeout(
+        fixture_path,
+        "Install the workflow skill template and simulate a webhook routine run",
+        RigConfig {
+            auto_approve: true,
+            skills: true,
+        },
+        Duration::from_secs(20),
+    )
+    .await;
 
     let completed = rig.tool_calls_completed();
     assert!(
@@ -289,29 +271,21 @@ async fn skill_install_routine_webhook_sim() {
     rig.shutdown();
 }
 
-// -----------------------------------------------------------------------
-// Test 8: job_create_status
-// -----------------------------------------------------------------------
 // Uses {{call_cj_1.job_id}} template to forward the dynamic UUID from
 // create_job's result into job_status's arguments.
 
 #[tokio::test]
 async fn job_create_status() {
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/job_create_status.json"
-    ))
-    .expect("failed to load job_create_status.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Create a job and check its status").await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
-    rig.verify_trace_expects(&trace, &responses);
+    );
+    let (rig, _trace, _responses) = run_trace_test(
+        fixture_path,
+        "Create a job and check its status",
+        RigConfig::default(),
+    )
+    .await;
 
     // Both tools should have succeeded.
     let completed = rig.tool_calls_completed();
@@ -358,30 +332,21 @@ async fn job_create_status() {
     rig.shutdown();
 }
 
-// -----------------------------------------------------------------------
-// Test 9: job_list_cancel
-// -----------------------------------------------------------------------
 // Uses {{call_cj_lc.job_id}} template to forward the dynamic UUID from
 // create_job into cancel_job.
 
 #[tokio::test]
 async fn job_list_cancel() {
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/job_list_cancel.json"
-    ))
-    .expect("failed to load job_list_cancel.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Create a job, list jobs, then cancel it")
-        .await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
-    rig.verify_trace_expects(&trace, &responses);
+    );
+    let (rig, _trace, _responses) = run_trace_test(
+        fixture_path,
+        "Create a job, list jobs, then cancel it",
+        RigConfig::default(),
+    )
+    .await;
 
     // All three tools should have succeeded.
     let completed = rig.tool_calls_completed();
@@ -401,27 +366,18 @@ async fn job_list_cancel() {
     rig.shutdown();
 }
 
-// -----------------------------------------------------------------------
-// Test 10: http_get_with_replay
-// -----------------------------------------------------------------------
-
 #[tokio::test]
 async fn http_get_with_replay() {
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/http_get_replay.json"
-    ))
-    .expect("failed to load http_get_replay.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Make an http GET request").await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
-    rig.verify_trace_expects(&trace, &responses);
+    );
+    let (rig, _trace, _responses) = run_trace_test(
+        fixture_path,
+        "Make an http GET request",
+        RigConfig::default(),
+    )
+    .await;
 
     // HTTP tool should have succeeded with the replayed exchange.
     let completed = rig.tool_calls_completed();

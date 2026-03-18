@@ -5,11 +5,30 @@
 
 use std::time::Duration;
 
+use ironclaw::channels::OutgoingResponse;
+
 use crate::support::cleanup::{CleanupGuard, setup_test_dir_with_suffix};
-use crate::support::test_rig::TestRigBuilder;
+use crate::support::test_rig::{TestRig, TestRigBuilder};
 use crate::support::trace_llm::LlmTrace;
 
-const TEST_DIR_BASE: &str = "/tmp/ironclaw_coverage_test";
+fn test_dir_base() -> std::path::PathBuf {
+    std::env::temp_dir().join("ironclaw_coverage_test")
+}
+
+async fn run_trace(
+    fixture_path: &str,
+    message: &str,
+) -> (LlmTrace, Vec<OutgoingResponse>, TestRig) {
+    let trace = LlmTrace::from_file(fixture_path)
+        .unwrap_or_else(|_| panic!("failed to load {fixture_path}"));
+    let rig = TestRigBuilder::new()
+        .with_trace(trace.clone())
+        .build()
+        .await;
+    rig.send_message(message).await;
+    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    (trace, responses, rig)
+}
 
 // -----------------------------------------------------------------------
 // json tool
@@ -17,19 +36,11 @@ const TEST_DIR_BASE: &str = "/tmp/ironclaw_coverage_test";
 
 #[tokio::test]
 async fn test_json_operations() {
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/coverage/json_operations.json"
-    ))
-    .expect("failed to load json_operations.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Parse and query this json data").await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    );
+    let (trace, responses, rig) = run_trace(fixture_path, "Parse and query this json data").await;
 
     rig.verify_trace_expects(&trace, &responses);
 
@@ -58,19 +69,11 @@ async fn test_json_operations() {
 
 #[tokio::test]
 async fn test_shell_echo() {
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/coverage/shell_echo.json"
-    ))
-    .expect("failed to load shell_echo.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Run a shell command for me").await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    );
+    let (trace, responses, rig) = run_trace(fixture_path, "Run a shell command for me").await;
 
     rig.verify_trace_expects(&trace, &responses);
     rig.shutdown();
@@ -82,7 +85,7 @@ async fn test_shell_echo() {
 
 #[tokio::test]
 async fn test_list_dir() {
-    let test_dir = setup_test_dir_with_suffix(TEST_DIR_BASE, "list_dir");
+    let test_dir = setup_test_dir_with_suffix(&test_dir_base(), "list_dir");
     let _cleanup = CleanupGuard::new().dir(&test_dir);
     tokio::fs::write(format!("{test_dir}/file_a.txt"), "content a")
         .await
@@ -91,19 +94,11 @@ async fn test_list_dir() {
         .await
         .expect("failed writing file_b.txt");
 
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/coverage/list_dir.json"
-    ))
-    .expect("failed to load list_dir.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("List the test directory").await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    );
+    let (trace, responses, rig) = run_trace(fixture_path, "List the test directory").await;
 
     rig.verify_trace_expects(&trace, &responses);
     rig.shutdown();
@@ -115,22 +110,14 @@ async fn test_list_dir() {
 
 #[tokio::test]
 async fn test_apply_patch_chain() {
-    let test_dir = setup_test_dir_with_suffix(TEST_DIR_BASE, "apply_patch");
+    let test_dir = setup_test_dir_with_suffix(&test_dir_base(), "apply_patch");
     let _cleanup = CleanupGuard::new().dir(&test_dir);
 
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/coverage/apply_patch_chain.json"
-    ))
-    .expect("failed to load apply_patch_chain.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Write a file and patch it").await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    );
+    let (trace, responses, rig) = run_trace(fixture_path, "Write a file and patch it").await;
 
     rig.verify_trace_expects(&trace, &responses);
 
@@ -161,20 +148,12 @@ async fn test_apply_patch_chain() {
 
 #[tokio::test]
 async fn test_memory_full_cycle() {
-    let trace = LlmTrace::from_file(concat!(
+    let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/coverage/memory_full_cycle.json"
-    ))
-    .expect("failed to load memory_full_cycle.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Exercise all four memory operations")
-        .await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    );
+    let (trace, responses, rig) =
+        run_trace(fixture_path, "Exercise all four memory operations").await;
 
     rig.verify_trace_expects(&trace, &responses);
 

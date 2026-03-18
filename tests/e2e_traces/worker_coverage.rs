@@ -7,12 +7,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use rstest::rstest;
 use serde_json::json;
 
+use ironclaw::channels::OutgoingResponse;
 use ironclaw::context::JobContext;
 use ironclaw::tools::{Tool, ToolError, ToolOutput};
 
-use crate::support::test_rig::TestRigBuilder;
+use crate::support::test_rig::{TestRig, TestRigBuilder};
 use crate::support::trace_llm::LlmTrace;
 
 // -- Stub tools for rate-limit and timeout tests --------------------------
@@ -40,29 +42,81 @@ impl Tool for StubRateLimitTool {
     }
 }
 
-// -----------------------------------------------------------------------
-// Test 1: parallel_three_tools
-// -----------------------------------------------------------------------
+struct SpotCase {
+    fixture: &'static str,
+    message: &'static str,
+}
 
-#[tokio::test]
-async fn parallel_three_tools() {
-    let trace = LlmTrace::from_file(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/worker/parallel_three_tools.json"
-    ))
-    .expect("failed to load parallel_three_tools.json");
-
+async fn run_worker_spot_case(
+    fixture_path: &str,
+    message: &str,
+) -> (LlmTrace, Vec<OutgoingResponse>, TestRig) {
+    let trace = LlmTrace::from_file(fixture_path)
+        .unwrap_or_else(|_| panic!("failed to load {fixture_path}"));
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
         .await;
-
-    rig.send_message("Run three tools in parallel").await;
+    rig.send_message(message).await;
     let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
     rig.verify_trace_expects(&trace, &responses);
+    (trace, responses, rig)
+}
 
-    // Verify all three tools were started.
+async fn run_worker_spot_test(fixture_path: &str, message: &str) {
+    let (_trace, _responses, rig) = run_worker_spot_case(fixture_path, message).await;
+    rig.shutdown();
+}
+
+// -----------------------------------------------------------------------
+// Test 1: baseline worker spot checks
+// -----------------------------------------------------------------------
+
+#[rstest]
+#[case(SpotCase {
+    fixture: concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/llm_traces/worker/parallel_three_tools.json"
+    ),
+    message: "Run three tools in parallel",
+})]
+#[case(SpotCase {
+    fixture: concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/llm_traces/worker/unknown_tool.json"
+    ),
+    message: "Deploy to production",
+})]
+#[case(SpotCase {
+    fixture: concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/llm_traces/worker/invalid_params.json"
+    ),
+    message: "Echo something with wrong params first",
+})]
+#[case(SpotCase {
+    fixture: concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/llm_traces/worker/plan_remaining_work.json"
+    ),
+    message: "Plan and execute a task",
+})]
+#[tokio::test]
+async fn worker_spot(#[case] case: SpotCase) {
+    run_worker_spot_test(case.fixture, case.message).await;
+}
+
+#[tokio::test]
+async fn parallel_three_tools_starts_all_tools() {
+    let (_trace, _responses, rig) = run_worker_spot_case(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/llm_traces/worker/parallel_three_tools.json"
+        ),
+        "Run three tools in parallel",
+    )
+    .await;
+
     let started = rig.tool_calls_started();
     assert!(
         started.contains(&"echo".to_string()),
@@ -139,21 +193,14 @@ async fn tool_error_feedback() {
 
 #[tokio::test]
 async fn unknown_tool_name() {
-    let trace = LlmTrace::from_file(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/worker/unknown_tool.json"
-    ))
-    .expect("failed to load unknown_tool.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Deploy to production").await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
-    rig.verify_trace_expects(&trace, &responses);
+    let (_trace, _responses, rig) = run_worker_spot_case(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/llm_traces/worker/unknown_tool.json"
+        ),
+        "Deploy to production",
+    )
+    .await;
 
     // The deploy_to_production tool should have been attempted but failed.
     let completed = rig.tool_calls_completed();
@@ -179,22 +226,14 @@ async fn unknown_tool_name() {
 
 #[tokio::test]
 async fn invalid_tool_params() {
-    let trace = LlmTrace::from_file(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/worker/invalid_params.json"
-    ))
-    .expect("failed to load invalid_params.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Echo something with wrong params first")
-        .await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
-    rig.verify_trace_expects(&trace, &responses);
+    let (_trace, _responses, rig) = run_worker_spot_case(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/llm_traces/worker/invalid_params.json"
+        ),
+        "Echo something with wrong params first",
+    )
+    .await;
 
     // Echo should have been called at least twice (bad then good).
     let started = rig.tool_calls_started();
@@ -292,21 +331,14 @@ async fn iteration_limit() {
 
 #[tokio::test]
 async fn simple_echo_flow() {
-    let trace = LlmTrace::from_file(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/worker/plan_remaining_work.json"
-    ))
-    .expect("failed to load plan_remaining_work.json");
-
-    let rig = TestRigBuilder::new()
-        .with_trace(trace.clone())
-        .build()
-        .await;
-
-    rig.send_message("Plan and execute a task").await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
-
-    rig.verify_trace_expects(&trace, &responses);
+    let (_trace, _responses, rig) = run_worker_spot_case(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/llm_traces/worker/plan_remaining_work.json"
+        ),
+        "Plan and execute a task",
+    )
+    .await;
 
     // Verify echo was called during execution.
     let started = rig.tool_calls_started();

@@ -259,6 +259,16 @@ impl LlmTrace {
         Ok(trace)
     }
 
+    /// Load a trace from a JSON file asynchronously.
+    #[allow(dead_code)] // Some test harnesses load traces asynchronously while others do not.
+    pub async fn from_file_async(
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let contents = tokio::fs::read_to_string(path).await?;
+        let trace: Self = serde_json::from_str(&contents)?;
+        Ok(trace)
+    }
+
     /// Replace all occurrences of `from` with `to` in tool call arguments.
     ///
     /// Walks through all turns and steps, patching any string values in tool call
