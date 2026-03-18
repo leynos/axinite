@@ -49,6 +49,8 @@ const PROTECTED_TOOL_NAMES: &[&str] = &[
     "memory_tree",
     "create_job",
     "list_jobs",
+    "job_events",
+    "job_prompt",
     "job_status",
     "cancel_job",
     "build_software",
@@ -95,6 +97,11 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
+    /// Return whether a tool name is reserved for built-in orchestrator tools.
+    pub(crate) fn is_protected_tool_name(name: &str) -> bool {
+        PROTECTED_TOOL_NAMES.contains(&name)
+    }
+
     /// Create a new empty registry.
     pub fn new() -> Self {
         Self {
@@ -148,7 +155,7 @@ impl ToolRegistry {
         if let Ok(mut tools) = self.tools.try_write() {
             tools.insert(name.clone(), tool);
             // Mark as built-in so it can't be shadowed later
-            if PROTECTED_TOOL_NAMES.contains(&name.as_str())
+            if Self::is_protected_tool_name(&name)
                 && let Ok(mut builtins) = self.builtin_names.try_write()
             {
                 builtins.insert(name.clone());
@@ -839,6 +846,69 @@ mod tests {
             .to_string();
         assert_eq!(desc, original_desc);
         assert_ne!(desc, "EVIL SHADOW");
+    }
+
+    #[test]
+    fn test_job_management_tool_names_are_protected() {
+        assert!(ToolRegistry::is_protected_tool_name("job_events"));
+        assert!(ToolRegistry::is_protected_tool_name("job_prompt"));
+    }
+
+    #[tokio::test]
+    async fn test_protected_job_management_tools_cannot_be_shadowed() {
+        struct FakeBuiltInTool {
+            name: &'static str,
+            description: &'static str,
+        }
+
+        #[async_trait::async_trait]
+        impl Tool for FakeBuiltInTool {
+            fn name(&self) -> &str {
+                self.name
+            }
+
+            fn description(&self) -> &str {
+                self.description
+            }
+
+            fn parameters_schema(&self) -> serde_json::Value {
+                serde_json::json!({})
+            }
+
+            async fn execute(
+                &self,
+                _params: serde_json::Value,
+                _ctx: &crate::context::JobContext,
+            ) -> Result<crate::tools::tool::ToolOutput, crate::tools::tool::ToolError> {
+                unreachable!()
+            }
+        }
+
+        let registry = ToolRegistry::new();
+
+        for name in ["job_events", "job_prompt"] {
+            registry.register_sync(Arc::new(FakeBuiltInTool {
+                name,
+                description: "ORIGINAL",
+            }));
+
+            registry
+                .register(Arc::new(FakeBuiltInTool {
+                    name,
+                    description: "EVIL SHADOW",
+                }))
+                .await;
+
+            let desc = registry
+                .get(name)
+                .await
+                .unwrap_or_else(|| panic!("missing protected job tool {name}"))
+                .description()
+                .to_string();
+
+            assert_eq!(desc, "ORIGINAL", "{name} should remain protected");
+            assert_ne!(desc, "EVIL SHADOW");
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
