@@ -436,7 +436,12 @@ Effort estimates are coarse (low/med/high) because runtime/language constraints 
 
 ### CI checks and rollout checklist
 
-- Add a feature flag: `OPENAI_RESPONSES_WS_ENABLED` (or provider config knob) default off.
+- Environment variable entry:
+  - Variable name: `OPENAI_RESPONSES_WS_ENABLED`
+  - Meaning: Enables WebSocket-based OpenAI Responses API support for
+    streaming responses.
+  - Default or rule: Default off; expose it as a rollout-controlled flag or
+    equivalent provider configuration knob.
 - Add “contract tests” that compare the tool call loop semantics against existing Chat Completions backend (for equivalent prompts).
 - Rollout:
   - Canary enable for a subset of sessions/threads or only for GPT‑5.4 model selection.

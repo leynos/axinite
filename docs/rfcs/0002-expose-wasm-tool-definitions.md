@@ -181,7 +181,7 @@ but its role changes:
 - good role: explain a failure and help a second attempt
 - bad role: act as the main way the model learns the tool contract
 
-Recommended behavior:
+Recommended behaviour:
 
 1. Keep the hint path for tool-level errors.
 2. Shorten it to a concise recovery message where possible.
@@ -349,12 +349,12 @@ Suggested shape:
 Recovery hint: check the advertised schema for `<tool-name>`.
 ```
 
-Full schema embedding in the hint should be optional diagnostic behavior, not a
+Full schema embedding in the hint should be optional diagnostic behaviour, not a
 design requirement.
 
 ## Testing Strategy
 
-This change needs both interface tests and behavioral tests.
+This change needs both interface tests and behavioural tests.
 
 ### Unit tests
 
@@ -393,7 +393,7 @@ That is the contract that removes first-call guesswork.
 3. Extend the hosted remote-tool catalog to include orchestrator-owned WASM
    tools.
 4. Reframe WASM retry hints as supplemental diagnostics in code comments,
-   behavior, and tests.
+   behaviour, and tests.
 5. Add explicit end-to-end tests for proactive schema exposure.
 
 ## Alternatives Considered
