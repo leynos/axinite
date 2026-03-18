@@ -197,11 +197,11 @@ Implementation steps:
    Linux and WSL, including `clang`, `mold`, the Rust toolchain, the
    WASM target, and the extra tools needed for WASM extensions and
    optional test suites.
-1. Add a small section documenting how a developer verifies the linker
+2. Add a small section documenting how a developer verifies the linker
    path locally. Prefer a checked-in Cargo configuration over shell
    profile instructions when the target-specific setup is portable
    enough to keep in the repo.
-1. Record one Linux or WSL baseline command for `cargo check --timings`
+3. Record one Linux or WSL baseline command for `cargo check --timings`
    and one command for the test suite baseline after the guide is in
    place.
 

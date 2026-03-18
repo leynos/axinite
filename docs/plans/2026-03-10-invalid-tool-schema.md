@@ -12,7 +12,7 @@ Status: COMPLETE
 After this work, IronClaw must stop sending OpenAI function-tool schemas
 whose root object still contains forbidden JSON Schema keywords such as
 `oneOf`, `anyOf`, `allOf`, `enum`, or `not`. The concrete user-visible
-outcome is that the `github` WASM tool can again be advertised to
+ outcome is that the `github` WebAssembly (WASM) tool can again be advertised to
 `openai/gpt-5.4` without the provider rejecting the request with
 HTTP 400 `invalid_function_parameters`.
 

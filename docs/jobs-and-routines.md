@@ -20,7 +20,8 @@
 Axinite does not have one generic "task runner". It has four related but
 distinct execution families:
 
-- in-process agent jobs, which are scheduler-managed LLM worker runs
+- in-process agent jobs, which are scheduler-managed language model (LLM)
+  worker runs
 - sandbox jobs, which run through the orchestrator and container workers
 - routines, which are persistent proactive rules that may run inline or dispatch
   full jobs

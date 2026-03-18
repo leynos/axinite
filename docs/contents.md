@@ -54,7 +54,6 @@
 - [Writing WebAssembly tools for ironclaw](writing-web-assembly-tools-for-ironclaw.md)
   explains how extension authors build and package WebAssembly tools for the
   existing runtime and tool contract.
-
 ## Plans
 
 - [Plans directory](plans/) collects execution plans, investigations, and
@@ -78,7 +77,6 @@
     investigation and fix plan for invalid tool-schema handling.
   - [Compile-time reduction](plans/2026-03-12-compile-time-reduction.md)
     tracks work to reduce build times and related tooling overhead.
-
 ## RFCs
 
 - [RFC directory](rfcs/) stores proposed and in-flight architectural changes
