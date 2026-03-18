@@ -125,7 +125,7 @@ pub(super) async fn execute_extension_tool(
         return Err(StatusCode::BAD_REQUEST);
     };
 
-    if !ExtensionToolKind::HOSTED_WORKER_PROXY_SAFE.contains(&kind) {
+    if !kind.is_hosted_worker_proxy_safe() {
         tracing::warn!(
             job_id = %job_id,
             tool = %kind.name(),
@@ -140,7 +140,10 @@ pub(super) async fn execute_extension_tool(
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    if tool.requires_approval(&req.params).is_required() {
+    if matches!(
+        tool.requires_approval(&req.params),
+        crate::tools::ApprovalRequirement::Always
+    ) {
         tracing::warn!(
             job_id = %job_id,
             tool = %kind.name(),

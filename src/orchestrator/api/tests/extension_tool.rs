@@ -115,6 +115,91 @@ async fn extension_tool_proxy_rejects_extension_tools_that_require_approval_for_
 
 #[rstest]
 #[tokio::test]
+async fn extension_tool_proxy_allows_hosted_safe_tools_with_unless_auto_approved(
+    test_state: OrchestratorState,
+) {
+    struct HostedSafeActivateTool;
+
+    #[async_trait::async_trait]
+    impl Tool for HostedSafeActivateTool {
+        fn name(&self) -> &str {
+            "tool_activate"
+        }
+
+        fn description(&self) -> &str {
+            "hosted-safe tool_activate"
+        }
+
+        fn parameters_schema(&self) -> serde_json::Value {
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string" }
+                },
+                "required": ["name"]
+            })
+        }
+
+        async fn execute(
+            &self,
+            params: serde_json::Value,
+            _ctx: &crate::context::JobContext,
+        ) -> Result<ToolOutput, crate::tools::ToolError> {
+            Ok(ToolOutput::success(
+                serde_json::json!({
+                    "activated": params["name"],
+                }),
+                Duration::from_millis(5),
+            ))
+        }
+
+        fn requires_approval(
+            &self,
+            _params: &serde_json::Value,
+        ) -> crate::tools::ApprovalRequirement {
+            crate::tools::ApprovalRequirement::UnlessAutoApproved
+        }
+    }
+
+    test_state
+        .tools
+        .register(Arc::new(HostedSafeActivateTool))
+        .await;
+    let job_id = Uuid::new_v4();
+    let token = test_state.token_store.create_token(job_id).await;
+    let router = OrchestratorApi::router(test_state);
+
+    let payload = serde_json::json!({
+        "tool_name": "tool_activate",
+        "params": {"name": "slack"}
+    });
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/worker/{}/extension_tool", job_id))
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&payload).expect("serialize hosted-safe activate payload"),
+        ))
+        .expect("build hosted-safe activate request");
+
+    let resp = router
+        .oneshot(req)
+        .await
+        .expect("send hosted-safe activate request");
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(resp.into_body(), 4096)
+        .await
+        .expect("read hosted-safe activate response");
+    let proxy_resp: crate::worker::api::ProxyExtensionToolResponse =
+        serde_json::from_slice(&body).expect("parse hosted-safe activate response");
+    assert_eq!(proxy_resp.output.result["activated"], "slack");
+}
+
+#[rstest]
+#[tokio::test]
 async fn extension_tool_proxy_executes_registered_extension_tool_with_request_job_id(
     test_state: OrchestratorState,
 ) {

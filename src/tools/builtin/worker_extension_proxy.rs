@@ -1,8 +1,8 @@
-//! Worker-local proxies for safe extension-management reads.
+//! Worker-local proxies for hosted-safe extension-management tools.
 //!
 //! Hosted workers cannot consume interactive approval grants, so this module
-//! only exposes the non-mutating extension tools that can be proxied through
-//! the orchestrator without bypassing approval checks.
+//! only exposes the explicitly allowlisted extension tools that can be proxied
+//! through the orchestrator without requiring an interactive approval flow.
 
 use std::sync::Arc;
 

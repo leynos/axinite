@@ -134,6 +134,44 @@ fn test_extension_info_schema() {
     assert!(required.iter().any(|v| v.as_str() == Some("name")));
 }
 
+#[test]
+fn hosted_worker_proxy_safety_is_explicit() {
+    use crate::tools::tool::ApprovalRequirement;
+
+    for safe_kind in [
+        ExtensionToolKind::Search,
+        ExtensionToolKind::Activate,
+        ExtensionToolKind::List,
+        ExtensionToolKind::Info,
+    ] {
+        assert!(
+            safe_kind.is_hosted_worker_proxy_safe(),
+            "{safe_kind:?} should stay in the hosted-worker allowlist"
+        );
+    }
+
+    for restricted_kind in [
+        ExtensionToolKind::Install,
+        ExtensionToolKind::Auth,
+        ExtensionToolKind::Remove,
+        ExtensionToolKind::Upgrade,
+    ] {
+        assert!(
+            !restricted_kind.is_hosted_worker_proxy_safe(),
+            "{restricted_kind:?} should stay out of the hosted-worker allowlist"
+        );
+    }
+
+    assert_eq!(
+        ExtensionToolKind::Activate.approval_requirement(),
+        ApprovalRequirement::UnlessAutoApproved
+    );
+    assert!(
+        ExtensionToolKind::Activate.is_hosted_worker_proxy_safe(),
+        "hosted visibility must not be inferred from blanket Never approval"
+    );
+}
+
 /// Create a stub manager for schema tests (these don't call execute).
 fn test_manager_stub() -> Arc<ExtensionManager> {
     use crate::secrets::{InMemorySecretsStore, SecretsCrypto};

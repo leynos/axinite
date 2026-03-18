@@ -6,8 +6,10 @@ use super::*;
 use crate::testing::credentials::TEST_BEARER_TOKEN;
 use uuid::Uuid;
 
-#[test]
-fn test_url_construction() {
+#[rstest]
+#[case("llm/complete")]
+#[case("credentials")]
+fn test_url_construction(#[case] path: &str) {
     let client = WorkerHttpClient::new(
         "http://host.docker.internal:50051".to_string(),
         Uuid::nil(),
@@ -15,10 +17,11 @@ fn test_url_construction() {
     );
 
     assert_eq!(
-        client.url("llm/complete"),
+        client.url(path),
         format!(
-            "http://host.docker.internal:50051/worker/{}/llm/complete",
-            Uuid::nil()
+            "http://host.docker.internal:50051/worker/{}/{}",
+            Uuid::nil(),
+            path
         )
     );
 }
@@ -32,23 +35,6 @@ fn test_url_construction() {
 #[case("unknown", FinishReason::Unknown)]
 fn test_parse_finish_reason(#[case] input: &str, #[case] expected: FinishReason) {
     assert_eq!(parse_finish_reason(input), expected);
-}
-
-#[test]
-fn test_credentials_url_construction() {
-    let client = WorkerHttpClient::new(
-        "http://host.docker.internal:50051".to_string(),
-        Uuid::nil(),
-        TEST_BEARER_TOKEN.to_string(),
-    );
-
-    assert_eq!(
-        client.url("credentials"),
-        format!(
-            "http://host.docker.internal:50051/worker/{}/credentials",
-            Uuid::nil()
-        )
-    );
 }
 
 #[test]

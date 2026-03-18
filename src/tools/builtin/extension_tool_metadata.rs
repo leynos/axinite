@@ -29,6 +29,15 @@ impl ExtensionToolKind {
     pub const HOSTED_WORKER_PROXY_SAFE: [Self; 4] =
         [Self::Search, Self::Activate, Self::List, Self::Info];
 
+    /// Whether this extension-management tool is explicitly allowed through the
+    /// hosted worker proxy path.
+    pub const fn is_hosted_worker_proxy_safe(self) -> bool {
+        matches!(
+            self,
+            Self::Search | Self::Activate | Self::List | Self::Info
+        )
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Self::Search => "tool_search",
