@@ -1,3 +1,4 @@
+<!-- markdownlint-disable-next-line MD013 -->
 # Architectural decision record (ADR) 002: Authoritative intent state must remain human-auditable
 
 ## Status
@@ -57,11 +58,11 @@ from the loss.
   provider's format creates vendor lock-in. If Axinite switches
   providers, migrates models, or operates in a multi-provider
   configuration, provider-specific state cannot transfer.
-- **Intent contract enforcement**: RFC 0009 defines intent contracts
+- **Intent contract enforcement**: RFC 0010 defines intent contracts
   that constrain agent behaviour. If the authoritative statement of
   what the agent should do lives in an opaque provider artefact, the
   contract cannot be enforced. [^4]
-- **Execution ledger completeness**: RFC 0010 requires an append-only
+- **Execution ledger completeness**: RFC 0011 requires an append-only
   ledger of system actions. Provider-side compaction events and
   continuation state changes must be visible in that ledger. [^5]
 
@@ -119,9 +120,9 @@ but it is never elevated to sole source of truth.
 
 This means:
 
-1. **Intent contracts** (RFC 0009) live in the workspace, thread, or
+1. **Intent contracts** (RFC 0010) live in the workspace, thread, or
    job metadata — not in provider-side conversation state.
-2. **Decision history** (RFC 0010) lives in the append-only execution
+2. **Decision history** (RFC 0011) lives in the append-only execution
    ledger — not in provider-side compaction items.
 3. **Conversation state** lives in Axinite's `Thread`/turn model — not
    solely in `previous_response_id` chains.
@@ -195,8 +196,8 @@ durable intent lives.
     See <https://www.nist.gov/itl/ai-risk-management-framework> and
     <https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf>.
 
-[^4]: RFC 0009: Intent contracts and fail-closed runtime gates. See
-    `docs/rfcs/0009-intent-contracts-and-fail-closed-runtime-gates.md`.
+[^4]: RFC 0010: Intent contracts and fail-closed runtime gates. See
+    `docs/rfcs/0010-intent-contracts-and-fail-closed-runtime-gates.md`.
 
-[^5]: RFC 0010: Execution truth ledger and action provenance. See
-    `docs/rfcs/0010-execution-truth-ledger-and-action-provenance.md`.
+[^5]: RFC 0011: Execution truth ledger and action provenance. See
+    `docs/rfcs/0011-execution-truth-ledger-and-action-provenance.md`.

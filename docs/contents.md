@@ -89,18 +89,31 @@
     proposes how WebAssembly tool schemas should be exported and consumed.
   - [RFC 0003: Skill bundle installation](rfcs/0003-skill-bundle-installation.md)
     proposes the packaging and installation model for skill bundles.
+  - [Pending RFC 0004: Tokenized delegated authorized endpoint requests](rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md)
+    captures a pending RFC for delegated endpoint requests that has not yet
+    been renumbered.
+  - [Pending RFC 0005: Monty code execution environment](rfcs/2026-03-11-monty-code-execution-environment.md)
+    captures a pending RFC for the Monty execution environment that has not yet
+    been renumbered.
   - [RFC 0006: Provenance-based zero-knowledge intent plugins](rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md)
     proposes intent-plugin boundaries driven by provenance-aware controls.
   - [RFC 0007: Secure memory sidecar design](rfcs/0007-secure-memory-sidecar-design.md)
     proposes a sidecar-based design for protected memory handling.
   - [RFC 0008: WebSocket Responses API](rfcs/0008-websocket-responses-api.md)
     proposes a WebSocket-based Responses API surface for axinite.
-  - [Monty code execution environment](rfcs/2026-03-11-monty-code-execution-environment.md)
-    captures a pending RFC for the Monty execution environment that has not yet
-    been renumbered.
   - [RFC 0009: Feature flags for the web front end](rfcs/0009-feature-flags-frontend.md)
     proposes a mechanism for passing feature flags from the backend to the
     browser front end.
-  - [Tokenized delegated authorized endpoint requests](rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md)
-    captures a pending RFC for delegated endpoint requests that has not yet
-    been renumbered.
+  - [RFC 0010: Intent contracts and fail-closed runtime gates](rfcs/0010-intent-contracts-and-fail-closed-runtime-gates.md)
+    proposes explicit intent contracts and fail-closed runtime policy gates.
+  - [RFC 0011: Execution truth ledger and action provenance](rfcs/0011-execution-truth-ledger-and-action-provenance.md)
+    proposes an append-only ledger for approvals, tool calls, and system
+    actions.
+  - [RFC 0012: Delegated child jobs with isolated context](rfcs/0012-delegated-child-jobs-with-isolated-context.md)
+    proposes bounded delegation with isolated context, budgets, and evidence
+    bundles.
+  - [RFC 0013: Auxiliary provider profiles and stable-prefix prompt assembly](rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md)
+    proposes named provider profiles and stable prompt-prefix construction.
+  - [RFC 0014: Memory projection tiers and promotion rules](rfcs/0014-memory-projection-tiers-and-promotion-rules.md)
+    proposes projection classes, epistemic status, and promotion rules for
+    memory.

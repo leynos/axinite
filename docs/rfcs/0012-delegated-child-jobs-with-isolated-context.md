@@ -1,8 +1,8 @@
-# RFC 0011: Delegated child jobs with isolated context
+# RFC 0012: Delegated child jobs with isolated context
 
 ## Preamble
 
-- **RFC number:** 0011
+- **RFC number:** 0012
 - **Status:** Proposed
 - **Created:** 2026-03-15
 
@@ -79,6 +79,7 @@ Axinite distinguishes four execution families: [^1]
 
 ### Relevant primitives
 
+<!-- markdownlint-disable MD013 -->
 | Primitive | Current capability | Gap for delegation |
 | --- | --- | --- |
 | `Task::Job` | Full LLM-driven job. Must go through `schedule()` and full persistence. | No isolation from parent context. No model-visible creation interface. |
@@ -88,6 +89,7 @@ Axinite distinguishes four execution families: [^1]
 | Routine `full_job` | Delegates to scheduler. Returns quickly. | No parent-child relationship in the scheduler. No result aggregation. |
 
 _Table 1: Current primitives and delegation gaps._
+<!-- markdownlint-enable MD013 -->
 
 ### Delegated endpoints
 
@@ -113,12 +115,12 @@ and do.
     boundary.
   - Propagate or narrow the parent's intent contract and approval
     context.
-  - Record delegation events in the execution ledger (RFC 0010).
+  - Record delegation events in the execution ledger (RFC 0011).
 - Non-goals:
   - Replace the existing scheduler or routine engine. The delegation
     primitive builds on them.
   - Support arbitrary nesting without limits. The intent contract's
-    `max_delegation_depth` constrains recursion (RFC 0009).
+    `max_delegation_depth` constrains recursion (RFC 0010).
   - Provide a general-purpose multi-agent orchestration framework.
     Delegation is one parent spawning one or more bounded child jobs,
     not a swarm.
@@ -129,6 +131,7 @@ and do.
 
 A delegation contract is a structured document specifying:
 
+<!-- markdownlint-disable MD013 -->
 | Field | Type | Description |
 | --- | --- | --- |
 | `goal` | string | What the child job should accomplish. |
@@ -143,11 +146,13 @@ A delegation contract is a structured document specifying:
 | `approval_inheritance` | enum | `inherit`, `narrow`, `fresh`. |
 
 _Table 2: Delegation contract fields._
+<!-- markdownlint-enable MD013 -->
 
 ### 2. Model-visible tool interface
 
 The delegation primitive is exposed as a built-in tool:
 
+<!-- markdownlint-disable-next-line MD013 -->
 ```json
 {
   "name": "delegate_task",
@@ -171,7 +176,7 @@ or job metadata.
 
 1. The model calls `delegate_task` with a goal and optional parameters.
 2. The runtime constructs a delegation contract by narrowing the
-   parent's intent contract (RFC 0009). The child contract cannot
+   parent's intent contract (RFC 0010). The child contract cannot
    widen any parent constraint.
 3. If workspace isolation is requested, the runtime creates the
    isolation environment (git worktree, sandbox container, or
@@ -187,7 +192,7 @@ or job metadata.
      (optional, based on `result_format`).
 7. The runtime returns only the summary (and optionally evidence
    references) to the parent context.
-8. A delegation ledger entry is recorded (RFC 0010).
+8. A delegation ledger entry is recorded (RFC 0011).
 
 ### 4. Approval context handling
 
@@ -206,6 +211,7 @@ while avoiding excessive approval friction.
 
 ### 5. Workspace isolation
 
+<!-- markdownlint-disable MD013 -->
 | Mode | Mechanism | Use case |
 | --- | --- | --- |
 | `none` | Child job shares the parent's working directory. | Read-only analysis, summarization. |
@@ -214,6 +220,7 @@ while avoiding excessive approval friction.
 | `copy_on_write` | Creates a filesystem-level copy-on-write snapshot. | File-system operations without git. |
 
 _Table 3: Workspace isolation modes._
+<!-- markdownlint-enable MD013 -->
 
 ### 6. Budget enforcement
 

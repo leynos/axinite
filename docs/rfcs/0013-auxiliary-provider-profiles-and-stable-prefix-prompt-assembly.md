@@ -1,8 +1,8 @@
-# RFC 0012: Auxiliary provider profiles and stable-prefix prompt assembly
+# RFC 0013: Auxiliary provider profiles and stable-prefix prompt assembly
 
 ## Preamble
 
-- **RFC number:** 0012
+- **RFC number:** 0013
 - **Status:** Proposed
 - **Created:** 2026-03-15
 
@@ -160,6 +160,7 @@ workload type, not by per-request complexity scoring.
 
 ### 2. Profile dispatch table
 
+<!-- markdownlint-disable MD013 -->
 | Workload | Default profile | Rationale |
 | --- | --- | --- |
 | Conversational reasoning | `main` (with smart routing) | Primary user-facing workload. |
@@ -168,6 +169,7 @@ workload type, not by per-request complexity scoring.
 | Vision analysis | `vision` | Requires modality support. |
 | Web extraction/summarization | `auxiliary` | Non-critical, cost-sensitive. |
 | Heartbeat/evaluation | `auxiliary` | Already uses cheap provider. |
+<!-- markdownlint-enable MD013 -->
 | Memory extraction (RFC 0007) | `auxiliary` | Background, non-critical. |
 | Embedding generation | Dedicated embedding config | Already separate. |
 
@@ -204,7 +206,7 @@ Restructure prompt construction into two segments:
 1. System instructions and operator policy.
 2. Identity files (`SOUL.md`, `AGENTS.md`, `USER.md`, `IDENTITY.md`).
 3. Active skill definitions and tool schemas.
-4. Intent contract (RFC 0009).
+4. Intent contract (RFC 0010).
 5. Long-lived workspace context (pinned documents, project metadata).
 
 **Volatile suffix** (not cached):

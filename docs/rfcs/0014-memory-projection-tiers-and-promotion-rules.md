@@ -1,8 +1,8 @@
-# RFC 0013: Memory projection tiers and promotion rules
+# RFC 0014: Memory projection tiers and promotion rules
 
 ## Preamble
 
-- **RFC number:** 0013
+- **RFC number:** 0014
 - **Status:** Proposed
 - **Created:** 2026-03-15
 
@@ -71,6 +71,7 @@ RFC 0007 proposes:
 
 ### Gaps relative to Honcho patterns
 
+<!-- markdownlint-disable MD013 -->
 | Honcho pattern | RFC 0007 status | Gap |
 | --- | --- | --- |
 | Explicit observations | Extraction produces entities/facts | No epistemic status labelling. |
@@ -83,6 +84,7 @@ RFC 0007 proposes:
 | Reconciliation metadata | Retraction and deletion propagation proposed. | No sync state or replay semantics per target. |
 
 _Table 1: RFC 0007 gaps relative to Honcho patterns._
+<!-- markdownlint-enable MD013 -->
 
 ## Goals and non-goals
 
@@ -109,6 +111,7 @@ _Table 1: RFC 0007 gaps relative to Honcho patterns._
 
 Define five first-class projection classes:
 
+<!-- markdownlint-disable MD013 -->
 | Class | Description | Storage | Lifetime |
 | --- | --- | --- | --- |
 | `episode` | A bounded, chronological record of an interaction or event. Contains raw observations, tool call results, and contextual signals. | Qdrant (vector) + Oxigraph (relations) | Indefinite; subject to retention policy. |
@@ -118,11 +121,13 @@ Define five first-class projection classes:
 | `profile` | A stable, curated representation of an entity (person, project, system). Aggregates durable traits, preferences, and constraints. | Oxigraph (subgraph) + Qdrant (vector) | Long-lived; updated only through explicit promotion. |
 
 _Table 2: Projection classes._
+<!-- markdownlint-enable MD013 -->
 
 ### 2. Epistemic status
 
 Every `fact` and `profile` entry carries an epistemic status:
 
+<!-- markdownlint-disable MD013 -->
 | Status | Meaning | Trust level | Promotion path |
 | --- | --- | --- | --- |
 | `explicit` | Directly stated by a human (user or operator). | Highest | N/A (already trusted). |
@@ -130,6 +135,7 @@ Every `fact` and `profile` entry carries an epistemic status:
 | `deduced` | Logically derived from explicit or curated facts. | Medium | Automatic if premises are trusted. |
 | `hypothesized` | Inductively or abductively inferred. | Low | Requires corroboration or curation. |
 | `retracted` | Previously held but now contradicted or withdrawn. | None | Retracted facts remain for audit trail. |
+<!-- markdownlint-enable MD013 -->
 
 _Table 3: Epistemic status levels._
 

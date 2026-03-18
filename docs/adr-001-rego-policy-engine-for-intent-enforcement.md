@@ -1,3 +1,4 @@
+<!-- markdownlint-disable-next-line MD013 -->
 # Architectural decision record (ADR) 001: OPA Rego as the policy engine for intent enforcement
 
 ## Status
@@ -10,7 +11,7 @@ Proposed.
 
 ## Context and problem statement
 
-Axinite's intent contract (RFC 0009) requires a deterministic policy
+Axinite's intent contract (RFC 0010) requires a deterministic policy
 evaluation engine that can accept structured inputs — intent contract,
 tool schema, provenance labels, approval context, workspace scope, and
 sink type — and produce auditable, machine-readable decisions. The
@@ -29,7 +30,7 @@ The key requirement is that policy evaluation must be:
 - **Deterministic**: the same inputs must always produce the same
   decision.
 - **Auditable**: every decision must produce a machine-readable reason
-  that can be recorded in the execution ledger (RFC 0010).
+  that can be recorded in the execution ledger (RFC 0011).
 - **Fast**: evaluation must run synchronously on the tool-execution
   critical path without perceptible latency.
 - **Embeddable**: the policy engine must run in-process in a Rust binary
@@ -99,6 +100,7 @@ dependencies but requires maintaining a policy language, parser, and
 evaluator. The ongoing maintenance cost is disproportionate to the
 benefit when mature alternatives exist.
 
+<!-- markdownlint-disable MD013 -->
 | Factor | OPA Rego (WASM) | Regorus (native) | Starlark | Cedar | Custom DSL |
 | --- | --- | --- | --- | --- | --- |
 | Purpose-built for policy | Yes | Yes (Rego) | No | Yes | No |
@@ -110,6 +112,7 @@ benefit when mature alternatives exist.
 | RFC 0006 recommendation | Yes | Yes | Authoring only | Not considered | Not considered |
 
 _Table 1: Policy engine comparison._
+<!-- markdownlint-enable MD013 -->
 
 ## Decision outcome / proposed direction
 
@@ -135,9 +138,9 @@ authoring layer is optional sugar, not a second policy system.
 
 - Goals:
   - Evaluate intent contracts against structured inputs at every gate
-    point defined in RFC 0009.
+    point defined in RFC 0010.
   - Produce machine-readable decision reasons that flow into the
-    execution ledger (RFC 0010).
+    execution ledger (RFC 0011).
   - Support policy versioning, bundling, and distribution alongside
     capability schemas.
   - Deny by default when a policy is absent, malformed, or fails to
@@ -176,13 +179,13 @@ Every evaluation produces a decision record:
 {
   "allowed": false,
   "reason": "tool 'memory_write' not in allowed_tool_families",
-  "policy_version": "0009-v1",
+  "policy_version": "0010-v1",
   "contract_scope": "job",
   "timestamp": "2026-03-15T12:00:00Z"
 }
 ```
 
-This record is appended to the execution ledger (RFC 0010).
+This record is appended to the execution ledger (RFC 0011).
 
 ### Policy-evaluation failure
 

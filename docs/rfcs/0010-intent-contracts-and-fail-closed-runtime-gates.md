@@ -1,8 +1,8 @@
-# RFC 0009: Intent contracts and fail-closed runtime gates
+# RFC 0010: Intent contracts and fail-closed runtime gates
 
 ## Preamble
 
-- **RFC number:** 0009
+- **RFC number:** 0010
 - **Status:** Proposed
 - **Created:** 2026-03-15
 
@@ -104,7 +104,7 @@ workspace documents at the runtime level.
     under a contract, not replaces them.
   - Define the policy language. That is the subject of ADR 001, which
     recommends OPA Rego compiled to WebAssembly.
-  - Specify memory projection semantics. That is the subject of RFC 0013.
+  - Specify memory projection semantics. That is the subject of RFC 0014.
 
 ## Proposed design
 
@@ -112,6 +112,7 @@ workspace documents at the runtime level.
 
 An intent contract is a structured document (YAML or JSON) that declares:
 
+<!-- markdownlint-disable MD013 -->
 | Field | Type | Description |
 | --- | --- | --- |
 | `goal` | string | Natural-language statement of what the job or session should accomplish. |
@@ -125,6 +126,7 @@ An intent contract is a structured document (YAML or JSON) that declares:
 | `scope` | enum | `workspace`, `thread`, or `job`. |
 
 _Table 1: Intent contract fields._
+<!-- markdownlint-enable MD013 -->
 
 ### 2. Contract scoping and precedence
 
@@ -174,7 +176,7 @@ The runtime evaluates the intent contract at the following gate points:
   satisfy constraints, and whether approval requirements are met.
 - **Pre-memory-promotion**: before a memory artefact is promoted from
   `untrusted` to `curated` or from `hypothesized` to `fact` (per
-  RFC 0013), the contract is checked.
+  RFC 0014), the contract is checked.
 - **Pre-delegation**: before a child job is created, the runtime verifies
   that the delegation depth does not exceed the contract limit and that the
   child contract narrows rather than widens the parent.
@@ -182,7 +184,7 @@ The runtime evaluates the intent contract at the following gate points:
   `prohibited_sink_promotions`, provenance labels are checked.
 
 Gate evaluation produces a machine-readable decision artefact (see
-RFC 0010) that records the contract version, the input, the decision, and
+RFC 0011) that records the contract version, the input, the decision, and
 the reason.
 
 ### 5. Failure mode: fail-closed with optional downgrade

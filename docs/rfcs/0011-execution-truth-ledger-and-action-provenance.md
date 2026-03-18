@@ -1,8 +1,8 @@
-# RFC 0010: Execution truth ledger and action provenance
+# RFC 0011: Execution truth ledger and action provenance
 
 ## Preamble
 
-- **RFC number:** 0010
+- **RFC number:** 0011
 - **Status:** Proposed
 - **Created:** 2026-03-15
 
@@ -113,6 +113,7 @@ Each ledger entry is an immutable record with the following fields:
 | Field | Type | Description |
 | --- | --- | --- |
 | `id` | UUID | Unique entry identifier. |
+<!-- markdownlint-disable MD013 -->
 | `timestamp` | ISO 8601 | When the action occurred. |
 | `workspace_id` | string | Workspace scope. |
 | `thread_id` | string | Thread scope, if applicable. |
@@ -125,6 +126,7 @@ Each ledger entry is an immutable record with the following fields:
 | `contract_version` | string | Intent contract version in effect at the time of the action. |
 
 _Table 1: Ledger entry fields._
+<!-- markdownlint-enable MD013 -->
 
 ### 2. Entry types and payloads
 
@@ -139,7 +141,7 @@ policy), and the approval context.
 **Policy decision**: records the policy evaluation input, the Rego
 policy version, the decision (allow, deny, escalate), and the
 machine-readable reason. This is the decision artefact produced by the
-gate evaluation in RFC 0009.
+gate evaluation in RFC 0010.
 
 **File write**: records the file path, operation type (create, update,
 append, delete), a content hash, and the byte count.
