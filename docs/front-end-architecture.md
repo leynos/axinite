@@ -19,9 +19,10 @@
 
 ## 1. Design scope
 
-Axinite's web front end is not a separate single-page application build that is
-compiled, versioned, and deployed independently from the host. It is a browser
-gateway surface embedded directly into the Rust application. The same binary
+Axinite's web front end is not a separate single-page application (SPA) build
+that is compiled, versioned, and deployed independently of the host. It is a
+browser gateway surface embedded directly into the Rust application. The same
+binary
 that starts the agent runtime also:
 
 - constructs the gateway channel,
@@ -60,7 +61,7 @@ Table 1. Browser gateway responsibilities within the host runtime.
 | User interface shell | Presents the authenticated SPA shell, tabs, editors, status widgets, and live activity cards | `src/channels/web/static/index.html`, `src/channels/web/static/style.css`, `src/channels/web/static/app.js` |
 | HTTP server surface | Serves embedded static assets and JSON APIs from the same Axum router | `src/channels/web/server.rs`, `src/channels/web/handlers/static_files.rs` |
 | Chat ingress | Converts REST and WebSocket browser actions into `IncomingMessage` values | `src/channels/web/handlers/chat.rs`, `src/channels/web/ws.rs` |
-| Chat egress | Maps agent responses and status events into browser SSE and WebSocket events | `src/channels/web/mod.rs`, `src/channels/web/sse.rs`, `src/channels/web/types.rs` |
+| Chat egress | Maps agent responses and status events into browser Server-Sent Events (SSE) and WebSocket events | `src/channels/web/mod.rs`, `src/channels/web/sse.rs`, `src/channels/web/types.rs` |
 | Runtime control plane | Exposes memory, jobs, routines, extensions, skills, settings, logs, and gateway status | `src/channels/web/handlers/` |
 | Integration hub | Holds references to optional runtime subsystems inside `GatewayState` so handlers can expose only what is available | `src/channels/web/server.rs`, `src/channels/web/mod.rs` |
 <!-- markdownlint-enable MD013 MD060 -->
@@ -157,7 +158,7 @@ model:
 
 ## 4. How the interface is generated
 
-### 4.1 Static shell plus runtime DOM construction
+### 4.1 Static shell plus runtime Document Object Model (DOM) construction
 
 The browser interface is a hand-written SPA assembled from three checked-in
 files:

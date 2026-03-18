@@ -183,7 +183,16 @@ createdb ironclaw
 psql ironclaw -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
-Then set:
+Then set `DATABASE_URL`:
+
+- Variable: `DATABASE_URL`
+- Meaning: PostgreSQL connection URL used by the app.
+- Default or rule: Required for PostgreSQL-backed work. For local development,
+  `postgres://localhost/ironclaw` is a typical example; include the correct
+  user, password, host, port, and database name when your local setup needs
+  them.
+
+Example:
 
 ```bash
 export DATABASE_URL=postgres://localhost/ironclaw
