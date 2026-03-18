@@ -245,4 +245,4 @@ The consolidation was completed successfully. Key changes:
 
 6. No changes needed to Cargo.toml (html_to_markdown already had required-features gate)
 
-Final structure: **9 test binaries** (down from 43)
+Final structure: **9 test binaries** (down from 40)

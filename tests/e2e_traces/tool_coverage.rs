@@ -84,10 +84,12 @@ async fn test_shell_echo() {
 async fn test_list_dir() {
     let test_dir = setup_test_dir_with_suffix(TEST_DIR_BASE, "list_dir");
     let _cleanup = CleanupGuard::new().dir(&test_dir);
-    std::fs::write(format!("{test_dir}/file_a.txt"), "content a")
-        .unwrap_or_else(|_| panic!("failed writing {test_dir}/file_a.txt"));
-    std::fs::write(format!("{test_dir}/file_b.txt"), "content b")
-        .unwrap_or_else(|_| panic!("failed writing {test_dir}/file_b.txt"));
+    tokio::fs::write(format!("{test_dir}/file_a.txt"), "content a")
+        .await
+        .expect("failed writing file_a.txt");
+    tokio::fs::write(format!("{test_dir}/file_b.txt"), "content b")
+        .await
+        .expect("failed writing file_b.txt");
 
     let trace = LlmTrace::from_file(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -133,8 +135,9 @@ async fn test_apply_patch_chain() {
     rig.verify_trace_expects(&trace, &responses);
 
     // Extra: verify the patch was applied on disk.
-    let content = std::fs::read_to_string(format!("{test_dir}/patch_target.txt"))
-        .expect("patch_target.txt should exist");
+    let content = tokio::fs::read_to_string(format!("{test_dir}/patch_target.txt"))
+        .await
+        .expect("failed reading patch_target.txt");
     assert!(
         content.contains("PATCHED"),
         "Expected 'PATCHED' in file content, got: {content:?}"

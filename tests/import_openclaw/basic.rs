@@ -3,6 +3,8 @@
 #![cfg(feature = "import")]
 
 mod import_tests {
+    //! Basic import functionality tests covering stats, error handling, and config construction.
+
     use ironclaw::import::openclaw::reader::{OpenClawConfig, OpenClawMemoryChunk};
     use ironclaw::import::{ImportError, ImportStats};
     use rstest::rstest;

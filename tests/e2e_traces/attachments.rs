@@ -10,6 +10,19 @@ use crate::support::trace_llm::LlmTrace;
 use ironclaw::channels::{AttachmentKind, IncomingAttachment, IncomingMessage};
 use ironclaw::llm::ContentPart;
 
+/// Extract the last user message from captured LLM requests.
+fn last_user_message(
+    requests: &[Vec<ironclaw::llm::ChatMessage>],
+) -> &ironclaw::llm::ChatMessage {
+    assert!(!requests.is_empty(), "no LLM requests captured");
+    let last_request = requests.last().expect("requests should be non-empty");
+    last_request
+        .iter()
+        .rev()
+        .find(|m| matches!(m.role, ironclaw::llm::Role::User))
+        .expect("should have a user message in the last request")
+}
+
 fn make_attachment(kind: AttachmentKind) -> IncomingAttachment {
     IncomingAttachment {
         id: "att-1".to_string(),
@@ -56,14 +69,7 @@ async fn attachment_audio_transcript_reaches_llm() {
 
     // Verify the augmented content reached the LLM
     let requests = rig.captured_llm_requests();
-    assert!(!requests.is_empty(), "LLM should have been called");
-
-    let last_request = &requests[requests.len() - 1];
-    let last_user_msg = last_request
-        .iter()
-        .rev()
-        .find(|m| matches!(m.role, ironclaw::llm::Role::User))
-        .expect("should have a user message");
+    let last_user_msg = last_user_message(&requests);
 
     // The augmented text should contain the attachment tags and transcript
     assert!(
@@ -122,14 +128,7 @@ async fn attachment_image_produces_content_parts() {
 
     // Verify multimodal content parts reached the LLM
     let requests = rig.captured_llm_requests();
-    assert!(!requests.is_empty(), "LLM should have been called");
-
-    let last_request = &requests[requests.len() - 1];
-    let last_user_msg = last_request
-        .iter()
-        .rev()
-        .find(|m| matches!(m.role, ironclaw::llm::Role::User))
-        .expect("should have a user message");
+    let last_user_msg = last_user_message(&requests);
 
     // Should have image content parts
     assert_eq!(
@@ -141,10 +140,11 @@ async fn attachment_image_produces_content_parts() {
     // Verify the content part is an ImageUrl with a data: URI
     match &last_user_msg.content_parts[0] {
         ContentPart::ImageUrl { image_url } => {
+            let truncated: String = image_url.url.chars().take(40).collect();
             assert!(
                 image_url.url.starts_with("data:image/png;base64,"),
                 "image URL should be a base64 data URI, got: {}",
-                &image_url.url[..image_url.url.len().min(40)]
+                truncated
             );
         }
         other => panic!("expected ImageUrl content part, got: {:?}", other),
@@ -176,16 +176,7 @@ async fn no_attachments_no_augmentation() {
     let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     let requests = rig.captured_llm_requests();
-    assert!(
-        !requests.is_empty(),
-        "no LLM requests captured — LLM was not invoked"
-    );
-    let last_request = &requests[requests.len() - 1];
-    let last_user_msg = last_request
-        .iter()
-        .rev()
-        .find(|m| matches!(m.role, ironclaw::llm::Role::User))
-        .expect("should have a user message");
+    let last_user_msg = last_user_message(&requests);
 
     // No attachments → no augmentation tags, no content parts
     assert!(
