@@ -89,12 +89,12 @@
     proposes how WebAssembly tool schemas should be exported and consumed.
   - [RFC 0003: Skill bundle installation](rfcs/0003-skill-bundle-installation.md)
     proposes the packaging and installation model for skill bundles.
-  - [Pending RFC 0004: Tokenized delegated authorized endpoint requests](rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md)
-    captures a pending RFC for delegated endpoint requests that has not yet
-    been renumbered.
-  - [Pending RFC 0005: Monty code execution environment](rfcs/2026-03-11-monty-code-execution-environment.md)
-    captures a pending RFC for the Monty execution environment that has not yet
-    been renumbered.
+  - [RFC 0004: Tokenized delegated authorized endpoint requests](rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md)
+    proposes a delegated endpoint model that keeps configured service URLs out
+    of agent-visible and extension-visible surfaces.
+  - [RFC 0005: Monty code execution environment](rfcs/0005-monty-code-execution-environment.md)
+    proposes a Monty-backed Python automation environment for saved scripts and
+    ephemeral code execution.
   - [RFC 0006: Provenance-based zero-knowledge intent plugins](rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md)
     proposes intent-plugin boundaries driven by provenance-aware controls.
   - [RFC 0007: Secure memory sidecar design](rfcs/0007-secure-memory-sidecar-design.md)

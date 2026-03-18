@@ -1,5 +1,6 @@
-# RFC: Monty-Based Python Code Execution Environment
+# RFC 0005: Monty-based Python code execution environment
 
+- RFC number: 0005
 - Status: Proposed
 - Date: 2026-03-11
 - Target: IronClaw tool system and worker runtime

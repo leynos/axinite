@@ -335,4 +335,4 @@ the delegation model matures.
     Tokenized delegated authorized endpoint requests. See
     `docs/rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md`
     and
-    `docs/rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md`.
+    `docs/rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md`.

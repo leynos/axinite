@@ -2,8 +2,7 @@
 
 This roadmap turns the current axinite design set into a sequence of
 implementation activities. It is derived from the welcome guide, RFCs
-0001-0003, 0006-0014, and ADRs 001-002 in this branch, and the two pending
-sibling-branch RFCs that will become RFC 0004 and RFC 0005 when merged.
+0001-0014, and ADRs 001-002 in this branch.
 
 The roadmap follows the current documentation style guidance:
 
@@ -15,12 +14,6 @@ The roadmap follows the current documentation style guidance:
 - dependencies are called out explicitly where work is not strictly linear;
 - headline tasks include signposts to the RFC sections that justify them.
 
-Two source RFCs are pending merge from a sibling branch but are treated here as
-reserved numbers:
-
-- **RFC 0004**: delegated authorized endpoint requests
-- **RFC 0005**: Monty-based Python code execution environment
-
 ## Source documents
 
 - [welcome-to-axinite.md](./welcome-to-axinite.md)
@@ -28,10 +21,8 @@ reserved numbers:
 - [RFC 0001](./rfcs/0001-expose-mcp-tool-definitions.md)
 - [RFC 0002](./rfcs/0002-expose-wasm-tool-definitions.md)
 - [RFC 0003](./rfcs/0003-skill-bundle-installation.md)
-- [Pending RFC 0004](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md)
-  delegated authorized endpoint requests, pending merge
-- [Pending RFC 0005](./rfcs/2026-03-11-monty-code-execution-environment.md)
-  Monty-based Python code execution environment, pending merge
+- [RFC 0004](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md)
+- [RFC 0005](./rfcs/0005-monty-code-execution-environment.md)
 - [RFC 0006](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md)
 - [RFC 0007](./rfcs/0007-secure-memory-sidecar-design.md)
 - [RFC 0008](./rfcs/0008-websocket-responses-api.md)
@@ -189,18 +180,18 @@ establishing host-owned transport assembly for sensitive requests.
 
 - [ ] 2.1.1. Add typed setup fields and delegated endpoint binding persistence.
   - See pending
-    [RFC 0004 §Current Surface](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#current-surface)
+    [RFC 0004 §Current Surface](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#current-surface)
     and
-    [RFC 0004 §Rollout Plan](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
+    [RFC 0004 §Rollout Plan](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
   - Success: extension setup can store non-secret endpoint configuration
     separately from secret material, and endpoint bindings are validated and
     stored through a dedicated service.
 - [ ] 2.1.2. Add delegated endpoint capability schema and WIT runtime plumbing.
   Requires 2.1.1.
   - See pending
-    [RFC 0004 §Goals](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#goals)
+    [RFC 0004 §Goals](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#goals)
     and
-    [RFC 0004 §Rollout Plan](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
+    [RFC 0004 §Rollout Plan](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
   - Success: WASM capabilities can declare delegated endpoint use without
     naming the real host in a static allowlist, and the runtime exposes an
     `authorized-endpoint-request` path that resolves endpoint identities inside
@@ -208,18 +199,18 @@ establishing host-owned transport assembly for sensitive requests.
 - [ ] 2.1.3. Add endpoint-aware redaction, approval, and audit behaviour.
   Requires 2.1.2.
   - See pending
-    [RFC 0004 §Summary](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#summary)
+    [RFC 0004 §Summary](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#summary)
     and
-    [RFC 0004 §Rollout Plan](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
+    [RFC 0004 §Rollout Plan](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
   - Success: logs, errors, and approval surfaces do not reveal configured
     endpoint URLs, while audit events retain enough structure to diagnose
     failures without leaking origin data.
 - [ ] 2.1.4. Deliver a pilot extension against the delegated request path.
   Requires 2.1.3.
   - See pending
-    [RFC 0004 §Problem](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#problem)
+    [RFC 0004 §Problem](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#problem)
     and
-    [RFC 0004 §Rollout Plan](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
+    [RFC 0004 §Rollout Plan](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
   - Success: the pilot operates end to end without guest-visible raw endpoint
     URLs, and test coverage proves that agent-visible output does not leak the
     endpoint.
@@ -239,42 +230,42 @@ on after 2.3 and 3.2 settle.
 
 - [ ] 2.2.1. Add a helper subprocess wrapper for Monty and expose `exec_code`.
   - See pending
-    [RFC 0005 §Summary](./rfcs/2026-03-11-monty-code-execution-environment.md#summary)
+    [RFC 0005 §Summary](./rfcs/0005-monty-code-execution-environment.md#summary)
     and
-    [RFC 0005 §Rollout Plan](./rfcs/2026-03-11-monty-code-execution-environment.md#rollout-plan).
+    [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: Monty runs out of process so a panic does not terminate the parent
     runtime, and host callbacks remain constrained to an explicit per-run tool
     allowlist.
 - [ ] 2.2.2. Implement the JSON ABI for tool calls, parameters, results, and
   state. Requires 2.2.1.
   - See pending
-    [RFC 0005 §Goals](./rfcs/2026-03-11-monty-code-execution-environment.md#goals)
+    [RFC 0005 §Goals](./rfcs/0005-monty-code-execution-environment.md#goals)
     and
-    [RFC 0005 §Rollout Plan](./rfcs/2026-03-11-monty-code-execution-environment.md#rollout-plan).
+    [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: cross-boundary data is normalized to JSON-shaped values only, and
     host callback approval plus attenuation rules are shared with existing tool
     execution paths.
 - [ ] 2.2.3. Add saved-script persistence with `save_script` and `run_script`.
   Requires 2.2.2.
   - See pending
-    [RFC 0005 §Problem](./rfcs/2026-03-11-monty-code-execution-environment.md#problem)
+    [RFC 0005 §Problem](./rfcs/0005-monty-code-execution-environment.md#problem)
     and
-    [RFC 0005 §Rollout Plan](./rfcs/2026-03-11-monty-code-execution-environment.md#rollout-plan).
+    [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: script source and manifest data are stored under a dedicated
     workspace scripts area, and per-script state is explicit rather than hidden
     in interpreter globals.
 - [ ] 2.2.4. Add run metadata and audit logging for script execution. Requires
   2.2.3.
   - See pending
-    [RFC 0005 §Goals](./rfcs/2026-03-11-monty-code-execution-environment.md#goals)
+    [RFC 0005 §Goals](./rfcs/0005-monty-code-execution-environment.md#goals)
     and
-    [RFC 0005 §Rollout Plan](./rfcs/2026-03-11-monty-code-execution-environment.md#rollout-plan).
+    [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: each script run records version, inputs, outputs, and failure
     state, and reruns can distinguish code changes from parameter changes.
 - [ ] 2.2.5. Integrate saved scripts into higher-level automation paths.
   Requires 2.2.3 and 2.2.4.
   - See pending
-    [RFC 0005 §Rollout Plan](./rfcs/2026-03-11-monty-code-execution-environment.md#rollout-plan).
+    [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: routines or job orchestration can invoke saved scripts without
     bypassing approval or policy checks, and review or rerun surfaces expose
     script identity plus version clearly.
