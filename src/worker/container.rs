@@ -65,6 +65,12 @@ pub struct WorkerRuntime {
     extra_env: Arc<HashMap<String, String>>,
 }
 
+enum WorkerExecutionResult {
+    Outcome(LoopOutcome),
+    Failed(crate::error::Error),
+    TimedOut,
+}
+
 impl WorkerRuntime {
     /// Create a new worker runtime.
     ///
@@ -119,25 +125,47 @@ impl WorkerRuntime {
     pub async fn run(mut self) -> Result<(), WorkerError> {
         tracing::info!("Worker starting for job {}", self.config.job_id);
 
-        // Fetch job description from orchestrator
         let job = self.client.get_job().await?;
-
         tracing::info!(
             "Received job: {} - {}",
             job.title,
             truncate_for_preview(&job.description, 100)
         );
 
-        // Fetch credentials and store them for injection into child processes
-        // via Command::envs() (avoids unsafe std::env::set_var in multi-threaded runtime).
-        let credentials = self.client.fetch_credentials().await?;
+        self.hydrate_credentials().await?;
+        self.report_worker_status(
+            "in_progress",
+            Some("Worker started, beginning execution".to_string()),
+            0,
+        )
+        .await?;
+
+        let iteration_tracker = Arc::new(Mutex::new(0u32));
+        let execution = match tokio::time::timeout(
+            self.config.timeout,
+            self.run_job_loop(&job, Arc::clone(&iteration_tracker)),
+        )
+        .await
         {
-            let mut env_map = HashMap::new();
-            for cred in &credentials {
-                env_map.insert(cred.env_var.clone(), cred.value.clone());
-            }
-            self.extra_env = Arc::new(env_map);
+            Ok(Ok(outcome)) => WorkerExecutionResult::Outcome(outcome),
+            Ok(Err(error)) => WorkerExecutionResult::Failed(error),
+            Err(_) => WorkerExecutionResult::TimedOut,
+        };
+
+        let iterations = *iteration_tracker.lock().await;
+        self.report_completion(execution, iterations).await?;
+
+        Ok(())
+    }
+
+    async fn hydrate_credentials(&mut self) -> Result<(), WorkerError> {
+        let credentials = self.client.fetch_credentials().await?;
+        let mut env_map = HashMap::new();
+        for cred in &credentials {
+            env_map.insert(cred.env_var.clone(), cred.value.clone());
         }
+        self.extra_env = Arc::new(env_map);
+
         if !credentials.is_empty() {
             tracing::info!(
                 "Fetched {} credential(s) for child process injection",
@@ -145,21 +173,61 @@ impl WorkerRuntime {
             );
         }
 
-        // Report that we're starting
+        Ok(())
+    }
+
+    async fn report_worker_status(
+        &self,
+        state: &str,
+        message: Option<String>,
+        iteration: u32,
+    ) -> Result<(), WorkerError> {
         self.client
             .report_status(&StatusUpdate {
-                state: "in_progress".to_string(),
-                message: Some("Worker started, beginning execution".to_string()),
-                iteration: 0,
+                state: state.to_string(),
+                message,
+                iteration,
             })
-            .await?;
+            .await
+    }
 
-        // Create reasoning engine
-        let reasoning = Reasoning::new(self.llm.clone());
+    async fn run_job_loop(
+        &self,
+        job: &crate::worker::api::JobDescription,
+        iteration_tracker: Arc<Mutex<u32>>,
+    ) -> Result<LoopOutcome, crate::error::Error> {
+        let reasoning = Reasoning::new(Arc::clone(&self.llm));
+        let mut reason_ctx = self.build_reasoning_context(job).await;
 
-        // Build initial context
+        let delegate = ContainerDelegate {
+            client: Arc::clone(&self.client),
+            safety: Arc::clone(&self.safety),
+            tools: Arc::clone(&self.tools),
+            extra_env: Arc::clone(&self.extra_env),
+            last_output: Mutex::new(String::new()),
+            iteration_tracker,
+        };
+
+        let config = AgenticLoopConfig {
+            max_iterations: self.config.max_iterations as usize,
+            enable_tool_intent_nudge: true,
+            max_tool_intent_nudges: 2,
+        };
+
+        crate::agent::agentic_loop::run_agentic_loop(
+            &delegate,
+            &reasoning,
+            &mut reason_ctx,
+            &config,
+        )
+        .await
+    }
+
+    async fn build_reasoning_context(
+        &self,
+        job: &crate::worker::api::JobDescription,
+    ) -> ReasoningContext {
         let mut reason_ctx = ReasoningContext::new().with_job(&job.description);
-
         reason_ctx.messages.push(ChatMessage::system(format!(
             r#"You are an autonomous agent running inside a Docker container.
 
@@ -170,44 +238,17 @@ You have tools for shell commands, file operations, code editing, and extension 
 Work independently to complete this job. Report when done."#,
             job.title, job.description
         )));
-
-        // Load tool definitions
         reason_ctx.available_tools = self.tools.tool_definitions().await;
+        reason_ctx
+    }
 
-        // Shared iteration tracker — read after the loop to report accurate counts.
-        let iteration_tracker = Arc::new(Mutex::new(0u32));
-
-        // Run with timeout using the shared agentic loop
-        let result = tokio::time::timeout(self.config.timeout, async {
-            let delegate = ContainerDelegate {
-                client: self.client.clone(),
-                safety: self.safety.clone(),
-                tools: self.tools.clone(),
-                extra_env: self.extra_env.clone(),
-                last_output: Mutex::new(String::new()),
-                iteration_tracker: iteration_tracker.clone(),
-            };
-
-            let config = AgenticLoopConfig {
-                max_iterations: self.config.max_iterations as usize,
-                enable_tool_intent_nudge: true,
-                max_tool_intent_nudges: 2,
-            };
-
-            crate::agent::agentic_loop::run_agentic_loop(
-                &delegate,
-                &reasoning,
-                &mut reason_ctx,
-                &config,
-            )
-            .await
-        })
-        .await;
-
-        let iterations = *iteration_tracker.lock().await;
-
-        match result {
-            Ok(Ok(LoopOutcome::Response(output))) => {
+    async fn report_completion(
+        &self,
+        execution: WorkerExecutionResult,
+        iterations: u32,
+    ) -> Result<(), WorkerError> {
+        match execution {
+            WorkerExecutionResult::Outcome(LoopOutcome::Response(output)) => {
                 tracing::info!("Worker completed job {} successfully", self.config.job_id);
                 self.post_event(
                     "result",
@@ -223,28 +264,15 @@ Work independently to complete this job. Report when done."#,
                         message: Some(output),
                         iterations,
                     })
-                    .await?;
+                    .await
             }
-            Ok(Ok(LoopOutcome::MaxIterations)) => {
+            WorkerExecutionResult::Outcome(LoopOutcome::MaxIterations) => {
                 let msg = format!("max iterations ({}) exceeded", self.config.max_iterations);
                 tracing::warn!("Worker failed for job {}: {}", self.config.job_id, msg);
-                self.post_event(
-                    "result",
-                    serde_json::json!({
-                        "success": false,
-                        "message": format!("Execution failed: {}", msg),
-                    }),
-                )
-                .await;
-                self.client
-                    .report_complete(&CompletionReport {
-                        success: false,
-                        message: Some(format!("Execution failed: {}", msg)),
-                        iterations,
-                    })
-                    .await?;
+                self.report_failure(iterations, &format!("Execution failed: {}", msg))
+                    .await
             }
-            Ok(Ok(LoopOutcome::Stopped | LoopOutcome::NeedApproval(_))) => {
+            WorkerExecutionResult::Outcome(LoopOutcome::Stopped | LoopOutcome::NeedApproval(_)) => {
                 tracing::info!("Worker for job {} stopped", self.config.job_id);
                 self.client
                     .report_complete(&CompletionReport {
@@ -252,47 +280,36 @@ Work independently to complete this job. Report when done."#,
                         message: Some("Execution stopped".to_string()),
                         iterations,
                     })
-                    .await?;
+                    .await
             }
-            Ok(Err(e)) => {
-                tracing::error!("Worker failed for job {}: {}", self.config.job_id, e);
-                self.post_event(
-                    "result",
-                    serde_json::json!({
-                        "success": false,
-                        "message": format!("Execution failed: {}", e),
-                    }),
-                )
-                .await;
-                self.client
-                    .report_complete(&CompletionReport {
-                        success: false,
-                        message: Some(format!("Execution failed: {}", e)),
-                        iterations,
-                    })
-                    .await?;
+            WorkerExecutionResult::Failed(error) => {
+                tracing::error!("Worker failed for job {}: {}", self.config.job_id, error);
+                self.report_failure(iterations, &format!("Execution failed: {}", error))
+                    .await
             }
-            Err(_) => {
+            WorkerExecutionResult::TimedOut => {
                 tracing::warn!("Worker timed out for job {}", self.config.job_id);
-                self.post_event(
-                    "result",
-                    serde_json::json!({
-                        "success": false,
-                        "message": "Execution timed out",
-                    }),
-                )
-                .await;
-                self.client
-                    .report_complete(&CompletionReport {
-                        success: false,
-                        message: Some("Execution timed out".to_string()),
-                        iterations,
-                    })
-                    .await?;
+                self.report_failure(iterations, "Execution timed out").await
             }
         }
+    }
 
-        Ok(())
+    async fn report_failure(&self, iterations: u32, message: &str) -> Result<(), WorkerError> {
+        self.post_event(
+            "result",
+            serde_json::json!({
+                "success": false,
+                "message": message,
+            }),
+        )
+        .await;
+        self.client
+            .report_complete(&CompletionReport {
+                success: false,
+                message: Some(message.to_string()),
+                iterations,
+            })
+            .await
     }
 
     /// Post a job event to the orchestrator (fire-and-forget).
