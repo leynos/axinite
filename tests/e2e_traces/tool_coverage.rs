@@ -84,8 +84,10 @@ async fn test_shell_echo() {
 async fn test_list_dir() {
     let test_dir = setup_test_dir_with_suffix(TEST_DIR_BASE, "list_dir");
     let _cleanup = CleanupGuard::new().dir(&test_dir);
-    std::fs::write(format!("{test_dir}/file_a.txt"), "content a").unwrap();
-    std::fs::write(format!("{test_dir}/file_b.txt"), "content b").unwrap();
+    std::fs::write(format!("{test_dir}/file_a.txt"), "content a")
+        .unwrap_or_else(|_| panic!("failed writing {test_dir}/file_a.txt"));
+    std::fs::write(format!("{test_dir}/file_b.txt"), "content b")
+        .unwrap_or_else(|_| panic!("failed writing {test_dir}/file_b.txt"));
 
     let trace = LlmTrace::from_file(concat!(
         env!("CARGO_MANIFEST_DIR"),

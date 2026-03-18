@@ -2,6 +2,7 @@
 //! files.
 
 /// The kind of path registered for cleanup.
+#[allow(dead_code)]
 enum PathKind {
     File,
     Dir,

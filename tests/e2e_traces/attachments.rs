@@ -176,6 +176,10 @@ async fn no_attachments_no_augmentation() {
     let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     let requests = rig.captured_llm_requests();
+    assert!(
+        !requests.is_empty(),
+        "no LLM requests captured — LLM was not invoked"
+    );
     let last_request = &requests[requests.len() - 1];
     let last_user_msg = last_request
         .iter()

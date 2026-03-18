@@ -33,7 +33,6 @@ mod import_tests {
     #[rstest]
     #[case(ImportError::ConfigParse("test error".to_string()), "JSON5 parse error: test error")]
     #[case(ImportError::Database("db error".to_string()), "Database error: db error")]
-    #[test]
     fn test_import_error_display(#[case] err: ImportError, #[case] expected: &str) {
         assert_eq!(err.to_string(), expected);
     }

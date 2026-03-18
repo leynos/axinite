@@ -144,14 +144,13 @@ async fn test_thinking_events_captured() {
         .iter()
         .any(|e| matches!(e, StatusUpdate::Thinking(_) | StatusUpdate::Status(_)));
 
-    if cfg!(debug_assertions) && !has_processing_event {
-        eprintln!(
-            "[INFO] No Thinking/Status events captured. \
-             Agent may not emit these for simple text responses. \
-             Captured events: {:?}",
-            events
-        );
-    }
+    assert!(
+        has_processing_event,
+        "Expected Thinking/Status events to be captured. \
+         Agent may not emit these for simple text responses. \
+         Captured events: {:?}",
+        events
+    );
 
     rig.shutdown();
 }

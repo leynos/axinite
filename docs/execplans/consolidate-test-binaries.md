@@ -4,15 +4,15 @@
 **Date:** 2026-03-15
 **Status:** Complete
 **Estimated impact:** 3–4 min saved on incremental `make test`
-**Actual result:** Reduced from 43 test binaries to 9 test binaries
+**Actual result:** Reduced from 40 test binaries to 9 test binaries
 
 ## Big picture
 
-Reduce the number of integration test binaries from 43 to ~8–10 by
+Reduce the number of integration test binaries from 40 to ~8–10 by
 grouping related test files into module trees under fewer top-level
 harnesses. Each top-level `.rs` file in `tests/` compiles as a separate
 binary, linked against the full ironclaw crate and all dev-dependencies.
-With 43 binaries, a single source change triggers 43 relink operations
+With 40 binaries, a single source change triggers 40 relink operations
 (measured at 6 min 05 s incremental). Consolidation targets ~8–10 binaries,
 cutting link time roughly in proportion.
 
@@ -105,13 +105,14 @@ tests/
 │   ├── test_channel.rs
 │   ├── test_rig.rs
 │   └── trace_llm.rs
-├── e2e_traces.rs                     # Harness: 15 e2e trace modules
+├── e2e_traces.rs                     # Harness: 16 e2e trace modules
 │   └── e2e_traces/
 │       ├── advanced_traces.rs
 │       ├── attachments.rs
 │       ├── builtin_tool_coverage.rs
 │       ├── metrics.rs
 │       ├── recorded_trace.rs
+│       ├── routine_heartbeat.rs
 │       ├── safety_layer.rs
 │       ├── spot_checks.rs
 │       ├── status_events.rs
@@ -160,7 +161,7 @@ tests/
 └── e2e/                              # Python tests (unchanged)
 ```
 
-**Result: 9 binaries** (down from 43).
+**Result: 9 binaries** (down from 40).
 
 ## Implementation steps
 
