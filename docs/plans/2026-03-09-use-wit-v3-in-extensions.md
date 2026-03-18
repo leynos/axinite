@@ -414,7 +414,7 @@ Record the exact log paths in the final implementation summary.
 - 2026-03-09T16:50:14+00:00: Only rebuild and republish bundles if extension
   artifacts or registry manifests actually change during the alignment work.
 - 2026-03-09T17:08:00+00:00: Treat the current implementation scope as three
-  coordinated deliverables: truthful WIT defaults and migration behavior,
+  coordinated deliverables: truthful WIT defaults and migration behaviour,
   red-green unit plus behavioural coverage for those application changes, and
   an imported authoring guide under `docs/` that documents the actual WIT
   `0.3.0` format.

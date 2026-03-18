@@ -6,7 +6,7 @@ Status: COMPLETE
 
 ## Purpose / big picture
 
-After this work, when IronClaw advertises a file-loaded WASM tool such as `GitHub`, the external tool definition must expose the same parameter schema that the tool itself exports from its WASM `schema()` function. The user-visible outcome is that the model sees a non-empty function definition, includes the correct arguments in tool calls, and those arguments arrive at the WASM guest intact instead of being collapsed to `{}` or omitted.
+After this work, when IronClaw advertises a file-loaded WebAssembly (WASM) tool such as `GitHub`, the external tool definition must expose the same parameter schema that the tool itself exports from its WASM `schema()` function. The user-visible outcome is that the model sees a non-empty function definition, includes the correct arguments in tool calls, and those arguments arrive at the WASM guest intact instead of being collapsed to `{}` or omitted.
 
 Success is observable in two complementary ways. First, a focused regression test must prove that a file-loaded WASM tool registered through `WasmToolLoader::load_from_files(...)` publishes the exported schema in `ToolRegistry::tool_definitions()` rather than the current placeholder schema with empty `properties`. Second, a behavioural test must prove that the externally visible tool definition for a representative WASM tool includes required fields such as `action`, so the tool call path no longer fails with messages like `missing field action at line 1 column 2` when the model attempted to send arguments.
 
@@ -126,7 +126,7 @@ There are two plausible repair points:
 1. Teach `WasmToolRuntime::prepare(...)` to call the guest’s exported `description()` and `schema()` functions instead of using placeholder metadata.
 2. If runtime extraction still needs to remain partial for some reason, make registration recover the guest-exported metadata after wrapper creation, where the full host linker and runtime limits already exist, and then apply those values before the tool is published externally.
 
-The preferred solution is the one that makes file-loaded and storage-loaded registration consistent around real metadata while keeping precedence clear. Implementation evidence in this branch showed that forcing metadata extraction inside `prepare(...)` against a minimal host was brittle on the real GitHub component, while wrapper-side extraction after full host wiring worked. The chosen fix therefore leaves runtime preparation side-effect free and recovers real metadata in the registration path before publication.
+The preferred solution is the one that makes file-loaded and storage-loaded registration consistent around real metadata while keeping precedence clear. Implementation evidence in this branch showed that forcing metadata extraction inside `prepare(...)` against a minimal host was brittle on the real GitHub component, while wrapper-side extraction after full host wiring worked. The chosen fix therefore leaves runtime preparation side-effect-free and recovers real metadata in the registration path before publication.
 
 ## Milestone 3: Guard the blast radius with unit and behavioural tests
 
