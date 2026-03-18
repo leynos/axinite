@@ -195,9 +195,32 @@ impl<'de> Deserialize<'de> for LlmTrace {
     }
 }
 
+/// Recursively patch string values in a JSON value, replacing `from` with `to`.
 #[allow(dead_code)]
+fn patch_json_value(value: &mut serde_json::Value, from: &str, to: &str) {
+    match value {
+        serde_json::Value::String(s) => {
+            if s.contains(from) {
+                *s = s.replace(from, to);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                patch_json_value(item, from, to);
+            }
+        }
+        serde_json::Value::Object(obj) => {
+            for (_, v) in obj {
+                patch_json_value(v, from, to);
+            }
+        }
+        _ => {}
+    }
+}
+
 impl LlmTrace {
     /// Create a trace from turns.
+    #[allow(dead_code)]
     pub fn new(model_name: impl Into<String>, turns: Vec<TraceTurn>) -> Self {
         Self {
             model_name: model_name.into(),
@@ -234,6 +257,24 @@ impl LlmTrace {
         let contents = std::fs::read_to_string(path)?;
         let trace: Self = serde_json::from_str(&contents)?;
         Ok(trace)
+    }
+
+    /// Replace all occurrences of `from` with `to` in tool call arguments.
+    ///
+    /// Walks through all turns and steps, patching any string values in tool call
+    /// arguments that contain the `from` path. Useful for adapting recorded traces
+    /// to use test-specific temporary directories.
+    #[allow(dead_code)]
+    pub fn patch_path(&mut self, from: &str, to: &str) {
+        for turn in &mut self.turns {
+            for step in &mut turn.steps {
+                if let TraceResponse::ToolCalls { tool_calls, .. } = &mut step.response {
+                    for tool_call in tool_calls {
+                        patch_json_value(&mut tool_call.arguments, from, to);
+                    }
+                }
+            }
+        }
     }
 
     /// Return only the playable steps from the raw steps (text + tool_calls),

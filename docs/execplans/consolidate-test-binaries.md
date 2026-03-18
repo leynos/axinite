@@ -8,12 +8,12 @@
 
 ## Big picture
 
-Reduce the number of integration test binaries from 40 to ~8–10 by
+Reduce the number of integration test binaries from 40 to 9 by
 grouping related test files into module trees under fewer top-level
 harnesses. Each top-level `.rs` file in `tests/` compiles as a separate
 binary, linked against the full ironclaw crate and all dev-dependencies.
 With 40 binaries, a single source change triggers 40 relink operations
-(measured at 6 min 05 s incremental). Consolidation targets ~8–10 binaries,
+(measured at 6 min 05 s incremental). Consolidation targets 9 binaries,
 cutting link time roughly in proportion.
 
 ## Constraints
@@ -227,7 +227,7 @@ tests/
 
 The consolidation was completed successfully. Key changes:
 
-1. Created 6 new test harness files with `#[path]` attributes:
+- Created 6 new test harness files with `#[path]` attributes:
    - `tests/e2e_traces.rs` (16 modules: 15 e2e tests + routine_heartbeat)
    - `tests/import_openclaw.rs` (6 modules)
    - `tests/channels.rs` (5 modules)
@@ -235,14 +235,14 @@ The consolidation was completed successfully. Key changes:
    - `tests/tools_and_config.rs` (4 modules)
    - `tests/db_integration.rs` (2 modules)
 
-2. Moved test files into subdirectories matching harness names
+- Moved test files into subdirectories matching harness names
 
-3. Removed wrapper `mod` blocks from moved files and adjusted indentation
+- Removed wrapper `mod` blocks from moved files and adjusted indentation
 
-4. Added `#[path = "..."]` attributes to harness files to reference subdirectory modules
+- Added `#[path = "..."]` attributes to harness files to reference subdirectory modules
 
-5. Ensured `mod support;` is only declared in harnesses that need it (e2e_traces, channels, tools_and_config)
+- Ensured `mod support;` is only declared in harnesses that need it (e2e_traces, channels, tools_and_config)
 
-6. No changes were needed to Cargo.toml (html_to_markdown already had required-features gate)
+- No changes were needed to Cargo.toml (html_to_markdown already had required-features gate)
 
 Final structure: **9 test binaries** (down from 40)

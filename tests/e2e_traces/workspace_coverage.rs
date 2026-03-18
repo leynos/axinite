@@ -8,6 +8,29 @@ use std::time::Duration;
 use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_llm::LlmTrace;
 
+/// Asserts that at least one result for `tool_name` has a preview
+/// containing any of `expected_substrings`.
+fn assert_tool_result_contains(
+    results: &[(String, String)],
+    tool_name: &str,
+    expected_substrings: &[&str],
+) {
+    let matched: Vec<_> = results
+        .iter()
+        .filter(|(name, _)| name == tool_name)
+        .collect();
+    assert!(
+        !matched.is_empty(),
+        "Expected at least one result for tool '{tool_name}'"
+    );
+    assert!(
+        matched
+            .iter()
+            .any(|(_, preview)| expected_substrings.iter().any(|s| preview.contains(s))),
+        "No result for '{tool_name}' contained any of {expected_substrings:?}: {matched:?}"
+    );
+}
+
 // -----------------------------------------------------------------------
 // Test 1: write_chunk_search
 // -----------------------------------------------------------------------
@@ -54,18 +77,10 @@ async fn write_chunk_search() {
         "memory_search should be called: {started:?}"
     );
     let results = rig.tool_results();
-    let search_results: Vec<_> = results
-        .iter()
-        .filter(|(name, _)| name == "memory_search")
-        .collect();
-    assert!(!search_results.is_empty(), "Expected memory_search results");
-    assert!(
-        search_results
-            .iter()
-            .any(|(_, preview)| preview.contains("Payment Service")
-                || preview.contains("payment")
-                || preview.contains("architecture")),
-        "memory_search should return results related to payment/architecture: {search_results:?}"
+    assert_tool_result_contains(
+        &results,
+        "memory_search",
+        &["Payment Service", "payment", "architecture"],
     );
 
     rig.shutdown();
@@ -184,24 +199,8 @@ async fn directory_tree() {
 
     // Verify the tree result contains the expected directory hierarchy.
     let results = rig.tool_results();
-    let tree_results: Vec<_> = results
-        .iter()
-        .filter(|(name, _)| name == "memory_tree")
-        .collect();
-    assert!(!tree_results.is_empty(), "Expected memory_tree results");
-
-    let tree_output: String = tree_results
-        .iter()
-        .map(|(_, preview)| preview.as_str())
-        .collect();
-    assert!(
-        tree_output.contains("alpha") || tree_output.contains("Alpha"),
-        "memory_tree output should contain 'alpha' project, got: {tree_output:?}"
-    );
-    assert!(
-        tree_output.contains("beta") || tree_output.contains("Beta"),
-        "memory_tree output should contain 'beta' project, got: {tree_output:?}"
-    );
+    assert_tool_result_contains(&results, "memory_tree", &["alpha", "Alpha"]);
+    assert_tool_result_contains(&results, "memory_tree", &["beta", "Beta"]);
 
     rig.shutdown();
 }
@@ -304,10 +303,11 @@ async fn identity_in_system_prompt() {
         system_msg.is_some(),
         "Expected a system message in the first request"
     );
+    let system_content = &system_msg.expect("system message verified above").content;
     assert!(
-        system_msg.unwrap().content.contains("TestBot"),
+        system_content.contains("TestBot"),
         "System prompt should contain seeded identity 'TestBot', got: {:?}",
-        &system_msg.unwrap().content[..200.min(system_msg.unwrap().content.len())]
+        &system_content[..200.min(system_content.len())]
     );
 
     rig.shutdown();
