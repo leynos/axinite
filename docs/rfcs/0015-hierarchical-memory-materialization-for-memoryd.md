@@ -6,7 +6,12 @@
 - **Status:** Proposed
 - **Created:** 2026-03-18
 - **Amends:** RFC 0007: Secure memory sidecar design for axinite
-- **Related:** RFC 0014: Memory projection tiers and promotion rules
+- **Related:** RFC 0014: Memory projection tiers and promotion rules; RFC 0016:
+  Theme detection and sparsity rebalancing for `memoryd`; RFC 0017:
+  Hierarchical recall for `memoryd`
+- **Companion ADRs:** ADR 003: Theme management belongs in `memoryd`;
+  ADR 004: Dual-path semantic extraction with validated provenance;
+  ADR 005: Dual-mode uncertainty gating for hierarchical recall
 
 ## Summary
 
@@ -250,7 +255,8 @@ semantics remain stable.
   from theme membership on demand?
 - Should retraction trigger summary regeneration immediately, or mark
   summaries stale for asynchronous refresh?
-- Which parts of theme balancing merit a future RFC versus an ADR?
+- How much of theme balancing should remain runtime policy rather than fixed
+  by RFC 0016 and ADR 003?
 
 ## Recommendation
 

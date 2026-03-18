@@ -2,7 +2,7 @@
 
 This roadmap turns the current axinite design set into a sequence of
 implementation activities. It is derived from the welcome guide, RFCs
-0001-0014, and ADRs 001-002 in this branch.
+0001-0017, and ADRs 001-005 in this branch.
 
 The roadmap follows the current documentation style guidance:
 
@@ -33,7 +33,13 @@ The roadmap follows the current documentation style guidance:
 - [RFC 0012](./rfcs/0012-delegated-child-jobs-with-isolated-context.md)
 - [RFC 0013](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md)
 - [RFC 0014](./rfcs/0014-memory-projection-tiers-and-promotion-rules.md)
+- [RFC 0015](./rfcs/0015-hierarchical-memory-materialization-for-memoryd.md)
+- [RFC 0016](./rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md)
+- [RFC 0017](./rfcs/0017-hierarchical-recall-for-memoryd.md)
 - [ADR 002](./adr-002-authoritative-intent-state-must-remain-human-auditable.md)
+- [ADR 003](./adr-003-theme-management-belongs-in-memoryd.md)
+- [ADR 004](./adr-004-dual-path-semantic-extraction-with-validated-provenance.md)
+- [ADR 005](./adr-005-dual-mode-uncertainty-gating-for-hierarchical-recall.md)
 
 ## 1. Make tool contracts explicit
 
@@ -594,6 +600,87 @@ boundaries that intent contracts gate.
     max_batch_delay_ms, flush_on_idle, and flush_on_explicit_write
     thresholds, batching is scoped by workspace, conversation, and entity,
     and configuration is per-workspace.
+
+### 3.4. Hierarchical memory materialization and recall
+
+Objective: materialize the post-0014 memory hierarchy, maintain stable theme
+structure over semantic carriers, and use that structure for budget-aware
+hierarchical recall.
+
+Learning opportunity: determine whether the theme layer and hierarchical recall
+deliver better evidence packs than projection-layer recall alone, and whether
+dual-path extraction plus dual-mode expansion gating are worth their added
+operational complexity.
+
+Dependencies: depends on 3.1 for the sidecar architecture and stores; depends
+on 3.3 for the normative projection classes, epistemic states, and
+projection-layer filtering rules.
+
+- [ ] 3.4.1. Materialize episode nodes, semantic carriers, and theme nodes
+  with durable provenance and temporal edges.
+  - See [RFC 0015 §Materialized Node
+    Families](./rfcs/0015-hierarchical-memory-materialization-for-memoryd.md#2-materialized-node-families),
+    [RFC 0015 §Temporal
+    Model](./rfcs/0015-hierarchical-memory-materialization-for-memoryd.md#5-temporal-model),
+    and [RFC 0015 §Provenance
+    Model](./rfcs/0015-hierarchical-memory-materialization-for-memoryd.md#6-provenance-model).
+  - Success: `memoryd` writes durable episode, semantic-carrier, and theme
+    structures; all retrievable semantic carriers resolve to concrete evidence;
+    and curated-document projection plus retraction propagation preserve the
+    RFC 0015 lineage rules.
+- [ ] 3.4.2. Implement the shared extraction schema, provenance validator, and
+  dual-path semantic extraction contract. Requires 3.4.1.
+  - See [ADR 004 §Decision Outcome / Proposed
+    Direction](./adr-004-dual-path-semantic-extraction-with-validated-provenance.md#decision-outcome--proposed-direction)
+    and [ADR 004 §Migration
+    Plan](./adr-004-dual-path-semantic-extraction-with-validated-provenance.md#migration-plan).
+  - Success: `memoryd` supports `encoder_extractive` and `llm_structured`
+    extraction behind one schema, unresolved support references are rejected,
+    and shadow mode can compare accepted versus rejected outputs per path.
+- [ ] 3.4.3. Add the workspace-local `ThemeManager` and stable theme IDs in
+  `memoryd`. Requires 3.4.1.
+  - See [ADR 003 §Decision Outcome / Proposed
+    Direction](./adr-003-theme-management-belongs-in-memoryd.md#decision-outcome--proposed-direction)
+    and [RFC 0016 §Theme Manager
+    Responsibilities](./rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md#theme-manager-responsibilities).
+  - Success: theme identity, lineage, and balancing policy are sidecar-owned;
+    Chutoro remains the clustering substrate; and the manager can rebuild from
+    stored semantic carriers when a clustering checkpoint is lost.
+- [ ] 3.4.4. Implement theme attach, split, merge, summary refresh, and sparse
+  kNN maintenance with shadow-mode safety rails. Requires 3.4.3.
+  - See [RFC 0016 §Incremental Attach
+    Path](./rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md#incremental-attach-path),
+    [RFC 0016 §Split
+    Proposals](./rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md#split-proposals),
+    [RFC 0016 §Merge
+    Proposals](./rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md#merge-proposals),
+    and [RFC 0016 §Theme and Semantic-Carrier kNN
+    Graph](./rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md#theme-and-semantic-carrier-knn-graph).
+  - Success: theme maintenance is bounded, lineage is auditable, summary
+    refresh stays asynchronous, and shadow metrics expose theme-size drift,
+    split rate, merge rate, and rebuild rate before live balancing is enabled.
+- [ ] 3.4.5. Extend `Recall` with projection-aware hierarchical profiles and
+  structured context assembly. Requires 3.3.6, 3.4.2, and 3.4.4.
+  - See [RFC 0017 §Projection-Aware Candidate
+    Generation](./rfcs/0017-hierarchical-recall-for-memoryd.md#stage-0-projection-aware-candidate-generation),
+    [RFC 0017 §Representative Selection Over the High-Level
+    Graph](./rfcs/0017-hierarchical-recall-for-memoryd.md#stage-i-representative-selection-over-the-high-level-graph),
+    and [RFC 0017 §Context
+    Assembly](./rfcs/0017-hierarchical-recall-for-memoryd.md#context-assembly).
+  - Success: `Recall` supports `flat_v1`, `hierarchical_v2`, `cheap_v2`, and
+    `evidence_v2`; returned blocks stay annotated with projection class and
+    epistemic status; and fallback to `flat_v1` remains explicit and
+    inspectable.
+- [ ] 3.4.6. Implement proxy and model-assisted stage-II expansion gating plus
+  shadow comparison. Requires 3.4.5.
+  - See [ADR 005 §Decision Outcome / Proposed
+    Direction](./adr-005-dual-mode-uncertainty-gating-for-hierarchical-recall.md#decision-outcome--proposed-direction)
+    and [RFC 0017 §Uncertainty and Gain
+    Estimation](./rfcs/0017-hierarchical-recall-for-memoryd.md#uncertainty-and-gain-estimation).
+  - Success: stage-II gain estimation exposes `estimated_gain`,
+    `estimated_token_cost`, and `reason_code`; cheap and evidence-heavy modes
+    can be shadow-compared; and hierarchical recall never depends on one
+    fragile uncertainty surface.
 
 ## 4. Harden operator lifecycle and control surfaces
 

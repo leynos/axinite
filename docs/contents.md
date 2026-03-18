@@ -120,3 +120,28 @@
   - [RFC 0015: Hierarchical memory materialization for memoryd](rfcs/0015-hierarchical-memory-materialization-for-memoryd.md)
     outlines how `memoryd` can materialize episode, semantic-carrier, and
     theme structures without replacing RFC 0014's projection taxonomy.
+  - [RFC 0016: Theme detection and sparsity rebalancing for memoryd](rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md)
+    defines how `memoryd` maintains stable theme identities, balancing, and
+    lineage over semantic carriers without promoting themes into a new truth
+    class.
+  - [RFC 0017: Hierarchical recall for memoryd](rfcs/0017-hierarchical-recall-for-memoryd.md)
+    proposes the theme-aware, budget-aware read path that expands to episodes
+    and messages only when the extra evidence is worth the token cost.
+
+## ADRs
+
+- [ADR 001: OPA Rego as the policy engine for intent enforcement](adr-001-rego-policy-engine-for-intent-enforcement.md)
+  records the proposed policy-engine choice for deterministic,
+  machine-auditable intent gates.
+- [ADR 002: Authoritative intent state must remain human-auditable](adr-002-authoritative-intent-state-must-remain-human-auditable.md)
+  records that provider-owned continuation state may optimize execution but
+  must never become the sole source of truth for intent or decision history.
+- [ADR 003: Theme management belongs in memoryd](adr-003-theme-management-belongs-in-memoryd.md)
+  records that stable theme IDs, balancing policy, and lineage belong in the
+  memory sidecar rather than in the clustering substrate.
+- [ADR 004: Dual-path semantic extraction with validated provenance](adr-004-dual-path-semantic-extraction-with-validated-provenance.md)
+  records that `memoryd` should support both structured LLM extraction and
+  encoder-only extraction behind one provenance-validated schema.
+- [ADR 005: Dual-mode uncertainty gating for hierarchical recall](adr-005-dual-mode-uncertainty-gating-for-hierarchical-recall.md)
+  records that hierarchical recall should support both proxy-based and
+  model-assisted gain estimation behind one expansion-gating interface.
