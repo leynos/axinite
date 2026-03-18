@@ -600,7 +600,7 @@ operator overrides, and subsystem-derived defaults provide sufficient control
 for progressive feature rollout without introducing complex targeting or
 percentage-based activation.
 
-Dependencies: independent of other Phase 4 work, but provides a foundation for
+Dependencies: independent of other Phase 4 tasks, but provides a foundation for
 Phase 6 front-end features (canvas hosting, advanced media handling) to roll
 out behind flags.
 
@@ -608,15 +608,15 @@ out behind flags.
   initialization in `GatewayChannel` or a dedicated config module.
   - See [RFC 0009 §Configuration inputs](./rfcs/0009-feature-flags-frontend.md#1-configuration-inputs).
   - Success: `FEATURE_FLAG_<NAME>` environment variables are parsed into a
-    mutable `FeatureFlagRegistry` with `Arc<RwLock<HashMap<String, bool>>>`,
-    invalid flag names are silently discarded with a warning, and compiled
-    defaults are applied for flags without environment overrides.
+    `FeatureFlagRegistry` with plain `HashMap<String, bool>`, invalid flag
+    names are silently discarded with a warning, and compiled defaults are
+    applied for flags without environment overrides.
 - [ ] 4.4.2. Add the `FeatureFlagRegistry` struct and `GatewayState`
   integration. Requires 4.4.1.
   - See [RFC 0009 §Data shape](./rfcs/0009-feature-flags-frontend.md#2-data-shape)
     and [RFC 0009 §GatewayState integration](./rfcs/0009-feature-flags-frontend.md#3-gatewaystate-integration).
-  - Success: `GatewayState` holds an `Arc<FeatureFlagRegistry>` that supports
-    runtime re-resolution when operator overrides change, and subsystem
+  - Success: `GatewayState` holds an `Arc<RwLock<FeatureFlagRegistry>>` that
+    supports runtime re-resolution when operator overrides change, and subsystem
     availability defaults are applied during initialization based on
     `GatewayState` field presence.
 - [ ] 4.4.3. Extend the settings handler to detect `feature_flag:` keys and

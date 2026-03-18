@@ -128,6 +128,8 @@ Each flag can be set through an environment variable of the form
 | `FEATURE_FLAG_<UPPER_SNAKE_NAME>` | Enable the named feature flag. | The value `true` (case-insensitive) enables the flag; any other value (including `false`, `0`, or an empty string) disables it. Unset variables fall through to the next precedence layer. |
 <!-- markdownlint-enable MD013 MD060 -->
 
+_Table 1: Environment variable naming and semantics._
+
 Examples:
 
 ```plaintext
@@ -192,7 +194,7 @@ overrides change.
 /// gateway instance.
 pub struct FeatureFlagRegistry {
     /// Resolved flag states: name -> enabled
-    flags: Arc<RwLock<HashMap<String, bool>>>,
+    flags: HashMap<String, bool>,
 }
 ```
 
@@ -207,13 +209,12 @@ Add a `feature_flags` field to `GatewayState`:
 ```rust,no_run
 pub struct GatewayState {
     // ... existing fields ...
-    pub feature_flags: Arc<FeatureFlagRegistry>,
+    pub feature_flags: Arc<RwLock<FeatureFlagRegistry>>,
 }
 ```
 
-The field is wrapped in `Arc` so handlers can share the registry. The
-inner `RwLock<HashMap<...>>` allows runtime mutation when operator
-overrides change.
+The field is wrapped in `Arc<RwLock<...>>` so handlers can share the
+registry and update it at runtime when operator overrides change.
 
 Construction sequence:
 
@@ -391,7 +392,7 @@ settings API.
 | Configuration complexity | Moderate (one env var per flag) | Minimal | Moderate (templating) | Minimal (one env var total) |
 <!-- markdownlint-enable MD013 MD060 -->
 
-_Table 1: Comparison of alternatives._
+_Table 2: Comparison of alternatives._
 
 ## Open questions
 
