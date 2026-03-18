@@ -11,9 +11,7 @@ use ironclaw::channels::{AttachmentKind, IncomingAttachment, IncomingMessage};
 use ironclaw::llm::ContentPart;
 
 /// Extract the last user message from captured LLM requests.
-fn last_user_message(
-    requests: &[Vec<ironclaw::llm::ChatMessage>],
-) -> &ironclaw::llm::ChatMessage {
+fn last_user_message(requests: &[Vec<ironclaw::llm::ChatMessage>]) -> &ironclaw::llm::ChatMessage {
     assert!(!requests.is_empty(), "no LLM requests captured");
     let last_request = requests.last().expect("requests should be non-empty");
     last_request

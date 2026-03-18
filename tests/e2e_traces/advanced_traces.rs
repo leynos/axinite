@@ -309,8 +309,13 @@ async fn routine_news_digest() {
     assert_routine_created(&r1);
 
     // Turn 2: Fire the routine. This dispatches a full_job through the scheduler.
+    // The routine worker runs asynchronously. We wait for at least the Turn 2 response
+    // (bringing total to 2, including Turn 1), then poll for additional messages from the worker.
     rig.send_message("Fire it now.").await;
-    let responses = rig.wait_for_responses(3, Duration::from_secs(15)).await;
+    let _turn2 = rig.wait_for_responses(2, Duration::from_secs(15)).await;
+
+    // Poll for additional responses from the routine worker (timeout-based collection)
+    let responses = rig.wait_for_responses(999, Duration::from_secs(10)).await;
 
     // Find the main conversation reply (from turn 2) by content, since
     // the routine worker runs asynchronously and may interleave messages.
