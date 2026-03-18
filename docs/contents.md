@@ -117,3 +117,6 @@
   - [RFC 0014: Memory projection tiers and promotion rules](rfcs/0014-memory-projection-tiers-and-promotion-rules.md)
     proposes projection classes, epistemic status, and promotion rules for
     memory.
+  - [RFC 0015: Hierarchical memory materialization for memoryd](rfcs/0015-hierarchical-memory-materialization-for-memoryd.md)
+    outlines how `memoryd` can materialize episode, semantic-carrier, and
+    theme structures without replacing RFC 0014's projection taxonomy.

@@ -5,6 +5,8 @@
 - **RFC number:** 0014
 - **Status:** Proposed
 - **Created:** 2026-03-15
+- **Related:** RFC 0015: Hierarchical memory materialization for
+  `memoryd`
 
 ## Summary
 
@@ -99,6 +101,9 @@ _Table 1: RFC 0007 gaps relative to Honcho patterns._
 - Non-goals:
   - Redesign the sidecar architecture. This RFC extends RFC 0007, not
     replaces it.
+  - Define the materialized hierarchy, theme structures, or projection
+    pipeline internals used to realize these semantics. Those are the
+    subject of RFC 0015.
   - Specify embedding models, extraction prompts, or retrieval
     algorithms. Those remain configurable.
   - Import Honcho's peer-centric ontology. Axinite's memory model
