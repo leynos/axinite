@@ -22,6 +22,7 @@ use crate::agent::routine::{
 use crate::agent::routine_engine::RoutineEngine;
 use crate::context::JobContext;
 use crate::db::Database;
+use crate::tools::tool::HostedToolEligibility;
 use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput, require_str};
 
 // ==================== routine_create ====================
@@ -696,6 +697,10 @@ impl Tool for RoutineFireTool {
         ApprovalRequirement::UnlessAutoApproved
     }
 
+    fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+        HostedToolEligibility::ApprovalGated
+    }
+
     fn parameters_schema(&self) -> serde_json::Value {
         serde_json::json!({
             "type": "object",
@@ -876,6 +881,10 @@ impl Tool for EventEmitTool {
         // Emitting an event can fire system_event routines that dispatch full_jobs
         // with pre-authorized Always-gated tools — same escalation risk as routine_fire.
         ApprovalRequirement::UnlessAutoApproved
+    }
+
+    fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+        HostedToolEligibility::ApprovalGated
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

@@ -12,12 +12,19 @@ use uuid::Uuid;
 
 use crate::context::JobContext;
 use crate::llm::ToolDefinition;
-use crate::tools::{Tool, ToolDomain, ToolError, ToolOutput, ToolRegistry};
+use crate::tools::{HostedToolEligibility, Tool, ToolDomain, ToolError, ToolOutput, ToolRegistry};
 
 enum HostedRemoteToolEligibility {
     Eligible,
     ApprovalGated,
     Ineligible,
+}
+
+pub(super) struct HostedRemoteToolRequest {
+    pub user_id: String,
+    pub job_id: Uuid,
+    pub tool_name: String,
+    pub params: serde_json::Value,
 }
 
 pub(super) async fn hosted_remote_tool_catalog(
@@ -48,12 +55,15 @@ pub(super) async fn hosted_remote_tool_catalog(
 
 pub(super) async fn execute_hosted_remote_tool(
     tools: &Arc<ToolRegistry>,
-    user_id: &str,
-    job_id: Uuid,
-    tool_name: &str,
-    params: serde_json::Value,
+    request: HostedRemoteToolRequest,
 ) -> Result<ToolOutput, StatusCode> {
-    let tool = tools.get(tool_name).await.ok_or(StatusCode::NOT_FOUND)?;
+    let HostedRemoteToolRequest {
+        user_id,
+        job_id,
+        tool_name,
+        params,
+    } = request;
+    let tool = tools.get(&tool_name).await.ok_or(StatusCode::NOT_FOUND)?;
     match hosted_remote_tool_eligibility(&tool) {
         HostedRemoteToolEligibility::Eligible => {}
         HostedRemoteToolEligibility::ApprovalGated => {
@@ -84,7 +94,7 @@ pub(super) async fn execute_hosted_remote_tool(
     }
 
     let mut ctx = JobContext::with_user(
-        user_id.to_string(),
+        user_id,
         "Hosted remote tool",
         format!("Hosted execution of {}", tool_name),
     );
@@ -106,10 +116,11 @@ fn hosted_remote_tool_eligibility(tool: &Arc<dyn Tool>) -> HostedRemoteToolEligi
         || ToolRegistry::is_protected_tool_name(tool.name())
     {
         HostedRemoteToolEligibility::Ineligible
-    } else if tool.requires_approval(&serde_json::json!({})).is_required() {
-        HostedRemoteToolEligibility::ApprovalGated
     } else {
-        HostedRemoteToolEligibility::Eligible
+        match tool.hosted_tool_eligibility() {
+            HostedToolEligibility::Eligible => HostedRemoteToolEligibility::Eligible,
+            HostedToolEligibility::ApprovalGated => HostedRemoteToolEligibility::ApprovalGated,
+        }
     }
 }
 

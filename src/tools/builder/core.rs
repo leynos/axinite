@@ -44,7 +44,7 @@ use crate::llm::{
     ChatMessage, LlmProvider, Reasoning, ReasoningContext, RespondResult, ToolDefinition,
 };
 use crate::tools::ToolRegistry;
-use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput};
+use crate::tools::tool::{ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput};
 
 /// Requirement specification for building software.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1011,6 +1011,10 @@ impl Tool for BuildSoftwareTool {
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
         ApprovalRequirement::UnlessAutoApproved
+    }
+
+    fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+        HostedToolEligibility::ApprovalGated
     }
 }
 

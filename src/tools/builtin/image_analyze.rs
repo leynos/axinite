@@ -8,7 +8,7 @@ use secrecy::{ExposeSecret, SecretString};
 
 use crate::context::JobContext;
 use crate::tools::builtin::path_utils::validate_path;
-use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput};
+use crate::tools::tool::{ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput};
 
 /// Tool for analyzing images using a vision-capable model.
 pub struct ImageAnalyzeTool {
@@ -88,6 +88,10 @@ impl Tool for ImageAnalyzeTool {
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
         ApprovalRequirement::UnlessAutoApproved
+    }
+
+    fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+        HostedToolEligibility::ApprovalGated
     }
 
     fn requires_sanitization(&self) -> bool {

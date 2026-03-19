@@ -62,15 +62,16 @@ special-cased for this roadmap step.
   `src/worker/api/tests.rs`, and `src/worker/container/tests.rs` are the
   nearest existing unit-test seams for the new transport and startup changes.
 
-Two documentation gaps matter before implementation begins.
+Two documentation gaps mattered before implementation began.
 
-- `docs/axinite-architecture-summary.md`, named in the request, does not exist
+- `docs/axinite-architecture-summary.md`, named in the request, did not exist
   in this checkout. Use `docs/axinite-architecture-overview.md` as the current
   architecture reference instead.
-- `docs/users-guide.md` also does not exist yet, even though the documentation
-  style guide treats it as canonical. This feature should create that guide if
-  it still does not exist when implementation lands, then document the new
-  hosted-tool behaviour there.
+- `docs/users-guide.md` did not exist at plan time, even though
+  [docs/contents.md](../contents.md) and the documentation style guide treat
+  the User's guide as canonical operator-facing documentation. If that guide
+  had remained absent when implementation landed, this feature would have
+  created it and documented the hosted-tool behaviour there.
 
 ## Constraints
 
@@ -86,8 +87,9 @@ Two documentation gaps matter before implementation begins.
   large hexagonal-architecture transplant. The important split is between
   policy and contract logic on one side and the `axum` or `reqwest` adapters on
   the other.
-- Do not change the LLM-facing `ToolDefinition` contract. This step changes
-  who supplies tool definitions, not the schema format itself.
+- Do not change the large language model (LLM)-facing `ToolDefinition`
+  contract. This step changes who supplies tool definitions, not the schema
+  format itself.
 - Do not widen hosted execution to approval-gated or otherwise unsafe tools as
   an incidental side effect of making the transport generic.
 - Keep `1.1.1` scoped to transport, proxy execution, and startup injection.
@@ -109,9 +111,9 @@ Two documentation gaps matter before implementation begins.
 - Startup coupling: if `WorkerRuntime` still has to read environment variables
   directly after three focused refactoring attempts, stop and record the
   hidden coupling that blocked injection.
-- Filtering: if exposing a real MCP tool safely requires the full hosted
-  visibility policy from `1.1.2`, stop and document the exact predicate or
-  data that is missing.
+- Filtering: if exposing a real Model Context Protocol (MCP) tool safely
+  requires the full hosted visibility policy from `1.1.2`, stop and document
+  the exact predicate or data that is missing.
 - Behaviour tests: if a meaningful `rstest-bdd` scenario cannot be expressed
   without Docker or live MCP infrastructure, document that limitation and fall
   back to in-process `rstest` integration coverage rather than faking the
@@ -385,9 +387,10 @@ Expected evidence:
 - [x] 2026-03-14 11:27Z: Confirmed that the previous hosted path depended on
   extension-only worker proxies before this generic remote-tool transport
   change.
-- [x] 2026-03-14 11:27Z: Confirmed that `docs/axinite-architecture-summary.md`
-  and `docs/users-guide.md` are absent in this checkout and must be handled
-  explicitly by the implementation.
+- [x] 2026-03-14 11:27Z: Confirmed that
+  `docs/axinite-architecture-summary.md` did not exist in this checkout and
+  that `docs/users-guide.md` did not yet exist at that point, so the
+  implementation needed to handle both documentation gaps explicitly.
 - [x] 2026-03-14 11:27Z: Drafted this ExecPlan and recorded the expected code,
   test, and documentation touchpoints for roadmap item `1.1.1`.
 - [x] 2026-03-14 12:43Z: Implemented the shared transport contract, the

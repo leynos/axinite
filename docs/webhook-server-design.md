@@ -6,7 +6,7 @@
 - **Scope:** The host-side `WebhookServer`, its route composition model, its
   restart and shutdown behaviour, and the way the main runtime uses it today.
 - **Primary audience:** Maintainers changing HTTP ingress, webhook delivery,
-  WASM channel hosting, or hot-reload behaviour.
+  WebAssembly (WASM) channel hosting, or hot-reload behaviour.
 - **Precedence:** `src/NETWORK_SECURITY.md` remains the source of truth for
   network-facing security posture. This document explains the current runtime
   shape and failure behaviour of the webhook server itself.
@@ -114,7 +114,7 @@ The most important current design feature is the restart path in
 `restart_with_addr()`. It is explicitly rollback-oriented.
 
 The method does **not** shut down the old listener first and hope the new bind
-works. Instead it:
+works. Instead, it:
 
 1. clones the previously merged router;
 2. snapshots the current address, shutdown sender, and task handle;

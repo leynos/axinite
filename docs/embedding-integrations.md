@@ -328,12 +328,12 @@ Table 5. Query-time embedding consumers.
 
 | Caller | Path | Behaviour |
 | -------- | ------ | ----------- |
-| `memory_search` tool | Agent tool layer -> `Workspace::search()` | Generates a query vector when a provider exists, otherwise performs Full-Text Search (FTS)-only search. |
+| `memory_search` tool | Agent tool layer -> `Workspace::search()` | Generates a query vector when a provider exists, otherwise performs full-text search (FTS)-only search. |
 | Web memory API | `/api/memory/search` -> `Workspace::search()` | Reuses the same workspace search behaviour as the tool path. |
 | Memory CLI | `ironclaw memory ...` -> `Workspace` | Resolves the same provider config and attaches it to a CLI-local workspace. |
 
 The search layer defaults to hybrid retrieval. `SearchConfig::default()`
-enables both Full-Text Search (FTS) and vector search, then combines ranked
+enables both FTS and vector search, then combines ranked
 results through Reciprocal Rank Fusion (RRF). If no provider exists, the query
 embedding is `None`, so the backend receives only the FTS side of the request.
 

@@ -327,6 +327,21 @@ pub enum WorkerError {
     #[error("LLM proxy request failed: {reason}")]
     LlmProxyFailed { reason: String },
 
+    #[error("Bad request from orchestrator: {reason}")]
+    BadRequest { reason: String },
+
+    #[error("Unauthorized remote tool request: {reason}")]
+    Unauthorized { reason: String },
+
+    #[error("Remote tool request was rate limited: {reason}")]
+    RateLimited {
+        reason: String,
+        retry_after: Option<Duration>,
+    },
+
+    #[error("Remote tool request failed upstream: {reason}")]
+    BadGateway { reason: String },
+
     #[error("Secret resolution failed for {secret_name}: {reason}")]
     SecretResolveFailed { secret_name: String, reason: String },
 

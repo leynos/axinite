@@ -1,5 +1,8 @@
 //! Shared test fixtures for orchestrator API endpoint tests.
 
+pub(super) mod remote_tool_helpers;
+pub(super) mod remote_tool_mocks;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 

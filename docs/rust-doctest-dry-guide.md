@@ -20,12 +20,12 @@ running within the library's own context, but as an entirely separate,
 temporary crate.[^1] When a developer executes
 
 `cargo test --doc`, `rustdoc` initiates a multi-stage process for every code
-block found in the documentation comments[^3]:
+block found in the documentation comments[^2]:
 
 1. **Parsing and Extraction**: `rustdoc` first parses the source code of the
    library, resolving conditional compilation attributes (`#[cfg]`) to
    determine which items are active and should be documented for the current
-   target.[^2] It then extracts all code examples enclosed in triple-backtick
+   target.[^3] It then extracts all code examples enclosed in triple-backtick
    fences (\`\`\`).
 
 2. **Code Generation**: For each extracted code block, `rustdoc` performs a
@@ -33,20 +33,20 @@ block found in the documentation comments[^3]:
    the block does not already contain a `fn main()`, the code is wrapped within
    one. Crucially, `rustdoc` also injects an `extern crate <mycrate>;`
    statement, where `<mycrate>` is the name of the library being documented.
-   This makes the library under test available as an external dependency.[^3]
+   This makes the library under test available as an external dependency.[^2]
 
 3. **Individual Compilation**: `rustdoc` then invokes the Rust compiler
    (`rustc`) separately for *each* of these newly generated miniature programs.
    Each one is compiled and linked against the already-compiled version of the
-   main library.[^2]
+   main library.[^3]
 
 4. **Execution and Verification**: Finally, if compilation succeeds, the
    resulting executable is run. The test is considered to have passed if the
    program runs to completion without panicking. The executable is then
-   deleted.[^2]
+   deleted.[^3]
 
 The significance of this model cannot be overstated. It effectively transforms
-every doctest into a true integration test.[^6] The test code does not have
+every doctest into a true integration test.[^4] The test code does not have
 special access to the library's internals; it interacts with the library's API
 precisely as a downstream crate would, providing a powerful guarantee that the
 public-facing examples are correct and functional.[^1]
@@ -69,12 +69,12 @@ doctest, is computationally expensive. For small projects, this overhead is
 negligible. However, for large libraries with hundreds of doctests, the
 cumulative compilation time can become a significant bottleneck in the
 development and Continuous Integration (CI) and Continuous Deployment (CD)
-cycle, a common pain point in the Rust community.[^2]
+cycle, a common pain point in the Rust community.[^3]
 
 The architectural purity of the `rustdoc` model—its insistence on simulating an
 external user—creates a fundamental trade-off. On one hand, it provides an
 unparalleled guarantee that the public documentation is accurate and that the
-examples work as advertised, creating true "living documentation".[^7] On the
+examples work as advertised, creating true "living documentation".[^5] On the
 other hand, this same purity prevents the use of doctests for verifying
 documentation of internal, private APIs. This forces a bifurcation of
 documentation strategy. Public-facing documentation can be tied directly to
@@ -100,34 +100,34 @@ clear, illustrative, and robust.
 Doctests reside within documentation comments. Rust recognizes two types:
 
 - **Outer doc comments (`///`)**: These document the item that follows them
-  (e.g., a function, struct, or module). This is the most common type.[^7]
+  (e.g., a function, struct, or module). This is the most common type.[^5]
 
 - **Inner doc comments (`//!`)**: These document the item they are inside
   (e.g., a module or the crate itself). They are typically used at the top of
-  `lib.rs` or `mod.rs` to provide crate- or module-level documentation.[^8]
+  `lib.rs` or `mod.rs` to provide crate- or module-level documentation.[^6]
 
 <!-- markdownlint-disable MD013 --> Within these comments, a code block is
 denoted by triple back-ticks (```). While `rustdoc` defaults to Rust syntax,
-explicitly add the `rust` language specifier for clarity.[^3] A doctest
+explicitly add the `rust` language specifier for clarity.[^2] A doctest
 "passes" when it compiles and runs without panicking. To assert specific
 outcomes, use the standard macros `assert!`, `assert_eq!`, and
-`assert_ne!`.[^3] <!-- markdownlint-enable MD013 -->
+`assert_ne!`.[^2] <!-- markdownlint-enable MD013 -->
 
 ### 2.2 The philosophy of a good example
 
 The purpose of a documentation example extends beyond merely demonstrating
 syntax. A reader can typically be expected to understand the mechanics of
 calling a function or instantiating a struct. A truly valuable example
-illustrates *why* and in *what context* an item should be used.[^9] It should
+illustrates *why* and in *what context* an item should be used.[^7] It should
 tell a small story or solve a miniature problem that illuminates the item's
 purpose. For instance, an example for
 
 `String::clone()` should not just show `hello.clone();`, but should demonstrate
-a scenario where ownership rules necessitate creating a copy.[^9]
+a scenario where ownership rules necessitate creating a copy.[^7]
 
 To achieve this, examples must be clear, concise, and purposeful. Any code that
 is directly relevant to the point being made—such as complex setup, boilerplate,
-or unrelated logic—should be hidden to avoid distracting the reader.[^3]
+or unrelated logic—should be hidden to avoid distracting the reader.[^2]
 
 ### 2.3 Ergonomic error handling: taming the `?` operator
 
@@ -136,11 +136,11 @@ functions that return a `Result`. The question mark (`?`) operator is the
 idiomatic way to propagate errors in Rust, but it presents a challenge for
 doctests. The implicit `fn main()` wrapper generated by `rustdoc` has a return
 type of `()`, while the `?` operator can only be used in a function that
-returns a `Result` or `Option`. This mismatch leads to a compilation error.[^3]
+returns a `Result` or `Option`. This mismatch leads to a compilation error.[^2]
 
 Using `.unwrap()` (or `.expect()`) in examples is strongly discouraged. It is
 considered an anti-pattern because users often copy example code verbatim, and
-encouraging panicking on errors is contrary to robust application design.[^9]
+encouraging panicking on errors is contrary to robust application design.[^7]
 Instead, two canonical solutions exist.
 
 #### Solution 1: The explicit main function
@@ -166,7 +166,7 @@ can then be hidden from the rendered documentation.
 ```
 
 In this pattern, the reader only sees the core, fallible code, while the test
-itself is a complete, well-behaved program.[^9]
+itself is a complete, well-behaved program.[^7]
 
 #### Solution 2: The implicit Result-returning main
 
@@ -187,7 +187,7 @@ automatically wrap the code in a main function that returns a Result.
 This is functionally equivalent to the explicit `main` but requires less
 boilerplate. However, it is critical that the `(())` be written as a single,
 contiguous sequence of characters, as `rustdoc`'s detection mechanism is purely
-textual and will not recognize `( () )`.[^3]
+textual and will not recognize `( () )`.[^2]
 
 ### 2.4 The power of hidden lines (`#`): creating clean examples
 
@@ -195,7 +195,7 @@ The mechanism that makes clean, focused examples possible is the "hidden line"
 syntax. Any line in a doctest code block that begins with a `#` character
 (optionally preceded by whitespace) will be compiled and executed as part of
 the test, but it will be completely omitted from the final HTML documentation
-rendered for the user.[^3]
+rendered for the user.[^2]
 
 This feature is essential for bridging the gap between what makes a good,
 human-readable example, and what constitutes a complete, compilable program.
@@ -203,12 +203,12 @@ Its primary use cases include:
 
 1. **Hiding** `main` **Wrappers**: As demonstrated in the error-handling
    examples, the entire `fn main() -> Result<…> { … }` and `Ok(())` scaffolding
-   can be hidden, presenting the user with only the relevant code.[^9]
+   can be hidden, presenting the user with only the relevant code.[^7]
 
 2. **Hiding Setup Code**: If an example requires some preliminary setup—like
    creating a temporary file, defining a helper struct for the test, or
    initializing a server—this logic can be hidden to keep the example focused
-   on the API item being documented.[^3]
+   on the API item being documented.[^2]
 
 3. **Hiding** `use` **Statements**: While often useful to show which types are
    involved, `use` statements can sometimes be hidden to declutter simple
@@ -216,9 +216,9 @@ Its primary use cases include:
 
 The existence of features like hidden lines and the `(())` shorthand reveals a
 core tension in `rustdoc`'s design. The compilation model is rigid: every test
-must be a valid, standalone program.[^2] However, the ideal documentation
+must be a valid, standalone program.[^3] However, the ideal documentation
 example is often just a small, illustrative snippet that is not a valid program
-on its own.[^9] These ergonomic features are pragmatic "patches" designed to
+on its own.[^7] These ergonomic features are pragmatic "patches" designed to
 resolve this conflict. They allow the developer to inject the necessary
 boilerplate to satisfy the compiler without burdening the human reader with
 irrelevant details. Understanding them as clever workarounds, rather than as
@@ -241,11 +241,11 @@ table provides a comparative reference for the most common doctest attributes.
 <!-- markdownlint-disable MD013 -->
 | Attribute    | Action                                                              | Test Outcome                                                   | Primary Use Case & Warnings                                                                                                                                                                                                           |
 | ------------ | ------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ignore       | Skips both compilation and execution.                               | ignored                                                        | Use Case: For pseudocode, examples known to be broken, or to temporarily disable a test. Warning: Provides no guarantee that the code is even syntactically correct. Generally discouraged in favour of more specific attributes.[^3] |
+| ignore       | Skips both compilation and execution.                               | ignored                                                        | Use Case: For pseudocode, examples known to be broken, or to temporarily disable a test. Warning: Provides no guarantee that the code is even syntactically correct. Generally discouraged in favour of more specific attributes.[^2] |
 | should_panic | Compiles and runs the code. The test passes if the code panics.     | OK on panic, failed if it does not panic.                      | Use Case: Demonstrating functions that are designed to panic on invalid input (e.g., indexing out of bounds).                                                                                                                         |
-| compile_fail | Attempts to compile the code. The test passes if compilation fails. | OK on compilation failure, failed if it compiles successfully. | Use Case: Illustrating language rules, such as the borrow checker or type system constraints. Warning: Highly brittle. A future Rust version might make the code valid, causing the test to unexpectedly fail.[^4]                    |
-| no_run       | Compiles the code but does not execute it.                          | OK if compilation succeeds.                                    | Use Case: Essential for examples with undesirable side effects in a test environment, such as network requests, filesystem input/output, or launching a GUI. Guarantees the example is valid Rust code without running it.[^5]        |
-| edition20xx  | Compiles the code using the specified Rust edition's rules.         | OK on success.                                                 | Use Case: Demonstrating syntax alongside idioms that are specific to a particular Rust edition (e.g., edition2018, edition2021).[^4]                                                                                                  |
+| compile_fail | Attempts to compile the code. The test passes if compilation fails. | OK on compilation failure, failed if it compiles successfully. | Use Case: Illustrating language rules, such as the borrow checker or type system constraints. Warning: Highly brittle. A future Rust version might make the code valid, causing the test to unexpectedly fail.[^8]                    |
+| no_run       | Compiles the code but does not execute it.                          | OK if compilation succeeds.                                    | Use Case: Essential for examples with undesirable side effects in a test environment, such as network requests, filesystem input/output, or launching a GUI. Guarantees the example is valid Rust code without running it.[^9]        |
+| edition20xx  | Compiles the code using the specified Rust edition's rules.         | OK on success.                                                 | Use Case: Demonstrating syntax alongside idioms that are specific to a particular Rust edition (e.g., edition2018, edition2021).[^8]                                                                                                  |
 <!-- markdownlint-enable MD013 -->
 
 ### 3.2 Detailed attribute breakdown
@@ -253,32 +253,32 @@ table provides a comparative reference for the most common doctest attributes.
 - `ignore`: This is the bluntest instrument in the toolbox. It tells `rustdoc`
   to do nothing with the code block. It is almost always better to either fix
   the example using hidden lines or use a more descriptive attribute like
-  `no_run`.[^3] Its main legitimate use is for non-Rust code blocks or
+  `no_run`.[^2] Its main legitimate use is for non-Rust code blocks or
   illustrative pseudocode.
 
 - `should_panic`: This attribute inverts the normal test condition. It is used
   to document and verify behaviour that intentionally results in a panic. The
   test will fail if the code completes successfully or panics for a reason
-  other than the one expected (if a specific panic message is asserted).[^3]
+  other than the one expected (if a specific panic message is asserted).[^2]
 
 - `compile_fail`: This is a powerful tool for creating educational examples
   that demonstrate what *not* to do. It is frequently used in documentation
   about ownership, borrowing, and lifetimes to show code that the compiler will
   correctly reject. However, developers must be aware of its fragility. An
   evolution in the Rust language, or in the compiler, could make previously
-  invalid code compile, which would break the test.[^4]
+  invalid code compile, which would break the test.[^8]
 
 - `no_run`: This attribute strikes a crucial balance between test verification
   and practicality. For an example that demonstrates how to download a file
   from the internet, the example code must be syntactically correct and use the
   API properly, but it is undesirable for the Continuous Integration (CI)
   server to perform a network request during every test run. `no_run` provides
-  this guarantee by compiling the code without executing it.[^5]
+  this guarantee by compiling the code without executing it.[^9]
 
 - `edition20xx`: This attribute allows an example to be tested against a
   specific Rust edition. This is important for crates that support multiple
   editions and need to demonstrate edition-specific features or migration
-  paths.[^4]
+  paths.[^8]
 
 ## The DRY principle in doctests: managing shared and complex logic
 
@@ -297,71 +297,53 @@ connect to it, and seed it with some initial data. Repeating this multi-line
 setup in every single example is inefficient and makes maintenance difficult. A
 change to the setup process would require updating dozens of doctests.
 
-### 4.2 The `#[cfg(doctest)]` pattern for shared helpers
+### 4.2 Hidden inline helpers for shared doctest setup
 
-The canonical solution to this problem involves using a special configuration
-flag provided by `rustdoc`: `doctest`. A common mistake is to try to place
-shared test logic in a block guarded by `#[cfg(test)]`. This will not work,
-because `rustdoc` does not enable the `test` configuration flag during its
-compilation process; `#[cfg(test)]` is reserved for unit and integration tests
-run directly by `cargo test`.[^11]
+One common mistake is to place shared doctest logic behind `#[cfg(test)]` or to
+import crate-internal helper modules as though doctests were compiled inside the
+library. That will not work because `rustdoc` compiles doctests as external
+crates, and `#[cfg(test)]` is reserved for unit and integration tests run
+directly by `cargo test`.[^10]
 
-Instead, `rustdoc` sets its own unique `doctest` flag. By guarding a module or
-function with `#[cfg(doctest)]`, developers can write helper code that is
-compiled and available *only* when `cargo test --doc` is running. This code is
-excluded from normal production builds and standard unit test runs, preventing
-any pollution of the final binary or the public API.
-
-The typical implementation pattern is to create a private helper module within
-the library:
+For examples that need bespoke setup, the most reliable pattern is to keep the
+helpers inside the doctest itself with hidden `#` lines. The reader sees the
+essential usage, while the doctest still has access to the support code it
+needs without depending on crate-local conditional compilation.
 
 ```rust,no_run
 // In lib.rs or a submodule
+
+pub struct TestContext {
+    // … fields for the test context …
+}
 
 /// A function that requires a complex environment to test.
 ///
 /// # Examples
 ///
 /// ```
-/// # use crate::doctest_helpers::setup_test_environment;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # struct TestContext;
+/// # fn setup_test_environment() -> Result<TestContext, Box<dyn std::error::Error>> {
+/// #     Ok(TestContext)
+/// # }
+/// # fn my_func_that_needs_env(_ctx: &mut TestContext) -> Result<(), ()> {
+/// #     Ok(())
+/// # }
 /// let mut ctx = setup_test_environment()?;
 /// let result = my_func_that_needs_env(&mut ctx);
 /// assert!(result.is_ok());
-/// # Ok(())
-/// # }
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub fn my_func_that_needs_env(ctx: &mut TestContext) -> Result<(), ()> {
     //… function logic…
     Ok(())
 }
-
-// This module and its contents are only compiled for doctests.
-#[cfg(doctest)]
-mod doctest_helpers {
-    // Re-export any types needed for the function signatures above.
-    pub use super::TestContext;
-    use std::io::Result;
-
-    pub struct TestContext {
-        //… fields for the test context…
-    }
-
-    pub fn setup_test_environment() -> Result<TestContext> {
-        // All the complex, shared setup logic lives here once.
-        println!("Setting up test environment…");
-        Ok(TestContext { /*… */ })
-    }
-}
-
-// A struct that might be needed by the public function signature.
-// It can be defined normally.
-pub struct TestContext { /*… */ }
 ```
 
-This pattern is the most effective way to achieve DRY doctests. It centralizes
-setup logic, improves maintainability, and cleanly separates testing concerns
-from production code.[^11]
+This pattern keeps the visible example focused while still letting the doctest
+compile as a standalone external crate. It avoids brittle references such as
+`crate::doctest_helpers::setup_test_environment`, and it makes the setup,
+support types and example flow live together in one self-contained block.[^10]
 
 ### 4.3 Advanced DRY: programmatic doctest generation
 
@@ -375,7 +357,7 @@ Crates like `quote-doctest` address this by allowing developers to
 programmatically construct a doctest from a `TokenStream`. This enables the
 generation of doctests from the same source of truth that generates the code
 they are intended to test, representing the ultimate application of the DRY
-principle in this domain.[^12]
+principle in this domain.[^11]
 
 ## Conditional compilation strategies for doctests
 
@@ -397,7 +379,7 @@ a Windows machine).
 **The Mechanism**: `rustdoc` always invokes the compiler with the `--cfg doc`
 flag set. By adding `doc` to an item's `#[cfg]` attribute, a developer can
 instruct the compiler to include that item specifically for documentation
-builds.[^13]
+builds.[^12]
 
 **The Pattern**:
 
@@ -416,7 +398,7 @@ This distinction highlights the "cfg duality." The `#[cfg(doc)]` attribute
 controls the *table of contents* of the documentation; it determines which
 items are parsed and rendered. The actual compilation of a doctest, however,
 happens in a separate, later stage. In that stage, the `doc` cfg is *not*
-passed to the compiler.[^13] The compiler only sees the host `cfg` (e.g.,
+passed to the compiler.[^12] The compiler only sees the host `cfg` (e.g.,
 `target_os = "windows"`), so the `UnixSocket` type is not available, and the
 test fails to compile. `#[cfg(doc)]` affects what is documented, not what is
 testable.
@@ -450,7 +432,7 @@ the doctest itself.
 When the `"serde"` feature is disabled, the code inside the block is compiled
 out. The doctest becomes an empty program that runs, does nothing, and is
 reported as `ok`. While simple to write, this can be misleading, because the
-test suite reports a "pass" even though the test was effectively skipped.[^14]
+test suite reports a "pass" even though the test was effectively skipped.[^13]
 
 Pattern 2: cfg_attr to Conditionally ignore the Test
 
@@ -473,7 +455,7 @@ With this pattern, if the `"serde"` feature is disabled, the test is marked as
 the feature is enabled, the `ignore` is omitted, and the test runs normally.
 This approach provides clearer feedback but is significantly more verbose and
 less ergonomic, especially when applied to outer (`///`) doc comments, as the
-`cfg_attr` must be applied to every single line of the comment.[^14]
+`cfg_attr` must be applied to every single line of the comment.[^13]
 
 ### 5.3 Displaying feature requirements in docs: `#[doc(cfg(…))]`
 
@@ -495,7 +477,7 @@ pub fn function_requiring_serde() { /*… */ }
 This will render a banner in the documentation for `function_requiring_serde`
 that reads, "This is only available when the `serde` feature is enabled." This
 attribute is purely for documentation generation, and it is independent of, but
-often used alongside, the conditional test execution patterns.[^14]
+often used alongside, the conditional test execution patterns.[^13]
 
 ## Doctests in the wider project ecosystem
 
@@ -512,7 +494,7 @@ its own purpose:
   public API. Their dual purpose is to provide clear documentation for users
   and to act as a basic sanity check that the examples remain correct over
   time. They should be easy to read and focused on illustrating a single
-  concept.[^6]
+  concept.[^4]
 
 - **Unit tests (`#[test]` in `src/`)**: These are for testing the
   nitty-gritty details of the implementation. They are placed in submodules
@@ -525,7 +507,7 @@ its own purpose:
   from a completely external perspective, much like doctests. However, they are
   not constrained by the need to be readable documentation. They are suited for
   testing complex user workflows, interactions between multiple API entry
-  points, and the overall behaviour of the library as a black box.[^6]
+  points, and the overall behaviour of the library as a black box.[^4]
 
 ### 6.2 The unsolved problem: testing private APIs
 
@@ -564,14 +546,14 @@ real-world challenges when working with doctests.
   audiences. It needs to render cleanly on platforms like GitHub and
   [crates.io](https://crates.io), where hidden lines (`#…`) look like ugly,
   commented-out code. At the same time, it should contain testable examples,
-  which often require hidden lines for setup.[^10] The best practice is to
+  which often require hidden lines for setup.[^14] The best practice is to
   avoid maintaining the README manually. Instead, use a tool like
 
   `cargo-readme`. This tool generates a `README.md` file from the crate-level
   documentation (in `lib.rs`), automatically stripping out the hidden lines.
   This provides a single source of truth that is both fully testable via
   `cargo test --doc` and produces a clean, professional README for external
-  sites.[^10]
+  sites.[^14]
 
 - **Developer Ergonomics in IDEs**: Writing code inside documentation comments
   can be a subpar experience. IDEs and tools like `rust-analyzer` often provide
@@ -625,41 +607,41 @@ mastering doctests:
 [^1]: Stack Overflow — Writing documentation tests for private modules,
 accessed on July 15, 2025,
 <https://stackoverflow.com/questions/70111757/how-can-i-write-documentation-tests-for-private-modules>
-[^2]: Rustdoc doctests need fixing - Swatinem, accessed on July 15, 2025,
-<https://swatinem.de/blog/fix-rustdoc/>
-[^3]: Documentation tests - The rustdoc book - Rust Documentation, accessed on
+[^2]: Documentation tests - The rustdoc book - Rust Documentation, accessed on
 July 15, 2025, <https://doc.rust-lang.org/rustdoc/documentation-tests.html>
-[^4]: Documentation tests - - GitHub Pages, accessed on July 15, 2025,
-<https://ebarnard.github.io/2019-06-03-rust-smaller-trait-implementers-docs/rustdoc/documentation-tests.html>
-[^5]: Documentation tests - - MIT, accessed on July 15, 2025,
-<http://web.mit.edu/rust-lang_v1.25/arch/amd64_ubuntu1404/share/doc/rust/html/rustdoc/documentation-tests.html>
-[^6]: LogRocket Blog — Organizing Rust tests, accessed on July 15, 2025,
+[^3]: Rustdoc doctests need fixing - Swatinem, accessed on July 15, 2025,
+<https://swatinem.de/blog/fix-rustdoc/>
+[^4]: LogRocket Blog — Organizing Rust tests, accessed on July 15, 2025,
 <https://blog.logrocket.com/how-to-organize-rust-tests/>
 <https://www.reddit.com/r/rust/comments/qk77iu/best_way_to_organise_tests_in_rust/>
-[^7]: Writing Rust documentation - Dev Community, accessed on July 15, 2025,
+[^5]: Writing Rust documentation - Dev Community, accessed on July 15, 2025,
 <https://dev.to/gritmax/writing-rust-documentation-5hn5>
-[^8]: The rustdoc book, accessed on July 15, 2025,
+[^6]: The rustdoc book, accessed on July 15, 2025,
 <https://doc.rust-lang.org/rustdoc/what-is-rustdoc.html>
-[^9]: Documentation - Rust API Guidelines, accessed on July 15, 2025,
+[^7]: Documentation - Rust API Guidelines, accessed on July 15, 2025,
 <https://rust-lang.github.io/api-guidelines/documentation.html>
-[^10]: Best practice for doc testing README - help - The Rust Programming
-       Language Forum, accessed on July 15, 2025,
-       <https://users.rust-lang.org/t/best-practice-for-doc-testing-readme/114862>
-[^11]: Compile_fail doc test ignored in cfg(test) - help - The Rust Programming
+[^8]: Documentation tests - - GitHub Pages, accessed on July 15, 2025,
+<https://ebarnard.github.io/2019-06-03-rust-smaller-trait-implementers-docs/rustdoc/documentation-tests.html>
+[^9]: Documentation tests - - MIT, accessed on July 15, 2025,
+<http://web.mit.edu/rust-lang_v1.25/arch/amd64_ubuntu1404/share/doc/rust/html/rustdoc/documentation-tests.html>
+[^10]: Compile_fail doc test ignored in cfg(test) - help - The Rust Programming
 Language Forum, accessed on July 15, 2025,
 <https://users.rust-lang.org/t/compile-fail-doc-test-ignored-in-cfg-test/124927>
 Accessed on July 15, 2025,
 <https://users.rust-lang.org/t/test-setup-for-doctests/50426>
-[^12]: quote_doctest - Rust - [Docs.rs](http://Docs.rs), accessed on July 15,
+[^11]: quote_doctest - Rust - [Docs.rs](http://Docs.rs), accessed on July 15,
 2025, <https://docs.rs/quote-doctest>
-[^13]: Advanced features - The rustdoc book - Rust Documentation, accessed on
+[^12]: Advanced features - The rustdoc book - Rust Documentation, accessed on
        July 15, 2025, <https://doc.rust-lang.org/rustdoc/advanced-features.html>
-[^14]: Stack Overflow — Conditionally executing a module-level doctest,
+[^13]: Stack Overflow — Conditionally executing a module-level doctest,
 accessed on July 15, 2025,
 <https://stackoverflow.com/questions/50312190/how-can-i-conditionally-execute-a-module-level-doctest-based-on-a-feature-flag>
  Stack Overflow — Conditional compilation with doctests, accessed on July 15,
 2025,
 <https://stackoverflow.com/questions/38292741/how-would-one-achieve-conditional-compilation-with-rust-projects-that-have-docte>
+[^14]: Best practice for doc testing README - help - The Rust Programming
+       Language Forum, accessed on July 15, 2025,
+       <https://users.rust-lang.org/t/best-practice-for-doc-testing-readme/114862>
 [^15]: Reddit — Preferred approaches for doc tests, accessed on July 15,
 2025,
 <https://www.reddit.com/r/rust/comments/ke438a/how_do_you_write_your_doc_tests/>

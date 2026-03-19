@@ -1,8 +1,16 @@
 //! Tests for the worker HTTP client and its shared API type conversions.
 
-use rstest::rstest;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use rstest::{fixture, rstest};
+use std::future::Future;
+use std::pin::Pin;
 
 use super::*;
+use crate::error::WorkerError;
 use crate::llm::FinishReason as LlmFinishReason;
 use crate::testing::credentials::TEST_BEARER_TOKEN;
 use serde_json::json;
@@ -11,9 +19,6 @@ use uuid::Uuid;
 #[rstest]
 #[case("llm/complete")]
 #[case("credentials")]
-use axum::extract::{Path, State};
-use axum::routing::{get, post};
-use axum::{Json, Router};
 fn test_url_construction(#[case] path: &str) {
     let client = WorkerHttpClient::new(
         "http://host.docker.internal:50051".to_string(),
@@ -78,6 +83,7 @@ fn test_job_description_deserialization() {
     assert!(job.project_dir.is_none());
 }
 
+#[test]
 fn remote_tool_catalog_url_construction() {
     let client = WorkerHttpClient::new(
         "http://host.docker.internal:50051".to_string(),
@@ -127,20 +133,15 @@ async fn reject_catalog(
     (axum::http::StatusCode::FORBIDDEN, "nope")
 }
 
-async fn remote_tool_catalog_reports_non_success_statuses() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind listener");
-    let addr = listener.local_addr().expect("listener addr");
-    let router = Router::new()
-        .route(REMOTE_TOOL_CATALOG_ROUTE, get(reject_catalog))
-        .with_state(TestState);
-    let server = tokio::spawn(async move {
-        axum::serve(listener, router).await.expect("serve router");
-    });
+#[rstest]
+#[tokio::test]
+async fn remote_tool_catalog_reports_non_success_statuses(
+    remote_tool_failure_server: RemoteToolFailureServerFactory,
+) {
+    let server = remote_tool_failure_server(RemoteToolFailureRoute::Catalog).await;
 
     let client = WorkerHttpClient::new(
-        format!("http://{}", addr),
+        server.base_url,
         Uuid::new_v4(),
         TEST_BEARER_TOKEN.to_string(),
     );
@@ -149,10 +150,16 @@ async fn remote_tool_catalog_reports_non_success_statuses() {
         .get_remote_tool_catalog()
         .await
         .expect_err("catalog fetch should fail on non-success status");
-    assert!(err.to_string().contains("GET /tools/catalog returned 403"));
 
-    server.abort();
-    let _ = server.await;
+    match err {
+        WorkerError::OrchestratorRejected { reason, .. } => {
+            assert!(reason.contains("GET /tools/catalog returned 403"));
+        }
+        other => panic!("unexpected worker error: {other:?}"),
+    };
+
+    server.handle.abort();
+    let _ = server.handle.await;
 }
 
 struct TestState;
@@ -161,24 +168,33 @@ async fn reject_execute(
     State(_state): State<TestState>,
     Path(_job_id): Path<Uuid>,
     Json(_req): Json<RemoteToolExecutionRequest>,
-) -> (axum::http::StatusCode, &'static str) {
-    (axum::http::StatusCode::BAD_REQUEST, "bad params")
+) -> (StatusCode, &'static str) {
+    (StatusCode::BAD_REQUEST, "bad params")
 }
 
-async fn remote_tool_execute_reports_non_success_statuses() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind listener");
-    let addr = listener.local_addr().expect("listener addr");
-    let router = Router::new()
-        .route(REMOTE_TOOL_EXECUTE_ROUTE, post(reject_execute))
-        .with_state(TestState);
-    let server = tokio::spawn(async move {
-        axum::serve(listener, router).await.expect("serve router");
-    });
+async fn reject_execute_forbidden(
+    State(_state): State<TestState>,
+    Path(_job_id): Path<Uuid>,
+    Json(_req): Json<RemoteToolExecutionRequest>,
+) -> (StatusCode, &'static str) {
+    (StatusCode::FORBIDDEN, "approval required")
+}
+
+#[rstest]
+#[case(RemoteToolFailureRoute::ExecuteBadRequest, "bad params")]
+#[case(RemoteToolFailureRoute::ExecuteForbidden, "approval required")]
+#[case(RemoteToolFailureRoute::ExecuteRateLimited, "slow down")]
+#[case(RemoteToolFailureRoute::ExecuteBadGateway, "proxy failure")]
+#[tokio::test]
+async fn remote_tool_execute_preserves_non_success_statuses(
+    remote_tool_failure_server: RemoteToolFailureServerFactory,
+    #[case] route: RemoteToolFailureRoute,
+    #[case] expected_message: &str,
+) {
+    let server = remote_tool_failure_server(route).await;
 
     let client = WorkerHttpClient::new(
-        format!("http://{}", addr),
+        server.base_url,
         Uuid::new_v4(),
         TEST_BEARER_TOKEN.to_string(),
     );
@@ -187,11 +203,106 @@ async fn remote_tool_execute_reports_non_success_statuses() {
         .execute_remote_tool("github_search", &serde_json::json!({"query": 7}))
         .await
         .expect_err("remote-tool execute should fail on non-success status");
-    assert!(
-        err.to_string()
-            .contains("Remote tool execution: orchestrator returned 400")
-    );
 
-    server.abort();
-    let _ = server.await;
+    match (route, err) {
+        (RemoteToolFailureRoute::ExecuteBadRequest, WorkerError::BadRequest { reason }) => {
+            assert!(reason.contains(expected_message))
+        }
+        (RemoteToolFailureRoute::ExecuteForbidden, WorkerError::Unauthorized { reason }) => {
+            assert!(reason.contains(expected_message))
+        }
+        (
+            RemoteToolFailureRoute::ExecuteRateLimited,
+            WorkerError::RateLimited {
+                reason,
+                retry_after: Some(retry_after),
+            },
+        ) => {
+            assert!(reason.contains(expected_message));
+            assert_eq!(retry_after, std::time::Duration::from_secs(7));
+        }
+        (RemoteToolFailureRoute::ExecuteBadGateway, WorkerError::BadGateway { reason }) => {
+            assert!(reason.contains(expected_message))
+        }
+        (_, other) => panic!("unexpected worker error: {other:?}"),
+    }
+
+    server.handle.abort();
+    let _ = server.handle.await;
+}
+
+type RemoteToolFailureServerFuture = Pin<Box<dyn Future<Output = RemoteToolFailureServer> + Send>>;
+
+struct RemoteToolFailureServer {
+    base_url: String,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+#[fixture]
+fn remote_tool_failure_server() -> RemoteToolFailureServerFactory {
+    Box::new(|route| {
+        Box::pin(async move {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind listener");
+            let addr = listener.local_addr().expect("listener addr");
+            let router = match route {
+                RemoteToolFailureRoute::Catalog => Router::new()
+                    .route(REMOTE_TOOL_CATALOG_ROUTE, get(reject_catalog))
+                    .with_state(TestState),
+                RemoteToolFailureRoute::ExecuteBadRequest => Router::new()
+                    .route(REMOTE_TOOL_EXECUTE_ROUTE, post(reject_execute))
+                    .with_state(TestState),
+                RemoteToolFailureRoute::ExecuteForbidden => Router::new()
+                    .route(REMOTE_TOOL_EXECUTE_ROUTE, post(reject_execute_forbidden))
+                    .with_state(TestState),
+                RemoteToolFailureRoute::ExecuteRateLimited => Router::new()
+                    .route(REMOTE_TOOL_EXECUTE_ROUTE, post(reject_execute_rate_limited))
+                    .with_state(TestState),
+                RemoteToolFailureRoute::ExecuteBadGateway => Router::new()
+                    .route(REMOTE_TOOL_EXECUTE_ROUTE, post(reject_execute_bad_gateway))
+                    .with_state(TestState),
+            };
+            let handle = tokio::spawn(async move {
+                axum::serve(listener, router).await.expect("serve router");
+            });
+
+            RemoteToolFailureServer {
+                base_url: format!("http://{}", addr),
+                handle,
+            }
+        })
+    })
+}
+
+enum RemoteToolFailureRoute {
+    Catalog,
+    ExecuteBadRequest,
+    ExecuteForbidden,
+    ExecuteRateLimited,
+    ExecuteBadGateway,
+}
+
+async fn reject_execute_bad_gateway(
+    State(_state): State<TestState>,
+    Path(_job_id): Path<Uuid>,
+    Json(_req): Json<RemoteToolExecutionRequest>,
+) -> (StatusCode, &'static str) {
+    (StatusCode::BAD_GATEWAY, "proxy failure")
+}
+
+type RemoteToolFailureServerFactory =
+    Box<dyn Fn(RemoteToolFailureRoute) -> RemoteToolFailureServerFuture + Send + Sync>;
+
+async fn reject_execute_rate_limited(
+    State(_state): State<TestState>,
+    Path(_job_id): Path<Uuid>,
+    Json(_req): Json<RemoteToolExecutionRequest>,
+) -> axum::response::Response {
+    (
+        StatusCode::TOO_MANY_REQUESTS,
+        [("retry-after", "7")],
+        "slow down",
+    )
+        .into_response()
 }

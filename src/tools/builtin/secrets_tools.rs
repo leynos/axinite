@@ -17,7 +17,9 @@ use async_trait::async_trait;
 
 use crate::context::JobContext;
 use crate::secrets::SecretsStore;
-use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput, require_str};
+use crate::tools::tool::{
+    ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput, require_str,
+};
 
 // ── secret_list ──────────────────────────────────────────────────────────────
 
@@ -151,6 +153,10 @@ impl Tool for SecretDeleteTool {
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
         ApprovalRequirement::UnlessAutoApproved
+    }
+
+    fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+        HostedToolEligibility::ApprovalGated
     }
 }
 

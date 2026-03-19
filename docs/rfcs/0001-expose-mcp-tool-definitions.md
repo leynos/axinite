@@ -234,7 +234,7 @@ Suggested response:
 
 ```json
 {
-  "result": {
+  "output": {
     "content": "Found 4 matching pages..."
   }
 }
@@ -362,8 +362,8 @@ implementations.
 The hosted LLM should see a single merged tool list:
 
 1. worker-local container tools
-2. worker-local proxies registered from the orchestrator catalog
-3. orchestrator-owned hosted-visible tools, including active MCP tools
+2. worker-local proxies registered from the orchestrator catalog, which expose
+   orchestrator-owned hosted-visible tools, including active MCP tools
 
 The LLM should not need to know which side owns execution. Ownership stays an
 implementation detail behind the proxy layer.

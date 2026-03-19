@@ -12,6 +12,9 @@ use axum::http::StatusCode;
 use uuid::Uuid;
 
 use super::OrchestratorState;
+use super::remote_tools::{
+    HostedRemoteToolRequest, execute_hosted_remote_tool, hosted_remote_tool_catalog,
+};
 use crate::channels::web::types::SseEvent;
 use crate::llm::{CompletionRequest, ToolCompletionRequest};
 use crate::worker::api::{
@@ -20,11 +23,9 @@ use crate::worker::api::{
     RemoteToolCatalogResponse, RemoteToolExecutionRequest, RemoteToolExecutionResponse,
     StatusUpdate,
 };
-use super::remote_tools::{execute_hosted_remote_tool, hosted_remote_tool_catalog};
 
 // All /worker/ handlers below are behind the worker_auth_middleware route_layer,
 // so they don't need to validate tokens themselves.
-
 pub(super) async fn health_check() -> &'static str {
     "ok"
 }
@@ -278,10 +279,12 @@ pub(super) async fn execute_remote_tool(
 ) -> Result<Json<RemoteToolExecutionResponse>, StatusCode> {
     let output = execute_hosted_remote_tool(
         &state.tools,
-        &state.user_id,
-        job_id,
-        &req.tool_name,
-        req.params,
+        HostedRemoteToolRequest {
+            user_id: state.user_id.clone(),
+            job_id,
+            tool_name: req.tool_name,
+            params: req.params,
+        },
     )
     .await?;
 

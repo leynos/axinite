@@ -65,6 +65,23 @@ impl WorkerHttpClient {
         format!("{}/worker/{}/{}", self.orchestrator_url, self.job_id, path)
     }
 
+    async fn send_post_json<B: Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+        context: &str,
+    ) -> Result<reqwest::Response, WorkerError> {
+        self.client
+            .post(self.url(path))
+            .bearer_auth(&self.token)
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| WorkerError::LlmProxyFailed {
+                reason: format!("{}: {}", context, e),
+            })
+    }
+
     /// Send a GET request, check the status, and deserialize the JSON body.
     async fn get_json<T: serde::de::DeserializeOwned>(
         &self,
@@ -101,16 +118,7 @@ impl WorkerHttpClient {
         body: &B,
         context: &str,
     ) -> Result<T, WorkerError> {
-        let resp = self
-            .client
-            .post(self.url(path))
-            .bearer_auth(&self.token)
-            .json(body)
-            .send()
-            .await
-            .map_err(|e| WorkerError::LlmProxyFailed {
-                reason: format!("{}: {}", context, e),
-            })?;
+        let resp = self.send_post_json(path, body, context).await?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -203,13 +211,22 @@ impl WorkerHttpClient {
             params: params.clone(),
         };
 
-        let proxy_resp: RemoteToolExecutionResponse = self
-            .post_json(
+        let resp = self
+            .send_post_json(
                 REMOTE_TOOL_EXECUTE_PATH,
                 &proxy_req,
                 "Remote tool execution",
             )
             .await?;
+
+        if !resp.status().is_success() {
+            return Err(map_remote_tool_status(resp).await);
+        }
+
+        let proxy_resp: RemoteToolExecutionResponse =
+            resp.json().await.map_err(|e| WorkerError::LlmProxyFailed {
+                reason: format!("Remote tool execution: failed to parse response: {}", e),
+            })?;
 
         Ok(proxy_resp.output)
     }
@@ -367,3 +384,29 @@ impl WorkerHttpClient {
 
 #[cfg(test)]
 mod tests;
+
+async fn map_remote_tool_status(resp: reqwest::Response) -> WorkerError {
+    let status = resp.status();
+    let retry_after = resp
+        .headers()
+        .get("retry-after")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(std::time::Duration::from_secs);
+    let body = resp.text().await.unwrap_or_default();
+    let reason = format!(
+        "Remote tool execution: orchestrator returned {}: {}",
+        status, body
+    );
+
+    match status {
+        reqwest::StatusCode::BAD_REQUEST => WorkerError::BadRequest { reason },
+        reqwest::StatusCode::FORBIDDEN => WorkerError::Unauthorized { reason },
+        reqwest::StatusCode::TOO_MANY_REQUESTS => WorkerError::RateLimited {
+            reason,
+            retry_after,
+        },
+        reqwest::StatusCode::BAD_GATEWAY => WorkerError::BadGateway { reason },
+        _ => WorkerError::LlmProxyFailed { reason },
+    }
+}

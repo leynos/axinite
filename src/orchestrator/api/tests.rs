@@ -12,7 +12,7 @@ pub(super) use uuid::Uuid;
 pub(super) use crate::orchestrator::auth::TokenStore;
 pub(super) use crate::orchestrator::job_manager::{ContainerJobConfig, ContainerJobManager};
 pub(super) use crate::testing::StubLlm;
-pub(super) use crate::tools::{Tool, ToolOutput, ToolRegistry};
+pub(super) use crate::tools::ToolRegistry;
 
 use super::*;
 
@@ -22,4 +22,5 @@ mod events;
 mod fixtures;
 mod prompts;
 mod remote_tools;
+mod remote_tools_param_aware;
 mod status;

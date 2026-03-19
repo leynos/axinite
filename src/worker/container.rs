@@ -392,6 +392,17 @@ Work independently to complete this job. Report when done."#,
         );
         Ok(())
     }
+
+    #[cfg(test)]
+    async fn register_remote_tools_with_degraded_startup(&self) {
+        if let Err(error) = self.register_remote_tools().await {
+            tracing::warn!(
+                job_id = %self.config.job_id,
+                error = %error,
+                "Failed to fetch hosted remote-tool catalogue; continuing with container-local tools only"
+            );
+        }
+    }
 }
 
 #[cfg(test)]

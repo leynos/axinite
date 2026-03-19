@@ -13,6 +13,7 @@ use crate::tools::ToolRegistry;
 use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput};
 use crate::worker::api::WorkerHttpClient;
 use crate::llm::ToolDefinition;
+use crate::error::WorkerError;
 
 impl Tool for WorkerRemoteToolProxy {
     fn name(&self) -> &str {
@@ -35,7 +36,7 @@ impl Tool for WorkerRemoteToolProxy {
         self.client
             .execute_remote_tool(&self.definition.name, &params)
             .await
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))
+            .map_err(map_worker_error_to_tool_error)
     }
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
@@ -43,6 +44,15 @@ impl Tool for WorkerRemoteToolProxy {
     }
 }
 
+fn map_worker_error_to_tool_error(error: WorkerError) -> ToolError {
+    match error {
+        WorkerError::BadRequest { reason } => ToolError::InvalidParameters(reason),
+        WorkerError::Unauthorized { reason } => ToolError::NotAuthorized(reason),
+        WorkerError::RateLimited { retry_after, .. } => ToolError::RateLimited(retry_after),
+        WorkerError::BadGateway { reason } => ToolError::ExternalService(reason),
+        other => ToolError::ExecutionFailed(other.to_string()),
+    }
+}
 pub(crate) fn register_worker_remote_tool_proxies(
     registry: &ToolRegistry,
     client: Arc<WorkerHttpClient>,

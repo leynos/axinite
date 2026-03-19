@@ -101,7 +101,7 @@ The feature file lives within the crate (commonly under `tests/features/`). The
 path to this file will be referenced by the `#[scenario]` macro in the test
 code.
 
-### Internationalised scenarios
+### Internationalized scenarios
 
 `rstest-bdd` reads the optional `# language: <code>` directive that appears at
 the top of a feature file. When a locale is specified, the parser uses that
@@ -870,8 +870,8 @@ Tests that exercise skip-heavy flows no longer need to match on enums to verify
 that a step or scenario stopped executing. Use
 `rstest_bdd::assert_step_skipped!` to unwrap a `StepExecution::Skipped`
 outcome, optionally constraining its message, and
-`rstest_bdd::assert_scenario_skipped!` to inspect
-[`ScenarioStatus`](crate::reporting::ScenarioStatus) records. Both macros
+`rstest_bdd::assert_scenario_skipped!` to inspect `ScenarioStatus` records.
+Both macros
 accept `message_absent = true` to assert that no message was provided and
 substring matching to confirm that a message contains the expected reason.
 
@@ -1763,12 +1763,10 @@ The binary `rstest-bdd-lsp` is placed in the Cargo bin directory.
 
 The server reads configuration from environment variables:
 
-- `RSTEST_BDD_LSP_LOG_LEVEL`
-  Description: Logging verbosity (`trace`, `debug`, `info`, `warn`, `error`).
-  Default: `info`.
-- `RSTEST_BDD_LSP_DEBOUNCE_MS`
-  Description: Delay in milliseconds before processing file changes.
-  Default: `300`.
+| Variable name | Meaning | Default or rule |
+| --- | --- | --- |
+| `RSTEST_BDD_LSP_LOG_LEVEL` | Logging verbosity, values: `trace`\|`debug`\|`info`\|`warn`\|`error` | `info` |
+| `RSTEST_BDD_LSP_DEBOUNCE_MS` | Delay before processing file changes in milliseconds | `300` |
 
 Example:
 

@@ -28,6 +28,6 @@ pub use registry::{
     ImageToolsArgs, RegisterJobToolsConfig, ToolRegistry, VisionToolsArgs, WasmFromStorageArgs,
 };
 pub use tool::{
-    ApprovalContext, ApprovalRequirement, Tool, ToolDomain, ToolError, ToolOutput,
-    ToolRateLimitConfig, redact_params, validate_tool_schema,
+    ApprovalContext, ApprovalRequirement, HostedToolEligibility, Tool, ToolDomain, ToolError,
+    ToolOutput, ToolRateLimitConfig, redact_params, validate_tool_schema,
 };

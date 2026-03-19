@@ -129,6 +129,15 @@ pub enum ToolDomain {
     Container,
 }
 
+/// Hosted-worker catalog eligibility for a tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostedToolEligibility {
+    /// The tool may be advertised to hosted workers.
+    Eligible,
+    /// The tool requires approval semantics hosted workers cannot satisfy.
+    ApprovalGated,
+}
+
 /// Error type for tool execution.
 #[derive(Debug, Error)]
 pub enum ToolError {
@@ -276,6 +285,15 @@ pub trait Tool: Send + Sync {
     /// must always prompt (e.g. destructive shell commands, HTTP with auth).
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
         ApprovalRequirement::Never
+    }
+
+    /// Whether hosted workers may advertise this tool in the remote catalog.
+    ///
+    /// This must not infer visibility from placeholder params because some
+    /// tools decide approval based on real invocation data. Override this when
+    /// hosted visibility needs an explicit policy.
+    fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+        HostedToolEligibility::Eligible
     }
 
     /// Maximum time this tool is allowed to run before the caller kills it.
@@ -595,6 +613,10 @@ mod tests {
         assert_eq!(
             tool.requires_approval(&serde_json::json!({"message": "hi"})),
             ApprovalRequirement::Never
+        );
+        assert_eq!(
+            tool.hosted_tool_eligibility(),
+            HostedToolEligibility::Eligible
         );
         assert!(!ApprovalRequirement::Never.is_required());
         assert!(ApprovalRequirement::UnlessAutoApproved.is_required());

@@ -184,7 +184,10 @@ pub struct ProxyToolCompletionResponse {
     pub cache_creation_input_tokens: u32,
 }
 
-/// Request body sent by a worker to execute a hosted remote tool.
+/// Request sent from a worker to the orchestrator for hosted remote-tool execution.
+///
+/// `tool_name` is the orchestrator tool identifier. `params` must match that
+/// tool's JSON Schema because the orchestrator validates and executes the call.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RemoteToolExecutionRequest {
     /// Stable hosted remote-tool identifier known to both worker and orchestrator.
@@ -193,14 +196,21 @@ pub struct RemoteToolExecutionRequest {
     pub params: serde_json::Value,
 }
 
-/// Response body returned after hosted remote-tool execution.
+/// Response returned after the orchestrator executes a hosted remote tool.
+///
+/// `output` is the tool's `ToolOutput`, including its result payload and
+/// reported side-effect metadata such as duration and optional cost.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RemoteToolExecutionResponse {
     /// Tool execution output returned by the orchestrator.
     pub output: ToolOutput,
 }
 
-/// Completion status reported by a worker once it finishes a job.
+/// Catalog payload returned to workers for hosted-visible remote tools.
+///
+/// `tools` is the current model-facing tool list. `toolset_instructions` is
+/// optional human-readable guidance and defaults to an empty list. `catalog_version`
+/// is a monotonic version derived from the catalog contents.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RemoteToolCatalogResponse {
     pub tools: Vec<ToolDefinition>,

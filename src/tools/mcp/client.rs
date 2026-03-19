@@ -20,7 +20,7 @@ use crate::tools::mcp::protocol::{
 };
 use crate::tools::mcp::session::McpSessionManager;
 use crate::tools::mcp::transport::McpTransport;
-use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput};
+use crate::tools::tool::{ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput};
 
 /// MCP client for communicating with MCP servers.
 ///
@@ -518,6 +518,14 @@ impl Tool for McpToolWrapper {
             ApprovalRequirement::UnlessAutoApproved
         } else {
             ApprovalRequirement::Never
+        }
+    }
+
+    fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+        if self.tool.requires_approval() {
+            HostedToolEligibility::ApprovalGated
+        } else {
+            HostedToolEligibility::Eligible
         }
     }
 }

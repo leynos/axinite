@@ -10,7 +10,9 @@ use async_trait::async_trait;
 use crate::context::JobContext;
 use crate::extensions::{ExtensionKind, ExtensionManager};
 pub use crate::tools::builtin::extension_tool_metadata::ExtensionToolKind;
-use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput, require_str};
+use crate::tools::tool::{
+    ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput, require_str,
+};
 
 macro_rules! delegate_extension_tool_metadata {
     ($kind:expr) => {
@@ -28,6 +30,14 @@ macro_rules! delegate_extension_tool_metadata {
 
         fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
             $kind.approval_requirement()
+        }
+
+        fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+            if $kind.approval_requirement().is_required() {
+                HostedToolEligibility::ApprovalGated
+            } else {
+                HostedToolEligibility::Eligible
+            }
         }
     };
 }

@@ -518,7 +518,7 @@ names.
 6. `BEDROCK_MODEL` is mandatory when `LLM_BACKEND=bedrock`.
 7. `DEFAULT_TIMEZONE` and `HEARTBEAT_TIMEZONE` must be valid IANA timezone
    names.
-8. `TUNNEL_URL` must start with `https://`, because the webhook-capable
+8. `TUNNEL_URL` must start with `https://` because the webhook-capable
    channels assume HTTPS.
 9. The relay OAuth path has one implementation quirk worth knowing about. Most
    gateway code defaults to port `3000`, but one fallback path in the relay

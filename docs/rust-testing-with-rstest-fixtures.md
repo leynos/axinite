@@ -388,8 +388,10 @@ an incoming event:
 use rstest::rstest;
 
 #
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State { Init, Start, Processing, Terminated }
 #
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Event { Process, Error, Fatal }
 
 impl State {
@@ -407,14 +409,28 @@ impl State {
 
 #[rstest]
 fn test_state_transitions(
+    #[values(State::Init, State::Start, State::Processing, State::Terminated)]
     initial_state: State,
     #[values(Event::Process, Event::Error, Event::Fatal)] event: Event
 ) {
-    // Real tests typically include more specific assertions based on expected_next_state
     let next_state = initial_state.process(event);
-    println!("Testing: {:?} + {:?} -> {:?}", initial_state, event, next_state);
-    // For demonstration, a generic assertion:
-    assert!(true); // Replace with actual assertions
+    let expected_next_state = match (initial_state, event) {
+        (State::Init, Event::Process) => State::Start,
+        (State::Start, Event::Process) => State::Processing,
+        (State::Processing, Event::Process) => State::Processing,
+        (_, Event::Error) => State::Start,
+        (_, Event::Fatal) => State::Terminated,
+        (state, _) => state,
+    };
+
+    assert_eq!(
+        next_state,
+        expected_next_state,
+        "Testing: {:?} + {:?} -> {:?}",
+        initial_state,
+        event,
+        next_state
+    );
 }
 ```
 
@@ -556,8 +572,9 @@ When using `#[once]`, there are critical warnings:
    and cannot be generic functions (neither with generic type parameters nor
    using `impl Trait` in arguments or return types).
 3. **Attribute Propagation:** `rstest` macros currently drop `#[expect]`
-   attributes. If a test relies on lint expectations, use `#[allow]` instead to
-   silence false positives.
+   attributes. When documenting lint expectations, note this limitation
+   explicitly: repository policy approves `#[expect(...)]` for justified lint
+   expectations and forbids `#[allow(...)]` as a workaround.
 
 The "never dropped" behaviour arises because `rstest` typically creates a
 `static` variable to hold the result of the `#[once]` fixture. `static`
@@ -830,6 +847,7 @@ async fn potentially_long_operation(duration: Duration) -> u32 {
 #[rstest]
 #
 #[async_std::test]
+#[timeout(Duration::from_millis(50))]
 async fn test_operation_within_timeout() {
     assert_eq!(potentially_long_operation(Duration::from_millis(10)).await, 42);
 }
@@ -837,6 +855,7 @@ async fn test_operation_within_timeout() {
 #[rstest]
 #
 #[async_std::test]
+#[timeout(Duration::from_millis(50))]
 #[should_panic] // Expect this test to panic due to timeout
 async fn test_operation_exceeds_timeout() {
     assert_eq!(potentially_long_operation(Duration::from_millis(100)).await, 42);
@@ -1173,7 +1192,7 @@ can become verbose for scenarios involving shared setup or parameterization.
 The following table summarizes key differences:
 
 **Table 1:** `rstest` vs standard Rust `#[test]` for fixture management and
-parameterisation
+parameterization
 
 | Feature                                  | Standard #[test] Approach                                     | rstest Approach                                                                  |
 | ---------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------- |

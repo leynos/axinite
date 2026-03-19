@@ -414,6 +414,16 @@ async fn remote_tool_catalog(
     })
 }
 
+async fn remote_tool_catalog_error(
+    State(_state): State<TestState>,
+    Path(_job_id): Path<Uuid>,
+) -> (axum::http::StatusCode, &'static str) {
+    (
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        "catalog offline",
+    )
+}
+
 #[derive(Clone)]
 struct TestState;
 
@@ -480,6 +490,58 @@ async fn hosted_worker_remote_tool_catalog_registers_remote_tools() {
         "Remote tool from orchestrator catalog"
     );
     assert_eq!(remote_tool.parameters_schema()["required"][0], "query");
+
+    server.abort();
+    let _ = server.await;
+}
+
+async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind listener");
+    let addr = listener.local_addr().expect("listener addr");
+    let router = Router::new()
+        .route(REMOTE_TOOL_CATALOG_ROUTE, get(remote_tool_catalog_error))
+        .with_state(TestState);
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.expect("serve router");
+    });
+
+    let client = Arc::new(WorkerHttpClient::new(
+        format!("http://{}", addr),
+        Uuid::nil(),
+        "test".to_string(),
+    ));
+    let runtime = WorkerRuntime::from_client(
+        WorkerConfig {
+            job_id: Uuid::nil(),
+            orchestrator_url: format!("http://{}", addr),
+            ..WorkerConfig::default()
+        },
+        client,
+    );
+
+    runtime.register_remote_tools_with_degraded_startup().await;
+
+    let mut names: Vec<String> = runtime
+        .tools
+        .tool_definitions()
+        .await
+        .into_iter()
+        .map(|def| def.name)
+        .collect();
+    names.sort();
+
+    assert_eq!(
+        names,
+        vec![
+            "apply_patch",
+            "list_dir",
+            "read_file",
+            "shell",
+            "write_file",
+        ]
+    );
 
     server.abort();
     let _ = server.await;
