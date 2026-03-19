@@ -108,7 +108,8 @@ fn collect_json_files(
                 path.display()
             ))
         })?;
-        println!("cargo:rerun-if-changed={}", relative_path.display());
+        let normalized_path = relative_path.to_string_lossy().replace('\\', "/");
+        println!("cargo:rerun-if-changed={normalized_path}");
         let content = fs::read_to_string(&path)
             .map_err(|e| io::Error::other(format!("failed to read {}: {e}", path.display())))?;
         out.push(content);

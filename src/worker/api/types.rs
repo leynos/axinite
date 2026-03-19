@@ -40,7 +40,7 @@ impl std::fmt::Display for WorkerState {
 /// Status update sent from worker to orchestrator.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatusUpdate {
-    pub state: String,
+    pub state: WorkerState,
     pub message: Option<String>,
     pub iteration: u32,
 }
@@ -48,7 +48,7 @@ pub struct StatusUpdate {
 impl StatusUpdate {
     pub fn new(state: WorkerState, message: Option<String>, iteration: u32) -> Self {
         Self {
-            state: state.as_wire().to_string(),
+            state,
             message,
             iteration,
         }

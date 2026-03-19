@@ -218,14 +218,28 @@ impl WorkerHttpClient {
             })?;
 
         if !resp.status().is_success() {
-            tracing::warn!(
-                "Status report failed with {}: {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            );
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(WorkerError::OrchestratorRejected {
+                job_id: self.job_id,
+                reason: format!("status endpoint returned {}: {}", status, body),
+            });
         }
 
         Ok(())
+    }
+
+    /// Report a non-terminal status update without failing the worker on rejection.
+    pub async fn report_status_lossy(&self, update: &StatusUpdate) {
+        if let Err(error) = self.report_status(update).await {
+            tracing::warn!(
+                job_id = %self.job_id,
+                state = %update.state,
+                iteration = update.iteration,
+                error = %error,
+                "Worker status report failed"
+            );
+        }
     }
 
     /// Post a job event to the orchestrator (fire-and-forget style, logs on failure).

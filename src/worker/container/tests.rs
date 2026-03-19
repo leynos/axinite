@@ -16,7 +16,9 @@ use uuid::Uuid;
 
 use super::*;
 use crate::error::{Error, ToolError};
-use crate::worker::api::{CompletionReport, CredentialResponse, JobDescription, StatusUpdate};
+use crate::worker::api::{
+    CompletionReport, CredentialResponse, JobDescription, StatusUpdate, WorkerState,
+};
 
 #[derive(Clone, Copy, Debug)]
 enum WorkerToolSetSource {
@@ -267,9 +269,14 @@ async fn worker_runtime_reports_failed_status_for_pre_loop_errors(
     );
 
     let statuses = state.statuses.lock().await;
+    assert_eq!(
+        statuses.len(),
+        1,
+        "expected exactly one terminal status update, got {statuses:?}"
+    );
     let failed_status = statuses
-        .iter()
-        .find(|status| status.state == "failed")
+        .first()
+        .filter(|status| status.state == WorkerState::Failed)
         .expect("expected a terminal failed status update");
     assert_eq!(failed_status.iteration, 100);
     assert!(
@@ -285,41 +292,44 @@ async fn worker_runtime_reports_failed_status_for_pre_loop_errors(
 }
 
 #[tokio::test]
-async fn worker_runtime_emits_failed_status_for_initial_status_transport_errors() {
+async fn worker_runtime_emits_failed_status_for_initial_status_rejections() {
     let state = Arc::new(RuntimeTestState::default());
+    state.job_statuses.lock().await.push_back(StatusCode::OK);
+    state
+        .status_statuses
+        .lock()
+        .await
+        .push_back(StatusCode::INTERNAL_SERVER_ERROR);
     state.status_statuses.lock().await.push_back(StatusCode::OK);
 
     let job_id = Uuid::new_v4();
     let (orchestrator_url, handle) = spawn_runtime_test_server(Arc::clone(&state)).await;
     let runtime = build_test_runtime(orchestrator_url, job_id);
 
-    let result: Result<(), WorkerError> = runtime
-        .fail_pre_loop(
-            "report initial status",
-            WorkerError::ConnectionFailed {
-                url: "http://127.0.0.1:9".to_string(),
-                reason: "connection refused".to_string(),
-            },
-        )
-        .await;
-    let error = result.expect_err("expected fail_pre_loop to return the original transport error");
+    let error = runtime.run().await;
+    let error = error.expect_err("expected runtime to fail when the initial status is rejected");
 
     assert!(
-        matches!(error, WorkerError::ConnectionFailed { .. }),
-        "expected original transport error, got {error}"
+        matches!(error, WorkerError::OrchestratorRejected { .. }),
+        "expected initial status rejection error, got {error}"
     );
 
     let statuses = state.statuses.lock().await;
-    assert_eq!(statuses.len(), 1);
-    assert_eq!(statuses[0].state, "failed");
-    assert_eq!(statuses[0].iteration, 100);
+    assert_eq!(
+        statuses.len(),
+        2,
+        "expected rejected status + terminal failed status"
+    );
+    assert_eq!(statuses[0].state, WorkerState::InProgress);
+    assert_eq!(statuses[1].state, WorkerState::Failed);
+    assert_eq!(statuses[1].iteration, 100);
     assert!(
-        statuses[0]
+        statuses[1]
             .message
             .as_deref()
             .is_some_and(|message| message.starts_with("pre-loop failure:")),
         "expected a pre-loop failure status payload, got {:?}",
-        statuses[0]
+        statuses[1]
     );
 
     handle.abort();

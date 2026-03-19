@@ -87,9 +87,8 @@ impl LoopDelegate for ContainerDelegate {
         *self.iteration_tracker.lock().await = iteration;
 
         if iteration % 5 == 1 {
-            let _ = self
-                .client
-                .report_status(&StatusUpdate::new(
+            self.client
+                .report_status_lossy(&StatusUpdate::new(
                     WorkerState::InProgress,
                     Some(format!("Iteration {}", iteration)),
                     iteration,

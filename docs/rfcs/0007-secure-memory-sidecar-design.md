@@ -681,10 +681,10 @@ Ollama supports **structured outputs** by providing a JSON schema to a
 It also provides an embeddings endpoint where vector dimension depends on the
 embedding model. [^50]
 
-Environment variable entries:
+#### Environment variables
 
 | Variable name | Meaning | Default or rule |
-|---|---|---|
+| --- | --- | --- |
 | `OLLAMA_NO_CLOUD` | Disables Ollama cloud-connected features, so the extraction path stays local-only. [^51] | Set to `1` when strict locality is required. |
 | `MEMORY_SIDECAR_MODE` | Selects whether the memory sidecar is disabled or which operating mode it uses. | Use `disabled`, `shadow`, or `active`; keep `disabled` as the kill-switch default unless the sidecar is explicitly enabled. |
 

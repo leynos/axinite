@@ -86,3 +86,17 @@ fn test_status_update_new_serializes_worker_state() {
     assert_eq!(value["message"], "Iteration 1");
     assert_eq!(value["iteration"], 1);
 }
+
+#[test]
+fn test_status_update_deserializes_worker_state() {
+    let update: StatusUpdate = serde_json::from_value(json!({
+        "state": "failed",
+        "message": "boom",
+        "iteration": 7
+    }))
+    .expect("failed to deserialize StatusUpdate in test_status_update_deserializes_worker_state");
+
+    assert_eq!(update.state, WorkerState::Failed);
+    assert_eq!(update.message.as_deref(), Some("boom"));
+    assert_eq!(update.iteration, 7);
+}

@@ -32,7 +32,8 @@ This RFC proposes three changes:
    tool advertisement, subject to provider-specific shaping where needed.
 3. Relegate schema-bearing error hints to fallback guidance only, and make
    hosted workers receive active orchestrator-owned WASM tool definitions
-   through the same remote-tool catalog proposed for MCP tools.
+   through the same remote-tool catalog proposed for Model Context Protocol
+   (MCP) tools.
 
 The LLM-visible interface remains the existing `ToolDefinition` shape:
 
