@@ -20,7 +20,7 @@ use crate::llm::{ChatMessage, Reasoning, ReasoningContext};
 use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
 use crate::tools::execute::{execute_tool_simple, process_tool_result};
-use crate::worker::api::{JobEventPayload, StatusUpdate};
+use crate::worker::api::{JobEventPayload, StatusUpdate, WorkerState};
 
 /// Container delegate: implements `LoopDelegate` for the Docker container context.
 ///
@@ -89,11 +89,11 @@ impl LoopDelegate for ContainerDelegate {
         if iteration % 5 == 1 {
             let _ = self
                 .client
-                .report_status(&StatusUpdate {
-                    state: "in_progress".to_string(),
-                    message: Some(format!("Iteration {}", iteration)),
+                .report_status(&StatusUpdate::new(
+                    WorkerState::InProgress,
+                    Some(format!("Iteration {}", iteration)),
                     iteration,
-                })
+                ))
                 .await;
         }
 

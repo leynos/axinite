@@ -21,7 +21,9 @@ use crate::llm::{ChatMessage, LlmProvider, Reasoning, ReasoningContext};
 use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
 use crate::tools::builtin::worker_extension_proxy::register_worker_extension_proxy_tools;
-use crate::worker::api::{CompletionReport, JobEventPayload, StatusUpdate, WorkerHttpClient};
+use crate::worker::api::{
+    CompletionReport, JobEventPayload, StatusUpdate, WorkerHttpClient, WorkerState,
+};
 use crate::worker::proxy_llm::ProxyLlmProvider;
 
 mod delegate;
@@ -125,20 +127,29 @@ impl WorkerRuntime {
     pub async fn run(mut self) -> Result<(), WorkerError> {
         tracing::info!("Worker starting for job {}", self.config.job_id);
 
-        let job = self.client.get_job().await?;
+        let job = match self.client.get_job().await {
+            Ok(job) => job,
+            Err(error) => return self.fail_pre_loop("fetch job", error).await,
+        };
         tracing::info!(
             "Received job: {} - {}",
             job.title,
             truncate_for_preview(&job.description, 100)
         );
 
-        self.hydrate_credentials().await?;
-        self.report_worker_status(
-            "in_progress",
-            Some("Worker started, beginning execution".to_string()),
-            0,
-        )
-        .await?;
+        if let Err(error) = self.hydrate_credentials().await {
+            return self.fail_pre_loop("hydrate credentials", error).await;
+        }
+        if let Err(error) = self
+            .report_worker_status(
+                WorkerState::InProgress,
+                Some("Worker started, beginning execution".to_string()),
+                0,
+            )
+            .await
+        {
+            return self.fail_pre_loop("report initial status", error).await;
+        }
 
         let iteration_tracker = Arc::new(Mutex::new(0u32));
         let execution = match tokio::time::timeout(
@@ -176,18 +187,41 @@ impl WorkerRuntime {
         Ok(())
     }
 
+    async fn fail_pre_loop<T>(&self, stage: &str, error: WorkerError) -> Result<T, WorkerError> {
+        tracing::error!(
+            job_id = %self.config.job_id,
+            stage,
+            error = %error,
+            "Worker failed before the execution loop started"
+        );
+
+        if let Err(report_error) = self
+            .report_worker_status(
+                WorkerState::Failed,
+                Some(format!("pre-loop failure: {}", error)),
+                100,
+            )
+            .await
+        {
+            tracing::warn!(
+                job_id = %self.config.job_id,
+                stage,
+                error = %report_error,
+                "Failed to emit terminal pre-loop worker status"
+            );
+        }
+
+        Err(error)
+    }
+
     async fn report_worker_status(
         &self,
-        state: &str,
+        state: WorkerState,
         message: Option<String>,
         iteration: u32,
     ) -> Result<(), WorkerError> {
         self.client
-            .report_status(&StatusUpdate {
-                state: state.to_string(),
-                message,
-                iteration,
-            })
+            .report_status(&StatusUpdate::new(state, message, iteration))
             .await
     }
 
@@ -284,8 +318,7 @@ Work independently to complete this job. Report when done."#,
             }
             WorkerExecutionResult::Failed(error) => {
                 tracing::error!("Worker failed for job {}: {}", self.config.job_id, error);
-                self.report_failure(iterations, &format!("Execution failed: {}", error))
-                    .await
+                self.report_failure(iterations, "Execution failed").await
             }
             WorkerExecutionResult::TimedOut => {
                 tracing::warn!("Worker timed out for job {}", self.config.job_id);

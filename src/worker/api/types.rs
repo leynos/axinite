@@ -10,12 +10,49 @@ use serde::{Deserialize, Serialize};
 use crate::llm::{ChatMessage, ToolCall, ToolDefinition};
 use crate::tools::ToolOutput;
 
+/// Worker lifecycle state sent to the orchestrator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkerState {
+    InProgress,
+    Running,
+    Completed,
+    Failed,
+}
+
+impl WorkerState {
+    pub const fn as_wire(self) -> &'static str {
+        match self {
+            Self::InProgress => "in_progress",
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl std::fmt::Display for WorkerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_wire())
+    }
+}
+
 /// Status update sent from worker to orchestrator.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatusUpdate {
     pub state: String,
     pub message: Option<String>,
     pub iteration: u32,
+}
+
+impl StatusUpdate {
+    pub fn new(state: WorkerState, message: Option<String>, iteration: u32) -> Self {
+        Self {
+            state: state.as_wire().to_string(),
+            message,
+            iteration,
+        }
+    }
 }
 
 /// Job description fetched from orchestrator.

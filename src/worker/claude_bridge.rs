@@ -35,7 +35,9 @@ use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::error::WorkerError;
-use crate::worker::api::{CompletionReport, JobEventPayload, PromptResponse, WorkerHttpClient};
+use crate::worker::api::{
+    CompletionReport, JobEventPayload, PromptResponse, StatusUpdate, WorkerHttpClient, WorkerState,
+};
 
 /// Configuration for the Claude bridge runtime.
 pub struct ClaudeBridgeConfig {
@@ -254,11 +256,11 @@ impl ClaudeBridgeRuntime {
 
         // Report that we're running
         self.client
-            .report_status(&crate::worker::api::StatusUpdate {
-                state: "running".to_string(),
-                message: Some("Spawning Claude Code".to_string()),
-                iteration: 0,
-            })
+            .report_status(&StatusUpdate::new(
+                WorkerState::Running,
+                Some("Spawning Claude Code".to_string()),
+                0,
+            ))
             .await?;
 
         // Run the initial Claude session

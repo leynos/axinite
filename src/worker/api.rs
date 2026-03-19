@@ -18,7 +18,7 @@ pub use types::{
     CompletionReport, CredentialResponse, FinishReason as ProxyFinishReason, JobDescription,
     JobEventPayload, PromptResponse, ProxyCompletionRequest, ProxyCompletionResponse,
     ProxyExtensionToolRequest, ProxyExtensionToolResponse, ProxyToolCompletionRequest,
-    ProxyToolCompletionResponse, StatusUpdate,
+    ProxyToolCompletionResponse, StatusUpdate, WorkerState,
 };
 
 /// HTTP client that a container worker uses to talk to the orchestrator.

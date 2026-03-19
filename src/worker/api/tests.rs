@@ -74,3 +74,15 @@ fn test_job_description_deserialization() {
     assert_eq!(job.description, "desc");
     assert!(job.project_dir.is_none());
 }
+
+#[test]
+fn test_status_update_new_serializes_worker_state() {
+    let update = StatusUpdate::new(WorkerState::InProgress, Some("Iteration 1".to_string()), 1);
+    let value = serde_json::to_value(update).expect(
+        "failed to serialize StatusUpdate in test_status_update_new_serializes_worker_state",
+    );
+
+    assert_eq!(value["state"], "in_progress");
+    assert_eq!(value["message"], "Iteration 1");
+    assert_eq!(value["iteration"], 1);
+}
