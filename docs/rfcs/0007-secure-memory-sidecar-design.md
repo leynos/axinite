@@ -683,17 +683,10 @@ embedding model. [^50]
 
 Environment variable entries:
 
-- Variable name: `OLLAMA_NO_CLOUD`
-- Meaning: Disables Ollama cloud-connected features so the extraction path
-  stays local-only.
-- Default or rule: Set to `1` when strict locality is required. [^51]
-
-- Variable name: `MEMORY_SIDECAR_MODE`
-- Meaning: Selects whether the memory sidecar is disabled or which operating
-  mode it uses.
-- Default or rule: Use `disabled`, `shadow`, or `active`; keep
-  `disabled` as the kill-switch default unless the sidecar is explicitly
-  enabled.
+| Variable name | Meaning | Default or rule |
+|---|---|---|
+| `OLLAMA_NO_CLOUD` | Disables Ollama cloud-connected features, so the extraction path stays local-only. [^51] | Set to `1` when strict locality is required. |
+| `MEMORY_SIDECAR_MODE` | Selects whether the memory sidecar is disabled or which operating mode it uses. | Use `disabled`, `shadow`, or `active`; keep `disabled` as the kill-switch default unless the sidecar is explicitly enabled. |
 
 #### Extraction contract (JSON schema)
 

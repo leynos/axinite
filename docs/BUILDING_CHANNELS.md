@@ -4,7 +4,8 @@ This guide covers how to build WASM channel modules for IronClaw.
 
 ## Overview
 
-Channels are WASM components that handle communication with external messaging
+Channels are WebAssembly (WASM) components that handle communication with
+external messaging
 platforms (Telegram, WhatsApp, Slack, etc.). They run in a sandboxed
 environment and communicate with the host via the WIT (WebAssembly Interface
 Types) interface.
