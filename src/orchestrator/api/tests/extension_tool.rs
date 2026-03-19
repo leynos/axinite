@@ -8,6 +8,46 @@ use rstest::rstest;
 use super::fixtures::test_state;
 use super::*;
 
+struct HostedSafeActivateTool;
+
+#[async_trait::async_trait]
+impl Tool for HostedSafeActivateTool {
+    fn name(&self) -> &str {
+        "tool_activate"
+    }
+
+    fn description(&self) -> &str {
+        "hosted-safe tool_activate"
+    }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" }
+            },
+            "required": ["name"]
+        })
+    }
+
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+        _ctx: &crate::context::JobContext,
+    ) -> Result<ToolOutput, crate::tools::ToolError> {
+        Ok(ToolOutput::success(
+            serde_json::json!({
+                "activated": params["name"],
+            }),
+            Duration::from_millis(5),
+        ))
+    }
+
+    fn requires_approval(&self, _params: &serde_json::Value) -> crate::tools::ApprovalRequirement {
+        crate::tools::ApprovalRequirement::UnlessAutoApproved
+    }
+}
+
 #[rstest]
 #[tokio::test]
 async fn extension_tool_proxy_rejects_non_extension_tool_names(test_state: OrchestratorState) {
@@ -118,49 +158,6 @@ async fn extension_tool_proxy_rejects_extension_tools_that_require_approval_for_
 async fn extension_tool_proxy_allows_hosted_safe_tools_with_unless_auto_approved(
     test_state: OrchestratorState,
 ) {
-    struct HostedSafeActivateTool;
-
-    #[async_trait::async_trait]
-    impl Tool for HostedSafeActivateTool {
-        fn name(&self) -> &str {
-            "tool_activate"
-        }
-
-        fn description(&self) -> &str {
-            "hosted-safe tool_activate"
-        }
-
-        fn parameters_schema(&self) -> serde_json::Value {
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "name": { "type": "string" }
-                },
-                "required": ["name"]
-            })
-        }
-
-        async fn execute(
-            &self,
-            params: serde_json::Value,
-            _ctx: &crate::context::JobContext,
-        ) -> Result<ToolOutput, crate::tools::ToolError> {
-            Ok(ToolOutput::success(
-                serde_json::json!({
-                    "activated": params["name"],
-                }),
-                Duration::from_millis(5),
-            ))
-        }
-
-        fn requires_approval(
-            &self,
-            _params: &serde_json::Value,
-        ) -> crate::tools::ApprovalRequirement {
-            crate::tools::ApprovalRequirement::UnlessAutoApproved
-        }
-    }
-
     test_state
         .tools
         .register(Arc::new(HostedSafeActivateTool))
