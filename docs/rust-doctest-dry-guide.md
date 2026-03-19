@@ -1,6 +1,6 @@
-<!-- markdownlint-configure-file { "MD013": false } -->
-
+<!-- markdownlint-disable MD013 -->
 # A systematic guide to effective, ergonomic, and "don't repeat yourself" (DRY) doctests in Rust
+<!-- markdownlint-enable MD013 -->
 
 ## The `rustdoc` compilation model: a foundational perspective
 
@@ -126,7 +126,7 @@ purpose. For instance, an example for
 a scenario where ownership rules necessitate creating a copy.[^9]
 
 To achieve this, examples must be clear, concise, and purposeful. Any code that
-directly relevant to the point being made—such as complex setup, boilerplate,
+is directly relevant to the point being made—such as complex setup, boilerplate,
 or unrelated logic—should be hidden to avoid distracting the reader.[^3]
 
 ### 2.3 Ergonomic error handling: taming the `?` operator
@@ -562,7 +562,7 @@ real-world challenges when working with doctests.
 
 - **The** `README.md` **Dilemma**: A project's `README.md` file serves multiple
   audiences. It needs to render cleanly on platforms like GitHub and
-  [crates.io](http://crates.io), where hidden lines (`#…`) look like ugly,
+  [crates.io](https://crates.io), where hidden lines (`#…`) look like ugly,
   commented-out code. At the same time, it should contain testable examples,
   which often require hidden lines for setup.[^10] The best practice is to
   avoid maintaining the README manually. Instead, use a tool like
@@ -619,6 +619,7 @@ mastering doctests:
    unit or integration test. Avoid compromising API design or test clarity by
    forcing a square peg into a round hole. Use the right tool for the job.
 
+<!-- markdownlint-disable MD013 -->
 ### **Works cited**
 
 [^1]: Stack Overflow — Writing documentation tests for private modules,
@@ -626,7 +627,7 @@ accessed on July 15, 2025,
 <https://stackoverflow.com/questions/70111757/how-can-i-write-documentation-tests-for-private-modules>
 [^2]: Rustdoc doctests need fixing - Swatinem, accessed on July 15, 2025,
 <https://swatinem.de/blog/fix-rustdoc/>
-[^3]: Documentation tests - The rustdoc boOK - Rust Documentation, accessed on
+[^3]: Documentation tests - The rustdoc book - Rust Documentation, accessed on
 July 15, 2025, <https://doc.rust-lang.org/rustdoc/documentation-tests.html>
 [^4]: Documentation tests - - GitHub Pages, accessed on July 15, 2025,
 <https://ebarnard.github.io/2019-06-03-rust-smaller-trait-implementers-docs/rustdoc/documentation-tests.html>
@@ -651,7 +652,7 @@ Accessed on July 15, 2025,
 <https://users.rust-lang.org/t/test-setup-for-doctests/50426>
 [^12]: quote_doctest - Rust - [Docs.rs](http://Docs.rs), accessed on July 15,
 2025, <https://docs.rs/quote-doctest>
-[^13]: Advanced features - The rustdoc boOK - Rust Documentation, accessed on
+[^13]: Advanced features - The rustdoc book - Rust Documentation, accessed on
        July 15, 2025, <https://doc.rust-lang.org/rustdoc/advanced-features.html>
 [^14]: Stack Overflow — Conditionally executing a module-level doctest,
 accessed on July 15, 2025,
@@ -662,3 +663,4 @@ accessed on July 15, 2025,
 [^15]: Reddit — Preferred approaches for doc tests, accessed on July 15,
 2025,
 <https://www.reddit.com/r/rust/comments/ke438a/how_do_you_write_your_doc_tests/>
+<!-- markdownlint-enable MD013 -->

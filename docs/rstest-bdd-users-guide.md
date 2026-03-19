@@ -65,7 +65,7 @@ wrappers normalize results into `StepExecution`.
   filters and parallelism because the generated tests are ordinary Rust tests.
 
 The following sections expand on these responsibilities and show how to use the
-current API effectively.
+current Application Programming Interface (API) effectively.
 
 ## Gherkin feature files
 
