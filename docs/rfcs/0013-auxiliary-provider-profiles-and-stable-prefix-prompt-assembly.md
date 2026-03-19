@@ -53,8 +53,8 @@ default. This creates three problems:
 
 ### Prompt cache instability
 
-Modern LLM providers offer significant cost and latency reductions
-through prompt prefix caching:
+Modern large language model (LLM) providers offer significant cost and
+latency reductions through prompt prefix caching:
 
 - **OpenAI**: automatic caching with a 50% discount on cached input
   tokens (90% for newer models). Minimum 1 024 cached tokens. [^4]

@@ -68,8 +68,9 @@ limitations:
 
 Axinite distinguishes four execution families: [^1]
 
-1. **In-process agent jobs**: scheduler-managed LLM worker runs with
-   full tool access, persistence, and approval gating.
+1. **In-process agent jobs**: scheduler-managed large language model
+   (LLM) worker runs with full tool access, persistence, and approval
+   gating.
 2. **Sandbox jobs**: containerized execution via an orchestrator with
    separate worker runtime.
 3. **Routines**: proactive rules that run either inline (`lightweight`

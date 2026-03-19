@@ -13,9 +13,9 @@ and job scope that records goal, hard constraints, trusted control-plane
 artefacts, allowed tool families, approval thresholds, and prohibited sink
 promotions. The runtime should evaluate that contract before tool execution,
 memory promotion, delegated-job creation, and other high-risk side effects.
-Retrieved workspace text, attachments, MCP resources, and similar material
-should enter context as explicitly untrusted data unless promoted into a
-curated control-plane artefact.
+Retrieved workspace text, attachments, Model Context Protocol (MCP)
+resources, and similar material should enter context as explicitly
+untrusted data unless promoted into a curated control-plane artefact.
 
 The core lesson from the intent-engineering analysis is that soft policy is
 decorative wallpaper, not enforcement. [^1] Axinite already contains strong
