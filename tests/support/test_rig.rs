@@ -388,6 +388,25 @@ pub struct TestRigBuilder {
     extra_tools: Vec<Arc<dyn Tool>>,
 }
 
+// Private: register the minimal set of job tools needed by the tests.
+fn register_job_tools_for_tests(
+    components: &ironclaw::app::AppComponents,
+    scheduler_slot: &ironclaw::tools::builtin::SchedulerSlot,
+) {
+    components
+        .tools
+        .register_job_tools(ironclaw::tools::RegisterJobToolsConfig {
+            context_manager: Arc::clone(&components.context_manager),
+            scheduler_slot: Some(scheduler_slot.clone()),
+            job_manager: None,
+            store: components.db.clone(),
+            job_event_tx: None,
+            inject_tx: None,
+            prompt_queue: None,
+            secrets_store: None,
+        });
+}
+
 impl TestRigBuilder {
     /// Create a new builder with defaults.
     pub fn new() -> Self {
@@ -574,18 +593,7 @@ impl TestRigBuilder {
 
         // 6. Register job tools, routine tools, and extra tools.
         {
-            components
-                .tools
-                .register_job_tools(ironclaw::tools::RegisterJobToolsConfig {
-                    context_manager: Arc::clone(&components.context_manager),
-                    scheduler_slot: Some(scheduler_slot.clone()),
-                    job_manager: None,
-                    store: components.db.clone(),
-                    job_event_tx: None,
-                    inject_tx: None,
-                    prompt_queue: None,
-                    secrets_store: None,
-                });
+            register_job_tools_for_tests(&components, &scheduler_slot);
 
             // Routine tools: create a RoutineEngine with the LLM and workspace.
             if let (Some(db_arc), Some(ws)) = (&components.db, &components.workspace) {
