@@ -45,8 +45,8 @@
 
 - [Configuration guide](configuration-guide.md) is the reference for command
   line options, environment variables, defaults, and configuration precedence.
-- [LLM providers](LLM_PROVIDERS.md) summarizes supported model backends and
-  provider-specific setup notes.
+- [Large language model (LLM) providers](LLM_PROVIDERS.md) summarizes
+  supported model backends and provider-specific setup notes.
 - [Telegram setup](TELEGRAM_SETUP.md) explains how to configure and run the
   Telegram channel integration.
 - [Building channels](BUILDING_CHANNELS.md) describes how to implement and
@@ -61,7 +61,7 @@
   implementation working notes for discrete streams of work.
   - [Automated QA](plans/2026-02-24-automated-qa.md) captures the plan for
     automated quality assurance coverage and supporting workflow changes.
-  - [E2E infrastructure design](plans/2026-02-24-e2e-infrastructure-design.md)
+  - [End-to-end (E2E) infrastructure design](plans/2026-02-24-e2e-infrastructure-design.md)
     explores the design for end-to-end test infrastructure.
   - [E2E infrastructure](plans/2026-02-24-e2e-infrastructure.md) tracks the
     delivery work for the end-to-end test environment.
@@ -83,9 +83,9 @@
 
 - [RFC directory](rfcs/) stores proposed and in-flight architectural changes
   that need technical review before acceptance.
-  - [RFC 0001: Expose MCP tool definitions](rfcs/0001-expose-mcp-tool-definitions.md)
+  - [RFC 0001: Expose Model Context Protocol (MCP) tool definitions](rfcs/0001-expose-mcp-tool-definitions.md)
     proposes how MCP tool schemas should be surfaced to the runtime and model.
-  - [RFC 0002: Expose WASM tool definitions](rfcs/0002-expose-wasm-tool-definitions.md)
+  - [RFC 0002: Expose WebAssembly (WASM) tool definitions](rfcs/0002-expose-wasm-tool-definitions.md)
     proposes how WebAssembly tool schemas should be exported and consumed.
   - [RFC 0003: Skill bundle installation](rfcs/0003-skill-bundle-installation.md)
     proposes the packaging and installation model for skill bundles.

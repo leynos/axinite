@@ -7,7 +7,7 @@ Proposed.
 
 ## Date
 
-2026-03-18.
+2026-03-18
 
 ## Context and problem statement
 
@@ -52,29 +52,16 @@ the evidence trail.
 
 ## Options considered
 
-### Option A: LLM-only structured extraction
+<!-- markdownlint-disable MD013 -->
+| Option | Provenance reliability | Quality | Cost | Fallback behaviour |
+| --- | --- | --- | --- | --- |
+| Option A: LLM-only structured extraction | Weak unless support references are validated strictly, because the model can hallucinate polished but unsupported claims. | Rich canonical statements, temporal inference, and high-quality summaries. | Higher local generative-model cost. | Poor: hierarchical extraction depends on one generative path. |
+| Option B: Bidirectional-encoder-only extractive projection | Strong because the pipeline works directly over spans and support references stay structural. | Lower abstraction quality; extractive text is clunky and theme summaries become template-driven. | Cheaper and easier to bound. | Strong bounded fallback, but no richer abstraction path. |
+| Option C: Dual-path extraction with shared schema and validated support | Strong once both paths pass the same support-reference validator before promotion. | Rich when the LLM path is available, with encoder fallback for stricter baseline and shadow comparison. | Mixed: supports cheap mode and richer local mode behind one schema. | Strong: encoder path remains available for cheap mode, bounded fallback, and shadow runs. |
+<!-- markdownlint-enable MD013 -->
 
-This option uses a local structured-output LLM for boundary detection, episode
-summarization, semantic extraction, and theme summarization. It produces rich
-canonical statements and can infer temporal relations from context. The weak
-point is provenance reliability: unless support references are validated
-strictly, the system risks storing very polished nonsense.
-
-### Option B: Bidirectional-encoder-only extractive projection
-
-This option uses sentence or span embeddings plus classifier heads for
-boundary detection, persistence scoring, semantic kind prediction, and
-extractive selection. Provenance is strong because the pipeline works directly
-over spans. The weakness is abstraction quality: extractive text is often
-clunky, and theme summaries become template-driven rather than semantically
-rich.
-
-### Option C: Dual-path extraction with shared schema and validated support
-
-This option uses the LLM path when available for richer abstraction, but keeps
-an encoder path for bounded fallback, cheap mode, and shadow comparison. Both
-paths emit the same schema, and a validation layer rejects unresolved support
-references before anything becomes authoritative.
+_Table 1: Comparison of extraction options across provenance,
+quality, cost, and fallback behaviour._
 
 ## Decision outcome / proposed direction
 

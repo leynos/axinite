@@ -47,8 +47,9 @@ that fits its local-only architecture and its narrow RPC surface.
 
 RFC 0015 provides durable episode nodes, semantic carriers, and theme nodes,
 together with provenance and temporal edges.[^1] RFC 0016 provides a
-maintained theme partition and sparse theme and semantic-carrier kNN
-graphs.[^4] RFC 0014 already defines the normative rule that recall should
+maintained theme partition and sparse theme and semantic-carrier
+k-nearest neighbour (kNN) graphs.[^4] RFC 0014 already defines the normative
+rule that recall should
 keep projection classes and epistemic status visible rather than flattening
 them into one undifferentiated memory stream.[^5] RFC 0007 already allows
 `Recall` over Unix domain socket (UDS) and keeps read scopes separate from

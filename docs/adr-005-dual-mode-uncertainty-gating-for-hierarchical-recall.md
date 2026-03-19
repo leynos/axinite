@@ -7,7 +7,7 @@ Proposed.
 
 ## Date
 
-2026-03-18.
+2026-03-18
 
 ## Context and problem statement
 
@@ -56,26 +56,16 @@ turning it into all-or-nothing wizardry.
 
 ## Options considered
 
-### Option A: Mandatory model-assisted uncertainty gating
+<!-- markdownlint-disable MD013 -->
+| Option | Description | Cost/Latency | Portability | Coverage/Accuracy | Risk |
+| --- | --- | --- | --- | --- | --- |
+| Option A: Mandatory model-assisted uncertainty gating | Use a local reader or judge model for every stage-II expansion decision. | Highest cost and latency because every expansion depends on a model call. | Weak in cheap or air-gapped deployments that lack a suitable judge model. | Best fit for the xMemory paper's intent when a capable local model exists. | Couples recall to model availability and whatever uncertainty surface the model exposes. |
+| Option B: Proxy-only gating | Use a deterministic score from novelty, support density, temporal fit, reinforcement, and token cost. | Lowest cost and latency. | Strong portability across cheap and local-only deployments. | Misses cases where a judge model could detect that extra evidence materially changes the answer. | Leaves quality on the floor in richer deployments. |
+| Option C: Dual-mode gating with a shared gain interface | Define one stage-II gain interface with model-assisted and proxy-based implementations selected by retrieval profile. | Mixed: proxy mode stays cheap, while richer deployments can spend more selectively. | Strong because hierarchical recall still works without a judge model. | Better coverage than proxy-only, while preserving bounded fallback and shadow comparison. | More implementation complexity because two gates must stay comparable behind one interface. |
+<!-- markdownlint-enable MD013 -->
 
-This option uses a local reader or judge model for every stage-II expansion
-decision. It best matches the xMemory paper's spirit, but it couples recall to
-local model availability, higher latency, and whatever uncertainty surface
-that model exposes.
-
-### Option B: Proxy-only gating
-
-This option uses a deterministic score from features such as semantic support
-density, novelty against already selected evidence, temporal fit,
-reinforcement, and token cost. It is portable and cheap, but it will
-inevitably miss cases where a local judge model can tell that an extra episode
-materially changes the likely answer.
-
-### Option C: Dual-mode gating with a shared gain interface
-
-This option defines one interface for stage-II gain estimation and allows two
-implementations: model-assisted and proxy-based. Retrieval profiles choose
-which one to use, and shadow mode can compare them on the same workloads.
+_Table 1: Comparison of gating strategies across cost, latency,
+portability, and coverage._
 
 ## Decision outcome / proposed direction
 

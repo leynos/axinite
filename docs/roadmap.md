@@ -185,8 +185,7 @@ Dependencies: depends on 1.2 for the stricter WASM contract and informs 2.3 by
 establishing host-owned transport assembly for sensitive requests.
 
 - [ ] 2.1.1. Add typed setup fields and delegated endpoint binding persistence.
-  - See pending
-    [RFC 0004 §Current Surface](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#current-surface)
+  - [RFC 0004 §Current Surface](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#current-surface)
     and
     [RFC 0004 §Rollout Plan](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
   - Success: extension setup can store non-secret endpoint configuration
@@ -194,8 +193,7 @@ establishing host-owned transport assembly for sensitive requests.
     stored through a dedicated service.
 - [ ] 2.1.2. Add delegated endpoint capability schema and WIT runtime plumbing.
   Requires 2.1.1.
-  - See pending
-    [RFC 0004 §Goals](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#goals)
+  - [RFC 0004 §Goals](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#goals)
     and
     [RFC 0004 §Rollout Plan](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
   - Success: WASM capabilities can declare delegated endpoint use without
@@ -204,8 +202,7 @@ establishing host-owned transport assembly for sensitive requests.
     the host.
 - [ ] 2.1.3. Add endpoint-aware redaction, approval, and audit behaviour.
   Requires 2.1.2.
-  - See pending
-    [RFC 0004 §Summary](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#summary)
+  - [RFC 0004 §Summary](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#summary)
     and
     [RFC 0004 §Rollout Plan](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
   - Success: logs, errors, and approval surfaces do not reveal configured
@@ -213,8 +210,7 @@ establishing host-owned transport assembly for sensitive requests.
     failures without leaking origin data.
 - [ ] 2.1.4. Deliver a pilot extension against the delegated request path.
   Requires 2.1.3.
-  - See pending
-    [RFC 0004 §Problem](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#problem)
+  - [RFC 0004 §Problem](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#problem)
     and
     [RFC 0004 §Rollout Plan](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
   - Success: the pilot operates end to end without guest-visible raw endpoint
@@ -235,8 +231,7 @@ reference material, and provides an automation surface that routines can build
 on after 2.3 and 3.2 settle.
 
 - [ ] 2.2.1. Add a helper subprocess wrapper for Monty and expose `exec_code`.
-  - See pending
-    [RFC 0005 §Summary](./rfcs/0005-monty-code-execution-environment.md#summary)
+  - [RFC 0005 §Summary](./rfcs/0005-monty-code-execution-environment.md#summary)
     and
     [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: Monty runs out of process so a panic does not terminate the parent
@@ -244,8 +239,7 @@ on after 2.3 and 3.2 settle.
     allowlist.
 - [ ] 2.2.2. Implement the JSON ABI for tool calls, parameters, results, and
   state. Requires 2.2.1.
-  - See pending
-    [RFC 0005 §Goals](./rfcs/0005-monty-code-execution-environment.md#goals)
+  - [RFC 0005 §Goals](./rfcs/0005-monty-code-execution-environment.md#goals)
     and
     [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: cross-boundary data is normalized to JSON-shaped values only, and
@@ -253,8 +247,7 @@ on after 2.3 and 3.2 settle.
     execution paths.
 - [ ] 2.2.3. Add saved-script persistence with `save_script` and `run_script`.
   Requires 2.2.2.
-  - See pending
-    [RFC 0005 §Problem](./rfcs/0005-monty-code-execution-environment.md#problem)
+  - [RFC 0005 §Problem](./rfcs/0005-monty-code-execution-environment.md#problem)
     and
     [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: script source and manifest data are stored under a dedicated
@@ -262,16 +255,14 @@ on after 2.3 and 3.2 settle.
     in interpreter globals.
 - [ ] 2.2.4. Add run metadata and audit logging for script execution. Requires
   2.2.3.
-  - See pending
-    [RFC 0005 §Goals](./rfcs/0005-monty-code-execution-environment.md#goals)
+  - [RFC 0005 §Goals](./rfcs/0005-monty-code-execution-environment.md#goals)
     and
     [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: each script run records version, inputs, outputs, and failure
     state, and reruns can distinguish code changes from parameter changes.
 - [ ] 2.2.5. Integrate saved scripts into higher-level automation paths.
   Requires 2.2.3 and 2.2.4.
-  - See pending
-    [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
+  - [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: routines or job orchestration can invoke saved scripts without
     bypassing approval or policy checks, and review or rerun surfaces expose
     script identity plus version clearly.
@@ -1001,7 +992,7 @@ builds on 4.2 for hook-inspection seams.
     where possible, and highlights mismatches where assistant completion
     claims lack matching ledger entries.
 
-### 4.4. Feature flags for progressive front-end rollout
+### 4.5. Feature flags for progressive front-end rollout
 
 Objective: add a lightweight feature-flag delivery mechanism so the backend
 can declare which front-end capabilities are enabled, the browser can gate
@@ -1017,15 +1008,15 @@ Dependencies: independent of other Phase 4 tasks, but provides a foundation for
 Phase 6 front-end features (canvas hosting, advanced media handling) to roll
 out behind flags.
 
-- [ ] 4.4.1. Add per-flag environment variable parsing and registry
+- [ ] 4.5.1. Add per-flag environment variable parsing and registry
   initialization in `GatewayChannel` or a dedicated config module.
   - See [RFC 0009 §Configuration inputs](./rfcs/0009-feature-flags-frontend.md#1-configuration-inputs).
   - Success: `FEATURE_FLAG_<NAME>` environment variables are parsed into a
     `FeatureFlagRegistry` with plain `HashMap<String, bool>`, invalid flag
     names are silently discarded with a warning, and compiled defaults are
     applied for flags without environment overrides.
-- [ ] 4.4.2. Add the `FeatureFlagRegistry` struct and `GatewayState`
-  integration. Requires 4.4.1.
+- [ ] 4.5.2. Add the `FeatureFlagRegistry` struct and `GatewayState`
+  integration. Requires 4.5.1.
   - See [RFC 0009 §Data shape](./rfcs/0009-feature-flags-frontend.md#2-data-shape)
     and [RFC 0009 §GatewayState integration](./rfcs/0009-feature-flags-frontend.md#3-gatewaystate-integration).
   - Success: `GatewayState` holds an `Arc<RwLock<FeatureFlagRegistry>>` that
@@ -1033,8 +1024,8 @@ out behind flags.
     change, resolves flags per deployment while ignoring user-scoped
     `feature_flag:` rows, and applies subsystem availability defaults during
     initialization based on `GatewayState` field presence.
-- [ ] 4.4.3. Extend the settings handler to detect `feature_flag:` keys and
-  apply runtime overrides to the registry. Requires 4.4.2.
+- [ ] 4.5.3. Extend the settings handler to detect `feature_flag:` keys and
+  apply runtime overrides to the registry. Requires 4.5.2.
   - See [RFC 0009 §Configuration inputs](./rfcs/0009-feature-flags-frontend.md#1-configuration-inputs).
   - Success: `PUT /api/settings/feature_flag:<name>` requires a deployment
     identifier, persists to the database as a deployment-scoped `settings`
@@ -1042,24 +1033,24 @@ out behind flags.
     updates the `FeatureFlagRegistry` for that deployment so subsequent
     `GET /api/features` requests reflect the updated flag state without a
     gateway restart.
-- [ ] 4.4.4. Implement the `GET /api/features` endpoint. Requires 4.4.2.
+- [ ] 4.5.4. Implement the `GET /api/features` endpoint. Requires 4.5.2.
   - See [RFC 0009 §API endpoint](./rfcs/0009-feature-flags-frontend.md#4-api-endpoint).
   - Success: the endpoint returns a JSON object mapping flag names to booleans
     (e.g. `{ "experimental_chat_ui": true, "dark_mode": false }`) by
     serializing the resolved registry state from `GatewayState` for the
     requested deployment, requires a deployment identifier in the request, and
     performs no database query on the hot path.
-- [ ] 4.4.5. Add front-end `loadFeatureFlags()` integration in `app.js`.
-  Requires 4.4.4.
+- [ ] 4.5.5. Add front-end `loadFeatureFlags()` integration in `app.js`.
+  Requires 4.5.4.
   - See [RFC 0009 §Front-end consumption](./rfcs/0009-feature-flags-frontend.md#5-front-end-consumption).
   - Success: the browser fetches `GET /api/features` after authentication,
-    includes the deployment identifier required by the 4.4.4 API contract,
+    includes the deployment identifier required by the 4.5.4 API contract,
     stores the result in a plain `featureFlags` object, and uses
     `featureFlags.experimental_chat_ui` checks for gating UI rendering and
     behaviour.
-- [ ] 4.4.6. Add integration tests for per-flag resolution, operator overrides,
-  subsystem defaults, mutability, and endpoint contract. Requires 4.4.3, 4.4.4,
-  and 4.4.5.
+- [ ] 4.5.6. Add integration tests for per-flag resolution, operator overrides,
+  subsystem defaults, mutability, and endpoint contract. Requires 4.5.3, 4.5.4,
+  and 4.5.5.
   - See [RFC 0009 §Requirements](./rfcs/0009-feature-flags-frontend.md#requirements).
   - Success: tests cover per-flag environment variable parsing (including
     `FEATURE_FLAG_<NAME>` pattern matching), operator override persistence and
