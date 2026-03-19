@@ -4,6 +4,7 @@ use std::net::{IpAddr, SocketAddr};
 
 use flate2::Compression;
 use flate2::write::DeflateEncoder;
+use rstest::rstest;
 use std::io::Write;
 
 use super::{extract_skill_from_zip, is_private_ip, validate_fetch_url, validate_resolved_addrs};
@@ -96,67 +97,23 @@ fn test_validate_resolved_addrs_allows_public_hostname() {
 
 #[test]
 fn test_extract_skill_from_zip_deflate() {
-    let skill_md = b"---\nname: test\n---\n# Test Skill\n";
-    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(skill_md).unwrap();
-    let compressed = encoder.finish().unwrap();
-
-    let mut zip = Vec::new();
-    zip.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
-    zip.extend_from_slice(&[0x14, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00]);
-    zip.extend_from_slice(&[0x08, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-    zip.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
-    zip.extend_from_slice(&(skill_md.len() as u32).to_le_bytes());
-    zip.extend_from_slice(&8u16.to_le_bytes());
-    zip.extend_from_slice(&0u16.to_le_bytes());
-    zip.extend_from_slice(b"SKILL.md");
-    zip.extend_from_slice(&compressed);
-
+    let content = b"---\nname: test\n---\n# Test Skill\n";
+    let zip = build_zip_entry_deflate("SKILL.md", content);
     let result = extract_skill_from_zip(&zip).unwrap();
-    assert_eq!(result, "---\nname: test\n---\n# Test Skill\n");
+    assert_eq!(result, std::str::from_utf8(content).unwrap());
 }
 
 #[test]
 fn test_extract_skill_from_zip_store() {
-    let skill_md = b"---\nname: stored\n---\n# Stored\n";
-
-    let mut zip = Vec::new();
-    zip.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
-    zip.extend_from_slice(&[0x0A, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-    zip.extend_from_slice(&(skill_md.len() as u32).to_le_bytes());
-    zip.extend_from_slice(&(skill_md.len() as u32).to_le_bytes());
-    zip.extend_from_slice(&8u16.to_le_bytes());
-    zip.extend_from_slice(&0u16.to_le_bytes());
-    zip.extend_from_slice(b"SKILL.md");
-    zip.extend_from_slice(skill_md);
-
+    let content = b"---\nname: stored\n---\n# Stored\n";
+    let zip = build_zip_entry_store("SKILL.md", content);
     let result = extract_skill_from_zip(&zip).unwrap();
-    assert_eq!(result, "---\nname: stored\n---\n# Stored\n");
+    assert_eq!(result, std::str::from_utf8(content).unwrap());
 }
 
 #[test]
 fn test_extract_skill_from_zip_missing_skill_md() {
-    let mut zip = Vec::new();
-    zip.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
-    zip.extend_from_slice(&[0x0A, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-    zip.extend_from_slice(&2u32.to_le_bytes());
-    zip.extend_from_slice(&2u32.to_le_bytes());
-    zip.extend_from_slice(&10u16.to_le_bytes());
-    zip.extend_from_slice(&0u16.to_le_bytes());
-    zip.extend_from_slice(b"_meta.json");
-    zip.extend_from_slice(b"{}");
-
+    let zip = build_zip_entry_store("_meta.json", b"{}");
     let err = extract_skill_from_zip(&zip).unwrap_err();
     assert!(err.to_string().contains("does not contain SKILL.md"));
 }
@@ -171,6 +128,51 @@ fn build_zip_entry_store(file_name: &str, content: &[u8]) -> Vec<u8> {
     zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
     zip.extend_from_slice(&(content.len() as u32).to_le_bytes());
     zip.extend_from_slice(&(content.len() as u32).to_le_bytes());
+    zip.extend_from_slice(&(file_name.len() as u16).to_le_bytes());
+    zip.extend_from_slice(&0u16.to_le_bytes());
+    zip.extend_from_slice(file_name.as_bytes());
+    zip.extend_from_slice(content);
+    zip
+}
+
+/// Build a raw ZIP local-file-header entry using DEFLATE compression (method 8).
+fn build_zip_entry_deflate(file_name: &str, content: &[u8]) -> Vec<u8> {
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(content).unwrap();
+    let compressed = encoder.finish().unwrap();
+
+    let mut zip = Vec::new();
+    zip.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
+    zip.extend_from_slice(&[0x14, 0x00]);
+    zip.extend_from_slice(&[0x00, 0x00]);
+    zip.extend_from_slice(&[0x08, 0x00]);
+    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+    zip.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+    zip.extend_from_slice(&(content.len() as u32).to_le_bytes());
+    zip.extend_from_slice(&(file_name.len() as u16).to_le_bytes());
+    zip.extend_from_slice(&0u16.to_le_bytes());
+    zip.extend_from_slice(file_name.as_bytes());
+    zip.extend_from_slice(&compressed);
+    zip
+}
+
+/// Build a stored ZIP entry where the declared uncompressed size differs from the
+/// actual payload length (used to exercise size-limit checks).
+fn build_zip_entry_store_oversized(
+    file_name: &str,
+    content: &[u8],
+    claimed_uncompressed: u32,
+) -> Vec<u8> {
+    let mut zip = Vec::new();
+    zip.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
+    zip.extend_from_slice(&[0x0A, 0x00]);
+    zip.extend_from_slice(&[0x00, 0x00]);
+    zip.extend_from_slice(&[0x00, 0x00]);
+    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+    zip.extend_from_slice(&(content.len() as u32).to_le_bytes());
+    zip.extend_from_slice(&claimed_uncompressed.to_le_bytes());
     zip.extend_from_slice(&(file_name.len() as u16).to_le_bytes());
     zip.extend_from_slice(&0u16.to_le_bytes());
     zip.extend_from_slice(file_name.as_bytes());
@@ -200,51 +202,23 @@ fn test_zip_extract_ignores_non_skill_entries() {
     );
 }
 
-#[test]
-fn test_zip_extract_path_traversal_rejected() {
-    let content = b"---\nname: evil\n---\n# Malicious path traversal\n";
-    let zip = build_zip_entry_store("../../SKILL.md", content);
-
+#[rstest]
+#[case("../../SKILL.md", "path traversal entry")]
+#[case("subdir/SKILL.md", "nested path")]
+fn test_zip_extract_non_root_skill_md_rejected(#[case] path: &str, #[case] label: &str) {
+    let zip = build_zip_entry_store(path, b"---\nname: x\n---\n# X\n");
     let err = extract_skill_from_zip(&zip).unwrap_err();
     assert!(
         err.to_string().contains("does not contain SKILL.md"),
-        "Path traversal entry should not match SKILL.md, got: {}",
-        err
-    );
-}
-
-#[test]
-fn test_zip_extract_nested_path_not_matched() {
-    let content = b"---\nname: nested\n---\n# Nested\n";
-    let zip = build_zip_entry_store("subdir/SKILL.md", content);
-
-    let err = extract_skill_from_zip(&zip).unwrap_err();
-    assert!(
-        err.to_string().contains("does not contain SKILL.md"),
-        "Nested path should not match SKILL.md, got: {}",
-        err
+        "{} should not match SKILL.md, got: {}",
+        label,
+        err,
     );
 }
 
 #[test]
 fn test_zip_extract_oversized_rejected() {
-    let oversized_claim: u32 = 2 * 1024 * 1024;
-    let small_body = b"tiny";
-
-    let mut zip = Vec::new();
-    zip.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
-    zip.extend_from_slice(&[0x0A, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-    zip.extend_from_slice(&(small_body.len() as u32).to_le_bytes());
-    zip.extend_from_slice(&oversized_claim.to_le_bytes());
-    zip.extend_from_slice(&8u16.to_le_bytes());
-    zip.extend_from_slice(&0u16.to_le_bytes());
-    zip.extend_from_slice(b"SKILL.md");
-    zip.extend_from_slice(small_body);
-
+    let zip = build_zip_entry_store_oversized("SKILL.md", b"tiny", 2 * 1024 * 1024);
     let err = extract_skill_from_zip(&zip).unwrap_err();
     assert!(
         err.to_string().contains("too large"),
