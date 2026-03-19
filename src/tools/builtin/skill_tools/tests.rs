@@ -18,54 +18,64 @@ fn test_catalog() -> Arc<SkillCatalog> {
     Arc::new(SkillCatalog::with_url("http://127.0.0.1:1"))
 }
 
+/// Assert the common contract of a skill tool's static metadata.
+fn assert_tool_schema(
+    tool: &dyn Tool,
+    expected_name: &str,
+    expected_approval: ApprovalRequirement,
+    expected_property_keys: &[&str],
+) {
+    assert_eq!(tool.name(), expected_name);
+    assert_eq!(
+        tool.requires_approval(&serde_json::json!({})),
+        expected_approval
+    );
+    let schema = tool.parameters_schema();
+    for key in expected_property_keys {
+        assert!(
+            schema["properties"].get(key).is_some(),
+            "parameters_schema missing property '{key}'"
+        );
+    }
+}
+
 #[test]
 fn test_skill_list_schema() {
     let tool = SkillListTool::new(test_registry());
-    assert_eq!(tool.name(), "skill_list");
-    assert_eq!(
-        tool.requires_approval(&serde_json::json!({})),
-        ApprovalRequirement::Never
-    );
-    let schema = tool.parameters_schema();
-    assert!(schema.get("properties").is_some());
+    assert_tool_schema(&tool, "skill_list", ApprovalRequirement::Never, &[]);
 }
 
 #[test]
 fn test_skill_search_schema() {
     let tool = SkillSearchTool::new(test_registry(), test_catalog());
-    assert_eq!(tool.name(), "skill_search");
-    assert_eq!(
-        tool.requires_approval(&serde_json::json!({})),
-        ApprovalRequirement::Never
+    assert_tool_schema(
+        &tool,
+        "skill_search",
+        ApprovalRequirement::Never,
+        &["query"],
     );
-    let schema = tool.parameters_schema();
-    assert!(schema["properties"].get("query").is_some());
 }
 
 #[test]
 fn test_skill_install_schema() {
     let tool = SkillInstallTool::new(test_registry(), test_catalog());
-    assert_eq!(tool.name(), "skill_install");
-    assert_eq!(
-        tool.requires_approval(&serde_json::json!({})),
-        ApprovalRequirement::UnlessAutoApproved
+    assert_tool_schema(
+        &tool,
+        "skill_install",
+        ApprovalRequirement::UnlessAutoApproved,
+        &["name", "url", "content"],
     );
-    let schema = tool.parameters_schema();
-    assert!(schema["properties"].get("name").is_some());
-    assert!(schema["properties"].get("url").is_some());
-    assert!(schema["properties"].get("content").is_some());
 }
 
 #[test]
 fn test_skill_remove_schema() {
     let tool = SkillRemoveTool::new(test_registry());
-    assert_eq!(tool.name(), "skill_remove");
-    assert_eq!(
-        tool.requires_approval(&serde_json::json!({})),
-        ApprovalRequirement::Always
+    assert_tool_schema(
+        &tool,
+        "skill_remove",
+        ApprovalRequirement::Always,
+        &["name"],
     );
-    let schema = tool.parameters_schema();
-    assert!(schema["properties"].get("name").is_some());
 }
 
 #[test]
