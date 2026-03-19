@@ -28,7 +28,7 @@ budgeting, not merely spawning more loops. [^2]
 
 ## Problem
 
-Axinite's agent currently handles complex, multi-step tasks in a single
+Axinite's agent currently handles complex, multistep tasks in a single
 context window. As tasks grow in scope, this creates several problems:
 
 - **Context pressure**: long-running tasks accumulate tool outputs,
@@ -40,8 +40,9 @@ context window. As tasks grow in scope, this creates several problems:
   operator to restart from scratch.
 - **Tool permission sprawl**: the agent sees all available tools for the
   entire task, even when only a subset is relevant to the current
-  subtask. OWASP LLM06:2025 (Excessive Agency) recommends minimizing
-  permissions granted to large language model (LLM) applications. [^3]
+  subtask. Open Web Application Security Project (OWASP) LLM06:2025
+  (Excessive Agency) recommends minimizing permissions granted to large
+  language model (LLM) applications. [^3]
 - **No budget enforcement**: there is no mechanism to cap the cost,
   iterations, or time spent on a subtask independently of the parent.
 - **No workspace isolation**: parallel work on the same repository
