@@ -207,80 +207,130 @@ pub(crate) async fn fetch_skill_content(url: &str) -> Result<String, ToolError> 
     }
 }
 
+/// Parsed fields from a ZIP local-file header (signature `PK\x03\x04`).
+struct ZipLocalHeader {
+    compression: u16,
+    compressed_size: usize,
+    uncompressed_size: usize,
+    name_start: usize,
+    name_end: usize,
+    extra_len: usize,
+}
+
+/// Parse a ZIP local-file header at `offset`. Returns `None` when the
+/// four-byte signature does not match (end of local-header chain).
+fn parse_zip_local_header(data: &[u8], offset: usize) -> Option<ZipLocalHeader> {
+    if data[offset..offset + 4] != [0x50, 0x4B, 0x03, 0x04] {
+        return None;
+    }
+    let compression = u16::from_le_bytes([data[offset + 8], data[offset + 9]]);
+    let compressed_size = u32::from_le_bytes([
+        data[offset + 18],
+        data[offset + 19],
+        data[offset + 20],
+        data[offset + 21],
+    ]) as usize;
+    let uncompressed_size = u32::from_le_bytes([
+        data[offset + 22],
+        data[offset + 23],
+        data[offset + 24],
+        data[offset + 25],
+    ]) as usize;
+    let name_len = u16::from_le_bytes([data[offset + 26], data[offset + 27]]) as usize;
+    let extra_len = u16::from_le_bytes([data[offset + 28], data[offset + 29]]) as usize;
+    let name_start = offset + 30;
+    let name_end = name_start + name_len;
+    Some(ZipLocalHeader {
+        compression,
+        compressed_size,
+        uncompressed_size,
+        name_start,
+        name_end,
+        extra_len,
+    })
+}
+
+/// Decompress `raw` bytes using ZIP `compression` method 0 (stored) or
+/// 8 (deflate). Returns an error for any other method.
+fn decompress_zip_entry(
+    raw: &[u8],
+    compression: u16,
+    uncompressed_size: usize,
+) -> Result<Vec<u8>, ToolError> {
+    match compression {
+        0 => Ok(raw.to_vec()),
+        8 => {
+            let mut decoder: Take<DeflateDecoder<&[u8]>> =
+                DeflateDecoder::new(raw).take(MAX_DECOMPRESSED as u64);
+            let mut buf = Vec::with_capacity(uncompressed_size.min(MAX_DECOMPRESSED));
+            decoder.read_to_end(&mut buf).map_err(|e| {
+                ToolError::ExecutionFailed(format!("Failed to decompress SKILL.md: {}", e))
+            })?;
+            Ok(buf)
+        }
+        other => Err(ToolError::ExecutionFailed(format!(
+            "Unsupported ZIP compression method: {}",
+            other
+        ))),
+    }
+}
+
+/// Validate bounds and size, decompress, and decode `SKILL.md` bytes to UTF-8.
+fn extract_skill_entry(
+    data: &[u8],
+    data_start: usize,
+    data_end: usize,
+    compression: u16,
+    uncompressed_size: usize,
+) -> Result<String, ToolError> {
+    if data_end > data.len() {
+        return Err(ToolError::ExecutionFailed(
+            "ZIP archive truncated".to_string(),
+        ));
+    }
+    if uncompressed_size > MAX_DECOMPRESSED {
+        return Err(ToolError::ExecutionFailed(
+            "ZIP entry too large to decompress safely".to_string(),
+        ));
+    }
+    let decompressed =
+        decompress_zip_entry(&data[data_start..data_end], compression, uncompressed_size)?;
+    String::from_utf8(decompressed).map_err(|e| {
+        ToolError::ExecutionFailed(format!("SKILL.md in archive is not valid UTF-8: {}", e))
+    })
+}
+
 fn extract_skill_from_zip(data: &[u8]) -> Result<String, ToolError> {
     let mut offset = 0usize;
 
     while offset + 30 <= data.len() {
-        if data[offset..offset + 4] != [0x50, 0x4B, 0x03, 0x04] {
+        let header = match parse_zip_local_header(data, offset) {
+            Some(h) => h,
+            None => break,
+        };
+
+        if header.name_end > data.len() {
             break;
         }
+        let file_name =
+            std::str::from_utf8(&data[header.name_start..header.name_end]).unwrap_or("");
 
-        let compression = u16::from_le_bytes([data[offset + 8], data[offset + 9]]);
-        let compressed_size = u32::from_le_bytes([
-            data[offset + 18],
-            data[offset + 19],
-            data[offset + 20],
-            data[offset + 21],
-        ]) as usize;
-        let uncompressed_size = u32::from_le_bytes([
-            data[offset + 22],
-            data[offset + 23],
-            data[offset + 24],
-            data[offset + 25],
-        ]) as usize;
-        let name_len = u16::from_le_bytes([data[offset + 26], data[offset + 27]]) as usize;
-        let extra_len = u16::from_le_bytes([data[offset + 28], data[offset + 29]]) as usize;
-
-        let name_start = offset + 30;
-        let name_end = name_start + name_len;
-        if name_end > data.len() {
-            break;
-        }
-        let file_name = std::str::from_utf8(&data[name_start..name_end]).unwrap_or("");
-
-        let data_start = name_end
-            .checked_add(extra_len)
+        let data_start = header
+            .name_end
+            .checked_add(header.extra_len)
             .ok_or_else(|| ToolError::ExecutionFailed("ZIP header offset overflow".to_string()))?;
         let data_end = data_start
-            .checked_add(compressed_size)
+            .checked_add(header.compressed_size)
             .ok_or_else(|| ToolError::ExecutionFailed("ZIP header size overflow".to_string()))?;
 
         if file_name == "SKILL.md" {
-            if data_end > data.len() {
-                return Err(ToolError::ExecutionFailed(
-                    "ZIP archive truncated".to_string(),
-                ));
-            }
-
-            if uncompressed_size > MAX_DECOMPRESSED {
-                return Err(ToolError::ExecutionFailed(
-                    "ZIP entry too large to decompress safely".to_string(),
-                ));
-            }
-
-            let raw = &data[data_start..data_end];
-            let decompressed = match compression {
-                0 => raw.to_vec(),
-                8 => {
-                    let mut decoder: Take<DeflateDecoder<&[u8]>> =
-                        DeflateDecoder::new(raw).take(MAX_DECOMPRESSED as u64);
-                    let mut buf = Vec::with_capacity(uncompressed_size.min(MAX_DECOMPRESSED));
-                    decoder.read_to_end(&mut buf).map_err(|e| {
-                        ToolError::ExecutionFailed(format!("Failed to decompress SKILL.md: {}", e))
-                    })?;
-                    buf
-                }
-                other => {
-                    return Err(ToolError::ExecutionFailed(format!(
-                        "Unsupported ZIP compression method: {}",
-                        other
-                    )));
-                }
-            };
-
-            return String::from_utf8(decompressed).map_err(|e| {
-                ToolError::ExecutionFailed(format!("SKILL.md in archive is not valid UTF-8: {}", e))
-            });
+            return extract_skill_entry(
+                data,
+                data_start,
+                data_end,
+                header.compression,
+                header.uncompressed_size,
+            );
         }
 
         offset = data_end;
