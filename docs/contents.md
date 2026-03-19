@@ -45,8 +45,8 @@
 
 - [Configuration guide](configuration-guide.md) is the reference for command
   line options, environment variables, defaults, and configuration precedence.
-- [LLM providers](LLM_PROVIDERS.md) summarizes supported model backends and
-  provider-specific setup notes.
+- [Large language model (LLM) providers](LLM_PROVIDERS.md) summarizes
+  supported model backends and provider-specific setup notes.
 - [Telegram setup](TELEGRAM_SETUP.md) explains how to configure and run the
   Telegram channel integration.
 - [Building channels](BUILDING_CHANNELS.md) describes how to implement and
@@ -61,7 +61,7 @@
   implementation working notes for discrete streams of work.
   - [Automated QA](plans/2026-02-24-automated-qa.md) captures the plan for
     automated quality assurance coverage and supporting workflow changes.
-  - [E2E infrastructure design](plans/2026-02-24-e2e-infrastructure-design.md)
+  - [End-to-end (E2E) infrastructure design](plans/2026-02-24-e2e-infrastructure-design.md)
     explores the design for end-to-end test infrastructure.
   - [E2E infrastructure](plans/2026-02-24-e2e-infrastructure.md) tracks the
     delivery work for the end-to-end test environment.
@@ -83,24 +83,65 @@
 
 - [RFC directory](rfcs/) stores proposed and in-flight architectural changes
   that need technical review before acceptance.
-  - [RFC 0001: Expose MCP tool definitions](rfcs/0001-expose-mcp-tool-definitions.md)
+  - [RFC 0001: Expose Model Context Protocol (MCP) tool definitions](rfcs/0001-expose-mcp-tool-definitions.md)
     proposes how MCP tool schemas should be surfaced to the runtime and model.
-  - [RFC 0002: Expose WASM tool definitions](rfcs/0002-expose-wasm-tool-definitions.md)
+  - [RFC 0002: Expose WebAssembly (WASM) tool definitions](rfcs/0002-expose-wasm-tool-definitions.md)
     proposes how WebAssembly tool schemas should be exported and consumed.
   - [RFC 0003: Skill bundle installation](rfcs/0003-skill-bundle-installation.md)
     proposes the packaging and installation model for skill bundles.
+  - [RFC 0004: Tokenized delegated authorized endpoint requests](rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md)
+    proposes a delegated endpoint model that keeps configured service URLs out
+    of agent-visible and extension-visible surfaces.
+  - [RFC 0005: Monty code execution environment](rfcs/0005-monty-code-execution-environment.md)
+    proposes a Monty-backed Python automation environment for saved scripts and
+    ephemeral code execution.
   - [RFC 0006: Provenance-based zero-knowledge intent plugins](rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md)
     proposes intent-plugin boundaries driven by provenance-aware controls.
   - [RFC 0007: Secure memory sidecar design](rfcs/0007-secure-memory-sidecar-design.md)
     proposes a sidecar-based design for protected memory handling.
   - [RFC 0008: WebSocket Responses API](rfcs/0008-websocket-responses-api.md)
     proposes a WebSocket-based Responses API surface for axinite.
-  - [Monty code execution environment](rfcs/2026-03-11-monty-code-execution-environment.md)
-    captures a pending RFC for the Monty execution environment that has not yet
-    been renumbered.
   - [RFC 0009: Feature flags for the web front end](rfcs/0009-feature-flags-frontend.md)
     proposes a mechanism for passing feature flags from the backend to the
     browser front end.
-  - [Tokenized delegated authorized endpoint requests](rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md)
-    captures a pending RFC for delegated endpoint requests that has not yet
-    been renumbered.
+  - [RFC 0010: Intent contracts and fail-closed runtime gates](rfcs/0010-intent-contracts-and-fail-closed-runtime-gates.md)
+    proposes explicit intent contracts and fail-closed runtime policy gates.
+  - [RFC 0011: Execution truth ledger and action provenance](rfcs/0011-execution-truth-ledger-and-action-provenance.md)
+    proposes an append-only ledger for approvals, tool calls, and system
+    actions.
+  - [RFC 0012: Delegated child jobs with isolated context](rfcs/0012-delegated-child-jobs-with-isolated-context.md)
+    proposes bounded delegation with isolated context, budgets, and evidence
+    bundles.
+  - [RFC 0013: Auxiliary provider profiles and stable-prefix prompt assembly](rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md)
+    proposes named provider profiles and stable prompt-prefix construction.
+  - [RFC 0014: Memory projection tiers and promotion rules](rfcs/0014-memory-projection-tiers-and-promotion-rules.md)
+    proposes projection classes, epistemic status, and promotion rules for
+    memory.
+  - [RFC 0015: Hierarchical memory materialization for memoryd](rfcs/0015-hierarchical-memory-materialization-for-memoryd.md)
+    outlines how `memoryd` can materialize episode, semantic-carrier, and
+    theme structures without replacing RFC 0014's projection taxonomy.
+  - [RFC 0016: Theme detection and sparsity rebalancing for memoryd](rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md)
+    defines how `memoryd` maintains stable theme identities, balancing, and
+    lineage over semantic carriers without promoting themes into a new truth
+    class.
+  - [RFC 0017: Hierarchical recall for memoryd](rfcs/0017-hierarchical-recall-for-memoryd.md)
+    proposes the theme-aware, budget-aware read path that expands to episodes
+    and messages only when the extra evidence is worth the token cost.
+
+## ADRs
+
+- [ADR 001: OPA Rego as the policy engine for intent enforcement](adr-001-rego-policy-engine-for-intent-enforcement.md)
+  records the proposed policy-engine choice for deterministic,
+  machine-auditable intent gates.
+- [ADR 002: Authoritative intent state must remain human-auditable](adr-002-authoritative-intent-state-must-remain-human-auditable.md)
+  records that provider-owned continuation state may optimize execution but
+  must never become the sole source of truth for intent or decision history.
+- [ADR 003: Theme management belongs in memoryd](adr-003-theme-management-belongs-in-memoryd.md)
+  records that stable theme IDs, balancing policy, and lineage belong in the
+  memory sidecar rather than in the clustering substrate.
+- [ADR 004: Dual-path semantic extraction with validated provenance](adr-004-dual-path-semantic-extraction-with-validated-provenance.md)
+  records that `memoryd` should support both structured LLM extraction and
+  encoder-only extraction behind one provenance-validated schema.
+- [ADR 005: Dual-mode uncertainty gating for hierarchical recall](adr-005-dual-mode-uncertainty-gating-for-hierarchical-recall.md)
+  records that hierarchical recall should support both proxy-based and
+  model-assisted gain estimation behind one expansion-gating interface.

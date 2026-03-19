@@ -19,7 +19,7 @@ consistent, and easy to maintain across projects.
   - maintain the "e" in words such as _likeable_, _liveable_ and _rateable_,
   - suffix -ogue in words such as _analogue_ and _catalogue_,
   - and so forth.
-- The word **"outwith"** is acceptable.
+- The words **"outwith"** and **"caveat"** are acceptable.
 - Keep United States (US) spelling when used in an API, for example, `color`.
 - The project uses the filename `LICENSE` for community consistency.
 

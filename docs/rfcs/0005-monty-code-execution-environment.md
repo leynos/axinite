@@ -1,5 +1,8 @@
-# RFC: Monty-Based Python Code Execution Environment
+# RFC 0005: Monty-based Python code execution environment
 
+## Preamble
+
+- RFC number: 0005
 - Status: Proposed
 - Date: 2026-03-11
 - Target: IronClaw tool system and worker runtime
@@ -37,10 +40,11 @@ tool use in Python.
 
 That gap shows up in three places:
 
-1. Traditional LLM tool calling is awkward for loops, filtering, retries, and
+1. Traditional language model (LLM) tool calling is awkward for loops,
+   filtering, retries, and
    conditional multi-step tool use.
 2. Pre-written automations are currently forced into either free-form prompt
-   text or bespoke Rust/WASM tools.
+   text or bespoke Rust/WebAssembly (WASM) tools.
 3. A full containerized Python runtime would duplicate existing safety layers
    while adding significant startup cost, image management, and operational
    complexity.
@@ -187,6 +191,9 @@ support and crash behaviour are mature enough to justify the surface area.
 
 #### `save_script`
 
+Screen-reader description: public operation signature for saving execution
+scripts.
+
 ```text
 save_script(
   name,
@@ -208,6 +215,9 @@ Behaviour:
 
 Recommended workspace layout:
 
+Screen-reader description: recommended workspace file layout for saved
+scripts and optional persistent state.
+
 ```text
 scripts/<safe_name>/script.py
 scripts/<safe_name>/manifest.json
@@ -227,6 +237,9 @@ Manifest fields:
 - `monty_version`
 
 #### `run_script`
+
+Screen-reader description: public operation signature for running a saved
+script with parameters and limits.
 
 ```text
 run_script(
@@ -250,6 +263,9 @@ Behaviour:
 tool access. The effective allowlist must never widen the saved allowlist.
 
 #### `exec_code`
+
+Screen-reader description: public operation signature for ad hoc code
+execution with explicit tool limits.
 
 ```text
 exec_code(
@@ -281,6 +297,9 @@ The guest contract should stay narrow and unsurprising.
 
 The design should standardize on a simple async entrypoint:
 
+Screen-reader description: canonical async Python entrypoint receiving
+explicit params and state.
+
 ```python
 from typing import Any
 
@@ -299,6 +318,9 @@ large implicit global namespace and maps directly onto Monty's named input model
 ### Return value
 
 The script result should be a JSON-like object with this conventional shape:
+
+Screen-reader description: conventional JSON-like result object returned by a
+script.
 
 ```python
 {
@@ -363,6 +385,9 @@ The broker should generate Python stubs from IronClaw `ToolDefinition` objects.
 The first version should optimize for reliability over perfect typing.
 
 Recommended first-pass stub shape:
+
+Screen-reader description: example generated Python tool stubs exported to
+guest code.
 
 ```python
 from typing import Any
@@ -555,6 +580,9 @@ This keeps the first implementation focused on the thing Monty already does well
 codemode-style host callback execution.
 
 ## Example
+
+Screen-reader description: example Monty script that reads memory, filters
+results, writes selected rows, and returns updated state.
 
 ```python
 from typing import Any

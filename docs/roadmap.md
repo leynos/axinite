@@ -2,8 +2,7 @@
 
 This roadmap turns the current axinite design set into a sequence of
 implementation activities. It is derived from the welcome guide, RFCs
-0001-0003, 0006-0009 in this branch, and the two pending sibling-branch RFCs
-that will become RFC 0004 and RFC 0005 when merged.
+0001-0017, and ADRs 001-005 in this branch.
 
 The roadmap follows the current documentation style guidance:
 
@@ -15,12 +14,6 @@ The roadmap follows the current documentation style guidance:
 - dependencies are called out explicitly where work is not strictly linear;
 - headline tasks include signposts to the RFC sections that justify them.
 
-Two source RFCs are pending merge from a sibling branch but are treated here as
-reserved numbers:
-
-- **RFC 0004**: delegated authorized endpoint requests
-- **RFC 0005**: Monty-based Python code execution environment
-
 ## Source documents
 
 - [welcome-to-axinite.md](./welcome-to-axinite.md)
@@ -28,14 +21,25 @@ reserved numbers:
 - [RFC 0001](./rfcs/0001-expose-mcp-tool-definitions.md)
 - [RFC 0002](./rfcs/0002-expose-wasm-tool-definitions.md)
 - [RFC 0003](./rfcs/0003-skill-bundle-installation.md)
-- [Pending RFC 0004](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md)
-  delegated authorized endpoint requests, pending merge
-- [Pending RFC 0005](./rfcs/2026-03-11-monty-code-execution-environment.md)
-  Monty-based Python code execution environment, pending merge
+- [RFC 0004](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md)
+- [RFC 0005](./rfcs/0005-monty-code-execution-environment.md)
 - [RFC 0006](./rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md)
 - [RFC 0007](./rfcs/0007-secure-memory-sidecar-design.md)
 - [RFC 0008](./rfcs/0008-websocket-responses-api.md)
 - [RFC 0009](./rfcs/0009-feature-flags-frontend.md)
+- [RFC 0010](./rfcs/0010-intent-contracts-and-fail-closed-runtime-gates.md)
+- [ADR 001](./adr-001-rego-policy-engine-for-intent-enforcement.md)
+- [RFC 0011](./rfcs/0011-execution-truth-ledger-and-action-provenance.md)
+- [RFC 0012](./rfcs/0012-delegated-child-jobs-with-isolated-context.md)
+- [RFC 0013](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md)
+- [RFC 0014](./rfcs/0014-memory-projection-tiers-and-promotion-rules.md)
+- [RFC 0015](./rfcs/0015-hierarchical-memory-materialization-for-memoryd.md)
+- [RFC 0016](./rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md)
+- [RFC 0017](./rfcs/0017-hierarchical-recall-for-memoryd.md)
+- [ADR 002](./adr-002-authoritative-intent-state-must-remain-human-auditable.md)
+- [ADR 003](./adr-003-theme-management-belongs-in-memoryd.md)
+- [ADR 004](./adr-004-dual-path-semantic-extraction-with-validated-provenance.md)
+- [ADR 005](./adr-005-dual-mode-uncertainty-gating-for-hierarchical-recall.md)
 
 ## 1. Make tool contracts explicit
 
@@ -181,38 +185,34 @@ Dependencies: depends on 1.2 for the stricter WASM contract and informs 2.3 by
 establishing host-owned transport assembly for sensitive requests.
 
 - [ ] 2.1.1. Add typed setup fields and delegated endpoint binding persistence.
-  - See pending
-    [RFC 0004 §Current Surface](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#current-surface)
+  - [RFC 0004 §Current Surface](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#current-surface)
     and
-    [RFC 0004 §Rollout Plan](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
+    [RFC 0004 §Rollout Plan](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
   - Success: extension setup can store non-secret endpoint configuration
     separately from secret material, and endpoint bindings are validated and
     stored through a dedicated service.
 - [ ] 2.1.2. Add delegated endpoint capability schema and WIT runtime plumbing.
   Requires 2.1.1.
-  - See pending
-    [RFC 0004 §Goals](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#goals)
+  - [RFC 0004 §Goals](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#goals)
     and
-    [RFC 0004 §Rollout Plan](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
+    [RFC 0004 §Rollout Plan](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
   - Success: WASM capabilities can declare delegated endpoint use without
     naming the real host in a static allowlist, and the runtime exposes an
     `authorized-endpoint-request` path that resolves endpoint identities inside
     the host.
 - [ ] 2.1.3. Add endpoint-aware redaction, approval, and audit behaviour.
   Requires 2.1.2.
-  - See pending
-    [RFC 0004 §Summary](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#summary)
+  - [RFC 0004 §Summary](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#summary)
     and
-    [RFC 0004 §Rollout Plan](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
+    [RFC 0004 §Rollout Plan](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
   - Success: logs, errors, and approval surfaces do not reveal configured
     endpoint URLs, while audit events retain enough structure to diagnose
     failures without leaking origin data.
 - [ ] 2.1.4. Deliver a pilot extension against the delegated request path.
   Requires 2.1.3.
-  - See pending
-    [RFC 0004 §Problem](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#problem)
+  - [RFC 0004 §Problem](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#problem)
     and
-    [RFC 0004 §Rollout Plan](./rfcs/2026-03-11-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
+    [RFC 0004 §Rollout Plan](./rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md#rollout-plan).
   - Success: the pilot operates end to end without guest-visible raw endpoint
     URLs, and test coverage proves that agent-visible output does not leak the
     endpoint.
@@ -231,43 +231,38 @@ reference material, and provides an automation surface that routines can build
 on after 2.3 and 3.2 settle.
 
 - [ ] 2.2.1. Add a helper subprocess wrapper for Monty and expose `exec_code`.
-  - See pending
-    [RFC 0005 §Summary](./rfcs/2026-03-11-monty-code-execution-environment.md#summary)
+  - [RFC 0005 §Summary](./rfcs/0005-monty-code-execution-environment.md#summary)
     and
-    [RFC 0005 §Rollout Plan](./rfcs/2026-03-11-monty-code-execution-environment.md#rollout-plan).
+    [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: Monty runs out of process so a panic does not terminate the parent
     runtime, and host callbacks remain constrained to an explicit per-run tool
     allowlist.
 - [ ] 2.2.2. Implement the JSON ABI for tool calls, parameters, results, and
   state. Requires 2.2.1.
-  - See pending
-    [RFC 0005 §Goals](./rfcs/2026-03-11-monty-code-execution-environment.md#goals)
+  - [RFC 0005 §Goals](./rfcs/0005-monty-code-execution-environment.md#goals)
     and
-    [RFC 0005 §Rollout Plan](./rfcs/2026-03-11-monty-code-execution-environment.md#rollout-plan).
+    [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: cross-boundary data is normalized to JSON-shaped values only, and
     host callback approval plus attenuation rules are shared with existing tool
     execution paths.
 - [ ] 2.2.3. Add saved-script persistence with `save_script` and `run_script`.
   Requires 2.2.2.
-  - See pending
-    [RFC 0005 §Problem](./rfcs/2026-03-11-monty-code-execution-environment.md#problem)
+  - [RFC 0005 §Problem](./rfcs/0005-monty-code-execution-environment.md#problem)
     and
-    [RFC 0005 §Rollout Plan](./rfcs/2026-03-11-monty-code-execution-environment.md#rollout-plan).
+    [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: script source and manifest data are stored under a dedicated
     workspace scripts area, and per-script state is explicit rather than hidden
     in interpreter globals.
 - [ ] 2.2.4. Add run metadata and audit logging for script execution. Requires
   2.2.3.
-  - See pending
-    [RFC 0005 §Goals](./rfcs/2026-03-11-monty-code-execution-environment.md#goals)
+  - [RFC 0005 §Goals](./rfcs/0005-monty-code-execution-environment.md#goals)
     and
-    [RFC 0005 §Rollout Plan](./rfcs/2026-03-11-monty-code-execution-environment.md#rollout-plan).
+    [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: each script run records version, inputs, outputs, and failure
     state, and reruns can distinguish code changes from parameter changes.
 - [ ] 2.2.5. Integrate saved scripts into higher-level automation paths.
   Requires 2.2.3 and 2.2.4.
-  - See pending
-    [RFC 0005 §Rollout Plan](./rfcs/2026-03-11-monty-code-execution-environment.md#rollout-plan).
+  - [RFC 0005 §Rollout Plan](./rfcs/0005-monty-code-execution-environment.md#rollout-plan).
   - Success: routines or job orchestration can invoke saved scripts without
     bypassing approval or policy checks, and review or rerun surfaces expose
     script identity plus version clearly.
@@ -336,6 +331,125 @@ expected to use these tools safely at scale.
   - Success: tests exercise derived-data exfiltration paths rather than only
     literal token leakage, and failures localize whether the break occurred in
     template assembly, provenance tracking, or policy evaluation.
+
+### 2.4. Intent contracts and fail-closed enforcement
+
+Objective: replace the current distributed constraint model with a single
+inspectable intent contract and deterministic policy evaluation at every gate
+point.
+
+Learning opportunity: determine whether shadow-mode contract validation can
+run at acceptable latency on the tool-execution critical path, and whether
+Regorus built-in coverage gaps affect any realistic policy patterns.
+
+Dependencies: can be developed in parallel with 2.3 but should inform 2.3.4
+(policy-engine integration); informs 3.3 by defining the trust labels that
+memory promotion checks against; informs 4.4 by defining the decision
+artefact shape that the execution ledger stores.
+
+- [ ] 2.4.1. Define the intent contract schema, storage format, and scope
+  precedence rules.
+  - See [RFC 0010 §Intent Contract
+    Schema](./rfcs/0010-intent-contracts-and-fail-closed-runtime-gates.md#1-intent-contract-schema)
+    and [RFC 0010 §Contract Scoping and
+    Precedence](./rfcs/0010-intent-contracts-and-fail-closed-runtime-gates.md#2-contract-scoping-and-precedence).
+  - Success: contracts can be authored in YAML, stored at workspace, thread,
+    and job scope, and composed with narrowing-only semantics where child
+    scopes restrict but never widen parent constraints.
+- [ ] 2.4.2. Add trust labelling to all content entering model context.
+  Requires 2.4.1.
+  - See [RFC 0010 §Trust Labelling for Retrieved
+    Content](./rfcs/0010-intent-contracts-and-fail-closed-runtime-gates.md#3-trust-labelling-for-retrieved-content).
+  - Success: identity files, workspace documents, tool outputs, and MCP
+    resources carry explicit trust labels (trusted control-plane, curated
+    data-plane, untrusted data-plane), and the runtime distinguishes
+    instruction-bearing artefacts from reference material.
+- [ ] 2.4.3. Integrate the Rego policy engine for structured input evaluation
+  and decision output. Requires 2.4.1.
+  - See [ADR 001 §Integration
+    Design](./adr-001-rego-policy-engine-for-intent-enforcement.md#integration-design)
+    and [ADR 001 §Decision Outcome / Proposed
+    Direction](./adr-001-rego-policy-engine-for-intent-enforcement.md#decision-outcome--proposed-direction).
+  - Success: policy evaluation accepts the structured input schema (contract,
+    action, provenance, approval, workspace, sink), produces machine-readable
+    decision records, and denies by default on evaluation failure, absent
+    policy, or malformed input.
+- [ ] 2.4.4. Add gate evaluation at pre-tool-execution,
+  pre-memory-promotion, pre-delegation, and pre-sink-write points. Requires
+  2.4.2 and 2.4.3.
+  - See [RFC 0010 §Gate
+    Evaluation](./rfcs/0010-intent-contracts-and-fail-closed-runtime-gates.md#4-gate-evaluation)
+    and [RFC 0010 §Failure
+    Mode](./rfcs/0010-intent-contracts-and-fail-closed-runtime-gates.md#5-failure-mode-fail-closed-with-optional-downgrade).
+  - Success: every gate point evaluates the effective contract, produces a
+    decision artefact, and fails closed by default, and the `escalate` mode
+    routes blocked actions to operator approval without silently widening
+    authority.
+- [ ] 2.4.5. Run shadow-mode contract enforcement alongside existing safety
+  mechanisms. Requires 2.4.4.
+  - See [RFC 0010 §Compatibility and
+    Migration](./rfcs/0010-intent-contracts-and-fail-closed-runtime-gates.md#compatibility-and-migration).
+  - Success: shadow mode logs contract violations without blocking actions,
+    operators can validate the effective policy before switching to
+    enforcement, and latency metrics confirm that critical-path evaluation
+    stays within acceptable bounds.
+
+### 2.5. Delegated child jobs with isolated context
+
+Objective: provide a model-callable delegation primitive that creates bounded
+child jobs with isolated context, explicit tool allowlists, and budget
+enforcement.
+
+Learning opportunity: determine whether worktree-based workspace isolation
+adds sufficient safety for parallel code modifications, and whether
+summary-only result distillation preserves enough information for the parent
+context.
+
+Dependencies: depends on 2.3 for the host-owned request model and on 2.4 for
+contract narrowing semantics; informs 4.4 by producing delegation ledger
+entries.
+
+- [ ] 2.5.1. Add the delegation contract schema and child-job dispatch
+  through the existing scheduler.
+  - See [RFC 0012 §Delegation
+    Contract](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#1-delegation-contract)
+    and [RFC 0012 §Execution
+    Path](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#3-execution-path).
+  - Success: the `delegate_task` tool creates child jobs with explicit goals,
+    tool allowlists, and budget parameters, and dispatches them through the
+    existing scheduler's `dispatch_job_with_context()` path.
+- [ ] 2.5.2. Implement budget enforcement at the child-job boundary. Requires
+  2.5.1.
+  - See [RFC 0012 §Budget
+    Enforcement](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#6-budget-enforcement).
+  - Success: iteration, token, cost, and time caps are enforced
+    deterministically at the worker level, the scheduler enforces a
+    wall-clock timeout, and budget exhaustion produces a partial result with
+    an explicit status.
+- [ ] 2.5.3. Add approval context handling with inherit, narrow, and fresh
+  modes. Requires 2.5.1.
+  - See [RFC 0012 §Approval Context
+    Handling](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#4-approval-context-handling).
+  - Success: child jobs respect the selected approval inheritance mode, the
+    `narrow` default prevents escalation beyond parent-approved tools, and
+    new approval requests from child jobs route to the parent's operator.
+- [ ] 2.5.4. Implement workspace isolation for `none` and `worktree` modes.
+  Requires 2.5.1.
+  - See [RFC 0012 §Workspace
+    Isolation](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#5-workspace-isolation).
+  - Success: `worktree` mode creates a git worktree for the child job with
+    changes isolated until explicitly merged, and `none` mode shares the
+    parent's working directory for read-only analysis tasks.
+- [ ] 2.5.5. Add result distillation and delegation ledger entries. Requires
+  2.5.2, 2.5.3, and 2.5.4.
+  - See [RFC 0012 §Execution
+    Path](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#3-execution-path)
+    and [RFC 0011
+    §Summary](./rfcs/0011-execution-truth-ledger-and-action-provenance.md#summary).
+  - Success: the parent receives only a distilled summary with optional
+    evidence references, full child context is stored out-of-band, and
+    delegation events produce execution ledger entries recording the child
+    job ID, delegation contract, and budget parameters.
 
 ## 3. Move retrieval and conversation state onto durable boundaries
 
@@ -461,6 +575,227 @@ rather than bypassing the memory path it introduces.
     reconnects, and fallback behaviour, and rollout can be enabled per provider
     or model with dashboards for reconnect, compaction, and rate-limit failure
     rates.
+
+### 3.3. Memory projection tiers and promotion rules
+
+Objective: extend the memory sidecar with explicit projection classes,
+epistemic status, observer/subject scope, and promotion rules so recall
+distinguishes trusted facts from hypothesized inferences.
+
+Learning opportunity: determine whether layered recall (profile, fact,
+summary, episode) produces meaningfully better context than single-tier
+vector retrieval, and whether batched extraction materially reduces
+per-message extraction overhead.
+
+Dependencies: depends on 3.1 for the sidecar architecture, extraction
+pipeline, and Qdrant/Oxigraph storage; informs 2.4 by defining the promotion
+boundaries that intent contracts gate.
+
+- [ ] 3.3.1. Add projection class and epistemic status fields to memory
+  artefacts in Qdrant payloads and Oxigraph triples.
+  - See [RFC 0014 §Projection
+    Classes](./rfcs/0014-memory-projection-tiers-and-promotion-rules.md#1-projection-classes)
+    and [RFC 0014 §Epistemic
+    Status](./rfcs/0014-memory-projection-tiers-and-promotion-rules.md#2-epistemic-status).
+  - Success: every memory artefact carries a projection class (episode,
+    summary, concept, fact, profile) and epistemic status (explicit, curated,
+    deduced, hypothesized, retracted), and the taxonomy is extensible without
+    schema migration for existing artefacts.
+- [ ] 3.3.2. Add observer and subject scope to memory artefacts. Requires
+  3.3.1.
+  - See [RFC 0014 §Observer and Subject
+    Scope](./rfcs/0014-memory-projection-tiers-and-promotion-rules.md#3-observer-and-subject-scope).
+  - Success: every artefact carries observer_id, subject_id, scope (private,
+    workspace, shared), and optional audience, and recall enforces scope
+    constraints at the query boundary so only artefacts within the caller's
+    scope are returned.
+- [ ] 3.3.3. Implement promotion rules governing epistemic level transitions.
+  Requires 3.3.1.
+  - See [RFC 0014 §Promotion
+    Rules](./rfcs/0014-memory-projection-tiers-and-promotion-rules.md#4-promotion-rules).
+  - Success: hypothesized facts promote to deduced when corroboration
+    thresholds are met, deduced facts promote to curated only by explicit
+    operator action, and profile promotion requires explicit or curated
+    status plus configurable stability duration.
+- [ ] 3.3.4. Implement contradiction detection, recording, and resolution.
+  Requires 3.3.1 and 3.3.3.
+  - See [RFC 0014 §Contradiction
+    Handling](./rfcs/0014-memory-projection-tiers-and-promotion-rules.md#5-contradiction-handling).
+  - Success: new evidence that contradicts an existing fact triggers the
+    appropriate resolution strategy (automatic retraction for lower-trust
+    versus higher-trust, operator escalation for same-trust conflicts), and
+    contradiction records are stored as Oxigraph relations linking the
+    conflicting facts.
+- [ ] 3.3.5. Add reconciliation metadata and sync state tracking per
+  projection target. Requires 3.3.1.
+  - See [RFC 0014 §Reconciliation
+    Metadata](./rfcs/0014-memory-projection-tiers-and-promotion-rules.md#6-reconciliation-metadata).
+  - Success: every projection target carries sync metadata (status, retry
+    count, last error, last synced), memoryd marks projections as pending
+    when targets are unavailable, and health and lag metrics are exposed.
+- [ ] 3.3.6. Restructure recall to query projection layers separately before
+  synthesis. Requires 3.3.1, 3.3.2, and 3.3.5.
+  - See [RFC 0014 §Recall Across Projection
+    Layers](./rfcs/0014-memory-projection-tiers-and-promotion-rules.md#7-recall-across-projection-layers).
+  - Success: recall queries profile, fact, summary, and episode layers
+    separately, results are annotated with projection class and epistemic
+    status, and hypotheses are included only when explicitly requested.
+- [ ] 3.3.7. Add batching and windowing between outbox consumption and
+  extraction. Requires 3.1.1.
+  - See [RFC 0014 §Batching and
+    Windowing](./rfcs/0014-memory-projection-tiers-and-promotion-rules.md#8-batching-and-windowing).
+  - Success: extraction triggers respect min_context_tokens,
+    max_batch_delay_ms, flush_on_idle, and flush_on_explicit_write
+    thresholds, batching is scoped by workspace, conversation, and entity,
+    and configuration is per-workspace.
+
+### 3.4. Hierarchical memory materialization and recall
+
+Objective: materialize the post-0014 memory hierarchy, maintain stable theme
+structure over semantic carriers, and use that structure for budget-aware
+hierarchical recall.
+
+Learning opportunity: determine whether the theme layer and hierarchical recall
+deliver better evidence packs than projection-layer recall alone, and whether
+dual-path extraction plus dual-mode expansion gating are worth their added
+operational complexity.
+
+Dependencies: depends on 3.1 for the sidecar architecture and stores; depends
+on 3.3 for the normative projection classes, epistemic states, and
+projection-layer filtering rules.
+
+- [ ] 3.4.1. Materialize episode nodes, semantic carriers, and theme nodes
+  with durable provenance and temporal edges.
+  - See [RFC 0015 §Materialized Node
+    Families](./rfcs/0015-hierarchical-memory-materialization-for-memoryd.md#2-materialized-node-families),
+    [RFC 0015 §Temporal
+    Model](./rfcs/0015-hierarchical-memory-materialization-for-memoryd.md#5-temporal-model),
+    and [RFC 0015 §Provenance
+    Model](./rfcs/0015-hierarchical-memory-materialization-for-memoryd.md#6-provenance-model).
+  - Success: `memoryd` writes durable episode, semantic-carrier, and theme
+    structures; all retrievable semantic carriers resolve to concrete evidence;
+    and curated-document projection plus retraction propagation preserve the
+    RFC 0015 lineage rules.
+- [ ] 3.4.2. Implement the shared extraction schema, provenance validator, and
+  dual-path semantic extraction contract. Requires 3.4.1.
+  - See [ADR 004 §Decision Outcome / Proposed
+    Direction](./adr-004-dual-path-semantic-extraction-with-validated-provenance.md#decision-outcome--proposed-direction)
+    and [ADR 004 §Migration
+    Plan](./adr-004-dual-path-semantic-extraction-with-validated-provenance.md#migration-plan).
+  - Success: `memoryd` supports `encoder_extractive` and `llm_structured`
+    extraction behind one schema, unresolved support references are rejected,
+    and shadow mode can compare accepted versus rejected outputs per path.
+- [ ] 3.4.3. Add the workspace-local `ThemeManager` and stable theme IDs in
+  `memoryd`. Requires 3.4.1.
+  - See [ADR 003 §Decision Outcome / Proposed
+    Direction](./adr-003-theme-management-belongs-in-memoryd.md#decision-outcome--proposed-direction)
+    and [RFC 0016 §Theme Manager
+    Responsibilities](./rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md#theme-manager-responsibilities).
+  - Success: theme identity, lineage, and balancing policy are sidecar-owned;
+    Chutoro remains the clustering substrate; and the manager can rebuild from
+    stored semantic carriers when a clustering checkpoint is lost.
+- [ ] 3.4.4. Implement theme attach, split, merge, summary refresh, and sparse
+  kNN maintenance with shadow-mode safety rails. Requires 3.4.3.
+  - See [RFC 0016 §Incremental Attach
+    Path](./rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md#incremental-attach-path),
+    [RFC 0016 §Split
+    Proposals](./rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md#split-proposals),
+    [RFC 0016 §Merge
+    Proposals](./rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md#merge-proposals),
+    and [RFC 0016 §Theme and Semantic-Carrier kNN
+    Graph](./rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md#theme-and-semantic-carrier-knn-graph).
+  - Success: theme maintenance is bounded, lineage is auditable, summary
+    refresh stays asynchronous, and shadow metrics expose theme-size drift,
+    split rate, merge rate, and rebuild rate before live balancing is enabled.
+- [ ] 3.4.5. Extend `Recall` with projection-aware hierarchical profiles and
+  structured context assembly. Requires 3.3.6, 3.4.2, and 3.4.4.
+  - See [RFC 0017 §Projection-Aware Candidate
+    Generation](./rfcs/0017-hierarchical-recall-for-memoryd.md#stage-0-projection-aware-candidate-generation),
+    [RFC 0017 §Representative Selection Over the High-Level
+    Graph](./rfcs/0017-hierarchical-recall-for-memoryd.md#stage-i-representative-selection-over-the-high-level-graph),
+    and [RFC 0017 §Context
+    Assembly](./rfcs/0017-hierarchical-recall-for-memoryd.md#context-assembly).
+  - Success: `Recall` supports `flat_v1`, `hierarchical_v2`, `cheap_v2`, and
+    `evidence_v2`; returned blocks stay annotated with projection class and
+    epistemic status; and fallback to `flat_v1` remains explicit and
+    inspectable.
+- [ ] 3.4.6. Implement proxy and model-assisted stage-II expansion gating plus
+  shadow comparison. Requires 3.4.5.
+  - See [ADR 005 §Decision Outcome / Proposed
+    Direction](./adr-005-dual-mode-uncertainty-gating-for-hierarchical-recall.md#decision-outcome--proposed-direction)
+    and [RFC 0017 §Uncertainty and Gain
+    Estimation](./rfcs/0017-hierarchical-recall-for-memoryd.md#uncertainty-and-gain-estimation).
+  - Success: stage-II gain estimation exposes `estimated_gain`,
+    `estimated_token_cost`, and `reason_code`; cheap and evidence-heavy modes
+    can be shadow-compared; and hierarchical recall never depends on one
+    fragile uncertainty surface.
+
+### 3.5. Auxiliary provider profiles and stable-prefix prompt assembly
+
+Objective: generalize the provider chain into named profiles with independent
+fallback chains and capability metadata, and restructure prompt assembly so
+the stable prefix maximizes cache hits across providers.
+
+Learning opportunity: measure prompt cache hit rates before and after the
+stable-prefix restructuring to validate the cost and latency benefit, and
+determine whether per-job prefix freeze scope is the right default for
+WebSocket Responses sessions.
+
+Dependencies: depends on 3.2 for the Responses session model that
+per-provider-session freeze scope would align with; informs 3.1 by routing
+memory extraction to the auxiliary profile. ADR 002 requires that
+provider-side continuation state remain a cache, not the authoritative
+source; this step must treat provider profiles accordingly.
+
+- [ ] 3.5.1. Add named provider profile configuration and per-profile
+  decorated provider chains.
+  - See [RFC 0013 §Named Provider
+    Profiles](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#1-named-provider-profiles)
+    and [RFC 0013
+    §Requirements](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#requirements).
+  - Success: the provider configuration supports named profiles (at minimum
+    main and auxiliary), each profile receives its own
+    retry/failover/circuit-breaker/cache chain, and existing configurations
+    without explicit profiles continue to function unchanged.
+- [ ] 3.5.2. Implement the profile dispatch table and route auxiliary
+  workloads to the appropriate profile. Requires 3.5.1.
+  - See [RFC 0013 §Profile Dispatch
+    Table](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#2-profile-dispatch-table).
+  - Success: summarization, classification, heartbeat, and memory extraction
+    default to the auxiliary profile without per-call configuration, and the
+    dispatch table is operator-configurable.
+- [ ] 3.5.3. Add provider capability and privacy metadata to profile
+  definitions. Requires 3.5.1.
+  - See [RFC 0013 §Provider Capability and Privacy
+    Metadata](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#3-provider-capability-and-privacy-metadata).
+  - Success: provider definitions can carry optional metadata
+    (supports_vision, supports_function_calling, data_retention,
+    data_collection), and profile dispatch uses metadata to avoid selecting
+    providers likely to fail or violate operator intent.
+- [ ] 3.5.4. Restructure prompt assembly into stable prefix and volatile
+  suffix segments. Requires 3.5.1.
+  - See [RFC 0013 §Stable-Prefix Prompt
+    Assembly](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#4-stable-prefix-prompt-assembly)
+    and [RFC 0013 §Prefix Freeze
+    Scope](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#5-prefix-freeze-scope).
+  - Success: system instructions, identity files, skill definitions, and
+    intent contracts form a byte-stable prefix, conversation turns and tool
+    results sit after the cache break, and the prefix remains byte-identical
+    across consecutive requests within the freeze scope.
+- [ ] 3.5.5. Add provider-specific cache control breakpoints and per-job
+  prefix freeze scope. Requires 3.5.4.
+  - See [RFC 0013 §Stable-Prefix Prompt
+    Assembly](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#4-stable-prefix-prompt-assembly).
+  - Success: Anthropic requests include `cache_control` breakpoints after
+    the stable prefix, OpenAI requests benefit from automatic prefix caching,
+    and per-job freeze scope is the configurable default.
+- [ ] 3.5.6. Extend chaos tests to cover auxiliary-profile failure modes.
+  Requires 3.5.1 and 3.5.2.
+  - See [RFC 0013
+    §Requirements](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#requirements).
+  - Success: tests cover fallback from auxiliary to main, circuit breaking on
+    auxiliary provider, and profile-specific failure isolation, and existing
+    provider chaos tests continue to pass.
 
 ## 4. Harden operator lifecycle and control surfaces
 
@@ -588,7 +923,76 @@ output modes, and stability promises before 4.3.2-4.3.4.
     local backups, self-update flows, subagent spawn, and session export with
     stable flags and audit-friendly output.
 
-### 4.4. Feature flags for progressive front-end rollout
+### 4.4. Execution truth ledger and action provenance
+
+Objective: add an append-only execution ledger that records system-level
+actions independently of the conversation transcript, and expose the ledger
+as a first-class operator surface.
+
+Learning opportunity: determine which action categories produce the most
+useful audit signal for operators, and whether completion-claim verification
+adds genuine trust value or produces excessive noise.
+
+Dependencies: informs 2.4 by storing policy decision artefacts; informs 2.5
+by storing delegation events; builds on 3.2 for provider-event recording;
+builds on 4.2 for hook-inspection seams.
+
+- [ ] 4.4.1. Add the append-only ledger table to both PostgreSQL and libSQL
+  backends.
+  - See [RFC 0011 §Ledger Entry
+    Schema](./rfcs/0011-execution-truth-ledger-and-action-provenance.md#1-ledger-entry-schema)
+    and [RFC 0011
+    §Storage](./rfcs/0011-execution-truth-ledger-and-action-provenance.md#3-storage).
+  - Success: the ledger schema supports the defined entry fields (id,
+    timestamp, scope IDs, entry_type, actor, detail JSON, redacted flag,
+    content_hash, contract_version), rows are never updated or deleted
+    during normal operation, and the schema is versioned and migration-safe.
+- [ ] 4.4.2. Add ledger writes for tool invocation, approval decision, and
+  policy decision entry types. Requires 4.4.1.
+  - See [RFC 0011 §Entry Types and
+    Payloads](./rfcs/0011-execution-truth-ledger-and-action-provenance.md#2-entry-types-and-payloads).
+  - Success: every tool invocation, approval gate decision, and policy
+    evaluation produces a ledger entry with sanitized parameters and
+    execution duration, writes do not block the critical path of tool
+    execution, and sensitive content is redactable with SHA-256 content
+    hashes.
+- [ ] 4.4.3. Add ledger writes for file write, workspace mutation,
+  delegation, and provider event entry types. Requires 4.4.1 and 4.4.2.
+  - See [RFC 0011 §Entry Types and
+    Payloads](./rfcs/0011-execution-truth-ledger-and-action-provenance.md#2-entry-types-and-payloads)
+    and [ADR 002 §Decision Outcome / Proposed
+    Direction](./adr-002-authoritative-intent-state-must-remain-human-auditable.md#decision-outcome--proposed-direction).
+  - Success: file writes record path and content hash, workspace mutations
+    record document changes, delegation entries record child-job contracts
+    and budgets, and provider events record `previous_response_id`
+    transitions, compaction events, and connection lifecycle changes.
+- [ ] 4.4.4. Add the bypass event entry type for actions that bypass normal
+  persistence. Requires 4.4.1.
+  - See [RFC 0011 §Entry Types and
+    Payloads](./rfcs/0011-execution-truth-ledger-and-action-provenance.md#2-entry-types-and-payloads).
+  - Success: auth token submissions, provider-native compaction events, and
+    other non-standard persistence paths produce redacted ledger entries that
+    preserve the fact of the action without leaking sensitive content.
+- [ ] 4.4.5. Add ledger query API to the web gateway with filtering by
+  workspace, thread, job, entry type, actor, and time range. Requires 4.4.2
+  and 4.4.3.
+  - See [RFC 0011 §UI
+    Surface](./rfcs/0011-execution-truth-ledger-and-action-provenance.md#4-ui-surface).
+  - Success: operators can query the ledger programmatically, results are
+    filterable by all indexed fields, and the API serves the ledger UI
+    panel.
+- [ ] 4.4.6. Add the execution ledger UI panel with correlation to
+  conversation turns and mismatch highlighting. Requires 4.4.5.
+  - See [RFC 0011 §UI
+    Surface](./rfcs/0011-execution-truth-ledger-and-action-provenance.md#4-ui-surface)
+    and [RFC 0011 §Completion Claim
+    Verification](./rfcs/0011-execution-truth-ledger-and-action-provenance.md#5-completion-claim-verification).
+  - Success: the ledger panel displays entries in chronological order with
+    filtering, correlates tool invocation entries with assistant messages
+    where possible, and highlights mismatches where assistant completion
+    claims lack matching ledger entries.
+
+### 4.5. Feature flags for progressive front-end rollout
 
 Objective: add a lightweight feature-flag delivery mechanism so the backend
 can declare which front-end capabilities are enabled, the browser can gate
@@ -604,15 +1008,15 @@ Dependencies: independent of other Phase 4 tasks, but provides a foundation for
 Phase 6 front-end features (canvas hosting, advanced media handling) to roll
 out behind flags.
 
-- [ ] 4.4.1. Add per-flag environment variable parsing and registry
+- [ ] 4.5.1. Add per-flag environment variable parsing and registry
   initialization in `GatewayChannel` or a dedicated config module.
   - See [RFC 0009 §Configuration inputs](./rfcs/0009-feature-flags-frontend.md#1-configuration-inputs).
   - Success: `FEATURE_FLAG_<NAME>` environment variables are parsed into a
     `FeatureFlagRegistry` with plain `HashMap<String, bool>`, invalid flag
     names are silently discarded with a warning, and compiled defaults are
     applied for flags without environment overrides.
-- [ ] 4.4.2. Add the `FeatureFlagRegistry` struct and `GatewayState`
-  integration. Requires 4.4.1.
+- [ ] 4.5.2. Add the `FeatureFlagRegistry` struct and `GatewayState`
+  integration. Requires 4.5.1.
   - See [RFC 0009 §Data shape](./rfcs/0009-feature-flags-frontend.md#2-data-shape)
     and [RFC 0009 §GatewayState integration](./rfcs/0009-feature-flags-frontend.md#3-gatewaystate-integration).
   - Success: `GatewayState` holds an `Arc<RwLock<FeatureFlagRegistry>>` that
@@ -620,8 +1024,8 @@ out behind flags.
     change, resolves flags per deployment while ignoring user-scoped
     `feature_flag:` rows, and applies subsystem availability defaults during
     initialization based on `GatewayState` field presence.
-- [ ] 4.4.3. Extend the settings handler to detect `feature_flag:` keys and
-  apply runtime overrides to the registry. Requires 4.4.2.
+- [ ] 4.5.3. Extend the settings handler to detect `feature_flag:` keys and
+  apply runtime overrides to the registry. Requires 4.5.2.
   - See [RFC 0009 §Configuration inputs](./rfcs/0009-feature-flags-frontend.md#1-configuration-inputs).
   - Success: `PUT /api/settings/feature_flag:<name>` requires a deployment
     identifier, persists to the database as a deployment-scoped `settings`
@@ -629,24 +1033,24 @@ out behind flags.
     updates the `FeatureFlagRegistry` for that deployment so subsequent
     `GET /api/features` requests reflect the updated flag state without a
     gateway restart.
-- [ ] 4.4.4. Implement the `GET /api/features` endpoint. Requires 4.4.2.
+- [ ] 4.5.4. Implement the `GET /api/features` endpoint. Requires 4.5.2.
   - See [RFC 0009 §API endpoint](./rfcs/0009-feature-flags-frontend.md#4-api-endpoint).
   - Success: the endpoint returns a JSON object mapping flag names to booleans
     (e.g. `{ "experimental_chat_ui": true, "dark_mode": false }`) by
     serializing the resolved registry state from `GatewayState` for the
     requested deployment, requires a deployment identifier in the request, and
     performs no database query on the hot path.
-- [ ] 4.4.5. Add front-end `loadFeatureFlags()` integration in `app.js`.
-  Requires 4.4.4.
+- [ ] 4.5.5. Add front-end `loadFeatureFlags()` integration in `app.js`.
+  Requires 4.5.4.
   - See [RFC 0009 §Front-end consumption](./rfcs/0009-feature-flags-frontend.md#5-front-end-consumption).
   - Success: the browser fetches `GET /api/features` after authentication,
-    includes the deployment identifier required by the 4.4.4 API contract,
+    includes the deployment identifier required by the 4.5.4 API contract,
     stores the result in a plain `featureFlags` object, and uses
     `featureFlags.experimental_chat_ui` checks for gating UI rendering and
     behaviour.
-- [ ] 4.4.6. Add integration tests for per-flag resolution, operator overrides,
-  subsystem defaults, mutability, and endpoint contract. Requires 4.4.3, 4.4.4,
-  and 4.4.5.
+- [ ] 4.5.6. Add integration tests for per-flag resolution, operator overrides,
+  subsystem defaults, mutability, and endpoint contract. Requires 4.5.3, 4.5.4,
+  and 4.5.5.
   - See [RFC 0009 §Requirements](./rfcs/0009-feature-flags-frontend.md#requirements).
   - Success: tests cover per-flag environment variable parsing (including
     `FEATURE_FLAG_<NAME>` pattern matching), operator override persistence and
@@ -886,4 +1290,15 @@ resulting runtime satisfies the following product-level outcomes:
   class service, health, hook, and CLI workflows;
 - model choice, compaction policy, reasoning visibility, citations, canvas
   hosting, and rich media handling are explicit runtime capabilities rather than
-  implicit or surface-specific behaviour.
+  implicit or surface-specific behaviour;
+- intent contracts declare inspectable, diffable constraints at every scope,
+  and fail-closed gate evaluation blocks rather than permits unauthorized
+  actions;
+- an append-only execution ledger records system-level truth independently of
+  the model's conversational narrative;
+- delegated child jobs run with isolated context, explicit budgets, and
+  narrowing-only contract inheritance;
+- memory recall distinguishes facts from hypotheses through explicit projection
+  tiers and epistemic status;
+- auxiliary provider profiles route non-critical workloads to cost-appropriate
+  models, and stable-prefix prompt assembly maximizes cache hits.
