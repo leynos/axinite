@@ -8,6 +8,7 @@ use futures::StreamExt;
 
 use crate::tools::tool::ToolError;
 
+const USER_AGENT: &str = concat!("ironclaw/", env!("CARGO_PKG_VERSION"));
 const MAX_DOWNLOAD_BYTES: usize = 10 * 1024 * 1024;
 const MAX_DECOMPRESSED: usize = 1024 * 1024;
 
@@ -112,7 +113,7 @@ fn validate_resolved_addrs(host: &str, addrs: &[SocketAddr]) -> Result<(), ToolE
 fn build_fetch_client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .user_agent("ironclaw/0.1")
+        .user_agent(USER_AGENT)
         .redirect(reqwest::redirect::Policy::none())
 }
 
@@ -153,7 +154,7 @@ async fn build_safe_fetch_client(parsed: &reqwest::Url) -> Result<reqwest::Clien
 
 fn is_private_ip(ip: &IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
+        IpAddr::V4(v4) => v4.is_private(),
         IpAddr::V6(v6) => {
             let segments = v6.segments();
             (segments[0] & 0xfe00) == 0xfc00
@@ -333,6 +334,24 @@ fn extract_skill_entry(
     })
 }
 
+/// Extract the root `SKILL.md` payload from a complete ZIP archive.
+///
+/// This function expects a complete ZIP archive as untrusted `&[u8]` input and
+/// performs manual local-header parsing rather than relying on a high-level ZIP
+/// library. It scans entries in local-header order, requires a root filename of
+/// exactly `SKILL.md`, and validates offsets, lengths, and decompression sizes
+/// before returning the decoded payload.
+///
+/// The parser enforces the configured size constraints for compressed input,
+/// decompressed entry data, filename-derived offsets, and checked
+/// offset-and-length arithmetic. Callers must treat the provided bytes as
+/// untrusted input, and this function will reject malformed, truncated, or
+/// oversized archives before attempting to return the skill payload.
+///
+/// Returns `Err` when the ZIP headers are invalid or corrupt, when the archive
+/// does not contain the required `SKILL.md` entry, when size or offset limits
+/// are exceeded, when UTF-8 decoding fails, or when another [`ToolError`]
+/// validation error occurs.
 fn extract_skill_from_zip(data: &[u8]) -> Result<String, ToolError> {
     let mut offset = 0usize;
 
