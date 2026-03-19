@@ -18,9 +18,13 @@ fn test_dir_base() -> std::path::PathBuf {
 async fn run_trace(
     fixture_path: &str,
     message: &str,
+    path_replacements: &[(&str, &str)],
 ) -> (LlmTrace, Vec<OutgoingResponse>, TestRig) {
-    let trace = LlmTrace::from_file(fixture_path)
+    let mut trace = LlmTrace::from_file(fixture_path)
         .unwrap_or_else(|_| panic!("failed to load {fixture_path}"));
+    for (from, to) in path_replacements {
+        trace.patch_path(from, to);
+    }
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
@@ -40,7 +44,8 @@ async fn test_json_operations() {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/coverage/json_operations.json"
     );
-    let (trace, responses, rig) = run_trace(fixture_path, "Parse and query this json data").await;
+    let (trace, responses, rig) =
+        run_trace(fixture_path, "Parse and query this json data", &[]).await;
 
     rig.verify_trace_expects(&trace, &responses);
 
@@ -73,7 +78,7 @@ async fn test_shell_echo() {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/coverage/shell_echo.json"
     );
-    let (trace, responses, rig) = run_trace(fixture_path, "Run a shell command for me").await;
+    let (trace, responses, rig) = run_trace(fixture_path, "Run a shell command for me", &[]).await;
 
     rig.verify_trace_expects(&trace, &responses);
     rig.shutdown();
@@ -99,7 +104,12 @@ async fn test_list_dir() {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/coverage/list_dir.json"
     );
-    let (trace, responses, rig) = run_trace(fixture_path, "List the test directory").await;
+    let (trace, responses, rig) = run_trace(
+        fixture_path,
+        "List the test directory",
+        &[("/tmp/ironclaw_coverage_test_list_dir", test_dir.as_str())],
+    )
+    .await;
 
     rig.verify_trace_expects(&trace, &responses);
     rig.shutdown();
@@ -119,7 +129,12 @@ async fn test_apply_patch_chain() {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/coverage/apply_patch_chain.json"
     );
-    let (trace, responses, rig) = run_trace(fixture_path, "Write a file and patch it").await;
+    let (trace, responses, rig) = run_trace(
+        fixture_path,
+        "Write a file and patch it",
+        &[("/tmp/ironclaw_coverage_test_apply_patch", test_dir.as_str())],
+    )
+    .await;
 
     rig.verify_trace_expects(&trace, &responses);
 
@@ -155,7 +170,7 @@ async fn test_memory_full_cycle() {
         "/tests/fixtures/llm_traces/coverage/memory_full_cycle.json"
     );
     let (trace, responses, rig) =
-        run_trace(fixture_path, "Exercise all four memory operations").await;
+        run_trace(fixture_path, "Exercise all four memory operations", &[]).await;
 
     rig.verify_trace_expects(&trace, &responses);
 

@@ -227,14 +227,9 @@ impl LlmTrace {
     #[allow(dead_code)]
     pub fn patch_path(&mut self, from: &str, to: &str) {
         for turn in &mut self.turns {
-            for step in &mut turn.steps {
-                if let TraceResponse::ToolCalls { tool_calls, .. } = &mut step.response {
-                    for tool_call in tool_calls {
-                        patch_json_value(&mut tool_call.arguments, from, to);
-                    }
-                }
-            }
+            Self::patch_steps(&mut turn.steps, from, to);
         }
+        Self::patch_steps(&mut self.steps, from, to);
     }
 
     /// Return only the playable steps from the raw steps (text + tool_calls),
@@ -246,5 +241,15 @@ impl LlmTrace {
             .iter()
             .filter(|step| !matches!(step.response, TraceResponse::UserInput { .. }))
             .collect()
+    }
+
+    fn patch_steps(steps: &mut [TraceStep], from: &str, to: &str) {
+        for step in steps {
+            if let TraceResponse::ToolCalls { tool_calls, .. } = &mut step.response {
+                for tool_call in tool_calls {
+                    patch_json_value(&mut tool_call.arguments, from, to);
+                }
+            }
+        }
     }
 }

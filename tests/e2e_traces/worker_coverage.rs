@@ -147,12 +147,11 @@ async fn tool_error_feedback() {
     let test_dir = tmp.path().to_str().expect("tempdir path");
 
     // Load and patch the fixture's recovery path to use our tempdir.
-    let fixture_str = std::fs::read_to_string(concat!(
+    let mut trace = LlmTrace::from_file(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/worker/tool_error_feedback.json"
     ))
-    .expect("read fixture");
-    let mut trace: LlmTrace = serde_json::from_str(&fixture_str).expect("parse fixture");
+    .expect("failed to load worker/tool_error_feedback.json");
     trace.patch_path(
         "/tmp/ironclaw_error_feedback_test/recovered.txt",
         &format!("{test_dir}/recovered.txt"),

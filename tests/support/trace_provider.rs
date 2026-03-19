@@ -22,16 +22,19 @@ use super::trace_types::LlmTrace;
 /// time. The provider advances through them linearly regardless of turn
 /// boundaries.
 ///
-/// **Concurrency assumption:** Uses `AtomicUsize` for step indexing, so
-/// concurrent calls to `complete`/`complete_with_tools` may consume steps
-/// in non-deterministic order. Current tests are single-threaded per rig;
-/// if parallel tool execution is ever enabled, steps may interleave.
+/// Mutable replay state is held behind one mutex so request capture and step
+/// advancement stay in lockstep even if a test drives the provider from more
+/// than one task.
+struct TraceLlmState {
+    index: usize,
+    captured_requests: Vec<Vec<ChatMessage>>,
+}
+
 pub struct TraceLlm {
     model_name: String,
     steps: Vec<TraceStep>,
-    index: AtomicUsize,
+    inner: Mutex<TraceLlmState>,
     hint_mismatches: AtomicUsize,
-    captured_requests: Mutex<Vec<Vec<ChatMessage>>>,
 }
 
 #[allow(dead_code)]
@@ -46,9 +49,11 @@ impl TraceLlm {
         Self {
             model_name: trace.model_name,
             steps,
-            index: AtomicUsize::new(0),
+            inner: Mutex::new(TraceLlmState {
+                index: 0,
+                captured_requests: Vec::new(),
+            }),
             hint_mismatches: AtomicUsize::new(0),
-            captured_requests: Mutex::new(Vec::new()),
         }
     }
 
@@ -60,7 +65,10 @@ impl TraceLlm {
 
     /// Number of calls made so far.
     pub fn calls(&self) -> usize {
-        self.index.load(Ordering::Relaxed)
+        self.inner
+            .lock()
+            .map(|inner| inner.index)
+            .unwrap_or_else(|poisoned| poisoned.into_inner().index)
     }
 
     /// Number of request-hint mismatches observed (warnings only).
@@ -69,8 +77,9 @@ impl TraceLlm {
     }
 
     /// Clone of all captured request message lists.
-    pub fn captured_requests(&self) -> Vec<Vec<ChatMessage>> {
-        self.captured_requests.lock().unwrap().clone()
+    pub fn captured_requests(&self) -> Result<Vec<Vec<ChatMessage>>, LlmError> {
+        self.lock_inner()
+            .map(|inner| inner.captured_requests.clone())
     }
 
     /// Advance the step index and return the current step, or an error if exhausted.
@@ -82,12 +91,14 @@ impl TraceLlm {
     /// result (e.g., `{{call_cj_1.job_id}}` extracts `.job_id` from the result
     /// of tool call `call_cj_1`).
     fn next_step(&self, messages: &[ChatMessage]) -> Result<TraceStep, LlmError> {
-        self.captured_requests
-            .lock()
-            .unwrap()
-            .push(messages.to_vec());
+        let idx = {
+            let mut inner = self.lock_inner()?;
+            inner.captured_requests.push(messages.to_vec());
+            let idx = inner.index;
+            inner.index += 1;
+            idx
+        };
 
-        let idx = self.index.fetch_add(1, Ordering::Relaxed);
         let mut step = self
             .steps
             .get(idx)
@@ -118,6 +129,13 @@ impl TraceLlm {
         }
 
         Ok(step)
+    }
+
+    fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, TraceLlmState>, LlmError> {
+        self.inner.lock().map_err(|_| LlmError::RequestFailed {
+            provider: self.model_name.clone(),
+            reason: "TraceLlm state lock poisoned".to_string(),
+        })
     }
 
     fn validate_hint(&self, hint: &RequestHint, messages: &[ChatMessage]) {

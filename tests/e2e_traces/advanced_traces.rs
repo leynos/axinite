@@ -44,7 +44,7 @@ async fn multi_turn_memory_coherence() {
 #[tokio::test]
 async fn user_steering() {
     let _cleanup = CleanupGuard::new().file("/tmp/ironclaw_steer_test.txt");
-    let _ = std::fs::remove_file("/tmp/ironclaw_steer_test.txt");
+    let _ = tokio::fs::remove_file("/tmp/ironclaw_steer_test.txt").await;
 
     let trace = LlmTrace::from_file(fixture_path("advanced", "steering.json"))
         .expect("failed to load fixture: advanced/steering.json");
@@ -59,7 +59,8 @@ async fn user_steering() {
     assert!(!all_responses[1].is_empty(), "Turn 2: no response");
 
     // Extra: verify file on disk after steering.
-    let content = std::fs::read_to_string("/tmp/ironclaw_steer_test.txt")
+    let content = tokio::fs::read_to_string("/tmp/ironclaw_steer_test.txt")
+        .await
         .expect("steer test file should exist");
     assert_eq!(
         content, "goodbye",
@@ -84,7 +85,7 @@ async fn user_steering() {
 #[tokio::test]
 async fn tool_error_recovery() {
     let _cleanup = CleanupGuard::new().file("/tmp/ironclaw_recovery_test.txt");
-    let _ = std::fs::remove_file("/tmp/ironclaw_recovery_test.txt");
+    let _ = tokio::fs::remove_file("/tmp/ironclaw_recovery_test.txt").await;
 
     let trace = LlmTrace::from_file(fixture_path("advanced", "tool_error_recovery.json"))
         .expect("failed to load fixture: advanced/tool_error_recovery.json");
@@ -105,7 +106,8 @@ async fn tool_error_recovery() {
     );
 
     // The second write should have succeeded on disk.
-    let content = std::fs::read_to_string("/tmp/ironclaw_recovery_test.txt")
+    let content = tokio::fs::read_to_string("/tmp/ironclaw_recovery_test.txt")
+        .await
         .expect("recovery file should exist");
     assert_eq!(content, "recovered successfully");
 
@@ -152,15 +154,18 @@ async fn long_tool_chain() {
     );
 
     // Verify files on disk.
-    let log = std::fs::read_to_string(format!("{test_dir}/log.md")).expect("log.md should exist");
+    let log = tokio::fs::read_to_string(format!("{test_dir}/log.md"))
+        .await
+        .expect("log.md should exist");
     assert!(
         log.contains("Afternoon"),
         "log.md missing Afternoon section"
     );
     assert!(log.contains("PR #42"), "log.md missing PR #42");
 
-    let summary =
-        std::fs::read_to_string(format!("{test_dir}/summary.md")).expect("summary.md should exist");
+    let summary = tokio::fs::read_to_string(format!("{test_dir}/summary.md"))
+        .await
+        .expect("summary.md should exist");
     assert!(
         summary.contains("accomplishments"),
         "summary.md missing accomplishments"

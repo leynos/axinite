@@ -72,7 +72,9 @@ async fn attachment_audio_transcript_reaches_llm() {
     );
 
     // Verify the augmented content reached the LLM
-    let requests = rig.captured_llm_requests();
+    let requests = rig
+        .captured_llm_requests()
+        .expect("failed to inspect captured LLM requests");
     let last_user_msg = last_user_message(&requests);
 
     // The augmented text should contain the attachment tags and transcript
@@ -126,7 +128,9 @@ async fn attachment_image_produces_content_parts() {
     );
 
     // Verify multimodal content parts reached the LLM
-    let requests = rig.captured_llm_requests();
+    let requests = rig
+        .captured_llm_requests()
+        .expect("failed to inspect captured LLM requests");
     let last_user_msg = last_user_message(&requests);
 
     // Should have image content parts
@@ -171,7 +175,9 @@ async fn no_attachments_no_augmentation() {
 
     assert!(!responses.is_empty(), "LLM produced no response");
 
-    let requests = rig.captured_llm_requests();
+    let requests = rig
+        .captured_llm_requests()
+        .expect("failed to inspect captured LLM requests");
     let last_user_msg = last_user_message(&requests);
 
     // No attachments → no augmentation tags, no content parts

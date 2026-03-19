@@ -613,7 +613,9 @@ mod trace_llm_tests {
             .await
             .unwrap();
 
-        let captured = llm.captured_requests();
+        let captured = llm
+            .captured_requests()
+            .expect("captured requests should be available");
         assert_eq!(captured.len(), 2);
         assert_eq!(captured[0].len(), 1);
         assert_eq!(captured[0][0].content, "first message");

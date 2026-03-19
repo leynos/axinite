@@ -290,7 +290,9 @@ async fn identity_in_system_prompt() {
     // Verify the TraceLlm captured requests include a system message
     // with the seeded identity content.
     let trace_llm = rig.trace_llm().expect("trace_llm must be available");
-    let captured = trace_llm.captured_requests();
+    let captured = trace_llm
+        .captured_requests()
+        .expect("failed to inspect captured LLM requests");
     assert!(
         !captured.is_empty(),
         "Expected at least one captured request"

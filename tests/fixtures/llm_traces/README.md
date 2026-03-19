@@ -402,9 +402,9 @@ let llm = TraceLlm::from_file("tests/fixtures/llm_traces/spot/tool_echo.json")?;
 
 // ... run agent loop ...
 
-assert_eq!(llm.calls(), 2);              // Total LLM calls made
-assert_eq!(llm.hint_mismatches(), 0);     // Request hint failures
-let reqs = llm.captured_requests();       // Vec<Vec<ChatMessage>> of all requests
+assert_eq!(llm.calls(), 2);                 // Total LLM calls made
+assert_eq!(llm.hint_mismatches(), 0);      // Request hint failures
+let reqs = llm.captured_requests()?;       // Vec<Vec<ChatMessage>> of all requests
 ```
 
 ## TestRig::run_trace()

@@ -14,29 +14,37 @@ use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceToolCall};
 const TEST_DIR: &str = "/tmp/ironclaw_metrics_test";
 const TEST_FILE: &str = "/tmp/ironclaw_metrics_test/hello.txt";
 
-fn localize_tool_call_path(tool_call: &mut TraceToolCall, path: &str) {
+fn localize_tool_call_path(tool_call: &mut TraceToolCall, path: &str) -> bool {
     if !matches!(tool_call.name.as_str(), "write_file" | "read_file") {
-        return;
+        return false;
     }
-    if let Some(arguments) = tool_call.arguments.as_object_mut() {
-        arguments.insert(
-            "path".to_string(),
-            serde_json::Value::String(path.to_string()),
-        );
-    }
+    let Some(arguments) = tool_call.arguments.as_object_mut() else {
+        return false;
+    };
+    arguments.insert(
+        "path".to_string(),
+        serde_json::Value::String(path.to_string()),
+    );
+    true
 }
 
 fn localize_file_tool_paths(trace: &mut LlmTrace, path: &str) {
+    let mut patch_count = 0;
     for turn in &mut trace.turns {
         for step in &mut turn.steps {
             let TraceResponse::ToolCalls { tool_calls, .. } = &mut step.response else {
                 continue;
             };
             for tool_call in tool_calls {
-                localize_tool_call_path(tool_call, path);
+                patch_count += usize::from(localize_tool_call_path(tool_call, path));
             }
         }
     }
+
+    assert!(
+        patch_count > 0,
+        "expected at least one file-tool path to be localized"
+    );
 }
 
 fn assert_text_trace_llm_metrics(metrics: &TraceMetrics) {

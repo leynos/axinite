@@ -62,7 +62,10 @@ pub fn setup_test_dir(path: &str) -> std::io::Result<()> {
 ///
 /// Useful when tests need isolated directories to avoid collisions.
 pub fn setup_test_dir_with_suffix(base: &Path, suffix: &str) -> std::io::Result<String> {
-    let dir = format!("{}_{suffix}", base.to_string_lossy());
+    let base = base
+        .to_str()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "non-UTF-8 path"))?;
+    let dir = format!("{base}_{suffix}");
     setup_test_dir(&dir)?;
     Ok(dir)
 }

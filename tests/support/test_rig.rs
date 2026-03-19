@@ -139,11 +139,13 @@ impl TestRig {
     /// Return all message lists that were sent to the LLM provider.
     ///
     /// Only available when the rig was built with a `TraceLlm` (i.e., via `.with_trace()`).
-    pub fn captured_llm_requests(&self) -> Vec<Vec<ironclaw::llm::ChatMessage>> {
+    pub fn captured_llm_requests(
+        &self,
+    ) -> Result<Vec<Vec<ironclaw::llm::ChatMessage>>, ironclaw::error::LlmError> {
         self.trace_llm
             .as_ref()
             .map(|t| t.captured_requests())
-            .unwrap_or_default()
+            .unwrap_or_else(|| Ok(Vec::new()))
     }
 
     /// Wait until at least `n` responses have been captured, or `timeout` elapses.
