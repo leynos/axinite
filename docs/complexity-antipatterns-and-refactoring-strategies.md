@@ -431,7 +431,7 @@ state (queries).[^14] Commands are task-based and should represent specific
 business intentions (e.g.,
 
 `BookHotelRoomCommand` rather than `SetReservationStatusCommand`).[^14] Queries
-never alter data and return Data Transfer Objects optimised for display
+never alter data and return Data Transfer Objects optimized for display
 needs.[^14]
 
 While Command Query Responsibility Segregation operates at a higher

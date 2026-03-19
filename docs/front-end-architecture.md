@@ -182,11 +182,11 @@ The browser boot flow is:
 
 1. `index.html` loads the basic shell, the stylesheet, Google Fonts, and the
    `marked` Markdown parser from a CDN.
-1. `app.js` attempts auto-authentication from either `?token=` in the URL or a
+2. `app.js` attempts auto-authentication from either `?token=` in the URL or a
    token stored in `sessionStorage`.
-1. `authenticate()` tests the token by calling `/api/chat/threads` through
+3. `authenticate()` tests the token by calling `/api/chat/threads` through
    `apiFetch()`.
-1. On success, the script hides the auth screen, reveals the main application
+4. On success, the script hides the auth screen, reveals the main application
    container, strips the token from the address bar, opens the chat SSE stream,
    opens the logs SSE stream, starts periodic gateway-status polling, checks
    TEE attestation state, and loads the initial thread, memory, and job data.
@@ -250,10 +250,10 @@ Assistant responses and several rich-detail panels are rendered as Markdown in
 the browser by the `marked` library. The flow is:
 
 1. raw text arrives from the backend,
-1. `marked.parse()` converts it to HTML,
-1. `sanitizeRenderedHtml()` strips dangerous tags and attributes,
-1. copy buttons are injected into `<pre>` blocks, and
-1. the sanitized HTML is inserted into the DOM.
+2. `marked.parse()` converts it to HTML,
+3. `sanitizeRenderedHtml()` strips dangerous tags and attributes,
+4. copy buttons are injected into `<pre>` blocks, and
+5. the sanitized HTML is inserted into the DOM.
 
 The sanitization step removes script-like elements, embedded objects, form
 elements, dangerous metadata tags, inline event handlers, and `javascript:` or
@@ -414,11 +414,11 @@ surface without duplicating backend orchestration logic in the browser layer.
 The main browser chat path is:
 
 1. the user submits a message through the chat composer,
-1. the browser sends `/api/chat/send`,
-1. the handler builds `IncomingMessage`,
-1. the gateway writes that message into `msg_tx`,
-1. `ChannelManager` merges the gateway stream with other channel streams, and
-1. the agent loop consumes the message as normal channel input.
+2. the browser sends `/api/chat/send`,
+3. the handler builds `IncomingMessage`,
+4. the gateway writes that message into `msg_tx`,
+5. `ChannelManager` merges the gateway stream with other channel streams, and
+6. the agent loop consumes the message as normal channel input.
 
 The same basic normalization applies to:
 
@@ -434,10 +434,10 @@ inline `IncomingAttachment` values before handing the message to the agent.
 The main browser chat egress path is:
 
 1. the agent finishes a response or emits a status update,
-1. `GatewayChannel::respond()` or `GatewayChannel::send_status()` maps that
+2. `GatewayChannel::respond()` or `GatewayChannel::send_status()` maps that
    output into `SseEvent`,
-1. `SseManager` broadcasts the event to connected clients, and
-1. `app.js` updates the relevant UI elements.
+3. `SseManager` broadcasts the event to connected clients, and
+4. `app.js` updates the relevant UI elements.
 
 This mapping keeps the channel boundary explicit. The agent does not know how
 the browser renders a tool card or a transcript bubble. It emits channel-level

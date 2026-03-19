@@ -35,7 +35,7 @@ where the current design still has hard edges.
 Table 1. Main runtime components in the current skills path.
 
 | Component | Role |
-|-----------|------|
+| ----------- | ------ |
 | `SkillsConfig` | Enables or disables the subsystem, defines local and installed directories, and caps active skills and prompt budget. |
 | `SkillRegistry` | Owns the loaded `LoadedSkill` set and handles discovery, installation, removal, and reload. |
 | `SkillCatalog` | Best-effort runtime search client for the ClawHub registry. |
@@ -87,7 +87,7 @@ strict identifier regex, and rejects empty bodies.
 Table 2. Important parsed skill fields.
 
 | Field | Meaning |
-|-------|---------|
+| ------- | --------- |
 | `manifest.name` | Canonical identifier used for de-duplication and management. |
 | `manifest.version` | Optional version string, defaulting to `0.0.0`. |
 | `manifest.description` | Short human-facing description. |
@@ -105,7 +105,7 @@ The core model distinguishes trust from source location.
 Table 3. Trust states and their current meaning.
 
 | Trust | Meaning |
-|-------|---------|
+| ------- | --------- |
 | `Trusted` | User-placed skills with full tool visibility. |
 | `Installed` | Registry or externally installed skills that force a read-only tool ceiling. |
 
@@ -238,7 +238,7 @@ The tool registry currently exposes four skill tools:
 Table 4. Current approval semantics for skill tools.
 
 | Tool | Current approval requirement |
-|------|------------------------------|
+| ------ | ------------------------------ |
 | `skill_list` | `Never` |
 | `skill_search` | `Never` |
 | `skill_install` | `UnlessAutoApproved` |
@@ -473,7 +473,7 @@ general skill-bundle runtime.
 Table 5. Main extension points in the current design.
 
 | Area | Current seam |
-|------|--------------|
+| ------ | -------------- |
 | New artifact metadata | Extend `SkillManifest` and parser validation. |
 | New trust behaviour | Change `SkillTrust` handling and `attenuate_tools()`. |
 | New discovery source | Wire another `SkillSource` path into `discover_all()` or startup. |

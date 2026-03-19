@@ -47,7 +47,7 @@ This document excludes two adjacent areas on purpose:
 Table 1. Applicability of chat-model topics in this document.
 
 | Area | Applies | Evidence | Notes |
-|------|---------|----------|-------|
+| ------ | --------- | ---------- | ------- |
 | Browser gateway chat | Yes | `src/channels/web/handlers/chat.rs`, `src/channels/web/ws.rs`, `src/channels/web/mod.rs` | This is the canonical end-to-end chat surface. |
 | Session-backed agent loop | Yes | `src/agent/agent_loop.rs`, `src/agent/thread_ops.rs`, `src/agent/dispatcher.rs` | This is the core chat execution engine. |
 | Conversation persistence | Yes | `src/agent/thread_ops.rs`, `src/history/store.rs`, `src/channels/web/util.rs` | Persistence is durable, but less expressive than the in-memory turn model. |
@@ -65,7 +65,7 @@ record is the contract between ingress code and the agent loop.
 Table 2. `IncomingMessage` and attachment fields that shape chat behaviour.
 
 | Type | Important fields | Why they matter | Evidence |
-|------|------------------|-----------------|----------|
+| ------ | ------------------ | ----------------- | ---------- |
 | `IncomingMessage` | `channel`, `user_id`, `content`, `thread_id`, `metadata`, `timezone`, `attachments` | Carries the full chat request as far as the session, safety, and reasoning layers. | `src/channels/channel.rs` |
 | `IncomingAttachment` | `kind`, `mime_type`, `filename`, `size_bytes`, `source_url`, `storage_key`, `extracted_text`, `data`, `duration_secs` | Supports later mutation steps such as transcription, text extraction, and multimodal image injection. | `src/channels/channel.rs` |
 | `AttachmentKind` | `Audio`, `Image`, `Document` | Drives which preprocessing path runs and how the attachment is rendered into prompt content. | `src/channels/channel.rs`, `src/agent/attachments.rs` |
@@ -84,7 +84,7 @@ interruptibility, and approval state.
 Table 3. Session-backed chat structures.
 
 | Type | Important fields | Behavioural role | Evidence |
-|------|------------------|------------------|----------|
+| ------ | ------------------ | ------------------ | ---------- |
 | `Session` | `user_id`, `active_thread`, `threads`, `auto_approved_tools` | Owns all threads for one user and remembers per-session approval decisions. | `src/agent/session.rs` |
 | `Thread` | `id`, `state`, `turns`, `metadata`, `pending_approval`, `pending_auth` | Represents one conversation timeline and the current interruption mode. | `src/agent/session.rs` |
 | `Turn` | `user_input`, `response`, `tool_calls`, `state`, timestamps, `image_content_parts` | Preserves the model-visible user input and the assistant-side work for one turn. | `src/agent/session.rs` |
@@ -110,7 +110,7 @@ durable enough to reload history after a restart, but it is intentionally lossy.
 Table 4. Durable conversation record.
 
 | Record | Stored fields | Notes | Evidence |
-|--------|---------------|-------|----------|
+| -------- | --------------- | ------- | ---------- |
 | `ConversationSummary` | conversation metadata and timestamps | Used to enumerate stored conversations. | `src/history/store.rs` |
 | `ConversationMessage` | `id`, `role`, `content`, `created_at` | The durable history format is a flat role-tagged message stream. | `src/history/store.rs` |
 | Roles in practice | `user`, `tool_calls`, `assistant` | Tool results are not stored as full transcript messages; tool calls are summarized into one JSON record. | `src/agent/thread_ops.rs`, `src/channels/web/util.rs` |
@@ -125,7 +125,7 @@ The browser gateway has its own view model over the chat runtime.
 Table 5. Browser-facing chat DTOs.
 
 | Type | Purpose | Evidence |
-|------|---------|----------|
+| ------ | --------- | ---------- |
 | `SendMessageRequest` | REST request body for `/api/chat/send` | `src/channels/web/types.rs` |
 | `HistoryResponse`, `TurnInfo`, `ToolCallInfo` | Browser history and thread view model | `src/channels/web/types.rs`, `src/channels/web/util.rs` |
 | `PendingApprovalInfo` | Re-renders approval state after a thread switch | `src/channels/web/types.rs`, `src/channels/web/handlers/chat_history.rs` |
@@ -276,7 +276,7 @@ trust levels and lifetimes.
 Table 6. Inputs injected into `ReasoningContext` before or during the loop.
 
 | Input | Source | Trust level | How it enters | Evidence |
-|------|--------|-------------|---------------|----------|
+| ------ | -------- | ------------- | --------------- | ---------- |
 | Workspace system prompt | workspace identity files such as `AGENTS.md` and `SOUL.md` | Trusted host instruction | Loaded by `system_prompt_for_context_tz()` and inserted as the system prompt | `src/agent/dispatcher.rs` |
 | Skill context | selected installed or trusted skills | Mixed; installed skills are explicitly downgraded to suggestions | Wrapped in `<skill>` blocks and injected into the prompt | `src/agent/dispatcher.rs` |
 | Channel conversation context | channel-specific metadata projection | Trusted host-side adapter data | Added through `Reasoning::with_conversation_data()` | `src/agent/dispatcher.rs` |
@@ -424,7 +424,7 @@ and simply re-encodes each `SseEvent` into a WebSocket frame.
 Table 7. Primary chat sources, trust levels, and guards.
 
 | Source | Trust level | Example path | Guard or wrapper |
-|--------|-------------|--------------|------------------|
+| -------- | ------------- | -------------- | ------------------ |
 | User text | Untrusted | `/api/chat/send`, `WsClientMessage::Message` | input validation, policy checks, inbound secret scan |
 | Audio transcript | Untrusted derivative of user data | `TranscriptionMiddleware` | attachment-kind gating and provider-specific transcription |
 | Document extraction | Untrusted derivative of attachment data | `DocumentExtractionMiddleware` | inline-data-only rule, size caps, truncation |
@@ -477,7 +477,7 @@ late because data may already have reached logs, history, or workspace storage.
 Table 8. Thread states and how chat actions move between them.
 
 | State | Meaning | Entered by | Exited by |
-|-------|---------|------------|-----------|
+| ------- | --------- | ------------ | ----------- |
 | `Idle` | Ready for a new turn | new thread creation, completed turn, cleared approval, resumed interrupt | new user turn |
 | `Processing` | A turn is actively running | `start_turn()` | completed turn, failed turn, interrupt |
 | `AwaitingApproval` | Tool execution is suspended pending user choice | approval-gated tool call | approval handling or interrupt |
@@ -489,7 +489,7 @@ Table 8. Thread states and how chat actions move between them.
 Table 9. High-value actions in the chat path.
 
 | Action | Input | Output | Evidence |
-|--------|-------|--------|----------|
+| -------- | ------- | -------- | ---------- |
 | Send chat message | `SendMessageRequest` or `WsClientMessage::Message` | `IncomingMessage` | `src/channels/web/handlers/chat.rs`, `src/channels/web/ws.rs` |
 | Start turn | normalized message plus resolved thread | in-memory turn plus durable user record | `src/agent/thread_ops.rs` |
 | Run model iteration | `ReasoningContext` | assistant text or tool-call batch | `src/agent/dispatcher.rs` |

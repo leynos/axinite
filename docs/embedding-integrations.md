@@ -66,12 +66,12 @@ flowchart LR
 The normal runtime path is:
 
 1. Resolve `EmbeddingsConfig` from environment and persisted settings.
-1. Build an `Arc<dyn EmbeddingProvider>` through
+2. Build an `Arc<dyn EmbeddingProvider>` through
    `EmbeddingsConfig::create_provider()`, or return `None`.
-1. Attach that provider to `Workspace` with `with_embeddings()`.
-1. Use the workspace to generate query embeddings for search and chunk
+3. Attach that provider to `Workspace` with `with_embeddings()`.
+4. Use the workspace to generate query embeddings for search and chunk
    embeddings for indexing or backfill.
-1. Hand the resulting vectors to the selected database backend for storage or
+5. Hand the resulting vectors to the selected database backend for storage or
    ranking.
 
 One import path deliberately bypasses provider generation. OpenClaw memory
@@ -104,7 +104,7 @@ The central interface is the `EmbeddingProvider` trait.
 Table 1. `EmbeddingProvider` surface and current meaning.
 
 | Method | Purpose | Current use in axinite |
-|--------|---------|------------------------|
+| -------- | --------- | ------------------------ |
 | `dimension()` | Reports the expected vector width. | Used for configuration coherence and provider metadata. |
 | `model_name()` | Reports the upstream model identifier. | Used for diagnostics and logging. |
 | `max_input_length()` | Reports the maximum accepted character length. | Enforced before each provider call. |
@@ -123,7 +123,7 @@ All provider adapters normalize failures into `EmbeddingError`.
 Table 2. Shared embedding error model.
 
 | Variant | Meaning |
-|---------|---------|
+| --------- | --------- |
 | `HttpError(String)` | Transport failure or non-success upstream response that is not promoted into a more specific variant. |
 | `InvalidResponse(String)` | The upstream response body did not match the expected schema or shape. |
 | `RateLimited { retry_after }` | The upstream service returned a throttling response and optionally exposed `retry-after`. |
@@ -165,7 +165,7 @@ than a startup error.
 Table 3. Supported embedding providers in the current runtime.
 
 | Provider string | Adapter type | Default model | Default dimension | Auth shape | Endpoint shape |
-|-----------------|--------------|---------------|-------------------|------------|----------------|
+| ----------------- | -------------- | --------------- | ------------------- | ------------ | ---------------- |
 | `openai` | `OpenAiEmbeddings` | `text-embedding-3-small` | `1536` | `OPENAI_API_KEY` bearer token | `POST https://api.openai.com/v1/embeddings` |
 | `nearai` | `NearAiEmbeddings` | `text-embedding-3-small` | `1536` | Session token from `SessionManager` | `POST {base_url}/v1/embeddings` |
 | `ollama` | `OllamaEmbeddings` | `nomic-embed-text` | `768` | No separate credential in this layer | `POST {base_url}/api/embed` |
@@ -244,7 +244,7 @@ environment variables.
 Table 4. Embedding-specific config surface.
 
 | Setting | Meaning |
-|---------|---------|
+| --------- | --------- |
 | `EMBEDDING_ENABLED` | Enables or disables embedding generation and query-time vector search. |
 | `EMBEDDING_PROVIDER` | Selects `openai`, `nearai`, or `ollama`. |
 | `EMBEDDING_MODEL` | Selects the embedding model identifier passed to the adapter. |
@@ -327,7 +327,7 @@ Search is the main read-side sink for embeddings.
 Table 5. Query-time embedding consumers.
 
 | Caller | Path | Behaviour |
-|--------|------|-----------|
+| -------- | ------ | ----------- |
 | `memory_search` tool | Agent tool layer -> `Workspace::search()` | Generates a query vector when a provider exists, otherwise performs Full-Text Search (FTS)-only search. |
 | Web memory API | `/api/memory/search` -> `Workspace::search()` | Reuses the same workspace search behaviour as the tool path. |
 | Memory CLI | `ironclaw memory ...` -> `Workspace` | Resolves the same provider config and attaches it to a CLI-local workspace. |
@@ -353,8 +353,8 @@ After workspace seeding and import, startup spawns `backfill_embeddings()` when
 a provider exists. That routine:
 
 1. fetches chunks that still have no embedding
-1. embeds them one by one
-1. updates the stored chunk rows in place
+2. embeds them one by one
+3. updates the stored chunk rows in place
 
 If no provider exists, `backfill_embeddings()` returns `0` immediately. If
 provider calls fail during backfill, the task logs warnings instead of failing
@@ -392,7 +392,7 @@ The embedding providers are backend-agnostic, but search backends are not.
 Table 6. Backend-specific vector search behaviour.
 
 | Backend | Vector behaviour |
-|---------|------------------|
+| --------- | ------------------ |
 | PostgreSQL with `pgvector` | Uses the query embedding for vector ranking and fuses that ranking with FTS results through RRF. |
 | libSQL | Attempts `vector_top_k(...)`, but falls back to FTS-only when the vector index is unavailable after the flexible-dimension migration path. |
 

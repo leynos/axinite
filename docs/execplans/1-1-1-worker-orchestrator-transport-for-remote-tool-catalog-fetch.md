@@ -389,7 +389,7 @@ Expected evidence:
   and `docs/users-guide.md` are absent in this checkout and must be handled
   explicitly by the implementation.
 - [x] 2026-03-14 11:27Z: Drafted this ExecPlan and recorded the expected code,
-  test, and documentation touch points for roadmap item `1.1.1`.
+  test, and documentation touchpoints for roadmap item `1.1.1`.
 - [x] 2026-03-14 12:43Z: Implemented the shared transport contract, the
   orchestrator catalogue and generic execute endpoints, the worker startup
   catalogue fetch, and the generic worker-side proxy registration path.
