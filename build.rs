@@ -48,13 +48,13 @@ fn embed_registry_catalog(root: &Path) -> Result<(), Box<dyn std::error::Error>>
     // Collect tool manifests
     let tools_dir = registry_dir.join("tools");
     if tools_dir.is_dir() {
-        collect_json_files(&tools_dir, &mut tools)?;
+        collect_json_files(root, &tools_dir, &mut tools)?;
     }
 
     // Collect channel manifests
     let channels_dir = registry_dir.join("channels");
     if channels_dir.is_dir() {
-        collect_json_files(&channels_dir, &mut channels)?;
+        collect_json_files(root, &channels_dir, &mut channels)?;
     }
 
     // Read bundles
@@ -80,7 +80,11 @@ fn embed_registry_catalog(root: &Path) -> Result<(), Box<dyn std::error::Error>>
 }
 
 /// Read all .json files from a directory and push their raw contents into `out`.
-fn collect_json_files(dir: &Path, out: &mut Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+fn collect_json_files(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut entries: Vec<_> = fs::read_dir(dir)
         .map_err(|e| io::Error::other(format!("failed to read {}: {e}", dir.display())))?
         .collect::<Result<Vec<_>, _>>()
@@ -96,8 +100,15 @@ fn collect_json_files(dir: &Path, out: &mut Vec<String>) -> Result<(), Box<dyn s
 
     for entry in entries {
         // Emit per-file watch so Cargo reruns when file contents change
-        println!("cargo:rerun-if-changed={}", entry.path().display());
         let path = entry.path();
+        let relative_path = path.strip_prefix(root).map_err(|e| {
+            io::Error::other(format!(
+                "failed to strip {} from {}: {e}",
+                root.display(),
+                path.display()
+            ))
+        })?;
+        println!("cargo:rerun-if-changed={}", relative_path.display());
         let content = fs::read_to_string(&path)
             .map_err(|e| io::Error::other(format!("failed to read {}: {e}", path.display())))?;
         out.push(content);
