@@ -7,7 +7,7 @@ Proposed.
 
 ## Date
 
-2026-03-15.
+2026-03-15
 
 ## Context and problem statement
 
@@ -47,7 +47,7 @@ The key requirement is that policy evaluation must be:
   noting that Rego was purpose-built for expressing policy over
   structured inputs. [^3]
 - OWASP LLM06:2025 (Excessive Agency) recommends that security controls
-  be enforced independently from the language model (LLM) in a
+  be enforced independently of the language model (LLM) in a
   deterministic, auditable manner. [^4]
 - National Institute of Standards and Technology (NIST) AI Risk
   Management Framework (RMF) 1.0 positions trustworthy AI as requiring

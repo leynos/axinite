@@ -8,7 +8,8 @@
 
 ## Supplemental metadata
 
-- Target: WASM tools, extension management page, web gateway, security model
+- Target: WebAssembly (WASM) tools, extension management page, web gateway,
+  security model
 - Authors: Codex draft for review
 
 ## Summary
@@ -143,6 +144,9 @@ Introduce a new delegated endpoint model with four coordinated changes:
 
 ### High-level flow
 
+Screen reader: this flow shows delegated JMAP request setup and execution,
+including host-side endpoint resolution and credential injection.
+
 ```text
 User configures JMAP endpoint in Extensions UI
     -> IronClaw validates and stores encrypted endpoint binding
@@ -189,12 +193,18 @@ second identifier type.
 
 Current setup DTOs should evolve from:
 
+Screen reader: current extension setup request and response structures are
+secret-only.
+
 ```text
 ExtensionSetupResponse { secrets: Vec<SecretFieldInfo> }
 ExtensionSetupRequest { secrets: HashMap<String, String> }
 ```
 
 to something closer to:
+
+Screen reader: proposed extension setup request and response structures add
+typed setup fields and values.
 
 ```text
 ExtensionSetupResponse {
@@ -209,6 +219,9 @@ ExtensionSetupRequest {
 ```
 
 Suggested field model:
+
+Screen reader: proposed setup field union distinguishes secret fields from
+delegated endpoint fields.
 
 ```text
 ExtensionSetupField =
@@ -234,6 +247,9 @@ DelegatedEndpointField {
 ```
 
 Suggested value model:
+
+Screen reader: proposed setup value union distinguishes secret submissions
+from delegated endpoint URL submissions.
 
 ```text
 ExtensionSetupValue =
@@ -275,6 +291,8 @@ On save:
 The current `needs_setup` boolean should evolve into something like a setup
 state summary that can account for more than missing secrets:
 
+Screen reader: example setup state enum for extension readiness reporting.
+
 ```text
 setup_state = "ready" | "needs_input" | "invalid" | "error"
 ```
@@ -288,6 +306,8 @@ longer define readiness solely as "all required secrets exist".
 
 Current tool setup schema:
 
+Screen reader: current tool setup schema example using only required secrets.
+
 ```json
 {
   "setup": {
@@ -299,6 +319,9 @@ Current tool setup schema:
 ```
 
 Proposed direction:
+
+Screen reader: proposed tool setup schema example using a delegated endpoint
+field.
 
 ```json
 {
@@ -316,6 +339,9 @@ Proposed direction:
 ```
 
 And for mixed cases:
+
+Screen reader: mixed setup schema example combining delegated endpoint and
+secret fields.
 
 ```json
 {
@@ -368,6 +394,9 @@ IronClaw should add a dedicated per-user endpoint binding store.
 
 Suggested record:
 
+Screen reader: proposed authorized endpoint binding record stored by the
+host.
+
 ```text
 AuthorizedEndpointBinding {
   id: uuid,
@@ -399,6 +428,9 @@ Notes:
 
 Add a service interface such as:
 
+Screen reader: host-owned endpoint binding store interface for lookup,
+storage, validation, and readiness checks.
+
 ```text
 EndpointBindingStore {
   get(user_id, extension_name, endpoint_name) -> Option<AuthorizedEndpointBinding>
@@ -417,6 +449,9 @@ This service should be owned by IronClaw, not by the extension.
 
 Current HTTP capability:
 
+Screen reader: current HTTP capability structure using raw allowlists and
+credential mappings.
+
 ```text
 http {
   allowlist: Vec<EndpointPattern>
@@ -425,6 +460,9 @@ http {
 ```
 
 Proposed addition:
+
+Screen reader: proposed authorized endpoint capability grant structure for
+opaque endpoint identities.
 
 ```text
 authorized_endpoints {
@@ -448,11 +486,16 @@ This lets a tool declare:
 
 Current host call:
 
+Screen reader: current raw-URL WIT host call for HTTP requests.
+
 ```text
 http-request(method, url, headers-json, body, timeout-ms)
 ```
 
 Proposed additive host call:
+
+Screen reader: proposed delegated endpoint WIT host call using endpoint name
+and relative request parts.
 
 ```text
 authorized-endpoint-request(
@@ -480,6 +523,9 @@ Where:
 
 Alternative shape:
 
+Screen reader: alternative delegated request signature using one structured
+request object.
+
 ```text
 authorized-endpoint-request(request: delegated-http-request)
 ```
@@ -504,6 +550,9 @@ to misuse. A dedicated host call is clearer because it:
 
 IronClaw should add a runtime service that handles delegated endpoint requests:
 
+Screen reader: authorized endpoint request service interface covering
+resolution, authorization, credential injection, and execution.
+
 ```text
 AuthorizedEndpointRequestService {
   resolve_binding(user_id, extension_name, endpoint_name)
@@ -516,6 +565,9 @@ AuthorizedEndpointRequestService {
 ### Resolution pipeline
 
 Proposed runtime pipeline:
+
+Screen reader: runtime pipeline for delegated endpoint requests from WASM
+guest input through host execution and redacted response handling.
 
 ```text
 WASM guest passes endpoint_name + relative request
@@ -563,6 +615,9 @@ For delegated endpoints, credential authority should be keyed by endpoint
 identity rather than by visible host patterns.
 
 Suggested new abstraction:
+
+Screen reader: endpoint credential binding structure keyed by delegated
+endpoint identity.
 
 ```text
 EndpointCredentialBinding {
@@ -663,6 +718,9 @@ design to leave room for either:
 
 ### Example tool capabilities
 
+Screen reader: example tool capabilities document defining delegated endpoint
+grants and setup fields.
+
 ```json
 {
   "version": "0.3.0",
@@ -690,6 +748,9 @@ design to leave room for either:
 ```
 
 ### Example guest-side call
+
+Screen reader: example delegated endpoint guest call showing opaque endpoint
+identity and relative request arguments.
 
 ```text
 authorized-endpoint-request(

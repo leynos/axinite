@@ -206,7 +206,8 @@ the action does not proceed. This is the fail-closed invariant.
 This directly addresses the current fail-open hook behaviour. [^6] Hooks
 that cannot be evaluated should block rather than permit. OWASP LLM06:2025
 (Excessive Agency) recommends that security controls be enforced
-independently from the LLM in a deterministic, auditable manner. [^7]
+independently of the language model (LLM) in a deterministic, auditable
+manner. [^7]
 
 ## Requirements
 

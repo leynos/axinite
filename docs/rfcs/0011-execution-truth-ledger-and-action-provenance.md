@@ -38,14 +38,14 @@ persistence. [^1] These are reasonable engineering trade-offs, but they
 become trust gaps when an operator cannot independently verify what
 the system actually did.
 
-The Open Web Application Security Project (OWASP) Top 10 for LLM
-Applications 2025 lists LLM09:2025 (Misinformation) as a top-level
-risk. [^3] The National Institute of Standards and Technology (NIST) AI
-600-1 lists confabulation as one of twelve generative AI risk
-categories, noting that confidently stated but false outputs are
-particularly dangerous in high-stakes domains. [^4] An execution truth
-ledger directly addresses this by providing a ground-truth record
-independent of the model's narrative.
+The Open Web Application Security Project (OWASP) Top 10 for language
+model (LLM) Applications 2025 lists LLM09:2025 (Misinformation) as a
+top-level risk. [^3] The National Institute of Standards and
+Technology (NIST) AI 600-1 lists confabulation as one of twelve
+generative AI risk categories, noting that confidently stated but false
+outputs are particularly dangerous in high-stakes domains. [^4] An
+execution truth ledger directly addresses this by providing a
+ground-truth record independent of the model's narrative.
 
 ## Current state
 
