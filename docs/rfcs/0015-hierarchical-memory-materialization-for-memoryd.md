@@ -159,7 +159,8 @@ models or prompts.
 
 Boundary detection should remain pluggable.
 
-- A structured LLM classifier may propose a new episode boundary.
+- A structured large language model (LLM) classifier may propose a new
+  episode boundary.
 - An encoder-based classifier may propose a new boundary from
   embeddings, time gaps, and lexical shift.
 - Hard split rules must take precedence. At minimum these include a new
