@@ -295,7 +295,9 @@ impl WorkerRuntime {
 Job: {}
 Description: {}
 
-You have tools for shell commands, file operations, code editing, and extension management.
+Use the available tools listed below to inspect the current capability surface.
+This toolset may include container-local tools and, when the remote catalogue
+loads, orchestrator-proxied remote tools.
 Work independently to complete this job. Report when done."#,
             job.title, job.description
         )));

@@ -4,6 +4,7 @@ use std::io::{Read, Take};
 use std::net::{IpAddr, SocketAddr};
 
 use flate2::read::DeflateDecoder;
+use futures::StreamExt;
 
 use crate::tools::tool::ToolError;
 
@@ -187,22 +188,26 @@ pub(crate) async fn fetch_skill_content(url: &str) -> Result<String, ToolError> 
         )));
     }
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| ToolError::ExecutionFailed(format!("Failed to read response body: {}", e)))?;
-    if bytes.len() > MAX_DOWNLOAD_BYTES {
-        return Err(ToolError::ExecutionFailed(format!(
-            "Response too large: {} bytes (max {} bytes)",
-            bytes.len(),
-            MAX_DOWNLOAD_BYTES
-        )));
+    let mut bytes = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| {
+            ToolError::ExecutionFailed(format!("Failed to read response body: {}", e))
+        })?;
+        let next_len = bytes.len().saturating_add(chunk.len());
+        if next_len > MAX_DOWNLOAD_BYTES {
+            return Err(ToolError::ExecutionFailed(format!(
+                "Response too large: {} bytes (max {} bytes)",
+                next_len, MAX_DOWNLOAD_BYTES
+            )));
+        }
+        bytes.extend_from_slice(&chunk);
     }
 
     if bytes.starts_with(b"PK\x03\x04") {
         extract_skill_from_zip(&bytes)
     } else {
-        String::from_utf8(bytes.to_vec())
+        String::from_utf8(bytes)
             .map_err(|e| ToolError::ExecutionFailed(format!("Response is not valid UTF-8: {}", e)))
     }
 }
@@ -257,8 +262,21 @@ fn decompress_zip_entry(
     compression: u16,
     uncompressed_size: usize,
 ) -> Result<Vec<u8>, ToolError> {
+    if raw.len() > MAX_DECOMPRESSED {
+        return Err(ToolError::ExecutionFailed(
+            "ZIP entry too large to decompress safely".to_string(),
+        ));
+    }
+
     match compression {
-        0 => Ok(raw.to_vec()),
+        0 => {
+            if raw.len() != uncompressed_size {
+                return Err(ToolError::ExecutionFailed(
+                    "ZIP archive truncated".to_string(),
+                ));
+            }
+            Ok(raw.to_vec())
+        }
         8 => {
             let mut decoder: Take<DeflateDecoder<&[u8]>> =
                 DeflateDecoder::new(raw).take(MAX_DECOMPRESSED as u64);
@@ -266,6 +284,21 @@ fn decompress_zip_entry(
             decoder.read_to_end(&mut buf).map_err(|e| {
                 ToolError::ExecutionFailed(format!("Failed to decompress SKILL.md: {}", e))
             })?;
+            if buf.len() > MAX_DECOMPRESSED {
+                return Err(ToolError::ExecutionFailed(
+                    "ZIP entry too large to decompress safely".to_string(),
+                ));
+            }
+            if buf.len() == MAX_DECOMPRESSED && uncompressed_size > MAX_DECOMPRESSED {
+                return Err(ToolError::ExecutionFailed(
+                    "ZIP entry too large to decompress safely".to_string(),
+                ));
+            }
+            if buf.len() != uncompressed_size {
+                return Err(ToolError::ExecutionFailed(
+                    "ZIP archive truncated".to_string(),
+                ));
+            }
             Ok(buf)
         }
         other => Err(ToolError::ExecutionFailed(format!(

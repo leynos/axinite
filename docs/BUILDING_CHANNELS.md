@@ -131,7 +131,7 @@ export!(MyChannel);
 
 ## Critical Pattern: Metadata Flow
 
-**The most important pattern**: Store routing info in message metadata so
+**The most important pattern**: Store routing info in message metadata, so
 responses can be delivered.
 
 ```rust

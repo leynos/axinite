@@ -12,17 +12,42 @@ use crate::tools::tool::{
     ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput, require_str,
 };
 
+/// Install skills from inline content, a URL, or a catalogue lookup.
 pub struct SkillInstallTool {
     registry: Arc<std::sync::RwLock<SkillRegistry>>,
     catalog: Arc<SkillCatalog>,
 }
 
 impl SkillInstallTool {
+    /// Create a skill installer backed by the shared registry and catalogue.
     pub fn new(
         registry: Arc<std::sync::RwLock<SkillRegistry>>,
         catalog: Arc<SkillCatalog>,
     ) -> Self {
         Self { registry, catalog }
+    }
+
+    async fn resolve_catalog_slug(&self, name_or_slug: &str) -> String {
+        if name_or_slug.contains('/') {
+            return name_or_slug.to_string();
+        }
+
+        self.catalog
+            .search(name_or_slug)
+            .await
+            .results
+            .into_iter()
+            .find(|entry| {
+                entry.slug.eq_ignore_ascii_case(name_or_slug)
+                    || entry.name.eq_ignore_ascii_case(name_or_slug)
+                    || entry
+                        .slug
+                        .rsplit('/')
+                        .next()
+                        .is_some_and(|segment| segment.eq_ignore_ascii_case(name_or_slug))
+            })
+            .map(|entry| entry.slug)
+            .unwrap_or_else(|| name_or_slug.to_string())
     }
 }
 
@@ -42,7 +67,7 @@ impl Tool for SkillInstallTool {
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Skill name or slug (from search results)"
+                    "description": "Skill slug or exact display name (from search results)"
                 },
                 "url": {
                     "type": "string",
@@ -70,8 +95,9 @@ impl Tool for SkillInstallTool {
         } else if let Some(url) = params.get("url").and_then(|value| value.as_str()) {
             fetch_skill_content(url).await?
         } else {
+            let slug = self.resolve_catalog_slug(name).await;
             let download_url =
-                crate::skills::catalog::skill_download_url(self.catalog.registry_url(), name);
+                crate::skills::catalog::skill_download_url(self.catalog.registry_url(), &slug);
             fetch_skill_content(&download_url).await?
         };
 

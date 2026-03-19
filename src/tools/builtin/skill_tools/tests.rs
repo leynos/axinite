@@ -2,16 +2,26 @@
 
 use std::sync::Arc;
 
+use rstest::rstest;
+
 use crate::skills::catalog::SkillCatalog;
 use crate::skills::registry::SkillRegistry;
 use crate::tools::tool::{ApprovalRequirement, Tool};
 
 use super::{SkillInstallTool, SkillListTool, SkillRemoveTool, SkillSearchTool};
 
-fn test_registry() -> Arc<std::sync::RwLock<SkillRegistry>> {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.keep();
-    Arc::new(std::sync::RwLock::new(SkillRegistry::new(path)))
+struct TestRegistryHandle {
+    _dir: tempfile::TempDir,
+    registry: Arc<std::sync::RwLock<SkillRegistry>>,
+}
+
+fn test_registry() -> TestRegistryHandle {
+    let dir = tempfile::tempdir().expect("tempdir creation failed");
+    let path = dir.path().to_path_buf();
+    TestRegistryHandle {
+        _dir: dir,
+        registry: Arc::new(std::sync::RwLock::new(SkillRegistry::new(path))),
+    }
 }
 
 fn test_catalog() -> Arc<SkillCatalog> {
@@ -41,13 +51,15 @@ fn assert_tool_schema(
 
 #[test]
 fn test_skill_list_schema() {
-    let tool = SkillListTool::new(test_registry());
+    let registry = test_registry();
+    let tool = SkillListTool::new(Arc::clone(&registry.registry));
     assert_tool_schema(&tool, "skill_list", ApprovalRequirement::Never, &[]);
 }
 
 #[test]
 fn test_skill_search_schema() {
-    let tool = SkillSearchTool::new(test_registry(), test_catalog());
+    let registry = test_registry();
+    let tool = SkillSearchTool::new(Arc::clone(&registry.registry), test_catalog());
     assert_tool_schema(
         &tool,
         "skill_search",
@@ -58,7 +70,8 @@ fn test_skill_search_schema() {
 
 #[test]
 fn test_skill_install_schema() {
-    let tool = SkillInstallTool::new(test_registry(), test_catalog());
+    let registry = test_registry();
+    let tool = SkillInstallTool::new(Arc::clone(&registry.registry), test_catalog());
     assert_tool_schema(
         &tool,
         "skill_install",
@@ -69,7 +82,8 @@ fn test_skill_install_schema() {
 
 #[test]
 fn test_skill_remove_schema() {
-    let tool = SkillRemoveTool::new(test_registry());
+    let registry = test_registry();
+    let tool = SkillRemoveTool::new(Arc::clone(&registry.registry));
     assert_tool_schema(
         &tool,
         "skill_remove",
@@ -78,30 +92,14 @@ fn test_skill_remove_schema() {
     );
 }
 
-#[test]
-fn skill_remove_always_requires_approval_regardless_of_params() {
-    let tool = SkillRemoveTool::new(test_registry());
-
-    let test_cases = vec![
-        ("no params", serde_json::json!({})),
-        ("empty name", serde_json::json!({"name": ""})),
-        (
-            "deployment skill",
-            serde_json::json!({"name": "deployment"}),
-        ),
-        ("custom skill", serde_json::json!({"name": "custom-skill"})),
-        (
-            "with extra fields",
-            serde_json::json!({"name": "skill", "extra": "field"}),
-        ),
-    ];
-
-    for (case_name, params) in test_cases {
-        assert_eq!(
-            tool.requires_approval(&params),
-            ApprovalRequirement::Always,
-            "skill_remove must always require approval for case: {}",
-            case_name
-        );
-    }
+#[rstest]
+#[case::no_params(serde_json::json!({}))]
+#[case::empty_name(serde_json::json!({"name": ""}))]
+#[case::deployment_skill(serde_json::json!({"name": "deployment"}))]
+#[case::custom_skill(serde_json::json!({"name": "custom-skill"}))]
+#[case::extra_fields(serde_json::json!({"name": "skill", "extra": "field"}))]
+fn skill_remove_always_requires_approval_regardless_of_params(#[case] params: serde_json::Value) {
+    let registry = test_registry();
+    let tool = SkillRemoveTool::new(Arc::clone(&registry.registry));
+    assert_eq!(tool.requires_approval(&params), ApprovalRequirement::Always,);
 }

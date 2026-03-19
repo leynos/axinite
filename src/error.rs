@@ -342,6 +342,9 @@ pub enum WorkerError {
     #[error("Remote tool request failed upstream: {reason}")]
     BadGateway { reason: String },
 
+    #[error("Remote tool request failed: {reason}")]
+    RemoteToolFailed { reason: String },
+
     #[error("Secret resolution failed for {secret_name}: {reason}")]
     SecretResolveFailed { secret_name: String, reason: String },
 

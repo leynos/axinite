@@ -50,6 +50,7 @@ fn map_worker_error_to_tool_error(error: WorkerError) -> ToolError {
         WorkerError::Unauthorized { reason } => ToolError::NotAuthorized(reason),
         WorkerError::RateLimited { retry_after, .. } => ToolError::RateLimited(retry_after),
         WorkerError::BadGateway { reason } => ToolError::ExternalService(reason),
+        WorkerError::RemoteToolFailed { reason } => ToolError::ExternalService(reason),
         other => ToolError::ExecutionFailed(other.to_string()),
     }
 }

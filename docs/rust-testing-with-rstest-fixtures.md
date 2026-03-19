@@ -125,9 +125,8 @@ libraries. This convention prevents testing utilities from being included in
 production binaries, which helps keep them small while reducing compile times
 for non-test builds.
 
-When leveraging Tokio's test utilities—for example `tokio::time::pause` or the
-Input/output helpers in `tokio-test`—enable the `test-util` feature via a
-dev-only dependency:
+When leveraging Tokio's test utilities—for example `tokio::time::pause`—enable
+the `test-util` feature via a dev-only dependency:
 
 ```toml
 [dev-dependencies]
@@ -957,6 +956,7 @@ A conceptual example using a hypothetical mocking library:
 
 ```rust,no_run
 use rstest::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 // Assume mockall or a similar library is used to define MockMyDatabase
@@ -973,12 +973,12 @@ pub trait MyDatabase {
 pub struct MockMyDatabase {
     pub expected_id: u32,
     pub user_to_return: Option<String>,
-    pub called: std::cell::Cell<bool>,
+    pub called: AtomicBool,
 }
 
 impl MyDatabase for MockMyDatabase {
     fn get_user_name(&self, id: u32) -> Option<String> {
-        self.called.set(true);
+        self.called.store(true, Ordering::Relaxed);
         if id == self.expected_id {
             self.user_to_return.clone()
         } else {
@@ -993,7 +993,7 @@ fn mock_db_returns_alice() -> MockMyDatabase {
     MockMyDatabase {
         expected_id: 1,
         user_to_return: Some("Alice".to_string()),
-        called: std::cell::Cell::new(false),
+        called: AtomicBool::new(false),
     }
 }
 

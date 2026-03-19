@@ -24,6 +24,6 @@ pub(super) async fn map_remote_tool_status(resp: reqwest::Response) -> WorkerErr
             retry_after,
         },
         reqwest::StatusCode::BAD_GATEWAY => WorkerError::BadGateway { reason },
-        _ => WorkerError::LlmProxyFailed { reason },
+        _ => WorkerError::RemoteToolFailed { reason },
     }
 }

@@ -198,9 +198,11 @@ impl Tool for SkillSearchTool {
         let catalog_json: Vec<serde_json::Value> = catalog_entries
             .iter()
             .map(|entry| {
-                let is_installed = installed_names
-                    .iter()
-                    .any(|name| entry.slug.ends_with(name.as_str()) || entry.name == *name);
+                let slug_segment = entry.slug.rsplit('/').next();
+                let is_installed = installed_names.iter().any(|name| {
+                    entry.name == *name
+                        || slug_segment.is_some_and(|segment| segment == name.as_str())
+                });
                 serde_json::json!({
                     "slug": entry.slug,
                     "name": entry.name,

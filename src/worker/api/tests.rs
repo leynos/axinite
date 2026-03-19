@@ -185,6 +185,10 @@ async fn reject_execute_forbidden(
 #[case(RemoteToolFailureRoute::ExecuteForbidden, "approval required")]
 #[case(RemoteToolFailureRoute::ExecuteRateLimited, "slow down")]
 #[case(RemoteToolFailureRoute::ExecuteBadGateway, "proxy failure")]
+#[case(
+    RemoteToolFailureRoute::ExecuteInternalError,
+    "remote tool blew up"
+)]
 #[tokio::test]
 async fn remote_tool_execute_preserves_non_success_statuses(
     remote_tool_failure_server: RemoteToolFailureServerFactory,
@@ -222,6 +226,12 @@ async fn remote_tool_execute_preserves_non_success_statuses(
             assert_eq!(retry_after, std::time::Duration::from_secs(7));
         }
         (RemoteToolFailureRoute::ExecuteBadGateway, WorkerError::BadGateway { reason }) => {
+            assert!(reason.contains(expected_message))
+        }
+        (
+            RemoteToolFailureRoute::ExecuteInternalError,
+            WorkerError::RemoteToolFailed { reason },
+        ) => {
             assert!(reason.contains(expected_message))
         }
         (_, other) => panic!("unexpected worker error: {other:?}"),
@@ -262,6 +272,12 @@ fn remote_tool_failure_server() -> RemoteToolFailureServerFactory {
                 RemoteToolFailureRoute::ExecuteBadGateway => Router::new()
                     .route(REMOTE_TOOL_EXECUTE_ROUTE, post(reject_execute_bad_gateway))
                     .with_state(TestState),
+                RemoteToolFailureRoute::ExecuteInternalError => Router::new()
+                    .route(
+                        REMOTE_TOOL_EXECUTE_ROUTE,
+                        post(reject_execute_internal_error),
+                    )
+                    .with_state(TestState),
             };
             let handle = tokio::spawn(async move {
                 axum::serve(listener, router).await.expect("serve router");
@@ -281,6 +297,7 @@ enum RemoteToolFailureRoute {
     ExecuteForbidden,
     ExecuteRateLimited,
     ExecuteBadGateway,
+    ExecuteInternalError,
 }
 
 async fn reject_execute_bad_gateway(
@@ -289,6 +306,14 @@ async fn reject_execute_bad_gateway(
     Json(_req): Json<RemoteToolExecutionRequest>,
 ) -> (StatusCode, &'static str) {
     (StatusCode::BAD_GATEWAY, "proxy failure")
+}
+
+async fn reject_execute_internal_error(
+    State(_state): State<TestState>,
+    Path(_job_id): Path<Uuid>,
+    Json(_req): Json<RemoteToolExecutionRequest>,
+) -> (StatusCode, &'static str) {
+    (StatusCode::INTERNAL_SERVER_ERROR, "remote tool blew up")
 }
 
 type RemoteToolFailureServerFactory =

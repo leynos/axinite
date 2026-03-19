@@ -139,7 +139,7 @@ type of `()`, while the `?` operator can only be used in a function that
 returns a `Result` or `Option`. This mismatch leads to a compilation error.[^2]
 
 Using `.unwrap()` (or `.expect()`) in examples is strongly discouraged. It is
-considered an anti-pattern because users often copy example code verbatim, and
+considered an antipattern because users often copy example code verbatim, and
 encouraging panicking on errors is contrary to robust application design.[^7]
 Instead, two canonical solutions exist.
 

@@ -1,120 +1,113 @@
 //! Tests for skill fetching and archive validation helpers.
 
+use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 
 use flate2::Compression;
 use flate2::write::DeflateEncoder;
-use rstest::rstest;
-use std::io::Write;
+use rstest::{fixture, rstest};
 
 use super::{extract_skill_from_zip, is_private_ip, validate_fetch_url, validate_resolved_addrs};
 
-#[test]
-fn test_validate_fetch_url_allows_https() {
-    assert!(validate_fetch_url("https://clawhub.ai/api/v1/download?slug=foo").is_ok());
+type ZipEntryBuilder = fn(&str, &[u8]) -> Vec<u8>;
+
+#[rstest]
+#[case("https://192.168.1.1/skill.md", "private")]
+#[case("https://127.0.0.1/skill.md", "private")]
+#[case("https://localhost/skill.md", "internal hostname")]
+#[case("https://localhost./skill.md", "internal hostname")]
+#[case("https://169.254.169.254/latest/meta-data/", "private")]
+#[case("https://metadata.google.internal/something", "internal hostname")]
+#[case("file:///etc/passwd", "Only HTTPS")]
+#[case("https://[::ffff:127.0.0.1]/skill.md", "private")]
+#[case("https://[::1]/skill.md", "private")]
+#[case("https://service.internal/api", "internal hostname")]
+#[case("https://myhost.local/skill.md", "internal hostname")]
+fn test_validate_fetch_url_rejects_invalid_targets(
+    #[case] input_url: &str,
+    #[case] expected_error_substring: &str,
+) {
+    let err = validate_fetch_url(input_url).expect_err("URL should be rejected");
+    assert!(
+        err.to_string().contains(expected_error_substring),
+        "expected error containing '{expected_error_substring}', got: {err}",
+    );
 }
 
-#[test]
-fn test_validate_fetch_url_rejects_http() {
-    let err = validate_fetch_url("http://example.com/skill.md").unwrap_err();
-    assert!(err.to_string().contains("Only HTTPS"));
+#[rstest]
+#[case("https://clawhub.ai/api/v1/download?slug=foo")]
+#[case("https://github.com/repo/SKILL.md")]
+#[case("https://clawhub.dev/api/v1/download?slug=foo")]
+#[case("https://raw.githubusercontent.com/user/repo/main/SKILL.md")]
+#[case("https://example.com/skills/deploy.md")]
+#[case("https://[::ffff:8.8.8.8]/skill.md")]
+fn test_validate_fetch_url_allows_public_https_targets(#[case] input_url: &str) {
+    validate_fetch_url(input_url).expect("public HTTPS URL should be accepted");
 }
 
-#[test]
-fn test_validate_fetch_url_rejects_private_ip() {
-    let err = validate_fetch_url("https://192.168.1.1/skill.md").unwrap_err();
-    assert!(err.to_string().contains("private"));
+#[rstest]
+#[case("example.com", "127.0.0.1:443,[::1]:443", false, Some("private"))]
+#[case("example.com", "8.8.8.8:443,[2606:4700:4700::1111]:443", true, None)]
+fn test_validate_resolved_addrs_cases(
+    #[case] hostname: &str,
+    #[case] addrs_csv: &str,
+    #[case] expected_ok: bool,
+    #[case] expected_error_substring: Option<&str>,
+) {
+    let addrs: Vec<SocketAddr> = addrs_csv
+        .split(',')
+        .map(|addr| {
+            addr.parse::<SocketAddr>()
+                .expect("socket address fixture should parse")
+        })
+        .collect();
+
+    if expected_ok {
+        validate_resolved_addrs(hostname, &addrs)
+            .expect("resolved public addresses should be accepted");
+    } else {
+        let err = validate_resolved_addrs(hostname, &addrs)
+            .expect_err("resolved private addresses should be rejected");
+        assert!(
+            err.to_string()
+                .contains(expected_error_substring.expect("expected error text")),
+            "expected error containing '{:?}', got: {err}",
+            expected_error_substring,
+        );
+    }
 }
 
-#[test]
-fn test_validate_fetch_url_rejects_loopback() {
-    let err = validate_fetch_url("https://127.0.0.1/skill.md").unwrap_err();
-    assert!(err.to_string().contains("private"));
+#[fixture]
+fn zip_builder_fixture() -> ZipEntryBuilder {
+    build_zip_entry_store
 }
 
-#[test]
-fn test_validate_fetch_url_rejects_localhost() {
-    let err = validate_fetch_url("https://localhost/skill.md").unwrap_err();
-    assert!(err.to_string().contains("internal hostname"));
+#[rstest]
+#[case::stored(
+    build_zip_entry_store as ZipEntryBuilder,
+    b"---\nname: stored\n---\n# Stored\n"
+)]
+#[case::deflate(
+    build_zip_entry_deflate as ZipEntryBuilder,
+    b"---\nname: test\n---\n# Test Skill\n"
+)]
+fn test_extract_skill_from_zip_success_cases(
+    #[case] builder: ZipEntryBuilder,
+    #[case] content: &[u8],
+) {
+    let zip = builder("SKILL.md", content);
+    let result =
+        extract_skill_from_zip(&zip).expect("ZIP archive containing SKILL.md should extract");
+    assert_eq!(
+        result,
+        std::str::from_utf8(content).expect("fixture content should be valid UTF-8"),
+    );
 }
 
-#[test]
-fn test_validate_fetch_url_rejects_localhost_fqdn() {
-    let err = validate_fetch_url("https://localhost./skill.md").unwrap_err();
-    assert!(err.to_string().contains("internal hostname"));
-}
-
-#[test]
-fn test_validate_fetch_url_rejects_metadata_endpoint() {
-    let err = validate_fetch_url("https://169.254.169.254/latest/meta-data/").unwrap_err();
-    assert!(err.to_string().contains("private"));
-}
-
-#[test]
-fn test_validate_fetch_url_rejects_internal_domain() {
-    let err = validate_fetch_url("https://metadata.google.internal/something").unwrap_err();
-    assert!(err.to_string().contains("internal hostname"));
-}
-
-#[test]
-fn test_validate_fetch_url_rejects_file_scheme() {
-    let err = validate_fetch_url("file:///etc/passwd").unwrap_err();
-    assert!(err.to_string().contains("Only HTTPS"));
-}
-
-#[test]
-fn test_validate_fetch_url_rejects_ipv4_mapped_ipv6_loopback() {
-    let err = validate_fetch_url("https://[::ffff:127.0.0.1]/skill.md").unwrap_err();
-    assert!(err.to_string().contains("private") || err.to_string().contains("loopback"));
-}
-
-#[test]
-fn test_validate_fetch_url_rejects_ipv6_loopback() {
-    let err = validate_fetch_url("https://[::1]/skill.md").unwrap_err();
-    assert!(err.to_string().contains("private") || err.to_string().contains("loopback"));
-}
-
-#[test]
-fn test_validate_resolved_addrs_rejects_loopback_hostname() {
-    let addrs = vec![
-        "127.0.0.1:443".parse::<SocketAddr>().unwrap(),
-        "[::1]:443".parse::<SocketAddr>().unwrap(),
-    ];
-
-    let err = validate_resolved_addrs("example.com", &addrs).unwrap_err();
-    assert!(err.to_string().contains("private") || err.to_string().contains("loopback"));
-}
-
-#[test]
-fn test_validate_resolved_addrs_allows_public_hostname() {
-    let addrs = vec![
-        "8.8.8.8:443".parse::<SocketAddr>().unwrap(),
-        "[2606:4700:4700::1111]:443".parse::<SocketAddr>().unwrap(),
-    ];
-
-    assert!(validate_resolved_addrs("example.com", &addrs).is_ok());
-}
-
-#[test]
-fn test_extract_skill_from_zip_deflate() {
-    let content = b"---\nname: test\n---\n# Test Skill\n";
-    let zip = build_zip_entry_deflate("SKILL.md", content);
-    let result = extract_skill_from_zip(&zip).unwrap();
-    assert_eq!(result, std::str::from_utf8(content).unwrap());
-}
-
-#[test]
-fn test_extract_skill_from_zip_store() {
-    let content = b"---\nname: stored\n---\n# Stored\n";
-    let zip = build_zip_entry_store("SKILL.md", content);
-    let result = extract_skill_from_zip(&zip).unwrap();
-    assert_eq!(result, std::str::from_utf8(content).unwrap());
-}
-
-#[test]
-fn test_extract_skill_from_zip_missing_skill_md() {
-    let zip = build_zip_entry_store("_meta.json", b"{}");
-    let err = extract_skill_from_zip(&zip).unwrap_err();
+#[rstest]
+fn test_extract_skill_from_zip_missing_skill_md(zip_builder_fixture: ZipEntryBuilder) {
+    let zip = zip_builder_fixture("_meta.json", b"{}");
+    let err = extract_skill_from_zip(&zip).expect_err("archive without SKILL.md should fail");
     assert!(err.to_string().contains("does not contain SKILL.md"));
 }
 
@@ -138,8 +131,12 @@ fn build_zip_entry_store(file_name: &str, content: &[u8]) -> Vec<u8> {
 /// Build a raw ZIP local-file-header entry using DEFLATE compression (method 8).
 fn build_zip_entry_deflate(file_name: &str, content: &[u8]) -> Vec<u8> {
     let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(content).unwrap();
-    let compressed = encoder.finish().unwrap();
+    encoder
+        .write_all(content)
+        .expect("deflate encoder should accept fixture content");
+    let compressed = encoder
+        .finish()
+        .expect("deflate encoder should finish fixture archive");
 
     let mut zip = Vec::new();
     zip.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
@@ -180,189 +177,97 @@ fn build_zip_entry_store_oversized(
     zip
 }
 
-#[test]
-fn test_zip_extract_valid_skill() {
+#[rstest]
+fn test_zip_extract_valid_skill(zip_builder_fixture: ZipEntryBuilder) {
     let content = b"---\nname: hello\n---\n# Hello Skill\nDoes things.\n";
-    let zip = build_zip_entry_store("SKILL.md", content);
-    let result = extract_skill_from_zip(&zip).unwrap();
-    assert_eq!(result, std::str::from_utf8(content).unwrap());
+    let zip = zip_builder_fixture("SKILL.md", content);
+    let result =
+        extract_skill_from_zip(&zip).expect("valid archive should extract the root SKILL.md");
+    assert_eq!(
+        result,
+        std::str::from_utf8(content).expect("fixture content should be valid UTF-8"),
+    );
 }
 
-#[test]
-fn test_zip_extract_ignores_non_skill_entries() {
+#[rstest]
+fn test_zip_extract_ignores_non_skill_entries(zip_builder_fixture: ZipEntryBuilder) {
     let mut zip = Vec::new();
-    zip.extend_from_slice(&build_zip_entry_store("README.md", b"# Readme"));
-    zip.extend_from_slice(&build_zip_entry_store("src/main.rs", b"fn main() {}"));
+    zip.extend_from_slice(&zip_builder_fixture("README.md", b"# Readme"));
+    zip.extend_from_slice(&zip_builder_fixture("src/main.rs", b"fn main() {}"));
 
-    let err = extract_skill_from_zip(&zip).unwrap_err();
+    let err = extract_skill_from_zip(&zip).expect_err("archive without root SKILL.md should fail");
     assert!(
         err.to_string().contains("does not contain SKILL.md"),
-        "Expected 'does not contain SKILL.md' error, got: {}",
-        err
+        "Expected 'does not contain SKILL.md' error, got: {err}",
     );
 }
 
 #[rstest]
 #[case("../../SKILL.md", "path traversal entry")]
 #[case("subdir/SKILL.md", "nested path")]
-fn test_zip_extract_non_root_skill_md_rejected(#[case] path: &str, #[case] label: &str) {
-    let zip = build_zip_entry_store(path, b"---\nname: x\n---\n# X\n");
-    let err = extract_skill_from_zip(&zip).unwrap_err();
+fn test_zip_extract_non_root_skill_md_rejected(
+    zip_builder_fixture: ZipEntryBuilder,
+    #[case] path: &str,
+    #[case] label: &str,
+) {
+    let zip = zip_builder_fixture(path, b"---\nname: x\n---\n# X\n");
+    let err = extract_skill_from_zip(&zip)
+        .expect_err("non-root SKILL.md entries should not satisfy extraction");
     assert!(
         err.to_string().contains("does not contain SKILL.md"),
-        "{} should not match SKILL.md, got: {}",
-        label,
-        err,
+        "{label} should not match SKILL.md, got: {err}",
     );
 }
 
 #[test]
 fn test_zip_extract_oversized_rejected() {
     let zip = build_zip_entry_store_oversized("SKILL.md", b"tiny", 2 * 1024 * 1024);
-    let err = extract_skill_from_zip(&zip).unwrap_err();
+    let err =
+        extract_skill_from_zip(&zip).expect_err("oversized ZIP entry should be rejected safely");
     assert!(
         err.to_string().contains("too large"),
-        "Oversized entry should be rejected, got: {}",
-        err
+        "Oversized entry should be rejected, got: {err}",
+    );
+}
+
+#[test]
+fn test_zip_extract_stored_size_mismatch_rejected() {
+    let zip = build_zip_entry_store_oversized("SKILL.md", b"tiny", 12);
+    let err = extract_skill_from_zip(&zip).expect_err("stored ZIP size mismatches should fail");
+    assert!(
+        err.to_string().contains("truncated"),
+        "Expected a truncation error for a mismatched stored entry, got: {err}",
     );
 }
 
 #[test]
 fn test_is_private_ip_blocks_loopback() {
-    let loopback: IpAddr = "127.0.0.1".parse().unwrap();
+    let loopback: IpAddr = "127.0.0.1"
+        .parse()
+        .expect("loopback test fixture should parse");
     assert!(loopback.is_loopback());
     assert!(validate_fetch_url("https://127.0.0.1/skill.md").is_err());
 }
 
-#[test]
-fn test_is_private_ip_blocks_private_ranges() {
-    let cases: Vec<(&str, bool)> = vec![
-        ("10.0.0.1", true),
-        ("10.255.255.255", true),
-        ("172.16.0.1", true),
-        ("172.31.255.255", true),
-        ("192.168.1.1", true),
-        ("192.168.0.0", true),
-    ];
-    for (ip_str, expect_private) in cases {
-        let ip: IpAddr = ip_str.parse().unwrap();
-        assert_eq!(
-            is_private_ip(&ip),
-            expect_private,
-            "Expected is_private_ip({}) = {}",
-            ip_str,
-            expect_private
-        );
-    }
-}
-
-#[test]
-fn test_is_private_ip_blocks_link_local() {
-    let cases = vec!["169.254.1.1", "169.254.0.1", "169.254.255.255"];
-    for ip_str in cases {
-        let ip: IpAddr = ip_str.parse().unwrap();
-        assert!(
-            is_private_ip(&ip),
-            "Expected is_private_ip({}) = true (link-local)",
-            ip_str
-        );
-    }
-}
-
-#[test]
-fn test_is_private_ip_allows_public() {
-    let public_ips = vec!["8.8.8.8", "1.1.1.1", "93.184.216.34", "151.101.1.67"];
-    for ip_str in public_ips {
-        let ip: IpAddr = ip_str.parse().unwrap();
-        assert!(
-            !is_private_ip(&ip),
-            "Expected is_private_ip({}) = false (public IP)",
-            ip_str
-        );
-        assert!(!ip.is_loopback(), "Expected {} is not loopback", ip_str);
-    }
-}
-
-#[test]
-fn test_is_private_ip_blocks_ipv4_mapped_ipv6() {
-    let err = validate_fetch_url("https://[::ffff:127.0.0.1]/skill.md").unwrap_err();
-    assert!(
-        err.to_string().contains("private") || err.to_string().contains("loopback"),
-        "IPv4-mapped loopback should be blocked, got: {}",
-        err
+#[rstest]
+#[case("10.0.0.1", true)]
+#[case("10.255.255.255", true)]
+#[case("172.16.0.1", true)]
+#[case("172.31.255.255", true)]
+#[case("192.168.1.1", true)]
+#[case("192.168.0.0", true)]
+#[case("169.254.1.1", true)]
+#[case("169.254.0.1", true)]
+#[case("169.254.255.255", true)]
+#[case("8.8.8.8", false)]
+#[case("1.1.1.1", false)]
+#[case("93.184.216.34", false)]
+#[case("151.101.1.67", false)]
+fn test_is_private_ip_cases(#[case] ip_str: &str, #[case] expect_private: bool) {
+    let ip: IpAddr = ip_str.parse().expect("IP fixture should parse");
+    assert_eq!(
+        is_private_ip(&ip),
+        expect_private,
+        "Expected is_private_ip({ip_str}) = {expect_private}",
     );
-
-    let err = validate_fetch_url("https://[::ffff:192.168.1.1]/skill.md").unwrap_err();
-    assert!(
-        err.to_string().contains("private") || err.to_string().contains("loopback"),
-        "IPv4-mapped private should be blocked, got: {}",
-        err
-    );
-
-    let err = validate_fetch_url("https://[::ffff:10.0.0.1]/skill.md").unwrap_err();
-    assert!(
-        err.to_string().contains("private") || err.to_string().contains("loopback"),
-        "IPv4-mapped 10.x should be blocked, got: {}",
-        err
-    );
-
-    assert!(
-        validate_fetch_url("https://[::ffff:8.8.8.8]/skill.md").is_ok(),
-        "IPv4-mapped public IP should be allowed"
-    );
-
-    let err = validate_fetch_url("https://[::1]/skill.md").unwrap_err();
-    assert!(
-        err.to_string().contains("private") || err.to_string().contains("loopback"),
-        "IPv6 loopback should be blocked, got: {}",
-        err
-    );
-}
-
-#[test]
-fn test_is_restricted_host_blocks_metadata() {
-    let err = validate_fetch_url("https://169.254.169.254/latest/meta-data/").unwrap_err();
-    assert!(
-        err.to_string().contains("private") || err.to_string().contains("link-local"),
-        "Metadata IP should be blocked, got: {}",
-        err
-    );
-
-    let err = validate_fetch_url("https://metadata.google.internal/something").unwrap_err();
-    assert!(
-        err.to_string().contains("internal hostname"),
-        "metadata.google.internal should be blocked, got: {}",
-        err
-    );
-
-    let err = validate_fetch_url("https://service.internal/api").unwrap_err();
-    assert!(
-        err.to_string().contains("internal hostname"),
-        ".internal domains should be blocked, got: {}",
-        err
-    );
-
-    let err = validate_fetch_url("https://myhost.local/skill.md").unwrap_err();
-    assert!(
-        err.to_string().contains("internal hostname"),
-        ".local domains should be blocked, got: {}",
-        err
-    );
-}
-
-#[test]
-fn test_is_restricted_host_allows_normal() {
-    let allowed = vec![
-        "https://github.com/repo/SKILL.md",
-        "https://clawhub.dev/api/v1/download?slug=foo",
-        "https://raw.githubusercontent.com/user/repo/main/SKILL.md",
-        "https://example.com/skills/deploy.md",
-    ];
-    for url in allowed {
-        assert!(
-            validate_fetch_url(url).is_ok(),
-            "Expected validate_fetch_url({}) to succeed",
-            url
-        );
-    }
 }

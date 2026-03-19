@@ -447,7 +447,8 @@ fn assert_pumpkins(basket: &Basket) {
 }
 
 #[scenario(path = "tests/features/shopping.feature")]
-fn test_add_to_basket(#[with(basket)] _: Basket) {
+fn test_add_to_basket(basket: Basket) {
+    let _ = basket;
     // optional assertions after the steps
 }
 ```
@@ -1073,7 +1074,7 @@ fn end_stream(stream_end: &StreamEnd) {
 scenarios!(
     "tests/features/streams.feature",
     runtime = "tokio-current-thread",
-    fixtures = [stream_end]
+    fixtures = [stream_end: StreamEnd]
 );
 ```
 
