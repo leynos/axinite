@@ -588,7 +588,9 @@ mastering doctests:
    `.unwrap()` to promote robust error-handling practices.
 
 4. **Be DRY**: When setup logic is shared across multiple examples, centralize
-   it in a helper module guarded by `#[cfg(doctest)]` to avoid repetition.
+   it with hidden helper lines inside the doctest itself, or expose
+   crate-public helpers that an external doctest crate can import. Do not rely
+   on `#[cfg(doctest)]`-only helper modules.
 
 5. **Master** `cfg`: Use `#[cfg(doc)]` to control an item's *visibility* in the
    final documentation. Use `#[cfg(feature = "…")]` or other `cfg` flags

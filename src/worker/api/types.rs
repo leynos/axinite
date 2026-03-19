@@ -22,15 +22,9 @@ pub enum WorkerState {
     Unknown,
 }
 
-impl WorkerState {
-    pub const fn as_wire(self) -> &'static str {
-        match self {
-            Self::InProgress => "in_progress",
-            Self::Running => "running",
-            Self::Completed => "completed",
-            Self::Failed => "failed",
-            Self::Unknown => "unknown",
-        }
+impl std::fmt::Display for WorkerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_wire())
     }
 }
 
@@ -209,8 +203,9 @@ pub struct RemoteToolExecutionResponse {
 /// Catalog payload returned to workers for hosted-visible remote tools.
 ///
 /// `tools` is the current model-facing tool list. `toolset_instructions` is
-/// optional human-readable guidance and defaults to an empty list. `catalog_version`
-/// is a monotonic version derived from the catalog contents.
+/// optional human-readable guidance and defaults to an empty list.
+/// `catalog_version` is a deterministic content version derived from the
+/// serialized catalog payload.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RemoteToolCatalogResponse {
     pub tools: Vec<ToolDefinition>,
@@ -242,16 +237,9 @@ pub enum JobEventType {
     Unknown,
 }
 
-impl JobEventType {
-    pub const fn as_wire(self) -> &'static str {
-        match self {
-            Self::Status => "status",
-            Self::Message => "message",
-            Self::ToolUse => "tool_use",
-            Self::ToolResult => "tool_result",
-            Self::Result => "result",
-            Self::Unknown => "unknown",
-        }
+impl std::fmt::Display for JobEventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_wire())
     }
 }
 

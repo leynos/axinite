@@ -153,7 +153,7 @@ pub async fn skills_install_handler(
         raw.clone()
     } else if let Some(ref url) = req.url {
         // Fetch from explicit URL (with SSRF protection)
-        crate::tools::builtin::skill_tools::fetch_skill_content(url)
+        crate::tools::builtin::skill_fetch::fetch_skill_content(url)
             .await
             .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
     } else if let Some(ref catalog) = state.skill_catalog {
@@ -165,7 +165,7 @@ pub async fn skills_install_handler(
             .filter(|s| !s.is_empty())
             .unwrap_or(&req.name);
         let url = crate::skills::catalog::skill_download_url(catalog.registry_url(), download_key);
-        crate::tools::builtin::skill_tools::fetch_skill_content(&url)
+        crate::tools::builtin::skill_fetch::fetch_skill_content(&url)
             .await
             .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?
     } else {

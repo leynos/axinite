@@ -60,6 +60,7 @@ pub struct WorkerRuntime {
     llm: Arc<dyn LlmProvider>,
     safety: Arc<SafetyLayer>,
     tools: Arc<ToolRegistry>,
+    toolset_instructions: Vec<String>,
     /// Credentials fetched from the orchestrator, injected into child processes
     /// via `Command::envs()` rather than mutating the global process environment.
     ///
@@ -112,6 +113,7 @@ impl WorkerRuntime {
             llm,
             safety,
             tools,
+            toolset_instructions: Vec::new(),
             extra_env: Arc::new(HashMap::new()),
         }
     }
@@ -139,13 +141,17 @@ impl WorkerRuntime {
         if let Err(error) = self.hydrate_credentials().await {
             return self.fail_pre_loop("hydrate credentials", error).await;
         }
-        if let Err(error) = self.register_remote_tools().await {
-            tracing::warn!(
-                job_id = %self.config.job_id,
-                error = %error,
-                "Failed to fetch hosted remote-tool catalogue; continuing with container-local tools only"
-            );
-        }
+        self.toolset_instructions = match self.register_remote_tools().await {
+            Ok(toolset_instructions) => toolset_instructions,
+            Err(error) => {
+                tracing::warn!(
+                    job_id = %self.config.job_id,
+                    error = %error,
+                    "Failed to fetch hosted remote-tool catalogue; continuing with container-local tools only"
+                );
+                Vec::new()
+            }
+        };
         if let Err(error) = self
             .report_worker_status(
                 WorkerState::InProgress,
@@ -277,6 +283,12 @@ impl WorkerRuntime {
         job: &crate::worker::api::JobDescription,
     ) -> ReasoningContext {
         let mut reason_ctx = ReasoningContext::new().with_job(&job.description);
+        if !self.toolset_instructions.is_empty() {
+            reason_ctx.messages.push(ChatMessage::system(format!(
+                "Hosted remote-tool guidance:\n\n{}",
+                self.toolset_instructions.join("\n")
+            )));
+        }
         reason_ctx.messages.push(ChatMessage::system(format!(
             r#"You are an autonomous agent running inside a Docker container.
 
@@ -376,9 +388,11 @@ Work independently to complete this job. Report when done."#,
             .await;
     }
 
-    async fn register_remote_tools(&self) -> Result<(), WorkerError> {
+    async fn register_remote_tools(&self) -> Result<Vec<String>, WorkerError> {
         let remote_catalog = self.client.get_remote_tool_catalog().await?;
         let remote_tool_count = remote_catalog.tools.len();
+        let catalog_version = remote_catalog.catalog_version;
+        let toolset_instructions = remote_catalog.toolset_instructions;
         register_worker_remote_tool_proxies(
             &self.tools,
             Arc::clone(&self.client),
@@ -386,11 +400,11 @@ Work independently to complete this job. Report when done."#,
         );
         tracing::info!(
             job_id = %self.config.job_id,
-            catalog_version = remote_catalog.catalog_version,
+            catalog_version,
             remote_tool_count,
             "Registered hosted remote tools from orchestrator catalog"
         );
-        Ok(())
+        Ok(toolset_instructions)
     }
 
     #[cfg(test)]
@@ -403,6 +417,7 @@ Work independently to complete this job. Report when done."#,
             );
         }
     }
+
 }
 
 #[cfg(test)]

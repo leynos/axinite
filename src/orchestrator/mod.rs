@@ -10,14 +10,14 @@
 //! │              Orchestrator                       │
 //! │                                                 │
 //! │  Internal API (default :50051, configurable)    │
-//! │    POST /worker/{id}/llm/complete               │
-//! │    POST /worker/{id}/llm/complete_with_tools    │
-//! │    GET  /worker/{id}/job                        │
+//! │    POST /worker/{job_id}/llm/complete           │
+//! │    POST /worker/{job_id}/llm/complete_with_tools│
+//! │    GET  /worker/{job_id}/job                    │
 //! │    GET  /worker/{job_id}/tools/catalog          │
 //! │    POST /worker/{job_id}/tools/execute          │
-//! │    GET  /worker/{id}/credentials                │
-//! │    POST /worker/{id}/status                     │
-//! │    POST /worker/{id}/complete                   │
+//! │    GET  /worker/{job_id}/credentials            │
+//! │    POST /worker/{job_id}/status                 │
+//! │    POST /worker/{job_id}/complete               │
 //! │                                                 │
 //! │  ContainerJobManager                            │
 //! │    create_job() -> container + token             │

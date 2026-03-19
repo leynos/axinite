@@ -487,7 +487,7 @@ fn cli_state() -> CliState {
     CliState::default()
 }
 
-#[when("I run the CLI with {word}")]
+#[when("I run the CLI with {argument}")]
 fn run_command(cli_state: &CliState, argument: String) {
     let result = format!("ran {argument}");
     cli_state.output.set(result);
@@ -810,11 +810,15 @@ steps. The macro records a `Skipped` outcome and short-circuits the scenario so
 the generated test returns before evaluating the annotated function body.
 Invoke `skip!()` with no arguments to record a skipped outcome without a
 message. Pass an optional string to describe the reason, and use the standard
-`format!` syntax to interpolate values when needed. Set the
-`RSTEST_BDD_FAIL_ON_SKIPPED` environment variable to `1`, or call
-`rstest_bdd::config::set_fail_on_skipped(true)`, to escalate skipped scenarios
-into test failures unless the feature or scenario carries an `@allow_skipped`
-tag. (Example-level tags are not yet evaluated.)
+`format!` syntax to interpolate values when needed. To escalate skipped
+scenarios into test failures, either set the environment variable below or
+call `rstest_bdd::config::set_fail_on_skipped(true)`, unless the feature or
+scenario carries an `@allow_skipped` tag. (Example-level tags are not yet
+evaluated.)
+
+| Variable name | Meaning | Default or rule |
+| --- | --- | --- |
+| `RSTEST_BDD_FAIL_ON_SKIPPED` | Escalates skipped scenarios into test failures unless `@allow_skipped` is present | Unset defaults to `false`; accepts common boolean strings such as `1`, `true`, `yes`, and `on` |
 
 The macro captures the current execution scope internally, so helper functions
 may freely call `skip!` as long as they eventually run within a step or hook.
@@ -1518,7 +1522,7 @@ assert!(err
     .contains("unrecognised boolean value 'maybe'"));
 ```
 
-[`DataTableError`]: crate::datatable::DataTableError
+[`DataTableError`]: https://docs.rs/rstest-bdd/latest/rstest_bdd/datatable/enum.DataTableError.html
 
 A Gherkin Docstring is available through an argument named `docstring` of type
 `String`. Both arguments must use these exact names and types to be detected by
@@ -1702,8 +1706,8 @@ The tool inspects the runtime step registry and offers four commands:
   file and line numbers alongside the explanatory message.
 
 The subcommand builds each test target in the workspace and runs the resulting
-binary with `RSTEST_BDD_DUMP_STEPS=1` and a private `--dump-steps` flag to
-collect the registered steps and recently executed scenario outcomes as JSON.
+binary in an internal step-dump mode to collect the registered steps and
+recently executed scenario outcomes as JSON.
 Because usage tracking is process local, `unused` only reflects steps invoked
 during that same execution. The merged output powers the commands above and the
 skip status summary, helping to keep the step library tidy and discover dead

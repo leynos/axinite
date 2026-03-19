@@ -45,10 +45,6 @@ be hidden when they:
 | Other ineligible or protected cases | Hidden | Omitted from the remote catalogue and rejected if called directly |
 | Hosted-visible orchestrator-owned tool | Visible | Advertised unchanged in the remote catalogue and executed through the generic remote-tool request |
 
-- require interactive approval that hosted workers cannot satisfy
-- depend on worker-local execution rather than orchestrator-owned execution
-- are otherwise not eligible for the hosted remote-tool path
-
 If a hosted-visible remote tool is selected, the worker sends one generic
 execution request to the orchestrator rather than using tool-family-specific
 proxy routes.

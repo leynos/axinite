@@ -109,7 +109,7 @@
 - [RFC directory](rfcs/) stores proposed and in-flight architectural changes
   that need technical review before acceptance.
   - [RFC 0001: Expose Model Context Protocol (MCP) tool definitions](rfcs/0001-expose-mcp-tool-definitions.md)
-    proposes how MCP tool schemas should be surfaced to the runtime and model.
+    describes how MCP tool schemas should be surfaced to the runtime and model.
   - [RFC 0002: Expose WebAssembly (WASM) tool definitions](rfcs/0002-expose-wasm-tool-definitions.md)
     proposes how WebAssembly tool schemas should be exported and consumed.
   - [RFC 0003: Skill bundle installation](rfcs/0003-skill-bundle-installation.md)

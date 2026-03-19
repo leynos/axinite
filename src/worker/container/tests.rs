@@ -409,7 +409,9 @@ async fn remote_tool_catalog(
                 "required": ["query"]
             }),
         }],
-        toolset_instructions: vec![],
+        toolset_instructions: vec![
+            "Prefer hosted remote tools for external systems.".to_string(),
+        ],
         catalog_version: 42,
     })
 }
@@ -490,6 +492,63 @@ async fn hosted_worker_remote_tool_catalog_registers_remote_tools() {
         "Remote tool from orchestrator catalog"
     );
     assert_eq!(remote_tool.parameters_schema()["required"][0], "query");
+
+    server.abort();
+    let _ = server.await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn worker_runtime_build_reasoning_context_includes_toolset_instructions() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind listener");
+    let addr = listener.local_addr().expect("listener addr");
+    let router = Router::new()
+        .route(REMOTE_TOOL_CATALOG_ROUTE, get(remote_tool_catalog))
+        .with_state(TestState);
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.expect("serve router");
+    });
+
+    let client = Arc::new(WorkerHttpClient::new(
+        format!("http://{}", addr),
+        Uuid::nil(),
+        "test".to_string(),
+    ));
+    let mut runtime = WorkerRuntime::from_client(
+        WorkerConfig {
+            job_id: Uuid::nil(),
+            orchestrator_url: format!("http://{}", addr),
+            ..WorkerConfig::default()
+        },
+        client,
+    );
+    runtime
+        .register_remote_tools()
+        .await
+        .expect("register hosted remote tools");
+
+    let reason_ctx = runtime
+        .build_reasoning_context(&JobDescription {
+            title: "Hosted guidance".to_string(),
+            description: "Use the available tools".to_string(),
+            project_dir: None,
+        })
+        .await;
+
+    let guidance_message = reason_ctx
+        .messages
+        .iter()
+        .find(|message| message.content.contains("Hosted remote-tool guidance"))
+        .expect("expected hosted remote-tool guidance message");
+
+    assert!(
+        guidance_message
+            .content
+            .contains("Prefer hosted remote tools for external systems."),
+        "reasoning context should include the preserved orchestrator guidance"
+    );
 
     server.abort();
     let _ = server.await;

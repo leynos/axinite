@@ -434,7 +434,8 @@ fn test_state_transitions(
 }
 ```
 
-In this scenario, `rstest` will generate 3×3=9 individual test cases, covering
+In this scenario, `rstest` will generate 4×3=12 individual test cases,
+covering
 all combinations of `initial_state` and `event` specified in the `#[values]`
 attributes.
 
@@ -866,6 +867,10 @@ A default timeout for all `rstest` async tests can also be set using the
 `RSTEST_TIMEOUT` environment variable (value in seconds), evaluated at test
 compile time. This built-in timeout support is a practical feature for ensuring
 test suite stability.
+
+| Variable name | Meaning | Default or rule |
+| --- | --- | --- |
+| `RSTEST_TIMEOUT` | Sets a default timeout, in seconds, for all `rstest` async tests | Value in seconds; evaluated at compile time; no default if unset |
 
 ## VII. Working with external resources and test data
 

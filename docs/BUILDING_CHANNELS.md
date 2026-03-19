@@ -4,14 +4,15 @@ This guide covers how to build WASM channel modules for IronClaw.
 
 ## Overview
 
-Channels are WASM components that handle communication with external
+Channels are WebAssembly (WASM) components that handle communication with
+external
 messaging platforms (Telegram, WhatsApp, Slack, etc.). They run in a
 sandboxed environment and communicate with the host via the WIT
 (WebAssembly Interface Types) interface.
 
 ## Directory Structure
 
-```text
+```plaintext
 channels/                    # Or channels-src/
 └── my-channel/
     ├── Cargo.toml
@@ -22,7 +23,7 @@ channels/                    # Or channels-src/
 
 After building, deploy to:
 
-```text
+```plaintext
 ~/.ironclaw/channels/
 ├── my-channel.wasm
 └── my-channel.capabilities.json

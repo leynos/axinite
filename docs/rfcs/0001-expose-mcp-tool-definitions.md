@@ -29,7 +29,7 @@ This RFC proposes a narrow architectural correction:
 
 1. Keep the orchestrator-side `ToolRegistry` as the canonical source of truth
    for active MCP tool definitions.
-2. Expose a hosted-visible orchestrator tool catalog to the worker.
+2. Expose a hosted-visible orchestrator tool catalogue to the worker.
 3. Have the worker advertise those real tool definitions to the LLM unchanged.
 4. Proxy execution of orchestrator-owned tools, including MCP tools, back
    through the orchestrator.
@@ -130,13 +130,13 @@ That causes:
    run it.
 5. Server-level MCP instructions may supplement the interface, but they must
    not replace per-tool descriptions and schemas.
-6. The worker-orchestrator transport contract for hosted tool catalog fetch
+6. The worker-orchestrator transport contract for hosted tool catalogue fetch
    and proxy execution must be owned in one shared boundary, not duplicated as
    parallel route fragments and payload conventions.
 
 ## Proposal
 
-### 1. Introduce a hosted-visible orchestrator tool catalog
+### 1. Introduce a hosted-visible orchestrator tool catalogue
 
 Add a worker-authenticated orchestrator endpoint that returns the
 orchestrator-owned tools that are visible and executable for hosted jobs.
@@ -185,9 +185,9 @@ module or equivalent typed boundary. The hosted-catalog fix should not add a
 second copy of route strings, request bodies, and response bodies that must be
 kept in sync by convention alone.
 
-### 2. Filter the catalog to hosted-executable tools
+### 2. Filter the catalogue to hosted-executable tools
 
-The catalog must not blindly dump the whole orchestrator registry into hosted
+The catalogue must not blindly dump the whole orchestrator registry into hosted
 mode. It must filter to tools that are valid in the hosted environment.
 
 For v1, a tool is hosted-visible only if all of the following are true:
@@ -205,7 +205,7 @@ For MCP tools specifically, this means:
 - approval semantics are compatible with hosted mode
 
 If IronClaw later grows a hosted approval grant mechanism, the filter can be
-relaxed. Until then, the catalog should prefer correctness over breadth.
+relaxed. Until then, the catalogue should prefer correctness over breadth.
 
 ### 3. Add a generic orchestrator-owned tool execution endpoint
 
@@ -245,15 +245,15 @@ This endpoint should execute against the canonical orchestrator-side
 
 ### 4. Register worker-local proxy wrappers for remote tools
 
-Once the worker fetches the hosted-visible catalog, it should register proxy
+Once the worker fetches the hosted-visible catalogue, it should register proxy
 tools locally so the reasoning loop can keep using a single local
 `ToolRegistry`.
 
 Conceptually:
 
 1. Worker starts with container tools and existing extension-management proxies.
-2. Worker fetches the orchestrator catalog.
-3. Worker registers a `RemoteToolProxy` for each catalog entry.
+2. Worker fetches the orchestrator catalogue.
+3. Worker registers a `RemoteToolProxy` for each catalogue entry.
 4. Each proxy reports the orchestrator-supplied `name`, `description`, and
    `parameters` unchanged.
 5. Each proxy executes by calling `POST /worker/{job_id}/tools/execute`.
@@ -298,7 +298,7 @@ Recommended treatment:
 1. Keep per-tool `description` and `parameters` as the primary interface.
 2. Collect server-level instructions from active hosted-visible MCP servers.
 3. Add them as a short synthesized system message before tool selection, or as
-   `toolset_instructions` returned by the catalog and injected by the worker.
+   `toolset_instructions` returned by the catalogue and injected by the worker.
 
 Example:
 
@@ -310,19 +310,20 @@ Active remote tool guidance:
 
 This gives the model behavioral context without distorting tool signatures.
 
-### 7. Refresh the catalog when tool availability changes
+### 7. Refresh the catalogue when tool availability changes
 
-Tool availability is not static. The hosted worker should refresh the catalog
+Tool availability is not static. The hosted worker should refresh the
+catalogue
 when:
 
 - the job starts
 - an extension is activated or removed
-- the orchestrator reports a catalog version change
+- the orchestrator reports a catalogue version change
 - an MCP server with `listChanged` support announces tool-list changes
 
 The minimal v1 approach is to fetch once at worker startup and again after any
 successful extension-management action that could change active tools. A later
-iteration can add explicit catalog version checks or push invalidation.
+iteration can add explicit catalogue version checks or push invalidation.
 
 ## Detailed Interface
 
@@ -362,7 +363,8 @@ implementations.
 The hosted LLM should see a single merged tool list:
 
 1. worker-local container tools
-2. worker-local proxies registered from the orchestrator catalog, which expose
+2. worker-local proxies registered from the orchestrator catalogue, which
+   expose
    orchestrator-owned hosted-visible tools, including active MCP tools
 
 The LLM should not need to know which side owns execution. Ownership stays an
@@ -383,7 +385,7 @@ Examples:
 - `notion_search`
 - `slack_post_message`
 
-The catalog endpoint must return exactly the registered name, not a display
+The catalogue endpoint must return exactly the registered name, not a display
 name and not a reconstructed alias.
 
 ## Why This Is The Correct Boundary
@@ -419,7 +421,7 @@ Required rules:
    tool surface, not the full orchestrator registry.
 
 If a tool requires approval and there is no hosted approval flow, exclude it
-from the catalog.
+from the catalogue.
 
 ## Testing Strategy
 
@@ -456,17 +458,17 @@ That is the contract that fixes malformed tool calls.
 
 ## Migration Plan
 
-1. Add worker/orchestrator transport types for the hosted tool catalog and
+1. Add worker/orchestrator transport types for the hosted tool catalogue and
    generic remote tool execution, with one shared contract owner for route
    builders and payload shapes.
-2. Add orchestrator-side catalog filtering against the canonical `ToolRegistry`.
+2. Add orchestrator-side catalogue filtering against the canonical `ToolRegistry`.
 3. Add worker-side remote proxy registration using the shared transport
    contract rather than worker-local path reconstruction.
 4. Merge remote tool definitions into the worker reasoning context.
 5. Add targeted tests for definition fidelity, execution routing, and
    contract parity between worker and orchestrator.
 6. Optionally inject supplemental server-level instructions into the system
-   prompt once the basic catalog path is stable.
+   prompt once the basic catalogue path is stable.
 
 ## Alternatives Considered
 
@@ -486,14 +488,14 @@ problem.
 This is a viable long-term simplification. It would remove the need for the
 worker to fetch and register remote tool definitions at all.
 
-It is not the recommended first step because the catalog-plus-proxy design is a
-smaller change that fits the current worker architecture and can be adopted
-incrementally.
+It is not the recommended first step because the
+catalogue-plus-proxy design is a smaller change that fits the current worker
+architecture and can be adopted incrementally.
 
 ### Alternative 4: Stop for a separate worker-orchestrator architecture cleanup
 
 Rejected. The contract duplication is real, but it sits directly on the path of
-hosted tool catalog delivery. The right response is to make the shared
+hosted tool catalogue delivery. The right response is to make the shared
 transport boundary part of this RFC's first implementation step, not to block
 the work behind a separate prerequisite stream.
 
@@ -503,14 +505,14 @@ the work behind a separate prerequisite stream.
    also tools that are already auto-approved by policy?
 2. Should `toolset_instructions` be injected as a dedicated system message, or
    folded into the job system prompt?
-3. Should the catalog be refreshed opportunistically after extension actions
+3. Should the catalogue be refreshed opportunistically after extension actions
    only, or version-checked every reasoning iteration?
 4. Should remote orchestrator-owned tools appear in the UI as a separate source
    category for observability, even though the LLM sees a unified list?
 
 ## Recommendation
 
-Implement the catalog-plus-proxy design first.
+Implement the catalogue-plus-proxy design first.
 
 It is the smallest change that fixes the actual bug:
 
