@@ -170,6 +170,16 @@ impl TraceLlm {
         }
     }
 
+    #[inline]
+    fn json_scalar_to_string(value: &serde_json::Value) -> Option<String> {
+        match value {
+            serde_json::Value::String(s) => Some(s.clone()),
+            serde_json::Value::Number(n) => Some(n.to_string()),
+            serde_json::Value::Bool(b) => Some(b.to_string()),
+            _ => None,
+        }
+    }
+
     fn extract_tool_result_vars(
         messages: &[ChatMessage],
     ) -> std::collections::HashMap<String, String> {
@@ -178,25 +188,21 @@ impl TraceLlm {
             if message.role != Role::Tool {
                 continue;
             }
-            let call_id = match &message.tool_call_id {
-                Some(id) => id,
-                None => continue,
+            let Some(call_id) = message.tool_call_id.as_deref() else {
+                continue;
             };
             let content = Self::unwrap_tool_output(&message.content);
-            let json: serde_json::Value = match serde_json::from_str(&content) {
-                Ok(value) => value,
-                Err(_) => continue,
+            let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
+                continue;
             };
-            if let Some(obj) = json.as_object() {
-                for (key, value) in obj {
-                    let string_value = match value {
-                        serde_json::Value::String(s) => s.clone(),
-                        serde_json::Value::Number(n) => n.to_string(),
-                        serde_json::Value::Bool(b) => b.to_string(),
-                        _ => continue,
-                    };
-                    vars.insert(format!("{call_id}.{key}"), string_value);
-                }
+            let Some(obj) = json.as_object() else {
+                continue;
+            };
+            for (key, value) in obj {
+                let Some(string_value) = Self::json_scalar_to_string(value) else {
+                    continue;
+                };
+                vars.insert(format!("{call_id}.{key}"), string_value);
             }
         }
         vars
