@@ -169,9 +169,9 @@ workload type, not by per-request complexity scoring.
 | Vision analysis | `vision` | Requires modality support. |
 | Web extraction/summarization | `auxiliary` | Non-critical, cost-sensitive. |
 | Heartbeat/evaluation | `auxiliary` | Already uses cheap provider. |
-<!-- markdownlint-enable MD013 -->
 | Memory extraction (RFC 0007) | `auxiliary` | Background, non-critical. |
 | Embedding generation | Dedicated embedding config | Already separate. |
+<!-- markdownlint-enable MD013 -->
 
 _Table 1: Default profile dispatch._
 
