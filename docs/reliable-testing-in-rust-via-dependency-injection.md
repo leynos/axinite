@@ -1,7 +1,5 @@
 # 🛡️ Reliable testing in Rust via dependency injection
 
-<!-- markdownlint-disable MD013 -->
-
 Writing robust, reliable, and parallelizable tests requires an intentional
 approach to handling external dependencies such as environment variables, the
 filesystem, or the system clock. Functions that directly call `std::env::var`
@@ -34,7 +32,10 @@ First, add the crate to development dependencies in `Cargo.toml`.
 
 ```toml
 [dev-dependencies]
-mockable = { version = "0.1.4", default-features = false, features = ["clock", "mock"] }
+mockable = { version = "0.1.4", default-features = false, features = [
+    "clock",
+    "mock",
+] }
 ```
 
 ### 2. The untestable code (before)
@@ -129,8 +130,8 @@ ______________________________________________________________________
 ## 🔩 Handling other non-deterministic dependencies
 
 This dependency injection pattern also applies to other non-deterministic
-dependencies, such as the system clock. The `mockable` crate provides a `Clock`
-trait for this purpose.
+dependencies, such as the system clock. The `mockable` crate provides a
+`Clock` trait for this purpose.
 
 ### Untestable code
 
@@ -152,7 +153,10 @@ fn is_cache_entry_stale(creation_time: SystemTime) -> bool {
 use mockable::Clock;
 use std::time::{SystemTime, Duration};
 
-fn is_cache_entry_stale(creation_time: SystemTime, clock: &impl Clock) -> bool {
+fn is_cache_entry_stale(
+    creation_time: SystemTime,
+    clock: &impl Clock,
+) -> bool {
     let timeout = Duration::from_secs(300);
     match clock.now().duration_since(creation_time) {
         Ok(age) => age > timeout,
