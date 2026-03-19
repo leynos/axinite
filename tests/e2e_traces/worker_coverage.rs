@@ -42,6 +42,7 @@ impl Tool for StubRateLimitTool {
     }
 }
 
+#[derive(Debug)]
 struct SpotCase {
     fixture: &'static str,
     message: &'static str,

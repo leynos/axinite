@@ -85,7 +85,8 @@ async fn test_shell_echo() {
 
 #[tokio::test]
 async fn test_list_dir() {
-    let test_dir = setup_test_dir_with_suffix(&test_dir_base(), "list_dir");
+    let test_dir = setup_test_dir_with_suffix(&test_dir_base(), "list_dir")
+        .expect("failed to create list_dir test directory");
     let _cleanup = CleanupGuard::new().dir(&test_dir);
     tokio::fs::write(format!("{test_dir}/file_a.txt"), "content a")
         .await
@@ -110,7 +111,8 @@ async fn test_list_dir() {
 
 #[tokio::test]
 async fn test_apply_patch_chain() {
-    let test_dir = setup_test_dir_with_suffix(&test_dir_base(), "apply_patch");
+    let test_dir = setup_test_dir_with_suffix(&test_dir_base(), "apply_patch")
+        .expect("failed to create apply_patch test directory");
     let _cleanup = CleanupGuard::new().dir(&test_dir);
 
     let fixture_path = concat!(

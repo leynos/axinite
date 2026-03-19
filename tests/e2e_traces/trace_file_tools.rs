@@ -13,7 +13,7 @@ const EXPECTED_CONTENT: &str = "Hello, E2E test!";
 
 #[tokio::test]
 async fn test_file_write_and_read_flow() {
-    setup_test_dir(TEST_DIR);
+    setup_test_dir(TEST_DIR).expect("failed to create trace file tools directory");
     let _cleanup = CleanupGuard::new().dir(TEST_DIR);
 
     let fixture_path = concat!(

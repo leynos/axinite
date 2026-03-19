@@ -4,19 +4,16 @@
 use std::path::Path;
 
 /// The kind of path registered for cleanup.
-#[allow(dead_code)]
 enum PathKind {
     File,
     Dir,
 }
 
 /// Removes listed paths when dropped, ensuring cleanup even on panic.
-#[allow(dead_code)]
 pub struct CleanupGuard {
     paths: Vec<(String, PathKind)>,
 }
 
-#[allow(dead_code)]
 impl CleanupGuard {
     pub fn new() -> Self {
         Self { paths: Vec::new() }
@@ -51,19 +48,21 @@ impl Drop for CleanupGuard {
 }
 
 /// Remove and recreate a test directory, ensuring a clean slate.
-#[allow(dead_code)]
-pub fn setup_test_dir(path: &str) {
-    // Ignore error: directory may not exist, removal failures are non-fatal in tests
-    let _ = std::fs::remove_dir_all(path);
-    std::fs::create_dir_all(path).expect("failed to create test directory");
+pub fn setup_test_dir(path: &str) -> std::io::Result<()> {
+    match std::fs::remove_dir_all(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+
+    std::fs::create_dir_all(path)
 }
 
 /// Remove and recreate a suffixed test directory, returning the full path.
 ///
 /// Useful when tests need isolated directories to avoid collisions.
-#[allow(dead_code)]
-pub fn setup_test_dir_with_suffix(base: &Path, suffix: &str) -> String {
+pub fn setup_test_dir_with_suffix(base: &Path, suffix: &str) -> std::io::Result<String> {
     let dir = format!("{}_{suffix}", base.to_string_lossy());
-    setup_test_dir(&dir);
-    dir
+    setup_test_dir(&dir)?;
+    Ok(dir)
 }

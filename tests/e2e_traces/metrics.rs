@@ -138,7 +138,7 @@ fn assert_tool_trace_names(metrics: &TraceMetrics) {
 /// Verify that metrics capture tool calls from a file write/read flow.
 #[tokio::test]
 async fn test_metrics_collected_from_tool_trace() {
-    setup_test_dir(TEST_DIR);
+    setup_test_dir(TEST_DIR).expect("failed to create metrics test directory");
     let _cleanup = CleanupGuard::new().dir(TEST_DIR);
 
     let mut trace = LlmTrace::from_file(concat!(

@@ -340,6 +340,7 @@ mod test_channel_tests {
 
 mod trace_llm_tests {
     use crate::support::trace_llm::*;
+    use crate::support::trace_types::TraceTurn;
     use ironclaw::llm::{
         ChatMessage, CompletionRequest, FinishReason, LlmProvider, ToolCompletionRequest,
     };

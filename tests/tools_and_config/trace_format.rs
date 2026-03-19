@@ -3,7 +3,8 @@
 //! These tests verify JSON deserialization and backward compatibility of the
 //! trace format. They do NOT require a rig, database, or the `libsql` feature.
 
-use crate::support::trace_llm::{LlmTrace, TraceExpects, TraceTurn};
+use crate::support::trace_llm::{LlmTrace, TraceExpects};
+use crate::support::trace_types::TraceTurn;
 
 /// Bundles the expected values checked against a [`TraceExpects`] instance.
 struct CoreExpectsSpec<'a> {

@@ -127,7 +127,7 @@ async fn tool_error_recovery() {
 async fn long_tool_chain() {
     let test_dir = "/tmp/ironclaw_chain_test";
     let _cleanup = CleanupGuard::new().dir(test_dir);
-    setup_test_dir(test_dir);
+    setup_test_dir(test_dir).expect("failed to create long tool chain test directory");
 
     let trace = LlmTrace::from_file(fixture_path("advanced", "long_tool_chain.json"))
         .expect("failed to load fixture: advanced/long_tool_chain.json");
