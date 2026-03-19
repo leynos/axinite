@@ -13,6 +13,15 @@ const MAX_DECOMPRESSED: usize = 1024 * 1024;
 #[cfg(test)]
 mod tests;
 
+/// Return `true` when the lowercased, normalised hostname is known to resolve
+/// to an internal or metadata endpoint that must not be fetched.
+fn is_blocked_hostname(host_lower: &str) -> bool {
+    host_lower == "localhost"
+        || host_lower == "metadata.google.internal"
+        || host_lower.ends_with(".internal")
+        || host_lower.ends_with(".local")
+}
+
 /// Validate that a URL is safe to fetch.
 fn validate_fetch_url(url_str: &str) -> Result<reqwest::Url, ToolError> {
     let parsed = reqwest::Url::parse(url_str)
@@ -34,11 +43,7 @@ fn validate_fetch_url(url_str: &str) -> Result<reqwest::Url, ToolError> {
     }
 
     let host_lower = normalize_domain(host.to_string().as_str()).to_lowercase();
-    if host_lower == "localhost"
-        || host_lower == "metadata.google.internal"
-        || host_lower.ends_with(".internal")
-        || host_lower.ends_with(".local")
-    {
+    if is_blocked_hostname(&host_lower) {
         return Err(ToolError::ExecutionFailed(format!(
             "URL points to an internal hostname: {}",
             host
@@ -66,8 +71,14 @@ fn normalize_ip(ip: IpAddr) -> IpAddr {
     }
 }
 
+/// Return `true` when the IP address is loopback, unspecified, private,
+/// or link-local, and therefore must not be fetched.
+fn is_non_routable_ip(ip: &IpAddr) -> bool {
+    ip.is_loopback() || ip.is_unspecified() || is_private_ip(ip) || is_link_local_ip(ip)
+}
+
 fn validate_fetch_ip(ip: &IpAddr, display_host: &str) -> Result<(), ToolError> {
-    if ip.is_loopback() || ip.is_unspecified() || is_private_ip(ip) || is_link_local_ip(ip) {
+    if is_non_routable_ip(ip) {
         return Err(ToolError::ExecutionFailed(format!(
             "URL points to a private/loopback/link-local address: {}",
             display_host
