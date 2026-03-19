@@ -20,6 +20,20 @@ mod tests;
 pub use install::SkillInstallTool;
 pub use remove::SkillRemoveTool;
 
+/// Build a minimal JSON Schema object descriptor.
+///
+/// `required` may be empty, in which case the key is omitted from the schema.
+fn object_schema(properties: serde_json::Value, required: &[&str]) -> serde_json::Value {
+    let mut schema = serde_json::json!({
+        "type": "object",
+        "properties": properties,
+    });
+    if !required.is_empty() {
+        schema["required"] = serde_json::json!(required);
+    }
+    schema
+}
+
 // ── skill_list ──────────────────────────────────────────────────────────
 
 pub struct SkillListTool {
@@ -43,16 +57,16 @@ impl Tool for SkillListTool {
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
+        object_schema(
+            serde_json::json!({
                 "verbose": {
                     "type": "boolean",
                     "description": "Include extra detail (tags, content_hash, version)",
                     "default": false
                 }
-            }
-        })
+            }),
+            &[],
+        )
     }
 
     async fn execute(
@@ -142,16 +156,15 @@ impl Tool for SkillSearchTool {
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
+        object_schema(
+            serde_json::json!({
                 "query": {
                     "type": "string",
                     "description": "Search query (name, keyword, or description fragment)"
                 }
-            },
-            "required": ["query"]
-        })
+            }),
+            &["query"],
+        )
     }
 
     async fn execute(
