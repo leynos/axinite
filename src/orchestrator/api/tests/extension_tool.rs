@@ -120,6 +120,97 @@ impl Tool for FakeToolList {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ExtensionToolSuccessKind {
+    HostedSafeActivate,
+    RegisteredToolList,
+}
+
+#[derive(Debug)]
+struct ExtensionToolSuccessCase {
+    kind: ExtensionToolSuccessKind,
+    payload: serde_json::Value,
+    expected_key: &'static str,
+    expected_value: &'static str,
+}
+
+fn hosted_safe_activate_case() -> ExtensionToolSuccessCase {
+    ExtensionToolSuccessCase {
+        kind: ExtensionToolSuccessKind::HostedSafeActivate,
+        payload: serde_json::json!({
+            "tool_name": "tool_activate",
+            "params": {"name": "slack"}
+        }),
+        expected_key: "activated",
+        expected_value: "slack",
+    }
+}
+
+fn registered_tool_list_case() -> ExtensionToolSuccessCase {
+    ExtensionToolSuccessCase {
+        kind: ExtensionToolSuccessKind::RegisteredToolList,
+        payload: serde_json::json!({
+            "tool_name": "tool_list",
+            "params": {"include_available": true}
+        }),
+        expected_key: "extensions",
+        expected_value: "telegram",
+    }
+}
+
+async fn register_extension_tool_case(
+    test_state: &OrchestratorState,
+    kind: ExtensionToolSuccessKind,
+) -> Option<Arc<tokio::sync::Mutex<Option<Uuid>>>> {
+    match kind {
+        ExtensionToolSuccessKind::HostedSafeActivate => {
+            test_state
+                .tools
+                .register(Arc::new(HostedSafeActivateTool))
+                .await;
+            None
+        }
+        ExtensionToolSuccessKind::RegisteredToolList => {
+            let seen_job_id = Arc::new(tokio::sync::Mutex::new(None));
+            test_state.tools.register_sync(Arc::new(FakeToolList {
+                seen_job_id: Arc::clone(&seen_job_id),
+            }));
+            Some(seen_job_id)
+        }
+    }
+}
+
+async fn post_extension_tool(
+    router: Router,
+    job_id: Uuid,
+    token: &str,
+    payload: serde_json::Value,
+) -> axum::http::Response<Body> {
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/worker/{job_id}/extension_tool"))
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&payload).expect("serialize proxy extension tool payload"),
+        ))
+        .expect("build proxy extension tool request");
+
+    router
+        .oneshot(req)
+        .await
+        .expect("send proxy extension tool request")
+}
+
+async fn decode_proxy_extension_tool_response(
+    resp: axum::http::Response<Body>,
+) -> crate::worker::api::ProxyExtensionToolResponse {
+    let body = axum::body::to_bytes(resp.into_body(), 4096)
+        .await
+        .expect("read proxy extension tool response body");
+    serde_json::from_slice(&body).expect("parse proxy extension tool response")
+}
+
 #[rstest]
 #[tokio::test]
 async fn extension_tool_proxy_rejects_non_extension_tool_names(test_state: OrchestratorState) {
@@ -185,89 +276,33 @@ async fn extension_tool_proxy_rejects_extension_tools_that_require_approval_for_
 }
 
 #[rstest]
+#[case(hosted_safe_activate_case())]
+#[case(registered_tool_list_case())]
 #[tokio::test]
-async fn extension_tool_proxy_allows_hosted_safe_tools_with_unless_auto_approved(
+async fn extension_tool_proxy_executes_hosted_visible_extension_tools(
     test_state: OrchestratorState,
+    #[case] case: ExtensionToolSuccessCase,
 ) {
-    test_state
-        .tools
-        .register(Arc::new(HostedSafeActivateTool))
-        .await;
+    let seen_job_id = register_extension_tool_case(&test_state, case.kind).await;
     let job_id = Uuid::new_v4();
     let token = test_state.token_store.create_token(job_id).await;
     let router = OrchestratorApi::router(test_state);
 
-    let payload = serde_json::json!({
-        "tool_name": "tool_activate",
-        "params": {"name": "slack"}
-    });
-
-    let req = Request::builder()
-        .method("POST")
-        .uri(format!("/worker/{}/extension_tool", job_id))
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Content-Type", "application/json")
-        .body(Body::from(
-            serde_json::to_vec(&payload).expect("serialize hosted-safe activate payload"),
-        ))
-        .expect("build hosted-safe activate request");
-
-    let resp = router
-        .oneshot(req)
-        .await
-        .expect("send hosted-safe activate request");
+    let resp = post_extension_tool(router, job_id, &token, case.payload).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(resp.into_body(), 4096)
-        .await
-        .expect("read hosted-safe activate response");
-    let proxy_resp: crate::worker::api::ProxyExtensionToolResponse =
-        serde_json::from_slice(&body).expect("parse hosted-safe activate response");
-    assert_eq!(proxy_resp.output.result["activated"], "slack");
-}
+    let proxy_resp = decode_proxy_extension_tool_response(resp).await;
+    let result = &proxy_resp.output.result;
+    let actual = match case.expected_key {
+        "extensions" => &result[case.expected_key][0],
+        _ => &result[case.expected_key],
+    };
+    assert_eq!(actual, case.expected_value);
 
-#[rstest]
-#[tokio::test]
-async fn extension_tool_proxy_executes_registered_extension_tool_with_request_job_id(
-    test_state: OrchestratorState,
-) {
-    let seen_job_id = Arc::new(tokio::sync::Mutex::new(None));
-    test_state.tools.register_sync(Arc::new(FakeToolList {
-        seen_job_id: Arc::clone(&seen_job_id),
-    }));
-    let job_id = Uuid::new_v4();
-    let token = test_state.token_store.create_token(job_id).await;
-    let router = OrchestratorApi::router(test_state);
-
-    let payload = serde_json::json!({
-        "tool_name": "tool_list",
-        "params": {"include_available": true}
-    });
-
-    let req = Request::builder()
-        .method("POST")
-        .uri(format!("/worker/{}/extension_tool", job_id))
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Content-Type", "application/json")
-        .body(Body::from(
-            serde_json::to_vec(&payload).expect("serialize registered proxy payload"),
-        ))
-        .expect("build registered proxy extension tool request");
-
-    let resp = router
-        .oneshot(req)
-        .await
-        .expect("send registered proxy extension tool request");
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(resp.into_body(), 4096)
-        .await
-        .expect("read registered proxy extension tool response body");
-    let proxy_resp: crate::worker::api::ProxyExtensionToolResponse =
-        serde_json::from_slice(&body).expect("parse registered proxy extension tool response");
-    assert_eq!(proxy_resp.output.result["extensions"][0], "telegram");
-    assert_eq!(proxy_resp.output.duration, Duration::from_millis(5));
-    assert_eq!(proxy_resp.output.cost, None);
-    assert_eq!(proxy_resp.output.raw, None);
-    assert_eq!(*seen_job_id.lock().await, Some(job_id));
+    if let Some(seen_job_id) = seen_job_id {
+        assert_eq!(proxy_resp.output.duration, Duration::from_millis(5));
+        assert_eq!(proxy_resp.output.cost, None);
+        assert_eq!(proxy_resp.output.raw, None);
+        assert_eq!(*seen_job_id.lock().await, Some(job_id));
+    }
 }
