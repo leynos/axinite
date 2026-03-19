@@ -354,7 +354,7 @@ design requirement.
 
 ## Testing Strategy
 
-This change needs both interface tests and behavioural tests.
+This change requires both interface and behavioural tests.
 
 ### Unit tests
 
