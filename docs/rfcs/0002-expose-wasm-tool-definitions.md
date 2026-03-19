@@ -355,8 +355,7 @@ design requirement.
 
 ## Testing Strategy
 
-This change requires both interface and behavioural tests.
-
+This change needs both interface tests and behavioural tests.
 ### Unit tests
 
 1. Active file-loaded WASM tools expose guest or override schema through

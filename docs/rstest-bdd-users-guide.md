@@ -1,7 +1,5 @@
 # `rstest-bdd` user's guide
 
-<!-- markdownlint-disable MD013 -->
-
 ## Introduction
 
 Behaviour‑Driven Development (BDD) is a collaborative practice that emphasizes
@@ -43,11 +41,28 @@ wrappers normalize results into `StepExecution`.
 
 ## The three amigos
 
-| Role ("amigo")                     | Primary concerns                                                                                                                  | Features provided by `rstest‑bdd`                                                                                                                                                                                                                                                                                                                                                                         |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Business analyst/product owner** | Writing and reviewing business-readable specifications; ensuring that acceptance criteria are expressed clearly.                  | Gherkin `.feature` files are plain text and start with a `Feature` declaration; each `Scenario` describes a single behaviour. Steps are written using keywords `Given`, `When`, and `Then` ([syntax](gherkin-syntax.md#L72-L91)), producing living documentation that can be read by non-technical stakeholders.                                                                                          |
-| **Developer**                      | Implementing step definitions in Rust and wiring them to the business specifications; using existing fixtures for setup/teardown. | Attribute macros `#[given]`, `#[when]` and `#[then]` register step functions and their pattern strings in a global step registry. A `#[scenario]` macro reads a feature file at compile time and generates a test that drives the registered steps. Fixtures whose parameter names match are injected automatically; use `#[from(name)]` only when a parameter name differs from the fixture.             |
-| **Tester/QA**                      | Executing behaviour tests, ensuring correct sequencing of steps and verifying outcomes observable by the user.                    | Scenarios are executed via the standard `cargo test` runner; test functions annotated with `#[scenario]` run each step in order and panic if a step is missing. Assertions belong in `Then` steps; guidelines discourage inspecting internal state and encourage verifying observable outcomes. Testers can use `cargo test` filters and parallelism because the generated tests are ordinary Rust tests. |
+- **Business analyst/product owner:** Writing and reviewing
+  business-readable specifications, and ensuring that acceptance criteria are
+  expressed clearly. `rstest-bdd` provides plain-text Gherkin `.feature`
+  files that start with a `Feature` declaration, with each `Scenario`
+  describing a single behaviour. Steps use the keywords `Given`, `When`, and
+  `Then` ([syntax](#gherkin-feature-files)), producing living documentation
+  that non-technical stakeholders can read.
+- **Developer:** Implementing step definitions in Rust and wiring them to the
+  business specifications, often by reusing existing fixtures for
+  setup/teardown. The `#[given]`, `#[when]`, and `#[then]` attribute macros
+  register step functions and their pattern strings in a global step
+  registry. The `#[scenario]` macro reads a feature file at compile time and
+  generates a test that drives the registered steps. Fixtures whose parameter
+  names match are injected automatically; use `#[from(name)]` only when a
+  parameter name differs from the fixture.
+- **Tester/QA:** Executing behaviour tests, ensuring correct sequencing of
+  steps, and verifying outcomes observable by the user. Scenarios run via the
+  standard `cargo test` runner; test functions annotated with `#[scenario]`
+  execute each step in order and panic if a step is missing. Assertions belong
+  in `Then` steps; guidelines discourage inspecting internal state and
+  encourage verifying observable outcomes. Testers can use `cargo test`
+  filters and parallelism because the generated tests are ordinary Rust tests.
 
 The following sections expand on these responsibilities and show how to use the
 current API effectively.
@@ -209,7 +224,10 @@ fn check(world: &CounterWorld, expected: usize) {
     assert_eq!(world.count, expected);
 }
 
-#[scenario(path = "tests/features/mutable_world.feature", name = "Steps mutate shared state")]
+#[scenario(
+    path = "tests/features/mutable_world.feature",
+    name = "Steps mutate shared state",
+)]
 fn mutable_world(world: CounterWorld) {
     assert_eq!(world.count, 3);
 }
@@ -238,7 +256,10 @@ fn check(cart_state: &CartState, expected: i32) {
     assert_eq!(cart_state.total.get(), Some(expected));
 }
 
-#[scenario(path = "tests/features/scenario_state.feature", name = "Recording a single value")]
+#[scenario(
+    path = "tests/features/scenario_state.feature",
+    name = "Recording a single value",
+)]
 fn keeps_value(_cart_state: CartState) {}
 ```
 
@@ -635,12 +656,18 @@ fn assert_update_succeeds(scenario_db: &ScenarioDb) {
     assert!(scenario_db.last_update_succeeded());
 }
 
-#[scenario(path = "tests/features/user_management.feature", name = "Create user")]
+#[scenario(
+    path = "tests/features/user_management.feature",
+    name = "Create user",
+)]
 fn create_user_scenario(scenario_db: ScenarioDb) {
     let _ = scenario_db;
 }
 
-#[scenario(path = "tests/features/user_management.feature", name = "Update user")]
+#[scenario(
+    path = "tests/features/user_management.feature",
+    name = "Update user",
+)]
 fn update_user_scenario(scenario_db: ScenarioDb) {
     let _ = scenario_db;
 }
@@ -707,12 +734,20 @@ For migrations from a cucumber `World`, map the concepts as follows:
 The `#[scenario]` macro is the entry point that ties a Rust test function to a
 scenario defined in a `.feature` file. It accepts four arguments:
 
-| Argument       | Purpose                                               | Status                                                                                    |
-| -------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `path: &str`   | Relative path to the feature file (required).         | **Implemented**: resolved and parsed at compile time.                                     |
-| `index: usize` | Optional zero-based scenario index (defaults to `0`). | **Implemented**: selects the scenario by position.                                        |
-| `name: &str`   | Optional scenario title; resolves when unique.        | **Implemented**: errors when missing and directs duplicates to `index`.                   |
-| `tags: &str`   | Optional tag-expression filter applied at expansion.  | **Implemented**: filters scenarios and outline example rows; errors when nothing matches. |
+- `path: &str`
+  Purpose: Relative path to the feature file (required).
+  Status: **Implemented**; resolved and parsed at compile time.
+- `index: usize`
+  Purpose: Optional zero-based scenario index (defaults to `0`).
+  Status: **Implemented**; selects the scenario by position.
+- `name: &str`
+  Purpose: Optional scenario title; resolves when unique.
+  Status: **Implemented**; errors when missing and directs duplicates to
+  `index`.
+- `tags: &str`
+  Purpose: Optional tag-expression filter applied at expansion.
+  Status: **Implemented**; filters scenarios and outline example rows, and
+  errors when nothing matches.
 
 Tag filters run at macro-expansion time against the union of tags on the
 feature, the matched scenario, and—when dealing with `Scenario Outline`—the
@@ -784,9 +819,13 @@ tag. (Example-level tags are not yet evaluated.)
 The macro captures the current execution scope internally, so helper functions
 may freely call `skip!` as long as they eventually run within a step or hook.
 When code outside that context—for example, a unit test or module
-initialization routine—invokes the macro, it panics with the message
-`rstest_bdd::skip! may only be used inside a step or hook generated by rstest-bdd`.
- Each scope tracks the thread that entered it; issuing a skip from another
+initialization routine—invokes the macro, it panics with the message:
+
+```text
+rstest_bdd::skip! may only be used inside a step or hook generated by rstest-bdd
+```
+
+Each scope tracks the thread that entered it; issuing a skip from another
 thread panics with
 `rstest_bdd::skip! may only run on the thread executing the step ...`. Keep
 skip requests on the thread that executes steps, so the runner can intercept
@@ -838,7 +877,9 @@ substring matching to confirm that a message contains the expected reason.
 
 ```rust,no_run
 use rstest_bdd::{assert_scenario_skipped, assert_step_skipped, StepExecution};
-use rstest_bdd::reporting::{ScenarioMetadata, ScenarioRecord, ScenarioStatus, SkippedScenario};
+use rstest_bdd::reporting::{
+    ScenarioMetadata, ScenarioRecord, ScenarioStatus, SkippedScenario,
+};
 
 let outcome = StepExecution::skipped(Some("maintenance pending".into()));
 let message = assert_step_skipped!(outcome, message = "maintenance");
@@ -1079,7 +1120,8 @@ sequenceDiagram
     ScenarioSync-->>TestRunner: scenario_result()
     TestRunner-->>Tester: report_result()
 
-    Note over ScenarioSync,TokioFallbackRuntime: Nested runtimes in async scenarios are guarded and will fail
+    Note over ScenarioSync,TokioFallbackRuntime:
+      Nested runtimes in async scenarios are guarded and will fail
 ```
 
 *Figure: Per-step Tokio fallback flow when a synchronous scenario reaches an
@@ -1184,14 +1226,18 @@ To enable validation, pin a feature in the project's `dev-dependencies`:
 
 ```toml
 [dev-dependencies]
-rstest-bdd-macros = { version = "0.5.0", features = ["compile-time-validation"] }
+rstest-bdd-macros = { version = "0.5.0", features = [
+    "compile-time-validation",
+] }
 ```
 
 For strict checking use:
 
 ```toml
 [dev-dependencies]
-rstest-bdd-macros = { version = "0.5.0", features = ["strict-compile-time-validation"] }
+rstest-bdd-macros = { version = "0.5.0", features = [
+    "strict-compile-time-validation",
+] }
 ```
 
 Steps are only validated when one of these features is enabled.
@@ -1387,7 +1433,8 @@ struct UserRow {
 }
 
 #[derive(Debug, PartialEq, Eq, DataTable)]
-#[datatable(row = UserRow, try_map = collect_active)] // Converts rows into a bespoke type.
+// Converts rows into a bespoke type.
+#[datatable(row = UserRow, try_map = collect_active)]
 struct ActiveUsers(Vec<String>);
 
 fn collect_active(rows: Rows<UserRow>) -> Result<Vec<String>, DataTableError> {
@@ -1585,15 +1632,18 @@ Localization tooling can be added to `Cargo.toml` as follows:
 ```toml
 [dependencies]
 rstest-bdd = "0.5.0"
-i18n-embed = { version = "0.16", features = ["fluent-system", "desktop-requester"] }
+i18n-embed = { version = "0.16", features = [
+    "fluent-system",
+    "desktop-requester",
+] }
 unic-langid = "0.9"
 ```
 
 The crate exposes the embedded assets via the [`Localizations`] helper. This
 type implements `i18n_embed::I18nAssets`, allowing applications with existing
 Fluent infrastructure to load resources into their own
-[`FluentLanguageLoader`]. Libraries without a localization framework can rely
-on the built-in loader and request a different language at runtime:
+`FluentLanguageLoader`. Libraries without a localization framework can rely on
+the built-in loader and request a different language at runtime:
 
 ```rust,no_run
 # fn scope_locale() -> Result<(), rstest_bdd::localization::LocalizationError> {
@@ -1613,8 +1663,6 @@ compile-time output stays deterministic regardless of the host machine’s
 language settings.
 
 [`Localizations`]: https://docs.rs/rstest-bdd/latest/rstest_bdd/localization/
-[`FluentLanguageLoader`]:
-https://docs.rs/i18n-embed/latest/i18n_embed/fluent/struct.FluentLanguageLoader.html
 
 ## Diagnostic tooling
 
@@ -1697,7 +1745,8 @@ serialize a custom selection of outcomes rather than the full snapshot.
 The `rstest-bdd-server` crate provides a Language Server Protocol (LSP)
 implementation that bridges Gherkin `.feature` files and Rust step definitions.
 The binary is named `rstest-bdd-lsp` and communicates over stdin/stdout using
-JSON-RPC, making it compatible with any editor supporting the LSP (VS Code,
+JSON Remote Procedure Call (JSON-RPC), making it compatible with any editor
+supporting the LSP (VS Code,
 Neovim, Zed, Helix, etc.).
 
 ### Installation
@@ -1714,10 +1763,12 @@ The binary `rstest-bdd-lsp` is placed in the Cargo bin directory.
 
 The server reads configuration from environment variables:
 
-| Variable                     | Description                                         | Default |
-| ---------------------------- | --------------------------------------------------- | ------- |
-| `RSTEST_BDD_LSP_LOG_LEVEL`   | Logging verbosity (trace, debug, info, warn, error) | `info`  |
-| `RSTEST_BDD_LSP_DEBOUNCE_MS` | Delay (ms) before processing file changes           | `300`   |
+- `RSTEST_BDD_LSP_LOG_LEVEL`
+  Description: Logging verbosity (`trace`, `debug`, `info`, `warn`, `error`).
+  Default: `info`.
+- `RSTEST_BDD_LSP_DEBOUNCE_MS`
+  Description: Delay in milliseconds before processing file changes.
+  Default: `300`.
 
 Example:
 
@@ -1730,9 +1781,7 @@ RSTEST_BDD_LSP_LOG_LEVEL=debug rstest-bdd-lsp
 #### VS Code
 
 Add a configuration in the `settings.json` file or use an extension that allows
-custom LSP servers. A minimal example using the
-[LSP-client](https://marketplace.visualstudio.com/items?itemName=ACharLuk.easy-lsp-client)
- extension:
+custom LSP servers. A minimal example using the `easy-lsp-client` extension:
 
 ```json
 {
