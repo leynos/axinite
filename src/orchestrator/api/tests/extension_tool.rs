@@ -48,6 +48,78 @@ impl Tool for HostedSafeActivateTool {
     }
 }
 
+struct ApprovalAwareToolList;
+
+#[async_trait::async_trait]
+impl Tool for ApprovalAwareToolList {
+    fn name(&self) -> &str {
+        "tool_list"
+    }
+
+    fn description(&self) -> &str {
+        "approval-aware tool_list"
+    }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "require_approval": { "type": "boolean" }
+            }
+        })
+    }
+
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+        _ctx: &crate::context::JobContext,
+    ) -> Result<ToolOutput, crate::tools::ToolError> {
+        panic!("approval-gated proxy requests must not execute")
+    }
+
+    fn requires_approval(&self, params: &serde_json::Value) -> crate::tools::ApprovalRequirement {
+        if params["require_approval"].as_bool() == Some(true) {
+            crate::tools::ApprovalRequirement::Always
+        } else {
+            crate::tools::ApprovalRequirement::Never
+        }
+    }
+}
+
+struct FakeToolList {
+    seen_job_id: Arc<tokio::sync::Mutex<Option<Uuid>>>,
+}
+
+#[async_trait::async_trait]
+impl Tool for FakeToolList {
+    fn name(&self) -> &str {
+        "tool_list"
+    }
+
+    fn description(&self) -> &str {
+        "fake tool_list"
+    }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {}
+        })
+    }
+
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+        ctx: &crate::context::JobContext,
+    ) -> Result<ToolOutput, crate::tools::ToolError> {
+        *self.seen_job_id.lock().await = Some(ctx.job_id);
+        Ok(ToolOutput::success(
+            serde_json::json!({"extensions": ["telegram"]}),
+            Duration::from_millis(5),
+        ))
+    }
+}
+
 #[rstest]
 #[tokio::test]
 async fn extension_tool_proxy_rejects_non_extension_tool_names(test_state: OrchestratorState) {
@@ -82,47 +154,6 @@ async fn extension_tool_proxy_rejects_non_extension_tool_names(test_state: Orche
 async fn extension_tool_proxy_rejects_extension_tools_that_require_approval_for_params(
     test_state: OrchestratorState,
 ) {
-    struct ApprovalAwareToolList;
-
-    #[async_trait::async_trait]
-    impl Tool for ApprovalAwareToolList {
-        fn name(&self) -> &str {
-            "tool_list"
-        }
-
-        fn description(&self) -> &str {
-            "approval-aware tool_list"
-        }
-
-        fn parameters_schema(&self) -> serde_json::Value {
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "require_approval": { "type": "boolean" }
-                }
-            })
-        }
-
-        async fn execute(
-            &self,
-            _params: serde_json::Value,
-            _ctx: &crate::context::JobContext,
-        ) -> Result<ToolOutput, crate::tools::ToolError> {
-            panic!("approval-gated proxy requests must not execute")
-        }
-
-        fn requires_approval(
-            &self,
-            params: &serde_json::Value,
-        ) -> crate::tools::ApprovalRequirement {
-            if params["require_approval"].as_bool() == Some(true) {
-                crate::tools::ApprovalRequirement::Always
-            } else {
-                crate::tools::ApprovalRequirement::Never
-            }
-        }
-    }
-
     test_state
         .tools
         .register(Arc::new(ApprovalAwareToolList))
@@ -200,40 +231,6 @@ async fn extension_tool_proxy_allows_hosted_safe_tools_with_unless_auto_approved
 async fn extension_tool_proxy_executes_registered_extension_tool_with_request_job_id(
     test_state: OrchestratorState,
 ) {
-    struct FakeToolList {
-        seen_job_id: Arc<tokio::sync::Mutex<Option<Uuid>>>,
-    }
-
-    #[async_trait::async_trait]
-    impl Tool for FakeToolList {
-        fn name(&self) -> &str {
-            "tool_list"
-        }
-
-        fn description(&self) -> &str {
-            "fake tool_list"
-        }
-
-        fn parameters_schema(&self) -> serde_json::Value {
-            serde_json::json!({
-                "type": "object",
-                "properties": {}
-            })
-        }
-
-        async fn execute(
-            &self,
-            _params: serde_json::Value,
-            ctx: &crate::context::JobContext,
-        ) -> Result<ToolOutput, crate::tools::ToolError> {
-            *self.seen_job_id.lock().await = Some(ctx.job_id);
-            Ok(ToolOutput::success(
-                serde_json::json!({"extensions": ["telegram"]}),
-                Duration::from_millis(5),
-            ))
-        }
-    }
-
     let seen_job_id = Arc::new(tokio::sync::Mutex::new(None));
     test_state.tools.register_sync(Arc::new(FakeToolList {
         seen_job_id: Arc::clone(&seen_job_id),
