@@ -403,6 +403,63 @@ artefact shape that the execution ledger stores.
     enforcement, and latency metrics confirm that critical-path evaluation
     stays within acceptable bounds.
 
+### 2.5. Delegated child jobs with isolated context
+
+Objective: provide a model-callable delegation primitive that creates bounded
+child jobs with isolated context, explicit tool allowlists, and budget
+enforcement.
+
+Learning opportunity: determine whether worktree-based workspace isolation
+adds sufficient safety for parallel code modifications, and whether
+summary-only result distillation preserves enough information for the parent
+context.
+
+Dependencies: depends on 2.3 for the host-owned request model and on 2.4 for
+contract narrowing semantics; informs 4.4 by producing delegation ledger
+entries.
+
+- [ ] 2.5.1. Add the delegation contract schema and child-job dispatch
+  through the existing scheduler.
+  - See [RFC 0012 §Delegation
+    Contract](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#1-delegation-contract)
+    and [RFC 0012 §Execution
+    Path](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#3-execution-path).
+  - Success: the `delegate_task` tool creates child jobs with explicit goals,
+    tool allowlists, and budget parameters, and dispatches them through the
+    existing scheduler's `dispatch_job_with_context()` path.
+- [ ] 2.5.2. Implement budget enforcement at the child-job boundary. Requires
+  2.5.1.
+  - See [RFC 0012 §Budget
+    Enforcement](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#6-budget-enforcement).
+  - Success: iteration, token, cost, and time caps are enforced
+    deterministically at the worker level, the scheduler enforces a
+    wall-clock timeout, and budget exhaustion produces a partial result with
+    an explicit status.
+- [ ] 2.5.3. Add approval context handling with inherit, narrow, and fresh
+  modes. Requires 2.5.1.
+  - See [RFC 0012 §Approval Context
+    Handling](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#4-approval-context-handling).
+  - Success: child jobs respect the selected approval inheritance mode, the
+    `narrow` default prevents escalation beyond parent-approved tools, and
+    new approval requests from child jobs route to the parent's operator.
+- [ ] 2.5.4. Implement workspace isolation for `none` and `worktree` modes.
+  Requires 2.5.1.
+  - See [RFC 0012 §Workspace
+    Isolation](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#5-workspace-isolation).
+  - Success: `worktree` mode creates a git worktree for the child job with
+    changes isolated until explicitly merged, and `none` mode shares the
+    parent's working directory for read-only analysis tasks.
+- [ ] 2.5.5. Add result distillation and delegation ledger entries. Requires
+  2.5.2, 2.5.3, and 2.5.4.
+  - See [RFC 0012 §Execution
+    Path](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#3-execution-path)
+    and [RFC 0011
+    §Summary](./rfcs/0011-execution-truth-ledger-and-action-provenance.md#summary).
+  - Success: the parent receives only a distilled summary with optional
+    evidence references, full child context is stored out-of-band, and
+    delegation events produce execution ledger entries recording the child
+    job ID, delegation contract, and budget parameters.
+
 ## 3. Move retrieval and conversation state onto durable boundaries
 
 Phase objective: shift memory and long-running chat state onto components that
@@ -681,6 +738,73 @@ projection-layer filtering rules.
     `estimated_token_cost`, and `reason_code`; cheap and evidence-heavy modes
     can be shadow-compared; and hierarchical recall never depends on one
     fragile uncertainty surface.
+
+### 3.5. Auxiliary provider profiles and stable-prefix prompt assembly
+
+Objective: generalize the provider chain into named profiles with independent
+fallback chains and capability metadata, and restructure prompt assembly so
+the stable prefix maximizes cache hits across providers.
+
+Learning opportunity: measure prompt cache hit rates before and after the
+stable-prefix restructuring to validate the cost and latency benefit, and
+determine whether per-job prefix freeze scope is the right default for
+WebSocket Responses sessions.
+
+Dependencies: depends on 3.2 for the Responses session model that
+per-provider-session freeze scope would align with; informs 3.1 by routing
+memory extraction to the auxiliary profile. ADR 002 requires that
+provider-side continuation state remain a cache, not the authoritative
+source; this step must treat provider profiles accordingly.
+
+- [ ] 3.5.1. Add named provider profile configuration and per-profile
+  decorated provider chains.
+  - See [RFC 0013 §Named Provider
+    Profiles](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#1-named-provider-profiles)
+    and [RFC 0013
+    §Requirements](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#requirements).
+  - Success: the provider configuration supports named profiles (at minimum
+    main and auxiliary), each profile receives its own
+    retry/failover/circuit-breaker/cache chain, and existing configurations
+    without explicit profiles continue to function unchanged.
+- [ ] 3.5.2. Implement the profile dispatch table and route auxiliary
+  workloads to the appropriate profile. Requires 3.5.1.
+  - See [RFC 0013 §Profile Dispatch
+    Table](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#2-profile-dispatch-table).
+  - Success: summarization, classification, heartbeat, and memory extraction
+    default to the auxiliary profile without per-call configuration, and the
+    dispatch table is operator-configurable.
+- [ ] 3.5.3. Add provider capability and privacy metadata to profile
+  definitions. Requires 3.5.1.
+  - See [RFC 0013 §Provider Capability and Privacy
+    Metadata](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#3-provider-capability-and-privacy-metadata).
+  - Success: provider definitions can carry optional metadata
+    (supports_vision, supports_function_calling, data_retention,
+    data_collection), and profile dispatch uses metadata to avoid selecting
+    providers likely to fail or violate operator intent.
+- [ ] 3.5.4. Restructure prompt assembly into stable prefix and volatile
+  suffix segments. Requires 3.5.1.
+  - See [RFC 0013 §Stable-Prefix Prompt
+    Assembly](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#4-stable-prefix-prompt-assembly)
+    and [RFC 0013 §Prefix Freeze
+    Scope](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#5-prefix-freeze-scope).
+  - Success: system instructions, identity files, skill definitions, and
+    intent contracts form a byte-stable prefix, conversation turns and tool
+    results sit after the cache break, and the prefix remains byte-identical
+    across consecutive requests within the freeze scope.
+- [ ] 3.5.5. Add provider-specific cache control breakpoints and per-job
+  prefix freeze scope. Requires 3.5.4.
+  - See [RFC 0013 §Stable-Prefix Prompt
+    Assembly](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#4-stable-prefix-prompt-assembly).
+  - Success: Anthropic requests include `cache_control` breakpoints after
+    the stable prefix, OpenAI requests benefit from automatic prefix caching,
+    and per-job freeze scope is the configurable default.
+- [ ] 3.5.6. Extend chaos tests to cover auxiliary-profile failure modes.
+  Requires 3.5.1 and 3.5.2.
+  - See [RFC 0013
+    §Requirements](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#requirements).
+  - Success: tests cover fallback from auxiliary to main, circuit breaking on
+    auxiliary provider, and profile-specific failure isolation, and existing
+    provider chaos tests continue to pass.
 
 ## 4. Harden operator lifecycle and control surfaces
 
@@ -1187,127 +1311,3 @@ resulting runtime satisfies the following product-level outcomes:
   tiers and epistemic status;
 - auxiliary provider profiles route non-critical workloads to cost-appropriate
   models, and stable-prefix prompt assembly maximizes cache hits.
-
-### 2.5. Delegated child jobs with isolated context
-
-Objective: provide a model-callable delegation primitive that creates bounded
-child jobs with isolated context, explicit tool allowlists, and budget
-enforcement.
-
-Learning opportunity: determine whether worktree-based workspace isolation
-adds sufficient safety for parallel code modifications, and whether
-summary-only result distillation preserves enough information for the parent
-context.
-
-Dependencies: depends on 2.3 for the host-owned request model and on 2.4 for
-contract narrowing semantics; informs 4.4 by producing delegation ledger
-entries.
-
-- [ ] 2.5.1. Add the delegation contract schema and child-job dispatch
-  through the existing scheduler.
-  - See [RFC 0012 §Delegation
-    Contract](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#1-delegation-contract)
-    and [RFC 0012 §Execution
-    Path](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#3-execution-path).
-  - Success: the `delegate_task` tool creates child jobs with explicit goals,
-    tool allowlists, and budget parameters, and dispatches them through the
-    existing scheduler's `dispatch_job_with_context()` path.
-- [ ] 2.5.2. Implement budget enforcement at the child-job boundary. Requires
-  2.5.1.
-  - See [RFC 0012 §Budget
-    Enforcement](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#6-budget-enforcement).
-  - Success: iteration, token, cost, and time caps are enforced
-    deterministically at the worker level, the scheduler enforces a
-    wall-clock timeout, and budget exhaustion produces a partial result with
-    an explicit status.
-- [ ] 2.5.3. Add approval context handling with inherit, narrow, and fresh
-  modes. Requires 2.5.1.
-  - See [RFC 0012 §Approval Context
-    Handling](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#4-approval-context-handling).
-  - Success: child jobs respect the selected approval inheritance mode, the
-    `narrow` default prevents escalation beyond parent-approved tools, and
-    new approval requests from child jobs route to the parent's operator.
-- [ ] 2.5.4. Implement workspace isolation for `none` and `worktree` modes.
-  Requires 2.5.1.
-  - See [RFC 0012 §Workspace
-    Isolation](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#5-workspace-isolation).
-  - Success: `worktree` mode creates a git worktree for the child job with
-    changes isolated until explicitly merged, and `none` mode shares the
-    parent's working directory for read-only analysis tasks.
-- [ ] 2.5.5. Add result distillation and delegation ledger entries. Requires
-  2.5.2, 2.5.3, and 2.5.4.
-  - See [RFC 0012 §Execution
-    Path](./rfcs/0012-delegated-child-jobs-with-isolated-context.md#3-execution-path)
-    and [RFC 0011
-    §Summary](./rfcs/0011-execution-truth-ledger-and-action-provenance.md#summary).
-  - Success: the parent receives only a distilled summary with optional
-    evidence references, full child context is stored out-of-band, and
-    delegation events produce execution ledger entries recording the child
-    job ID, delegation contract, and budget parameters.
-
-### 3.4. Auxiliary provider profiles and stable-prefix prompt assembly
-
-Objective: generalize the provider chain into named profiles with independent
-fallback chains and capability metadata, and restructure prompt assembly so
-the stable prefix maximizes cache hits across providers.
-
-Learning opportunity: measure prompt cache hit rates before and after the
-stable-prefix restructuring to validate the cost and latency benefit, and
-determine whether per-job prefix freeze scope is the right default for
-WebSocket Responses sessions.
-
-Dependencies: depends on 3.2 for the Responses session model that
-per-provider-session freeze scope would align with; informs 3.1 by routing
-memory extraction to the auxiliary profile. ADR 002 requires that
-provider-side continuation state remain a cache, not the authoritative
-source; this step must treat provider profiles accordingly.
-
-- [ ] 3.4.1. Add named provider profile configuration and per-profile
-  decorated provider chains.
-  - See [RFC 0013 §Named Provider
-    Profiles](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#1-named-provider-profiles)
-    and [RFC 0013
-    §Requirements](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#requirements).
-  - Success: the provider configuration supports named profiles (at minimum
-    main and auxiliary), each profile receives its own
-    retry/failover/circuit-breaker/cache chain, and existing configurations
-    without explicit profiles continue to function unchanged.
-- [ ] 3.4.2. Implement the profile dispatch table and route auxiliary
-  workloads to the appropriate profile. Requires 3.4.1.
-  - See [RFC 0013 §Profile Dispatch
-    Table](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#2-profile-dispatch-table).
-  - Success: summarization, classification, heartbeat, and memory extraction
-    default to the auxiliary profile without per-call configuration, and the
-    dispatch table is operator-configurable.
-- [ ] 3.4.3. Add provider capability and privacy metadata to profile
-  definitions. Requires 3.4.1.
-  - See [RFC 0013 §Provider Capability and Privacy
-    Metadata](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#3-provider-capability-and-privacy-metadata).
-  - Success: provider definitions can carry optional metadata
-    (supports_vision, supports_function_calling, data_retention,
-    data_collection), and profile dispatch uses metadata to avoid selecting
-    providers likely to fail or violate operator intent.
-- [ ] 3.4.4. Restructure prompt assembly into stable prefix and volatile
-  suffix segments. Requires 3.4.1.
-  - See [RFC 0013 §Stable-Prefix Prompt
-    Assembly](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#4-stable-prefix-prompt-assembly)
-    and [RFC 0013 §Prefix Freeze
-    Scope](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#5-prefix-freeze-scope).
-  - Success: system instructions, identity files, skill definitions, and
-    intent contracts form a byte-stable prefix, conversation turns and tool
-    results sit after the cache break, and the prefix remains byte-identical
-    across consecutive requests within the freeze scope.
-- [ ] 3.4.5. Add provider-specific cache control breakpoints and per-job
-  prefix freeze scope. Requires 3.4.4.
-  - See [RFC 0013 §Stable-Prefix Prompt
-    Assembly](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#4-stable-prefix-prompt-assembly).
-  - Success: Anthropic requests include `cache_control` breakpoints after
-    the stable prefix, OpenAI requests benefit from automatic prefix caching,
-    and per-job freeze scope is the configurable default.
-- [ ] 3.4.6. Extend chaos tests to cover auxiliary-profile failure modes.
-  Requires 3.4.1 and 3.4.2.
-  - See [RFC 0013
-    §Requirements](./rfcs/0013-auxiliary-provider-profiles-and-stable-prefix-prompt-assembly.md#requirements).
-  - Success: tests cover fallback from auxiliary to main, circuit breaking on
-    auxiliary provider, and profile-specific failure isolation, and existing
-    provider chaos tests continue to pass.
