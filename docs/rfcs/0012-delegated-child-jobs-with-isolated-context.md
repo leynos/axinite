@@ -152,6 +152,9 @@ _Table 2: Delegation contract fields._
 
 The delegation primitive is exposed as a built-in tool:
 
+The following JSON shows the parameter names and types for the
+`delegate_task` call; required fields are indicated.
+
 <!-- markdownlint-disable-next-line MD013 -->
 ```json
 {
@@ -322,14 +325,16 @@ the delegation model matures.
 ---
 
 [^1]: Jobs and routines architecture, scheduler, `Task` model, and
-    subtask limitations. See `docs/jobs-and-routines.md`.
+    subtask limitations. See [Jobs and routines
+    architecture](../jobs-and-routines.md).
 
 [^2]: Hermes Agent analysis, sub-agent patterns. See
-    `docs/Axinite lessons from Hermes Agent on provider resilience
-    and sub-agents.md`.
+    [Hermes Agent provider resilience and sub-agents
+    analysis](../Axinite%20lessons%20from%20Hermes%20Agent%20on%20provider%20resilience%20and%20sub-agents.md).
 
 [^3]: OWASP Top 10 for LLM Applications 2025. LLM06:2025 (Excessive
     Agency). See <https://genai.owasp.org/llm-top-10/>.
 
 [^4]: RFC 0004: Tokenized delegated authorized endpoint requests. See
-    `docs/rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md`.
+    [RFC 0004: Tokenized delegated authorized endpoint
+    requests](0004-tokenized-delegated-authorized-endpoint-requests.md).
