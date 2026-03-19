@@ -41,7 +41,7 @@ context window. As tasks grow in scope, this creates several problems:
 - **Tool permission sprawl**: the agent sees all available tools for the
   entire task, even when only a subset is relevant to the current
   subtask. OWASP LLM06:2025 (Excessive Agency) recommends minimizing
-  permissions granted to LLM applications. [^3]
+  permissions granted to large language model (LLM) applications. [^3]
 - **No budget enforcement**: there is no mechanism to cap the cost,
   iterations, or time spent on a subtask independently of the parent.
 - **No workspace isolation**: parallel work on the same repository
@@ -68,9 +68,8 @@ limitations:
 
 Axinite distinguishes four execution families: [^1]
 
-1. **In-process agent jobs**: scheduler-managed large language model
-   (LLM) worker runs with full tool access, persistence, and approval
-   gating.
+1. **In-process agent jobs**: scheduler-managed LLM worker runs with
+   full tool access, persistence, and approval gating.
 2. **Sandbox jobs**: containerized execution via an orchestrator with
    separate worker runtime.
 3. **Routines**: proactive rules that run either inline (`lightweight`
