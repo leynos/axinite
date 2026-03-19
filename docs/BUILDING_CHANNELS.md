@@ -256,8 +256,8 @@ Create `my-channel.capabilities.json`:
 ### Supply Chain Security: No Committed Binaries
 
 **Do not commit compiled WASM binaries.** They are a supply chain risk
-because the binary in a PR may not match the source. IronClaw builds
-channels from source:
+because the binary in a pull request (PR) may not match the source.
+IronClaw builds channels from source:
 
 - `cargo build` no longer builds channel artifacts implicitly
 - run `./scripts/build-wasm-extensions.sh --channels` or a

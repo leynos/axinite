@@ -250,12 +250,12 @@ async fn async_main() -> anyhow::Result<()> {
     let channels = ChannelManager::new();
     let mut channel_names: Vec<String> = Vec::new();
     let mut loaded_wasm_channel_names: Vec<String> = Vec::new();
-    #[allow(clippy::type_complexity)]
-    let mut wasm_channel_runtime_state: Option<(
+    type WasmChannelRuntimeState = (
         Arc<WasmChannelRuntime>,
         Arc<PairingStore>,
         Arc<WasmChannelRouter>,
-    )> = None;
+    );
+    let mut wasm_channel_runtime_state: Option<WasmChannelRuntimeState> = None;
 
     // Create CLI channel
     let repl_channel = if let Some(ref msg) = cli.message {

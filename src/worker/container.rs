@@ -198,7 +198,7 @@ impl WorkerRuntime {
         if let Err(report_error) = self
             .report_worker_status(
                 WorkerState::Failed,
-                Some(format!("pre-loop failure: {}", error)),
+                Some("pre-loop failure".to_string()),
                 100,
             )
             .await

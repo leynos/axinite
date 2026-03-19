@@ -279,12 +279,10 @@ async fn worker_runtime_reports_failed_status_for_pre_loop_errors(
         .filter(|status| status.state == WorkerState::Failed)
         .expect("expected a terminal failed status update");
     assert_eq!(failed_status.iteration, 100);
-    assert!(
-        failed_status
-            .message
-            .as_deref()
-            .is_some_and(|message| message.starts_with("pre-loop failure:")),
-        "expected a pre-loop failure message, got {failed_status:?}"
+    assert_eq!(
+        failed_status.message.as_deref(),
+        Some("pre-loop failure"),
+        "expected a sanitised pre-loop failure message, got {failed_status:?}"
     );
 
     handle.abort();
@@ -323,12 +321,10 @@ async fn worker_runtime_emits_failed_status_for_initial_status_rejections() {
     assert_eq!(statuses[0].state, WorkerState::InProgress);
     assert_eq!(statuses[1].state, WorkerState::Failed);
     assert_eq!(statuses[1].iteration, 100);
-    assert!(
-        statuses[1]
-            .message
-            .as_deref()
-            .is_some_and(|message| message.starts_with("pre-loop failure:")),
-        "expected a pre-loop failure status payload, got {:?}",
+    assert_eq!(
+        statuses[1].message.as_deref(),
+        Some("pre-loop failure"),
+        "expected a sanitised pre-loop failure status payload, got {:?}",
         statuses[1]
     );
 

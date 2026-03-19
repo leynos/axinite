@@ -6,17 +6,25 @@ use super::ClaudeBridgeRuntime;
 
 impl ClaudeBridgeRuntime {
     /// Write project-level `.claude/settings.json` with the tool allowlist.
-    pub(super) fn write_permission_settings(&self) -> Result<(), WorkerError> {
+    pub(super) async fn write_permission_settings(&self) -> Result<(), WorkerError> {
         let settings_json = build_permission_settings(&self.config.allowed_tools)?;
-        let settings_dir = std::path::Path::new("/workspace/.claude");
-        std::fs::create_dir_all(settings_dir).map_err(|error| WorkerError::ExecutionFailed {
-            reason: format!("failed to create /workspace/.claude/: {error}"),
-        })?;
-        std::fs::write(settings_dir.join("settings.json"), &settings_json).map_err(|error| {
-            WorkerError::ExecutionFailed {
-                reason: format!("failed to write settings.json: {error}"),
-            }
-        })?;
+        tokio::task::spawn_blocking(move || {
+            let settings_dir = std::path::Path::new("/workspace/.claude");
+            std::fs::create_dir_all(settings_dir).map_err(|error| {
+                WorkerError::ExecutionFailed {
+                    reason: format!("failed to create /workspace/.claude/: {error}"),
+                }
+            })?;
+            std::fs::write(settings_dir.join("settings.json"), settings_json).map_err(|error| {
+                WorkerError::ExecutionFailed {
+                    reason: format!("failed to write settings.json: {error}"),
+                }
+            })
+        })
+        .await
+        .map_err(|error| WorkerError::ExecutionFailed {
+            reason: format!("permission settings task failed: {error}"),
+        })??;
         tracing::info!(
             job_id = %self.config.job_id,
             tools = ?self.config.allowed_tools,
@@ -26,21 +34,31 @@ impl ClaudeBridgeRuntime {
     }
 
     /// Copy auth files from a read-only source into the writable home dir.
-    pub(super) fn copy_auth_from_mount(&self) -> Result<(), WorkerError> {
-        let mount = std::path::Path::new("/home/sandbox/.claude-host");
-        if !mount.exists() {
+    pub(super) async fn copy_auth_from_mount(&self) -> Result<(), WorkerError> {
+        let mount = std::path::PathBuf::from("/home/sandbox/.claude-host");
+        if !tokio::fs::try_exists(&mount)
+            .await
+            .map_err(|error| WorkerError::ExecutionFailed {
+                reason: format!("failed to check ~/.claude-host: {error}"),
+            })?
+        {
             return Ok(());
         }
 
-        let target = std::path::Path::new("/home/sandbox/.claude");
-        std::fs::create_dir_all(target).map_err(|error| WorkerError::ExecutionFailed {
-            reason: format!("failed to create ~/.claude: {error}"),
-        })?;
-
-        let copied =
-            copy_dir_recursive(mount, target).map_err(|error| WorkerError::ExecutionFailed {
-                reason: format!("failed to copy auth from host mount: {error}"),
+        let target = std::path::PathBuf::from("/home/sandbox/.claude");
+        let copied = tokio::task::spawn_blocking(move || {
+            std::fs::create_dir_all(&target).map_err(|error| WorkerError::ExecutionFailed {
+                reason: format!("failed to create ~/.claude: {error}"),
             })?;
+
+            copy_dir_recursive(&mount, &target).map_err(|error| WorkerError::ExecutionFailed {
+                reason: format!("failed to copy auth from host mount: {error}"),
+            })
+        })
+        .await
+        .map_err(|error| WorkerError::ExecutionFailed {
+            reason: format!("auth copy task failed: {error}"),
+        })??;
 
         tracing::info!(
             job_id = %self.config.job_id,
