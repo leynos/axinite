@@ -38,13 +38,14 @@ persistence. [^1] These are reasonable engineering trade-offs, but they
 become trust gaps when an operator cannot independently verify what
 the system actually did.
 
-OWASP LLM09:2025 (Misinformation) identifies confabulation — confident
-but false statements — as a top-level risk. [^3] NIST AI 600-1 lists
-confabulation as one of twelve generative AI risk categories, noting
-that confidently stated but false outputs are particularly dangerous in
-high-stakes domains. [^4] An execution truth ledger directly addresses
-this by providing a ground-truth record independent of the model's
-narrative.
+The Open Web Application Security Project (OWASP) Top 10 for LLM
+Applications 2025 lists LLM09:2025 (Misinformation) as a top-level
+risk. [^3] The National Institute of Standards and Technology (NIST) AI
+600-1 lists confabulation as one of twelve generative AI risk
+categories, noting that confidently stated but false outputs are
+particularly dangerous in high-stakes domains. [^4] An execution truth
+ledger directly addresses this by providing a ground-truth record
+independent of the model's narrative.
 
 ## Current state
 
@@ -114,7 +115,7 @@ Each ledger entry is an immutable record with the following fields:
 | --- | --- | --- |
 | `id` | UUID | Unique entry identifier. |
 <!-- markdownlint-disable MD013 -->
-| `timestamp` | ISO 8601 | When the action occurred. |
+| `timestamp` | ISO 8601 (International Organization for Standardization date and time format) | When the action occurred. |
 | `workspace_id` | string | Workspace scope. |
 | `thread_id` | string | Thread scope, if applicable. |
 | `job_id` | string | Job scope, if applicable. |

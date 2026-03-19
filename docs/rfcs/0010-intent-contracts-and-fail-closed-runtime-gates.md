@@ -19,11 +19,12 @@ untrusted data unless promoted into a curated control-plane artefact.
 
 The core lesson from the intent-engineering analysis is that soft policy is
 decorative wallpaper, not enforcement. [^1] Axinite already contains strong
-deterministic skill activation (keyword/tag/regex scoring with no LLM
-involvement) and tool attenuation (installed skills receive a read-only tool
-ceiling), plus a WASM isolation boundary that enforces deny-by-default
-capabilities. [^2] [^3] This RFC extends those mechanisms into a coherent
-contract model that applies across the full agent lifecycle.
+deterministic skill activation (keyword/tag/regex scoring with no language
+model (LLM) involvement) and tool attenuation (installed skills receive a
+read-only tool ceiling), plus a WebAssembly (WASM) isolation boundary that
+enforces deny-by-default capabilities. [^2] [^3] This RFC extends those
+mechanisms into a coherent contract model that applies across the full agent
+lifecycle.
 
 ## Problem
 

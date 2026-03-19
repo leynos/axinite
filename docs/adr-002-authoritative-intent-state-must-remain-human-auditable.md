@@ -13,7 +13,7 @@ Proposed.
 
 Axinite is integrating provider-specific continuation mechanisms that
 carry opaque or encrypted state. RFC 0008 proposes a WebSocket
-Responses API backend that supports:
+Responses Application Programming Interface (API) backend that supports:
 
 - **Stateful continuation via `previous_response_id`**: the WebSocket
   connection keeps a local cache of the most recent previous-response
@@ -40,8 +40,9 @@ from the loss.
 
 ## Decision drivers
 
-- **Auditability**: NIST AI RMF 1.0 requires accountability and
-  transparency as trustworthy AI characteristics. The AI RMF Govern
+- **Auditability**: National Institute of Standards and Technology
+  (NIST) AI Risk Management Framework (RMF) 1.0 requires accountability
+  and transparency as trustworthy AI characteristics. The AI RMF Govern
   function requires clear accountability chains, and the Measure
   function requires that AI system behaviour be verifiable. [^3]
   Opaque provider state cannot be verified.
@@ -179,8 +180,8 @@ durable intent lives.
 - Whether the execution ledger should store compaction items verbatim
   (as opaque blobs) for potential future decryption or inspection,
   or merely record that a compaction event occurred.
-- How the UI should indicate when provider-side state is being used
-  versus Axinite-native state.
+- How the user interface (UI) should indicate when provider-side state
+  is being used versus Axinite-native state.
 
 ---
 

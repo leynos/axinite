@@ -40,18 +40,19 @@ The key requirement is that policy evaluation must be:
 
 ## Decision drivers
 
-- Axinite already uses WebAssembly (via `wasmtime`) as a core isolation
-  boundary for tool execution. [^1] Adding WASM-compiled policy
+- Axinite already uses WebAssembly (WASM) (via `wasmtime`) as a core
+  isolation boundary for tool execution. [^1] Adding WASM-compiled policy
   evaluation reuses the same runtime dependency and operational model.
 - RFC 0006 explicitly recommends Rego over Starlark for enforcement,
   noting that Rego was purpose-built for expressing policy over
   structured inputs. [^3]
 - OWASP LLM06:2025 (Excessive Agency) recommends that security controls
-  be enforced independently from the LLM in a deterministic, auditable
-  manner. [^4]
-- NIST AI RMF 1.0 positions trustworthy AI as requiring governance,
-  measurement, and operationalization across the full lifecycle, not
-  solely modelling-time controls. [^5]
+  be enforced independently from the language model (LLM) in a
+  deterministic, auditable manner. [^4]
+- National Institute of Standards and Technology (NIST) AI Risk
+  Management Framework (RMF) 1.0 positions trustworthy AI as requiring
+  governance, measurement, and operationalization across the full
+  lifecycle, not solely modelling-time controls. [^5]
 
 ## Options considered
 
@@ -60,15 +61,16 @@ The key requirement is that policy evaluation must be:
 Open Policy Agent (OPA) Rego is a purpose-built policy language with
 deny-by-default semantics. OPA compiles Rego policies to WebAssembly
 modules using `opa build -t wasm`, producing bundles that expose an
-`opa_eval` entry point for one-shot policy evaluation. [^6] The WASM ABI
-(version 1.2+) accepts JSON-serialized input and data, and returns
-JSON-serialized decision results. [^6]
+`opa_eval` entry point for one-shot policy evaluation. [^6] The WASM
+application binary interface (ABI) (version 1.2+) accepts JSON-
+serialized input and data, and returns JSON-serialized decision
+results. [^6]
 
 Rust integration is available through multiple paths:
 
-- **`opa-wasm`** (Matrix.org): a Rust SDK that evaluates OPA WASM bundles
-  using `wasmtime`. Actively maintained, supports `wasmtime` 22–40,
-  Apache-2.0 licensed. [^7]
+- **`opa-wasm`** (Matrix.org): a Rust software development kit (SDK)
+  that evaluates OPA WASM bundles using `wasmtime`. Actively maintained,
+  supports `wasmtime` 22–40, Apache-2.0 licensed. [^7]
 - **Regorus** (Microsoft): a native Rust Rego interpreter (~85–90%
   coverage of OPA v1.2.0, ~10x faster than OPA Go on benchmarks),
   MIT-licensed. Does not require WASM compilation. [^8]
@@ -86,8 +88,9 @@ enforcement engine. [^3]
 ### Option C: Cedar (Amazon)
 
 Cedar is a purpose-built authorization policy language with formal
-verification properties. It has strong semantics for RBAC/ABAC but is
-less flexible for the kinds of structured-input policy evaluation that
+verification properties. It has strong semantics for role-based access
+control (RBAC) and attribute-based access control (ABAC) but is less
+flexible for the kinds of structured-input policy evaluation that
 intent contracts require (e.g. provenance-label checks, sink-promotion
 constraints). Cedar's Rust SDK is well-maintained but adds a new
 dependency with a different operational model from Axinite's existing
@@ -160,6 +163,9 @@ authoring layer is optional sugar, not a second policy system.
 
 Every policy evaluation receives a JSON input document containing:
 
+Screen-reader: example policy evaluation input payload showing contract,
+action, provenance, approval, workspace, and sink fields.
+
 ```json
 {
   "contract": { "scope": "job", "allowed_tool_families": [...], ... },
@@ -174,6 +180,9 @@ Every policy evaluation receives a JSON input document containing:
 ### Decision output schema
 
 Every evaluation produces a decision record:
+
+Screen-reader: example policy evaluation decision output payload showing
+allowed, reason, policy_version, contract_scope, and timestamp fields.
 
 ```json
 {
@@ -191,8 +200,8 @@ This record is appended to the execution ledger (RFC 0011).
 
 If the Rego evaluator fails (crash, timeout, malformed policy), the
 gate denies the action. There is no fallback to a permissive default.
-The failure is logged with full diagnostic context and emitted as an
-SSE event.
+The failure is logged with full diagnostic context and emitted over
+Server-Sent Events (SSE).
 
 ## Known risks and limitations
 
@@ -200,9 +209,10 @@ SSE event.
   familiarity with Rego syntax. Mitigated by providing well-documented
   default policies and optional Starlark authoring sugar.
 - **Regorus coverage gaps**: Regorus covers ~85–90% of OPA v1.2.0
-  built-ins, with gaps in JWT operations, network CIDR functions, and
-  GraphQL. [^8] These gaps are unlikely to affect intent-contract
-  evaluation, which operates on JSON-structured inputs.
+  built-ins, with gaps in JSON Web Token (JWT) operations, network
+  Classless Inter-Domain Routing (CIDR) functions, and GraphQL. [^8]
+  These gaps are unlikely to affect intent-contract evaluation, which
+  operates on JSON-structured inputs.
 - **Performance under complex policies**: Rego evaluation is typically
   sub-millisecond for simple policies, but complex policies with large
   data sets may require benchmarking. The chaos-test infrastructure

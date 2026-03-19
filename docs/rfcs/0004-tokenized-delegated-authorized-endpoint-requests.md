@@ -1,8 +1,13 @@
 # RFC 0004: Tokenized delegated authorized endpoint requests
 
+## Preamble
+
 - RFC number: 0004
 - Status: Proposed
 - Date: 2026-03-11
+
+## Supplemental metadata
+
 - Target: WASM tools, extension management page, web gateway, security model
 - Authors: Codex draft for review
 

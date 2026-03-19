@@ -92,7 +92,7 @@ _Table 1: RFC 0007 gaps relative to Honcho patterns._
 
 - Goals:
   - Define a closed set of projection classes with clear semantics.
-  - Add epistemic status to every memory artefact.
+  - Add epistemic status to claim-bearing memory artefacts.
   - Add observer and subject scope to every artefact.
   - Define promotion rules governing how artefacts mature.
   - Define contradiction-handling strategies.
@@ -130,7 +130,8 @@ _Table 2: Projection classes._
 
 ### 2. Epistemic status
 
-Every `fact` and `profile` entry carries an epistemic status:
+Every `concept`, `fact`, and `profile` entry carries or derives an
+epistemic status:
 
 <!-- markdownlint-disable MD013 -->
 | Status | Meaning | Trust level | Promotion path |
@@ -246,7 +247,7 @@ Recall should query each projection layer separately before synthesis:
 4. **Episode recall**: retrieve raw episodes only when detail beyond
    summaries and facts is needed.
 5. **Synthesis**: combine results from all layers, annotating each
-   with its projection class and epistemic status.
+   with its projection class and, where applicable, epistemic status.
 
 This layered recall avoids mixing raw episodic retrieval with curated
 facts in a single vector search, which is the "one vector soup"
@@ -272,8 +273,9 @@ half-formed turns. [^2]
 
 ### Functional requirements
 
-- All memory artefacts must carry a projection class, epistemic status,
-  observer/subject scope, and provenance metadata.
+- All memory artefacts must carry a projection class, observer/subject
+  scope, and provenance metadata. Claim-bearing artefacts (`concept`,
+  `fact`, and `profile`) must also carry or derive an epistemic status.
 - Promotion between epistemic levels must follow explicit rules, not
   implicit model behaviour.
 - Contradictions must be detected, recorded, and resolved according to
@@ -345,12 +347,12 @@ frame.
 ## Recommendation
 
 Implement the five projection classes (episode, summary, concept, fact,
-profile) with explicit epistemic status, observer/subject scope, and
-promotion rules. Add reconciliation metadata with sync state and health
-metrics. Restructure recall to query projection layers separately.
-Add a batching layer between outbox consumption and extraction. These
-changes extend RFC 0007's sidecar without requiring architectural
-rework.
+profile) with explicit epistemic status for claim-bearing artefacts,
+observer/subject scope, and promotion rules. Add reconciliation
+metadata with sync state and health metrics. Restructure recall to
+query projection layers separately. Add a batching layer between
+outbox consumption and extraction. These changes extend RFC 0007's
+sidecar without requiring architectural rework.
 
 ---
 

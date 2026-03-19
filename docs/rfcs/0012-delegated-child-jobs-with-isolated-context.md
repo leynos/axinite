@@ -94,7 +94,7 @@ _Table 1: Current primitives and delegation gaps._
 
 ### Delegated endpoints
 
-RFC 0006's "tokenized delegated authorized endpoint requests" provides
+RFC 0004's "tokenized delegated authorized endpoint requests" provides
 a security vocabulary directly relevant to safe delegation: opaque
 capability tokens let the host resolve identities and inject
 credentials while redacting the concrete endpoint from agent-visible
@@ -332,8 +332,5 @@ the delegation model matures.
 [^3]: OWASP Top 10 for LLM Applications 2025. LLM06:2025 (Excessive
     Agency). See <https://genai.owasp.org/llm-top-10/>.
 
-[^4]: RFC 0006: Provenance-based, zero-knowledge intent plugins.
-    Tokenized delegated authorized endpoint requests. See
-    `docs/rfcs/0006-provenance-based-zero-knowledge-intent-plugins.md`
-    and
+[^4]: RFC 0004: Tokenized delegated authorized endpoint requests. See
     `docs/rfcs/0004-tokenized-delegated-authorized-endpoint-requests.md`.
