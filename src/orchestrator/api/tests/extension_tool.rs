@@ -88,6 +88,7 @@ impl Tool for ApprovalAwareToolList {
 
 struct FakeToolList {
     seen_job_id: Arc<tokio::sync::Mutex<Option<Uuid>>>,
+    seen_params: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
 }
 
 #[async_trait::async_trait]
@@ -109,10 +110,11 @@ impl Tool for FakeToolList {
 
     async fn execute(
         &self,
-        _params: serde_json::Value,
+        params: serde_json::Value,
         ctx: &crate::context::JobContext,
     ) -> Result<ToolOutput, crate::tools::ToolError> {
         *self.seen_job_id.lock().await = Some(ctx.job_id);
+        *self.seen_params.lock().await = Some(params.clone());
         Ok(ToolOutput::success(
             serde_json::json!({"extensions": ["telegram"]}),
             Duration::from_millis(5),
@@ -132,6 +134,7 @@ struct ExtensionToolSuccessCase {
     payload: serde_json::Value,
     expected_key: &'static str,
     expected_value: &'static str,
+    expected_params: Option<serde_json::Value>,
 }
 
 fn hosted_safe_activate_case() -> ExtensionToolSuccessCase {
@@ -143,6 +146,7 @@ fn hosted_safe_activate_case() -> ExtensionToolSuccessCase {
         }),
         expected_key: "activated",
         expected_value: "slack",
+        expected_params: None,
     }
 }
 
@@ -155,13 +159,19 @@ fn registered_tool_list_case() -> ExtensionToolSuccessCase {
         }),
         expected_key: "extensions",
         expected_value: "telegram",
+        expected_params: Some(serde_json::json!({"include_available": true})),
     }
+}
+
+struct RegisteredToolObservations {
+    seen_job_id: Arc<tokio::sync::Mutex<Option<Uuid>>>,
+    seen_params: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
 }
 
 async fn register_extension_tool_case(
     test_state: &OrchestratorState,
     kind: ExtensionToolSuccessKind,
-) -> Option<Arc<tokio::sync::Mutex<Option<Uuid>>>> {
+) -> Option<RegisteredToolObservations> {
     match kind {
         ExtensionToolSuccessKind::HostedSafeActivate => {
             test_state
@@ -172,10 +182,15 @@ async fn register_extension_tool_case(
         }
         ExtensionToolSuccessKind::RegisteredToolList => {
             let seen_job_id = Arc::new(tokio::sync::Mutex::new(None));
+            let seen_params = Arc::new(tokio::sync::Mutex::new(None));
             test_state.tools.register_sync(Arc::new(FakeToolList {
                 seen_job_id: Arc::clone(&seen_job_id),
+                seen_params: Arc::clone(&seen_params),
             }));
-            Some(seen_job_id)
+            Some(RegisteredToolObservations {
+                seen_job_id,
+                seen_params,
+            })
         }
     }
 }
@@ -298,11 +313,12 @@ async fn extension_tool_proxy_executes_hosted_visible_extension_tools(
         _ => &result[case.expected_key],
     };
     assert_eq!(actual, case.expected_value);
+    assert_eq!(proxy_resp.output.duration, Duration::from_millis(5));
+    assert_eq!(proxy_resp.output.cost, None);
+    assert_eq!(proxy_resp.output.raw, None);
 
-    if let Some(seen_job_id) = seen_job_id {
-        assert_eq!(proxy_resp.output.duration, Duration::from_millis(5));
-        assert_eq!(proxy_resp.output.cost, None);
-        assert_eq!(proxy_resp.output.raw, None);
-        assert_eq!(*seen_job_id.lock().await, Some(job_id));
+    if let Some(observations) = seen_job_id {
+        assert_eq!(*observations.seen_job_id.lock().await, Some(job_id));
+        assert_eq!(*observations.seen_params.lock().await, case.expected_params,);
     }
 }
