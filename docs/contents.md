@@ -46,7 +46,6 @@
 - [Smart routing spec](smart-routing-spec.md) captures the current design for
   routing requests across models and providers.
 
-
 ## Implementation and testing references
 
 - [Navigating code complexity](complexity-antipatterns-and-refactoring-strategies.md)
@@ -105,7 +104,6 @@
   written in the Codex ExecPlan format for roadmap-scoped work.
   - [Worker-orchestrator transport for hosted remote tool catalogue fetch](execplans/1-1-1-worker-orchestrator-transport-for-remote-tool-catalog-fetch.md)
     plans roadmap item `1.1.1` for the shared hosted remote-tool transport.
-
 ## RFCs
 
 - [RFC directory](rfcs/) stores proposed and in-flight architectural changes
