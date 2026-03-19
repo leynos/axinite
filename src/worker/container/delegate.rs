@@ -20,7 +20,7 @@ use crate::llm::{ChatMessage, Reasoning, ReasoningContext};
 use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
 use crate::tools::execute::{execute_tool_simple, process_tool_result};
-use crate::worker::api::{JobEventPayload, StatusUpdate, WorkerState};
+use crate::worker::api::{JobEventPayload, JobEventType, StatusUpdate, WorkerState};
 
 /// Container delegate: implements `LoopDelegate` for the Docker container context.
 ///
@@ -38,12 +38,9 @@ pub(super) struct ContainerDelegate {
 }
 
 impl ContainerDelegate {
-    pub(super) async fn post_event(&self, event_type: &str, data: serde_json::Value) {
+    pub(super) async fn post_event(&self, event_type: JobEventType, data: serde_json::Value) {
         self.client
-            .post_event(&JobEventPayload {
-                event_type: event_type.to_string(),
-                data,
-            })
+            .post_event(&JobEventPayload { event_type, data })
             .await;
     }
 
@@ -55,7 +52,7 @@ impl ContainerDelegate {
                     truncate_for_preview(&prompt.content, 100)
                 );
                 self.post_event(
-                    "message",
+                    JobEventType::Message,
                     serde_json::json!({
                         "role": "user",
                         "content": truncate_for_preview(&prompt.content, 2000),
@@ -120,7 +117,7 @@ impl LoopDelegate for ContainerDelegate {
         reason_ctx: &mut ReasoningContext,
     ) -> TextAction {
         self.post_event(
-            "message",
+            JobEventType::Message,
             serde_json::json!({
                 "role": "assistant",
                 "content": truncate_for_preview(text, 2000),
@@ -150,7 +147,7 @@ impl LoopDelegate for ContainerDelegate {
     ) -> Result<Option<LoopOutcome>, crate::error::Error> {
         if let Some(ref text) = content {
             self.post_event(
-                "message",
+                JobEventType::Message,
                 serde_json::json!({
                     "role": "assistant",
                     "content": truncate_for_preview(text, 2000),
@@ -168,7 +165,7 @@ impl LoopDelegate for ContainerDelegate {
 
         for tc in tool_calls {
             self.post_event(
-                "tool_use",
+                JobEventType::ToolUse,
                 serde_json::json!({
                     "tool_name": tc.name,
                     "input": truncate_for_preview(&tc.arguments.to_string(), 500),
@@ -188,7 +185,7 @@ impl LoopDelegate for ContainerDelegate {
                 process_tool_result(&self.safety, &tc.name, &tc.id, &result);
 
             self.post_event(
-                "tool_result",
+                JobEventType::ToolResult,
                 serde_json::json!({
                     "tool_name": tc.name,
                     "output": truncate_for_preview(&tool_result_content, 2000),
@@ -209,7 +206,7 @@ impl LoopDelegate for ContainerDelegate {
 
     async fn on_tool_intent_nudge(&self, text: &str, _reason_ctx: &mut ReasoningContext) {
         self.post_event(
-            "message",
+            JobEventType::Message,
             serde_json::json!({
                 "role": "assistant",
                 "content": truncate_for_preview(text, 2000),

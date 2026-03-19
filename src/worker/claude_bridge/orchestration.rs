@@ -9,11 +9,14 @@ use tokio::process::Command;
 
 use crate::error::WorkerError;
 use crate::worker::api::{
-    CompletionReport, JobEventPayload, PromptResponse, StatusUpdate, WorkerState,
+    CompletionReport, JobEventPayload, JobEventType, PromptResponse, StatusUpdate, WorkerState,
 };
 
 use super::ClaudeBridgeRuntime;
 use super::ndjson::{ClaudeStreamEvent, stream_event_to_payloads, truncate};
+
+const PROMPT_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const PROMPT_POLL_ERROR_INTERVAL: Duration = Duration::from_secs(5);
 
 impl ClaudeBridgeRuntime {
     /// Run the bridge: fetch job, spawn claude, stream events, handle follow-ups.
@@ -102,7 +105,7 @@ impl ClaudeBridgeRuntime {
                             "Follow-up Claude session failed: {}", error
                         );
                         self.report_event(
-                            "status",
+                            JobEventType::Status,
                             &serde_json::json!({
                                 "message": format!("Follow-up session failed: {}", error),
                             }),
@@ -111,14 +114,14 @@ impl ClaudeBridgeRuntime {
                     }
                 }
                 Ok(None) => {
-                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    tokio::time::sleep(PROMPT_POLL_INTERVAL).await;
                 }
                 Err(error) => {
                     tracing::warn!(
                         job_id = %self.config.job_id,
                         "Prompt polling error: {}", error
                     );
-                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    tokio::time::sleep(PROMPT_POLL_ERROR_INTERVAL).await;
                 }
             }
         }
@@ -191,7 +194,7 @@ impl ClaudeBridgeRuntime {
             while let Ok(Some(line)) = lines.next_line().await {
                 tracing::debug!(job_id = %job_id, "claude stderr: {}", line);
                 let payload = JobEventPayload {
-                    event_type: "status".to_string(),
+                    event_type: JobEventType::Status,
                     data: serde_json::json!({ "message": line }),
                 };
                 client_for_stderr.post_event(&payload).await;
@@ -222,7 +225,7 @@ impl ClaudeBridgeRuntime {
                     }
 
                     for payload in stream_event_to_payloads(&event) {
-                        self.report_event(&payload.event_type, &payload.data).await;
+                        self.report_event(payload.event_type, &payload.data).await;
                     }
                 }
                 Err(error) => {
@@ -232,8 +235,11 @@ impl ClaudeBridgeRuntime {
                         line,
                         error
                     );
-                    self.report_event("status", &serde_json::json!({ "message": line }))
-                        .await;
+                    self.report_event(
+                        JobEventType::Status,
+                        &serde_json::json!({ "message": line }),
+                    )
+                    .await;
                 }
             }
         }
@@ -245,7 +251,12 @@ impl ClaudeBridgeRuntime {
                 reason: format!("failed waiting for claude: {}", error),
             })?;
 
-        let _ = stderr_handle.await;
+        if let Err(error) = stderr_handle.await {
+            tracing::debug!(
+                job_id = %self.config.job_id,
+                "Claude stderr task failed: {}", error
+            );
+        }
 
         if !status.success() {
             let code = status.code().unwrap_or(-1);
@@ -256,7 +267,7 @@ impl ClaudeBridgeRuntime {
             );
 
             self.report_event(
-                "result",
+                JobEventType::Result,
                 &serde_json::json!({
                     "status": "error",
                     "exit_code": code,
@@ -271,7 +282,7 @@ impl ClaudeBridgeRuntime {
         }
 
         self.report_event(
-            "result",
+            JobEventType::Result,
             &serde_json::json!({
                 "status": "completed",
                 "session_id": session_id,
@@ -282,9 +293,9 @@ impl ClaudeBridgeRuntime {
         Ok(session_id)
     }
 
-    async fn report_event(&self, event_type: &str, data: &serde_json::Value) {
+    async fn report_event(&self, event_type: JobEventType, data: &serde_json::Value) {
         let payload = JobEventPayload {
-            event_type: event_type.to_string(),
+            event_type,
             data: data.clone(),
         };
         self.client.post_event(&payload).await;

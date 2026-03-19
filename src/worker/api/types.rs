@@ -198,11 +198,43 @@ pub struct CompletionReport {
     pub iterations: u32,
 }
 
+/// Event discriminator understood by the worker-orchestrator event pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JobEventType {
+    Status,
+    Message,
+    ToolUse,
+    ToolResult,
+    Result,
+    #[serde(other)]
+    Unknown,
+}
+
+impl JobEventType {
+    pub const fn as_wire(self) -> &'static str {
+        match self {
+            Self::Status => "status",
+            Self::Message => "message",
+            Self::ToolUse => "tool_use",
+            Self::ToolResult => "tool_result",
+            Self::Result => "result",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+impl std::fmt::Display for JobEventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_wire())
+    }
+}
+
 /// Payload sent to the orchestrator for each job event (shared by worker and Claude Code bridge).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JobEventPayload {
     /// Event discriminator understood by the orchestrator event pipeline.
-    pub event_type: String,
+    pub event_type: JobEventType,
     /// Event-specific JSON payload.
     pub data: serde_json::Value,
 }

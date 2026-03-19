@@ -5,10 +5,9 @@ This guide covers how to build WASM channel modules for IronClaw.
 ## Overview
 
 Channels are WebAssembly (WASM) components that handle communication with
-external messaging
-platforms (Telegram, WhatsApp, Slack, etc.). They run in a sandboxed
-environment and communicate with the host via the WIT (WebAssembly Interface
-Types) interface.
+external messaging platforms (Telegram, WhatsApp, Slack, etc.). They run in a
+sandboxed environment and communicate with the host via the WIT (WebAssembly
+Interface Types) interface.
 
 ## Directory Structure
 
@@ -191,8 +190,8 @@ channel_host::http_request("POST", &url, &headers.to_string(), Some(&body));
 ```
 
 The placeholder format is `{SECRET_NAME}` where `SECRET_NAME` matches the
-credential name in uppercase with underscores (e.g.,
-`whatsapp_access_token` → `{WHATSAPP_ACCESS_TOKEN}`).
+credential name in uppercase with underscores (e.g., `whatsapp_access_token` →
+`{WHATSAPP_ACCESS_TOKEN}`).
 
 ## Capabilities File
 
@@ -264,7 +263,7 @@ channels from source:
 - run `./scripts/build-wasm-extensions.sh --channels` or a
   channel-specific build script when channel artifacts are required
 - The built binary is in `.gitignore` and is not committed
-- CI should run explicit channel build steps (or
+- Continuous Integration (CI) should run explicit channel build steps (or
   `./scripts/build-all.sh`) before packaging releases
 
 **Reproducible build:**
@@ -454,8 +453,7 @@ let preview: String = content.chars().take(50).collect();
 
 ### Messages not routing to responses
 
-Ensure `on_respond` uses the ORIGINAL message's metadata, not response
-metadata:
+Ensure `on_respond` uses the ORIGINAL message's metadata, not response metadata:
 
 ```rust
 // response.metadata_json comes from the ORIGINAL emit_message call

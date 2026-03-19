@@ -572,16 +572,18 @@ impl TestRigBuilder {
 
         // 6. Register job tools, routine tools, and extra tools.
         {
-            components.tools.register_job_tools(
-                Arc::clone(&components.context_manager),
-                Some(scheduler_slot.clone()),
-                None,
-                components.db.clone(),
-                None,
-                None,
-                None,
-                None,
-            );
+            components
+                .tools
+                .register_job_tools(ironclaw::tools::RegisterJobToolsConfig {
+                    context_manager: Arc::clone(&components.context_manager),
+                    scheduler_slot: Some(scheduler_slot.clone()),
+                    job_manager: None,
+                    store: components.db.clone(),
+                    job_event_tx: None,
+                    inject_tx: None,
+                    prompt_queue: None,
+                    secrets_store: None,
+                });
 
             // Routine tools: create a RoutineEngine with the LLM and workspace.
             if let (Some(db_arc), Some(ws)) = (&components.db, &components.workspace) {

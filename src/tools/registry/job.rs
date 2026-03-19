@@ -13,6 +13,19 @@ use crate::tools::builtin::{
 
 use super::ToolRegistry;
 
+/// Dependency bundle for job-tool registration.
+pub struct RegisterJobToolsConfig {
+    pub context_manager: Arc<ContextManager>,
+    pub scheduler_slot: Option<crate::tools::builtin::SchedulerSlot>,
+    pub job_manager: Option<Arc<ContainerJobManager>>,
+    pub store: Option<Arc<dyn Database>>,
+    pub job_event_tx:
+        Option<tokio::sync::broadcast::Sender<(uuid::Uuid, crate::channels::web::types::SseEvent)>>,
+    pub inject_tx: Option<tokio::sync::mpsc::Sender<crate::channels::IncomingMessage>>,
+    pub prompt_queue: Option<PromptQueue>,
+    pub secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+}
+
 impl ToolRegistry {
     /// Register job management tools.
     ///
@@ -20,20 +33,18 @@ impl ToolRegistry {
     /// When sandbox deps are provided, `create_job` automatically delegates to
     /// Docker containers. Otherwise it dispatches via the Scheduler (which
     /// persists to DB and spawns a worker).
-    #[allow(clippy::too_many_arguments)]
-    pub fn register_job_tools(
-        &self,
-        context_manager: Arc<ContextManager>,
-        scheduler_slot: Option<crate::tools::builtin::SchedulerSlot>,
-        job_manager: Option<Arc<ContainerJobManager>>,
-        store: Option<Arc<dyn Database>>,
-        job_event_tx: Option<
-            tokio::sync::broadcast::Sender<(uuid::Uuid, crate::channels::web::types::SseEvent)>,
-        >,
-        inject_tx: Option<tokio::sync::mpsc::Sender<crate::channels::IncomingMessage>>,
-        prompt_queue: Option<PromptQueue>,
-        secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
-    ) {
+    pub fn register_job_tools(&self, config: RegisterJobToolsConfig) {
+        let RegisterJobToolsConfig {
+            context_manager,
+            scheduler_slot,
+            job_manager,
+            store,
+            job_event_tx,
+            inject_tx,
+            prompt_queue,
+            secrets_store,
+        } = config;
+
         let mut create_tool = CreateJobTool::new(Arc::clone(&context_manager));
         if let Some(slot) = scheduler_slot {
             create_tool = create_tool.with_scheduler_slot(slot);

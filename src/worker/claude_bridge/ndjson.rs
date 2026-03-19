@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::worker::api::JobEventPayload;
+use crate::worker::api::{JobEventPayload, JobEventType};
 
 /// A Claude Code streaming event (NDJSON line from `--output-format stream-json`).
 ///
@@ -84,7 +84,7 @@ pub(crate) fn stream_event_to_payloads(event: &ClaudeStreamEvent) -> Vec<JobEven
     match event.event_type.as_str() {
         "system" => {
             payloads.push(JobEventPayload {
-                event_type: "status".to_string(),
+                event_type: JobEventType::Status,
                 data: serde_json::json!({
                     "message": "Claude Code session started",
                     "session_id": event.session_id,
@@ -100,7 +100,7 @@ pub(crate) fn stream_event_to_payloads(event: &ClaudeStreamEvent) -> Vec<JobEven
                                 block.text.as_deref().filter(|text| !text.is_empty())
                             {
                                 payloads.push(JobEventPayload {
-                                    event_type: "message".to_string(),
+                                    event_type: JobEventType::Message,
                                     data: serde_json::json!({
                                         "role": "assistant",
                                         "content": text,
@@ -110,7 +110,7 @@ pub(crate) fn stream_event_to_payloads(event: &ClaudeStreamEvent) -> Vec<JobEven
                         }
                         "tool_use" => {
                             payloads.push(JobEventPayload {
-                                event_type: "tool_use".to_string(),
+                                event_type: JobEventType::ToolUse,
                                 data: serde_json::json!({
                                     "tool_name": block.name,
                                     "tool_use_id": block.id,
@@ -128,7 +128,7 @@ pub(crate) fn stream_event_to_payloads(event: &ClaudeStreamEvent) -> Vec<JobEven
                 for block in blocks {
                     if block.block_type == "tool_result" {
                         payloads.push(JobEventPayload {
-                            event_type: "tool_result".to_string(),
+                            event_type: JobEventType::ToolResult,
                             data: serde_json::json!({
                                 "tool_use_id": block.tool_use_id,
                                 "output": block.content,
@@ -148,7 +148,7 @@ pub(crate) fn stream_event_to_payloads(event: &ClaudeStreamEvent) -> Vec<JobEven
                 .filter(|text| !text.is_empty())
             {
                 payloads.push(JobEventPayload {
-                    event_type: "message".to_string(),
+                    event_type: JobEventType::Message,
                     data: serde_json::json!({
                         "role": "assistant",
                         "content": text,
@@ -157,7 +157,7 @@ pub(crate) fn stream_event_to_payloads(event: &ClaudeStreamEvent) -> Vec<JobEven
             }
 
             payloads.push(JobEventPayload {
-                event_type: "result".to_string(),
+                event_type: JobEventType::Result,
                 data: serde_json::json!({
                     "status": if is_error { "error" } else { "completed" },
                     "session_id": event.session_id,
@@ -168,7 +168,7 @@ pub(crate) fn stream_event_to_payloads(event: &ClaudeStreamEvent) -> Vec<JobEven
         }
         _ => {
             payloads.push(JobEventPayload {
-                event_type: "status".to_string(),
+                event_type: JobEventType::Status,
                 data: serde_json::json!({
                     "message": format!("Claude event: {}", event.event_type),
                     "raw_type": event.event_type,

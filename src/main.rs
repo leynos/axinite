@@ -411,20 +411,22 @@ async fn async_main() -> anyhow::Result<()> {
         Arc::new(tokio::sync::RwLock::new(None));
 
     // Register job tools (sandbox deps auto-injected when container_job_manager is available)
-    components.tools.register_job_tools(
-        Arc::clone(&components.context_manager),
-        Some(scheduler_slot.clone()),
-        container_job_manager.clone(),
-        components.db.clone(),
-        job_event_tx.clone(),
-        Some(channels.inject_sender()),
-        if config.sandbox.enabled {
-            Some(Arc::clone(&prompt_queue))
-        } else {
-            None
-        },
-        components.secrets_store.clone(),
-    );
+    components
+        .tools
+        .register_job_tools(ironclaw::tools::RegisterJobToolsConfig {
+            context_manager: Arc::clone(&components.context_manager),
+            scheduler_slot: Some(scheduler_slot.clone()),
+            job_manager: container_job_manager.clone(),
+            store: components.db.clone(),
+            job_event_tx: job_event_tx.clone(),
+            inject_tx: Some(channels.inject_sender()),
+            prompt_queue: if config.sandbox.enabled {
+                Some(Arc::clone(&prompt_queue))
+            } else {
+                None
+            },
+            secrets_store: components.secrets_store.clone(),
+        });
 
     // ── Gateway channel ────────────────────────────────────────────────
 

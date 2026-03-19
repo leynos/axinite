@@ -16,7 +16,7 @@ mod types;
 
 pub use types::{
     CompletionReport, CredentialResponse, FinishReason as ProxyFinishReason, JobDescription,
-    JobEventPayload, PromptResponse, ProxyCompletionRequest, ProxyCompletionResponse,
+    JobEventPayload, JobEventType, PromptResponse, ProxyCompletionRequest, ProxyCompletionResponse,
     ProxyExtensionToolRequest, ProxyExtensionToolResponse, ProxyToolCompletionRequest,
     ProxyToolCompletionResponse, StatusUpdate, WorkerState,
 };

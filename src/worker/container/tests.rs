@@ -183,7 +183,7 @@ async fn event_handler(
     State(state): State<Arc<RuntimeTestState>>,
     Json(payload): Json<crate::worker::api::JobEventPayload>,
 ) -> impl IntoResponse {
-    if payload.event_type == "result" {
+    if payload.event_type == crate::worker::api::JobEventType::Result {
         state.result_events.lock().await.push(payload.data);
     }
     StatusCode::OK

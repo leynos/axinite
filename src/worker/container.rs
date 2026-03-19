@@ -22,7 +22,7 @@ use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
 use crate::tools::builtin::worker_extension_proxy::register_worker_extension_proxy_tools;
 use crate::worker::api::{
-    CompletionReport, JobEventPayload, StatusUpdate, WorkerHttpClient, WorkerState,
+    CompletionReport, JobEventPayload, JobEventType, StatusUpdate, WorkerHttpClient, WorkerState,
 };
 use crate::worker::proxy_llm::ProxyLlmProvider;
 
@@ -285,7 +285,7 @@ Work independently to complete this job. Report when done."#,
             WorkerExecutionResult::Outcome(LoopOutcome::Response(output)) => {
                 tracing::info!("Worker completed job {} successfully", self.config.job_id);
                 self.post_event(
-                    "result",
+                    JobEventType::Result,
                     serde_json::json!({
                         "success": true,
                         "message": truncate_for_preview(&output, 2000),
@@ -329,7 +329,7 @@ Work independently to complete this job. Report when done."#,
 
     async fn report_failure(&self, iterations: u32, message: &str) -> Result<(), WorkerError> {
         self.post_event(
-            "result",
+            JobEventType::Result,
             serde_json::json!({
                 "success": false,
                 "message": message,
@@ -346,12 +346,9 @@ Work independently to complete this job. Report when done."#,
     }
 
     /// Post a job event to the orchestrator (fire-and-forget).
-    async fn post_event(&self, event_type: &str, data: serde_json::Value) {
+    async fn post_event(&self, event_type: JobEventType, data: serde_json::Value) {
         self.client
-            .post_event(&JobEventPayload {
-                event_type: event_type.to_string(),
-                data,
-            })
+            .post_event(&JobEventPayload { event_type, data })
             .await;
     }
 }

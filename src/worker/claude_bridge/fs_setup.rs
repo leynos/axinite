@@ -7,7 +7,7 @@ use super::ClaudeBridgeRuntime;
 impl ClaudeBridgeRuntime {
     /// Write project-level `.claude/settings.json` with the tool allowlist.
     pub(super) fn write_permission_settings(&self) -> Result<(), WorkerError> {
-        let settings_json = build_permission_settings(&self.config.allowed_tools);
+        let settings_json = build_permission_settings(&self.config.allowed_tools)?;
         let settings_dir = std::path::Path::new("/workspace/.claude");
         std::fs::create_dir_all(settings_dir).map_err(|error| WorkerError::ExecutionFailed {
             reason: format!("failed to create /workspace/.claude/: {error}"),
@@ -52,13 +52,15 @@ impl ClaudeBridgeRuntime {
 }
 
 /// Build the JSON content for `.claude/settings.json` with the given tool allowlist.
-pub(crate) fn build_permission_settings(allowed_tools: &[String]) -> String {
+pub(crate) fn build_permission_settings(allowed_tools: &[String]) -> Result<String, WorkerError> {
     let settings = serde_json::json!({
         "permissions": {
             "allow": allowed_tools,
         }
     });
-    serde_json::to_string_pretty(&settings).expect("static JSON structure is always valid")
+    serde_json::to_string_pretty(&settings).map_err(|error| WorkerError::ExecutionFailed {
+        reason: format!("failed to serialize Claude permission settings: {error}"),
+    })
 }
 
 /// Recursively copy files and directories from `src` to `dst`, skipping
@@ -106,14 +108,21 @@ pub(crate) fn copy_dir_recursive(
         }
 
         if file_type.is_dir() {
-            if std::fs::create_dir_all(&dst_path).is_ok() {
-                copied += copy_dir_recursive(&src_path, &dst_path)?;
-            }
+            std::fs::create_dir_all(&dst_path)?;
+            copied += copy_dir_recursive(&src_path, &dst_path)?;
         } else {
             match std::fs::copy(&src_path, &dst_path) {
                 Ok(_) => copied += 1,
                 Err(error) => {
-                    tracing::debug!("Skipping unreadable file {}: {}", src_path.display(), error);
+                    if error.kind() == std::io::ErrorKind::NotFound {
+                        tracing::debug!(
+                            "Skipping unreadable file {}: {}",
+                            src_path.display(),
+                            error
+                        );
+                    } else {
+                        return Err(error);
+                    }
                 }
             }
         }

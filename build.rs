@@ -79,7 +79,11 @@ fn embed_registry_catalog(root: &Path) -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-/// Read all .json files from a directory and push their raw contents into `out`.
+/// Read all `.json` files from `dir` and push their raw contents into `out`.
+///
+/// `collect_json_files(root, dir, out)` emits `cargo:rerun-if-changed` entries
+/// relative to `root`, not `dir`, and normalizes those emitted paths to use
+/// forward slashes.
 fn collect_json_files(
     root: &Path,
     dir: &Path,

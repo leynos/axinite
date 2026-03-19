@@ -122,7 +122,7 @@ async fn test_protected_job_management_tools_cannot_be_shadowed(#[case] name: &'
     let desc = registry
         .get(name)
         .await
-        .unwrap_or_else(|| panic!("missing protected job tool {name}"))
+        .expect("missing protected job tool")
         .description()
         .to_string();
 
