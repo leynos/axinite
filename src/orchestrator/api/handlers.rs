@@ -12,7 +12,6 @@ use axum::http::StatusCode;
 use uuid::Uuid;
 
 use super::OrchestratorState;
-use super::handler_support::format_finish_reason;
 use crate::channels::web::types::SseEvent;
 use crate::context::JobContext;
 use crate::llm::{CompletionRequest, ToolCompletionRequest};
@@ -70,7 +69,7 @@ pub(super) async fn llm_complete(
         content: resp.content,
         input_tokens: resp.input_tokens,
         output_tokens: resp.output_tokens,
-        finish_reason: format_finish_reason(resp.finish_reason),
+        finish_reason: resp.finish_reason.into(),
         cache_read_input_tokens: resp.cache_read_input_tokens,
         cache_creation_input_tokens: resp.cache_creation_input_tokens,
     }))
@@ -101,7 +100,7 @@ pub(super) async fn llm_complete_with_tools(
         tool_calls: resp.tool_calls,
         input_tokens: resp.input_tokens,
         output_tokens: resp.output_tokens,
-        finish_reason: format_finish_reason(resp.finish_reason),
+        finish_reason: resp.finish_reason.into(),
         cache_read_input_tokens: resp.cache_read_input_tokens,
         cache_creation_input_tokens: resp.cache_creation_input_tokens,
     }))

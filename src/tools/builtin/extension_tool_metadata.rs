@@ -31,11 +31,8 @@ impl ExtensionToolKind {
 
     /// Whether this extension-management tool is explicitly allowed through the
     /// hosted worker proxy path.
-    pub const fn is_hosted_worker_proxy_safe(self) -> bool {
-        matches!(
-            self,
-            Self::Search | Self::Activate | Self::List | Self::Info
-        )
+    pub fn is_hosted_worker_proxy_safe(self) -> bool {
+        Self::HOSTED_WORKER_PROXY_SAFE.contains(&self)
     }
 
     pub fn name(self) -> &'static str {

@@ -8,18 +8,17 @@ use uuid::Uuid;
 
 use crate::error::WorkerError;
 use crate::llm::{
-    CompletionRequest, CompletionResponse, FinishReason, ToolCompletionRequest,
-    ToolCompletionResponse,
+    CompletionRequest, CompletionResponse, ToolCompletionRequest, ToolCompletionResponse,
 };
 use crate::tools::ToolOutput;
 
 mod types;
 
 pub use types::{
-    CompletionReport, CredentialResponse, JobDescription, JobEventPayload, PromptResponse,
-    ProxyCompletionRequest, ProxyCompletionResponse, ProxyExtensionToolRequest,
-    ProxyExtensionToolResponse, ProxyToolCompletionRequest, ProxyToolCompletionResponse,
-    StatusUpdate,
+    CompletionReport, CredentialResponse, FinishReason as ProxyFinishReason, JobDescription,
+    JobEventPayload, PromptResponse, ProxyCompletionRequest, ProxyCompletionResponse,
+    ProxyExtensionToolRequest, ProxyExtensionToolResponse, ProxyToolCompletionRequest,
+    ProxyToolCompletionResponse, StatusUpdate,
 };
 
 /// HTTP client that a container worker uses to talk to the orchestrator.
@@ -151,7 +150,7 @@ impl WorkerHttpClient {
             content: proxy_resp.content,
             input_tokens: proxy_resp.input_tokens,
             output_tokens: proxy_resp.output_tokens,
-            finish_reason: parse_finish_reason(&proxy_resp.finish_reason),
+            finish_reason: proxy_resp.finish_reason.into(),
             cache_read_input_tokens: proxy_resp.cache_read_input_tokens,
             cache_creation_input_tokens: proxy_resp.cache_creation_input_tokens,
         })
@@ -180,7 +179,7 @@ impl WorkerHttpClient {
             tool_calls: proxy_resp.tool_calls,
             input_tokens: proxy_resp.input_tokens,
             output_tokens: proxy_resp.output_tokens,
-            finish_reason: parse_finish_reason(&proxy_resp.finish_reason),
+            finish_reason: proxy_resp.finish_reason.into(),
             cache_read_input_tokens: proxy_resp.cache_read_input_tokens,
             cache_creation_input_tokens: proxy_resp.cache_creation_input_tokens,
         })
@@ -338,16 +337,6 @@ impl WorkerHttpClient {
             .post_json("complete", report, "report complete")
             .await?;
         Ok(())
-    }
-}
-
-fn parse_finish_reason(s: &str) -> FinishReason {
-    match s {
-        "stop" => FinishReason::Stop,
-        "length" => FinishReason::Length,
-        "tool_use" | "tool_calls" => FinishReason::ToolUse,
-        "content_filter" => FinishReason::ContentFilter,
-        _ => FinishReason::Unknown,
     }
 }
 

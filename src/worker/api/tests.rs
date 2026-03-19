@@ -3,7 +3,9 @@
 use rstest::rstest;
 
 use super::*;
+use crate::llm::FinishReason as LlmFinishReason;
 use crate::testing::credentials::TEST_BEARER_TOKEN;
+use serde_json::json;
 use uuid::Uuid;
 
 #[rstest]
@@ -27,14 +29,40 @@ fn test_url_construction(#[case] path: &str) {
 }
 
 #[rstest]
-#[case("stop", FinishReason::Stop)]
-#[case("length", FinishReason::Length)]
-#[case("tool_use", FinishReason::ToolUse)]
-#[case("tool_calls", FinishReason::ToolUse)]
-#[case("content_filter", FinishReason::ContentFilter)]
-#[case("unknown", FinishReason::Unknown)]
-fn test_parse_finish_reason(#[case] input: &str, #[case] expected: FinishReason) {
-    assert_eq!(parse_finish_reason(input), expected);
+#[case(json!("stop"), ProxyFinishReason::Stop)]
+#[case(json!("length"), ProxyFinishReason::Length)]
+#[case(json!("tool_use"), ProxyFinishReason::ToolUse)]
+#[case(json!("tool_calls"), ProxyFinishReason::ToolUse)]
+#[case(json!("content_filter"), ProxyFinishReason::ContentFilter)]
+#[case(json!("unknown"), ProxyFinishReason::Unknown)]
+fn test_proxy_finish_reason_deserialization(
+    #[case] input: serde_json::Value,
+    #[case] expected: ProxyFinishReason,
+) {
+    let actual: ProxyFinishReason = serde_json::from_value(input).expect(
+        "failed to deserialize ProxyFinishReason in test_proxy_finish_reason_deserialization",
+    );
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn test_proxy_finish_reason_rejects_unknown_provider_value() {
+    let err = serde_json::from_value::<ProxyFinishReason>(json!("made_up_reason"))
+        .expect_err("unexpectedly deserialized an unknown ProxyFinishReason");
+    assert!(err.is_data());
+}
+
+#[rstest]
+#[case(ProxyFinishReason::Stop, LlmFinishReason::Stop)]
+#[case(ProxyFinishReason::Length, LlmFinishReason::Length)]
+#[case(ProxyFinishReason::ToolUse, LlmFinishReason::ToolUse)]
+#[case(ProxyFinishReason::ContentFilter, LlmFinishReason::ContentFilter)]
+#[case(ProxyFinishReason::Unknown, LlmFinishReason::Unknown)]
+fn test_proxy_finish_reason_conversion(
+    #[case] input: ProxyFinishReason,
+    #[case] expected: LlmFinishReason,
+) {
+    assert_eq!(LlmFinishReason::from(input), expected);
 }
 
 #[test]

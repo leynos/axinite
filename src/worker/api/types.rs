@@ -26,6 +26,42 @@ pub struct JobDescription {
     pub project_dir: Option<String>,
 }
 
+/// Provider finish reason transported between orchestrator and worker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FinishReason {
+    Stop,
+    Length,
+    #[serde(alias = "tool_calls")]
+    ToolUse,
+    ContentFilter,
+    Unknown,
+}
+
+impl From<crate::llm::FinishReason> for FinishReason {
+    fn from(value: crate::llm::FinishReason) -> Self {
+        match value {
+            crate::llm::FinishReason::Stop => Self::Stop,
+            crate::llm::FinishReason::Length => Self::Length,
+            crate::llm::FinishReason::ToolUse => Self::ToolUse,
+            crate::llm::FinishReason::ContentFilter => Self::ContentFilter,
+            crate::llm::FinishReason::Unknown => Self::Unknown,
+        }
+    }
+}
+
+impl From<FinishReason> for crate::llm::FinishReason {
+    fn from(value: FinishReason) -> Self {
+        match value {
+            FinishReason::Stop => Self::Stop,
+            FinishReason::Length => Self::Length,
+            FinishReason::ToolUse => Self::ToolUse,
+            FinishReason::ContentFilter => Self::ContentFilter,
+            FinishReason::Unknown => Self::Unknown,
+        }
+    }
+}
+
 /// Completion result from the orchestrator (proxied from the real LLM).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProxyCompletionRequest {
@@ -50,8 +86,8 @@ pub struct ProxyCompletionResponse {
     pub input_tokens: u32,
     /// Provider-reported completion token usage.
     pub output_tokens: u32,
-    /// Provider finish reason normalised into a transport string.
-    pub finish_reason: String,
+    /// Provider finish reason normalised into a transport enum.
+    pub finish_reason: FinishReason,
     /// Tokens served from cache when the provider exposes that metric.
     #[serde(default)]
     pub cache_read_input_tokens: u32,
@@ -88,8 +124,8 @@ pub struct ProxyToolCompletionResponse {
     pub input_tokens: u32,
     /// Provider-reported completion token usage.
     pub output_tokens: u32,
-    /// Provider finish reason normalised into a transport string.
-    pub finish_reason: String,
+    /// Provider finish reason normalised into a transport enum.
+    pub finish_reason: FinishReason,
     /// Tokens served from cache when the provider exposes that metric.
     #[serde(default)]
     pub cache_read_input_tokens: u32,

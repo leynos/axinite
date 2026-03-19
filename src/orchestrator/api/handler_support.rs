@@ -103,13 +103,3 @@ pub(super) async fn get_credentials_handler(
 
     Ok((StatusCode::OK, Json(body)).into_response())
 }
-
-pub(super) fn format_finish_reason(reason: crate::llm::FinishReason) -> String {
-    match reason {
-        crate::llm::FinishReason::Stop => "stop".to_string(),
-        crate::llm::FinishReason::Length => "length".to_string(),
-        crate::llm::FinishReason::ToolUse => "tool_use".to_string(),
-        crate::llm::FinishReason::ContentFilter => "content_filter".to_string(),
-        crate::llm::FinishReason::Unknown => "unknown".to_string(),
-    }
-}
