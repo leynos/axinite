@@ -7,12 +7,11 @@ use rstest::rstest;
 use super::super::remote_tools::hosted_remote_tool_catalog;
 use super::fixtures::remote_tool_helpers::execute_remote_tool_status;
 use super::fixtures::remote_tool_mocks::{
-    ErrorTool, ExecuteErrorKind, JobAwareTool, approval_gated_tool, container_only_tool,
-    hosted_catalog_tool, hosted_catalog_tool_beta, protected_job_events_tool,
-    protected_orchestration_tool,
+    ErrorTool, ExecuteErrorKind, JobAwareTool, StubOutput, StubTool,
 };
 use super::fixtures::test_state;
 use super::*;
+use crate::tools::{HostedToolEligibility, ToolDomain};
 use crate::worker::api::{REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_ROUTE};
 
 #[rstest]
@@ -20,23 +19,66 @@ use crate::worker::api::{REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_ROUTE};
 async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: OrchestratorState) {
     test_state
         .tools
-        .register(Arc::new(hosted_catalog_tool()))
+        .register(Arc::new(StubTool::hosted(
+            "remote_tool_catalog_fixture",
+            "Hosted-safe tool for catalog tests",
+            serde_json::json!({
+                "type":"object",
+                "properties":{"query":{"type":"string","description":"search query"}},
+                "required":["query"]
+            }),
+        )))
         .await;
     test_state
         .tools
-        .register(Arc::new(protected_orchestration_tool()))
+        .register(Arc::new(StubTool {
+            name: "create_job",
+            description: "Protected orchestration tool",
+            output: StubOutput::Fixed(serde_json::json!({"created":true})),
+            ..StubTool::hosted(
+                "create_job",
+                "",
+                serde_json::json!({"type":"object","properties":{}}),
+            )
+        }))
         .await;
     test_state
         .tools
-        .register(Arc::new(protected_job_events_tool()))
+        .register(Arc::new(StubTool {
+            name: "job_events",
+            description: "Protected job-events tool",
+            output: StubOutput::Fixed(serde_json::json!({"events":[]})),
+            ..StubTool::hosted(
+                "job_events",
+                "",
+                serde_json::json!({"type":"object","properties":{}}),
+            )
+        }))
         .await;
     test_state
         .tools
-        .register(Arc::new(approval_gated_tool()))
+        .register(Arc::new(StubTool {
+            always_approve: true,
+            eligibility: HostedToolEligibility::ApprovalGated,
+            output: StubOutput::Panic("approval-gated tool must not execute"),
+            ..StubTool::hosted(
+                "remote_tool_execute_gated",
+                "Approval-gated tool",
+                serde_json::json!({"type":"object","properties":{}}),
+            )
+        }))
         .await;
     test_state
         .tools
-        .register(Arc::new(container_only_tool()))
+        .register(Arc::new(StubTool {
+            domain: ToolDomain::Container,
+            output: StubOutput::Panic("container-only tool must not execute"),
+            ..StubTool::hosted(
+                "remote_tool_execute_container",
+                "Container-only tool",
+                serde_json::json!({"type":"object","properties":{}}),
+            )
+        }))
         .await;
     let job_id = Uuid::new_v4();
     let token = test_state.token_store.create_token(job_id).await;
@@ -86,9 +128,28 @@ async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: Or
 #[tokio::test]
 async fn remote_tool_catalog_excludes_job_events_named_tools() {
     let registry = Arc::new(ToolRegistry::new());
-    registry.register(Arc::new(hosted_catalog_tool())).await;
     registry
-        .register(Arc::new(protected_job_events_tool()))
+        .register(Arc::new(StubTool::hosted(
+            "remote_tool_catalog_fixture",
+            "Hosted-safe tool for catalog tests",
+            serde_json::json!({
+                "type":"object",
+                "properties":{"query":{"type":"string","description":"search query"}},
+                "required":["query"]
+            }),
+        )))
+        .await;
+    registry
+        .register(Arc::new(StubTool {
+            name: "job_events",
+            description: "Protected job-events tool",
+            output: StubOutput::Fixed(serde_json::json!({"events":[]})),
+            ..StubTool::hosted(
+                "job_events",
+                "",
+                serde_json::json!({"type":"object","properties":{}}),
+            )
+        }))
         .await;
 
     let (tools, _instructions, _version) = hosted_remote_tool_catalog(&registry).await;
@@ -107,14 +168,50 @@ async fn remote_tool_catalog_excludes_job_events_named_tools() {
 async fn remote_tool_catalog_sorts_tools_before_versioning() {
     let registry_a = Arc::new(ToolRegistry::new());
     registry_a
-        .register(Arc::new(hosted_catalog_tool_beta()))
+        .register(Arc::new(StubTool::hosted(
+            "remote_tool_catalog_fixture_beta",
+            "Second hosted-safe tool for catalog tests",
+            serde_json::json!({
+                "type":"object",
+                "properties":{"path":{"type":"string"}},
+                "required":["path"]
+            }),
+        )))
         .await;
-    registry_a.register(Arc::new(hosted_catalog_tool())).await;
+    registry_a
+        .register(Arc::new(StubTool::hosted(
+            "remote_tool_catalog_fixture",
+            "Hosted-safe tool for catalog tests",
+            serde_json::json!({
+                "type":"object",
+                "properties":{"query":{"type":"string","description":"search query"}},
+                "required":["query"]
+            }),
+        )))
+        .await;
 
     let registry_b = Arc::new(ToolRegistry::new());
-    registry_b.register(Arc::new(hosted_catalog_tool())).await;
     registry_b
-        .register(Arc::new(hosted_catalog_tool_beta()))
+        .register(Arc::new(StubTool::hosted(
+            "remote_tool_catalog_fixture",
+            "Hosted-safe tool for catalog tests",
+            serde_json::json!({
+                "type":"object",
+                "properties":{"query":{"type":"string","description":"search query"}},
+                "required":["query"]
+            }),
+        )))
+        .await;
+    registry_b
+        .register(Arc::new(StubTool::hosted(
+            "remote_tool_catalog_fixture_beta",
+            "Second hosted-safe tool for catalog tests",
+            serde_json::json!({
+                "type":"object",
+                "properties":{"path":{"type":"string"}},
+                "required":["path"]
+            }),
+        )))
         .await;
 
     let (tools_a, instructions_a, version_a) = hosted_remote_tool_catalog(&registry_a).await;
@@ -177,7 +274,15 @@ async fn remote_tool_execute_rejects_unknown_tools(test_state: OrchestratorState
 async fn remote_tool_execute_rejects_non_catalog_tools(test_state: OrchestratorState) {
     test_state
         .tools
-        .register(Arc::new(container_only_tool()))
+        .register(Arc::new(StubTool {
+            domain: ToolDomain::Container,
+            output: StubOutput::Panic("container-only tool must not execute"),
+            ..StubTool::hosted(
+                "remote_tool_execute_container",
+                "Container-only tool",
+                serde_json::json!({"type":"object","properties":{}}),
+            )
+        }))
         .await;
     let job_id = Uuid::new_v4();
     let token = test_state.token_store.create_token(job_id).await;
@@ -209,7 +314,16 @@ async fn remote_tool_execute_rejects_non_catalog_tools(test_state: OrchestratorS
 async fn remote_tool_execute_rejects_protected_orchestration_tools(test_state: OrchestratorState) {
     test_state
         .tools
-        .register(Arc::new(protected_orchestration_tool()))
+        .register(Arc::new(StubTool {
+            name: "create_job",
+            description: "Protected orchestration tool",
+            output: StubOutput::Fixed(serde_json::json!({"created":true})),
+            ..StubTool::hosted(
+                "create_job",
+                "",
+                serde_json::json!({"type":"object","properties":{}}),
+            )
+        }))
         .await;
     let job_id = Uuid::new_v4();
     let token = test_state.token_store.create_token(job_id).await;
@@ -241,7 +355,16 @@ async fn remote_tool_execute_rejects_protected_orchestration_tools(test_state: O
 async fn remote_tool_execute_rejects_approval_gated_tools(test_state: OrchestratorState) {
     test_state
         .tools
-        .register(Arc::new(approval_gated_tool()))
+        .register(Arc::new(StubTool {
+            always_approve: true,
+            eligibility: HostedToolEligibility::ApprovalGated,
+            output: StubOutput::Panic("approval-gated tool must not execute"),
+            ..StubTool::hosted(
+                "remote_tool_execute_gated",
+                "Approval-gated tool",
+                serde_json::json!({"type":"object","properties":{}}),
+            )
+        }))
         .await;
     let job_id = Uuid::new_v4();
     let token = test_state.token_store.create_token(job_id).await;

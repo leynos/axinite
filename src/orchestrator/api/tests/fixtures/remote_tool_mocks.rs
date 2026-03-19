@@ -12,68 +12,42 @@ use crate::tools::{
     ApprovalRequirement, HostedToolEligibility, Tool, ToolDomain, ToolError, ToolOutput,
 };
 
-enum StubExecute {
+/// Output behaviour for [`StubTool`].
+pub(crate) enum StubOutput {
+    /// Echo the incoming `params` value back as the output.
     EchoParams,
+    /// Return a fixed `serde_json::Value` regardless of `params`.
     Fixed(serde_json::Value),
+    /// Panic with the given message (for tools that must never be executed).
     Panic(&'static str),
 }
 
+/// General-purpose parameterised stub implementing [`Tool`].
 pub(crate) struct StubTool {
-    name: &'static str,
-    description: &'static str,
-    parameters: serde_json::Value,
-    container_domain: bool,
-    always_approve: bool,
-    approval_gated: bool,
-    execute_behaviour: StubExecute,
+    pub(crate) name: &'static str,
+    pub(crate) description: &'static str,
+    pub(crate) parameters: serde_json::Value,
+    pub(crate) domain: ToolDomain,
+    pub(crate) always_approve: bool,
+    pub(crate) eligibility: HostedToolEligibility,
+    pub(crate) output: StubOutput,
 }
 
 impl StubTool {
-    pub(crate) fn new(name: &'static str) -> Self {
+    pub(crate) fn hosted(
+        name: &'static str,
+        description: &'static str,
+        parameters: serde_json::Value,
+    ) -> Self {
         Self {
             name,
-            description: "",
-            parameters: serde_json::json!({"type": "object", "properties": {}}),
-            container_domain: false,
+            description,
+            parameters,
+            domain: ToolDomain::Orchestrator,
             always_approve: false,
-            approval_gated: false,
-            execute_behaviour: StubExecute::EchoParams,
+            eligibility: HostedToolEligibility::Eligible,
+            output: StubOutput::EchoParams,
         }
-    }
-
-    pub(crate) fn description(mut self, d: &'static str) -> Self {
-        self.description = d;
-        self
-    }
-
-    pub(crate) fn parameters(mut self, p: serde_json::Value) -> Self {
-        self.parameters = p;
-        self
-    }
-
-    pub(crate) fn container_domain(mut self) -> Self {
-        self.container_domain = true;
-        self
-    }
-
-    pub(crate) fn always_approve(mut self) -> Self {
-        self.always_approve = true;
-        self
-    }
-
-    pub(crate) fn approval_gated(mut self) -> Self {
-        self.approval_gated = true;
-        self
-    }
-
-    pub(crate) fn fixed_output(mut self, v: serde_json::Value) -> Self {
-        self.execute_behaviour = StubExecute::Fixed(v);
-        self
-    }
-
-    pub(crate) fn panics_on_execute(mut self, msg: &'static str) -> Self {
-        self.execute_behaviour = StubExecute::Panic(msg);
-        self
     }
 }
 
@@ -92,11 +66,7 @@ impl Tool for StubTool {
     }
 
     fn domain(&self) -> ToolDomain {
-        if self.container_domain {
-            ToolDomain::Container
-        } else {
-            ToolDomain::Orchestrator
-        }
+        self.domain
     }
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
@@ -108,11 +78,7 @@ impl Tool for StubTool {
     }
 
     fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
-        if self.approval_gated {
-            HostedToolEligibility::ApprovalGated
-        } else {
-            HostedToolEligibility::Eligible
-        }
+        self.eligibility
     }
 
     async fn execute(
@@ -120,52 +86,12 @@ impl Tool for StubTool {
         params: serde_json::Value,
         _ctx: &JobContext,
     ) -> Result<ToolOutput, ToolError> {
-        match &self.execute_behaviour {
-            StubExecute::EchoParams => Ok(ToolOutput::success(params, Duration::from_millis(5))),
-            StubExecute::Fixed(v) => Ok(ToolOutput::success(v.clone(), Duration::from_millis(5))),
-            StubExecute::Panic(msg) => panic!("{}", msg),
+        match &self.output {
+            StubOutput::EchoParams => Ok(ToolOutput::success(params, Duration::from_millis(5))),
+            StubOutput::Fixed(v) => Ok(ToolOutput::success(v.clone(), Duration::from_millis(5))),
+            StubOutput::Panic(msg) => panic!("{}", msg),
         }
     }
-}
-
-pub(crate) fn hosted_catalog_tool() -> StubTool {
-    StubTool::new("remote_tool_catalog_fixture")
-        .description("Hosted-safe tool for catalog tests")
-        .parameters(serde_json::json!({
-            "type": "object",
-            "properties": {"query": {"type": "string", "description": "search query"}},
-            "required": ["query"]
-        }))
-}
-
-pub(crate) fn hosted_catalog_tool_beta() -> StubTool {
-    StubTool::new("remote_tool_catalog_fixture_beta")
-        .description("Second hosted-safe tool for catalog tests")
-        .parameters(serde_json::json!({
-            "type": "object",
-            "properties": {"path": {"type": "string"}},
-            "required": ["path"]
-        }))
-}
-
-pub(crate) fn protected_orchestration_tool() -> StubTool {
-    StubTool::new("create_job")
-        .description("Protected orchestration tool")
-        .fixed_output(serde_json::json!({"created": true}))
-}
-
-pub(crate) fn protected_job_events_tool() -> StubTool {
-    StubTool::new("job_events")
-        .description("Protected job-events tool")
-        .fixed_output(serde_json::json!({"events": []}))
-}
-
-pub(crate) fn approval_gated_tool() -> StubTool {
-    StubTool::new("remote_tool_execute_gated")
-        .description("Approval-gated tool")
-        .always_approve()
-        .approval_gated()
-        .panics_on_execute("approval-gated tool must not execute")
 }
 
 pub(crate) struct ParamAwareHostedTool;
@@ -215,13 +141,6 @@ impl Tool for ParamAwareHostedTool {
     fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
         HostedToolEligibility::Eligible
     }
-}
-
-pub(crate) fn container_only_tool() -> StubTool {
-    StubTool::new("remote_tool_execute_container")
-        .description("Container-only tool")
-        .container_domain()
-        .panics_on_execute("container-only tool must not execute")
 }
 
 pub(crate) struct JobAwareTool {
