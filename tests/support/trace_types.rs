@@ -84,18 +84,30 @@ pub struct TraceExpects {
 }
 
 impl TraceExpects {
-    /// Returns true if no expectations are set.
+    /// Returns true when no expectations are specified.
     pub fn is_empty(&self) -> bool {
-        self.response_contains.is_empty()
-            && self.response_not_contains.is_empty()
-            && self.response_matches.is_none()
-            && self.tools_used.is_empty()
-            && self.tools_not_used.is_empty()
-            && self.all_tools_succeeded.is_none()
-            && self.max_tool_calls.is_none()
-            && self.min_responses.is_none()
-            && self.tool_results_contain.is_empty()
-            && self.tools_order.is_empty()
+        // All vector-based expectations must be empty.
+        let vecs_empty = [
+            &self.response_contains,
+            &self.response_not_contains,
+            &self.tools_used,
+            &self.tools_not_used,
+            &self.tools_order,
+        ]
+        .into_iter()
+        .all(|values| values.is_empty());
+
+        // All option-based expectations must be absent.
+        let opts_none = [
+            self.response_matches.is_none(),
+            self.all_tools_succeeded.is_none(),
+            self.max_tool_calls.is_none(),
+            self.min_responses.is_none(),
+        ]
+        .into_iter()
+        .all(|is_none| is_none);
+
+        vecs_empty && opts_none && self.tool_results_contain.is_empty()
     }
 }
 
