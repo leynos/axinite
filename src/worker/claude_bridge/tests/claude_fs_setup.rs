@@ -1,47 +1,43 @@
 //! Tests for Claude filesystem setup utilities.
 
+use rstest::rstest;
+
 use super::{build_permission_settings, copy_dir_recursive};
 
-#[test]
-fn test_build_permission_settings_default_tools() {
-    let tools: Vec<String> = ["Bash(*)", "Read", "Edit(*)", "Glob", "Grep"]
-        .into_iter()
-        .map(String::from)
-        .collect();
-    let json_str =
-        build_permission_settings(&tools).expect("default tool permission settings should build");
+fn parse_allow_list(tools: &[String]) -> Vec<serde_json::Value> {
+    let json_str = build_permission_settings(tools).expect("permission settings should build");
     let parsed: serde_json::Value =
         serde_json::from_str(&json_str).expect("settings JSON should parse");
-    let allow = parsed["permissions"]["allow"]
+    parsed["permissions"]["allow"]
         .as_array()
-        .expect("allow list should be an array");
-    assert_eq!(allow.len(), 5);
-    assert_eq!(allow[0], "Bash(*)");
-    assert_eq!(allow[1], "Read");
-    assert_eq!(allow[2], "Edit(*)");
+        .expect("allow list should be an array")
+        .clone()
 }
 
-#[test]
-fn test_build_permission_settings_empty_tools() {
-    let json_str =
-        build_permission_settings(&[]).expect("empty tool permission settings should build");
-    let parsed: serde_json::Value =
-        serde_json::from_str(&json_str).expect("settings JSON should parse");
-    let allow = parsed["permissions"]["allow"]
-        .as_array()
-        .expect("allow list should be an array");
-    assert!(allow.is_empty());
-}
-
-#[test]
-fn test_build_permission_settings_is_valid_json() {
-    let tools = vec!["Bash(npm run *)".to_string(), "Read".to_string()];
-    let json_str =
-        build_permission_settings(&tools).expect("permission settings JSON should build");
-    let parsed: serde_json::Value =
-        serde_json::from_str(&json_str).expect("settings JSON should parse");
-    assert!(parsed["permissions"].is_object());
-    assert!(parsed["permissions"]["allow"].is_array());
+#[rstest]
+#[case(
+    vec!["Bash(*)".into(), "Read".into(), "Edit(*)".into(), "Glob".into(), "Grep".into()],
+    5,
+    vec![Some("Bash(*)"), Some("Read"), Some("Edit(*)")],
+)]
+#[case(vec![], 0, vec![])]
+#[case(
+    vec!["Bash(npm run *)".into(), "Read".into()],
+    2,
+    vec![Some("Bash(npm run *)"), Some("Read")],
+)]
+fn test_build_permission_settings(
+    #[case] tools: Vec<String>,
+    #[case] expected_len: usize,
+    #[case] expected_entries: Vec<Option<&str>>,
+) {
+    let allow = parse_allow_list(&tools);
+    assert_eq!(allow.len(), expected_len);
+    for (i, expected) in expected_entries.iter().enumerate() {
+        if let Some(val) = expected {
+            assert_eq!(allow[i], *val);
+        }
+    }
 }
 
 #[test]
