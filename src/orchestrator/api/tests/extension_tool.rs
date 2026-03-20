@@ -200,30 +200,22 @@ async fn post_extension_tool(
     job_id: Uuid,
     token: &str,
     payload: serde_json::Value,
-) -> axum::http::Response<Body> {
+) -> anyhow::Result<axum::http::Response<Body>> {
     let req = Request::builder()
         .method("POST")
         .uri(format!("/worker/{job_id}/extension_tool"))
         .header("Authorization", format!("Bearer {token}"))
         .header("Content-Type", "application/json")
-        .body(Body::from(
-            serde_json::to_vec(&payload).expect("serialize proxy extension tool payload"),
-        ))
-        .expect("build proxy extension tool request");
+        .body(Body::from(serde_json::to_vec(&payload)?))?;
 
-    router
-        .oneshot(req)
-        .await
-        .expect("send proxy extension tool request")
+    router.oneshot(req).await.map_err(anyhow::Error::from)
 }
 
 async fn decode_proxy_extension_tool_response(
     resp: axum::http::Response<Body>,
-) -> crate::worker::api::ProxyExtensionToolResponse {
-    let body = axum::body::to_bytes(resp.into_body(), 4096)
-        .await
-        .expect("read proxy extension tool response body");
-    serde_json::from_slice(&body).expect("parse proxy extension tool response")
+) -> anyhow::Result<crate::worker::api::ProxyExtensionToolResponse> {
+    let body = axum::body::to_bytes(resp.into_body(), 4096).await?;
+    Ok(serde_json::from_slice(&body)?)
 }
 
 #[rstest]
@@ -297,16 +289,16 @@ async fn extension_tool_proxy_rejects_extension_tools_that_require_approval_for_
 async fn extension_tool_proxy_executes_hosted_visible_extension_tools(
     test_state: OrchestratorState,
     #[case] case: ExtensionToolSuccessCase,
-) {
+) -> anyhow::Result<()> {
     let seen_job_id = register_extension_tool_case(&test_state, case.kind).await;
     let job_id = Uuid::new_v4();
     let token = test_state.token_store.create_token(job_id).await;
     let router = OrchestratorApi::router(test_state);
 
-    let resp = post_extension_tool(router, job_id, &token, case.payload).await;
+    let resp = post_extension_tool(router, job_id, &token, case.payload).await?;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let proxy_resp = decode_proxy_extension_tool_response(resp).await;
+    let proxy_resp = decode_proxy_extension_tool_response(resp).await?;
     let result = &proxy_resp.output.result;
     let actual = match case.expected_key {
         "extensions" => &result[case.expected_key][0],
@@ -321,4 +313,6 @@ async fn extension_tool_proxy_executes_hosted_visible_extension_tools(
         assert_eq!(*observations.seen_job_id.lock().await, Some(job_id));
         assert_eq!(*observations.seen_params.lock().await, case.expected_params,);
     }
+
+    Ok(())
 }
