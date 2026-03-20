@@ -544,7 +544,7 @@ mod trace_llm_tests {
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/llm_traces/simple_text.json"
         );
-        let llm = TraceLlm::from_file(fixture_path).unwrap();
+        let llm = TraceLlm::from_file_async(fixture_path).await.unwrap();
 
         assert_eq!(llm.model_name(), "test-model");
 

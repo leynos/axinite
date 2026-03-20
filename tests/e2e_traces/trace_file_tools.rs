@@ -20,7 +20,9 @@ async fn test_file_write_and_read_flow() {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/file_write_read.json"
     );
-    let trace = LlmTrace::from_file(fixture_path).expect("failed to load trace fixture");
+    let trace = LlmTrace::from_file_async(fixture_path)
+        .await
+        .expect("failed to load trace fixture");
 
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())

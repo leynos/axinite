@@ -14,10 +14,11 @@ use crate::support::trace_llm::LlmTrace;
 
 #[tokio::test]
 async fn multi_turn_state() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/threading/multi_turn_state.json"
     ))
+    .await
     .expect("failed to load multi_turn_state.json");
 
     let rig = TestRigBuilder::new()
@@ -80,10 +81,11 @@ fn thread_interruption() {
 
 #[tokio::test]
 async fn undo_redo_cycle() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/threading/undo_redo.json"
     ))
+    .await
     .expect("failed to load undo_redo.json");
 
     let rig = TestRigBuilder::new()
@@ -112,10 +114,11 @@ async fn undo_redo_cycle() {
 
 #[tokio::test]
 async fn concurrent_dispatch() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/threading/concurrent_dispatch.json"
     ))
+    .await
     .expect("failed to load concurrent_dispatch.json");
 
     let rig = TestRigBuilder::new()

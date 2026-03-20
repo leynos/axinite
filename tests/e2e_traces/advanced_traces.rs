@@ -15,7 +15,8 @@ use crate::support::trace_llm::LlmTrace;
 
 #[tokio::test]
 async fn multi_turn_memory_coherence() {
-    let trace = LlmTrace::from_file(fixture_path("advanced", "multi_turn_memory.json"))
+    let trace = LlmTrace::from_file_async(fixture_path("advanced", "multi_turn_memory.json"))
+        .await
         .expect("failed to load fixture: advanced/multi_turn_memory.json");
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -46,7 +47,8 @@ async fn user_steering() {
     let _cleanup = CleanupGuard::new().file("/tmp/ironclaw_steer_test.txt");
     let _ = tokio::fs::remove_file("/tmp/ironclaw_steer_test.txt").await;
 
-    let trace = LlmTrace::from_file(fixture_path("advanced", "steering.json"))
+    let trace = LlmTrace::from_file_async(fixture_path("advanced", "steering.json"))
+        .await
         .expect("failed to load fixture: advanced/steering.json");
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -87,7 +89,8 @@ async fn tool_error_recovery() {
     let _cleanup = CleanupGuard::new().file("/tmp/ironclaw_recovery_test.txt");
     let _ = tokio::fs::remove_file("/tmp/ironclaw_recovery_test.txt").await;
 
-    let trace = LlmTrace::from_file(fixture_path("advanced", "tool_error_recovery.json"))
+    let trace = LlmTrace::from_file_async(fixture_path("advanced", "tool_error_recovery.json"))
+        .await
         .expect("failed to load fixture: advanced/tool_error_recovery.json");
     let rig = TestRigBuilder::new().with_trace(trace).build().await;
 
@@ -131,7 +134,8 @@ async fn long_tool_chain() {
     let _cleanup = CleanupGuard::new().dir(test_dir);
     setup_test_dir(test_dir).expect("failed to create long tool chain test directory");
 
-    let trace = LlmTrace::from_file(fixture_path("advanced", "long_tool_chain.json"))
+    let trace = LlmTrace::from_file_async(fixture_path("advanced", "long_tool_chain.json"))
+        .await
         .expect("failed to load fixture: advanced/long_tool_chain.json");
     let rig = TestRigBuilder::new().with_trace(trace).build().await;
 
@@ -190,7 +194,8 @@ async fn long_tool_chain() {
 
 #[tokio::test]
 async fn workspace_semantic_search() {
-    let trace = LlmTrace::from_file(fixture_path("advanced", "workspace_search.json"))
+    let trace = LlmTrace::from_file_async(fixture_path("advanced", "workspace_search.json"))
+        .await
         .expect("failed to load fixture: advanced/workspace_search.json");
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -226,7 +231,8 @@ async fn workspace_semantic_search() {
 
 #[tokio::test]
 async fn iteration_limit_stops_runaway() {
-    let trace = LlmTrace::from_file(fixture_path("advanced", "iteration_limit.json"))
+    let trace = LlmTrace::from_file_async(fixture_path("advanced", "iteration_limit.json"))
+        .await
         .expect("failed to load fixture: advanced/iteration_limit.json");
     let rig = TestRigBuilder::new()
         .with_trace(trace)
@@ -294,7 +300,8 @@ fn assert_routine_created(responses: &[ironclaw::channels::OutgoingResponse]) {
 
 #[tokio::test]
 async fn routine_news_digest() {
-    let trace = LlmTrace::from_file(fixture_path("advanced", "routine_news_digest.json"))
+    let trace = LlmTrace::from_file_async(fixture_path("advanced", "routine_news_digest.json"))
+        .await
         .expect("failed to load fixture: advanced/routine_news_digest.json");
 
     let rig = TestRigBuilder::new()
@@ -371,8 +378,10 @@ async fn routine_news_digest() {
 
 #[tokio::test]
 async fn prompt_injection_resilience() {
-    let trace = LlmTrace::from_file(fixture_path("advanced", "prompt_injection_resilience.json"))
-        .expect("failed to load fixture: advanced/prompt_injection_resilience.json");
+    let trace =
+        LlmTrace::from_file_async(fixture_path("advanced", "prompt_injection_resilience.json"))
+            .await
+            .expect("failed to load fixture: advanced/prompt_injection_resilience.json");
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()

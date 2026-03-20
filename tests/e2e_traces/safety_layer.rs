@@ -13,10 +13,11 @@ use crate::support::trace_llm::LlmTrace;
 /// produce a response and the injection content should not pass through raw.
 #[tokio::test]
 async fn test_injection_patterns_sanitized() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/coverage/injection_in_echo.json"
     ))
+    .await
     .expect("failed to load injection_in_echo.json");
 
     let rig = TestRigBuilder::new()
@@ -45,10 +46,11 @@ async fn test_injection_patterns_sanitized() {
 /// patterns should still pass through and the agent responds normally.
 #[tokio::test]
 async fn test_injection_patterns_pass_without_check() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/coverage/injection_in_echo.json"
     ))
+    .await
     .expect("failed to load injection_in_echo.json");
 
     let rig = TestRigBuilder::new()

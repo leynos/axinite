@@ -170,7 +170,6 @@ impl<'de> Deserialize<'de> for LlmTrace {
 
 impl LlmTrace {
     /// Create a trace from turns.
-    #[allow(dead_code)]
     pub fn new(model_name: impl Into<String>, turns: Vec<TraceTurn>) -> Self {
         Self {
             model_name: model_name.into(),
@@ -202,15 +201,7 @@ impl LlmTrace {
         }
     }
 
-    /// Load a trace from a JSON file.
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, Box<dyn std::error::Error>> {
-        let contents = std::fs::read_to_string(path)?;
-        let trace: Self = serde_json::from_str(&contents)?;
-        Ok(trace)
-    }
-
     /// Load a trace from a JSON file asynchronously.
-    #[allow(dead_code)]
     pub async fn from_file_async(
         path: impl AsRef<Path>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -224,7 +215,6 @@ impl LlmTrace {
     /// Walks through all turns and steps, patching any string values in tool call
     /// arguments that contain the `from` path. Useful for adapting recorded traces
     /// to use test-specific temporary directories.
-    #[allow(dead_code)]
     pub fn patch_path(&mut self, from: &str, to: &str) {
         for turn in &mut self.turns {
             Self::patch_steps(&mut turn.steps, from, to);
@@ -235,7 +225,6 @@ impl LlmTrace {
     /// Return only the playable steps from the raw steps (text + tool_calls),
     /// skipping `user_input` markers. Only meaningful for recorded traces that
     /// were deserialized from a flat `steps` array.
-    #[allow(dead_code)]
     pub fn playable_steps(&self) -> Vec<&TraceStep> {
         self.steps
             .iter()

@@ -37,10 +37,11 @@ fn assert_tool_result_contains(
 
 #[tokio::test]
 async fn write_chunk_search() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/workspace/write_chunk_search.json"
     ))
+    .await
     .expect("failed to load write_chunk_search.json");
 
     let rig = TestRigBuilder::new()
@@ -92,10 +93,11 @@ async fn write_chunk_search() {
 
 #[tokio::test]
 async fn multi_document_search() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/workspace/multi_doc_search.json"
     ))
+    .await
     .expect("failed to load multi_doc_search.json");
 
     let rig = TestRigBuilder::new()
@@ -134,10 +136,11 @@ async fn multi_document_search() {
 
 #[tokio::test]
 async fn hybrid_search_with_embeddings() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/workspace/hybrid_search.json"
     ))
+    .await
     .expect("failed to load hybrid_search.json");
 
     let rig = TestRigBuilder::new()
@@ -173,10 +176,11 @@ async fn hybrid_search_with_embeddings() {
 
 #[tokio::test]
 async fn directory_tree() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/workspace/directory_tree.json"
     ))
+    .await
     .expect("failed to load directory_tree.json");
 
     let rig = TestRigBuilder::new()
@@ -211,10 +215,11 @@ async fn directory_tree() {
 
 #[tokio::test]
 async fn document_lifecycle() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/workspace/doc_lifecycle.json"
     ))
+    .await
     .expect("failed to load doc_lifecycle.json");
 
     let rig = TestRigBuilder::new()
@@ -262,10 +267,11 @@ async fn document_lifecycle() {
 
 #[tokio::test]
 async fn identity_in_system_prompt() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/workspace/identity_prompt.json"
     ))
+    .await
     .expect("failed to load identity_prompt.json");
 
     let rig = TestRigBuilder::new()
@@ -306,10 +312,11 @@ async fn identity_in_system_prompt() {
         "Expected a system message in the first request"
     );
     let system_content = &system_msg.expect("system message verified above").content;
+    let preview = system_content.chars().take(200).collect::<String>();
     assert!(
         system_content.contains("TestBot"),
         "System prompt should contain seeded identity 'TestBot', got: {:?}",
-        &system_content[..200.min(system_content.len())]
+        preview
     );
 
     rig.shutdown();

@@ -10,7 +10,8 @@ use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_llm::LlmTrace;
 
 async fn run_spot_test(fixture_file: &str, message: &str) {
-    let trace = LlmTrace::from_file(fixture_path("spot", fixture_file))
+    let trace = LlmTrace::from_file_async(fixture_path("spot", fixture_file))
+        .await
         .unwrap_or_else(|_| panic!("failed to load fixture: spot/{fixture_file}"));
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -74,7 +75,8 @@ async fn spot_chain_write_read() {
     // Ignore error: file may not exist yet, this is intentional cleanup
     let _ = std::fs::remove_file("/tmp/ironclaw_spot_test.txt");
 
-    let trace = LlmTrace::from_file(fixture_path("spot", "chain_write_read.json"))
+    let trace = LlmTrace::from_file_async(fixture_path("spot", "chain_write_read.json"))
+        .await
         .expect("failed to load fixture: spot/chain_write_read.json");
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -122,7 +124,8 @@ async fn spot_memory_save_recall() {
     let _cleanup = CleanupGuard::new().file("/tmp/bench-meeting.md");
     let _ = std::fs::remove_file("/tmp/bench-meeting.md");
 
-    let trace = LlmTrace::from_file(fixture_path("spot", "memory_save_recall.json"))
+    let trace = LlmTrace::from_file_async(fixture_path("spot", "memory_save_recall.json"))
+        .await
         .expect("failed to load fixture: spot/memory_save_recall.json");
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())

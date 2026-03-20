@@ -10,10 +10,11 @@ use crate::support::trace_llm::LlmTrace;
 
 #[tokio::test]
 async fn test_memory_write_flow() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/memory_write_read.json"
     ))
+    .await
     .expect("failed to load memory_write_read.json trace fixture");
 
     let rig = TestRigBuilder::new()

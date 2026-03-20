@@ -52,7 +52,8 @@ async fn run_worker_spot_case(
     fixture_path: &str,
     message: &str,
 ) -> (LlmTrace, Vec<OutgoingResponse>, TestRig) {
-    let trace = LlmTrace::from_file(fixture_path)
+    let trace = LlmTrace::from_file_async(fixture_path)
+        .await
         .unwrap_or_else(|_| panic!("failed to load {fixture_path}"));
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -147,10 +148,11 @@ async fn tool_error_feedback() {
     let test_dir = tmp.path().to_str().expect("tempdir path");
 
     // Load and patch the fixture's recovery path to use our tempdir.
-    let mut trace = LlmTrace::from_file(concat!(
+    let mut trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/worker/tool_error_feedback.json"
     ))
+    .await
     .expect("failed to load worker/tool_error_feedback.json");
     trace.patch_path(
         "/tmp/ironclaw_error_feedback_test/recovered.txt",
@@ -252,10 +254,11 @@ async fn invalid_tool_params() {
 
 #[tokio::test]
 async fn rate_limit_cascade() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/worker/rate_limit_cascade.json"
     ))
+    .await
     .expect("failed to load rate_limit_cascade.json");
 
     let rig = TestRigBuilder::new()
@@ -293,10 +296,11 @@ async fn rate_limit_cascade() {
 
 #[tokio::test]
 async fn iteration_limit() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/worker/worker_timeout.json"
     ))
+    .await
     .expect("failed to load worker_timeout.json");
 
     let rig = TestRigBuilder::new()
@@ -314,8 +318,14 @@ async fn iteration_limit() {
         "Expected at least one response with iteration limit"
     );
 
+    rig.verify_trace_expects(&trace, &responses);
+
     // Metrics should show we hit the iteration limit.
     let metrics = rig.collect_metrics().await;
+    assert!(
+        metrics.hit_iteration_limit,
+        "Expected iteration limit stop, got metrics: {metrics:?}"
+    );
     assert!(
         metrics.tool_calls.len() <= 2,
         "Expected at most 2 tool calls with limit=2, got {}",

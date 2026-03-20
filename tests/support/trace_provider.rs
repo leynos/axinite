@@ -37,7 +37,6 @@ pub struct TraceLlm {
     hint_mismatches: AtomicUsize,
 }
 
-#[allow(dead_code)]
 impl TraceLlm {
     /// Create from an in-memory trace.
     pub fn from_trace(trace: LlmTrace) -> Self {
@@ -58,8 +57,10 @@ impl TraceLlm {
     }
 
     /// Load from a JSON file and create the provider.
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, Box<dyn std::error::Error>> {
-        let trace = LlmTrace::from_file(path)?;
+    pub async fn from_file_async(
+        path: impl AsRef<Path>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let trace = LlmTrace::from_file_async(path).await?;
         Ok(Self::from_trace(trace))
     }
 
@@ -199,13 +200,35 @@ impl TraceLlm {
                 continue;
             };
             for (key, value) in obj {
-                let Some(string_value) = Self::json_scalar_to_string(value) else {
-                    continue;
-                };
-                vars.insert(format!("{call_id}.{key}"), string_value);
+                Self::flatten_json_vars(&format!("{call_id}.{key}"), value, &mut vars);
             }
         }
         vars
+    }
+
+    fn flatten_json_vars(
+        path: &str,
+        value: &serde_json::Value,
+        vars: &mut std::collections::HashMap<String, String>,
+    ) {
+        if let Some(string_value) = Self::json_scalar_to_string(value) {
+            vars.insert(path.to_string(), string_value);
+            return;
+        }
+
+        match value {
+            serde_json::Value::Object(map) => {
+                for (key, child) in map {
+                    Self::flatten_json_vars(&format!("{path}.{key}"), child, vars);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for (index, child) in items.iter().enumerate() {
+                    Self::flatten_json_vars(&format!("{path}.{index}"), child, vars);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn unwrap_tool_output(content: &str) -> std::borrow::Cow<'_, str> {

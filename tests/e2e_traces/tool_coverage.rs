@@ -20,7 +20,8 @@ async fn run_trace(
     message: &str,
     path_replacements: &[(&str, &str)],
 ) -> (LlmTrace, Vec<OutgoingResponse>, TestRig) {
-    let mut trace = LlmTrace::from_file(fixture_path)
+    let mut trace = LlmTrace::from_file_async(fixture_path)
+        .await
         .unwrap_or_else(|_| panic!("failed to load {fixture_path}"));
     for (from, to) in path_replacements {
         trace.patch_path(from, to);

@@ -398,7 +398,7 @@ Example -- multi-turn steering:
 The provider exposes inspection methods for test assertions:
 
 ```rust
-let llm = TraceLlm::from_file("tests/fixtures/llm_traces/spot/tool_echo.json")?;
+let llm = TraceLlm::from_file_async("tests/fixtures/llm_traces/spot/tool_echo.json").await?;
 
 // ... run agent loop ...
 
@@ -412,7 +412,8 @@ let reqs = llm.captured_requests()?;       // Vec<Vec<ChatMessage>> of all reque
 For traces with multiple turns, `run_trace()` drives the entire conversation automatically:
 
 ```rust
-let trace = LlmTrace::from_file("tests/fixtures/llm_traces/advanced/steering.json")?;
+let trace = LlmTrace::from_file_async("tests/fixtures/llm_traces/advanced/steering.json")
+    .await?;
 let rig = TestRigBuilder::new()
     .with_trace(trace.clone())
     .with_tools(tools_with_file_support())

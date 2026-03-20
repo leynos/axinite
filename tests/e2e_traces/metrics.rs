@@ -18,9 +18,10 @@ fn localize_tool_call_path(tool_call: &mut TraceToolCall, path: &str) -> bool {
     if !matches!(tool_call.name.as_str(), "write_file" | "read_file") {
         return false;
     }
-    let Some(arguments) = tool_call.arguments.as_object_mut() else {
-        return false;
-    };
+    let arguments = tool_call
+        .arguments
+        .as_object_mut()
+        .expect("file-tool arguments should be a JSON object");
     arguments.insert(
         "path".to_string(),
         serde_json::Value::String(path.to_string()),
@@ -86,10 +87,11 @@ fn assert_text_trace_shape(metrics: &TraceMetrics) {
 /// Verify that metrics are collected from a simple text-only trace.
 #[tokio::test]
 async fn test_metrics_collected_from_text_trace() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/simple_text.json"
     ))
+    .await
     .expect("failed to load simple_text.json");
 
     let rig = TestRigBuilder::new().with_trace(trace).build().await;
@@ -149,10 +151,11 @@ async fn test_metrics_collected_from_tool_trace() {
     setup_test_dir(TEST_DIR).expect("failed to create metrics test directory");
     let _cleanup = CleanupGuard::new().dir(TEST_DIR);
 
-    let mut trace = LlmTrace::from_file(concat!(
+    let mut trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/file_write_read.json"
     ))
+    .await
     .expect("failed to load file_write_read.json");
     localize_file_tool_paths(&mut trace, TEST_FILE);
 
@@ -193,10 +196,11 @@ fn assert_scenario_result_json_keys(json: &str) {
 /// Verify that metrics serialize to JSON correctly (for CI consumption).
 #[tokio::test]
 async fn test_metrics_json_serialization() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/simple_text.json"
     ))
+    .await
     .expect("failed to load simple_text.json");
 
     let rig = TestRigBuilder::new().with_trace(trace).build().await;
@@ -235,10 +239,11 @@ async fn test_metrics_json_serialization() {
 /// Verify RunResult aggregation and baseline comparison.
 #[tokio::test]
 async fn test_run_result_and_baseline_comparison() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/simple_text.json"
     ))
+    .await
     .expect("failed to load simple_text.json");
 
     let rig = TestRigBuilder::new().with_trace(trace).build().await;
@@ -343,10 +348,11 @@ fn assert_rig_metrics_are_populated(rig: &TestRig) {
 /// Verify that accessor methods on TestRig match InstrumentedLlm data.
 #[tokio::test]
 async fn test_rig_metric_accessors() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/simple_text.json"
     ))
+    .await
     .expect("failed to load simple_text.json");
 
     let rig = TestRigBuilder::new().with_trace(trace).build().await;

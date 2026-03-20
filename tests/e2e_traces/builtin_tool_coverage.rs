@@ -118,7 +118,8 @@ async fn run_trace_test_with_timeout(
     config: RigConfig,
     timeout: Duration,
 ) -> (TestRig, LlmTrace, Vec<OutgoingResponse>) {
-    let trace = LlmTrace::from_file(fixture_path)
+    let trace = LlmTrace::from_file_async(fixture_path)
+        .await
         .unwrap_or_else(|_| panic!("failed to load {fixture_path}"));
 
     let mut builder = TestRigBuilder::new().with_trace(trace.clone());

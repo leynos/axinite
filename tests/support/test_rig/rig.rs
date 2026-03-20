@@ -53,7 +53,12 @@ impl TestRig {
         self.trace_llm
             .as_ref()
             .map(|trace_llm| trace_llm.captured_requests())
-            .unwrap_or_else(|| Ok(Vec::new()))
+            .unwrap_or_else(|| {
+                Err(LlmError::RequestFailed {
+                    provider: "test-rig".to_string(),
+                    reason: "TraceLlm not available; built without tracing".to_string(),
+                })
+            })
     }
 
     /// Wait until at least `n` responses have been captured, or `timeout` elapses.
@@ -144,13 +149,21 @@ impl TestRig {
             })
             .collect();
 
-        let hit_iteration_limit = completed.len() >= self.max_tool_iterations;
         let responses = self.channel.captured_responses();
+        let llm_calls = self.instrumented_llm.call_count();
+        let response_mentions_iteration_limit = responses.iter().any(|response| {
+            let content = response.content.to_lowercase();
+            content.contains("iteration limit") || content.contains("iterations")
+        });
+        let hit_iteration_limit = completed.len() >= self.max_tool_iterations
+            || (llm_calls >= self.max_tool_iterations as u32
+                && completed.len() < self.max_tool_iterations
+                && response_mentions_iteration_limit);
         let turns = responses.len() as u32;
 
         TraceMetrics {
             wall_time_ms: self.elapsed_ms(),
-            llm_calls: self.instrumented_llm.call_count(),
+            llm_calls,
             input_tokens: self.instrumented_llm.total_input_tokens(),
             output_tokens: self.instrumented_llm.total_output_tokens(),
             estimated_cost_usd: self.instrumented_llm.estimated_cost_usd(),

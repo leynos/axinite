@@ -46,7 +46,23 @@ const _: fn(&std::path::Path, &str) -> std::io::Result<String> =
     cleanup::setup_test_dir_with_suffix;
 const _: fn(String, String, Vec<trace_llm::TraceStep>) -> trace_llm::LlmTrace =
     trace_llm::LlmTrace::single_turn;
+fn trace_support_symbol_refs() {
+    let _ = trace_llm::patch_json_value;
+    let _ = trace_llm::TraceLlm::from_trace;
+    let _ = |path: String| trace_llm::TraceLlm::from_file_async(path);
+    let _ = trace_llm::TraceLlm::calls;
+    let _ = trace_llm::TraceLlm::hint_mismatches;
+    let _ = trace_llm::TraceLlm::captured_requests;
+    let _ = |model_name: String, turns: Vec<trace_types::TraceTurn>| {
+        trace_llm::LlmTrace::new(model_name, turns)
+    };
+    let _ = |path: String| trace_llm::LlmTrace::from_file_async(path);
+    let _ = trace_llm::LlmTrace::patch_path;
+    let _ = trace_llm::LlmTrace::playable_steps;
+}
+
 const _: () = {
+    let _ = trace_support_symbol_refs;
     let _ = test_rig::TestChannelHandle::new;
     let _ = test_rig::TestRigBuilder::new;
     let _ = test_rig::TestRigBuilder::with_trace;

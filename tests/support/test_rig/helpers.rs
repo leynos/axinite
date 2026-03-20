@@ -13,7 +13,8 @@ pub async fn run_recorded_trace(filename: &str) {
         "{}/tests/fixtures/llm_traces/recorded/{filename}",
         env!("CARGO_MANIFEST_DIR")
     );
-    let trace = LlmTrace::from_file(&path)
+    let trace = LlmTrace::from_file_async(&path)
+        .await
         .unwrap_or_else(|error| panic!("failed to load trace {filename}: {error}"));
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())

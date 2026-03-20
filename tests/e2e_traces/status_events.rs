@@ -67,10 +67,11 @@ fn assert_tool_event_ordering(tool_events: &[&StatusUpdate]) {
 /// 3. No ToolCompleted appears without a preceding ToolStarted for that name.
 #[tokio::test]
 async fn test_status_event_ordering() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/coverage/status_events_tool_chain.json"
     ))
+    .await
     .expect("failed to load status_events_tool_chain.json");
 
     let rig = TestRigBuilder::new()
@@ -127,10 +128,11 @@ async fn test_status_event_ordering() {
 /// Verify that Thinking events are emitted during agent processing.
 #[tokio::test]
 async fn test_thinking_events_captured() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/simple_text.json"
     ))
+    .await
     .expect("failed to load simple_text.json");
 
     let rig = TestRigBuilder::new().with_trace(trace).build().await;

@@ -10,10 +10,11 @@ use crate::support::trace_llm::LlmTrace;
 
 #[tokio::test]
 async fn test_tool_error_handled_gracefully() {
-    let trace = LlmTrace::from_file(concat!(
+    let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/error_path.json"
     ))
+    .await
     .expect("failed to load error_path.json trace fixture");
 
     let rig = TestRigBuilder::new()
