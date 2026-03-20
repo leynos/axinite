@@ -141,7 +141,6 @@ async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: Or
     );
 }
 
-#[rstest]
 #[tokio::test]
 async fn remote_tool_catalog_excludes_job_events_named_tools() {
     let registry = Arc::new(ToolRegistry::new());
@@ -180,7 +179,6 @@ async fn remote_tool_catalog_excludes_job_events_named_tools() {
     );
 }
 
-#[rstest]
 #[tokio::test]
 async fn remote_tool_catalog_sorts_tools_before_versioning() {
     let registry_a = Arc::new(ToolRegistry::new());
@@ -347,9 +345,12 @@ async fn remote_tool_execute_maps_error_statuses(
 #[tokio::test]
 async fn remote_tool_execute_propagates_request_job_id(test_state: OrchestratorState) {
     let seen_job_id = Arc::new(Mutex::new(None));
-    test_state.tools.register_sync(Arc::new(JobAwareTool {
-        seen_job_id: Arc::clone(&seen_job_id),
-    }));
+    test_state
+        .tools
+        .register(Arc::new(JobAwareTool {
+            seen_job_id: Arc::clone(&seen_job_id),
+        }))
+        .await;
     let job_id = Uuid::new_v4();
     let token = test_state.token_store.create_token(job_id).await;
     let router = OrchestratorApi::router(test_state);
