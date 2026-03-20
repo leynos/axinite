@@ -7,40 +7,13 @@ use rstest::rstest;
 use super::super::remote_tools::hosted_remote_tool_catalog;
 use super::fixtures::remote_tool_helpers::execute_remote_tool_status;
 use super::fixtures::remote_tool_mocks::{
-    ErrorTool, ExecuteErrorKind, JobAwareTool, StubOutput, StubTool,
+    ErrorTool, ExecuteErrorKind, JobAwareTool, StubOutput, StubTool, ToolFixture,
+    build_tool_fixture,
 };
 use super::fixtures::test_state;
 use super::*;
 use crate::tools::{HostedToolEligibility, ToolDomain};
 use crate::worker::api::{REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_ROUTE};
-
-/// Construct the alpha catalogue fixture stub used across multiple catalogue
-/// tests.
-fn catalog_fixture_alpha() -> StubTool {
-    StubTool::hosted(
-        "remote_tool_catalog_fixture",
-        "Hosted-safe tool for catalog tests",
-        serde_json::json!({
-            "type": "object",
-            "properties": {"query": {"type": "string", "description": "search query"}},
-            "required": ["query"]
-        }),
-    )
-}
-
-/// Construct the beta catalogue fixture stub used across multiple catalogue
-/// tests.
-fn catalog_fixture_beta() -> StubTool {
-    StubTool::hosted(
-        "remote_tool_catalog_fixture_beta",
-        "Second hosted-safe tool for catalog tests",
-        serde_json::json!({
-            "type": "object",
-            "properties": {"path": {"type": "string"}},
-            "required": ["path"]
-        }),
-    )
-}
 
 /// Register the full set of catalogue-visibility test fixtures into `tools`.
 ///
@@ -48,7 +21,9 @@ fn catalog_fixture_beta() -> StubTool {
 /// `job_events`), one approval-gated tool, and one container-only tool,
 /// covering every filtering branch exercised by the catalogue visibility tests.
 async fn populate_catalog_visibility_fixtures(tools: &ToolRegistry) {
-    tools.register(Arc::new(catalog_fixture_alpha())).await;
+    tools
+        .register(build_tool_fixture(ToolFixture::CatalogAlpha))
+        .await;
     tools
         .register(Arc::new(StubTool {
             name: "create_job",
@@ -145,15 +120,7 @@ async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: Or
 async fn remote_tool_catalog_excludes_job_events_named_tools() {
     let registry = Arc::new(ToolRegistry::new());
     registry
-        .register(Arc::new(StubTool::hosted(
-            "remote_tool_catalog_fixture",
-            "Hosted-safe tool for catalog tests",
-            serde_json::json!({
-                "type":"object",
-                "properties":{"query":{"type":"string","description":"search query"}},
-                "required":["query"]
-            }),
-        )))
+        .register(build_tool_fixture(ToolFixture::CatalogAlpha))
         .await;
     registry
         .register(Arc::new(StubTool {
@@ -182,12 +149,20 @@ async fn remote_tool_catalog_excludes_job_events_named_tools() {
 #[tokio::test]
 async fn remote_tool_catalog_sorts_tools_before_versioning() {
     let registry_a = Arc::new(ToolRegistry::new());
-    registry_a.register(Arc::new(catalog_fixture_beta())).await;
-    registry_a.register(Arc::new(catalog_fixture_alpha())).await;
+    registry_a
+        .register(build_tool_fixture(ToolFixture::CatalogBeta))
+        .await;
+    registry_a
+        .register(build_tool_fixture(ToolFixture::CatalogAlpha))
+        .await;
 
     let registry_b = Arc::new(ToolRegistry::new());
-    registry_b.register(Arc::new(catalog_fixture_alpha())).await;
-    registry_b.register(Arc::new(catalog_fixture_beta())).await;
+    registry_b
+        .register(build_tool_fixture(ToolFixture::CatalogAlpha))
+        .await;
+    registry_b
+        .register(build_tool_fixture(ToolFixture::CatalogBeta))
+        .await;
 
     let (tools_a, instructions_a, version_a) = hosted_remote_tool_catalog(&registry_a).await;
     let (tools_b, instructions_b, version_b) = hosted_remote_tool_catalog(&registry_b).await;
@@ -243,15 +218,7 @@ async fn remote_tool_execute_rejects_unknown_tools(test_state: OrchestratorState
 async fn remote_tool_execute_rejects_non_catalog_tools(test_state: OrchestratorState) {
     let status = execute_remote_tool_status(
         test_state,
-        Arc::new(StubTool {
-            domain: ToolDomain::Container,
-            output: StubOutput::Panic("container-only tool must not execute"),
-            ..StubTool::hosted(
-                "remote_tool_execute_container",
-                "Container-only tool",
-                serde_json::json!({"type":"object","properties":{}}),
-            )
-        }),
+        build_tool_fixture(ToolFixture::ContainerOnly),
         "remote_tool_execute_container",
     )
     .await;
@@ -284,16 +251,7 @@ async fn remote_tool_execute_rejects_protected_orchestration_tools(test_state: O
 async fn remote_tool_execute_rejects_approval_gated_tools(test_state: OrchestratorState) {
     let status = execute_remote_tool_status(
         test_state,
-        Arc::new(StubTool {
-            always_approve: true,
-            eligibility: HostedToolEligibility::ApprovalGated,
-            output: StubOutput::Panic("approval-gated tool must not execute"),
-            ..StubTool::hosted(
-                "remote_tool_execute_gated",
-                "Approval-gated tool",
-                serde_json::json!({"type":"object","properties":{}}),
-            )
-        }),
+        build_tool_fixture(ToolFixture::ApprovalGated),
         "remote_tool_execute_gated",
     )
     .await;

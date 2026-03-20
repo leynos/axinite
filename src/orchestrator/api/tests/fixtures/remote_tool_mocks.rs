@@ -94,6 +94,56 @@ impl Tool for StubTool {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ToolFixture {
+    CatalogAlpha,
+    CatalogBeta,
+    ApprovalGated,
+    ContainerOnly,
+}
+
+pub(crate) fn build_tool_fixture(kind: ToolFixture) -> Arc<dyn Tool> {
+    match kind {
+        ToolFixture::CatalogAlpha => Arc::new(StubTool::hosted(
+            "remote_tool_catalog_fixture",
+            "Hosted-safe tool for catalog tests",
+            serde_json::json!({
+                "type":"object",
+                "properties":{"query":{"type":"string","description":"search query"}},
+                "required":["query"]
+            }),
+        )) as Arc<dyn Tool>,
+        ToolFixture::CatalogBeta => Arc::new(StubTool::hosted(
+            "remote_tool_catalog_fixture_beta",
+            "Second hosted-safe tool for catalog tests",
+            serde_json::json!({
+                "type":"object",
+                "properties":{"path":{"type":"string"}},
+                "required":["path"]
+            }),
+        )) as Arc<dyn Tool>,
+        ToolFixture::ApprovalGated => Arc::new(StubTool {
+            always_approve: true,
+            eligibility: HostedToolEligibility::ApprovalGated,
+            output: StubOutput::Panic("approval-gated tool must not execute"),
+            ..StubTool::hosted(
+                "remote_tool_execute_gated",
+                "Approval-gated tool",
+                serde_json::json!({"type":"object","properties":{}}),
+            )
+        }) as Arc<dyn Tool>,
+        ToolFixture::ContainerOnly => Arc::new(StubTool {
+            domain: ToolDomain::Container,
+            output: StubOutput::Panic("container-only tool must not execute"),
+            ..StubTool::hosted(
+                "remote_tool_execute_container",
+                "Container-only tool",
+                serde_json::json!({"type":"object","properties":{}}),
+            )
+        }) as Arc<dyn Tool>,
+    }
+}
+
 /// Hosted-safe fixture whose approval requirement depends on input params.
 pub(crate) struct ParamAwareHostedTool;
 
