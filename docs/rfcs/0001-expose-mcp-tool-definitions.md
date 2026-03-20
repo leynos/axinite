@@ -251,7 +251,7 @@ tools locally so the reasoning loop can keep using a single local
 
 Conceptually:
 
-1. Worker starts with container tools and existing extension-management proxies.
+1. Worker starts with container-local tools.
 2. Worker fetches the orchestrator catalogue.
 3. Worker registers a `RemoteToolProxy` for each catalogue entry.
 4. Each proxy reports the orchestrator-supplied `name`, `description`, and

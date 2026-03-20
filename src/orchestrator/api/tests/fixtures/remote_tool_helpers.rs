@@ -16,7 +16,11 @@ pub(crate) async fn execute_remote_tool_status(
     tool: Arc<dyn Tool>,
     tool_name: &str,
 ) -> StatusCode {
-    test_state.tools.register(tool).await;
+    if crate::tools::ToolRegistry::is_protected_tool_name(tool.name()) {
+        test_state.tools.register_sync(Arc::clone(&tool));
+    } else {
+        test_state.tools.register(tool).await;
+    }
     let job_id = Uuid::new_v4();
     let token = test_state.token_store.create_token(job_id).await;
     let router = OrchestratorApi::router(test_state);

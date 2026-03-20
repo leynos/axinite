@@ -59,10 +59,11 @@ wrappers normalize results into `StepExecution`.
 - **Tester/QA:** Executing behaviour tests, ensuring correct sequencing of
   steps, and verifying outcomes observable by the user. Scenarios run via the
   standard `cargo test` runner; test functions annotated with `#[scenario]`
-  execute each step in order and panic if a step is missing. Assertions belong
-  in `Then` steps; guidelines discourage inspecting internal state and
-  encourage verifying observable outcomes. Testers can use `cargo test`
-  filters and parallelism because the generated tests are ordinary Rust tests.
+  execute each step in order and fail to compile if a step is missing or
+  ambiguous. Assertions belong in `Then` steps; guidelines discourage
+  inspecting internal state and encourage verifying observable outcomes.
+  Testers can use `cargo test` filters and parallelism because the generated
+  tests are ordinary Rust tests.
 
 The following sections expand on these responsibilities and show how to use the
 current Application Programming Interface (API) effectively.

@@ -203,6 +203,10 @@ mod tests {
             tool.requires_approval(&serde_json::json!({})),
             ApprovalRequirement::UnlessAutoApproved
         );
+        assert_eq!(
+            tool.hosted_tool_eligibility(),
+            HostedToolEligibility::ApprovalGated
+        );
 
         let schema = tool.parameters_schema();
         assert!(schema["properties"]["prompt"].is_object());

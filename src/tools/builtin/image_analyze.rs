@@ -214,6 +214,10 @@ mod tests {
             tool.requires_approval(&serde_json::json!({})),
             ApprovalRequirement::UnlessAutoApproved
         );
+        assert_eq!(
+            tool.hosted_tool_eligibility(),
+            HostedToolEligibility::ApprovalGated
+        );
     }
 
     #[tokio::test]

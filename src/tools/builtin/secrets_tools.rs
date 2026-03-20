@@ -222,4 +222,15 @@ mod tests {
             .unwrap();
         assert_eq!(result2.result["status"], "not_found");
     }
+
+    #[test]
+    fn test_secret_delete_hosted_tool_eligibility() {
+        let store = test_store();
+        let delete =
+            SecretDeleteTool::new(Arc::clone(&store) as Arc<dyn SecretsStore + Send + Sync>);
+        assert_eq!(
+            delete.hosted_tool_eligibility(),
+            HostedToolEligibility::ApprovalGated
+        );
+    }
 }

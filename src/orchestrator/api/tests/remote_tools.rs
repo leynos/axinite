@@ -1,4 +1,4 @@
-//! Tests for hosted remote-tool catalog fetch and execution.
+//! Tests for hosted remote-tool catalogue fetch and execution.
 
 use std::sync::Arc;
 

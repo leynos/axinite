@@ -20,6 +20,11 @@ enum HostedRemoteToolEligibility {
     Ineligible,
 }
 
+/// Request context for executing a hosted-eligible remote tool.
+///
+/// `user_id` identifies the worker's effective user, `job_id` identifies the
+/// active hosted job, `tool_name` selects the orchestrator-owned tool to run,
+/// and `params` carries the JSON arguments forwarded to that tool.
 pub(super) struct HostedRemoteToolRequest {
     pub user_id: String,
     pub job_id: Uuid,
@@ -27,6 +32,11 @@ pub(super) struct HostedRemoteToolRequest {
     pub params: serde_json::Value,
 }
 
+/// Build the hosted-worker remote-tool catalogue from the orchestrator registry.
+///
+/// Returns the hosted-visible tool definitions, any toolset instructions that
+/// should be injected into the worker prompt, and the deterministic catalogue
+/// version hash for that tool/instruction set.
 pub(super) async fn hosted_remote_tool_catalog(
     tools: &Arc<ToolRegistry>,
 ) -> (Vec<ToolDefinition>, Vec<String>, u64) {
@@ -53,6 +63,10 @@ pub(super) async fn hosted_remote_tool_catalog(
     (hosted_tools, toolset_instructions, catalog_version)
 }
 
+/// Execute a hosted-eligible orchestrator tool for a worker request.
+///
+/// Returns the tool output on success, or an HTTP `StatusCode` describing why
+/// the worker request was rejected or why execution failed.
 pub(super) async fn execute_hosted_remote_tool(
     tools: &Arc<ToolRegistry>,
     request: HostedRemoteToolRequest,

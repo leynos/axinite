@@ -4,7 +4,7 @@
 //! - Connects to the orchestrator over HTTP
 //! - Uses a `ProxyLlmProvider` that routes LLM calls through the orchestrator
 //! - Runs container-local development tools plus orchestrator-backed hosted
-//!   remote-tool proxies fetched from the worker-authenticated catalog
+//!   remote-tool proxies fetched from the worker-authenticated catalogue
 //! - Reports status and completion back to the orchestrator
 //!
 //! ```text
@@ -20,7 +20,7 @@
 //! │    │   ├─ write_file            │                                            │
 //! │    │   ├─ list_dir              │                                            │
 //! │    │   ├─ apply_patch           │                                            │
-//! │    │   └─ remote catalog tools (proxied)                                    │
+//! │    │   └─ remote catalogue tools (proxied)                                  │
 //! │    └─ WorkerHttpClient ─────────┼──▶ Orchestrator /worker/{id}/status       │
 //! │                                                                              │
 //! └──────────────────────────────────────────────────────────────────────────────┘

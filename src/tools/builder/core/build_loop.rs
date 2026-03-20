@@ -1,0 +1,312 @@
+use super::*;
+
+impl LlmSoftwareBuilder {
+    /// Execute the build loop.
+    pub(super) async fn execute_build_loop(
+        &self,
+        requirement: &BuildRequirement,
+        project_dir: &Path,
+    ) -> Result<BuildResult, AgentToolError> {
+        let build_id = Uuid::new_v4();
+        let started_at = Utc::now();
+        let mut logs = Vec::new();
+        let mut iteration = 0;
+
+        // Create reasoning engine
+        let reasoning =
+            Reasoning::new(self.llm.clone()).with_model_name(self.llm.active_model_name());
+
+        // Build initial context
+        let tool_defs = self.get_build_tools().await;
+        let mut reason_ctx = ReasoningContext::new().with_tools(tool_defs);
+
+        // Add system prompt
+        reason_ctx
+            .messages
+            .push(ChatMessage::system(self.build_system_prompt(requirement)));
+
+        // Add initial user message - directive to force immediate tool use
+        reason_ctx.messages.push(ChatMessage::user(format!(
+            "Build the {} in directory: {}\n\n\
+             Requirements:\n- {}\n\n\
+             IMPORTANT: Use the write_file tool NOW to create Cargo.toml. \
+             Do not explain, plan, or output JSON—immediately call write_file.",
+            requirement.name,
+            project_dir.display(),
+            requirement.description
+        )));
+
+        logs.push(BuildLog {
+            timestamp: Utc::now(),
+            phase: BuildPhase::Analyzing,
+            message: "Starting build process".into(),
+            details: None,
+        });
+
+        // Main build loop
+        let mut current_phase = BuildPhase::Scaffolding;
+        let mut last_error: Option<String> = None;
+        let mut tools_executed = false;
+        let mut consecutive_text_responses = 0;
+
+        loop {
+            iteration += 1;
+
+            if iteration > self.config.max_iterations {
+                logs.push(BuildLog {
+                    timestamp: Utc::now(),
+                    phase: BuildPhase::Failed,
+                    message: "Maximum iterations exceeded".into(),
+                    details: last_error.clone(),
+                });
+
+                return Ok(BuildResult {
+                    build_id,
+                    requirement: requirement.clone(),
+                    artifact_path: project_dir.to_path_buf(),
+                    logs,
+                    success: false,
+                    error: Some("Maximum iterations exceeded".into()),
+                    started_at,
+                    completed_at: Utc::now(),
+                    iterations: iteration,
+                    validation_warnings: Vec::new(),
+                    tests_passed: 0,
+                    tests_failed: 0,
+                    registered: false,
+                });
+            }
+
+            // Refresh tool definitions each iteration
+            reason_ctx.available_tools = self.get_build_tools().await;
+
+            // Get response from LLM (may be text or tool calls)
+            let result = reasoning
+                .respond_with_tools(&reason_ctx)
+                .await
+                .map_err(|e| {
+                    AgentToolError::BuilderFailed(format!("LLM response failed: {}", e))
+                })?;
+
+            match result.result {
+                RespondResult::Text(response) => {
+                    reason_ctx.messages.push(ChatMessage::assistant(&response));
+
+                    // If tools haven't been executed yet, we're stuck in planning mode
+                    if !tools_executed {
+                        consecutive_text_responses += 1;
+
+                        // Fail fast after 2 consecutive text-only responses
+                        if consecutive_text_responses >= 2 {
+                            logs.push(BuildLog {
+                                timestamp: Utc::now(),
+                                phase: BuildPhase::Failed,
+                                message: "Builder stuck in planning mode".into(),
+                                details: Some(format!(
+                                    "LLM returned {} consecutive text responses without calling tools. \
+                                     Try a more specific requirement.",
+                                    consecutive_text_responses
+                                )),
+                            });
+
+                            return Ok(BuildResult {
+                                build_id,
+                                requirement: requirement.clone(),
+                                artifact_path: project_dir.to_path_buf(),
+                                logs,
+                                success: false,
+                                error: Some(
+                                    "LLM not executing tools - stuck in planning mode".into(),
+                                ),
+                                started_at,
+                                completed_at: Utc::now(),
+                                iterations: iteration,
+                                validation_warnings: Vec::new(),
+                                tests_passed: 0,
+                                tests_failed: 0,
+                                registered: false,
+                            });
+                        }
+
+                        tracing::debug!(
+                            "Builder: no tools executed (text response #{}/2), forcing tool use",
+                            consecutive_text_responses
+                        );
+                        reason_ctx.messages.push(ChatMessage::user(
+                            "STOP. Do NOT output text, JSON specs, or explanations. \
+                             Call the write_file tool RIGHT NOW to create Cargo.toml. \
+                             Just call the tool—no commentary.",
+                        ));
+                        continue;
+                    }
+
+                    // Reset counter when tools have been executed (we're in completion phase)
+                    consecutive_text_responses = 0;
+
+                    // Check for completion signals
+                    let response_lower = response.to_lowercase();
+                    if response_lower.contains("build complete")
+                        || response_lower.contains("successfully built")
+                        || response_lower.contains("all tests pass")
+                        || response_lower.contains("complete")
+                    {
+                        logs.push(BuildLog {
+                            timestamp: Utc::now(),
+                            phase: BuildPhase::Complete,
+                            message: "Build completed successfully".into(),
+                            details: Some(response),
+                        });
+
+                        // Determine artifact path
+                        let artifact_path = self.find_artifact(requirement, project_dir).await;
+
+                        return Ok(BuildResult {
+                            build_id,
+                            requirement: requirement.clone(),
+                            artifact_path,
+                            logs,
+                            success: true,
+                            error: None,
+                            started_at,
+                            completed_at: Utc::now(),
+                            iterations: iteration,
+                            validation_warnings: Vec::new(),
+                            tests_passed: 0,
+                            tests_failed: 0,
+                            registered: false,
+                        });
+                    }
+
+                    // Ask for next steps
+                    reason_ctx
+                        .messages
+                        .push(ChatMessage::user("Continue with the next step."));
+                }
+                RespondResult::ToolCalls {
+                    tool_calls,
+                    content,
+                } => {
+                    tools_executed = true;
+
+                    // Add assistant message with tool_calls (OpenAI protocol)
+                    reason_ctx
+                        .messages
+                        .push(ChatMessage::assistant_with_tool_calls(
+                            content,
+                            tool_calls.clone(),
+                        ));
+
+                    // Execute each tool call
+                    for tc in tool_calls {
+                        logs.push(BuildLog {
+                            timestamp: Utc::now(),
+                            phase: current_phase,
+                            message: format!("Executing: {}", tc.name),
+                            details: Some(format!("{:?}", tc.arguments)),
+                        });
+
+                        // Execute tool
+                        let tool_result = self
+                            .execute_build_tool(&tc.name, &tc.arguments, project_dir)
+                            .await;
+
+                        match tool_result {
+                            Ok(output) => {
+                                let output_str = serde_json::to_string_pretty(&output.result)
+                                    .unwrap_or_default();
+
+                                // Add to context
+                                reason_ctx.messages.push(ChatMessage::tool_result(
+                                    &tc.id,
+                                    &tc.name,
+                                    output_str.clone(),
+                                ));
+
+                                // Update phase based on tool
+                                current_phase = match tc.name.as_str() {
+                                    "write_file" => BuildPhase::Implementing,
+                                    "shell" if tc.arguments.to_string().contains("build") => {
+                                        BuildPhase::Building
+                                    }
+                                    "shell" if tc.arguments.to_string().contains("test") => {
+                                        BuildPhase::Testing
+                                    }
+                                    _ => current_phase,
+                                };
+
+                                // Check for build/test errors in output
+                                if output_str.to_lowercase().contains("error:")
+                                    || output_str.to_lowercase().contains("error[")
+                                    || output_str.to_lowercase().contains("failed")
+                                {
+                                    last_error = Some(output_str);
+                                    current_phase = BuildPhase::Fixing;
+                                }
+                            }
+                            Err(e) => {
+                                let error_msg = format!("Tool error: {}", e);
+                                last_error = Some(error_msg.clone());
+
+                                reason_ctx.messages.push(ChatMessage::tool_result(
+                                    &tc.id,
+                                    &tc.name,
+                                    format!("Error: {}", e),
+                                ));
+
+                                logs.push(BuildLog {
+                                    timestamp: Utc::now(),
+                                    phase: BuildPhase::Fixing,
+                                    message: "Tool execution failed".into(),
+                                    details: Some(error_msg),
+                                });
+
+                                current_phase = BuildPhase::Fixing;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Execute a build tool.
+    async fn execute_build_tool(
+        &self,
+        tool_name: &str,
+        params: &serde_json::Value,
+        _project_dir: &Path,
+    ) -> Result<ToolOutput, ToolError> {
+        let tool =
+            self.tools.get(tool_name).await.ok_or_else(|| {
+                ToolError::ExecutionFailed(format!("Tool not found: {}", tool_name))
+            })?;
+
+        // Execute with a dummy context (build tools don't need job context)
+        let ctx = JobContext::default();
+        tool.execute(params.clone(), &ctx).await
+    }
+
+    /// Find the build artifact based on project type.
+    async fn find_artifact(&self, requirement: &BuildRequirement, project_dir: &Path) -> PathBuf {
+        match (&requirement.software_type, &requirement.language) {
+            (SoftwareType::WasmTool, Language::Rust) => {
+                // WASM output location
+                crate::tools::wasm::wasm_artifact_path(
+                    project_dir,
+                    &requirement.name.replace('-', "_"),
+                )
+            }
+            (SoftwareType::CliBinary, Language::Rust) => project_dir.join(format!(
+                "target/release/{}",
+                requirement.name.replace('-', "_")
+            )),
+            (SoftwareType::Script, Language::Python) => {
+                project_dir.join(format!("{}.py", requirement.name))
+            }
+            (SoftwareType::Script, Language::Bash) => {
+                project_dir.join(format!("{}.sh", requirement.name))
+            }
+            _ => project_dir.to_path_buf(),
+        }
+    }
+}

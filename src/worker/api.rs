@@ -32,6 +32,7 @@ pub struct WorkerHttpClient {
     token: String,
 }
 
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 impl WorkerHttpClient {
     /// Create a new client from environment.
     ///
@@ -41,7 +42,13 @@ impl WorkerHttpClient {
             std::env::var("IRONCLAW_WORKER_TOKEN").map_err(|_| WorkerError::MissingToken)?;
 
         Ok(Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(REQUEST_TIMEOUT)
+                .build()
+                .map_err(|e| WorkerError::ConnectionFailed {
+                    url: orchestrator_url.clone(),
+                    reason: format!("failed to build HTTP client: {}", e),
+                })?,
             orchestrator_url: orchestrator_url.trim_end_matches('/').to_string(),
             job_id,
             token,
@@ -51,7 +58,10 @@ impl WorkerHttpClient {
     /// Create with an explicit token (for testing).
     pub fn new(orchestrator_url: String, job_id: Uuid, token: String) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(REQUEST_TIMEOUT)
+                .build()
+                .unwrap_or_default(),
             orchestrator_url: orchestrator_url.trim_end_matches('/').to_string(),
             job_id,
             token,

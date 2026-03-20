@@ -10,6 +10,7 @@ const MAX_DECOMPRESSED: usize = 1024 * 1024;
 
 /// Parsed fields from a ZIP local-file header (signature `PK\x03\x04`).
 struct ZipLocalHeader {
+    flags: u16,
     compression: u16,
     compressed_size: usize,
     uncompressed_size: usize,
@@ -31,6 +32,7 @@ fn parse_zip_local_header(data: &[u8], offset: usize) -> Option<ZipLocalHeader> 
     if data[offset..offset + 4] != [0x50, 0x4B, 0x03, 0x04] {
         return None;
     }
+    let flags = u16::from_le_bytes([data[offset + 6], data[offset + 7]]);
     let compression = u16::from_le_bytes([data[offset + 8], data[offset + 9]]);
     let compressed_size = u32::from_le_bytes([
         data[offset + 18],
@@ -49,6 +51,7 @@ fn parse_zip_local_header(data: &[u8], offset: usize) -> Option<ZipLocalHeader> 
     let name_start = offset + 30;
     let name_end = name_start + name_len;
     Some(ZipLocalHeader {
+        flags,
         compression,
         compressed_size,
         uncompressed_size,
@@ -82,11 +85,16 @@ fn decompress_zip_entry(
         }
         8 => {
             let mut decoder: Take<DeflateDecoder<&[u8]>> =
-                DeflateDecoder::new(raw).take(MAX_DECOMPRESSED as u64);
+                DeflateDecoder::new(raw).take((MAX_DECOMPRESSED as u64) + 1);
             let mut buf = Vec::with_capacity(uncompressed_size.min(MAX_DECOMPRESSED));
             decoder.read_to_end(&mut buf).map_err(|e| {
                 ToolError::ExecutionFailed(format!("Failed to decompress SKILL.md: {}", e))
             })?;
+            if buf.len() > MAX_DECOMPRESSED {
+                return Err(ToolError::ExecutionFailed(
+                    "ZIP entry too large to decompress safely".to_string(),
+                ));
+            }
             if buf.len() == MAX_DECOMPRESSED && uncompressed_size > MAX_DECOMPRESSED {
                 return Err(ToolError::ExecutionFailed(
                     "ZIP entry too large to decompress safely".to_string(),
@@ -167,6 +175,11 @@ pub(super) fn extract_skill_from_zip(data: &[u8]) -> Result<String, ToolError> {
             Some(h) => h,
             None => break,
         };
+        if header.flags & 0x0008 != 0 {
+            return Err(ToolError::ExecutionFailed(
+                "ZIP entries using data descriptors are not supported".to_string(),
+            ));
+        }
 
         if header.name_end > data.len() {
             break;

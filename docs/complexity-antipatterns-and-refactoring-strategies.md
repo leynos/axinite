@@ -1,7 +1,5 @@
 # Navigating code complexity: a guide for implementers and maintainers
 
-<!-- markdownlint-disable MD013 -->
-
 ## 1. Introduction: the challenge of software complexity
 
 Software development is an inherently complex endeavour. As systems evolve, and
@@ -9,8 +7,8 @@ as features are added, the intricacy of the codebase tends to increase, often
 leading to challenges in maintenance, scalability, and developer productivity.
 "Any fool can write code that a computer can understand. Good programmers write
 code that humans can understand".[^1] This adage underscores a fundamental
-truth: the long-term viability of a software project hinges significantly on
-its comprehensibility and modifiability. Unchecked complexity can transform a
+truth: the long-term viability of a software project hinges significantly on its
+comprehensibility and modifiability. Unchecked complexity can transform a
 once-manageable system into a "full-blown algorithmic monster," torpedoing
 performance and maintainability.[^2]
 
@@ -38,26 +36,26 @@ challenges.
 Cyclomatic Complexity, developed by Thomas J. McCabe, Sr. in 1976, is a
 quantitative measure of the number of linearly independent paths through a
 program's source code.[^3] It essentially quantifies the structural complexity
-of a program by counting decision points that can affect the execution
-flow.[^4] This metric is computed using the control-flow graph of the program,
-where nodes represent indivisible groups of commands, and directed edges
-connect nodes if one command can immediately follow another.[^3]
+of a program by counting decision points that can affect the execution flow.[^4]
+This metric is computed using the control-flow graph of the program, where nodes
+represent indivisible groups of commands, and directed edges connect nodes if
+one command can immediately follow another.[^3]
 
 Cyclomatic Complexity is often expressed with the formula M=E−N+2P, where E is
 the number of edges, N is the number of nodes, and P is the number of connected
 components (typically 1 for a single program or method).[^3] A simpler
 formulation applies to a single subroutine:
 
-M = number of decision points + 1, where decision points include constructs
-like `if` statements and conditional loops.[^3]
+M = number of decision points + 1, where decision points include constructs like
+`if` statements and conditional loops.[^3]
 
 Thresholds and Implications:
 
 High Cyclomatic Complexity indicates a more intricate control flow, which
 directly impacts testability, maintainability, and defect discovery effort.[^1]
 More paths mean more test cases are required for comprehensive coverage.[^4]
-McCabe proposed the following risk categorization based on Cyclomatic
-Complexity scores[^3]:
+McCabe proposed the following risk categorization based on Cyclomatic Complexity
+scores[^3]:
 
 - 1-10: Simple procedure, little risk.
 
@@ -87,9 +85,9 @@ Core Principles of Calculation:
 Cognitive Complexity is incremented based on three main rules[^8]:
 
 1. **Breaks in Linear Flow:** Each time the code breaks the normal linear
-   reading flow (e.g., loops, conditionals like
-   `if`/`else`/`switch`, `try-catch` blocks, jumps to labels, and sequences of
-   logical operators like `&&` and `||`), a penalty is applied.
+   reading flow (e.g., loops, conditionals like `if`/`else`/`switch`,
+   `try-catch` blocks, jumps to labels, and sequences of logical operators like
+   `&&` and `||`), a penalty is applied.
 
 2. **Nesting:** Each level of nesting of these flow-breaking structures adds an
    additional penalty. This is because deeper nesting makes it harder to keep
@@ -98,9 +96,9 @@ Cognitive Complexity is incremented based on three main rules[^8]:
 3. **Shorthand Discount:** Structures that allow multiple statements to be read
    as a single unit (e.g., a well-named method call) do not incur the same
    penalties as the raw statements they encapsulate. Method calls are generally
-   "free" in terms of cognitive complexity, as a well-chosen name summarizes
-   the underlying logic, allowing readers to grasp the high-level view before
-   diving into details. However, recursive calls do increment the score.[^8]
+   "free" in terms of cognitive complexity, as a well-chosen name summarizes the
+   underlying logic, allowing readers to grasp the high-level view before diving
+   into details. However, recursive calls do increment the score.[^8]
 
 For instance, a `switch` statement with multiple cases might have a high
 Cyclomatic Complexity because each case represents a distinct path for testing.
@@ -113,32 +111,32 @@ Thresholds and Implications:
 
 Code with high Cognitive Complexity is harder to read, understand, test, and
 modify.[^8] SonarQube, for example, raises issues when a function's Cognitive
-Complexity exceeds a certain threshold, signaling that the code should likely
-be refactored into smaller, more manageable pieces.[^8] The primary impact of
-high Cognitive Complexity is a slowdown in development and an increase in
-maintenance costs.[^8]
+Complexity exceeds a certain threshold, signaling that the code should likely be
+refactored into smaller, more manageable pieces.[^8] The primary impact of high
+Cognitive Complexity is a slowdown in development and an increase in maintenance
+costs.[^8]
 
 ### Table 1: Cyclomatic vs. cognitive complexity
 
 - **Primary Focus**
-  - *Cyclomatic Complexity:* testability and execution paths
-  - *Cognitive Complexity:* readability and human understanding
+  - _Cyclomatic Complexity:_ testability and execution paths
+  - _Cognitive Complexity:_ readability and human understanding
 - **Basis**
-  - *Cyclomatic Complexity:* rooted in graph theory
-  - *Cognitive Complexity:* breaks in flow and nesting
+  - _Cyclomatic Complexity:_ rooted in graph theory
+  - _Cognitive Complexity:_ breaks in flow and nesting
 - **Nesting Penalty**
-  - *Cyclomatic Complexity:* counts paths only
-  - *Cognitive Complexity:* adds cost for each nested level
+  - _Cyclomatic Complexity:_ counts paths only
+  - _Cognitive Complexity:_ adds cost for each nested level
 - **Method Calls**
-  - *Cyclomatic Complexity:* each path in a called method counts
-  - *Cognitive Complexity:* generally free unless recursive
+  - _Cyclomatic Complexity:_ each path in a called method counts
+  - _Cognitive Complexity:_ generally free unless recursive
 - **Logical Operators**
-  - *Cyclomatic Complexity:* each condition is a decision point
-  - *Cognitive Complexity:* mixed operators raise the score
+  - _Cyclomatic Complexity:_ each condition is a decision point
+  - _Cognitive Complexity:_ mixed operators raise the score
 - **Use Case Example**
-  - *Cyclomatic Complexity:* high Cyclomatic Complexity, low cognitive load in
+  - _Cyclomatic Complexity:_ high Cyclomatic Complexity, low cognitive load in
     simple switch
-  - *Cognitive Complexity:* deep nesting raises cognitive load
+  - _Cognitive Complexity:_ deep nesting raises cognitive load
 
 Understanding both metrics provides a more holistic view of code quality. While
 Cyclomatic Complexity guides testing efforts, Cognitive Complexity directly
@@ -193,21 +191,21 @@ The severity of a Bumpy Road can be assessed by[^6]:
   model).
 
 Fundamentally, a Bumpy Road signifies a function that is trying to do too many
-things, violating the Single Responsibility Principle. It acts as an obstacle
-to comprehension, forcing developers to slow down, so they must pay meticulous
+things, violating the Single Responsibility Principle. It acts as an obstacle to
+comprehension, forcing developers to slow down, so they must pay meticulous
 attention, much like a physical bumpy road slows down driving.[^9]
 
 ### B. How it forms and its impact
 
 The Bumpy Road antipattern, like many software antipatterns, often emerges from
-development practices that prioritize short-term speed over long-term
-structural integrity.[^2] Rushed development cycles, lack of clear design, or
-cutting corners on maintenance can lead to the gradual accumulation of
-conditional logic within a single function.[^2] As new requirements emerge
-alongside additional edge cases, developers might add conditional branches to
-an existing method. Examples include an `if` statement, a loop, or a deeply
-nested match added in haste when a team could instead step back to refactor and
-create appropriate abstractions.
+development practices that prioritize short-term speed over long-term structural
+integrity.[^2] Rushed development cycles, lack of clear design, or cutting
+corners on maintenance can lead to the gradual accumulation of conditional logic
+within a single function.[^2] As new requirements emerge alongside additional
+edge cases, developers might add conditional branches to an existing method.
+Examples include an `if` statement, a loop, or a deeply nested match added in
+haste when a team could instead step back to refactor and create appropriate
+abstractions.
 
 The impact of this antipattern is significant:
 
@@ -215,10 +213,10 @@ The impact of this antipattern is significant:
   it extremely difficult for developers to follow the logic and understand the
   method's overall purpose.[^9]
 
-- **Increased Maintenance Costs:** Modifying that code, as well as debugging
-  it, is time-consuming and error-prone. A change in one "bump" can have
-  unintended consequences in another, especially if state is shared or
-  manipulated across these logical chunks.[^2]
+- **Increased Maintenance Costs:** Modifying that code, as well as debugging it,
+  is time-consuming and error-prone. A change in one "bump" can have unintended
+  consequences in another, especially if state is shared or manipulated across
+  these logical chunks.[^2]
 
 - **Higher Defect Rates:** The heavy tax on working memory and the risk of
   feature entanglement contribute to a higher likelihood of introducing
@@ -244,8 +242,8 @@ code. Identifying early warning signs is also crucial.
 
 ### A. Avoiding the antipattern: proactive strategies
 
-Preventing the Bumpy Road begins with a commitment to sound software
-engineering principles from the outset.
+Preventing the Bumpy Road begins with a commitment to sound software engineering
+principles from the outset.
 
 1. **Adherence to the Single Responsibility Principle:** Ensure that each
    function, and each method, has one clear, well-defined responsibility.[^8]
@@ -321,7 +319,6 @@ Once a Bumpy Road is identified, the primary remediation strategy is the
 2. **Extract to New Methods/Functions:** Encapsulate each identified chunk into
    its own well-named method or function.[^8] The name of the new method should
    clearly describe its purpose.
-
    - This breaks down the large, complex function into smaller, more manageable,
      and understandable pieces.[^8]
 
@@ -337,8 +334,8 @@ Once a Bumpy Road is identified, the primary remediation strategy is the
    process. After initial extractions, further opportunities for simplification
    or abstraction may become apparent.[^10] Sometimes, extracting methods
    reveals that a more significant restructuring, perhaps involving new classes
-   or design patterns (like the Command pattern for different actions within
-   the bumps), is warranted.[^10]
+   or design patterns (like the Command pattern for different actions within the
+   bumps), is warranted.[^10]
 
 Tools like CodeScene's Automatic Code Evolution (ACE) service can automatically
 identify Bumpy Roads and even suggest or perform auto-refactoring for certain
@@ -374,14 +371,14 @@ escalating into full-blown Bumpy Roads.
    correlates with high complexity that could manifest as a Bumpy Road.
 
 6. **Code "Smells" like Long Method:** A Bumpy Road is often, though not always,
-   a Long Method.[^12] The length itself isn't the core problem, but it
-   provides more space for bumps to accumulate.
+   a Long Method.[^12] The length itself isn't the core problem, but it provides
+   more space for bumps to accumulate.
 
 7. **Declining Code Health Metrics:** Tools like CodeScene provide "Code Health"
    metrics which can degrade if Bumpy Roads are introduced.[^9]
 
-By proactively addressing these red flags through disciplined refactoring,
-teams can maintain a smoother, more navigable codebase.
+By proactively addressing these red flags through disciplined refactoring, teams
+can maintain a smoother, more navigable codebase.
 
 ## 5. Broader implications and clean refactoring approaches
 
@@ -395,33 +392,32 @@ maintainable systems.
 1\. Separation of Concerns (SoC)
 
 Separation of Concerns is a design principle that advocates for dividing a
-computer program into distinct sections, where each section addresses a
-separate concern.[^13] A "concern" is a set of information that affects the
-code of a computer program. Modularity is achieved by encapsulating information
-within a section of code that has a well-defined interface.[^13]
+computer program into distinct sections, where each section addresses a separate
+concern.[^13] A "concern" is a set of information that affects the code of a
+computer program. Modularity is achieved by encapsulating information within a
+section of code that has a well-defined interface.[^13]
 
-The Bumpy Road antipattern is a direct violation of SoC. Each "bump" in the
-code often represents a distinct concern, or responsibility, that has been
-improperly co-located within a single method.[^9] For example, a single method
-might handle input validation, business logic processing for different cases,
-data transformation, and error handling for each case, all intermingled.
-Refactoring a Bumpy Road by extracting methods inherently applies SoC, as each
-extracted method ideally handles a single, well-defined concern.[^10] This
-leads to increased freedom for simplification, maintenance, module upgrade,
-reuse, and independent development.[^13] While SoC might introduce additional
-interfaces and require more code to execute, the accompanying coordination
-overhead is typically outweighed by gains in clarity and maintainability,
-especially as systems grow.[^13]
+The Bumpy Road antipattern is a direct violation of SoC. Each "bump" in the code
+often represents a distinct concern, or responsibility, that has been improperly
+co-located within a single method.[^9] For example, a single method might handle
+input validation, business logic processing for different cases, data
+transformation, and error handling for each case, all intermingled. Refactoring
+a Bumpy Road by extracting methods inherently applies SoC, as each extracted
+method ideally handles a single, well-defined concern.[^10] This leads to
+increased freedom for simplification, maintenance, module upgrade, reuse, and
+independent development.[^13] While SoC might introduce additional interfaces
+and require more code to execute, the accompanying coordination overhead is
+typically outweighed by gains in clarity and maintainability, especially as
+systems grow.[^13]
 
 Consider a function that processes different types of user commands. A Bumpy
 Road approach might have a large `if-else if-else` structure, with each block
 handling a command type and its associated logic. This mixes the concern of
-"dispatching" or "routing" based on command type with the concern of
-"executing" each specific command. Applying SoC would involve separating these
-concerns: one component decides which command to execute while separate
-components—functions or classes—handle the execution of each command. This
-separation makes the system easier to understand, test, and extend with new
-commands.
+"dispatching" or "routing" based on command type with the concern of "executing"
+each specific command. Applying SoC would involve separating these concerns: one
+component decides which command to execute while separate components—functions
+or classes—handle the execution of each command. This separation makes the
+system easier to understand, test, and extend with new commands.
 
 2\. Command Query Responsibility Segregation
 
@@ -435,20 +431,19 @@ never alter data and return Data Transfer Objects optimized for display
 needs.[^14]
 
 While Command Query Responsibility Segregation operates at a higher
-architectural level than a single Bumpy Road method, the principles are
-related. Complex methods often arise when read and write concerns, or multiple
-distinct command-like operations, are tangled together.
+architectural level than a single Bumpy Road method, the principles are related.
+Complex methods often arise when read and write concerns, or multiple distinct
+command-like operations, are tangled together.
 
-- **Preventing Bumpy Roads:** Applying Command Query Responsibility
-  Segregation encourages developers to think about operations in terms of
-  distinct commands and queries from the start. This naturally leads to
-  smaller, more focused methods or handlers for each command and query,
-  reducing the likelihood of a single method accumulating many "bumps" of
-  unrelated logic.[^14] For instance, a method that both fetches data for a
-  complex report, and then allows modifications based on that report, could
-  become very complex. Command Query Responsibility Segregation would split
-  this into a query to fetch the data and separate commands for any
-  modifications.
+- **Preventing Bumpy Roads:** Applying Command Query Responsibility Segregation
+  encourages developers to think about operations in terms of distinct commands
+  and queries from the start. This naturally leads to smaller, more focused
+  methods or handlers for each command and query, reducing the likelihood of a
+  single method accumulating many "bumps" of unrelated logic.[^14] For instance,
+  a method that both fetches data for a complex report, and then allows
+  modifications based on that report, could become very complex. Command Query
+  Responsibility Segregation would split this into a query to fetch the data and
+  separate commands for any modifications.
 
 - **Refactoring Complex Methods:** If a large method exhibits Bumpy Road
   characteristics because it handles multiple types of updates or decisions
@@ -458,26 +453,26 @@ distinct command-like operations, are tangled together.
   aligns with the Single Responsibility Principle, as each command handler
   focuses on a single way of modifying state.[^15]
 
-- **God Objects and Command Query Responsibility Segregation:** The "God
-  Object" or "God Class" antipattern, where a single class hoards too much
-  logic and responsibility, often leads to methods within that class becoming
-  Bumpy Roads. Command Query Responsibility Segregation can help decompose God
-  Objects by separating their command-handling responsibilities from their
-  query-handling responsibilities, potentially leading to smaller, more focused
-  classes (e.g., one class for command processing, another for query
-  processing, or even finer-grained handlers).[^16] This separation simplifies
-  each part, making them easier to manage and reducing the cognitive load
-  associated with the original monolithic structure.
+- **God Objects and Command Query Responsibility Segregation:** The "God Object"
+  or "God Class" antipattern, where a single class hoards too much logic and
+  responsibility, often leads to methods within that class becoming Bumpy Roads.
+  Command Query Responsibility Segregation can help decompose God Objects by
+  separating their command-handling responsibilities from their query-handling
+  responsibilities, potentially leading to smaller, more focused classes (e.g.,
+  one class for command processing, another for query processing, or even
+  finer-grained handlers).[^16] This separation simplifies each part, making
+  them easier to manage and reducing the cognitive load associated with the
+  original monolithic structure.
 
 Command Query Responsibility Segregation promotes a clear separation that can
 prevent the kind of tangled logic that forms Bumpy Roads. By isolating write
 operations (commands) from read operations (queries), and by encouraging
 task-based commands, the system naturally tends towards smaller, more cohesive
-units of behaviour, thus reducing overall cognitive complexity within
-individual components.[^14] The separation allows for independent optimization
-and scaling of read and write sides, but more importantly for this discussion,
-it enforces a structural discipline that discourages methods from accumulating
-diverse responsibilities.[^14]
+units of behaviour, thus reducing overall cognitive complexity within individual
+components.[^14] The separation allows for independent optimization and scaling
+of read and write sides, but more importantly for this discussion, it enforces a
+structural discipline that discourages methods from accumulating diverse
+responsibilities.[^14]
 
 ### B. Avoiding spaghetti code turning into ravioli code
 
@@ -500,7 +495,6 @@ pieces—making it as difficult to follow as the original spaghetti.[^17]
 
 2. **Balance Abstraction Levels:** Abstraction is about hiding unnecessary
    details and exposing essential features.[^18]
-
    - **Under-abstraction** (common in Spaghetti Code) leads to duplication and
      tight coupling.[^19]
 
@@ -512,8 +506,8 @@ pieces—making it as difficult to follow as the original spaghetti.[^17]
      problem domain without introducing unnecessary complexity. Create
      abstractions when painful duplication emerges or when a clear conceptual
      boundary can be established, not just for the sake of having more
-     classes/objects.[^19] Start with simple, straightforward code and
-     introduce abstractions only when genuinely needed.[^20]
+     classes/objects.[^19] Start with simple, straightforward code and introduce
+     abstractions only when genuinely needed.[^20]
 
 3. **Meaningful Naming:** Clear and descriptive names for classes, methods, and
    variables are crucial, especially when dealing with many small components.
@@ -533,16 +527,15 @@ pieces—making it as difficult to follow as the original spaghetti.[^17]
    consolidated.[^10] Pair programming can also help maintain a balanced
    perspective during refactoring.[^21]
 
-6. **The “Ya Ain't Gonna Need It” (YAGNI) principle:** The initialism
-   summarizes the reminder that speculative features will probably go unused.
-   It helps avoid unnecessary abstractions and features, which can contribute
-   to Ravioli code if abstractions are created for anticipated but not actual
-   needs.[^21]
+6. **The “Ya Ain't Gonna Need It” (YAGNI) principle:** The initialism summarizes
+   the reminder that speculative features will probably go unused. It helps
+   avoid unnecessary abstractions and features, which can contribute to Ravioli
+   code if abstractions are created for anticipated but not actual needs.[^21]
 
 7. **Focus on System Flow:** While individual components in Ravioli code might
    be simple, the difficulty lies in tracing the overall execution flow. Ensure
-   that the interactions, and the dependencies between components, are clear
-   and easy to follow. A slightly larger, more cohesive component often proves
+   that the interactions, and the dependencies between components, are clear and
+   easy to follow. A slightly larger, more cohesive component often proves
    superior to many tiny ones when it improves overall system behaviour clarity.
 
 The goal is not to have the fewest classes or methods, but to have a structure
@@ -583,18 +576,18 @@ match-case) and C#—offers a declarative and expressive way to handle complex
 conditional logic, often replacing verbose if-elif-else chains or switch
 statements.[^21]
 
-It works by allowing code to match against the *structure* of data—such as its
+It works by allowing code to match against the _structure_ of data—such as its
 type, shape, or specific values within sequences like lists or tuples, or
 mappings such as dictionaries—and simultaneously destructure this data, binding
 parts of it to variables.[^22] This approach can significantly reduce cognitive
 load. The clarity comes from the direct mapping of data shapes to code blocks,
 making it easier to understand the conditions under which a piece of code
-executes.[^23] For instance, instead of multiple `isinstance` checks followed
-by key lookups and value comparisons in a nested `if` structure to parse a JSON
-object, a single `case` statement with a mapping pattern can define the
-expected structure and extract the necessary values concisely.[^22] This shifts
-the focus from an imperative sequence of checks to a declarative description of
-data shapes, which is often more intuitive. The destructuring capability is
+executes.[^23] For instance, instead of multiple `isinstance` checks followed by
+key lookups and value comparisons in a nested `if` structure to parse a JSON
+object, a single `case` statement with a mapping pattern can define the expected
+structure and extract the necessary values concisely.[^22] This shifts the focus
+from an imperative sequence of checks to a declarative description of data
+shapes, which is often more intuitive. The destructuring capability is
 particularly powerful, as it eliminates the manual code otherwise needed to
 extract values after a condition has been met, reducing boilerplate while also
 cutting the number of mental steps a developer must follow.[^22]
@@ -602,7 +595,7 @@ cutting the number of mental steps a developer must follow.[^22]
 Consider processing different event types from a UI framework, where events are
 represented as dictionaries.[^24]
 
-- *Imperative (Python-like pseudocode):*
+- _Imperative (Python-like pseudocode):_
 
 ```python
   event_data = get_event()
@@ -616,9 +609,9 @@ represented as dictionaries.[^24]
           handle_keypress(key)
   #… and so on for other event types
 
-   ```
+```
 
-- *Declarative with Structural Pattern Matching (Python* `match-case`*):*
+- _Declarative with Structural Pattern Matching (Python_ `match-case`_):_
 
   ```python
   event_data = get_event()
@@ -647,25 +640,24 @@ complexity by abstracting away low-level control flow and state management.
 
 When developers write declarative code, they operate at a higher level of
 abstraction, allowing them to reason about the program's intent more
-directly.[^25] This often leads to more concise, readable, and maintainable
-code because the "noise" of explicit iteration, temporary variables, and manual
-state updates is minimized.[^25] Many declarative approaches also inherently
-favour immutability, reduce side effects, and encourage deterministic
-behaviour—common culprits for bugs and increased cognitive load in imperative
-code.[^26]
+directly.[^25] This often leads to more concise, readable, and maintainable code
+because the "noise" of explicit iteration, temporary variables, and manual state
+updates is minimized.[^25] Many declarative approaches also inherently favour
+immutability, reduce side effects, and encourage deterministic behaviour—common
+culprits for bugs and increased cognitive load in imperative code.[^26]
 
 Examples include using Structured Query Language for database queries—
-specifying the desired dataset rather than the retrieval algorithm[^34]—or
-employing functional programming constructs like `map`, `filter`, and `reduce`
-on collections instead of writing explicit loops. Refactoring imperative code
-to a declarative style can start small, perhaps by converting a loop that
-filters and transforms a list into a chain of `filter` and `map`
-operations.[^26] The broader adoption of declarative approaches in areas like
-UI development (e.g., React) and data querying signifies an industry trend
-towards managing complexity by raising abstraction levels. However, the
-effectiveness of declarative programming relies on well-designed underlying
-abstractions; a poorly designed declarative layer might not successfully hide
-complexity or could introduce its own.[^27]
+specifying the desired dataset rather than the retrieval algorithm—or employing
+functional programming constructs like `map`, `filter`, and `reduce` on
+collections instead of writing explicit loops. Refactoring imperative code to a
+declarative style can start small, perhaps by converting a loop that filters and
+transforms a list into a chain of `filter` and `map` operations.[^26] The
+broader adoption of declarative approaches in areas like UI development (e.g.,
+React) and data querying signifies an industry trend towards managing complexity
+by raising abstraction levels. However, the effectiveness of declarative
+programming relies on well-designed underlying abstractions; a poorly designed
+declarative layer might not successfully hide complexity or could introduce its
+own.[^27]
 
 #### 3. Employing dispatcher and command patterns
 
@@ -676,13 +668,12 @@ offer a structured and extensible alternative.
 The **Command pattern** encapsulates a request or an action as an object.[^28]
 Each command object implements a common interface (e.g., with an
 
-`execute()` method). This decouples the object that invokes the command from
-the object that knows how to perform it. Instead of a large conditional
-checking a type and then executing logic, different command objects can be
-instantiated based on the type, and then their `execute()` method is called.
-This promotes the Single Responsibility Principle, as each command class
-handles a single action, making the system easier to test, extend, and
-evolve.[^29]
+`execute()` method). This decouples the object that invokes the command from the
+object that knows how to perform it. Instead of a large conditional checking a
+type and then executing logic, different command objects can be instantiated
+based on the type, and then their `execute()` method is called. This promotes
+the Single Responsibility Principle, as each command class handles a single
+action, making the system easier to test, extend, and evolve.[^29]
 
 The **Dispatcher pattern** often works in conjunction with the Command pattern.
 A dispatcher is a central component that receives requests (which could be
@@ -753,9 +744,9 @@ This approach not only simplifies the original `handleMessage` method but also
 makes the system more extensible, as new message types can be supported by
 adding new handler classes and registering them with the dispatcher, often
 without modifying existing dispatcher code (aligning with the Open/Closed
-Principle). However, it's important to ensure that the dispatch mechanism
-itself remains clear and that the proliferation of small classes doesn't lead
-to Ravioli Code, where the overall system flow becomes obscured.[^17] Maintain
+Principle). However, it's important to ensure that the dispatch mechanism itself
+remains clear and that the proliferation of small classes doesn't lead to
+Ravioli Code, where the overall system flow becomes obscured.[^17] Maintain
 clear naming conventions, and ensure the logical organization remains
 consistent.[^31]
 
@@ -796,94 +787,154 @@ modify—is paramount.[^2] This is achieved not merely through aesthetic choices
 but through deliberate design and refactoring efforts. Techniques such as
 ensuring balanced abstraction, leveraging structural pattern matching for
 clearer conditional logic, embracing declarative programming paradigms, and
-employing patterns like the Dispatcher pattern alongside the Command pattern
-can transform convoluted code into more manageable and comprehensible
-structures. However, these techniques must be applied judiciously, always
-prioritizing genuine improvements in clarity and maintainability over adherence
-to a pattern for its own sake, to avoid pitfalls like Ravioli Code.
+employing patterns like the Dispatcher pattern alongside the Command pattern can
+transform convoluted code into more manageable and comprehensible structures.
+However, these techniques must be applied judiciously, always prioritizing
+genuine improvements in clarity and maintainability over adherence to a pattern
+for its own sake, to avoid pitfalls like Ravioli Code.
 
 Integrate these principles and techniques into daily development practices
 through a proactive and disciplined approach. This includes regular code
-reviews, monitoring complexity metrics, and fostering a team culture that
-values code quality and continuous improvement. The oft-quoted wisdom, "Good
+reviews, monitoring complexity metrics, and fostering a team culture that values
+code quality and continuous improvement. The oft-quoted wisdom, "Good
 programmers write code that humans can understand"[^1], remains the guiding
-principle. Strive for this ideal. That focus delivers systems that are
-powerful, efficient, and genuinely enjoyable for the team to evolve and
-maintain.
+principle. Strive for this ideal. That focus delivers systems that are powerful,
+efficient, and genuinely enjoyable for the team to evolve and maintain.
 
 ## Works cited
 
-[^1]: How to Identify and Reduce Cognitive Complexity in a Codebase — Axify,
-      <https://axify.io/blog/cognitive-complexity>
-[^2]: Top 5 Software Anti Patterns to Avoid for Better Development Outcomes |
-      BairesDev, <https://www.bairesdev.com/blog/software-anti-patterns/>
-[^3]: Cyclomatic complexity — Wikipedia,
-      <https://en.wikipedia.org/wiki/Cyclomatic_complexity>
-[^4]: Cyclomatic complexity: Definition and limits in understanding code
-      quality — the Developer Experience platform,
-      <https://getdx.com/blog/cyclomatic-complexity/>
-      <https://getdx.com/blog/cyclomatic-complexity/>
-[^5]: Cyclomatic complexity — Wikipedia (risk classification),
-      <https://en.wikipedia.org/wiki/Cyclomatic_complexity>
-[^6]: Cognitive Complexity — Code Climate,
-      <https://docs.codeclimate.com/docs/cognitive-complexity>
-[^7]: Cognitive Complexity | Sonar SonarSource | Sonar,
-      <https://www.sonarsource.com/resources/cognitive-complexity/#:~:text=This%20paper%20describes%20Cognitive%20Complexity,Complexity%20precedents%20with%20human%20assessment.>
-[^8]: Cognitive Complexity of functions should not be too high — Rules -
-      SonarQube Server,
-      <https://next.sonarqube.com/sonarqube/coding_rules?languages=cpp&q=cognitive&open=cpp%3AS3776>
-[^9]: The Bumpy Road Code Smell: Measuring Code Complexity by its Shape and
-      Distribution,
-      <https://codescene.com/engineering-blog/bumpy-road-code-complexity-in-context/>
-[^10]: Bumpy Road — Samman Technical Coaching,
-      <https://sammancoaching.org/code_smells/bumpy_road.html>
-[^11]: Adam Tornhill, *Code as a Crime Scene*, Second Edition,
-       <https://media.pragprog.com/titles/atcrime2/logic.pdf>
-[^12]: The software antipatterns that are killing development speed | Okoone,
-       <https://www.okoone.com/spark/strategy-transformation/the-software-anti-patterns-that-are-killing-development-speed/>
-[^13]: How to *resist* refactoring a large spaghetti codebase? :
-       r/SoftwareEngineering — Reddit,
-       <https://www.reddit.com/r/SoftwareEngineering/comments/11smgtp/how_to_resist_refactoring_a_large_spaghetti/>
-[^14]: Refactoring nested conditional statements — Software Engineering
-       Stack Exchange,
-       <https://softwareengineering.stackexchange.com/questions/47789/>
-[^15]: CodeScene Automatic Code Evolution (ACE): Auto-Refactor Code,
-       <https://codescene.io/docs/auto-refactor/index.html>
-[^16]: Code Smells — Samman Technical Coaching,
-       <https://sammancoaching.org/reference/code_smells/>
-[^17]: src/sas/sascalc/poresize/maxEnt_method.py — CodeScene,
-       <https://codescene.io/projects/64300/delta?repo-id=263464&review-id=3247&biomarker=Overall+Code+Complexity&filename=src%2Fsas%2Fsascalc%2Fporesize%2FmaxEnt_method.py&method=>
-[^18]: Separation of concerns — Wikipedia,
-       <https://en.wikipedia.org/wiki/Separation_of_concerns>
-[^19]: Command Query Responsibility Segregation pattern — Azure Architecture
-       Center | Microsoft Learn,
-       <https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs>
-[^20]: Mastering Command Query Responsibility Segregation: 7 Powerful Benefits,
-       <https://hyscaler.com/insights/mastering-cqrs-benefits-of-command-query/>
-[^21]: Implementing Command Query Responsibility Segregation in the dotnet
-       ecosystem — Dev Community,
-       <https://dev.to/moh_moh701/enhancing-net-applications-with-cqrs-and-solid-principles-30i8>
-[^22]: Refactoring a God class — Stack Overflow,
-       <https://stackoverflow.com/questions/14870377/>
-[^23]: Command Query Responsibility Segregation: Understanding From First
-       Principles — NDepend Blog,
-       <https://blog.ndepend.com/cqrs-understanding-first-principles/>
-[^24]: When to use the Command Query Responsibility Segregation design
-       pattern? — architecture — Stack Overflow,
-       <https://stackoverflow.com/questions/8820748/when-to-use-the-cqrs-design-pattern>
-[^25]: Another pasta-themed programming problem is "ravioli code". That …,
-       <https://news.ycombinator.com/item?id=4537664>
+[^1]:
+    How to Identify and Reduce Cognitive Complexity in a Codebase — Axify,
+    <https://axify.io/blog/cognitive-complexity>
+
+[^2]:
+    Top 5 Software Anti Patterns to Avoid for Better Development Outcomes |
+    BairesDev, <https://www.bairesdev.com/blog/software-anti-patterns/>
+
+[^3]:
+    Cyclomatic complexity — Wikipedia,
+    <https://en.wikipedia.org/wiki/Cyclomatic_complexity>
+
+[^4]:
+    Cyclomatic complexity: Definition and limits in understanding code quality —
+    the Developer Experience platform,
+    <https://getdx.com/blog/cyclomatic-complexity/>
+    <https://getdx.com/blog/cyclomatic-complexity/>
+
+[^5]:
+    Cyclomatic complexity — Wikipedia (risk classification),
+    <https://en.wikipedia.org/wiki/Cyclomatic_complexity>
+
+[^6]:
+    Cognitive Complexity — Code Climate,
+    <https://docs.codeclimate.com/docs/cognitive-complexity>
+
+[^7]:
+    Cognitive Complexity | Sonar SonarSource | Sonar,
+    <https://www.sonarsource.com/resources/cognitive-complexity/#:~:text=This%20paper%20describes%20Cognitive%20Complexity,Complexity%20precedents%20with%20human%20assessment.>
+
+[^8]:
+    Cognitive Complexity of functions should not be too high — Rules - SonarQube
+    Server,
+    <https://next.sonarqube.com/sonarqube/coding_rules?languages=cpp&q=cognitive&open=cpp%3AS3776>
+
+[^9]:
+    The Bumpy Road Code Smell: Measuring Code Complexity by its Shape and
+    Distribution,
+    <https://codescene.com/engineering-blog/bumpy-road-code-complexity-in-context/>
+
+[^10]:
+    Bumpy Road — Samman Technical Coaching,
+    <https://sammancoaching.org/code_smells/bumpy_road.html>
+
+[^11]:
+    Adam Tornhill, _Code as a Crime Scene_, Second Edition,
+    <https://media.pragprog.com/titles/atcrime2/logic.pdf>
+
+[^12]:
+    The software antipatterns that are killing development speed | Okoone,
+    <https://www.okoone.com/spark/strategy-transformation/the-software-anti-patterns-that-are-killing-development-speed/>
+
+[^13]:
+    How to _resist_ refactoring a large spaghetti codebase? :
+    r/SoftwareEngineering — Reddit,
+    <https://www.reddit.com/r/SoftwareEngineering/comments/11smgtp/how_to_resist_refactoring_a_large_spaghetti/>
+
+[^14]:
+    Refactoring nested conditional statements — Software Engineering Stack
+    Exchange, <https://softwareengineering.stackexchange.com/questions/47789/>
+
+[^15]:
+    CodeScene Automatic Code Evolution (ACE): Auto-Refactor Code,
+    <https://codescene.io/docs/auto-refactor/index.html>
+
+[^16]:
+    Code Smells — Samman Technical Coaching,
+    <https://sammancoaching.org/reference/code_smells/>
+
+[^17]:
+    src/sas/sascalc/poresize/maxEnt_method.py — CodeScene,
+    <https://codescene.io/projects/64300/delta?repo-id=263464&review-id=3247&biomarker=Overall+Code+Complexity&filename=src%2Fsas%2Fsascalc%2Fporesize%2FmaxEnt_method.py&method=>
+
+[^18]:
+    Separation of concerns — Wikipedia,
+    <https://en.wikipedia.org/wiki/Separation_of_concerns>
+
+[^19]:
+    Command Query Responsibility Segregation pattern — Azure Architecture Center
+    | Microsoft Learn,
+    <https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs>
+
+[^20]:
+    Mastering Command Query Responsibility Segregation: 7 Powerful Benefits,
+    <https://hyscaler.com/insights/mastering-cqrs-benefits-of-command-query/>
+
+[^21]:
+    Implementing Command Query Responsibility Segregation in the dotnet
+    ecosystem — Dev Community,
+    <https://dev.to/moh_moh701/enhancing-net-applications-with-cqrs-and-solid-principles-30i8>
+
+[^22]:
+    Refactoring a God class — Stack Overflow,
+    <https://stackoverflow.com/questions/14870377/>
+
+[^23]:
+    Command Query Responsibility Segregation: Understanding From First
+    Principles — NDepend Blog,
+    <https://blog.ndepend.com/cqrs-understanding-first-principles/>
+
+[^24]:
+    When to use the Command Query Responsibility Segregation design pattern? —
+    architecture — Stack Overflow,
+    <https://stackoverflow.com/questions/8820748/when-to-use-the-cqrs-design-pattern>
+
+[^25]:
+    Another pasta-themed programming problem is "ravioli code". That …,
+    <https://news.ycombinator.com/item?id=4537664>
+
 [^26]: Ravioli Code — C2 wiki, <https://wiki.c2.com/?RavioliCode>
-[^27]: Ravioli code — why an antipattern? — Stack Overflow,
-       <https://stackoverflow.com/questions/2052017/ravioli-code-why-an-anti-pattern>
-[^28]: A Guide to Data Abstraction and Its Significant Benefits — CelerData,
-       <https://celerdata.com/glossary/a-guide-to-data-abstraction>
-[^29]: The Role of Abstraction in Software Development | Bebras Armenia,
-       <https://bebras.am/en/blog/The-Role-of-Abstraction-in-Software-Development>
-[^30]: Abstraction, Refactoring, Complexity, and Tradeoffs — Part 1 | Synth
-       …, <https://omux.dev/blog/abstraction-refactoring-complexity/>
-[^31]: Don't create over abstractions — Castineiras thoughts -,
-       <https://www.castineiras.com/?p=102>
-[^32]: Refactor `if-else` Statements to `match-case` for Improved Readability
-       and Maintainability in Python 3.10+ · Issue #453 — GitHub,
-       <https://github.com/sourcery-ai/sourcery/issues/453>
+
+[^27]:
+    Ravioli code — why an antipattern? — Stack Overflow,
+    <https://stackoverflow.com/questions/2052017/ravioli-code-why-an-anti-pattern>
+
+[^28]:
+    A Guide to Data Abstraction and Its Significant Benefits — CelerData,
+    <https://celerdata.com/glossary/a-guide-to-data-abstraction>
+
+[^29]:
+    The Role of Abstraction in Software Development | Bebras Armenia,
+    <https://bebras.am/en/blog/The-Role-of-Abstraction-in-Software-Development>
+
+[^30]:
+    Abstraction, Refactoring, Complexity, and Tradeoffs — Part 1 | Synth …,
+    <https://omux.dev/blog/abstraction-refactoring-complexity/>
+
+[^31]:
+    Don't create over abstractions — Castineiras thoughts -,
+    <https://www.castineiras.com/?p=102>
+
+[^32]:
+    Refactor `if-else` Statements to `match-case` for Improved Readability and
+    Maintainability in Python 3.10+ · Issue #453 — GitHub,
+    <https://github.com/sourcery-ai/sourcery/issues/453>

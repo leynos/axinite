@@ -6,6 +6,7 @@ use async_trait::async_trait;
 
 use crate::context::JobContext;
 use crate::skills::registry::SkillRegistry;
+use crate::tools::builtin::skill_tools::object_schema;
 use crate::tools::tool::{
     ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput, require_str,
 };
@@ -32,16 +33,15 @@ impl Tool for SkillRemoveTool {
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
+        object_schema(
+            serde_json::json!({
                 "name": {
                     "type": "string",
                     "description": "Name of the skill to remove"
                 }
-            },
-            "required": ["name"]
-        })
+            }),
+            &["name"],
+        )
     }
 
     async fn execute(

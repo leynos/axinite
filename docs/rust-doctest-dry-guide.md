@@ -106,12 +106,11 @@ Doctests reside within documentation comments. Rust recognizes two types:
   (e.g., a module or the crate itself). They are typically used at the top of
   `lib.rs` or `mod.rs` to provide crate- or module-level documentation.[^6]
 
-<!-- markdownlint-disable MD013 --> Within these comments, a code block is
-denoted by triple back-ticks (```). While `rustdoc` defaults to Rust syntax,
-explicitly add the `rust` language specifier for clarity.[^2] A doctest
-"passes" when it compiles and runs without panicking. To assert specific
-outcomes, use the standard macros `assert!`, `assert_eq!`, and
-`assert_ne!`.[^2] <!-- markdownlint-enable MD013 -->
+Within these comments, a code block is denoted by triple back-ticks (```).
+While `rustdoc` defaults to Rust syntax, explicitly add the `rust` language
+specifier for clarity.[^2] A doctest "passes" when it compiles and runs
+without panicking. To assert specific outcomes, use the standard macros
+`assert!`, `assert_eq!`, and `assert_ne!`.[^2]
 
 ### 2.2 The philosophy of a good example
 
@@ -617,7 +616,8 @@ July 15, 2025, <https://doc.rust-lang.org/rustdoc/documentation-tests.html>
 <https://swatinem.de/blog/fix-rustdoc/>
 [^4]: LogRocket Blog — Organizing Rust tests, accessed on July 15, 2025,
 <https://blog.logrocket.com/how-to-organize-rust-tests/>
-<https://www.reddit.com/r/rust/comments/qk77iu/best_way_to_organise_tests_in_rust/>
+      Reddit — Best way to organise tests in Rust, accessed on July 15, 2025,
+      <https://www.reddit.com/r/rust/comments/qk77iu/best_way_to_organise_tests_in_rust/>
 [^5]: Writing Rust documentation - Dev Community, accessed on July 15, 2025,
 <https://dev.to/gritmax/writing-rust-documentation-5hn5>
 [^6]: The rustdoc book, accessed on July 15, 2025,
@@ -627,7 +627,7 @@ July 15, 2025, <https://doc.rust-lang.org/rustdoc/documentation-tests.html>
 [^8]: Documentation tests - - GitHub Pages, accessed on July 15, 2025,
 <https://ebarnard.github.io/2019-06-03-rust-smaller-trait-implementers-docs/rustdoc/documentation-tests.html>
 [^9]: Documentation tests - - MIT, accessed on July 15, 2025,
-<http://web.mit.edu/rust-lang_v1.25/arch/amd64_ubuntu1404/share/doc/rust/html/rustdoc/documentation-tests.html>
+<https://web.mit.edu/rust-lang_v1.25/arch/amd64_ubuntu1404/share/doc/rust/html/rustdoc/documentation-tests.html>
 [^10]: Compile_fail doc test ignored in cfg(test) - help - The Rust Programming
 Language Forum, accessed on July 15, 2025,
 <https://users.rust-lang.org/t/compile-fail-doc-test-ignored-in-cfg-test/124927>

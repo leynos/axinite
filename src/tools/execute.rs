@@ -251,7 +251,11 @@ mod tests {
     async fn registry_with(tools: Vec<Arc<dyn Tool>>) -> ToolRegistry {
         let registry = ToolRegistry::new();
         for tool in tools {
-            registry.register(tool).await;
+            if ToolRegistry::is_protected_tool_name(tool.name()) {
+                registry.register_sync(Arc::clone(&tool));
+            } else {
+                registry.register(tool).await;
+            }
         }
         registry
     }

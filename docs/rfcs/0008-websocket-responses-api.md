@@ -438,11 +438,11 @@ Effort estimates are coarse (low/med/high) because runtime/language constraints 
 
 Add the rollout flag as a documented environment-variable entry:
 
-<!-- markdownlint-disable MD013 MD060 -->
+<!-- markdownlint-disable MD013 -->
 | Variable | Meaning | Default or rule |
 |----------|---------|-----------------|
 | `OPENAI_RESPONSES_WS_ENABLED` | Enables WebSocket-based OpenAI Responses API for streaming responses. | Default: off. Treat as a rollout-controlled flag or provider configuration knob. |
-<!-- markdownlint-enable MD013 MD060 -->
+<!-- markdownlint-enable MD013 -->
 
 - Add a feature flag: `OPENAI_RESPONSES_WS_ENABLED` (or provider config knob)
   default off.

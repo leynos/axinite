@@ -12,7 +12,7 @@ Status: COMPLETE
 After this work, IronClaw must stop sending OpenAI function-tool schemas
 whose root object still contains forbidden JSON Schema keywords such as
 `oneOf`, `anyOf`, `allOf`, `enum`, or `not`. The concrete user-visible
-outcome is that the `github` WebAssembly (WASM) tool can again be
+outcome is that the `GitHub` WebAssembly (WASM) tool can again be
 advertised to
 `openai/gpt-5.4` without the provider rejecting the request with
 HTTP 400 `invalid_function_parameters`.
@@ -45,7 +45,7 @@ The live failure path currently crosses four areas.
   `oneOf`/`anyOf`/`allOf`/`enum`/`not`, so OpenAI still receives an
   invalid top-level schema.
 
-The reported provider error names the `github` tool and points at
+The reported provider error names the `GitHub` tool and points at
 `tools[15].parameters`, which matches the provider-bound tool list
 created inside `RigAdapter::complete_with_tools(...)`.
 
@@ -84,7 +84,7 @@ to keep pace with the richer real schema.
   `docs/plans/2026-03-10-invalid-tool-schema.md`.
 - Keep the recovered guest metadata path intact. The fix must not revert
   file-loaded WASM tools back to placeholder schemas.
-- Do not special-case the `github` tool by name. The repair must apply
+- Do not special-case the `GitHub` tool by name. The repair must apply
   generically to any tool schema that reaches the OpenAI provider
   boundary.
 - Keep provider-facing tool names and descriptions stable.
@@ -169,7 +169,7 @@ Add tests at two layers.
 1. Unit-level tests in `src/llm/rig_adapter.rs` for raw schema
    normalization, including a GitHub-style root `oneOf` input and at
    least one non-WASM control schema that must remain stable.
-1. Behavioural coverage in `tests/tool_schema_validation.rs` or another
+2. Behavioural coverage in `tests/tool_schema_validation.rs` or another
    integration-style Rust test that loads the real GitHub WASM tool,
    passes its published schema through the provider normalization path,
    and verifies that the provider-bound result is root-safe while still
