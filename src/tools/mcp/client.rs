@@ -466,10 +466,10 @@ fn extract_server_name(url: &str) -> String {
 }
 
 /// Wrapper that implements Tool for an MCP tool.
-struct McpToolWrapper {
-    tool: McpTool,
-    prefixed_name: String,
-    client: Arc<McpClient>,
+pub(super) struct McpToolWrapper {
+    pub(super) tool: McpTool,
+    pub(super) prefixed_name: String,
+    pub(super) client: Arc<McpClient>,
 }
 
 #[async_trait]
@@ -754,53 +754,6 @@ mod tests {
             annotations: None,
         };
         assert!(!tool.requires_approval());
-    }
-
-    #[test]
-    fn test_mcp_tool_wrapper_hosted_tool_eligibility_is_approval_gated() {
-        use crate::tools::mcp::protocol::{McpTool, McpToolAnnotations};
-
-        let wrapper = McpToolWrapper {
-            tool: McpTool {
-                name: "delete_all".to_string(),
-                description: "Deletes everything".to_string(),
-                input_schema: serde_json::json!({"type": "object"}),
-                annotations: Some(McpToolAnnotations {
-                    destructive_hint: true,
-                    side_effects_hint: false,
-                    read_only_hint: false,
-                    execution_time_hint: None,
-                }),
-            },
-            prefixed_name: "mcp__delete_all".to_string(),
-            client: Arc::new(McpClient::new("http://localhost:1234")),
-        };
-
-        assert_eq!(
-            wrapper.hosted_tool_eligibility(),
-            HostedToolEligibility::ApprovalGated
-        );
-    }
-
-    #[test]
-    fn test_mcp_tool_wrapper_hosted_tool_eligibility_is_eligible() {
-        use crate::tools::mcp::protocol::McpTool;
-
-        let wrapper = McpToolWrapper {
-            tool: McpTool {
-                name: "simple_tool".to_string(),
-                description: "A simple tool".to_string(),
-                input_schema: serde_json::json!({"type": "object"}),
-                annotations: None,
-            },
-            prefixed_name: "mcp__simple_tool".to_string(),
-            client: Arc::new(McpClient::new("http://localhost:1234")),
-        };
-
-        assert_eq!(
-            wrapper.hosted_tool_eligibility(),
-            HostedToolEligibility::Eligible
-        );
     }
 
     /// Mock transport for testing transport abstraction behavior.

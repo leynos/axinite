@@ -47,11 +47,13 @@ impl Tool for RoutineHistoryTool {
 
         let name = require_str(&params, "name")?;
 
-        let limit = params
-            .get("limit")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(10)
-            .min(50);
+        let limit = params.get("limit").and_then(|v| v.as_i64()).unwrap_or(10);
+        if limit <= 0 {
+            return Err(ToolError::InvalidParameters(
+                "limit must be greater than 0".to_string(),
+            ));
+        }
+        let limit = limit.min(50);
 
         let routine = self
             .store

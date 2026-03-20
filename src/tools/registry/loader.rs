@@ -37,6 +37,15 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
+    fn sync_write_lock<T>(lock: &RwLock<T>) -> tokio::sync::RwLockWriteGuard<'_, T> {
+        loop {
+            if let Ok(guard) = lock.try_write() {
+                return guard;
+            }
+            std::thread::yield_now();
+        }
+    }
+
     /// Whether a tool name belongs to the protected built-in namespace.
     pub fn is_protected_tool_name(name: &str) -> bool {
         is_protected_tool_name(name)
@@ -76,39 +85,37 @@ impl ToolRegistry {
     }
 
     /// Register a tool. Rejects dynamic tools that try to shadow a built-in name.
-    pub async fn register(&self, tool: Arc<dyn Tool>) {
+    pub async fn register(&self, tool: Arc<dyn Tool>) -> bool {
         let name = tool.name().to_string();
         if Self::is_protected_tool_name(&name) {
             tracing::warn!(
                 tool = %name,
                 "Rejected tool registration: protected tool names cannot be dynamically registered"
             );
-            return;
+            return false;
         }
         if self.builtin_names.read().await.contains(&name) {
             tracing::warn!(
                 tool = %name,
                 "Rejected tool registration: would shadow a built-in tool"
             );
-            return;
+            return false;
         }
         self.tools.write().await.insert(name.clone(), tool);
         tracing::trace!("Registered tool: {}", name);
+        true
     }
 
     /// Register a tool (sync version for startup, marks as built-in).
     pub fn register_sync(&self, tool: Arc<dyn Tool>) {
         let name = tool.name().to_string();
-        if let Ok(mut tools) = self.tools.try_write() {
-            tools.insert(name.clone(), tool);
-            // Mark as built-in so it can't be shadowed later
-            if PROTECTED_TOOL_NAMES.contains(&name.as_str())
-                && let Ok(mut builtins) = self.builtin_names.try_write()
-            {
-                builtins.insert(name.clone());
-            }
-            tracing::debug!("Registered tool: {}", name);
+        let mut tools = Self::sync_write_lock(&self.tools);
+        tools.insert(name.clone(), tool);
+        if PROTECTED_TOOL_NAMES.contains(&name.as_str()) {
+            let mut builtins = Self::sync_write_lock(&self.builtin_names);
+            builtins.insert(name.clone());
         }
+        tracing::debug!("Registered tool: {}", name);
     }
 
     /// Unregister a tool.
@@ -258,7 +265,12 @@ impl ToolRegistry {
         }
 
         // Register the tool
-        self.register(Arc::new(wrapper)).await;
+        let registered = self.register(Arc::new(wrapper)).await;
+        if !registered {
+            return Err(WasmError::ConfigError(
+                "tool registration rejected".to_string(),
+            ));
+        }
 
         // Add credential mappings to the shared registry (for HTTP tool injection)
         if let Some(cr) = &self.credential_registry

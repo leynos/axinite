@@ -13,11 +13,11 @@
 
 ## Summary
 
-Hosted workers currently expose only their local tool registry plus a small set
-of extension-management proxy tools. That means the hosted large language model
-(LLM) does not see the real `ToolDefinition`s for user-configured Model Context
-Protocol (MCP) tools, even when those tools are already installed, activated,
-and available in the main IronClaw process.
+Before roadmap item `1.1.1`, hosted workers exposed only their local tool
+registry plus a small set of extension-management proxy tools. That meant the
+hosted large language model (LLM) did not see the real `ToolDefinition`s for
+user-configured Model Context Protocol (MCP) tools, even when those tools were
+already installed, activated, and available in the main IronClaw process.
 
 The result is predictable: the model either cannot discover those tools at all,
 or it sees only high-level extension-management tools rather than the real call
@@ -274,7 +274,7 @@ pub struct ToolDefinition {
 ```
 
 That is already the right contract. The problem is not that the structure is
-too weak. The problem is that hosted mode currently populates it from the wrong
+too weak. Before roadmap item `1.1.1`, hosted mode populated it from the wrong
 registry.
 
 The LLM-visible fields should map as follows:

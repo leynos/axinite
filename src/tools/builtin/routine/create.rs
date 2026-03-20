@@ -53,9 +53,36 @@ fn trigger_props() -> serde_json::Value {
         },
         "event_filters": {
             "type": "object",
-            "description": "Optional exact-match filters against payload fields for system_event triggers. Values can be strings, numbers, or booleans."
+            "description": "Optional exact-match filters against payload fields for system_event triggers. Values can be strings, numbers, or booleans.",
+            "additionalProperties": {
+                "type": ["string", "number", "boolean"]
+            }
         }
     })
+}
+
+fn parse_event_filters(
+    params: &serde_json::Value,
+) -> Result<std::collections::HashMap<String, String>, ToolError> {
+    match params.get("event_filters") {
+        None | Some(serde_json::Value::Null) => Ok(std::collections::HashMap::new()),
+        Some(serde_json::Value::Object(obj)) => obj
+            .iter()
+            .map(|(key, value)| {
+                crate::agent::routine::json_value_as_filter_string(value)
+                    .map(|string| (key.to_string(), string))
+                    .ok_or_else(|| {
+                        ToolError::InvalidParameters(format!(
+                            "event_filters['{}'] must be a string, number, or boolean",
+                            key
+                        ))
+                    })
+            })
+            .collect(),
+        Some(_) => Err(ToolError::InvalidParameters(
+            "event_filters must be an object".to_string(),
+        )),
+    }
 }
 
 fn action_props() -> serde_json::Value {
@@ -246,18 +273,7 @@ impl Tool for RoutineCreateTool {
                             "system_event trigger requires 'event_type'".to_string(),
                         )
                     })?;
-                let filters = params
-                    .get("event_filters")
-                    .and_then(|v| v.as_object())
-                    .map(|obj| {
-                        obj.iter()
-                            .filter_map(|(k, v)| {
-                                crate::agent::routine::json_value_as_filter_string(v)
-                                    .map(|s| (k.to_string(), s))
-                            })
-                            .collect::<std::collections::HashMap<String, String>>()
-                    })
-                    .unwrap_or_default();
+                let filters = parse_event_filters(&params)?;
                 Trigger::SystemEvent {
                     source: source.to_string(),
                     event_type: event_type.to_string(),

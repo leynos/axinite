@@ -73,7 +73,11 @@ impl Tool for BuildSoftwareTool {
                 "cli_binary" => SoftwareType::CliBinary,
                 "library" => SoftwareType::Library,
                 "script" => SoftwareType::Script,
-                _ => requirement.software_type,
+                other => {
+                    return Err(ToolError::InvalidParameters(format!(
+                        "unknown type: {other}"
+                    )));
+                }
             };
         }
 
@@ -83,7 +87,11 @@ impl Tool for BuildSoftwareTool {
                 "python" => Language::Python,
                 "typescript" => Language::TypeScript,
                 "bash" => Language::Bash,
-                _ => requirement.language,
+                other => {
+                    return Err(ToolError::InvalidParameters(format!(
+                        "unknown language: {other}"
+                    )));
+                }
             };
         }
 
@@ -96,7 +104,7 @@ impl Tool for BuildSoftwareTool {
 
         let output = serde_json::json!({
             "build_id": result.build_id.to_string(),
-            "name": result.requirement.name,
+            "name": result.requirement.name.to_string(),
             "success": result.success,
             "artifact_path": result.artifact_path.display().to_string(),
             "iterations": result.iterations,

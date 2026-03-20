@@ -182,18 +182,29 @@ pub(super) fn extract_skill_from_zip(data: &[u8]) -> Result<String, ToolError> {
         }
 
         if header.name_end > data.len() {
-            break;
+            return Err(ToolError::ExecutionFailed(
+                "ZIP archive truncated".to_string(),
+            ));
         }
-        let file_name =
-            std::str::from_utf8(&data[header.name_start..header.name_end]).unwrap_or("");
-
         let data_start = header
             .name_end
             .checked_add(header.extra_len)
             .ok_or_else(|| ToolError::ExecutionFailed("ZIP header offset overflow".to_string()))?;
+        if data_start > data.len() {
+            return Err(ToolError::ExecutionFailed(
+                "ZIP archive truncated".to_string(),
+            ));
+        }
         let data_end = data_start
             .checked_add(header.compressed_size)
             .ok_or_else(|| ToolError::ExecutionFailed("ZIP header size overflow".to_string()))?;
+        if data_end > data.len() {
+            return Err(ToolError::ExecutionFailed(
+                "ZIP archive truncated".to_string(),
+            ));
+        }
+        let file_name =
+            std::str::from_utf8(&data[header.name_start..header.name_end]).unwrap_or("");
 
         if file_name == "SKILL.md" {
             return extract_skill_entry(SkillEntryParams {

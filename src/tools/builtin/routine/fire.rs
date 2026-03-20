@@ -9,6 +9,10 @@ impl RoutineFireTool {
     pub fn new(store: Arc<dyn Database>, engine: Arc<RoutineEngine>) -> Self {
         Self { store, engine }
     }
+
+    fn approval_requirement() -> ApprovalRequirement {
+        ApprovalRequirement::Always
+    }
 }
 
 #[async_trait]
@@ -22,9 +26,7 @@ impl Tool for RoutineFireTool {
     }
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-        // Firing a routine can dispatch a full_job with pre-authorized Always-gated tools,
-        // so this is a meaningful escalation that warrants auto-approval gating.
-        ApprovalRequirement::UnlessAutoApproved
+        Self::approval_requirement()
     }
 
     fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
@@ -79,5 +81,18 @@ impl Tool for RoutineFireTool {
 
     fn requires_sanitization(&self) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn routine_fire_always_requires_approval() {
+        assert_eq!(
+            RoutineFireTool::approval_requirement(),
+            ApprovalRequirement::Always
+        );
     }
 }

@@ -1,10 +1,19 @@
+//! Event emission tool for triggering `system_event` routines.
+//!
+//! This module exposes a side-effecting helper that sends structured events
+//! into the routine engine. Callers should use it when a workflow needs to
+//! trigger routine automation explicitly rather than waiting for cron or
+//! message-driven triggers.
+
 use super::*;
 
+/// Tool that emits structured events into the routine engine.
 pub struct EventEmitTool {
     engine: Arc<RoutineEngine>,
 }
 
 impl EventEmitTool {
+    /// Create a new event-emission tool backed by the shared routine engine.
     pub fn new(engine: Arc<RoutineEngine>) -> Self {
         Self { engine }
     }
@@ -65,6 +74,11 @@ impl Tool for EventEmitTool {
             .get("payload")
             .cloned()
             .unwrap_or_else(|| serde_json::json!({}));
+        if !payload.is_object() {
+            return Err(ToolError::InvalidParameters(
+                "payload must be an object".to_string(),
+            ));
+        }
 
         let fired = self
             .engine

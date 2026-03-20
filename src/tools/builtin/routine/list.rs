@@ -1,3 +1,8 @@
+//! Built-in tool for listing routines visible to the current user.
+//!
+//! This module provides the read-only routine summary surface used by the
+//! routine system and related operator workflows.
+
 use super::*;
 
 pub struct RoutineListTool {

@@ -2,11 +2,12 @@ use super::*;
 use crate::llm::ToolCall;
 
 const PLANNING_TEXT_LIMIT: u32 = 2;
-const COMPLETION_MARKERS: [&str; 4] = [
+const COMPLETION_MARKERS: [&str; 5] = [
     "build complete",
+    "completed successfully",
     "successfully built",
+    "build succeeded",
     "all tests pass",
-    "complete",
 ];
 const FAILURE_MARKERS: [&str; 3] = ["error:", "error[", "failed"];
 
@@ -390,16 +391,39 @@ impl LlmSoftwareBuilder {
         &self,
         tool_name: &str,
         params: &serde_json::Value,
-        _project_dir: &Path,
+        project_dir: &Path,
     ) -> Result<ToolOutput, ToolError> {
-        let tool =
-            self.tools.get(tool_name).await.ok_or_else(|| {
-                ToolError::ExecutionFailed(format!("Tool not found: {}", tool_name))
-            })?;
-
-        // Execute with a dummy context (build tools don't need job context)
         let ctx = JobContext::default();
-        tool.execute(params.clone(), &ctx).await
+        let project_root = project_dir.to_path_buf();
+
+        match tool_name {
+            "read_file" => {
+                let tool = crate::tools::builtin::ReadFileTool::new().with_base_dir(project_root);
+                tool.execute(params.clone(), &ctx).await
+            }
+            "write_file" => {
+                let tool = crate::tools::builtin::WriteFileTool::new().with_base_dir(project_root);
+                tool.execute(params.clone(), &ctx).await
+            }
+            "list_dir" => {
+                let tool = crate::tools::builtin::ListDirTool::new().with_base_dir(project_root);
+                tool.execute(params.clone(), &ctx).await
+            }
+            "apply_patch" => {
+                let tool = crate::tools::builtin::ApplyPatchTool::new().with_base_dir(project_root);
+                tool.execute(params.clone(), &ctx).await
+            }
+            "shell" => {
+                let tool = crate::tools::builtin::ShellTool::new().with_working_dir(project_root);
+                tool.execute(params.clone(), &ctx).await
+            }
+            _ => {
+                let tool = self.tools.get(tool_name).await.ok_or_else(|| {
+                    ToolError::ExecutionFailed(format!("Tool not found: {}", tool_name))
+                })?;
+                tool.execute(params.clone(), &ctx).await
+            }
+        }
     }
 
     /// Find the build artifact based on project type.
@@ -409,12 +433,12 @@ impl LlmSoftwareBuilder {
                 // WASM output location
                 crate::tools::wasm::wasm_artifact_path(
                     project_dir,
-                    &requirement.name.replace('-', "_"),
+                    &requirement.name.to_string().replace('-', "_"),
                 )
             }
             (SoftwareType::CliBinary, Language::Rust) => project_dir.join(format!(
                 "target/release/{}",
-                requirement.name.replace('-', "_")
+                requirement.name.to_string().replace('-', "_")
             )),
             (SoftwareType::Script, Language::Python) => {
                 project_dir.join(format!("{}.py", requirement.name))

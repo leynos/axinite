@@ -819,7 +819,6 @@ efficient, and genuinely enjoyable for the team to evolve and maintain.
     Cyclomatic complexity: Definition and limits in understanding code quality —
     the Developer Experience platform,
     <https://getdx.com/blog/cyclomatic-complexity/>
-    <https://getdx.com/blog/cyclomatic-complexity/>
 
 [^5]:
     Cyclomatic complexity — Wikipedia (risk classification),
@@ -856,21 +855,22 @@ efficient, and genuinely enjoyable for the team to evolve and maintain.
     <https://www.okoone.com/spark/strategy-transformation/the-software-anti-patterns-that-are-killing-development-speed/>
 
 [^13]:
-    How to _resist_ refactoring a large spaghetti codebase? :
-    r/SoftwareEngineering — Reddit,
-    <https://www.reddit.com/r/SoftwareEngineering/comments/11smgtp/how_to_resist_refactoring_a_large_spaghetti/>
+    Separation of concerns — Wikipedia,
+    <https://en.wikipedia.org/wiki/Separation_of_concerns>
 
 [^14]:
-    Refactoring nested conditional statements — Software Engineering Stack
-    Exchange, <https://softwareengineering.stackexchange.com/questions/47789/>
+    Command Query Responsibility Segregation pattern — Azure Architecture
+    Center | Microsoft Learn,
+    <https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs>
 
 [^15]:
-    CodeScene Automatic Code Evolution (ACE): Auto-Refactor Code,
-    <https://codescene.io/docs/auto-refactor/index.html>
+    Command Query Responsibility Segregation: Understanding From First
+    Principles — NDepend Blog,
+    <https://blog.ndepend.com/cqrs-understanding-first-principles/>
 
 [^16]:
-    Code Smells — Samman Technical Coaching,
-    <https://sammancoaching.org/reference/code_smells/>
+    Refactoring a God class — Stack Overflow,
+    <https://stackoverflow.com/questions/14870377/>
 
 [^17]:
     src/sas/sascalc/poresize/maxEnt_method.py — CodeScene,

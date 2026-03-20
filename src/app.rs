@@ -9,7 +9,6 @@
 
 use std::sync::Arc;
 
-use crate::bootstrap::tools::{MediaToolsArgs, register_image_and_vision_tools};
 use crate::channels::web::log_layer::LogBroadcaster;
 use crate::config::Config;
 use crate::context::ContextManager;
@@ -24,8 +23,8 @@ use crate::skills::catalog::SkillCatalog;
 use crate::tools::mcp::{McpProcessManager, McpSessionManager};
 use crate::tools::wasm::SharedCredentialRegistry;
 use crate::tools::wasm::WasmToolRuntime;
-use crate::workspace::{EmbeddingProvider, Workspace};
 use crate::tools::{ImageToolsRegistration, ToolRegistry, VisionToolsRegistration};
+use crate::workspace::{EmbeddingProvider, Workspace};
 
 /// Fully initialized application components, ready for channel wiring
 /// and agent construction.
@@ -93,7 +92,6 @@ impl AppBuilder {
         toml_path: Option<std::path::PathBuf>,
         session: Arc<SessionManager>,
         log_broadcaster: Arc<LogBroadcaster>,
-
     ) -> Self {
         Self {
             config,
@@ -109,13 +107,11 @@ impl AppBuilder {
     }
 
     /// Inject a pre-created database, skipping `init_database()`.
-
     pub fn with_database(&mut self, db: Arc<dyn Database>) {
         self.db = Some(db);
     }
 
     /// Inject a pre-created LLM provider, skipping `init_llm()`.
-
     pub fn with_llm(&mut self, llm: Arc<dyn LlmProvider>) {
         self.llm_override = Some(llm);
     }
@@ -124,7 +120,6 @@ impl AppBuilder {
     ///
     /// Creates the database connection, runs migrations, reloads config
     /// from DB, attaches DB to session manager, and cleans up stale jobs.
-
     pub async fn init_database(&mut self) -> Result<(), anyhow::Error> {
         if self.db.is_some() {
             tracing::debug!("Database already provided, skipping init_database()");
@@ -179,7 +174,6 @@ impl AppBuilder {
     /// Requires a master key and a backend-specific DB handle. After creating
     /// the store, injects any encrypted LLM API keys into the config overlay
     /// and re-resolves config.
-
     pub async fn init_secrets(&mut self) -> Result<(), anyhow::Error> {
         let master_key = match self.config.secrets.master_key() {
             Some(k) => k,
@@ -251,10 +245,143 @@ impl AppBuilder {
     /// Delegates to `build_provider_chain` which applies all decorators
     /// (retry, smart routing, failover, circuit breaker, response cache).
     #[allow(clippy::type_complexity)]
-
     pub async fn init_llm(
         &self,
+    ) -> Result<
+        (
+            Arc<dyn LlmProvider>,
+            Option<Arc<dyn LlmProvider>>,
+            Option<Arc<RecordingLlm>>,
+        ),
+        anyhow::Error,
+    > {
+        let (llm, cheap_llm, recording_handle) =
+            crate::llm::build_provider_chain(&self.config.llm, self.session.clone()).await?;
+        Ok((llm, cheap_llm, recording_handle))
+    }
 
+    /// Phase 4: Initialize safety, tools, embeddings, and workspace.
+    pub async fn init_tools(
+        &self,
+        llm: &Arc<dyn LlmProvider>,
+    ) -> Result<
+        (
+            Arc<SafetyLayer>,
+            Arc<ToolRegistry>,
+            Option<Arc<dyn EmbeddingProvider>>,
+            Option<Arc<Workspace>>,
+        ),
+        anyhow::Error,
+    > {
+        let safety = Arc::new(SafetyLayer::new(&self.config.safety));
+        tracing::debug!("Safety layer initialized");
+
+        // Initialize tool registry with credential injection support
+        let credential_registry = Arc::new(SharedCredentialRegistry::new());
+        let tools = if let Some(ref ss) = self.secrets_store {
+            Arc::new(
+                ToolRegistry::new()
+                    .with_credentials(Arc::clone(&credential_registry), Arc::clone(ss)),
+            )
+        } else {
+            Arc::new(ToolRegistry::new())
+        };
+        tools.register_builtin_tools();
+
+        if let Some(ref ss) = self.secrets_store {
+            tools.register_secrets_tools(Arc::clone(ss));
+        }
+
+        // Create embeddings provider using the unified method
+        let embeddings = self
+            .config
+            .embeddings
+            .create_provider(&self.config.llm.nearai.base_url, self.session.clone());
+
+        // Register memory tools if database is available
+        let workspace = if let Some(ref db) = self.db {
+            let mut ws = Workspace::new_with_db("default", db.clone());
+            if let Some(ref emb) = embeddings {
+                ws = ws.with_embeddings(emb.clone());
+            }
+            let ws = Arc::new(ws);
+            tools.register_memory_tools(Arc::clone(&ws));
+            Some(ws)
+        } else {
+            None
+        };
+
+        // Register image/vision tools if we have a workspace and LLM API credentials
+        if workspace.is_some() {
+            let (api_base, api_key_opt) = if let Some(ref provider) = self.config.llm.provider {
+                (
+                    provider.base_url.clone(),
+                    provider.api_key.as_ref().map(|s| {
+                        use secrecy::ExposeSecret;
+                        s.expose_secret().to_string()
+                    }),
+                )
+            } else {
+                (
+                    self.config.llm.nearai.base_url.clone(),
+                    self.config.llm.nearai.api_key.as_ref().map(|s| {
+                        use secrecy::ExposeSecret;
+                        s.expose_secret().to_string()
+                    }),
+                )
+            };
+
+            if let Some(api_key) = api_key_opt {
+                // Check for image generation models
+                let model_name = self
+                    .config
+                    .llm
+                    .provider
+                    .as_ref()
+                    .map(|p| p.model.clone())
+                    .unwrap_or_else(|| self.config.llm.nearai.model.clone());
+                let models = vec![model_name.clone()];
+                let gen_model = crate::llm::image_models::suggest_image_model(&models)
+                    .unwrap_or("flux-1.1-pro")
+                    .to_string();
+                tools.register_image_tools(ImageToolsRegistration {
+                    api_base_url: api_base.clone(),
+                    api_key: api_key.clone(),
+                    gen_model,
+                    base_dir: None,
+                });
+
+                // Check for vision models
+                let vision_model = crate::llm::vision_models::suggest_vision_model(&models)
+                    .unwrap_or(&model_name)
+                    .to_string();
+                tools.register_vision_tools(VisionToolsRegistration {
+                    api_base_url: api_base,
+                    api_key,
+                    vision_model,
+                    base_dir: None,
+                });
+            }
+        }
+
+        // Register builder tool if enabled
+        if self.config.builder.enabled
+            && (self.config.agent.allow_local_tools || !self.config.sandbox.enabled)
+        {
+            tools
+                .register_builder_tool(llm.clone(), Some(self.config.builder.to_builder_config()))
+                .await?;
+            tracing::debug!("Builder mode enabled");
+        }
+
+        Ok((safety, tools, embeddings, workspace))
+    }
+
+    /// Phase 5: Load WASM tools, MCP servers, and create extension manager.
+    pub async fn init_extensions(
+        &self,
+        tools: &Arc<ToolRegistry>,
+        hooks: &Arc<HookRegistry>,
     ) -> Result<
         (
             Arc<McpSessionManager>,
@@ -265,7 +392,6 @@ impl AppBuilder {
             Vec<String>,
         ),
         anyhow::Error,
-
     > {
         use crate::tools::mcp::config::load_mcp_servers_from_db;
         use crate::tools::wasm::{WasmToolLoader, load_dev_tools};
@@ -537,16 +663,6 @@ impl AppBuilder {
     }
 
     /// Run all init phases in order and return the assembled components.
-
-    pub async fn init_tools(
-        &self,
-        llm: &Arc<dyn LlmProvider>,
-
-    pub async fn init_extensions(
-        &self,
-        tools: &Arc<ToolRegistry>,
-        hooks: &Arc<HookRegistry>,
-
     pub async fn build_all(mut self) -> Result<AppComponents, anyhow::Error> {
         self.init_database().await?;
         self.init_secrets().await?;

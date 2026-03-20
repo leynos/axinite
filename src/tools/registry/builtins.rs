@@ -38,6 +38,17 @@ pub struct VisionToolsRegistration {
     pub base_dir: Option<std::path::PathBuf>,
 }
 
+pub struct RegisterJobToolsOptions {
+    pub context_manager: Arc<ContextManager>,
+    pub scheduler_slot: Option<crate::tools::builtin::SchedulerSlot>,
+    pub job_manager: Option<Arc<ContainerJobManager>>,
+    pub store: Option<Arc<dyn Database>>,
+    pub job_event_tx: Option<tokio::sync::broadcast::Sender<(uuid::Uuid, SseEvent)>>,
+    pub inject_tx: Option<tokio::sync::mpsc::Sender<IncomingMessage>>,
+    pub prompt_queue: Option<PromptQueue>,
+    pub secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+}
+
 impl ToolRegistry {
     /// Register all built-in tools.
     pub fn register_builtin_tools(&self) {
@@ -74,7 +85,8 @@ impl ToolRegistry {
 
     /// Get tool definitions filtered by domain.
     pub async fn tool_definitions_for_domain(&self, domain: ToolDomain) -> Vec<ToolDefinition> {
-        self.tools
+        let mut defs: Vec<ToolDefinition> = self
+            .tools
             .read()
             .await
             .values()
@@ -84,7 +96,9 @@ impl ToolRegistry {
                 description: tool.description().to_string(),
                 parameters: tool.parameters_schema(),
             })
-            .collect()
+            .collect();
+        defs.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+        defs
     }
 
     /// Register development tools for building software.
@@ -121,18 +135,17 @@ impl ToolRegistry {
     /// When sandbox deps are provided, `create_job` automatically delegates to
     /// Docker containers. Otherwise it dispatches via the Scheduler (which
     /// persists to DB and spawns a worker).
-    #[allow(clippy::too_many_arguments)]
-    pub fn register_job_tools(
-        &self,
-        context_manager: Arc<ContextManager>,
-        scheduler_slot: Option<crate::tools::builtin::SchedulerSlot>,
-        job_manager: Option<Arc<ContainerJobManager>>,
-        store: Option<Arc<dyn Database>>,
-        job_event_tx: Option<tokio::sync::broadcast::Sender<(uuid::Uuid, SseEvent)>>,
-        inject_tx: Option<tokio::sync::mpsc::Sender<IncomingMessage>>,
-        prompt_queue: Option<PromptQueue>,
-        secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
-    ) {
+    pub fn register_job_tools(&self, opts: RegisterJobToolsOptions) {
+        let RegisterJobToolsOptions {
+            context_manager,
+            scheduler_slot,
+            job_manager,
+            store,
+            job_event_tx,
+            inject_tx,
+            prompt_queue,
+            secrets_store,
+        } = opts;
         let mut create_tool = CreateJobTool::new(Arc::clone(&context_manager));
         if let Some(slot) = scheduler_slot {
             create_tool = create_tool.with_scheduler_slot(slot);
@@ -339,7 +352,7 @@ impl ToolRegistry {
         self: &Arc<Self>,
         llm: Arc<dyn LlmProvider>,
         config: Option<BuilderConfig>,
-    ) {
+    ) -> std::io::Result<()> {
         // First register dev tools needed by the builder
         self.register_dev_tools();
 
@@ -348,11 +361,12 @@ impl ToolRegistry {
             config.unwrap_or_default(),
             llm,
             Arc::clone(self),
-        ));
+        )?);
 
         // Register the protected build_software tool through the built-in path.
         self.register_sync(Arc::new(BuildSoftwareTool::new(builder)));
 
         tracing::debug!("Registered software builder tool");
+        Ok(())
     }
 }

@@ -1,4 +1,10 @@
+//! Tests for the builder core domain types and result structures.
+//!
+//! These tests cover builder-specific serialization, command planning, and
+//! result-shape invariants without invoking the full LLM-driven build loop.
+
 use super::*;
+use std::path::Path;
 
 mod assertions {
     use super::*;
@@ -61,23 +67,29 @@ fn test_language_extension_all_variants() {
 
 #[test]
 fn test_language_build_command_compiled_returns_some() {
-    let dir = "/tmp/project";
+    let dir = Path::new("/tmp/project");
     let rust_cmd = Language::Rust.build_command(dir);
     assert!(rust_cmd.is_some());
-    assert!(rust_cmd.unwrap().contains("cargo build"));
+    let rust_cmd = rust_cmd.expect("rust build command");
+    assert_eq!(rust_cmd.program, "cargo");
+    assert_eq!(rust_cmd.args, vec!["build", "--release"]);
 
     let ts_cmd = Language::TypeScript.build_command(dir);
     assert!(ts_cmd.is_some());
-    assert!(ts_cmd.unwrap().contains("npm run build"));
+    let ts_cmd = ts_cmd.expect("typescript build command");
+    assert_eq!(ts_cmd.program, "npm");
+    assert_eq!(ts_cmd.args, vec!["run", "build"]);
 
     let go_cmd = Language::Go.build_command(dir);
     assert!(go_cmd.is_some());
-    assert!(go_cmd.unwrap().contains("go build"));
+    let go_cmd = go_cmd.expect("go build command");
+    assert_eq!(go_cmd.program, "go");
+    assert_eq!(go_cmd.args, vec!["build", "./..."]);
 }
 
 #[test]
 fn test_language_build_command_interpreted_returns_none() {
-    let dir = "/tmp/project";
+    let dir = Path::new("/tmp/project");
     assert!(Language::Python.build_command(dir).is_none());
     assert!(Language::JavaScript.build_command(dir).is_none());
     assert!(Language::Bash.build_command(dir).is_none());
@@ -85,11 +97,15 @@ fn test_language_build_command_interpreted_returns_none() {
 
 #[test]
 fn test_language_build_command_includes_project_dir() {
-    let dir = "/home/user/my_project";
+    let dir = Path::new("/home/user/my_project");
     for lang in [Language::Rust, Language::TypeScript, Language::Go] {
         let cmd = lang.build_command(dir);
         assert!(
-            cmd.as_ref().unwrap().contains(dir),
+            cmd.as_ref()
+                .expect("compiled language build command")
+                .cwd
+                .as_path()
+                == dir,
             "{:?} build command should contain project dir",
             lang
         );
@@ -98,7 +114,7 @@ fn test_language_build_command_includes_project_dir() {
 
 #[test]
 fn test_language_test_command_all_variants_non_empty() {
-    let dir = "/tmp/project";
+    let dir = Path::new("/tmp/project");
     let all_languages = [
         Language::Rust,
         Language::Python,
@@ -110,12 +126,12 @@ fn test_language_test_command_all_variants_non_empty() {
     for lang in all_languages {
         let cmd = lang.test_command(dir);
         assert!(
-            !cmd.is_empty(),
+            !cmd.program.is_empty(),
             "{:?} test command should not be empty",
             lang
         );
         assert!(
-            cmd.contains(dir),
+            cmd.cwd.as_path() == dir,
             "{:?} test command should contain project dir",
             lang
         );
@@ -124,13 +140,16 @@ fn test_language_test_command_all_variants_non_empty() {
 
 #[test]
 fn test_language_test_command_specific_tools() {
-    let dir = "/tmp/p";
-    assert!(Language::Rust.test_command(dir).contains("cargo test"));
-    assert!(Language::Python.test_command(dir).contains("pytest"));
-    assert!(Language::TypeScript.test_command(dir).contains("npm test"));
-    assert!(Language::JavaScript.test_command(dir).contains("npm test"));
-    assert!(Language::Go.test_command(dir).contains("go test"));
-    assert!(Language::Bash.test_command(dir).contains("shellcheck"));
+    let dir = Path::new("/tmp/p");
+    assert_eq!(Language::Rust.test_command(dir).program, "cargo");
+    assert_eq!(
+        Language::Python.test_command(dir).args,
+        vec!["-m", "pytest"]
+    );
+    assert_eq!(Language::TypeScript.test_command(dir).program, "npm");
+    assert_eq!(Language::JavaScript.test_command(dir).program, "npm");
+    assert_eq!(Language::Go.test_command(dir).args, vec!["test", "./..."]);
+    assert_eq!(Language::Bash.test_command(dir).program, "sh");
 }
 
 #[test]
@@ -150,9 +169,10 @@ fn test_software_type_serde_roundtrip() {
         "\"web_service\"",
     ];
     for (variant, expected) in variants.iter().zip(expected_strings.iter()) {
-        let json = serde_json::to_string(variant).unwrap();
+        let json = serde_json::to_string(variant).expect("serialize SoftwareType variant");
         assert_eq!(&json, expected, "serialization mismatch for {:?}", variant);
-        let deserialized: SoftwareType = serde_json::from_str(&json).unwrap();
+        let deserialized: SoftwareType =
+            serde_json::from_str(&json).expect("deserialize SoftwareType");
         assert_eq!(
             &deserialized, variant,
             "roundtrip mismatch for {:?}",
@@ -180,9 +200,9 @@ fn test_language_serde_roundtrip() {
         "\"bash\"",
     ];
     for (variant, expected) in variants.iter().zip(expected_strings.iter()) {
-        let json = serde_json::to_string(variant).unwrap();
+        let json = serde_json::to_string(variant).expect("serialize Language variant");
         assert_eq!(&json, expected, "serialization mismatch for {:?}", variant);
-        let deserialized: Language = serde_json::from_str(&json).unwrap();
+        let deserialized: Language = serde_json::from_str(&json).expect("deserialize Language");
         assert_eq!(
             &deserialized, variant,
             "roundtrip mismatch for {:?}",
@@ -194,7 +214,7 @@ fn test_language_serde_roundtrip() {
 #[test]
 fn test_build_requirement_serde_roundtrip() {
     let req = BuildRequirement {
-        name: "my_tool".into(),
+        name: ProjectName::new("my_tool").expect("valid project name"),
         description: "A tool that does stuff".into(),
         software_type: SoftwareType::WasmTool,
         language: Language::Rust,
@@ -203,8 +223,9 @@ fn test_build_requirement_serde_roundtrip() {
         dependencies: vec!["serde".into(), "reqwest".into()],
         capabilities: vec!["http".into(), "workspace".into()],
     };
-    let json = serde_json::to_string(&req).unwrap();
-    let deserialized: BuildRequirement = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&req).expect("serialize BuildRequirement");
+    let deserialized: BuildRequirement =
+        serde_json::from_str(&json).expect("deserialize BuildRequirement");
     assert_eq!(
         (
             deserialized.name,
@@ -232,7 +253,7 @@ fn test_build_requirement_serde_roundtrip() {
 #[test]
 fn test_build_requirement_serde_optional_fields_none() {
     let req = BuildRequirement {
-        name: "minimal".into(),
+        name: ProjectName::new("minimal").expect("valid project name"),
         description: "Bare minimum".into(),
         software_type: SoftwareType::Script,
         language: Language::Bash,
@@ -241,8 +262,9 @@ fn test_build_requirement_serde_optional_fields_none() {
         dependencies: vec![],
         capabilities: vec![],
     };
-    let json = serde_json::to_string(&req).unwrap();
-    let deserialized: BuildRequirement = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&req).expect("serialize BuildRequirement");
+    let deserialized: BuildRequirement =
+        serde_json::from_str(&json).expect("deserialize BuildRequirement");
     assert!(deserialized.input_spec.is_none() && deserialized.output_spec.is_none());
     assert!(deserialized.dependencies.is_empty() && deserialized.capabilities.is_empty());
 }
@@ -287,8 +309,8 @@ fn test_build_phase_serde_roundtrip() {
         BuildPhase::Failed,
     ];
     for variant in &variants {
-        let json = serde_json::to_string(variant).unwrap();
-        let deserialized: BuildPhase = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(variant).expect("serialize BuildPhase variant");
+        let deserialized: BuildPhase = serde_json::from_str(&json).expect("deserialize BuildPhase");
         assert_eq!(
             &deserialized, variant,
             "roundtrip mismatch for {:?}",
@@ -304,7 +326,7 @@ fn test_build_result_serde_success() {
     let result = BuildResult {
         build_id: Uuid::nil(),
         requirement: BuildRequirement {
-            name: "test_tool".into(),
+            name: ProjectName::new("test_tool").expect("valid project name"),
             description: "test".into(),
             software_type: SoftwareType::WasmTool,
             language: Language::Rust,
@@ -325,8 +347,8 @@ fn test_build_result_serde_success() {
         tests_failed: 0,
         registered: true,
     };
-    let json = serde_json::to_string(&result).unwrap();
-    let deserialized: BuildResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result).expect("serialize BuildResult");
+    let deserialized: BuildResult = serde_json::from_str(&json).expect("deserialize BuildResult");
     assert_build_success(&deserialized);
     assert_eq!(deserialized.iterations, 3);
     assert_eq!(
@@ -343,7 +365,7 @@ fn test_build_result_serde_failure() {
     let result = BuildResult {
         build_id: Uuid::nil(),
         requirement: BuildRequirement {
-            name: "broken".into(),
+            name: ProjectName::new("broken").expect("valid project name"),
             description: "fails".into(),
             software_type: SoftwareType::CliBinary,
             language: Language::Go,
@@ -364,8 +386,8 @@ fn test_build_result_serde_failure() {
         tests_failed: 3,
         registered: false,
     };
-    let json = serde_json::to_string(&result).unwrap();
-    let deserialized: BuildResult = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&result).expect("serialize BuildResult");
+    let deserialized: BuildResult = serde_json::from_str(&json).expect("deserialize BuildResult");
     assert_build_failure_contains(&deserialized, "compilation error: undefined reference");
     assert_eq!(deserialized.iterations, 10);
     assert_eq!(
@@ -402,7 +424,8 @@ fn test_build_result_default_fields_from_json() {
         "completed_at": "2025-01-01T00:01:00Z",
         "iterations": 1
     });
-    let result: BuildResult = serde_json::from_value(json).unwrap();
+    let result: BuildResult =
+        serde_json::from_value(json).expect("deserialize BuildResult from value");
     assert_eq!(result.validation_warnings, Vec::<String>::new());
     assert_eq!(result.tests_passed, 0);
     assert_eq!(result.tests_failed, 0);
@@ -419,8 +442,8 @@ fn test_build_log_serde_roundtrip() {
         message: "Running cargo build".into(),
         details: Some("cargo build --release 2>&1".into()),
     };
-    let json = serde_json::to_string(&log).unwrap();
-    let deserialized: BuildLog = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&log).expect("serialize BuildLog");
+    let deserialized: BuildLog = serde_json::from_str(&json).expect("deserialize BuildLog");
     let logs = vec![deserialized.clone()];
     assert_logs_contain_phase(&logs, BuildPhase::Building);
     assert_logs_message_contains(&logs, "Running cargo build");
@@ -440,8 +463,8 @@ fn test_build_log_serde_details_none() {
         message: "Done".into(),
         details: None,
     };
-    let json = serde_json::to_string(&log).unwrap();
-    let deserialized: BuildLog = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&log).expect("serialize BuildLog");
+    let deserialized: BuildLog = serde_json::from_str(&json).expect("deserialize BuildLog");
     assert_logs_contain_phase(std::slice::from_ref(&deserialized), BuildPhase::Complete);
     assert_logs_message_contains(std::slice::from_ref(&deserialized), "Done");
     assert!(deserialized.details.is_none());

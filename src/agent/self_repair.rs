@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::context::{ContextManager, JobState};
 use crate::db::Database;
 use crate::error::RepairError;
+use crate::tools::builder::ProjectName;
 use crate::tools::{BuildRequirement, Language, SoftwareBuilder, SoftwareType, ToolRegistry};
 
 /// A job that has been detected as stuck.
@@ -240,7 +241,14 @@ impl SelfRepair for DefaultSelfRepair {
 
         // Create BuildRequirement for repair
         let requirement = BuildRequirement {
-            name: tool.name.clone(),
+            name: ProjectName::new(&tool.name).map_err(|error| RepairError::Failed {
+                target_type: "tool".to_string(),
+                target_id: Uuid::nil(),
+                reason: format!(
+                    "invalid tool name '{}' for repair build: {error}",
+                    tool.name
+                ),
+            })?,
             description: format!(
                 "Repair broken WASM tool.\n\n\
                  Tool name: {}\n\

@@ -11,11 +11,13 @@ use crate::tools::tool::{
     ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput, require_str,
 };
 
+/// Tool for permanently deleting an installed skill from disk and the registry.
 pub struct SkillRemoveTool {
     registry: Arc<std::sync::RwLock<SkillRegistry>>,
 }
 
 impl SkillRemoveTool {
+    /// Create a new removal tool backed by the shared skill registry.
     pub fn new(registry: Arc<std::sync::RwLock<SkillRegistry>>) -> Self {
         Self { registry }
     }
@@ -28,8 +30,10 @@ impl Tool for SkillRemoveTool {
     }
 
     fn description(&self) -> &str {
-        "Permanently remove an installed skill from disk. This action cannot be undone — \
-         the skill files will be deleted."
+        concat!(
+            "Permanently remove an installed skill from disk. ",
+            "This action cannot be undone — the skill files will be deleted."
+        )
     }
 
     fn parameters_schema(&self) -> serde_json::Value {

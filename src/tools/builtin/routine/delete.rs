@@ -1,3 +1,8 @@
+//! Built-in tool for permanently deleting routines and their run history.
+//!
+//! This module owns the destructive routine-deletion path and refreshes the
+//! routine-engine event cache after a successful delete.
+
 use super::*;
 
 pub struct RoutineDeleteTool {

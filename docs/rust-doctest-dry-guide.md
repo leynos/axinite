@@ -638,9 +638,9 @@ Language Forum, accessed on July 15, 2025,
 [^13]: Stack Overflow — Conditionally executing a module-level doctest,
 accessed on July 15, 2025,
 <https://stackoverflow.com/questions/50312190/how-can-i-conditionally-execute-a-module-level-doctest-based-on-a-feature-flag>
-Stack Overflow — Conditional compilation with doctests, accessed on July 15,
-2025,
-<https://stackoverflow.com/questions/38292741/how-would-one-achieve-conditional-compilation-with-rust-projects-that-have-docte>
+    Stack Overflow — Conditional compilation with doctests, accessed on July
+    15, 2025,
+    <https://stackoverflow.com/questions/38292741/how-would-one-achieve-conditional-compilation-with-rust-projects-that-have-docte>
 [^14]: Best practice for doc testing README - help - The Rust Programming
        Language Forum, accessed on July 15, 2025,
        <https://users.rust-lang.org/t/best-practice-for-doc-testing-readme/114862>

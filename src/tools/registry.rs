@@ -12,6 +12,7 @@ pub use loader::{
 };
 pub use names::PROTECTED_TOOL_NAMES;
 
+/// Return `true` when `name` belongs to the protected built-in namespace.
 pub fn is_protected_tool_name(name: &str) -> bool {
     names::is_protected_tool_name(name)
 }

@@ -1,4 +1,55 @@
+//! Builder implementation for requirement analysis, build execution, and repair.
+//!
+//! This module wires [`LlmSoftwareBuilder`] into the [`SoftwareBuilder`] trait.
+//! It owns the LLM-backed requirement analysis path, project-directory lifecycle,
+//! and timeout-wrapped build execution.
+
 use super::*;
+
+fn extract_first_json_object(response: &str) -> Option<&str> {
+    for (start, ch) in response.char_indices() {
+        if ch != '{' {
+            continue;
+        }
+
+        let mut depth = 0usize;
+        let mut in_string = false;
+        let mut escaped = false;
+
+        for (offset, current) in response[start..].char_indices() {
+            if in_string {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                match current {
+                    '\\' => escaped = true,
+                    '"' => in_string = false,
+                    _ => {}
+                }
+                continue;
+            }
+
+            match current {
+                '"' => in_string = true,
+                '{' => depth += 1,
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        let candidate = &response[start..start + offset + current.len_utf8()];
+                        if serde_json::from_str::<serde_json::Value>(candidate).is_ok() {
+                            return Some(candidate);
+                        }
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    None
+}
 
 #[async_trait]
 impl SoftwareBuilder for LlmSoftwareBuilder {
@@ -42,10 +93,7 @@ JSON:"#,
             .await
             .map_err(|e| AgentToolError::BuilderFailed(format!("Analysis failed: {}", e)))?;
 
-        // Extract JSON from response
-        let json_start = response.find('{').unwrap_or(0);
-        let json_end = response.rfind('}').map(|i| i + 1).unwrap_or(response.len());
-        let json_str = &response[json_start..json_end];
+        let json_str = extract_first_json_object(&response).unwrap_or(&response);
 
         serde_json::from_str(json_str).map_err(|e| {
             AgentToolError::BuilderFailed(format!("Failed to parse requirement: {}", e))
@@ -54,13 +102,13 @@ JSON:"#,
 
     async fn build(&self, requirement: &BuildRequirement) -> Result<BuildResult, AgentToolError> {
         // Create project directory
-        let project_dir = self.config.build_dir.join(&requirement.name);
+        let project_dir = self.config.build_dir.join(requirement.name.as_str());
         if project_dir.exists() {
-            std::fs::remove_dir_all(&project_dir).map_err(|e| {
+            tokio::fs::remove_dir_all(&project_dir).await.map_err(|e| {
                 AgentToolError::BuilderFailed(format!("Failed to clean project dir: {}", e))
             })?;
         }
-        std::fs::create_dir_all(&project_dir).map_err(|e| {
+        tokio::fs::create_dir_all(&project_dir).await.map_err(|e| {
             AgentToolError::BuilderFailed(format!("Failed to create project dir: {}", e))
         })?;
 

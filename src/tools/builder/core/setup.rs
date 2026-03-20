@@ -1,3 +1,10 @@
+//! Builder setup and prompt construction helpers.
+//!
+//! This module defines [`LlmSoftwareBuilder`] and the setup logic that wires a
+//! [`BuilderConfig`], an [`LlmProvider`], and a [`ToolRegistry`] into the
+//! builder runtime. It also owns the builder-specific system prompt and WASM
+//! scaffolding guidance.
+
 use super::*;
 
 /// LLM-powered software builder.
@@ -9,13 +16,13 @@ pub struct LlmSoftwareBuilder {
 
 impl LlmSoftwareBuilder {
     /// Create a new LLM-based software builder.
-    pub fn new(config: BuilderConfig, llm: Arc<dyn LlmProvider>, tools: Arc<ToolRegistry>) -> Self {
-        // Ensure build directory exists
-        if let Err(e) = std::fs::create_dir_all(&config.build_dir) {
-            tracing::warn!("Failed to create build directory: {}", e);
-        }
-
-        Self { config, llm, tools }
+    pub fn new(
+        config: BuilderConfig,
+        llm: Arc<dyn LlmProvider>,
+        tools: Arc<ToolRegistry>,
+    ) -> Result<Self, std::io::Error> {
+        std::fs::create_dir_all(&config.build_dir)?;
+        Ok(Self { config, llm, tools })
     }
 
     /// Get the build tools available for the build loop.
@@ -137,7 +144,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-wit-bindgen = "0.41"
+wit-bindgen = "0.54.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ```

@@ -43,6 +43,8 @@ pub const PROTECTED_TOOL_NAMES: &[&str] = &[
     "skill_search",
     "skill_install",
     "skill_remove",
+    "secret_list",
+    "secret_delete",
     "message",
     "web_fetch",
     "restart",
@@ -51,6 +53,7 @@ pub const PROTECTED_TOOL_NAMES: &[&str] = &[
     "image_analyze",
 ];
 
+/// Return `true` when `name` is reserved for a built-in tool.
 pub fn is_protected_tool_name(name: &str) -> bool {
     PROTECTED_TOOL_NAMES.contains(&name)
 }

@@ -605,10 +605,14 @@ impl ShellTool {
         }
 
         // Determine working directory
-        let cwd = workdir
-            .map(PathBuf::from)
-            .or_else(|| self.working_dir.clone())
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        let cwd = match (&self.working_dir, workdir) {
+            (Some(base_dir), Some(path)) => {
+                crate::tools::builtin::path_utils::validate_path(path, Some(base_dir))?
+            }
+            (Some(base_dir), None) => base_dir.clone(),
+            (None, Some(path)) => PathBuf::from(path),
+            (None, None) => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        };
 
         // Determine timeout
         let timeout_duration = timeout.map(Duration::from_secs).unwrap_or(self.timeout);
