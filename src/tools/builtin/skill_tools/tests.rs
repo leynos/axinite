@@ -56,40 +56,40 @@ fn test_skill_list_schema() {
     assert_tool_schema(&tool, "skill_list", ApprovalRequirement::Never, &[]);
 }
 
-#[test]
-fn test_skill_search_schema() {
+#[rstest]
+#[case(
+    |r: &TestRegistryHandle| -> Box<dyn Tool> {
+        Box::new(SkillSearchTool::new(Arc::clone(&r.registry), test_catalog()))
+    },
+    "skill_search",
+    ApprovalRequirement::Never,
+    &["query"] as &[&str],
+)]
+#[case(
+    |r: &TestRegistryHandle| -> Box<dyn Tool> {
+        Box::new(SkillInstallTool::new(Arc::clone(&r.registry), test_catalog()))
+    },
+    "skill_install",
+    ApprovalRequirement::UnlessAutoApproved,
+    &["name", "url", "content"] as &[&str],
+)]
+#[case(
+    |r: &TestRegistryHandle| -> Box<dyn Tool> {
+        Box::new(SkillRemoveTool::new(Arc::clone(&r.registry)))
+    },
+    "skill_remove",
+    ApprovalRequirement::Always,
+    &["name"] as &[&str],
+)]
+fn test_skill_tool_schema(
+    #[case] make_tool: impl Fn(&TestRegistryHandle) -> Box<dyn Tool>,
+    #[case] expected_name: &str,
+    #[case] expected_approval: ApprovalRequirement,
+    #[case] expected_keys: &[&str],
+) {
     let registry = test_registry();
-    let tool = SkillSearchTool::new(Arc::clone(&registry.registry), test_catalog());
-    assert_tool_schema(
-        &tool,
-        "skill_search",
-        ApprovalRequirement::Never,
-        &["query"],
-    );
-}
-
-#[test]
-fn test_skill_install_schema() {
-    let registry = test_registry();
-    let tool = SkillInstallTool::new(Arc::clone(&registry.registry), test_catalog());
-    assert_tool_schema(
-        &tool,
-        "skill_install",
-        ApprovalRequirement::UnlessAutoApproved,
-        &["name", "url", "content"],
-    );
-}
-
-#[test]
-fn test_skill_remove_schema() {
-    let registry = test_registry();
-    let tool = SkillRemoveTool::new(Arc::clone(&registry.registry));
-    assert_tool_schema(
-        &tool,
-        "skill_remove",
-        ApprovalRequirement::Always,
-        &["name"],
-    );
+    let tool = make_tool(&registry);
+    assert_tool_schema(&*tool, expected_name, expected_approval, expected_keys);
 }
 
 #[rstest]
