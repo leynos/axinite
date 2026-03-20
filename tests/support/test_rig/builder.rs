@@ -1,11 +1,8 @@
-//! Builder utilities for assembling a [`TestRig`] with realistic shared test
-//! infrastructure.
+//! Builder utilities for assembling a realistic [`TestRig`].
 //!
-//! `TestRigBuilder` composes [`TestRig`], [`TestChannelHandle`],
-//! [`InstrumentedLlm`], [`TestChannel`], and trace-backed providers such as
-//! [`TraceLlm`]. Use it when a test needs a fully wired agent loop, optionally
-//! replaying `LlmTrace` steps and HTTP exchanges through
-//! `ReplayingHttpInterceptor`.
+//! `TestRigBuilder` wires [`TestRig`], [`TestChannelHandle`],
+//! [`InstrumentedLlm`], [`TestChannel`], [`TraceLlm`], and optional
+//! `ReplayingHttpInterceptor` support into a fully running agent loop.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,6 +12,7 @@ use ironclaw::agent::{Agent, AgentDeps};
 use ironclaw::app::{AppBuilder, AppBuilderFlags, AppComponents};
 use ironclaw::channels::web::log_layer::LogBroadcaster;
 use ironclaw::config::Config;
+use ironclaw::db::Database;
 use ironclaw::llm::recording::{HttpExchange, ReplayingHttpInterceptor};
 use ironclaw::llm::{LlmProvider, SessionConfig, SessionManager};
 use ironclaw::tools::Tool;
@@ -38,7 +36,6 @@ pub struct TestRigBuilder {
     extra_tools: Vec<Arc<dyn Tool>>,
 }
 
-// Private: register the minimal set of job tools needed by the tests.
 fn register_job_tools_for_tests(
     components: &ironclaw::app::AppComponents,
     scheduler_slot: &ironclaw::tools::builtin::SchedulerSlot,
@@ -168,7 +165,7 @@ impl TestRigBuilder {
     async fn register_optional_subsystems(
         &self,
         components: &mut AppComponents,
-        db: &Arc<dyn ironclaw::db::Database>,
+        db: &Arc<dyn Database>,
         temp_dir: &tempfile::TempDir,
     ) {
         if self.enable_routines && components.db.is_some() && components.workspace.is_some() {
@@ -215,11 +212,10 @@ impl TestRigBuilder {
         }
     }
 
-    /// Build the test rig, creating a real agent and spawning it in the background.
     #[cfg(feature = "libsql")]
-    pub async fn build(self) -> anyhow::Result<TestRig> {
-        use ironclaw::channels::ChannelManager;
-        use ironclaw::db::Database;
+    async fn setup_database_and_config(
+        &self,
+    ) -> anyhow::Result<(tempfile::TempDir, Arc<dyn Database>, Config)> {
         use ironclaw::db::libsql::LibSqlBackend;
 
         let temp_dir = tempfile::tempdir().context("failed to create temp dir")?;
@@ -231,7 +227,7 @@ impl TestRigBuilder {
             .run_migrations()
             .await
             .context("failed to run migrations")?;
-        let db: Arc<dyn ironclaw::db::Database> = Arc::new(backend);
+        let db: Arc<dyn Database> = Arc::new(backend);
 
         let skills_dir = temp_dir.path().join("skills");
         let installed_skills_dir = temp_dir.path().join("installed_skills");
@@ -248,13 +244,18 @@ impl TestRigBuilder {
         if let Some(value) = self.auto_approve_tools {
             config.agent.auto_approve_tools = value;
         }
+        Ok((temp_dir, db, config))
+    }
 
+    #[cfg(feature = "libsql")]
+    async fn build_components(
+        &self,
+        config: Config,
+        db: Arc<dyn Database>,
+        llm: Arc<dyn LlmProvider>,
+    ) -> anyhow::Result<AppComponents> {
         let session = Arc::new(SessionManager::new(SessionConfig::default()));
         let log_broadcaster = Arc::new(LogBroadcaster::new());
-        let (base_llm, trace_llm_ref) = self.resolve_llm();
-        let instrumented = Arc::new(InstrumentedLlm::new(base_llm));
-        let llm: Arc<dyn LlmProvider> = Arc::clone(&instrumented) as Arc<dyn LlmProvider>;
-
         let mut builder = AppBuilder::new(
             config,
             AppBuilderFlags::default(),
@@ -262,27 +263,28 @@ impl TestRigBuilder {
             session,
             log_broadcaster,
         );
-        builder.with_database(Arc::clone(&db));
+        builder.with_database(db);
         builder.with_llm(llm);
-        let mut components = builder
+        builder
             .build_all()
             .await
-            .context("AppBuilder::build_all() failed in test rig")?;
+            .context("AppBuilder::build_all() failed in test rig")
+    }
 
-        let scheduler_slot: ironclaw::tools::builtin::SchedulerSlot =
-            Arc::new(tokio::sync::RwLock::new(None));
-
-        register_job_tools_for_tests(&components, &scheduler_slot);
-        self.register_optional_subsystems(&mut components, &db, &temp_dir)
-            .await;
-
+    fn build_agent_deps(
+        &self,
+        components: AppComponents,
+        http_replay: Option<ReplayingHttpInterceptor>,
+    ) -> (
+        AgentDeps,
+        Arc<dyn Database>,
+        Option<Arc<ironclaw::workspace::Workspace>>,
+    ) {
         let db_ref = components
             .db
             .clone()
-            .context("test rig requires a database")?;
+            .expect("test rig requires a database after AppBuilder setup");
         let workspace_ref = components.workspace.clone();
-        let http_replay = self.build_http_interceptor(self.trace.as_ref());
-
         let deps = AgentDeps {
             store: components.db,
             llm: components.llm,
@@ -303,17 +305,55 @@ impl TestRigBuilder {
             transcription: None,
             document_extraction: None,
         };
+        (deps, db_ref, workspace_ref)
+    }
 
+    #[cfg(feature = "libsql")]
+    async fn spawn_agent_and_wait(
+        &self,
+        agent: Agent,
+        test_channel: &Arc<TestChannel>,
+    ) -> anyhow::Result<tokio::task::JoinHandle<()>> {
+        let agent_handle = tokio::spawn(async move {
+            if let Err(error) = agent.run().await {
+                tracing::error!(%error, "TestRig Agent exited with error");
+            }
+        });
+        if let Some(rx) = test_channel.take_ready_rx().await {
+            tokio::time::timeout(Duration::from_secs(5), rx)
+                .await
+                .context("wait for TestRig readiness")?
+                .context("TestRig readiness channel closed before signalling ready")?;
+        }
+        Ok(agent_handle)
+    }
+
+    /// Build the test rig, creating a real agent and spawning it in the background.
+    #[cfg(feature = "libsql")]
+    pub async fn build(self) -> anyhow::Result<TestRig> {
+        use ironclaw::channels::ChannelManager;
+        let (temp_dir, db, config) = self.setup_database_and_config().await?;
+        let (base_llm, trace_llm_ref) = self.resolve_llm();
+        let instrumented = Arc::new(InstrumentedLlm::new(base_llm));
+        let llm: Arc<dyn LlmProvider> = Arc::clone(&instrumented) as Arc<dyn LlmProvider>;
+        let mut components = self.build_components(config, Arc::clone(&db), llm).await?;
+        let scheduler_slot: ironclaw::tools::builtin::SchedulerSlot =
+            Arc::new(tokio::sync::RwLock::new(None));
+        register_job_tools_for_tests(&components, &scheduler_slot);
+        self.register_optional_subsystems(&mut components, &db, &temp_dir)
+            .await;
+        let http_replay = self.build_http_interceptor(self.trace.as_ref());
+        let context_manager = Arc::clone(&components.context_manager);
+        let agent_config = components.config.agent.clone();
+        let (deps, db_ref, workspace_ref) = self.build_agent_deps(components, http_replay);
         let test_channel = Arc::new(TestChannel::new());
         let handle = TestChannelHandle::new(Arc::clone(&test_channel));
         let channel_manager = ChannelManager::new();
         channel_manager.add(Box::new(handle)).await;
         let channels = Arc::new(channel_manager);
-
         deps.tools
             .register_message_tools(Arc::clone(&channels))
             .await;
-
         let routine_config = if self.enable_routines {
             Some(ironclaw::config::RoutineConfig {
                 enabled: true,
@@ -328,31 +368,17 @@ impl TestRigBuilder {
             None
         };
         let agent = Agent::new(
-            components.config.agent.clone(),
+            agent_config,
             deps,
             channels,
             None,
             None,
             routine_config,
-            Some(Arc::clone(&components.context_manager)),
+            Some(context_manager),
             None,
         );
-
         *scheduler_slot.write().await = Some(agent.scheduler());
-
-        let agent_handle = tokio::spawn(async move {
-            if let Err(error) = agent.run().await {
-                tracing::error!(%error, "TestRig Agent exited with error");
-            }
-        });
-
-        if let Some(rx) = test_channel.take_ready_rx().await {
-            tokio::time::timeout(Duration::from_secs(5), rx)
-                .await
-                .context("wait for TestRig readiness")?
-                .context("TestRig readiness channel closed before signalling ready")?;
-        }
-
+        let agent_handle = self.spawn_agent_and_wait(agent, &test_channel).await?;
         Ok(TestRig {
             channel: test_channel,
             instrumented_llm: instrumented,
