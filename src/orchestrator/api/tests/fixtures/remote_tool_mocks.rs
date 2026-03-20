@@ -1,4 +1,4 @@
-//! Shared mock tools for hosted remote-tool endpoint tests.
+//! Shared mock tools for hosted remote-tool catalogue endpoint tests.
 
 use std::sync::Arc;
 use std::time::Duration;

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::context::JobContext;
+use crate::skills::LoadedSkill;
 use crate::skills::catalog::{CatalogEntry, SkillCatalog};
 use crate::skills::registry::SkillRegistry;
 use crate::tools::tool::{Tool, ToolError, ToolOutput, require_str};
@@ -146,7 +147,13 @@ impl SkillSearchTool {
     }
 
     fn parse_search_query(params: &serde_json::Value) -> Result<String, ToolError> {
-        Ok(require_str(params, "query")?.to_string())
+        let query = require_str(params, "query")?.trim().to_string();
+        if query.is_empty() {
+            return Err(ToolError::InvalidParameters(
+                "query must not be empty".to_string(),
+            ));
+        }
+        Ok(query)
     }
 
     fn compute_installed_index(registry: &SkillRegistry) -> Result<HashSet<String>, ToolError> {
@@ -192,20 +199,27 @@ impl SkillSearchTool {
         )
     }
 
+    fn matches_query(skill: &LoadedSkill, query_lower: &str) -> bool {
+        skill.manifest.name.to_lowercase().contains(query_lower)
+            || skill
+                .manifest
+                .description
+                .to_lowercase()
+                .contains(query_lower)
+            || skill
+                .manifest
+                .activation
+                .keywords
+                .iter()
+                .any(|keyword| keyword.to_lowercase().contains(query_lower))
+    }
+
     fn collect_local_matches(registry: &SkillRegistry, query: &str) -> Vec<serde_json::Value> {
         let query_lower = query.to_lowercase();
         registry
             .skills()
             .iter()
-            .filter(|s| {
-                s.manifest.name.to_lowercase().contains(&query_lower)
-                    || s.manifest.description.to_lowercase().contains(&query_lower)
-                    || s.manifest
-                        .activation
-                        .keywords
-                        .iter()
-                        .any(|keyword| keyword.to_lowercase().contains(&query_lower))
-            })
+            .filter(|s| Self::matches_query(s, &query_lower))
             .map(|s| {
                 serde_json::json!({
                     "name": s.manifest.name,

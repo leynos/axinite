@@ -7,6 +7,7 @@ use rstest::{fixture, rstest};
 
 use crate::skills::catalog::SkillCatalog;
 use crate::skills::registry::SkillRegistry;
+use crate::skills::{ActivationCriteria, LoadedSkill, SkillManifest, SkillSource, SkillTrust};
 use crate::tools::tool::{ApprovalRequirement, Tool};
 
 use super::{SkillInstallTool, SkillListTool, SkillRemoveTool, SkillSearchTool};
@@ -120,4 +121,47 @@ fn skill_remove_always_requires_approval_regardless_of_params(
 ) {
     let tool = SkillRemoveTool::new(Arc::clone(&test_registry.registry));
     assert_eq!(tool.requires_approval(&params), ApprovalRequirement::Always,);
+}
+
+#[test]
+fn skill_search_rejects_whitespace_only_query() {
+    let err = SkillSearchTool::parse_search_query(&serde_json::json!({"query": "   \t  "}))
+        .expect_err("whitespace-only query should be rejected");
+    assert_eq!(
+        err.to_string(),
+        "Invalid parameters: query must not be empty"
+    );
+}
+
+#[rstest]
+#[case("search", true)]
+#[case("discover skills", true)]
+#[case("rust", true)]
+#[case("python", false)]
+fn skill_search_matches_query_checks_name_description_and_keywords(
+    #[case] query: &str,
+    #[case] expected: bool,
+) {
+    let skill = LoadedSkill {
+        manifest: SkillManifest {
+            name: "search-helper".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Discover skills for Rust workflows".to_string(),
+            activation: ActivationCriteria {
+                keywords: vec!["skill-search".to_string(), "rust".to_string()],
+                ..ActivationCriteria::default()
+            },
+            metadata: None,
+        },
+        prompt_content: String::new(),
+        trust: SkillTrust::Trusted,
+        source: SkillSource::Bundled(std::path::PathBuf::from("skills/search-helper")),
+        content_hash: "hash".to_string(),
+        compiled_patterns: Vec::new(),
+        lowercased_keywords: Vec::new(),
+        lowercased_exclude_keywords: Vec::new(),
+        lowercased_tags: Vec::new(),
+    };
+
+    assert_eq!(SkillSearchTool::matches_query(&skill, query), expected);
 }
