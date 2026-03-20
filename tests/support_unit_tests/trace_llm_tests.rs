@@ -7,6 +7,20 @@ use ironclaw::llm::{
     ToolCompletionRequest,
 };
 
+#[derive(Copy, Clone, Debug)]
+struct LlmCounterSnapshot {
+    calls: usize,
+    input_tokens: u32,
+    output_tokens: u32,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct LlmCounterMinima {
+    calls: usize,
+    input_tokens: u32,
+    output_tokens: u32,
+}
+
 fn assert_msg(role: Role, msg: &ChatMessage, contains: &str) {
     assert_eq!(msg.role, role);
     assert!(
@@ -39,25 +53,24 @@ fn assert_captured_requests_shape(
     assert_msg(Role::User, last_message, last_user_contains);
 }
 
-fn assert_llm_counters(
-    calls: usize,
-    in_tokens: u32,
-    out_tokens: u32,
-    min_calls: usize,
-    min_in: u32,
-    min_out: u32,
-) {
+fn assert_llm_counters(actual: LlmCounterSnapshot, min: LlmCounterMinima) {
     assert!(
-        calls >= min_calls,
-        "expected at least {min_calls} calls, got {calls}"
+        actual.calls >= min.calls,
+        "expected at least {} calls, got {}",
+        min.calls,
+        actual.calls
     );
     assert!(
-        in_tokens >= min_in,
-        "expected at least {min_in} input tokens, got {in_tokens}"
+        actual.input_tokens >= min.input_tokens,
+        "expected at least {} input tokens, got {}",
+        min.input_tokens,
+        actual.input_tokens
     );
     assert!(
-        out_tokens >= min_out,
-        "expected at least {min_out} output tokens, got {out_tokens}"
+        actual.output_tokens >= min.output_tokens,
+        "expected at least {} output tokens, got {}",
+        min.output_tokens,
+        actual.output_tokens
     );
 }
 
@@ -176,12 +189,16 @@ async fn replays_text_response() {
     assert!(resp.tool_calls.is_empty());
     assert_eq!(resp.finish_reason, FinishReason::Stop);
     assert_llm_counters(
-        llm.calls(),
-        resp.input_tokens,
-        resp.output_tokens,
-        1,
-        100,
-        20,
+        LlmCounterSnapshot {
+            calls: llm.calls(),
+            input_tokens: resp.input_tokens,
+            output_tokens: resp.output_tokens,
+        },
+        LlmCounterMinima {
+            calls: 1,
+            input_tokens: 100,
+            output_tokens: 20,
+        },
     );
 }
 
@@ -207,7 +224,18 @@ async fn replays_tool_calls() {
     assert_eq!(resp.tool_calls.len(), 1);
     assert_tool_call(&resp.tool_calls[0], "memory_search", "call_memory_search");
     assert_eq!(resp.finish_reason, FinishReason::ToolUse);
-    assert_llm_counters(1, resp.input_tokens, resp.output_tokens, 1, 80, 15);
+    assert_llm_counters(
+        LlmCounterSnapshot {
+            calls: 1,
+            input_tokens: resp.input_tokens,
+            output_tokens: resp.output_tokens,
+        },
+        LlmCounterMinima {
+            calls: 1,
+            input_tokens: 80,
+            output_tokens: 15,
+        },
+    );
 }
 
 #[tokio::test]
@@ -293,7 +321,18 @@ async fn from_json_file() {
         .unwrap();
 
     assert_eq!(resp.content.as_deref(), Some("Hello from fixture file!"));
-    assert_llm_counters(0, resp.input_tokens, resp.output_tokens, 0, 50, 10);
+    assert_llm_counters(
+        LlmCounterSnapshot {
+            calls: 0,
+            input_tokens: resp.input_tokens,
+            output_tokens: resp.output_tokens,
+        },
+        LlmCounterMinima {
+            calls: 0,
+            input_tokens: 50,
+            output_tokens: 10,
+        },
+    );
 }
 
 #[tokio::test]
@@ -305,7 +344,18 @@ async fn complete_text_step() {
 
     assert_eq!(resp.content, "plain text");
     assert_eq!(resp.finish_reason, FinishReason::Stop);
-    assert_llm_counters(0, resp.input_tokens, resp.output_tokens, 0, 30, 8);
+    assert_llm_counters(
+        LlmCounterSnapshot {
+            calls: 0,
+            input_tokens: resp.input_tokens,
+            output_tokens: resp.output_tokens,
+        },
+        LlmCounterMinima {
+            calls: 0,
+            input_tokens: 30,
+            output_tokens: 8,
+        },
+    );
 }
 
 #[tokio::test]
@@ -327,7 +377,18 @@ async fn complete_skips_tool_calls_step() {
 
     assert_eq!(resp.content, "skipped past tools");
     assert_eq!(resp.finish_reason, FinishReason::Stop);
-    assert_llm_counters(0, resp.input_tokens, resp.output_tokens, 0, 20, 8);
+    assert_llm_counters(
+        LlmCounterSnapshot {
+            calls: 0,
+            input_tokens: resp.input_tokens,
+            output_tokens: resp.output_tokens,
+        },
+        LlmCounterMinima {
+            calls: 0,
+            input_tokens: 20,
+            output_tokens: 8,
+        },
+    );
 }
 
 #[tokio::test]
