@@ -239,6 +239,8 @@ example and ensuring the test suite provides meaningful feedback. The following
 table provides a comparative reference for the most common doctest attributes.
 
 <!-- markdownlint-disable MD013 -->
+**Table 1:** Comparison of doctest attributes and their behaviours
+
 | Attribute    | Action                                                              | Test Outcome                                                   | Primary Use Case & Warnings                                                                                                                                                                                                           |
 | ------------ | ------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ignore       | Skips both compilation and execution.                               | ignored                                                        | Use Case: For pseudocode, examples known to be broken, or to temporarily disable a test. Warning: Provides no guarantee that the code is even syntactically correct. Generally discouraged in favour of more specific attributes.[^2] |
@@ -629,7 +631,8 @@ July 15, 2025, <https://doc.rust-lang.org/rustdoc/documentation-tests.html>
 [^10]: Compile_fail doc test ignored in cfg(test) - help - The Rust Programming
 Language Forum, accessed on July 15, 2025,
 <https://users.rust-lang.org/t/compile-fail-doc-test-ignored-in-cfg-test/124927>
-Accessed on July 15, 2025,
+Test setup for doctests - help - The Rust Programming Language Forum,
+accessed on July 15, 2025,
 <https://users.rust-lang.org/t/test-setup-for-doctests/50426>
 [^11]: quote_doctest - Rust - [Docs.rs](http://Docs.rs), accessed on July 15,
 2025, <https://docs.rs/quote-doctest>
@@ -638,7 +641,7 @@ Accessed on July 15, 2025,
 [^13]: Stack Overflow — Conditionally executing a module-level doctest,
 accessed on July 15, 2025,
 <https://stackoverflow.com/questions/50312190/how-can-i-conditionally-execute-a-module-level-doctest-based-on-a-feature-flag>
- Stack Overflow — Conditional compilation with doctests, accessed on July 15,
+Stack Overflow — Conditional compilation with doctests, accessed on July 15,
 2025,
 <https://stackoverflow.com/questions/38292741/how-would-one-achieve-conditional-compilation-with-rust-projects-that-have-docte>
 [^14]: Best practice for doc testing README - help - The Rust Programming

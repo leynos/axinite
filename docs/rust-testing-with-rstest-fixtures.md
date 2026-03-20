@@ -1,7 +1,5 @@
 # Mastering test fixtures in Rust with `rstest`
 
-<!-- markdownlint-disable MD013 -->
-
 Testing is an indispensable part of modern software development, ensuring code
 reliability, maintainability, and correctness. In the Rust ecosystem, while the
 built-in testing framework provides a solid foundation, managing test
@@ -126,11 +124,11 @@ production binaries, which helps keep them small while reducing compile times
 for non-test builds.
 
 When leveraging Tokio's test utilities—for example `tokio::time::pause`—enable
-the `test-util` feature via a dev-only dependency:
+the `time` and `test-util` features via a dev-only dependency:
 
 ```toml
 [dev-dependencies]
-tokio = { version = "1", default-features = false, features = ["test-util"] }
+tokio = { version = "1", default-features = false, features = ["time", "test-util"] }
 rstest = "0.26.1"
 ```
 

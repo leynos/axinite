@@ -94,6 +94,7 @@ impl WorkerRuntime {
     /// with [`WorkerHttpClient::from_env`] using the supplied [`WorkerConfig`],
     /// while `from_client` takes an `Arc<WorkerHttpClient>` that has already
     /// completed that validation and therefore returns `Self` directly.
+
     fn from_client(config: WorkerConfig, client: Arc<WorkerHttpClient>) -> Self {
         let llm: Arc<dyn LlmProvider> = Arc::new(ProxyLlmProvider::new(
             Arc::clone(&client),
@@ -125,6 +126,7 @@ impl WorkerRuntime {
     }
 
     /// Run the worker until the job is complete or an error occurs.
+
     pub async fn run(mut self) -> Result<(), WorkerError> {
         tracing::info!("Worker starting for job {}", self.config.job_id);
 
@@ -240,75 +242,7 @@ impl WorkerRuntime {
         state: WorkerState,
         message: Option<String>,
         iteration: u32,
-    ) -> Result<(), WorkerError> {
-        self.client
-            .report_status(&StatusUpdate::new(state, message, iteration))
-            .await
-    }
 
-    async fn run_job_loop(
-        &self,
-        job: &crate::worker::api::JobDescription,
-        iteration_tracker: Arc<Mutex<u32>>,
-    ) -> Result<LoopOutcome, crate::error::Error> {
-        let reasoning = Reasoning::new(Arc::clone(&self.llm));
-        let mut reason_ctx = self.build_reasoning_context(job).await;
-
-        let delegate = ContainerDelegate {
-            client: Arc::clone(&self.client),
-            safety: Arc::clone(&self.safety),
-            tools: Arc::clone(&self.tools),
-            extra_env: Arc::clone(&self.extra_env),
-            last_output: Mutex::new(String::new()),
-            iteration_tracker,
-        };
-
-        let config = AgenticLoopConfig {
-            max_iterations: self.config.max_iterations as usize,
-            enable_tool_intent_nudge: true,
-            max_tool_intent_nudges: 2,
-        };
-
-        crate::agent::agentic_loop::run_agentic_loop(
-            &delegate,
-            &reasoning,
-            &mut reason_ctx,
-            &config,
-        )
-        .await
-    }
-
-    async fn build_reasoning_context(
-        &self,
-        job: &crate::worker::api::JobDescription,
-    ) -> ReasoningContext {
-        let mut reason_ctx = ReasoningContext::new().with_job(&job.description);
-        if !self.toolset_instructions.is_empty() {
-            reason_ctx.messages.push(ChatMessage::system(format!(
-                "Hosted remote-tool guidance:\n\n{}",
-                self.toolset_instructions.join("\n")
-            )));
-        }
-        reason_ctx.messages.push(ChatMessage::system(format!(
-            r#"You are an autonomous agent running inside a Docker container.
-
-Job: {}
-Description: {}
-
-Use the available tools listed below to inspect the current capability surface.
-This toolset may include container-local tools and, when the remote catalogue
-loads, orchestrator-proxied remote tools.
-Work independently to complete this job. Report when done."#,
-            job.title, job.description
-        )));
-        reason_ctx.available_tools = self.tools.tool_definitions().await;
-        reason_ctx
-    }
-
-    async fn report_completion(
-        &self,
-        execution: WorkerExecutionResult,
-        iterations: u32,
     ) -> Result<(), WorkerError> {
         match execution {
             WorkerExecutionResult::Outcome(LoopOutcome::Response(output)) => {
@@ -365,6 +299,72 @@ Work independently to complete this job. Report when done."#,
         }
     }
 
+    async fn run_job_loop(
+        &self,
+        job: &crate::worker::api::JobDescription,
+        iteration_tracker: Arc<Mutex<u32>>,
+
+    ) -> Result<LoopOutcome, crate::error::Error> {
+        let reasoning = Reasoning::new(Arc::clone(&self.llm));
+        let mut reason_ctx = self.build_reasoning_context(job).await;
+
+        let delegate = ContainerDelegate {
+            client: Arc::clone(&self.client),
+            safety: Arc::clone(&self.safety),
+            tools: Arc::clone(&self.tools),
+            extra_env: Arc::clone(&self.extra_env),
+            last_output: Mutex::new(String::new()),
+            iteration_tracker,
+        };
+
+        let config = AgenticLoopConfig {
+            max_iterations: self.config.max_iterations as usize,
+            enable_tool_intent_nudge: true,
+            max_tool_intent_nudges: 2,
+        };
+
+        crate::agent::agentic_loop::run_agentic_loop(
+            &delegate,
+            &reasoning,
+            &mut reason_ctx,
+            &config,
+        )
+        .await
+    }
+
+    async fn build_reasoning_context(
+        &self,
+        job: &crate::worker::api::JobDescription,
+
+    ) -> ReasoningContext {
+        let mut reason_ctx = ReasoningContext::new().with_job(&job.description);
+        if !self.toolset_instructions.is_empty() {
+            reason_ctx.messages.push(ChatMessage::system(format!(
+                "Hosted remote-tool guidance:\n\n{}",
+                self.toolset_instructions.join("\n")
+            )));
+        }
+        reason_ctx.messages.push(ChatMessage::system(format!(
+            r#"You are an autonomous agent running inside a Docker container.
+
+Job: {}
+Description: {}
+
+Use the available tools listed below to inspect the current capability surface.
+This toolset may include container-local tools and, when the remote catalogue
+loads, orchestrator-proxied remote tools.
+Work independently to complete this job. Report when done."#,
+            job.title, job.description
+        )));
+        reason_ctx.available_tools = self.tools.tool_definitions().await;
+        reason_ctx
+    }
+
+    async fn report_completion(
+        &self,
+        execution: WorkerExecutionResult,
+        iterations: u32,
+
     async fn report_failure(&self, iterations: u32, message: &str) -> Result<(), WorkerError> {
         self.post_event(
             JobEventType::Result,
@@ -384,6 +384,7 @@ Work independently to complete this job. Report when done."#,
     }
 
     /// Post a job event to the orchestrator (fire-and-forget).
+
     async fn post_event(&self, event_type: JobEventType, data: serde_json::Value) {
         self.client
             .post_event(&JobEventPayload { event_type, data })
@@ -410,16 +411,63 @@ Work independently to complete this job. Report when done."#,
     }
 
     #[cfg(test)]
+
     async fn register_remote_tools_with_degraded_startup(&self) {
-        if let Err(error) = self.register_remote_tools().await {
-            tracing::warn!(
-                job_id = %self.config.job_id,
-                error = %error,
-                "Failed to fetch hosted remote-tool catalogue; continuing with container-local tools only"
+        let _ = self.handle_register_remote_tools_with_degradation().await;
+    }
+
+    async fn prepare_for_execution(&mut self) -> Result<JobDescription, WorkerError> {
+        tracing::info!("Worker starting for job {}", self.config.job_id);
+
+        let job = self.client.get_job().await?;
+        tracing::info!(
+            "Received job: {} - {}",
+            job.title,
+            truncate_for_preview(&job.description, 100)
+        );
+
+        let credentials = self.client.fetch_credentials().await?;
+        let mut env_map = HashMap::new();
+        for credential in &credentials {
+            env_map.insert(credential.env_var.clone(), credential.value.clone());
+        }
+        self.extra_env = Arc::new(env_map);
+
+        if !credentials.is_empty() {
+            tracing::info!(
+                "Fetched {} credential(s) for child process injection",
+                credentials.len()
             );
+        }
+
+        self.toolset_instructions = self.handle_register_remote_tools_with_degradation().await;
+
+        self.client
+            .report_status(&StatusUpdate {
+                state: "in_progress".to_string(),
+                message: Some("Worker started, beginning execution".to_string()),
+                iteration: 0,
+            })
+            .await?;
+
+        Ok(job)
+    }
+
+    async fn handle_register_remote_tools_with_degradation(&self) -> Vec<String> {
+        match self.register_remote_tools().await {
+            Ok(toolset_instructions) => toolset_instructions,
+            Err(error) => {
+                tracing::warn!(
+                    job_id = %self.config.job_id,
+                    error = %error,
+                    "Failed to fetch hosted remote-tool catalogue; continuing with container-local tools only"
+                );
+                Vec::new()
+            }
         }
     }
 
+    #[cfg(test)]
 }
 
 #[cfg(test)]

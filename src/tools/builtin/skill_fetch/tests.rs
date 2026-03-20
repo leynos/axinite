@@ -5,7 +5,7 @@ use std::net::{IpAddr, SocketAddr};
 
 use flate2::Compression;
 use flate2::write::DeflateEncoder;
-use rstest::{fixture, rstest};
+use rstest::rstest;
 
 use super::{extract_skill_from_zip, is_private_ip, validate_fetch_url, validate_resolved_addrs};
 
@@ -77,11 +77,6 @@ fn test_validate_resolved_addrs_cases(
     }
 }
 
-#[fixture]
-fn zip_builder_fixture() -> ZipEntryBuilder {
-    build_zip_entry_store
-}
-
 #[rstest]
 #[case::stored(
     build_zip_entry_store as ZipEntryBuilder,
@@ -104,9 +99,9 @@ fn test_extract_skill_from_zip_success_cases(
     );
 }
 
-#[rstest]
-fn test_extract_skill_from_zip_missing_skill_md(zip_builder_fixture: ZipEntryBuilder) {
-    let zip = zip_builder_fixture("_meta.json", b"{}");
+#[test]
+fn test_extract_skill_from_zip_missing_skill_md() {
+    let zip = build_zip_entry_store("_meta.json", b"{}");
     let err = extract_skill_from_zip(&zip).expect_err("archive without SKILL.md should fail");
     assert!(err.to_string().contains("does not contain SKILL.md"));
 }
@@ -182,11 +177,11 @@ fn build_zip_entry_store_oversized(
     zip
 }
 
-#[rstest]
-fn test_zip_extract_ignores_non_skill_entries(zip_builder_fixture: ZipEntryBuilder) {
+#[test]
+fn test_zip_extract_ignores_non_skill_entries() {
     let mut zip = Vec::new();
-    zip.extend_from_slice(&zip_builder_fixture("README.md", b"# Readme"));
-    zip.extend_from_slice(&zip_builder_fixture("src/main.rs", b"fn main() {}"));
+    zip.extend_from_slice(&build_zip_entry_store("README.md", b"# Readme"));
+    zip.extend_from_slice(&build_zip_entry_store("src/main.rs", b"fn main() {}"));
 
     let err = extract_skill_from_zip(&zip).expect_err("archive without root SKILL.md should fail");
     assert!(
@@ -198,12 +193,8 @@ fn test_zip_extract_ignores_non_skill_entries(zip_builder_fixture: ZipEntryBuild
 #[rstest]
 #[case("../../SKILL.md", "path traversal entry")]
 #[case("subdir/SKILL.md", "nested path")]
-fn test_zip_extract_non_root_skill_md_rejected(
-    zip_builder_fixture: ZipEntryBuilder,
-    #[case] path: &str,
-    #[case] label: &str,
-) {
-    let zip = zip_builder_fixture(path, b"---\nname: x\n---\n# X\n");
+fn test_zip_extract_non_root_skill_md_rejected(#[case] path: &str, #[case] label: &str) {
+    let zip = build_zip_entry_store(path, b"---\nname: x\n---\n# X\n");
     let err = extract_skill_from_zip(&zip)
         .expect_err("non-root SKILL.md entries should not satisfy extraction");
     assert!(

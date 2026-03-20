@@ -817,6 +817,8 @@ call `rstest_bdd::config::set_fail_on_skipped(true)`, unless the feature or
 scenario carries an `@allow_skipped` tag. (Example-level tags are not yet
 evaluated.)
 
+**Table 1:** Environment variables for skipped-scenario behaviour
+
 | Variable name | Meaning | Default or rule |
 | --- | --- | --- |
 | `RSTEST_BDD_FAIL_ON_SKIPPED` | Escalates skipped scenarios into test failures unless `@allow_skipped` is present | Unset defaults to `false`; accepts common boolean strings such as `1`, `true`, `yes`, and `on` |
@@ -1005,8 +1007,8 @@ fn check_value(counter: &Counter, n: i32) {
     assert_eq!(counter.value, n);
 }
 
-#[scenario(path = "tests/features/counter.feature", name = "Increment counter")]
 #[tokio::test(flavor = "current_thread")]
+#[scenario(path = "tests/features/counter.feature", name = "Increment counter")]
 async fn increment_counter(counter: Counter) {}
 ```
 
@@ -1767,6 +1769,8 @@ The binary `rstest-bdd-lsp` is placed in the Cargo bin directory.
 ### Configuration
 
 The server reads configuration from environment variables:
+
+**Table 2:** Environment variables for `rstest-bdd-lsp`
 
 | Variable name | Meaning | Default or rule |
 | --- | --- | --- |

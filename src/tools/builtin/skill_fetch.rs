@@ -229,7 +229,9 @@ struct ZipLocalHeader {
 /// calling this function. If the four-byte signature does not match
 /// `0x50 0x4B 0x03 0x04`, this returns `None`. Violating the length
 /// precondition causes out-of-bounds panics rather than a safe error, so
-/// callers must validate buffer bounds first.
+/// callers must validate buffer bounds first. Callers must also validate that
+/// `data.len() >= name_end + extra_len` before treating the parsed filename and
+/// extra-field ranges as safe to read.
 fn parse_zip_local_header(data: &[u8], offset: usize) -> Option<ZipLocalHeader> {
     if data[offset..offset + 4] != [0x50, 0x4B, 0x03, 0x04] {
         return None;
@@ -314,26 +316,32 @@ fn decompress_zip_entry(
     }
 }
 
-/// Validate bounds and size, decompress, and decode `SKILL.md` bytes to UTF-8.
-fn extract_skill_entry(
-    data: &[u8],
+/// Parameters for extracting a single `SKILL.md` archive entry.
+struct SkillEntryParams<'a> {
+    data: &'a [u8],
     data_start: usize,
     data_end: usize,
     compression: u16,
     uncompressed_size: usize,
-) -> Result<String, ToolError> {
-    if data_end > data.len() {
+}
+
+/// Validate bounds and size, decompress, and decode `SKILL.md` bytes to UTF-8.
+fn extract_skill_entry(args: SkillEntryParams<'_>) -> Result<String, ToolError> {
+    if args.data_end > args.data.len() {
         return Err(ToolError::ExecutionFailed(
             "ZIP archive truncated".to_string(),
         ));
     }
-    if uncompressed_size > MAX_DECOMPRESSED {
+    if args.uncompressed_size > MAX_DECOMPRESSED {
         return Err(ToolError::ExecutionFailed(
             "ZIP entry too large to decompress safely".to_string(),
         ));
     }
-    let decompressed =
-        decompress_zip_entry(&data[data_start..data_end], compression, uncompressed_size)?;
+    let decompressed = decompress_zip_entry(
+        &args.data[args.data_start..args.data_end],
+        args.compression,
+        args.uncompressed_size,
+    )?;
     String::from_utf8(decompressed).map_err(|e| {
         ToolError::ExecutionFailed(format!("SKILL.md in archive is not valid UTF-8: {}", e))
     })
@@ -344,8 +352,9 @@ fn extract_skill_entry(
 /// This function expects a complete ZIP archive as untrusted `&[u8]` input and
 /// performs manual local-header parsing rather than relying on a high-level ZIP
 /// library. It scans entries in local-header order, requires a root filename of
-/// exactly `SKILL.md`, and validates offsets, lengths, and decompression sizes
-/// before returning the decoded payload.
+/// exactly `SKILL.md`, and validates header bounds, `extra_len`,
+/// `compressed_size`, and `uncompressed_size` before passing matching entries
+/// to [`extract_skill_entry`] for decompression and UTF-8 validation.
 ///
 /// The parser enforces the configured size constraints for compressed input,
 /// decompressed entry data, filename-derived offsets, and checked
@@ -353,10 +362,13 @@ fn extract_skill_entry(
 /// untrusted input, and this function will reject malformed, truncated, or
 /// oversized archives before attempting to return the skill payload.
 ///
-/// Returns `Err` when the ZIP headers are invalid or corrupt, when the archive
-/// does not contain the required `SKILL.md` entry, when size or offset limits
-/// are exceeded, when UTF-8 decoding fails, or when another [`ToolError`]
-/// validation error occurs.
+/// Returns `Err` when offset arithmetic overflows (`ZIP header offset
+/// overflow`, `ZIP header size overflow`), when entry data points out of
+/// bounds, when `SKILL.md` is missing, or when [`extract_skill_entry`]
+/// reports truncation, unsupported compression, invalid UTF-8 payload bytes, or
+/// other [`ToolError::ExecutionFailed`] validation failures. Entry names with
+/// invalid UTF-8 are treated as non-matching, which eventually yields the
+/// missing-`SKILL.md` error.
 fn extract_skill_from_zip(data: &[u8]) -> Result<String, ToolError> {
     let mut offset = 0usize;
 
@@ -381,13 +393,13 @@ fn extract_skill_from_zip(data: &[u8]) -> Result<String, ToolError> {
             .ok_or_else(|| ToolError::ExecutionFailed("ZIP header size overflow".to_string()))?;
 
         if file_name == "SKILL.md" {
-            return extract_skill_entry(
+            return extract_skill_entry(SkillEntryParams {
                 data,
                 data_start,
                 data_end,
-                header.compression,
-                header.uncompressed_size,
-            );
+                compression: header.compression,
+                uncompressed_size: header.uncompressed_size,
+            });
         }
 
         offset = data_end;

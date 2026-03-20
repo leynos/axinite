@@ -67,7 +67,7 @@ impl Tool for SkillInstallTool {
             "properties": {
                 "name": {
                     "type": "string",
-                    "description": "Skill slug or exact display name (from search results)"
+                    "description": "Skill slug from the ClawHub catalogue"
                 },
                 "url": {
                     "type": "string",
