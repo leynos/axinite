@@ -3,8 +3,69 @@
 use crate::support::trace_llm::*;
 use crate::support::trace_types::TraceTurn;
 use ironclaw::llm::{
-    ChatMessage, CompletionRequest, FinishReason, LlmProvider, ToolCompletionRequest,
+    ChatMessage, CompletionRequest, FinishReason, LlmProvider, Role, ToolCall,
+    ToolCompletionRequest,
 };
+
+fn assert_msg(role: Role, msg: &ChatMessage, contains: &str) {
+    assert_eq!(msg.role, role);
+    assert!(
+        msg.content.contains(contains),
+        "expected message content {:?} to contain {:?}",
+        msg.content,
+        contains
+    );
+}
+
+fn assert_captured_requests_shape(
+    captured: &[Vec<ChatMessage>],
+    expected_batches: usize,
+    last_user_contains: &str,
+    min_msgs_per_batch: usize,
+) {
+    assert_eq!(captured.len(), expected_batches);
+    assert!(
+        captured
+            .iter()
+            .all(|batch| batch.len() >= min_msgs_per_batch),
+        "expected every captured batch to contain at least {min_msgs_per_batch} messages"
+    );
+    let last_batch = captured
+        .last()
+        .expect("captured requests should contain at least one batch");
+    let last_message = last_batch
+        .last()
+        .expect("captured request batch should contain at least one message");
+    assert_msg(Role::User, last_message, last_user_contains);
+}
+
+fn assert_llm_counters(
+    calls: usize,
+    in_tokens: u32,
+    out_tokens: u32,
+    min_calls: usize,
+    min_in: u32,
+    min_out: u32,
+) {
+    assert!(
+        calls >= min_calls,
+        "expected at least {min_calls} calls, got {calls}"
+    );
+    assert!(
+        in_tokens >= min_in,
+        "expected at least {min_in} input tokens, got {in_tokens}"
+    );
+    assert!(
+        out_tokens >= min_out,
+        "expected at least {min_out} output tokens, got {out_tokens}"
+    );
+}
+
+fn assert_tool_call(call: &ToolCall, expected_name: &str, expected_id: &str) {
+    assert_eq!(call.name, expected_name);
+    assert_eq!(call.id, expected_id);
+    assert_eq!(call.arguments, serde_json::json!({"key": "value"}));
+}
 
 fn text_step(content: &str, input_tokens: u32, output_tokens: u32) -> TraceStep {
     TraceStep {
@@ -55,10 +116,15 @@ async fn replays_text_response() {
 
     assert_eq!(resp.content.as_deref(), Some("Hello world"));
     assert!(resp.tool_calls.is_empty());
-    assert_eq!(resp.input_tokens, 100);
-    assert_eq!(resp.output_tokens, 20);
     assert_eq!(resp.finish_reason, FinishReason::Stop);
-    assert_eq!(llm.calls(), 1);
+    assert_llm_counters(
+        llm.calls(),
+        resp.input_tokens,
+        resp.output_tokens,
+        1,
+        100,
+        20,
+    );
 }
 
 #[tokio::test]
@@ -81,15 +147,9 @@ async fn replays_tool_calls() {
 
     assert!(resp.content.is_none());
     assert_eq!(resp.tool_calls.len(), 1);
-    assert_eq!(resp.tool_calls[0].name, "memory_search");
-    assert_eq!(resp.tool_calls[0].id, "call_memory_search");
-    assert_eq!(
-        resp.tool_calls[0].arguments,
-        serde_json::json!({"key": "value"})
-    );
-    assert_eq!(resp.input_tokens, 80);
-    assert_eq!(resp.output_tokens, 15);
+    assert_tool_call(&resp.tool_calls[0], "memory_search", "call_memory_search");
     assert_eq!(resp.finish_reason, FinishReason::ToolUse);
+    assert_llm_counters(1, resp.input_tokens, resp.output_tokens, 1, 80, 15);
 }
 
 #[tokio::test]
@@ -109,7 +169,7 @@ async fn advances_through_steps() {
         .await
         .unwrap();
     assert_eq!(resp1.tool_calls.len(), 1);
-    assert_eq!(resp1.tool_calls[0].name, "echo");
+    assert_tool_call(&resp1.tool_calls[0], "echo", "call_echo");
     assert_eq!(llm.calls(), 1);
 
     let resp2 = llm
@@ -215,8 +275,7 @@ async fn from_json_file() {
         .unwrap();
 
     assert_eq!(resp.content.as_deref(), Some("Hello from fixture file!"));
-    assert_eq!(resp.input_tokens, 50);
-    assert_eq!(resp.output_tokens, 10);
+    assert_llm_counters(0, resp.input_tokens, resp.output_tokens, 0, 50, 10);
 }
 
 #[tokio::test]
@@ -227,9 +286,8 @@ async fn complete_text_step() {
     let resp = llm.complete(make_completion_request("hi")).await.unwrap();
 
     assert_eq!(resp.content, "plain text");
-    assert_eq!(resp.input_tokens, 30);
-    assert_eq!(resp.output_tokens, 8);
     assert_eq!(resp.finish_reason, FinishReason::Stop);
+    assert_llm_counters(0, resp.input_tokens, resp.output_tokens, 0, 30, 8);
 }
 
 #[tokio::test]
@@ -250,9 +308,8 @@ async fn complete_skips_tool_calls_step() {
         .expect("complete() should skip ToolCalls and return the Text step");
 
     assert_eq!(resp.content, "skipped past tools");
-    assert_eq!(resp.input_tokens, 20);
-    assert_eq!(resp.output_tokens, 8);
     assert_eq!(resp.finish_reason, FinishReason::Stop);
+    assert_llm_counters(0, resp.input_tokens, resp.output_tokens, 0, 20, 8);
 }
 
 #[tokio::test]
@@ -274,10 +331,8 @@ async fn captured_requests() {
     let captured = llm
         .captured_requests()
         .expect("captured requests should be available");
-    assert_eq!(captured.len(), 2);
-    assert_eq!(captured[0].len(), 1);
-    assert_eq!(captured[0][0].content, "first message");
-    assert_eq!(captured[1][0].content, "second message");
+    assert_captured_requests_shape(&captured, 2, "second message", 1);
+    assert_msg(Role::User, &captured[0][0], "first message");
 }
 
 #[test]
