@@ -44,7 +44,13 @@ impl ClaudeBridgeRuntime {
             ))
             .await?;
 
-        let session_id = match self.run_initial_session(&job_description, &extra_env).await {
+        let session_id = match self
+            .timeout_initial_session(
+                "initial Claude session timed out",
+                self.run_initial_session(&job_description, &extra_env),
+            )
+            .await
+        {
             Ok(session_id) => session_id,
             Err(failure) => {
                 return self
@@ -53,7 +59,13 @@ impl ClaudeBridgeRuntime {
             }
         };
 
-        match self.followup_loop(session_id, &extra_env).await {
+        match self
+            .timeout_followup_loop(
+                "Claude follow-up loop timed out",
+                self.followup_loop(session_id, &extra_env),
+            )
+            .await
+        {
             Ok(iterations) => {
                 self.client
                     .report_complete(&CompletionReport {
@@ -67,6 +79,41 @@ impl ClaudeBridgeRuntime {
                 self.finish_failure("Follow-up Claude session failed", iterations, &failure)
                     .await
             }
+        }
+    }
+
+    async fn timeout_initial_session<T>(
+        &self,
+        reason: &str,
+        future: impl std::future::Future<Output = Result<T, ClaudeSessionFailure>>,
+    ) -> Result<T, ClaudeSessionFailure> {
+        match tokio::time::timeout(self.config.timeout, future).await {
+            Ok(result) => result,
+            Err(_) => Err(ClaudeSessionFailure {
+                error: WorkerError::ExecutionFailed {
+                    reason: reason.to_string(),
+                },
+                emitted_terminal_result: false,
+            }),
+        }
+    }
+
+    async fn timeout_followup_loop<T>(
+        &self,
+        reason: &str,
+        future: impl std::future::Future<Output = Result<T, (u32, ClaudeSessionFailure)>>,
+    ) -> Result<T, (u32, ClaudeSessionFailure)> {
+        match tokio::time::timeout(self.config.timeout, future).await {
+            Ok(result) => result,
+            Err(_) => Err((
+                1,
+                ClaudeSessionFailure {
+                    error: WorkerError::ExecutionFailed {
+                        reason: reason.to_string(),
+                    },
+                    emitted_terminal_result: false,
+                },
+            )),
         }
     }
 
@@ -161,13 +208,24 @@ impl ClaudeBridgeRuntime {
             }
 
             iteration += 1;
+            let Some(current_session_id) = session_id.as_deref() else {
+                return Err((
+                    iteration,
+                    ClaudeSessionFailure {
+                        error: WorkerError::ExecutionFailed {
+                            reason: "missing Claude session id for follow-up resume".to_string(),
+                        },
+                        emitted_terminal_result: false,
+                    },
+                ));
+            };
             tracing::info!(
                 job_id = %self.config.job_id,
                 "Got follow-up prompt, resuming session"
             );
 
             match self
-                .run_claude_session(&prompt.content, session_id.as_deref(), env)
+                .run_claude_session(&prompt.content, Some(current_session_id), env)
                 .await
             {
                 Ok(result) => {
@@ -216,19 +274,41 @@ impl ClaudeBridgeRuntime {
             emitted_terminal_result: false,
         })?;
 
-        let stdout = child.stdout.take().ok_or_else(|| ClaudeSessionFailure {
-            error: WorkerError::ExecutionFailed {
-                reason: "failed to capture claude stdout".to_string(),
-            },
-            emitted_terminal_result: false,
-        })?;
+        let stdout = match child.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                return Err(self
+                    .cleanup_failed_session_process(
+                        &mut child,
+                        None,
+                        ClaudeSessionFailure {
+                            error: WorkerError::ExecutionFailed {
+                                reason: "failed to capture claude stdout".to_string(),
+                            },
+                            emitted_terminal_result: false,
+                        },
+                    )
+                    .await);
+            }
+        };
 
-        let stderr = child.stderr.take().ok_or_else(|| ClaudeSessionFailure {
-            error: WorkerError::ExecutionFailed {
-                reason: "failed to capture claude stderr".to_string(),
-            },
-            emitted_terminal_result: false,
-        })?;
+        let stderr = match child.stderr.take() {
+            Some(stderr) => stderr,
+            None => {
+                return Err(self
+                    .cleanup_failed_session_process(
+                        &mut child,
+                        None,
+                        ClaudeSessionFailure {
+                            error: WorkerError::ExecutionFailed {
+                                reason: "failed to capture claude stderr".to_string(),
+                            },
+                            emitted_terminal_result: false,
+                        },
+                    )
+                    .await);
+            }
+        };
 
         let client_for_stderr = Arc::clone(&self.client);
         let job_id = self.config.job_id;
@@ -268,12 +348,18 @@ impl ClaudeBridgeRuntime {
                 Ok(Some(line)) => line,
                 Ok(None) => break,
                 Err(error) => {
-                    return Err(ClaudeSessionFailure {
-                        error: WorkerError::ExecutionFailed {
-                            reason: format!("failed reading claude stdout: {}", error),
-                        },
-                        emitted_terminal_result: seen_terminal_result,
-                    });
+                    return Err(self
+                        .cleanup_failed_session_process(
+                            &mut child,
+                            Some(stderr_handle),
+                            ClaudeSessionFailure {
+                                error: WorkerError::ExecutionFailed {
+                                    reason: format!("failed reading claude stdout: {}", error),
+                                },
+                                emitted_terminal_result: seen_terminal_result,
+                            },
+                        )
+                        .await);
                 }
             };
 
@@ -370,5 +456,42 @@ impl ClaudeBridgeRuntime {
         }
 
         Ok(ClaudeSessionResult { session_id })
+    }
+
+    async fn cleanup_failed_session_process(
+        &self,
+        child: &mut tokio::process::Child,
+        stderr_handle: Option<tokio::task::JoinHandle<()>>,
+        failure: ClaudeSessionFailure,
+    ) -> ClaudeSessionFailure {
+        if let Some(stderr_handle) = stderr_handle {
+            stderr_handle.abort();
+            if let Err(error) = stderr_handle.await
+                && !error.is_cancelled()
+            {
+                tracing::debug!(
+                    job_id = %self.config.job_id,
+                    "Claude stderr task failed during cleanup: {}",
+                    error
+                );
+            }
+        }
+
+        if let Err(error) = child.kill().await {
+            tracing::debug!(
+                job_id = %self.config.job_id,
+                "failed to kill Claude process during cleanup: {}",
+                error
+            );
+        }
+        if let Err(error) = child.wait().await {
+            tracing::debug!(
+                job_id = %self.config.job_id,
+                "failed to reap Claude process during cleanup: {}",
+                error
+            );
+        }
+
+        failure
     }
 }
