@@ -306,9 +306,7 @@ impl RoutineEngine {
             .store
             .get_routine(routine_id)
             .await
-            .map_err(|e| RoutineError::Database {
-                reason: e.to_string(),
-            })?
+            .map_err(RoutineError::from)?
             .ok_or(RoutineError::NotFound { id: routine_id })?;
 
         // Enforce ownership when a user_id is provided (gateway calls).
@@ -345,11 +343,10 @@ impl RoutineEngine {
             created_at: Utc::now(),
         };
 
-        if let Err(e) = self.store.create_routine_run(&run).await {
-            return Err(RoutineError::Database {
-                reason: format!("failed to create run record: {e}"),
-            });
-        }
+        self.store
+            .create_routine_run(&run)
+            .await
+            .map_err(RoutineError::from)?;
 
         // Execute inline for manual triggers (caller wants to wait)
         let engine = EngineContext {
@@ -610,9 +607,7 @@ async fn execute_full_job(
     let scheduler = ctx
         .scheduler
         .as_ref()
-        .ok_or_else(|| RoutineError::JobDispatchFailed {
-            reason: "scheduler not available".to_string(),
-        })?;
+        .ok_or(RoutineError::SchedulerUnavailable)?;
 
     let mut metadata = serde_json::json!({ "max_iterations": max_iterations });
     // Carry the routine's notify config in job metadata so the message tool
@@ -635,9 +630,7 @@ async fn execute_full_job(
             approval_context,
         )
         .await
-        .map_err(|e| RoutineError::JobDispatchFailed {
-            reason: format!("failed to dispatch job: {e}"),
-        })?;
+        .map_err(RoutineError::from)?;
 
     // Link the routine run to the dispatched job
     if let Err(e) = ctx.store.link_routine_run_to_job(run.id, job_id).await {
@@ -779,9 +772,7 @@ async fn execute_lightweight_no_tools(
         .llm
         .complete(request)
         .await
-        .map_err(|e| RoutineError::LlmFailed {
-            reason: e.to_string(),
-        })?;
+        .map_err(RoutineError::from)?;
 
     let content = response.content.trim();
     let tokens_used = Some((response.input_tokens + response.output_tokens) as i32);
@@ -887,13 +878,11 @@ async fn execute_lightweight_with_tools(
                 .with_max_tokens(effective_max_tokens)
                 .with_temperature(0.3);
 
-            let response =
-                ctx.llm
-                    .complete(request)
-                    .await
-                    .map_err(|e| RoutineError::LlmFailed {
-                        reason: e.to_string(),
-                    })?;
+            let response = ctx
+                .llm
+                .complete(request)
+                .await
+                .map_err(RoutineError::from)?;
 
             total_input_tokens += response.input_tokens;
             total_output_tokens += response.output_tokens;
@@ -912,11 +901,11 @@ async fn execute_lightweight_with_tools(
                 .with_max_tokens(effective_max_tokens)
                 .with_temperature(0.3);
 
-            let response = ctx.llm.complete_with_tools(request).await.map_err(|e| {
-                RoutineError::LlmFailed {
-                    reason: e.to_string(),
-                }
-            })?;
+            let response = ctx
+                .llm
+                .complete_with_tools(request)
+                .await
+                .map_err(RoutineError::from)?;
 
             total_input_tokens += response.input_tokens;
             total_output_tokens += response.output_tokens;

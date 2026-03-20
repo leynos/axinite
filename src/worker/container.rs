@@ -412,8 +412,8 @@ Work independently to complete this job. Report when done."#,
 
     #[cfg(test)]
 
-    async fn register_remote_tools_with_degraded_startup(&self) {
-        let _ = self.handle_register_remote_tools_with_degradation().await;
+    async fn register_remote_tools_with_degraded_startup(&mut self) {
+        self.toolset_instructions = self.handle_register_remote_tools_with_degradation().await;
     }
 
     async fn prepare_for_execution(&mut self) -> Result<JobDescription, WorkerError> {

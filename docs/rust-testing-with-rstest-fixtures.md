@@ -865,6 +865,8 @@ A default timeout for all `rstest` async tests can also be set using the
 compile time. This built-in timeout support is a practical feature for ensuring
 test suite stability.
 
+Table: Environment variables for `rstest` fixture execution
+
 | Variable name | Meaning | Default or rule |
 | --- | --- | --- |
 | `RSTEST_TIMEOUT` | Sets a default timeout, in seconds, for all `rstest` async tests | Value in seconds; evaluated at compile time; no default if unset |

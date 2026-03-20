@@ -631,11 +631,11 @@ July 15, 2025, <https://doc.rust-lang.org/rustdoc/documentation-tests.html>
 [^10]: Compile_fail doc test ignored in cfg(test) - help - The Rust Programming
 Language Forum, accessed on July 15, 2025,
 <https://users.rust-lang.org/t/compile-fail-doc-test-ignored-in-cfg-test/124927>
-Test setup for doctests - help - The Rust Programming Language Forum,
-accessed on July 15, 2025,
+       Test setup for doctests - help - The Rust Programming Language Forum,
+       accessed on July 15, 2025,
 <https://users.rust-lang.org/t/test-setup-for-doctests/50426>
-[^11]: quote_doctest - Rust - [Docs.rs](http://Docs.rs), accessed on July 15,
-2025, <https://docs.rs/quote-doctest>
+[^11]: quote_doctest - Rust - Docs.rs, accessed on July 15, 2025,
+<https://docs.rs/quote-doctest>
 [^12]: Advanced features - The rustdoc book - Rust Documentation, accessed on
        July 15, 2025, <https://doc.rust-lang.org/rustdoc/advanced-features.html>
 [^13]: Stack Overflow — Conditionally executing a module-level doctest,

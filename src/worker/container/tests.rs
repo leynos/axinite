@@ -571,7 +571,7 @@ async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools() 
         Uuid::nil(),
         "test".to_string(),
     ));
-    let runtime = WorkerRuntime::from_client(
+    let mut runtime = WorkerRuntime::from_client(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: format!("http://{}", addr),

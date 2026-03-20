@@ -1,5 +1,6 @@
 //! Routine-related error types.
 
+use super::{DatabaseError, JobError, LlmError};
 use uuid::Uuid;
 
 /// Routine-related errors.
@@ -32,14 +33,17 @@ pub enum RoutineError {
     #[error("Routine {name} at max concurrent runs")]
     MaxConcurrent { name: String },
 
-    #[error("Database error: {reason}")]
-    Database { reason: String },
+    #[error(transparent)]
+    Database(#[from] DatabaseError),
 
-    #[error("LLM call failed: {reason}")]
-    LlmFailed { reason: String },
+    #[error(transparent)]
+    LlmFailed(#[from] LlmError),
 
-    #[error("Failed to dispatch full job: {reason}")]
-    JobDispatchFailed { reason: String },
+    #[error("Scheduler not available for full-job routine dispatch")]
+    SchedulerUnavailable,
+
+    #[error(transparent)]
+    JobDispatchFailed(#[from] JobError),
 
     #[error("LLM returned empty content")]
     EmptyResponse,

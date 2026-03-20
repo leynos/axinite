@@ -3,7 +3,7 @@
 /// Workspace/memory errors.
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
-    #[error("Document not found: {doc_type} for user {user_id}")]
+    #[error("Document not found: {doc_type}")]
     DocumentNotFound { doc_type: String, user_id: String },
 
     #[error("Search failed: {reason}")]
@@ -18,7 +18,7 @@ pub enum WorkspaceError {
     #[error("Invalid document type: {doc_type}")]
     InvalidDocType { doc_type: String },
 
-    #[error("Workspace not initialized for user {user_id}")]
+    #[error("Workspace not initialized")]
     NotInitialized { user_id: String },
 
     #[error("Heartbeat error: {reason}")]
