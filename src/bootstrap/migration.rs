@@ -54,32 +54,6 @@ pub enum MigrationError {
     Io(String),
 }
 
-async fn migrate_legacy_settings(
-    store: &dyn crate::db::Database,
-    user_id: &str,
-    legacy_settings_path: &Path,
-) -> Result<(), MigrationError> {
-    let settings = crate::settings::Settings::load_from(legacy_settings_path);
-    let db_map = settings.to_db_map();
-    if !db_map.is_empty() {
-        store
-            .set_all_settings(user_id, &db_map)
-            .await
-            .map_err(|error| {
-                MigrationError::Database(format!("Failed to write settings to DB: {}", error))
-            })?;
-        tracing::info!("Migrated {} settings to database", db_map.len());
-    }
-
-    if let Some(ref url) = settings.database_url {
-        save_database_url(url)
-            .map_err(|error| MigrationError::Io(format!("Failed to write .env: {}", error)))?;
-        tracing::info!("Wrote DATABASE_URL to {}", ironclaw_env_path().display());
-    }
-
-    Ok(())
-}
-
 fn read_optional_json_file(path: &Path, file_name: &str) -> Option<serde_json::Value> {
     if !path.exists() {
         return None;
@@ -133,38 +107,53 @@ fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
     }
 }
 
-/// One-time migration of legacy `~/.ironclaw/settings.json` into the database.
-///
-/// Only runs when a `settings.json` exists on disk AND the DB has no settings
-/// yet. After the wizard writes directly to the DB, this path is only hit by
-/// users upgrading from the old disk-only configuration.
-///
-/// After syncing, renames `settings.json` to `.migrated` so it won't trigger again.
-pub async fn migrate_disk_to_db(
-    store: &dyn crate::db::Database,
-    user_id: &str,
-) -> Result<(), MigrationError> {
-    let ironclaw_dir = ironclaw_base_dir();
-    let legacy_settings_path = ironclaw_dir.join("settings.json");
-
-    if !legacy_settings_path.exists() {
-        tracing::debug!("No legacy settings.json found, skipping disk-to-DB migration");
-        return Ok(());
+fn read_legacy_state(path: &Path) -> Result<Option<serde_json::Value>, MigrationError> {
+    if !path.exists() {
+        return Ok(None);
     }
 
+    let settings = crate::settings::Settings::load_from(path);
+    Ok(serde_json::to_value(settings).ok())
+}
+
+async fn apply_migration_to_db(
+    store: &dyn crate::db::Database,
+    user_id: &str,
+    legacy: &serde_json::Value,
+    legacy_settings_path: &Path,
+) -> Result<(), MigrationError> {
     let has_settings = store.has_settings(user_id).await.map_err(|error| {
         MigrationError::Database(format!("Failed to check existing settings: {}", error))
     })?;
     if has_settings {
         tracing::info!("DB already has settings, renaming stale settings.json");
-        rename_to_migrated(&legacy_settings_path);
         return Ok(());
     }
 
     tracing::info!("Migrating disk settings to database...");
 
-    migrate_legacy_settings(store, user_id, &legacy_settings_path).await?;
+    let settings =
+        serde_json::from_value::<crate::settings::Settings>(legacy.clone()).unwrap_or_default();
+    let db_map = settings.to_db_map();
+    if !db_map.is_empty() {
+        store
+            .set_all_settings(user_id, &db_map)
+            .await
+            .map_err(|error| {
+                MigrationError::Database(format!("Failed to write settings to DB: {}", error))
+            })?;
+        tracing::info!("Migrated {} settings to database", db_map.len());
+    }
 
+    if let Some(ref url) = settings.database_url {
+        save_database_url(url)
+            .map_err(|error| MigrationError::Io(format!("Failed to write .env: {}", error)))?;
+        tracing::info!("Wrote DATABASE_URL to {}", ironclaw_env_path().display());
+    }
+
+    let ironclaw_dir = legacy_settings_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
     let mcp_path = ironclaw_dir.join("mcp-servers.json");
     migrate_json_sidecar(
         store,
@@ -189,10 +178,36 @@ pub async fn migrate_disk_to_db(
     )
     .await?;
 
-    rename_to_migrated(&legacy_settings_path);
-    rename_legacy_bootstrap(&ironclaw_dir);
+    rename_legacy_bootstrap(ironclaw_dir);
 
     tracing::info!("Disk-to-DB migration complete");
+    Ok(())
+}
+
+fn mark_legacy_migrated(path: &Path) -> Result<(), MigrationError> {
+    rename_to_migrated(path);
+    Ok(())
+}
+
+/// One-time migration of legacy `~/.ironclaw/settings.json` into the database.
+///
+/// Only runs when a `settings.json` exists on disk AND the DB has no settings
+/// yet. After the wizard writes directly to the DB, this path is only hit by
+/// users upgrading from the old disk-only configuration.
+///
+/// After syncing, renames `settings.json` to `.migrated` so it won't trigger again.
+pub async fn migrate_disk_to_db(
+    store: &dyn crate::db::Database,
+    user_id: &str,
+) -> Result<(), MigrationError> {
+    let ironclaw_dir = ironclaw_base_dir();
+    let legacy_settings_path = ironclaw_dir.join("settings.json");
+    let Some(legacy) = read_legacy_state(&legacy_settings_path)? else {
+        tracing::debug!("No legacy settings.json found, skipping disk-to-DB migration");
+        return Ok(());
+    };
+    apply_migration_to_db(store, user_id, &legacy, &legacy_settings_path).await?;
+    mark_legacy_migrated(&legacy_settings_path)?;
     Ok(())
 }
 
