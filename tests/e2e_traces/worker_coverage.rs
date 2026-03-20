@@ -154,9 +154,13 @@ async fn tool_error_feedback() {
     ))
     .await
     .expect("failed to load worker/tool_error_feedback.json");
-    trace.patch_path(
+    let patch_count = trace.patch_path(
         "/tmp/ironclaw_error_feedback_test/recovered.txt",
         &format!("{test_dir}/recovered.txt"),
+    );
+    assert!(
+        patch_count > 0,
+        "expected to patch recovery path in worker/tool_error_feedback.json"
     );
 
     let rig = TestRigBuilder::new()

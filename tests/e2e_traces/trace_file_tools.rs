@@ -20,11 +20,15 @@ async fn test_file_write_and_read_flow() {
     let mut trace = LlmTrace::from_file_async(fixture_path)
         .await
         .expect("failed to load trace fixture");
-    trace.patch_path(
+    let patch_count = trace.patch_path(
         "/tmp/ironclaw_e2e_test/hello.txt",
         test_file
             .to_str()
             .expect("temp file path should be valid UTF-8"),
+    );
+    assert!(
+        patch_count > 0,
+        "expected to patch file_write_read.json test path"
     );
 
     let rig = TestRigBuilder::new()

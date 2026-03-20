@@ -217,11 +217,13 @@ impl LlmTrace {
     /// Walks through all turns and steps, patching any string values in tool call
     /// arguments that contain the `from` path. Useful for adapting recorded traces
     /// to use test-specific temporary directories.
-    pub fn patch_path(&mut self, from: &str, to: &str) {
+    pub fn patch_path(&mut self, from: &str, to: &str) -> usize {
+        let mut patched = 0;
         for turn in &mut self.turns {
-            Self::patch_steps(&mut turn.steps, from, to);
+            patched += Self::patch_steps(&mut turn.steps, from, to);
         }
-        Self::patch_steps(&mut self.steps, from, to);
+        patched += Self::patch_steps(&mut self.steps, from, to);
+        patched
     }
 
     /// Return only the playable steps from the raw steps (text + tool_calls),
@@ -234,13 +236,19 @@ impl LlmTrace {
             .collect()
     }
 
-    fn patch_steps(steps: &mut [TraceStep], from: &str, to: &str) {
+    fn patch_steps(steps: &mut [TraceStep], from: &str, to: &str) -> usize {
+        let mut patched = 0;
         for step in steps {
             if let TraceResponse::ToolCalls { tool_calls, .. } = &mut step.response {
                 for tool_call in tool_calls {
+                    let before = tool_call.arguments.clone();
                     patch_json_value(&mut tool_call.arguments, from, to);
+                    if tool_call.arguments != before {
+                        patched += 1;
+                    }
                 }
             }
         }
+        patched
     }
 }

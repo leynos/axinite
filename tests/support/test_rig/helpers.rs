@@ -1,3 +1,8 @@
+//! Helpers for shared `TestRig`-based integration tests.
+//!
+//! Provides small utilities around `TestRigBuilder`, `LlmTrace`, and common
+//! recorded-trace execution patterns used by multiple test binaries.
+
 use std::time::Duration;
 
 use crate::support::trace_llm::LlmTrace;

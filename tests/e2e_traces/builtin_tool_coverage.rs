@@ -260,8 +260,8 @@ async fn skill_install_routine_webhook_sim() {
 
     let completed = rig.tool_calls_completed();
     assert!(
-        completed.iter().any(|(n, _)| n == "skill_install"),
-        "skill_install should be called: {completed:?}"
+        completed.iter().any(|(n, ok)| n == "skill_install" && *ok),
+        "skill_install should succeed: {completed:?}"
     );
     for tool in &["routine_create", "event_emit", "routine_history"] {
         assert!(
@@ -275,10 +275,15 @@ async fn skill_install_routine_webhook_sim() {
         .iter()
         .find(|(n, _)| n == "event_emit")
         .expect("event_emit result missing");
+    let emit_payload: serde_json::Value =
+        serde_json::from_str(&emit_result.1).expect("event_emit result should be valid JSON");
+    let fired_routines = emit_payload
+        .get("fired_routines")
+        .and_then(serde_json::Value::as_i64)
+        .expect("event_emit result should include integer fired_routines");
     assert!(
-        emit_result.1.contains("fired_routines"),
-        "event_emit should include fired_routines: {:?}",
-        emit_result.1
+        fired_routines > 0,
+        "event_emit should report fired routines > 0: {emit_payload:?}"
     );
 
     let _history_result = results

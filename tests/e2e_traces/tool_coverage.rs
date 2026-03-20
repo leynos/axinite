@@ -26,7 +26,13 @@ async fn run_trace(
         .with_context(|| format!("failed to load {fixture_path}"))
         .expect("failed to load trace fixture");
     for (from, to) in path_replacements {
-        trace.patch_path(from, to);
+        let patch_count = trace.patch_path(from, to);
+        if from != to {
+            assert!(
+                patch_count > 0,
+                "expected to patch at least one trace path from {from:?} to {to:?}"
+            );
+        }
     }
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())

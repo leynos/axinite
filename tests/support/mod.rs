@@ -74,7 +74,7 @@ fn trace_support_symbol_refs() {
         trace_llm::TraceLlm::captured_requests;
     const _: fn(String, Vec<trace_types::TraceTurn>) -> trace_llm::LlmTrace =
         trace_llm::LlmTrace::new;
-    const _: fn(&mut trace_llm::LlmTrace, &str, &str) = trace_llm::LlmTrace::patch_path;
+    const _: fn(&mut trace_llm::LlmTrace, &str, &str) -> usize = trace_llm::LlmTrace::patch_path;
     const _: for<'a> fn(&'a trace_llm::LlmTrace) -> Vec<&'a trace_llm::TraceStep> =
         trace_llm::LlmTrace::playable_steps;
 

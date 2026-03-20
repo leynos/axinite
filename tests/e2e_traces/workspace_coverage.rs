@@ -133,11 +133,11 @@ async fn multi_document_search() {
 }
 
 // -----------------------------------------------------------------------
-// Test 3: hybrid_search_with_embeddings
+// Test 3: hybrid_search_keyword_pipeline
 // -----------------------------------------------------------------------
 
 #[tokio::test]
-async fn hybrid_search_with_embeddings() {
+async fn hybrid_search_keyword_pipeline() {
     let trace = LlmTrace::from_file_async(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/workspace/hybrid_search.json"
@@ -158,8 +158,8 @@ async fn hybrid_search_with_embeddings() {
     rig.verify_trace_expects(&trace, &responses);
 
     // Verify both memory_write and memory_search were used.
-    // Without a real embedding provider the FTS path handles keyword matches;
-    // we assert both tools ran to confirm the write-then-search pipeline.
+    // This rig does not install a real embedding provider, so the test covers
+    // the write-then-search pipeline through the keyword/FTS path.
     let started = rig.tool_calls_started();
     assert!(
         started.contains(&"memory_write".to_string()),

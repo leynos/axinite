@@ -171,19 +171,22 @@ impl TestRigBuilder {
         db: &Arc<dyn ironclaw::db::Database>,
         temp_dir: &tempfile::TempDir,
     ) {
-        if self.enable_routines
-            && let (Some(_db), Some(workspace)) = (&components.db, &components.workspace)
-        {
+        if self.enable_routines && components.db.is_some() && components.workspace.is_some() {
             use ironclaw::agent::routine_engine::RoutineEngine;
             use ironclaw::config::RoutineConfig;
 
             let routine_config = RoutineConfig::default();
-            let (notify_tx, _notify_rx) = tokio::sync::mpsc::channel(16);
+            let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel(64);
+            tokio::spawn(async move { while notify_rx.recv().await.is_some() {} });
+            let Some(workspace) = components.workspace.as_ref() else {
+                return;
+            };
+            let workspace = Arc::clone(workspace);
             let engine = Arc::new(RoutineEngine::new(
                 routine_config,
                 Arc::clone(db),
                 components.llm.clone(),
-                Arc::clone(workspace),
+                workspace,
                 notify_tx,
                 None,
                 components.tools.clone(),
@@ -339,7 +342,7 @@ impl TestRigBuilder {
 
         let agent_handle = tokio::spawn(async move {
             if let Err(error) = agent.run().await {
-                eprintln!("[TestRig] Agent exited with error: {error}");
+                tracing::error!(%error, "TestRig Agent exited with error");
             }
         });
 

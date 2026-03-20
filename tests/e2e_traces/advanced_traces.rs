@@ -25,6 +25,11 @@ async fn multi_turn_memory_coherence() {
         .expect("failed to build test rig");
 
     let all_responses = rig.run_and_verify_trace(&trace, LONG_TIMEOUT).await;
+    assert!(
+        all_responses.len() >= 3,
+        "expected at least 3 turns, got {}",
+        all_responses.len()
+    );
 
     // Extra: per-turn content checks (not in fixture expects yet).
     assert!(!all_responses[0].is_empty(), "Turn 1: no response");
