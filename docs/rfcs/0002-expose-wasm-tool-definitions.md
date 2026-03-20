@@ -153,7 +153,7 @@ The remaining problem is contractual, not structural:
 3. Registration-time schema recovery or override selection is the correct place
    to determine the outward-facing schema.
 4. Hosted mode should reuse the canonical orchestrator-owned tool catalogue, not
-   reconstruct WASM tool metadata inside the worker.
+  reconstruct WASM tool metadata inside the worker.
 5. Error hints should help recovery, not compensate for missing normal tool
    metadata.
 

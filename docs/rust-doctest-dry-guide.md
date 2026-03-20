@@ -1,6 +1,4 @@
-<!-- markdownlint-disable MD013 -->
 # A systematic guide to effective, ergonomic, and "don't repeat yourself" (DRY) doctests in Rust
-<!-- markdownlint-enable MD013 -->
 
 ## The `rustdoc` compilation model: a foundational perspective
 
@@ -604,7 +602,6 @@ mastering doctests:
    unit or integration test. Avoid compromising API design or test clarity by
    forcing a square peg into a round hole. Use the right tool for the job.
 
-<!-- markdownlint-disable MD013 -->
 ### **Works cited**
 
 [^1]: Stack Overflow — Writing documentation tests for private modules,
@@ -616,8 +613,8 @@ July 15, 2025, <https://doc.rust-lang.org/rustdoc/documentation-tests.html>
 <https://swatinem.de/blog/fix-rustdoc/>
 [^4]: LogRocket Blog — Organizing Rust tests, accessed on July 15, 2025,
 <https://blog.logrocket.com/how-to-organize-rust-tests/>
-      Reddit — Best way to organise tests in Rust, accessed on July 15, 2025,
-      <https://www.reddit.com/r/rust/comments/qk77iu/best_way_to_organise_tests_in_rust/>
+Reddit — Best way to organise tests in Rust, accessed on July 15, 2025,
+<https://www.reddit.com/r/rust/comments/qk77iu/best_way_to_organise_tests_in_rust/>
 [^5]: Writing Rust documentation - Dev Community, accessed on July 15, 2025,
 <https://dev.to/gritmax/writing-rust-documentation-5hn5>
 [^6]: The rustdoc book, accessed on July 15, 2025,
@@ -650,4 +647,3 @@ Stack Overflow — Conditional compilation with doctests, accessed on July 15,
 [^15]: Reddit — Preferred approaches for doc tests, accessed on July 15,
 2025,
 <https://www.reddit.com/r/rust/comments/ke438a/how_do_you_write_your_doc_tests/>
-<!-- markdownlint-enable MD013 -->
