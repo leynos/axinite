@@ -74,7 +74,9 @@ impl Tool for ApprovalAwareToolList {
         _params: serde_json::Value,
         _ctx: &crate::context::JobContext,
     ) -> Result<ToolOutput, crate::tools::ToolError> {
-        panic!("approval-gated proxy requests must not execute")
+        Err(crate::tools::ToolError::ExecutionFailed(
+            "approval-gated proxy requests must not execute".to_string(),
+        ))
     }
 
     fn requires_approval(&self, params: &serde_json::Value) -> crate::tools::ApprovalRequirement {
@@ -89,6 +91,7 @@ impl Tool for ApprovalAwareToolList {
 struct FakeToolList {
     seen_job_id: Arc<tokio::sync::Mutex<Option<Uuid>>>,
     seen_params: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
+    call_count: Arc<tokio::sync::Mutex<usize>>,
 }
 
 #[async_trait::async_trait]
@@ -115,6 +118,7 @@ impl Tool for FakeToolList {
     ) -> Result<ToolOutput, crate::tools::ToolError> {
         *self.seen_job_id.lock().await = Some(ctx.job_id);
         *self.seen_params.lock().await = Some(params.clone());
+        *self.call_count.lock().await += 1;
         Ok(ToolOutput::success(
             serde_json::json!({"extensions": ["telegram"]}),
             Duration::from_millis(5),
@@ -166,6 +170,7 @@ fn registered_tool_list_case() -> ExtensionToolSuccessCase {
 struct RegisteredToolObservations {
     seen_job_id: Arc<tokio::sync::Mutex<Option<Uuid>>>,
     seen_params: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
+    call_count: Arc<tokio::sync::Mutex<usize>>,
 }
 
 async fn register_extension_tool_case(
@@ -183,13 +188,16 @@ async fn register_extension_tool_case(
         ExtensionToolSuccessKind::RegisteredToolList => {
             let seen_job_id = Arc::new(tokio::sync::Mutex::new(None));
             let seen_params = Arc::new(tokio::sync::Mutex::new(None));
+            let call_count = Arc::new(tokio::sync::Mutex::new(0usize));
             test_state.tools.register_sync(Arc::new(FakeToolList {
                 seen_job_id: Arc::clone(&seen_job_id),
                 seen_params: Arc::clone(&seen_params),
+                call_count: Arc::clone(&call_count),
             }));
             Some(RegisteredToolObservations {
                 seen_job_id,
                 seen_params,
+                call_count,
             })
         }
     }
@@ -312,6 +320,7 @@ async fn extension_tool_proxy_executes_hosted_visible_extension_tools(
     if let Some(observations) = seen_job_id {
         assert_eq!(*observations.seen_job_id.lock().await, Some(job_id));
         assert_eq!(*observations.seen_params.lock().await, case.expected_params,);
+        assert_eq!(*observations.call_count.lock().await, 1);
     }
 
     Ok(())

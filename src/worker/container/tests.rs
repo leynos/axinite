@@ -12,6 +12,7 @@ use rstest::rstest;
 use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
+use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use super::*;
@@ -191,13 +192,13 @@ async fn event_handler(
 
 async fn spawn_runtime_test_server(
     state: Arc<RuntimeTestState>,
-) -> (String, tokio::task::JoinHandle<std::io::Result<()>>) {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind runtime test server listener");
-    let addr = listener
-        .local_addr()
-        .expect("retrieve runtime test server address");
+) -> std::io::Result<(
+    String,
+    oneshot::Sender<()>,
+    tokio::task::JoinHandle<std::io::Result<()>>,
+)> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
 
     let app = Router::new()
         .route("/worker/{job_id}/job", get(job_handler))
@@ -207,8 +208,15 @@ async fn spawn_runtime_test_server(
         .route("/worker/{job_id}/event", post(event_handler))
         .with_state(state);
 
-    let handle = tokio::spawn(async move { axum::serve(listener, app).await });
-    (format!("http://{}", addr), handle)
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                let _ = shutdown_rx.await;
+            })
+            .await
+    });
+    Ok((format!("http://{}", addr), shutdown_tx, handle))
 }
 
 fn build_test_runtime(orchestrator_url: String, job_id: Uuid) -> WorkerRuntime {
@@ -227,13 +235,51 @@ fn build_test_runtime(orchestrator_url: String, job_id: Uuid) -> WorkerRuntime {
     )
 }
 
+struct RuntimeTestHarness {
+    state: Arc<RuntimeTestState>,
+    runtime: Option<WorkerRuntime>,
+    shutdown_tx: Option<oneshot::Sender<()>>,
+    handle: tokio::task::JoinHandle<std::io::Result<()>>,
+}
+
+async fn setup_runtime_test(
+    state: Arc<RuntimeTestState>,
+    job_id: Uuid,
+) -> std::io::Result<RuntimeTestHarness> {
+    let (orchestrator_url, shutdown_tx, handle) =
+        spawn_runtime_test_server(Arc::clone(&state)).await?;
+    let runtime = build_test_runtime(orchestrator_url, job_id);
+    Ok(RuntimeTestHarness {
+        state,
+        runtime: Some(runtime),
+        shutdown_tx: Some(shutdown_tx),
+        handle,
+    })
+}
+
+impl RuntimeTestHarness {
+    fn take_runtime(&mut self) -> WorkerRuntime {
+        self.runtime
+            .take()
+            .expect("runtime test harness should contain a runtime")
+    }
+
+    async fn shutdown(mut self) -> std::io::Result<Arc<RuntimeTestState>> {
+        if let Some(shutdown_tx) = self.shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
+        }
+        self.handle.await??;
+        Ok(self.state)
+    }
+}
+
 #[rstest]
 #[case(PreLoopFailureCase::GetJob)]
 #[case(PreLoopFailureCase::HydrateCredentials)]
 #[tokio::test]
 async fn worker_runtime_reports_failed_status_for_pre_loop_errors(
     #[case] case: PreLoopFailureCase,
-) {
+) -> anyhow::Result<()> {
     let state = Arc::new(RuntimeTestState::default());
     match case {
         PreLoopFailureCase::GetJob => {
@@ -256,10 +302,10 @@ async fn worker_runtime_reports_failed_status_for_pre_loop_errors(
     }
 
     let job_id = Uuid::new_v4();
-    let (orchestrator_url, handle) = spawn_runtime_test_server(Arc::clone(&state)).await;
-    let runtime = build_test_runtime(orchestrator_url, job_id);
+    let mut harness = setup_runtime_test(Arc::clone(&state), job_id).await?;
 
-    let error = runtime
+    let error = harness
+        .take_runtime()
         .run()
         .await
         .expect_err("expected runtime to fail before the execution loop");
@@ -285,12 +331,12 @@ async fn worker_runtime_reports_failed_status_for_pre_loop_errors(
         "expected a sanitised pre-loop failure message, got {failed_status:?}"
     );
 
-    handle.abort();
-    let _ = handle.await;
+    let _ = harness.shutdown().await?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn worker_runtime_emits_failed_status_for_initial_status_rejections() {
+async fn worker_runtime_emits_failed_status_for_initial_status_rejections() -> anyhow::Result<()> {
     let state = Arc::new(RuntimeTestState::default());
     state.job_statuses.lock().await.push_back(StatusCode::OK);
     state
@@ -301,10 +347,9 @@ async fn worker_runtime_emits_failed_status_for_initial_status_rejections() {
     state.status_statuses.lock().await.push_back(StatusCode::OK);
 
     let job_id = Uuid::new_v4();
-    let (orchestrator_url, handle) = spawn_runtime_test_server(Arc::clone(&state)).await;
-    let runtime = build_test_runtime(orchestrator_url, job_id);
+    let mut harness = setup_runtime_test(Arc::clone(&state), job_id).await?;
 
-    let error = runtime.run().await;
+    let error = harness.take_runtime().run().await;
     let error = error.expect_err("expected runtime to fail when the initial status is rejected");
 
     assert!(
@@ -328,8 +373,8 @@ async fn worker_runtime_emits_failed_status_for_initial_status_rejections() {
         statuses[1]
     );
 
-    handle.abort();
-    let _ = handle.await;
+    let _ = harness.shutdown().await?;
+    Ok(())
 }
 
 #[rstest]
@@ -345,13 +390,15 @@ async fn worker_runtime_emits_failed_status_for_initial_status_rejections() {
 async fn worker_runtime_sanitizes_failure_messages(
     #[case] execution: WorkerExecutionResult,
     #[case] expected_message: &str,
-) {
+) -> anyhow::Result<()> {
     let state = Arc::new(RuntimeTestState::default());
     let job_id = Uuid::new_v4();
-    let (orchestrator_url, handle) = spawn_runtime_test_server(Arc::clone(&state)).await;
-    let runtime = build_test_runtime(orchestrator_url, job_id);
+    let harness = setup_runtime_test(Arc::clone(&state), job_id).await?;
 
-    runtime
+    harness
+        .runtime
+        .as_ref()
+        .expect("runtime test harness should contain a runtime")
         .report_completion(execution, 7)
         .await
         .expect("report_completion should succeed in test harness");
@@ -375,6 +422,6 @@ async fn worker_runtime_sanitizes_failure_messages(
         "result payload should not leak the detailed error text"
     );
 
-    handle.abort();
-    let _ = handle.await;
+    let _ = harness.shutdown().await?;
+    Ok(())
 }

@@ -90,7 +90,6 @@ cutting link time roughly in proportion.
 - `libsql_wit_defaults_integration.rs`
 - `module_init_integration.rs`
 
-
 ## Target structure (9 binaries)
 
 ```plaintext
@@ -222,27 +221,30 @@ tests/
 - [x] Phase 3: Update Cargo.toml
 - [x] Phase 4: Validate
 
-
 ## Implementation notes
 
 The consolidation was completed successfully. Key changes:
 
 - Created 6 new test harness files with `#[path]` attributes:
-   - `tests/e2e_traces.rs` (16 modules: 15 e2e tests + routine_heartbeat)
-   - `tests/import_openclaw.rs` (6 modules)
-   - `tests/channels.rs` (5 modules)
-   - `tests/infrastructure.rs` (5 modules)
-   - `tests/tools_and_config.rs` (4 modules)
-   - `tests/db_integration.rs` (2 modules)
+  - `tests/e2e_traces.rs` (16 modules: 15 e2e tests +
+    `routine_heartbeat`)
+  - `tests/import_openclaw.rs` (6 modules)
+  - `tests/channels.rs` (5 modules)
+  - `tests/infrastructure.rs` (5 modules)
+  - `tests/tools_and_config.rs` (4 modules)
+  - `tests/db_integration.rs` (2 modules)
 
-- Moved test files into subdirectories matching harness names
+- Moved test files into subdirectories matching harness names.
 
-- Removed wrapper `mod` blocks from moved files and adjusted indentation
+- Removed wrapper `mod` blocks from moved files and adjusted indentation.
 
-- Added `#[path = "..."]` attributes to harness files to reference subdirectory modules
+- Added `#[path = "..."]` attributes to harness files so they reference
+  subdirectory modules.
 
-- Ensured `mod support;` is only declared in harnesses that need it (e2e_traces, channels, tools_and_config)
+- Ensured `mod support;` is only declared in harnesses that need it
+  (`e2e_traces`, `channels`, `tools_and_config`).
 
-- No changes were needed to Cargo.toml (html_to_markdown already had required-features gate)
+- No changes were needed to `Cargo.toml`
+  (`html_to_markdown` already had a `required-features` gate).
 
 Final structure: **9 test binaries** (down from 40)

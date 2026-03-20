@@ -1,3 +1,5 @@
+//! Tests for mapping Claude stream events into `JobEventPayload` values.
+
 use rstest::rstest;
 
 use super::{

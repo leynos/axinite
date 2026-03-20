@@ -11,7 +11,7 @@ Interface Types) interface.
 
 ## Directory Structure
 
-```text
+```plaintext
 channels/                    # Or channels-src/
 └── my-channel/
     ├── Cargo.toml
@@ -22,7 +22,7 @@ channels/                    # Or channels-src/
 
 After building, deploy to:
 
-```text
+```plaintext
 ~/.ironclaw/channels/
 ├── my-channel.wasm
 └── my-channel.capabilities.json

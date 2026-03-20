@@ -34,7 +34,7 @@ pub struct JobToolsArgs {
 }
 
 /// Register the job-management tool set from bootstrap wiring.
-pub async fn register_job_tools(registry: &ToolRegistry, args: JobToolsArgs) {
+pub fn register_job_tools(registry: &ToolRegistry, args: JobToolsArgs) {
     registry.register_job_tools(RegisterJobToolsConfig {
         context_manager: args.context_manager,
         scheduler_slot: args.scheduler_slot,

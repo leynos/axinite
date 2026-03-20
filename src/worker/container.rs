@@ -308,6 +308,15 @@ Work independently to complete this job. Report when done."#,
             }
             WorkerExecutionResult::Outcome(LoopOutcome::Stopped | LoopOutcome::NeedApproval(_)) => {
                 tracing::info!("Worker for job {} stopped", self.config.job_id);
+                self.post_event(
+                    JobEventType::Result,
+                    serde_json::json!({
+                        "success": false,
+                        "message": "Execution stopped",
+                        "iterations": iterations,
+                    }),
+                )
+                .await;
                 self.client
                     .report_complete(&CompletionReport {
                         success: false,

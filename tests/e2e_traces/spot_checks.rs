@@ -122,6 +122,7 @@ spot_test!(
 #[tokio::test]
 async fn spot_memory_save_recall() {
     let _cleanup = CleanupGuard::new().file("/tmp/bench-meeting.md");
+    // Ignore the error if the file does not exist; cleanup is best-effort.
     let _ = std::fs::remove_file("/tmp/bench-meeting.md");
 
     let trace = LlmTrace::from_file_async(fixture_path("spot", "memory_save_recall.json"))

@@ -15,7 +15,7 @@ use super::ToolRegistry;
 
 /// Dependency bundle for registering the job-management tool set.
 ///
-/// This config is the entrypoint for `ToolRegistry::register_job_tools`.
+/// This config is the entry point for `ToolRegistry::register_job_tools`.
 /// Every field is optional except `context_manager`, and `None` disables the
 /// related tool capability rather than causing registration to fail.
 pub struct RegisterJobToolsConfig {

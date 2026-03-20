@@ -1,3 +1,5 @@
+//! Tests for NDJSON deserialization of Claude stream events.
+
 use super::ClaudeStreamEvent;
 
 #[test]

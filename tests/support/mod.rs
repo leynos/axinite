@@ -44,21 +44,46 @@ const _: fn(cleanup::CleanupGuard, String) -> cleanup::CleanupGuard = cleanup::C
 const _: fn(&str) -> std::io::Result<()> = cleanup::setup_test_dir;
 const _: fn(&std::path::Path, &str) -> std::io::Result<String> =
     cleanup::setup_test_dir_with_suffix;
+const _: &str = fixtures::FIXTURE_ROOT;
+const _: std::time::Duration = fixtures::DEFAULT_TIMEOUT;
+const _: std::time::Duration = fixtures::LONG_TIMEOUT;
+const _: fn(&str, &str) -> String = fixtures::fixture_path;
 const _: fn(String, String, Vec<trace_llm::TraceStep>) -> trace_llm::LlmTrace =
     trace_llm::LlmTrace::single_turn;
+
 fn trace_support_symbol_refs() {
-    let _ = trace_llm::patch_json_value;
-    let _ = trace_llm::TraceLlm::from_trace;
-    let _ = |path: String| trace_llm::TraceLlm::from_file_async(path);
-    let _ = trace_llm::TraceLlm::calls;
-    let _ = trace_llm::TraceLlm::hint_mismatches;
-    let _ = trace_llm::TraceLlm::captured_requests;
-    let _ = |model_name: String, turns: Vec<trace_types::TraceTurn>| {
-        trace_llm::LlmTrace::new(model_name, turns)
-    };
-    let _ = |path: String| trace_llm::LlmTrace::from_file_async(path);
-    let _ = trace_llm::LlmTrace::patch_path;
-    let _ = trace_llm::LlmTrace::playable_steps;
+    const _: fn(&mut serde_json::Value, &str, &str) = trace_llm::patch_json_value;
+    const _: fn(trace_llm::LlmTrace) -> trace_llm::TraceLlm = trace_llm::TraceLlm::from_trace;
+    const _: fn(&trace_llm::TraceLlm) -> usize = trace_llm::TraceLlm::calls;
+    const _: fn(&trace_llm::TraceLlm) -> usize = trace_llm::TraceLlm::hint_mismatches;
+    const _: fn(
+        &trace_llm::TraceLlm,
+    ) -> Result<Vec<Vec<ironclaw::llm::ChatMessage>>, ironclaw::error::LlmError> =
+        trace_llm::TraceLlm::captured_requests;
+    const _: fn(String, Vec<trace_types::TraceTurn>) -> trace_llm::LlmTrace =
+        trace_llm::LlmTrace::new;
+    const _: fn(&mut trace_llm::LlmTrace, &str, &str) = trace_llm::LlmTrace::patch_path;
+    const _: for<'a> fn(&'a trace_llm::LlmTrace) -> Vec<&'a trace_llm::TraceStep> =
+        trace_llm::LlmTrace::playable_steps;
+
+    fn assert_trace_llm_from_file_async<Fut>(f: fn(String) -> Fut)
+    where
+        Fut: std::future::Future<Output = Result<trace_llm::TraceLlm, Box<dyn std::error::Error>>>,
+    {
+        let _ = f;
+    }
+
+    fn assert_trace_from_file_async<Fut>(f: fn(String) -> Fut)
+    where
+        Fut: std::future::Future<Output = anyhow::Result<trace_llm::LlmTrace>>,
+    {
+        let _ = f;
+    }
+
+    let _: fn(String) -> _ = trace_llm::TraceLlm::from_file_async;
+    assert_trace_llm_from_file_async(trace_llm::TraceLlm::from_file_async);
+    let _: fn(String) -> _ = trace_llm::LlmTrace::from_file_async;
+    assert_trace_from_file_async(trace_llm::LlmTrace::from_file_async);
 }
 
 const _: () = {

@@ -22,6 +22,9 @@ struct ClaudeSessionResult {
     session_id: Option<String>,
 }
 
+/// Records whether `emitted_terminal_result` already sent the final result
+/// event. `true` avoids duplicate terminal emissions; `false` tells callers
+/// they still need to publish the final failure result during cleanup.
 struct ClaudeSessionFailure {
     error: WorkerError,
     emitted_terminal_result: bool,

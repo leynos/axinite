@@ -1,3 +1,5 @@
+//! Tests for Claude filesystem setup utilities.
+
 use super::{build_permission_settings, copy_dir_recursive};
 
 #[test]
@@ -77,8 +79,9 @@ fn test_copy_dir_recursive_empty_source() {
 #[test]
 fn test_copy_dir_recursive_skips_nonexistent_source() {
     let dst = tempfile::tempdir().expect("create dst tempdir");
-    let nonexistent = std::path::Path::new("/no/such/path");
+    let root = tempfile::tempdir().expect("create source root tempdir");
+    let nonexistent = root.path().join("no_such_path");
 
-    let copied = copy_dir_recursive(nonexistent, dst.path()).expect("copy should be graceful");
+    let copied = copy_dir_recursive(&nonexistent, dst.path()).expect("copy should be graceful");
     assert_eq!(copied, 0);
 }

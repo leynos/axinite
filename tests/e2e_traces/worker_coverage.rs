@@ -51,10 +51,8 @@ struct SpotCase {
 async fn run_worker_spot_case(
     fixture_path: &str,
     message: &str,
-) -> (LlmTrace, Vec<OutgoingResponse>, TestRig) {
-    let trace = LlmTrace::from_file_async(fixture_path)
-        .await
-        .unwrap_or_else(|_| panic!("failed to load {fixture_path}"));
+) -> anyhow::Result<(LlmTrace, Vec<OutgoingResponse>, TestRig)> {
+    let trace = LlmTrace::from_file_async(fixture_path).await?;
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
@@ -62,12 +60,13 @@ async fn run_worker_spot_case(
     rig.send_message(message).await;
     let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
     rig.verify_trace_expects(&trace, &responses);
-    (trace, responses, rig)
+    Ok((trace, responses, rig))
 }
 
-async fn run_worker_spot_test(fixture_path: &str, message: &str) {
-    let (_trace, _responses, rig) = run_worker_spot_case(fixture_path, message).await;
+async fn run_worker_spot_test(fixture_path: &str, message: &str) -> anyhow::Result<()> {
+    let (_trace, _responses, rig) = run_worker_spot_case(fixture_path, message).await?;
     rig.shutdown();
+    Ok(())
 }
 
 // -----------------------------------------------------------------------
@@ -104,8 +103,8 @@ async fn run_worker_spot_test(fixture_path: &str, message: &str) {
     message: "Plan and execute a task",
 })]
 #[tokio::test]
-async fn worker_spot(#[case] case: SpotCase) {
-    run_worker_spot_test(case.fixture, case.message).await;
+async fn worker_spot(#[case] case: SpotCase) -> anyhow::Result<()> {
+    run_worker_spot_test(case.fixture, case.message).await
 }
 
 #[tokio::test]
@@ -117,7 +116,8 @@ async fn parallel_three_tools_starts_all_tools() {
         ),
         "Run three tools in parallel",
     )
-    .await;
+    .await
+    .expect("failed to run worker spot case");
 
     let started = rig.tool_calls_started();
     assert!(
@@ -202,7 +202,8 @@ async fn unknown_tool_name() {
         ),
         "Deploy to production",
     )
-    .await;
+    .await
+    .expect("failed to run worker spot case");
 
     // The deploy_to_production tool should have been attempted but failed.
     let completed = rig.tool_calls_completed();
@@ -235,7 +236,8 @@ async fn invalid_tool_params() {
         ),
         "Echo something with wrong params first",
     )
-    .await;
+    .await
+    .expect("failed to run worker spot case");
 
     // Echo should have been called at least twice (bad then good).
     let started = rig.tool_calls_started();
@@ -348,7 +350,8 @@ async fn simple_echo_flow() {
         ),
         "Plan and execute a task",
     )
-    .await;
+    .await
+    .expect("failed to run worker spot case");
 
     // Verify echo was called during execution.
     let started = rig.tool_calls_started();

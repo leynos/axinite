@@ -18,6 +18,8 @@ pub enum WorkerState {
     Running,
     Completed,
     Failed,
+    #[serde(other)]
+    Unknown,
 }
 
 impl WorkerState {
@@ -27,6 +29,7 @@ impl WorkerState {
             Self::Running => "running",
             Self::Completed => "completed",
             Self::Failed => "failed",
+            Self::Unknown => "unknown",
         }
     }
 }
@@ -72,6 +75,7 @@ pub enum FinishReason {
     #[serde(alias = "tool_calls")]
     ToolUse,
     ContentFilter,
+    #[serde(other)]
     Unknown,
 }
 

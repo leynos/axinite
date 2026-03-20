@@ -1,3 +1,12 @@
+//! Builder utilities for assembling a [`TestRig`] with realistic shared test
+//! infrastructure.
+//!
+//! `TestRigBuilder` composes [`TestRig`], [`TestChannelHandle`],
+//! [`InstrumentedLlm`], [`TestChannel`], and trace-backed providers such as
+//! [`TraceLlm`]. Use it when a test needs a fully wired agent loop, optionally
+//! replaying `LlmTrace` steps and HTTP exchanges through
+//! `ReplayingHttpInterceptor`.
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -220,8 +229,8 @@ impl TestRigBuilder {
 
         let skills_dir = temp_dir.path().join("skills");
         let installed_skills_dir = temp_dir.path().join("installed_skills");
-        let _ = std::fs::create_dir_all(&skills_dir);
-        let _ = std::fs::create_dir_all(&installed_skills_dir);
+        let _ = tokio::fs::create_dir_all(&skills_dir).await;
+        let _ = tokio::fs::create_dir_all(&installed_skills_dir).await;
         let mut config = Config::for_testing(db_path, skills_dir, installed_skills_dir);
         config.agent.max_tool_iterations = self.max_tool_iterations;
         config.safety.injection_check_enabled = self.injection_check;

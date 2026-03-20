@@ -1,3 +1,10 @@
+//! Test rig channel adapter that exposes [`TestChannel`] through the runtime
+//! [`Channel`] trait.
+//!
+//! This support module lets integration tests share one in-memory
+//! [`TestChannel`] while still handing a trait object to the production
+//! channel manager.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -8,15 +15,17 @@ use ironclaw::error::ChannelError;
 
 use crate::support::test_channel::TestChannel;
 
-/// A thin wrapper around `Arc<TestChannel>` that implements `Channel`.
+/// A thin wrapper around `Arc<TestChannel>` that implements `Channel` for tests.
 ///
-/// This lets the test rig hand a `Box<dyn Channel>` to `ChannelManager::add()`
-/// while still keeping a shared `Arc<TestChannel>` for assertions.
+/// `TestChannelHandle` lets the test rig pass a channel trait object into the
+/// runtime while preserving shared access to the underlying `TestChannel` for
+/// assertions.
 pub struct TestChannelHandle {
     inner: Arc<TestChannel>,
 }
 
 impl TestChannelHandle {
+    /// Construct a `TestChannelHandle` from a shared `Arc<TestChannel>`.
     pub fn new(inner: Arc<TestChannel>) -> Self {
         Self { inner }
     }

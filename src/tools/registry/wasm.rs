@@ -252,7 +252,7 @@ fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
             if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
                 None
             } else {
-                Some(serde_json::Value::String(value))
+                Some(serde_json::Value::String(trimmed.to_string()))
             }
         }
         value => Some(value),

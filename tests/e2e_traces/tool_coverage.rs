@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use anyhow::Context as _;
 use ironclaw::channels::OutgoingResponse;
 
 use crate::support::cleanup::{CleanupGuard, setup_test_dir_with_suffix};
@@ -22,7 +23,8 @@ async fn run_trace(
 ) -> (LlmTrace, Vec<OutgoingResponse>, TestRig) {
     let mut trace = LlmTrace::from_file_async(fixture_path)
         .await
-        .unwrap_or_else(|_| panic!("failed to load {fixture_path}"));
+        .with_context(|| format!("failed to load {fixture_path}"))
+        .expect("failed to load trace fixture");
     for (from, to) in path_replacements {
         trace.patch_path(from, to);
     }

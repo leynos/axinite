@@ -46,10 +46,10 @@ fn test_proxy_finish_reason_deserialization(
 }
 
 #[test]
-fn test_proxy_finish_reason_rejects_unknown_provider_value() {
-    let err = serde_json::from_value::<ProxyFinishReason>(json!("made_up_reason"))
-        .expect_err("unexpectedly deserialized an unknown ProxyFinishReason");
-    assert!(err.is_data());
+fn test_proxy_finish_reason_unknown_provider_value_falls_back() {
+    let reason = serde_json::from_value::<ProxyFinishReason>(json!("made_up_reason"))
+        .expect("failed to deserialize unknown ProxyFinishReason as fallback");
+    assert_eq!(reason, ProxyFinishReason::Unknown);
 }
 
 #[rstest]

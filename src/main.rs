@@ -428,8 +428,7 @@ async fn async_main() -> anyhow::Result<()> {
             },
             secrets_store: components.secrets_store.clone(),
         },
-    )
-    .await;
+    );
 
     // ── Gateway channel ────────────────────────────────────────────────
 

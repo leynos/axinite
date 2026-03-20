@@ -10,6 +10,12 @@ use ironclaw::channels::OutgoingResponse;
 use crate::support::test_rig::{TestRig, TestRigBuilder};
 use crate::support::trace_llm::LlmTrace;
 
+#[derive(Default)]
+struct RigConfig {
+    auto_approve: bool,
+    skills: bool,
+}
+
 #[tokio::test]
 async fn time_parse_and_diff() {
     let fixture_path = concat!(
@@ -96,12 +102,6 @@ async fn routine_create_list() {
     );
 
     rig.shutdown();
-}
-
-#[derive(Default)]
-struct RigConfig {
-    auto_approve: bool,
-    skills: bool,
 }
 
 async fn run_trace_test(

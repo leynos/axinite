@@ -3,26 +3,29 @@
 
 use std::time::Duration;
 
-use crate::support::cleanup::{CleanupGuard, setup_test_dir};
 use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_llm::LlmTrace;
 
-const TEST_DIR: &str = "/tmp/ironclaw_e2e_test";
-const TEST_FILE: &str = "/tmp/ironclaw_e2e_test/hello.txt";
 const EXPECTED_CONTENT: &str = "Hello, E2E test!";
 
 #[tokio::test]
 async fn test_file_write_and_read_flow() {
-    setup_test_dir(TEST_DIR).expect("failed to create trace file tools directory");
-    let _cleanup = CleanupGuard::new().dir(TEST_DIR);
+    let temp_dir = tempfile::tempdir().expect("failed to create trace file tools tempdir");
+    let test_file = temp_dir.path().join("hello.txt");
 
     let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/file_write_read.json"
     );
-    let trace = LlmTrace::from_file_async(fixture_path)
+    let mut trace = LlmTrace::from_file_async(fixture_path)
         .await
         .expect("failed to load trace fixture");
+    trace.patch_path(
+        "/tmp/ironclaw_e2e_test/hello.txt",
+        test_file
+            .to_str()
+            .expect("temp file path should be valid UTF-8"),
+    );
 
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -37,7 +40,7 @@ async fn test_file_write_and_read_flow() {
 
     // Extra: verify file on disk (can't express in expects).
     let file_content =
-        std::fs::read_to_string(TEST_FILE).expect("hello.txt should exist after write_file");
+        std::fs::read_to_string(&test_file).expect("hello.txt should exist after write_file");
     assert_eq!(file_content, EXPECTED_CONTENT);
 
     rig.shutdown();
