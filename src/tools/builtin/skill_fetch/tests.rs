@@ -111,6 +111,11 @@ fn test_extract_skill_from_zip_missing_skill_md(zip_builder_fixture: ZipEntryBui
     assert!(err.to_string().contains("does not contain SKILL.md"));
 }
 
+/// Build a minimal ZIP local-file entry using the stored (no-compression)
+/// method for tests.
+///
+/// The `file_name` and `content` lengths are encoded as little-endian `u16`
+/// and `u32` fields in the local file header.
 fn build_zip_entry_store(file_name: &str, content: &[u8]) -> Vec<u8> {
     let mut zip = Vec::new();
     zip.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
@@ -178,18 +183,6 @@ fn build_zip_entry_store_oversized(
 }
 
 #[rstest]
-fn test_zip_extract_valid_skill(zip_builder_fixture: ZipEntryBuilder) {
-    let content = b"---\nname: hello\n---\n# Hello Skill\nDoes things.\n";
-    let zip = zip_builder_fixture("SKILL.md", content);
-    let result =
-        extract_skill_from_zip(&zip).expect("valid archive should extract the root SKILL.md");
-    assert_eq!(
-        result,
-        std::str::from_utf8(content).expect("fixture content should be valid UTF-8"),
-    );
-}
-
-#[rstest]
 fn test_zip_extract_ignores_non_skill_entries(zip_builder_fixture: ZipEntryBuilder) {
     let mut zip = Vec::new();
     zip.extend_from_slice(&zip_builder_fixture("README.md", b"# Readme"));
@@ -241,7 +234,7 @@ fn test_zip_extract_stored_size_mismatch_rejected() {
 }
 
 #[test]
-fn test_is_private_ip_blocks_loopback() {
+fn test_validate_fetch_url_rejects_loopback_ip() {
     let loopback: IpAddr = "127.0.0.1"
         .parse()
         .expect("loopback test fixture should parse");
