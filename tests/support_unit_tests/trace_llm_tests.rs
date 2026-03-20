@@ -107,6 +107,64 @@ fn make_completion_request(user_msg: &str) -> CompletionRequest {
     CompletionRequest::new(vec![ChatMessage::user(user_msg)])
 }
 
+async fn run_hint_case(
+    user_text: &str,
+    last_user_contains: &str,
+    min_messages: usize,
+    response_text: &str,
+) -> (String, usize) {
+    let trace_json = serde_json::json!({
+        "model_name": "test-model",
+        "turns": [{
+            "user_input": user_text,
+            "steps": [{
+                "request_hint": {
+                    "last_user_message_contains": last_user_contains,
+                    "min_message_count": min_messages,
+                },
+                "response": {
+                    "type": "text",
+                    "content": response_text,
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                },
+                "expected_tool_results": [],
+            }]
+        }]
+    });
+    let trace: LlmTrace =
+        serde_json::from_str(&trace_json.to_string()).expect("parse hint test trace");
+    let llm = TraceLlm::from_trace(trace);
+    let resp = llm
+        .complete_with_tools(make_request(user_text))
+        .await
+        .expect("hint test completion should succeed");
+
+    (
+        resp.content
+            .expect("hint test response should contain text"),
+        llm.hint_mismatches(),
+    )
+}
+
+macro_rules! hint_test {
+    (
+        $name:ident,
+        user = $user:expr,
+        contains = $contains:expr,
+        min = $min:expr,
+        response = $response:expr,
+        expect_mismatches = $expected:expr
+    ) => {
+        #[tokio::test]
+        async fn $name() {
+            let (content, mismatches) = run_hint_case($user, $contains, $min, $response).await;
+            assert_eq!(content, $response);
+            assert_eq!(mismatches, $expected);
+        }
+    };
+}
+
 #[tokio::test]
 async fn replays_text_response() {
     let trace = LlmTrace::single_turn("test-model", "hi", vec![text_step("Hello world", 100, 20)]);
@@ -199,63 +257,23 @@ async fn errors_when_exhausted() {
     );
 }
 
-#[tokio::test]
-async fn validates_request_hints() {
-    let trace = LlmTrace::single_turn(
-        "test-model",
-        "say hello please",
-        vec![TraceStep {
-            request_hint: Some(RequestHint {
-                last_user_message_contains: Some("hello".to_string()),
-                min_message_count: Some(1),
-            }),
-            response: TraceResponse::Text {
-                content: "matched".to_string(),
-                input_tokens: 10,
-                output_tokens: 5,
-            },
-            expected_tool_results: Vec::new(),
-        }],
-    );
-    let llm = TraceLlm::from_trace(trace);
+hint_test!(
+    validates_request_hints,
+    user = "say hello please",
+    contains = "hello",
+    min = 1,
+    response = "matched",
+    expect_mismatches = 0
+);
 
-    let resp = llm
-        .complete_with_tools(make_request("say hello please"))
-        .await
-        .unwrap();
-
-    assert_eq!(resp.content.as_deref(), Some("matched"));
-    assert_eq!(llm.hint_mismatches(), 0);
-}
-
-#[tokio::test]
-async fn hint_mismatch_warns_but_continues() {
-    let trace = LlmTrace::single_turn(
-        "test-model",
-        "apple",
-        vec![TraceStep {
-            request_hint: Some(RequestHint {
-                last_user_message_contains: Some("banana".to_string()),
-                min_message_count: Some(5),
-            }),
-            response: TraceResponse::Text {
-                content: "still works".to_string(),
-                input_tokens: 10,
-                output_tokens: 5,
-            },
-            expected_tool_results: Vec::new(),
-        }],
-    );
-    let llm = TraceLlm::from_trace(trace);
-
-    let resp = llm
-        .complete_with_tools(make_request("apple"))
-        .await
-        .unwrap();
-
-    assert_eq!(resp.content.as_deref(), Some("still works"));
-    assert_eq!(llm.hint_mismatches(), 2);
-}
+hint_test!(
+    hint_mismatch_warns_but_continues,
+    user = "apple",
+    contains = "banana",
+    min = 5,
+    response = "still works",
+    expect_mismatches = 2
+);
 
 #[tokio::test]
 async fn from_json_file() {
