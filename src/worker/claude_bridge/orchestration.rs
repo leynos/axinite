@@ -9,7 +9,7 @@ use tokio::process::Command;
 
 use crate::error::WorkerError;
 use crate::worker::api::{
-    CompletionReport, JobEventPayload, JobEventType, PromptResponse, StatusUpdate, WorkerState,
+    CompletionReport, JobEventPayload, JobEventType, StatusUpdate, WorkerState,
 };
 
 use super::ClaudeBridgeRuntime;
@@ -25,17 +25,17 @@ struct ClaudeSessionResult {
 /// Records whether `emitted_terminal_result` already sent the final result
 /// event. `true` avoids duplicate terminal emissions; `false` tells callers
 /// they still need to publish the final failure result during cleanup.
-struct ClaudeSessionFailure {
-    error: WorkerError,
-    emitted_terminal_result: bool,
+pub(super) struct ClaudeSessionFailure {
+    pub(super) error: WorkerError,
+    pub(super) emitted_terminal_result: bool,
 }
 
 impl ClaudeBridgeRuntime {
     /// Run the bridge: fetch job, spawn claude, stream events, handle follow-ups.
     pub async fn run(&self) -> Result<(), WorkerError> {
-        self.preflight_fs().await?;
+        let copied_auth_present = self.preflight_fs().await?;
         let (job_description, extra_env) = self.fetch_job_and_env().await?;
-        self.warn_if_missing_auth(&extra_env);
+        self.warn_if_missing_auth(&extra_env, copied_auth_present);
         self.client
             .report_status(&StatusUpdate::new(
                 WorkerState::Running,
@@ -70,9 +70,10 @@ impl ClaudeBridgeRuntime {
         }
     }
 
-    async fn preflight_fs(&self) -> Result<(), WorkerError> {
+    async fn preflight_fs(&self) -> Result<bool, WorkerError> {
         self.copy_auth_from_mount().await?;
-        self.write_permission_settings().await
+        self.write_permission_settings().await?;
+        self.has_copied_auth().await
     }
 
     async fn fetch_job_and_env(&self) -> Result<(String, HashMap<String, String>), WorkerError> {
@@ -106,12 +107,12 @@ impl ClaudeBridgeRuntime {
             .collect()
     }
 
-    fn warn_if_missing_auth(&self, env: &HashMap<String, String>) {
+    fn warn_if_missing_auth(&self, env: &HashMap<String, String>, copied_auth_present: bool) {
         let has_api_key =
             env.contains_key("ANTHROPIC_API_KEY") || std::env::var("ANTHROPIC_API_KEY").is_ok();
         let has_oauth = env.contains_key("CLAUDE_CODE_OAUTH_TOKEN")
             || std::env::var("CLAUDE_CODE_OAUTH_TOKEN").is_ok();
-        if has_api_key || has_oauth {
+        if has_api_key || has_oauth || copied_auth_present {
             return;
         }
         tracing::warn!(
@@ -133,7 +134,7 @@ impl ClaudeBridgeRuntime {
 
     async fn followup_loop(
         &self,
-        session_id: Option<String>,
+        mut session_id: Option<String>,
         env: &HashMap<String, String>,
     ) -> Result<u32, (u32, ClaudeSessionFailure)> {
         let mut iteration = 1u32;
@@ -165,52 +166,18 @@ impl ClaudeBridgeRuntime {
                 "Got follow-up prompt, resuming session"
             );
 
-            if let Err(failure) = self
+            match self
                 .run_claude_session(&prompt.content, session_id.as_deref(), env)
                 .await
             {
-                return Err((iteration, failure));
+                Ok(result) => {
+                    if let Some(next_session_id) = result.session_id {
+                        session_id = Some(next_session_id);
+                    }
+                }
+                Err(failure) => return Err((iteration, failure)),
             }
         }
-    }
-
-    async fn finish_failure(
-        &self,
-        log_message: &str,
-        iterations: u32,
-        failure: &ClaudeSessionFailure,
-    ) -> Result<(), WorkerError> {
-        tracing::error!(
-            job_id = %self.config.job_id,
-            "{log_message}: {}",
-            failure.error
-        );
-        self.report_terminal_failure(iterations, failure).await?;
-        Ok(())
-    }
-
-    async fn report_terminal_failure(
-        &self,
-        iterations: u32,
-        failure: &ClaudeSessionFailure,
-    ) -> Result<(), WorkerError> {
-        if !failure.emitted_terminal_result {
-            self.report_event(
-                JobEventType::Result,
-                &serde_json::json!({
-                    "success": false,
-                    "message": failure.error.to_string(),
-                }),
-            )
-            .await;
-        }
-        self.client
-            .report_complete(&CompletionReport {
-                success: false,
-                message: Some("Claude Code failed".to_string()),
-                iterations,
-            })
-            .await
     }
 
     /// Spawn a `claude` CLI process and stream its output.
@@ -268,13 +235,26 @@ impl ClaudeBridgeRuntime {
         let stderr_handle = tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                tracing::debug!(job_id = %job_id, "claude stderr: {}", line);
-                let payload = JobEventPayload {
-                    event_type: JobEventType::Status,
-                    data: serde_json::json!({ "message": line }),
-                };
-                client_for_stderr.post_event(&payload).await;
+            loop {
+                match lines.next_line().await {
+                    Ok(Some(line)) => {
+                        tracing::debug!(job_id = %job_id, "claude stderr: {}", line);
+                        let payload = JobEventPayload {
+                            event_type: JobEventType::Status,
+                            data: serde_json::json!({ "message": line }),
+                        };
+                        client_for_stderr.post_event(&payload).await;
+                    }
+                    Ok(None) => break,
+                    Err(error) => {
+                        tracing::error!(
+                            job_id = %job_id,
+                            "failed reading claude stderr: {}",
+                            error
+                        );
+                        break;
+                    }
+                }
             }
         });
 
@@ -283,7 +263,20 @@ impl ClaudeBridgeRuntime {
         let mut session_id: Option<String> = None;
         let mut seen_terminal_result = false;
 
-        while let Ok(Some(line)) = lines.next_line().await {
+        loop {
+            let line = match lines.next_line().await {
+                Ok(Some(line)) => line,
+                Ok(None) => break,
+                Err(error) => {
+                    return Err(ClaudeSessionFailure {
+                        error: WorkerError::ExecutionFailed {
+                            reason: format!("failed reading claude stdout: {}", error),
+                        },
+                        emitted_terminal_result: seen_terminal_result,
+                    });
+                }
+            };
+
             let line = line.trim().to_string();
             if line.is_empty() {
                 continue;
@@ -361,7 +354,7 @@ impl ClaudeBridgeRuntime {
                 error: WorkerError::ExecutionFailed {
                     reason: format!("claude exited with code {}", code),
                 },
-                emitted_terminal_result: seen_terminal_result,
+                emitted_terminal_result: true,
             });
         }
 
@@ -377,17 +370,5 @@ impl ClaudeBridgeRuntime {
         }
 
         Ok(ClaudeSessionResult { session_id })
-    }
-
-    async fn report_event(&self, event_type: JobEventType, data: &serde_json::Value) {
-        let payload = JobEventPayload {
-            event_type,
-            data: data.clone(),
-        };
-        self.client.post_event(&payload).await;
-    }
-
-    async fn poll_for_prompt(&self) -> Result<Option<PromptResponse>, WorkerError> {
-        self.client.poll_prompt().await
     }
 }

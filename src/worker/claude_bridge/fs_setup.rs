@@ -69,6 +69,22 @@ impl ClaudeBridgeRuntime {
         );
         Ok(())
     }
+
+    pub(super) async fn has_copied_auth(&self) -> Result<bool, WorkerError> {
+        match tokio::fs::read_dir("/home/sandbox/.claude").await {
+            Ok(mut entries) => entries
+                .next_entry()
+                .await
+                .map(|entry| entry.is_some())
+                .map_err(|error| WorkerError::ExecutionFailed {
+                    reason: format!("failed to inspect ~/.claude for copied auth: {error}"),
+                }),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(WorkerError::ExecutionFailed {
+                reason: format!("failed to inspect ~/.claude for copied auth: {error}"),
+            }),
+        }
+    }
 }
 
 /// Build the JSON content for `.claude/settings.json` with the given tool allowlist.
