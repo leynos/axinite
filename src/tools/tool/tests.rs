@@ -1,10 +1,30 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use rstest::rstest;
 
 use super::*;
 use crate::context::JobContext;
 use crate::testing::credentials::TEST_REDACT_SECRET;
+
+fn assert_schema_ok(schema: serde_json::Value) {
+    let errors = validate_tool_schema(&schema, "test");
+    assert!(errors.is_empty(), "unexpected schema errors: {errors:?}");
+}
+
+fn assert_schema_err_contains(schema: serde_json::Value, needle: &str) {
+    let errors = validate_tool_schema(&schema, "test");
+    assert_eq!(
+        errors.len(),
+        1,
+        "expected exactly one schema error containing '{needle}', got: {errors:?}",
+    );
+    assert!(
+        errors[0].contains(needle),
+        "expected schema error containing '{needle}', got: {:?}",
+        errors[0],
+    );
+}
 
 /// A simple no-op tool for testing.
 #[derive(Debug)]
@@ -158,58 +178,77 @@ fn test_redact_params_non_object_is_passthrough() {
     assert_eq!(redacted, params);
 }
 
-#[test]
-fn test_validate_schema_valid() {
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "name": { "type": "string", "description": "A name" }
-        },
-        "required": ["name"]
-    });
-    let errors = validate_tool_schema(&schema, "test");
-    assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+#[rstest]
+#[case(serde_json::json!({
+    "type": "object",
+    "properties": {
+        "name": { "type": "string", "description": "A name" }
+    },
+    "required": ["name"]
+}))]
+#[case(serde_json::json!({
+    "type": "object",
+    "properties": {
+        "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+        }
+    }
+}))]
+#[case(serde_json::json!({
+    "type": "object",
+    "properties": {
+        "data": { "description": "Any JSON value" }
+    },
+    "required": ["data"]
+}))]
+#[case(serde_json::json!({
+    "type": "object",
+    "properties": {
+        "headers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string" },
+                    "value": { "type": "string" }
+                },
+                "required": ["name", "value"]
+            }
+        }
+    }
+}))]
+fn test_validate_schema_success_cases(#[case] schema: serde_json::Value) {
+    assert_schema_ok(schema);
 }
 
-#[test]
-fn test_validate_schema_missing_type() {
-    let schema = serde_json::json!({
+#[rstest]
+#[case(
+    serde_json::json!({
         "properties": {
             "name": { "type": "string" }
         }
-    });
-    let errors = validate_tool_schema(&schema, "test");
-    assert_eq!(errors.len(), 1);
-    assert!(errors[0].contains("missing \"type\": \"object\""));
-}
-
-#[test]
-fn test_validate_schema_wrong_type() {
-    let schema = serde_json::json!({
+    }),
+    "missing \"type\": \"object\""
+)]
+#[case(
+    serde_json::json!({
         "type": "string"
-    });
-    let errors = validate_tool_schema(&schema, "test");
-    assert_eq!(errors.len(), 1);
-    assert!(errors[0].contains("expected type \"object\""));
-}
-
-#[test]
-fn test_validate_schema_required_not_in_properties() {
-    let schema = serde_json::json!({
+    }),
+    "expected type \"object\""
+)]
+#[case(
+    serde_json::json!({
         "type": "object",
         "properties": {
             "name": { "type": "string" }
         },
         "required": ["name", "age"]
-    });
-    let errors = validate_tool_schema(&schema, "test");
-    assert_eq!(errors.len(), 1);
-    assert!(errors[0].contains("\"age\" not found in properties"));
-}
-
-#[test]
-fn test_validate_schema_nested_object() {
-    let schema = serde_json::json!({
+    }),
+    "\"age\" not found in properties"
+)]
+#[case(
+    serde_json::json!({
         "type": "object",
         "properties": {
             "config": {
@@ -220,82 +259,20 @@ fn test_validate_schema_nested_object() {
                 "required": ["key", "missing"]
             }
         }
-    });
-    let errors = validate_tool_schema(&schema, "test");
-    assert_eq!(errors.len(), 1);
-    assert!(errors[0].contains("test.config"));
-    assert!(errors[0].contains("\"missing\" not found"));
-}
-
-#[test]
-fn test_validate_schema_array_missing_items() {
-    let schema = serde_json::json!({
+    }),
+    "test.config: required key \"missing\" not found in properties"
+)]
+#[case(
+    serde_json::json!({
         "type": "object",
         "properties": {
             "tags": { "type": "array", "description": "Tags" }
         }
-    });
-    let errors = validate_tool_schema(&schema, "test");
-    assert_eq!(errors.len(), 1);
-    assert!(errors[0].contains("array property missing \"items\""));
-}
-
-#[test]
-fn test_validate_schema_array_with_items_ok() {
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "tags": {
-                "type": "array",
-                "items": { "type": "string" }
-            }
-        }
-    });
-    let errors = validate_tool_schema(&schema, "test");
-    assert!(errors.is_empty(), "unexpected errors: {errors:?}");
-}
-
-#[test]
-fn test_validate_schema_freeform_property_allowed() {
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "data": { "description": "Any JSON value" }
-        },
-        "required": ["data"]
-    });
-    let errors = validate_tool_schema(&schema, "test");
-    assert!(
-        errors.is_empty(),
-        "freeform property should be allowed: {errors:?}"
-    );
-}
-
-#[test]
-fn test_validate_schema_nested_array_items_object() {
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "headers": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string" },
-                        "value": { "type": "string" }
-                    },
-                    "required": ["name", "value"]
-                }
-            }
-        }
-    });
-    let errors = validate_tool_schema(&schema, "test");
-    assert!(errors.is_empty(), "unexpected errors: {errors:?}");
-}
-
-#[test]
-fn test_validate_schema_nested_array_items_object_bad() {
-    let schema = serde_json::json!({
+    }),
+    "array property missing \"items\""
+)]
+#[case(
+    serde_json::json!({
         "type": "object",
         "properties": {
             "headers": {
@@ -309,11 +286,14 @@ fn test_validate_schema_nested_array_items_object_bad() {
                 }
             }
         }
-    });
-    let errors = validate_tool_schema(&schema, "test");
-    assert_eq!(errors.len(), 1);
-    assert!(errors[0].contains("headers.items"));
-    assert!(errors[0].contains("\"missing_field\""));
+    }),
+    "test.headers.items: required key \"missing_field\" not found in properties"
+)]
+fn test_validate_schema_error_cases(
+    #[case] schema: serde_json::Value,
+    #[case] expected_fragment: &str,
+) {
+    assert_schema_err_contains(schema, expected_fragment);
 }
 
 #[test]
