@@ -1,6 +1,6 @@
 //! Legacy bootstrap and disk-to-database migration helpers.
 
-use std::path::Path;
+use std::{io, path::Path};
 
 use crate::bootstrap::{ironclaw_base_dir, ironclaw_env_path, save_database_url};
 
@@ -8,41 +8,105 @@ use crate::bootstrap::{ironclaw_base_dir, ironclaw_env_path, save_database_url};
 pub(crate) fn migrate_bootstrap_json_to_env(env_path: &Path) {
     let ironclaw_dir = env_path.parent().unwrap_or_else(|| Path::new("."));
     let bootstrap_path = ironclaw_dir.join("bootstrap.json");
-
-    if !bootstrap_path.exists() {
+    let parsed = match read_bootstrap_json(&bootstrap_path) {
+        Ok(Some(parsed)) => parsed,
+        Ok(None) | Err(_) => return,
+    };
+    let pairs = extract_env_pairs(&parsed);
+    if pairs.is_empty() {
         return;
     }
+    if upsert_env_lines(env_path, &pairs).is_err() {
+        return;
+    }
+    let _ = rename_bootstrap_to_migrated(&bootstrap_path);
+    eprintln!(
+        "Migrated DATABASE_URL from bootstrap.json to {}",
+        env_path.display()
+    );
+}
 
-    let content = match std::fs::read_to_string(&bootstrap_path) {
-        Ok(content) => content,
-        Err(_) => return,
-    };
+fn read_bootstrap_json(path: &Path) -> io::Result<Option<serde_json::Value>> {
+    if !path.exists() {
+        return Ok(None);
+    }
 
-    let parsed: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(value) => value,
-        Err(_) => return,
-    };
+    let content = std::fs::read_to_string(path)?;
+    serde_json::from_str(&content)
+        .map(Some)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+}
 
-    if let Some(url) = parsed.get("database_url").and_then(|value| value.as_str()) {
-        if let Some(parent) = env_path.parent()
-            && let Err(error) = std::fs::create_dir_all(parent)
-        {
-            eprintln!("Warning: failed to create {}: {}", parent.display(), error);
-            return;
-        }
-        if let Err(error) = std::fs::write(env_path, format!("DATABASE_URL=\"{}\"\n", url)) {
+fn extract_env_pairs(json: &serde_json::Value) -> Vec<(String, String)> {
+    json.get("database_url")
+        .and_then(serde_json::Value::as_str)
+        .map(|url| vec![("DATABASE_URL".to_string(), url.to_string())])
+        .unwrap_or_default()
+}
+
+fn quote_env_value(raw: &str) -> String {
+    raw.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn upsert_env_lines(env_path: &Path, pairs: &[(String, String)]) -> io::Result<()> {
+    if let Some(parent) = env_path.parent()
+        && let Err(error) = std::fs::create_dir_all(parent)
+    {
+        eprintln!("Warning: failed to create {}: {}", parent.display(), error);
+        return Err(error);
+    }
+
+    let keys_being_written: std::collections::HashSet<&str> =
+        pairs.iter().map(|(key, _)| key.as_str()).collect();
+    let existing = match std::fs::read_to_string(env_path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(error) => {
             eprintln!(
                 "Warning: failed to migrate bootstrap.json to .env: {}",
                 error
             );
-            return;
+            return Err(error);
         }
-        rename_to_migrated(&bootstrap_path);
-        eprintln!(
-            "Migrated DATABASE_URL from bootstrap.json to {}",
-            env_path.display()
-        );
+    };
+
+    let mut result = String::new();
+    for line in existing.lines() {
+        let is_overwritten = line
+            .split_once('=')
+            .map(|(key, _)| keys_being_written.contains(key.trim()))
+            .unwrap_or(false);
+        if !is_overwritten {
+            result.push_str(line);
+            result.push('\n');
+        }
     }
+
+    for (key, value) in pairs {
+        result.push_str(&format!("{}=\"{}\"\n", key, quote_env_value(value)));
+    }
+
+    if let Err(error) = std::fs::write(env_path, result) {
+        eprintln!(
+            "Warning: failed to migrate bootstrap.json to .env: {}",
+            error
+        );
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn rename_bootstrap_to_migrated(path: &Path) -> io::Result<()> {
+    let mut migrated = path.as_os_str().to_owned();
+    migrated.push(".migrated");
+    std::fs::rename(path, &migrated).map_err(|error| {
+        tracing::warn!(
+            "Failed to rename {} to .migrated: {}",
+            path.display(),
+            error
+        );
+        error
+    })
 }
 
 /// Errors that can occur during disk-to-DB migration.
