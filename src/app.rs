@@ -344,13 +344,23 @@ impl AppBuilder {
                 let gen_model = crate::llm::image_models::suggest_image_model(&models)
                     .unwrap_or("flux-1.1-pro")
                     .to_string();
-                tools.register_image_tools(api_base.clone(), api_key.clone(), gen_model, None);
+                tools.register_image_tools(crate::tools::ImageToolsArgs {
+                    api_base_url: api_base.clone(),
+                    api_key: api_key.clone(),
+                    gen_model,
+                    base_dir: None,
+                });
 
                 // Check for vision models
                 let vision_model = crate::llm::vision_models::suggest_vision_model(&models)
                     .unwrap_or(&model_name)
                     .to_string();
-                tools.register_vision_tools(api_base, api_key, vision_model, None);
+                tools.register_vision_tools(crate::tools::VisionToolsArgs {
+                    api_base_url: api_base,
+                    api_key,
+                    vision_model,
+                    base_dir: None,
+                });
             }
         }
 

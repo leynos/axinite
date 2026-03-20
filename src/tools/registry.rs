@@ -23,8 +23,9 @@ use crate::tools::tool::{Tool, ToolDomain};
 use crate::tools::wasm::SharedCredentialRegistry;
 use crate::workspace::Workspace;
 
+pub use extension::{ImageToolsArgs, VisionToolsArgs};
 pub use job::RegisterJobToolsConfig;
-pub use wasm::{WasmRegistrationError, WasmToolRegistration};
+pub use wasm::{WasmFromStorageArgs, WasmRegistrationError, WasmToolRegistration};
 
 /// Names of built-in tools that cannot be shadowed by dynamic registrations.
 /// This prevents a dynamically built or installed tool from replacing a

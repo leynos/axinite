@@ -1,5 +1,6 @@
 //! Extension and higher-level feature-tool registration helpers.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::db::Database;
@@ -14,6 +15,32 @@ use crate::tools::builtin::{
 use crate::tools::tool::Tool;
 
 use super::ToolRegistry;
+
+/// Arguments for registering image-generation and image-editing tools.
+#[derive(Clone, Debug)]
+pub struct ImageToolsArgs {
+    /// Base URL for the backing image API.
+    pub api_base_url: String,
+    /// API key used by the image tools.
+    pub api_key: String,
+    /// Model identifier for image generation and editing requests.
+    pub gen_model: String,
+    /// Optional workspace-relative base directory for file-backed image edits.
+    pub base_dir: Option<PathBuf>,
+}
+
+/// Arguments for registering vision/image-analysis tools.
+#[derive(Clone, Debug)]
+pub struct VisionToolsArgs {
+    /// Base URL for the backing vision API.
+    pub api_base_url: String,
+    /// API key used by the vision tool.
+    pub api_key: String,
+    /// Model identifier for vision analysis requests.
+    pub vision_model: String,
+    /// Optional workspace-relative base directory for reading local images.
+    pub base_dir: Option<PathBuf>,
+}
 
 impl ToolRegistry {
     /// Register extension management tools (search, install, auth, activate, list, remove).
@@ -109,14 +136,14 @@ impl ToolRegistry {
     /// Register image generation and editing tools.
     ///
     /// These tools allow the LLM to generate and edit images using cloud APIs.
-    pub fn register_image_tools(
-        &self,
-        api_base_url: String,
-        api_key: String,
-        gen_model: String,
-        base_dir: Option<std::path::PathBuf>,
-    ) {
+    pub fn register_image_tools(&self, args: ImageToolsArgs) {
         use crate::tools::builtin::{ImageEditTool, ImageGenerateTool};
+        let ImageToolsArgs {
+            api_base_url,
+            api_key,
+            gen_model,
+            base_dir,
+        } = args;
         self.register_sync(Arc::new(ImageGenerateTool::new(
             api_base_url.clone(),
             api_key.clone(),
@@ -134,14 +161,14 @@ impl ToolRegistry {
     /// Register vision/image analysis tools.
     ///
     /// These tools allow the LLM to analyze images using a vision-capable model.
-    pub fn register_vision_tools(
-        &self,
-        api_base_url: String,
-        api_key: String,
-        vision_model: String,
-        base_dir: Option<std::path::PathBuf>,
-    ) {
+    pub fn register_vision_tools(&self, args: VisionToolsArgs) {
         use crate::tools::builtin::ImageAnalyzeTool;
+        let VisionToolsArgs {
+            api_base_url,
+            api_key,
+            vision_model,
+            base_dir,
+        } = args;
         self.register_sync(Arc::new(ImageAnalyzeTool::new(
             api_base_url,
             api_key,

@@ -46,6 +46,19 @@ pub struct WasmToolRegistration<'a> {
     pub oauth_refresh: Option<OAuthRefreshConfig>,
 }
 
+/// Arguments for registering a WASM tool loaded from persistent storage.
+#[derive(Clone, Copy)]
+pub struct WasmFromStorageArgs<'a> {
+    /// Backing store used to load the tool record and binary.
+    pub store: &'a dyn WasmToolStore,
+    /// WASM runtime used to prepare the stored component.
+    pub runtime: &'a Arc<WasmToolRuntime>,
+    /// User whose installed tool should be loaded.
+    pub user_id: &'a str,
+    /// Name of the stored tool to load.
+    pub name: &'a str,
+}
+
 impl ToolRegistry {
     async fn compile_wasm_artifact(
         reg: &WasmToolRegistration<'_>,
@@ -162,11 +175,14 @@ impl ToolRegistry {
     /// Loads the WASM binary with integrity verification and configures capabilities.
     pub async fn register_wasm_from_storage(
         &self,
-        store: &dyn WasmToolStore,
-        runtime: &Arc<WasmToolRuntime>,
-        user_id: &str,
-        name: &str,
+        args: WasmFromStorageArgs<'_>,
     ) -> Result<(), WasmRegistrationError> {
+        let WasmFromStorageArgs {
+            store,
+            runtime,
+            user_id,
+            name,
+        } = args;
         let tool_with_binary = store
             .get_with_binary(user_id, name)
             .await
