@@ -1,6 +1,150 @@
 use super::*;
+use crate::llm::ToolCall;
 
 impl LlmSoftwareBuilder {
+    #[inline]
+    fn is_completion_signal(response: &str) -> bool {
+        let response_lower = response.to_lowercase();
+        response_lower.contains("build complete")
+            || response_lower.contains("successfully built")
+            || response_lower.contains("all tests pass")
+            || response_lower.contains("complete")
+    }
+
+    #[inline]
+    fn has_build_error(output: &str) -> bool {
+        let output_lower = output.to_lowercase();
+        output_lower.contains("error:")
+            || output_lower.contains("error[")
+            || output_lower.contains("failed")
+    }
+
+    #[inline]
+    fn next_phase(current: BuildPhase, tool_name: &str, args: &serde_json::Value) -> BuildPhase {
+        match tool_name {
+            "write_file" => BuildPhase::Implementing,
+            "shell" if args.to_string().contains("build") => BuildPhase::Building,
+            "shell" if args.to_string().contains("test") => BuildPhase::Testing,
+            _ => current,
+        }
+    }
+
+    #[inline]
+    fn force_tool_use_prompt(ctx: &mut ReasoningContext) {
+        ctx.messages.push(ChatMessage::user(
+            "STOP. Do NOT output text, JSON specs, or explanations. \
+             Call the write_file tool RIGHT NOW to create Cargo.toml. \
+             Just call the tool—no commentary.",
+        ));
+    }
+
+    fn make_success_result(
+        build_id: Uuid,
+        requirement: &BuildRequirement,
+        artifact_path: PathBuf,
+        logs: Vec<BuildLog>,
+        started_at: DateTime<Utc>,
+        iterations: i32,
+    ) -> BuildResult {
+        BuildResult {
+            build_id,
+            requirement: requirement.clone(),
+            artifact_path,
+            logs,
+            success: true,
+            error: None,
+            started_at,
+            completed_at: Utc::now(),
+            iterations: iterations as u32,
+            validation_warnings: Vec::new(),
+            tests_passed: 0,
+            tests_failed: 0,
+            registered: false,
+        }
+    }
+
+    fn make_failure_result(
+        build_id: Uuid,
+        requirement: &BuildRequirement,
+        artifact_path: PathBuf,
+        logs: Vec<BuildLog>,
+        started_at: DateTime<Utc>,
+        iterations: i32,
+        reason: &str,
+    ) -> BuildResult {
+        BuildResult {
+            build_id,
+            requirement: requirement.clone(),
+            artifact_path,
+            logs,
+            success: false,
+            error: Some(reason.into()),
+            started_at,
+            completed_at: Utc::now(),
+            iterations: iterations as u32,
+            validation_warnings: Vec::new(),
+            tests_passed: 0,
+            tests_failed: 0,
+            registered: false,
+        }
+    }
+
+    async fn handle_tool_call(
+        &self,
+        tc: ToolCall,
+        phase: BuildPhase,
+        reason_ctx: &mut ReasoningContext,
+        logs: &mut Vec<BuildLog>,
+    ) -> (BuildPhase, Option<String>) {
+        logs.push(BuildLog {
+            timestamp: Utc::now(),
+            phase,
+            message: format!("Executing: {}", tc.name),
+            details: Some(format!("{:?}", tc.arguments)),
+        });
+
+        match self
+            .execute_build_tool(&tc.name, &tc.arguments, Path::new("."))
+            .await
+        {
+            Ok(output) => {
+                let output_str = serde_json::to_string_pretty(&output.result).unwrap_or_default();
+
+                reason_ctx.messages.push(ChatMessage::tool_result(
+                    &tc.id,
+                    &tc.name,
+                    output_str.clone(),
+                ));
+
+                let mut next_phase = Self::next_phase(phase, &tc.name, &tc.arguments);
+                if Self::has_build_error(&output_str) {
+                    next_phase = BuildPhase::Fixing;
+                    return (next_phase, Some(output_str));
+                }
+
+                (next_phase, None)
+            }
+            Err(e) => {
+                let error_msg = format!("Tool error: {}", e);
+
+                reason_ctx.messages.push(ChatMessage::tool_result(
+                    &tc.id,
+                    &tc.name,
+                    format!("Error: {}", e),
+                ));
+
+                logs.push(BuildLog {
+                    timestamp: Utc::now(),
+                    phase: BuildPhase::Fixing,
+                    message: "Tool execution failed".into(),
+                    details: Some(error_msg.clone()),
+                });
+
+                (BuildPhase::Fixing, Some(error_msg))
+            }
+        }
+    }
+
     /// Execute the build loop.
     pub(super) async fn execute_build_loop(
         &self,
@@ -10,7 +154,7 @@ impl LlmSoftwareBuilder {
         let build_id = Uuid::new_v4();
         let started_at = Utc::now();
         let mut logs = Vec::new();
-        let mut iteration = 0;
+        let mut iteration = 0i32;
 
         // Create reasoning engine
         let reasoning =
@@ -52,7 +196,7 @@ impl LlmSoftwareBuilder {
         loop {
             iteration += 1;
 
-            if iteration > self.config.max_iterations {
+            if iteration > self.config.max_iterations as i32 {
                 logs.push(BuildLog {
                     timestamp: Utc::now(),
                     phase: BuildPhase::Failed,
@@ -60,21 +204,15 @@ impl LlmSoftwareBuilder {
                     details: last_error.clone(),
                 });
 
-                return Ok(BuildResult {
+                return Ok(Self::make_failure_result(
                     build_id,
-                    requirement: requirement.clone(),
-                    artifact_path: project_dir.to_path_buf(),
+                    requirement,
+                    project_dir.to_path_buf(),
                     logs,
-                    success: false,
-                    error: Some("Maximum iterations exceeded".into()),
                     started_at,
-                    completed_at: Utc::now(),
-                    iterations: iteration,
-                    validation_warnings: Vec::new(),
-                    tests_passed: 0,
-                    tests_failed: 0,
-                    registered: false,
-                });
+                    iteration,
+                    "Maximum iterations exceeded",
+                ));
             }
 
             // Refresh tool definitions each iteration
@@ -96,7 +234,6 @@ impl LlmSoftwareBuilder {
                     if !tools_executed {
                         consecutive_text_responses += 1;
 
-                        // Fail fast after 2 consecutive text-only responses
                         if consecutive_text_responses >= 2 {
                             logs.push(BuildLog {
                                 timestamp: Utc::now(),
@@ -109,47 +246,28 @@ impl LlmSoftwareBuilder {
                                 )),
                             });
 
-                            return Ok(BuildResult {
+                            return Ok(Self::make_failure_result(
                                 build_id,
-                                requirement: requirement.clone(),
-                                artifact_path: project_dir.to_path_buf(),
+                                requirement,
+                                project_dir.to_path_buf(),
                                 logs,
-                                success: false,
-                                error: Some(
-                                    "LLM not executing tools - stuck in planning mode".into(),
-                                ),
                                 started_at,
-                                completed_at: Utc::now(),
-                                iterations: iteration,
-                                validation_warnings: Vec::new(),
-                                tests_passed: 0,
-                                tests_failed: 0,
-                                registered: false,
-                            });
+                                iteration,
+                                "LLM not executing tools - stuck in planning mode",
+                            ));
                         }
 
                         tracing::debug!(
                             "Builder: no tools executed (text response #{}/2), forcing tool use",
                             consecutive_text_responses
                         );
-                        reason_ctx.messages.push(ChatMessage::user(
-                            "STOP. Do NOT output text, JSON specs, or explanations. \
-                             Call the write_file tool RIGHT NOW to create Cargo.toml. \
-                             Just call the tool—no commentary.",
-                        ));
+                        Self::force_tool_use_prompt(&mut reason_ctx);
                         continue;
                     }
 
-                    // Reset counter when tools have been executed (we're in completion phase)
                     consecutive_text_responses = 0;
 
-                    // Check for completion signals
-                    let response_lower = response.to_lowercase();
-                    if response_lower.contains("build complete")
-                        || response_lower.contains("successfully built")
-                        || response_lower.contains("all tests pass")
-                        || response_lower.contains("complete")
-                    {
+                    if Self::is_completion_signal(&response) {
                         logs.push(BuildLog {
                             timestamp: Utc::now(),
                             phase: BuildPhase::Complete,
@@ -157,27 +275,18 @@ impl LlmSoftwareBuilder {
                             details: Some(response),
                         });
 
-                        // Determine artifact path
                         let artifact_path = self.find_artifact(requirement, project_dir).await;
 
-                        return Ok(BuildResult {
+                        return Ok(Self::make_success_result(
                             build_id,
-                            requirement: requirement.clone(),
+                            requirement,
                             artifact_path,
                             logs,
-                            success: true,
-                            error: None,
                             started_at,
-                            completed_at: Utc::now(),
-                            iterations: iteration,
-                            validation_warnings: Vec::new(),
-                            tests_passed: 0,
-                            tests_failed: 0,
-                            registered: false,
-                        });
+                            iteration,
+                        ));
                     }
 
-                    // Ask for next steps
                     reason_ctx
                         .messages
                         .push(ChatMessage::user("Continue with the next step."));
@@ -196,72 +305,13 @@ impl LlmSoftwareBuilder {
                             tool_calls.clone(),
                         ));
 
-                    // Execute each tool call
                     for tc in tool_calls {
-                        logs.push(BuildLog {
-                            timestamp: Utc::now(),
-                            phase: current_phase,
-                            message: format!("Executing: {}", tc.name),
-                            details: Some(format!("{:?}", tc.arguments)),
-                        });
-
-                        // Execute tool
-                        let tool_result = self
-                            .execute_build_tool(&tc.name, &tc.arguments, project_dir)
+                        let (phase, error) = self
+                            .handle_tool_call(tc, current_phase, &mut reason_ctx, &mut logs)
                             .await;
-
-                        match tool_result {
-                            Ok(output) => {
-                                let output_str = serde_json::to_string_pretty(&output.result)
-                                    .unwrap_or_default();
-
-                                // Add to context
-                                reason_ctx.messages.push(ChatMessage::tool_result(
-                                    &tc.id,
-                                    &tc.name,
-                                    output_str.clone(),
-                                ));
-
-                                // Update phase based on tool
-                                current_phase = match tc.name.as_str() {
-                                    "write_file" => BuildPhase::Implementing,
-                                    "shell" if tc.arguments.to_string().contains("build") => {
-                                        BuildPhase::Building
-                                    }
-                                    "shell" if tc.arguments.to_string().contains("test") => {
-                                        BuildPhase::Testing
-                                    }
-                                    _ => current_phase,
-                                };
-
-                                // Check for build/test errors in output
-                                if output_str.to_lowercase().contains("error:")
-                                    || output_str.to_lowercase().contains("error[")
-                                    || output_str.to_lowercase().contains("failed")
-                                {
-                                    last_error = Some(output_str);
-                                    current_phase = BuildPhase::Fixing;
-                                }
-                            }
-                            Err(e) => {
-                                let error_msg = format!("Tool error: {}", e);
-                                last_error = Some(error_msg.clone());
-
-                                reason_ctx.messages.push(ChatMessage::tool_result(
-                                    &tc.id,
-                                    &tc.name,
-                                    format!("Error: {}", e),
-                                ));
-
-                                logs.push(BuildLog {
-                                    timestamp: Utc::now(),
-                                    phase: BuildPhase::Fixing,
-                                    message: "Tool execution failed".into(),
-                                    details: Some(error_msg),
-                                });
-
-                                current_phase = BuildPhase::Fixing;
-                            }
+                        current_phase = phase;
+                        if error.is_some() {
+                            last_error = error;
                         }
                     }
                 }
