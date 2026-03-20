@@ -236,18 +236,26 @@ impl LlmTrace {
             .collect()
     }
 
+    fn patch_tool_calls_in_step(step: &mut TraceStep, from: &str, to: &str) -> usize {
+        let TraceResponse::ToolCalls { tool_calls, .. } = &mut step.response else {
+            return 0;
+        };
+
+        let mut patched = 0;
+        for call in tool_calls {
+            let before = call.arguments.clone();
+            patch_json_value(&mut call.arguments, from, to);
+            if call.arguments != before {
+                patched += 1;
+            }
+        }
+        patched
+    }
+
     fn patch_steps(steps: &mut [TraceStep], from: &str, to: &str) -> usize {
         let mut patched = 0;
         for step in steps {
-            if let TraceResponse::ToolCalls { tool_calls, .. } = &mut step.response {
-                for tool_call in tool_calls {
-                    let before = tool_call.arguments.clone();
-                    patch_json_value(&mut tool_call.arguments, from, to);
-                    if tool_call.arguments != before {
-                        patched += 1;
-                    }
-                }
-            }
+            patched += Self::patch_tool_calls_in_step(step, from, to);
         }
         patched
     }
