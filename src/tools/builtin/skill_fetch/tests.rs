@@ -111,7 +111,11 @@ fn test_extract_skill_from_zip_missing_skill_md() {
 ///
 /// The `file_name` and `content` lengths are encoded as little-endian `u16`
 /// and `u32` fields in the local file header.
-fn build_zip_entry_store(file_name: &str, content: &[u8]) -> Vec<u8> {
+fn build_zip_entry_store_with_uncompressed(
+    file_name: &str,
+    content: &[u8],
+    claimed_uncompressed: u32,
+) -> Vec<u8> {
     let mut zip = Vec::new();
     zip.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
     zip.extend_from_slice(&[0x0A, 0x00]);
@@ -120,12 +124,21 @@ fn build_zip_entry_store(file_name: &str, content: &[u8]) -> Vec<u8> {
     zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
     zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
     zip.extend_from_slice(&(content.len() as u32).to_le_bytes());
-    zip.extend_from_slice(&(content.len() as u32).to_le_bytes());
+    zip.extend_from_slice(&claimed_uncompressed.to_le_bytes());
     zip.extend_from_slice(&(file_name.len() as u16).to_le_bytes());
     zip.extend_from_slice(&0u16.to_le_bytes());
     zip.extend_from_slice(file_name.as_bytes());
     zip.extend_from_slice(content);
     zip
+}
+
+/// Build a minimal ZIP local-file entry using the stored (no-compression)
+/// method for tests.
+///
+/// The `file_name` and `content` lengths are encoded as little-endian `u16`
+/// and `u32` fields in the local file header.
+fn build_zip_entry_store(file_name: &str, content: &[u8]) -> Vec<u8> {
+    build_zip_entry_store_with_uncompressed(file_name, content, content.len() as u32)
 }
 
 /// Build a raw ZIP local-file-header entry using DEFLATE compression (method 8).
@@ -161,20 +174,7 @@ fn build_zip_entry_store_oversized(
     content: &[u8],
     claimed_uncompressed: u32,
 ) -> Vec<u8> {
-    let mut zip = Vec::new();
-    zip.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
-    zip.extend_from_slice(&[0x0A, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-    zip.extend_from_slice(&(content.len() as u32).to_le_bytes());
-    zip.extend_from_slice(&claimed_uncompressed.to_le_bytes());
-    zip.extend_from_slice(&(file_name.len() as u16).to_le_bytes());
-    zip.extend_from_slice(&0u16.to_le_bytes());
-    zip.extend_from_slice(file_name.as_bytes());
-    zip.extend_from_slice(content);
-    zip
+    build_zip_entry_store_with_uncompressed(file_name, content, claimed_uncompressed)
 }
 
 #[test]
