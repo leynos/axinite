@@ -24,6 +24,20 @@ use crate::tools::registry::loader::ToolRegistry;
 use crate::tools::tool::{Tool, ToolDomain};
 use crate::workspace::Workspace;
 
+pub struct ImageToolsRegistration {
+    pub api_base_url: String,
+    pub api_key: String,
+    pub gen_model: String,
+    pub base_dir: Option<std::path::PathBuf>,
+}
+
+pub struct VisionToolsRegistration {
+    pub api_base_url: String,
+    pub api_key: String,
+    pub vision_model: String,
+    pub base_dir: Option<std::path::PathBuf>,
+}
+
 impl ToolRegistry {
     /// Register all built-in tools.
     pub fn register_builtin_tools(&self) {
@@ -273,13 +287,13 @@ impl ToolRegistry {
     ///
     /// These tools allow the LLM to generate and edit images using cloud APIs.
     /// Requires an API base URL, API key, and model name for the image generation backend.
-    pub fn register_image_tools(
-        &self,
-        api_base_url: String,
-        api_key: String,
-        gen_model: String,
-        base_dir: Option<std::path::PathBuf>,
-    ) {
+    pub fn register_image_tools(&self, req: ImageToolsRegistration) {
+        let ImageToolsRegistration {
+            api_base_url,
+            api_key,
+            gen_model,
+            base_dir,
+        } = req;
         use crate::tools::builtin::{ImageEditTool, ImageGenerateTool};
         self.register_sync(Arc::new(ImageGenerateTool::new(
             api_base_url.clone(),
@@ -298,13 +312,13 @@ impl ToolRegistry {
     /// Register vision/image analysis tools.
     ///
     /// These tools allow the LLM to analyze images using a vision-capable model.
-    pub fn register_vision_tools(
-        &self,
-        api_base_url: String,
-        api_key: String,
-        vision_model: String,
-        base_dir: Option<std::path::PathBuf>,
-    ) {
+    pub fn register_vision_tools(&self, req: VisionToolsRegistration) {
+        let VisionToolsRegistration {
+            api_base_url,
+            api_key,
+            vision_model,
+            base_dir,
+        } = req;
         use crate::tools::builtin::ImageAnalyzeTool;
         self.register_sync(Arc::new(ImageAnalyzeTool::new(
             api_base_url,

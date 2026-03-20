@@ -14,6 +14,13 @@ use crate::tools::wasm::{
 
 use super::{PROTECTED_TOOL_NAMES, is_protected_tool_name};
 
+pub struct WasmFromStorageRegistration<'a> {
+    pub store: &'a dyn WasmToolStore,
+    pub runtime: &'a Arc<WasmToolRuntime>,
+    pub user_id: &'a str,
+    pub name: &'a str,
+}
+
 /// Registry of available tools.
 pub struct ToolRegistry {
     pub(super) tools: RwLock<HashMap<String, Arc<dyn Tool>>>,
@@ -280,20 +287,25 @@ impl ToolRegistry {
     /// let store = PostgresWasmToolStore::new(pool);
     /// let runtime = Arc::new(WasmToolRuntime::new(WasmRuntimeConfig::default())?);
     ///
-    /// registry.register_wasm_from_storage(
-    ///     &store,
-    ///     &runtime,
-    ///     "user_123",
-    ///     "my_tool",
-    /// ).await?;
+    /// registry
+    ///     .register_wasm_from_storage(WasmFromStorageRegistration {
+    ///         store: &store,
+    ///         runtime: &runtime,
+    ///         user_id: "user_123",
+    ///         name: "my_tool",
+    ///     })
+    ///     .await?;
     /// ```
     pub async fn register_wasm_from_storage(
         &self,
-        store: &dyn WasmToolStore,
-        runtime: &Arc<WasmToolRuntime>,
-        user_id: &str,
-        name: &str,
+        req: WasmFromStorageRegistration<'_>,
     ) -> Result<(), WasmRegistrationError> {
+        let WasmFromStorageRegistration {
+            store,
+            runtime,
+            user_id,
+            name,
+        } = req;
         // Load tool with integrity verification
         let tool_with_binary = store
             .get_with_binary(user_id, name)
