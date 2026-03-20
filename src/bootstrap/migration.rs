@@ -1,8 +1,42 @@
 //! Legacy bootstrap and disk-to-database migration helpers.
 
-use std::{io, path::Path};
+use std::{borrow::Cow, io, path::Path};
 
 use crate::bootstrap::{ironclaw_base_dir, ironclaw_env_path, save_database_url};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum KnownEnvKey {
+    DatabaseUrl,
+    DatabaseBackend,
+    LlmBackend,
+    OnboardCompleted,
+    EmbeddingEnabled,
+}
+
+impl KnownEnvKey {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::DatabaseUrl => "DATABASE_URL",
+            Self::DatabaseBackend => "DATABASE_BACKEND",
+            Self::LlmBackend => "LLM_BACKEND",
+            Self::OnboardCompleted => "ONBOARD_COMPLETED",
+            Self::EmbeddingEnabled => "EMBEDDING_ENABLED",
+        }
+    }
+}
+
+struct EnvPair<'a> {
+    key: KnownEnvKey,
+    value: Cow<'a, str>,
+}
+
+const _: [KnownEnvKey; 5] = [
+    KnownEnvKey::DatabaseUrl,
+    KnownEnvKey::DatabaseBackend,
+    KnownEnvKey::LlmBackend,
+    KnownEnvKey::OnboardCompleted,
+    KnownEnvKey::EmbeddingEnabled,
+];
 
 /// If `bootstrap.json` exists, pull `database_url` out of it and write `.env`.
 pub(crate) fn migrate_bootstrap_json_to_env(env_path: &Path) {
@@ -16,7 +50,7 @@ pub(crate) fn migrate_bootstrap_json_to_env(env_path: &Path) {
     if pairs.is_empty() {
         return;
     }
-    if upsert_env_lines(env_path, &pairs).is_err() {
+    if upsert_env_pairs(env_path, &pairs).is_err() {
         return;
     }
     let _ = rename_bootstrap_to_migrated(&bootstrap_path);
@@ -37,10 +71,15 @@ fn read_bootstrap_json(path: &Path) -> io::Result<Option<serde_json::Value>> {
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
 
-fn extract_env_pairs(json: &serde_json::Value) -> Vec<(String, String)> {
+fn extract_env_pairs(json: &serde_json::Value) -> Vec<EnvPair<'_>> {
     json.get("database_url")
         .and_then(serde_json::Value::as_str)
-        .map(|url| vec![("DATABASE_URL".to_string(), url.to_string())])
+        .map(|url| {
+            vec![EnvPair {
+                key: KnownEnvKey::DatabaseUrl,
+                value: Cow::Borrowed(url),
+            }]
+        })
         .unwrap_or_default()
 }
 
@@ -48,7 +87,7 @@ fn quote_env_value(raw: &str) -> String {
     raw.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-fn upsert_env_lines(env_path: &Path, pairs: &[(String, String)]) -> io::Result<()> {
+fn upsert_env_pairs(env_path: &Path, pairs: &[EnvPair<'_>]) -> io::Result<()> {
     if let Some(parent) = env_path.parent()
         && let Err(error) = std::fs::create_dir_all(parent)
     {
@@ -57,7 +96,7 @@ fn upsert_env_lines(env_path: &Path, pairs: &[(String, String)]) -> io::Result<(
     }
 
     let keys_being_written: std::collections::HashSet<&str> =
-        pairs.iter().map(|(key, _)| key.as_str()).collect();
+        pairs.iter().map(|pair| pair.key.as_str()).collect();
     let existing = match std::fs::read_to_string(env_path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
@@ -82,8 +121,12 @@ fn upsert_env_lines(env_path: &Path, pairs: &[(String, String)]) -> io::Result<(
         }
     }
 
-    for (key, value) in pairs {
-        result.push_str(&format!("{}=\"{}\"\n", key, quote_env_value(value)));
+    for pair in pairs {
+        result.push_str(&format!(
+            "{}=\"{}\"\n",
+            pair.key.as_str(),
+            quote_env_value(pair.value.as_ref())
+        ));
     }
 
     if let Err(error) = std::fs::write(env_path, result) {
