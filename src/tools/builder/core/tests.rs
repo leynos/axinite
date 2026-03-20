@@ -1,5 +1,54 @@
 use super::*;
 
+mod assertions {
+    use super::*;
+
+    pub(super) fn assert_build_success(res: &BuildResult) {
+        assert!(res.success, "expected build to succeed");
+        assert!(
+            res.error.is_none(),
+            "expected successful build to have no error, got {:?}",
+            res.error
+        );
+    }
+
+    pub(super) fn assert_build_failure_contains(res: &BuildResult, needle: &str) {
+        assert!(!res.success, "expected build to fail");
+        assert!(
+            res.error
+                .as_deref()
+                .is_some_and(|error| error.contains(needle)),
+            "expected build error to contain {:?}, got {:?}",
+            needle,
+            res.error
+        );
+    }
+
+    pub(super) fn assert_logs_contain_phase(logs: &[BuildLog], phase: BuildPhase) {
+        assert!(
+            logs.iter().any(|log| log.phase == phase),
+            "expected logs to contain phase {:?}, got {:?}",
+            phase,
+            logs.iter().map(|log| log.phase).collect::<Vec<_>>()
+        );
+    }
+
+    pub(super) fn assert_logs_message_contains(logs: &[BuildLog], needle: &str) {
+        assert!(
+            logs.iter().any(|log| log.message.contains(needle)
+                || log
+                    .details
+                    .as_deref()
+                    .is_some_and(|details| details.contains(needle))),
+            "expected logs to contain {:?}, got {:?}",
+            needle,
+            logs.iter()
+                .map(|log| (&log.message, log.details.as_deref()))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
 #[test]
 fn test_language_extension_all_variants() {
     assert_eq!(Language::Rust.extension(), "rs");
@@ -156,14 +205,28 @@ fn test_build_requirement_serde_roundtrip() {
     };
     let json = serde_json::to_string(&req).unwrap();
     let deserialized: BuildRequirement = serde_json::from_str(&json).unwrap();
-    assert_eq!(deserialized.name, req.name);
-    assert_eq!(deserialized.description, req.description);
-    assert_eq!(deserialized.software_type, req.software_type);
-    assert_eq!(deserialized.language, req.language);
-    assert_eq!(deserialized.input_spec, req.input_spec);
-    assert_eq!(deserialized.output_spec, req.output_spec);
-    assert_eq!(deserialized.dependencies, req.dependencies);
-    assert_eq!(deserialized.capabilities, req.capabilities);
+    assert_eq!(
+        (
+            deserialized.name,
+            deserialized.description,
+            deserialized.software_type,
+            deserialized.language,
+            deserialized.input_spec,
+            deserialized.output_spec,
+            deserialized.dependencies,
+            deserialized.capabilities,
+        ),
+        (
+            req.name,
+            req.description,
+            req.software_type,
+            req.language,
+            req.input_spec,
+            req.output_spec,
+            req.dependencies,
+            req.capabilities,
+        )
+    );
 }
 
 #[test]
@@ -180,31 +243,24 @@ fn test_build_requirement_serde_optional_fields_none() {
     };
     let json = serde_json::to_string(&req).unwrap();
     let deserialized: BuildRequirement = serde_json::from_str(&json).unwrap();
-    assert!(deserialized.input_spec.is_none());
-    assert!(deserialized.output_spec.is_none());
-    assert!(deserialized.dependencies.is_empty());
-    assert!(deserialized.capabilities.is_empty());
+    assert!(deserialized.input_spec.is_none() && deserialized.output_spec.is_none());
+    assert!(deserialized.dependencies.is_empty() && deserialized.capabilities.is_empty());
 }
 
 #[test]
 fn test_builder_config_default_sensible_values() {
     let config = BuilderConfig::default();
-    assert!(config.max_iterations > 0, "max_iterations must be positive");
-    assert!(!config.timeout.is_zero(), "timeout must be non-zero");
     assert!(
-        config.timeout.as_secs() >= 60,
-        "timeout should be at least 60 seconds"
-    );
-    assert!(config.validate_wasm, "validate_wasm should default to true");
-    assert!(config.run_tests, "run_tests should default to true");
-    assert!(config.auto_register, "auto_register should default to true");
-    assert!(
-        !config.cleanup_on_failure,
-        "cleanup_on_failure should default to false for debugging"
+        config.max_iterations > 0 && !config.timeout.is_zero() && config.timeout.as_secs() >= 60,
+        "defaults should provide a positive iteration cap and non-trivial timeout"
     );
     assert!(
-        config.wasm_output_dir.is_none(),
-        "wasm_output_dir should default to None"
+        config.validate_wasm && config.run_tests && config.auto_register,
+        "validation, tests, and registration should default to enabled"
+    );
+    assert!(
+        !config.cleanup_on_failure && config.wasm_output_dir.is_none(),
+        "cleanup should stay disabled and wasm_output_dir should default to None"
     );
     assert!(
         config
@@ -243,6 +299,8 @@ fn test_build_phase_serde_roundtrip() {
 
 #[test]
 fn test_build_result_serde_success() {
+    use assertions::*;
+
     let result = BuildResult {
         build_id: Uuid::nil(),
         requirement: BuildRequirement {
@@ -269,16 +327,19 @@ fn test_build_result_serde_success() {
     };
     let json = serde_json::to_string(&result).unwrap();
     let deserialized: BuildResult = serde_json::from_str(&json).unwrap();
-    assert!(deserialized.success);
-    assert!(deserialized.error.is_none());
+    assert_build_success(&deserialized);
     assert_eq!(deserialized.iterations, 3);
-    assert_eq!(deserialized.tests_passed, 5);
-    assert_eq!(deserialized.tests_failed, 0);
+    assert_eq!(
+        (deserialized.tests_passed, deserialized.tests_failed),
+        (5, 0)
+    );
     assert!(deserialized.registered);
 }
 
 #[test]
 fn test_build_result_serde_failure() {
+    use assertions::*;
+
     let result = BuildResult {
         build_id: Uuid::nil(),
         requirement: BuildRequirement {
@@ -305,15 +366,16 @@ fn test_build_result_serde_failure() {
     };
     let json = serde_json::to_string(&result).unwrap();
     let deserialized: BuildResult = serde_json::from_str(&json).unwrap();
-    assert!(!deserialized.success);
-    assert_eq!(
-        deserialized.error.as_deref(),
-        Some("compilation error: undefined reference")
-    );
+    assert_build_failure_contains(&deserialized, "compilation error: undefined reference");
     assert_eq!(deserialized.iterations, 10);
-    assert_eq!(deserialized.validation_warnings.len(), 1);
-    assert_eq!(deserialized.tests_passed, 2);
-    assert_eq!(deserialized.tests_failed, 3);
+    assert_eq!(
+        (
+            deserialized.validation_warnings.len(),
+            deserialized.tests_passed,
+            deserialized.tests_failed,
+        ),
+        (1, 2, 3)
+    );
     assert!(!deserialized.registered);
 }
 
@@ -349,6 +411,8 @@ fn test_build_result_default_fields_from_json() {
 
 #[test]
 fn test_build_log_serde_roundtrip() {
+    use assertions::*;
+
     let log = BuildLog {
         timestamp: Utc::now(),
         phase: BuildPhase::Building,
@@ -357,8 +421,9 @@ fn test_build_log_serde_roundtrip() {
     };
     let json = serde_json::to_string(&log).unwrap();
     let deserialized: BuildLog = serde_json::from_str(&json).unwrap();
-    assert_eq!(deserialized.phase, BuildPhase::Building);
-    assert_eq!(deserialized.message, "Running cargo build");
+    let logs = vec![deserialized.clone()];
+    assert_logs_contain_phase(&logs, BuildPhase::Building);
+    assert_logs_message_contains(&logs, "Running cargo build");
     assert_eq!(
         deserialized.details.as_deref(),
         Some("cargo build --release 2>&1")
@@ -367,6 +432,8 @@ fn test_build_log_serde_roundtrip() {
 
 #[test]
 fn test_build_log_serde_details_none() {
+    use assertions::*;
+
     let log = BuildLog {
         timestamp: Utc::now(),
         phase: BuildPhase::Complete,
@@ -375,6 +442,7 @@ fn test_build_log_serde_details_none() {
     };
     let json = serde_json::to_string(&log).unwrap();
     let deserialized: BuildLog = serde_json::from_str(&json).unwrap();
+    assert_logs_contain_phase(std::slice::from_ref(&deserialized), BuildPhase::Complete);
+    assert_logs_message_contains(std::slice::from_ref(&deserialized), "Done");
     assert!(deserialized.details.is_none());
-    assert_eq!(deserialized.phase, BuildPhase::Complete);
 }
