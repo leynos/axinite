@@ -1,0 +1,95 @@
+//! Bootstrap helpers for tool registration.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use uuid::Uuid;
+
+use crate::channels::ChannelManager;
+use crate::channels::IncomingMessage;
+use crate::channels::web::types::SseEvent;
+use crate::context::ContextManager;
+use crate::db::Database;
+use crate::orchestrator::job_manager::ContainerJobManager;
+use crate::secrets::SecretsStore;
+use crate::tools::builtin::{PromptQueue, SchedulerSlot};
+use crate::tools::{ImageToolsArgs, RegisterJobToolsConfig, ToolRegistry, VisionToolsArgs};
+
+/// Dependency bundle for registering job tools during bootstrap.
+pub struct JobToolsArgs {
+    /// Shared conversation context store used by all job tools.
+    pub context_manager: Arc<ContextManager>,
+    /// Scheduler slot populated after the scheduler is initialized.
+    pub scheduler_slot: Option<SchedulerSlot>,
+    /// Optional sandbox-backed job manager.
+    pub job_manager: Option<Arc<ContainerJobManager>>,
+    /// Optional database handle for persistence-backed job tools.
+    pub store: Option<Arc<dyn Database>>,
+    /// Optional broadcast sender for job event fan-out.
+    pub job_event_tx: Option<tokio::sync::broadcast::Sender<(Uuid, SseEvent)>>,
+    /// Optional inbound injector for monitored job execution.
+    pub inject_tx: Option<tokio::sync::mpsc::Sender<IncomingMessage>>,
+    /// Optional prompt queue for interactive job prompts.
+    pub prompt_queue: Option<PromptQueue>,
+    /// Optional secrets store shared with job execution flows.
+    pub secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+}
+
+/// Register the job-management tool set from bootstrap wiring.
+pub fn register_job_tools(registry: &ToolRegistry, args: JobToolsArgs) {
+    registry.register_job_tools(RegisterJobToolsConfig {
+        context_manager: args.context_manager,
+        scheduler_slot: args.scheduler_slot,
+        job_manager: args.job_manager,
+        store: args.store,
+        job_event_tx: args.job_event_tx,
+        inject_tx: args.inject_tx,
+        prompt_queue: args.prompt_queue,
+        secrets_store: args.secrets_store,
+    });
+}
+
+/// Register the core runtime tools required by the main agent loop.
+pub async fn wire_core_runtime_tools(
+    registry: &ToolRegistry,
+    job_args: JobToolsArgs,
+    channel_manager: Arc<ChannelManager>,
+) {
+    register_job_tools(registry, job_args);
+    registry.register_message_tools(channel_manager).await;
+}
+
+/// Dependency bundle for registering image and vision tools together.
+#[derive(Clone, Debug)]
+pub struct MediaToolsArgs {
+    pub api_base_url: String,
+    pub api_key: String,
+    pub gen_model: String,
+    pub vision_model: String,
+    pub base_dir: Option<PathBuf>,
+}
+
+/// Register image generation and vision tools from shared bootstrap wiring.
+pub fn register_image_and_vision_tools(registry: &ToolRegistry, args: MediaToolsArgs) {
+    let MediaToolsArgs {
+        api_base_url,
+        api_key,
+        gen_model,
+        vision_model,
+        base_dir,
+    } = args;
+
+    registry.register_image_tools(ImageToolsArgs {
+        api_base_url: api_base_url.clone(),
+        api_key: api_key.clone(),
+        gen_model,
+        base_dir: base_dir.clone(),
+    });
+
+    registry.register_vision_tools(VisionToolsArgs {
+        api_base_url,
+        api_key,
+        vision_model,
+        base_dir,
+    });
+}

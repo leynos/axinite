@@ -202,7 +202,7 @@ This section describes the changes in terms of new modules, modifications to exi
 
 ### Introduce a WIT intent world and intent manifest schema
 
-You need *both*:
+Both artifacts are required:
 - A runtime ABI (WIT) for **enumerating** and **invoking** intents.
 - A static manifest for **preflight review** and **deterministic rendering**.
 

@@ -57,7 +57,7 @@ The central contract is the `Database` supertrait in `src/db/mod.rs`. It
 groups narrower traits for:
 
 - conversations and durable chat history
-- agent jobs, job actions, and LLM (large language model) call accounting
+- agent jobs, job actions, and language model (LLM) call accounting
 - sandbox job tracking
 - routines and routine runs
 - settings storage
@@ -68,7 +68,7 @@ This design keeps most of the host backend-agnostic, but two categories still
 retain concrete backend handles:
 
 - the encrypted secrets store
-- the WASM (WebAssembly) tool and channel storage layers that use dedicated
+- the WebAssembly (WASM) tool and channel storage layers that use dedicated
   connections
 
 That is why `connect_with_handles()` returns both the trait object and a
@@ -111,7 +111,7 @@ The onboarding wizard validates two PostgreSQL prerequisites before it accepts
 a connection string:
 
 1. PostgreSQL major version 15 or newer
-1. `pgvector` available through `pg_available_extensions`
+2. `pgvector` available through `pg_available_extensions`
 
 That matches the current operator expectation in the code: PostgreSQL is not
 just "any SQL server", it is specifically a PostgreSQL deployment with
@@ -197,7 +197,7 @@ two-layer approach:
 
 1. a consolidated SQLite-compatible bootstrap schema from
    `migrations/libsql_schema.sql`
-1. incremental migrations from `src/db/libsql_migrations.rs`, tracked in the
+2. incremental migrations from `src/db/libsql_migrations.rs`, tracked in the
    `_migrations` table
 
 The bootstrap schema translates PostgreSQL concepts into SQLite or libSQL
@@ -360,9 +360,9 @@ behaviour after the flexible-dimension migration path.
 1. `DATABASE_SSLMODE=prefer` currently behaves like `require` in practice,
    because the PostgreSQL TLS helper does not retry without TLS after a failed
    handshake.
-1. PostgreSQL still supports vector search after V9, but no longer through the
+2. PostgreSQL still supports vector search after V9, but no longer through the
    old fixed-dimension HNSW index.
-1. libSQL migration and schema comments still describe a brute-force vector
+3. libSQL migration and schema comments still describe a brute-force vector
    fallback that the current code does not implement.
-1. Workspace memory and memory tools are absent in `--no-db` mode because the
+4. Workspace memory and memory tools are absent in `--no-db` mode because the
    host does not build a workspace without a database.

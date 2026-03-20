@@ -25,8 +25,9 @@ Open choices (explicit “no constraint” for this request):
 ## Baseline architecture and constraints from Axinite
 
 IronClaw’s README and internal development guide describe an architecture built
-around: multichannel inputs → agent loop → tools (built-in, MCP, WASM) →
-PostgreSQL persistence; with explicit defence-in-depth (WASM sandbox with
+around: multichannel inputs → agent loop → tools (built-in, Model Context
+Protocol (MCP), WebAssembly (WASM)) → PostgreSQL persistence; with explicit
+defence-in-depth (WASM sandbox with
 capabilities, prompt-injection defences, secret protection). [^8]
 
 The existing workspace subsystem:
@@ -675,7 +676,17 @@ Avoid spinning up Oxigraph’s HTTP server; keep access strictly in-process.
 
 ### Ollama extraction with structured outputs
 
-Ollama supports **structured outputs** by providing a JSON schema to a `format` field (and recommends also embedding the schema in the prompt). [^49] It also provides an embeddings endpoint where vector dimension depends on the embedding model. [^50] For strict locality, disable cloud features via config or `OLLAMA_NO_CLOUD=1`. [^51]
+Ollama supports **structured outputs** by providing a JSON schema to a
+`format` field (and recommends also embedding the schema in the prompt). [^49]
+It also provides an embeddings endpoint where vector dimension depends on the
+embedding model. [^50]
+
+#### Environment variables
+
+| Variable name | Meaning | Default or rule |
+| --- | --- | --- |
+| `OLLAMA_NO_CLOUD` | Disables Ollama cloud-connected features, so the extraction path stays local-only. [^51] | Set to `1` when strict locality is required. |
+| `MEMORY_SIDECAR_MODE` | Selects whether the memory sidecar is disabled or which operating mode it uses. | Use `disabled`, `shadow`, or `active`; keep `disabled` as the kill-switch default unless the sidecar is explicitly enabled. |
 
 #### Extraction contract (JSON schema)
 

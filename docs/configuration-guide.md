@@ -506,28 +506,28 @@ names.
    only `true`, `false`, `1`, and `0` are accepted. A few older call sites,
    such as parts of the Signal config and tunnel config, still do their own
    looser parsing.
-1. `HTTP_HOST` and `HTTP_PORT` do not merely change values on an always-on HTTP
+2. `HTTP_HOST` and `HTTP_PORT` do not merely change values on an always-on HTTP
    listener. The listener is created only when one of those variables is set.
-1. `HTTP_WEBHOOK_SECRET` secures webhook traffic, but setting it alone does
+3. `HTTP_WEBHOOK_SECRET` secures webhook traffic, but setting it alone does
    not start the HTTP listener. One of `HTTP_HOST` or `HTTP_PORT` must also be
    set.
-1. `GATEWAY_ENABLED=false` disables the web gateway entirely, even if
+4. `GATEWAY_ENABLED=false` disables the web gateway entirely, even if
    `GATEWAY_HOST` and `GATEWAY_PORT` are also set.
-1. `LIBSQL_URL` requires `LIBSQL_AUTH_TOKEN`. Setting only the URL is treated
+5. `LIBSQL_URL` requires `LIBSQL_AUTH_TOKEN`. Setting only the URL is treated
    as an error.
-1. `BEDROCK_MODEL` is mandatory when `LLM_BACKEND=bedrock`.
-1. `DEFAULT_TIMEZONE` and `HEARTBEAT_TIMEZONE` must be valid IANA timezone
+6. `BEDROCK_MODEL` is mandatory when `LLM_BACKEND=bedrock`.
+7. `DEFAULT_TIMEZONE` and `HEARTBEAT_TIMEZONE` must be valid IANA timezone
    names.
-1. `TUNNEL_URL` must start with `https://`, because the webhook-capable
+8. `TUNNEL_URL` must start with `https://` because the webhook-capable
    channels assume HTTPS.
-1. The relay OAuth path has one implementation quirk worth knowing about. Most
+9. The relay OAuth path has one implementation quirk worth knowing about. Most
    gateway code defaults to port `3000`, but one fallback path in the relay
    auth flow reconstructs the callback base from `GATEWAY_HOST` and
    `GATEWAY_PORT` and falls back to port `3001` when `GATEWAY_PORT` is unset.
    If relay OAuth callbacks look wrong, check that pair first.
-1. Unknown `LLM_BACKEND` values do not fail closed. The runtime warns, then
+10. Unknown `LLM_BACKEND` values do not fail closed. The runtime warns, then
    tries to interpret the backend through the generic OpenAI-compatible
    provider shape.
-1. The built-in provider table is not exhaustive once a local
+11. The built-in provider table is not exhaustive once a local
    `~/.ironclaw/providers.json` exists. Custom provider definitions can add new
    provider IDs and entirely different environment-variable names.

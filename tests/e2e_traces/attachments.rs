@@ -1,0 +1,196 @@
+//! E2E tests for attachment processing in the LLM pipeline.
+//!
+//! Verifies that attachments on incoming messages are augmented into the user
+//! text and (for images) passed as multimodal content parts to the LLM.
+
+use crate::support::fixtures::{DEFAULT_TIMEOUT, fixture_path};
+use crate::support::test_rig::{TestRig, TestRigBuilder};
+use crate::support::trace_llm::LlmTrace;
+
+use ironclaw::channels::{AttachmentKind, IncomingAttachment, IncomingMessage};
+use ironclaw::llm::ContentPart;
+
+/// Extract the last user message from captured LLM requests.
+fn last_user_message(requests: &[Vec<ironclaw::llm::ChatMessage>]) -> &ironclaw::llm::ChatMessage {
+    assert!(!requests.is_empty(), "no LLM requests captured");
+    let last_request = requests.last().expect("requests should be non-empty");
+    last_request
+        .iter()
+        .rev()
+        .find(|m| matches!(m.role, ironclaw::llm::Role::User))
+        .expect("should have a user message in the last request")
+}
+
+fn make_attachment(kind: AttachmentKind) -> IncomingAttachment {
+    IncomingAttachment {
+        id: "att-1".to_string(),
+        kind,
+        mime_type: "application/octet-stream".to_string(),
+        filename: None,
+        size_bytes: None,
+        source_url: None,
+        storage_key: None,
+        extracted_text: None,
+        data: vec![],
+        duration_secs: None,
+    }
+}
+
+async fn build_rig(subdir: &str, fixture: &str) -> (LlmTrace, TestRig) {
+    let trace = LlmTrace::from_file_async(fixture_path(subdir, fixture))
+        .await
+        .unwrap_or_else(|_| panic!("failed to load fixture: {subdir}/{fixture}"));
+    let rig = TestRigBuilder::new()
+        .with_trace(trace.clone())
+        .build()
+        .await
+        .expect("failed to build test rig");
+    (trace, rig)
+}
+
+/// Audio attachment with transcript reaches the LLM as augmented text.
+#[tokio::test]
+async fn attachment_audio_transcript_reaches_llm() {
+    let (trace, rig) = build_rig("spot", "attachment_audio_transcript.json").await;
+
+    // Build a message with an audio attachment containing a transcript
+    let mut att = make_attachment(AttachmentKind::Audio);
+    att.filename = Some("voice.ogg".to_string());
+    att.mime_type = "audio/ogg".to_string();
+    att.extracted_text = Some("Hello, can you help me with my project?".to_string());
+    att.duration_secs = Some(5);
+
+    let mut msg = IncomingMessage::new("test", "test-user", "Check this voice note");
+    msg.attachments.push(att);
+
+    rig.send_incoming(msg).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
+
+    // Verify the response was received
+    assert!(
+        !responses.is_empty(),
+        "should receive at least one response"
+    );
+
+    // Verify the augmented content reached the LLM
+    let requests = rig
+        .captured_llm_requests()
+        .expect("failed to inspect captured LLM requests");
+    let last_user_msg = last_user_message(&requests);
+
+    // The augmented text should contain the attachment tags and transcript
+    assert!(
+        last_user_msg.content.contains("<attachments>"),
+        "user message should contain <attachments> block, got: {}",
+        last_user_msg.content.chars().take(200).collect::<String>()
+    );
+    assert!(
+        last_user_msg
+            .content
+            .contains("Hello, can you help me with my project?"),
+        "user message should contain the transcript"
+    );
+    assert!(
+        last_user_msg.content.contains("duration=\"5s\""),
+        "user message should contain duration"
+    );
+
+    // Audio attachments should NOT produce image content parts
+    assert!(
+        last_user_msg.content_parts.is_empty(),
+        "audio attachments should not produce image content parts"
+    );
+
+    rig.verify_trace_expects(&trace, &responses);
+    rig.shutdown();
+}
+
+/// Image attachment with data reaches the LLM with multimodal content parts.
+#[tokio::test]
+async fn attachment_image_produces_content_parts() {
+    let (trace, rig) = build_rig("spot", "attachment_image.json").await;
+
+    // Build a message with an image attachment that has raw data
+    let mut att = make_attachment(AttachmentKind::Image);
+    att.filename = Some("screenshot.png".to_string());
+    att.mime_type = "image/png".to_string();
+    att.size_bytes = Some(1024);
+    att.data = vec![0x89, 0x50, 0x4E, 0x47]; // PNG magic bytes (fake)
+
+    let mut msg = IncomingMessage::new("test", "test-user", "What do you see in this screenshot?");
+    msg.attachments.push(att);
+
+    rig.send_incoming(msg).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
+
+    assert!(
+        !responses.is_empty(),
+        "should receive at least one response"
+    );
+
+    // Verify multimodal content parts reached the LLM
+    let requests = rig
+        .captured_llm_requests()
+        .expect("failed to inspect captured LLM requests");
+    let last_user_msg = last_user_message(&requests);
+
+    // Should have image content parts
+    assert_eq!(
+        last_user_msg.content_parts.len(),
+        1,
+        "should have exactly one image content part"
+    );
+
+    // Verify the content part is an ImageUrl with a data: URI
+    match &last_user_msg.content_parts[0] {
+        ContentPart::ImageUrl { image_url } => {
+            let truncated: String = image_url.url.chars().take(40).collect();
+            assert!(
+                image_url.url.starts_with("data:image/png;base64,"),
+                "image URL should be a base64 data URI, got: {}",
+                truncated
+            );
+        }
+        other => panic!("expected ImageUrl content part, got: {:?}", other),
+    }
+
+    // The text should note the image is sent as visual content
+    assert!(
+        last_user_msg
+            .content
+            .contains("[Image attached — sent as visual content]"),
+        "augmented text should note image sent as visual content"
+    );
+
+    rig.verify_trace_expects(&trace, &responses);
+    rig.shutdown();
+}
+
+/// Message without attachments should have no content_parts and no augmentation.
+#[tokio::test]
+async fn no_attachments_no_augmentation() {
+    let (trace, rig) = build_rig("spot", "smoke_greeting.json").await;
+
+    rig.send_message("Hello! Introduce yourself briefly.").await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
+
+    assert!(!responses.is_empty(), "LLM produced no response");
+
+    let requests = rig
+        .captured_llm_requests()
+        .expect("failed to inspect captured LLM requests");
+    let last_user_msg = last_user_message(&requests);
+
+    // No attachments → no augmentation tags, no content parts
+    assert!(
+        !last_user_msg.content.contains("<attachments>"),
+        "plain message should NOT contain <attachments>"
+    );
+    assert!(
+        last_user_msg.content_parts.is_empty(),
+        "plain message should have no content parts"
+    );
+
+    rig.verify_trace_expects(&trace, &responses);
+    rig.shutdown();
+}

@@ -1,18 +1,19 @@
 # Consolidate integration test binaries
 
-**Branch:** (to be created from `build-time`)
+**Branch:** docs-consolidate-test-binaries-0n9r99
 **Date:** 2026-03-15
-**Status:** Plan ready; not yet started
+**Status:** Complete
 **Estimated impact:** 3–4 min saved on incremental `make test`
+**Actual result:** Reduced from 40 test binaries to 9 test binaries
 
 ## Big picture
 
-Reduce the number of integration test binaries from 43 to ~8–10 by
+Reduce the number of integration test binaries from 40 to 9 by
 grouping related test files into module trees under fewer top-level
 harnesses. Each top-level `.rs` file in `tests/` compiles as a separate
 binary, linked against the full ironclaw crate and all dev-dependencies.
-With 43 binaries, a single source change triggers 43 relink operations
-(measured at 6 min 05 s incremental). Consolidation targets ~8–10 binaries,
+With 40 binaries, a single source change triggers 40 relink operations
+(measured at 6 min 05 s incremental). Consolidation targets 9 binaries,
 cutting link time roughly in proportion.
 
 ## Constraints
@@ -89,7 +90,7 @@ cutting link time roughly in proportion.
 - `libsql_wit_defaults_integration.rs`
 - `module_init_integration.rs`
 
-## Target structure (10 binaries)
+## Target structure (9 binaries)
 
 ```plaintext
 tests/
@@ -103,13 +104,14 @@ tests/
 │   ├── test_channel.rs
 │   ├── test_rig.rs
 │   └── trace_llm.rs
-├── e2e_traces.rs                     # Harness: 15 e2e trace modules
+├── e2e_traces.rs                     # Harness: 16 e2e trace modules
 │   └── e2e_traces/
 │       ├── advanced_traces.rs
 │       ├── attachments.rs
 │       ├── builtin_tool_coverage.rs
 │       ├── metrics.rs
 │       ├── recorded_trace.rs
+│       ├── routine_heartbeat.rs
 │       ├── safety_layer.rs
 │       ├── spot_checks.rs
 │       ├── status_events.rs
@@ -158,45 +160,45 @@ tests/
 └── e2e/                              # Python tests (unchanged)
 ```
 
-**Result: 10 binaries** (down from 43).
+**Result: 9 binaries** (down from 40).
 
 ## Implementation steps
 
 ### Phase 1: Create harness structure
 
-- [ ] Create subdirectory for each harness group (e.g.,
+- [x] Create subdirectory for each harness group (e.g.,
   `tests/e2e_traces/`)
-- [ ] For each group, create the top-level harness file (e.g.,
+- [x] For each group, create the top-level harness file (e.g.,
   `tests/e2e_traces.rs`) containing `mod support;` (if needed) and `mod`
   declarations for each submodule
-- [ ] Move existing test files into the subdirectories, renaming as needed
-- [ ] Adjust `mod support;` imports — in the new structure, only the
+- [x] Move existing test files into the subdirectories, renaming as needed
+- [x] Adjust `mod support;` imports — in the new structure, only the
   top-level harness needs `mod support;`; submodules access it via
   `crate::support::*` or `super::support::*`
 
 ### Phase 2: Fix module paths
 
-- [ ] Update any `use crate::*` or `use super::*` imports in moved test
+- [x] Update any `use crate::*` or `use super::*` imports in moved test
   files
-- [ ] Ensure `#[cfg(feature = "...")]` gates are preserved on individual
+- [x] Ensure `#[cfg(feature = "...")]` gates are preserved on individual
   test functions or modules
-- [ ] Verify that `tests/support/` is still reachable from all harnesses
+- [x] Verify that `tests/support/` is still reachable from all harnesses
   that need it
 
 ### Phase 3: Update Cargo.toml
 
-- [ ] Remove the existing `[[test]]` entry for `html_to_markdown` only if
+- [x] Remove the existing `[[test]]` entry for `html_to_markdown` only if
   its path changes (it should not)
-- [ ] Verify no other `[[test]]` entries are needed for the new structure
+- [x] Verify no other `[[test]]` entries are needed for the new structure
   (Cargo auto-discovers `tests/*.rs`)
 
 ### Phase 4: Validate
 
-- [ ] Run `cargo nextest run --workspace --features test-helpers` — all
+- [x] Run `cargo nextest run --workspace --features test-helpers` — all
   3,209 tests must pass
-- [ ] Run `cargo test --manifest-path tools-src/github/Cargo.toml`
-- [ ] Verify test count matches pre-consolidation count
-- [ ] Time `make test` with a one-file touch to confirm link-time
+- [x] Run `cargo test --manifest-path tools-src/github/Cargo.toml`
+- [x] Verify test count matches pre-consolidation count
+- [x] Time `make test` with a one-file touch to confirm link-time
   improvement
 
 ## Risks
@@ -214,7 +216,35 @@ tests/
 
 ## Progress
 
-- [ ] Phase 1: Create harness structure
-- [ ] Phase 2: Fix module paths
-- [ ] Phase 3: Update Cargo.toml
-- [ ] Phase 4: Validate
+- [x] Phase 1: Create harness structure
+- [x] Phase 2: Fix module paths
+- [x] Phase 3: Update Cargo.toml
+- [x] Phase 4: Validate
+
+## Implementation notes
+
+The consolidation was completed successfully. Key changes:
+
+- Created 6 new test harness files with `#[path]` attributes:
+  - `tests/e2e_traces.rs` (16 modules: 15 e2e tests +
+    `routine_heartbeat`)
+  - `tests/import_openclaw.rs` (6 modules)
+  - `tests/channels.rs` (5 modules)
+  - `tests/infrastructure.rs` (5 modules)
+  - `tests/tools_and_config.rs` (4 modules)
+  - `tests/db_integration.rs` (2 modules)
+
+- Moved test files into subdirectories matching harness names.
+
+- Removed wrapper `mod` blocks from moved files and adjusted indentation.
+
+- Added `#[path = "..."]` attributes to harness files so they reference
+  subdirectory modules.
+
+- Ensured `mod support;` is only declared in harnesses that need it
+  (`e2e_traces`, `channels`, and `tools_and_config`).
+
+- No changes were needed to `Cargo.toml`
+  (`html_to_markdown` already had a `required-features` gate).
+
+Final structure: **9 test binaries** (down from 40)

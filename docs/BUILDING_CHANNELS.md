@@ -1,14 +1,17 @@
 # Building WASM Channels
 
-This guide covers how to build WASM channel modules for IronClaw.
+This guide covers how to build WebAssembly (WASM) channel modules for IronClaw.
 
 ## Overview
 
-Channels are WASM components that handle communication with external messaging platforms (Telegram, WhatsApp, Slack, etc.). They run in a sandboxed environment and communicate with the host via the WIT (WebAssembly Interface Types) interface.
+Channels are WebAssembly (WASM) components that handle communication with
+external messaging platforms (Telegram, WhatsApp, Slack, etc.). They run in a
+sandboxed environment and communicate with the host via the WIT (WebAssembly
+Interface Types) interface.
 
 ## Directory Structure
 
-```
+```plaintext
 channels/                    # Or channels-src/
 └── my-channel/
     ├── Cargo.toml
@@ -18,7 +21,8 @@ channels/                    # Or channels-src/
 ```
 
 After building, deploy to:
-```
+
+```plaintext
 ~/.ironclaw/channels/
 ├── my-channel.wasm
 └── my-channel.capabilities.json
@@ -126,7 +130,8 @@ export!(MyChannel);
 
 ## Critical Pattern: Metadata Flow
 
-**The most important pattern**: Store routing info in message metadata so responses can be delivered.
+**The most important pattern**: Store routing info in message metadata, so
+responses can be delivered.
 
 ```rust
 // When receiving a message, store routing info:
@@ -184,7 +189,9 @@ let headers = serde_json::json!({
 channel_host::http_request("POST", &url, &headers.to_string(), Some(&body));
 ```
 
-The placeholder format is `{SECRET_NAME}` where `SECRET_NAME` matches the credential name in uppercase with underscores (e.g., `whatsapp_access_token` → `{WHATSAPP_ACCESS_TOKEN}`).
+The placeholder format is `{SECRET_NAME}` where `SECRET_NAME` matches the
+credential name in uppercase with underscores (e.g., `whatsapp_access_token` →
+`{WHATSAPP_ACCESS_TOKEN}`).
 
 ## Capabilities File
 
@@ -249,18 +256,18 @@ Create `my-channel.capabilities.json`:
 ### Supply Chain Security: No Committed Binaries
 
 **Do not commit compiled WASM binaries.** They are a supply chain risk
-because the binary in a PR may not match the source. IronClaw builds
-channels from source:
+because the binary in a pull request (PR) may not match the source.
+IronClaw builds channels from source:
 
 - `cargo build` no longer builds channel artifacts implicitly
 - run `./scripts/build-wasm-extensions.sh --channels` or a
-  channel-specific build script when you intentionally need channel
-  artifacts
+  channel-specific build script when channel artifacts are required
 - The built binary is in `.gitignore` and is not committed
-- CI should run explicit channel build steps (or
+- Continuous Integration (CI) should run explicit channel build steps (or
   `./scripts/build-all.sh`) before packaging releases
 
 **Reproducible build:**
+
 ```bash
 ./scripts/build-all.sh
 ```
@@ -279,7 +286,9 @@ rustup target add wasm32-wasip2
 
 # Install (or use ironclaw onboard to install bundled channel)
 mkdir -p ~/.ironclaw/channels
-cp channels-src/telegram/telegram.wasm channels-src/telegram/telegram.capabilities.json ~/.ironclaw/channels/
+cp channels-src/telegram/telegram.wasm \
+  channels-src/telegram/telegram.capabilities.json \
+  ~/.ironclaw/channels/
 ```
 
 **Note**: The main IronClaw binary no longer bundles `telegram.wasm`.
@@ -417,6 +426,7 @@ mod tests {
 ```
 
 Run tests with:
+
 ```bash
 cargo test
 ```
@@ -444,6 +454,7 @@ let preview: String = content.chars().take(50).collect();
 ### Messages not routing to responses
 
 Ensure `on_respond` uses the ORIGINAL message's metadata, not response metadata:
+
 ```rust
 // response.metadata_json comes from the ORIGINAL emit_message call
 let metadata: MyMetadata = serde_json::from_str(&response.metadata_json)?;

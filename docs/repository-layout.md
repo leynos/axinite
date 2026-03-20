@@ -47,7 +47,7 @@ Table 1. Major repository paths and their current responsibilities.
 | `.cargo/` | Checked-in Cargo configuration for local and Continuous Integration (CI) builds | Includes Linux linker configuration for `clang` and `mold` |
 | `.claude/` | Local automation prompts and rules used by assistant-driven workflows | Contributor-facing only when working on those automation flows |
 | `.github/` | GitHub Actions workflows, repository automation, and pull request templates | Workflow changes often need YAML-aware review because they affect release and CI behaviour |
-| `channels-src/` | Standalone source crates for WASM channel integrations such as Telegram, Slack, Discord, and WhatsApp | These crates are intentionally excluded from the root workspace build and are packaged as runtime-loadable channel artefacts |
+| `channels-src/` | Standalone source crates for WebAssembly (WASM) channel integrations such as Telegram, Slack, Discord, and WhatsApp | These crates are intentionally excluded from the root workspace build and are packaged as runtime-loadable channel artefacts |
 | `deploy/` | Service-unit examples, deployment environment templates, and setup scripts | Intended for operational setup rather than local development logic |
 | `docker/` and `Dockerfile*` | Container build material for host, test, and worker runtimes | The worker image and sandbox image are part of the execution-isolation story, not just packaging |
 | `docs/` | Long-lived maintainer and design documentation, including plans and RFCs | `plans/` and `rfcs/` are durable reference subtrees rather than scratch notes |
@@ -82,7 +82,7 @@ Table 2. Key `src/` paths and why they matter.
 | `src/cli/` | Public and internal command definitions, onboarding helpers, diagnostics, and subcommand execution |
 | `src/config/` | Layered configuration loading from environment, optional TOML, database settings, and injected secrets |
 | `src/db/` | Backend-agnostic persistence traits plus PostgreSQL and libSQL implementations |
-| `src/extensions/` | Runtime discovery, installation, authentication, and activation for WASM and MCP extensions |
+| `src/extensions/` | Runtime discovery, installation, authentication, and activation for WASM and Model Context Protocol (MCP) extensions |
 | `src/llm/` | Language model provider chain, routing, provider-specific integrations, and session handling |
 | `src/orchestrator/` | Sandbox orchestrator API, job manager, token store, and reaper support |
 | `src/registry/` | Runtime registry catalogue loading and installer support |

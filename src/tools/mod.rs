@@ -24,7 +24,9 @@ pub use builder::{
     TestCase, TestHarness, TestResult, TestSuite, ValidationError, ValidationResult, WasmValidator,
 };
 pub use rate_limiter::RateLimiter;
-pub use registry::ToolRegistry;
+pub use registry::{
+    ImageToolsArgs, RegisterJobToolsConfig, ToolRegistry, VisionToolsArgs, WasmFromStorageArgs,
+};
 pub use tool::{
     ApprovalContext, ApprovalRequirement, Tool, ToolDomain, ToolError, ToolOutput,
     ToolRateLimitConfig, redact_params, validate_tool_schema,

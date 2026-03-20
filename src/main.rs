@@ -8,6 +8,7 @@ use clap::Parser;
 use ironclaw::{
     agent::{Agent, AgentDeps},
     app::{AppBuilder, AppBuilderFlags},
+    bootstrap::tools::{JobToolsArgs, wire_core_runtime_tools},
     channels::{
         ChannelManager, GatewayChannel, HttpChannel, ReplChannel, SignalChannel, WebhookServer,
         WebhookServerConfig,
@@ -247,15 +248,15 @@ async fn async_main() -> anyhow::Result<()> {
 
     // ── Channel setup ──────────────────────────────────────────────────
 
-    let channels = ChannelManager::new();
+    let channels = Arc::new(ChannelManager::new());
     let mut channel_names: Vec<String> = Vec::new();
     let mut loaded_wasm_channel_names: Vec<String> = Vec::new();
-    #[allow(clippy::type_complexity)]
-    let mut wasm_channel_runtime_state: Option<(
+    type WasmChannelRuntimeState = (
         Arc<WasmChannelRuntime>,
         Arc<PairingStore>,
         Arc<WasmChannelRouter>,
-    )> = None;
+    );
+    let mut wasm_channel_runtime_state: Option<WasmChannelRuntimeState> = None;
 
     // Create CLI channel
     let repl_channel = if let Some(ref msg) = cli.message {
@@ -410,21 +411,21 @@ async fn async_main() -> anyhow::Result<()> {
     let scheduler_slot: ironclaw::tools::builtin::SchedulerSlot =
         Arc::new(tokio::sync::RwLock::new(None));
 
-    // Register job tools (sandbox deps auto-injected when container_job_manager is available)
-    components.tools.register_job_tools(
-        Arc::clone(&components.context_manager),
-        Some(scheduler_slot.clone()),
-        container_job_manager.clone(),
-        components.db.clone(),
-        job_event_tx.clone(),
-        Some(channels.inject_sender()),
-        if config.sandbox.enabled {
-            Some(Arc::clone(&prompt_queue))
-        } else {
-            None
+    wire_core_runtime_tools(
+        &components.tools,
+        JobToolsArgs {
+            context_manager: Arc::clone(&components.context_manager),
+            scheduler_slot: Some(scheduler_slot.clone()),
+            job_manager: container_job_manager.clone(),
+            store: components.db.clone(),
+            job_event_tx: job_event_tx.clone(),
+            inject_tx: Some(channels.inject_sender()),
+            prompt_queue: config.sandbox.enabled.then_some(Arc::clone(&prompt_queue)),
+            secrets_store: components.secrets_store.clone(),
         },
-        components.secrets_store.clone(),
-    );
+        Arc::clone(&channels),
+    )
+    .await;
 
     // ── Gateway channel ────────────────────────────────────────────────
 
@@ -544,14 +545,6 @@ async fn async_main() -> anyhow::Result<()> {
     }
 
     // ── Run the agent ──────────────────────────────────────────────────
-
-    let channels = Arc::new(channels);
-
-    // Register message tool for sending messages to connected channels
-    components
-        .tools
-        .register_message_tools(Arc::clone(&channels))
-        .await;
 
     // Wire up channel runtime for hot-activation of WASM channels.
     if let Some(ref ext_mgr) = components.extension_manager

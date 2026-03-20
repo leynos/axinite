@@ -8,18 +8,17 @@ use uuid::Uuid;
 
 use crate::error::WorkerError;
 use crate::llm::{
-    CompletionRequest, CompletionResponse, FinishReason, ToolCompletionRequest,
-    ToolCompletionResponse,
+    CompletionRequest, CompletionResponse, ToolCompletionRequest, ToolCompletionResponse,
 };
 use crate::tools::ToolOutput;
 
 mod types;
 
 pub use types::{
-    CompletionReport, CredentialResponse, JobDescription, JobEventPayload, PromptResponse,
-    ProxyCompletionRequest, ProxyCompletionResponse, ProxyExtensionToolRequest,
-    ProxyExtensionToolResponse, ProxyToolCompletionRequest, ProxyToolCompletionResponse,
-    StatusUpdate,
+    CompletionReport, CredentialResponse, FinishReason as ProxyFinishReason, JobDescription,
+    JobEventPayload, JobEventType, PromptResponse, ProxyCompletionRequest, ProxyCompletionResponse,
+    ProxyExtensionToolRequest, ProxyExtensionToolResponse, ProxyToolCompletionRequest,
+    ProxyToolCompletionResponse, StatusUpdate, WorkerState,
 };
 
 /// HTTP client that a container worker uses to talk to the orchestrator.
@@ -151,7 +150,7 @@ impl WorkerHttpClient {
             content: proxy_resp.content,
             input_tokens: proxy_resp.input_tokens,
             output_tokens: proxy_resp.output_tokens,
-            finish_reason: parse_finish_reason(&proxy_resp.finish_reason),
+            finish_reason: proxy_resp.finish_reason.into(),
             cache_read_input_tokens: proxy_resp.cache_read_input_tokens,
             cache_creation_input_tokens: proxy_resp.cache_creation_input_tokens,
         })
@@ -180,7 +179,7 @@ impl WorkerHttpClient {
             tool_calls: proxy_resp.tool_calls,
             input_tokens: proxy_resp.input_tokens,
             output_tokens: proxy_resp.output_tokens,
-            finish_reason: parse_finish_reason(&proxy_resp.finish_reason),
+            finish_reason: proxy_resp.finish_reason.into(),
             cache_read_input_tokens: proxy_resp.cache_read_input_tokens,
             cache_creation_input_tokens: proxy_resp.cache_creation_input_tokens,
         })
@@ -219,14 +218,28 @@ impl WorkerHttpClient {
             })?;
 
         if !resp.status().is_success() {
-            tracing::warn!(
-                "Status report failed with {}: {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            );
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(WorkerError::OrchestratorRejected {
+                job_id: self.job_id,
+                reason: format!("status endpoint returned {}: {}", status, body),
+            });
         }
 
         Ok(())
+    }
+
+    /// Report a non-terminal status update without failing the worker on rejection.
+    pub async fn report_status_lossy(&self, update: &StatusUpdate) {
+        if let Err(error) = self.report_status(update).await {
+            tracing::warn!(
+                job_id = %self.job_id,
+                state = %update.state,
+                iteration = update.iteration,
+                error = %error,
+                "Worker status report failed"
+            );
+        }
     }
 
     /// Post a job event to the orchestrator (fire-and-forget style, logs on failure).
@@ -338,16 +351,6 @@ impl WorkerHttpClient {
             .post_json("complete", report, "report complete")
             .await?;
         Ok(())
-    }
-}
-
-fn parse_finish_reason(s: &str) -> FinishReason {
-    match s {
-        "stop" => FinishReason::Stop,
-        "length" => FinishReason::Length,
-        "tool_use" | "tool_calls" => FinishReason::ToolUse,
-        "content_filter" => FinishReason::ContentFilter,
-        _ => FinishReason::Unknown,
     }
 }
 

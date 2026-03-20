@@ -46,7 +46,7 @@ The roadmap follows the current documentation style guidance:
 Phase objective: ensure axinite advertises accurate tool interfaces before it
 widens the runtime surface.
 
-### 1.1. Hosted MCP tool catalog parity
+### 1.1. Hosted Model Context Protocol (MCP) tool catalog parity
 
 Objective: make hosted workers advertise the real orchestrator-owned MCP tools
 instead of only local proxy tools.
@@ -83,7 +83,7 @@ Dependencies: unlocks 1.2 and reduces integration risk for 3.2.
     incorrectly, and prove that advertised remote tools execute through the
     orchestrator rather than a local stub.
 
-### 1.2. Proactive WASM schema publication
+### 1.2. Proactive WebAssembly (WASM) schema publication
 
 Objective: make proactive WASM schema advertisement the only normal contract
 for active WASM tools.

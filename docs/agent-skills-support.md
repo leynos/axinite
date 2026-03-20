@@ -27,7 +27,7 @@ That means the skills subsystem is really four linked mechanisms:
 - deterministic per-turn activation and tool attenuation
 - prompt assembly and context injection
 
-This document follows that sequence so it is clear where a behavior belongs and
+This document follows that sequence so it is clear where a behaviour belongs and
 where the current design still has hard edges.
 
 ## 2. Runtime overview
@@ -39,7 +39,7 @@ Table 1. Main runtime components in the current skills path.
 | `SkillsConfig` | Enables or disables the subsystem, defines local and installed directories, and caps active skills and prompt budget. |
 | `SkillRegistry` | Owns the loaded `LoadedSkill` set and handles discovery, installation, removal, and reload. |
 | `SkillCatalog` | Best-effort runtime search client for the ClawHub registry. |
-| `prefilter_skills()` | Deterministic first-pass selector that chooses skills from the message text without LLM involvement. |
+| `prefilter_skills()` | Deterministic first-pass selector that chooses skills from the message text without language model (LLM) involvement. |
 | `attenuate_tools()` | Applies the trust ceiling of the active skills to the model-visible tool list. |
 | `Agent::select_active_skills()` | Per-turn hook that asks the registry for available skills and runs the deterministic selector. |
 | `dispatcher.rs` | Wraps selected skills into `<skill>` blocks, adds installed-skill downgrade text, and injects the result into `Reasoning`. |
@@ -475,7 +475,7 @@ Table 5. Main extension points in the current design.
 | Area | Current seam |
 |------|--------------|
 | New artifact metadata | Extend `SkillManifest` and parser validation. |
-| New trust behavior | Change `SkillTrust` handling and `attenuate_tools()`. |
+| New trust behaviour | Change `SkillTrust` handling and `attenuate_tools()`. |
 | New discovery source | Wire another `SkillSource` path into `discover_all()` or startup. |
 | New activation logic | Change `prefilter_skills()` scoring or add more deterministic inputs. |
 | New management surface | Add tool, command, or web handlers that call the registry. |

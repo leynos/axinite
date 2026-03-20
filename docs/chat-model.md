@@ -303,9 +303,9 @@ stop signal, or a need-approval outcome. When a tool-call batch arrives,
 
 1. It appends an `assistant_with_tool_calls` message to the transcript and
    records redacted tool-call parameters in the current turn.
-1. It runs sequential preflight checks:
+2. It runs sequential preflight checks:
    hook evaluation, hook-driven parameter rewrites, and approval gating.
-1. It executes runnable tools, either sequentially or in parallel, emits live
+3. It executes runnable tools, either sequentially or in parallel, emits live
    status updates, sanitizes outputs, and appends `tool_result` messages to the
    reasoning context.
 

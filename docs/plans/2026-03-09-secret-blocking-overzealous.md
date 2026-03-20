@@ -8,7 +8,21 @@ Status: COMPLETE
 
 After this work, a hosted or in-process IronClaw agent should be able to call the curated `github` WebAssembly (WASM) tool with a real `github_token` secret stored in IronClaw and have the host inject that credential into the outbound request without the request being blocked as a secret leak. The observable success case is simple: a call such as `{"action":"get_repo","owner":"leynos","repo":"mxd"}` reaches `api.github.com` and either returns real GitHub data or a real GitHub API error, but it must not fail with `Potential secret leak blocked` merely because IronClaw injected its own bearer token.
 
-The current failure is specific and already reproducible. The `github` tool declares `github_token` as a bearer credential for `api.github.com` in `tools-src/github/github-tool.capabilities.json`, the tool implementation relies on host-side automatic injection rather than constructing the `Authorization` header itself in `tools-src/github/src/lib.rs`, and the tool-side WASM wrapper currently performs leak scanning after host credential injection in `src/tools/wasm/wrapper.rs`. The leak detector in `src/safety/leak_detector.rs` correctly blocks real GitHub PAT patterns, so scanning the post-injection request treats the legitimate host-managed credential as if the WASM module were exfiltrating it. The channel-side WASM wrapper in `src/channels/wasm/wrapper.rs` already has the correct ordering and comments explaining why leak scanning must happen before host credential injection. This plan exists to align the tool-side path with that already-correct channel-side behaviour, add regression coverage, and verify that the fix remains narrow.
+The current failure is specific and already reproducible. The `github` tool
+declares `github_token` as a bearer credential for `api.github.com` in
+`tools-src/github/github-tool.capabilities.json`, the tool implementation
+relies on host-side automatic injection rather than constructing the
+`Authorization` header itself in `tools-src/github/src/lib.rs`, and the
+tool-side WASM wrapper currently performs leak scanning after host credential
+injection in `src/tools/wasm/wrapper.rs`. The leak detector in
+`src/safety/leak_detector.rs` correctly blocks real GitHub personal access
+token (PAT) patterns, so scanning the post-injection request treats the
+legitimate host-managed credential as if the WASM module were exfiltrating it.
+The channel-side WASM wrapper in `src/channels/wasm/wrapper.rs` already has the
+correct ordering and comments explaining why leak scanning must happen before
+host credential injection. This plan exists to align the tool-side path with
+that already-correct channel-side behaviour, add regression coverage, and
+verify that the fix remains narrow.
 
 ## Repository orientation
 

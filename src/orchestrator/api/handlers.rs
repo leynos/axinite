@@ -12,7 +12,6 @@ use axum::http::StatusCode;
 use uuid::Uuid;
 
 use super::OrchestratorState;
-use super::handler_support::format_finish_reason;
 use crate::channels::web::types::SseEvent;
 use crate::context::JobContext;
 use crate::llm::{CompletionRequest, ToolCompletionRequest};
@@ -70,7 +69,7 @@ pub(super) async fn llm_complete(
         content: resp.content,
         input_tokens: resp.input_tokens,
         output_tokens: resp.output_tokens,
-        finish_reason: format_finish_reason(resp.finish_reason),
+        finish_reason: resp.finish_reason.into(),
         cache_read_input_tokens: resp.cache_read_input_tokens,
         cache_creation_input_tokens: resp.cache_creation_input_tokens,
     }))
@@ -101,7 +100,7 @@ pub(super) async fn llm_complete_with_tools(
         tool_calls: resp.tool_calls,
         input_tokens: resp.input_tokens,
         output_tokens: resp.output_tokens,
-        finish_reason: format_finish_reason(resp.finish_reason),
+        finish_reason: resp.finish_reason.into(),
         cache_read_input_tokens: resp.cache_read_input_tokens,
         cache_creation_input_tokens: resp.cache_creation_input_tokens,
     }))
@@ -125,7 +124,7 @@ pub(super) async fn execute_extension_tool(
         return Err(StatusCode::BAD_REQUEST);
     };
 
-    if !ExtensionToolKind::HOSTED_WORKER_PROXY_SAFE.contains(&kind) {
+    if !kind.is_hosted_worker_proxy_safe() {
         tracing::warn!(
             job_id = %job_id,
             tool = %kind.name(),
@@ -140,7 +139,10 @@ pub(super) async fn execute_extension_tool(
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    if tool.requires_approval(&req.params).is_required() {
+    if matches!(
+        tool.requires_approval(&req.params),
+        crate::tools::ApprovalRequirement::Always
+    ) {
         tracing::warn!(
             job_id = %job_id,
             tool = %kind.name(),
@@ -231,18 +233,21 @@ pub(super) async fn job_event_handler(
 
     if let Some(ref store) = state.store {
         let store = Arc::clone(store);
-        let event_type = payload.event_type.clone();
+        let event_type = payload.event_type;
         let data = payload.data.clone();
         tokio::spawn(async move {
-            if let Err(e) = store.save_job_event(job_id, &event_type, &data).await {
+            if let Err(e) = store
+                .save_job_event(job_id, event_type.as_wire(), &data)
+                .await
+            {
                 tracing::warn!(job_id = %job_id, "Failed to persist job event: {}", e);
             }
         });
     }
 
     let job_id_str = job_id.to_string();
-    let sse_event = match payload.event_type.as_str() {
-        "message" => SseEvent::JobMessage {
+    let sse_event = match payload.event_type {
+        crate::worker::api::JobEventType::Message => SseEvent::JobMessage {
             job_id: job_id_str,
             role: payload
                 .data
@@ -257,7 +262,7 @@ pub(super) async fn job_event_handler(
                 .unwrap_or("")
                 .to_string(),
         },
-        "tool_use" => SseEvent::JobToolUse {
+        crate::worker::api::JobEventType::ToolUse => SseEvent::JobToolUse {
             job_id: job_id_str,
             tool_name: payload
                 .data
@@ -271,7 +276,7 @@ pub(super) async fn job_event_handler(
                 .cloned()
                 .unwrap_or(serde_json::Value::Null),
         },
-        "tool_result" => SseEvent::JobToolResult {
+        crate::worker::api::JobEventType::ToolResult => SseEvent::JobToolResult {
             job_id: job_id_str,
             tool_name: payload
                 .data
@@ -286,7 +291,7 @@ pub(super) async fn job_event_handler(
                 .unwrap_or("")
                 .to_string(),
         },
-        "result" => SseEvent::JobResult {
+        crate::worker::api::JobEventType::Result => SseEvent::JobResult {
             job_id: job_id_str,
             status: payload
                 .data
@@ -300,15 +305,17 @@ pub(super) async fn job_event_handler(
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
         },
-        _ => SseEvent::JobStatus {
-            job_id: job_id_str,
-            message: payload
-                .data
-                .get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-        },
+        crate::worker::api::JobEventType::Status | crate::worker::api::JobEventType::Unknown => {
+            SseEvent::JobStatus {
+                job_id: job_id_str,
+                message: payload
+                    .data
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            }
+        }
     };
 
     if let Some(ref tx) = state.job_event_tx {

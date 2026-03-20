@@ -23,8 +23,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn embed_registry_catalog(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let registry_dir = root.join("registry");
 
-    // Rerun if the bundles file changes (per-file watches for tools/channels
-    // are emitted inside collect_json_files to track content changes reliably).
+    // Watch the registry roots even if some subdirectories are absent on the
+    // first build, then add per-file watches for present manifests.
+    println!("cargo:rerun-if-changed=registry");
+    println!("cargo:rerun-if-changed=registry/tools");
+    println!("cargo:rerun-if-changed=registry/channels");
     println!("cargo:rerun-if-changed=registry/_bundles.json");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
@@ -45,13 +48,13 @@ fn embed_registry_catalog(root: &Path) -> Result<(), Box<dyn std::error::Error>>
     // Collect tool manifests
     let tools_dir = registry_dir.join("tools");
     if tools_dir.is_dir() {
-        collect_json_files(&tools_dir, &mut tools)?;
+        collect_json_files(root, &tools_dir, &mut tools)?;
     }
 
     // Collect channel manifests
     let channels_dir = registry_dir.join("channels");
     if channels_dir.is_dir() {
-        collect_json_files(&channels_dir, &mut channels)?;
+        collect_json_files(root, &channels_dir, &mut channels)?;
     }
 
     // Read bundles
@@ -76,8 +79,16 @@ fn embed_registry_catalog(root: &Path) -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-/// Read all .json files from a directory and push their raw contents into `out`.
-fn collect_json_files(dir: &Path, out: &mut Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+/// Read all `.json` files from `dir` and push their raw contents into `out`.
+///
+/// `collect_json_files(root, dir, out)` emits `cargo:rerun-if-changed` entries
+/// relative to `root`, not `dir`, and normalizes those emitted paths to use
+/// forward slashes.
+fn collect_json_files(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut entries: Vec<_> = fs::read_dir(dir)
         .map_err(|e| io::Error::other(format!("failed to read {}: {e}", dir.display())))?
         .collect::<Result<Vec<_>, _>>()
@@ -93,8 +104,16 @@ fn collect_json_files(dir: &Path, out: &mut Vec<String>) -> Result<(), Box<dyn s
 
     for entry in entries {
         // Emit per-file watch so Cargo reruns when file contents change
-        println!("cargo:rerun-if-changed={}", entry.path().display());
         let path = entry.path();
+        let relative_path = path.strip_prefix(root).map_err(|e| {
+            io::Error::other(format!(
+                "failed to strip {} from {}: {e}",
+                root.display(),
+                path.display()
+            ))
+        })?;
+        let normalized_path = relative_path.to_string_lossy().replace('\\', "/");
+        println!("cargo:rerun-if-changed={normalized_path}");
         let content = fs::read_to_string(&path)
             .map_err(|e| io::Error::other(format!("failed to read {}: {e}", path.display())))?;
         out.push(content);

@@ -287,7 +287,12 @@ impl WasmToolLoader {
         tool_name: &str,
     ) -> Result<(), WasmLoadError> {
         self.registry
-            .register_wasm_from_storage(store, &self.runtime, user_id, tool_name)
+            .register_wasm_from_storage(crate::tools::WasmFromStorageArgs {
+                store,
+                runtime: &self.runtime,
+                user_id,
+                name: tool_name,
+            })
             .await?;
 
         tracing::info!(
