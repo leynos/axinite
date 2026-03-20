@@ -90,10 +90,10 @@ fn touch_fixture_symbols() {
 }
 
 fn touch_trace_symbols() {
-    use crate::support::trace_llm;
+    use crate::support::{trace_llm, trace_types};
 
     touch!(
-        trace_llm::LlmTrace::single_turn
+        trace_types::LlmTrace::single_turn
             as fn(String, String, Vec<trace_llm::TraceStep>) -> trace_llm::LlmTrace,
         trace_llm::patch_json_value as fn(&mut serde_json::Value, &str, &str),
     );
@@ -134,6 +134,7 @@ fn trace_support_symbol_refs() {
     assert_trace_from_file_async(trace_llm::LlmTrace::from_file_async);
 }
 
+#[cfg(feature = "libsql")]
 fn touch_test_rig_symbols() {
     const _: fn(std::sync::Arc<test_channel::TestChannel>) -> test_rig::TestChannelHandle =
         test_rig::TestChannelHandle::new;
@@ -275,6 +276,7 @@ fn test_rig_symbol_refs() {
     touch_cleanup_symbols();
     touch_fixture_symbols();
     touch_trace_symbols();
+    #[cfg(feature = "libsql")]
     touch_test_rig_symbols();
 }
 
