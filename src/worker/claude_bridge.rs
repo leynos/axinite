@@ -8,6 +8,7 @@ mod fs_setup;
 mod ndjson;
 mod orchestration;
 mod reporting;
+mod session;
 #[cfg(test)]
 mod tests;
 

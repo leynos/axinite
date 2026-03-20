@@ -1,25 +1,20 @@
 //! Runtime orchestration for the Claude bridge worker.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
-
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
+use tokio::time::Instant;
 
 use crate::error::WorkerError;
-use crate::worker::api::{
-    CompletionReport, JobEventPayload, JobEventType, StatusUpdate, WorkerState,
-};
+use crate::worker::api::{CompletionReport, StatusUpdate, WorkerState};
 
 use super::ClaudeBridgeRuntime;
-use super::ndjson::{ClaudeStreamEvent, stream_event_to_payloads, truncate};
+use super::ndjson::truncate;
 
 const PROMPT_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const PROMPT_POLL_ERROR_INTERVAL: Duration = Duration::from_secs(5);
 
-struct ClaudeSessionResult {
-    session_id: Option<String>,
+pub(super) struct ClaudeSessionResult {
+    pub(super) session_id: Option<String>,
 }
 
 /// Records whether `emitted_terminal_result` already sent the final result
@@ -84,37 +79,18 @@ impl ClaudeBridgeRuntime {
 
     async fn timeout_initial_session<T>(
         &self,
-        reason: &str,
+        _reason: &str,
         future: impl std::future::Future<Output = Result<T, ClaudeSessionFailure>>,
     ) -> Result<T, ClaudeSessionFailure> {
-        match tokio::time::timeout(self.config.timeout, future).await {
-            Ok(result) => result,
-            Err(_) => Err(ClaudeSessionFailure {
-                error: WorkerError::ExecutionFailed {
-                    reason: reason.to_string(),
-                },
-                emitted_terminal_result: false,
-            }),
-        }
+        future.await
     }
 
     async fn timeout_followup_loop<T>(
         &self,
-        reason: &str,
+        _reason: &str,
         future: impl std::future::Future<Output = Result<T, (u32, ClaudeSessionFailure)>>,
     ) -> Result<T, (u32, ClaudeSessionFailure)> {
-        match tokio::time::timeout(self.config.timeout, future).await {
-            Ok(result) => result,
-            Err(_) => Err((
-                1,
-                ClaudeSessionFailure {
-                    error: WorkerError::ExecutionFailed {
-                        reason: reason.to_string(),
-                    },
-                    emitted_terminal_result: false,
-                },
-            )),
-        }
+        future.await
     }
 
     async fn preflight_fs(&self) -> Result<bool, WorkerError> {
@@ -164,8 +140,10 @@ impl ClaudeBridgeRuntime {
         }
         tracing::warn!(
             job_id = %self.config.job_id,
-            "No Claude Code auth available. Set ANTHROPIC_API_KEY or run \
-             `claude login` on the host to authenticate."
+            concat!(
+                "No Claude Code auth available. Set ANTHROPIC_API_KEY or run ",
+                "`claude login` on the host to authenticate."
+            )
         );
     }
 
@@ -185,21 +163,48 @@ impl ClaudeBridgeRuntime {
         env: &HashMap<String, String>,
     ) -> Result<u32, (u32, ClaudeSessionFailure)> {
         let mut iteration = 1u32;
+        let deadline = Instant::now() + self.config.timeout;
         loop {
-            let prompt = match self.poll_for_prompt().await {
-                Ok(Some(prompt)) => prompt,
-                Ok(None) => {
-                    tokio::time::sleep(PROMPT_POLL_INTERVAL).await;
-                    continue;
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err((
+                    iteration,
+                    ClaudeSessionFailure {
+                        error: WorkerError::ExecutionFailed {
+                            reason: "Claude follow-up loop timed out".to_string(),
+                        },
+                        emitted_terminal_result: false,
+                    },
+                ));
+            }
+
+            let prompt = match tokio::time::timeout(remaining, self.poll_for_prompt()).await {
+                Err(_) => {
+                    return Err((
+                        iteration,
+                        ClaudeSessionFailure {
+                            error: WorkerError::ExecutionFailed {
+                                reason: "Claude follow-up loop timed out".to_string(),
+                            },
+                            emitted_terminal_result: false,
+                        },
+                    ));
                 }
-                Err(error) => {
-                    tracing::warn!(
-                        job_id = %self.config.job_id,
-                        "Prompt polling error: {}", error
-                    );
-                    tokio::time::sleep(PROMPT_POLL_ERROR_INTERVAL).await;
-                    continue;
-                }
+                Ok(result) => match result {
+                    Ok(Some(prompt)) => prompt,
+                    Ok(None) => {
+                        tokio::time::sleep(PROMPT_POLL_INTERVAL).await;
+                        continue;
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            job_id = %self.config.job_id,
+                            "Prompt polling error: {}", error
+                        );
+                        tokio::time::sleep(PROMPT_POLL_ERROR_INTERVAL).await;
+                        continue;
+                    }
+                },
             };
 
             if prompt.done {
@@ -236,262 +241,5 @@ impl ClaudeBridgeRuntime {
                 Err(failure) => return Err((iteration, failure)),
             }
         }
-    }
-
-    /// Spawn a `claude` CLI process and stream its output.
-    async fn run_claude_session(
-        &self,
-        prompt: &str,
-        resume_session_id: Option<&str>,
-        extra_env: &HashMap<String, String>,
-    ) -> Result<ClaudeSessionResult, ClaudeSessionFailure> {
-        let mut command = Command::new("claude");
-        command
-            .arg("-p")
-            .arg(prompt)
-            .arg("--output-format")
-            .arg("stream-json")
-            .arg("--verbose")
-            .arg("--max-turns")
-            .arg(self.config.max_turns.to_string())
-            .arg("--model")
-            .arg(&self.config.model);
-
-        if let Some(session_id) = resume_session_id {
-            command.arg("--resume").arg(session_id);
-        }
-
-        command.envs(extra_env);
-        command
-            .current_dir("/workspace")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-
-        let mut child = command.spawn().map_err(|error| ClaudeSessionFailure {
-            error: WorkerError::ExecutionFailed {
-                reason: format!("failed to spawn claude: {}", error),
-            },
-            emitted_terminal_result: false,
-        })?;
-
-        let stdout = match child.stdout.take() {
-            Some(stdout) => stdout,
-            None => {
-                return Err(self
-                    .cleanup_failed_session_process(
-                        &mut child,
-                        None,
-                        ClaudeSessionFailure {
-                            error: WorkerError::ExecutionFailed {
-                                reason: "failed to capture claude stdout".to_string(),
-                            },
-                            emitted_terminal_result: false,
-                        },
-                    )
-                    .await);
-            }
-        };
-
-        let stderr = match child.stderr.take() {
-            Some(stderr) => stderr,
-            None => {
-                return Err(self
-                    .cleanup_failed_session_process(
-                        &mut child,
-                        None,
-                        ClaudeSessionFailure {
-                            error: WorkerError::ExecutionFailed {
-                                reason: "failed to capture claude stderr".to_string(),
-                            },
-                            emitted_terminal_result: false,
-                        },
-                    )
-                    .await);
-            }
-        };
-
-        let client_for_stderr = Arc::clone(&self.client);
-        let job_id = self.config.job_id;
-        let stderr_handle = tokio::spawn(async move {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
-            loop {
-                match lines.next_line().await {
-                    Ok(Some(line)) => {
-                        tracing::debug!(job_id = %job_id, "claude stderr: {}", line);
-                        let payload = JobEventPayload {
-                            event_type: JobEventType::Status,
-                            data: serde_json::json!({ "message": line }),
-                        };
-                        client_for_stderr.post_event(&payload).await;
-                    }
-                    Ok(None) => break,
-                    Err(error) => {
-                        tracing::error!(
-                            job_id = %job_id,
-                            "failed reading claude stderr: {}",
-                            error
-                        );
-                        break;
-                    }
-                }
-            }
-        });
-
-        let reader = BufReader::new(stdout);
-        let mut lines = reader.lines();
-        let mut session_id: Option<String> = None;
-        let mut seen_terminal_result = false;
-
-        loop {
-            let line = match lines.next_line().await {
-                Ok(Some(line)) => line,
-                Ok(None) => break,
-                Err(error) => {
-                    return Err(self
-                        .cleanup_failed_session_process(
-                            &mut child,
-                            Some(stderr_handle),
-                            ClaudeSessionFailure {
-                                error: WorkerError::ExecutionFailed {
-                                    reason: format!("failed reading claude stdout: {}", error),
-                                },
-                                emitted_terminal_result: seen_terminal_result,
-                            },
-                        )
-                        .await);
-                }
-            };
-
-            let line = line.trim().to_string();
-            if line.is_empty() {
-                continue;
-            }
-
-            match serde_json::from_str::<ClaudeStreamEvent>(&line) {
-                Ok(event) => {
-                    if event.event_type == "system"
-                        && let Some(ref captured_session_id) = event.session_id
-                    {
-                        session_id = Some(captured_session_id.clone());
-                        tracing::info!(
-                            job_id = %self.config.job_id,
-                            session_id = %captured_session_id,
-                            "Captured Claude session ID"
-                        );
-                    }
-
-                    for payload in stream_event_to_payloads(&event) {
-                        seen_terminal_result |= payload.event_type == JobEventType::Result;
-                        self.report_event(payload.event_type, &payload.data).await;
-                    }
-                }
-                Err(error) => {
-                    tracing::debug!(
-                        job_id = %self.config.job_id,
-                        "Non-JSON claude output: {} (parse error: {})",
-                        line,
-                        error
-                    );
-                    self.report_event(
-                        JobEventType::Status,
-                        &serde_json::json!({ "message": line }),
-                    )
-                    .await;
-                }
-            }
-        }
-
-        let status = child.wait().await.map_err(|error| ClaudeSessionFailure {
-            error: WorkerError::ExecutionFailed {
-                reason: format!("failed waiting for claude: {}", error),
-            },
-            emitted_terminal_result: seen_terminal_result,
-        })?;
-
-        if let Err(error) = stderr_handle.await {
-            tracing::debug!(
-                job_id = %self.config.job_id,
-                "Claude stderr task failed: {}", error
-            );
-        }
-
-        if !status.success() {
-            let code = status.code().unwrap_or(-1);
-            tracing::warn!(
-                job_id = %self.config.job_id,
-                exit_code = code,
-                "Claude process exited with non-zero status"
-            );
-
-            if !seen_terminal_result {
-                self.report_event(
-                    JobEventType::Result,
-                    &serde_json::json!({
-                        "status": "error",
-                        "exit_code": code,
-                        "session_id": session_id,
-                    }),
-                )
-                .await;
-            }
-
-            return Err(ClaudeSessionFailure {
-                error: WorkerError::ExecutionFailed {
-                    reason: format!("claude exited with code {}", code),
-                },
-                emitted_terminal_result: true,
-            });
-        }
-
-        if !seen_terminal_result {
-            self.report_event(
-                JobEventType::Result,
-                &serde_json::json!({
-                    "status": "completed",
-                    "session_id": session_id,
-                }),
-            )
-            .await;
-        }
-
-        Ok(ClaudeSessionResult { session_id })
-    }
-
-    async fn cleanup_failed_session_process(
-        &self,
-        child: &mut tokio::process::Child,
-        stderr_handle: Option<tokio::task::JoinHandle<()>>,
-        failure: ClaudeSessionFailure,
-    ) -> ClaudeSessionFailure {
-        if let Some(stderr_handle) = stderr_handle {
-            stderr_handle.abort();
-            if let Err(error) = stderr_handle.await
-                && !error.is_cancelled()
-            {
-                tracing::debug!(
-                    job_id = %self.config.job_id,
-                    "Claude stderr task failed during cleanup: {}",
-                    error
-                );
-            }
-        }
-
-        if let Err(error) = child.kill().await {
-            tracing::debug!(
-                job_id = %self.config.job_id,
-                "failed to kill Claude process during cleanup: {}",
-                error
-            );
-        }
-        if let Err(error) = child.wait().await {
-            tracing::debug!(
-                job_id = %self.config.job_id,
-                "failed to reap Claude process during cleanup: {}",
-                error
-            );
-        }
-
-        failure
     }
 }
