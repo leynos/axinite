@@ -30,42 +30,9 @@ struct ClaudeSessionFailure {
 impl ClaudeBridgeRuntime {
     /// Run the bridge: fetch job, spawn claude, stream events, handle follow-ups.
     pub async fn run(&self) -> Result<(), WorkerError> {
-        self.copy_auth_from_mount().await?;
-        self.write_permission_settings().await?;
-
-        let job = self.client.get_job().await?;
-
-        tracing::info!(
-            job_id = %self.config.job_id,
-            "Starting Claude Code bridge for: {}",
-            truncate(&job.description, 100)
-        );
-
-        let credentials = self.client.fetch_credentials().await?;
-        let mut extra_env = HashMap::new();
-        for credential in &credentials {
-            extra_env.insert(credential.env_var.clone(), credential.value.clone());
-        }
-        if !extra_env.is_empty() {
-            tracing::info!(
-                job_id = %self.config.job_id,
-                "Fetched {} credential(s) for child process injection",
-                extra_env.len()
-            );
-        }
-
-        let has_api_key = extra_env.contains_key("ANTHROPIC_API_KEY")
-            || std::env::var("ANTHROPIC_API_KEY").is_ok();
-        let has_oauth = extra_env.contains_key("CLAUDE_CODE_OAUTH_TOKEN")
-            || std::env::var("CLAUDE_CODE_OAUTH_TOKEN").is_ok();
-        if !has_api_key && !has_oauth {
-            tracing::warn!(
-                job_id = %self.config.job_id,
-                "No Claude Code auth available. Set ANTHROPIC_API_KEY or run \
-                 `claude login` on the host to authenticate."
-            );
-        }
-
+        self.preflight_fs().await?;
+        let (job_description, extra_env) = self.fetch_job_and_env().await?;
+        self.warn_if_missing_auth(&extra_env);
         self.client
             .report_status(&StatusUpdate::new(
                 WorkerState::Running,
@@ -74,51 +41,105 @@ impl ClaudeBridgeRuntime {
             ))
             .await?;
 
-        let session = match self
-            .run_claude_session(&job.description, None, &extra_env)
-            .await
-        {
-            Ok(session) => session,
+        let session_id = match self.run_initial_session(&job_description, &extra_env).await {
+            Ok(session_id) => session_id,
             Err(failure) => {
-                tracing::error!(
-                    job_id = %self.config.job_id,
-                    "Claude session failed: {}",
-                    failure.error
-                );
-                self.report_terminal_failure(1, &failure).await?;
-                return Ok(());
+                return self
+                    .finish_failure("Claude session failed", 1, &failure)
+                    .await;
             }
         };
-        let session_id = session.session_id;
 
+        match self.followup_loop(session_id, &extra_env).await {
+            Ok(iterations) => {
+                self.client
+                    .report_complete(&CompletionReport {
+                        success: true,
+                        message: Some("Claude Code session completed".to_string()),
+                        iterations,
+                    })
+                    .await
+            }
+            Err((iterations, failure)) => {
+                self.finish_failure("Follow-up Claude session failed", iterations, &failure)
+                    .await
+            }
+        }
+    }
+
+    async fn preflight_fs(&self) -> Result<(), WorkerError> {
+        self.copy_auth_from_mount().await?;
+        self.write_permission_settings().await
+    }
+
+    async fn fetch_job_and_env(&self) -> Result<(String, HashMap<String, String>), WorkerError> {
+        let job = self.client.get_job().await?;
+        tracing::info!(
+            job_id = %self.config.job_id,
+            "Starting Claude Code bridge for: {}",
+            truncate(&job.description, 100)
+        );
+
+        let credentials = self.client.fetch_credentials().await?;
+        let extra_env = self.build_child_env(&credentials);
+        if !extra_env.is_empty() {
+            tracing::info!(
+                job_id = %self.config.job_id,
+                "Fetched {} credential(s) for child process injection",
+                extra_env.len()
+            );
+        }
+
+        Ok((job.description, extra_env))
+    }
+
+    fn build_child_env(
+        &self,
+        credentials: &[crate::worker::api::CredentialResponse],
+    ) -> HashMap<String, String> {
+        credentials
+            .iter()
+            .map(|credential| (credential.env_var.clone(), credential.value.clone()))
+            .collect()
+    }
+
+    fn warn_if_missing_auth(&self, env: &HashMap<String, String>) {
+        let has_api_key =
+            env.contains_key("ANTHROPIC_API_KEY") || std::env::var("ANTHROPIC_API_KEY").is_ok();
+        let has_oauth = env.contains_key("CLAUDE_CODE_OAUTH_TOKEN")
+            || std::env::var("CLAUDE_CODE_OAUTH_TOKEN").is_ok();
+        if has_api_key || has_oauth {
+            return;
+        }
+        tracing::warn!(
+            job_id = %self.config.job_id,
+            "No Claude Code auth available. Set ANTHROPIC_API_KEY or run \
+             `claude login` on the host to authenticate."
+        );
+    }
+
+    async fn run_initial_session(
+        &self,
+        prompt: &str,
+        env: &HashMap<String, String>,
+    ) -> Result<Option<String>, ClaudeSessionFailure> {
+        self.run_claude_session(prompt, None, env)
+            .await
+            .map(|session| session.session_id)
+    }
+
+    async fn followup_loop(
+        &self,
+        session_id: Option<String>,
+        env: &HashMap<String, String>,
+    ) -> Result<u32, (u32, ClaudeSessionFailure)> {
         let mut iteration = 1u32;
         loop {
-            match self.poll_for_prompt().await {
-                Ok(Some(prompt)) => {
-                    if prompt.done {
-                        tracing::info!(job_id = %self.config.job_id, "Orchestrator signaled done");
-                        break;
-                    }
-                    iteration += 1;
-                    tracing::info!(
-                        job_id = %self.config.job_id,
-                        "Got follow-up prompt, resuming session"
-                    );
-                    if let Err(failure) = self
-                        .run_claude_session(&prompt.content, session_id.as_deref(), &extra_env)
-                        .await
-                    {
-                        tracing::error!(
-                            job_id = %self.config.job_id,
-                            "Follow-up Claude session failed: {}",
-                            failure.error
-                        );
-                        self.report_terminal_failure(iteration, &failure).await?;
-                        return Ok(());
-                    }
-                }
+            let prompt = match self.poll_for_prompt().await {
+                Ok(Some(prompt)) => prompt,
                 Ok(None) => {
                     tokio::time::sleep(PROMPT_POLL_INTERVAL).await;
+                    continue;
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -126,18 +147,42 @@ impl ClaudeBridgeRuntime {
                         "Prompt polling error: {}", error
                     );
                     tokio::time::sleep(PROMPT_POLL_ERROR_INTERVAL).await;
+                    continue;
                 }
+            };
+
+            if prompt.done {
+                tracing::info!(job_id = %self.config.job_id, "Orchestrator signaled done");
+                return Ok(iteration);
+            }
+
+            iteration += 1;
+            tracing::info!(
+                job_id = %self.config.job_id,
+                "Got follow-up prompt, resuming session"
+            );
+
+            if let Err(failure) = self
+                .run_claude_session(&prompt.content, session_id.as_deref(), env)
+                .await
+            {
+                return Err((iteration, failure));
             }
         }
+    }
 
-        self.client
-            .report_complete(&CompletionReport {
-                success: true,
-                message: Some("Claude Code session completed".to_string()),
-                iterations: iteration,
-            })
-            .await?;
-
+    async fn finish_failure(
+        &self,
+        log_message: &str,
+        iterations: u32,
+        failure: &ClaudeSessionFailure,
+    ) -> Result<(), WorkerError> {
+        tracing::error!(
+            job_id = %self.config.job_id,
+            "{log_message}: {}",
+            failure.error
+        );
+        self.report_terminal_failure(iterations, failure).await?;
         Ok(())
     }
 
