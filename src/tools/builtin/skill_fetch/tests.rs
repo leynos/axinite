@@ -77,6 +77,17 @@ fn test_validate_resolved_addrs_cases(
     }
 }
 
+#[test]
+fn test_validate_resolved_addrs_rejects_empty_results() {
+    let err = validate_resolved_addrs("example.com", &Vec::<SocketAddr>::new())
+        .expect_err("empty DNS resolution results should be rejected");
+    assert!(
+        err.to_string()
+            .contains("DNS resolution returned no addresses"),
+        "expected empty-resolution error, got: {err}",
+    );
+}
+
 #[rstest]
 #[case::stored(
     build_zip_entry_store as ZipEntryBuilder,
