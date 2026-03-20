@@ -303,67 +303,44 @@ async fn remote_tool_execute_rejects_approval_gated_tools(test_state: Orchestrat
 }
 
 #[rstest]
+#[case(
+    "remote_tool_execute_invalid_parameters",
+    ExecuteErrorKind::InvalidParameters,
+    StatusCode::BAD_REQUEST
+)]
+#[case(
+    "remote_tool_execute_not_authorized",
+    ExecuteErrorKind::NotAuthorized,
+    StatusCode::FORBIDDEN
+)]
+#[case(
+    "remote_tool_execute_rate_limited",
+    ExecuteErrorKind::RateLimited,
+    StatusCode::TOO_MANY_REQUESTS
+)]
+#[case(
+    "remote_tool_execute_other_error",
+    ExecuteErrorKind::ExecutionFailed,
+    StatusCode::BAD_GATEWAY
+)]
 #[tokio::test]
-async fn remote_tool_execute_returns_400_on_invalid_parameters(test_state: OrchestratorState) {
+async fn remote_tool_execute_maps_error_statuses(
+    test_state: OrchestratorState,
+    #[case] tool_name: &'static str,
+    #[case] error_kind: ExecuteErrorKind,
+    #[case] expected_status: StatusCode,
+) {
     let status = execute_remote_tool_status(
         test_state,
         Arc::new(ErrorTool {
-            name: "remote_tool_execute_invalid_parameters",
-            error_kind: ExecuteErrorKind::InvalidParameters,
+            name: tool_name,
+            error_kind,
         }),
-        "remote_tool_execute_invalid_parameters",
+        tool_name,
     )
     .await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-}
-
-#[rstest]
-#[tokio::test]
-async fn remote_tool_execute_returns_403_on_not_authorized(test_state: OrchestratorState) {
-    let status = execute_remote_tool_status(
-        test_state,
-        Arc::new(ErrorTool {
-            name: "remote_tool_execute_not_authorized",
-            error_kind: ExecuteErrorKind::NotAuthorized,
-        }),
-        "remote_tool_execute_not_authorized",
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::FORBIDDEN);
-}
-
-#[rstest]
-#[tokio::test]
-async fn remote_tool_execute_returns_429_on_rate_limited(test_state: OrchestratorState) {
-    let status = execute_remote_tool_status(
-        test_state,
-        Arc::new(ErrorTool {
-            name: "remote_tool_execute_rate_limited",
-            error_kind: ExecuteErrorKind::RateLimited,
-        }),
-        "remote_tool_execute_rate_limited",
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
-}
-
-#[rstest]
-#[tokio::test]
-async fn remote_tool_execute_returns_502_on_other_errors(test_state: OrchestratorState) {
-    let status = execute_remote_tool_status(
-        test_state,
-        Arc::new(ErrorTool {
-            name: "remote_tool_execute_other_error",
-            error_kind: ExecuteErrorKind::ExecutionFailed,
-        }),
-        "remote_tool_execute_other_error",
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    assert_eq!(status, expected_status);
 }
 
 #[rstest]
