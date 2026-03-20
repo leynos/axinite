@@ -94,6 +94,7 @@ impl Tool for StubTool {
     }
 }
 
+/// Hosted-safe fixture whose approval requirement depends on input params.
 pub(crate) struct ParamAwareHostedTool;
 
 #[async_trait]
@@ -143,7 +144,9 @@ impl Tool for ParamAwareHostedTool {
     }
 }
 
+/// Fixture tool that records the `JobContext.job_id` seen during execution.
 pub(crate) struct JobAwareTool {
+    /// Shared slot used by tests to observe the executed job id.
     pub(crate) seen_job_id: Arc<Mutex<Option<Uuid>>>,
 }
 
@@ -180,16 +183,24 @@ impl Tool for JobAwareTool {
     }
 }
 
+/// Fixed execution-error modes used to verify HTTP status mapping in tests.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum ExecuteErrorKind {
+    /// Simulate invalid tool parameters and expect `400 Bad Request`.
     InvalidParameters,
+    /// Simulate an authorization failure and expect `403 Forbidden`.
     NotAuthorized,
+    /// Simulate rate limiting and expect `429 Too Many Requests`.
     RateLimited,
+    /// Simulate a generic execution failure and expect `502 Bad Gateway`.
     ExecutionFailed,
 }
 
+/// Fixture tool that returns a chosen [`ExecuteErrorKind`] when executed.
 pub(crate) struct ErrorTool {
+    /// Hosted tool name exposed through the remote-tool execution route.
     pub(crate) name: &'static str,
+    /// Specific execution failure to surface for status-mapping assertions.
     pub(crate) error_kind: ExecuteErrorKind,
 }
 
