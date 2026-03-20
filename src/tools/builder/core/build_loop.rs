@@ -11,7 +11,7 @@ const COMPLETION_MARKERS: [&str; 5] = [
 ];
 const FAILURE_MARKERS: [&str; 3] = ["error:", "error[", "failed"];
 
-struct BuildLoopInputs {
+struct BuildLoopParams {
     build_id: Uuid,
     started_at: DateTime<Utc>,
     requirement: BuildRequirement,
@@ -25,6 +25,11 @@ struct BuildLoopState {
     tools_executed: bool,
     consecutive_text_responses: u32,
     last_error: Option<String>,
+}
+
+struct ReasoningBundle {
+    reasoning: Reasoning,
+    ctx: ReasoningContext,
 }
 
 fn is_completion_signal(lower: &str) -> bool {
@@ -70,33 +75,26 @@ impl LlmSoftwareBuilder {
         ));
     }
 
-    async fn prepare_reasoning_context(
-        &self,
-        requirement: &BuildRequirement,
-    ) -> (Reasoning, ReasoningContext, Vec<BuildLog>) {
+    async fn prepare_reasoning_context(&self, inputs: &BuildLoopParams) -> ReasoningBundle {
         let reasoning =
             Reasoning::new(self.llm.clone()).with_model_name(self.llm.active_model_name());
 
         let tool_defs = self.get_build_tools().await;
         let mut reason_ctx = ReasoningContext::new().with_tools(tool_defs);
 
-        reason_ctx
-            .messages
-            .push(ChatMessage::system(self.build_system_prompt(requirement)));
+        reason_ctx.messages.push(ChatMessage::system(
+            self.build_system_prompt(&inputs.requirement),
+        ));
 
-        let logs = vec![BuildLog {
-            timestamp: Utc::now(),
-            phase: BuildPhase::Analyzing,
-            message: "Starting build process".into(),
-            details: None,
-        }];
-
-        (reasoning, reason_ctx, logs)
+        ReasoningBundle {
+            reasoning,
+            ctx: reason_ctx,
+        }
     }
 
     fn fail_max_iterations(
         &self,
-        inputs: &BuildLoopInputs,
+        inputs: &BuildLoopParams,
         state: &mut BuildLoopState,
     ) -> BuildResult {
         state.logs.push(BuildLog {
@@ -125,7 +123,7 @@ impl LlmSoftwareBuilder {
 
     fn fail_planning_stuck(
         &self,
-        inputs: &BuildLoopInputs,
+        inputs: &BuildLoopParams,
         state: &mut BuildLoopState,
     ) -> BuildResult {
         state.logs.push(BuildLog {
@@ -158,7 +156,7 @@ impl LlmSoftwareBuilder {
 
     async fn build_success_result(
         &self,
-        inputs: &BuildLoopInputs,
+        inputs: &BuildLoopParams,
         state: &mut BuildLoopState,
         response: String,
     ) -> BuildResult {
@@ -197,7 +195,7 @@ impl LlmSoftwareBuilder {
     async fn handle_text_response(
         &self,
         response: String,
-        inputs: &BuildLoopInputs,
+        inputs: &BuildLoopParams,
         state: &mut BuildLoopState,
         reason_ctx: &mut ReasoningContext,
     ) -> std::ops::ControlFlow<BuildResult> {
@@ -230,13 +228,14 @@ impl LlmSoftwareBuilder {
 
     async fn handle_tool_calls(
         &self,
-        inputs: &BuildLoopInputs,
-        reason_ctx: &mut ReasoningContext,
+        inputs: &BuildLoopParams,
+        bundle: &mut ReasoningBundle,
         state: &mut BuildLoopState,
         tool_calls: Vec<ToolCall>,
         content: Option<String>,
     ) {
-        reason_ctx
+        bundle
+            .ctx
             .messages
             .push(ChatMessage::assistant_with_tool_calls(
                 content,
@@ -259,7 +258,7 @@ impl LlmSoftwareBuilder {
                     let output_str =
                         serde_json::to_string_pretty(&output.result).unwrap_or_default();
 
-                    reason_ctx.messages.push(ChatMessage::tool_result(
+                    bundle.ctx.messages.push(ChatMessage::tool_result(
                         &tc.id,
                         &tc.name,
                         output_str.clone(),
@@ -278,7 +277,7 @@ impl LlmSoftwareBuilder {
                     let error_msg = format!("Tool error: {}", e);
                     state.last_error = Some(error_msg.clone());
 
-                    reason_ctx.messages.push(ChatMessage::tool_result(
+                    bundle.ctx.messages.push(ChatMessage::tool_result(
                         &tc.id,
                         &tc.name,
                         format!("Error: {}", e),
@@ -303,30 +302,29 @@ impl LlmSoftwareBuilder {
         requirement: &BuildRequirement,
         project_dir: &Path,
     ) -> Result<BuildResult, AgentToolError> {
-        let build_id = Uuid::new_v4();
-        let iteration = 0u32;
-        let (reasoning, mut reason_ctx, logs) = self.prepare_reasoning_context(requirement).await;
-        let started_at = logs
-            .first()
-            .map(|log| log.timestamp)
-            .unwrap_or_else(Utc::now);
-        let inputs = BuildLoopInputs {
-            build_id,
-            started_at,
+        let inputs = BuildLoopParams {
+            build_id: Uuid::new_v4(),
+            started_at: Utc::now(),
             requirement: requirement.clone(),
             project_dir: project_dir.to_path_buf(),
         };
         let mut state = BuildLoopState {
-            logs,
-            iteration,
+            logs: vec![BuildLog {
+                timestamp: inputs.started_at,
+                phase: BuildPhase::Analyzing,
+                message: "Starting build process".into(),
+                details: None,
+            }],
+            iteration: 0,
             current_phase: BuildPhase::Scaffolding,
-            last_error: None,
             tools_executed: false,
             consecutive_text_responses: 0,
+            last_error: None,
         };
+        let mut bundle = self.prepare_reasoning_context(&inputs).await;
 
         // Add initial user message - directive to force immediate tool use
-        reason_ctx.messages.push(ChatMessage::user(format!(
+        bundle.ctx.messages.push(ChatMessage::user(format!(
             "Build the {} in directory: {}\n\n\
              Requirements:\n- {}\n\n\
              IMPORTANT: Use the write_file tool NOW to create Cargo.toml. \
@@ -344,11 +342,12 @@ impl LlmSoftwareBuilder {
             }
 
             // Refresh tool definitions each iteration
-            reason_ctx.available_tools = self.get_build_tools().await;
+            bundle.ctx.available_tools = self.get_build_tools().await;
 
             // Get response from LLM (may be text or tool calls)
-            let result = reasoning
-                .respond_with_tools(&reason_ctx)
+            let result = bundle
+                .reasoning
+                .respond_with_tools(&bundle.ctx)
                 .await
                 .map_err(|e| {
                     AgentToolError::BuilderFailed(format!("LLM response failed: {}", e))
@@ -357,7 +356,7 @@ impl LlmSoftwareBuilder {
             match result.result {
                 RespondResult::Text(response) => {
                     match self
-                        .handle_text_response(response, &inputs, &mut state, &mut reason_ctx)
+                        .handle_text_response(response, &inputs, &mut state, &mut bundle.ctx)
                         .await
                     {
                         std::ops::ControlFlow::Break(done) => return Ok(done),
@@ -369,14 +368,8 @@ impl LlmSoftwareBuilder {
                     content,
                 } => {
                     state.tools_executed = true;
-                    self.handle_tool_calls(
-                        &inputs,
-                        &mut reason_ctx,
-                        &mut state,
-                        tool_calls,
-                        content,
-                    )
-                    .await;
+                    self.handle_tool_calls(&inputs, &mut bundle, &mut state, tool_calls, content)
+                        .await;
                 }
             }
         }
