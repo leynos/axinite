@@ -4,11 +4,13 @@ use std::sync::Arc;
 
 use crate::secrets::SecretsStore;
 use crate::tools::wasm::{
-    Capabilities, OAuthRefreshConfig, ResourceLimits, WasmError, WasmStorageError, WasmToolRuntime,
-    WasmToolStore, WasmToolWrapper,
+    Capabilities, OAuthRefreshConfig, PreparedModule, ResourceLimits, WasmError, WasmStorageError,
+    WasmToolRuntime, WasmToolStore, WasmToolWrapper,
 };
 
 use super::ToolRegistry;
+
+type CompiledWasm = Arc<PreparedModule>;
 
 /// Error when registering a WASM tool from storage.
 #[derive(Debug, thiserror::Error)]
@@ -43,38 +45,47 @@ pub struct WasmToolRegistration<'a> {
 }
 
 impl ToolRegistry {
-    /// Register a WASM tool from bytes.
-    ///
-    /// This validates and compiles the WASM component, then registers it as a tool.
-    /// The tool will be executed in a sandboxed environment with the given capabilities.
-    pub async fn register_wasm(&self, reg: WasmToolRegistration<'_>) -> Result<(), WasmError> {
-        let prepared = reg
-            .runtime
-            .prepare(reg.name, reg.wasm_bytes, reg.limits)
-            .await?;
+    async fn compile_wasm_artifact(
+        reg: &WasmToolRegistration<'_>,
+    ) -> Result<CompiledWasm, WasmError> {
+        reg.runtime
+            .prepare(reg.name, reg.wasm_bytes, reg.limits.clone())
+            .await
+    }
 
-        let credential_mappings: Vec<crate::secrets::CredentialMapping> = reg
-            .capabilities
-            .http
-            .as_ref()
-            .map(|http| http.credentials.values().cloned().collect())
-            .unwrap_or_default();
+    fn build_wasm_wrapper(
+        runtime: &Arc<WasmToolRuntime>,
+        compiled: &CompiledWasm,
+        capabilities: &Capabilities,
+    ) -> Result<WasmToolWrapper, WasmError> {
+        Ok(WasmToolWrapper::new(
+            Arc::clone(runtime),
+            Arc::clone(compiled),
+            capabilities.clone(),
+        ))
+    }
 
-        let mut wrapper = WasmToolWrapper::new(Arc::clone(reg.runtime), prepared, reg.capabilities);
+    fn resolve_metadata_overrides(
+        mut wrapper: WasmToolWrapper,
+        name: &str,
+        description: Option<&str>,
+        schema: Option<serde_json::Value>,
+    ) -> Result<WasmToolWrapper, WasmError> {
+        let mut schema = schema;
 
-        if reg.description.is_none() || reg.schema.is_none() {
+        if description.is_none() || schema.is_none() {
             match wrapper.exported_metadata() {
-                Ok((description, schema)) => {
-                    if reg.description.is_none() {
-                        wrapper = wrapper.with_description(description);
+                Ok((exported_description, exported_schema)) => {
+                    if description.is_none() {
+                        wrapper = wrapper.with_description(exported_description);
                     }
-                    if reg.schema.is_none() {
-                        wrapper = wrapper.with_schema(schema);
+                    if schema.is_none() {
+                        schema = Some(exported_schema);
                     }
                 }
                 Err(error) => {
                     tracing::debug!(
-                        name = reg.name,
+                        name = name,
                         %error,
                         "Failed to recover exported WASM metadata; using placeholders or overrides"
                     );
@@ -82,24 +93,66 @@ impl ToolRegistry {
             }
         }
 
-        if let Some(desc) = reg.description {
-            wrapper = wrapper.with_description(desc);
+        if let Some(description) = description {
+            wrapper = wrapper.with_description(description);
         }
-        if let Some(schema) = reg.schema {
+        if let Some(schema) = schema {
             wrapper = wrapper.with_schema(schema);
         }
-        if let Some(store) = reg.secrets_store {
-            wrapper = wrapper.with_secrets_store(store);
+
+        Ok(wrapper)
+    }
+
+    fn apply_security_integrations(
+        mut wrapper: WasmToolWrapper,
+        secrets_store: Option<&Arc<dyn SecretsStore + Send + Sync>>,
+        oauth_refresh: Option<&OAuthRefreshConfig>,
+    ) -> WasmToolWrapper {
+        if let Some(store) = secrets_store {
+            wrapper = wrapper.with_secrets_store(Arc::clone(store));
         }
-        if let Some(oauth) = reg.oauth_refresh {
-            wrapper = wrapper.with_oauth_refresh(oauth);
+        if let Some(oauth) = oauth_refresh {
+            wrapper = wrapper.with_oauth_refresh(oauth.clone());
         }
+        wrapper
+    }
+
+    async fn register_wrapper_and_credentials(
+        &self,
+        name: &str,
+        wrapper: WasmToolWrapper,
+        capabilities: &Capabilities,
+    ) -> Result<(), WasmError> {
+        let credential_mappings: Vec<crate::secrets::CredentialMapping> = capabilities
+            .http
+            .as_ref()
+            .map(|http| http.credentials.values().cloned().collect())
+            .unwrap_or_default();
 
         self.register(Arc::new(wrapper)).await;
-        self.register_wasm_credential_mappings(reg.name, credential_mappings);
+        self.register_wasm_credential_mappings(name, credential_mappings);
 
-        tracing::debug!(name = reg.name, "Registered WASM tool");
+        tracing::debug!(name = name, "Registered WASM tool");
         Ok(())
+    }
+
+    /// Register a WASM tool from bytes.
+    ///
+    /// This validates and compiles the WASM component, then registers it as a tool.
+    /// The tool will be executed in a sandboxed environment with the given capabilities.
+    pub async fn register_wasm(&self, reg: WasmToolRegistration<'_>) -> Result<(), WasmError> {
+        let compiled = Self::compile_wasm_artifact(&reg).await?;
+        let wrapper = Self::build_wasm_wrapper(reg.runtime, &compiled, &reg.capabilities)?;
+        let wrapper =
+            Self::resolve_metadata_overrides(wrapper, reg.name, reg.description, reg.schema)?;
+        let wrapper = Self::apply_security_integrations(
+            wrapper,
+            reg.secrets_store.as_ref(),
+            reg.oauth_refresh.as_ref(),
+        );
+
+        self.register_wrapper_and_credentials(reg.name, wrapper, &reg.capabilities)
+            .await
     }
 
     /// Register a WASM tool from database storage.
