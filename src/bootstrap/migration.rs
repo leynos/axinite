@@ -54,6 +54,85 @@ pub enum MigrationError {
     Io(String),
 }
 
+async fn migrate_legacy_settings(
+    store: &dyn crate::db::Database,
+    user_id: &str,
+    legacy_settings_path: &Path,
+) -> Result<(), MigrationError> {
+    let settings = crate::settings::Settings::load_from(legacy_settings_path);
+    let db_map = settings.to_db_map();
+    if !db_map.is_empty() {
+        store
+            .set_all_settings(user_id, &db_map)
+            .await
+            .map_err(|error| {
+                MigrationError::Database(format!("Failed to write settings to DB: {}", error))
+            })?;
+        tracing::info!("Migrated {} settings to database", db_map.len());
+    }
+
+    if let Some(ref url) = settings.database_url {
+        save_database_url(url)
+            .map_err(|error| MigrationError::Io(format!("Failed to write .env: {}", error)))?;
+        tracing::info!("Wrote DATABASE_URL to {}", ironclaw_env_path().display());
+    }
+
+    Ok(())
+}
+
+fn read_optional_json_file(path: &Path, file_name: &str) -> Option<serde_json::Value> {
+    if !path.exists() {
+        return None;
+    }
+
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) => {
+            tracing::warn!("Failed to read {}: {}", file_name, error);
+            return None;
+        }
+    };
+
+    match serde_json::from_str::<serde_json::Value>(&content) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::warn!("Failed to parse {}: {}", file_name, error);
+            None
+        }
+    }
+}
+
+async fn migrate_json_sidecar(
+    store: &dyn crate::db::Database,
+    user_id: &str,
+    path: &Path,
+    file_name: &str,
+    setting_key: &str,
+    db_error_message: &str,
+    success_message: &str,
+) -> Result<(), MigrationError> {
+    let Some(value) = read_optional_json_file(path, file_name) else {
+        return Ok(());
+    };
+
+    store
+        .set_setting(user_id, setting_key, &value)
+        .await
+        .map_err(|error| MigrationError::Database(format!("{}: {}", db_error_message, error)))?;
+    tracing::info!("{}", success_message);
+    rename_to_migrated(path);
+
+    Ok(())
+}
+
+fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
+    let old_bootstrap = ironclaw_dir.join("bootstrap.json");
+    if old_bootstrap.exists() {
+        rename_to_migrated(&old_bootstrap);
+        tracing::info!("Renamed old bootstrap.json to .migrated");
+    }
+}
+
 /// One-time migration of legacy `~/.ironclaw/settings.json` into the database.
 ///
 /// Only runs when a `settings.json` exists on disk AND the DB has no settings
@@ -84,87 +163,34 @@ pub async fn migrate_disk_to_db(
 
     tracing::info!("Migrating disk settings to database...");
 
-    let settings = crate::settings::Settings::load_from(&legacy_settings_path);
-    let db_map = settings.to_db_map();
-    if !db_map.is_empty() {
-        store
-            .set_all_settings(user_id, &db_map)
-            .await
-            .map_err(|error| {
-                MigrationError::Database(format!("Failed to write settings to DB: {}", error))
-            })?;
-        tracing::info!("Migrated {} settings to database", db_map.len());
-    }
-
-    if let Some(ref url) = settings.database_url {
-        save_database_url(url)
-            .map_err(|error| MigrationError::Io(format!("Failed to write .env: {}", error)))?;
-        tracing::info!("Wrote DATABASE_URL to {}", ironclaw_env_path().display());
-    }
+    migrate_legacy_settings(store, user_id, &legacy_settings_path).await?;
 
     let mcp_path = ironclaw_dir.join("mcp-servers.json");
-    if mcp_path.exists() {
-        match std::fs::read_to_string(&mcp_path) {
-            Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
-                Ok(value) => {
-                    store
-                        .set_setting(user_id, "mcp_servers", &value)
-                        .await
-                        .map_err(|error| {
-                            MigrationError::Database(format!(
-                                "Failed to write MCP servers to DB: {}",
-                                error
-                            ))
-                        })?;
-                    tracing::info!("Migrated mcp-servers.json to database");
-
-                    rename_to_migrated(&mcp_path);
-                }
-                Err(error) => {
-                    tracing::warn!("Failed to parse mcp-servers.json: {}", error);
-                }
-            },
-            Err(error) => {
-                tracing::warn!("Failed to read mcp-servers.json: {}", error);
-            }
-        }
-    }
+    migrate_json_sidecar(
+        store,
+        user_id,
+        &mcp_path,
+        "mcp-servers.json",
+        "mcp_servers",
+        "Failed to write MCP servers to DB",
+        "Migrated mcp-servers.json to database",
+    )
+    .await?;
 
     let session_path = ironclaw_dir.join("session.json");
-    if session_path.exists() {
-        match std::fs::read_to_string(&session_path) {
-            Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
-                Ok(value) => {
-                    store
-                        .set_setting(user_id, "nearai.session_token", &value)
-                        .await
-                        .map_err(|error| {
-                            MigrationError::Database(format!(
-                                "Failed to write session to DB: {}",
-                                error
-                            ))
-                        })?;
-                    tracing::info!("Migrated session.json to database");
-
-                    rename_to_migrated(&session_path);
-                }
-                Err(error) => {
-                    tracing::warn!("Failed to parse session.json: {}", error);
-                }
-            },
-            Err(error) => {
-                tracing::warn!("Failed to read session.json: {}", error);
-            }
-        }
-    }
+    migrate_json_sidecar(
+        store,
+        user_id,
+        &session_path,
+        "session.json",
+        "nearai.session_token",
+        "Failed to write session to DB",
+        "Migrated session.json to database",
+    )
+    .await?;
 
     rename_to_migrated(&legacy_settings_path);
-
-    let old_bootstrap = ironclaw_dir.join("bootstrap.json");
-    if old_bootstrap.exists() {
-        rename_to_migrated(&old_bootstrap);
-        tracing::info!("Renamed old bootstrap.json to .migrated");
-    }
+    rename_legacy_bootstrap(&ironclaw_dir);
 
     tracing::info!("Disk-to-DB migration complete");
     Ok(())
