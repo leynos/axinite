@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
+use crate::channels::ChannelManager;
 use crate::channels::IncomingMessage;
 use crate::channels::web::types::SseEvent;
 use crate::context::ContextManager;
@@ -45,4 +46,14 @@ pub fn register_job_tools(registry: &ToolRegistry, args: JobToolsArgs) {
         prompt_queue: args.prompt_queue,
         secrets_store: args.secrets_store,
     });
+}
+
+/// Register the core runtime tools required by the main agent loop.
+pub async fn wire_core_runtime_tools(
+    registry: &ToolRegistry,
+    job_args: JobToolsArgs,
+    channel_manager: Arc<ChannelManager>,
+) {
+    register_job_tools(registry, job_args);
+    registry.register_message_tools(channel_manager).await;
 }
