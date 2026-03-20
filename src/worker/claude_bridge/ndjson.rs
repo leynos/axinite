@@ -55,22 +55,56 @@ pub struct MessageWrapper {
     pub content: Option<Vec<ContentBlock>>,
 }
 
+/// One content block nested under a Claude stream `message.content` array.
+///
+/// The serialized `type` field determines which optional fields are meaningful:
+/// `text` blocks use `text`, `tool_use` blocks use `name`/`id`/`input`, and
+/// `tool_result` blocks use `tool_use_id`/`content`. Missing fields default to
+/// `None` during deserialization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentBlock {
+    /// Required block kind, serialized as `type`.
+    ///
+    /// Common values are `text`, `tool_use`, and `tool_result`.
     #[serde(rename = "type")]
     pub block_type: String,
+    /// Optional text payload for `text` blocks.
     #[serde(default)]
     pub text: Option<String>,
+    /// Optional tool name for `tool_use` blocks.
     #[serde(default)]
     pub name: Option<String>,
+    /// Optional tool-use identifier emitted with `tool_use` blocks.
     #[serde(default)]
     pub id: Option<String>,
+    /// Optional JSON input blob for `tool_use` blocks.
     #[serde(default)]
     pub input: Option<serde_json::Value>,
+    /// Optional JSON output/content blob, typically used by `tool_result`.
     #[serde(default)]
     pub content: Option<serde_json::Value>,
+    /// Optional tool-use identifier referenced by `tool_result` blocks.
     #[serde(default)]
     pub tool_use_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EventType<'a> {
+    System,
+    Assistant,
+    User,
+    Result,
+    Unknown(&'a str),
+}
+
+fn classify_event(event_type: &str) -> EventType<'_> {
+    match event_type {
+        "system" => EventType::System,
+        "assistant" => EventType::Assistant,
+        "user" => EventType::User,
+        "result" => EventType::Result,
+        other => EventType::Unknown(other),
+    }
 }
 
 /// Convert a Claude stream event into one or more event payloads for the orchestrator.
@@ -173,9 +207,9 @@ fn result_payloads(event: &ClaudeStreamEvent) -> Vec<JobEventPayload> {
 }
 
 pub(crate) fn stream_event_to_payloads(event: &ClaudeStreamEvent) -> Vec<JobEventPayload> {
-    match event.event_type.as_str() {
-        "system" => vec![status_started(event.session_id.as_deref())],
-        "assistant" => {
+    match classify_event(&event.event_type) {
+        EventType::System => vec![status_started(event.session_id.as_deref())],
+        EventType::Assistant => {
             let Some(blocks) = event
                 .message
                 .as_ref()
@@ -185,7 +219,7 @@ pub(crate) fn stream_event_to_payloads(event: &ClaudeStreamEvent) -> Vec<JobEven
             };
             map_assistant_blocks(blocks)
         }
-        "user" => {
+        EventType::User => {
             let Some(blocks) = event
                 .message
                 .as_ref()
@@ -195,8 +229,8 @@ pub(crate) fn stream_event_to_payloads(event: &ClaudeStreamEvent) -> Vec<JobEven
             };
             map_user_blocks(blocks)
         }
-        "result" => result_payloads(event),
-        other => vec![status_unknown(other)],
+        EventType::Result => result_payloads(event),
+        EventType::Unknown(raw_type) => vec![status_unknown(raw_type)],
     }
 }
 

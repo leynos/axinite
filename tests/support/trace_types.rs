@@ -1,7 +1,8 @@
 //! Trace data types and JSON loading helpers for replay-based LLM tests.
 
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use ironclaw::llm::recording::{HttpExchange, MemorySnapshotEntry, TraceResponse, TraceStep};
@@ -76,8 +77,8 @@ pub struct TraceExpects {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_responses: Option<usize>,
     /// Tool result preview must contain substring (tool_name -> substring).
-    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
-    pub tool_results_contain: std::collections::HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub tool_results_contain: HashMap<String, String>,
     /// Tools must have been called in this relative order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tools_order: Vec<String>,
@@ -107,20 +108,32 @@ struct RawLlmTrace {
 }
 
 impl<'de> Deserialize<'de> for LlmTrace {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let raw = RawLlmTrace::deserialize(deserializer)?;
-        let raw_steps = raw.steps.clone();
-        let turns = if !raw.turns.is_empty() {
-            raw.turns
-        } else if !raw.steps.is_empty() {
+        let RawLlmTrace {
+            model_name,
+            steps,
+            turns,
+            memory_snapshot,
+            http_exchanges,
+            expects,
+        } = raw;
+        let raw_steps = if turns.is_empty() {
+            steps.clone()
+        } else {
+            Vec::new()
+        };
+        let turns = if !turns.is_empty() {
+            turns
+        } else if !steps.is_empty() {
             let mut turns = Vec::new();
             let mut current_input = "(test input)".to_string();
             let mut current_steps: Vec<TraceStep> = Vec::new();
 
-            for step in raw.steps {
+            for step in steps {
                 if let TraceResponse::UserInput { ref content } = step.response {
                     if !current_steps.is_empty() {
                         turns.push(TraceTurn {
@@ -149,11 +162,11 @@ impl<'de> Deserialize<'de> for LlmTrace {
         };
 
         Ok(LlmTrace {
-            model_name: raw.model_name,
+            model_name,
             turns,
-            memory_snapshot: raw.memory_snapshot,
-            http_exchanges: raw.http_exchanges,
-            expects: raw.expects,
+            memory_snapshot,
+            http_exchanges,
+            expects,
             steps: raw_steps,
         })
     }
@@ -193,9 +206,7 @@ impl LlmTrace {
     }
 
     /// Load a trace from a JSON file asynchronously.
-    pub async fn from_file_async(
-        path: impl AsRef<Path>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn from_file_async(path: impl AsRef<Path>) -> Result<Self> {
         let contents = tokio::fs::read_to_string(path).await?;
         let trace: Self = serde_json::from_str(&contents)?;
         Ok(trace)

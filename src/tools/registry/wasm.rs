@@ -15,9 +15,11 @@ type CompiledWasm = Arc<PreparedModule>;
 /// Error when registering a WASM tool from storage.
 #[derive(Debug, thiserror::Error)]
 pub enum WasmRegistrationError {
+    /// Storage-related registration failure from [`WasmStorageError`].
     #[error("Storage error: {0}")]
     Storage(#[from] WasmStorageError),
 
+    /// WASM compilation or wrapper-registration failure from [`WasmError`].
     #[error("WASM error: {0}")]
     Wasm(#[from] WasmError),
 }
@@ -176,6 +178,8 @@ impl ToolRegistry {
             .map_err(WasmRegistrationError::Storage)?;
 
         let capabilities = stored_caps.map(|c| c.to_capabilities()).unwrap_or_default();
+        let description = normalized_description(&tool_with_binary.tool.description);
+        let schema = normalized_schema(tool_with_binary.tool.parameters_schema.clone());
 
         self.register_wasm(WasmToolRegistration {
             name: &tool_with_binary.tool.name,
@@ -183,8 +187,8 @@ impl ToolRegistry {
             runtime,
             capabilities,
             limits: None,
-            description: Some(&tool_with_binary.tool.description),
-            schema: Some(tool_with_binary.tool.parameters_schema.clone()),
+            description,
+            schema,
             secrets_store: self.secrets_store.clone(),
             oauth_refresh: None,
         })
@@ -193,7 +197,6 @@ impl ToolRegistry {
 
         tracing::debug!(
             name = tool_with_binary.tool.name,
-            user_id = user_id,
             trust_level = %tool_with_binary.tool.trust_level,
             "Registered WASM tool from storage"
         );
@@ -217,5 +220,25 @@ impl ToolRegistry {
                 "Added credential mappings from WASM tool"
             );
         }
+    }
+}
+
+fn normalized_description(description: &str) -> Option<&str> {
+    let trimmed = description.trim();
+    (!trimmed.is_empty()).then_some(trimmed)
+}
+
+fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
+    match schema {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
+                None
+            } else {
+                Some(serde_json::Value::String(value))
+            }
+        }
+        value => Some(value),
     }
 }
