@@ -47,7 +47,8 @@ async fn write_chunk_search() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Write a long architecture document and search it")
         .await;
@@ -103,7 +104,8 @@ async fn multi_document_search() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Write three docs and search across them")
         .await;
@@ -146,7 +148,8 @@ async fn hybrid_search_with_embeddings() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Write and semantically search for ML content")
         .await;
@@ -186,7 +189,8 @@ async fn directory_tree() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Write files in a hierarchy and show the tree")
         .await;
@@ -225,7 +229,8 @@ async fn document_lifecycle() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Write, read, overwrite, and read a document")
         .await;
@@ -277,7 +282,8 @@ async fn identity_in_system_prompt() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     // Seed an IDENTITY.md so the system prompt has real content to inject.
     let ws = rig.workspace().expect("workspace must be available");

@@ -713,7 +713,11 @@ mod test_rig_tests {
             }],
         );
 
-        let rig = TestRigBuilder::new().with_trace(trace).build().await;
+        let rig = TestRigBuilder::new()
+            .with_trace(trace)
+            .build()
+            .await
+            .expect("failed to build test rig");
 
         rig.send_message("Hello test rig").await;
 

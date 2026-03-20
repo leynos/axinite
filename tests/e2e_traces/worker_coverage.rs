@@ -56,7 +56,7 @@ async fn run_worker_spot_case(
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await?;
     rig.send_message(message).await;
     let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
     rig.verify_trace_expects(&trace, &responses);
@@ -162,7 +162,8 @@ async fn tool_error_feedback() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Write a file to a bad path then recover")
         .await;
@@ -267,7 +268,8 @@ async fn rate_limit_cascade() {
         .with_trace(trace.clone())
         .with_extra_tools(vec![Arc::new(StubRateLimitTool) as Arc<dyn Tool>])
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Call the rate limited tool").await;
     let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
@@ -309,7 +311,8 @@ async fn iteration_limit() {
         .with_trace(trace.clone())
         .with_max_tool_iterations(2)
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Keep calling tools until the limit").await;
     let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;

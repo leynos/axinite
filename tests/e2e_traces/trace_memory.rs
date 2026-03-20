@@ -20,7 +20,8 @@ async fn test_memory_write_flow() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Please remember that Project Alpha launches on March 15th")
         .await;

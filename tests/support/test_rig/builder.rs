@@ -10,6 +10,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use anyhow::Context;
 use ironclaw::agent::{Agent, AgentDeps};
 use ironclaw::app::{AppBuilder, AppBuilderFlags, AppComponents};
 use ironclaw::channels::web::log_layer::LogBroadcaster;
@@ -170,7 +171,9 @@ impl TestRigBuilder {
         db: &Arc<dyn ironclaw::db::Database>,
         temp_dir: &tempfile::TempDir,
     ) {
-        if let (Some(_db), Some(workspace)) = (&components.db, &components.workspace) {
+        if self.enable_routines
+            && let (Some(_db), Some(workspace)) = (&components.db, &components.workspace)
+        {
             use ironclaw::agent::routine_engine::RoutineEngine;
             use ironclaw::config::RoutineConfig;
 
@@ -211,26 +214,30 @@ impl TestRigBuilder {
 
     /// Build the test rig, creating a real agent and spawning it in the background.
     #[cfg(feature = "libsql")]
-    pub async fn build(self) -> TestRig {
+    pub async fn build(self) -> anyhow::Result<TestRig> {
         use ironclaw::channels::ChannelManager;
         use ironclaw::db::Database;
         use ironclaw::db::libsql::LibSqlBackend;
 
-        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let temp_dir = tempfile::tempdir().context("failed to create temp dir")?;
         let db_path = temp_dir.path().join("test_rig.db");
         let backend = LibSqlBackend::new_local(&db_path)
             .await
-            .expect("failed to create test LibSqlBackend");
+            .context("failed to create test LibSqlBackend")?;
         backend
             .run_migrations()
             .await
-            .expect("failed to run migrations");
+            .context("failed to run migrations")?;
         let db: Arc<dyn ironclaw::db::Database> = Arc::new(backend);
 
         let skills_dir = temp_dir.path().join("skills");
         let installed_skills_dir = temp_dir.path().join("installed_skills");
-        let _ = tokio::fs::create_dir_all(&skills_dir).await;
-        let _ = tokio::fs::create_dir_all(&installed_skills_dir).await;
+        tokio::fs::create_dir_all(&skills_dir)
+            .await
+            .context("failed to create test rig skills dir")?;
+        tokio::fs::create_dir_all(&installed_skills_dir)
+            .await
+            .context("failed to create test rig installed_skills dir")?;
         let mut config = Config::for_testing(db_path, skills_dir, installed_skills_dir);
         config.agent.max_tool_iterations = self.max_tool_iterations;
         config.safety.injection_check_enabled = self.injection_check;
@@ -257,7 +264,7 @@ impl TestRigBuilder {
         let mut components = builder
             .build_all()
             .await
-            .expect("AppBuilder::build_all() failed in test rig");
+            .context("AppBuilder::build_all() failed in test rig")?;
 
         let scheduler_slot: ironclaw::tools::builtin::SchedulerSlot =
             Arc::new(tokio::sync::RwLock::new(None));
@@ -266,7 +273,10 @@ impl TestRigBuilder {
         self.register_optional_subsystems(&mut components, &db, &temp_dir)
             .await;
 
-        let db_ref = components.db.clone().expect("test rig requires a database");
+        let db_ref = components
+            .db
+            .clone()
+            .context("test rig requires a database")?;
         let workspace_ref = components.workspace.clone();
         let http_replay = self.build_http_interceptor(self.trace.as_ref());
 
@@ -334,10 +344,13 @@ impl TestRigBuilder {
         });
 
         if let Some(rx) = test_channel.take_ready_rx().await {
-            let _ = tokio::time::timeout(Duration::from_secs(5), rx).await;
+            tokio::time::timeout(Duration::from_secs(5), rx)
+                .await
+                .context("wait for TestRig readiness")?
+                .context("TestRig readiness channel closed before signalling ready")?;
         }
 
-        TestRig {
+        Ok(TestRig {
             channel: test_channel,
             instrumented_llm: instrumented,
             start_time: Instant::now(),
@@ -347,7 +360,7 @@ impl TestRigBuilder {
             workspace: workspace_ref,
             trace_llm: trace_llm_ref,
             _temp_dir: temp_dir,
-        }
+        })
     }
 }
 

@@ -24,7 +24,8 @@ async fn multi_turn_state() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     let all_responses = rig
         .run_and_verify_trace(&trace, Duration::from_secs(30))
@@ -91,7 +92,8 @@ async fn undo_redo_cycle() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     let all_responses = rig
         .run_and_verify_trace(&trace, Duration::from_secs(30))
@@ -124,7 +126,8 @@ async fn concurrent_dispatch() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     let all_responses = rig
         .run_and_verify_trace(&trace, Duration::from_secs(30))

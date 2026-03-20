@@ -77,7 +77,8 @@ async fn test_status_event_ordering() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Run the tool chain").await;
     let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
@@ -135,7 +136,11 @@ async fn test_thinking_events_captured() {
     .await
     .expect("failed to load simple_text.json");
 
-    let rig = TestRigBuilder::new().with_trace(trace).build().await;
+    let rig = TestRigBuilder::new()
+        .with_trace(trace)
+        .build()
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("hello").await;
     let _responses = rig.wait_for_responses(1, Duration::from_secs(10)).await;

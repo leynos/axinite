@@ -13,6 +13,7 @@ use crate::support::trace_llm::LlmTrace;
 #[derive(Default)]
 struct RigConfig {
     auto_approve: bool,
+    routines: bool,
     skills: bool,
 }
 
@@ -27,6 +28,7 @@ async fn time_parse_and_diff() {
         "Parse a time and compute a diff",
         RigConfig {
             auto_approve: true,
+            routines: false,
             skills: true,
         },
     )
@@ -54,6 +56,7 @@ async fn time_parse_invalid() {
         "Parse an invalid timestamp",
         RigConfig {
             auto_approve: true,
+            routines: false,
             skills: true,
         },
     )
@@ -85,6 +88,7 @@ async fn routine_create_list() {
         "Create a daily routine and list all routines",
         RigConfig {
             auto_approve: true,
+            routines: true,
             skills: true,
         },
     )
@@ -129,7 +133,10 @@ async fn run_trace_test_with_timeout(
     if config.skills {
         builder = builder.with_skills();
     }
-    let rig = builder.build().await;
+    if config.routines {
+        builder = builder.with_routines();
+    }
+    let rig = builder.build().await.expect("failed to build test rig");
 
     rig.send_message(message).await;
     let responses = rig.wait_for_responses(1, timeout).await;
@@ -139,8 +146,15 @@ async fn run_trace_test_with_timeout(
 }
 
 async fn run_routine_started_test(fixture_path: &str, message: &str, expected_tools: &[&str]) {
-    let (rig, _trace, _responses) =
-        run_trace_test(fixture_path, message, RigConfig::default()).await;
+    let (rig, _trace, _responses) = run_trace_test(
+        fixture_path,
+        message,
+        RigConfig {
+            routines: true,
+            ..RigConfig::default()
+        },
+    )
+    .await;
     let started = rig.tool_calls_started();
     for tool in expected_tools {
         assert!(
@@ -191,6 +205,7 @@ async fn routine_system_event_emit() {
         "Create a system-event routine and emit an event",
         RigConfig {
             auto_approve: true,
+            routines: true,
             skills: false,
         },
     )
@@ -235,6 +250,7 @@ async fn skill_install_routine_webhook_sim() {
         "Install the workflow skill template and simulate a webhook routine run",
         RigConfig {
             auto_approve: true,
+            routines: true,
             skills: true,
         },
         Duration::from_secs(20),

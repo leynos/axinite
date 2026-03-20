@@ -22,7 +22,7 @@ async fn build_injection_rig(
     if injection_check {
         builder = builder.with_injection_check(true);
     }
-    let rig = builder.build().await;
+    let rig = builder.build().await.expect("failed to build test rig");
     (trace, rig)
 }
 

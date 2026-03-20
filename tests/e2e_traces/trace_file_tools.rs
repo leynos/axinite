@@ -30,7 +30,8 @@ async fn test_file_write_and_read_flow() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Please write a greeting to a file and read it back.")
         .await;

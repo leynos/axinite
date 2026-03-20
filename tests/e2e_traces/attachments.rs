@@ -43,7 +43,8 @@ async fn build_rig(subdir: &str, fixture: &str) -> (LlmTrace, TestRig) {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
     (trace, rig)
 }
 

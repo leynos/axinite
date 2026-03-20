@@ -94,7 +94,11 @@ async fn test_metrics_collected_from_text_trace() {
     .await
     .expect("failed to load simple_text.json");
 
-    let rig = TestRigBuilder::new().with_trace(trace).build().await;
+    let rig = TestRigBuilder::new()
+        .with_trace(trace)
+        .build()
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("hello").await;
     let _responses = rig.wait_for_responses(1, Duration::from_secs(10)).await;
@@ -159,7 +163,11 @@ async fn test_metrics_collected_from_tool_trace() {
     .expect("failed to load file_write_read.json");
     localize_file_tool_paths(&mut trace, TEST_FILE);
 
-    let rig = TestRigBuilder::new().with_trace(trace).build().await;
+    let rig = TestRigBuilder::new()
+        .with_trace(trace)
+        .build()
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Please write a greeting to a file and read it back.")
         .await;
@@ -203,7 +211,11 @@ async fn test_metrics_json_serialization() {
     .await
     .expect("failed to load simple_text.json");
 
-    let rig = TestRigBuilder::new().with_trace(trace).build().await;
+    let rig = TestRigBuilder::new()
+        .with_trace(trace)
+        .build()
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("hello").await;
     let responses = rig.wait_for_responses(1, Duration::from_secs(10)).await;
@@ -246,7 +258,11 @@ async fn test_run_result_and_baseline_comparison() {
     .await
     .expect("failed to load simple_text.json");
 
-    let rig = TestRigBuilder::new().with_trace(trace).build().await;
+    let rig = TestRigBuilder::new()
+        .with_trace(trace)
+        .build()
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("hello").await;
     let responses = rig.wait_for_responses(1, Duration::from_secs(10)).await;
@@ -355,7 +371,11 @@ async fn test_rig_metric_accessors() {
     .await
     .expect("failed to load simple_text.json");
 
-    let rig = TestRigBuilder::new().with_trace(trace).build().await;
+    let rig = TestRigBuilder::new()
+        .with_trace(trace)
+        .build()
+        .await
+        .expect("failed to build test rig");
 
     // Before sending any message, metrics should be zero.
     assert_rig_metrics_are_zero(&rig);

@@ -16,7 +16,8 @@ async fn run_spot_test(fixture_file: &str, message: &str) {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message(message).await;
     let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
@@ -81,7 +82,8 @@ async fn spot_chain_write_read() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message(
         "Write the text 'ironclaw spot check' to /tmp/ironclaw_spot_test.txt \
@@ -131,7 +133,8 @@ async fn spot_memory_save_recall() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message(
         "Save these meeting notes to /tmp/bench-meeting.md:\n\

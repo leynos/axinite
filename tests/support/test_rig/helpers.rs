@@ -19,7 +19,8 @@ pub async fn run_recorded_trace(filename: &str) {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
     rig.run_and_verify_trace(&trace, Duration::from_secs(30))
         .await;
     rig.shutdown();

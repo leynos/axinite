@@ -20,7 +20,8 @@ async fn test_tool_error_handled_gracefully() {
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await;
+        .await
+        .expect("failed to build test rig");
 
     rig.send_message("Read a file for me").await;
     let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
