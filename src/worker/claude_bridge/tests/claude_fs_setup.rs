@@ -85,3 +85,23 @@ fn test_copy_dir_recursive_skips_nonexistent_source() {
     let copied = copy_dir_recursive(&nonexistent, dst.path()).expect("copy should be graceful");
     assert_eq!(copied, 0);
 }
+
+#[test]
+fn test_copy_dir_recursive_propagates_destination_errors() {
+    let src = tempfile::tempdir().expect("create src tempdir");
+    let dst = tempfile::tempdir().expect("create dst tempdir");
+
+    std::fs::create_dir_all(src.path().join("subdir")).expect("create source subdir");
+    std::fs::write(src.path().join("subdir").join("nested.txt"), "nested")
+        .expect("write nested source file");
+    std::fs::write(dst.path().join("subdir"), "not a directory")
+        .expect("block destination subdir path");
+
+    let error = copy_dir_recursive(src.path(), dst.path())
+        .expect_err("destination-side failures should be returned");
+    assert_ne!(
+        error.kind(),
+        std::io::ErrorKind::NotFound,
+        "destination errors should not be downgraded to missing source"
+    );
+}

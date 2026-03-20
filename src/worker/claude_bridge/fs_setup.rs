@@ -99,11 +99,11 @@ pub(crate) fn build_permission_settings(allowed_tools: &[String]) -> Result<Stri
     })
 }
 
-fn copy_one_file(src: &Path, dst: &Path) -> usize {
+fn copy_one_file(src: &Path, dst: &Path) -> io::Result<usize> {
     use std::io::ErrorKind;
 
     match std::fs::copy(src, dst) {
-        Ok(_) => 1,
+        Ok(_) => Ok(1),
         Err(error) if error.kind() == ErrorKind::NotFound => match src.metadata() {
             Err(metadata_error) if metadata_error.kind() == ErrorKind::NotFound => {
                 tracing::debug!(
@@ -111,54 +111,29 @@ fn copy_one_file(src: &Path, dst: &Path) -> usize {
                     src.display(),
                     dst.display()
                 );
-                0
+                Ok(0)
             }
-            _ => {
-                tracing::debug!(
-                    "fs_setup: copy {} → {} failed: {error}",
-                    src.display(),
-                    dst.display()
-                );
-                0
-            }
+            _ => Err(error),
         },
-        Err(error) => {
-            tracing::debug!(
-                "fs_setup: copy {} → {} failed: {error}",
-                src.display(),
-                dst.display()
-            );
-            0
-        }
+        Err(error) => Err(error),
     }
 }
 
-fn copy_subdir(src: &Path, parent_dst: &Path, dir_name: &OsStr) -> usize {
+fn copy_subdir(src: &Path, parent_dst: &Path, dir_name: &OsStr) -> io::Result<usize> {
     let sub_dst = parent_dst.join(dir_name);
-    if let Err(error) = std::fs::create_dir_all(&sub_dst) {
-        tracing::debug!(
-            "fs_setup: create_dir_all({}) failed: {error}",
-            sub_dst.display()
-        );
-        return 0;
-    }
-    match copy_dir_recursive(src, &sub_dst) {
-        Ok(count) => count,
-        Err(error) => {
-            tracing::debug!("fs_setup: recurse into {} failed: {error}", src.display());
-            0
-        }
-    }
+    std::fs::create_dir_all(&sub_dst)?;
+    copy_dir_recursive(src, &sub_dst)
 }
 
 /// Recursively copy files and directories from `src` to `dst`, skipping
 /// entries that can't be read.
 pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<usize> {
-    if !src.exists() {
-        return Ok(0);
-    }
+    let entries = match std::fs::read_dir(src) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error),
+    };
     std::fs::create_dir_all(dst)?;
-    let entries = std::fs::read_dir(src)?;
     let mut copied = 0usize;
     for entry_result in entries {
         let entry = match entry_result {
@@ -183,19 +158,14 @@ pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<usize> {
                 continue;
             }
         };
-        match () {
-            _ if file_type.is_dir() => {
-                copied += copy_subdir(&path, dst, &name);
-            }
-            _ if file_type.is_file() => {
-                copied += copy_one_file(&path, &dst.join(&name));
-            }
-            _ if file_type.is_symlink() => {
-                tracing::debug!("fs_setup: skipping symlink {}", path.display());
-            }
-            _ => {
-                tracing::debug!("fs_setup: unknown entry type at {}", path.display());
-            }
+        if file_type.is_dir() {
+            copied += copy_subdir(&path, dst, &name)?;
+        } else if file_type.is_file() {
+            copied += copy_one_file(&path, &dst.join(&name))?;
+        } else if file_type.is_symlink() {
+            tracing::debug!("fs_setup: skipping symlink {}", path.display());
+        } else {
+            tracing::debug!("fs_setup: unknown entry type at {}", path.display());
         }
     }
     Ok(copied)
