@@ -136,6 +136,14 @@ impl Tool for SkillInstallTool {
                 .registry
                 .write()
                 .map_err(|e| ToolError::ExecutionFailed(format!("Lock poisoned: {}", e)))?;
+            // Re-check under the write lock to close the TOCTOU window between
+            // the earlier read-side `has()` check and this commit.
+            if guard.has(&skill_name) {
+                return Err(ToolError::ExecutionFailed(format!(
+                    "Skill '{}' already exists",
+                    skill_name
+                )));
+            }
             guard
                 .commit_install(&skill_name, loaded_skill)
                 .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
