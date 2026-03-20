@@ -180,6 +180,7 @@ impl Tool for JobAwareTool {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum ExecuteErrorKind {
     InvalidParameters,
     NotAuthorized,
