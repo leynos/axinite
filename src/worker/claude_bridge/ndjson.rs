@@ -74,49 +74,41 @@ pub struct ContentBlock {
 }
 
 /// Convert a Claude stream event into one or more event payloads for the orchestrator.
-pub(crate) fn stream_event_to_payloads(event: &ClaudeStreamEvent) -> Vec<JobEventPayload> {
-    let blocks = event
-        .message
-        .as_ref()
-        .and_then(|message| message.content.as_ref());
-
-    match event.event_type.as_str() {
-        "system" => handle_system_event(event),
-        "assistant" => handle_assistant_event(blocks),
-        "user" => handle_user_event(blocks),
-        "result" => handle_result_event(event),
-        _ => handle_fallback_event(event),
-    }
-}
-
-fn handle_system_event(event: &ClaudeStreamEvent) -> Vec<JobEventPayload> {
-    vec![JobEventPayload {
+fn status_started(session_id: Option<&str>) -> JobEventPayload {
+    JobEventPayload {
         event_type: JobEventType::Status,
         data: serde_json::json!({
             "message": "Claude Code session started",
-            "session_id": event.session_id,
+            "session_id": session_id,
         }),
-    }]
+    }
 }
 
-fn handle_assistant_event(blocks: Option<&Vec<ContentBlock>>) -> Vec<JobEventPayload> {
-    let Some(blocks) = blocks else {
-        return Vec::new();
-    };
+fn status_unknown(raw_type: &str) -> JobEventPayload {
+    JobEventPayload {
+        event_type: JobEventType::Status,
+        data: serde_json::json!({
+            "message": format!("Claude event: {raw_type}"),
+            "raw_type": raw_type,
+        }),
+    }
+}
 
+fn map_assistant_blocks(blocks: &[ContentBlock]) -> Vec<JobEventPayload> {
     let mut payloads = Vec::new();
     for block in blocks {
         match block.block_type.as_str() {
             "text" => {
-                if let Some(text) = block.text.as_deref().filter(|text| !text.is_empty()) {
-                    payloads.push(JobEventPayload {
-                        event_type: JobEventType::Message,
-                        data: serde_json::json!({
-                            "role": "assistant",
-                            "content": text,
-                        }),
-                    });
-                }
+                let Some(text) = block.text.as_deref().filter(|text| !text.is_empty()) else {
+                    continue;
+                };
+                payloads.push(JobEventPayload {
+                    event_type: JobEventType::Message,
+                    data: serde_json::json!({
+                        "role": "assistant",
+                        "content": text,
+                    }),
+                });
             }
             "tool_use" => {
                 payloads.push(JobEventPayload {
@@ -128,18 +120,13 @@ fn handle_assistant_event(blocks: Option<&Vec<ContentBlock>>) -> Vec<JobEventPay
                     }),
                 });
             }
-            _ => {}
+            _ => continue,
         }
     }
-
     payloads
 }
 
-fn handle_user_event(blocks: Option<&Vec<ContentBlock>>) -> Vec<JobEventPayload> {
-    let Some(blocks) = blocks else {
-        return Vec::new();
-    };
-
+fn map_user_blocks(blocks: &[ContentBlock]) -> Vec<JobEventPayload> {
     blocks
         .iter()
         .filter(|block| block.block_type == "tool_result")
@@ -153,7 +140,7 @@ fn handle_user_event(blocks: Option<&Vec<ContentBlock>>) -> Vec<JobEventPayload>
         .collect()
 }
 
-fn handle_result_event(event: &ClaudeStreamEvent) -> Vec<JobEventPayload> {
+fn result_payloads(event: &ClaudeStreamEvent) -> Vec<JobEventPayload> {
     let mut payloads = Vec::new();
     let is_error = event.is_error.unwrap_or(false);
 
@@ -185,14 +172,32 @@ fn handle_result_event(event: &ClaudeStreamEvent) -> Vec<JobEventPayload> {
     payloads
 }
 
-fn handle_fallback_event(event: &ClaudeStreamEvent) -> Vec<JobEventPayload> {
-    vec![JobEventPayload {
-        event_type: JobEventType::Status,
-        data: serde_json::json!({
-            "message": format!("Claude event: {}", event.event_type),
-            "raw_type": event.event_type,
-        }),
-    }]
+pub(crate) fn stream_event_to_payloads(event: &ClaudeStreamEvent) -> Vec<JobEventPayload> {
+    match event.event_type.as_str() {
+        "system" => vec![status_started(event.session_id.as_deref())],
+        "assistant" => {
+            let Some(blocks) = event
+                .message
+                .as_ref()
+                .and_then(|message| message.content.as_ref())
+            else {
+                return Vec::new();
+            };
+            map_assistant_blocks(blocks)
+        }
+        "user" => {
+            let Some(blocks) = event
+                .message
+                .as_ref()
+                .and_then(|message| message.content.as_ref())
+            else {
+                return Vec::new();
+            };
+            map_user_blocks(blocks)
+        }
+        "result" => result_payloads(event),
+        other => vec![status_unknown(other)],
+    }
 }
 
 pub(crate) fn truncate(input: &str, max_len: usize) -> &str {
