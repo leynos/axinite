@@ -1,10 +1,10 @@
 # Migrate from async-trait to native async traits
 
-**Branch:** (to be created from `build-time`)
+**Branch:** `migrate-async-trait`
 **Date:** 2026-03-15
-**Status:** Plan ready; not yet started
-**Estimated impact:** Reduced proc-macro expansion overhead (158 uses
-across 74 files)
+**Status:** In progress
+**Estimated impact:** Reduced proc-macro expansion overhead for the small
+subset of async traits that are not used as trait objects
 
 ## Big Picture
 
@@ -54,15 +54,24 @@ trivially migrate to native async traits:
 
 ### Concrete-only traits (safe to migrate)
 
-Traits that are only used with concrete types (impl blocks, generics with
-`impl Trait`, never `dyn Trait`) can be migrated. These include:
+The initial plan overestimated this bucket. A direct audit on
+2026-03-20 found that many "internal" traits are still used as trait
+objects and therefore cannot yet migrate. Examples:
 
-- Internal implementation traits in `src/tools/builtin/*.rs`
-- Helper traits in `src/tools/mcp/*.rs` (transports)
-- Internal traits in `src/tools/wasm/*.rs`
-- Concrete implementations of the above core traits (the `impl` blocks)
-- Helper/adapter traits in `src/llm/` (failover, circuit breaker,
-  recording, etc.)
+- `LoopDelegate` is passed as `&dyn LoopDelegate`
+- `SelfRepair` is stored as `Arc<dyn SelfRepair>`
+- `TaskHandler` is stored as `Arc<dyn TaskHandler>`
+- `HttpInterceptor` is stored as `Arc<dyn HttpInterceptor>`
+- `CredentialResolver` is stored as `Arc<dyn CredentialResolver>`
+- `SoftwareBuilder` is stored as `Arc<dyn SoftwareBuilder>`
+- `TranscriptionProvider` is stored as `Box<dyn TranscriptionProvider>`
+- `McpTransport` is stored as `Arc<dyn McpTransport>`
+- `WasmToolStore` is passed as `&dyn WasmToolStore`
+
+The traits currently confirmed safe to migrate are:
+
+- `WasmChannelStore` (`src/channels/wasm/storage.rs`)
+- `SuccessEvaluator` (`src/evaluation/success.rs`)
 
 ### `impl` blocks of core traits
 
@@ -85,23 +94,47 @@ migrated independently of the trait definition.
 
 ### Phase 1: Audit and classify every `#[async_trait]` use
 
-- [ ] For each trait with `#[async_trait]`, determine whether it is ever
+- [x] For each trait with `#[async_trait]`, determine whether it is ever
   used as `dyn Trait`
-- [ ] Produce a spreadsheet/table of: trait name, file, definition or impl,
-  dyn-used (yes/no), migratable (yes/no)
-- [ ] Identify the subset that can be migrated
+- [x] Produce a table of: trait name, file, dyn-used (yes/no),
+  migratable (yes/no)
+- [x] Identify the subset that can be migrated
+
+Audit snapshot as of 2026-03-20:
+
+- `WasmChannelStore` in `src/channels/wasm/storage.rs`:
+  no trait-object usage found, migratable now.
+- `SuccessEvaluator` in `src/evaluation/success.rs`:
+  no trait-object usage found, migratable now.
+- `ConversationStore`, `JobStore`, `SandboxStore`, `RoutineStore`,
+  `ToolFailureStore`, and `WorkspaceStore` in `src/db/mod.rs`:
+  blocked because `Database` depends on them as supertraits.
+- `LoopDelegate` in `src/agent/agentic_loop.rs`:
+  blocked by `&dyn LoopDelegate`.
+- `SelfRepair` in `src/agent/self_repair.rs`:
+  blocked by `Arc<dyn SelfRepair>`.
+- `TaskHandler` in `src/agent/task.rs`:
+  blocked by `Arc<dyn TaskHandler>`.
+- `ChannelSecretUpdater` in `src/channels/channel.rs`:
+  blocked by `Arc<dyn ChannelSecretUpdater>`.
+- `HttpInterceptor` in `src/llm/recording.rs`:
+  blocked by `Arc<dyn HttpInterceptor>`.
+- `CredentialResolver` in `src/sandbox/proxy/http.rs`:
+  blocked by `Arc<dyn CredentialResolver>`.
+- `SoftwareBuilder` in `src/tools/builder/core.rs`:
+  blocked by `Arc<dyn SoftwareBuilder>`.
+- `McpTransport` in `src/tools/mcp/transport.rs`:
+  blocked by `Arc<dyn McpTransport>`.
 
 ### Phase 2: Migrate concrete-only traits (batch by module)
 
 For each module, in separate commits:
 
-- [ ] `src/tools/mcp/` transports (stdio, unix, http) — likely 3–5 uses
-- [ ] `src/tools/wasm/` internal traits — likely 3–5 uses
-- [ ] `src/tools/builtin/` helper traits — likely 10–15 uses
-- [ ] `src/llm/` internal traits (recording, response_cache, etc.) —
-  likely 5–10 uses
-- [ ] `src/worker/` traits — likely 2–3 uses
-- [ ] Remaining scattered uses
+- [x] `src/channels/wasm/storage.rs`
+- [x] `src/evaluation/success.rs`
+- [ ] Re-audit remaining candidates after the first batch lands
+- [ ] Only expand into higher-effort modules if we can first eliminate
+  their trait-object usage
 
 ### Phase 3: Evaluate core trait migration (optional, higher effort)
 
@@ -120,13 +153,15 @@ For each module, in separate commits:
 Table 1. Migration scope by async-trait category.
 
 | Category | Uses | Migratable |
-|----------|------|------------|
+| ---------- | ------ | ------------ |
 | Core trait definitions | ~12 | No (dyn Trait) |
 | Core trait `impl` blocks | ~80 | No (must match trait) |
-| Concrete-only traits + impls | ~66 | **Yes** |
+| Confirmed safe trait definitions | 2 | **Yes** |
+| Confirmed safe impl blocks | 3 | **Yes** |
 
-Roughly **66 of 158 uses** (~42%) can be migrated. The remaining 92 uses
-are tied to core extensibility traits that require object safety.
+The currently verified scope is **5 of 158 uses**. More may become
+migratable later, but only after removing trait-object usage or adopting a
+different object-safety pattern.
 
 ## Risks
 
@@ -135,15 +170,26 @@ are tied to core extensibility traits that require object safety.
   add `Send` bounds automatically. If any migrated trait is used in a
   `Send`-requiring context (e.g., spawned on tokio), the migration may
   need explicit `Send` bounds added to the trait or its methods.
-- **Large diff:** Even the concrete-only migration touches ~66 locations
-  across many files. Breaking this into module-scoped commits is essential.
+- **Scope drift:** The original estimate assumed a much larger concrete-only
+  bucket. Future batches must be re-audited before code changes begin.
 - **Incomplete classification:** A trait that appears concrete-only today
   may be used as `dyn Trait` in uncommon code paths. The audit phase must
   be thorough.
 
 ## Progress
 
-- [ ] Phase 1: Audit and classify
+- [x] Phase 1: Audit and classify
 - [ ] Phase 2: Migrate concrete-only traits
 - [ ] Phase 3: Evaluate core trait migration (optional)
 - [ ] Phase 4: Clean up
+
+## Progress Notes
+
+- 2026-03-20: Audited every async trait definition and corrected the
+  original scope estimate. Most "internal" traits still flow through
+  `dyn`/`Arc<dyn>`/`Box<dyn>` call sites and are therefore out of scope for
+  native async traits without broader refactors.
+- 2026-03-20: Started the first safe migration batch in
+  `src/channels/wasm/storage.rs` and `src/evaluation/success.rs`, using
+  return-position `impl Future + Send` in trait definitions to preserve the
+  `Send` contract that `async-trait` previously supplied implicitly.

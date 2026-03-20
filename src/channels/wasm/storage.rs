@@ -12,10 +12,10 @@
 //!                    └──► Later: Load ──► Verify hash ──► Return bytes
 //! ```
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 #[cfg(feature = "postgres")]
 use deadpool_postgres::Pool;
+use std::future::Future;
 use uuid::Uuid;
 
 use crate::tools::wasm::storage::{compute_binary_hash, verify_binary_integrity};
@@ -71,33 +71,41 @@ pub enum WasmChannelStoreError {
 }
 
 /// Trait for WASM channel storage.
-#[async_trait]
 pub trait WasmChannelStore: Send + Sync {
+    /// Use return-position `impl Future + Send` to preserve the implicit
+    /// `Send` guarantee from `async-trait` without keeping the proc macro.
     /// Store a new WASM channel.
-    async fn store(
+    fn store(
         &self,
         params: StoreChannelParams,
-    ) -> Result<StoredWasmChannel, WasmChannelStoreError>;
+    ) -> impl Future<Output = Result<StoredWasmChannel, WasmChannelStoreError>> + Send;
 
     /// Get channel metadata (without binary).
-    async fn get(
+    fn get(
         &self,
         user_id: &str,
         name: &str,
-    ) -> Result<StoredWasmChannel, WasmChannelStoreError>;
+    ) -> impl Future<Output = Result<StoredWasmChannel, WasmChannelStoreError>> + Send;
 
     /// Get channel with binary (verifies integrity).
-    async fn get_with_binary(
+    fn get_with_binary(
         &self,
         user_id: &str,
         name: &str,
-    ) -> Result<StoredWasmChannelWithBinary, WasmChannelStoreError>;
+    ) -> impl Future<Output = Result<StoredWasmChannelWithBinary, WasmChannelStoreError>> + Send;
 
     /// List all channels for a user.
-    async fn list(&self, user_id: &str) -> Result<Vec<StoredWasmChannel>, WasmChannelStoreError>;
+    fn list(
+        &self,
+        user_id: &str,
+    ) -> impl Future<Output = Result<Vec<StoredWasmChannel>, WasmChannelStoreError>> + Send;
 
     /// Delete a channel.
-    async fn delete(&self, user_id: &str, name: &str) -> Result<bool, WasmChannelStoreError>;
+    fn delete(
+        &self,
+        user_id: &str,
+        name: &str,
+    ) -> impl Future<Output = Result<bool, WasmChannelStoreError>> + Send;
 }
 
 // ==================== PostgreSQL implementation ====================
@@ -116,7 +124,6 @@ impl PostgresWasmChannelStore {
 }
 
 #[cfg(feature = "postgres")]
-#[async_trait]
 impl WasmChannelStore for PostgresWasmChannelStore {
     async fn store(
         &self,
@@ -367,7 +374,6 @@ impl LibSqlWasmChannelStore {
 }
 
 #[cfg(feature = "libsql")]
-#[async_trait]
 impl WasmChannelStore for LibSqlWasmChannelStore {
     async fn store(
         &self,
