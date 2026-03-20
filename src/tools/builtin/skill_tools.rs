@@ -149,13 +149,8 @@ impl SkillSearchTool {
         Ok(require_str(params, "query")?.to_string())
     }
 
-    async fn compute_installed_index(
-        registry: &Arc<std::sync::RwLock<SkillRegistry>>,
-    ) -> Result<HashSet<String>, ToolError> {
-        let guard = registry
-            .read()
-            .map_err(|e| ToolError::ExecutionFailed(format!("Lock poisoned: {}", e)))?;
-        Ok(guard
+    fn compute_installed_index(registry: &SkillRegistry) -> Result<HashSet<String>, ToolError> {
+        Ok(registry
             .skills()
             .iter()
             .map(|s| s.manifest.name.clone())
@@ -174,8 +169,8 @@ impl SkillSearchTool {
     fn format_search_results(
         entries: Vec<CatalogEntry>,
         installed: &HashSet<String>,
-    ) -> Result<serde_json::Value, ToolError> {
-        Ok(serde_json::Value::Array(
+    ) -> serde_json::Value {
+        serde_json::Value::Array(
             entries
                 .into_iter()
                 .map(|entry| {
@@ -194,16 +189,12 @@ impl SkillSearchTool {
                     })
                 })
                 .collect(),
-        ))
+        )
     }
 
-    fn collect_local_matches(&self, query: &str) -> Result<Vec<serde_json::Value>, ToolError> {
+    fn collect_local_matches(registry: &SkillRegistry, query: &str) -> Vec<serde_json::Value> {
         let query_lower = query.to_lowercase();
-        let guard = self
-            .registry
-            .read()
-            .map_err(|e| ToolError::ExecutionFailed(format!("Lock poisoned: {}", e)))?;
-        Ok(guard
+        registry
             .skills()
             .iter()
             .filter(|s| {
@@ -222,7 +213,19 @@ impl SkillSearchTool {
                     "trust": s.trust.to_string(),
                 })
             })
-            .collect())
+            .collect()
+    }
+
+    fn compute_search_context(
+        registry: &Arc<std::sync::RwLock<SkillRegistry>>,
+        query: &str,
+    ) -> Result<(HashSet<String>, Vec<serde_json::Value>), ToolError> {
+        let guard = registry
+            .read()
+            .map_err(|e| ToolError::ExecutionFailed(format!("Lock poisoned: {}", e)))?;
+        let installed = Self::compute_installed_index(&guard)?;
+        let local_matches = Self::collect_local_matches(&guard, query);
+        Ok((installed, local_matches))
     }
 }
 
@@ -264,9 +267,8 @@ impl Tool for SkillSearchTool {
             .enrich_search_results(&mut catalog_entries, 5)
             .await;
 
-        let installed = Self::compute_installed_index(&self.registry).await?;
-        let catalog_json = Self::format_search_results(catalog_entries, &installed)?;
-        let local_matches = self.collect_local_matches(&query)?;
+        let (installed, local_matches) = Self::compute_search_context(&self.registry, &query)?;
+        let catalog_json = Self::format_search_results(catalog_entries, &installed);
 
         let mut output = serde_json::json!({
             "catalog": catalog_json,
