@@ -31,6 +31,12 @@ macro_rules! touch {
     ($($e:expr),+ $(,)?) => { $(let _ = $e;)+ };
 }
 
+macro_rules! touch_const {
+    ($($tt:tt)*) => {
+        const _: $($tt)*;
+    };
+}
+
 pub(crate) use ironclaw::testing_wasm::{
     github_tool_source_dir, github_wasm_artifact, metadata_test_runtime,
 };
@@ -44,6 +50,7 @@ type AsyncTraceMetrics<'a> =
 type AsyncTraceRun<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Vec<Vec<ironclaw::channels::OutgoingResponse>>> + 'a>,
 >;
+#[cfg(feature = "libsql")]
 type AsyncBuildRig =
     std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<test_rig::TestRig>>>>;
 
@@ -135,141 +142,201 @@ fn trace_support_symbol_refs() {
 }
 
 #[cfg(feature = "libsql")]
+fn _send_message_sig<'a>(rig: &'a test_rig::TestRig, content: &'a str) -> AsyncUnit<'a> {
+    Box::pin(test_rig::TestRig::send_message(rig, content))
+}
+
+#[cfg(feature = "libsql")]
+fn _send_incoming_sig<'a>(
+    rig: &'a test_rig::TestRig,
+    message: ironclaw::channels::IncomingMessage,
+) -> AsyncUnit<'a> {
+    Box::pin(test_rig::TestRig::send_incoming(rig, message))
+}
+
+#[cfg(feature = "libsql")]
+fn _wait_for_responses_sig<'a>(
+    rig: &'a test_rig::TestRig,
+    count: usize,
+    timeout: std::time::Duration,
+) -> AsyncOutgoingResponses<'a> {
+    Box::pin(test_rig::TestRig::wait_for_responses(rig, count, timeout))
+}
+
+#[cfg(feature = "libsql")]
+fn _clear_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncUnit<'a> {
+    Box::pin(test_rig::TestRig::clear(rig))
+}
+
+#[cfg(feature = "libsql")]
+fn _collect_metrics_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncTraceMetrics<'a> {
+    Box::pin(test_rig::TestRig::collect_metrics(rig))
+}
+
+#[cfg(feature = "libsql")]
+fn _run_trace_sig<'a>(
+    rig: &'a test_rig::TestRig,
+    trace: &'a trace_llm::LlmTrace,
+    timeout: std::time::Duration,
+) -> AsyncTraceRun<'a> {
+    Box::pin(test_rig::TestRig::run_trace(rig, trace, timeout))
+}
+
+#[cfg(feature = "libsql")]
+fn _run_and_verify_trace_sig<'a>(
+    rig: &'a test_rig::TestRig,
+    trace: &'a trace_llm::LlmTrace,
+    timeout: std::time::Duration,
+) -> AsyncTraceRun<'a> {
+    Box::pin(test_rig::TestRig::run_and_verify_trace(rig, trace, timeout))
+}
+
+#[cfg(feature = "libsql")]
+fn _build_sig(builder: test_rig::TestRigBuilder) -> AsyncBuildRig {
+    Box::pin(test_rig::TestRigBuilder::build(builder))
+}
+
+#[cfg(feature = "libsql")]
+fn _run_recorded_trace_sig<'a>(filename: &'a str) -> AsyncUnit<'a> {
+    Box::pin(test_rig::run_recorded_trace(filename))
+}
+
+#[cfg(feature = "libsql")]
+fn touch_test_rig_constructors() {
+    touch_const!(
+        fn(std::sync::Arc<test_channel::TestChannel>) -> test_rig::TestChannelHandle =
+            test_rig::TestChannelHandle::new
+    );
+    touch_const!(fn() -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::new);
+    touch_const!(
+        fn(test_rig::TestRigBuilder, trace_llm::LlmTrace) -> test_rig::TestRigBuilder =
+            test_rig::TestRigBuilder::with_trace
+    );
+    touch_const!(
+        fn(
+            test_rig::TestRigBuilder,
+            std::sync::Arc<dyn ironclaw::llm::LlmProvider>,
+        ) -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::with_llm
+    );
+    touch_const!(
+        fn(test_rig::TestRigBuilder, usize) -> test_rig::TestRigBuilder =
+            test_rig::TestRigBuilder::with_max_tool_iterations
+    );
+    touch_const!(
+        fn(
+            test_rig::TestRigBuilder,
+            Vec<std::sync::Arc<dyn ironclaw::tools::Tool>>,
+        ) -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::with_extra_tools
+    );
+    touch_const!(
+        fn(test_rig::TestRigBuilder, bool) -> test_rig::TestRigBuilder =
+            test_rig::TestRigBuilder::with_injection_check
+    );
+    touch_const!(
+        fn(test_rig::TestRigBuilder, bool) -> test_rig::TestRigBuilder =
+            test_rig::TestRigBuilder::with_auto_approve_tools
+    );
+    touch_const!(
+        fn(test_rig::TestRigBuilder) -> test_rig::TestRigBuilder =
+            test_rig::TestRigBuilder::with_skills
+    );
+    touch_const!(
+        fn(test_rig::TestRigBuilder) -> test_rig::TestRigBuilder =
+            test_rig::TestRigBuilder::with_routines
+    );
+    touch_const!(
+        fn(
+            test_rig::TestRigBuilder,
+            Vec<ironclaw::llm::recording::HttpExchange>,
+        ) -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::with_http_exchanges
+    );
+}
+
+#[cfg(feature = "libsql")]
+fn touch_test_rig_observers() {
+    touch_const!(
+        fn(&test_rig::TestRig) -> Result<Vec<Vec<ironclaw::llm::ChatMessage>>, ironclaw::error::LlmError> =
+            test_rig::TestRig::captured_llm_requests
+    );
+    touch_const!(fn(&test_rig::TestRig) -> Vec<String> = test_rig::TestRig::tool_calls_started);
+    touch_const!(
+        fn(&test_rig::TestRig) -> Vec<(String, bool)> = test_rig::TestRig::tool_calls_completed
+    );
+    touch_const!(fn(&test_rig::TestRig) -> Vec<(String, String)> = test_rig::TestRig::tool_results);
+    touch_const!(fn(&test_rig::TestRig) -> Vec<(String, u64)> = test_rig::TestRig::tool_timings);
+    touch_const!(
+        fn(&test_rig::TestRig) -> Vec<ironclaw::channels::StatusUpdate> =
+            test_rig::TestRig::captured_status_events
+    );
+    touch_const!(fn(&test_rig::TestRig) -> u32 = test_rig::TestRig::llm_call_count);
+    touch_const!(fn(&test_rig::TestRig) -> u32 = test_rig::TestRig::total_input_tokens);
+    touch_const!(fn(&test_rig::TestRig) -> u32 = test_rig::TestRig::total_output_tokens);
+    touch_const!(fn(&test_rig::TestRig) -> f64 = test_rig::TestRig::estimated_cost_usd);
+    touch_const!(fn(&test_rig::TestRig) -> u64 = test_rig::TestRig::elapsed_ms);
+    touch_const!(
+        fn(&test_rig::TestRig, &trace_llm::LlmTrace, &[ironclaw::channels::OutgoingResponse]) =
+            test_rig::TestRig::verify_trace_expects
+    );
+    touch_const!(fn(test_rig::TestRig) = test_rig::TestRig::shutdown);
+    touch_const!(fn(&test_rig::TestRig) -> bool = test_rig::TestRig::has_safety_warnings);
+}
+
+#[cfg(feature = "libsql")]
+fn touch_test_rig_async_sigs() {
+    touch_const!(for<'a> fn(&'a test_rig::TestRig, &'a str) -> AsyncUnit<'a> = _send_message_sig);
+    touch_const!(
+        for<'a> fn(&'a test_rig::TestRig, ironclaw::channels::IncomingMessage) -> AsyncUnit<'a> =
+            _send_incoming_sig
+    );
+    touch_const!(
+        for<'a> fn(
+            &'a test_rig::TestRig,
+            usize,
+            std::time::Duration,
+        ) -> AsyncOutgoingResponses<'a> = _wait_for_responses_sig
+    );
+    touch_const!(for<'a> fn(&'a test_rig::TestRig) -> AsyncUnit<'a> = _clear_sig);
+    touch_const!(for<'a> fn(&'a test_rig::TestRig) -> AsyncTraceMetrics<'a> = _collect_metrics_sig);
+    touch_const!(
+        for<'a> fn(
+            &'a test_rig::TestRig,
+            &'a trace_llm::LlmTrace,
+            std::time::Duration,
+        ) -> AsyncTraceRun<'a> = _run_trace_sig
+    );
+    touch_const!(
+        for<'a> fn(
+            &'a test_rig::TestRig,
+            &'a trace_llm::LlmTrace,
+            std::time::Duration,
+        ) -> AsyncTraceRun<'a> = _run_and_verify_trace_sig
+    );
+}
+
+#[cfg(feature = "libsql")]
+fn touch_test_rig_db_sigs() {
+    touch_const!(
+        fn(&test_rig::TestRig) -> &std::sync::Arc<dyn ironclaw::db::Database> =
+            test_rig::TestRig::database
+    );
+    touch_const!(
+        fn(&test_rig::TestRig) -> Option<&std::sync::Arc<ironclaw::workspace::Workspace>> =
+            test_rig::TestRig::workspace
+    );
+    touch_const!(
+        fn(&test_rig::TestRig) -> Option<&std::sync::Arc<trace_llm::TraceLlm>> =
+            test_rig::TestRig::trace_llm
+    );
+    touch_const!(fn(test_rig::TestRigBuilder) -> AsyncBuildRig = _build_sig);
+    touch_const!(for<'a> fn(&'a str) -> AsyncUnit<'a> = _run_recorded_trace_sig);
+}
+
+#[cfg(feature = "libsql")]
 fn touch_test_rig_symbols() {
-    const _: fn(std::sync::Arc<test_channel::TestChannel>) -> test_rig::TestChannelHandle =
-        test_rig::TestChannelHandle::new;
-    const _: fn() -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::new;
-    const _: fn(test_rig::TestRigBuilder, trace_llm::LlmTrace) -> test_rig::TestRigBuilder =
-        test_rig::TestRigBuilder::with_trace;
-    const _: fn(
-        test_rig::TestRigBuilder,
-        std::sync::Arc<dyn ironclaw::llm::LlmProvider>,
-    ) -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::with_llm;
-    const _: fn(test_rig::TestRigBuilder, usize) -> test_rig::TestRigBuilder =
-        test_rig::TestRigBuilder::with_max_tool_iterations;
-    const _: fn(
-        test_rig::TestRigBuilder,
-        Vec<std::sync::Arc<dyn ironclaw::tools::Tool>>,
-    ) -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::with_extra_tools;
-    const _: fn(test_rig::TestRigBuilder, bool) -> test_rig::TestRigBuilder =
-        test_rig::TestRigBuilder::with_injection_check;
-    const _: fn(test_rig::TestRigBuilder, bool) -> test_rig::TestRigBuilder =
-        test_rig::TestRigBuilder::with_auto_approve_tools;
-    const _: fn(test_rig::TestRigBuilder) -> test_rig::TestRigBuilder =
-        test_rig::TestRigBuilder::with_skills;
-    const _: fn(test_rig::TestRigBuilder) -> test_rig::TestRigBuilder =
-        test_rig::TestRigBuilder::with_routines;
-    const _: fn(
-        test_rig::TestRigBuilder,
-        Vec<ironclaw::llm::recording::HttpExchange>,
-    ) -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::with_http_exchanges;
-    const _: fn(
-        &test_rig::TestRig,
-    ) -> Result<Vec<Vec<ironclaw::llm::ChatMessage>>, ironclaw::error::LlmError> =
-        test_rig::TestRig::captured_llm_requests;
-    const _: fn(&test_rig::TestRig) -> Vec<String> = test_rig::TestRig::tool_calls_started;
-    const _: fn(&test_rig::TestRig) -> Vec<(String, bool)> =
-        test_rig::TestRig::tool_calls_completed;
-    const _: fn(&test_rig::TestRig) -> Vec<(String, String)> = test_rig::TestRig::tool_results;
-    const _: fn(&test_rig::TestRig) -> Vec<(String, u64)> = test_rig::TestRig::tool_timings;
-    const _: fn(&test_rig::TestRig) -> Vec<ironclaw::channels::StatusUpdate> =
-        test_rig::TestRig::captured_status_events;
-    const _: fn(&test_rig::TestRig) -> u32 = test_rig::TestRig::llm_call_count;
-    const _: fn(&test_rig::TestRig) -> u32 = test_rig::TestRig::total_input_tokens;
-    const _: fn(&test_rig::TestRig) -> u32 = test_rig::TestRig::total_output_tokens;
-    const _: fn(&test_rig::TestRig) -> f64 = test_rig::TestRig::estimated_cost_usd;
-    const _: fn(&test_rig::TestRig) -> u64 = test_rig::TestRig::elapsed_ms;
-    const _: fn(&test_rig::TestRig, &trace_llm::LlmTrace, &[ironclaw::channels::OutgoingResponse]) =
-        test_rig::TestRig::verify_trace_expects;
-    const _: fn(test_rig::TestRig) = test_rig::TestRig::shutdown;
-    const _: fn(&test_rig::TestRig) -> bool = test_rig::TestRig::has_safety_warnings;
-
-    fn send_message_sig<'a>(rig: &'a test_rig::TestRig, content: &'a str) -> AsyncUnit<'a> {
-        Box::pin(test_rig::TestRig::send_message(rig, content))
-    }
-
-    fn send_incoming_sig<'a>(
-        rig: &'a test_rig::TestRig,
-        message: ironclaw::channels::IncomingMessage,
-    ) -> AsyncUnit<'a> {
-        Box::pin(test_rig::TestRig::send_incoming(rig, message))
-    }
-
-    fn wait_for_responses_sig<'a>(
-        rig: &'a test_rig::TestRig,
-        count: usize,
-        timeout: std::time::Duration,
-    ) -> AsyncOutgoingResponses<'a> {
-        Box::pin(test_rig::TestRig::wait_for_responses(rig, count, timeout))
-    }
-
-    fn clear_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncUnit<'a> {
-        Box::pin(test_rig::TestRig::clear(rig))
-    }
-
-    fn collect_metrics_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncTraceMetrics<'a> {
-        Box::pin(test_rig::TestRig::collect_metrics(rig))
-    }
-
-    fn run_trace_sig<'a>(
-        rig: &'a test_rig::TestRig,
-        trace: &'a trace_llm::LlmTrace,
-        timeout: std::time::Duration,
-    ) -> AsyncTraceRun<'a> {
-        Box::pin(test_rig::TestRig::run_trace(rig, trace, timeout))
-    }
-
-    fn run_and_verify_trace_sig<'a>(
-        rig: &'a test_rig::TestRig,
-        trace: &'a trace_llm::LlmTrace,
-        timeout: std::time::Duration,
-    ) -> AsyncTraceRun<'a> {
-        Box::pin(test_rig::TestRig::run_and_verify_trace(rig, trace, timeout))
-    }
-
-    const _: for<'a> fn(&'a test_rig::TestRig, &'a str) -> AsyncUnit<'a> = send_message_sig;
-    const _: for<'a> fn(
-        &'a test_rig::TestRig,
-        ironclaw::channels::IncomingMessage,
-    ) -> AsyncUnit<'a> = send_incoming_sig;
-    const _: for<'a> fn(
-        &'a test_rig::TestRig,
-        usize,
-        std::time::Duration,
-    ) -> AsyncOutgoingResponses<'a> = wait_for_responses_sig;
-    const _: for<'a> fn(&'a test_rig::TestRig) -> AsyncUnit<'a> = clear_sig;
-    const _: for<'a> fn(&'a test_rig::TestRig) -> AsyncTraceMetrics<'a> = collect_metrics_sig;
-    const _: for<'a> fn(
-        &'a test_rig::TestRig,
-        &'a trace_llm::LlmTrace,
-        std::time::Duration,
-    ) -> AsyncTraceRun<'a> = run_trace_sig;
-    const _: for<'a> fn(
-        &'a test_rig::TestRig,
-        &'a trace_llm::LlmTrace,
-        std::time::Duration,
-    ) -> AsyncTraceRun<'a> = run_and_verify_trace_sig;
-
-    #[cfg(feature = "libsql")]
-    {
-        const _: fn(&test_rig::TestRig) -> &std::sync::Arc<dyn ironclaw::db::Database> =
-            test_rig::TestRig::database;
-        const _: fn(&test_rig::TestRig) -> Option<&std::sync::Arc<ironclaw::workspace::Workspace>> =
-            test_rig::TestRig::workspace;
-        const _: fn(&test_rig::TestRig) -> Option<&std::sync::Arc<trace_llm::TraceLlm>> =
-            test_rig::TestRig::trace_llm;
-
-        fn build_sig(builder: test_rig::TestRigBuilder) -> AsyncBuildRig {
-            Box::pin(test_rig::TestRigBuilder::build(builder))
-        }
-
-        fn run_recorded_trace_sig<'a>(filename: &'a str) -> AsyncUnit<'a> {
-            Box::pin(test_rig::run_recorded_trace(filename))
-        }
-
-        const _: fn(test_rig::TestRigBuilder) -> AsyncBuildRig = build_sig;
-        const _: for<'a> fn(&'a str) -> AsyncUnit<'a> = run_recorded_trace_sig;
-    }
+    touch_test_rig_constructors();
+    touch_test_rig_observers();
+    touch_test_rig_async_sigs();
+    touch_test_rig_db_sigs();
 }
 
 fn test_rig_symbol_refs() {
