@@ -168,61 +168,59 @@ impl ClaudeBridgeRuntime {
         let mut session_id = None;
         let mut seen_terminal_result = false;
 
-        loop {
-            let line = match lines.next_line().await {
-                Ok(Some(line)) => line,
-                Ok(None) => break,
-                Err(error) => {
-                    tracing::error!(
-                        job_id = %self.config.job_id,
-                        session_id = ?session_id,
-                        "failed reading claude stdout: {error}"
-                    );
-                    return Err(ClaudeSessionFailure {
-                        error: WorkerError::ExecutionFailed {
-                            reason: format!("failed reading claude stdout: {error}"),
-                        },
-                        emitted_terminal_result: seen_terminal_result,
-                    });
-                }
-            };
-
-            let line = line.trim().to_string();
+        while let Some(raw_line) = lines.next_line().await.map_err(|error| {
+            tracing::error!(
+                job_id = %self.config.job_id,
+                session_id = ?session_id,
+                "failed reading claude stdout: {error}"
+            );
+            ClaudeSessionFailure {
+                error: WorkerError::ExecutionFailed {
+                    reason: format!("failed reading claude stdout: {error}"),
+                },
+                emitted_terminal_result: seen_terminal_result,
+            }
+        })? {
+            let line = raw_line.trim().to_string();
             if line.is_empty() {
                 continue;
             }
 
-            match serde_json::from_str::<ClaudeStreamEvent>(&line) {
-                Ok(event) => {
-                    if event.event_type == "system"
-                        && let Some(ref captured_session_id) = event.session_id
-                    {
-                        session_id = Some(captured_session_id.clone());
-                        tracing::info!(
-                            job_id = %self.config.job_id,
-                            session_id = %captured_session_id,
-                            "Captured Claude session ID"
-                        );
-                    }
+            let parsed_event = serde_json::from_str::<ClaudeStreamEvent>(&line);
+            let Ok(event) = parsed_event else {
+                let Err(error) = parsed_event else {
+                    unreachable!("parsed_event should be an error here");
+                };
+                tracing::debug!(
+                    job_id = %self.config.job_id,
+                    "Non-JSON claude output: {} (parse error: {})",
+                    line,
+                    error
+                );
+                self.report_event(
+                    JobEventType::Status,
+                    &serde_json::json!({ "message": line }),
+                )
+                .await;
+                continue;
+            };
 
-                    for payload in stream_event_to_payloads(&event) {
-                        seen_terminal_result |= payload.event_type == JobEventType::Result;
-                        self.report_event(payload.event_type, &payload.data).await;
-                    }
-                }
-                Err(error) => {
-                    tracing::debug!(
-                        job_id = %self.config.job_id,
-                        "Non-JSON claude output: {} (parse error: {})",
-                        line,
-                        error
-                    );
-                    self.report_event(
-                        JobEventType::Status,
-                        &serde_json::json!({ "message": line }),
-                    )
-                    .await;
-                }
+            if let Some(captured_session_id) = event
+                .session_id
+                .as_ref()
+                .filter(|_| event.event_type == "system")
+            {
+                session_id = Some(captured_session_id.clone());
+                tracing::info!(
+                    job_id = %self.config.job_id,
+                    session_id = %captured_session_id,
+                    "Captured Claude session ID"
+                );
+            }
+
+            for payload in stream_event_to_payloads(&event) {
+                seen_terminal_result |= payload.event_type == JobEventType::Result;
+                self.report_event(payload.event_type, &payload.data).await;
             }
         }
 
