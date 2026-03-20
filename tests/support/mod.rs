@@ -27,6 +27,10 @@ pub use test_rig::run_recorded_trace;
 )]
 pub use test_rig::{TestChannelHandle, TestRig, TestRigBuilder};
 
+macro_rules! touch {
+    ($($e:expr),+ $(,)?) => { $(let _ = $e;)+ };
+}
+
 pub(crate) use ironclaw::testing_wasm::{
     github_tool_source_dir, github_wasm_artifact, metadata_test_runtime,
 };
@@ -63,6 +67,38 @@ const _: fn(&str, &str) -> String = fixtures::fixture_path;
 const _: fn(String, String, Vec<trace_llm::TraceStep>) -> trace_llm::LlmTrace =
     trace_llm::LlmTrace::single_turn;
 
+fn touch_cleanup_symbols() {
+    use crate::support::cleanup;
+
+    touch!(
+        cleanup::CleanupGuard::new as fn() -> cleanup::CleanupGuard,
+        cleanup::setup_test_dir as fn(&str) -> std::io::Result<()>,
+        cleanup::setup_test_dir_with_suffix
+            as fn(&std::path::Path, &str) -> std::io::Result<String>,
+    );
+}
+
+fn touch_fixture_symbols() {
+    use crate::support::fixtures;
+
+    touch!(
+        fixtures::FIXTURE_ROOT,
+        fixtures::DEFAULT_TIMEOUT,
+        fixtures::LONG_TIMEOUT,
+        fixtures::fixture_path as fn(&str, &str) -> String,
+    );
+}
+
+fn touch_trace_symbols() {
+    use crate::support::trace_llm;
+
+    touch!(
+        trace_llm::LlmTrace::single_turn
+            as fn(String, String, Vec<trace_llm::TraceStep>) -> trace_llm::LlmTrace,
+        trace_llm::patch_json_value as fn(&mut serde_json::Value, &str, &str),
+    );
+}
+
 fn trace_support_symbol_refs() {
     const _: fn(&mut serde_json::Value, &str, &str) = trace_llm::patch_json_value;
     const _: fn(trace_llm::LlmTrace) -> trace_llm::TraceLlm = trace_llm::TraceLlm::from_trace;
@@ -98,7 +134,7 @@ fn trace_support_symbol_refs() {
     assert_trace_from_file_async(trace_llm::LlmTrace::from_file_async);
 }
 
-fn test_rig_symbol_refs() {
+fn touch_test_rig_symbols() {
     const _: fn(std::sync::Arc<test_channel::TestChannel>) -> test_rig::TestChannelHandle =
         test_rig::TestChannelHandle::new;
     const _: fn() -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::new;
@@ -233,6 +269,13 @@ fn test_rig_symbol_refs() {
         const _: fn(test_rig::TestRigBuilder) -> AsyncBuildRig = build_sig;
         const _: for<'a> fn(&'a str) -> AsyncUnit<'a> = run_recorded_trace_sig;
     }
+}
+
+fn test_rig_symbol_refs() {
+    touch_cleanup_symbols();
+    touch_fixture_symbols();
+    touch_trace_symbols();
+    touch_test_rig_symbols();
 }
 
 const _: fn() = trace_support_symbol_refs;
