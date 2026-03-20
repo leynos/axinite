@@ -4,51 +4,92 @@ use std::net::{IpAddr, SocketAddr};
 
 use crate::tools::tool::ToolError;
 
+pub(super) struct HttpsUrl(reqwest::Url);
+
+impl HttpsUrl {
+    pub(super) fn as_url(&self) -> &reqwest::Url {
+        &self.0
+    }
+}
+
+impl TryFrom<&str> for HttpsUrl {
+    type Error = ToolError;
+
+    fn try_from(url_str: &str) -> Result<Self, Self::Error> {
+        let parsed = reqwest::Url::parse(url_str)
+            .map_err(|e| ToolError::ExecutionFailed(format!("Invalid URL '{}': {}", url_str, e)))?;
+
+        if parsed.scheme() != "https" {
+            return Err(ToolError::ExecutionFailed(format!(
+                "Only HTTPS URLs are allowed for skill fetching, got scheme '{}'",
+                parsed.scheme()
+            )));
+        }
+
+        if parsed.host().is_none() {
+            return Err(ToolError::ExecutionFailed("URL has no host".to_string()));
+        }
+
+        Ok(Self(parsed))
+    }
+}
+
+pub(super) struct NormalizedDomain(String);
+
+impl NormalizedDomain {
+    pub(super) fn new(host: &str) -> Self {
+        Self(host.trim_end_matches('.').to_lowercase())
+    }
+
+    pub(super) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+enum Host {
+    Domain(NormalizedDomain),
+    Ip(IpAddr),
+}
+
 /// Return `true` when the lowercased, normalised hostname is known to resolve
 /// to an internal or metadata endpoint that must not be fetched.
-fn is_blocked_hostname(host_lower: &str) -> bool {
-    host_lower == "localhost"
-        || host_lower == "metadata.google.internal"
-        || host_lower.ends_with(".internal")
-        || host_lower.ends_with(".local")
+fn is_blocked_hostname(host: &NormalizedDomain) -> bool {
+    host.as_str() == "localhost"
+        || host.as_str() == "metadata.google.internal"
+        || host.as_str().ends_with(".internal")
+        || host.as_str().ends_with(".local")
 }
 
 /// Validate that a URL is safe to fetch.
-pub(super) fn validate_fetch_url(url_str: &str) -> Result<reqwest::Url, ToolError> {
-    let parsed = reqwest::Url::parse(url_str)
-        .map_err(|e| ToolError::ExecutionFailed(format!("Invalid URL '{}': {}", url_str, e)))?;
-
-    if parsed.scheme() != "https" {
-        return Err(ToolError::ExecutionFailed(format!(
-            "Only HTTPS URLs are allowed for skill fetching, got scheme '{}'",
-            parsed.scheme()
-        )));
-    }
-
-    let host = parsed
+pub(super) fn validate_fetch_url(url: &HttpsUrl) -> Result<reqwest::Url, ToolError> {
+    let parsed = url.as_url().clone();
+    let display_host = parsed
         .host()
-        .ok_or_else(|| ToolError::ExecutionFailed("URL has no host".to_string()))?;
-
-    if let Some(ip) = host_ip_addr(&host) {
-        validate_fetch_ip(&ip, &host.to_string())?;
-    }
-
-    let host_lower = normalize_domain(host.to_string().as_str()).to_lowercase();
-    if is_blocked_hostname(&host_lower) {
-        return Err(ToolError::ExecutionFailed(format!(
-            "URL points to an internal hostname: {}",
-            host
-        )));
+        .expect("HttpsUrl guarantees that validated URLs always have a host")
+        .to_string();
+    match parse_host(&parsed) {
+        Host::Ip(ip) => validate_fetch_ip(&ip, &display_host)?,
+        Host::Domain(domain) => {
+            if is_blocked_hostname(&domain) {
+                return Err(ToolError::ExecutionFailed(format!(
+                    "URL points to an internal hostname: {}",
+                    display_host
+                )));
+            }
+        }
     }
 
     Ok(parsed)
 }
 
-fn host_ip_addr(host: &url::Host<&str>) -> Option<IpAddr> {
-    match host {
-        url::Host::Ipv4(v4) => Some(IpAddr::V4(*v4)),
-        url::Host::Ipv6(v6) => Some(normalize_ip(IpAddr::V6(*v6))),
-        url::Host::Domain(_) => None,
+fn parse_host(url: &reqwest::Url) -> Host {
+    match url
+        .host()
+        .expect("HttpsUrl guarantees that validated URLs always have a host")
+    {
+        url::Host::Ipv4(v4) => Host::Ip(IpAddr::V4(v4)),
+        url::Host::Ipv6(v6) => Host::Ip(normalize_ip(IpAddr::V6(v6))),
+        url::Host::Domain(domain) => Host::Domain(NormalizedDomain::new(domain)),
     }
 }
 
@@ -79,21 +120,20 @@ fn validate_fetch_ip(ip: &IpAddr, display_host: &str) -> Result<(), ToolError> {
     Ok(())
 }
 
-pub(super) fn normalize_domain(host: &str) -> &str {
-    host.trim_end_matches('.')
-}
-
-pub(super) fn validate_resolved_addrs(host: &str, addrs: &[SocketAddr]) -> Result<(), ToolError> {
+pub(super) fn validate_resolved_addrs(
+    host: &NormalizedDomain,
+    addrs: &[SocketAddr],
+) -> Result<(), ToolError> {
     if addrs.is_empty() {
         return Err(ToolError::ExecutionFailed(format!(
             "DNS resolution returned no addresses for {}",
-            host
+            host.as_str()
         )));
     }
 
     for addr in addrs {
         let ip = normalize_ip(addr.ip());
-        validate_fetch_ip(&ip, host)?;
+        validate_fetch_ip(&ip, host.as_str())?;
     }
 
     Ok(())

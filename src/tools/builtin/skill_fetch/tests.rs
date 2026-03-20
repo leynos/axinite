@@ -7,6 +7,7 @@ use flate2::Compression;
 use flate2::write::DeflateEncoder;
 use rstest::rstest;
 
+use super::url_policy::{HttpsUrl, NormalizedDomain};
 use super::{extract_skill_from_zip, is_private_ip, validate_fetch_url, validate_resolved_addrs};
 
 type ZipEntryBuilder = fn(&str, &[u8]) -> Vec<u8>;
@@ -27,7 +28,10 @@ fn test_validate_fetch_url_rejects_invalid_targets(
     #[case] input_url: &str,
     #[case] expected_error_substring: &str,
 ) {
-    let err = validate_fetch_url(input_url).expect_err("URL should be rejected");
+    let err = match HttpsUrl::try_from(input_url) {
+        Ok(url) => validate_fetch_url(&url).expect_err("URL should be rejected"),
+        Err(err) => err,
+    };
     assert!(
         err.to_string().contains(expected_error_substring),
         "expected error containing '{expected_error_substring}', got: {err}",
@@ -42,7 +46,8 @@ fn test_validate_fetch_url_rejects_invalid_targets(
 #[case("https://example.com/skills/deploy.md")]
 #[case("https://[::ffff:8.8.8.8]/skill.md")]
 fn test_validate_fetch_url_allows_public_https_targets(#[case] input_url: &str) {
-    validate_fetch_url(input_url).expect("public HTTPS URL should be accepted");
+    let https = HttpsUrl::try_from(input_url).expect("public HTTPS URL should parse");
+    validate_fetch_url(&https).expect("public HTTPS URL should be accepted");
 }
 
 #[rstest]
@@ -54,6 +59,7 @@ fn test_validate_resolved_addrs_cases(
     #[case] expected_ok: bool,
     #[case] expected_error_substring: Option<&str>,
 ) {
+    let host = NormalizedDomain::new(hostname);
     let addrs: Vec<SocketAddr> = addrs_csv
         .split(',')
         .map(|addr| {
@@ -63,10 +69,10 @@ fn test_validate_resolved_addrs_cases(
         .collect();
 
     if expected_ok {
-        validate_resolved_addrs(hostname, &addrs)
+        validate_resolved_addrs(&host, &addrs)
             .expect("resolved public addresses should be accepted");
     } else {
-        let err = validate_resolved_addrs(hostname, &addrs)
+        let err = validate_resolved_addrs(&host, &addrs)
             .expect_err("resolved private addresses should be rejected");
         assert!(
             err.to_string()
@@ -79,7 +85,8 @@ fn test_validate_resolved_addrs_cases(
 
 #[test]
 fn test_validate_resolved_addrs_rejects_empty_results() {
-    let err = validate_resolved_addrs("example.com", &Vec::<SocketAddr>::new())
+    let host = NormalizedDomain::new("example.com");
+    let err = validate_resolved_addrs(&host, &Vec::<SocketAddr>::new())
         .expect_err("empty DNS resolution results should be rejected");
     assert!(
         err.to_string()

@@ -2,7 +2,7 @@
 
 use futures::StreamExt;
 
-use super::url_policy::{normalize_domain, validate_fetch_url, validate_resolved_addrs};
+use super::url_policy::{HttpsUrl, NormalizedDomain, validate_fetch_url, validate_resolved_addrs};
 use super::zip_extract::extract_skill_from_zip;
 use crate::tools::tool::ToolError;
 
@@ -27,22 +27,24 @@ async fn build_safe_fetch_client(parsed: &reqwest::Url) -> Result<reqwest::Clien
             .build()
             .map_err(|e| ToolError::ExecutionFailed(format!("HTTP client error: {}", e))),
         url::Host::Domain(domain) => {
-            let lookup_host = normalize_domain(domain);
+            let lookup_host = NormalizedDomain::new(domain);
             let port = parsed
                 .port_or_known_default()
                 .ok_or_else(|| ToolError::ExecutionFailed("URL has no valid port".to_string()))?;
 
-            let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((lookup_host, port))
-                .await
-                .map_err(|e| {
-                    ToolError::ExecutionFailed(format!(
-                        "DNS resolution failed for {}: {}",
-                        lookup_host, e
-                    ))
-                })?
-                .collect();
+            let addrs: Vec<std::net::SocketAddr> =
+                tokio::net::lookup_host((lookup_host.as_str(), port))
+                    .await
+                    .map_err(|e| {
+                        ToolError::ExecutionFailed(format!(
+                            "DNS resolution failed for {}: {}",
+                            lookup_host.as_str(),
+                            e
+                        ))
+                    })?
+                    .collect();
 
-            validate_resolved_addrs(domain, &addrs)?;
+            validate_resolved_addrs(&NormalizedDomain::new(domain), &addrs)?;
 
             build_fetch_client_builder()
                 .resolve_to_addrs(domain, &addrs)
@@ -54,7 +56,8 @@ async fn build_safe_fetch_client(parsed: &reqwest::Url) -> Result<reqwest::Clien
 
 /// Fetch SKILL.md content from a URL with SSRF protection.
 pub(crate) async fn fetch_skill_content(url: &str) -> Result<String, ToolError> {
-    let parsed = validate_fetch_url(url)?;
+    let https = HttpsUrl::try_from(url)?;
+    let parsed = validate_fetch_url(&https)?;
     let client = build_safe_fetch_client(&parsed).await?;
 
     let response = client.get(parsed.clone()).send().await.map_err(|e| {
