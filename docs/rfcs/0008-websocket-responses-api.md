@@ -436,9 +436,11 @@ Effort estimates are coarse (low/med/high) because runtime/language constraints 
 
 ### CI checks and rollout checklist
 
+Table: Environment variables for WebSocket Responses API
+
 | Variable name | Meaning | Default or rule |
 | --- | --- | --- |
-| `OPENAI_RESPONSES_WS_ENABLED` | Enables WebSocket-based OpenAI Responses API support for streaming responses, | Default off; rollout-controlled flag or equivalent provider configuration knob. |
+| `OPENAI_RESPONSES_WS_ENABLED` | Enables WebSocket-based OpenAI Responses API support for streaming responses | Default off; rollout-controlled flag or equivalent provider configuration knob. |
 
 - Add “contract tests” that compare the tool call loop semantics against existing Chat Completions backend (for equivalent prompts).
 - Rollout:

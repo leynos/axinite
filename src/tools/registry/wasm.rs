@@ -144,8 +144,8 @@ impl ToolRegistry {
             .map(|http| http.credentials.values().cloned().collect())
             .unwrap_or_default();
 
-        self.register(Arc::new(wrapper)).await;
         self.register_wasm_credential_mappings(name, credential_mappings);
+        self.register(Arc::new(wrapper)).await;
 
         tracing::debug!(name = name, "Registered WASM tool");
         Ok(())

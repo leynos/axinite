@@ -6,10 +6,17 @@
 //!
 //! File: `~/.ironclaw/.env` (standard dotenvy format)
 
+mod migration;
+mod pid_lock;
 pub mod tools;
+
+pub use migration::{MigrationError, migrate_disk_to_db};
+pub use pid_lock::{PidLock, PidLockError, pid_lock_path};
 
 use std::path::PathBuf;
 use std::sync::LazyLock;
+
+use migration::migrate_bootstrap_json_to_env;
 
 const IRONCLAW_BASE_DIR_ENV: &str = "IRONCLAW_BASE_DIR";
 
@@ -122,47 +129,6 @@ pub fn load_ironclaw_env() {
             // before the Tokio runtime is started, so no other threads exist yet.
             unsafe { std::env::set_var("DATABASE_BACKEND", "libsql") };
         }
-    }
-}
-
-/// If `bootstrap.json` exists, pull `database_url` out of it and write `.env`.
-fn migrate_bootstrap_json_to_env(env_path: &std::path::Path) {
-    let ironclaw_dir = env_path
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."));
-    let bootstrap_path = ironclaw_dir.join("bootstrap.json");
-
-    if !bootstrap_path.exists() {
-        return;
-    }
-
-    let content = match std::fs::read_to_string(&bootstrap_path) {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-
-    // Minimal parse: just grab database_url from the JSON
-    let parsed: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-
-    if let Some(url) = parsed.get("database_url").and_then(|v| v.as_str()) {
-        if let Some(parent) = env_path.parent()
-            && let Err(e) = std::fs::create_dir_all(parent)
-        {
-            eprintln!("Warning: failed to create {}: {}", parent.display(), e);
-            return;
-        }
-        if let Err(e) = std::fs::write(env_path, format!("DATABASE_URL=\"{}\"\n", url)) {
-            eprintln!("Warning: failed to migrate bootstrap.json to .env: {}", e);
-            return;
-        }
-        rename_to_migrated(&bootstrap_path);
-        eprintln!(
-            "Migrated DATABASE_URL from bootstrap.json to {}",
-            env_path.display()
-        );
     }
 }
 
@@ -324,238 +290,6 @@ fn restrict_file_permissions(_path: &std::path::Path) -> std::io::Result<()> {
 /// paths. Prefer `save_bootstrap_env` for new code.
 pub fn save_database_url(url: &str) -> std::io::Result<()> {
     save_bootstrap_env(&[("DATABASE_URL", url)])
-}
-
-/// One-time migration of legacy `~/.ironclaw/settings.json` into the database.
-///
-/// Only runs when a `settings.json` exists on disk AND the DB has no settings
-/// yet. After the wizard writes directly to the DB, this path is only hit by
-/// users upgrading from the old disk-only configuration.
-///
-/// After syncing, renames `settings.json` to `.migrated` so it won't trigger again.
-pub async fn migrate_disk_to_db(
-    store: &dyn crate::db::Database,
-    user_id: &str,
-) -> Result<(), MigrationError> {
-    let ironclaw_dir = ironclaw_base_dir();
-    let legacy_settings_path = ironclaw_dir.join("settings.json");
-
-    if !legacy_settings_path.exists() {
-        tracing::debug!("No legacy settings.json found, skipping disk-to-DB migration");
-        return Ok(());
-    }
-
-    // If DB already has settings, this is not a first boot, the wizard already
-    // wrote directly to the DB. Just clean up the stale file.
-    let has_settings = store.has_settings(user_id).await.map_err(|e| {
-        MigrationError::Database(format!("Failed to check existing settings: {}", e))
-    })?;
-    if has_settings {
-        tracing::info!("DB already has settings, renaming stale settings.json");
-        rename_to_migrated(&legacy_settings_path);
-        return Ok(());
-    }
-
-    tracing::info!("Migrating disk settings to database...");
-
-    // 1. Load and migrate settings.json
-    let settings = crate::settings::Settings::load_from(&legacy_settings_path);
-    let db_map = settings.to_db_map();
-    if !db_map.is_empty() {
-        store
-            .set_all_settings(user_id, &db_map)
-            .await
-            .map_err(|e| {
-                MigrationError::Database(format!("Failed to write settings to DB: {}", e))
-            })?;
-        tracing::info!("Migrated {} settings to database", db_map.len());
-    }
-
-    // 2. Write DATABASE_URL to ~/.ironclaw/.env
-    if let Some(ref url) = settings.database_url {
-        save_database_url(url)
-            .map_err(|e| MigrationError::Io(format!("Failed to write .env: {}", e)))?;
-        tracing::info!("Wrote DATABASE_URL to {}", ironclaw_env_path().display());
-    }
-
-    // 3. Migrate mcp-servers.json if it exists
-    let mcp_path = ironclaw_dir.join("mcp-servers.json");
-    if mcp_path.exists() {
-        match std::fs::read_to_string(&mcp_path) {
-            Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
-                Ok(value) => {
-                    store
-                        .set_setting(user_id, "mcp_servers", &value)
-                        .await
-                        .map_err(|e| {
-                            MigrationError::Database(format!(
-                                "Failed to write MCP servers to DB: {}",
-                                e
-                            ))
-                        })?;
-                    tracing::info!("Migrated mcp-servers.json to database");
-
-                    rename_to_migrated(&mcp_path);
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to parse mcp-servers.json: {}", e);
-                }
-            },
-            Err(e) => {
-                tracing::warn!("Failed to read mcp-servers.json: {}", e);
-            }
-        }
-    }
-
-    // 4. Migrate session.json if it exists
-    let session_path = ironclaw_dir.join("session.json");
-    if session_path.exists() {
-        match std::fs::read_to_string(&session_path) {
-            Ok(content) => match serde_json::from_str::<serde_json::Value>(&content) {
-                Ok(value) => {
-                    store
-                        .set_setting(user_id, "nearai.session_token", &value)
-                        .await
-                        .map_err(|e| {
-                            MigrationError::Database(format!(
-                                "Failed to write session to DB: {}",
-                                e
-                            ))
-                        })?;
-                    tracing::info!("Migrated session.json to database");
-
-                    rename_to_migrated(&session_path);
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to parse session.json: {}", e);
-                }
-            },
-            Err(e) => {
-                tracing::warn!("Failed to read session.json: {}", e);
-            }
-        }
-    }
-
-    // 5. Rename settings.json to .migrated (don't delete, safety net)
-    rename_to_migrated(&legacy_settings_path);
-
-    // 6. Clean up old bootstrap.json if it exists (superseded by .env)
-    let old_bootstrap = ironclaw_dir.join("bootstrap.json");
-    if old_bootstrap.exists() {
-        rename_to_migrated(&old_bootstrap);
-        tracing::info!("Renamed old bootstrap.json to .migrated");
-    }
-
-    tracing::info!("Disk-to-DB migration complete");
-    Ok(())
-}
-
-/// Rename a file to `<name>.migrated` as a safety net.
-fn rename_to_migrated(path: &std::path::Path) {
-    let mut migrated = path.as_os_str().to_owned();
-    migrated.push(".migrated");
-    if let Err(e) = std::fs::rename(path, &migrated) {
-        tracing::warn!("Failed to rename {} to .migrated: {}", path.display(), e);
-    }
-}
-
-/// Errors that can occur during disk-to-DB migration.
-#[derive(Debug, thiserror::Error)]
-pub enum MigrationError {
-    #[error("Database error: {0}")]
-    Database(String),
-    #[error("IO error: {0}")]
-    Io(String),
-}
-
-// ── PID Lock ──────────────────────────────────────────────────────────────
-
-/// Path to the PID lock file: `~/.ironclaw/ironclaw.pid`.
-pub fn pid_lock_path() -> PathBuf {
-    ironclaw_base_dir().join("ironclaw.pid")
-}
-
-/// A PID-based lock that prevents multiple IronClaw instances from running
-/// simultaneously.
-///
-/// Uses `fs4::try_lock_exclusive()` for atomic locking (no TOCTOU race),
-/// then writes the current PID into the locked file for diagnostics.
-/// The OS-level lock is held for the lifetime of this struct and
-/// automatically released on drop (along with the PID file cleanup).
-#[derive(Debug)]
-pub struct PidLock {
-    path: PathBuf,
-    /// Held open to maintain the OS-level exclusive lock.
-    _file: std::fs::File,
-}
-
-/// Errors from PID lock acquisition.
-#[derive(Debug, thiserror::Error)]
-pub enum PidLockError {
-    #[error("Another IronClaw instance is already running (PID {pid})")]
-    AlreadyRunning { pid: u32 },
-    #[error("Failed to acquire PID lock: {0}")]
-    Io(#[from] std::io::Error),
-}
-
-impl PidLock {
-    /// Try to acquire the PID lock.
-    ///
-    /// Uses an exclusive file lock (`flock`/`LockFileEx`) so that two
-    /// concurrent processes cannot both acquire the lock — no TOCTOU race.
-    /// If the lock file exists but the holding process is gone (stale),
-    /// the lock is reclaimed automatically by the OS.
-    pub fn acquire() -> Result<Self, PidLockError> {
-        Self::acquire_at(pid_lock_path())
-    }
-
-    /// Acquire at a specific path (for testing).
-    fn acquire_at(path: PathBuf) -> Result<Self, PidLockError> {
-        use fs4::FileExt;
-        use std::fs::OpenOptions;
-        use std::io::Write;
-
-        // Ensure parent directory exists
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        // Open (or create) the lock file
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&path)?;
-
-        // Try non-blocking exclusive lock — if another process holds it,
-        // this fails immediately instead of blocking.
-        if let Err(e) = file.try_lock_exclusive() {
-            if e.kind() == std::io::ErrorKind::WouldBlock {
-                // Lock held by another process — read its PID for the error message
-                let pid = std::fs::read_to_string(&path)
-                    .ok()
-                    .and_then(|s| s.trim().parse::<u32>().ok())
-                    .unwrap_or(0);
-                return Err(PidLockError::AlreadyRunning { pid });
-            }
-            // Other errors (permissions, unsupported filesystem, etc.)
-            return Err(PidLockError::Io(e));
-        }
-
-        // We hold the exclusive lock — write our PID
-        file.set_len(0)?; // truncate
-        write!(file, "{}", std::process::id())?;
-
-        Ok(PidLock { path, _file: file })
-    }
-}
-
-impl Drop for PidLock {
-    fn drop(&mut self) {
-        // Remove the PID file; the OS-level lock is released when _file is dropped.
-        let _ = std::fs::remove_file(&self.path);
-    }
 }
 
 #[cfg(test)]

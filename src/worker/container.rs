@@ -211,6 +211,15 @@ impl WorkerRuntime {
             );
         }
 
+        if let Err(report_error) = self.report_failure(0, "Worker failed during startup").await {
+            tracing::warn!(
+                job_id = %self.config.job_id,
+                stage,
+                error = %report_error,
+                "Failed to emit terminal pre-loop completion"
+            );
+        }
+
         Err(error)
     }
 

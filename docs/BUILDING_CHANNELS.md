@@ -1,6 +1,6 @@
 # Building WASM Channels
 
-This guide covers how to build WASM channel modules for IronClaw.
+This guide covers how to build WebAssembly (WASM) channel modules for IronClaw.
 
 ## Overview
 

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use rstest::rstest;
 
 use super::fixtures::test_state;
@@ -214,16 +215,24 @@ async fn post_extension_tool(
         .uri(format!("/worker/{job_id}/extension_tool"))
         .header("Authorization", format!("Bearer {token}"))
         .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(&payload)?))?;
+        .body(Body::from(
+            serde_json::to_vec(&payload).context("serialise extension-tool proxy payload")?,
+        ))
+        .context("build extension-tool proxy request")?;
 
-    router.oneshot(req).await.map_err(anyhow::Error::from)
+    router
+        .oneshot(req)
+        .await
+        .context("send extension-tool proxy request")
 }
 
 async fn decode_proxy_extension_tool_response(
     resp: axum::http::Response<Body>,
 ) -> anyhow::Result<crate::worker::api::ProxyExtensionToolResponse> {
-    let body = axum::body::to_bytes(resp.into_body(), 4096).await?;
-    Ok(serde_json::from_slice(&body)?)
+    let body = axum::body::to_bytes(resp.into_body(), 4096)
+        .await
+        .context("read extension-tool proxy response body")?;
+    serde_json::from_slice(&body).context("decode extension-tool proxy response")
 }
 
 #[rstest]

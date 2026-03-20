@@ -4,34 +4,37 @@
 //! the result using declarative `expects` from the fixture JSON plus any
 //! additional assertions that can't be expressed declaratively.
 
+use anyhow::{Context, Result};
+
 use crate::support::cleanup::CleanupGuard;
 use crate::support::fixtures::{DEFAULT_TIMEOUT, fixture_path};
 use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_llm::LlmTrace;
 
-async fn run_spot_test(fixture_file: &str, message: &str) {
+async fn run_spot_test(fixture_file: &str, message: &str) -> Result<()> {
     let trace = LlmTrace::from_file_async(fixture_path("spot", fixture_file))
         .await
-        .unwrap_or_else(|_| panic!("failed to load fixture: spot/{fixture_file}"));
+        .with_context(|| format!("failed to load fixture: spot/{fixture_file}"))?;
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
-        .await
-        .expect("failed to build test rig");
+        .await?;
 
     rig.send_message(message).await;
     let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     rig.verify_trace_expects(&trace, &responses);
     rig.shutdown();
+    Ok(())
 }
 
 /// Generates a `#[tokio::test]` wrapper that delegates to `run_spot_test`.
 macro_rules! spot_test {
     ($name:ident, $fixture:literal, $message:literal) => {
         #[tokio::test]
-        async fn $name() {
-            run_spot_test($fixture, $message).await;
+        async fn $name() -> anyhow::Result<()> {
+            run_spot_test($fixture, $message).await?;
+            Ok(())
         }
     };
 }

@@ -242,7 +242,7 @@ The consolidation was completed successfully. Key changes:
   subdirectory modules.
 
 - Ensured `mod support;` is only declared in harnesses that need it
-  (`e2e_traces`, `channels`, `tools_and_config`).
+  (`e2e_traces`, `channels`, and `tools_and_config`).
 
 - No changes were needed to `Cargo.toml`
   (`html_to_markdown` already had a `required-features` gate).

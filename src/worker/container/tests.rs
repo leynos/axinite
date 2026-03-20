@@ -236,10 +236,9 @@ fn build_test_runtime(orchestrator_url: String, job_id: Uuid) -> WorkerRuntime {
 }
 
 struct RuntimeTestHarness {
-    state: Arc<RuntimeTestState>,
     runtime: Option<WorkerRuntime>,
     shutdown_tx: Option<oneshot::Sender<()>>,
-    handle: tokio::task::JoinHandle<std::io::Result<()>>,
+    handle: Option<tokio::task::JoinHandle<std::io::Result<()>>>,
 }
 
 async fn setup_runtime_test(
@@ -250,10 +249,9 @@ async fn setup_runtime_test(
         spawn_runtime_test_server(Arc::clone(&state)).await?;
     let runtime = build_test_runtime(orchestrator_url, job_id);
     Ok(RuntimeTestHarness {
-        state,
         runtime: Some(runtime),
         shutdown_tx: Some(shutdown_tx),
-        handle,
+        handle: Some(handle),
     })
 }
 
@@ -264,12 +262,31 @@ impl RuntimeTestHarness {
             .expect("runtime test harness should contain a runtime")
     }
 
-    async fn shutdown(mut self) -> std::io::Result<Arc<RuntimeTestState>> {
+    async fn shutdown_handle(
+        handle: tokio::task::JoinHandle<std::io::Result<()>>,
+    ) -> std::io::Result<()> {
+        handle.await??;
+        Ok(())
+    }
+}
+
+impl Drop for RuntimeTestHarness {
+    fn drop(&mut self) {
         if let Some(shutdown_tx) = self.shutdown_tx.take() {
             let _ = shutdown_tx.send(());
         }
-        self.handle.await??;
-        Ok(self.state)
+
+        if let Some(handle) = self.handle.take() {
+            if let Ok(runtime_handle) = tokio::runtime::Handle::try_current() {
+                runtime_handle.spawn(async move {
+                    if let Err(error) = RuntimeTestHarness::shutdown_handle(handle).await {
+                        tracing::warn!(%error, "runtime test server shutdown failed");
+                    }
+                });
+            } else {
+                handle.abort();
+            }
+        }
     }
 }
 
@@ -331,7 +348,23 @@ async fn worker_runtime_reports_failed_status_for_pre_loop_errors(
         "expected a sanitised pre-loop failure message, got {failed_status:?}"
     );
 
-    let _ = harness.shutdown().await?;
+    let completions = state.completions.lock().await;
+    assert_eq!(
+        completions.len(),
+        1,
+        "expected a terminal completion report"
+    );
+    assert_eq!(
+        completions[0].message.as_deref(),
+        Some("Worker failed during startup")
+    );
+    drop(completions);
+
+    let result_events = state.result_events.lock().await;
+    assert_eq!(result_events.len(), 1, "expected a terminal result event");
+    assert_eq!(result_events[0]["message"], "Worker failed during startup");
+    assert_eq!(result_events[0]["success"], false);
+
     Ok(())
 }
 
@@ -373,7 +406,23 @@ async fn worker_runtime_emits_failed_status_for_initial_status_rejections() -> a
         statuses[1]
     );
 
-    let _ = harness.shutdown().await?;
+    let completions = state.completions.lock().await;
+    assert_eq!(
+        completions.len(),
+        1,
+        "expected a terminal completion report"
+    );
+    assert_eq!(
+        completions[0].message.as_deref(),
+        Some("Worker failed during startup")
+    );
+    drop(completions);
+
+    let result_events = state.result_events.lock().await;
+    assert_eq!(result_events.len(), 1, "expected a terminal result event");
+    assert_eq!(result_events[0]["message"], "Worker failed during startup");
+    assert_eq!(result_events[0]["success"], false);
+
     Ok(())
 }
 
@@ -422,6 +471,5 @@ async fn worker_runtime_sanitizes_failure_messages(
         "result payload should not leak the detailed error text"
     );
 
-    let _ = harness.shutdown().await?;
     Ok(())
 }

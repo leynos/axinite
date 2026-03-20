@@ -104,14 +104,24 @@ fn copy_one_file(src: &Path, dst: &Path) -> usize {
 
     match std::fs::copy(src, dst) {
         Ok(_) => 1,
-        Err(error) if error.kind() == ErrorKind::NotFound => {
-            tracing::debug!(
-                "fs_setup: source disappeared {} → {}, skipping: {error}",
-                src.display(),
-                dst.display()
-            );
-            0
-        }
+        Err(error) if error.kind() == ErrorKind::NotFound => match src.metadata() {
+            Err(metadata_error) if metadata_error.kind() == ErrorKind::NotFound => {
+                tracing::debug!(
+                    "fs_setup: source disappeared {} → {}, skipping: {error}",
+                    src.display(),
+                    dst.display()
+                );
+                0
+            }
+            _ => {
+                tracing::debug!(
+                    "fs_setup: copy {} → {} failed: {error}",
+                    src.display(),
+                    dst.display()
+                );
+                0
+            }
+        },
         Err(error) => {
             tracing::debug!(
                 "fs_setup: copy {} → {} failed: {error}",
