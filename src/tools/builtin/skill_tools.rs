@@ -3,12 +3,13 @@
 //! Four tools for discovering, installing, listing, and removing skills
 //! entirely through conversation, following the extension_tools pattern.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
 use crate::context::JobContext;
-use crate::skills::catalog::SkillCatalog;
+use crate::skills::catalog::{CatalogEntry, SkillCatalog};
 use crate::skills::registry::SkillRegistry;
 use crate::tools::tool::{Tool, ToolError, ToolOutput, require_str};
 
@@ -143,6 +144,86 @@ impl SkillSearchTool {
     ) -> Self {
         Self { registry, catalog }
     }
+
+    fn parse_search_query(params: &serde_json::Value) -> Result<String, ToolError> {
+        Ok(require_str(params, "query")?.to_string())
+    }
+
+    async fn compute_installed_index(
+        registry: &Arc<std::sync::RwLock<SkillRegistry>>,
+    ) -> Result<HashSet<String>, ToolError> {
+        let guard = registry
+            .read()
+            .map_err(|e| ToolError::ExecutionFailed(format!("Lock poisoned: {}", e)))?;
+        Ok(guard
+            .skills()
+            .iter()
+            .map(|s| s.manifest.name.clone())
+            .collect())
+    }
+
+    fn is_entry_installed(installed: &HashSet<String>, name: &str, slug_opt: Option<&str>) -> bool {
+        installed.contains(name)
+            || slug_opt.is_some_and(|slug| {
+                slug.rsplit('/')
+                    .next()
+                    .is_some_and(|segment| installed.contains(segment))
+            })
+    }
+
+    fn format_search_results(
+        entries: Vec<CatalogEntry>,
+        installed: &HashSet<String>,
+    ) -> Result<serde_json::Value, ToolError> {
+        Ok(serde_json::Value::Array(
+            entries
+                .into_iter()
+                .map(|entry| {
+                    let is_installed =
+                        Self::is_entry_installed(installed, &entry.name, Some(&entry.slug));
+                    serde_json::json!({
+                        "slug": entry.slug,
+                        "name": entry.name,
+                        "description": entry.description,
+                        "version": entry.version,
+                        "score": entry.score,
+                        "installed": is_installed,
+                        "stars": entry.stars,
+                        "downloads": entry.downloads,
+                        "owner": entry.owner,
+                    })
+                })
+                .collect(),
+        ))
+    }
+
+    fn collect_local_matches(&self, query: &str) -> Result<Vec<serde_json::Value>, ToolError> {
+        let query_lower = query.to_lowercase();
+        let guard = self
+            .registry
+            .read()
+            .map_err(|e| ToolError::ExecutionFailed(format!("Lock poisoned: {}", e)))?;
+        Ok(guard
+            .skills()
+            .iter()
+            .filter(|s| {
+                s.manifest.name.to_lowercase().contains(&query_lower)
+                    || s.manifest.description.to_lowercase().contains(&query_lower)
+                    || s.manifest
+                        .activation
+                        .keywords
+                        .iter()
+                        .any(|keyword| keyword.to_lowercase().contains(&query_lower))
+            })
+            .map(|s| {
+                serde_json::json!({
+                    "name": s.manifest.name,
+                    "description": s.manifest.description,
+                    "trust": s.trust.to_string(),
+                })
+            })
+            .collect())
+    }
 }
 
 #[async_trait]
@@ -173,9 +254,9 @@ impl Tool for SkillSearchTool {
         _ctx: &JobContext,
     ) -> Result<ToolOutput, ToolError> {
         let start = std::time::Instant::now();
-        let query = require_str(&params, "query")?;
+        let query = Self::parse_search_query(&params)?;
 
-        let catalog_outcome = self.catalog.search(query).await;
+        let catalog_outcome = self.catalog.search(&query).await;
         let catalog_error = catalog_outcome.error.clone();
 
         let mut catalog_entries = catalog_outcome.results;
@@ -183,71 +264,13 @@ impl Tool for SkillSearchTool {
             .enrich_search_results(&mut catalog_entries, 5)
             .await;
 
-        let installed_names: Vec<String> = {
-            let guard = self
-                .registry
-                .read()
-                .map_err(|e| ToolError::ExecutionFailed(format!("Lock poisoned: {}", e)))?;
-            guard
-                .skills()
-                .iter()
-                .map(|s| s.manifest.name.clone())
-                .collect()
-        };
-
-        let catalog_json: Vec<serde_json::Value> = catalog_entries
-            .iter()
-            .map(|entry| {
-                let slug_segment = entry.slug.rsplit('/').next();
-                let is_installed = installed_names.iter().any(|name| {
-                    entry.name == *name
-                        || slug_segment.is_some_and(|segment| segment == name.as_str())
-                });
-                serde_json::json!({
-                    "slug": entry.slug,
-                    "name": entry.name,
-                    "description": entry.description,
-                    "version": entry.version,
-                    "score": entry.score,
-                    "installed": is_installed,
-                    "stars": entry.stars,
-                    "downloads": entry.downloads,
-                    "owner": entry.owner,
-                })
-            })
-            .collect();
-
-        let query_lower = query.to_lowercase();
-        let local_matches: Vec<serde_json::Value> = {
-            let guard = self
-                .registry
-                .read()
-                .map_err(|e| ToolError::ExecutionFailed(format!("Lock poisoned: {}", e)))?;
-            guard
-                .skills()
-                .iter()
-                .filter(|s| {
-                    s.manifest.name.to_lowercase().contains(&query_lower)
-                        || s.manifest.description.to_lowercase().contains(&query_lower)
-                        || s.manifest
-                            .activation
-                            .keywords
-                            .iter()
-                            .any(|keyword| keyword.to_lowercase().contains(&query_lower))
-                })
-                .map(|s| {
-                    serde_json::json!({
-                        "name": s.manifest.name,
-                        "description": s.manifest.description,
-                        "trust": s.trust.to_string(),
-                    })
-                })
-                .collect()
-        };
+        let installed = Self::compute_installed_index(&self.registry).await?;
+        let catalog_json = Self::format_search_results(catalog_entries, &installed)?;
+        let local_matches = self.collect_local_matches(&query)?;
 
         let mut output = serde_json::json!({
             "catalog": catalog_json,
-            "catalog_count": catalog_json.len(),
+            "catalog_count": catalog_json.as_array().map_or(0, Vec::len),
             "installed": local_matches,
             "installed_count": local_matches.len(),
             "registry_url": self.catalog.registry_url(),
