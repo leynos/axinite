@@ -114,6 +114,7 @@ fn build_fetch_client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .user_agent(USER_AGENT)
+        .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
 }
 
