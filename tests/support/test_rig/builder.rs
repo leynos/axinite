@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ironclaw::agent::{Agent, AgentDeps};
-use ironclaw::app::{AppBuilder, AppBuilderFlags};
+use ironclaw::app::{AppBuilder, AppBuilderFlags, AppComponents};
 use ironclaw::channels::web::log_layer::LogBroadcaster;
 use ironclaw::config::Config;
 use ironclaw::llm::recording::{HttpExchange, ReplayingHttpInterceptor};
@@ -117,24 +117,95 @@ impl TestRigBuilder {
         self
     }
 
+    fn resolve_llm(&self) -> (Arc<dyn LlmProvider>, Option<Arc<TraceLlm>>) {
+        if let Some(llm) = &self.llm {
+            return (Arc::clone(llm), None);
+        }
+
+        let trace = self.trace.clone().unwrap_or_else(|| {
+            LlmTrace::single_turn(
+                "test-rig-default",
+                "(default)",
+                vec![TraceStep {
+                    request_hint: None,
+                    response: TraceResponse::Text {
+                        content: "Hello from test rig!".to_string(),
+                        input_tokens: 10,
+                        output_tokens: 5,
+                    },
+                    expected_tool_results: Vec::new(),
+                }],
+            )
+        });
+        let trace_llm = Arc::new(TraceLlm::from_trace(trace));
+        (
+            Arc::clone(&trace_llm) as Arc<dyn LlmProvider>,
+            Some(trace_llm),
+        )
+    }
+
+    fn build_http_interceptor(&self, trace: Option<&LlmTrace>) -> Option<ReplayingHttpInterceptor> {
+        if !self.http_exchanges.is_empty() {
+            return Some(ReplayingHttpInterceptor::new(self.http_exchanges.clone()));
+        }
+
+        let exchanges = trace
+            .map(|trace| trace.http_exchanges.clone())
+            .filter(|exchanges| !exchanges.is_empty())?;
+        Some(ReplayingHttpInterceptor::new(exchanges))
+    }
+
+    async fn register_optional_subsystems(
+        &self,
+        components: &mut AppComponents,
+        db: &Arc<dyn ironclaw::db::Database>,
+        temp_dir: &tempfile::TempDir,
+    ) {
+        if let (Some(_db), Some(workspace)) = (&components.db, &components.workspace) {
+            use ironclaw::agent::routine_engine::RoutineEngine;
+            use ironclaw::config::RoutineConfig;
+
+            let routine_config = RoutineConfig::default();
+            let (notify_tx, _notify_rx) = tokio::sync::mpsc::channel(16);
+            let engine = Arc::new(RoutineEngine::new(
+                routine_config,
+                Arc::clone(db),
+                components.llm.clone(),
+                Arc::clone(workspace),
+                notify_tx,
+                None,
+                components.tools.clone(),
+                components.safety.clone(),
+            ));
+            components
+                .tools
+                .register_routine_tools(Arc::clone(db), engine);
+        }
+
+        if self.enable_skills {
+            let registry = Arc::new(std::sync::RwLock::new(
+                ironclaw::skills::SkillRegistry::new(temp_dir.path().join("skills"))
+                    .with_installed_dir(temp_dir.path().join("installed_skills")),
+            ));
+            let catalog = ironclaw::skills::catalog::shared_catalog();
+            components
+                .tools
+                .register_skill_tools(Arc::clone(&registry), Arc::clone(&catalog));
+            components.skill_registry = Some(registry);
+            components.skill_catalog = Some(catalog);
+        }
+
+        for tool in &self.extra_tools {
+            components.tools.register(Arc::clone(tool)).await;
+        }
+    }
+
     /// Build the test rig, creating a real agent and spawning it in the background.
     #[cfg(feature = "libsql")]
     pub async fn build(self) -> TestRig {
         use ironclaw::channels::ChannelManager;
         use ironclaw::db::Database;
         use ironclaw::db::libsql::LibSqlBackend;
-
-        let TestRigBuilder {
-            trace,
-            llm,
-            max_tool_iterations,
-            injection_check,
-            auto_approve_tools,
-            enable_skills,
-            enable_routines,
-            http_exchanges: explicit_http_exchanges,
-            extra_tools,
-        } = self;
 
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let db_path = temp_dir.path().join("test_rig.db");
@@ -152,46 +223,16 @@ impl TestRigBuilder {
         let _ = std::fs::create_dir_all(&skills_dir);
         let _ = std::fs::create_dir_all(&installed_skills_dir);
         let mut config = Config::for_testing(db_path, skills_dir, installed_skills_dir);
-        config.agent.max_tool_iterations = max_tool_iterations;
-        config.safety.injection_check_enabled = injection_check;
-        config.skills.enabled = enable_skills;
-        if let Some(value) = auto_approve_tools {
+        config.agent.max_tool_iterations = self.max_tool_iterations;
+        config.safety.injection_check_enabled = self.injection_check;
+        config.skills.enabled = self.enable_skills;
+        if let Some(value) = self.auto_approve_tools {
             config.agent.auto_approve_tools = value;
         }
 
         let session = Arc::new(SessionManager::new(SessionConfig::default()));
         let log_broadcaster = Arc::new(LogBroadcaster::new());
-
-        let trace_http_exchanges = trace
-            .as_ref()
-            .map(|trace| trace.http_exchanges.clone())
-            .unwrap_or_default();
-
-        let mut trace_llm_ref: Option<Arc<TraceLlm>> = None;
-        let base_llm: Arc<dyn LlmProvider> = if let Some(llm) = llm {
-            llm
-        } else if let Some(trace) = trace {
-            let trace_llm = Arc::new(TraceLlm::from_trace(trace));
-            trace_llm_ref = Some(Arc::clone(&trace_llm));
-            trace_llm
-        } else {
-            let trace = LlmTrace::single_turn(
-                "test-rig-default",
-                "(default)",
-                vec![TraceStep {
-                    request_hint: None,
-                    response: TraceResponse::Text {
-                        content: "Hello from test rig!".to_string(),
-                        input_tokens: 10,
-                        output_tokens: 5,
-                    },
-                    expected_tool_results: Vec::new(),
-                }],
-            );
-            let trace_llm = Arc::new(TraceLlm::from_trace(trace));
-            trace_llm_ref = Some(Arc::clone(&trace_llm));
-            trace_llm
-        };
+        let (base_llm, trace_llm_ref) = self.resolve_llm();
         let instrumented = Arc::new(InstrumentedLlm::new(base_llm));
         let llm: Arc<dyn LlmProvider> = Arc::clone(&instrumented) as Arc<dyn LlmProvider>;
 
@@ -213,47 +254,12 @@ impl TestRigBuilder {
             Arc::new(tokio::sync::RwLock::new(None));
 
         register_job_tools_for_tests(&components, &scheduler_slot);
-
-        if let (Some(db_arc), Some(workspace)) = (&components.db, &components.workspace) {
-            use ironclaw::agent::routine_engine::RoutineEngine;
-            use ironclaw::config::RoutineConfig;
-
-            let routine_config = RoutineConfig::default();
-            let (notify_tx, _notify_rx) = tokio::sync::mpsc::channel(16);
-            let engine = Arc::new(RoutineEngine::new(
-                routine_config,
-                Arc::clone(db_arc),
-                components.llm.clone(),
-                Arc::clone(workspace),
-                notify_tx,
-                None,
-                components.tools.clone(),
-                components.safety.clone(),
-            ));
-            components
-                .tools
-                .register_routine_tools(Arc::clone(db_arc), engine);
-        }
-
-        if enable_skills {
-            let registry = Arc::new(std::sync::RwLock::new(
-                ironclaw::skills::SkillRegistry::new(temp_dir.path().join("skills"))
-                    .with_installed_dir(temp_dir.path().join("installed_skills")),
-            ));
-            let catalog = ironclaw::skills::catalog::shared_catalog();
-            components
-                .tools
-                .register_skill_tools(Arc::clone(&registry), Arc::clone(&catalog));
-            components.skill_registry = Some(registry);
-            components.skill_catalog = Some(catalog);
-        }
-
-        for tool in extra_tools {
-            components.tools.register(tool).await;
-        }
+        self.register_optional_subsystems(&mut components, &db, &temp_dir)
+            .await;
 
         let db_ref = components.db.clone().expect("test rig requires a database");
         let workspace_ref = components.workspace.clone();
+        let http_replay = self.build_http_interceptor(self.trace.as_ref());
 
         let deps = AgentDeps {
             store: components.db,
@@ -269,19 +275,9 @@ impl TestRigBuilder {
             hooks: components.hooks,
             cost_guard: components.cost_guard,
             sse_tx: None,
-            http_interceptor: {
-                let exchanges = if explicit_http_exchanges.is_empty() {
-                    trace_http_exchanges
-                } else {
-                    explicit_http_exchanges
-                };
-                if exchanges.is_empty() {
-                    None
-                } else {
-                    Some(Arc::new(ReplayingHttpInterceptor::new(exchanges))
-                        as Arc<dyn ironclaw::llm::recording::HttpInterceptor>)
-                }
-            },
+            http_interceptor: http_replay.map(|interceptor| {
+                Arc::new(interceptor) as Arc<dyn ironclaw::llm::recording::HttpInterceptor>
+            }),
             transcription: None,
             document_extraction: None,
         };
@@ -296,7 +292,7 @@ impl TestRigBuilder {
             .register_message_tools(Arc::clone(&channels))
             .await;
 
-        let routine_config = if enable_routines {
+        let routine_config = if self.enable_routines {
             Some(ironclaw::config::RoutineConfig {
                 enabled: true,
                 cron_check_interval_secs: 60,
@@ -336,7 +332,7 @@ impl TestRigBuilder {
             channel: test_channel,
             instrumented_llm: instrumented,
             start_time: Instant::now(),
-            max_tool_iterations,
+            max_tool_iterations: self.max_tool_iterations,
             agent_handle: Some(agent_handle),
             db: db_ref,
             workspace: workspace_ref,
