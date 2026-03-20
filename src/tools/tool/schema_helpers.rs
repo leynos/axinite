@@ -1,4 +1,5 @@
 use super::traits::ToolError;
+use serde_json::{Map, Value};
 
 /// Extract a required string parameter from a JSON object.
 ///
@@ -49,6 +50,58 @@ pub fn redact_params(params: &serde_json::Value, sensitive: &[&str]) -> serde_js
     redacted
 }
 
+fn is_object_type(schema: &Value) -> bool {
+    schema.get("type").and_then(|t| t.as_str()) == Some("object")
+}
+
+fn properties_obj(schema: &Value) -> Option<&Map<String, Value>> {
+    schema.get("properties").and_then(|p| p.as_object())
+}
+
+fn required_array(schema: &Value) -> Option<&Vec<Value>> {
+    schema.get("required").and_then(|r| r.as_array())
+}
+
+fn join_path(parent: &str, segment: &str) -> String {
+    format!("{parent}.{segment}")
+}
+
+fn validate_required_array(
+    required: &Vec<Value>,
+    properties: &Map<String, Value>,
+    path: &str,
+    out: &mut Vec<String>,
+) {
+    for req in required {
+        if let Some(key) = req.as_str()
+            && !properties.contains_key(key)
+        {
+            out.push(format!(
+                "{path}: required key \"{key}\" not found in properties"
+            ));
+        }
+    }
+}
+
+fn validate_property_schema(name: &str, prop: &Value, path: &str, out: &mut Vec<String>) {
+    let prop_path = join_path(path, name);
+    if let Some(prop_type) = prop.get("type").and_then(|t| t.as_str()) {
+        match prop_type {
+            "object" => out.extend(validate_tool_schema(prop, &prop_path)),
+            "array" => {
+                if let Some(items) = prop.get("items") {
+                    if items.get("type").and_then(|t| t.as_str()) == Some("object") {
+                        out.extend(validate_tool_schema(items, &join_path(&prop_path, "items")));
+                    }
+                } else {
+                    out.push(format!("{prop_path}: array property missing \"items\""));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Lenient runtime validation of a tool's `parameters_schema()`.
 ///
 /// Use this function at tool-registration time to catch structural mistakes
@@ -76,19 +129,19 @@ pub fn redact_params(params: &serde_json::Value, sensitive: &[&str]) -> serde_js
 pub fn validate_tool_schema(schema: &serde_json::Value, path: &str) -> Vec<String> {
     let mut errors = Vec::new();
 
-    match schema.get("type").and_then(|t| t.as_str()) {
-        Some("object") => {}
-        Some(other) => {
-            errors.push(format!("{path}: expected type \"object\", got \"{other}\""));
-            return errors;
+    if !is_object_type(schema) {
+        match schema.get("type").and_then(|t| t.as_str()) {
+            Some(other) => {
+                errors.push(format!("{path}: expected type \"object\", got \"{other}\""));
+            }
+            None => {
+                errors.push(format!("{path}: missing \"type\": \"object\""));
+            }
         }
-        None => {
-            errors.push(format!("{path}: missing \"type\": \"object\""));
-            return errors;
-        }
+        return errors;
     }
 
-    let properties = match schema.get("properties").and_then(|p| p.as_object()) {
+    let properties = match properties_obj(schema) {
         Some(p) => p,
         None => {
             errors.push(format!("{path}: missing or non-object \"properties\""));
@@ -96,38 +149,12 @@ pub fn validate_tool_schema(schema: &serde_json::Value, path: &str) -> Vec<Strin
         }
     };
 
-    if let Some(required) = schema.get("required").and_then(|r| r.as_array()) {
-        for req in required {
-            if let Some(key) = req.as_str()
-                && !properties.contains_key(key)
-            {
-                errors.push(format!(
-                    "{path}: required key \"{key}\" not found in properties"
-                ));
-            }
-        }
+    if let Some(required) = required_array(schema) {
+        validate_required_array(required, properties, path, &mut errors);
     }
 
     for (key, prop) in properties {
-        let prop_path = format!("{path}.{key}");
-        if let Some(prop_type) = prop.get("type").and_then(|t| t.as_str()) {
-            match prop_type {
-                "object" => {
-                    errors.extend(validate_tool_schema(prop, &prop_path));
-                }
-                "array" => {
-                    if let Some(items) = prop.get("items") {
-                        if items.get("type").and_then(|t| t.as_str()) == Some("object") {
-                            errors
-                                .extend(validate_tool_schema(items, &format!("{prop_path}.items")));
-                        }
-                    } else {
-                        errors.push(format!("{prop_path}: array property missing \"items\""));
-                    }
-                }
-                _ => {}
-            }
-        }
+        validate_property_schema(key, prop, path, &mut errors);
     }
 
     errors
