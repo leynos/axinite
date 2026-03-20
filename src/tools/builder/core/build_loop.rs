@@ -1,10 +1,12 @@
 use super::*;
 use crate::llm::ToolCall;
 
+const PLANNING_TEXT_LIMIT: u32 = 2;
+
 impl LlmSoftwareBuilder {
     #[inline]
-    fn is_completion_signal(response: &str) -> bool {
-        let response_lower = response.to_lowercase();
+    fn is_completion_signal(s: &str) -> bool {
+        let response_lower = s.to_lowercase();
         response_lower.contains("build complete")
             || response_lower.contains("successfully built")
             || response_lower.contains("all tests pass")
@@ -30,117 +32,225 @@ impl LlmSoftwareBuilder {
     }
 
     #[inline]
-    fn force_tool_use_prompt(ctx: &mut ReasoningContext) {
-        ctx.messages.push(ChatMessage::user(
+    fn push_force_tool_use(reason_ctx: &mut ReasoningContext, n: u32) {
+        tracing::debug!(
+            "Builder: no tools executed (text response #{}/{}), forcing tool use",
+            n,
+            PLANNING_TEXT_LIMIT
+        );
+
+        reason_ctx.messages.push(ChatMessage::user(
             "STOP. Do NOT output text, JSON specs, or explanations. \
              Call the write_file tool RIGHT NOW to create Cargo.toml. \
              Just call the tool—no commentary.",
         ));
     }
 
-    fn make_success_result(
-        build_id: Uuid,
-        requirement: &BuildRequirement,
-        artifact_path: PathBuf,
-        logs: Vec<BuildLog>,
-        started_at: DateTime<Utc>,
-        iterations: i32,
-    ) -> BuildResult {
-        BuildResult {
-            build_id,
-            requirement: requirement.clone(),
-            artifact_path,
-            logs,
-            success: true,
-            error: None,
-            started_at,
-            completed_at: Utc::now(),
-            iterations: iterations as u32,
-            validation_warnings: Vec::new(),
-            tests_passed: 0,
-            tests_failed: 0,
-            registered: false,
-        }
-    }
-
-    fn make_failure_result(
-        build_id: Uuid,
-        requirement: &BuildRequirement,
-        artifact_path: PathBuf,
-        logs: Vec<BuildLog>,
-        started_at: DateTime<Utc>,
-        iterations: i32,
-        reason: &str,
-    ) -> BuildResult {
-        BuildResult {
-            build_id,
-            requirement: requirement.clone(),
-            artifact_path,
-            logs,
-            success: false,
-            error: Some(reason.into()),
-            started_at,
-            completed_at: Utc::now(),
-            iterations: iterations as u32,
-            validation_warnings: Vec::new(),
-            tests_passed: 0,
-            tests_failed: 0,
-            registered: false,
-        }
-    }
-
-    async fn handle_tool_call(
+    async fn prepare_reasoning_context(
         &self,
-        tc: ToolCall,
-        phase: BuildPhase,
-        reason_ctx: &mut ReasoningContext,
+        requirement: &BuildRequirement,
+    ) -> (Reasoning, ReasoningContext, Vec<BuildLog>) {
+        let reasoning =
+            Reasoning::new(self.llm.clone()).with_model_name(self.llm.active_model_name());
+
+        let tool_defs = self.get_build_tools().await;
+        let mut reason_ctx = ReasoningContext::new().with_tools(tool_defs);
+
+        reason_ctx
+            .messages
+            .push(ChatMessage::system(self.build_system_prompt(requirement)));
+
+        let logs = vec![BuildLog {
+            timestamp: Utc::now(),
+            phase: BuildPhase::Analyzing,
+            message: "Starting build process".into(),
+            details: None,
+        }];
+
+        (reasoning, reason_ctx, logs)
+    }
+
+    // The helper signature is fixed by the review request.
+    #[allow(clippy::too_many_arguments)]
+    fn fail_max_iterations(
+        &self,
+        build_id: Uuid,
+        requirement: &BuildRequirement,
+        project_dir: &Path,
+        started_at: DateTime<Utc>,
+        iteration: u32,
+        last_error: Option<String>,
         logs: &mut Vec<BuildLog>,
-    ) -> (BuildPhase, Option<String>) {
+    ) -> BuildResult {
         logs.push(BuildLog {
             timestamp: Utc::now(),
-            phase,
-            message: format!("Executing: {}", tc.name),
-            details: Some(format!("{:?}", tc.arguments)),
+            phase: BuildPhase::Failed,
+            message: "Maximum iterations exceeded".into(),
+            details: last_error,
         });
 
-        match self
-            .execute_build_tool(&tc.name, &tc.arguments, Path::new("."))
-            .await
-        {
-            Ok(output) => {
-                let output_str = serde_json::to_string_pretty(&output.result).unwrap_or_default();
+        BuildResult {
+            build_id,
+            requirement: requirement.clone(),
+            artifact_path: project_dir.to_path_buf(),
+            logs: logs.clone(),
+            success: false,
+            error: Some("Maximum iterations exceeded".into()),
+            started_at,
+            completed_at: Utc::now(),
+            iterations: iteration,
+            validation_warnings: Vec::new(),
+            tests_passed: 0,
+            tests_failed: 0,
+            registered: false,
+        }
+    }
 
-                reason_ctx.messages.push(ChatMessage::tool_result(
-                    &tc.id,
-                    &tc.name,
-                    output_str.clone(),
-                ));
+    // The helper signature is fixed by the review request.
+    #[allow(clippy::too_many_arguments)]
+    fn fail_planning_stuck(
+        &self,
+        build_id: Uuid,
+        requirement: &BuildRequirement,
+        project_dir: &Path,
+        started_at: DateTime<Utc>,
+        iteration: u32,
+        logs: &mut Vec<BuildLog>,
+        consecutive_text_responses: u32,
+    ) -> BuildResult {
+        logs.push(BuildLog {
+            timestamp: Utc::now(),
+            phase: BuildPhase::Failed,
+            message: "Builder stuck in planning mode".into(),
+            details: Some(format!(
+                "LLM returned {} consecutive text responses without calling tools. \
+                 Try a more specific requirement.",
+                consecutive_text_responses
+            )),
+        });
 
-                let mut next_phase = Self::next_phase(phase, &tc.name, &tc.arguments);
-                if Self::has_build_error(&output_str) {
-                    next_phase = BuildPhase::Fixing;
-                    return (next_phase, Some(output_str));
+        BuildResult {
+            build_id,
+            requirement: requirement.clone(),
+            artifact_path: project_dir.to_path_buf(),
+            logs: logs.clone(),
+            success: false,
+            error: Some("LLM not executing tools - stuck in planning mode".into()),
+            started_at,
+            completed_at: Utc::now(),
+            iterations: iteration,
+            validation_warnings: Vec::new(),
+            tests_passed: 0,
+            tests_failed: 0,
+            registered: false,
+        }
+    }
+
+    async fn build_success_result(
+        &self,
+        build_id: Uuid,
+        requirement: &BuildRequirement,
+        project_dir: &Path,
+        logs: &mut Vec<BuildLog>,
+        iteration: u32,
+        response: String,
+    ) -> BuildResult {
+        logs.push(BuildLog {
+            timestamp: Utc::now(),
+            phase: BuildPhase::Complete,
+            message: "Build completed successfully".into(),
+            details: Some(response),
+        });
+
+        let artifact_path = self.find_artifact(requirement, project_dir).await;
+
+        BuildResult {
+            build_id,
+            requirement: requirement.clone(),
+            artifact_path,
+            logs: logs.clone(),
+            success: true,
+            error: None,
+            started_at: logs
+                .first()
+                .map(|log| log.timestamp)
+                .unwrap_or_else(Utc::now),
+            completed_at: Utc::now(),
+            iterations: iteration,
+            validation_warnings: Vec::new(),
+            tests_passed: 0,
+            tests_failed: 0,
+            registered: false,
+        }
+    }
+
+    // The helper signature is fixed by the review request.
+    #[allow(clippy::too_many_arguments)]
+    async fn handle_tool_calls(
+        &self,
+        tool_calls: Vec<ToolCall>,
+        content: Option<String>,
+        project_dir: &Path,
+        reason_ctx: &mut ReasoningContext,
+        logs: &mut Vec<BuildLog>,
+        current_phase: &mut BuildPhase,
+        last_error: &mut Option<String>,
+    ) {
+        reason_ctx
+            .messages
+            .push(ChatMessage::assistant_with_tool_calls(
+                content,
+                tool_calls.clone(),
+            ));
+
+        for tc in tool_calls {
+            logs.push(BuildLog {
+                timestamp: Utc::now(),
+                phase: *current_phase,
+                message: format!("Executing: {}", tc.name),
+                details: Some(format!("{:?}", tc.arguments)),
+            });
+
+            match self
+                .execute_build_tool(&tc.name, &tc.arguments, project_dir)
+                .await
+            {
+                Ok(output) => {
+                    let output_str =
+                        serde_json::to_string_pretty(&output.result).unwrap_or_default();
+
+                    reason_ctx.messages.push(ChatMessage::tool_result(
+                        &tc.id,
+                        &tc.name,
+                        output_str.clone(),
+                    ));
+
+                    *current_phase = Self::next_phase(*current_phase, &tc.name, &tc.arguments);
+
+                    if Self::has_build_error(&output_str) {
+                        *last_error = Some(output_str);
+                        *current_phase = BuildPhase::Fixing;
+                    }
                 }
+                Err(e) => {
+                    let error_msg = format!("Tool error: {}", e);
+                    *last_error = Some(error_msg.clone());
 
-                (next_phase, None)
-            }
-            Err(e) => {
-                let error_msg = format!("Tool error: {}", e);
+                    reason_ctx.messages.push(ChatMessage::tool_result(
+                        &tc.id,
+                        &tc.name,
+                        format!("Error: {}", e),
+                    ));
 
-                reason_ctx.messages.push(ChatMessage::tool_result(
-                    &tc.id,
-                    &tc.name,
-                    format!("Error: {}", e),
-                ));
+                    logs.push(BuildLog {
+                        timestamp: Utc::now(),
+                        phase: BuildPhase::Fixing,
+                        message: "Tool execution failed".into(),
+                        details: Some(error_msg),
+                    });
 
-                logs.push(BuildLog {
-                    timestamp: Utc::now(),
-                    phase: BuildPhase::Fixing,
-                    message: "Tool execution failed".into(),
-                    details: Some(error_msg.clone()),
-                });
-
-                (BuildPhase::Fixing, Some(error_msg))
+                    *current_phase = BuildPhase::Fixing;
+                }
             }
         }
     }
@@ -152,22 +262,13 @@ impl LlmSoftwareBuilder {
         project_dir: &Path,
     ) -> Result<BuildResult, AgentToolError> {
         let build_id = Uuid::new_v4();
-        let started_at = Utc::now();
-        let mut logs = Vec::new();
-        let mut iteration = 0i32;
-
-        // Create reasoning engine
-        let reasoning =
-            Reasoning::new(self.llm.clone()).with_model_name(self.llm.active_model_name());
-
-        // Build initial context
-        let tool_defs = self.get_build_tools().await;
-        let mut reason_ctx = ReasoningContext::new().with_tools(tool_defs);
-
-        // Add system prompt
-        reason_ctx
-            .messages
-            .push(ChatMessage::system(self.build_system_prompt(requirement)));
+        let mut iteration = 0u32;
+        let (reasoning, mut reason_ctx, mut logs) =
+            self.prepare_reasoning_context(requirement).await;
+        let started_at = logs
+            .first()
+            .map(|log| log.timestamp)
+            .unwrap_or_else(Utc::now);
 
         // Add initial user message - directive to force immediate tool use
         reason_ctx.messages.push(ChatMessage::user(format!(
@@ -180,38 +281,24 @@ impl LlmSoftwareBuilder {
             requirement.description
         )));
 
-        logs.push(BuildLog {
-            timestamp: Utc::now(),
-            phase: BuildPhase::Analyzing,
-            message: "Starting build process".into(),
-            details: None,
-        });
-
         // Main build loop
         let mut current_phase = BuildPhase::Scaffolding;
         let mut last_error: Option<String> = None;
         let mut tools_executed = false;
-        let mut consecutive_text_responses = 0;
+        let mut consecutive_text_responses = 0u32;
 
         loop {
             iteration += 1;
 
-            if iteration > self.config.max_iterations as i32 {
-                logs.push(BuildLog {
-                    timestamp: Utc::now(),
-                    phase: BuildPhase::Failed,
-                    message: "Maximum iterations exceeded".into(),
-                    details: last_error.clone(),
-                });
-
-                return Ok(Self::make_failure_result(
+            if iteration > self.config.max_iterations {
+                return Ok(self.fail_max_iterations(
                     build_id,
                     requirement,
-                    project_dir.to_path_buf(),
-                    logs,
+                    project_dir,
                     started_at,
                     iteration,
-                    "Maximum iterations exceeded",
+                    last_error.clone(),
+                    &mut logs,
                 ));
             }
 
@@ -230,61 +317,38 @@ impl LlmSoftwareBuilder {
                 RespondResult::Text(response) => {
                     reason_ctx.messages.push(ChatMessage::assistant(&response));
 
-                    // If tools haven't been executed yet, we're stuck in planning mode
                     if !tools_executed {
                         consecutive_text_responses += 1;
 
-                        if consecutive_text_responses >= 2 {
-                            logs.push(BuildLog {
-                                timestamp: Utc::now(),
-                                phase: BuildPhase::Failed,
-                                message: "Builder stuck in planning mode".into(),
-                                details: Some(format!(
-                                    "LLM returned {} consecutive text responses without calling tools. \
-                                     Try a more specific requirement.",
-                                    consecutive_text_responses
-                                )),
-                            });
-
-                            return Ok(Self::make_failure_result(
+                        if consecutive_text_responses >= PLANNING_TEXT_LIMIT {
+                            return Ok(self.fail_planning_stuck(
                                 build_id,
                                 requirement,
-                                project_dir.to_path_buf(),
-                                logs,
+                                project_dir,
                                 started_at,
                                 iteration,
-                                "LLM not executing tools - stuck in planning mode",
+                                &mut logs,
+                                consecutive_text_responses,
                             ));
                         }
 
-                        tracing::debug!(
-                            "Builder: no tools executed (text response #{}/2), forcing tool use",
-                            consecutive_text_responses
-                        );
-                        Self::force_tool_use_prompt(&mut reason_ctx);
+                        Self::push_force_tool_use(&mut reason_ctx, consecutive_text_responses);
                         continue;
                     }
 
                     consecutive_text_responses = 0;
 
                     if Self::is_completion_signal(&response) {
-                        logs.push(BuildLog {
-                            timestamp: Utc::now(),
-                            phase: BuildPhase::Complete,
-                            message: "Build completed successfully".into(),
-                            details: Some(response),
-                        });
-
-                        let artifact_path = self.find_artifact(requirement, project_dir).await;
-
-                        return Ok(Self::make_success_result(
-                            build_id,
-                            requirement,
-                            artifact_path,
-                            logs,
-                            started_at,
-                            iteration,
-                        ));
+                        return Ok(self
+                            .build_success_result(
+                                build_id,
+                                requirement,
+                                project_dir,
+                                &mut logs,
+                                iteration,
+                                response,
+                            )
+                            .await);
                     }
 
                     reason_ctx
@@ -296,24 +360,16 @@ impl LlmSoftwareBuilder {
                     content,
                 } => {
                     tools_executed = true;
-
-                    // Add assistant message with tool_calls (OpenAI protocol)
-                    reason_ctx
-                        .messages
-                        .push(ChatMessage::assistant_with_tool_calls(
-                            content,
-                            tool_calls.clone(),
-                        ));
-
-                    for tc in tool_calls {
-                        let (phase, error) = self
-                            .handle_tool_call(tc, current_phase, &mut reason_ctx, &mut logs)
-                            .await;
-                        current_phase = phase;
-                        if error.is_some() {
-                            last_error = error;
-                        }
-                    }
+                    self.handle_tool_calls(
+                        tool_calls,
+                        content,
+                        project_dir,
+                        &mut reason_ctx,
+                        &mut logs,
+                        &mut current_phase,
+                        &mut last_error,
+                    )
+                    .await;
                 }
             }
         }
