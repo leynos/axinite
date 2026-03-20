@@ -6,6 +6,8 @@
 //!
 //! File: `~/.ironclaw/.env` (standard dotenvy format)
 
+pub mod tools;
+
 use std::path::PathBuf;
 use std::sync::LazyLock;
 

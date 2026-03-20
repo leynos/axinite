@@ -8,6 +8,7 @@ use clap::Parser;
 use ironclaw::{
     agent::{Agent, AgentDeps},
     app::{AppBuilder, AppBuilderFlags},
+    bootstrap::tools::{JobToolsArgs, register_job_tools},
     channels::{
         ChannelManager, GatewayChannel, HttpChannel, ReplChannel, SignalChannel, WebhookServer,
         WebhookServerConfig,
@@ -411,9 +412,9 @@ async fn async_main() -> anyhow::Result<()> {
         Arc::new(tokio::sync::RwLock::new(None));
 
     // Register job tools (sandbox deps auto-injected when container_job_manager is available)
-    components
-        .tools
-        .register_job_tools(ironclaw::tools::RegisterJobToolsConfig {
+    register_job_tools(
+        &components.tools,
+        JobToolsArgs {
             context_manager: Arc::clone(&components.context_manager),
             scheduler_slot: Some(scheduler_slot.clone()),
             job_manager: container_job_manager.clone(),
@@ -426,7 +427,9 @@ async fn async_main() -> anyhow::Result<()> {
                 None
             },
             secrets_store: components.secrets_store.clone(),
-        });
+        },
+    )
+    .await;
 
     // ── Gateway channel ────────────────────────────────────────────────
 
