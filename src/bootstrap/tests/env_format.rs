@@ -4,6 +4,43 @@ use tempfile::tempdir;
 
 use super::super::*;
 
+fn assert_env_roundtrip(key: &str, value: &str) {
+    let dir = tempdir().expect("create temp dir for env round-trip test");
+    let env_path = dir.path().join(".env");
+    let write_error = format!("write round-trip env at {}", env_path.display());
+    let parse_error = format!("parse round-trip env at {}", env_path.display());
+    let vars = [(key, value)];
+
+    upsert_bootstrap_vars_to(&env_path, &vars).expect(write_error.as_str());
+
+    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
+        .expect(parse_error.as_str())
+        .filter_map(|result| result.ok())
+        .collect();
+
+    assert_eq!(
+        parsed.len(),
+        1,
+        "{key} round-trip should produce one env var"
+    );
+    let found = parsed.iter().find(|(parsed_key, _)| parsed_key == key);
+    assert!(found.is_some(), "{key} must be present");
+    assert_eq!(
+        found.expect("round-trip env entry present").1,
+        value,
+        "{key} must survive .env round-trip"
+    );
+}
+
+macro_rules! env_roundtrip_test {
+    ($name:ident, $key:expr, $value:expr) => {
+        #[test]
+        fn $name() {
+            assert_env_roundtrip($key, $value);
+        }
+    };
+}
+
 #[test]
 fn test_save_and_load_database_url() {
     let dir = tempdir().expect("create temp dir for test_save_and_load_database_url");
@@ -140,62 +177,16 @@ fn test_save_bootstrap_env_overwrites_previous() {
     assert!(parsed.iter().all(|(key, _)| key != "DATABASE_URL"));
 }
 
-#[test]
-fn test_onboard_completed_round_trips_through_env() {
-    let dir = tempdir().expect("create temp dir for onboard round-trip test");
-    let env_path = dir.path().join(".env");
-    let vars = [
-        ("DATABASE_BACKEND", "libsql"),
-        ("ONBOARD_COMPLETED", "true"),
-    ];
-
-    let mut content = String::new();
-    for (key, value) in &vars {
-        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
-        content.push_str(&format!("{}=\"{}\"\n", key, escaped));
-    }
-    std::fs::write(&env_path, &content).expect("write onboard round-trip env");
-
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect("parse onboard round-trip env")
-        .filter_map(|result| result.ok())
-        .collect();
-    assert_eq!(parsed.len(), 2);
-    let onboard = parsed.iter().find(|(key, _)| key == "ONBOARD_COMPLETED");
-    assert!(onboard.is_some(), "ONBOARD_COMPLETED must be present");
-    assert_eq!(onboard.expect("onboard entry present").1, "true");
-}
-
-#[test]
-fn bootstrap_env_round_trips_llm_backend() {
-    let dir = tempdir().expect("create temp dir for LLM backend round-trip");
-    let env_path = dir.path().join(".env");
-    let vars = [
-        ("DATABASE_BACKEND", "libsql"),
-        ("LLM_BACKEND", "openai"),
-        ("ONBOARD_COMPLETED", "true"),
-    ];
-
-    let mut content = String::new();
-    for (key, value) in &vars {
-        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
-        content.push_str(&format!("{}=\"{}\"\n", key, escaped));
-    }
-    std::fs::write(&env_path, &content).expect("write LLM backend round-trip env");
-
-    let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect("parse LLM backend round-trip env")
-        .filter_map(|result| result.ok())
-        .collect();
-
-    let llm_backend = parsed.iter().find(|(key, _)| key == "LLM_BACKEND");
-    assert!(llm_backend.is_some(), "LLM_BACKEND must be present");
-    assert_eq!(
-        llm_backend.expect("LLM backend entry present").1,
-        "openai",
-        "LLM_BACKEND must survive .env round-trip"
-    );
-}
+env_roundtrip_test!(
+    test_onboard_completed_round_trips_through_env,
+    "ONBOARD_COMPLETED",
+    "true"
+);
+env_roundtrip_test!(
+    bootstrap_env_round_trips_llm_backend,
+    "LLM_BACKEND",
+    "openai"
+);
 
 #[test]
 fn bootstrap_env_special_chars_in_url() {
