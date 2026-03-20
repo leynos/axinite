@@ -49,7 +49,7 @@ pub struct LlmTrace {
 ///
 /// All fields are optional and default to empty/None, so traces without
 /// `expects` work unchanged (backward compatible).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceExpects {
     /// Each string must appear in the response (case-insensitive).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -86,28 +86,7 @@ pub struct TraceExpects {
 impl TraceExpects {
     /// Returns true when no expectations are specified.
     pub fn is_empty(&self) -> bool {
-        // All vector-based expectations must be empty.
-        let vecs_empty = [
-            &self.response_contains,
-            &self.response_not_contains,
-            &self.tools_used,
-            &self.tools_not_used,
-            &self.tools_order,
-        ]
-        .into_iter()
-        .all(|values| values.is_empty());
-
-        // All option-based expectations must be absent.
-        let opts_none = [
-            self.response_matches.is_none(),
-            self.all_tools_succeeded.is_none(),
-            self.max_tool_calls.is_none(),
-            self.min_responses.is_none(),
-        ]
-        .into_iter()
-        .all(|is_none| is_none);
-
-        vecs_empty && opts_none && self.tool_results_contain.is_empty()
+        self == &Self::default()
     }
 }
 
