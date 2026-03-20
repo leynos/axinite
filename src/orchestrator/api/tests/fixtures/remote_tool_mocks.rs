@@ -95,6 +95,11 @@ impl Tool for StubTool {
 }
 
 #[derive(Clone, Copy, Debug)]
+/// Shared hosted-remote-tool fixture presets for catalogue and execute tests.
+///
+/// `CatalogAlpha` and `CatalogBeta` model hosted-safe catalogue entries,
+/// `ApprovalGated` models a hosted tool that must never execute without
+/// approval, and `ContainerOnly` models a non-catalogue container tool.
 pub(crate) enum ToolFixture {
     CatalogAlpha,
     CatalogBeta,
@@ -102,6 +107,10 @@ pub(crate) enum ToolFixture {
     ContainerOnly,
 }
 
+/// Build an `Arc<dyn Tool>` configured for the requested hosted-tool fixture.
+///
+/// The returned fixture preserves the canonical names, descriptions, schemas,
+/// and panic messages used throughout the remote-tool test suite.
 pub(crate) fn build_tool_fixture(kind: ToolFixture) -> Arc<dyn Tool> {
     match kind {
         ToolFixture::CatalogAlpha => Arc::new(StubTool::hosted(

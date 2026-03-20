@@ -12,7 +12,6 @@ use super::fixtures::remote_tool_mocks::{
 };
 use super::fixtures::test_state;
 use super::*;
-use crate::tools::{HostedToolEligibility, ToolDomain};
 use crate::worker::api::{REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_ROUTE};
 
 /// Register the full set of catalogue-visibility test fixtures into `tools`.
@@ -49,27 +48,10 @@ async fn populate_catalog_visibility_fixtures(tools: &ToolRegistry) {
         }))
         .await;
     tools
-        .register(Arc::new(StubTool {
-            always_approve: true,
-            eligibility: HostedToolEligibility::ApprovalGated,
-            output: StubOutput::Panic("approval-gated tool must not execute"),
-            ..StubTool::hosted(
-                "remote_tool_execute_gated",
-                "Approval-gated tool",
-                serde_json::json!({"type": "object", "properties": {}}),
-            )
-        }))
+        .register(build_tool_fixture(ToolFixture::ApprovalGated))
         .await;
     tools
-        .register(Arc::new(StubTool {
-            domain: ToolDomain::Container,
-            output: StubOutput::Panic("container-only tool must not execute"),
-            ..StubTool::hosted(
-                "remote_tool_execute_container",
-                "Container-only tool",
-                serde_json::json!({"type": "object", "properties": {}}),
-            )
-        }))
+        .register(build_tool_fixture(ToolFixture::ContainerOnly))
         .await;
 }
 
