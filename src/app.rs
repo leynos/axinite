@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 
+use crate::bootstrap::tools::{MediaToolsArgs, register_image_and_vision_tools};
 use crate::channels::web::log_layer::LogBroadcaster;
 use crate::config::Config;
 use crate::context::ContextManager;
@@ -344,23 +345,20 @@ impl AppBuilder {
                 let gen_model = crate::llm::image_models::suggest_image_model(&models)
                     .unwrap_or("flux-1.1-pro")
                     .to_string();
-                tools.register_image_tools(crate::tools::ImageToolsArgs {
-                    api_base_url: api_base.clone(),
-                    api_key: api_key.clone(),
-                    gen_model,
-                    base_dir: None,
-                });
-
-                // Check for vision models
                 let vision_model = crate::llm::vision_models::suggest_vision_model(&models)
                     .unwrap_or(&model_name)
                     .to_string();
-                tools.register_vision_tools(crate::tools::VisionToolsArgs {
-                    api_base_url: api_base,
-                    api_key,
-                    vision_model,
-                    base_dir: None,
-                });
+
+                register_image_and_vision_tools(
+                    &tools,
+                    MediaToolsArgs {
+                        api_base_url: api_base,
+                        api_key,
+                        gen_model,
+                        vision_model,
+                        base_dir: None,
+                    },
+                );
             }
         }
 

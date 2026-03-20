@@ -1,5 +1,6 @@
 //! Bootstrap helpers for tool registration.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use uuid::Uuid;
@@ -12,7 +13,7 @@ use crate::db::Database;
 use crate::orchestrator::job_manager::ContainerJobManager;
 use crate::secrets::SecretsStore;
 use crate::tools::builtin::{PromptQueue, SchedulerSlot};
-use crate::tools::{RegisterJobToolsConfig, ToolRegistry};
+use crate::tools::{ImageToolsArgs, RegisterJobToolsConfig, ToolRegistry, VisionToolsArgs};
 
 /// Dependency bundle for registering job tools during bootstrap.
 pub struct JobToolsArgs {
@@ -56,4 +57,39 @@ pub async fn wire_core_runtime_tools(
 ) {
     register_job_tools(registry, job_args);
     registry.register_message_tools(channel_manager).await;
+}
+
+/// Dependency bundle for registering image and vision tools together.
+#[derive(Clone, Debug)]
+pub struct MediaToolsArgs {
+    pub api_base_url: String,
+    pub api_key: String,
+    pub gen_model: String,
+    pub vision_model: String,
+    pub base_dir: Option<PathBuf>,
+}
+
+/// Register image generation and vision tools from shared bootstrap wiring.
+pub fn register_image_and_vision_tools(registry: &ToolRegistry, args: MediaToolsArgs) {
+    let MediaToolsArgs {
+        api_base_url,
+        api_key,
+        gen_model,
+        vision_model,
+        base_dir,
+    } = args;
+
+    registry.register_image_tools(ImageToolsArgs {
+        api_base_url: api_base_url.clone(),
+        api_key: api_key.clone(),
+        gen_model,
+        base_dir: base_dir.clone(),
+    });
+
+    registry.register_vision_tools(VisionToolsArgs {
+        api_base_url,
+        api_key,
+        vision_model,
+        base_dir,
+    });
 }
