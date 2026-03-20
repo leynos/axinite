@@ -4,6 +4,16 @@ use std::{borrow::Cow, io, path::Path};
 
 use crate::bootstrap::{ironclaw_base_dir, ironclaw_env_path, save_database_url};
 
+#[derive(Debug)]
+struct SidecarSpec<'a> {
+    user_id: &'a str,
+    path: &'a std::path::Path,
+    file_name: &'a str,
+    setting_key: &'a str,
+    db_error_msg: &'a str,
+    success_msg: &'a str,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum KnownEnvKey {
     DatabaseUrl,
@@ -185,23 +195,19 @@ fn read_optional_json_file(path: &Path, file_name: &str) -> Option<serde_json::V
 
 async fn migrate_json_sidecar(
     store: &dyn crate::db::Database,
-    user_id: &str,
-    path: &Path,
-    file_name: &str,
-    setting_key: &str,
-    db_error_message: &str,
-    success_message: &str,
+    spec: &SidecarSpec<'_>,
 ) -> Result<(), MigrationError> {
-    let Some(value) = read_optional_json_file(path, file_name) else {
+    let Some(value) = read_optional_json_file(spec.path, spec.file_name) else {
         return Ok(());
     };
 
     store
-        .set_setting(user_id, setting_key, &value)
+        .set_setting(spec.user_id, spec.setting_key, &value)
         .await
-        .map_err(|error| MigrationError::Database(format!("{}: {}", db_error_message, error)))?;
-    tracing::info!("{}", success_message);
-    rename_to_migrated(path);
+        .map_err(|error| MigrationError::Database(format!("{}: {}", spec.db_error_msg, error)))?;
+
+    tracing::info!("{}", spec.success_msg);
+    rename_to_migrated(spec.path);
 
     Ok(())
 }
@@ -262,28 +268,26 @@ async fn apply_migration_to_db(
         .parent()
         .unwrap_or_else(|| Path::new("."));
     let mcp_path = ironclaw_dir.join("mcp-servers.json");
-    migrate_json_sidecar(
-        store,
+    let mcp_spec = SidecarSpec {
         user_id,
-        &mcp_path,
-        "mcp-servers.json",
-        "mcp_servers",
-        "Failed to write MCP servers to DB",
-        "Migrated mcp-servers.json to database",
-    )
-    .await?;
+        path: &mcp_path,
+        file_name: "mcp-servers.json",
+        setting_key: "mcp_servers",
+        db_error_msg: "Failed to write MCP servers to DB",
+        success_msg: "Migrated mcp-servers.json to database",
+    };
+    migrate_json_sidecar(store, &mcp_spec).await?;
 
     let session_path = ironclaw_dir.join("session.json");
-    migrate_json_sidecar(
-        store,
+    let session_spec = SidecarSpec {
         user_id,
-        &session_path,
-        "session.json",
-        "nearai.session_token",
-        "Failed to write session to DB",
-        "Migrated session.json to database",
-    )
-    .await?;
+        path: &session_path,
+        file_name: "session.json",
+        setting_key: "nearai.session_token",
+        db_error_msg: "Failed to write session to DB",
+        success_msg: "Migrated session.json to database",
+    };
+    migrate_json_sidecar(store, &session_spec).await?;
 
     rename_legacy_bootstrap(ironclaw_dir);
 
