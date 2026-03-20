@@ -272,9 +272,9 @@ async fn remote_tool_execute_rejects_unknown_tools(test_state: OrchestratorState
 #[rstest]
 #[tokio::test]
 async fn remote_tool_execute_rejects_non_catalog_tools(test_state: OrchestratorState) {
-    test_state
-        .tools
-        .register(Arc::new(StubTool {
+    let status = execute_remote_tool_status(
+        test_state,
+        Arc::new(StubTool {
             domain: ToolDomain::Container,
             output: StubOutput::Panic("container-only tool must not execute"),
             ..StubTool::hosted(
@@ -282,39 +282,19 @@ async fn remote_tool_execute_rejects_non_catalog_tools(test_state: OrchestratorS
                 "Container-only tool",
                 serde_json::json!({"type":"object","properties":{}}),
             )
-        }))
-        .await;
-    let job_id = Uuid::new_v4();
-    let token = test_state.token_store.create_token(job_id).await;
-    let router = OrchestratorApi::router(test_state);
-
-    let req = Request::builder()
-        .method("POST")
-        .uri(REMOTE_TOOL_EXECUTE_ROUTE.replace("{job_id}", &job_id.to_string()))
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Content-Type", "application/json")
-        .body(Body::from(
-            serde_json::to_vec(&serde_json::json!({
-                "tool_name": "remote_tool_execute_container",
-                "params": {}
-            }))
-            .expect("serialize non-catalog remote-tool execute payload"),
-        ))
-        .expect("build non-catalog remote-tool execute request");
-
-    let resp = router
-        .oneshot(req)
-        .await
-        .expect("send non-catalog remote-tool execute request");
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        }),
+        "remote_tool_execute_container",
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[rstest]
 #[tokio::test]
 async fn remote_tool_execute_rejects_protected_orchestration_tools(test_state: OrchestratorState) {
-    test_state
-        .tools
-        .register(Arc::new(StubTool {
+    let status = execute_remote_tool_status(
+        test_state,
+        Arc::new(StubTool {
             name: "create_job",
             description: "Protected orchestration tool",
             output: StubOutput::Fixed(serde_json::json!({"created":true})),
@@ -323,39 +303,19 @@ async fn remote_tool_execute_rejects_protected_orchestration_tools(test_state: O
                 "",
                 serde_json::json!({"type":"object","properties":{}}),
             )
-        }))
-        .await;
-    let job_id = Uuid::new_v4();
-    let token = test_state.token_store.create_token(job_id).await;
-    let router = OrchestratorApi::router(test_state);
-
-    let req = Request::builder()
-        .method("POST")
-        .uri(REMOTE_TOOL_EXECUTE_ROUTE.replace("{job_id}", &job_id.to_string()))
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Content-Type", "application/json")
-        .body(Body::from(
-            serde_json::to_vec(&serde_json::json!({
-                "tool_name": "create_job",
-                "params": {}
-            }))
-            .expect("serialize protected orchestration remote-tool execute payload"),
-        ))
-        .expect("build protected orchestration remote-tool execute request");
-
-    let resp = router
-        .oneshot(req)
-        .await
-        .expect("send protected orchestration remote-tool execute request");
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        }),
+        "create_job",
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[rstest]
 #[tokio::test]
 async fn remote_tool_execute_rejects_approval_gated_tools(test_state: OrchestratorState) {
-    test_state
-        .tools
-        .register(Arc::new(StubTool {
+    let status = execute_remote_tool_status(
+        test_state,
+        Arc::new(StubTool {
             always_approve: true,
             eligibility: HostedToolEligibility::ApprovalGated,
             output: StubOutput::Panic("approval-gated tool must not execute"),
@@ -364,31 +324,11 @@ async fn remote_tool_execute_rejects_approval_gated_tools(test_state: Orchestrat
                 "Approval-gated tool",
                 serde_json::json!({"type":"object","properties":{}}),
             )
-        }))
-        .await;
-    let job_id = Uuid::new_v4();
-    let token = test_state.token_store.create_token(job_id).await;
-    let router = OrchestratorApi::router(test_state);
-
-    let req = Request::builder()
-        .method("POST")
-        .uri(REMOTE_TOOL_EXECUTE_ROUTE.replace("{job_id}", &job_id.to_string()))
-        .header("Authorization", format!("Bearer {}", token))
-        .header("Content-Type", "application/json")
-        .body(Body::from(
-            serde_json::to_vec(&serde_json::json!({
-                "tool_name": "remote_tool_execute_gated",
-                "params": {}
-            }))
-            .expect("serialize approval-gated remote-tool execute payload"),
-        ))
-        .expect("build approval-gated remote-tool execute request");
-
-    let resp = router
-        .oneshot(req)
-        .await
-        .expect("send approval-gated remote-tool execute request");
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        }),
+        "remote_tool_execute_gated",
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
 #[rstest]
