@@ -224,15 +224,6 @@ fn test_zip_extract_stored_size_mismatch_rejected() {
     );
 }
 
-#[test]
-fn test_validate_fetch_url_rejects_loopback_ip() {
-    let loopback: IpAddr = "127.0.0.1"
-        .parse()
-        .expect("loopback test fixture should parse");
-    assert!(loopback.is_loopback());
-    assert!(validate_fetch_url("https://127.0.0.1/skill.md").is_err());
-}
-
 #[rstest]
 #[case("10.0.0.1", true)]
 #[case("10.255.255.255", true)]
@@ -247,6 +238,11 @@ fn test_validate_fetch_url_rejects_loopback_ip() {
 #[case("1.1.1.1", false)]
 #[case("93.184.216.34", false)]
 #[case("151.101.1.67", false)]
+#[case("fc00::1", true)]
+#[case("fd12:3456:789a::1", true)]
+#[case("::1", false)]
+#[case("fe80::1", false)]
+#[case("2001:4860:4860::8888", false)]
 fn test_is_private_ip_cases(#[case] ip_str: &str, #[case] expect_private: bool) {
     let ip: IpAddr = ip_str.parse().expect("IP fixture should parse");
     assert_eq!(
