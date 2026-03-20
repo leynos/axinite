@@ -31,6 +31,17 @@ pub struct ImageToolsRegistration {
     pub base_dir: Option<std::path::PathBuf>,
 }
 
+impl ImageToolsRegistration {
+    pub fn new(api_base_url: String, api_key: String, gen_model: String) -> Self {
+        Self {
+            api_base_url,
+            api_key,
+            gen_model,
+            base_dir: None,
+        }
+    }
+}
+
 pub struct VisionToolsRegistration {
     pub api_base_url: String,
     pub api_key: String,
