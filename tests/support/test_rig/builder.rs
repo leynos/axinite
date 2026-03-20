@@ -162,54 +162,88 @@ impl TestRigBuilder {
         Some(ReplayingHttpInterceptor::new(exchanges))
     }
 
+    fn wants_routines(&self) -> bool {
+        self.enable_routines
+    }
+
+    fn wants_skills(&self) -> bool {
+        self.enable_skills
+    }
+
+    fn has_extra_tools(&self) -> bool {
+        !self.extra_tools.is_empty()
+    }
+
+    async fn register_routines(
+        &self,
+        components: &mut AppComponents,
+        db: &Arc<dyn Database>,
+    ) -> anyhow::Result<()> {
+        use ironclaw::agent::routine_engine::RoutineEngine;
+        use ironclaw::config::RoutineConfig;
+
+        if components.db.is_none() {
+            return Ok(());
+        }
+
+        let Some(workspace) = components.workspace.as_ref() else {
+            return Ok(());
+        };
+
+        let routine_config = RoutineConfig::default();
+        let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel(64);
+        tokio::spawn(async move { while notify_rx.recv().await.is_some() {} });
+        let engine = Arc::new(RoutineEngine::new(
+            routine_config,
+            Arc::clone(db),
+            components.llm.clone(),
+            Arc::clone(workspace),
+            notify_tx,
+            None,
+            components.tools.clone(),
+            components.safety.clone(),
+        ));
+        components
+            .tools
+            .register_routine_tools(Arc::clone(db), engine);
+        Ok(())
+    }
+
+    fn register_skills(&self, components: &mut AppComponents) {
+        let registry = Arc::new(std::sync::RwLock::new(
+            ironclaw::skills::SkillRegistry::new(components.config.skills.local_dir.clone())
+                .with_installed_dir(components.config.skills.installed_dir.clone()),
+        ));
+        let catalog = ironclaw::skills::catalog::shared_catalog();
+        components
+            .tools
+            .register_skill_tools(Arc::clone(&registry), Arc::clone(&catalog));
+        components.skill_registry = Some(registry);
+        components.skill_catalog = Some(catalog);
+    }
+
+    async fn register_extra_tools(&self, components: &mut AppComponents) {
+        for tool in &self.extra_tools {
+            components.tools.register(Arc::clone(tool)).await;
+        }
+    }
+
     async fn register_optional_subsystems(
         &self,
         components: &mut AppComponents,
         db: &Arc<dyn Database>,
-        temp_dir: &tempfile::TempDir,
-    ) {
-        if self.enable_routines && components.db.is_some() && components.workspace.is_some() {
-            use ironclaw::agent::routine_engine::RoutineEngine;
-            use ironclaw::config::RoutineConfig;
-
-            let routine_config = RoutineConfig::default();
-            let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel(64);
-            tokio::spawn(async move { while notify_rx.recv().await.is_some() {} });
-            let Some(workspace) = components.workspace.as_ref() else {
-                return;
-            };
-            let workspace = Arc::clone(workspace);
-            let engine = Arc::new(RoutineEngine::new(
-                routine_config,
-                Arc::clone(db),
-                components.llm.clone(),
-                workspace,
-                notify_tx,
-                None,
-                components.tools.clone(),
-                components.safety.clone(),
-            ));
-            components
-                .tools
-                .register_routine_tools(Arc::clone(db), engine);
+        _temp_dir: &tempfile::TempDir,
+    ) -> anyhow::Result<()> {
+        if self.wants_routines() {
+            self.register_routines(components, db).await?;
         }
-
-        if self.enable_skills {
-            let registry = Arc::new(std::sync::RwLock::new(
-                ironclaw::skills::SkillRegistry::new(temp_dir.path().join("skills"))
-                    .with_installed_dir(temp_dir.path().join("installed_skills")),
-            ));
-            let catalog = ironclaw::skills::catalog::shared_catalog();
-            components
-                .tools
-                .register_skill_tools(Arc::clone(&registry), Arc::clone(&catalog));
-            components.skill_registry = Some(registry);
-            components.skill_catalog = Some(catalog);
+        if self.wants_skills() {
+            self.register_skills(components);
         }
-
-        for tool in &self.extra_tools {
-            components.tools.register(Arc::clone(tool)).await;
+        if self.has_extra_tools() {
+            self.register_extra_tools(components).await;
         }
+        Ok(())
     }
 
     #[cfg(feature = "libsql")]
@@ -341,7 +375,7 @@ impl TestRigBuilder {
             Arc::new(tokio::sync::RwLock::new(None));
         register_job_tools_for_tests(&components, &scheduler_slot);
         self.register_optional_subsystems(&mut components, &db, &temp_dir)
-            .await;
+            .await?;
         let http_replay = self.build_http_interceptor(self.trace.as_ref());
         let context_manager = Arc::clone(&components.context_manager);
         let agent_config = components.config.agent.clone();
