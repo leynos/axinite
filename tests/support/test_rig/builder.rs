@@ -162,14 +162,17 @@ impl TestRigBuilder {
         Some(ReplayingHttpInterceptor::new(exchanges))
     }
 
+    #[inline]
     fn wants_routines(&self) -> bool {
         self.enable_routines
     }
 
+    #[inline]
     fn wants_skills(&self) -> bool {
         self.enable_skills
     }
 
+    #[inline]
     fn has_extra_tools(&self) -> bool {
         !self.extra_tools.is_empty()
     }
