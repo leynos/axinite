@@ -2,35 +2,42 @@ use super::*;
 use crate::llm::ToolCall;
 
 const PLANNING_TEXT_LIMIT: u32 = 2;
+const COMPLETION_MARKERS: [&str; 4] = [
+    "build complete",
+    "successfully built",
+    "all tests pass",
+    "complete",
+];
+const FAILURE_MARKERS: [&str; 3] = ["error:", "error[", "failed"];
+
+fn is_completion_signal(lower: &str) -> bool {
+    COMPLETION_MARKERS
+        .iter()
+        .any(|marker| lower.contains(marker))
+}
+
+fn has_failure_marker(lower: &str) -> bool {
+    FAILURE_MARKERS.iter().any(|marker| lower.contains(marker))
+}
+
+fn infer_phase_from_tool(name: &str, args: &serde_json::Value, current: BuildPhase) -> BuildPhase {
+    match name {
+        "write_file" => BuildPhase::Implementing,
+        "shell" => {
+            let text = args.to_string();
+            if text.contains("build") {
+                BuildPhase::Building
+            } else if text.contains("test") {
+                BuildPhase::Testing
+            } else {
+                current
+            }
+        }
+        _ => current,
+    }
+}
 
 impl LlmSoftwareBuilder {
-    #[inline]
-    fn is_completion_signal(s: &str) -> bool {
-        let response_lower = s.to_lowercase();
-        response_lower.contains("build complete")
-            || response_lower.contains("successfully built")
-            || response_lower.contains("all tests pass")
-            || response_lower.contains("complete")
-    }
-
-    #[inline]
-    fn has_build_error(output: &str) -> bool {
-        let output_lower = output.to_lowercase();
-        output_lower.contains("error:")
-            || output_lower.contains("error[")
-            || output_lower.contains("failed")
-    }
-
-    #[inline]
-    fn next_phase(current: BuildPhase, tool_name: &str, args: &serde_json::Value) -> BuildPhase {
-        match tool_name {
-            "write_file" => BuildPhase::Implementing,
-            "shell" if args.to_string().contains("build") => BuildPhase::Building,
-            "shell" if args.to_string().contains("test") => BuildPhase::Testing,
-            _ => current,
-        }
-    }
-
     #[inline]
     fn push_force_tool_use(reason_ctx: &mut ReasoningContext, n: u32) {
         tracing::debug!(
@@ -225,9 +232,11 @@ impl LlmSoftwareBuilder {
                         output_str.clone(),
                     ));
 
-                    *current_phase = Self::next_phase(*current_phase, &tc.name, &tc.arguments);
+                    *current_phase =
+                        infer_phase_from_tool(tc.name.as_str(), &tc.arguments, *current_phase);
 
-                    if Self::has_build_error(&output_str) {
+                    let output_lower = output_str.to_lowercase();
+                    if has_failure_marker(&output_lower) {
                         *last_error = Some(output_str);
                         *current_phase = BuildPhase::Fixing;
                     }
@@ -338,7 +347,8 @@ impl LlmSoftwareBuilder {
 
                     consecutive_text_responses = 0;
 
-                    if Self::is_completion_signal(&response) {
+                    let response_lower = response.to_lowercase();
+                    if is_completion_signal(&response_lower) {
                         return Ok(self
                             .build_success_result(
                                 build_id,
