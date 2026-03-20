@@ -293,11 +293,6 @@ fn decompress_zip_entry(
             decoder.read_to_end(&mut buf).map_err(|e| {
                 ToolError::ExecutionFailed(format!("Failed to decompress SKILL.md: {}", e))
             })?;
-            if buf.len() > MAX_DECOMPRESSED {
-                return Err(ToolError::ExecutionFailed(
-                    "ZIP entry too large to decompress safely".to_string(),
-                ));
-            }
             if buf.len() == MAX_DECOMPRESSED && uncompressed_size > MAX_DECOMPRESSED {
                 return Err(ToolError::ExecutionFailed(
                     "ZIP entry too large to decompress safely".to_string(),
