@@ -223,8 +223,13 @@ struct ZipLocalHeader {
     extra_len: usize,
 }
 
-/// Parse a ZIP local-file header at `offset`. Returns `None` when the
-/// four-byte signature does not match (end of local-header chain).
+/// Parse a ZIP local-file header at `offset` into a [`ZipLocalHeader`].
+///
+/// Callers must enforce the precondition `offset + 30 <= data.len()` before
+/// calling this function. If the four-byte signature does not match
+/// `0x50 0x4B 0x03 0x04`, this returns `None`. Violating the length
+/// precondition causes out-of-bounds panics rather than a safe error, so
+/// callers must validate buffer bounds first.
 fn parse_zip_local_header(data: &[u8], offset: usize) -> Option<ZipLocalHeader> {
     if data[offset..offset + 4] != [0x50, 0x4B, 0x03, 0x04] {
         return None;
