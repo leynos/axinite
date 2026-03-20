@@ -1,6 +1,10 @@
 //! Filesystem and local setup helpers for the Claude bridge runtime.
 
-use std::{ffi::OsStr, io, path::Path};
+use std::{
+    ffi::{OsStr, OsString},
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 use crate::error::WorkerError;
 
@@ -99,43 +103,16 @@ pub(crate) fn build_permission_settings(allowed_tools: &[String]) -> Result<Stri
     })
 }
 
-fn copy_one_file(src: &Path, dst: &Path) -> io::Result<usize> {
-    use std::io::ErrorKind;
-
-    match std::fs::copy(src, dst) {
-        Ok(_) => Ok(1),
-        Err(error) if error.kind() == ErrorKind::NotFound => match src.metadata() {
-            Err(metadata_error) if metadata_error.kind() == ErrorKind::NotFound => {
-                tracing::debug!(
-                    "fs_setup: source disappeared {} → {}, skipping: {error}",
-                    src.display(),
-                    dst.display()
-                );
-                Ok(0)
-            }
-            _ => Err(error),
-        },
-        Err(error) => Err(error),
-    }
+enum DirEntryKind {
+    Dir { path: PathBuf, name: OsString },
+    File { path: PathBuf, name: OsString },
+    Symlink { path: PathBuf },
+    Other { path: PathBuf },
 }
 
-fn copy_subdir(src: &Path, parent_dst: &Path, dir_name: &OsStr) -> io::Result<usize> {
-    let sub_dst = parent_dst.join(dir_name);
-    std::fs::create_dir_all(&sub_dst)?;
-    copy_dir_recursive(src, &sub_dst)
-}
-
-/// Recursively copy files and directories from `src` to `dst`, skipping
-/// entries that can't be read.
-pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<usize> {
-    let entries = match std::fs::read_dir(src) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
-        Err(error) => return Err(error),
-    };
-    std::fs::create_dir_all(dst)?;
-    let mut copied = 0usize;
-    for entry_result in entries {
+fn scan_dir(src: &Path) -> io::Result<Vec<DirEntryKind>> {
+    let mut entries = Vec::new();
+    for entry_result in fs::read_dir(src)? {
         let entry = match entry_result {
             Ok(entry) => entry,
             Err(error) => {
@@ -158,14 +135,64 @@ pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<usize> {
                 continue;
             }
         };
-        if file_type.is_dir() {
-            copied += copy_subdir(&path, dst, &name)?;
+        let kind = if file_type.is_dir() {
+            DirEntryKind::Dir { path, name }
         } else if file_type.is_file() {
-            copied += copy_one_file(&path, &dst.join(&name))?;
+            DirEntryKind::File { path, name }
         } else if file_type.is_symlink() {
-            tracing::debug!("fs_setup: skipping symlink {}", path.display());
+            DirEntryKind::Symlink { path }
         } else {
-            tracing::debug!("fs_setup: unknown entry type at {}", path.display());
+            DirEntryKind::Other { path }
+        };
+        entries.push(kind);
+    }
+    Ok(entries)
+}
+
+fn copy_one_file(src: &Path, dst: &Path) -> io::Result<usize> {
+    match fs::copy(src, dst) {
+        Ok(_) => Ok(1),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => match src.metadata() {
+            Err(metadata_error) if metadata_error.kind() == io::ErrorKind::NotFound => {
+                tracing::debug!(
+                    "fs_setup: source disappeared {} → {}, skipping: {error}",
+                    src.display(),
+                    dst.display()
+                );
+                Ok(0)
+            }
+            _ => Err(error),
+        },
+        Err(error) => Err(error),
+    }
+}
+
+fn copy_subdir(src: &Path, parent_dst: &Path, dir_name: &OsStr) -> io::Result<usize> {
+    let sub_dst = parent_dst.join(dir_name);
+    fs::create_dir_all(&sub_dst)?;
+    copy_dir_recursive(src, &sub_dst)
+}
+
+/// Recursively copy files and directories from `src` to `dst`, skipping
+/// entries that can't be read.
+pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<usize> {
+    if !src.exists() {
+        return Ok(0);
+    }
+    fs::create_dir_all(dst)?;
+    let mut copied = 0usize;
+    for entry in scan_dir(src)? {
+        match entry {
+            DirEntryKind::Dir { path, name } => copied += copy_subdir(&path, dst, &name)?,
+            DirEntryKind::File { path, name } => {
+                copied += copy_one_file(&path, &dst.join(&name))?;
+            }
+            DirEntryKind::Symlink { path } => {
+                tracing::debug!("fs_setup: skipping symlink {}", path.display());
+            }
+            DirEntryKind::Other { path } => {
+                tracing::debug!("fs_setup: unknown entry type at {}", path.display());
+            }
         }
     }
     Ok(copied)
