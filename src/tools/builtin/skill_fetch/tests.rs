@@ -7,7 +7,7 @@ use flate2::Compression;
 use flate2::write::DeflateEncoder;
 use rstest::rstest;
 
-use super::url_policy::{HttpsUrl, NormalizedDomain};
+use super::url_policy::{HttpsUrl, NormalizedDomain, redact_url};
 use super::{extract_skill_from_zip, is_private_ip, validate_fetch_url, validate_resolved_addrs};
 
 type ZipEntryBuilder = fn(&str, &[u8]) -> Vec<u8>;
@@ -93,6 +93,45 @@ fn test_validate_resolved_addrs_rejects_empty_results() {
             .contains("DNS resolution returned no addresses"),
         "expected empty-resolution error, got: {err}",
     );
+}
+
+#[test]
+fn test_validate_fetch_url_rejects_internal_host_without_leaking_credentials() {
+    let https = HttpsUrl::try_from("https://user:secret@localhost/path?token=abc")
+        .expect("credentialled localhost URL should parse");
+    let err = validate_fetch_url(&https).expect_err("localhost URL should be rejected");
+    let err_text = err.to_string();
+    assert!(
+        !err_text.contains("secret"),
+        "validation error should not include credentials, got: {err_text}",
+    );
+    assert!(
+        !err_text.contains("token=abc"),
+        "validation error should not include query strings, got: {err_text}",
+    );
+}
+
+#[test]
+fn test_https_url_parse_error_does_not_echo_raw_input() {
+    let raw_input = "not a url";
+    let err = match HttpsUrl::try_from(raw_input) {
+        Ok(_) => panic!("malformed URL should be rejected"),
+        Err(err) => err,
+    };
+    let err_text = err.to_string();
+    assert!(
+        !err_text.contains(raw_input),
+        "parse error should not echo the raw input, got: {err_text}",
+    );
+}
+
+#[test]
+fn test_redact_url_strips_userinfo_and_query() {
+    let parsed =
+        reqwest::Url::parse("https://user:secret@example.com/path/to/skill.zip?token=abc#fragment")
+            .expect("fixture URL should parse");
+    let redacted = redact_url(&parsed);
+    assert_eq!(redacted, "https://example.com/path/to/skill.zip");
 }
 
 #[rstest]

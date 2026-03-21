@@ -51,6 +51,17 @@ enum Host {
     Ip(IpAddr),
 }
 
+/// Return a URL string with userinfo, query, and fragment stripped, safe to
+/// include in error messages.
+pub(super) fn redact_url(url: &reqwest::Url) -> String {
+    let mut redacted = url.clone();
+    let _ = redacted.set_username("");
+    let _ = redacted.set_password(None);
+    redacted.set_query(None);
+    redacted.set_fragment(None);
+    redacted.to_string()
+}
+
 /// Return `true` when the lowercased, normalised hostname is known to resolve
 /// to an internal or metadata endpoint that must not be fetched.
 fn is_blocked_hostname(host: &NormalizedDomain) -> bool {

@@ -2,7 +2,9 @@
 
 use futures::StreamExt;
 
-use super::url_policy::{HttpsUrl, NormalizedDomain, validate_fetch_url, validate_resolved_addrs};
+use super::url_policy::{
+    HttpsUrl, NormalizedDomain, redact_url, validate_fetch_url, validate_resolved_addrs,
+};
 use super::zip_extract::extract_skill_from_zip;
 use crate::tools::tool::ToolError;
 
@@ -67,20 +69,17 @@ pub(crate) async fn fetch_skill_content(url: &str) -> Result<String, ToolError> 
     let https = HttpsUrl::try_from(url)?;
     let parsed = validate_fetch_url(&https)?;
     let client = build_safe_fetch_client(&parsed).await?;
+    let safe_url = redact_url(&parsed);
 
     let response = client.get(parsed.clone()).send().await.map_err(|e| {
-        ToolError::ExecutionFailed(format!(
-            "Failed to fetch skill from {}: {}",
-            parsed.host_str().unwrap_or("unknown"),
-            e
-        ))
+        ToolError::ExecutionFailed(format!("Failed to fetch skill from {}: {}", safe_url, e))
     })?;
 
     if !response.status().is_success() {
         return Err(ToolError::ExecutionFailed(format!(
-            "Skill fetch returned HTTP {} from {}",
+            "Skill fetch returned HTTP {}: {}",
             response.status(),
-            parsed.host_str().unwrap_or("unknown")
+            safe_url
         )));
     }
 
