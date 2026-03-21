@@ -3,7 +3,7 @@
 
 ## Status
 
-Proposed.
+Accepted.
 
 ## Date
 
@@ -22,6 +22,12 @@ Those interfaces still rely on `Arc<dyn Trait>`, `Box<dyn Trait>`, or
 `&dyn Trait` call sites. Native `async fn` in traits do not support
 dynamic dispatch today, so those interfaces cannot be migrated by simply
 dropping `#[async_trait]`.[^3]
+
+That is not just a theoretical limitation in older toolchains. A direct
+check on `rustc 1.92.0` still rejects `&dyn McpTransport` when
+`McpTransport` is written with native `async fn` methods, so the dyn
+boundary must remain explicitly boxed for this repository's current
+minimum toolchain.
 
 The remaining work therefore needs a design decision, not just a search
 and replace. The design must optimize for:

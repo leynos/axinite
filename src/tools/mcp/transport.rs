@@ -4,6 +4,10 @@
 //! [`NativeMcpTransport`] sibling trait for concrete implementations, and
 //! JSON-RPC framing helpers for newline-delimited byte streams (used by stdio
 //! and unix socket transports).
+//!
+//! Rust 1.92 still rejects `dyn McpTransport` when the trait uses native
+//! `async fn` methods directly, so the boxed-future boundary remains necessary
+//! for object-safe call sites such as `Arc<dyn McpTransport>`.
 
 use core::future::Future;
 use core::pin::Pin;
@@ -18,11 +22,18 @@ use crate::tools::mcp::protocol::{McpRequest, McpResponse};
 use crate::tools::tool::ToolError;
 
 /// Boxed future used at the dyn transport boundary.
+///
+/// This keeps the object-safe trait compact while preserving `Send` and the
+/// existing `Arc<dyn McpTransport>` call sites that native `async fn` traits
+/// still cannot express on stable Rust 1.92.
 pub type McpTransportFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Trait for sending JSON-RPC requests to an MCP server and receiving responses.
 ///
 /// Implementations handle the underlying transport (HTTP, stdio, unix socket, etc.).
+///
+/// The dyn-facing trait stays object-safe because the MCP client stores
+/// transports behind `Arc<dyn McpTransport>`.
 pub trait McpTransport: Send + Sync {
     /// Send a request and wait for the corresponding response.
     ///
