@@ -230,6 +230,8 @@ pub(super) fn build_tool_hint(
 #[cfg(test)]
 mod tests {
     use crate::testing::{github_wasm_artifact, metadata_test_runtime};
+    use crate::tools::Tool;
+    use crate::tools::tool::HostedToolCatalogSource;
     use crate::tools::wasm::capabilities::Capabilities;
 
     use super::super::WasmToolWrapper;
@@ -274,6 +276,24 @@ mod tests {
         assert_eq!(
             schema["properties"]["owner"]["type"],
             serde_json::json!("string")
+        );
+    }
+
+    #[tokio::test]
+    async fn wasm_tool_wrapper_reports_wasm_catalog_source() {
+        let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
+
+        let runtime = metadata_test_runtime().expect("create metadata test runtime");
+        let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm artifact");
+        let prepared = runtime
+            .prepare("github", &wasm_bytes, None)
+            .await
+            .expect("prepare github wasm component");
+        let wrapper = WasmToolWrapper::new(runtime, prepared, Capabilities::default());
+
+        assert_eq!(
+            wrapper.hosted_tool_catalog_source(),
+            Some(HostedToolCatalogSource::Wasm)
         );
     }
 }

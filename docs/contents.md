@@ -78,8 +78,6 @@
   explains how extension authors build and package WebAssembly tools for the
   existing runtime and tool contract.
 
-<<<<<<< ours — heading `Plans` (F, confidence: medium)
-// hint: Logic changed on both sides. Requires understanding intent of each change.
 ## Plans
 
 - [Plans directory](plans/) collects execution plans, investigations, and

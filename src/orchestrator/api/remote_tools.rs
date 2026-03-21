@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::context::JobContext;
 use crate::llm::ToolDefinition;
 use crate::tools::{
-    HostedToolCatalogSource, HostedToolLookupError, ToolError, ToolOutput, ToolRegistry,
+    HostedToolCatalogSource, HostedToolLookupError, Tool, ToolError, ToolOutput, ToolRegistry,
 };
 
 const HOSTED_REMOTE_TOOL_SOURCES: [HostedToolCatalogSource; 1] = [HostedToolCatalogSource::Mcp];
@@ -60,29 +60,7 @@ pub(super) async fn execute_hosted_remote_tool(
         tool_name,
         params,
     } = request;
-    let tool = match tools
-        .get_hosted_tool(&tool_name, &HOSTED_REMOTE_TOOL_SOURCES)
-        .await
-    {
-        Ok(tool) => tool,
-        Err(HostedToolLookupError::NotFound) => return Err(StatusCode::NOT_FOUND),
-        Err(HostedToolLookupError::ApprovalGated) => {
-            tracing::warn!(
-                job_id = %job_id,
-                tool = %tool_name,
-                "Worker attempted approval-gated hosted remote tool execution"
-            );
-            return Err(StatusCode::FORBIDDEN);
-        }
-        Err(HostedToolLookupError::Ineligible) => {
-            tracing::warn!(
-                job_id = %job_id,
-                tool = %tool_name,
-                "Worker attempted non-hosted remote tool execution"
-            );
-            return Err(StatusCode::BAD_REQUEST);
-        }
-    };
+    let tool = resolve_hosted_tool(tools, &tool_name, job_id).await?;
 
     if tool.requires_approval(&params).is_required() {
         tracing::warn!(
@@ -109,6 +87,36 @@ pub(super) async fn execute_hosted_remote_tool(
         );
         tool_error_status(&error)
     })
+}
+
+async fn resolve_hosted_tool(
+    tools: &Arc<ToolRegistry>,
+    tool_name: &str,
+    job_id: Uuid,
+) -> Result<Arc<dyn Tool>, StatusCode> {
+    match tools
+        .get_hosted_tool(tool_name, &HOSTED_REMOTE_TOOL_SOURCES)
+        .await
+    {
+        Ok(tool) => Ok(tool),
+        Err(HostedToolLookupError::NotFound) => Err(StatusCode::NOT_FOUND),
+        Err(HostedToolLookupError::ApprovalGated) => {
+            tracing::warn!(
+                job_id = %job_id,
+                tool = %tool_name,
+                "Worker attempted approval-gated hosted remote tool execution"
+            );
+            Err(StatusCode::FORBIDDEN)
+        }
+        Err(HostedToolLookupError::Ineligible) => {
+            tracing::warn!(
+                job_id = %job_id,
+                tool = %tool_name,
+                "Worker attempted non-hosted remote tool execution"
+            );
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
 }
 
 fn compute_catalog_version(tools: &[ToolDefinition], toolset_instructions: &[String]) -> u64 {
