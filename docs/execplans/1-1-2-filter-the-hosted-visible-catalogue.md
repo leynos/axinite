@@ -85,7 +85,10 @@ insufficient.
 - Keep future reuse in mind for roadmap item `1.2.2`. The canonical filter may
   start with MCP-focused rules, but it must not hard-code assumptions that make
   orchestrator-owned WebAssembly (WASM) tools impossible to add through the same
-  seam later.
+  seam later. The companion WASM schema-advertising design in
+  `docs/rfcs/0002-expose-wasm-tool-definitions.md` must explicitly reference
+  this canonical `1.1.2` seam so later work is required to reuse it rather than
+  rebuilding hosted visibility logic elsewhere.
 - Avoid widening approval semantics in hosted mode. If a tool currently needs an
   interactive approval flow, it must remain hidden until the product has a real
   hosted approval-grant path.
@@ -293,15 +296,18 @@ Implementation is not complete until the docs say the same thing as the code.
 1. Update `docs/rfcs/0001-expose-mcp-tool-definitions.md` if the final
    canonical-filter seam or MCP-specific rule is narrower or more explicit than
    the current RFC text.
-2. Update `docs/axinite-architecture-overview.md` to say that hosted-catalogue
+2. Update `docs/rfcs/0002-expose-wasm-tool-definitions.md` so roadmap item
+   `1.2.2` explicitly references the canonical hosted-visible filter introduced
+   by `1.1.2`, not only the shared worker-orchestrator transport.
+3. Update `docs/axinite-architecture-overview.md` to say that hosted-catalogue
    filtering now comes from the canonical tool registry or policy layer rather
    than from the orchestrator adapter.
-3. Review `docs/users-guide.md` and update the visibility-rules section if the
+4. Review `docs/users-guide.md` and update the visibility-rules section if the
    set of hosted-visible tools or the rationale for exclusions changed from the
    current text.
-4. Add or refresh the `docs/contents.md` entry if new plan or architecture
+5. Add or refresh the `docs/contents.md` entry if new plan or architecture
    documents need to be indexed.
-5. When the feature implementation is complete and validated, mark roadmap item
+6. When the feature implementation is complete and validated, mark roadmap item
    `1.1.2` as done in `docs/roadmap.md`.
 
 Do not mark the roadmap entry done during the plan phase.

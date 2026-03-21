@@ -216,7 +216,6 @@ That guarantee should be documented and tested for:
 This changes the contract from "best effort if registration recovered metadata"
 to "required interface guarantee."
 
-
 ### 4. Reuse the remote-tool catalogue for orchestrator-owned WASM tools
 
 The companion RFC [0001-expose-mcp-tool-definitions.md](0001-expose-mcp-tool-definitions.md)
@@ -224,6 +223,12 @@ proposes a worker-authenticated hosted tool catalogue plus generic remote tool
 execution endpoint.
 
 That same mechanism should cover orchestrator-owned active WASM tools.
+Roadmap item `1.1.2` is the specific prerequisite that moves hosted-visible
+catalogue filtering into the canonical `ToolRegistry` or policy layer. Roadmap
+item `1.2.2` should explicitly consume that same canonical hosted-visible
+filter seam, extending its eligibility rules to include orchestrator-owned WASM
+tools, rather than reconstructing hosted visibility in a second WASM-specific
+adapter path.
 
 Suggested hosted catalogue response:
 
@@ -357,6 +362,7 @@ design requirement.
 ## Testing Strategy
 
 This change needs both interface tests and behavioural tests.
+
 ### Unit tests
 
 1. Active file-loaded WASM tools expose guest or override schema through
@@ -392,9 +398,12 @@ That is the contract that removes first-call guesswork.
    `ToolDefinition.parameters`.
 2. Audit registration paths to ensure they all satisfy that rule.
 3. Extend the hosted remote-tool catalogue to include orchestrator-owned WASM
-   tools, reusing the same shared worker-orchestrator transport contract
-   introduced for RFC 0001 rather than defining a second hosted-catalogue
-   boundary.
+   tools, reusing both:
+   - the shared worker-orchestrator transport contract introduced for RFC 0001
+   - the canonical hosted-visible filter seam introduced by roadmap item `1.1.2`
+
+   Do not define a second hosted-catalogue boundary or a parallel WASM-only
+   eligibility pass.
 4. Reframe WASM retry hints as supplemental diagnostics in code comments,
    behaviour, and tests.
 5. Add explicit end-to-end tests for proactive schema exposure.
