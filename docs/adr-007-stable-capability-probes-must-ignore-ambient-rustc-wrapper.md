@@ -3,9 +3,10 @@
 
 ## Status
 
-Accepted. Carry a narrow vendored patch chain for the affected `cap-*`
-build-script probes until the dependency graph or build environment provides
-an equivalent stable-safe behaviour without repository-local patches.
+Accepted and retired. The branch originally carried a narrow vendored patch
+chain for the affected `cap-*` build-script probes. That workaround was
+removed once the ambient `RUSTC_WRAPPER` was fixed and the unpatched
+dependency graph passed the required stable acceptance command.
 
 ## Date
 
@@ -112,16 +113,16 @@ acceptable steady-state solution.
 
 ## Decision outcome / proposed direction
 
-Choose **Option A** for the current branch.
+Choose **Option A** for the initial branch recovery.
 
-The repository will carry vendored patches for:
+The repository originally carried vendored patches for:
 
 - `io-extras`
 - `cap-primitives`
 - `cap-std`
 - `system-interface`
 
-The carried delta must stay narrow:
+The carried delta was kept narrow:
 
 - patch only the build-script probe path,
 - keep the vendored crate versions aligned with the locked dependency graph,
@@ -130,8 +131,8 @@ The carried delta must stay narrow:
 
 ### Retirement criteria
 
-The vendored patch chain must be removed when any one of the following becomes
-true and is validated on this repository:
+The vendored patch chain had to be removed when any one of the following became
+true and was validated on this repository:
 
 1. The dependency graph can be updated to upstream releases that no longer rely
    on wrapper-tainted probe results, and the unpatched graph passes:
@@ -146,9 +147,26 @@ true and is validated on this repository:
    that makes plain `cargo` invocations wrapper-neutral for capability probes,
    and the unpatched dependency graph passes the same acceptance commands above.
 
-The patches must not be retired based only on a local anecdotal success. The
-retirement branch must prove the unpatched path against the full acceptance
-commands listed above.
+The patches were not retired based only on anecdotal local success. Retirement
+required a verified unpatched build path against the repository acceptance
+commands.
+
+### Retirement outcome
+
+On 2026-03-21, the ambient `notdeadyet` wrapper was fixed so stdin-backed
+compiler probes no longer depended on a backgrounded `rustc` process. The
+retirement proof used a scratch copy of this repository with the
+`[patch.crates-io]` stanza removed and reran the original stable no-Docker
+acceptance command:
+
+```bash
+cargo check --no-default-features --features libsql,test-helpers
+```
+
+That unpatched build succeeded on the stable toolchain, which satisfied the
+root retirement criterion for the original blocker. The repository then
+removed the vendored `cap-*` patch chain and the Dockerfile packaging carry
+for `third-party-patches/`.
 
 ## Goals and non-goals
 
@@ -164,38 +182,34 @@ commands listed above.
 ## Migration plan
 
 1. Keep the current vendored patch chain in place while the branch depends on
-   the affected crate versions.
-2. Periodically check whether upstream releases or dependency updates remove the
-   need for the patch.
-3. When a retirement candidate exists, test the unpatched graph on a dedicated
-   branch by removing the relevant `[patch.crates-io]` entries and vendored
-   directories.
-4. Remove the patch chain only after the unpatched branch passes the stable
+   the affected crate versions and the ambient wrapper still taints probes.
+2. Test the unpatched graph on a dedicated scratch tree by removing the
+   relevant `[patch.crates-io]` entries and vendored directories.
+3. Remove the patch chain only after the unpatched branch passes the stable
    no-Docker acceptance command and the full gate stack.
-5. Update this ADR, `docs/contents.md`, and any related implementation notes to
+4. Update this ADR, `docs/contents.md`, and any related implementation notes to
    record the retirement.
 
 ## Known risks and limitations
 
-- Vendored dependencies increase repository weight and review noise.
-- Upstream security or bug-fix updates still require active monitoring because
-  vendored copies do not update themselves.
-- The retirement trigger depends on future validation work; it is easy to leave
-  temporary patches in place if nobody owns the follow-up.
+- Ambient compiler wrappers can still distort build-script capability probes if
+  they do not preserve stdin semantics faithfully.
+- Future wrapper changes should be treated as build-contract changes and
+  revalidated against the stable no-Docker acceptance command when they affect
+  `rustc` invocation shape.
 
 ## Architectural rationale
 
-This decision protects the repository's stable-toolchain contract at the
+This decision protected the repository's stable-toolchain contract at the
 architectural boundary where it was actually violated: compiler capability
-detection. It keeps Docker feature-gating and sandbox behaviour independent
-from a separate build-environment fault, and it makes the workaround explicit,
+detection. It kept Docker feature-gating and sandbox behaviour independent from
+a separate build-environment fault, and it made the workaround explicit,
 bounded, and removable.
 
-The chosen approach also preserves an important maintainability property:
+The retirement also preserves an important maintainability property:
 repository acceptance should depend on declared source and lock state, not on
-ambient shell quirks. Carrying a small, well-documented patch is preferable to
-depending on invisible wrapper semantics that a future maintainer cannot infer
-from the repository alone.
+ambient shell quirks. Once the wrapper was fixed, the repository no longer
+needed to carry a local vendor delta to defend itself from that environment bug.
 
 ## References
 

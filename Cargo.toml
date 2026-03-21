@@ -220,12 +220,6 @@ import = ["dep:rusqlite", "dep:json5"]
 test-helpers = ["dep:tempfile"]
 docker = ["dep:bollard"]
 
-[patch.crates-io]
-cap-primitives = { path = "third-party-patches/cap-primitives-3.4.5" }
-cap-std = { path = "third-party-patches/cap-std-3.4.5" }
-io-extras = { path = "third-party-patches/io-extras-0.18.4" }
-system-interface = { path = "third-party-patches/system-interface-0.27.3" }
-
 [[test]]
 name = "html_to_markdown"
 required-features = ["html-to-markdown"]

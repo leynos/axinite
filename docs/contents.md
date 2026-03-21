@@ -183,6 +183,6 @@
   records the proposed migration pattern for dyn-backed async traits,
   balancing compilation speed against implementation maintainability.
 - [ADR 007: Stable capability probes must ignore ambient `RUSTC_WRAPPER`](adr-007-stable-capability-probes-must-ignore-ambient-rustc-wrapper.md)
-  records why the repository carries a narrow vendored `cap-*` probe patch
-  chain, which non-patch alternatives exist, and what evidence is required to
-  retire the workaround.
+  records why the repository temporarily carried a narrow vendored `cap-*`
+  probe patch chain, which non-patch alternatives existed, and what evidence
+  retired the workaround.

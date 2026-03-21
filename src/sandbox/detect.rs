@@ -172,7 +172,7 @@ fn docker_binary_exists() -> bool {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(feature = "docker", windows))]
 fn docker_cli_daemon_reachable() -> bool {
     let stdout = std::process::Stdio::null();
     let stderr = std::process::Stdio::null();

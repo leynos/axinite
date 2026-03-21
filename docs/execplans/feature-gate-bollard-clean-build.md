@@ -5,16 +5,15 @@ This ExecPlan (execution plan) is a living document. The sections
 `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work
 proceeds.
 
-Status: COMPLETED
+Status: COMPLETED AND RETIRED
 
 ## Purpose / big picture
 
 The `feature-gate-bollard` branch already contains the Docker feature-gating
-changes, but the branch is not yet in a state where the normal repository gates
-can pass cleanly. The next person working this branch must restore a clean
+changes. This plan captured the follow-on work to restore a clean
 stable-toolchain build, remove the no-Docker warning fallout from the new stub
-paths, and then replay the full Axinite gate contract so the change can be
-committed and pushed.
+paths, replay the full Axinite gate contract, and then retire the temporary
+vendored `cap-*` workaround once the underlying wrapper bug was fixed.
 
 Success is observable in three ways:
 
@@ -35,6 +34,8 @@ Success is observable in three ways:
 
 3. `git status --short` shows only the intended source changes before commit,
    and the branch can then be committed and pushed.
+4. The vendored `cap-*` workaround can be removed after the unpatched graph
+   proves the same stable acceptance path cleanly.
 
 ## Current state
 
@@ -83,12 +84,15 @@ There is also useful fallback evidence:
    finished successfully after the no-Docker stub fixes, but emitted warning
    noise from dead code and unused items in the no-Docker configuration.
 
-The clean-build work therefore has two layers:
+The clean-build work therefore had two layers:
 
 - restore stable-toolchain compatibility for the `wasmtime-wasi` dependency
   chain, and
 - clean up the warning-only fallout in the no-Docker configuration so the
   repository can pass its strict warning-as-error gates.
+
+That work is now complete, and the later wrapper fix has also allowed the
+repository-local vendored patch chain to be retired.
 
 ## Constraints
 
@@ -280,6 +284,12 @@ $ git push
   `/tmp/lint-axinite-feature-gate-bollard-rerun.out`, and
   `/tmp/test-axinite-feature-gate-bollard.out`.
 - [ ] Commit and push with clean gate evidence.
+- [x] Fix the ambient `notdeadyet` wrapper so stdin-backed compiler probes are
+  stable-safe.
+- [x] Prove the unpatched graph in a scratch copy with
+  `cargo check --no-default-features --features libsql,test-helpers`.
+- [x] Retire the repository-local `[patch.crates-io]` override and the vendored
+  `third-party-patches/` carry path.
 
 ## Surprises & Discoveries
 
@@ -323,6 +333,14 @@ $ git push
   passed the WASM prebuild, `cargo nextest run --workspace --features
   test-helpers`, and `cargo test --manifest-path tools-src/github/Cargo.toml`
   without further source changes.
+- 2026-03-21: Fixing `~/.local/bin/notdeadyet` to keep `rustc` in the
+  foreground and materialize stdin-backed probes to a temporary file preserved
+  heartbeat output while removing the wrapper behaviour that had tainted the
+  capability probes.
+- 2026-03-21: After the wrapper fix, a scratch copy of the repository with the
+  `[patch.crates-io]` stanza removed passed
+  `cargo check --no-default-features --features libsql,test-helpers` on the
+  stable toolchain. That made the vendored patch chain unnecessary.
 
 ## Decision Log
 
@@ -337,6 +355,10 @@ $ git push
   Reason: until the normal stable toolchain can compile the dependency graph,
   the repository's real gate sequence cannot pass, and warning cleanup alone
   does not make the branch shippable.
+- 2026-03-21: Retire the vendored `cap-*` patch chain once the fixed ambient
+  wrapper proves the unpatched stable no-Docker build in a scratch copy.
+  Reason: the repository should not keep carrying a vendor delta after the
+  underlying probe bug has been eliminated from the execution environment.
 
 - 2026-03-21: Keep `RUSTC_BOOTSTRAP=1` as a diagnostic tool only.
   Reason: it is useful for separating branch-local compile problems from

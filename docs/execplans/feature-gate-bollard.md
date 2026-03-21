@@ -141,6 +141,10 @@ The direct bollard usage sites and their primary purposes are:
   trusted an ambient `RUSTC_WRAPPER`. The fix was vendored patching of the
   affected probe chain plus narrow cfg cleanup in the sandbox and orchestrator
   modules.
+- 2026-03-21: The vendored `cap-*` workaround has now been retired. Fixing the
+  ambient `notdeadyet` wrapper restored honest stdin-backed compiler probes,
+  and the unpatched stable no-Docker acceptance check passed in a scratch copy
+  before the repository-local patches were removed.
 - 2026-03-21: Validation is now complete. The branch passed
   `make check-fmt`, `make typecheck`, `make lint`, and `make test`.
   The stable no-Docker acceptance check also passes.
