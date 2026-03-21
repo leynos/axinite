@@ -139,6 +139,15 @@ Re-audit snapshot as of 2026-03-21:
   directly used as trait objects, or inherited by a trait object that
   preserves the object-safety requirement.
 
+Re-audit snapshot as of 2026-03-21 after Phase 3 expansion:
+
+- `SettingsStore` in `src/db/mod.rs` is now piloted with ADR 006's
+  dual-trait pattern while preserving both direct `Arc<dyn
+  SettingsStore>` consumers and the `Database` supertrait boundary.
+- `SoftwareBuilder` in `src/tools/builder/core/domain.rs` is now piloted
+  with ADR 006's dual-trait pattern while preserving
+  `Arc<dyn SoftwareBuilder>` consumers in self-repair and the build tool.
+
 ### Phase 2: Migrate concrete-only traits (batch by module)
 
 For each module, in separate commits:
@@ -230,3 +239,8 @@ piloting ADR 006's dual-trait pattern.
   implementors need the ergonomic path. The next candidates should be
   comparably small dyn-backed families rather than `Tool`, `LlmProvider`,
   or `Database`.
+- 2026-03-21: Expanded the ADR 006 pattern to `SettingsStore` and
+  `SoftwareBuilder`, the two narrow follow-on candidates named in the
+  ADR. `PgBackend`, `LibSqlBackend`, and `LlmSoftwareBuilder` now use the
+  native sibling traits, while existing `Arc<dyn SettingsStore>` and
+  `Arc<dyn SoftwareBuilder>` call sites remain unchanged.

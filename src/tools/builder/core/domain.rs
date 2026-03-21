@@ -7,7 +7,9 @@
 
 use super::*;
 use std::fmt;
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 
 use serde::de::Error as _;
 
@@ -300,19 +302,76 @@ impl Default for BuilderConfig {
     }
 }
 
+/// Boxed future used at the dyn-backed builder boundary.
+pub type SoftwareBuilderFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Trait for building software.
-#[async_trait]
 pub trait SoftwareBuilder: Send + Sync {
     /// Analyze a natural language description and extract a structured requirement.
-    async fn analyze(&self, description: &str) -> Result<BuildRequirement, AgentToolError>;
+    fn analyze<'a>(
+        &'a self,
+        description: &'a str,
+    ) -> SoftwareBuilderFuture<'a, Result<BuildRequirement, AgentToolError>>;
 
     /// Build software from a requirement.
-    async fn build(&self, requirement: &BuildRequirement) -> Result<BuildResult, AgentToolError>;
+    fn build<'a>(
+        &'a self,
+        requirement: &'a BuildRequirement,
+    ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>>;
 
     /// Attempt to repair a failed build.
-    async fn repair(
-        &self,
-        result: &BuildResult,
-        error: &str,
-    ) -> Result<BuildResult, AgentToolError>;
+    fn repair<'a>(
+        &'a self,
+        result: &'a BuildResult,
+        error: &'a str,
+    ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>>;
+}
+
+/// Native async sibling trait for concrete builder implementations.
+pub trait NativeSoftwareBuilder: Send + Sync {
+    /// Analyze a natural language description and extract a structured requirement.
+    fn analyze<'a>(
+        &'a self,
+        description: &'a str,
+    ) -> impl Future<Output = Result<BuildRequirement, AgentToolError>> + Send + 'a;
+
+    /// Build software from a requirement.
+    fn build<'a>(
+        &'a self,
+        requirement: &'a BuildRequirement,
+    ) -> impl Future<Output = Result<BuildResult, AgentToolError>> + Send + 'a;
+
+    /// Attempt to repair a failed build.
+    fn repair<'a>(
+        &'a self,
+        result: &'a BuildResult,
+        error: &'a str,
+    ) -> impl Future<Output = Result<BuildResult, AgentToolError>> + Send + 'a;
+}
+
+impl<T> SoftwareBuilder for T
+where
+    T: NativeSoftwareBuilder + Send + Sync,
+{
+    fn analyze<'a>(
+        &'a self,
+        description: &'a str,
+    ) -> SoftwareBuilderFuture<'a, Result<BuildRequirement, AgentToolError>> {
+        Box::pin(async move { NativeSoftwareBuilder::analyze(self, description).await })
+    }
+
+    fn build<'a>(
+        &'a self,
+        requirement: &'a BuildRequirement,
+    ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>> {
+        Box::pin(async move { NativeSoftwareBuilder::build(self, requirement).await })
+    }
+
+    fn repair<'a>(
+        &'a self,
+        result: &'a BuildResult,
+        error: &'a str,
+    ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>> {
+        Box::pin(async move { NativeSoftwareBuilder::repair(self, result, error).await })
+    }
 }

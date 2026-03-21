@@ -1,6 +1,6 @@
 //! Builder implementation for requirement analysis, build execution, and repair.
 //!
-//! This module wires [`LlmSoftwareBuilder`] into the [`SoftwareBuilder`] trait.
+//! This module wires [`LlmSoftwareBuilder`] into the native builder trait.
 //! It owns the LLM-backed requirement analysis path, project-directory lifecycle,
 //! and timeout-wrapped build execution.
 
@@ -51,8 +51,7 @@ fn extract_first_json_object(response: &str) -> Option<&str> {
     None
 }
 
-#[async_trait]
-impl SoftwareBuilder for LlmSoftwareBuilder {
+impl NativeSoftwareBuilder for LlmSoftwareBuilder {
     async fn analyze(&self, description: &str) -> Result<BuildRequirement, AgentToolError> {
         // Use LLM to parse the description
         let reasoning =
@@ -139,6 +138,6 @@ JSON:"#,
         );
 
         // Rebuild (preserving project directory if it exists)
-        self.build(&requirement).await
+        NativeSoftwareBuilder::build(self, &requirement).await
     }
 }

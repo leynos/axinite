@@ -30,7 +30,8 @@ mod validation;
 
 pub use core::{
     BuildLog, BuildPhase, BuildRequirement, BuildResult, BuildSoftwareTool, BuilderConfig,
-    ExecutionCommand, Language, LlmSoftwareBuilder, ProjectName, SoftwareBuilder, SoftwareType,
+    ExecutionCommand, Language, LlmSoftwareBuilder, NativeSoftwareBuilder, ProjectName,
+    SoftwareBuilder, SoftwareType,
 };
 pub use templates::{Template, TemplateEngine, TemplateType};
 pub use testing::{TestCase, TestHarness, TestResult, TestSuite};

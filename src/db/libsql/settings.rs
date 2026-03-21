@@ -2,18 +2,16 @@
 
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use libsql::params;
 
 use super::{LibSqlBackend, fmt_ts, get_i64, get_json, get_text, get_ts};
-use crate::db::SettingsStore;
+use crate::db::NativeSettingsStore;
 use crate::error::DatabaseError;
 use crate::history::SettingRow;
 
 use chrono::Utc;
 
-#[async_trait]
-impl SettingsStore for LibSqlBackend {
+impl NativeSettingsStore for LibSqlBackend {
     async fn get_setting(
         &self,
         user_id: &str,
