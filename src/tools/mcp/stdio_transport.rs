@@ -7,14 +7,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use tokio::io::BufReader;
 use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, oneshot};
 use tokio::task::JoinHandle;
 
 use crate::tools::mcp::protocol::{McpRequest, McpResponse};
-use crate::tools::mcp::transport::{McpTransport, spawn_jsonrpc_reader, write_jsonrpc_line};
+use crate::tools::mcp::transport::{NativeMcpTransport, spawn_jsonrpc_reader, write_jsonrpc_line};
 use crate::tools::tool::ToolError;
 
 /// MCP transport that communicates with a child process over stdin/stdout.
@@ -111,8 +110,7 @@ impl StdioMcpTransport {
     }
 }
 
-#[async_trait]
-impl McpTransport for StdioMcpTransport {
+impl NativeMcpTransport for StdioMcpTransport {
     async fn send(
         &self,
         request: &McpRequest,

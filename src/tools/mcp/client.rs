@@ -549,6 +549,7 @@ fn strip_top_level_nulls(value: serde_json::Value) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::mcp::transport::NativeMcpTransport;
 
     #[test]
     fn test_mcp_request_list_tools() {
@@ -776,8 +777,7 @@ mod tests {
         }
     }
 
-    #[async_trait]
-    impl McpTransport for MockTransport {
+    impl NativeMcpTransport for MockTransport {
         async fn send(
             &self,
             _request: &McpRequest,
@@ -829,9 +829,9 @@ mod tests {
     #[tokio::test]
     async fn test_transport_supports_http_features_accessor() {
         let http_transport = HttpMcpTransport::new("http://localhost:8080", "test");
-        assert!(http_transport.supports_http_features());
+        assert!(McpTransport::supports_http_features(&http_transport));
         let mock_non_http = MockTransport::new(false, vec![]);
-        assert!(!mock_non_http.supports_http_features());
+        assert!(!McpTransport::supports_http_features(&mock_non_http));
     }
 
     #[test]

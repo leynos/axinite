@@ -151,11 +151,11 @@ For each module, in separate commits:
 
 ### Phase 3: pilot ADR 006 for dyn-backed traits (optional, higher effort)
 
-- [ ] Apply ADR 006's dual-trait pattern to one narrow dyn-backed trait
+- [x] Apply ADR 006's dual-trait pattern to one narrow dyn-backed trait
   family as a proof of concept
-- [ ] Verify that the pilot preserves object-safe call sites while removing
+- [x] Verify that the pilot preserves object-safe call sites while removing
   `#[async_trait]` from the trait family and its implementations
-- [ ] Document the pilot results and follow-on migration rules for future
+- [x] Document the pilot results and follow-on migration rules for future
   dyn-backed traits
 
 ### Phase 4: Clean up
@@ -195,7 +195,7 @@ piloting ADR 006's dual-trait pattern.
 
 - [x] Phase 1: Audit and classify
 - [ ] Phase 2: Migrate concrete-only traits
-- [ ] Phase 3: Pilot ADR 006 for dyn-backed traits (optional)
+- [x] Phase 3: Pilot ADR 006 for dyn-backed traits (optional)
 - [ ] Phase 4: Clean up
 
 ## Progress notes
@@ -218,3 +218,15 @@ piloting ADR 006's dual-trait pattern.
 - 2026-03-21: ADR 006 supersedes `trait_variant` as the active Phase 3
   plan for remaining dyn-backed async traits. Any `trait_variant`
   discussion in this document is retained only as historical background.
+- 2026-03-21: Piloted ADR 006 on the `McpTransport` family. The dyn-facing
+  `McpTransport` trait now uses an explicit boxed-future boundary, while
+  `NativeMcpTransport` keeps concrete implementations on native async
+  methods. `HttpMcpTransport`, `StdioMcpTransport`, `UnixMcpTransport`,
+  and the client test double migrated without changing `Arc<dyn
+  McpTransport>` call sites in the client and factory layers.
+- 2026-03-21: Follow-on rule from the pilot: keep the existing trait name
+  on the dyn-facing surface, add a `Native*` sibling for implementations,
+  and only export the sibling trait when external or cross-module
+  implementors need the ergonomic path. The next candidates should be
+  comparably small dyn-backed families rather than `Tool`, `LlmProvider`,
+  or `Database`.

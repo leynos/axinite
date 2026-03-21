@@ -1,13 +1,15 @@
 //! Shared MCP transport trait and JSON-RPC framing helpers.
 //!
-//! Provides the [`McpTransport`] trait that all MCP transports implement,
-//! plus `write_jsonrpc_line` and `spawn_jsonrpc_reader` for newline-delimited
-//! JSON-RPC over byte streams (used by stdio and unix socket transports).
+//! Provides the dyn-facing [`McpTransport`] trait, the ergonomic
+//! [`NativeMcpTransport`] sibling trait for concrete implementations, and
+//! JSON-RPC framing helpers for newline-delimited byte streams (used by stdio
+//! and unix socket transports).
 
+use core::future::Future;
+use core::pin::Pin;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{Mutex, oneshot};
 use tokio::task::JoinHandle;
@@ -15,27 +17,71 @@ use tokio::task::JoinHandle;
 use crate::tools::mcp::protocol::{McpRequest, McpResponse};
 use crate::tools::tool::ToolError;
 
+/// Boxed future used at the dyn transport boundary.
+pub type McpTransportFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Trait for sending JSON-RPC requests to an MCP server and receiving responses.
 ///
 /// Implementations handle the underlying transport (HTTP, stdio, unix socket, etc.).
-#[async_trait]
 pub trait McpTransport: Send + Sync {
     /// Send a request and wait for the corresponding response.
     ///
     /// `headers` are used by HTTP-based transports (e.g., `Mcp-Session-Id`);
     /// stream-based transports may ignore them.
-    async fn send(
-        &self,
-        request: &McpRequest,
-        headers: &HashMap<String, String>,
-    ) -> Result<McpResponse, ToolError>;
+    fn send<'a>(
+        &'a self,
+        request: &'a McpRequest,
+        headers: &'a HashMap<String, String>,
+    ) -> McpTransportFuture<'a, Result<McpResponse, ToolError>>;
 
     /// Shut down the transport, releasing any resources (child processes, connections).
-    async fn shutdown(&self) -> Result<(), ToolError>;
+    fn shutdown(&self) -> McpTransportFuture<'_, Result<(), ToolError>>;
 
     /// Whether this transport supports HTTP-specific features like session headers.
     fn supports_http_features(&self) -> bool {
         false
+    }
+}
+
+/// Native async sibling trait for concrete MCP transport implementations.
+///
+/// Implementors can keep ordinary `async fn` bodies while the blanket adapter
+/// boxes futures only at the dyn-dispatch boundary.
+pub trait NativeMcpTransport: Send + Sync {
+    /// Send a request and wait for the corresponding response.
+    fn send<'a>(
+        &'a self,
+        request: &'a McpRequest,
+        headers: &'a HashMap<String, String>,
+    ) -> impl Future<Output = Result<McpResponse, ToolError>> + Send + 'a;
+
+    /// Shut down the transport, releasing any resources (child processes, connections).
+    fn shutdown(&self) -> impl Future<Output = Result<(), ToolError>> + Send;
+
+    /// Whether this transport supports HTTP-specific features like session headers.
+    fn supports_http_features(&self) -> bool {
+        false
+    }
+}
+
+impl<T> McpTransport for T
+where
+    T: NativeMcpTransport + Send + Sync,
+{
+    fn send<'a>(
+        &'a self,
+        request: &'a McpRequest,
+        headers: &'a HashMap<String, String>,
+    ) -> McpTransportFuture<'a, Result<McpResponse, ToolError>> {
+        Box::pin(async move { NativeMcpTransport::send(self, request, headers).await })
+    }
+
+    fn shutdown(&self) -> McpTransportFuture<'_, Result<(), ToolError>> {
+        Box::pin(async move { NativeMcpTransport::shutdown(self).await })
+    }
+
+    fn supports_http_features(&self) -> bool {
+        NativeMcpTransport::supports_http_features(self)
     }
 }
 

@@ -50,4 +50,4 @@ pub use factory::{McpFactoryError, create_client_from_config};
 pub use process::McpProcessManager;
 pub use protocol::{InitializeResult, McpRequest, McpResponse, McpTool};
 pub use session::McpSessionManager;
-pub use transport::McpTransport;
+pub use transport::{McpTransport, NativeMcpTransport};
