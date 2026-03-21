@@ -60,7 +60,7 @@ and replace. The design must optimize for:
   - This works well for choosing between local and `Send` variants of
     native async traits.[^4]
   - It does not solve dynamic dispatch today. The Rust Async Working
-    Group explicitly call out dyn support as future work for the crate.[^5]
+    Group explicitly calls out dyn support as future work for the crate.[^5]
   - It therefore does not address the repository's main remaining
     blocker.
 - Introduce a local dual-trait pattern for dyn-backed interfaces.

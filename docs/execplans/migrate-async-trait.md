@@ -144,8 +144,8 @@ For each module, in separate commits:
 - [x] `src/channels/wasm/storage.rs`
 - [x] `src/evaluation/success.rs`
 - [x] Re-audit remaining candidates after the first batch lands
-- [ ] Only expand into higher-effort modules if we can first eliminate
-  their trait-object usage
+- [ ] Only expand into higher-effort modules once trait-object usage has
+  been eliminated
 
 ### Phase 3: Evaluate core trait migration (optional, higher effort)
 
@@ -208,6 +208,6 @@ different object-safety pattern.
   No additional low-risk migrations were found. The next meaningful work
   item is architectural: remove trait-object usage for one blocked trait
   family or introduce an object-safe dual-trait pattern.
-- 2026-03-21: ADR 006 records the proposed design direction for the
-  remaining dyn-backed traits:
+- 2026-03-21: Architectural decision record (ADR) 006 records the
+  proposed design direction for the remaining dyn-backed traits:
   `docs/adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`.
