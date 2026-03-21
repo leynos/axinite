@@ -26,17 +26,18 @@ boxing pattern.
 
 - Rust edition 2024, minimum version 1.92.
 - Traits used as `dyn Trait` (boxed trait objects) cannot use native async
-  methods without manual boxing or the `trait_variant` crate.
+  methods directly. ADR 006 adopts a dual-trait pattern for those surfaces.
 - The migration must be incremental — it is not feasible or desirable to
   change all 158 uses in a single commit.
 - Each batch of changes must pass `make all`.
 
 ## Trait Classification
 
-### Core extensibility traits (used as `dyn Trait` — KEEP `async-trait`)
+### Core extensibility traits (used as `dyn Trait` — blocked pending ADR 006)
 
 These traits are used as trait objects throughout the codebase and cannot
-trivially migrate to native async traits:
+trivially migrate to native async traits. Until the ADR 006 pilot lands,
+they remain on `async-trait`:
 
 - `Database` (`src/db/mod.rs`) — 10 `dyn` references
 - `Channel` (`src/channels/channel.rs`) — used via `dyn Channel`
@@ -88,8 +89,8 @@ migrated independently of the trait definition.
    `impl` blocks.
 3. Leave core extensibility traits unchanged (they require `async-trait`
    for object safety).
-4. Optionally, evaluate `trait_variant` crate for providing both
-   object-safe and non-object-safe variants of core traits in the future.
+4. For dyn-backed traits, follow ADR 006's dual-trait pattern rather than
+   evaluating `trait_variant` as an active migration path.
 
 ### Phase 1: Audit and classify every `#[async_trait]` use
 
@@ -147,12 +148,14 @@ For each module, in separate commits:
 - [ ] Only expand into higher-effort modules once trait-object usage has
   been eliminated
 
-### Phase 3: Evaluate core trait migration (optional, higher effort)
+### Phase 3: Pilot ADR 006 for dyn-backed traits (optional, higher effort)
 
-- [ ] Assess whether `trait_variant` or manual `-> Pin<Box<dyn Future>>`
-  return types would allow removing `async-trait` from core traits
-- [ ] If viable, migrate one core trait as a proof of concept
-- [ ] Document the pattern for future migrations
+- [ ] Apply ADR 006's dual-trait pattern to one narrow dyn-backed trait
+  family as a proof of concept
+- [ ] Verify that the pilot preserves object-safe call sites while removing
+  `#[async_trait]` from the trait family and its implementations
+- [ ] Document the pilot results and follow-on migration rules for future
+  dyn-backed traits
 
 ### Phase 4: Clean up
 
@@ -191,7 +194,7 @@ different object-safety pattern.
 
 - [x] Phase 1: Audit and classify
 - [ ] Phase 2: Migrate concrete-only traits
-- [ ] Phase 3: Evaluate core trait migration (optional)
+- [ ] Phase 3: Pilot ADR 006 for dyn-backed traits (optional)
 - [ ] Phase 4: Clean up
 
 ## Progress Notes
@@ -206,8 +209,11 @@ different object-safety pattern.
   `Send` contract that `async-trait` previously supplied implicitly.
 - 2026-03-21: Re-audited the remaining async traits after the first batch.
   No additional low-risk migrations were found. The next meaningful work
-  item is architectural: remove trait-object usage for one blocked trait
-  family or introduce an object-safe dual-trait pattern.
+  item is architectural: pilot ADR 006's object-safe dual-trait pattern
+  for one blocked trait family.
 - 2026-03-21: Architectural decision record (ADR) 006 records the
   proposed design direction for the remaining dyn-backed traits:
   `docs/adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`.
+- 2026-03-21: ADR 006 supersedes `trait_variant` as the active Phase 3
+  plan for remaining dyn-backed async traits. Any `trait_variant`
+  discussion in this document is retained only as historical background.

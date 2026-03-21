@@ -103,8 +103,12 @@
     tracks work to reduce build times and related tooling overhead.
 - [ExecPlans directory](execplans/) collects approval-gated execution plans
   written in the Codex ExecPlan format for roadmap-scoped work.
+  - [Migrate from async-trait to native async traits](execplans/migrate-async-trait.md)
+    plans the staged migration away from `async-trait`, including the ADR 006
+    follow-on for dyn-backed traits.
   - [Worker-orchestrator transport for hosted remote tool catalogue fetch](execplans/1-1-1-worker-orchestrator-transport-for-remote-tool-catalog-fetch.md)
     plans roadmap item `1.1.1` for the shared hosted remote-tool transport.
+
 ## RFCs
 
 - [RFC directory](rfcs/) stores proposed and in-flight architectural changes

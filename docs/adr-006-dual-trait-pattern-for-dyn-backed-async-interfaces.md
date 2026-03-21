@@ -116,7 +116,7 @@ explicit and local rather than being generated through a proc macro.
 
 Use one shared alias for dyn-facing async methods:
 
-```rust
+```rust,no_run
 use core::future::Future;
 use core::pin::Pin;
 
@@ -152,7 +152,7 @@ of the tree.[^2]
 
 ### Today
 
-```rust
+```rust,no_run
 #[async_trait]
 pub trait McpTransport: Send + Sync {
     async fn send(
@@ -171,7 +171,7 @@ pub trait McpTransport: Send + Sync {
 
 ### Worked shape
 
-```rust
+```rust,no_run
 pub trait McpTransport: Send + Sync {
     fn send(
         &self,
@@ -187,13 +187,13 @@ pub trait McpTransport: Send + Sync {
 }
 
 pub trait NativeMcpTransport: Send + Sync {
-    async fn send(
+    fn send(
         &self,
         request: &McpRequest,
         headers: &HashMap<String, String>,
-    ) -> Result<McpResponse, ToolError>;
+    ) -> impl Future<Output = Result<McpResponse, ToolError>> + Send;
 
-    async fn shutdown(&self) -> Result<(), ToolError>;
+    fn shutdown(&self) -> impl Future<Output = Result<(), ToolError>> + Send;
 
     fn supports_http_features(&self) -> bool {
         false
@@ -239,7 +239,7 @@ eventually move.[^1]
 
 ### Proposed shape
 
-```rust
+```rust,no_run
 pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
     fn description(&self) -> &str;
@@ -255,11 +255,11 @@ pub trait NativeTool: Send + Sync {
     fn name(&self) -> &str;
     fn description(&self) -> &str;
     fn parameters_schema(&self) -> serde_json::Value;
-    async fn execute(
+    fn execute(
         &self,
         params: serde_json::Value,
         ctx: &JobContext,
-    ) -> Result<ToolOutput, ToolError>;
+    ) -> impl Future<Output = Result<ToolOutput, ToolError>> + Send;
 }
 
 impl<T> Tool for T
