@@ -78,6 +78,8 @@
   explains how extension authors build and package WebAssembly tools for the
   existing runtime and tool contract.
 
+<<<<<<< ours — heading `Plans` (F, confidence: medium)
+// hint: Logic changed on both sides. Requires understanding intent of each change.
 ## Plans
 
 - [Plans directory](plans/) collects execution plans, investigations, and
@@ -108,6 +110,8 @@
     follow-on for dyn-backed traits.
   - [Worker-orchestrator transport for hosted remote tool catalogue fetch](execplans/1-1-1-worker-orchestrator-transport-for-remote-tool-catalog-fetch.md)
     plans roadmap item `1.1.1` for the shared hosted remote-tool transport.
+  - [Filter the hosted-visible catalogue from the canonical ToolRegistry](execplans/1-1-2-filter-the-hosted-visible-catalogue.md)
+    plans roadmap item `1.1.2` for canonical hosted-visible tool filtering.
 
 ## RFCs
 
