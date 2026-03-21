@@ -77,6 +77,7 @@
 - [Writing WebAssembly tools for ironclaw](writing-web-assembly-tools-for-ironclaw.md)
   explains how extension authors build and package WebAssembly tools for the
   existing runtime and tool contract.
+
 ## Plans
 
 - [Plans directory](plans/) collects execution plans, investigations, and
@@ -170,3 +171,6 @@
 - [ADR 005: Dual-mode uncertainty gating for hierarchical recall](adr-005-dual-mode-uncertainty-gating-for-hierarchical-recall.md)
   records that hierarchical recall should support both proxy-based and
   model-assisted gain estimation behind one expansion-gating interface.
+- [ADR 006: Dual-trait pattern for dyn-backed async interfaces](adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
+  records the proposed migration pattern for dyn-backed async traits,
+  balancing compilation speed against implementation maintainability.

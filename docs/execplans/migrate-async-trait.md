@@ -208,3 +208,6 @@ different object-safety pattern.
   No additional low-risk migrations were found. The next meaningful work
   item is architectural: remove trait-object usage for one blocked trait
   family or introduce an object-safe dual-trait pattern.
+- 2026-03-21: ADR 006 records the proposed design direction for the
+  remaining dyn-backed traits:
+  `docs/adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`.
