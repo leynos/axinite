@@ -61,10 +61,7 @@ fn hosted_tool_lookup(
     tool: &Arc<dyn Tool>,
     allowed_sources: &[HostedToolCatalogSource],
 ) -> Result<(), HostedToolLookupError> {
-    if !is_hosted_tool_source_allowed(tool, allowed_sources)
-        || tool.domain() != crate::tools::ToolDomain::Orchestrator
-        || ToolRegistry::is_protected_tool_name(tool.name())
-    {
+    if is_tool_ineligible_for_hosted_catalogue(tool, allowed_sources) {
         return Err(HostedToolLookupError::Ineligible);
     }
 
@@ -72,6 +69,15 @@ fn hosted_tool_lookup(
         HostedToolEligibility::Eligible => Ok(()),
         HostedToolEligibility::ApprovalGated => Err(HostedToolLookupError::ApprovalGated),
     }
+}
+
+fn is_tool_ineligible_for_hosted_catalogue(
+    tool: &Arc<dyn Tool>,
+    allowed_sources: &[HostedToolCatalogSource],
+) -> bool {
+    !is_hosted_tool_source_allowed(tool, allowed_sources)
+        || tool.domain() != crate::tools::ToolDomain::Orchestrator
+        || ToolRegistry::is_protected_tool_name(tool.name())
 }
 
 fn is_hosted_tool_source_allowed(
