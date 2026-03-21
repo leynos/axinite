@@ -11,9 +11,9 @@ subset of async traits that are not used as trait objects
 The `async-trait` proc macro is used 158 times across 74 source files.
 Each use generates boxing and dynamic dispatch boilerplate at compile time.
 Since the project targets Rust 1.92 (which supports native `async fn` in
-traits, stabilized in Rust 1.75), most uses can be migrated to native
-syntax, eliminating the proc-macro expansion overhead and reducing compile
-times.
+traits, stabilized in Rust 1.75), the currently verified migration scope
+is **5 of 158 uses**. More may become migratable later, but only after
+removing trait-object usage or piloting ADR 006's dual-trait pattern.
 
 However, native async traits are **not object-safe** — it is not possible
 to write `dyn MyAsyncTrait` without boxing the future. This project uses
@@ -174,9 +174,9 @@ Table 1. Migration scope by async-trait category.
 | Confirmed safe trait definitions | 2 | **Yes** |
 | Confirmed safe impl blocks | 3 | **Yes** |
 
-The currently verified scope is **5 of 158 uses**. More may become
-migratable later, but only after removing trait-object usage or adopting a
-different object-safety pattern.
+The currently verified migration scope is **5 of 158 uses**. More may
+become migratable later, but only after removing trait-object usage or
+piloting ADR 006's dual-trait pattern.
 
 ## Risks
 
