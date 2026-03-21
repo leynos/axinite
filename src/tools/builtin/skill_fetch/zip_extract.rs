@@ -95,11 +95,6 @@ fn decompress_zip_entry(
                     "ZIP entry too large to decompress safely".to_string(),
                 ));
             }
-            if buf.len() == MAX_DECOMPRESSED && uncompressed_size > MAX_DECOMPRESSED {
-                return Err(ToolError::ExecutionFailed(
-                    "ZIP entry too large to decompress safely".to_string(),
-                ));
-            }
             if buf.len() != uncompressed_size {
                 return Err(ToolError::ExecutionFailed(
                     "ZIP archive truncated".to_string(),

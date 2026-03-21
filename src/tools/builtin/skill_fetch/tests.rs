@@ -11,6 +11,7 @@ use super::url_policy::{HttpsUrl, NormalizedDomain, redact_url};
 use super::{extract_skill_from_zip, is_private_ip, validate_fetch_url, validate_resolved_addrs};
 
 type ZipEntryBuilder = fn(&str, &[u8]) -> Vec<u8>;
+const TEST_MAX_DECOMPRESSED: usize = 1024 * 1024;
 
 #[rstest]
 #[case("https://192.168.1.1/skill.md", "private")]
@@ -224,6 +225,35 @@ fn build_zip_entry_deflate(file_name: &str, content: &[u8]) -> Vec<u8> {
     zip
 }
 
+fn build_zip_entry_deflate_with_uncompressed(
+    file_name: &str,
+    content: &[u8],
+    claimed_uncompressed: u32,
+) -> Vec<u8> {
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+    encoder
+        .write_all(content)
+        .expect("deflate encoder should accept fixture content");
+    let compressed = encoder
+        .finish()
+        .expect("deflate encoder should finish fixture archive");
+
+    let mut zip = Vec::new();
+    zip.extend_from_slice(&[0x50, 0x4B, 0x03, 0x04]);
+    zip.extend_from_slice(&[0x14, 0x00]);
+    zip.extend_from_slice(&[0x00, 0x00]);
+    zip.extend_from_slice(&[0x08, 0x00]);
+    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+    zip.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+    zip.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+    zip.extend_from_slice(&claimed_uncompressed.to_le_bytes());
+    zip.extend_from_slice(&(file_name.len() as u16).to_le_bytes());
+    zip.extend_from_slice(&0u16.to_le_bytes());
+    zip.extend_from_slice(file_name.as_bytes());
+    zip.extend_from_slice(&compressed);
+    zip
+}
+
 /// Build a stored ZIP entry where the declared uncompressed size differs from the
 /// actual payload length (used to exercise size-limit checks).
 fn build_zip_entry_store_oversized(
@@ -268,6 +298,22 @@ fn test_zip_extract_oversized_rejected() {
     assert!(
         err.to_string().contains("too large"),
         "Oversized entry should be rejected, got: {err}",
+    );
+}
+
+#[test]
+fn test_zip_extract_deflate_overflow_at_boundary_rejected() {
+    let content = vec![b'a'; TEST_MAX_DECOMPRESSED + 1];
+    let zip = build_zip_entry_deflate_with_uncompressed(
+        "SKILL.md",
+        &content,
+        TEST_MAX_DECOMPRESSED as u32,
+    );
+    let err = extract_skill_from_zip(&zip)
+        .expect_err("deflate entry expanding past the safety boundary should fail");
+    assert!(
+        err.to_string().contains("too large"),
+        "Expected size-limit error for overflowing deflate entry, got: {err}",
     );
 }
 
