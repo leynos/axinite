@@ -6,7 +6,7 @@
 **Estimated impact:** Reduced proc-macro expansion overhead for the small
 subset of async traits that are not used as trait objects
 
-## Big Picture
+## Big picture
 
 The `async-trait` proc macro is used 158 times across 74 source files.
 Each use generates boxing and dynamic dispatch boilerplate at compile time.
@@ -32,7 +32,7 @@ boxing pattern.
   change all 158 uses in a single commit.
 - Each batch of changes must pass `make all`.
 
-## Trait Classification
+## Trait classification
 
 ### Core extensibility traits (used as `dyn Trait` — blocked pending ADR 006)
 
@@ -81,7 +81,7 @@ blocks on concrete types **also** need `#[async_trait]` because the trait
 signature expects `Pin<Box<dyn Future>>` return types. These cannot be
 migrated independently of the trait definition.
 
-## Migration Strategy
+## Migration strategy
 
 ### Approach: Bottom-up, concrete-only first
 
@@ -163,7 +163,7 @@ For each module, in separate commits:
 - [ ] If all uses are removed, remove `async-trait` from `[dependencies]`
 - [ ] If some uses remain, document which traits still require it and why
 
-## Estimated Scope
+## Estimated scope
 
 Table 1. Migration scope by async-trait category.
 
@@ -212,7 +212,7 @@ piloting ADR 006's dual-trait pattern.
   No additional low-risk migrations were found. The next meaningful work
   item is architectural: pilot ADR 006's object-safe dual-trait pattern
   for one blocked trait family.
-- 2026-03-21: Architectural decision record (ADR) 006 records the
+- 2026-03-21: ADR 006 records the
   proposed design direction for the remaining dyn-backed traits:
   `docs/adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`.
 - 2026-03-21: ADR 006 supersedes `trait_variant` as the active Phase 3
