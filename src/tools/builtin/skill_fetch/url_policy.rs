@@ -16,9 +16,8 @@ impl TryFrom<&str> for HttpsUrl {
     type Error = ToolError;
 
     fn try_from(url_str: &str) -> Result<Self, Self::Error> {
-        let parsed = reqwest::Url::parse(url_str).map_err(|e| {
-            ToolError::InvalidParameters(format!("Invalid URL '{}': {}", url_str, e))
-        })?;
+        let parsed = reqwest::Url::parse(url_str)
+            .map_err(|e| ToolError::ExecutionFailed(format!("Invalid URL: {}", e)))?;
 
         if parsed.scheme() != "https" {
             return Err(ToolError::InvalidParameters(format!(

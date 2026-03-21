@@ -61,14 +61,18 @@ pub(crate) async fn fetch_skill_content(url: &str) -> Result<String, ToolError> 
     let client = build_safe_fetch_client(&parsed).await?;
 
     let response = client.get(parsed.clone()).send().await.map_err(|e| {
-        ToolError::ExecutionFailed(format!("Failed to fetch skill from {}: {}", url, e))
+        ToolError::ExecutionFailed(format!(
+            "Failed to fetch skill from {}: {}",
+            parsed.host_str().unwrap_or("unknown"),
+            e
+        ))
     })?;
 
     if !response.status().is_success() {
         return Err(ToolError::ExecutionFailed(format!(
-            "Skill fetch returned HTTP {}: {}",
+            "Skill fetch returned HTTP {} from {}",
             response.status(),
-            url
+            parsed.host_str().unwrap_or("unknown")
         )));
     }
 
