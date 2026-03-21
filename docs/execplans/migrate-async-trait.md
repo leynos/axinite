@@ -97,7 +97,7 @@ migrated independently of the trait definition.
 
 - [x] For each trait with `#[async_trait]`, determine whether it is ever
   used as `dyn Trait`
-- [x] Produce a table of: trait name, file, dyn-used (yes/no),
+- [x] Produce a table of trait name, file, dyn-used (yes/no),
   migratable (yes/no)
 - [x] Identify the subset that can be migrated
 
@@ -149,7 +149,7 @@ For each module, in separate commits:
 - [ ] Only expand into higher-effort modules once trait-object usage has
   been eliminated
 
-### Phase 3: Pilot ADR 006 for dyn-backed traits (optional, higher effort)
+### Phase 3: pilot ADR 006 for dyn-backed traits (optional, higher effort)
 
 - [ ] Apply ADR 006's dual-trait pattern to one narrow dyn-backed trait
   family as a proof of concept
@@ -198,7 +198,7 @@ different object-safety pattern.
 - [ ] Phase 3: Pilot ADR 006 for dyn-backed traits (optional)
 - [ ] Phase 4: Clean up
 
-## Progress Notes
+## Progress notes
 
 - 2026-03-20: Audited every async trait definition and corrected the
   original scope estimate. Most "internal" traits still flow through
