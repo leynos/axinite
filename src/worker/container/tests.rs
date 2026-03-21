@@ -416,6 +416,26 @@ async fn remote_tool_catalog(
     })
 }
 
+async fn remote_tool_catalog_with_hosted_guidance(
+    State(_state): State<TestState>,
+    Path(_job_id): Path<Uuid>,
+) -> Json<RemoteToolCatalogResponse> {
+    Json(RemoteToolCatalogResponse {
+        tools: vec![ToolDefinition {
+            name: "hosted_worker_remote_tool_fixture".to_string(),
+            description: "Remote tool from orchestrator catalog".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"}
+                },
+                "required": ["query"]
+            }),
+        }],
+        toolset_instructions: vec!["Prefer hosted remote tools for external systems.".to_string()],
+        catalog_version: 42,
+    })
+}
 async fn remote_tool_catalog_error(
     State(_state): State<TestState>,
     Path(_job_id): Path<Uuid>,
@@ -505,7 +525,10 @@ async fn worker_runtime_build_reasoning_context_includes_toolset_instructions() 
         .expect("bind listener");
     let addr = listener.local_addr().expect("listener addr");
     let router = Router::new()
-        .route(REMOTE_TOOL_CATALOG_ROUTE, get(remote_tool_catalog))
+        .route(
+            REMOTE_TOOL_CATALOG_ROUTE,
+            get(remote_tool_catalog_with_hosted_guidance),
+        )
         .with_state(TestState);
     let server = tokio::spawn(async move {
         axum::serve(listener, router).await.expect("serve router");
@@ -524,7 +547,7 @@ async fn worker_runtime_build_reasoning_context_includes_toolset_instructions() 
         },
         client,
     );
-    runtime
+    runtime.toolset_instructions = runtime
         .register_remote_tools()
         .await
         .expect("register hosted remote tools");
