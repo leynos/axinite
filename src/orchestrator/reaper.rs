@@ -11,6 +11,7 @@
 //! 2. Checks if each job is active in the ContextManager
 //! 3. Cleans up containers with inactive/missing jobs
 
+#[cfg(feature = "docker")]
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,6 +22,7 @@ use uuid::Uuid;
 use crate::context::ContextManager;
 use crate::orchestrator::job_manager::ContainerJobManager;
 use crate::sandbox::connect_docker;
+use crate::sandbox::container::DockerConnection;
 
 /// Configuration for the sandbox reaper.
 #[derive(Debug, Clone)]
@@ -45,7 +47,8 @@ impl Default for ReaperConfig {
 
 /// Background task that periodically cleans up orphaned Docker containers.
 pub struct SandboxReaper {
-    docker: bollard::Docker,
+    docker: DockerConnection,
+    #[cfg(feature = "docker")]
     job_manager: Arc<ContainerJobManager>,
     context_manager: Arc<ContextManager>,
     config: ReaperConfig,
@@ -58,9 +61,13 @@ impl SandboxReaper {
         context_manager: Arc<ContextManager>,
         config: ReaperConfig,
     ) -> Result<Self, crate::sandbox::SandboxError> {
+        #[cfg(not(feature = "docker"))]
+        let _ = &job_manager;
+
         let docker = connect_docker().await?;
         Ok(Self {
             docker,
+            #[cfg(feature = "docker")]
             job_manager,
             context_manager,
             config,
@@ -148,6 +155,7 @@ impl SandboxReaper {
     /// List all IronClaw-managed containers from Docker.
     ///
     /// Returns tuples of (container_id, job_id, created_at).
+    #[cfg(feature = "docker")]
     async fn list_ironclaw_containers(
         &self,
     ) -> Result<Vec<(String, Uuid, DateTime<Utc>)>, bollard::errors::Error> {
@@ -215,11 +223,23 @@ impl SandboxReaper {
         Ok(result)
     }
 
+    #[cfg(not(feature = "docker"))]
+    async fn list_ironclaw_containers(
+        &self,
+    ) -> Result<Vec<(String, Uuid, DateTime<Utc>)>, crate::sandbox::SandboxError> {
+        let _ = &self.docker;
+        Err(crate::sandbox::SandboxError::DockerNotAvailable {
+            reason: "Docker support was not compiled in; rebuild with --features docker"
+                .to_string(),
+        })
+    }
+
     /// Stop and remove a single orphaned container.
     ///
     /// First tries `job_manager.stop_job()` (which also revokes the auth token).
     /// Falls back to direct Docker API if the handle is no longer in the in-memory map
     /// (e.g., after a process restart).
+    #[cfg(feature = "docker")]
     async fn reap_container(&self, container_id: &str, job_id: Uuid) {
         // Try the high-level stop first (handles token revocation)
         match self.job_manager.stop_job(job_id).await {
@@ -281,11 +301,21 @@ impl SandboxReaper {
             );
         }
     }
+
+    #[cfg(not(feature = "docker"))]
+    async fn reap_container(&self, container_id: &str, job_id: Uuid) {
+        tracing::warn!(
+            job_id = %job_id,
+            container_id = %container_id,
+            "Skipping reaper cleanup because Docker support was not compiled in"
+        );
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
     // Test: age threshold filtering
@@ -668,7 +698,7 @@ mod tests {
     //
     // Run with: IRONCLAW_E2E_DOCKER_TESTS=1 cargo test orchestrator::reaper::e2e_tests --lib -- --nocapture
 
-    #[cfg(all(test, not(target_env = "msvc")))]
+    #[cfg(all(test, feature = "docker", not(target_env = "msvc")))]
     mod e2e_tests {
         use super::*;
 

@@ -27,21 +27,31 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "docker", test)))]
 use std::path::PathBuf;
 use std::time::Duration;
 
-use bollard::Docker;
+#[cfg(feature = "docker")]
 use bollard::container::{
     Config, CreateContainerOptions, LogOutput, LogsOptions, RemoveContainerOptions,
     StartContainerOptions, WaitContainerOptions,
 };
+#[cfg(feature = "docker")]
 use bollard::exec::{CreateExecOptions, StartExecResults};
+#[cfg(feature = "docker")]
 use bollard::models::HostConfig;
+#[cfg(feature = "docker")]
 use futures::StreamExt;
 
 use crate::sandbox::config::{ResourceLimits, SandboxPolicy};
 use crate::sandbox::error::{Result, SandboxError};
+
+#[cfg(feature = "docker")]
+pub type DockerConnection = bollard::Docker;
+
+#[cfg(not(feature = "docker"))]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DockerConnection;
 
 /// Output from container execution.
 #[derive(Debug, Clone)]
@@ -60,11 +70,13 @@ pub struct ContainerOutput {
 
 /// Manages Docker container lifecycle.
 pub struct ContainerRunner {
-    docker: Docker,
+    #[cfg(feature = "docker")]
+    docker: DockerConnection,
     image: String,
     proxy_port: u16,
 }
 
+#[cfg(any(feature = "docker", test))]
 /// Append `text` into `buffer` up to `limit` bytes without breaking UTF-8.
 ///
 /// Returns `true` when truncation occurred.
@@ -90,14 +102,21 @@ fn append_with_limit(buffer: &mut String, text: &str, limit: usize) -> bool {
 
 impl ContainerRunner {
     /// Create a new container runner.
-    pub fn new(docker: Docker, image: String, proxy_port: u16) -> Self {
+    pub fn new(docker: DockerConnection, image: String, proxy_port: u16) -> Self {
+        #[cfg(not(feature = "docker"))]
+        let _ = docker;
+
         Self {
+            #[cfg(feature = "docker")]
             docker,
             image,
             proxy_port,
         }
     }
+}
 
+#[cfg(feature = "docker")]
+impl ContainerRunner {
     /// Check if the Docker daemon is available.
     pub async fn is_available(&self) -> bool {
         self.docker.ping().await.is_ok()
@@ -487,6 +506,50 @@ impl ContainerRunner {
     }
 }
 
+#[cfg(not(feature = "docker"))]
+impl ContainerRunner {
+    /// Check if the Docker daemon is available.
+    pub async fn is_available(&self) -> bool {
+        false
+    }
+
+    /// Check if the sandbox image exists locally.
+    pub async fn image_exists(&self) -> bool {
+        false
+    }
+
+    /// Pull the sandbox image.
+    pub async fn pull_image(&self) -> Result<()> {
+        let _ = (&self.image, self.proxy_port);
+        Err(feature_disabled_error())
+    }
+
+    /// Execute a command in a new container.
+    pub async fn execute(
+        &self,
+        _command: &str,
+        _working_dir: &Path,
+        _policy: SandboxPolicy,
+        _limits: &ResourceLimits,
+        _env: HashMap<String, String>,
+    ) -> Result<ContainerOutput> {
+        let _ = (&self.image, self.proxy_port);
+        Err(feature_disabled_error())
+    }
+
+    /// Execute a command in an existing container using exec.
+    pub async fn exec_in_container(
+        &self,
+        _container_id: &str,
+        _command: &str,
+        _working_dir: &str,
+        _limits: &ResourceLimits,
+    ) -> Result<ContainerOutput> {
+        let _ = (&self.image, self.proxy_port);
+        Err(feature_disabled_error())
+    }
+}
+
 /// Connect to the Docker daemon.
 ///
 /// Tries these locations in order:
@@ -497,11 +560,12 @@ impl ContainerRunner {
 /// 5. `~/.rd/docker.sock` (Rancher Desktop on macOS)
 /// 6. `$XDG_RUNTIME_DIR/docker.sock` (common rootless Docker socket on Linux)
 /// 7. `/run/user/$UID/docker.sock` (rootless Docker fallback on Linux)
-pub async fn connect_docker() -> Result<Docker> {
+#[cfg(feature = "docker")]
+pub async fn connect_docker() -> Result<DockerConnection> {
     // First try bollard defaults (checks DOCKER_HOST env var, then /var/run/docker.sock).
     // This covers Linux, OrbStack (updates the /var/run symlink), and any user with
     // DOCKER_HOST set to their runtime's socket.
-    if let Ok(docker) = Docker::connect_with_local_defaults()
+    if let Ok(docker) = DockerConnection::connect_with_local_defaults()
         && docker.ping().await.is_ok()
     {
         return Ok(docker);
@@ -516,9 +580,11 @@ pub async fn connect_docker() -> Result<Docker> {
         for sock in unix_socket_candidates() {
             if sock.exists() {
                 let sock_str = sock.to_string_lossy();
-                if let Ok(docker) =
-                    Docker::connect_with_socket(&sock_str, 120, bollard::API_DEFAULT_VERSION)
-                    && docker.ping().await.is_ok()
+                if let Ok(docker) = DockerConnection::connect_with_socket(
+                    &sock_str,
+                    120,
+                    bollard::API_DEFAULT_VERSION,
+                ) && docker.ping().await.is_ok()
                 {
                     return Ok(docker);
                 }
@@ -535,7 +601,19 @@ pub async fn connect_docker() -> Result<Docker> {
     })
 }
 
-#[cfg(unix)]
+#[cfg(not(feature = "docker"))]
+pub async fn connect_docker() -> Result<DockerConnection> {
+    Err(feature_disabled_error())
+}
+
+#[cfg(not(feature = "docker"))]
+fn feature_disabled_error() -> SandboxError {
+    SandboxError::DockerNotAvailable {
+        reason: "Docker support was not compiled in; rebuild with --features docker".to_string(),
+    }
+}
+
+#[cfg(all(unix, feature = "docker"))]
 fn unix_socket_candidates() -> Vec<PathBuf> {
     unix_socket_candidates_from_env(
         std::env::var_os("HOME").map(PathBuf::from),
@@ -544,7 +622,7 @@ fn unix_socket_candidates() -> Vec<PathBuf> {
     )
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, any(feature = "docker", test)))]
 fn unix_socket_candidates_from_env(
     home: Option<PathBuf>,
     xdg_runtime_dir: Option<PathBuf>,
@@ -617,6 +695,7 @@ mod tests {
         assert!(candidates.contains(&PathBuf::from("/run/user/1000/docker.sock")));
     }
 
+    #[cfg(feature = "docker")]
     #[tokio::test]
     async fn test_docker_connection() {
         // This test requires Docker to be running

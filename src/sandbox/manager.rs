@@ -35,10 +35,10 @@ use std::time::Duration;
 
 use tokio::sync::RwLock;
 
-use bollard::Docker;
-
 use crate::sandbox::config::{ResourceLimits, SandboxConfig, SandboxPolicy};
-use crate::sandbox::container::{ContainerOutput, ContainerRunner, connect_docker};
+use crate::sandbox::container::{
+    ContainerOutput, ContainerRunner, DockerConnection, connect_docker,
+};
 use crate::sandbox::error::{Result, SandboxError};
 use crate::sandbox::proxy::{HttpProxy, NetworkProxyBuilder};
 
@@ -84,7 +84,7 @@ impl From<ContainerOutput> for ExecOutput {
 pub struct SandboxManager {
     config: SandboxConfig,
     proxy: Arc<RwLock<Option<HttpProxy>>>,
-    docker: Arc<RwLock<Option<Docker>>>,
+    docker: Arc<RwLock<Option<DockerConnection>>>,
     initialized: std::sync::atomic::AtomicBool,
 }
 
@@ -111,7 +111,10 @@ impl SandboxManager {
         }
 
         match connect_docker().await {
+            #[cfg(feature = "docker")]
             Ok(docker) => docker.ping().await.is_ok(),
+            #[cfg(not(feature = "docker"))]
+            Ok(_) => false,
             Err(_) => false,
         }
     }
@@ -132,6 +135,7 @@ impl SandboxManager {
         let docker = connect_docker().await?;
 
         // Check if Docker is responsive
+        #[cfg(feature = "docker")]
         docker
             .ping()
             .await
@@ -140,8 +144,13 @@ impl SandboxManager {
             })?;
 
         // Check for / pull image using a temporary runner
+        #[cfg(feature = "docker")]
+        let checker_docker = docker.clone();
+        #[cfg(not(feature = "docker"))]
+        let checker_docker = docker;
+
         let checker = ContainerRunner::new(
-            docker.clone(),
+            checker_docker,
             self.config.image.clone(),
             self.config.proxy_port,
         );
@@ -225,14 +234,18 @@ impl SandboxManager {
         };
 
         // Reuse the stored Docker connection, create a runner with the current proxy port
-        let docker =
-            self.docker
-                .read()
-                .await
-                .clone()
-                .ok_or_else(|| SandboxError::DockerNotAvailable {
-                    reason: "Docker connection not initialized".to_string(),
-                })?;
+        let docker_guard = self.docker.read().await;
+        #[cfg(feature = "docker")]
+        let docker = docker_guard
+            .clone()
+            .ok_or_else(|| SandboxError::DockerNotAvailable {
+                reason: "Docker connection not initialized".to_string(),
+            })?;
+        #[cfg(not(feature = "docker"))]
+        let docker = (*docker_guard).ok_or_else(|| SandboxError::DockerNotAvailable {
+            reason: "Docker connection not initialized".to_string(),
+        })?;
+
         let runner = ContainerRunner::new(docker, self.config.image.clone(), proxy_port);
 
         let limits = ResourceLimits {

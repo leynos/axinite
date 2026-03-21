@@ -42,6 +42,7 @@ pub enum SandboxError {
     CredentialInjectionFailed { domain: String, reason: String },
 
     /// Docker API error.
+    #[cfg(feature = "docker")]
     #[error("Docker API error: {0}")]
     Docker(#[from] bollard::errors::Error),
 
