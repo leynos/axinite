@@ -6,7 +6,7 @@ mod names;
 #[cfg(test)]
 mod tests;
 
-pub use builtins::{ImageToolsRegistration, VisionToolsRegistration};
+pub use builtins::{ImageToolsRegistration, RegisterJobToolsOptions, VisionToolsRegistration};
 pub use loader::{
     ToolRegistry, WasmFromStorageRegistration, WasmRegistrationError, WasmToolRegistration,
 };

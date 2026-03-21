@@ -162,6 +162,7 @@ async fn remote_tool_catalog_reports_non_success_statuses(
     let _ = server.handle.await;
 }
 
+#[derive(Clone, Copy)]
 struct TestState;
 
 async fn reject_execute(
@@ -185,10 +186,7 @@ async fn reject_execute_forbidden(
 #[case(RemoteToolFailureRoute::ExecuteForbidden, "approval required")]
 #[case(RemoteToolFailureRoute::ExecuteRateLimited, "slow down")]
 #[case(RemoteToolFailureRoute::ExecuteBadGateway, "proxy failure")]
-#[case(
-    RemoteToolFailureRoute::ExecuteInternalError,
-    "remote tool blew up"
-)]
+#[case(RemoteToolFailureRoute::ExecuteInternalError, "remote tool blew up")]
 #[tokio::test]
 async fn remote_tool_execute_preserves_non_success_statuses(
     remote_tool_failure_server: RemoteToolFailureServerFactory,
@@ -291,6 +289,7 @@ fn remote_tool_failure_server() -> RemoteToolFailureServerFactory {
     })
 }
 
+#[derive(Clone, Copy)]
 enum RemoteToolFailureRoute {
     Catalog,
     ExecuteBadRequest,

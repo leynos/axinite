@@ -397,5 +397,4 @@ impl WorkerHttpClient {
 #[cfg(test)]
 mod tests;
 
-
 mod error_mapping;

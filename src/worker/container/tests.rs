@@ -409,9 +409,7 @@ async fn remote_tool_catalog(
                 "required": ["query"]
             }),
         }],
-        toolset_instructions: vec![
-            "Prefer hosted remote tools for external systems.".to_string(),
-        ],
+        toolset_instructions: vec!["Prefer hosted remote tools for external systems.".to_string()],
         catalog_version: 42,
     })
 }
@@ -577,6 +575,8 @@ async fn worker_runtime_build_reasoning_context_includes_toolset_instructions() 
     let _ = server.await;
 }
 
+#[rstest]
+#[tokio::test]
 async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -594,7 +594,7 @@ async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools() 
         Uuid::nil(),
         "test".to_string(),
     ));
-    let mut runtime = WorkerRuntime::from_client(
+    let runtime = WorkerRuntime::from_client(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: format!("http://{}", addr),

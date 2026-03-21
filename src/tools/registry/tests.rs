@@ -65,6 +65,7 @@ async fn test_tool_definitions() {
     assert_eq!(defs[0].name, "echo");
 }
 
+#[test]
 fn test_is_protected_tool_name_includes_job_events_and_job_prompt() {
     assert!(ToolRegistry::is_protected_tool_name("job_events"));
     assert!(ToolRegistry::is_protected_tool_name("job_prompt"));

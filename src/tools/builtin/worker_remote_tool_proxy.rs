@@ -9,12 +9,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::context::JobContext;
+use crate::error::WorkerError;
+use crate::llm::ToolDefinition;
 use crate::tools::ToolRegistry;
 use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput};
 use crate::worker::api::WorkerHttpClient;
-use crate::llm::ToolDefinition;
-use crate::error::WorkerError;
 
+#[async_trait]
 impl Tool for WorkerRemoteToolProxy {
     fn name(&self) -> &str {
         &self.definition.name
@@ -66,6 +67,19 @@ pub(crate) fn register_worker_remote_tool_proxies(
         )));
     }
 }
+
+struct WorkerRemoteToolProxy {
+    definition: ToolDefinition,
+    client: Arc<WorkerHttpClient>,
+}
+
+impl WorkerRemoteToolProxy {
+    fn new(definition: ToolDefinition, client: Arc<WorkerHttpClient>) -> Self {
+        Self { definition, client }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use axum::extract::{Path, State};
     use axum::routing::post;
@@ -160,16 +174,5 @@ mod tests {
 
         server.abort();
         let _ = server.await;
-    }
-}
-
-struct WorkerRemoteToolProxy {
-    definition: ToolDefinition,
-    client: Arc<WorkerHttpClient>,
-}
-
-impl WorkerRemoteToolProxy {
-    fn new(definition: ToolDefinition, client: Arc<WorkerHttpClient>) -> Self {
-        Self { definition, client }
     }
 }

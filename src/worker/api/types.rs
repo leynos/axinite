@@ -1,7 +1,7 @@
 //! API-facing worker transport types shared with the orchestrator.
 //!
 //! This module defines the serialized request and response shapes used for
-//! worker chat completions, hosted remote-tool catalog fetch and execution,
+//! worker chat completions, hosted remote-tool catalogue fetch and execution,
 //! status updates, and credential delivery, including shared types such as
 //! [`ChatMessage`], [`ToolCall`], [`ToolDefinition`], and [`ToolOutput`].
 
@@ -22,9 +22,15 @@ pub enum WorkerState {
     Unknown,
 }
 
-impl std::fmt::Display for WorkerState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_wire())
+impl WorkerState {
+    pub const fn as_wire(self) -> &'static str {
+        match self {
+            Self::InProgress => "in_progress",
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Unknown => "unknown",
+        }
     }
 }
 
@@ -34,11 +40,11 @@ impl std::fmt::Display for WorkerState {
     }
 }
 
-/// Relative worker path for the hosted remote-tool catalog endpoint.
+/// Relative worker path for the hosted remote-tool catalogue endpoint.
 pub const REMOTE_TOOL_CATALOG_PATH: &str = "tools/catalog";
 /// Relative worker path for hosted remote-tool execution.
 pub const REMOTE_TOOL_EXECUTE_PATH: &str = "tools/execute";
-/// Axum route for the hosted remote-tool catalog endpoint.
+/// Axum route for the hosted remote-tool catalogue endpoint.
 pub const REMOTE_TOOL_CATALOG_ROUTE: &str = "/worker/{job_id}/tools/catalog";
 /// Axum route for hosted remote-tool execution.
 pub const REMOTE_TOOL_EXECUTE_ROUTE: &str = "/worker/{job_id}/tools/execute";
@@ -200,12 +206,12 @@ pub struct RemoteToolExecutionResponse {
     pub output: ToolOutput,
 }
 
-/// Catalog payload returned to workers for hosted-visible remote tools.
+/// Catalogue payload returned to workers for hosted-visible remote tools.
 ///
 /// `tools` is the current model-facing tool list. `toolset_instructions` is
 /// optional human-readable guidance and defaults to an empty list.
 /// `catalog_version` is a deterministic content version derived from the
-/// serialized catalog payload.
+/// serialized catalogue payload.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RemoteToolCatalogResponse {
     pub tools: Vec<ToolDefinition>,
@@ -237,9 +243,16 @@ pub enum JobEventType {
     Unknown,
 }
 
-impl std::fmt::Display for JobEventType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_wire())
+impl JobEventType {
+    pub const fn as_wire(self) -> &'static str {
+        match self {
+            Self::Status => "status",
+            Self::Message => "message",
+            Self::ToolUse => "tool_use",
+            Self::ToolResult => "tool_result",
+            Self::Result => "result",
+            Self::Unknown => "unknown",
+        }
     }
 }
 
