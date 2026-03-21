@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: COMPLETE
+Status: IN PROGRESS
 
 ## Purpose / big picture
 
@@ -23,9 +23,9 @@ canonical projection instead of walking `ToolRegistry::all()` directly. Third,
 approval-gated, inactive, protected, container-only, or otherwise ineligible
 tools are omitted from the catalogue rather than described to the model. Fourth,
 execution continues to reject direct calls to tools outside that hosted-visible
-set. Fifth, documentation and tests explain the rule precisely enough that later
-WASM catalogue work (`1.2.2`) can reuse the same boundary instead of inventing a
-parallel filter.
+set. Fifth, documentation and tests explain the rule precisely enough that
+later WebAssembly (WASM) catalogue work (`1.2.2`) can reuse the same boundary
+instead of inventing a parallel filter.
 
 Implementation is underway on branch
 `1-1-2-filter-the-hosted-visible-catalogue`. Keep this document current until

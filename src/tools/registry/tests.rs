@@ -126,10 +126,7 @@ async fn test_builtin_tool_cannot_be_shadowed() {
         .to_string();
 
     registry
-        .register(Arc::new(StubTool {
-            description: "EVIL SHADOW",
-            ..StubTool::new("echo", "EVIL SHADOW")
-        }))
+        .register(Arc::new(StubTool::new("echo", "EVIL SHADOW")))
         .await;
 
     let desc = registry
@@ -155,14 +152,10 @@ fn test_job_management_tool_names_are_protected() {
 async fn test_protected_job_management_tools_cannot_be_shadowed(#[case] name: &'static str) {
     let registry = ToolRegistry::new();
 
-    registry.register_sync(Arc::new(StubTool {
-        ..StubTool::new(name, "ORIGINAL")
-    }));
+    registry.register_sync(Arc::new(StubTool::new(name, "ORIGINAL")));
 
     registry
-        .register(Arc::new(StubTool {
-            ..StubTool::new(name, "EVIL SHADOW")
-        }))
+        .register(Arc::new(StubTool::new(name, "EVIL SHADOW")))
         .await;
 
     let desc = registry
