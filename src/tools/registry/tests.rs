@@ -5,7 +5,8 @@ use std::sync::Arc;
 use rstest::rstest;
 
 use super::*;
-use crate::tools::registry::EchoTool;
+use crate::tools::builtin::EchoTool;
+use crate::tools::tool::Tool;
 
 struct StubTool {
     name: &'static str,
@@ -38,7 +39,7 @@ impl Tool for StubTool {
 #[tokio::test]
 async fn test_register_and_get() {
     let registry = ToolRegistry::new();
-    registry.register(Arc::new(EchoTool)).await;
+    registry.register_sync(Arc::new(EchoTool));
 
     assert!(registry.has("echo").await);
     assert!(registry.get("echo").await.is_some());
@@ -48,7 +49,7 @@ async fn test_register_and_get() {
 #[tokio::test]
 async fn test_list_tools() {
     let registry = ToolRegistry::new();
-    registry.register(Arc::new(EchoTool)).await;
+    registry.register_sync(Arc::new(EchoTool));
 
     let tools = registry.list().await;
     assert!(tools.contains(&"echo".to_string()));
@@ -57,11 +58,17 @@ async fn test_list_tools() {
 #[tokio::test]
 async fn test_tool_definitions() {
     let registry = ToolRegistry::new();
-    registry.register(Arc::new(EchoTool)).await;
+    registry.register_sync(Arc::new(EchoTool));
 
     let defs = registry.tool_definitions().await;
     assert_eq!(defs.len(), 1);
     assert_eq!(defs[0].name, "echo");
+}
+
+#[test]
+fn test_is_protected_tool_name_includes_job_events_and_job_prompt() {
+    assert!(ToolRegistry::is_protected_tool_name("job_events"));
+    assert!(ToolRegistry::is_protected_tool_name("job_prompt"));
 }
 
 #[tokio::test]
@@ -137,8 +144,10 @@ async fn concurrent_register_and_read_no_panic() {
     let registry = StdArc::new(ToolRegistry::new());
     registry.register_builtin_tools();
 
+    // Spawn concurrent readers and check they don't panic
     let mut handles = Vec::new();
 
+    // Readers
     for _ in 0..10 {
         let reg = StdArc::clone(&registry);
         handles.push(tokio::spawn(async move {
@@ -152,9 +161,11 @@ async fn concurrent_register_and_read_no_panic() {
         }));
     }
 
+    // Concurrent register attempts (will be rejected as shadowing)
     for _ in 0..5 {
         let reg = StdArc::clone(&registry);
         handles.push(tokio::spawn(async move {
+            // This will be rejected (echo is protected) but should not panic
             reg.register(Arc::new(EchoTool)).await;
         }));
     }
@@ -166,6 +177,7 @@ async fn concurrent_register_and_read_no_panic() {
 
 #[tokio::test]
 async fn test_tool_definitions_sorted_alphabetically() {
+    // Create tools with names that would NOT be alphabetical if inserted in this order.
     struct ToolZ;
     struct ToolA;
     struct ToolM;
@@ -199,6 +211,7 @@ async fn test_tool_definitions_sorted_alphabetically() {
     impl_tool!(ToolM, "middle");
 
     let registry = ToolRegistry::new();
+    // Register in non-alphabetical order
     registry.register(Arc::new(ToolZ)).await;
     registry.register(Arc::new(ToolA)).await;
     registry.register(Arc::new(ToolM)).await;

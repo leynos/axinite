@@ -677,16 +677,11 @@ Avoid spinning up Oxigraph’s HTTP server; keep access strictly in-process.
 ### Ollama extraction with structured outputs
 
 Ollama supports **structured outputs** by providing a JSON schema to a
-`format` field (and recommends also embedding the schema in the prompt). [^49]
-It also provides an embeddings endpoint where vector dimension depends on the
-embedding model. [^50]
-
-#### Environment variables
-
-| Variable name | Meaning | Default or rule |
-| --- | --- | --- |
-| `OLLAMA_NO_CLOUD` | Disables Ollama cloud-connected features, so the extraction path stays local-only. [^51] | Set to `1` when strict locality is required. |
-| `MEMORY_SIDECAR_MODE` | Selects whether the memory sidecar is disabled or which operating mode it uses. | Use `disabled`, `shadow`, or `active`; keep `disabled` as the kill-switch default unless the sidecar is explicitly enabled. |
+`format` field (and recommends also embedding the schema in the prompt).
+[^49] It also provides an embeddings endpoint where vector dimension
+depends on the embedding model. [^50] For strict locality, disable cloud
+features via config or see the [environment
+variables](#environment-variables) section below. [^51]
 
 #### Extraction contract (JSON schema)
 
@@ -845,6 +840,13 @@ Axinite already persists job history and tool actions (tool_name, inputs/outputs
   - delete Qdrant points, and
   - compact Oxigraph graphs (optional).
 
+### Environment variables
+
+| Variable | Meaning | Default / rule |
+| -------- | ------- | -------------- |
+| `OLLAMA_NO_CLOUD` | Disables Ollama cloud features, ensuring strict local-only operation of the embedding and extraction model. | Unset (cloud features enabled by default); set to `1` to enforce strict locality. |
+| `MEMORY_SIDECAR_MODE` | Selects the operating mode of the memory sidecar. Accepted values: `disabled` (no outbox writes or memoryd calls), `shadow` (write outbox and call memoryd for ingestion, but do not surface memoryd results to users), `active` (memory tools call memoryd for recall, with optional fallback to workspace search). | `disabled` |
+
 ### Rollout plan
 
 **Disabled → Shadow → Active**
@@ -856,7 +858,8 @@ Axinite already persists job history and tool actions (tool_name, inputs/outputs
   - Record metrics: recall overlap vs baseline, latency, errors.
 - **Active**:
   - `memory_search` first calls memoryd `Recall`, then optionally falls back to existing workspace search if memoryd is unavailable or returns empty.
-  - Keep a “kill switch” env var: `MEMORY_SIDECAR_MODE=disabled`.
+  - Keep a “kill switch” env var; see the [environment
+    variables](#environment-variables) section below.
 
 ### Test plan
 

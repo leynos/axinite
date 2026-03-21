@@ -32,7 +32,7 @@ This RFC proposes three changes:
    tool advertisement, subject to provider-specific shaping where needed.
 3. Relegate schema-bearing error hints to fallback guidance only, and make
    hosted workers receive active orchestrator-owned WASM tool definitions
-   through the same remote-tool catalog proposed for Model Context Protocol
+   through the same remote-tool catalogue proposed for Model Context Protocol
    (MCP) tools.
 
 The LLM-visible interface remains the existing `ToolDefinition` shape:
@@ -88,7 +88,7 @@ disclosure as optional overhead rather than as the core tool-calling interface.
 ### Hosted mode compounds the problem
 
 Hosted workers build a local tool list and currently do not automatically
-receive the canonical orchestrator-owned dynamic tool catalog. That means
+receive the canonical orchestrator-owned dynamic tool catalogue. That means
 orchestrator-owned WASM tools can be missing from hosted LLM tool definitions
 even if their schema is available in the main process.
 
@@ -119,7 +119,7 @@ The remaining problem is contractual, not structural:
 - the code still treats schema-in-error-hint as a normal LLM guidance path
 - there is no explicit guarantee that active WASM tools are always advertised
   with their schema before first use
-- hosted mode does not yet have a unified remote-tool catalog for
+- hosted mode does not yet have a unified remote-tool catalogue for
   orchestrator-owned dynamic tools, including WASM tools
 
 ## Goals
@@ -152,8 +152,8 @@ The remaining problem is contractual, not structural:
    `name`, `description`, `parameters`.
 3. Registration-time schema recovery or override selection is the correct place
    to determine the outward-facing schema.
-4. Hosted mode should reuse the canonical orchestrator-owned tool catalog, not
-   reconstruct WASM tool metadata inside the worker.
+4. Hosted mode should reuse the canonical orchestrator-owned tool catalogue, not
+  reconstruct WASM tool metadata inside the worker.
 5. Error hints should help recovery, not compensate for missing normal tool
    metadata.
 
@@ -216,15 +216,16 @@ That guarantee should be documented and tested for:
 This changes the contract from "best effort if registration recovered metadata"
 to "required interface guarantee."
 
-### 4. Reuse the remote-tool catalog for orchestrator-owned WASM tools
+
+### 4. Reuse the remote-tool catalogue for orchestrator-owned WASM tools
 
 The companion RFC [0001-expose-mcp-tool-definitions.md](0001-expose-mcp-tool-definitions.md)
-proposes a worker-authenticated hosted tool catalog plus generic remote tool
+proposes a worker-authenticated hosted tool catalogue plus generic remote tool
 execution endpoint.
 
 That same mechanism should cover orchestrator-owned active WASM tools.
 
-Suggested hosted catalog response:
+Suggested hosted catalogue response:
 
 ```json
 {
@@ -328,14 +329,14 @@ pub struct ToolDefinition {
 
 ### Hosted worker interface
 
-Use the same remote-tool catalog and execution transport as the MCP RFC:
+Use the same remote-tool catalogue and execution transport as the MCP RFC:
 
 ```text
 GET  /worker/{job_id}/tools/catalog
 POST /worker/{job_id}/tools/execute
 ```
 
-The catalog should include hosted-visible active WASM tools alongside other
+The catalogue should include hosted-visible active WASM tools alongside other
 orchestrator-owned tools.
 
 ### Error interface
@@ -355,15 +356,14 @@ design requirement.
 
 ## Testing Strategy
 
-This change requires both interface and behavioural tests.
-
+This change needs both interface tests and behavioural tests.
 ### Unit tests
 
 1. Active file-loaded WASM tools expose guest or override schema through
    `ToolRegistry::tool_definitions()`.
 2. Active storage-backed WASM tools expose the correct precedence-selected
    schema through `ToolRegistry::tool_definitions()`.
-3. Hosted tool catalog construction includes active hosted-visible WASM tools
+3. Hosted tool catalogue construction includes active hosted-visible WASM tools
    with their advertised schema.
 4. Retry hints remain available on tool failure but are no longer the only
    place the schema can be observed.
@@ -391,8 +391,10 @@ That is the contract that removes first-call guesswork.
 1. Document the normative rule that active WASM tool schemas must be exposed in
    `ToolDefinition.parameters`.
 2. Audit registration paths to ensure they all satisfy that rule.
-3. Extend the hosted remote-tool catalog to include orchestrator-owned WASM
-   tools.
+3. Extend the hosted remote-tool catalogue to include orchestrator-owned WASM
+   tools, reusing the same shared worker-orchestrator transport contract
+   introduced for RFC 0001 rather than defining a second hosted-catalogue
+   boundary.
 4. Reframe WASM retry hints as supplemental diagnostics in code comments,
    behaviour, and tests.
 5. Add explicit end-to-end tests for proactive schema exposure.
@@ -411,7 +413,7 @@ replacement for machine-readable argument structure.
 
 ### Alternative 3: Hide complex WASM schemas from some providers to save tokens
 
-Rejected. Token concerns are real, but the right fix is better cataloging,
+Rejected. Token concerns are real, but the right fix is better cataloguing,
 provider-specific shaping, or summarization alongside the schema, not removing
 the schema from the normal tool interface.
 
@@ -421,7 +423,7 @@ the schema from the normal tool interface.
    only for parse/validation failures?
 2. Should IronClaw store both canonical guest schema and provider-normalized
    advertised schema explicitly for observability?
-3. Should hosted workers fetch the remote tool catalog only at startup, or also
+3. Should hosted workers fetch the remote tool catalogue only at startup, or also
    after dynamic tool activation events involving WASM tools?
 4. Should UI diagnostics show whether a WASM tool's advertised schema came from
    a guest export or an explicit host override?
@@ -435,7 +437,7 @@ That means:
 
 - active WASM tools must expose `parameters` before first use
 - hosted workers must receive orchestrator-owned WASM tool definitions through
-  the remote-tool catalog
+  the remote-tool catalogue using the same shared transport boundary as MCP tools
 - provider shaping may adjust the schema, but it must still be present
 - execution-time hints should help recovery, not teach the tool for the first
   time

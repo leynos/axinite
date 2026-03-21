@@ -40,7 +40,9 @@ use std::sync::Arc;
 use tokio::fs;
 
 use crate::secrets::SecretsStore;
-use crate::tools::registry::{ToolRegistry, WasmRegistrationError, WasmToolRegistration};
+use crate::tools::registry::{
+    ToolRegistry, WasmFromStorageRegistration, WasmRegistrationError, WasmToolRegistration,
+};
 use crate::tools::wasm::capabilities_schema::CapabilitiesFile;
 use crate::tools::wasm::{
     Capabilities, OAuthRefreshConfig, WasmError, WasmStorageError, WasmToolRuntime, WasmToolStore,
@@ -287,7 +289,7 @@ impl WasmToolLoader {
         tool_name: &str,
     ) -> Result<(), WasmLoadError> {
         self.registry
-            .register_wasm_from_storage(crate::tools::WasmFromStorageArgs {
+            .register_wasm_from_storage(WasmFromStorageRegistration {
                 store,
                 runtime: &self.runtime,
                 user_id,

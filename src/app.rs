@@ -9,7 +9,6 @@
 
 use std::sync::Arc;
 
-use crate::bootstrap::tools::{MediaToolsArgs, register_image_and_vision_tools};
 use crate::channels::web::log_layer::LogBroadcaster;
 use crate::config::Config;
 use crate::context::ContextManager;
@@ -21,10 +20,10 @@ use crate::safety::SafetyLayer;
 use crate::secrets::SecretsStore;
 use crate::skills::SkillRegistry;
 use crate::skills::catalog::SkillCatalog;
-use crate::tools::ToolRegistry;
 use crate::tools::mcp::{McpProcessManager, McpSessionManager};
 use crate::tools::wasm::SharedCredentialRegistry;
 use crate::tools::wasm::WasmToolRuntime;
+use crate::tools::{ImageToolsRegistration, ToolRegistry, VisionToolsRegistration};
 use crate::workspace::{EmbeddingProvider, Workspace};
 
 /// Fully initialized application components, ready for channel wiring
@@ -115,6 +114,16 @@ impl AppBuilder {
     /// Inject a pre-created LLM provider, skipping `init_llm()`.
     pub fn with_llm(&mut self, llm: Arc<dyn LlmProvider>) {
         self.llm_override = Some(llm);
+    }
+
+    fn register_image_tools_default(
+        &self,
+        tools: &ToolRegistry,
+        api_base: String,
+        api_key: String,
+        gen_model: String,
+    ) {
+        tools.register_image_tools(ImageToolsRegistration::new(api_base, api_key, gen_model));
     }
 
     /// Phase 1: Initialize database backend.
@@ -345,20 +354,23 @@ impl AppBuilder {
                 let gen_model = crate::llm::image_models::suggest_image_model(&models)
                     .unwrap_or("flux-1.1-pro")
                     .to_string();
+                self.register_image_tools_default(
+                    &tools,
+                    api_base.clone(),
+                    api_key.clone(),
+                    gen_model,
+                );
+
+                // Check for vision models
                 let vision_model = crate::llm::vision_models::suggest_vision_model(&models)
                     .unwrap_or(&model_name)
                     .to_string();
-
-                register_image_and_vision_tools(
-                    &tools,
-                    MediaToolsArgs {
-                        api_base_url: api_base,
-                        api_key,
-                        gen_model,
-                        vision_model,
-                        base_dir: None,
-                    },
-                );
+                tools.register_vision_tools(VisionToolsRegistration {
+                    api_base_url: api_base,
+                    api_key,
+                    vision_model,
+                    base_dir: None,
+                });
             }
         }
 
@@ -368,7 +380,7 @@ impl AppBuilder {
         {
             tools
                 .register_builder_tool(llm.clone(), Some(self.config.builder.to_builder_config()))
-                .await;
+                .await?;
             tracing::debug!("Builder mode enabled");
         }
 

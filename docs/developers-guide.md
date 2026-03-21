@@ -31,15 +31,15 @@ line up with the current CI setup.
 Install these tools before running the standard repository commands:
 
 1. Rust `1.92` via `rustup`.
-1. `clang` on Linux or WSL.
-1. `mold` on Linux or WSL.
-1. The `wasm32-wasip2` Rust target.
-1. `wasm-tools`.
-1. `cargo-component`.
-1. `cargo-nextest`.
-1. `jq`.
-1. `make`.
-1. Git.
+2. `clang` on Linux or WSL.
+3. `mold` on Linux or WSL.
+4. The `wasm32-wasip2` Rust target.
+5. `wasm-tools`.
+6. `cargo-component`.
+7. `cargo-nextest`.
+8. `jq`.
+9. `make`.
+10. Git.
 
 The root crate declares `rust-version = "1.92"` in `Cargo.toml`. The
 repository also includes standalone WebAssembly (WASM) tool and channel
@@ -183,14 +183,15 @@ createdb ironclaw
 psql ironclaw -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
-Then set `DATABASE_URL`:
+Then set the database connection variable:
 
-- Variable: `DATABASE_URL`
-- Meaning: PostgreSQL connection URL used by the app.
-- Default or rule: Required for PostgreSQL-backed work. For local development,
-  `postgres://localhost/ironclaw` is a typical example; include the correct
-  user, password, host, port, and database name when a local setup requires
-  them.
+Variable: `DATABASE_URL`
+Meaning: PostgreSQL connection URL used by the app.
+Default or rule:
+Required for PostgreSQL-backed work. For local development,
+`postgres://localhost/ironclaw` is a typical example; include the correct
+user, password, host, port, and database name when a local setup requires
+them.
 
 Example:
 
@@ -200,7 +201,6 @@ export DATABASE_URL=postgres://localhost/ironclaw
 
 Adjust the connection string if the local PostgreSQL instance requires a
 different host, user, or password.
-
 ## End-to-end (E2E) prerequisites
 
 For browser-based tests:

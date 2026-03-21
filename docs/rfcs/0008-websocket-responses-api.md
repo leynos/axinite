@@ -276,8 +276,8 @@ Axinite currently models conversations as a sequence of `ChatMessage` objects de
 A practical mapping for compatibility:
 
 | Axinite concept | Responses API representation | Notes |
-| --- | --- | --- |
-| System/user/assistant message | `{"type":"message","role":"<role>","content":[{"type":"input_text","text":"<text>"}]}` | Valid `role` values here are `"user"`, `"assistant"`, and `"system"`. WebSocket examples show `message` items inside `input`. [^103] |
+|---|---|---|
+| System/user/assistant message | `{"type":"message","role":"user\|assistant\|system","content":[{"type":"input_text","text":...}]}` | WebSocket examples show `message` items inside `input`. [^103] |
 | Tool call request from model | Output item `{"type":"function_call","call_id":...,"name":...,"arguments":"{...}"}` | `call_id` is the join key for outputs. [^104] |
 | Tool output back to model | Input item `{"type":"function_call_output","call_id":...,"output":"..."}` | WebSocket docs demonstrate this in continuation. [^105] |
 | Axinite compaction summary | Prefer: Responses “compaction item” emitted by server when `context_management` triggers | Compaction item is opaque and should be stored, not interpreted. [^106] |
@@ -436,12 +436,16 @@ Effort estimates are coarse (low/med/high) because runtime/language constraints 
 
 ### CI checks and rollout checklist
 
-Table: Environment variables for WebSocket Responses API
+Add the rollout flag as a documented environment-variable entry:
 
-| Variable name | Meaning | Default or rule |
-| --- | --- | --- |
-| `OPENAI_RESPONSES_WS_ENABLED` | Enables WebSocket-based OpenAI Responses API support for streaming responses | Default off; rollout-controlled flag or equivalent provider configuration knob. |
+<!-- markdownlint-disable MD013 -->
+| Variable | Meaning | Default or rule |
+|----------|---------|-----------------|
+| `OPENAI_RESPONSES_WS_ENABLED` | Enables WebSocket-based OpenAI Responses API for streaming responses. | Default: off. Treat as a rollout-controlled flag or provider configuration knob. |
+<!-- markdownlint-enable MD013 -->
 
+- Add a feature flag: `OPENAI_RESPONSES_WS_ENABLED` (or provider config knob)
+  default off.
 - Add “contract tests” that compare the tool call loop semantics against existing Chat Completions backend (for equivalent prompts).
 - Rollout:
   - Canary enable for a subset of sessions/threads or only for GPT‑5.4 model selection.

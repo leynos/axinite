@@ -15,7 +15,7 @@ settings once persistent state is online.
 Table 1. Effective configuration precedence.
 
 | Priority | Source | Notes |
-|----------|--------|-------|
+| ---------- | -------- | ------- |
 | Highest | Explicit process environment | Values exported in the shell always win. Empty strings are treated as unset by the config helpers. |
 | High | `./.env` | Loaded by `dotenvy::dotenv()` before `~/.ironclaw/.env`, and never overwrites existing process variables. |
 | Medium | `~/.ironclaw/.env` | Loaded by `crate::bootstrap::load_ironclaw_env()`. This is the bootstrap layer for settings needed before database access, especially `DATABASE_URL`. |
@@ -28,7 +28,7 @@ Two bootstrap details matter in practice:
 1. `IRONCLAW_BASE_DIR` changes the per-user base directory from
    `~/.ironclaw` to another path. Relative paths are accepted, but the code
    warns when one is used.
-1. If `DATABASE_BACKEND` is still unset after environment files are loaded and
+2. If `DATABASE_BACKEND` is still unset after environment files are loaded and
    `~/.ironclaw/ironclaw.db` exists, startup auto-selects the `libsql`
    backend.
 
@@ -40,7 +40,7 @@ subcommand.
 Table 2. Global CLI options.
 
 | Option | Meaning | Default or behaviour |
-|--------|---------|----------------------|
+| -------- | --------- | ---------------------- |
 | `--cli-only` | Run in interactive CLI mode only and disable other channels. | Disabled by default. |
 | `--no-db` | Skip database connection. | Disabled by default. Intended mainly for testing and reduced bootstrap paths. |
 | `-m`, `--message <TEXT>` | Send one message and exit. | Omitted by default. |
@@ -56,7 +56,7 @@ When no subcommand is supplied, `ironclaw` behaves as `ironclaw run`.
 Table 3. Top-level commands exposed by `ironclaw`.
 
 | Command | Purpose | Notes |
-|---------|---------|-------|
+| --------- | --------- | ------- |
 | `run` | Start the main agent runtime. | This is the default path when no subcommand is given. |
 | `onboard` | Run the interactive setup wizard. | Supports a small set of mutually exclusive shortcuts. |
 | `config` | Inspect or mutate persisted configuration values. | Subcommands listed below. |
@@ -78,7 +78,7 @@ Table 3. Top-level commands exposed by `ironclaw`.
 Table 4. `ironclaw onboard` options.
 
 | Option | Meaning | Notes |
-|--------|---------|-------|
+| -------- | --------- | ------- |
 | `--skip-auth` | Reuse existing authentication instead of re-running auth. | Can be combined with normal onboarding. |
 | `--channels-only` | Reconfigure channels only. | Conflicts with `--provider-only` and `--quick`. |
 | `--provider-only` | Reconfigure only the LLM provider and model. | Conflicts with `--channels-only` and `--quick`. |
@@ -89,7 +89,7 @@ Table 4. `ironclaw onboard` options.
 Table 5. `ironclaw config` subcommands.
 
 | Command | Syntax | Meaning |
-|---------|--------|---------|
+| --------- | -------- | --------- |
 | `init` | `ironclaw config init [-o\|--output PATH] [--force]` | Emit a starter configuration file. |
 | `list` | `ironclaw config list [-f\|--filter PREFIX]` | List known configuration paths, optionally filtered by prefix. |
 | `get` | `ironclaw config get <path>` | Print one configuration value. |
@@ -100,7 +100,7 @@ Table 5. `ironclaw config` subcommands.
 Table 6. `ironclaw config` options.
 
 | Option | Used by | Meaning |
-|--------|---------|---------|
+| -------- | --------- | --------- |
 | `-o`, `--output <PATH>` | `config init` | Write the starter file to an explicit path. |
 | `--force` | `config init` | Overwrite the output file if it already exists. |
 | `-f`, `--filter <PREFIX>` | `config list` | Restrict listed keys to a prefix. |
@@ -110,7 +110,7 @@ Table 6. `ironclaw config` options.
 Table 7. `ironclaw tool` subcommands and options.
 
 | Command | Syntax | Meaning |
-|---------|--------|---------|
+| --------- | -------- | --------- |
 | `install` | `ironclaw tool install <path> [-n\|--name NAME] [--capabilities PATH] [-t\|--target PATH] [--release <BOOL>] [--skip-build] [-f\|--force]` | Install a WASM tool from a file or a crate directory. |
 | `list` | `ironclaw tool list [-d\|--dir PATH] [-v\|--verbose]` | List installed tools. |
 | `remove` | `ironclaw tool remove <name> [-d\|--dir PATH]` | Remove an installed tool. |
@@ -121,7 +121,7 @@ Table 7. `ironclaw tool` subcommands and options.
 Table 8. `ironclaw tool` option meanings.
 
 | Option | Meaning | Notes |
-|--------|---------|-------|
+| -------- | --------- | ------- |
 | `-n`, `--name <NAME>` | Override the install name. | `tool install` only. |
 | `--capabilities <PATH>` | Use an explicit capabilities file. | `tool install` only. |
 | `-t`, `--target <PATH>` | Override the install target directory. | `tool install` only. |
@@ -137,7 +137,7 @@ Table 8. `ironclaw tool` option meanings.
 Table 9. `ironclaw registry` subcommands and options.
 
 | Command | Syntax | Meaning |
-|---------|--------|---------|
+| --------- | -------- | --------- |
 | `list` | `ironclaw registry list [-k\|--kind KIND] [-t\|--tag TAG] [-v\|--verbose]` | List registry entries. |
 | `info` | `ironclaw registry info <name>` | Show one registry entry. |
 | `install` | `ironclaw registry install <name> [-f\|--force] [--build]` | Install one registry entry. |
@@ -146,7 +146,7 @@ Table 9. `ironclaw registry` subcommands and options.
 Table 10. `ironclaw registry` option meanings.
 
 | Option | Meaning | Notes |
-|--------|---------|-------|
+| -------- | --------- | ------- |
 | `-k`, `--kind <KIND>` | Filter registry results by entry kind. | `registry list` only. |
 | `-t`, `--tag <TAG>` | Filter registry results by tag. | `registry list` only. |
 | `-v`, `--verbose` | Show extra entry metadata. | `registry list` only. |
@@ -158,7 +158,7 @@ Table 10. `ironclaw registry` option meanings.
 Table 11. `ironclaw mcp` subcommands.
 
 | Command | Syntax | Meaning |
-|---------|--------|---------|
+| --------- | -------- | --------- |
 | `add` | `ironclaw mcp add <name> [url] [--transport http\|stdio\|unix] [--command CMD] [--arg ARG ...] [--env KEY=VALUE ...] [--socket PATH] [--header KEY:VALUE ...] [--client-id ID] [--auth-url URL] [--token-url URL] [--scopes CSV] [--description TEXT]` | Register an MCP server definition. |
 | `remove` | `ironclaw mcp remove <name>` | Remove an MCP server definition. |
 | `list` | `ironclaw mcp list [-v\|--verbose]` | List registered MCP servers. |
@@ -169,7 +169,7 @@ Table 11. `ironclaw mcp` subcommands.
 Table 12. `ironclaw mcp` option meanings.
 
 | Option | Meaning | Notes |
-|--------|---------|-------|
+| -------- | --------- | ------- |
 | `--transport <http\|stdio\|unix>` | Select the transport kind. | Defaults to `http` when omitted. |
 | `--command <CMD>` | Executable to launch for stdio transport. | `mcp add` only. |
 | `--arg <ARG>` | One or more command arguments. | `mcp add` only, repeatable. |
@@ -191,7 +191,7 @@ Table 12. `ironclaw mcp` option meanings.
 Table 13. `ironclaw memory` subcommands and options.
 
 | Command | Syntax | Meaning |
-|---------|--------|---------|
+| --------- | -------- | --------- |
 | `search` | `ironclaw memory search <query> [-l\|--limit N]` | Search workspace memory. |
 | `read` | `ironclaw memory read <path>` | Read one memory document. |
 | `write` | `ironclaw memory write <path> [content] [-a\|--append]` | Write or append a memory document. |
@@ -201,7 +201,7 @@ Table 13. `ironclaw memory` subcommands and options.
 Table 14. `ironclaw memory` option meanings.
 
 | Option | Meaning | Notes |
-|--------|---------|-------|
+| -------- | --------- | ------- |
 | `-l`, `--limit <N>` | Maximum number of search results. | Defaults to `5`. |
 | `-a`, `--append` | Append instead of replacing the file. | `memory write` only. |
 | `-d`, `--depth <N>` | Limit tree traversal depth. | Defaults to `3`. |
@@ -211,7 +211,7 @@ Table 14. `ironclaw memory` option meanings.
 Table 15. Remaining user-facing commands.
 
 | Command | Syntax | Meaning |
-|---------|--------|---------|
+| --------- | -------- | --------- |
 | `pairing list` | `ironclaw pairing list <channel> [--json]` | List pending pairing requests for one channel. |
 | `pairing approve` | `ironclaw pairing approve <channel> <code>` | Approve one pairing request. |
 | `service install` | `ironclaw service install` | Install the operating-system service. |
@@ -228,7 +228,7 @@ Table 15. Remaining user-facing commands.
 Table 16. Feature-gated and hidden commands.
 
 | Command | Syntax | Meaning |
-|---------|--------|---------|
+| --------- | -------- | --------- |
 | `import openclaw` | `ironclaw import openclaw [--path PATH] [--dry-run] [--re-embed] [--user-id USER]` | Import from an OpenClaw data source when the `import` feature is enabled. |
 | `worker` | `ironclaw worker --job-id UUID [--orchestrator-url URL] [--max-iterations N]` | Internal sandbox worker entrypoint. Defaults to `http://host.docker.internal:50051` and `50`. |
 | `claude-bridge` | `ironclaw claude-bridge --job-id UUID [--orchestrator-url URL] [--max-turns N] [--model MODEL]` | Internal Claude Code bridge entrypoint. Defaults to `http://host.docker.internal:50051`, `50`, and `sonnet`. |
@@ -240,7 +240,7 @@ Table 16. Feature-gated and hidden commands.
 Table 17. Bootstrap and configuration-source environment variables.
 
 | Variable | Meaning | Default or rule |
-|----------|---------|-----------------|
+| ---------- | --------- | ----------------- |
 | `IRONCLAW_BASE_DIR` | Override the per-user base directory. | Defaults to `~/.ironclaw`. An empty string is treated as unset. |
 | `DATABASE_BACKEND` | Select the database backend. | Accepted values include `postgres`, `postgresql`, `pg`, `libsql`, `turso`, and `sqlite`. Defaults to `postgres` unless libSQL auto-detection triggers. |
 | `DATABASE_URL` | PostgreSQL connection string. | Required unless the effective backend is `libsql`. |
@@ -253,7 +253,7 @@ Table 17. Bootstrap and configuration-source environment variables.
 Table 18. Database and secrets environment variables.
 
 | Variable | Meaning | Default or rule |
-|----------|---------|-----------------|
+| ---------- | --------- | ----------------- |
 | `DATABASE_POOL_SIZE` | PostgreSQL connection-pool size. | Defaults to `10`. |
 | `DATABASE_SSLMODE` | PostgreSQL TLS mode. | `disable`, `prefer`, or `require`; defaults to `prefer`. |
 | `LIBSQL_PATH` | Local libSQL database path. | Defaults to `~/.ironclaw/ironclaw.db` when `DATABASE_BACKEND=libsql`. |
@@ -266,7 +266,7 @@ Table 18. Database and secrets environment variables.
 Table 19. Core runtime behaviour variables.
 
 | Variable | Meaning | Default or rule |
-|----------|---------|-----------------|
+| ---------- | --------- | ----------------- |
 | `AGENT_NAME` | Agent display name. | Falls back to the persisted setting. |
 | `AGENT_MAX_PARALLEL_JOBS` | Maximum concurrent jobs. | Falls back to the persisted setting. |
 | `AGENT_JOB_TIMEOUT_SECS` | Per-job timeout. | Falls back to the persisted setting. |
@@ -318,7 +318,7 @@ Table 19. Core runtime behaviour variables.
 Table 20. Channel, gateway, tunnel, and relay environment variables.
 
 | Variable | Meaning | Default or rule |
-|----------|---------|-----------------|
+| ---------- | --------- | ----------------- |
 | `CLI_ENABLED` | Enable the CLI channel. | Truthy by default; `false` or `0` disables it. |
 | `HTTP_HOST` | Bind address for the HTTP and webhook channel. | Only enabling HTTP when `HTTP_HOST` or `HTTP_PORT` is set. Defaults to `0.0.0.0` once enabled. |
 | `HTTP_PORT` | Port for the HTTP and webhook channel. | Enables HTTP when set; defaults to `8080` once enabled. |
@@ -365,7 +365,7 @@ Table 20. Channel, gateway, tunnel, and relay environment variables.
 Table 21. LLM routing and provider-selection environment variables.
 
 | Variable | Meaning | Default or rule |
-|----------|---------|-----------------|
+| ---------- | --------- | ----------------- |
 | `LLM_BACKEND` | Select the primary LLM backend. | Defaults to `nearai`. Known backends include `nearai`, `bedrock`, and the provider IDs in `providers.json`. Unknown values fall back to the generic OpenAI-compatible provider definition. |
 | `LLM_REQUEST_TIMEOUT_SECS` | End-to-end request timeout for LLM calls. | Defaults to `120`. |
 | `NEARAI_AUTH_URL` | OAuth or auth base URL for the NEAR AI session manager. | Defaults to `https://private.near.ai`. |
@@ -411,7 +411,7 @@ from the custom provider definition rather than this table.
 Table 22. Built-in provider-specific environment variables from `providers.json`.
 
 | Provider ID | API key env | Base URL env | Model env | Extra headers env | Default base URL | Default model |
-|-------------|-------------|--------------|-----------|-------------------|------------------|---------------|
+| ------------- | ------------- | -------------- | ----------- | ------------------- | ------------------ | --------------- |
 | `openai` | `OPENAI_API_KEY` | `OPENAI_BASE_URL` | `OPENAI_MODEL` | | provider default | `gpt-5-mini` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` | `ANTHROPIC_MODEL` | | provider default | `claude-sonnet-4-20250514` |
 | `ollama` | | `OLLAMA_BASE_URL` | `OLLAMA_MODEL` | | `http://localhost:11434` | `llama3` |
@@ -437,7 +437,7 @@ Table 22. Built-in provider-specific environment variables from `providers.json`
 Table 23. WASM, sandbox, and development-override environment variables.
 
 | Variable | Meaning | Default or rule |
-|----------|---------|-----------------|
+| ---------- | --------- | ----------------- |
 | `WASM_ENABLED` | Enable WASM tool execution. | Boolean, default `true`. |
 | `WASM_TOOLS_DIR` | Directory containing installed WASM tools. | Defaults to `~/.ironclaw/tools`. |
 | `WASM_DEFAULT_MEMORY_LIMIT` | Default WASM memory limit in bytes. | Defaults to `10485760` (10 MiB). |
@@ -472,7 +472,7 @@ Table 23. WASM, sandbox, and development-override environment variables.
 Table 24. Advanced, internal, and debug-oriented environment variables.
 
 | Variable | Meaning | Default or rule |
-|----------|---------|-----------------|
+| ---------- | --------- | ----------------- |
 | `IRONCLAW_OAUTH_EXCHANGE_URL` | Proxy URL used by gateway OAuth completion to exchange the authorization code through another service. | Optional. When unset, the gateway exchanges directly with the upstream token endpoint. |
 | `OAUTH_CALLBACK_HOST` | Host used by the local OAuth callback listener. | Defaults to `127.0.0.1`. Wildcard addresses such as `0.0.0.0` and `::` are rejected. |
 | `IRONCLAW_INSTANCE_NAME` | Prefix applied to OAuth CSRF state for platform routing. | Optional. |

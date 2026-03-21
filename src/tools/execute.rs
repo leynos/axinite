@@ -248,17 +248,30 @@ mod tests {
         JobContext::default()
     }
 
-    async fn registry_with(tools: Vec<Arc<dyn Tool>>) -> ToolRegistry {
+    enum RegistrationMode {
+        Dynamic,
+        Privileged,
+    }
+
+    async fn registry_with(tools: Vec<(Arc<dyn Tool>, RegistrationMode)>) -> ToolRegistry {
         let registry = ToolRegistry::new();
-        for tool in tools {
-            registry.register(tool).await;
+        for (tool, mode) in tools {
+            match mode {
+                RegistrationMode::Dynamic => {
+                    registry.register(tool).await;
+                }
+                RegistrationMode::Privileged => {
+                    registry.register_sync(Arc::clone(&tool));
+                }
+            }
         }
         registry
     }
 
     #[tokio::test]
     async fn test_execute_success() {
-        let registry = registry_with(vec![Arc::new(EchoTool)]).await;
+        let registry =
+            registry_with(vec![(Arc::new(EchoTool), RegistrationMode::Privileged)]).await;
         let safety = test_safety();
         let params = serde_json::json!({"message": "hello"});
 
@@ -298,7 +311,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_tool_failure() {
-        let registry = registry_with(vec![Arc::new(FailTool)]).await;
+        let registry = registry_with(vec![(Arc::new(FailTool), RegistrationMode::Dynamic)]).await;
         let safety = test_safety();
 
         let result = execute_tool_with_safety(
@@ -321,7 +334,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_tool_timeout() {
-        let registry = registry_with(vec![Arc::new(SlowTool)]).await;
+        let registry = registry_with(vec![(Arc::new(SlowTool), RegistrationMode::Dynamic)]).await;
         let safety = test_safety();
 
         let start = std::time::Instant::now();

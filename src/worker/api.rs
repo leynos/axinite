@@ -14,13 +14,16 @@ use crate::tools::ToolOutput;
 
 mod types;
 
+use error_mapping::map_remote_tool_status;
+
 pub use types::{
     CompletionReport, CredentialResponse, FinishReason as ProxyFinishReason, JobDescription,
     JobEventPayload, JobEventType, PromptResponse, ProxyCompletionRequest, ProxyCompletionResponse,
-    ProxyExtensionToolRequest, ProxyExtensionToolResponse, ProxyToolCompletionRequest,
-    ProxyToolCompletionResponse, StatusUpdate, WorkerState,
+    ProxyToolCompletionRequest, ProxyToolCompletionResponse, REMOTE_TOOL_CATALOG_PATH,
+    REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_PATH, REMOTE_TOOL_EXECUTE_ROUTE,
+    RemoteToolCatalogResponse, RemoteToolExecutionRequest, RemoteToolExecutionResponse,
+    StatusUpdate, WorkerState,
 };
-
 /// HTTP client that a container worker uses to talk to the orchestrator.
 pub struct WorkerHttpClient {
     client: reqwest::Client,
@@ -29,6 +32,7 @@ pub struct WorkerHttpClient {
     token: String,
 }
 
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 impl WorkerHttpClient {
     /// Create a new client from environment.
     ///
@@ -38,7 +42,13 @@ impl WorkerHttpClient {
             std::env::var("IRONCLAW_WORKER_TOKEN").map_err(|_| WorkerError::MissingToken)?;
 
         Ok(Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(REQUEST_TIMEOUT)
+                .build()
+                .map_err(|e| WorkerError::ConnectionFailed {
+                    url: orchestrator_url.clone(),
+                    reason: format!("failed to build HTTP client: {}", e),
+                })?,
             orchestrator_url: orchestrator_url.trim_end_matches('/').to_string(),
             job_id,
             token,
@@ -48,7 +58,10 @@ impl WorkerHttpClient {
     /// Create with an explicit token (for testing).
     pub fn new(orchestrator_url: String, job_id: Uuid, token: String) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(REQUEST_TIMEOUT)
+                .build()
+                .unwrap_or_default(),
             orchestrator_url: orchestrator_url.trim_end_matches('/').to_string(),
             job_id,
             token,
@@ -62,6 +75,23 @@ impl WorkerHttpClient {
 
     fn url(&self, path: &str) -> String {
         format!("{}/worker/{}/{}", self.orchestrator_url, self.job_id, path)
+    }
+
+    async fn send_post_json<B: Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+        context: &str,
+    ) -> Result<reqwest::Response, WorkerError> {
+        self.client
+            .post(self.url(path))
+            .bearer_auth(&self.token)
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| WorkerError::LlmProxyFailed {
+                reason: format!("{}: {}", context, e),
+            })
     }
 
     /// Send a GET request, check the status, and deserialize the JSON body.
@@ -100,16 +130,7 @@ impl WorkerHttpClient {
         body: &B,
         context: &str,
     ) -> Result<T, WorkerError> {
-        let resp = self
-            .client
-            .post(self.url(path))
-            .bearer_auth(&self.token)
-            .json(body)
-            .send()
-            .await
-            .map_err(|e| WorkerError::LlmProxyFailed {
-                reason: format!("{}: {}", context, e),
-            })?;
+        let resp = self.send_post_json(path, body, context).await?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -185,20 +206,39 @@ impl WorkerHttpClient {
         })
     }
 
-    /// Execute an extension-management tool against the orchestrator-side app state.
-    pub async fn execute_extension_tool(
+    /// Fetch the hosted-visible orchestrator-owned remote tool catalog.
+    pub async fn get_remote_tool_catalog(&self) -> Result<RemoteToolCatalogResponse, WorkerError> {
+        self.get_json(REMOTE_TOOL_CATALOG_PATH, "GET /tools/catalog")
+            .await
+    }
+
+    /// Execute an orchestrator-owned hosted remote tool.
+    pub async fn execute_remote_tool(
         &self,
         tool_name: &str,
         params: &serde_json::Value,
     ) -> Result<ToolOutput, WorkerError> {
-        let proxy_req = ProxyExtensionToolRequest {
+        let proxy_req = RemoteToolExecutionRequest {
             tool_name: tool_name.to_string(),
             params: params.clone(),
         };
 
-        let proxy_resp: ProxyExtensionToolResponse = self
-            .post_json("extension_tool", &proxy_req, "Extension tool execution")
+        let resp = self
+            .send_post_json(
+                REMOTE_TOOL_EXECUTE_PATH,
+                &proxy_req,
+                "Remote tool execution",
+            )
             .await?;
+
+        if !resp.status().is_success() {
+            return Err(map_remote_tool_status(resp).await);
+        }
+
+        let proxy_resp: RemoteToolExecutionResponse =
+            resp.json().await.map_err(|e| WorkerError::LlmProxyFailed {
+                reason: format!("Remote tool execution: failed to parse response: {}", e),
+            })?;
 
         Ok(proxy_resp.output)
     }
@@ -356,3 +396,5 @@ impl WorkerHttpClient {
 
 #[cfg(test)]
 mod tests;
+
+mod error_mapping;

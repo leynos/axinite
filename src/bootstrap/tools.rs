@@ -13,7 +13,9 @@ use crate::db::Database;
 use crate::orchestrator::job_manager::ContainerJobManager;
 use crate::secrets::SecretsStore;
 use crate::tools::builtin::{PromptQueue, SchedulerSlot};
-use crate::tools::{ImageToolsArgs, RegisterJobToolsConfig, ToolRegistry, VisionToolsArgs};
+use crate::tools::{
+    ImageToolsRegistration, RegisterJobToolsOptions, ToolRegistry, VisionToolsRegistration,
+};
 
 /// Dependency bundle for registering job tools during bootstrap.
 pub struct JobToolsArgs {
@@ -37,7 +39,7 @@ pub struct JobToolsArgs {
 
 /// Register the job-management tool set from bootstrap wiring.
 pub fn register_job_tools(registry: &ToolRegistry, args: JobToolsArgs) {
-    registry.register_job_tools(RegisterJobToolsConfig {
+    registry.register_job_tools(RegisterJobToolsOptions {
         context_manager: args.context_manager,
         scheduler_slot: args.scheduler_slot,
         job_manager: args.job_manager,
@@ -79,14 +81,14 @@ pub fn register_image_and_vision_tools(registry: &ToolRegistry, args: MediaTools
         base_dir,
     } = args;
 
-    registry.register_image_tools(ImageToolsArgs {
+    registry.register_image_tools(ImageToolsRegistration {
         api_base_url: api_base_url.clone(),
         api_key: api_key.clone(),
         gen_model,
         base_dir: base_dir.clone(),
     });
 
-    registry.register_vision_tools(VisionToolsArgs {
+    registry.register_vision_tools(VisionToolsRegistration {
         api_base_url,
         api_key,
         vision_model,

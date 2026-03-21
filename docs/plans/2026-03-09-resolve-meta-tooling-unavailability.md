@@ -94,7 +94,7 @@ The change must be observable in three ways. First, a focused regression test mu
   Evidence: The first local run spent about eight minutes in the initial `src/lib.rs` test binary compilation before the test execution phase began.
   Impact: Broad validation is still feasible locally, but it should be expected to take materially longer than the default or pre-warmed matrices.
 
-## Decision log
+## Decision Log
 
 - Decision: Keep the plan in `docs/plans/2026-03-09-resolve-meta-tooling-unavailability.md`.
   Rationale: Repository guidance prefers `docs/execplans/...`, but the user explicitly requested the `docs/plans/...` location, which takes priority.
@@ -112,7 +112,7 @@ The change must be observable in three ways. First, a focused regression test mu
   Rationale: `register_container_tools` is currently documented as the container-local development tool set. Preserving that meaning reduces blast radius and makes the final tests easier to read.
   Date/Author: 2026-03-09 12:57Z / Codex
 
-## Outcomes & retrospective
+## Outcomes & Retrospective
 
 Hosted workers now advertise and can execute the non-mutating
 extension-management tool surface that was previously only available to the

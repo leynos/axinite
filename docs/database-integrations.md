@@ -36,7 +36,7 @@ through `crate::db::connect_with_handles()`.
 Table 1. Backend selection and startup rules.
 
 | Concern | Current implementation |
-|---------|------------------------|
+| --------- | ------------------------ |
 | Default backend | `postgres` unless `DATABASE_BACKEND` says otherwise or bootstrap auto-detects a local libSQL file |
 | Accepted backend names | `postgres`, `postgresql`, `pg`, `libsql`, `turso`, and `sqlite` |
 | PostgreSQL bootstrap requirement | `DATABASE_URL` must be present |
@@ -124,7 +124,7 @@ The PostgreSQL workspace repository is the richer search implementation.
 Table 2. PostgreSQL workspace search components.
 
 | Component | Implementation |
-|-----------|----------------|
+| ----------- | ---------------- |
 | Document store | `memory_documents` table |
 | Chunk store | `memory_chunks` table |
 | Full-text search | Generated `content_tsv` column plus a GIN index |
@@ -232,7 +232,7 @@ search path is narrower.
 Table 3. libSQL workspace search components.
 
 | Component | Implementation |
-|-----------|----------------|
+| ----------- | ---------------- |
 | Document store | `memory_documents` table |
 | Chunk store | `memory_chunks` table with `embedding BLOB` |
 | Full-text search | `memory_chunks_fts` FTS5 virtual table plus maintenance triggers |
@@ -323,7 +323,7 @@ high-level API.
 Table 4. Current backend comparison.
 
 | Concern | PostgreSQL with pgvector | libSQL |
-|---------|--------------------------|--------|
+| --------- | -------------------------- | -------- |
 | Default on this branch | Yes | No, unless bootstrap auto-detects `~/.ironclaw/ironclaw.db` |
 | External service needed | Yes | No for local mode; optional for Turso replica mode |
 | Connection strategy | Shared async pool | Fresh connection per operation |

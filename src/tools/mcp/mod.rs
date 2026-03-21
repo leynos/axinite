@@ -37,6 +37,8 @@ pub(crate) mod process;
 mod protocol;
 pub mod session;
 pub(crate) mod stdio_transport;
+#[cfg(test)]
+mod tests;
 pub(crate) mod transport;
 #[cfg(unix)]
 pub(crate) mod unix_transport;

@@ -17,7 +17,9 @@ use async_trait::async_trait;
 
 use crate::context::JobContext;
 use crate::secrets::SecretsStore;
-use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput, require_str};
+use crate::tools::tool::{
+    ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput, require_str,
+};
 
 // ── secret_list ──────────────────────────────────────────────────────────────
 
@@ -152,6 +154,10 @@ impl Tool for SecretDeleteTool {
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
         ApprovalRequirement::UnlessAutoApproved
     }
+
+    fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+        HostedToolEligibility::ApprovalGated
+    }
 }
 
 #[cfg(test)]
@@ -215,5 +221,16 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result2.result["status"], "not_found");
+    }
+
+    #[test]
+    fn test_secret_delete_hosted_tool_eligibility() {
+        let store = test_store();
+        let delete =
+            SecretDeleteTool::new(Arc::clone(&store) as Arc<dyn SecretsStore + Send + Sync>);
+        assert_eq!(
+            delete.hosted_tool_eligibility(),
+            HostedToolEligibility::ApprovalGated
+        );
     }
 }

@@ -42,7 +42,7 @@ fn register_job_tools_for_tests(
 ) {
     components
         .tools
-        .register_job_tools(ironclaw::tools::RegisterJobToolsConfig {
+        .register_job_tools(ironclaw::tools::RegisterJobToolsOptions {
             context_manager: Arc::clone(&components.context_manager),
             scheduler_slot: Some(scheduler_slot.clone()),
             job_manager: None,

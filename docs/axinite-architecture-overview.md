@@ -119,22 +119,22 @@ before channels and background services start.
 1. `main()` loads `.env` files and the per-user `~/.ironclaw/.env` bootstrap
    file before starting Tokio. This avoids mutating process environment after
    worker threads exist.
-1. `async_main()` parses `Cli`, routes standalone subcommands, and only falls
+2. `async_main()` parses `Cli`, routes standalone subcommands, and only falls
    through to the agent runtime for `ironclaw run` or no subcommand.
-1. The host acquires a PID lock to prevent accidental double-starts of the main
+3. The host acquires a PID lock to prevent accidental double-starts of the main
    process.
-1. If onboarding is still required and onboarding has not been suppressed, the
+4. If onboarding is still required and onboarding has not been suppressed, the
    setup wizard runs before the rest of the runtime is built.
-1. `Config::from_env_with_toml()` builds the initial configuration from
+5. `Config::from_env_with_toml()` builds the initial configuration from
    environment variables, optional TOML, and defaults. The database is not yet
    required at this point.
-1. `AppBuilder::build_all()` executes the mechanical initialization phases in a
+6. `AppBuilder::build_all()` executes the mechanical initialization phases in a
    fixed order: database, secrets, language model providers, tools and
    workspace, then extensions.
-1. After core components exist, `async_main()` starts optional tunnel support,
+7. After core components exist, `async_main()` starts optional tunnel support,
    configures the sandbox orchestrator, wires interaction channels, registers
    hooks, and creates the agent.
-1. The process finally enters `agent.run()`, while background tasks such as the
+8. The process finally enters `agent.run()`, while background tasks such as the
    sandbox reaper and Unix `SIGHUP` config reloader run alongside it.
 
 ### 3.2 AppBuilder phases
@@ -172,7 +172,9 @@ means the main binary is responsible for both synchronous command dispatch and
 asynchronous service hosting. It also means HTTP routes from the built-in HTTP
 channel and from WASM channels are co-hosted behind one `WebhookServer`, so
 newly activated channels can begin handling webhook traffic without a separate
-host process.
+host process. `docs/webhook-server-design.md` documents that unified webhook
+architecture in more detail, including the current rollback-focused
+`WebhookServer` restart behaviour.
 
 ## 4. Core runtime subsystems
 
@@ -295,11 +297,18 @@ external content as untrusted before it reaches the language model.
 
 For code execution and high-risk tools, Axinite uses a Docker-backed sandbox
 system plus an orchestrator-worker split. The orchestrator runs inside the main
-process, owns the worker-facing HTTP API, creates per-job bearer tokens, and
-tracks credential grants. Workers run the same binary through the hidden
-`ironclaw worker` or `ironclaw claude-bridge` subcommands, but with a
-restricted runtime that proxies language model access and reports status back to
-the orchestrator.
+process, owns the worker-facing HTTP API, creates per-job bearer tokens, tracks
+credential grants, serves `GET /worker/{job_id}/tools/catalog`, and executes
+hosted-visible orchestrator-owned tools through
+`POST /worker/{job_id}/tools/execute`. Workers run the same binary through the
+hidden `ironclaw worker` or `ironclaw claude-bridge` subcommands, but with a
+restricted runtime that proxies language model access, fetches the remote-tool
+catalog during startup, and reports status back to the orchestrator.
+
+The worker-orchestrator seam now owns its hosted remote-tool route fragments
+and payload shapes in one shared transport module under `src/worker/api/`.
+That keeps the worker HTTP adapter and the orchestrator router aligned while
+later roadmap work extends filtering and reasoning-context behaviour.
 
 The WASM execution path adds another boundary inside the host process. Before
 the host injects any credentials into outbound requests, it validates endpoint
@@ -312,6 +321,41 @@ The security implications of the network surfaces, bind addresses, token
 validation, and webhook authentication are already documented in
 `src/NETWORK_SECURITY.md`. This overview relies on that document rather than
 duplicating its full inventory.
+
+### 4.6 Dependency and boundary map
+
+The current codebase has a practical layered shape even though it does not use
+formal hexagonal vocabulary throughout.
+
+- bootstrap and configuration in `src/bootstrap.rs` and `src/config/`
+- composition roots in `src/main.rs` and `src/app.rs`
+- runtime services in `src/agent/`, `src/channels/`, `src/extensions/`,
+  `src/worker/`, and `src/orchestrator/`
+- persistence and memory in `src/db/`, `src/workspace/`, and `src/history/`
+
+Some dependency directions are healthy and worth preserving.
+
+- The runtime still exposes meaningful extensibility seams such as
+  `Database`, `Channel`, `Tool`, and `LlmProvider`.
+- `AppBuilder` is a reasonable composition root for the mechanical bootstrap
+  phases.
+- `WebhookServer` isolates listener restart mechanics better than the
+  higher-level hot-reload caller in `src/main.rs` that decides when and why a
+  restart should happen.
+
+Other edges are more muddled and currently create avoidable maintenance cost.
+
+- `src/main.rs` reaches deep into config reload, secret injection, transport
+  restart, and lifecycle mutation during the SIGHUP hot-reload path.
+- `ExtensionManager` points outward to many adapters at once, including
+  discovery, MCP, WASM runtime, channel activation, secrets, database-backed
+  state, and gateway callback machinery.
+- The worker-orchestrator seam now shares its hosted remote-tool contract, but
+  later roadmap work still needs to tighten catalog filtering and refresh
+  behaviour.
+- Job lifecycle semantics are split between in-memory context transitions and
+  best-effort persistence paths, which makes cancellation and terminal status
+  handling harder to reason about under failure.
 
 ## 5. Repository structure that supports the architecture
 

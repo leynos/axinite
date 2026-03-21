@@ -20,7 +20,7 @@ use crate::error::WorkerError;
 use crate::llm::{ChatMessage, LlmProvider, Reasoning, ReasoningContext};
 use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
-use crate::tools::builtin::worker_extension_proxy::register_worker_extension_proxy_tools;
+use crate::tools::builtin::worker_remote_tool_proxy::register_worker_remote_tool_proxies;
 use crate::worker::api::{
     CompletionReport, JobEventPayload, JobEventType, StatusUpdate, WorkerHttpClient, WorkerState,
 };
@@ -60,6 +60,7 @@ pub struct WorkerRuntime {
     llm: Arc<dyn LlmProvider>,
     safety: Arc<SafetyLayer>,
     tools: Arc<ToolRegistry>,
+    toolset_instructions: Vec<String>,
     /// Credentials fetched from the orchestrator, injected into child processes
     /// via `Command::envs()` rather than mutating the global process environment.
     ///
@@ -104,7 +105,7 @@ impl WorkerRuntime {
             injection_check_enabled: true,
         }));
 
-        let tools = Self::build_tools(Arc::clone(&client));
+        let tools = Self::build_tools();
 
         Self {
             config,
@@ -112,14 +113,14 @@ impl WorkerRuntime {
             llm,
             safety,
             tools,
+            toolset_instructions: Vec::new(),
             extra_env: Arc::new(HashMap::new()),
         }
     }
 
-    fn build_tools(client: Arc<WorkerHttpClient>) -> Arc<ToolRegistry> {
+    fn build_tools() -> Arc<ToolRegistry> {
         let tools = Arc::new(ToolRegistry::new());
         tools.register_container_tools();
-        register_worker_extension_proxy_tools(&tools, client);
         tools
     }
 
@@ -140,6 +141,17 @@ impl WorkerRuntime {
         if let Err(error) = self.hydrate_credentials().await {
             return self.fail_pre_loop("hydrate credentials", error).await;
         }
+        self.toolset_instructions = match self.register_remote_tools().await {
+            Ok(toolset_instructions) => toolset_instructions,
+            Err(error) => {
+                tracing::warn!(
+                    job_id = %self.config.job_id,
+                    error = %error,
+                    "Failed to fetch hosted remote-tool catalogue; continuing with container-local tools only"
+                );
+                Vec::new()
+            }
+        };
         if let Err(error) = self
             .report_worker_status(
                 WorkerState::InProgress,
@@ -271,13 +283,21 @@ impl WorkerRuntime {
         job: &crate::worker::api::JobDescription,
     ) -> ReasoningContext {
         let mut reason_ctx = ReasoningContext::new().with_job(&job.description);
+        if !self.toolset_instructions.is_empty() {
+            reason_ctx.messages.push(ChatMessage::system(format!(
+                "Hosted remote-tool guidance:\n\n{}",
+                self.toolset_instructions.join("\n")
+            )));
+        }
         reason_ctx.messages.push(ChatMessage::system(format!(
             r#"You are an autonomous agent running inside a Docker container.
 
 Job: {}
 Description: {}
 
-You have tools for shell commands, file operations, code editing, and extension management.
+Use the available tools listed below to inspect the current capability surface.
+This toolset may include container-local tools and, when the remote catalogue
+loads, orchestrator-proxied remote tools.
 Work independently to complete this job. Report when done."#,
             job.title, job.description
         )));
@@ -368,6 +388,36 @@ Work independently to complete this job. Report when done."#,
         self.client
             .post_event(&JobEventPayload { event_type, data })
             .await;
+    }
+
+    async fn register_remote_tools(&self) -> Result<Vec<String>, WorkerError> {
+        let remote_catalog = self.client.get_remote_tool_catalog().await?;
+        let remote_tool_count = remote_catalog.tools.len();
+        let catalog_version = remote_catalog.catalog_version;
+        let toolset_instructions = remote_catalog.toolset_instructions;
+        register_worker_remote_tool_proxies(
+            &self.tools,
+            Arc::clone(&self.client),
+            remote_catalog.tools,
+        );
+        tracing::info!(
+            job_id = %self.config.job_id,
+            catalog_version,
+            remote_tool_count,
+            "Registered hosted remote tools from orchestrator catalog"
+        );
+        Ok(toolset_instructions)
+    }
+
+    #[cfg(test)]
+    async fn register_remote_tools_with_degraded_startup(&self) {
+        if let Err(error) = self.register_remote_tools().await {
+            tracing::warn!(
+                job_id = %self.config.job_id,
+                error = %error,
+                "Failed to fetch hosted remote-tool catalogue; continuing with container-local tools only"
+            );
+        }
     }
 }
 

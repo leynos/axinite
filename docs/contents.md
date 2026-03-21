@@ -12,6 +12,8 @@
 - [Testing strategy](testing-strategy.md) explains how the repository designs
   tests, runs them locally, exercises them in CI, and supports periodic or ad
   hoc validation.
+- [User's guide](users-guide.md) explains current operator-visible behaviour
+  and day-to-day usage expectations for the shipped runtime.
 - [Repository layout](repository-layout.md) maps the repository structure and
   shows where major subsystems, assets, and support files live.
 - [Documentation style guide](documentation-style-guide.md) defines the
@@ -25,6 +27,9 @@
 - [axinite architecture overview](axinite-architecture-overview.md) explains
   the top-level runtime shape, major subsystems, and how the pieces fit
   together.
+- [Webhook server design](webhook-server-design.md) describes the unified
+  webhook listener, route composition model, and rollback-focused restart
+  behaviour.
 - [Front-end architecture](front-end-architecture.md) explains how the web
   gateway serves the browser UI, generates the interface, and connects browser
   actions to the runtime subsystems.
@@ -40,6 +45,24 @@
   discovered, installed, selected, and injected into model context.
 - [Smart routing spec](smart-routing-spec.md) captures the current design for
   routing requests across models and providers.
+
+## Implementation and testing references
+
+- [Navigating code complexity](complexity-antipatterns-and-refactoring-strategies.md)
+  explains complexity metrics, the bumpy-road antipattern, and practical
+  refactoring strategies for maintainers.
+- [Reliable testing in Rust via dependency injection](reliable-testing-in-rust-via-dependency-injection.md)
+  explains how to avoid global-state coupling in tests by injecting
+  environment, clock, and other system dependencies.
+- [`rstest-bdd` user's guide](rstest-bdd-users-guide.md) documents how to use
+  the current `rstest-bdd` implementation from Gherkin features through step
+  definitions and scenario execution.
+- [A systematic guide to effective, ergonomic, and DRY doctests in Rust](rust-doctest-dry-guide.md)
+  explains the `rustdoc` compilation model and practical doctest patterns for
+  public API documentation.
+- [Mastering test fixtures in Rust with `rstest`](rust-testing-with-rstest-fixtures.md)
+  explains fixture-based and parameterized testing with `rstest` for Rust
+  contributors.
 
 ## Operator and integration references
 
@@ -77,12 +100,16 @@
     investigation and fix plan for invalid tool-schema handling.
   - [Compile-time reduction](plans/2026-03-12-compile-time-reduction.md)
     tracks work to reduce build times and related tooling overhead.
+- [ExecPlans directory](execplans/) collects approval-gated execution plans
+  written in the Codex ExecPlan format for roadmap-scoped work.
+  - [Worker-orchestrator transport for hosted remote tool catalogue fetch](execplans/1-1-1-worker-orchestrator-transport-for-remote-tool-catalog-fetch.md)
+    plans roadmap item `1.1.1` for the shared hosted remote-tool transport.
 ## RFCs
 
 - [RFC directory](rfcs/) stores proposed and in-flight architectural changes
   that need technical review before acceptance.
   - [RFC 0001: Expose Model Context Protocol (MCP) tool definitions](rfcs/0001-expose-mcp-tool-definitions.md)
-    proposes how MCP tool schemas should be surfaced to the runtime and model.
+    describes how MCP tool schemas should be surfaced to the runtime and model.
   - [RFC 0002: Expose WebAssembly (WASM) tool definitions](rfcs/0002-expose-wasm-tool-definitions.md)
     proposes how WebAssembly tool schemas should be exported and consumed.
   - [RFC 0003: Skill bundle installation](rfcs/0003-skill-bundle-installation.md)

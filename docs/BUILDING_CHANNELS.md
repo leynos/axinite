@@ -1,13 +1,14 @@
 # Building WASM Channels
 
-This guide covers how to build WebAssembly (WASM) channel modules for IronClaw.
+This guide covers how to build WASM channel modules for IronClaw.
 
 ## Overview
 
 Channels are WebAssembly (WASM) components that handle communication with
-external messaging platforms (Telegram, WhatsApp, Slack, etc.). They run in a
-sandboxed environment and communicate with the host via the WIT (WebAssembly
-Interface Types) interface.
+external
+messaging platforms (Telegram, WhatsApp, Slack, etc.). They run in a
+sandboxed environment and communicate with the host via the WIT
+(WebAssembly Interface Types) interface.
 
 ## Directory Structure
 
@@ -190,8 +191,8 @@ channel_host::http_request("POST", &url, &headers.to_string(), Some(&body));
 ```
 
 The placeholder format is `{SECRET_NAME}` where `SECRET_NAME` matches the
-credential name in uppercase with underscores (e.g., `whatsapp_access_token` →
-`{WHATSAPP_ACCESS_TOKEN}`).
+credential name in uppercase with underscores (for example,
+`whatsapp_access_token` → `{WHATSAPP_ACCESS_TOKEN}`).
 
 ## Capabilities File
 
@@ -256,14 +257,14 @@ Create `my-channel.capabilities.json`:
 ### Supply Chain Security: No Committed Binaries
 
 **Do not commit compiled WASM binaries.** They are a supply chain risk
-because the binary in a pull request (PR) may not match the source.
-IronClaw builds channels from source:
+because the binary in a PR may not match the source. IronClaw builds
+channels from source:
 
 - `cargo build` no longer builds channel artifacts implicitly
 - run `./scripts/build-wasm-extensions.sh --channels` or a
   channel-specific build script when channel artifacts are required
 - The built binary is in `.gitignore` and is not committed
-- Continuous Integration (CI) should run explicit channel build steps (or
+- CI should run explicit channel build steps (or
   `./scripts/build-all.sh`) before packaging releases
 
 **Reproducible build:**
@@ -286,9 +287,7 @@ rustup target add wasm32-wasip2
 
 # Install (or use ironclaw onboard to install bundled channel)
 mkdir -p ~/.ironclaw/channels
-cp channels-src/telegram/telegram.wasm \
-  channels-src/telegram/telegram.capabilities.json \
-  ~/.ironclaw/channels/
+cp channels-src/telegram/telegram.wasm channels-src/telegram/telegram.capabilities.json ~/.ironclaw/channels/
 ```
 
 **Note**: The main IronClaw binary no longer bundles `telegram.wasm`.

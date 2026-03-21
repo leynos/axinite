@@ -20,7 +20,7 @@ use crate::tools::mcp::protocol::{
 };
 use crate::tools::mcp::session::McpSessionManager;
 use crate::tools::mcp::transport::McpTransport;
-use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput};
+use crate::tools::tool::{ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput};
 
 /// MCP client for communicating with MCP servers.
 ///
@@ -466,10 +466,10 @@ fn extract_server_name(url: &str) -> String {
 }
 
 /// Wrapper that implements Tool for an MCP tool.
-struct McpToolWrapper {
-    tool: McpTool,
-    prefixed_name: String,
-    client: Arc<McpClient>,
+pub(super) struct McpToolWrapper {
+    pub(super) tool: McpTool,
+    pub(super) prefixed_name: String,
+    pub(super) client: Arc<McpClient>,
 }
 
 #[async_trait]
@@ -518,6 +518,14 @@ impl Tool for McpToolWrapper {
             ApprovalRequirement::UnlessAutoApproved
         } else {
             ApprovalRequirement::Never
+        }
+    }
+
+    fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+        if self.tool.requires_approval() {
+            HostedToolEligibility::ApprovalGated
+        } else {
+            HostedToolEligibility::Eligible
         }
     }
 }

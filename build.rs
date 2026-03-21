@@ -23,8 +23,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn embed_registry_catalog(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let registry_dir = root.join("registry");
 
-    // Watch the registry roots even if some subdirectories are absent on the
-    // first build, then add per-file watches for present manifests.
+    // Always watch the registry paths themselves so Cargo reruns when the
+    // directories appear later; collect_json_files adds per-file watches for
+    // existing manifests to track content changes reliably.
     println!("cargo:rerun-if-changed=registry");
     println!("cargo:rerun-if-changed=registry/tools");
     println!("cargo:rerun-if-changed=registry/channels");

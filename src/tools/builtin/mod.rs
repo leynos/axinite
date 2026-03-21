@@ -14,9 +14,10 @@ mod restart;
 pub mod routine;
 pub mod secrets_tools;
 pub(crate) mod shell;
+pub(crate) mod skill_fetch;
 pub mod skill_tools;
 mod time;
-pub(crate) mod worker_extension_proxy;
+pub(crate) mod worker_remote_tool_proxy;
 
 pub use echo::EchoTool;
 pub use extension_tools::{

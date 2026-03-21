@@ -112,7 +112,8 @@ worker.
 - `ToolRegistry` for actual tool execution
 - optional `Database` for persistence
 - `HookRegistry` for lifecycle hooks
-- optional SSE sender and optional HTTP recording interceptor
+- optional Server-Sent Events (SSE) sender and optional HTTP recording
+  interceptor
 
 Its main responsibilities are:
 
