@@ -16,18 +16,19 @@ impl TryFrom<&str> for HttpsUrl {
     type Error = ToolError;
 
     fn try_from(url_str: &str) -> Result<Self, Self::Error> {
-        let parsed = reqwest::Url::parse(url_str)
-            .map_err(|e| ToolError::ExecutionFailed(format!("Invalid URL '{}': {}", url_str, e)))?;
+        let parsed = reqwest::Url::parse(url_str).map_err(|e| {
+            ToolError::InvalidParameters(format!("Invalid URL '{}': {}", url_str, e))
+        })?;
 
         if parsed.scheme() != "https" {
-            return Err(ToolError::ExecutionFailed(format!(
+            return Err(ToolError::InvalidParameters(format!(
                 "Only HTTPS URLs are allowed for skill fetching, got scheme '{}'",
                 parsed.scheme()
             )));
         }
 
         if parsed.host().is_none() {
-            return Err(ToolError::ExecutionFailed("URL has no host".to_string()));
+            return Err(ToolError::InvalidParameters("URL has no host".to_string()));
         }
 
         Ok(Self(parsed))
@@ -71,7 +72,7 @@ pub(super) fn validate_fetch_url(url: &HttpsUrl) -> Result<reqwest::Url, ToolErr
         Host::Ip(ip) => validate_fetch_ip(&ip, &display_host)?,
         Host::Domain(domain) => {
             if is_blocked_hostname(&domain) {
-                return Err(ToolError::ExecutionFailed(format!(
+                return Err(ToolError::InvalidParameters(format!(
                     "URL points to an internal hostname: {}",
                     display_host
                 )));
@@ -111,7 +112,7 @@ fn is_non_routable_ip(ip: &IpAddr) -> bool {
 
 fn validate_fetch_ip(ip: &IpAddr, display_host: &str) -> Result<(), ToolError> {
     if is_non_routable_ip(ip) {
-        return Err(ToolError::ExecutionFailed(format!(
+        return Err(ToolError::InvalidParameters(format!(
             "URL points to a private/loopback/link-local address: {}",
             display_host
         )));
@@ -125,7 +126,7 @@ pub(super) fn validate_resolved_addrs(
     addrs: &[SocketAddr],
 ) -> Result<(), ToolError> {
     if addrs.is_empty() {
-        return Err(ToolError::ExecutionFailed(format!(
+        return Err(ToolError::InvalidParameters(format!(
             "DNS resolution returned no addresses for {}",
             host.as_str()
         )));
