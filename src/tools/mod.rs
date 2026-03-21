@@ -25,10 +25,10 @@ pub use builder::{
 };
 pub use rate_limiter::RateLimiter;
 pub use registry::{
-    ImageToolsRegistration, RegisterJobToolsOptions, ToolRegistry, VisionToolsRegistration,
-    WasmFromStorageRegistration,
+    HostedToolLookupError, ImageToolsRegistration, RegisterJobToolsOptions, ToolRegistry,
+    VisionToolsRegistration, WasmFromStorageRegistration,
 };
 pub use tool::{
-    ApprovalContext, ApprovalRequirement, HostedToolEligibility, Tool, ToolDomain, ToolError,
-    ToolOutput, ToolRateLimitConfig, redact_params, validate_tool_schema,
+    ApprovalContext, ApprovalRequirement, HostedToolCatalogSource, HostedToolEligibility, Tool,
+    ToolDomain, ToolError, ToolOutput, ToolRateLimitConfig, redact_params, validate_tool_schema,
 };

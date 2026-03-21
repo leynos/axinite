@@ -19,7 +19,7 @@ use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
 use crate::context::JobContext;
 use crate::safety::LeakDetector;
 use crate::secrets::SecretsStore;
-use crate::tools::tool::{Tool, ToolError, ToolOutput};
+use crate::tools::tool::{HostedToolCatalogSource, Tool, ToolError, ToolOutput};
 use crate::tools::wasm::capabilities::Capabilities;
 use crate::tools::wasm::credential_injector::{
     InjectedCredentials, host_matches_pattern, inject_credential,
@@ -816,6 +816,10 @@ impl Tool for WasmToolWrapper {
     fn estimated_duration(&self, _params: &serde_json::Value) -> Option<Duration> {
         // Use the timeout as a conservative estimate
         Some(self.prepared.limits.timeout)
+    }
+
+    fn hosted_tool_catalog_source(&self) -> Option<HostedToolCatalogSource> {
+        Some(HostedToolCatalogSource::Wasm)
     }
 }
 

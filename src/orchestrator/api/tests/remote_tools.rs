@@ -25,6 +25,19 @@ async fn populate_catalog_visibility_fixtures(tools: &ToolRegistry) {
         .await;
     tools
         .register(Arc::new(StubTool {
+            name: "tool_list",
+            description: "Hosted-safe extension-management built-in",
+            catalog_source: None,
+            output: StubOutput::Fixed(serde_json::json!({"extensions": []})),
+            ..StubTool::hosted(
+                "tool_list",
+                "",
+                serde_json::json!({"type": "object", "properties": {}}),
+            )
+        }))
+        .await;
+    tools
+        .register(Arc::new(StubTool {
             name: "create_job",
             description: "Protected orchestration tool",
             output: StubOutput::Fixed(serde_json::json!({"created": true})),
@@ -111,6 +124,37 @@ async fn remote_tool_catalog_excludes_job_events_named_tools() {
             output: StubOutput::Fixed(serde_json::json!({"events":[]})),
             ..StubTool::hosted(
                 "job_events",
+                "",
+                serde_json::json!({"type":"object","properties":{}}),
+            )
+        }))
+        .await;
+
+    let (tools, _instructions, _version) = hosted_remote_tool_catalog(&registry).await;
+
+    assert_eq!(
+        tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["remote_tool_catalog_fixture"]
+    );
+}
+
+#[tokio::test]
+async fn remote_tool_catalog_excludes_non_mcp_orchestrator_tools() {
+    let registry = Arc::new(ToolRegistry::new());
+    registry
+        .register(build_tool_fixture(ToolFixture::CatalogAlpha))
+        .await;
+    registry
+        .register(Arc::new(StubTool {
+            name: "tool_list",
+            description: "Hosted-safe extension-management built-in",
+            catalog_source: None,
+            output: StubOutput::Fixed(serde_json::json!({"extensions": []})),
+            ..StubTool::hosted(
+                "tool_list",
                 "",
                 serde_json::json!({"type":"object","properties":{}}),
             )

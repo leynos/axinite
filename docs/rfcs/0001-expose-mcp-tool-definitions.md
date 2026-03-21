@@ -5,11 +5,12 @@
 - **RFC number:** 0001
 - **Status:** Proposed
 - **Created:** 2026-03-11
-- **Implementation status:** Roadmap item `1.1.1` is implemented in this
-  branch through the shared `src/worker/api/` transport types, the worker
-  catalog-fetch startup path, and the orchestrator generic remote-tool
-  execution endpoint. Later roadmap items still own broader filtering,
-  reasoning-context, and end-to-end parity work.
+- **Implementation status:** Roadmap items `1.1.1` and `1.1.2` are implemented
+  in this branch through the shared `src/worker/api/` transport types, the
+  worker catalog-fetch startup path, the orchestrator generic remote-tool
+  execution endpoint, and the canonical `ToolRegistry`-owned hosted-visible
+  filter for active MCP tools. Later roadmap items still own reasoning-context
+  merge, broader schema parity checks, and end-to-end coverage.
 
 ## Summary
 
@@ -189,6 +190,8 @@ kept in sync by convention alone.
 
 The catalogue must not blindly dump the whole orchestrator registry into hosted
 mode. It must filter to tools that are valid in the hosted environment.
+That filter should be owned by the canonical `ToolRegistry` or adjacent tool
+policy layer, not rebuilt inside HTTP adapters.
 
 For v1, a tool is hosted-visible only if all of the following are true:
 
@@ -206,6 +209,9 @@ For MCP tools specifically, this means:
 
 If IronClaw later grows a hosted approval grant mechanism, the filter can be
 relaxed. Until then, the catalogue should prefer correctness over breadth.
+The current implementation keeps the hosted-visible source set to active MCP
+tools only; later roadmap work extends that same canonical filter seam to
+orchestrator-owned WASM tools.
 
 ### 3. Add a generic orchestrator-owned tool execution endpoint
 

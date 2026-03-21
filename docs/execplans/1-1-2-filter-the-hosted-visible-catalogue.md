@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: DRAFT
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -27,8 +27,9 @@ set. Fifth, documentation and tests explain the rule precisely enough that later
 WASM catalogue work (`1.2.2`) can reuse the same boundary instead of inventing a
 parallel filter.
 
-This plan is intentionally plan-only. It prepares implementation for roadmap
-item `1.1.2` and must be approved before code changes begin.
+Implementation is underway on branch
+`1-1-2-filter-the-hosted-visible-catalogue`. Keep this document current until
+the final gates, commit, push, and roadmap update are complete.
 
 ## Repository orientation
 
@@ -366,11 +367,39 @@ When the implementation is ready, the final evidence bundle should include:
   to update instead.
 - [x] 2026-03-21 09:27Z: Drafted this ExecPlan and indexed it from
   `docs/contents.md`.
-- [ ] Await user approval before implementation.
-- [ ] Implement the canonical hosted-visible registry filter, tests, and
-  documentation updates.
-- [ ] Run full gates for the implementation, commit, push, and mark roadmap item
-  `1.1.2` done.
+- [x] 2026-03-21 09:40Z: Received approval to implement.
+- [x] 2026-03-21 10:46Z: Added a canonical hosted-visible registry helper in
+  `src/tools/registry/hosted.rs` plus a `HostedToolCatalogSource` metadata seam
+  on `Tool`, so the filter can admit MCP-backed tools now without blocking
+  later reuse for orchestrator-owned WASM tools in `1.2.2`.
+- [x] 2026-03-21 10:46Z: Switched
+  `src/orchestrator/api/remote_tools.rs` to consume the registry-owned hosted
+  projection for both catalogue generation and direct execution lookups, with
+  HTTP status mapping kept local to the adapter.
+- [x] 2026-03-21 10:52Z: Added regression coverage in
+  `src/tools/registry/tests.rs`, `src/tools/mcp/tests.rs`,
+  `src/orchestrator/api/tests/remote_tools.rs`, and
+  `src/orchestrator/api/tests/remote_tools_param_aware.rs` for happy-path,
+  hidden-path, unhappy-path, param-aware, and determinism cases.
+- [x] 2026-03-21 10:58Z: Updated `docs/users-guide.md`,
+  `docs/axinite-architecture-overview.md`,
+  `docs/rfcs/0001-expose-mcp-tool-definitions.md`, and `docs/roadmap.md` to
+  describe the canonical hosted-visible filter and mark roadmap item `1.1.2`
+  done after implementation.
+- [x] 2026-03-21 11:03Z: Passed `make check-fmt`, `make test`, and
+  `make typecheck`. Logs:
+  `/tmp/check-fmt-axinite-1-1-2-filter-the-hosted-visible-catalogue.out`,
+  `/tmp/test-axinite-1-1-2-filter-the-hosted-visible-catalogue.out`, and
+  `/tmp/typecheck-axinite-1-1-2-filter-the-hosted-visible-catalogue.out`.
+- [x] 2026-03-21 11:13Z: Passed `make lint`. Log:
+  `/tmp/lint-axinite-1-1-2-filter-the-hosted-visible-catalogue.out`.
+- [x] 2026-03-21 11:06Z: Passed Markdown validation for
+  `docs/execplans/1-1-2-filter-the-hosted-visible-catalogue.md`,
+  `docs/users-guide.md`, `docs/axinite-architecture-overview.md`,
+  `docs/rfcs/0001-expose-mcp-tool-definitions.md`, and `docs/roadmap.md`. Log:
+  `/tmp/markdownlint-axinite-1-1-2-filter-the-hosted-visible-catalogue.out`.
+- [x] 2026-03-21 11:08Z: Passed `git diff --check`.
+- [ ] Commit and push the validated implementation branch.
 
 ## Surprises & Discoveries
 
@@ -385,6 +414,10 @@ When the implementation is ready, the final evidence bundle should include:
 - Worker startup already preserves degraded behaviour when catalogue fetch
   fails, so `1.1.2` can stay focused on selection correctness rather than
   bootstrap resilience.
+- The repository currently has `rstest`-based in-process orchestrator and
+  registry tests for this surface, but no local `rstest-bdd` harness for the
+  remote-tool catalogue flow. Adding one here would be net-new harness work
+  rather than a focused behaviour assertion.
 
 ## Decision Log
 
@@ -398,10 +431,40 @@ When the implementation is ready, the final evidence bundle should include:
   separate checks. The catalogue must fail closed by default, but params-aware
   approval still belongs in the execution path for tools whose safety depends on
   invocation data.
+- 2026-03-21 10:46Z: Represent hosted-visible source families with
+  `HostedToolCatalogSource` on the `Tool` trait, and make the canonical
+  registry helper accept an allowed-source list. This keeps the seam reusable
+  for `1.2.2` instead of baking "MCP only" into the API shape.
+- 2026-03-21 11:05Z: Keep behavioural coverage in existing `rstest`-based
+  in-process tests for this change. `rstest-bdd` is not currently wired into
+  the remote-tool test area, so adding it here would expand harness scope
+  without improving the user-visible contract materially.
 
 ## Outcomes & Retrospective
 
-Not started. Populate this section after implementation and validation,
-including what shipped, what stayed deferred to `1.1.3` or `1.2.2`, and what
-future maintainers should watch for when extending the hosted-visible
-catalogue.
+The implementation now ships one canonical hosted-visible filter owned by
+`ToolRegistry`, and the orchestrator adapter consumes that policy instead of
+rebuilding it locally. The filter currently advertises only active MCP-backed
+orchestrator tools that are both source-eligible and approval-compatible for
+hosted mode. Protected orchestration tools, container-only tools,
+approval-gated tools, and non-source-classified tools are hidden rather than
+advertised optimistically.
+
+Coverage now exists at the right boundaries for this slice:
+
+- `src/tools/registry/tests.rs` proves source filtering, protected-name
+  exclusion, and reasoned lookup failures.
+- `src/orchestrator/api/tests/remote_tools.rs` proves worker-visible catalogue
+  contents, deterministic ordering and versioning, and direct execution
+  rejection for tools outside the hosted-visible set.
+- `src/orchestrator/api/tests/remote_tools_param_aware.rs` proves the
+  catalogue-versus-execution split for param-sensitive approval.
+- `src/tools/mcp/tests.rs` proves MCP wrappers advertise the new hosted-visible
+  source classification.
+
+The deliberate non-change is equally important. This work did not add a second
+WASM-specific filter path or expand hosted approvals. `1.1.3` can build refresh
+behaviour on top of the same remote-catalogue contract, and `1.2.2` can extend
+the same registry seam to WASM-backed tools by admitting
+`HostedToolCatalogSource::Wasm` without inventing a parallel visibility rule
+set.

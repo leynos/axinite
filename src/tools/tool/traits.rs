@@ -8,7 +8,8 @@ use thiserror::Error;
 use crate::context::JobContext;
 
 use super::approval_policy::{
-    ApprovalRequirement, HostedToolEligibility, ToolDomain, ToolRateLimitConfig,
+    ApprovalRequirement, HostedToolCatalogSource, HostedToolEligibility, ToolDomain,
+    ToolRateLimitConfig,
 };
 
 /// Error type for tool execution.
@@ -167,6 +168,17 @@ pub trait Tool: Send + Sync {
     /// hosted visibility needs an explicit policy.
     fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
         HostedToolEligibility::Eligible
+    }
+
+    /// Which hosted-catalogue source family this tool belongs to, if any.
+    ///
+    /// Most built-in tools should return `None`, because being safe to execute
+    /// is not enough to make them part of the hosted-visible remote catalogue.
+    /// Dynamic tool wrappers such as MCP and later WASM adapters should opt in
+    /// explicitly so the canonical registry filter can project only the tool
+    /// families the current roadmap step is ready to advertise.
+    fn hosted_tool_catalog_source(&self) -> Option<HostedToolCatalogSource> {
+        None
     }
 
     /// Maximum time this tool is allowed to run before the caller kills it.

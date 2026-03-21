@@ -12,13 +12,11 @@ use uuid::Uuid;
 
 use crate::context::JobContext;
 use crate::llm::ToolDefinition;
-use crate::tools::{HostedToolEligibility, Tool, ToolDomain, ToolError, ToolOutput, ToolRegistry};
+use crate::tools::{
+    HostedToolCatalogSource, HostedToolLookupError, ToolError, ToolOutput, ToolRegistry,
+};
 
-enum HostedRemoteToolEligibility {
-    Eligible,
-    ApprovalGated,
-    Ineligible,
-}
+const HOSTED_REMOTE_TOOL_SOURCES: [HostedToolCatalogSource; 1] = [HostedToolCatalogSource::Mcp];
 
 /// Request context for executing a hosted-eligible remote tool.
 ///
@@ -40,24 +38,9 @@ pub(super) struct HostedRemoteToolRequest {
 pub(super) async fn hosted_remote_tool_catalog(
     tools: &Arc<ToolRegistry>,
 ) -> (Vec<ToolDefinition>, Vec<String>, u64) {
-    let mut hosted_tools = tools
-        .all()
-        .await
-        .into_iter()
-        .filter(|tool| {
-            matches!(
-                hosted_remote_tool_eligibility(tool),
-                HostedRemoteToolEligibility::Eligible
-            )
-        })
-        .map(|tool| ToolDefinition {
-            name: tool.name().to_string(),
-            description: tool.description().to_string(),
-            parameters: tool.parameters_schema(),
-        })
-        .collect::<Vec<_>>();
-    hosted_tools.sort_unstable_by(|left, right| left.name.cmp(&right.name));
-
+    let hosted_tools = tools
+        .hosted_tool_definitions(&HOSTED_REMOTE_TOOL_SOURCES)
+        .await;
     let toolset_instructions = Vec::new();
     let catalog_version = compute_catalog_version(&hosted_tools, &toolset_instructions);
     (hosted_tools, toolset_instructions, catalog_version)
@@ -77,10 +60,13 @@ pub(super) async fn execute_hosted_remote_tool(
         tool_name,
         params,
     } = request;
-    let tool = tools.get(&tool_name).await.ok_or(StatusCode::NOT_FOUND)?;
-    match hosted_remote_tool_eligibility(&tool) {
-        HostedRemoteToolEligibility::Eligible => {}
-        HostedRemoteToolEligibility::ApprovalGated => {
+    let tool = match tools
+        .get_hosted_tool(&tool_name, &HOSTED_REMOTE_TOOL_SOURCES)
+        .await
+    {
+        Ok(tool) => tool,
+        Err(HostedToolLookupError::NotFound) => return Err(StatusCode::NOT_FOUND),
+        Err(HostedToolLookupError::ApprovalGated) => {
             tracing::warn!(
                 job_id = %job_id,
                 tool = %tool_name,
@@ -88,7 +74,7 @@ pub(super) async fn execute_hosted_remote_tool(
             );
             return Err(StatusCode::FORBIDDEN);
         }
-        HostedRemoteToolEligibility::Ineligible => {
+        Err(HostedToolLookupError::Ineligible) => {
             tracing::warn!(
                 job_id = %job_id,
                 tool = %tool_name,
@@ -96,7 +82,7 @@ pub(super) async fn execute_hosted_remote_tool(
             );
             return Err(StatusCode::BAD_REQUEST);
         }
-    }
+    };
 
     if tool.requires_approval(&params).is_required() {
         tracing::warn!(
@@ -123,19 +109,6 @@ pub(super) async fn execute_hosted_remote_tool(
         );
         tool_error_status(&error)
     })
-}
-
-fn hosted_remote_tool_eligibility(tool: &Arc<dyn Tool>) -> HostedRemoteToolEligibility {
-    if tool.domain() != ToolDomain::Orchestrator
-        || ToolRegistry::is_protected_tool_name(tool.name())
-    {
-        HostedRemoteToolEligibility::Ineligible
-    } else {
-        match tool.hosted_tool_eligibility() {
-            HostedToolEligibility::Eligible => HostedRemoteToolEligibility::Eligible,
-            HostedToolEligibility::ApprovalGated => HostedRemoteToolEligibility::ApprovalGated,
-        }
-    }
 }
 
 fn compute_catalog_version(tools: &[ToolDefinition], toolset_instructions: &[String]) -> u64 {

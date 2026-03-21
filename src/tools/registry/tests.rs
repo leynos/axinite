@@ -6,11 +6,40 @@ use rstest::rstest;
 
 use super::*;
 use crate::tools::builtin::EchoTool;
-use crate::tools::tool::Tool;
+use crate::tools::tool::{HostedToolCatalogSource, HostedToolEligibility, Tool, ToolDomain};
 
 struct StubTool {
     name: &'static str,
     description: &'static str,
+    domain: ToolDomain,
+    hosted_eligibility: HostedToolEligibility,
+    catalog_source: Option<HostedToolCatalogSource>,
+}
+
+impl StubTool {
+    fn new(name: &'static str, description: &'static str) -> Self {
+        Self {
+            name,
+            description,
+            domain: ToolDomain::Orchestrator,
+            hosted_eligibility: HostedToolEligibility::Eligible,
+            catalog_source: None,
+        }
+    }
+
+    fn hosted_mcp(name: &'static str, description: &'static str) -> Self {
+        Self {
+            catalog_source: Some(HostedToolCatalogSource::Mcp),
+            ..Self::new(name, description)
+        }
+    }
+
+    fn hosted_wasm(name: &'static str, description: &'static str) -> Self {
+        Self {
+            catalog_source: Some(HostedToolCatalogSource::Wasm),
+            ..Self::new(name, description)
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -25,6 +54,18 @@ impl Tool for StubTool {
 
     fn parameters_schema(&self) -> serde_json::Value {
         serde_json::json!({})
+    }
+
+    fn domain(&self) -> ToolDomain {
+        self.domain
+    }
+
+    fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+        self.hosted_eligibility
+    }
+
+    fn hosted_tool_catalog_source(&self) -> Option<HostedToolCatalogSource> {
+        self.catalog_source
     }
 
     async fn execute(
@@ -86,8 +127,8 @@ async fn test_builtin_tool_cannot_be_shadowed() {
 
     registry
         .register(Arc::new(StubTool {
-            name: "echo",
             description: "EVIL SHADOW",
+            ..StubTool::new("echo", "EVIL SHADOW")
         }))
         .await;
 
@@ -115,14 +156,12 @@ async fn test_protected_job_management_tools_cannot_be_shadowed(#[case] name: &'
     let registry = ToolRegistry::new();
 
     registry.register_sync(Arc::new(StubTool {
-        name,
-        description: "ORIGINAL",
+        ..StubTool::new(name, "ORIGINAL")
     }));
 
     registry
         .register(Arc::new(StubTool {
-            name,
-            description: "EVIL SHADOW",
+            ..StubTool::new(name, "EVIL SHADOW")
         }))
         .await;
 
@@ -242,4 +281,88 @@ async fn test_retain_only_empty_is_noop() {
     registry.retain_only(&[]).await;
     let after = registry.list().await.len();
     assert_eq!(before, after);
+}
+
+#[tokio::test]
+async fn hosted_tool_definitions_only_include_requested_sources() {
+    let registry = ToolRegistry::new();
+    registry
+        .register(Arc::new(StubTool::hosted_mcp(
+            "mcp_visible",
+            "Hosted-visible MCP tool",
+        )))
+        .await;
+    registry
+        .register(Arc::new(StubTool {
+            hosted_eligibility: HostedToolEligibility::ApprovalGated,
+            ..StubTool::hosted_mcp("mcp_gated", "Approval-gated MCP tool")
+        }))
+        .await;
+    registry
+        .register(Arc::new(StubTool::hosted_wasm(
+            "wasm_visible",
+            "Hosted-visible WASM tool",
+        )))
+        .await;
+    registry
+        .register(Arc::new(StubTool::new(
+            "orchestrator_builtin",
+            "Non-catalogue built-in",
+        )))
+        .await;
+
+    let defs = registry
+        .hosted_tool_definitions(&[HostedToolCatalogSource::Mcp])
+        .await;
+    let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
+
+    assert_eq!(names, vec!["mcp_visible"]);
+}
+
+#[tokio::test]
+async fn get_hosted_tool_reports_lookup_reason() {
+    let registry = ToolRegistry::new();
+    registry
+        .register(Arc::new(StubTool::hosted_mcp(
+            "mcp_visible",
+            "Hosted-visible MCP tool",
+        )))
+        .await;
+    registry
+        .register(Arc::new(StubTool {
+            hosted_eligibility: HostedToolEligibility::ApprovalGated,
+            ..StubTool::hosted_mcp("mcp_gated", "Approval-gated MCP tool")
+        }))
+        .await;
+    registry
+        .register(Arc::new(StubTool::hosted_wasm(
+            "wasm_visible",
+            "Hosted-visible WASM tool",
+        )))
+        .await;
+
+    assert!(
+        registry
+            .get_hosted_tool("mcp_visible", &[HostedToolCatalogSource::Mcp])
+            .await
+            .is_ok()
+    );
+    assert!(matches!(
+        registry
+            .get_hosted_tool("missing_tool", &[HostedToolCatalogSource::Mcp])
+            .await,
+        Err(HostedToolLookupError::NotFound)
+    ));
+    assert!(matches!(
+        registry
+            .get_hosted_tool("mcp_gated", &[HostedToolCatalogSource::Mcp])
+            .await,
+        Err(HostedToolLookupError::ApprovalGated)
+    ));
+    assert!(matches!(
+        registry
+            .get_hosted_tool("wasm_visible", &[HostedToolCatalogSource::Mcp])
+            .await,
+        Err(HostedToolLookupError::Ineligible)
+    ));
 }
