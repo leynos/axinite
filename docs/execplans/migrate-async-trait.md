@@ -26,7 +26,8 @@ boxing pattern.
 
 - Rust edition 2024, minimum version 1.92.
 - Traits used as `dyn Trait` (boxed trait objects) cannot use native async
-  methods directly. ADR 006 adopts a dual-trait pattern for those surfaces.
+  methods directly. Architectural decision record (ADR) 006 adopts a
+  dual-trait pattern for those surfaces.
 - The migration must be incremental — it is not feasible or desirable to
   change all 158 uses in a single commit.
 - Each batch of changes must pass `make all`.
