@@ -77,6 +77,7 @@
 - [Writing WebAssembly tools for ironclaw](writing-web-assembly-tools-for-ironclaw.md)
   explains how extension authors build and package WebAssembly tools for the
   existing runtime and tool contract.
+
 ## Plans
 
 - [Plans directory](plans/) collects execution plans, investigations, and
@@ -102,8 +103,12 @@
     tracks work to reduce build times and related tooling overhead.
 - [ExecPlans directory](execplans/) collects approval-gated execution plans
   written in the Codex ExecPlan format for roadmap-scoped work.
+  - [Migrate from async-trait to native async traits](execplans/migrate-async-trait.md)
+    plans the staged migration away from `async-trait`, including the ADR 006
+    follow-on for dyn-backed traits.
   - [Worker-orchestrator transport for hosted remote tool catalogue fetch](execplans/1-1-1-worker-orchestrator-transport-for-remote-tool-catalog-fetch.md)
     plans roadmap item `1.1.1` for the shared hosted remote-tool transport.
+
 ## RFCs
 
 - [RFC directory](rfcs/) stores proposed and in-flight architectural changes
@@ -170,3 +175,6 @@
 - [ADR 005: Dual-mode uncertainty gating for hierarchical recall](adr-005-dual-mode-uncertainty-gating-for-hierarchical-recall.md)
   records that hierarchical recall should support both proxy-based and
   model-assisted gain estimation behind one expansion-gating interface.
+- [ADR 006: Dual-trait pattern for dyn-backed async interfaces](adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
+  records the proposed migration pattern for dyn-backed async traits,
+  balancing compilation speed against implementation maintainability.

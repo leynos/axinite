@@ -1,6 +1,7 @@
 //! Success evaluation for jobs.
 
-use async_trait::async_trait;
+use std::future::Future;
+
 use serde::{Deserialize, Serialize};
 
 use crate::context::{ActionRecord, JobContext};
@@ -50,15 +51,16 @@ impl EvaluationResult {
 }
 
 /// Trait for success evaluators.
-#[async_trait]
 pub trait SuccessEvaluator: Send + Sync {
+    /// Use an explicit future type so the public trait keeps a `Send`
+    /// contract without relying on the `async-trait` proc macro.
     /// Evaluate whether a job was completed successfully.
-    async fn evaluate(
+    fn evaluate(
         &self,
         job: &JobContext,
         actions: &[ActionRecord],
         output: Option<&str>,
-    ) -> Result<EvaluationResult, EvaluationError>;
+    ) -> impl Future<Output = Result<EvaluationResult, EvaluationError>> + Send;
 }
 
 #[cfg(test)]
@@ -98,7 +100,6 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
     impl SuccessEvaluator for RuleBasedEvaluator {
         async fn evaluate(
             &self,
