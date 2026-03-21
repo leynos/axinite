@@ -58,6 +58,37 @@ pub trait McpTransport: Send + Sync {
 ///
 /// Implementors can keep ordinary `async fn` bodies while the blanket adapter
 /// boxes futures only at the dyn-dispatch boundary.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use std::collections::HashMap;
+///
+/// use ironclaw::tools::mcp::protocol::{McpRequest, McpResponse};
+/// use ironclaw::tools::mcp::{McpTransport, NativeMcpTransport};
+/// use ironclaw::tools::tool::ToolError;
+///
+/// struct Foo;
+///
+/// impl NativeMcpTransport for Foo {
+///     async fn send(
+///         &self,
+///         request: &McpRequest,
+///         headers: &HashMap<String, String>,
+///     ) -> Result<McpResponse, ToolError> {
+///         let _ = (request, headers);
+///         todo!()
+///     }
+///
+///     async fn shutdown(&self) -> Result<(), ToolError> {
+///         Ok(())
+///     }
+/// }
+///
+/// // The blanket adapter keeps the dyn-facing trait object-safe.
+/// let transport: &dyn McpTransport = &Foo;
+/// let _boxed = transport.shutdown();
+/// ```
 pub trait NativeMcpTransport: Send + Sync {
     /// Send a request and wait for the corresponding response.
     fn send<'a>(
