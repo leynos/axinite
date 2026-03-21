@@ -32,17 +32,25 @@ async fn build_safe_fetch_client(parsed: &reqwest::Url) -> Result<reqwest::Clien
                 .port_or_known_default()
                 .ok_or_else(|| ToolError::ExecutionFailed("URL has no valid port".to_string()))?;
 
-            let addrs: Vec<std::net::SocketAddr> =
-                tokio::net::lookup_host((lookup_host.as_str(), port))
-                    .await
-                    .map_err(|e| {
-                        ToolError::ExecutionFailed(format!(
-                            "DNS resolution failed for {}: {}",
-                            lookup_host.as_str(),
-                            e
-                        ))
-                    })?
-                    .collect();
+            let addrs: Vec<std::net::SocketAddr> = tokio::time::timeout(
+                std::time::Duration::from_secs(15),
+                tokio::net::lookup_host((lookup_host.as_str(), port)),
+            )
+            .await
+            .map_err(|_| {
+                ToolError::ExecutionFailed(format!(
+                    "DNS resolution timed out for {}",
+                    lookup_host.as_str()
+                ))
+            })?
+            .map_err(|e| {
+                ToolError::ExecutionFailed(format!(
+                    "DNS resolution failed for {}: {}",
+                    lookup_host.as_str(),
+                    e
+                ))
+            })?
+            .collect();
 
             validate_resolved_addrs(&NormalizedDomain::new(domain), &addrs)?;
 
