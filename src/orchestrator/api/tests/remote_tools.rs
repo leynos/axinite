@@ -111,24 +111,12 @@ async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: Or
     );
 }
 
-#[tokio::test]
-async fn remote_tool_catalog_excludes_job_events_named_tools() {
+async fn assert_catalog_excludes_stub(excluded_stub: StubTool) {
     let registry = Arc::new(ToolRegistry::new());
     registry
         .register(build_tool_fixture(ToolFixture::CatalogAlpha))
         .await;
-    registry
-        .register(Arc::new(StubTool {
-            name: "job_events",
-            description: "Protected job-events tool",
-            output: StubOutput::Fixed(serde_json::json!({"events":[]})),
-            ..StubTool::hosted(
-                "job_events",
-                "",
-                serde_json::json!({"type":"object","properties":{}}),
-            )
-        }))
-        .await;
+    registry.register(Arc::new(excluded_stub)).await;
 
     let (tools, _instructions, _version) = hosted_remote_tool_catalog(&registry).await;
 
@@ -142,34 +130,34 @@ async fn remote_tool_catalog_excludes_job_events_named_tools() {
 }
 
 #[tokio::test]
+async fn remote_tool_catalog_excludes_job_events_named_tools() {
+    assert_catalog_excludes_stub(StubTool {
+        name: "job_events",
+        description: "Protected job-events tool",
+        output: StubOutput::Fixed(serde_json::json!({"events": []})),
+        ..StubTool::hosted(
+            "job_events",
+            "",
+            serde_json::json!({"type": "object", "properties": {}}),
+        )
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn remote_tool_catalog_excludes_non_mcp_orchestrator_tools() {
-    let registry = Arc::new(ToolRegistry::new());
-    registry
-        .register(build_tool_fixture(ToolFixture::CatalogAlpha))
-        .await;
-    registry
-        .register(Arc::new(StubTool {
-            name: "tool_list",
-            description: "Hosted-safe extension-management built-in",
-            catalog_source: None,
-            output: StubOutput::Fixed(serde_json::json!({"extensions": []})),
-            ..StubTool::hosted(
-                "tool_list",
-                "",
-                serde_json::json!({"type":"object","properties":{}}),
-            )
-        }))
-        .await;
-
-    let (tools, _instructions, _version) = hosted_remote_tool_catalog(&registry).await;
-
-    assert_eq!(
-        tools
-            .iter()
-            .map(|tool| tool.name.as_str())
-            .collect::<Vec<_>>(),
-        vec!["remote_tool_catalog_fixture"]
-    );
+    assert_catalog_excludes_stub(StubTool {
+        name: "tool_list",
+        description: "Hosted-safe extension-management built-in",
+        catalog_source: None,
+        output: StubOutput::Fixed(serde_json::json!({"extensions": []})),
+        ..StubTool::hosted(
+            "tool_list",
+            "",
+            serde_json::json!({"type": "object", "properties": {}}),
+        )
+    })
+    .await;
 }
 
 #[tokio::test]
