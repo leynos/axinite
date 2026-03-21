@@ -47,7 +47,7 @@ pub enum WorkerError {
     #[error("Remote tool request failed upstream: {reason}")]
     BadGateway { reason: String },
 
-    /// The remote-tool request failed for a non-specialised upstream reason.
+    /// The remote-tool request failed for a non-specialized upstream reason.
     ///
     /// `reason` contains the orchestrator status and response body summary.
     #[error("Remote tool request failed: {reason}")]
