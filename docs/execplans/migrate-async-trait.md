@@ -43,14 +43,13 @@ trivially migrate to native async traits:
 - `Tool` (`src/tools/tool.rs`) — used via `dyn Tool`
 - `LlmProvider` (`src/llm/provider.rs`) — 19 `dyn` references in
   `src/llm/mod.rs` alone
-- `SuccessEvaluator` (`src/evaluation/success.rs`)
 - `EmbeddingProvider` (`src/workspace/embeddings.rs`)
 - `NetworkPolicyDecider` (`src/sandbox/proxy/policy.rs`)
 - `Hook` (`src/hooks/hook.rs`)
 - `Observer` (`src/observability/traits.rs`)
 - `Tunnel` (`src/tunnel/mod.rs`)
-- `SecretStore` (`src/secrets/store.rs`)
-- `Transcriber` (`src/transcription/mod.rs`)
+- `SecretsStore` (`src/secrets/store.rs`)
+- `TranscriptionProvider` (`src/transcription/mod.rs`)
 
 ### Concrete-only traits (safe to migrate)
 
@@ -126,13 +125,25 @@ Audit snapshot as of 2026-03-20:
 - `McpTransport` in `src/tools/mcp/transport.rs`:
   blocked by `Arc<dyn McpTransport>`.
 
+Re-audit snapshot as of 2026-03-21:
+
+- No new safe native-async candidates were found after the first batch.
+- `ConversationStore`, `JobStore`, `SandboxStore`, `RoutineStore`,
+  `ToolFailureStore`, and `WorkspaceStore` still have no direct `dyn`
+  call sites, but they remain blocked because `Database` inherits them as
+  supertraits and `Database` is used as `Arc<dyn Database>`.
+- `SettingsStore` remains blocked by direct `Arc<dyn SettingsStore>` usage.
+- The remaining async traits still fall into one of two categories:
+  directly used as trait objects, or inherited by a trait object that
+  preserves the object-safety requirement.
+
 ### Phase 2: Migrate concrete-only traits (batch by module)
 
 For each module, in separate commits:
 
 - [x] `src/channels/wasm/storage.rs`
 - [x] `src/evaluation/success.rs`
-- [ ] Re-audit remaining candidates after the first batch lands
+- [x] Re-audit remaining candidates after the first batch lands
 - [ ] Only expand into higher-effort modules if we can first eliminate
   their trait-object usage
 
@@ -193,3 +204,7 @@ different object-safety pattern.
   `src/channels/wasm/storage.rs` and `src/evaluation/success.rs`, using
   return-position `impl Future + Send` in trait definitions to preserve the
   `Send` contract that `async-trait` previously supplied implicitly.
+- 2026-03-21: Re-audited the remaining async traits after the first batch.
+  No additional low-risk migrations were found. The next meaningful work
+  item is architectural: remove trait-object usage for one blocked trait
+  family or introduce an object-safe dual-trait pattern.
