@@ -27,6 +27,7 @@ COPY tests/ tests/
 COPY migrations/ migrations/
 COPY registry/ registry/
 COPY channels-src/ channels-src/
+COPY third-party-patches/ third-party-patches/
 COPY wit/ wit/
 COPY providers.json providers.json
 
