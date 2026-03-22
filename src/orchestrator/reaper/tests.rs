@@ -266,6 +266,41 @@ mod e2e_tests {
         std::env::var("IRONCLAW_E2E_DOCKER_TESTS").is_ok()
     }
 
+    /// Create a stopped ironclaw-labelled test container and return its response.
+    /// Returns `None` and prints a diagnostic if creation fails.
+    async fn create_labeled_test_container(
+        docker: &crate::sandbox::container::DockerConnection,
+        name: &str,
+        job_id_str: &str,
+        created_at_str: &str,
+    ) -> Option<bollard::models::ContainerCreateResponse> {
+        let mut labels: std::collections::HashMap<&str, &str> =
+            std::collections::HashMap::new();
+        labels.insert("ironclaw.job_id", job_id_str);
+        labels.insert("ironclaw.created_at", created_at_str);
+
+        match docker
+            .create_container(
+                Some(bollard::container::CreateContainerOptions {
+                    name,
+                    platform: None,
+                }),
+                bollard::container::Config {
+                    image: Some("alpine:latest"),
+                    labels: Some(labels),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            Ok(response) => Some(response),
+            Err(e) => {
+                eprintln!("Could not create test container '{name}': {e}");
+                None
+            }
+        }
+    }
+
     #[tokio::test]
     async fn e2e_reaper_lists_ironclaw_containers() {
         if !should_run_e2e() {
@@ -286,30 +321,16 @@ mod e2e_tests {
         let job_id_str = job_id.to_string();
         let created_at_str = (Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
 
-        let mut labels_str: std::collections::HashMap<&str, &str> =
-            std::collections::HashMap::new();
-        labels_str.insert("ironclaw.job_id", &job_id_str);
-        labels_str.insert("ironclaw.created_at", &created_at_str);
-
-        let response = match docker
-            .create_container(
-                Some(bollard::container::CreateContainerOptions {
-                    name: test_name.as_str(),
-                    platform: None,
-                }),
-                bollard::container::Config {
-                    image: Some("alpine:latest"),
-                    labels: Some(labels_str),
-                    ..Default::default()
-                },
-            )
-            .await
-        {
-            Ok(response) => response,
-            Err(e) => {
-                eprintln!("Skipping e2e test: Could not create test container: {e}");
-                return;
-            }
+        let Some(response) = create_labeled_test_container(
+            &docker,
+            &test_name,
+            &job_id_str,
+            &created_at_str,
+        )
+        .await
+        else {
+            eprintln!("Skipping e2e test: Could not create test container");
+            return;
         };
 
         let container_id = &response.id;
@@ -352,29 +373,16 @@ mod e2e_tests {
         let job_id_str = orphaned_job_id.to_string();
         let created_at_str = (Utc::now() - chrono::Duration::hours(2)).to_rfc3339();
 
-        let mut labels: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
-        labels.insert("ironclaw.job_id", &job_id_str);
-        labels.insert("ironclaw.created_at", &created_at_str);
-
-        let response = match docker
-            .create_container(
-                Some(bollard::container::CreateContainerOptions {
-                    name: test_name.as_str(),
-                    platform: None,
-                }),
-                bollard::container::Config {
-                    image: Some("alpine:latest"),
-                    labels: Some(labels),
-                    ..Default::default()
-                },
-            )
-            .await
-        {
-            Ok(response) => response,
-            Err(e) => {
-                eprintln!("Skipping e2e test: Could not create test container: {e}");
-                return;
-            }
+        let Some(response) = create_labeled_test_container(
+            &docker,
+            &test_name,
+            &job_id_str,
+            &created_at_str,
+        )
+        .await
+        else {
+            eprintln!("Skipping e2e test: Could not create test container");
+            return;
         };
 
         let container_id = response.id.clone();
@@ -429,59 +437,27 @@ mod e2e_tests {
 
         let recent_id_str = recent_job_id.to_string();
         let recent_created_at_str = (Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
-        let mut recent_labels: std::collections::HashMap<&str, &str> =
-            std::collections::HashMap::new();
-        recent_labels.insert("ironclaw.job_id", &recent_id_str);
-        recent_labels.insert("ironclaw.created_at", &recent_created_at_str);
-
-        let recent_response = match docker
-            .create_container(
-                Some(bollard::container::CreateContainerOptions {
-                    name: recent_name.as_str(),
-                    platform: None,
-                }),
-                bollard::container::Config {
-                    image: Some("alpine:latest"),
-                    labels: Some(recent_labels),
-                    ..Default::default()
-                },
-            )
-            .await
-        {
-            Ok(response) => response,
-            Err(e) => {
-                eprintln!("Skipping e2e test: Could not create recent container: {e}");
-                return;
-            }
+        let Some(recent_response) = create_labeled_test_container(
+            &docker,
+            &recent_name,
+            &recent_id_str,
+            &recent_created_at_str,
+        )
+        .await
+        else {
+            eprintln!("Skipping e2e test: Could not create recent container");
+            return;
         };
 
         let old_id_str = old_job_id.to_string();
         let old_created_at_str = (Utc::now() - chrono::Duration::hours(2)).to_rfc3339();
-        let mut old_labels: std::collections::HashMap<&str, &str> =
-            std::collections::HashMap::new();
-        old_labels.insert("ironclaw.job_id", &old_id_str);
-        old_labels.insert("ironclaw.created_at", &old_created_at_str);
-
-        let old_response = match docker
-            .create_container(
-                Some(bollard::container::CreateContainerOptions {
-                    name: old_name.as_str(),
-                    platform: None,
-                }),
-                bollard::container::Config {
-                    image: Some("alpine:latest"),
-                    labels: Some(old_labels),
-                    ..Default::default()
-                },
-            )
-            .await
-        {
-            Ok(response) => response,
-            Err(e) => {
-                let _ = docker.remove_container(&recent_response.id, None).await;
-                eprintln!("Skipping e2e test: Could not create old container: {e}");
-                return;
-            }
+        let Some(old_response) =
+            create_labeled_test_container(&docker, &old_name, &old_id_str, &old_created_at_str)
+                .await
+        else {
+            let _ = docker.remove_container(&recent_response.id, None).await;
+            eprintln!("Skipping e2e test: Could not create old container");
+            return;
         };
 
         let recent_age =
