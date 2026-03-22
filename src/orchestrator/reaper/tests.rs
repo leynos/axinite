@@ -153,8 +153,8 @@ fn malformed_timestamp_fallback_works() {
     );
 }
 
-#[tokio::test]
-async fn age_calculation_correctly_filters_containers() {
+#[test]
+fn age_calculation_correctly_filters_containers() {
     let cfg = ReaperConfig {
         orphan_threshold: Duration::from_secs(600),
         ..Default::default()
@@ -185,26 +185,17 @@ async fn active_job_prevents_cleanup_of_old_container() {
         .get_context(job_id)
         .await
         .expect("get_context failed for active_job_prevents_cleanup_of_old_container job_id");
-    assert!(ctx.state.is_active());
-
-    let is_active = match ctx_mgr.get_context(job_id).await {
-        Ok(ctx) => ctx.state.is_active(),
-        Err(_) => false,
-    };
-    assert!(is_active, "Active job should prevent cleanup");
+    assert!(ctx.state.is_active(), "Active job should prevent cleanup");
 }
 
 #[rstest]
 #[case(JobState::Failed)]
 #[case(JobState::Cancelled)]
 #[tokio::test]
-async fn failed_job_allows_cleanup(#[case] state: JobState) {
+async fn terminal_job_allows_cleanup(#[case] state: JobState) {
     let ctx_mgr = Arc::new(ContextManager::new(5));
     let (_job_id, ctx) = make_terminal_job(&ctx_mgr, "test", state).await;
-    assert!(
-        !ctx.state.is_active(),
-        "Failed job (terminal state) should allow cleanup"
-    );
+    assert!(!ctx.state.is_active(), "Terminal job should allow cleanup");
 }
 
 #[test]
