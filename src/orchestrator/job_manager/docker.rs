@@ -38,6 +38,11 @@ async fn build_workspace_binds(
 
 /// Append Claude Code-specific environment variables.
 fn append_claude_code_env(config: &ContainerJobConfig, env_vec: &mut Vec<String>) {
+    if config.claude_code_api_key.is_some() && config.claude_code_oauth_token.is_some() {
+        tracing::warn!(
+            "Both claude_code_api_key and claude_code_oauth_token are set; using the API key"
+        );
+    }
     if let Some(ref api_key) = config.claude_code_api_key {
         env_vec.push(format!("ANTHROPIC_API_KEY={}", api_key));
     } else if let Some(ref oauth_token) = config.claude_code_oauth_token {
@@ -114,30 +119,35 @@ fn container_name(mode: JobMode, job_id: Uuid) -> String {
     }
 }
 
-/// Build the Docker container configuration and options for a job.
-fn build_container_config(
-    image: &str,
+/// Inputs used to assemble the Docker container configuration for a job.
+struct BuildContainerParams {
+    image: String,
     cmd: Vec<String>,
     env_vec: Vec<String>,
     host_config: bollard::models::HostConfig,
     job_id: Uuid,
     mode: JobMode,
+}
+
+/// Build the Docker container configuration and options for a job.
+fn build_container_config(
+    params: BuildContainerParams,
 ) -> (
     bollard::container::Config<String>,
     bollard::container::CreateContainerOptions<String>,
 ) {
     let mut labels = std::collections::HashMap::new();
-    labels.insert("ironclaw.job_id".to_string(), job_id.to_string());
+    labels.insert("ironclaw.job_id".to_string(), params.job_id.to_string());
     labels.insert(
         "ironclaw.created_at".to_string(),
         chrono::Utc::now().to_rfc3339(),
     );
 
     let config = bollard::container::Config {
-        image: Some(image.to_string()),
-        cmd: Some(cmd),
-        env: Some(env_vec),
-        host_config: Some(host_config),
+        image: Some(params.image),
+        cmd: Some(params.cmd),
+        env: Some(params.env_vec),
+        host_config: Some(params.host_config),
         user: Some("1000:1000".to_string()),
         working_dir: Some("/workspace".to_string()),
         labels: Some(labels),
@@ -145,7 +155,7 @@ fn build_container_config(
     };
 
     let options = bollard::container::CreateContainerOptions {
-        name: container_name(mode, job_id),
+        name: container_name(params.mode, params.job_id),
         ..Default::default()
     };
 
@@ -280,8 +290,14 @@ impl ContainerJobManager {
         let host_config = build_host_config(binds, memory_mb, self.config.cpu_shares);
         let cmd = build_cmd(mode, job_id, &orchestrator_url, &self.config);
 
-        let (container_config, options) =
-            build_container_config(&self.config.image, cmd, env_vec, host_config, job_id, mode);
+        let (container_config, options) = build_container_config(BuildContainerParams {
+            image: self.config.image.clone(),
+            cmd,
+            env_vec,
+            host_config,
+            job_id,
+            mode,
+        });
 
         let container_id =
             create_and_start_container(&docker, options, container_config, job_id).await?;
