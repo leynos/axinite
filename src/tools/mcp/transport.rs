@@ -66,9 +66,8 @@ pub trait McpTransport: Send + Sync {
 /// ```rust,no_run
 /// use std::collections::HashMap;
 ///
-/// use ironclaw::tools::mcp::protocol::{McpRequest, McpResponse};
-/// use ironclaw::tools::mcp::{McpTransport, NativeMcpTransport};
-/// use ironclaw::tools::tool::ToolError;
+/// use ironclaw::tools::mcp::{McpRequest, McpResponse, McpTransport, NativeMcpTransport};
+/// use ironclaw::tools::ToolError;
 ///
 /// struct Foo;
 ///

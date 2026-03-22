@@ -95,22 +95,6 @@ async fn make_terminal_job(
     (job_id, ctx)
 }
 
-async fn ensure_job_state(
-    ctx_mgr: &Arc<ContextManager>,
-    description: &str,
-    state: JobState,
-    expected_is_active: bool,
-    assertion_message: &str,
-) {
-    let (_job_id, ctx) = make_terminal_job(ctx_mgr, description, state).await;
-    assert_eq!(
-        ctx.state.is_active(),
-        expected_is_active,
-        "{}",
-        assertion_message
-    );
-}
-
 #[rstest]
 #[case(JobState::Failed)]
 #[case(JobState::Cancelled)]
@@ -243,50 +227,93 @@ fn reaper_config_can_be_customized() {
     assert_eq!(cfg.container_label, "custom.label");
 }
 
+/// Create a job, optionally transition it to `new_state`, then return whether
+/// `ctx.state.is_active()` is `true` for the resulting context.
+///
+/// `tag` is embedded verbatim in `.expect(…)` diagnostics so that failures
+/// match the original per-job error messages.
+async fn create_job_in_state(
+    ctx_mgr: &ContextManager,
+    tag: &str,
+    description: &str,
+    new_state: Option<crate::context::JobState>,
+) -> bool {
+    let job_id = ctx_mgr
+        .create_job_for_user("default", "test", description)
+        .await
+        .unwrap_or_else(|_| panic!("create_job_for_user failed for {tag}"));
+    if let Some(state) = new_state {
+        ctx_mgr
+            .update_context(job_id, |ctx| {
+                ctx.state = state;
+            })
+            .await
+            .unwrap_or_else(|_| panic!("update_context failed when setting state for {tag}"));
+    }
+    ctx_mgr
+        .get_context(job_id)
+        .await
+        .unwrap_or_else(|_| panic!("get_context failed for {tag}"))
+        .state
+        .is_active()
+}
+
 #[tokio::test]
 async fn reaper_cleanup_decision_matrix() {
+    use crate::context::JobState;
+
     let ctx_mgr = Arc::new(ContextManager::new(5));
 
-    ensure_job_state(
-        &ctx_mgr,
-        "test1",
-        JobState::Pending,
-        true,
-        "Pending job is active",
-    )
-    .await;
-    ensure_job_state(
-        &ctx_mgr,
-        "test2",
-        JobState::InProgress,
-        true,
-        "InProgress job is active",
-    )
-    .await;
-    ensure_job_state(
-        &ctx_mgr,
-        "test3",
-        JobState::Completed,
-        true,
-        "Completed is still active",
-    )
-    .await;
-    ensure_job_state(
-        &ctx_mgr,
-        "test4",
-        JobState::Failed,
-        false,
-        "Failed job is terminal",
-    )
-    .await;
-    ensure_job_state(
-        &ctx_mgr,
-        "test5",
-        JobState::Cancelled,
-        false,
-        "Cancelled job is terminal",
-    )
-    .await;
+    assert!(
+        create_job_in_state(
+            &ctx_mgr,
+            "reaper_cleanup_decision_matrix job1",
+            "test1",
+            None,
+        )
+        .await,
+        "Pending job is active"
+    );
+    assert!(
+        create_job_in_state(
+            &ctx_mgr,
+            "reaper_cleanup_decision_matrix job2",
+            "test2",
+            Some(JobState::InProgress),
+        )
+        .await,
+        "InProgress job is active"
+    );
+    assert!(
+        create_job_in_state(
+            &ctx_mgr,
+            "reaper_cleanup_decision_matrix job3",
+            "test3",
+            Some(JobState::Completed),
+        )
+        .await,
+        "Completed is still active"
+    );
+    assert!(
+        !create_job_in_state(
+            &ctx_mgr,
+            "reaper_cleanup_decision_matrix job4",
+            "test4",
+            Some(JobState::Failed),
+        )
+        .await,
+        "Failed job is terminal"
+    );
+    assert!(
+        !create_job_in_state(
+            &ctx_mgr,
+            "reaper_cleanup_decision_matrix job5",
+            "test5",
+            Some(JobState::Cancelled),
+        )
+        .await,
+        "Cancelled job is terminal"
+    );
 
     let missing_job = Uuid::new_v4();
     let is_active = match ctx_mgr.get_context(missing_job).await {
