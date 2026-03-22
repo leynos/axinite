@@ -14,10 +14,9 @@ use crate::agent::session::{PendingApproval, Session, ThreadState};
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::context::JobContext;
 use crate::error::Error;
-use async_trait::async_trait;
 
 use crate::agent::agentic_loop::{
-    AgenticLoopConfig, LoopDelegate, LoopOutcome, LoopSignal, TextAction,
+    AgenticLoopConfig, LoopOutcome, LoopSignal, NativeLoopDelegate, TextAction,
 };
 use crate::llm::{ChatMessage, Reasoning, ReasoningContext};
 use crate::tools::redact_params;
@@ -247,8 +246,7 @@ struct ChatDelegate<'a> {
     user_tz: chrono_tz::Tz,
 }
 
-#[async_trait]
-impl<'a> LoopDelegate for ChatDelegate<'a> {
+impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
     async fn check_signals(&self) -> LoopSignal {
         let sess = self.session.lock().await;
         if let Some(thread) = sess.threads.get(&self.thread_id)

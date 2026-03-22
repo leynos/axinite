@@ -8,12 +8,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use tokio::sync::Mutex;
 
 use super::WorkerHttpClient;
 use crate::agent::agentic_loop::{
-    LoopDelegate, LoopOutcome, LoopSignal, TextAction, truncate_for_preview,
+    LoopOutcome, LoopSignal, NativeLoopDelegate, TextAction, truncate_for_preview,
 };
 use crate::context::JobContext;
 use crate::llm::{ChatMessage, Reasoning, ReasoningContext};
@@ -69,8 +68,7 @@ impl ContainerDelegate {
     }
 }
 
-#[async_trait]
-impl LoopDelegate for ContainerDelegate {
+impl NativeLoopDelegate for ContainerDelegate {
     async fn check_signals(&self) -> LoopSignal {
         LoopSignal::Continue
     }

@@ -2,10 +2,11 @@
 //!
 //! Provides a single implementation of the core LLM call → tool execution →
 //! result processing → context update → repeat cycle. Three consumers
-//! (chat dispatcher, job worker, container runtime) customize behavior
+//! (chat dispatcher, job worker, container runtime) customize behaviour
 //! via the `LoopDelegate` trait.
 
-use async_trait::async_trait;
+use core::future::Future;
+use core::pin::Pin;
 
 use crate::agent::session::PendingApproval;
 use crate::error::Error;
@@ -58,68 +59,193 @@ impl Default for AgenticLoopConfig {
     }
 }
 
+/// Boxed future used by the dyn-facing agentic-loop boundary.
+pub type LoopDelegateFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Strategy trait — each consumer implements this to customize I/O and lifecycle.
 ///
 /// The shared loop calls these methods at well-defined points. Consumers
 /// implement only the behavior that differs between chat, job, and container
 /// contexts. The loop itself handles the common logic: tool intent nudge,
 /// iteration counting, tool definition refresh, and the respond → execute → process cycle.
-///
-/// # `Send + Sync` requirement
-///
-/// This trait requires `Send + Sync` because the loop accepts `&dyn LoopDelegate`.
-/// Delegates using borrowed references (e.g. `ChatDelegate<'a>`) must ensure all
-/// borrowed fields are `Send + Sync`. This is a load-bearing constraint: if a
-/// delegate needs to be spawned into a detached task, it must use `Arc`-based
-/// ownership instead of borrows (as `JobDelegate` and `ContainerDelegate` do).
-#[async_trait]
 pub trait LoopDelegate: Send + Sync {
     /// Called at the start of each iteration. Check for external signals
     /// (cancellation, user messages, stop requests).
-    async fn check_signals(&self) -> LoopSignal;
+    fn check_signals(&self) -> LoopDelegateFuture<'_, LoopSignal>;
 
     /// Called before the LLM call. Allows the delegate to refresh tool
     /// definitions, enforce cost guards, or inject messages.
     /// Return `Some(outcome)` to break the loop early.
-    async fn before_llm_call(
-        &self,
-        reason_ctx: &mut ReasoningContext,
+    fn before_llm_call<'a>(
+        &'a self,
+        reason_ctx: &'a mut ReasoningContext,
         iteration: usize,
-    ) -> Option<LoopOutcome>;
+    ) -> LoopDelegateFuture<'a, Option<LoopOutcome>>;
 
     /// Call the LLM and return the result. Delegates own the LLM call
     /// to handle consumer-specific concerns (rate limiting, auto-compaction,
     /// cost tracking, force_text mode).
-    async fn call_llm(
-        &self,
-        reasoning: &Reasoning,
-        reason_ctx: &mut ReasoningContext,
+    fn call_llm<'a>(
+        &'a self,
+        reasoning: &'a Reasoning,
+        reason_ctx: &'a mut ReasoningContext,
         iteration: usize,
-    ) -> Result<crate::llm::RespondOutput, Error>;
+    ) -> LoopDelegateFuture<'a, Result<crate::llm::RespondOutput, Error>>;
 
     /// Handle a text-only response from the LLM.
     /// Return `TextAction::Return` to exit the loop, `TextAction::Continue` to proceed.
-    async fn handle_text_response(
-        &self,
-        text: &str,
-        reason_ctx: &mut ReasoningContext,
-    ) -> TextAction;
+    fn handle_text_response<'a>(
+        &'a self,
+        text: &'a str,
+        reason_ctx: &'a mut ReasoningContext,
+    ) -> LoopDelegateFuture<'a, TextAction>;
 
     /// Execute tool calls and add results to context.
     /// Return `Some(outcome)` to break the loop (e.g. approval needed).
-    async fn execute_tool_calls(
-        &self,
+    fn execute_tool_calls<'a>(
+        &'a self,
         tool_calls: Vec<crate::llm::ToolCall>,
         content: Option<String>,
-        reason_ctx: &mut ReasoningContext,
-    ) -> Result<Option<LoopOutcome>, Error>;
+        reason_ctx: &'a mut ReasoningContext,
+    ) -> LoopDelegateFuture<'a, Result<Option<LoopOutcome>, Error>>;
 
     /// Called when the LLM expresses tool intent without actually calling a tool.
     /// Delegates can use this to emit events or log the nudge for observability.
-    async fn on_tool_intent_nudge(&self, _text: &str, _reason_ctx: &mut ReasoningContext) {}
+    fn on_tool_intent_nudge<'a>(
+        &'a self,
+        _text: &'a str,
+        _reason_ctx: &'a mut ReasoningContext,
+    ) -> LoopDelegateFuture<'a, ()> {
+        Box::pin(async {})
+    }
 
     /// Called after each successful iteration (no error, no early return).
-    async fn after_iteration(&self, _iteration: usize) {}
+    fn after_iteration(&self, _iteration: usize) -> LoopDelegateFuture<'_, ()> {
+        Box::pin(async {})
+    }
+}
+
+/// Native async sibling trait for concrete agentic-loop implementations.
+pub trait NativeLoopDelegate: Send + Sync {
+    /// Called at the start of each iteration. Check for external signals
+    /// (cancellation, user messages, stop requests).
+    fn check_signals(&self) -> impl Future<Output = LoopSignal> + Send + '_;
+
+    /// Called before the LLM call. Allows the delegate to refresh tool
+    /// definitions, enforce cost guards, or inject messages.
+    /// Return `Some(outcome)` to break the loop early.
+    fn before_llm_call<'a>(
+        &'a self,
+        reason_ctx: &'a mut ReasoningContext,
+        iteration: usize,
+    ) -> impl Future<Output = Option<LoopOutcome>> + Send + 'a;
+
+    /// Call the LLM and return the result. Delegates own the LLM call
+    /// to handle consumer-specific concerns (rate limiting, auto-compaction,
+    /// cost tracking, force_text mode).
+    fn call_llm<'a>(
+        &'a self,
+        reasoning: &'a Reasoning,
+        reason_ctx: &'a mut ReasoningContext,
+        iteration: usize,
+    ) -> impl Future<Output = Result<crate::llm::RespondOutput, Error>> + Send + 'a;
+
+    /// Handle a text-only response from the LLM.
+    /// Return `TextAction::Return` to exit the loop, `TextAction::Continue` to proceed.
+    fn handle_text_response<'a>(
+        &'a self,
+        text: &'a str,
+        reason_ctx: &'a mut ReasoningContext,
+    ) -> impl Future<Output = TextAction> + Send + 'a;
+
+    /// Execute tool calls and add results to context.
+    /// Return `Some(outcome)` to break the loop (e.g. approval needed).
+    fn execute_tool_calls<'a>(
+        &'a self,
+        tool_calls: Vec<crate::llm::ToolCall>,
+        content: Option<String>,
+        reason_ctx: &'a mut ReasoningContext,
+    ) -> impl Future<Output = Result<Option<LoopOutcome>, Error>> + Send + 'a;
+
+    /// Called when the LLM expresses tool intent without actually calling a tool.
+    /// Delegates can use this to emit events or log the nudge for observability.
+    fn on_tool_intent_nudge<'a>(
+        &'a self,
+        _text: &'a str,
+        _reason_ctx: &'a mut ReasoningContext,
+    ) -> impl Future<Output = ()> + Send + 'a {
+        async {}
+    }
+
+    /// Called after each successful iteration (no error, no early return).
+    fn after_iteration(&self, _iteration: usize) -> impl Future<Output = ()> + Send + '_ {
+        async {}
+    }
+}
+
+impl<T> LoopDelegate for T
+where
+    T: NativeLoopDelegate + Send + Sync,
+{
+    fn check_signals(&self) -> LoopDelegateFuture<'_, LoopSignal> {
+        Box::pin(NativeLoopDelegate::check_signals(self))
+    }
+
+    fn before_llm_call<'a>(
+        &'a self,
+        reason_ctx: &'a mut ReasoningContext,
+        iteration: usize,
+    ) -> LoopDelegateFuture<'a, Option<LoopOutcome>> {
+        Box::pin(
+            async move { NativeLoopDelegate::before_llm_call(self, reason_ctx, iteration).await },
+        )
+    }
+
+    fn call_llm<'a>(
+        &'a self,
+        reasoning: &'a Reasoning,
+        reason_ctx: &'a mut ReasoningContext,
+        iteration: usize,
+    ) -> LoopDelegateFuture<'a, Result<crate::llm::RespondOutput, Error>> {
+        Box::pin(async move {
+            NativeLoopDelegate::call_llm(self, reasoning, reason_ctx, iteration).await
+        })
+    }
+
+    fn handle_text_response<'a>(
+        &'a self,
+        text: &'a str,
+        reason_ctx: &'a mut ReasoningContext,
+    ) -> LoopDelegateFuture<'a, TextAction> {
+        Box::pin(
+            async move { NativeLoopDelegate::handle_text_response(self, text, reason_ctx).await },
+        )
+    }
+
+    fn execute_tool_calls<'a>(
+        &'a self,
+        tool_calls: Vec<crate::llm::ToolCall>,
+        content: Option<String>,
+        reason_ctx: &'a mut ReasoningContext,
+    ) -> LoopDelegateFuture<'a, Result<Option<LoopOutcome>, Error>> {
+        Box::pin(async move {
+            NativeLoopDelegate::execute_tool_calls(self, tool_calls, content, reason_ctx).await
+        })
+    }
+
+    fn on_tool_intent_nudge<'a>(
+        &'a self,
+        text: &'a str,
+        reason_ctx: &'a mut ReasoningContext,
+    ) -> LoopDelegateFuture<'a, ()> {
+        Box::pin(
+            async move { NativeLoopDelegate::on_tool_intent_nudge(self, text, reason_ctx).await },
+        )
+    }
+
+    fn after_iteration(&self, iteration: usize) -> LoopDelegateFuture<'_, ()> {
+        Box::pin(async move { NativeLoopDelegate::after_iteration(self, iteration).await })
+    }
 }
 
 /// Run the unified agentic loop.
@@ -295,8 +421,7 @@ mod tests {
         }
     }
 
-    #[async_trait]
-    impl LoopDelegate for MockDelegate {
+    impl NativeLoopDelegate for MockDelegate {
         async fn check_signals(&self) -> LoopSignal {
             let mut sig = self.signal.lock().await;
             std::mem::replace(&mut *sig, LoopSignal::Continue)
@@ -454,8 +579,7 @@ mod tests {
     async fn test_max_iterations_reached() {
         struct ContinueDelegate;
 
-        #[async_trait]
-        impl LoopDelegate for ContinueDelegate {
+        impl NativeLoopDelegate for ContinueDelegate {
             async fn check_signals(&self) -> LoopSignal {
                 LoopSignal::Continue
             }

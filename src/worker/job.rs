@@ -7,13 +7,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use crate::agent::agentic_loop::{
-    AgenticLoopConfig, LoopDelegate, LoopOutcome, LoopSignal, TextAction, run_agentic_loop,
+    AgenticLoopConfig, LoopOutcome, LoopSignal, NativeLoopDelegate, TextAction, run_agentic_loop,
     truncate_for_preview,
 };
 use crate::agent::scheduler::WorkerMessage;
@@ -1055,8 +1054,7 @@ impl<'a> JobDelegate<'a> {
     }
 }
 
-#[async_trait]
-impl<'a> LoopDelegate for JobDelegate<'a> {
+impl<'a> NativeLoopDelegate for JobDelegate<'a> {
     async fn check_signals(&self) -> LoopSignal {
         // Drain the entire message channel, prioritizing Stop over user messages.
         // Scope the lock so it's dropped before any .await below.

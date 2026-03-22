@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Decision log`, and `Outcomes & retrospective` must be kept up to date as work
 proceeds.
 
-Status: DRAFT
+Status: IN PROGRESS
 
 ## Purpose / big picture
 
@@ -306,6 +306,22 @@ set -o pipefail; git diff --check | tee /tmp/diff-check-axinite-<wave>.out
 - [ ] Milestone 4: Convert the high-fanout core traits
 - [ ] Milestone 5: Clean up dependency and documentation state
 
+Progress notes:
+
+- 2026-03-22: Started Milestone 2 with the agent-owned trio
+  `LoopDelegate`, `SelfRepair`, and `TaskHandler`. This keeps the first code
+  wave inside `src/agent/` plus its two existing delegate implementations in
+  `src/worker/`, which is a smaller blast radius than mixing agent, sandbox,
+  llm, and tools in one opening commit.
+- 2026-03-22: The first Milestone 2 sub-wave replaced 15 `async-trait`
+  references across the six touched files, leaving only unrelated test-only
+  `LlmProvider` and `Tool` fixtures on `#[async_trait]` in
+  `src/agent/dispatcher.rs` and `src/worker/job.rs`.
+- 2026-03-22: `LoopDelegate` has now been switched to `NativeLoopDelegate`
+  with a blanket adapter in `src/agent/agentic_loop.rs`. The remaining
+  compiler failures in `cargo check --tests` come from the separate
+  `SelfRepair` migration, not from the loop family.
+
 ## Surprises & discoveries
 
 - 2026-03-22: The earlier pilot work showed that the original migration scope
@@ -315,6 +331,11 @@ set -o pipefail; git diff --check | tee /tmp/diff-check-axinite-<wave>.out
   credible reference implementation for the sibling-trait pattern, so the next
   plan can focus on family ordering and validation discipline rather than
   debating the migration mechanism again.
+- 2026-03-22: Starting Milestone 2 inside the agent subsystem was cheaper than
+  the original cross-subsystem bundle. `LoopDelegate`, `SelfRepair`, and
+  `TaskHandler` shared the same ADR 006 shape, while their dyn-backed call
+  sites stayed stable as `&dyn LoopDelegate`, `Arc<dyn SelfRepair>`, and
+  `Arc<dyn TaskHandler>`.
 
 ## Decision log
 
@@ -329,6 +350,11 @@ set -o pipefail; git diff --check | tee /tmp/diff-check-axinite-<wave>.out
   not post-hoc cleanup. Rationale: this refactor exists to improve build
   behaviour while preserving architecture, so the evidence must stay alongside
   the code changes.
+- 2026-03-22: Split the opening Milestone 2 execution into an agent-owned
+  sub-wave first. Rationale: it required only one subsystem spec plus two
+  already-related delegate implementations, which reduced early integration
+  risk while still exercising the dyn-backed sibling-trait pattern on three
+  distinct call boundaries.
 
 ## Outcomes & retrospective
 
