@@ -1,12 +1,14 @@
 //! Tool registry for managing available tools.
 
 mod builtins;
+mod hosted;
 mod loader;
 mod names;
 #[cfg(test)]
 mod tests;
 
 pub use builtins::{ImageToolsRegistration, RegisterJobToolsOptions, VisionToolsRegistration};
+pub use hosted::HostedToolLookupError;
 pub use loader::{
     ToolRegistry, WasmFromStorageRegistration, WasmRegistrationError, WasmToolRegistration,
 };

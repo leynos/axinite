@@ -6,7 +6,7 @@ use rstest::rstest;
 
 use super::client::{McpClient, McpToolWrapper};
 use super::protocol::{McpTool, McpToolAnnotations};
-use crate::tools::tool::{HostedToolEligibility, Tool};
+use crate::tools::tool::{HostedToolCatalogSource, HostedToolEligibility, Tool};
 
 #[rstest]
 #[case(
@@ -44,4 +44,8 @@ fn test_mcp_tool_wrapper_hosted_tool_eligibility(
     };
 
     assert_eq!(wrapper.hosted_tool_eligibility(), expected);
+    assert_eq!(
+        wrapper.hosted_tool_catalog_source(),
+        Some(HostedToolCatalogSource::Mcp)
+    );
 }

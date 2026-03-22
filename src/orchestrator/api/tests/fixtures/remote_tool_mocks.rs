@@ -9,7 +9,8 @@ use uuid::Uuid;
 
 use crate::context::JobContext;
 use crate::tools::{
-    ApprovalRequirement, HostedToolEligibility, Tool, ToolDomain, ToolError, ToolOutput,
+    ApprovalRequirement, HostedToolCatalogSource, HostedToolEligibility, Tool, ToolDomain,
+    ToolError, ToolOutput,
 };
 
 /// Output behaviour for [`StubTool`].
@@ -30,6 +31,7 @@ pub(crate) struct StubTool {
     pub(crate) domain: ToolDomain,
     pub(crate) always_approve: bool,
     pub(crate) eligibility: HostedToolEligibility,
+    pub(crate) catalog_source: Option<HostedToolCatalogSource>,
     pub(crate) output: StubOutput,
 }
 
@@ -46,6 +48,7 @@ impl StubTool {
             domain: ToolDomain::Orchestrator,
             always_approve: false,
             eligibility: HostedToolEligibility::Eligible,
+            catalog_source: Some(HostedToolCatalogSource::Mcp),
             output: StubOutput::EchoParams,
         }
     }
@@ -79,6 +82,10 @@ impl Tool for StubTool {
 
     fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
         self.eligibility
+    }
+
+    fn hosted_tool_catalog_source(&self) -> Option<HostedToolCatalogSource> {
+        self.catalog_source
     }
 
     async fn execute(
@@ -201,6 +208,10 @@ impl Tool for ParamAwareHostedTool {
     fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
         HostedToolEligibility::Eligible
     }
+
+    fn hosted_tool_catalog_source(&self) -> Option<HostedToolCatalogSource> {
+        Some(HostedToolCatalogSource::Mcp)
+    }
 }
 
 /// Fixture tool that records the `JobContext.job_id` seen during execution.
@@ -239,6 +250,10 @@ impl Tool for JobAwareTool {
             serde_json::json!({"echo": params["query"]}),
             Duration::from_millis(5),
         ))
+    }
+
+    fn hosted_tool_catalog_source(&self) -> Option<HostedToolCatalogSource> {
+        Some(HostedToolCatalogSource::Mcp)
     }
 }
 
@@ -288,5 +303,9 @@ impl Tool for ErrorTool {
             ExecuteErrorKind::RateLimited => ToolError::RateLimited(None),
             ExecuteErrorKind::ExecutionFailed => ToolError::ExecutionFailed("boom".to_string()),
         })
+    }
+
+    fn hosted_tool_catalog_source(&self) -> Option<HostedToolCatalogSource> {
+        Some(HostedToolCatalogSource::Mcp)
     }
 }

@@ -20,7 +20,10 @@ use crate::tools::mcp::protocol::{
 };
 use crate::tools::mcp::session::McpSessionManager;
 use crate::tools::mcp::transport::McpTransport;
-use crate::tools::tool::{ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput};
+use crate::tools::tool::{
+    ApprovalRequirement, HostedToolCatalogSource, HostedToolEligibility, Tool, ToolError,
+    ToolOutput,
+};
 
 /// MCP client for communicating with MCP servers.
 ///
@@ -527,6 +530,10 @@ impl Tool for McpToolWrapper {
         } else {
             HostedToolEligibility::Eligible
         }
+    }
+
+    fn hosted_tool_catalog_source(&self) -> Option<HostedToolCatalogSource> {
+        Some(HostedToolCatalogSource::Mcp)
     }
 }
 

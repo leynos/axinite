@@ -307,8 +307,11 @@ catalog during startup, and reports status back to the orchestrator.
 
 The worker-orchestrator seam now owns its hosted remote-tool route fragments
 and payload shapes in one shared transport module under `src/worker/api/`.
-That keeps the worker HTTP adapter and the orchestrator router aligned while
-later roadmap work extends filtering and reasoning-context behaviour.
+That keeps the worker HTTP adapter and the orchestrator router aligned, while
+the canonical hosted-visible catalogue filter now lives with the tool registry
+and policy layer instead of in the HTTP adapter. The current source set is
+active hosted-visible MCP tools; later roadmap work extends that same filter
+seam for orchestrator-owned WASM tools and richer refresh behaviour.
 
 The WASM execution path adds another boundary inside the host process. Before
 the host injects any credentials into outbound requests, it validates endpoint
@@ -350,9 +353,9 @@ Other edges are more muddled and currently create avoidable maintenance cost.
 - `ExtensionManager` points outward to many adapters at once, including
   discovery, MCP, WASM runtime, channel activation, secrets, database-backed
   state, and gateway callback machinery.
-- The worker-orchestrator seam now shares its hosted remote-tool contract, but
-  later roadmap work still needs to tighten catalog filtering and refresh
-  behaviour.
+- The worker-orchestrator seam now shares its hosted remote-tool contract and
+  canonical catalogue filter, but later roadmap work still needs to extend that
+  filter to WASM tools and add refresh behaviour.
 - Job lifecycle semantics are split between in-memory context transitions and
   best-effort persistence paths, which makes cancellation and terminal status
   handling harder to reason about under failure.

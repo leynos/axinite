@@ -126,3 +126,12 @@ pub enum HostedToolEligibility {
     /// The tool requires approval semantics hosted workers cannot satisfy.
     ApprovalGated,
 }
+
+/// Source family a tool belongs to for hosted catalogue projection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HostedToolCatalogSource {
+    /// Tool supplied by a live MCP server wrapper.
+    Mcp,
+    /// Tool supplied by an orchestrator-owned WASM wrapper.
+    Wasm,
+}
