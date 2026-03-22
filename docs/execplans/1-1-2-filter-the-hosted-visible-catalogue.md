@@ -31,6 +31,33 @@ Implementation is underway on branch
 `1-1-2-filter-the-hosted-visible-catalogue`. Keep this document current until
 the final gates, commit, push, and roadmap update are complete.
 
+## Approval gates
+
+- Plan approved
+  Acceptance criteria: the hosted-visible filtering rules, excluded tool
+  classes, and reuse boundary for later WebAssembly (WASM) work are explicit,
+  with no hidden transport redesign folded into this step.
+  Sign-off: human reviewer approves the ExecPlan before filtering changes
+  proceed.
+- Implementation complete
+  Acceptance criteria: one canonical `ToolRegistry`-owned filter determines the
+  hosted-visible catalogue, the orchestrator consumes that filter, and
+  execution continues to reject tools outside the allowed set.
+  Sign-off: implementer marks the filtering slice complete before final
+  validation.
+- Validation passed
+  Acceptance criteria: the required repository gates and targeted hosted
+  catalogue tests pass with retained logs, and any residual work for `1.1.3`
+  or `1.2.2` is recorded explicitly.
+  Sign-off: implementer records final validation evidence immediately before
+  commit and push.
+- Docs synced
+  Acceptance criteria: the roadmap, RFC, architecture notes, user-facing docs,
+  and execplan all describe the same hosted-visible filtering rule before the
+  plan is marked complete.
+  Sign-off: implementer completes the documentation sync as the final
+  pre-commit checkpoint.
+
 ## Repository orientation
 
 The current transport from `1.1.1` is already in place, so this step should not

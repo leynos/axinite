@@ -29,6 +29,33 @@ This plan covers roadmap item `1.1.1`, tracks Issue `#12`, and deliberately
 stops short of the broader canonical filtering and reasoning-context merge work
 reserved for `1.1.2` and `1.1.3`.
 
+## Approval gates
+
+- Plan approved
+  Acceptance criteria: the transport scope is limited to catalogue fetch and
+  generic remote execution, with filtering and reasoning-context merge work
+  explicitly left to later roadmap items.
+  Sign-off: human reviewer approves the ExecPlan before transport changes
+  begin.
+- Implementation complete
+  Acceptance criteria: the worker and orchestrator share one typed transport
+  contract for hosted catalogue fetch and generic remote execution, and remote
+  proxies preserve the orchestrator-owned tool definitions unchanged.
+  Sign-off: implementer marks the transport slice complete before final
+  validation.
+- Validation passed
+  Acceptance criteria: the required repository gates and targeted transport
+  regressions pass with retained logs, and the final notes record any
+  deliberate follow-up work left for `1.1.2` or `1.1.3`.
+  Sign-off: implementer records final validation evidence immediately before
+  commit and push.
+- Docs synced
+  Acceptance criteria: the roadmap, RFC, architecture notes, and execplan all
+  describe the same worker-orchestrator transport boundary before the plan is
+  marked complete.
+  Sign-off: implementer completes the documentation sync as the final
+  pre-commit checkpoint.
+
 ## Repository orientation
 
 The current transport seam already exists, but it is incomplete and still too

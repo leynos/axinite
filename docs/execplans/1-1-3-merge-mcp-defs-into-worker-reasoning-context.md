@@ -1,4 +1,4 @@
-# Merge remote MCP tool definitions into the worker reasoning context
+# Merge remote Model Context Protocol (MCP) tool definitions into the worker reasoning context
 
 This ExecPlan (execution plan) is a living document. The sections
 `Constraints`, `Tolerances`, `Risks`, `Progress`,
@@ -32,6 +32,32 @@ remain the completed prerequisites that own the shared worker-orchestrator
 transport and the canonical hosted-visible filtering seam. It must not absorb
 the broader schema-fidelity and routing matrix from `1.1.4` beyond the narrow
 tests needed to prove the reasoning-context merge itself.
+
+## Approval gates
+
+- Plan approved
+  Acceptance criteria: the plan stays limited to reasoning-context merge
+  behaviour for roadmap item `1.1.3`, with transport and broader schema-matrix
+  work left to the neighbouring roadmap items that already own them.
+  Sign-off: human reviewer approves the ExecPlan before implementation begins.
+- Implementation complete
+  Acceptance criteria: initial context construction and later
+  `before_llm_call(...)` refreshes use the same registry-backed merged tool
+  surface, degraded startup remains intact, and hosted guidance is injected
+  once during context build rather than on every refresh.
+  Sign-off: implementer marks the feature complete before final validation.
+- Validation passed
+  Acceptance criteria: the required repository gates and targeted reasoning
+  regressions pass with retained logs, and the final plan notes record any
+  follow-up work still reserved for `1.1.4`.
+  Sign-off: implementer records final validation evidence immediately before
+  commit and push.
+- Docs synced
+  Acceptance criteria: the roadmap, RFC, architecture overview, user guide,
+  contents index, and execplan all describe the same merged hosted-tool
+  reasoning behaviour before the plan is marked complete.
+  Sign-off: implementer completes the documentation sync as the final
+  pre-commit checkpoint.
 
 ## Repository orientation
 
