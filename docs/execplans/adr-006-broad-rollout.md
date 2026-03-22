@@ -215,7 +215,7 @@ Special handling:
 - `Hook` and `Observer` are extension surfaces that are likely to have test
   doubles in multiple modules. Expect to update test fixtures and registry
   wiring in the same commit.
-- `EmbeddingProvider` may sit close to background or multi-threaded work, so
+- `EmbeddingProvider` may sit close to background or multithreaded work, so
   verify the `Send` contract explicitly.
 
 Observable result: these extension seams retain their dyn-facing usage model but
