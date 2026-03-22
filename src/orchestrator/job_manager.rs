@@ -28,7 +28,7 @@ mod tests;
 ///
 /// Passed as a single parameter to `create_job_inner` to avoid an
 /// excess-arguments violation (CodeScene threshold = 4).
-pub(super) struct CreateJobSpec {
+pub(super) struct CreateJobParams {
     pub job_id: Uuid,
     /// Auth token minted by the TokenStore for this job.
     pub token: String,
@@ -81,16 +81,17 @@ impl ContainerJobManager {
 
         // Run the actual container creation. On any failure, revoke the token
         // and remove the handle so we don't leak resources.
+        let return_token = token.clone();
         match self
-            .create_job_inner(CreateJobSpec {
+            .create_job_inner(CreateJobParams {
                 job_id,
-                token: token.clone(),
+                token,
                 project_dir,
                 mode,
             })
             .await
         {
-            Ok(()) => Ok(token),
+            Ok(()) => Ok(return_token),
             Err(e) => {
                 self.token_store.revoke(job_id).await;
                 self.registry.remove(job_id).await;

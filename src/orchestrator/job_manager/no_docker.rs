@@ -27,14 +27,14 @@ impl ContainerJobManager {
 
     pub(super) async fn create_job_inner(
         &self,
-        spec: CreateJobSpec,
+        params: CreateJobParams,
     ) -> Result<(), OrchestratorError> {
-        let CreateJobSpec {
+        let CreateJobParams {
             job_id,
             token,
             project_dir,
             mode,
-        } = spec;
+        } = params;
         let _ = (token, project_dir, mode);
         Err(OrchestratorError::Docker {
             reason: format!("{DOCKER_FEATURE_DISABLED_REASON}, cannot create sandbox job {job_id}"),
