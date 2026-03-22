@@ -7,8 +7,11 @@ use std::collections::HashMap;
 use crate::context::{JobContext, JobState};
 use rstest::rstest;
 
+#[rstest]
+#[case(2, false)]
+#[case(15, true)]
 #[test]
-fn orphan_threshold_filters_young_containers() {
+fn orphan_threshold_filters_by_age(#[case] age_minutes: i64, #[case] expected: bool) {
     let cfg = ReaperConfig {
         orphan_threshold: Duration::from_secs(600),
         ..Default::default()
@@ -17,33 +20,13 @@ fn orphan_threshold_filters_young_containers() {
     let mut labels = HashMap::new();
     labels.insert(
         "ironclaw.created_at".to_string(),
-        (now - chrono::Duration::minutes(2)).to_rfc3339(),
+        (now - chrono::Duration::minutes(age_minutes)).to_rfc3339(),
     );
     let created_at = parse_created_at_label(&labels, None)
-        .expect("expected young container timestamp to parse in threshold test");
+        .expect("expected container timestamp to parse in threshold test");
     assert!(
-        !is_past_orphan_threshold(created_at, &cfg, now),
-        "Young container should be skipped"
-    );
-}
-
-#[test]
-fn orphan_threshold_allows_old_containers() {
-    let cfg = ReaperConfig {
-        orphan_threshold: Duration::from_secs(600),
-        ..Default::default()
-    };
-    let now = Utc::now();
-    let mut labels = HashMap::new();
-    labels.insert(
-        "ironclaw.created_at".to_string(),
-        (now - chrono::Duration::minutes(15)).to_rfc3339(),
-    );
-    let created_at =
-        parse_created_at_label(&labels, None).expect("expected old container timestamp to parse");
-    assert!(
-        is_past_orphan_threshold(created_at, &cfg, now),
-        "Old container should be reaped"
+        is_past_orphan_threshold(created_at, &cfg, now) == expected,
+        "Container threshold classification should match the expected age bucket"
     );
 }
 
@@ -112,17 +95,22 @@ async fn terminal_job_is_treated_as_orphaned(#[case] state: JobState) {
 fn parse_container_labels_extracts_job_id_and_timestamp() {
     let mut labels = HashMap::new();
     let job_id = Uuid::new_v4();
+    let created_at_raw = "2024-01-15T10:30:45+00:00";
     labels.insert("ironclaw.job_id".to_string(), job_id.to_string());
     labels.insert(
         "ironclaw.created_at".to_string(),
-        "2024-01-15T10:30:45+00:00".to_string(),
+        created_at_raw.to_string(),
     );
 
     let parsed_id = parse_job_id_label(&labels, "ironclaw.job_id");
     assert_eq!(parsed_id, Some(job_id));
 
-    let parsed_time = parse_created_at_label(&labels, None);
-    assert!(parsed_time.is_some());
+    let parsed_time =
+        parse_created_at_label(&labels, None).expect("expected created_at label to parse");
+    let expected_time = chrono::DateTime::parse_from_rfc3339(created_at_raw)
+        .expect("expected created_at label fixture to be valid RFC3339")
+        .with_timezone(&Utc);
+    assert_eq!(parsed_time, expected_time);
 }
 
 #[test]
@@ -147,8 +135,11 @@ fn malformed_timestamp_fallback_works() {
     );
 
     let fallback = parse_created_at_label(&labels, Some(1705324245));
-    assert!(
-        fallback.is_some(),
+    let expected_fallback = chrono::DateTime::<Utc>::from_timestamp(1705324245, 0)
+        .expect("expected fallback timestamp fixture to be valid");
+    assert_eq!(
+        fallback,
+        Some(expected_fallback),
         "Docker timestamp fallback should parse successfully"
     );
 }
@@ -222,19 +213,21 @@ async fn create_job_in_state(
     let job_id = ctx_mgr
         .create_job_for_user("default", "test", description)
         .await
-        .unwrap_or_else(|_| panic!("create_job_for_user failed for {tag}"));
+        .unwrap_or_else(|e| panic!("create_job_for_user failed for {tag}: {e:#?}"));
     if let Some(state) = new_state {
         ctx_mgr
             .update_context(job_id, |ctx| {
                 ctx.state = state;
             })
             .await
-            .unwrap_or_else(|_| panic!("update_context failed when setting state for {tag}"));
+            .unwrap_or_else(|e| {
+                panic!("update_context failed when setting state for {tag}: {e:#?}")
+            });
     }
     ctx_mgr
         .get_context(job_id)
         .await
-        .unwrap_or_else(|_| panic!("get_context failed for {tag}"))
+        .unwrap_or_else(|e| panic!("get_context failed for {tag}: {e:#?}"))
         .state
         .is_active()
 }
