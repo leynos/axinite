@@ -102,24 +102,7 @@ async fn ensure_job_state(
     expected_is_active: bool,
     assertion_message: &str,
 ) {
-    let job_id = ctx_mgr
-        .create_job_for_user("default", "test", description)
-        .await
-        .expect("create_job_for_user failed in reaper_cleanup_decision_matrix");
-
-    if state != JobState::Pending {
-        ctx_mgr
-            .update_context(job_id, |ctx| {
-                ctx.state = state;
-            })
-            .await
-            .expect("update_context failed in reaper_cleanup_decision_matrix");
-    }
-
-    let ctx = ctx_mgr
-        .get_context(job_id)
-        .await
-        .expect("get_context failed in reaper_cleanup_decision_matrix");
+    let (_job_id, ctx) = make_terminal_job(ctx_mgr, description, state).await;
     assert_eq!(
         ctx.state.is_active(),
         expected_is_active,
