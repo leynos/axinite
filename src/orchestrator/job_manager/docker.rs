@@ -198,6 +198,13 @@ async fn create_and_start_container(
 }
 
 impl ContainerJobManager {
+    /// Create a Docker-backed job manager with an empty registry and lazy
+    /// Docker connection cache.
+    ///
+    /// `config` controls container creation settings, and `token_store` owns
+    /// the worker credentials minted for created jobs. The manager initializes
+    /// a fresh [`JobRegistry`] and an empty `Arc<RwLock<Option<_>>>` cache that
+    /// is populated on first Docker use.
     pub fn new(config: ContainerJobConfig, token_store: TokenStore) -> Self {
         Self {
             config,
@@ -209,19 +216,27 @@ impl ContainerJobManager {
 
     /// Get or create a Docker connection.
     async fn docker(&self) -> Result<DockerConnection, OrchestratorError> {
-        {
-            let guard = self.docker.read().await;
-            if let Some(ref docker) = *guard {
-                return Ok(docker.clone());
-            }
+        if let Some(docker) = self.docker.read().await.clone() {
+            return Ok(docker);
         }
 
-        let docker = connect_docker()
-            .await
-            .map_err(|e| OrchestratorError::Docker {
-                reason: e.to_string(),
-            })?;
-        *self.docker.write().await = Some(docker.clone());
+        let docker = match connect_docker().await {
+            Ok(docker) => docker,
+            Err(e) => {
+                if let Some(docker) = self.docker.read().await.clone() {
+                    return Ok(docker);
+                }
+                return Err(OrchestratorError::Docker {
+                    reason: e.to_string(),
+                });
+            }
+        };
+
+        let mut guard = self.docker.write().await;
+        if let Some(existing) = guard.clone() {
+            return Ok(existing);
+        }
+        *guard = Some(docker.clone());
         Ok(docker)
     }
 
@@ -280,6 +295,12 @@ impl ContainerJobManager {
         Ok(())
     }
 
+    /// Stop and remove the container for `job_id`, then revoke its worker
+    /// token and mark the handle as stopped.
+    ///
+    /// Returns an error when the job has no known container or Docker cannot
+    /// be reached. Container stop and removal failures are logged as warnings
+    /// and do not prevent the registry and token-store cleanup from running.
     pub async fn stop_job(&self, job_id: Uuid) -> Result<(), OrchestratorError> {
         let container_id = self
             .registry

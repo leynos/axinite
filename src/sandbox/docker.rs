@@ -36,11 +36,9 @@ impl DockerState {
     }
 
     pub(crate) async fn is_available(&self) -> bool {
-        {
-            let guard = self.inner.read().await;
-            if let Some(ref docker) = *guard {
-                return docker_is_responsive(docker).await;
-            }
+        let cached_client = self.inner.read().await.as_ref().cloned();
+        if let Some(docker) = cached_client {
+            return docker_is_responsive(&docker).await;
         }
 
         match connect_docker().await {

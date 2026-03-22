@@ -18,6 +18,9 @@ graph passed the required stable acceptance command.
 The `feature-gate-bollard` branch makes Docker-backed sandboxing optional at
 compile time, which introduces an important no-Docker acceptance path:
 
+This command verifies the stable no-Docker acceptance path that exposed the
+wrapper-tainted capability probes in the first place.
+
 ```bash
 cargo check --no-default-features --features libsql,test-helpers
 ```
@@ -69,50 +72,18 @@ depending on ad hoc operator shell state.
 
 ## Options considered
 
-### Option A: Carry a narrow vendored patch chain
+| Option | Risk | Implementation effort | Stable-toolchain impact | Retirement path |
+| --- | --- | --- | --- | --- |
+| Option A: Carry a narrow vendored patch chain | Moderate vendor-delta risk, but the fault stays local to the affected probe scripts | Moderate, because the branch must vendor and patch only the build-script probe path | Restores stable acceptance with plain `cargo` by forcing probes to use `RUSTC` directly | Clear and auditable: remove the patches once the unpatched graph passes the stable acceptance commands |
+| Option B: Upgrade to upstream crate releases that no longer need the patch | Higher dependency-churn risk because runtime-pinned crates would move during a focused feature-gating branch | Higher, because the `wasmtime-wasi` and `cap-*` graph would need coordinated upgrades and revalidation | Potentially good long-term stable outcome, but not the safest immediate recovery path for this branch | Strong long-term exit because the local patch disappears when upstream fixes are adopted |
+| Option C: Enforce a wrapper-neutral build environment | High operational risk because plain `cargo` invocations may still inherit ambient wrapper state | Moderate on paper, but unreliable in practice across shell, Cargo, and automation entry points | Unreliable for stable acceptance because repository-local configuration did not consistently beat ambient environment state | Weak retirement path because it depends on operator choreography rather than a source-controlled fix |
+| Option D: Require nightly or `RUSTC_BOOTSTRAP` | High contract risk because it normalizes a broken probe result instead of fixing it | Low immediate effort, because it sidesteps the defect rather than correcting it | Weakens the stable-toolchain contract and makes the no-Docker path less trustworthy | Poor retirement path because it entrenches the workaround instead of removing the root cause |
 
-Vendor the affected crates under `third-party-patches/` and patch only their
-`build.rs` probe logic so it invokes `RUSTC` directly instead of inheriting
-probe results from the ambient `RUSTC_WRAPPER`.
+Table: Comparison of options A-D across key dimensions.
 
-This keeps the fix local to the actual fault, works with plain `cargo`, and
-avoids changing the repository toolchain contract. The cost is that the
-repository carries a temporary vendor delta that must be monitored and later
-retired.
-
-### Option B: Upgrade to upstream crate releases that no longer need the patch
-
-Update the `wasmtime-wasi` and `cap-*` family to versions whose build scripts
-either probe `RUSTC` directly or otherwise remain stable-safe under the
-ambient wrapper.
-
-This is the preferred long-term outcome because it removes the carried patch.
-It was not the right immediate fix for this branch because the dependency graph
-was already pinned to working runtime versions, and the root-cause evidence
-showed a probe bug rather than a known functional defect in the selected
-versions.
-
-### Option C: Enforce a wrapper-neutral build environment
-
-Neutralize `RUSTC_WRAPPER` in repository or CI configuration so the build
-scripts see direct compiler behaviour even when operators run plain `cargo`
-commands.
-
-This avoids vendoring, but it proved unreliable for the acceptance path that
-matters here. Repository-local Cargo configuration did not consistently beat
-the ambient shell environment for plain `cargo` invocations, and command-line
-overrides would not satisfy the requirement that the branch behave correctly
-without special operator choreography.
-
-### Option D: Require nightly or `RUSTC_BOOTSTRAP`
-
-Treat the probe outcome as acceptable and make the branch rely on nightly or
-bootstrap builds.
-
-This removes the immediate failure, but it weakens the repository's stable
-toolchain contract and hides the underlying probe error instead of fixing it.
-It also makes the no-Docker acceptance path less trustworthy, so it is not an
-acceptable steady-state solution.
+Option C neutralizes `RUSTC_WRAPPER` in repository or Continuous Integration
+(CI) configuration so the build scripts see direct compiler behaviour even
+when operators run plain `cargo` commands.
 
 ## Decision outcome / proposed direction
 
@@ -161,6 +132,10 @@ compiler probes no longer depended on a backgrounded `rustc` process. The
 retirement proof used a scratch copy of this repository with the
 `[patch.crates-io]` stanza removed and reran the original stable no-Docker
 acceptance command:
+
+This command demonstrates that the unpatched dependency graph once again passes
+the original stable no-Docker acceptance path after wrapper repair and patch
+retirement.
 
 ```bash
 cargo check --no-default-features --features libsql,test-helpers
@@ -218,3 +193,6 @@ needed to carry a local vendor delta to defend itself from that environment bug.
 
 - `docs/execplans/feature-gate-bollard-clean-build.md`
 - `Cargo.toml`
+Neutralize `RUSTC_WRAPPER` in repository or Continuous Integration (CI)
+configuration so the build scripts see direct compiler behaviour even when
+operators run plain `cargo` commands.

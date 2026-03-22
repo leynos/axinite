@@ -104,7 +104,7 @@ async fn terminal_job_is_treated_as_orphaned(#[case] state: JobState) {
     let (_job_id, ctx) = make_terminal_job(&ctx_mgr, "test description", state).await;
     assert!(
         !ctx.state.is_active(),
-        "Failed job should be treated as orphaned"
+        "Terminal job should be treated as orphaned"
     );
 }
 
@@ -186,16 +186,6 @@ async fn active_job_prevents_cleanup_of_old_container() {
         .await
         .expect("get_context failed for active_job_prevents_cleanup_of_old_container job_id");
     assert!(ctx.state.is_active(), "Active job should prevent cleanup");
-}
-
-#[rstest]
-#[case(JobState::Failed)]
-#[case(JobState::Cancelled)]
-#[tokio::test]
-async fn terminal_job_allows_cleanup(#[case] state: JobState) {
-    let ctx_mgr = Arc::new(ContextManager::new(5));
-    let (_job_id, ctx) = make_terminal_job(&ctx_mgr, "test", state).await;
-    assert!(!ctx.state.is_active(), "Terminal job should allow cleanup");
 }
 
 #[test]

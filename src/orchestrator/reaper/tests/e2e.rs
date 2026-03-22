@@ -3,6 +3,7 @@
 use super::*;
 use crate::orchestrator::auth::TokenStore;
 use crate::orchestrator::job_manager::{ContainerJobConfig, ContainerJobManager};
+use anyhow::{Result, anyhow};
 
 const LABEL_JOB_ID: &str = "ironclaw.job_id";
 const LABEL_CREATED_AT: &str = "ironclaw.created_at";
@@ -11,14 +12,10 @@ fn should_run_e2e() -> bool {
     std::env::var("IRONCLAW_E2E_DOCKER_TESTS").is_ok()
 }
 
-async fn connect_or_skip() -> Option<crate::sandbox::container::DockerConnection> {
-    match crate::sandbox::connect_docker().await {
-        Ok(docker) => Some(docker),
-        Err(e) => {
-            eprintln!("Skipping e2e test: Docker unavailable: {e}");
-            None
-        }
-    }
+async fn connect_or_skip() -> Result<crate::sandbox::container::DockerConnection> {
+    crate::sandbox::connect_docker()
+        .await
+        .map_err(|e| anyhow!("Docker unavailable: {e}"))
 }
 
 async fn create_labeled_container(
@@ -26,7 +23,7 @@ async fn create_labeled_container(
     name: &str,
     job_id: Uuid,
     age_offset: chrono::Duration,
-) -> Option<String> {
+) -> Result<String> {
     let job_id_str = job_id.to_string();
     let created_at_str = (Utc::now() - age_offset).to_rfc3339();
     let mut labels: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
@@ -47,11 +44,8 @@ async fn create_labeled_container(
         )
         .await
     {
-        Ok(response) => Some(response.id),
-        Err(e) => {
-            eprintln!("Could not create test container '{name}': {e}");
-            None
-        }
+        Ok(response) => Ok(response.id),
+        Err(e) => Err(anyhow!("Could not create test container '{name}': {e}")),
     }
 }
 
@@ -62,20 +56,18 @@ async fn e2e_reaper_lists_ironclaw_containers() {
         return;
     }
 
-    let Some(docker) = connect_or_skip().await else {
-        return;
-    };
+    let docker = connect_or_skip()
+        .await
+        .expect("e2e requires Docker and images available");
 
     let job_id = Uuid::new_v4();
     let test_name = format!("ironclaw-reaper-test-{}", &job_id.to_string()[..8]);
-    let Some(container_id) =
-        create_labeled_container(&docker, &test_name, job_id, chrono::Duration::hours(1)).await
-    else {
-        eprintln!("Skipping e2e test: Could not create test container");
-        return;
-    };
+    let container_id =
+        create_labeled_container(&docker, &test_name, job_id, chrono::Duration::hours(1))
+            .await
+            .expect("e2e requires labelled container creation to succeed");
 
-    let reaper = match SandboxReaper::new(
+    let reaper = SandboxReaper::new(
         Arc::new(ContainerJobManager::new(
             ContainerJobConfig::default(),
             TokenStore::new(),
@@ -84,14 +76,7 @@ async fn e2e_reaper_lists_ironclaw_containers() {
         ReaperConfig::default(),
     )
     .await
-    {
-        Ok(reaper) => reaper,
-        Err(e) => {
-            let _ = docker.remove_container(&container_id, None).await;
-            eprintln!("Skipping e2e test: Could not create reaper: {e}");
-            return;
-        }
-    };
+    .expect("e2e requires SandboxReaper setup to succeed");
 
     let containers = reaper
         .list_ironclaw_containers()
@@ -114,27 +99,24 @@ async fn e2e_reaper_removes_orphaned_containers() {
         return;
     }
 
-    let Some(docker) = connect_or_skip().await else {
-        return;
-    };
+    let docker = connect_or_skip()
+        .await
+        .expect("e2e requires Docker and images available");
 
     let orphaned_job_id = Uuid::new_v4();
     let test_name = format!("ironclaw-orphan-test-{}", &orphaned_job_id.to_string()[..8]);
-    let Some(container_id) = create_labeled_container(
+    let container_id = create_labeled_container(
         &docker,
         &test_name,
         orphaned_job_id,
         chrono::Duration::hours(2),
     )
     .await
-    else {
-        eprintln!("Skipping e2e test: Could not create test container");
-        return;
-    };
+    .expect("e2e requires labelled container creation to succeed");
 
     assert!(docker.inspect_container(&container_id, None).await.is_ok());
 
-    let reaper = match SandboxReaper::new(
+    let reaper = SandboxReaper::new(
         Arc::new(ContainerJobManager::new(
             ContainerJobConfig::default(),
             TokenStore::new(),
@@ -143,14 +125,7 @@ async fn e2e_reaper_removes_orphaned_containers() {
         ReaperConfig::default(),
     )
     .await
-    {
-        Ok(reaper) => reaper,
-        Err(e) => {
-            let _ = docker.remove_container(&container_id, None).await;
-            eprintln!("Skipping e2e test: Could not create reaper: {e}");
-            return;
-        }
-    };
+    .expect("e2e requires SandboxReaper setup to succeed");
 
     reaper.scan_and_reap().await;
     assert!(docker.inspect_container(&container_id, None).await.is_err());
@@ -163,36 +138,30 @@ async fn e2e_reaper_respects_age_threshold() {
         return;
     }
 
-    let Some(docker) = connect_or_skip().await else {
-        return;
-    };
+    let docker = connect_or_skip()
+        .await
+        .expect("e2e requires Docker and images available");
 
     let recent_job_id = Uuid::new_v4();
     let old_job_id = Uuid::new_v4();
     let recent_name = format!("ironclaw-recent-test-{}", &recent_job_id.to_string()[..8]);
     let old_name = format!("ironclaw-old-test-{}", &old_job_id.to_string()[..8]);
 
-    let Some(recent_container_id) = create_labeled_container(
+    let recent_container_id = create_labeled_container(
         &docker,
         &recent_name,
         recent_job_id,
         chrono::Duration::minutes(5),
     )
     .await
-    else {
-        eprintln!("Skipping e2e test: Could not create recent container");
-        return;
-    };
+    .expect("e2e requires recent labelled container creation to succeed");
 
-    let Some(old_container_id) =
-        create_labeled_container(&docker, &old_name, old_job_id, chrono::Duration::hours(2)).await
-    else {
-        let _ = docker.remove_container(&recent_container_id, None).await;
-        eprintln!("Skipping e2e test: Could not create old container");
-        return;
-    };
+    let old_container_id =
+        create_labeled_container(&docker, &old_name, old_job_id, chrono::Duration::hours(2))
+            .await
+            .expect("e2e requires old labelled container creation to succeed");
 
-    let reaper = match SandboxReaper::new(
+    let reaper = SandboxReaper::new(
         Arc::new(ContainerJobManager::new(
             ContainerJobConfig::default(),
             TokenStore::new(),
@@ -201,15 +170,7 @@ async fn e2e_reaper_respects_age_threshold() {
         ReaperConfig::default(),
     )
     .await
-    {
-        Ok(reaper) => reaper,
-        Err(e) => {
-            let _ = docker.remove_container(&recent_container_id, None).await;
-            let _ = docker.remove_container(&old_container_id, None).await;
-            eprintln!("Skipping e2e test: Could not create reaper: {e}");
-            return;
-        }
-    };
+    .expect("e2e requires SandboxReaper setup to succeed");
 
     reaper.scan_and_reap().await;
     assert!(

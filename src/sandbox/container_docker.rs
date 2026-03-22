@@ -208,6 +208,7 @@ impl ContainerRunner {
         exec_id: &str,
         max_output: usize,
     ) -> Result<ContainerOutput> {
+        let start_time = Instant::now();
         let start_result = self.docker.start_exec(exec_id, None).await.map_err(|e| {
             SandboxError::ExecutionFailed {
                 reason: format!("exec start failed: {}", e),
@@ -247,12 +248,13 @@ impl ContainerRunner {
                 })?;
 
         let exit_code = inspect.exit_code.unwrap_or(-1);
+        let duration = start_time.elapsed();
 
         Ok(ContainerOutput {
             exit_code,
             stdout,
             stderr,
-            duration: Duration::ZERO,
+            duration,
             truncated,
         })
     }
