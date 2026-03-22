@@ -7,11 +7,10 @@ use std::collections::HashMap;
 use crate::context::{JobContext, JobState};
 use rstest::rstest;
 
-#[rstest]
-#[case(2, false)]
-#[case(15, true)]
-#[test]
-fn orphan_threshold_filters_by_age(#[case] age_minutes: i64, #[case] expected: bool) {
+/// Build a standard 600-second-threshold `ReaperConfig`, fabricate a single
+/// `ironclaw.created_at` label `age_offset` before now, parse it, and return
+/// whether the container is past the orphan threshold.
+fn container_age_is_past_threshold(age_offset: chrono::Duration) -> bool {
     let cfg = ReaperConfig {
         orphan_threshold: Duration::from_secs(600),
         ..Default::default()
@@ -20,29 +19,27 @@ fn orphan_threshold_filters_by_age(#[case] age_minutes: i64, #[case] expected: b
     let mut labels = HashMap::new();
     labels.insert(
         "ironclaw.created_at".to_string(),
-        (now - chrono::Duration::minutes(age_minutes)).to_rfc3339(),
+        (now - age_offset).to_rfc3339(),
     );
     let created_at = parse_created_at_label(&labels, None)
-        .expect("expected container timestamp to parse in threshold test");
+        .expect("timestamp should parse in orphan-threshold test");
+    is_past_orphan_threshold(created_at, &cfg, now)
+}
+
+#[test]
+fn orphan_threshold_filters_young_containers() {
     assert!(
-        is_past_orphan_threshold(created_at, &cfg, now) == expected,
-        "Container threshold classification should match the expected age bucket"
+        !container_age_is_past_threshold(chrono::Duration::minutes(2)),
+        "Young container should be skipped"
     );
 }
 
-#[tokio::test]
-async fn active_job_is_not_orphaned() {
-    let ctx_mgr = Arc::new(ContextManager::new(5));
-    let job_id = ctx_mgr
-        .create_job_for_user("default", "test", "test description")
-        .await
-        .expect("create_job_for_user failed for active_job_is_not_orphaned");
-
-    let ctx = ctx_mgr
-        .get_context(job_id)
-        .await
-        .expect("get_context failed for active_job_is_not_orphaned job_id");
-    assert!(ctx.state.is_active(), "Pending job should be active");
+#[test]
+fn orphan_threshold_allows_old_containers() {
+    assert!(
+        container_age_is_past_threshold(chrono::Duration::minutes(15)),
+        "Old container should be reaped"
+    );
 }
 
 #[tokio::test]
@@ -76,6 +73,32 @@ async fn make_terminal_job(
         .await
         .expect("get_context failed in make_terminal_job");
     (job_id, ctx)
+}
+
+/// Create a freshly-pending job and return whether its state `is_active()`.
+///
+/// `tag` is embedded verbatim in `.expect(…)` diagnostics so that failure
+/// messages match the original per-test strings.
+async fn create_active_job(ctx_mgr: &ContextManager, description: &str, tag: &str) -> bool {
+    let job_id = ctx_mgr
+        .create_job_for_user("default", "test", description)
+        .await
+        .unwrap_or_else(|_| panic!("create_job_for_user failed for {tag}"));
+    ctx_mgr
+        .get_context(job_id)
+        .await
+        .unwrap_or_else(|_| panic!("get_context failed for {tag} job_id"))
+        .state
+        .is_active()
+}
+
+#[tokio::test]
+async fn active_job_is_not_orphaned() {
+    let ctx_mgr = Arc::new(ContextManager::new(5));
+    assert!(
+        create_active_job(&ctx_mgr, "test description", "active_job_is_not_orphaned").await,
+        "Pending job should be active"
+    );
 }
 
 #[rstest]
@@ -167,16 +190,15 @@ fn age_calculation_correctly_filters_containers() {
 #[tokio::test]
 async fn active_job_prevents_cleanup_of_old_container() {
     let ctx_mgr = Arc::new(ContextManager::new(5));
-    let job_id = ctx_mgr
-        .create_job_for_user("default", "test", "test job")
-        .await
-        .expect("create_job_for_user failed for active_job_prevents_cleanup_of_old_container");
-
-    let ctx = ctx_mgr
-        .get_context(job_id)
-        .await
-        .expect("get_context failed for active_job_prevents_cleanup_of_old_container job_id");
-    assert!(ctx.state.is_active(), "Active job should prevent cleanup");
+    assert!(
+        create_active_job(
+            &ctx_mgr,
+            "test job",
+            "active_job_prevents_cleanup_of_old_container"
+        )
+        .await,
+        "Active job should prevent cleanup"
+    );
 }
 
 #[test]
