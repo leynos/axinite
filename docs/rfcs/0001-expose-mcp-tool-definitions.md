@@ -5,12 +5,13 @@
 - **RFC number:** 0001
 - **Status:** Proposed
 - **Created:** 2026-03-11
-- **Implementation status:** Roadmap items `1.1.1` and `1.1.2` are implemented
-  in this branch through the shared `src/worker/api/` transport types, the
-  worker catalog-fetch startup path, the orchestrator generic remote-tool
-  execution endpoint, and the canonical `ToolRegistry`-owned hosted-visible
-  filter for active MCP tools. Later roadmap items still own reasoning-context
-  merge, broader schema parity checks, and end-to-end coverage.
+- **Implementation status:** Roadmap items `1.1.1`, `1.1.2`, and `1.1.3` are
+  implemented in this branch through the shared `src/worker/api/` transport
+  types, the worker catalog-fetch startup path, the orchestrator generic
+  remote-tool execution endpoint, the canonical `ToolRegistry`-owned
+  hosted-visible filter for active MCP tools, and the explicit worker-side
+  merged reasoning surface used both at context build and later refresh.
+  Roadmap item `1.1.4` still owns the broader schema-parity and routing matrix.
 
 ## Summary
 
@@ -330,6 +331,11 @@ when:
 The minimal v1 approach is to fetch once at worker startup and again after any
 successful extension-management action that could change active tools. A later
 iteration can add explicit catalogue version checks or push invalidation.
+The current implementation already refreshes the worker-visible tool list
+before later hosted LLM calls by recomputing it from the worker registry after
+proxy registration. That refresh path intentionally does not re-inject
+`toolset_instructions`; the dedicated hosted guidance message is added once
+when the reasoning context is first built.
 
 ## Detailed Interface
 
@@ -473,8 +479,8 @@ That is the contract that fixes malformed tool calls.
 4. Merge remote tool definitions into the worker reasoning context.
 5. Add targeted tests for definition fidelity, execution routing, and
    contract parity between worker and orchestrator.
-6. Optionally inject supplemental server-level instructions into the system
-   prompt once the basic catalogue path is stable.
+6. Inject supplemental server-level instructions into the system prompt once
+   per reasoning context, while later refreshes update only the tool list.
 
 ## Alternatives Considered
 
@@ -509,8 +515,9 @@ the work behind a separate prerequisite stream.
 
 1. Should hosted mode expose only `ApprovalRequirement::Never` tools in v1, or
    also tools that are already auto-approved by policy?
-2. Should `toolset_instructions` be injected as a dedicated system message, or
-   folded into the job system prompt?
+2. Resolved in `1.1.3`: inject `toolset_instructions` as a dedicated system
+   message during reasoning-context build, and do not duplicate it during later
+   tool refreshes.
 3. Should the catalogue be refreshed opportunistically after extension actions
    only, or version-checked every reasoning iteration?
 4. Should remote orchestrator-owned tools appear in the UI as a separate source

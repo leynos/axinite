@@ -69,6 +69,18 @@ async fn populate_catalog_visibility_fixtures(tools: &ToolRegistry) {
         .await;
 }
 
+fn expected_catalog_fixture_definition() -> crate::llm::ToolDefinition {
+    crate::llm::ToolDefinition {
+        name: "remote_tool_catalog_fixture".to_string(),
+        description: "Hosted-safe tool for catalog tests".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "search query"}},
+            "required": ["query"]
+        }),
+    }
+}
+
 #[rstest]
 #[tokio::test]
 async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: OrchestratorState) {
@@ -100,16 +112,10 @@ async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: Or
     assert_ne!(catalog.catalog_version, 0);
     assert_eq!(catalog.tools.len(), 1);
     let tool = &catalog.tools[0];
-    assert_eq!(tool.name, "remote_tool_catalog_fixture");
-    assert_eq!(tool.description, "Hosted-safe tool for catalog tests");
-    assert_eq!(
-        tool.parameters,
-        serde_json::json!({
-            "type": "object",
-            "properties": {"query": {"type": "string", "description": "search query"}},
-            "required": ["query"]
-        })
-    );
+    let expected = expected_catalog_fixture_definition();
+    assert_eq!(tool.name, expected.name);
+    assert_eq!(tool.description, expected.description);
+    assert_eq!(tool.parameters, expected.parameters);
 }
 
 async fn assert_catalog_excludes_stub(excluded_stub: StubTool) {

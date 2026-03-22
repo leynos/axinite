@@ -313,6 +313,14 @@ and policy layer instead of in the HTTP adapter. The current source set is
 active hosted-visible MCP tools; later roadmap work extends that same filter
 seam for orchestrator-owned WASM tools and richer refresh behaviour.
 
+On the worker side, the merged tool surface is now explicit rather than
+incidental. Startup still registers the remote proxies into the worker-local
+registry, but both initial reasoning-context construction and later
+`before_llm_call` refreshes now read the same sorted registry-backed
+`ToolDefinition` list. Hosted `toolset_instructions` remain a context-build
+concern: they are injected once as a dedicated system message and are not
+re-added during iterative tool refreshes.
+
 The WASM execution path adds another boundary inside the host process. Before
 the host injects any credentials into outbound requests, it validates endpoint
 allowlists, applies rate limits, and leak-scans the raw WASM-supplied request

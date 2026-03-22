@@ -315,9 +315,10 @@ async fn hosted_tool_definitions_only_include_requested_sources(
     let defs = registry
         .hosted_tool_definitions(&[HostedToolCatalogSource::Mcp])
         .await;
-    let names: Vec<&str> = defs.iter().map(|def| def.name.as_str()).collect();
-
-    assert_eq!(names, vec!["mcp_visible"]);
+    assert_eq!(defs.len(), 1);
+    assert_eq!(defs[0].name, "mcp_visible");
+    assert_eq!(defs[0].description, "Hosted-visible MCP tool");
+    assert_eq!(defs[0].parameters, serde_json::json!({}));
 }
 
 #[rstest]

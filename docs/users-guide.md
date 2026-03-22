@@ -17,6 +17,13 @@ each advertised remote tool. The model therefore sees the orchestrator-owned
 tool's `name`, `description`, and JSON Schema parameters unchanged, even though
 execution still happens in the orchestrator process.
 
+The worker now computes one registry-backed tool surface for reasoning. That
+merged view is used both when the initial reasoning context is built and when
+later hosted-loop iterations refresh `available_tools`, so long-running jobs
+do not drift back to a local-only view. Supplemental hosted guidance from the
+catalogue is injected once as a dedicated system message during context build;
+later refreshes update only the tool list and any queued follow-up prompts.
+
 ### Minimal workflow example
 
 ```text

@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: DRAFT
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -297,7 +297,7 @@ retained under `/tmp`.
 Use the following command pattern during implementation:
 
 ```bash
-set -o pipefail && cargo test worker_runtime_build_reasoning_context_includes_toolset_instructions \
+set -o pipefail && cargo test worker_runtime_build_reasoning_context_merges_local_and_remote_tools \
   | tee /tmp/unit-axinite-1-1-3-merge-mcp-defs-into-worker-reasoning-context.out
 ```
 
@@ -336,12 +336,14 @@ surface to reasoning, and the final report must cite the exact log paths.
 - [x] 2026-03-22: Inspected the current worker, registry, orchestrator, and
   test seams that already participate in hosted remote-tool advertisement.
 - [x] 2026-03-22: Drafted this ExecPlan and indexed it from `docs/contents.md`.
-- [ ] Implement Milestones 1 and 2, making the merge contract explicit in the
-  worker reasoning path.
-- [ ] Implement Milestone 3 test coverage and record whether `rstest-bdd` was
-  applicable or replaced with equivalent in-process `rstest` coverage.
-- [ ] Implement Milestone 4 documentation sync and mark roadmap item `1.1.3`
-  complete.
+- [x] Implemented Milestones 1 and 2, making the merge contract explicit in
+  the worker reasoning path through one shared helper-backed registry read.
+- [x] Implemented Milestone 3 coverage with in-process `rstest` integration
+  tests and tightened worker, orchestrator, registry, and proxy fidelity
+  assertions. `rstest-bdd` was not used because this slice already had a
+  stronger in-process harness and no existing narrow feature harness.
+- [x] Implemented Milestone 4 documentation sync and marked roadmap item
+  `1.1.3` complete.
 - [ ] Run the full validation gates, commit, and push.
 
 ## Surprises & Discoveries
@@ -359,6 +361,15 @@ surface to reasoning, and the final report must cite the exact log paths.
   usage for `rstest-bdd` in this area, so behavioural coverage may need to
   stay with stronger in-process `rstest` integration tests unless a narrow BDD
   harness proves worthwhile.
+- The most surgical implementation point is a tiny shared helper in
+  `src/worker/container.rs` that both `build_reasoning_context(...)` and
+  `ContainerDelegate::before_llm_call(...)` call. That makes the merge rule
+  explicit without pushing worker policy into a new module.
+- The refresh-path contract was easier to prove by exercising
+  `ContainerDelegate::before_llm_call(...)` against the existing catalogue
+  route than by extending the test server with extra prompt-state machinery.
+  That kept the test focused on tool-surface refresh and one-time guidance
+  injection rather than unrelated worker-loop plumbing.
 
 ## Decision Log
 
@@ -388,8 +399,37 @@ surface to reasoning, and the final report must cite the exact log paths.
   Rationale: The user asked for behavioural tests where applicable. A fake BDD
   layer that weakens the assertions would not satisfy that requirement.
 
+- Decision: keep the merged tool-surface rule as one small worker-side helper
+  rather than a new policy module.
+  Rationale: both relevant call sites already live in the worker container
+  family, and the shared helper makes the recomputation rule explicit without
+  widening the architecture for this roadmap slice.
+
+- Decision: use direct in-process `rstest` integration coverage instead of
+  adding `rstest-bdd` to this slice.
+  Rationale: the repository already had strong worker and orchestrator harness
+  seams, while a new BDD layer would have added ceremony without improving the
+  observable guarantees for the merge contract.
+
 ## Outcomes & Retrospective
 
-Not started. When implementation finishes, replace this note with a concise
-summary of what shipped, what changed from the draft, the final gate results,
-and any follow-up work intentionally left for `1.1.4` or later roadmap items.
+Shipped `1.1.3` as a worker-side reasoning contract hardening pass rather than
+as a transport rewrite. The implementation added one helper-backed path for
+reading the worker-visible merged registry so both
+`WorkerRuntime::build_reasoning_context(...)` and
+`ContainerDelegate::before_llm_call(...)` advertise the same local-plus-remote
+tool surface. Hosted `toolset_instructions` remain a one-time system guidance
+message during context build and are not duplicated during later refreshes.
+
+The test plan stayed inside the existing in-process `rstest` harnesses. Worker
+tests now prove merged-tool visibility at initial build and later refresh,
+including degraded startup and one-time guidance injection. Proxy,
+orchestrator, and registry tests were tightened so the worker-facing remote
+definitions are checked as full `ToolDefinition` payloads rather than loose
+field spot checks.
+
+Documentation was synchronized across the roadmap, RFC, architecture overview,
+and user guide so the described behaviour matches the implemented merge rule.
+Follow-up work intentionally left for `1.1.4` is the broader hosted-mode test
+matrix for schema fidelity and execution routing beyond the narrow
+reasoning-context contract covered here.

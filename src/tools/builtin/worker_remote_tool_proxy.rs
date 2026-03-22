@@ -134,21 +134,18 @@ mod tests {
             "test-token".to_string(),
         ));
         let registry = ToolRegistry::new();
-        register_worker_remote_tool_proxies(
-            &registry,
-            client,
-            vec![ToolDefinition {
-                name: "github_search".to_string(),
-                description: "Search repositories".to_string(),
-                parameters: serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string"}
-                    },
-                    "required": ["query"]
-                }),
-            }],
-        );
+        let expected_definition = ToolDefinition {
+            name: "github_search".to_string(),
+            description: "Search repositories".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"}
+                },
+                "required": ["query"]
+            }),
+        };
+        register_worker_remote_tool_proxies(&registry, client, vec![expected_definition.clone()]);
 
         let tool = registry
             .get("github_search")
@@ -162,9 +159,17 @@ mod tests {
             .await
             .expect("proxy execution should succeed");
 
-        assert_eq!(tool.name(), "github_search");
-        assert_eq!(tool.description(), "Search repositories");
-        assert_eq!(tool.parameters_schema()["required"][0], "query");
+        let actual_definition = ToolDefinition {
+            name: tool.name().to_string(),
+            description: tool.description().to_string(),
+            parameters: tool.parameters_schema(),
+        };
+        assert_eq!(actual_definition.name, expected_definition.name);
+        assert_eq!(
+            actual_definition.description,
+            expected_definition.description
+        );
+        assert_eq!(actual_definition.parameters, expected_definition.parameters);
         assert_eq!(output.result["tool_name"], "github_search");
         assert_eq!(output.result["job_id"], job_id.to_string());
         assert_eq!(output.result["params"]["query"], "axinite");

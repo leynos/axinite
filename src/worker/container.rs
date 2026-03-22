@@ -74,6 +74,10 @@ enum WorkerExecutionResult {
     TimedOut,
 }
 
+async fn available_tool_definitions(tools: &ToolRegistry) -> Vec<crate::llm::ToolDefinition> {
+    tools.tool_definitions().await
+}
+
 impl WorkerRuntime {
     /// Create a new worker runtime.
     ///
@@ -301,7 +305,7 @@ loads, orchestrator-proxied remote tools.
 Work independently to complete this job. Report when done."#,
             job.title, job.description
         )));
-        reason_ctx.available_tools = self.tools.tool_definitions().await;
+        reason_ctx.available_tools = available_tool_definitions(&self.tools).await;
         reason_ctx
     }
 
