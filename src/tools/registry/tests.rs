@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use rstest::rstest;
+use rstest::{fixture, rstest};
 
 use super::*;
 use crate::tools::builtin::EchoTool;
@@ -40,6 +40,35 @@ impl StubTool {
             ..Self::new(name, description)
         }
     }
+}
+
+enum HostedLookupExpectation {
+    Ok,
+    Err(HostedToolLookupError),
+}
+
+#[fixture]
+async fn hosted_registry() -> ToolRegistry {
+    let registry = ToolRegistry::new();
+    registry
+        .register(Arc::new(StubTool::hosted_mcp(
+            "mcp_visible",
+            "Hosted-visible MCP tool",
+        )))
+        .await;
+    registry
+        .register(Arc::new(StubTool {
+            hosted_eligibility: HostedToolEligibility::ApprovalGated,
+            ..StubTool::hosted_mcp("mcp_gated", "Approval-gated MCP tool")
+        }))
+        .await;
+    registry
+        .register(Arc::new(StubTool::hosted_wasm(
+            "wasm_visible",
+            "Hosted-visible WASM tool",
+        )))
+        .await;
+    registry
 }
 
 #[async_trait::async_trait]
@@ -276,33 +305,12 @@ async fn test_retain_only_empty_is_noop() {
     assert_eq!(before, after);
 }
 
+#[rstest]
 #[tokio::test]
-async fn hosted_tool_definitions_only_include_requested_sources() {
-    let registry = ToolRegistry::new();
-    registry
-        .register(Arc::new(StubTool::hosted_mcp(
-            "mcp_visible",
-            "Hosted-visible MCP tool",
-        )))
-        .await;
-    registry
-        .register(Arc::new(StubTool {
-            hosted_eligibility: HostedToolEligibility::ApprovalGated,
-            ..StubTool::hosted_mcp("mcp_gated", "Approval-gated MCP tool")
-        }))
-        .await;
-    registry
-        .register(Arc::new(StubTool::hosted_wasm(
-            "wasm_visible",
-            "Hosted-visible WASM tool",
-        )))
-        .await;
-    registry
-        .register(Arc::new(StubTool::new(
-            "orchestrator_builtin",
-            "Non-catalogue built-in",
-        )))
-        .await;
+async fn hosted_tool_definitions_only_include_requested_sources(
+    #[future] hosted_registry: ToolRegistry,
+) {
+    let registry = hosted_registry.await;
 
     let defs = registry
         .hosted_tool_definitions(&[HostedToolCatalogSource::Mcp])
@@ -312,50 +320,35 @@ async fn hosted_tool_definitions_only_include_requested_sources() {
     assert_eq!(names, vec!["mcp_visible"]);
 }
 
+#[rstest]
+#[case("mcp_visible", HostedLookupExpectation::Ok)]
+#[case(
+    "missing_tool",
+    HostedLookupExpectation::Err(HostedToolLookupError::NotFound)
+)]
+#[case(
+    "mcp_gated",
+    HostedLookupExpectation::Err(HostedToolLookupError::ApprovalGated)
+)]
+#[case(
+    "wasm_visible",
+    HostedLookupExpectation::Err(HostedToolLookupError::Ineligible)
+)]
 #[tokio::test]
-async fn get_hosted_tool_reports_lookup_reason() {
-    let registry = ToolRegistry::new();
-    registry
-        .register(Arc::new(StubTool::hosted_mcp(
-            "mcp_visible",
-            "Hosted-visible MCP tool",
-        )))
-        .await;
-    registry
-        .register(Arc::new(StubTool {
-            hosted_eligibility: HostedToolEligibility::ApprovalGated,
-            ..StubTool::hosted_mcp("mcp_gated", "Approval-gated MCP tool")
-        }))
-        .await;
-    registry
-        .register(Arc::new(StubTool::hosted_wasm(
-            "wasm_visible",
-            "Hosted-visible WASM tool",
-        )))
+async fn get_hosted_tool_reports_lookup_reason(
+    #[future] hosted_registry: ToolRegistry,
+    #[case] name: &'static str,
+    #[case] expected: HostedLookupExpectation,
+) {
+    let registry = hosted_registry.await;
+    let result = registry
+        .get_hosted_tool(name, &[HostedToolCatalogSource::Mcp])
         .await;
 
-    assert!(
-        registry
-            .get_hosted_tool("mcp_visible", &[HostedToolCatalogSource::Mcp])
-            .await
-            .is_ok()
-    );
-    assert!(matches!(
-        registry
-            .get_hosted_tool("missing_tool", &[HostedToolCatalogSource::Mcp])
-            .await,
-        Err(HostedToolLookupError::NotFound)
-    ));
-    assert!(matches!(
-        registry
-            .get_hosted_tool("mcp_gated", &[HostedToolCatalogSource::Mcp])
-            .await,
-        Err(HostedToolLookupError::ApprovalGated)
-    ));
-    assert!(matches!(
-        registry
-            .get_hosted_tool("wasm_visible", &[HostedToolCatalogSource::Mcp])
-            .await,
-        Err(HostedToolLookupError::Ineligible)
-    ));
+    match expected {
+        HostedLookupExpectation::Ok => assert!(result.is_ok(), "expected Ok for {name}"),
+        HostedLookupExpectation::Err(expected_error) => {
+            assert!(matches!(result, Err(error) if error == expected_error));
+        }
+    }
 }

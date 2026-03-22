@@ -222,7 +222,7 @@ Concrete implementation expectations:
 
 This is where the hexagonal-architecture guidance matters most: a small inward
 policy seam is enough. The repository does not need a full "application layer"
-rewrite to gain the boundary we care about here.
+rewrite to gain the relevant boundary.
 
 ## Milestone 3: keep the worker and transport stable while switching the source
 
