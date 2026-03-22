@@ -34,6 +34,8 @@ pub type McpTransportFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>
 ///
 /// The dyn-facing trait stays object-safe because the MCP client stores
 /// transports behind `Arc<dyn McpTransport>`.
+/// Concrete transports should implement `NativeMcpTransport` and rely on the
+/// provided blanket adapter instead of implementing `McpTransport` directly.
 pub trait McpTransport: Send + Sync {
     /// Send a request and wait for the corresponding response.
     ///
