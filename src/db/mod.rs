@@ -23,6 +23,7 @@ pub mod libsql_migrations;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::{future::Future, pin::Pin};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -40,6 +41,9 @@ use crate::history::{
 };
 use crate::workspace::{MemoryChunk, MemoryDocument, WorkspaceEntry};
 use crate::workspace::{SearchConfig, SearchResult};
+
+/// Boxed future used at dyn-backed database trait boundaries.
+pub type DbFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Create a database backend from configuration, run migrations, and return it.
 ///
@@ -131,45 +135,29 @@ pub async fn create_secrets_store(
     config: &crate::config::DatabaseConfig,
     crypto: Arc<crate::secrets::SecretsCrypto>,
 ) -> Result<Arc<dyn crate::secrets::SecretsStore + Send + Sync>, DatabaseError> {
+    let (_db, handles) = connect_with_handles(config).await?;
+
     match config.backend {
         #[cfg(feature = "libsql")]
         crate::config::DatabaseBackend::LibSql => {
-            use secrecy::ExposeSecret as _;
-
-            let default_path = crate::config::default_libsql_path();
-            let db_path = config.libsql_path.as_deref().unwrap_or(&default_path);
-
-            let backend = if let Some(ref url) = config.libsql_url {
-                let token = config.libsql_auth_token.as_ref().ok_or_else(|| {
-                    DatabaseError::Pool(
-                        "LIBSQL_AUTH_TOKEN required when LIBSQL_URL is set".to_string(),
-                    )
-                })?;
-                libsql::LibSqlBackend::new_remote_replica(db_path, url, token.expose_secret())
-                    .await
-                    .map_err(|e| DatabaseError::Pool(e.to_string()))?
-            } else {
-                libsql::LibSqlBackend::new_local(db_path)
-                    .await
-                    .map_err(|e| DatabaseError::Pool(e.to_string()))?
-            };
-            backend.run_migrations().await?;
+            let libsql_db = handles.libsql_db.ok_or_else(|| {
+                DatabaseError::Pool("libSQL handle missing after connect_with_handles".to_string())
+            })?;
 
             Ok(Arc::new(crate::secrets::LibSqlSecretsStore::new(
-                backend.shared_db(),
-                crypto,
+                libsql_db, crypto,
             )))
         }
         #[cfg(feature = "postgres")]
         _ => {
-            let pg = postgres::PgBackend::new(config)
-                .await
-                .map_err(|e| DatabaseError::Pool(e.to_string()))?;
-            pg.run_migrations().await?;
+            let pg_pool = handles.pg_pool.ok_or_else(|| {
+                DatabaseError::Pool(
+                    "PostgreSQL handle missing after connect_with_handles".to_string(),
+                )
+            })?;
 
             Ok(Arc::new(crate::secrets::PostgresSecretsStore::new(
-                pg.pool(),
-                crypto,
+                pg_pool, crypto,
             )))
         }
         #[cfg(not(feature = "postgres"))]
@@ -412,36 +400,150 @@ pub trait ToolFailureStore: Send + Sync {
     async fn increment_repair_attempts(&self, tool_name: &str) -> Result<(), DatabaseError>;
 }
 
-#[async_trait]
 pub trait SettingsStore: Send + Sync {
-    async fn get_setting(
-        &self,
-        user_id: &str,
-        key: &str,
-    ) -> Result<Option<serde_json::Value>, DatabaseError>;
-    async fn get_setting_full(
-        &self,
-        user_id: &str,
-        key: &str,
-    ) -> Result<Option<SettingRow>, DatabaseError>;
-    async fn set_setting(
-        &self,
-        user_id: &str,
-        key: &str,
-        value: &serde_json::Value,
-    ) -> Result<(), DatabaseError>;
-    async fn delete_setting(&self, user_id: &str, key: &str) -> Result<bool, DatabaseError>;
-    async fn list_settings(&self, user_id: &str) -> Result<Vec<SettingRow>, DatabaseError>;
-    async fn get_all_settings(
-        &self,
-        user_id: &str,
-    ) -> Result<HashMap<String, serde_json::Value>, DatabaseError>;
-    async fn set_all_settings(
-        &self,
-        user_id: &str,
-        settings: &HashMap<String, serde_json::Value>,
-    ) -> Result<(), DatabaseError>;
-    async fn has_settings(&self, user_id: &str) -> Result<bool, DatabaseError>;
+    fn get_setting<'a>(
+        &'a self,
+        user_id: &'a str,
+        key: &'a str,
+    ) -> DbFuture<'a, Result<Option<serde_json::Value>, DatabaseError>>;
+    fn get_setting_full<'a>(
+        &'a self,
+        user_id: &'a str,
+        key: &'a str,
+    ) -> DbFuture<'a, Result<Option<SettingRow>, DatabaseError>>;
+    fn set_setting<'a>(
+        &'a self,
+        user_id: &'a str,
+        key: &'a str,
+        value: &'a serde_json::Value,
+    ) -> DbFuture<'a, Result<(), DatabaseError>>;
+    fn delete_setting<'a>(
+        &'a self,
+        user_id: &'a str,
+        key: &'a str,
+    ) -> DbFuture<'a, Result<bool, DatabaseError>>;
+    fn list_settings<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> DbFuture<'a, Result<Vec<SettingRow>, DatabaseError>>;
+    fn get_all_settings<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> DbFuture<'a, Result<HashMap<String, serde_json::Value>, DatabaseError>>;
+    fn set_all_settings<'a>(
+        &'a self,
+        user_id: &'a str,
+        settings: &'a HashMap<String, serde_json::Value>,
+    ) -> DbFuture<'a, Result<(), DatabaseError>>;
+    fn has_settings<'a>(&'a self, user_id: &'a str) -> DbFuture<'a, Result<bool, DatabaseError>>;
+}
+
+/// Native async sibling trait for concrete settings-store implementations.
+pub trait NativeSettingsStore: Send + Sync {
+    fn get_setting<'a>(
+        &'a self,
+        user_id: &'a str,
+        key: &'a str,
+    ) -> impl Future<Output = Result<Option<serde_json::Value>, DatabaseError>> + Send + 'a;
+    fn get_setting_full<'a>(
+        &'a self,
+        user_id: &'a str,
+        key: &'a str,
+    ) -> impl Future<Output = Result<Option<SettingRow>, DatabaseError>> + Send + 'a;
+    fn set_setting<'a>(
+        &'a self,
+        user_id: &'a str,
+        key: &'a str,
+        value: &'a serde_json::Value,
+    ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
+    fn delete_setting<'a>(
+        &'a self,
+        user_id: &'a str,
+        key: &'a str,
+    ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
+    fn list_settings<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> impl Future<Output = Result<Vec<SettingRow>, DatabaseError>> + Send + 'a;
+    fn get_all_settings<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> impl Future<Output = Result<HashMap<String, serde_json::Value>, DatabaseError>> + Send + 'a;
+    fn set_all_settings<'a>(
+        &'a self,
+        user_id: &'a str,
+        settings: &'a HashMap<String, serde_json::Value>,
+    ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
+    fn has_settings<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
+}
+
+impl<T> SettingsStore for T
+where
+    T: NativeSettingsStore + Send + Sync,
+{
+    fn get_setting<'a>(
+        &'a self,
+        user_id: &'a str,
+        key: &'a str,
+    ) -> DbFuture<'a, Result<Option<serde_json::Value>, DatabaseError>> {
+        Box::pin(async move { NativeSettingsStore::get_setting(self, user_id, key).await })
+    }
+
+    fn get_setting_full<'a>(
+        &'a self,
+        user_id: &'a str,
+        key: &'a str,
+    ) -> DbFuture<'a, Result<Option<SettingRow>, DatabaseError>> {
+        Box::pin(async move { NativeSettingsStore::get_setting_full(self, user_id, key).await })
+    }
+
+    fn set_setting<'a>(
+        &'a self,
+        user_id: &'a str,
+        key: &'a str,
+        value: &'a serde_json::Value,
+    ) -> DbFuture<'a, Result<(), DatabaseError>> {
+        Box::pin(async move { NativeSettingsStore::set_setting(self, user_id, key, value).await })
+    }
+
+    fn delete_setting<'a>(
+        &'a self,
+        user_id: &'a str,
+        key: &'a str,
+    ) -> DbFuture<'a, Result<bool, DatabaseError>> {
+        Box::pin(async move { NativeSettingsStore::delete_setting(self, user_id, key).await })
+    }
+
+    fn list_settings<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> DbFuture<'a, Result<Vec<SettingRow>, DatabaseError>> {
+        Box::pin(async move { NativeSettingsStore::list_settings(self, user_id).await })
+    }
+
+    fn get_all_settings<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> DbFuture<'a, Result<HashMap<String, serde_json::Value>, DatabaseError>> {
+        Box::pin(async move { NativeSettingsStore::get_all_settings(self, user_id).await })
+    }
+
+    fn set_all_settings<'a>(
+        &'a self,
+        user_id: &'a str,
+        settings: &'a HashMap<String, serde_json::Value>,
+    ) -> DbFuture<'a, Result<(), DatabaseError>> {
+        Box::pin(
+            async move { NativeSettingsStore::set_all_settings(self, user_id, settings).await },
+        )
+    }
+
+    fn has_settings<'a>(&'a self, user_id: &'a str) -> DbFuture<'a, Result<bool, DatabaseError>> {
+        Box::pin(async move { NativeSettingsStore::has_settings(self, user_id).await })
+    }
 }
 
 #[async_trait]

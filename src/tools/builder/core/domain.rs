@@ -7,7 +7,9 @@
 
 use super::*;
 use std::fmt;
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 
 use serde::de::Error as _;
 
@@ -300,19 +302,91 @@ impl Default for BuilderConfig {
     }
 }
 
-/// Trait for building software.
-#[async_trait]
+/// Boxed future used at the dyn-backed builder boundary.
+pub type SoftwareBuilderFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Dyn-facing trait for building software behind erased builder handles.
+///
+/// Callers that need dynamic dispatch store builders as
+/// `Arc<dyn SoftwareBuilder>` and pay the boxed-future cost at this boundary.
+/// Concrete implementations should normally implement
+/// [`NativeSoftwareBuilder`] instead; the blanket adapter below bridges those
+/// native futures into this boxed-future surface.
 pub trait SoftwareBuilder: Send + Sync {
     /// Analyze a natural language description and extract a structured requirement.
-    async fn analyze(&self, description: &str) -> Result<BuildRequirement, AgentToolError>;
+    fn analyze<'a>(
+        &'a self,
+        description: &'a str,
+    ) -> SoftwareBuilderFuture<'a, Result<BuildRequirement, AgentToolError>>;
 
     /// Build software from a requirement.
-    async fn build(&self, requirement: &BuildRequirement) -> Result<BuildResult, AgentToolError>;
+    fn build<'a>(
+        &'a self,
+        requirement: &'a BuildRequirement,
+    ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>>;
 
     /// Attempt to repair a failed build.
-    async fn repair(
-        &self,
-        result: &BuildResult,
-        error: &str,
-    ) -> Result<BuildResult, AgentToolError>;
+    fn repair<'a>(
+        &'a self,
+        result: &'a BuildResult,
+        error: &'a str,
+    ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>>;
+}
+
+/// Native async sibling trait for concrete builder implementations.
+///
+/// Concrete builders should implement this trait with ordinary `async fn`
+/// methods. The blanket `impl<T> SoftwareBuilder for T` below automatically
+/// grants those implementors the dyn-facing [`SoftwareBuilder`] interface by
+/// boxing the returned futures only at the dispatch boundary.
+///
+/// [`super::builder_impl`] follows this pattern for [`LlmSoftwareBuilder`]:
+/// `LlmSoftwareBuilder` implements `NativeSoftwareBuilder`, while callers that
+/// need dynamic dispatch continue to use `SoftwareBuilder`.
+pub trait NativeSoftwareBuilder: Send + Sync {
+    /// Analyze a natural language description and extract a structured requirement.
+    fn analyze<'a>(
+        &'a self,
+        description: &'a str,
+    ) -> impl Future<Output = Result<BuildRequirement, AgentToolError>> + Send + 'a;
+
+    /// Build software from a requirement.
+    fn build<'a>(
+        &'a self,
+        requirement: &'a BuildRequirement,
+    ) -> impl Future<Output = Result<BuildResult, AgentToolError>> + Send + 'a;
+
+    /// Attempt to repair a failed build.
+    fn repair<'a>(
+        &'a self,
+        result: &'a BuildResult,
+        error: &'a str,
+    ) -> impl Future<Output = Result<BuildResult, AgentToolError>> + Send + 'a;
+}
+
+impl<T> SoftwareBuilder for T
+where
+    T: NativeSoftwareBuilder + Send + Sync,
+{
+    fn analyze<'a>(
+        &'a self,
+        description: &'a str,
+    ) -> SoftwareBuilderFuture<'a, Result<BuildRequirement, AgentToolError>> {
+        Box::pin(NativeSoftwareBuilder::analyze(self, description))
+    }
+
+    fn build<'a>(
+        &'a self,
+        requirement: &'a BuildRequirement,
+    ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>> {
+        Box::pin(NativeSoftwareBuilder::build(self, requirement))
+    }
+
+    fn repair<'a>(
+        &'a self,
+        result: &'a BuildResult,
+        error: &'a str,
+    ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>> {
+        Box::pin(NativeSoftwareBuilder::repair(self, result, error))
+    }
 }

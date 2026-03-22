@@ -54,7 +54,7 @@ mod wrapper;
 
 pub use domain::{
     BuildLog, BuildPhase, BuildRequirement, BuildResult, BuilderConfig, ExecutionCommand, Language,
-    ProjectName, SoftwareBuilder, SoftwareType,
+    NativeSoftwareBuilder, ProjectName, SoftwareBuilder, SoftwareType,
 };
 pub use setup::LlmSoftwareBuilder;
 pub use wrapper::BuildSoftwareTool;

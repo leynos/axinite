@@ -8,14 +8,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use tokio::io::BufReader;
 use tokio::net::UnixStream;
 use tokio::sync::{Mutex, oneshot};
 use tokio::task::JoinHandle;
 
 use crate::tools::mcp::protocol::{McpRequest, McpResponse};
-use crate::tools::mcp::transport::{McpTransport, spawn_jsonrpc_reader, write_jsonrpc_line};
+use crate::tools::mcp::transport::{NativeMcpTransport, spawn_jsonrpc_reader, write_jsonrpc_line};
 use crate::tools::tool::ToolError;
 
 /// MCP transport that communicates over a Unix domain socket.
@@ -84,8 +83,7 @@ impl UnixMcpTransport {
     }
 }
 
-#[async_trait]
-impl McpTransport for UnixMcpTransport {
+impl NativeMcpTransport for UnixMcpTransport {
     async fn send(
         &self,
         request: &McpRequest,

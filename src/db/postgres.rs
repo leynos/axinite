@@ -16,7 +16,7 @@ use crate::agent::routine::{Routine, RoutineRun, RunStatus};
 use crate::config::DatabaseConfig;
 use crate::context::{ActionRecord, JobContext, JobState};
 use crate::db::{
-    ConversationStore, Database, JobStore, RoutineStore, SandboxStore, SettingsStore,
+    ConversationStore, Database, JobStore, NativeSettingsStore, RoutineStore, SandboxStore,
     ToolFailureStore, WorkspaceStore,
 };
 use crate::error::{DatabaseError, WorkspaceError};
@@ -526,8 +526,7 @@ impl ToolFailureStore for PgBackend {
 
 // ==================== SettingsStore ====================
 
-#[async_trait]
-impl SettingsStore for PgBackend {
+impl NativeSettingsStore for PgBackend {
     async fn get_setting(
         &self,
         user_id: &str,

@@ -3,7 +3,7 @@
 
 ## Status
 
-Proposed.
+Accepted.
 
 ## Date
 
@@ -22,6 +22,12 @@ Those interfaces still rely on `Arc<dyn Trait>`, `Box<dyn Trait>`, or
 `&dyn Trait` call sites. Native `async fn` in traits do not support
 dynamic dispatch today, so those interfaces cannot be migrated by simply
 dropping `#[async_trait]`.[^3]
+
+That is not just a theoretical limitation in older toolchains. A direct
+check on `rustc 1.92.0` still rejects `&dyn McpTransport` when
+`McpTransport` is written with native `async fn` methods, so the dyn
+boundary must remain explicitly boxed for this repository's current
+minimum toolchain.[^6]
 
 The remaining work therefore needs a design decision, not just a search
 and replace. The design must optimize for:
@@ -330,15 +336,26 @@ this repository.
 
 ## Migration plan
 
-1. Add a shared boxed-future alias module.
-2. Pilot the pattern on `McpTransport`.
-3. Measure before and after with the same gate set used for this stream,
-   especially `make lint`, `make test`, and a `cargo check --timings`
-   sample.
-4. If the pilot is successful, migrate one small dyn-backed trait family
-   next, likely `SettingsStore` or `SoftwareBuilder`.
-5. Only after two successful smaller pilots, evaluate a larger migration
-   for `Tool`, `LlmProvider`, or the `Database` family.
+1. Added shared boxed-future aliases inside the migrated trait modules so
+   the dyn-facing signatures stay readable without reintroducing
+   `#[async_trait]`.
+2. Completed the `McpTransport` pilot. The pilot confirmed that
+   `Arc<dyn McpTransport>` call sites could stay unchanged, concrete
+   transports could move to `NativeMcpTransport` with ordinary `async fn`
+   implementations, and the dyn boundary still needs explicit boxing on
+   the current compiler.
+3. Completed the next two smaller migrations on `SettingsStore` and
+   `SoftwareBuilder`. Those follow-on conversions showed that the
+   sibling-trait pattern scales beyond the transport layer while keeping
+   existing dyn-backed consumers intact.
+4. Follow up with more disciplined before-and-after measurements for the
+   remaining larger trait families, using the same gate set for this
+   stream and at least one `cargo check --timings` sample per major
+   migration step.
+5. Use the completed smaller pilots as the template for evaluating
+   larger remaining families such as `Tool`, `LlmProvider`, and the
+   `Database` family, with trait-specific rollout plans rather than a
+   single all-at-once rewrite.
 
 ## Decision summary
 
@@ -363,4 +380,10 @@ compilation speed and maintainability.
 [^5]: Rust blog: `async fn` and return-position `impl Trait` in traits.
     The blog recommends `trait_variant` for `Send` variants, and notes
     that dynamic dispatch support is future work.
+    See <https://blog.rust-lang.org/2023/12/21/async-fn-rpit-in-traits/>.
+[^6]: Rust Async Working Group blog post announcing `async fn` in traits.
+    It states that traits using `-> impl Trait` and `async fn` are not
+    object-safe and therefore do not support dynamic dispatch, and also
+    notes that needing dynamic dispatch remains a reason to keep using
+    `#[async_trait]`.
     See <https://blog.rust-lang.org/2023/12/21/async-fn-rpit-in-traits/>.

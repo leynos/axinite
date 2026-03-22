@@ -6,11 +6,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::tools::mcp::protocol::{McpRequest, McpResponse};
 use crate::tools::mcp::session::McpSessionManager;
-use crate::tools::mcp::transport::McpTransport;
+use crate::tools::mcp::transport::NativeMcpTransport;
 use crate::tools::tool::ToolError;
 
 /// MCP transport that communicates with a server over HTTP.
@@ -71,8 +69,7 @@ impl HttpMcpTransport {
     }
 }
 
-#[async_trait]
-impl McpTransport for HttpMcpTransport {
+impl NativeMcpTransport for HttpMcpTransport {
     async fn send(
         &self,
         request: &McpRequest,
