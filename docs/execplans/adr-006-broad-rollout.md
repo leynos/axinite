@@ -48,8 +48,9 @@ Most of the remaining migration surface sits in four clusters:
   `SelfRepair` in `src/agent/self_repair.rs`,
   `TaskHandler` in `src/agent/task.rs`,
   `ChannelSecretUpdater` in `src/channels/channel.rs`,
-  `HttpInterceptor` in `src/llm/recording.rs`, and
-  `CredentialResolver` in `src/sandbox/proxy/http.rs`.
+  `HttpInterceptor` in `src/llm/recording.rs`,
+  `CredentialResolver` in `src/sandbox/proxy/http.rs`, and
+  `WasmToolStore` in `src/tools/wasm/storage.rs`.
 - Infrastructure-facing extension seams, such as
   `EmbeddingProvider` in `src/workspace/embeddings.rs`,
   `NetworkPolicyDecider` in `src/sandbox/proxy/policy.rs`,
@@ -172,7 +173,7 @@ sample.
 
 Use the pilot pattern on the small internal families first:
 `LoopDelegate`, `SelfRepair`, `TaskHandler`, `ChannelSecretUpdater`,
-`HttpInterceptor`, and `CredentialResolver`.
+`HttpInterceptor`, `CredentialResolver`, and `WasmToolStore`.
 
 For each family:
 
@@ -187,6 +188,9 @@ For each family:
 
 These families are small enough to prove whether the pilot pattern scales
 across several subsystems without the blast radius of `Tool` or `Database`.
+`WasmToolStore` is especially important to keep in this wave because it still
+blocks the direct dependency audit through `&dyn WasmToolStore` consumers in
+the WASM loader and tool registry paths.
 
 Observable result: those trait families no longer use `#[async_trait]` in their
 production definitions and concrete implementations, and the affected module
