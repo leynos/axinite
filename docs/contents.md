@@ -110,6 +110,9 @@
     plans roadmap item `1.1.1` for the shared hosted remote-tool transport.
   - [Filter the hosted-visible catalogue from the canonical ToolRegistry](execplans/1-1-2-filter-the-hosted-visible-catalogue.md)
     plans roadmap item `1.1.2` for canonical hosted-visible tool filtering.
+  - [Merge remote MCP tool definitions into the worker reasoning context](execplans/1-1-3-merge-mcp-defs-into-worker-reasoning-context.md)
+    plans roadmap item `1.1.3` for the worker-side merged hosted-tool
+    reasoning surface.
 
 ## RFCs
 
