@@ -305,7 +305,13 @@ impl Default for BuilderConfig {
 /// Boxed future used at the dyn-backed builder boundary.
 pub type SoftwareBuilderFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// Trait for building software.
+/// Dyn-facing trait for building software behind erased builder handles.
+///
+/// Callers that need dynamic dispatch store builders as
+/// `Arc<dyn SoftwareBuilder>` and pay the boxed-future cost at this boundary.
+/// Concrete implementations should normally implement
+/// [`NativeSoftwareBuilder`] instead; the blanket adapter below bridges those
+/// native futures into this boxed-future surface.
 pub trait SoftwareBuilder: Send + Sync {
     /// Analyze a natural language description and extract a structured requirement.
     fn analyze<'a>(
@@ -328,6 +334,15 @@ pub trait SoftwareBuilder: Send + Sync {
 }
 
 /// Native async sibling trait for concrete builder implementations.
+///
+/// Concrete builders should implement this trait with ordinary `async fn`
+/// methods. The blanket `impl<T> SoftwareBuilder for T` below automatically
+/// grants those implementors the dyn-facing [`SoftwareBuilder`] interface by
+/// boxing the returned futures only at the dispatch boundary.
+///
+/// [`super::builder_impl`] follows this pattern for [`LlmSoftwareBuilder`]:
+/// `LlmSoftwareBuilder` implements `NativeSoftwareBuilder`, while callers that
+/// need dynamic dispatch continue to use `SoftwareBuilder`.
 pub trait NativeSoftwareBuilder: Send + Sync {
     /// Analyze a natural language description and extract a structured requirement.
     fn analyze<'a>(
@@ -357,14 +372,14 @@ where
         &'a self,
         description: &'a str,
     ) -> SoftwareBuilderFuture<'a, Result<BuildRequirement, AgentToolError>> {
-        Box::pin(async move { NativeSoftwareBuilder::analyze(self, description).await })
+        Box::pin(NativeSoftwareBuilder::analyze(self, description))
     }
 
     fn build<'a>(
         &'a self,
         requirement: &'a BuildRequirement,
     ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>> {
-        Box::pin(async move { NativeSoftwareBuilder::build(self, requirement).await })
+        Box::pin(NativeSoftwareBuilder::build(self, requirement))
     }
 
     fn repair<'a>(
@@ -372,6 +387,6 @@ where
         result: &'a BuildResult,
         error: &'a str,
     ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>> {
-        Box::pin(async move { NativeSoftwareBuilder::repair(self, result, error).await })
+        Box::pin(NativeSoftwareBuilder::repair(self, result, error))
     }
 }
