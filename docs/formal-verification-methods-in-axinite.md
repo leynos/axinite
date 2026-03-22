@@ -605,7 +605,8 @@ That is small, stable, and checks a load-bearing security property.
 Stateright is a Rust model checker for nondeterministic systems. Models
 implement a `Model` trait, are supplemented with `always` and `sometimes`
 properties, and are explored by a checker obtained from `Model::checker()`,
-typically via `spawn_bfs()` or `spawn_dfs()`.[^28][^29][^35]
+typically via `spawn_bfs()` (breadth-first search, BFS) or `spawn_dfs()`
+(depth-first search, DFS).[^28][^29][^35]
 
 That makes it a good fit for Axinite’s orchestration semantics, where the
 dominant risk is interleaving rather than input parsing.
