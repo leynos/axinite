@@ -100,7 +100,7 @@ pub trait NativeMcpTransport: Send + Sync {
     ) -> impl Future<Output = Result<McpResponse, ToolError>> + Send + 'a;
 
     /// Shut down the transport, releasing any resources (child processes, connections).
-    fn shutdown(&self) -> impl Future<Output = Result<(), ToolError>> + Send;
+    fn shutdown(&self) -> impl Future<Output = Result<(), ToolError>> + Send + '_;
 
     /// Whether this transport supports HTTP-specific features like session headers.
     fn supports_http_features(&self) -> bool {
