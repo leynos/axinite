@@ -115,11 +115,11 @@ where
         request: &'a McpRequest,
         headers: &'a HashMap<String, String>,
     ) -> McpTransportFuture<'a, Result<McpResponse, ToolError>> {
-        Box::pin(async move { NativeMcpTransport::send(self, request, headers).await })
+        Box::pin(NativeMcpTransport::send(self, request, headers))
     }
 
     fn shutdown(&self) -> McpTransportFuture<'_, Result<(), ToolError>> {
-        Box::pin(async move { NativeMcpTransport::shutdown(self).await })
+        Box::pin(NativeMcpTransport::shutdown(self))
     }
 
     fn supports_http_features(&self) -> bool {
