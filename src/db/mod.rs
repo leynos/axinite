@@ -135,45 +135,29 @@ pub async fn create_secrets_store(
     config: &crate::config::DatabaseConfig,
     crypto: Arc<crate::secrets::SecretsCrypto>,
 ) -> Result<Arc<dyn crate::secrets::SecretsStore + Send + Sync>, DatabaseError> {
+    let (_db, handles) = connect_with_handles(config).await?;
+
     match config.backend {
         #[cfg(feature = "libsql")]
         crate::config::DatabaseBackend::LibSql => {
-            use secrecy::ExposeSecret as _;
-
-            let default_path = crate::config::default_libsql_path();
-            let db_path = config.libsql_path.as_deref().unwrap_or(&default_path);
-
-            let backend = if let Some(ref url) = config.libsql_url {
-                let token = config.libsql_auth_token.as_ref().ok_or_else(|| {
-                    DatabaseError::Pool(
-                        "LIBSQL_AUTH_TOKEN required when LIBSQL_URL is set".to_string(),
-                    )
-                })?;
-                libsql::LibSqlBackend::new_remote_replica(db_path, url, token.expose_secret())
-                    .await
-                    .map_err(|e| DatabaseError::Pool(e.to_string()))?
-            } else {
-                libsql::LibSqlBackend::new_local(db_path)
-                    .await
-                    .map_err(|e| DatabaseError::Pool(e.to_string()))?
-            };
-            backend.run_migrations().await?;
+            let libsql_db = handles.libsql_db.ok_or_else(|| {
+                DatabaseError::Pool("libSQL handle missing after connect_with_handles".to_string())
+            })?;
 
             Ok(Arc::new(crate::secrets::LibSqlSecretsStore::new(
-                backend.shared_db(),
-                crypto,
+                libsql_db, crypto,
             )))
         }
         #[cfg(feature = "postgres")]
         _ => {
-            let pg = postgres::PgBackend::new(config)
-                .await
-                .map_err(|e| DatabaseError::Pool(e.to_string()))?;
-            pg.run_migrations().await?;
+            let pg_pool = handles.pg_pool.ok_or_else(|| {
+                DatabaseError::Pool(
+                    "PostgreSQL handle missing after connect_with_handles".to_string(),
+                )
+            })?;
 
             Ok(Arc::new(crate::secrets::PostgresSecretsStore::new(
-                pg.pool(),
-                crypto,
+                pg_pool, crypto,
             )))
         }
         #[cfg(not(feature = "postgres"))]
