@@ -5,9 +5,21 @@
 //! `connect_docker()`, applies [`ContainerJobConfig`], manages worker tokens,
 //! and tracks active [`ContainerHandle`] values through the in-memory registry.
 
-use super::*;
+use std::sync::Arc;
 
-use crate::orchestrator::bind_mount;
+use tokio::sync::RwLock;
+use uuid::Uuid;
+
+use super::{
+    CompletionResult, ContainerId, ContainerJobConfig, ContainerState, CreateJobParams, JobMode,
+    JobRegistry, TokenStore,
+};
+use crate::error::OrchestratorError;
+use crate::orchestrator::job_manager::docker_helpers::{
+    ContainerConfigParams, append_claude_code_env, build_cmd, build_container_config,
+    build_host_config, build_workspace_binds, create_and_start_container,
+};
+
 use crate::sandbox::connect_docker;
 use crate::sandbox::container::DockerConnection;
 
@@ -18,193 +30,6 @@ pub struct ContainerJobManager {
     pub(crate) registry: JobRegistry,
     /// Cached Docker connection (created on first use).
     pub(super) docker: Arc<RwLock<Option<DockerConnection>>>,
-}
-
-/// Build bind mounts and related environment for a job workspace.
-async fn build_workspace_binds(
-    project_dir: Option<&PathBuf>,
-    job_id: Uuid,
-    env_vec: &mut Vec<String>,
-) -> Result<Vec<String>, OrchestratorError> {
-    let mut binds = Vec::new();
-    if let Some(dir) = project_dir {
-        let canonical = bind_mount::validate_bind_mount_path(dir, job_id).await?;
-        binds.push(format!("{}:/workspace:rw", canonical.display()));
-        env_vec.push("IRONCLAW_WORKSPACE=/workspace".to_string());
-    }
-
-    Ok(binds)
-}
-
-/// Append Claude Code-specific environment variables.
-fn append_claude_code_env(config: &ContainerJobConfig, env_vec: &mut Vec<String>) {
-    if config.claude_code_api_key.is_some() && config.claude_code_oauth_token.is_some() {
-        tracing::warn!(
-            "Both claude_code_api_key and claude_code_oauth_token are set; using the API key"
-        );
-    }
-    if let Some(ref api_key) = config.claude_code_api_key {
-        env_vec.push(format!("ANTHROPIC_API_KEY={}", api_key));
-    } else if let Some(ref oauth_token) = config.claude_code_oauth_token {
-        env_vec.push(format!("CLAUDE_CODE_OAUTH_TOKEN={}", oauth_token));
-    }
-    if !config.claude_code_allowed_tools.is_empty() {
-        env_vec.push(format!(
-            "CLAUDE_CODE_ALLOWED_TOOLS={}",
-            config.claude_code_allowed_tools.join(",")
-        ));
-    }
-}
-
-/// Build the Docker host configuration for a job container.
-fn build_host_config(
-    binds: Vec<String>,
-    memory_mb: u64,
-    cpu_shares: u32,
-) -> bollard::models::HostConfig {
-    use bollard::models::HostConfig;
-
-    HostConfig {
-        binds: if binds.is_empty() { None } else { Some(binds) },
-        memory: Some((memory_mb * 1024 * 1024) as i64),
-        cpu_shares: Some(cpu_shares as i64),
-        network_mode: Some("bridge".to_string()),
-        extra_hosts: Some(vec!["host.docker.internal:host-gateway".to_string()]),
-        cap_drop: Some(vec!["ALL".to_string()]),
-        cap_add: Some(vec!["CHOWN".to_string()]),
-        security_opt: Some(vec!["no-new-privileges:true".to_string()]),
-        tmpfs: Some(
-            [("/tmp".to_string(), "size=512M".to_string())]
-                .into_iter()
-                .collect(),
-        ),
-        ..Default::default()
-    }
-}
-
-/// Build the container command for a job mode.
-fn build_cmd(
-    mode: JobMode,
-    job_id: Uuid,
-    orchestrator_url: &str,
-    config: &ContainerJobConfig,
-) -> Vec<String> {
-    match mode {
-        JobMode::Worker => vec![
-            "worker".to_string(),
-            "--job-id".to_string(),
-            job_id.to_string(),
-            "--orchestrator-url".to_string(),
-            orchestrator_url.to_string(),
-        ],
-        JobMode::ClaudeCode => vec![
-            "claude-bridge".to_string(),
-            "--job-id".to_string(),
-            job_id.to_string(),
-            "--orchestrator-url".to_string(),
-            orchestrator_url.to_string(),
-            "--max-turns".to_string(),
-            config.claude_code_max_turns.to_string(),
-            "--model".to_string(),
-            config.claude_code_model.clone(),
-        ],
-    }
-}
-
-/// Build the Docker container name for a job mode.
-fn container_name(mode: JobMode, job_id: Uuid) -> String {
-    match mode {
-        JobMode::Worker => format!("ironclaw-worker-{}", job_id),
-        JobMode::ClaudeCode => format!("ironclaw-claude-{}", job_id),
-    }
-}
-
-/// Inputs used to assemble the Docker container configuration for a job.
-struct BuildContainerParams {
-    image: String,
-    cmd: Vec<String>,
-    env_vec: Vec<String>,
-    host_config: bollard::models::HostConfig,
-    job_id: Uuid,
-    mode: JobMode,
-}
-
-/// Build the Docker container configuration and options for a job.
-fn build_container_config(
-    params: BuildContainerParams,
-) -> (
-    bollard::container::Config<String>,
-    bollard::container::CreateContainerOptions<String>,
-) {
-    let mut labels = std::collections::HashMap::new();
-    labels.insert("ironclaw.job_id".to_string(), params.job_id.to_string());
-    labels.insert(
-        "ironclaw.created_at".to_string(),
-        chrono::Utc::now().to_rfc3339(),
-    );
-
-    let config = bollard::container::Config {
-        image: Some(params.image),
-        cmd: Some(params.cmd),
-        env: Some(params.env_vec),
-        host_config: Some(params.host_config),
-        user: Some("1000:1000".to_string()),
-        working_dir: Some("/workspace".to_string()),
-        labels: Some(labels),
-        ..Default::default()
-    };
-
-    let options = bollard::container::CreateContainerOptions {
-        name: container_name(params.mode, params.job_id),
-        ..Default::default()
-    };
-
-    (config, options)
-}
-
-/// Create and start a Docker container, cleaning up if start fails.
-async fn create_and_start_container(
-    docker: &DockerConnection,
-    options: bollard::container::CreateContainerOptions<String>,
-    config: bollard::container::Config<String>,
-    job_id: Uuid,
-) -> Result<String, OrchestratorError> {
-    let response = docker
-        .create_container(Some(options), config)
-        .await
-        .map_err(|e| OrchestratorError::ContainerCreationFailed {
-            job_id,
-            reason: e.to_string(),
-        })?;
-
-    let container_id = response.id;
-
-    if let Err(e) = docker.start_container::<String>(&container_id, None).await {
-        if let Err(remove_error) = docker
-            .remove_container(
-                &container_id,
-                Some(bollard::container::RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
-            .await
-        {
-            tracing::warn!(
-                job_id = %job_id,
-                container_id = %container_id,
-                error = %remove_error,
-                "Failed to remove container after start failure"
-            );
-        }
-
-        return Err(OrchestratorError::ContainerCreationFailed {
-            job_id,
-            reason: format!("failed to start container: {}", e),
-        });
-    }
-
-    Ok(container_id)
 }
 
 impl ContainerJobManager {
@@ -233,9 +58,6 @@ impl ContainerJobManager {
         let docker = match connect_docker().await {
             Ok(docker) => docker,
             Err(e) => {
-                if let Some(docker) = self.docker.read().await.clone() {
-                    return Ok(docker);
-                }
                 return Err(OrchestratorError::Docker {
                     reason: e.to_string(),
                 });
@@ -290,7 +112,7 @@ impl ContainerJobManager {
         let host_config = build_host_config(binds, memory_mb, self.config.cpu_shares);
         let cmd = build_cmd(mode, job_id, &orchestrator_url, &self.config);
 
-        let (container_config, options) = build_container_config(BuildContainerParams {
+        let (container_config, options) = build_container_config(ContainerConfigParams {
             image: self.config.image.clone(),
             cmd,
             env_vec,

@@ -191,8 +191,5 @@ needed to carry a local vendor delta to defend itself from that environment bug.
 
 ## References
 
-- `docs/execplans/feature-gate-bollard-clean-build.md`
-- `Cargo.toml`
-Neutralize `RUSTC_WRAPPER` in repository or Continuous Integration (CI)
-configuration so the build scripts see direct compiler behaviour even when
-operators run plain `cargo` commands.
+- [Feature-gate bollard: clean build](execplans/feature-gate-bollard-clean-build.md)
+- [Cargo.toml](../Cargo.toml)

@@ -92,12 +92,28 @@ async fn create_active_job(ctx_mgr: &ContextManager, description: &str, tag: &st
         .is_active()
 }
 
+#[rstest]
+#[case(
+    "test description",
+    "active_job_is_not_orphaned",
+    "Pending job should be active"
+)]
+#[case(
+    "test job",
+    "active_job_prevents_cleanup_of_old_container",
+    "Active job should prevent cleanup"
+)]
 #[tokio::test]
-async fn active_job_is_not_orphaned() {
+async fn active_job_remains_active(
+    #[case] description: &str,
+    #[case] tag: &str,
+    #[case] assertion_message: &str,
+) {
     let ctx_mgr = Arc::new(ContextManager::new(5));
     assert!(
-        create_active_job(&ctx_mgr, "test description", "active_job_is_not_orphaned").await,
-        "Pending job should be active"
+        create_active_job(&ctx_mgr, description, tag).await,
+        "{}",
+        assertion_message
     );
 }
 
@@ -184,20 +200,6 @@ fn age_calculation_correctly_filters_containers() {
     assert!(
         is_past_orphan_threshold(old_container, &cfg, now),
         "Old container should be cleaned"
-    );
-}
-
-#[tokio::test]
-async fn active_job_prevents_cleanup_of_old_container() {
-    let ctx_mgr = Arc::new(ContextManager::new(5));
-    assert!(
-        create_active_job(
-            &ctx_mgr,
-            "test job",
-            "active_job_prevents_cleanup_of_old_container"
-        )
-        .await,
-        "Active job should prevent cleanup"
     );
 }
 

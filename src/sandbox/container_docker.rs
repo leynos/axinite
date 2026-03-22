@@ -4,7 +4,11 @@
 //! [`ContainerRunner`]. It stays separate from the shared container module so
 //! Docker-specific lifecycle handling and dependency usage do not leak into the
 //! no-Docker build.
-use super::*;
+use std::collections::HashMap;
+use std::path::Path;
+use std::time::Instant;
+
+use super::{ContainerOutput, ContainerRunner, append_with_limit};
 
 use bollard::container::{
     Config, CreateContainerOptions, LogOutput, LogsOptions, WaitContainerOptions,
@@ -12,7 +16,9 @@ use bollard::container::{
 use bollard::exec::StartExecResults;
 use bollard::models::HostConfig;
 use futures::StreamExt;
-use std::time::Instant;
+
+use crate::sandbox::config::{ResourceLimits, SandboxPolicy};
+use crate::sandbox::error::{Result, SandboxError};
 
 #[cfg(feature = "docker")]
 impl ContainerRunner {

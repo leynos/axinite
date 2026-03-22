@@ -9,9 +9,9 @@ use uuid::Uuid;
 
 #[cfg(test)]
 use std::collections::HashMap;
-#[cfg(any(feature = "docker", test))]
+#[cfg(test)]
 use std::sync::Arc;
-#[cfg(any(feature = "docker", test))]
+#[cfg(test)]
 use tokio::sync::RwLock;
 
 use crate::error::OrchestratorError;
@@ -21,6 +21,8 @@ pub use crate::orchestrator::job_types::*;
 
 #[cfg(feature = "docker")]
 mod docker;
+#[cfg(feature = "docker")]
+mod docker_helpers;
 #[cfg(not(feature = "docker"))]
 mod no_docker;
 #[cfg(test)]

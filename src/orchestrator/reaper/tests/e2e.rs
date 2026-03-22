@@ -187,5 +187,4 @@ async fn e2e_reaper_respects_age_threshold() {
     );
 
     let _ = docker.remove_container(&recent_container_id, None).await;
-    let _ = docker.remove_container(&old_container_id, None).await;
 }
