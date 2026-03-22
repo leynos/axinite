@@ -1,8 +1,17 @@
+//! Docker-disabled container job orchestration.
+//!
+//! This module provides the [`ContainerJobManager`] fallback used when Docker
+//! support is not compiled in. It preserves the sandbox job management surface
+//! while returning errors based on `DOCKER_FEATURE_DISABLED_REASON`.
+
 use super::*;
 
 use crate::sandbox::container::DOCKER_FEATURE_DISABLED_REASON;
 
-/// Manages the lifecycle of Docker containers for sandboxed job execution.
+/// No-Docker backend for sandboxed job execution.
+///
+/// This implementation is compiled when Docker support is disabled and uses
+/// `DOCKER_FEATURE_DISABLED_REASON` for operations that require containers.
 pub struct ContainerJobManager {
     pub(super) token_store: TokenStore,
     pub(crate) registry: JobRegistry,

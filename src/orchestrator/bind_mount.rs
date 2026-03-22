@@ -1,6 +1,8 @@
 //! Bind-mount path validation for sandboxed containers.
 
 #[cfg(any(feature = "docker", test))]
+use std::path::Path;
+#[cfg(any(feature = "docker", test))]
 use std::path::PathBuf;
 
 #[cfg(any(feature = "docker", test))]
@@ -25,6 +27,15 @@ pub(crate) fn validate_bind_mount_path(
     dir: &std::path::Path,
     job_id: uuid::Uuid,
 ) -> Result<PathBuf, OrchestratorError> {
+    validate_bind_mount_path_against_base(dir, &ironclaw_base_dir().join("projects"), job_id)
+}
+
+#[cfg(any(feature = "docker", test))]
+fn validate_bind_mount_path_against_base(
+    dir: &Path,
+    projects_base: &Path,
+    job_id: uuid::Uuid,
+) -> Result<PathBuf, OrchestratorError> {
     let canonical = dir
         .canonicalize()
         .map_err(|e| OrchestratorError::ContainerCreationFailed {
@@ -36,8 +47,6 @@ pub(crate) fn validate_bind_mount_path(
             ),
         })?;
 
-    let projects_base = ironclaw_base_dir().join("projects");
-
     if !projects_base.is_absolute() {
         return Err(OrchestratorError::ContainerCreationFailed {
             job_id,
@@ -46,7 +55,7 @@ pub(crate) fn validate_bind_mount_path(
     }
 
     // Ensure the base exists so canonicalize always succeeds.
-    std::fs::create_dir_all(&projects_base).map_err(|e| {
+    std::fs::create_dir_all(projects_base).map_err(|e| {
         OrchestratorError::ContainerCreationFailed {
             job_id,
             reason: format!(
@@ -89,22 +98,20 @@ mod tests {
 
     use uuid::Uuid;
 
-    use super::validate_bind_mount_path;
+    use super::{validate_bind_mount_path, validate_bind_mount_path_against_base};
 
     #[test]
     fn test_validate_bind_mount_valid_path() {
-        let base = crate::bootstrap::compute_ironclaw_base_dir().join("projects");
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("projects");
         std::fs::create_dir_all(&base).unwrap();
-
         let test_dir = base.join("test_validate_bind");
         std::fs::create_dir_all(&test_dir).unwrap();
 
-        let result = validate_bind_mount_path(&test_dir, Uuid::new_v4());
+        let result = validate_bind_mount_path_against_base(&test_dir, &base, Uuid::new_v4());
         assert!(result.is_ok());
         let canonical = result.unwrap();
         assert!(canonical.starts_with(base.canonicalize().unwrap()));
-
-        let _ = std::fs::remove_dir_all(&test_dir);
     }
 
     #[test]
@@ -124,8 +131,11 @@ mod tests {
 
     #[test]
     fn test_validate_bind_mount_rejects_nonexistent() {
-        let nonexistent = PathBuf::from("/no/such/path/at/all");
-        let result = validate_bind_mount_path(&nonexistent, Uuid::new_v4());
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("projects");
+        std::fs::create_dir_all(&base).unwrap();
+        let nonexistent = base.join(PathBuf::from("missing/project"));
+        let result = validate_bind_mount_path_against_base(&nonexistent, &base, Uuid::new_v4());
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(

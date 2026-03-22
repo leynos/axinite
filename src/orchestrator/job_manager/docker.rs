@@ -1,3 +1,10 @@
+//! Docker-backed container job orchestration.
+//!
+//! This module implements [`ContainerJobManager`] for sandboxed job execution
+//! when Docker support is enabled. It caches a [`DockerConnection`] from
+//! `connect_docker()`, applies [`ContainerJobConfig`], manages worker tokens,
+//! and tracks active [`ContainerHandle`] values through the in-memory registry.
+
 use super::*;
 
 use crate::orchestrator::bind_mount;
@@ -172,13 +179,30 @@ impl ContainerJobManager {
 
         let container_id = response.id;
 
-        docker
-            .start_container::<String>(&container_id, None)
-            .await
-            .map_err(|e| OrchestratorError::ContainerCreationFailed {
+        if let Err(e) = docker.start_container::<String>(&container_id, None).await {
+            if let Err(remove_error) = docker
+                .remove_container(
+                    &container_id,
+                    Some(bollard::container::RemoveContainerOptions {
+                        force: true,
+                        ..Default::default()
+                    }),
+                )
+                .await
+            {
+                tracing::warn!(
+                    job_id = %job_id,
+                    container_id = %container_id,
+                    error = %remove_error,
+                    "Failed to remove container after start failure"
+                );
+            }
+
+            return Err(OrchestratorError::ContainerCreationFailed {
                 job_id,
                 reason: format!("failed to start container: {}", e),
-            })?;
+            });
+        }
 
         self.registry.set_container_id(job_id, container_id).await;
 

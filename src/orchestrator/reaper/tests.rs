@@ -1,6 +1,5 @@
 use super::*;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 #[test]
 fn orphan_threshold_filters_young_containers() {
@@ -62,61 +61,6 @@ async fn terminal_job_is_treated_as_orphaned() {
     );
 }
 
-#[allow(dead_code)]
-struct MockDocker {
-    containers: Arc<std::sync::Mutex<Vec<ContainerSummary>>>,
-    stop_called: Arc<AtomicU32>,
-    remove_called: Arc<AtomicU32>,
-    stop_error: Arc<AtomicBool>,
-    remove_error: Arc<AtomicBool>,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Debug)]
-struct ContainerSummary {
-    id: String,
-    labels: HashMap<String, String>,
-    created: Option<i64>,
-}
-
-#[allow(dead_code)]
-impl MockDocker {
-    fn new() -> Self {
-        Self {
-            containers: Arc::new(std::sync::Mutex::new(Vec::new())),
-            stop_called: Arc::new(AtomicU32::new(0)),
-            remove_called: Arc::new(AtomicU32::new(0)),
-            stop_error: Arc::new(AtomicBool::new(false)),
-            remove_error: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
-    fn add_container(&self, id: String, labels: HashMap<String, String>, created: Option<i64>) {
-        let mut cs = self.containers.lock().unwrap();
-        cs.push(ContainerSummary {
-            id,
-            labels,
-            created,
-        });
-    }
-
-    fn set_stop_error(&self, error: bool) {
-        self.stop_error.store(error, Ordering::SeqCst);
-    }
-
-    fn set_remove_error(&self, error: bool) {
-        self.remove_error.store(error, Ordering::SeqCst);
-    }
-
-    fn stop_call_count(&self) -> u32 {
-        self.stop_called.load(Ordering::SeqCst)
-    }
-
-    fn remove_call_count(&self) -> u32 {
-        self.remove_called.load(Ordering::SeqCst)
-    }
-}
-
 #[test]
 fn parse_container_labels_extracts_job_id_and_timestamp() {
     let mut labels = HashMap::new();
@@ -127,23 +71,17 @@ fn parse_container_labels_extracts_job_id_and_timestamp() {
         "2024-01-15T10:30:45+00:00".to_string(),
     );
 
-    let parsed_id: Option<Uuid> = labels
-        .get("ironclaw.job_id")
-        .and_then(|s| s.parse::<Uuid>().ok());
+    let parsed_id = parse_job_id_label(&labels, "ironclaw.job_id");
     assert_eq!(parsed_id, Some(job_id));
 
-    let parsed_time = labels
-        .get("ironclaw.created_at")
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+    let parsed_time = parse_created_at_label(&labels, None);
     assert!(parsed_time.is_some());
 }
 
 #[test]
 fn missing_job_id_label_is_skipped() {
     let labels: HashMap<String, String> = HashMap::new();
-    let job_id: Option<Uuid> = labels
-        .get("ironclaw.job_id")
-        .and_then(|s| s.parse::<Uuid>().ok());
+    let job_id = parse_job_id_label(&labels, "ironclaw.job_id");
     assert_eq!(job_id, None);
 }
 
@@ -155,16 +93,13 @@ fn malformed_timestamp_fallback_works() {
         "invalid-date".to_string(),
     );
 
-    let parsed_time = labels
-        .get("ironclaw.created_at")
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+    let parsed_time = parse_created_at_label(&labels, None);
     assert!(
         parsed_time.is_none(),
         "Malformed timestamp should fail to parse"
     );
 
-    let docker_timestamp: Option<i64> = Some(1705324245);
-    let fallback = docker_timestamp.and_then(|ts| DateTime::from_timestamp(ts, 0));
+    let fallback = parse_created_at_label(&labels, Some(1705324245));
     assert!(
         fallback.is_some(),
         "Docker timestamp fallback should parse successfully"

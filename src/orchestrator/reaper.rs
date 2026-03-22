@@ -4,6 +4,8 @@
 //! containers and cleans up those whose corresponding jobs are no longer
 //! active.
 
+#[cfg(any(test, feature = "docker"))]
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,8 +16,6 @@ use crate::context::ContextManager;
 use crate::orchestrator::job_manager::ContainerJobManager;
 #[cfg(feature = "docker")]
 use crate::sandbox::connect_docker;
-#[cfg(not(feature = "docker"))]
-use crate::sandbox::container::DOCKER_FEATURE_DISABLED_REASON;
 #[cfg(feature = "docker")]
 use crate::sandbox::container::DockerConnection;
 
@@ -74,9 +74,7 @@ impl ReaperBackend {
             #[cfg(feature = "docker")]
             Self::Docker(docker) => list_docker_containers(docker, label).await,
             #[cfg(not(feature = "docker"))]
-            Self::Noop => Err(crate::sandbox::SandboxError::DockerNotAvailable {
-                reason: DOCKER_FEATURE_DISABLED_REASON.to_string(),
-            }),
+            Self::Noop => Ok(Vec::new()),
         }
     }
 
@@ -104,6 +102,25 @@ impl ReaperBackend {
             }
         }
     }
+}
+
+#[cfg(any(test, feature = "docker"))]
+fn parse_job_id_label(labels: &HashMap<String, String>, label: &str) -> Option<Uuid> {
+    labels
+        .get(label)
+        .and_then(|value| value.parse::<Uuid>().ok())
+}
+
+#[cfg(any(test, feature = "docker"))]
+fn parse_created_at_label(
+    labels: &HashMap<String, String>,
+    created: Option<i64>,
+) -> Option<DateTime<Utc>> {
+    labels
+        .get("ironclaw.created_at")
+        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+        .map(|timestamp| timestamp.with_timezone(&Utc))
+        .or_else(|| created.and_then(|timestamp| DateTime::from_timestamp(timestamp, 0)))
 }
 
 impl SandboxReaper {
@@ -233,8 +250,6 @@ async fn list_docker_containers(
     docker: &DockerConnection,
     label: &str,
 ) -> Result<Vec<ReaperContainer>, crate::sandbox::SandboxError> {
-    use std::collections::HashMap;
-
     use bollard::container::ListContainersOptions;
 
     let mut filters = HashMap::new();
@@ -260,7 +275,7 @@ async fn list_docker_containers(
         };
 
         let labels = summary.labels.unwrap_or_default();
-        let job_id = match labels.get(label).and_then(|s| s.parse::<Uuid>().ok()) {
+        let job_id = match parse_job_id_label(&labels, label) {
             Some(id) => id,
             None => {
                 tracing::warn!(
@@ -272,15 +287,7 @@ async fn list_docker_containers(
             }
         };
 
-        let created_at = match labels
-            .get("ironclaw.created_at")
-            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&Utc))
-            .or_else(|| {
-                summary
-                    .created
-                    .and_then(|ts| DateTime::from_timestamp(ts, 0))
-            }) {
+        let created_at = match parse_created_at_label(&labels, summary.created) {
             Some(ts) => ts,
             None => {
                 tracing::warn!(

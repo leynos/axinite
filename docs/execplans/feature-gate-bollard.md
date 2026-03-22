@@ -3,11 +3,13 @@
 **Branch:** (to be created from `build-time`)
 **Date:** 2026-03-15
 **Status:** Completed
-**Estimated impact:** ~156 fewer crates when `docker` feature is off
+**Measured impact:** 1 fewer crate when `docker` feature is off
+  (`cargo tree --prefix none | sort -u | wc -l`: 810 with default features,
+  809 with `postgres,libsql,html-to-markdown` and `docker` disabled)
 
 ## Big Picture
 
-The bollard crate (Docker API client) and its ~156 transitive dependencies
+The bollard crate (Docker API client) and its transitive dependency surface
 are always compiled, even though Docker-based sandboxing is an optional
 deployment capability. Feature-gating it behind a `docker` feature
 (included in defaults) lets developers who do not use Docker sandboxing
@@ -110,8 +112,11 @@ The direct bollard usage sites and their primary purposes are:
   passes (no Docker)
 - [x] `cargo check --all-features --features test-helpers` passes
 - [x] Full test suite passes
-- [ ] Verify crate count reduction: compare `cargo tree --prefix none |
+- [x] Verify crate count reduction: compare `cargo tree --prefix none |
   sort -u | wc -l` with and without `docker` feature
+  Measured on 2026-03-22 as 810 crates with default features and 809 crates
+  with `docker` disabled while keeping `postgres`, `libsql`, and
+  `html-to-markdown` enabled.
 
 ## Risks
 
@@ -146,6 +151,9 @@ The direct bollard usage sites and their primary purposes are:
 - 2026-03-21: Validation is now complete. The branch passed
   `make check-fmt`, `make typecheck`, `make lint`, and `make test`.
   The stable no-Docker acceptance check also passes.
+- 2026-03-22: The crate-count validation was closed with a fresh measurement.
+  The current resolved graph drops from 810 unique crates to 809 when the
+  `docker` feature is disabled while keeping the other default features.
 
 ## Progress
 

@@ -27,19 +27,12 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-#[cfg(all(unix, any(feature = "docker", test)))]
-use std::path::PathBuf;
 use std::time::Duration;
 
 #[cfg(feature = "docker")]
-use bollard::container::{
-    Config, CreateContainerOptions, LogOutput, LogsOptions, RemoveContainerOptions,
-    StartContainerOptions, WaitContainerOptions,
-};
+use bollard::container::{RemoveContainerOptions, StartContainerOptions};
 #[cfg(feature = "docker")]
-use bollard::exec::{CreateExecOptions, StartExecResults};
-#[cfg(feature = "docker")]
-use bollard::models::HostConfig;
+use bollard::exec::CreateExecOptions;
 #[cfg(feature = "docker")]
 use futures::StreamExt;
 
@@ -56,6 +49,19 @@ pub struct DockerConnection;
 #[cfg(not(feature = "docker"))]
 pub(crate) const DOCKER_FEATURE_DISABLED_REASON: &str =
     "Docker support was not compiled in; rebuild with --features docker";
+
+#[path = "container_connection.rs"]
+mod container_connection;
+
+#[cfg(feature = "docker")]
+#[path = "container_docker.rs"]
+mod container_docker;
+
+#[cfg(not(feature = "docker"))]
+pub(crate) use self::container_connection::docker_feature_disabled_error;
+pub use self::container_connection::{
+    connect_docker, docker_is_responsive, ensure_docker_responsive,
+};
 
 /// Output from container execution.
 #[derive(Debug, Clone)]
@@ -312,390 +318,6 @@ impl ContainerRunner {
     }
 }
 
-/// Connect to the Docker daemon.
-///
-/// When the crate is compiled without the `docker` feature, this returns
-/// `SandboxError::DockerNotAvailable` immediately via
-/// `docker_feature_disabled_error()`.
-///
-/// With the `docker` feature enabled, this delegates to
-/// `connect_docker_inner()` and tries these locations in order:
-///
-/// Tries these locations in order:
-/// 1. `DOCKER_HOST` env var (bollard default)
-/// 2. `/var/run/docker.sock` (Linux default; also used by OrbStack and Podman Desktop on macOS)
-/// 3. `~/.docker/run/docker.sock` (Docker Desktop 4.13+ on macOS — primary user-owned socket)
-/// 4. `~/.colima/default/docker.sock` (Colima — popular lightweight Docker Desktop alternative)
-/// 5. `~/.rd/docker.sock` (Rancher Desktop on macOS)
-/// 6. `$XDG_RUNTIME_DIR/docker.sock` (common rootless Docker socket on Linux)
-/// 7. `/run/user/$UID/docker.sock` (rootless Docker fallback on Linux)
-pub async fn connect_docker() -> Result<DockerConnection> {
-    #[cfg(feature = "docker")]
-    {
-        connect_docker_inner().await
-    }
-
-    #[cfg(not(feature = "docker"))]
-    {
-        Err(docker_feature_disabled_error())
-    }
-}
-
-#[cfg(feature = "docker")]
-async fn connect_docker_inner() -> Result<DockerConnection> {
-    // First try bollard defaults (checks DOCKER_HOST env var, then /var/run/docker.sock).
-    // This covers Linux, OrbStack (updates the /var/run symlink), and any user with
-    // DOCKER_HOST set to their runtime's socket.
-    if let Ok(docker) = DockerConnection::connect_with_local_defaults()
-        && docker.ping().await.is_ok()
-    {
-        return Ok(docker);
-    }
-
-    #[cfg(unix)]
-    {
-        // Try well-known user-owned socket locations for desktop and rootless runtimes.
-        // Docker Desktop 4.13+ (stabilised in 4.18) stopped creating the
-        // /var/run/docker.sock symlink by default and moved the API socket
-        // to ~/.docker/run/docker.sock.
-        for sock in unix_socket_candidates() {
-            if sock.exists() {
-                let sock_str = sock.to_string_lossy();
-                if let Ok(docker) = DockerConnection::connect_with_socket(
-                    &sock_str,
-                    120,
-                    bollard::API_DEFAULT_VERSION,
-                ) && docker.ping().await.is_ok()
-                {
-                    return Ok(docker);
-                }
-            }
-        }
-    }
-
-    Err(SandboxError::DockerNotAvailable {
-        reason: "Could not connect to Docker daemon. Tried: $DOCKER_HOST, \
-            /var/run/docker.sock, ~/.docker/run/docker.sock, \
-            ~/.colima/default/docker.sock, ~/.rd/docker.sock, \
-            $XDG_RUNTIME_DIR/docker.sock, /run/user/$UID/docker.sock"
-            .to_string(),
-    })
-}
-
-#[cfg(not(feature = "docker"))]
-pub(crate) fn docker_feature_disabled_error() -> SandboxError {
-    SandboxError::DockerNotAvailable {
-        reason: DOCKER_FEATURE_DISABLED_REASON.to_string(),
-    }
-}
-
-#[cfg(all(unix, feature = "docker"))]
-fn unix_socket_candidates() -> Vec<PathBuf> {
-    unix_socket_candidates_from_env(
-        std::env::var_os("HOME").map(PathBuf::from),
-        std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
-        std::env::var("UID").ok(),
-    )
-}
-
-#[cfg(all(unix, any(feature = "docker", test)))]
-fn unix_socket_candidates_from_env(
-    home: Option<PathBuf>,
-    xdg_runtime_dir: Option<PathBuf>,
-    uid: Option<String>,
-) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    let mut push_unique = |path: PathBuf| {
-        if !candidates.iter().any(|existing| existing == &path) {
-            candidates.push(path);
-        }
-    };
-
-    if let Some(home) = home {
-        push_unique(home.join(".docker/run/docker.sock")); // Docker Desktop 4.13+
-        push_unique(home.join(".colima/default/docker.sock")); // Colima
-        push_unique(home.join(".rd/docker.sock")); // Rancher Desktop
-    }
-
-    if let Some(xdg_runtime_dir) = xdg_runtime_dir {
-        push_unique(xdg_runtime_dir.join("docker.sock"));
-    }
-
-    if let Some(uid) = uid.filter(|value| !value.is_empty()) {
-        push_unique(PathBuf::from(format!("/run/user/{uid}/docker.sock")));
-    }
-
-    candidates
-}
-
-pub async fn docker_is_responsive(docker: &DockerConnection) -> bool {
-    #[cfg(feature = "docker")]
-    {
-        docker.ping().await.is_ok()
-    }
-
-    #[cfg(not(feature = "docker"))]
-    {
-        let _ = docker;
-        false
-    }
-}
-
-pub async fn ensure_docker_responsive(docker: &DockerConnection) -> Result<()> {
-    #[cfg(feature = "docker")]
-    {
-        docker
-            .ping()
-            .await
-            .map(|_| ())
-            .map_err(|e| SandboxError::DockerNotAvailable {
-                reason: e.to_string(),
-            })
-    }
-
-    #[cfg(not(feature = "docker"))]
-    {
-        let _ = docker;
-        Err(docker_feature_disabled_error())
-    }
-}
-
-#[cfg(feature = "docker")]
-impl ContainerRunner {
-    /// Create a container with the appropriate configuration.
-    async fn create_container(
-        &self,
-        command: &str,
-        working_dir: &Path,
-        policy: SandboxPolicy,
-        limits: &ResourceLimits,
-        env: HashMap<String, String>,
-    ) -> Result<String> {
-        let working_dir_str = working_dir.display().to_string();
-
-        let mut env_vec: Vec<String> = env
-            .into_iter()
-            .map(|(k, v)| format!("{}={}", k, v))
-            .collect();
-
-        let proxy_host = if cfg!(target_os = "linux") {
-            "172.17.0.1"
-        } else {
-            "host.docker.internal"
-        };
-
-        if self.proxy_port > 0 && policy.is_sandboxed() {
-            env_vec.push(format!(
-                "http_proxy=http://{}:{}",
-                proxy_host, self.proxy_port
-            ));
-            env_vec.push(format!(
-                "https_proxy=http://{}:{}",
-                proxy_host, self.proxy_port
-            ));
-            env_vec.push(format!(
-                "HTTP_PROXY=http://{}:{}",
-                proxy_host, self.proxy_port
-            ));
-            env_vec.push(format!(
-                "HTTPS_PROXY=http://{}:{}",
-                proxy_host, self.proxy_port
-            ));
-        }
-
-        let binds = match policy {
-            SandboxPolicy::ReadOnly => vec![format!("{}:/workspace:ro", working_dir_str)],
-            SandboxPolicy::WorkspaceWrite => vec![format!("{}:/workspace:rw", working_dir_str)],
-            SandboxPolicy::FullAccess => vec![
-                format!("{}:/workspace:rw", working_dir_str),
-                "/tmp:/tmp:rw".to_string(),
-            ],
-        };
-
-        let host_config = HostConfig {
-            binds: Some(binds),
-            memory: Some((limits.memory_bytes) as i64),
-            cpu_shares: Some(limits.cpu_shares as i64),
-            auto_remove: Some(true),
-            network_mode: Some("bridge".to_string()),
-            cap_drop: Some(vec!["ALL".to_string()]),
-            cap_add: Some(vec!["CHOWN".to_string()]),
-            security_opt: Some(vec!["no-new-privileges:true".to_string()]),
-            readonly_rootfs: Some(policy != SandboxPolicy::FullAccess),
-            tmpfs: Some(
-                [
-                    ("/tmp".to_string(), "size=512M".to_string()),
-                    (
-                        "/home/sandbox/.cargo/registry".to_string(),
-                        "size=1G".to_string(),
-                    ),
-                ]
-                .into_iter()
-                .collect(),
-            ),
-            ..Default::default()
-        };
-
-        let config = Config {
-            image: Some(self.image.clone()),
-            cmd: Some(vec![
-                "sh".to_string(),
-                "-c".to_string(),
-                command.to_string(),
-            ]),
-            working_dir: Some("/workspace".to_string()),
-            env: Some(env_vec),
-            host_config: Some(host_config),
-            user: Some("1000:1000".to_string()),
-            ..Default::default()
-        };
-
-        let options = CreateContainerOptions {
-            name: format!("sandbox-{}", uuid::Uuid::new_v4()),
-            ..Default::default()
-        };
-
-        let response = self
-            .docker
-            .create_container(Some(options), config)
-            .await
-            .map_err(|e| SandboxError::ContainerCreationFailed {
-                reason: e.to_string(),
-            })?;
-
-        Ok(response.id)
-    }
-
-    /// Wait for a container to complete and collect output.
-    async fn wait_for_container(
-        &self,
-        container_id: &str,
-        max_output: usize,
-    ) -> Result<ContainerOutput> {
-        let mut wait_stream = self.docker.wait_container(
-            container_id,
-            Some(WaitContainerOptions {
-                condition: "not-running",
-            }),
-        );
-
-        let exit_code = match wait_stream.next().await {
-            Some(Ok(response)) => response.status_code,
-            Some(Err(e)) => {
-                return Err(SandboxError::ExecutionFailed {
-                    reason: format!("wait failed: {}", e),
-                });
-            }
-            None => {
-                return Err(SandboxError::ExecutionFailed {
-                    reason: "container wait stream ended unexpectedly".to_string(),
-                });
-            }
-        };
-
-        let (stdout, stderr, truncated) = self.collect_logs(container_id, max_output).await?;
-
-        Ok(ContainerOutput {
-            exit_code,
-            stdout,
-            stderr,
-            duration: Duration::ZERO,
-            truncated,
-        })
-    }
-
-    /// Collect stdout and stderr from a container.
-    async fn collect_logs(
-        &self,
-        container_id: &str,
-        max_output: usize,
-    ) -> Result<(String, String, bool)> {
-        let options = LogsOptions::<String> {
-            stdout: true,
-            stderr: true,
-            follow: false,
-            ..Default::default()
-        };
-
-        let mut stream = self.docker.logs(container_id, Some(options));
-
-        let mut stdout = String::new();
-        let mut stderr = String::new();
-        let mut truncated = false;
-        let half_max = max_output / 2;
-
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(LogOutput::StdOut { message }) => {
-                    let text = String::from_utf8_lossy(&message);
-                    truncated |= append_with_limit(&mut stdout, &text, half_max);
-                }
-                Ok(LogOutput::StdErr { message }) => {
-                    let text = String::from_utf8_lossy(&message);
-                    truncated |= append_with_limit(&mut stderr, &text, half_max);
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!("Error reading container logs: {}", e);
-                }
-            }
-        }
-
-        Ok((stdout, stderr, truncated))
-    }
-
-    /// Run an exec and collect output.
-    async fn run_exec(&self, exec_id: &str, max_output: usize) -> Result<ContainerOutput> {
-        let start_result = self.docker.start_exec(exec_id, None).await.map_err(|e| {
-            SandboxError::ExecutionFailed {
-                reason: format!("exec start failed: {}", e),
-            }
-        })?;
-
-        let mut stdout = String::new();
-        let mut stderr = String::new();
-        let mut truncated = false;
-        let half_max = max_output / 2;
-
-        if let StartExecResults::Attached { mut output, .. } = start_result {
-            while let Some(result) = output.next().await {
-                match result {
-                    Ok(LogOutput::StdOut { message }) => {
-                        let text = String::from_utf8_lossy(&message);
-                        truncated |= append_with_limit(&mut stdout, &text, half_max);
-                    }
-                    Ok(LogOutput::StdErr { message }) => {
-                        let text = String::from_utf8_lossy(&message);
-                        truncated |= append_with_limit(&mut stderr, &text, half_max);
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::warn!("Error reading exec output: {}", e);
-                    }
-                }
-            }
-        }
-
-        let inspect =
-            self.docker
-                .inspect_exec(exec_id)
-                .await
-                .map_err(|e| SandboxError::ExecutionFailed {
-                    reason: format!("exec inspect failed: {}", e),
-                })?;
-
-        let exit_code = inspect.exit_code.unwrap_or(-1);
-
-        Ok(ContainerOutput {
-            exit_code,
-            stdout,
-            stderr,
-            duration: Duration::ZERO,
-            truncated,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -724,21 +346,6 @@ mod tests {
         assert_eq!(out, "hello");
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn test_unix_socket_candidates_include_rootless_paths() {
-        let candidates = unix_socket_candidates_from_env(
-            Some(PathBuf::from("/home/tester")),
-            Some(PathBuf::from("/run/user/1000")),
-            Some("1000".to_string()),
-        );
-
-        assert!(candidates.contains(&PathBuf::from("/home/tester/.docker/run/docker.sock")));
-        assert!(candidates.contains(&PathBuf::from("/home/tester/.colima/default/docker.sock")));
-        assert!(candidates.contains(&PathBuf::from("/home/tester/.rd/docker.sock")));
-        assert!(candidates.contains(&PathBuf::from("/run/user/1000/docker.sock")));
-    }
-
     #[cfg(feature = "docker")]
     #[tokio::test]
     async fn test_docker_connection() {
@@ -750,7 +357,7 @@ mod tests {
             return;
         }
 
-        let docker = result.unwrap();
+        let docker = result.expect("failed to create docker client");
         let runner = ContainerRunner::new(docker, "alpine:latest".to_string(), 0);
         // Just check that we can query Docker (result doesn't matter for CI)
         let _available = runner.is_available().await;

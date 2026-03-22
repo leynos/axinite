@@ -149,9 +149,10 @@ repository-local vendored patch chain to be retired.
   modules, which could accidentally expand scope.
   Severity: medium
   Likelihood: medium
-  Mitigation: prefer local `#[cfg]`, helper extraction, or narrow
-  `#[cfg_attr(..., allow(dead_code))]` only when a code path is truly
-  configuration-specific and the reason is documented.
+  Mitigation: prefer local `#[cfg]` pruning or helper extraction. If
+  suppression is truly unavoidable, do not use `#[allow(dead_code)]`; use a
+  tightly scoped `#[expect(dead_code, reason = "...")]` with the reason filled
+  in.
 
 ## Execution outline
 
@@ -216,8 +217,10 @@ Fix these narrowly. Good fixes include:
 - splitting Docker-only impl blocks from shared structs,
 - reducing stored fields in no-Docker configurations only where that does not
   change the public API,
-- adding tightly scoped `#[cfg_attr(not(feature = "docker"), allow(dead_code))]`
-  only when the item must remain present for interface symmetry.
+- using tightly scoped `#[expect(dead_code, reason = "...")]` only when an item
+  must remain present for interface symmetry and configuration (`cfg`) pruning
+  or helper extraction cannot remove the dead path. `#[allow(dead_code)]` is
+  not an approved option.
 
 Do not blanket-silence warnings across whole files.
 
@@ -398,7 +401,7 @@ $ git push
   pattern, so patching the full set is the smallest durable stable fix.
 
 - 2026-03-21: Remove the no-Docker warnings by cfg-pruning Docker-only fields
-  and helpers rather than adding broad `allow(dead_code)` suppressions.
+  and helpers rather than adding broad `#[allow(dead_code)]` suppressions.
   Reason: the warnings came from configuration-specific dead paths introduced by
   the optional `docker` feature, so the clean fix is to compile those items only
   when they are genuinely reachable.
