@@ -20,6 +20,100 @@ pub struct ContainerJobManager {
     pub(super) docker: Arc<RwLock<Option<DockerConnection>>>,
 }
 
+/// Build bind mounts and related environment for a job workspace.
+fn build_workspace_binds(
+    project_dir: Option<&PathBuf>,
+    job_id: Uuid,
+    env_vec: &mut Vec<String>,
+) -> Result<Vec<String>, OrchestratorError> {
+    let mut binds = Vec::new();
+    if let Some(dir) = project_dir {
+        let canonical = bind_mount::validate_bind_mount_path(dir, job_id)?;
+        binds.push(format!("{}:/workspace:rw", canonical.display()));
+        env_vec.push("IRONCLAW_WORKSPACE=/workspace".to_string());
+    }
+
+    Ok(binds)
+}
+
+/// Append Claude Code-specific environment variables.
+fn append_claude_code_env(config: &ContainerJobConfig, env_vec: &mut Vec<String>) {
+    if let Some(ref api_key) = config.claude_code_api_key {
+        env_vec.push(format!("ANTHROPIC_API_KEY={}", api_key));
+    } else if let Some(ref oauth_token) = config.claude_code_oauth_token {
+        env_vec.push(format!("CLAUDE_CODE_OAUTH_TOKEN={}", oauth_token));
+    }
+    if !config.claude_code_allowed_tools.is_empty() {
+        env_vec.push(format!(
+            "CLAUDE_CODE_ALLOWED_TOOLS={}",
+            config.claude_code_allowed_tools.join(",")
+        ));
+    }
+}
+
+/// Build the Docker host configuration for a job container.
+fn build_host_config(
+    binds: Vec<String>,
+    memory_mb: u64,
+    cpu_shares: u32,
+) -> bollard::models::HostConfig {
+    use bollard::models::HostConfig;
+
+    HostConfig {
+        binds: if binds.is_empty() { None } else { Some(binds) },
+        memory: Some((memory_mb * 1024 * 1024) as i64),
+        cpu_shares: Some(cpu_shares as i64),
+        network_mode: Some("bridge".to_string()),
+        extra_hosts: Some(vec!["host.docker.internal:host-gateway".to_string()]),
+        cap_drop: Some(vec!["ALL".to_string()]),
+        cap_add: Some(vec!["CHOWN".to_string()]),
+        security_opt: Some(vec!["no-new-privileges:true".to_string()]),
+        tmpfs: Some(
+            [("/tmp".to_string(), "size=512M".to_string())]
+                .into_iter()
+                .collect(),
+        ),
+        ..Default::default()
+    }
+}
+
+/// Build the container command for a job mode.
+fn build_cmd(
+    mode: JobMode,
+    job_id: Uuid,
+    orchestrator_url: &str,
+    config: &ContainerJobConfig,
+) -> Vec<String> {
+    match mode {
+        JobMode::Worker => vec![
+            "worker".to_string(),
+            "--job-id".to_string(),
+            job_id.to_string(),
+            "--orchestrator-url".to_string(),
+            orchestrator_url.to_string(),
+        ],
+        JobMode::ClaudeCode => vec![
+            "claude-bridge".to_string(),
+            "--job-id".to_string(),
+            job_id.to_string(),
+            "--orchestrator-url".to_string(),
+            orchestrator_url.to_string(),
+            "--max-turns".to_string(),
+            config.claude_code_max_turns.to_string(),
+            "--model".to_string(),
+            config.claude_code_model.clone(),
+        ],
+    }
+}
+
+/// Build the Docker container name for a job mode.
+fn container_name(mode: JobMode, job_id: Uuid) -> String {
+    match mode {
+        JobMode::Worker => format!("ironclaw-worker-{}", job_id),
+        JobMode::ClaudeCode => format!("ironclaw-claude-{}", job_id),
+    }
+}
+
 impl ContainerJobManager {
     pub fn new(config: ContainerJobConfig, token_store: TokenStore) -> Self {
         Self {
@@ -75,25 +169,10 @@ impl ContainerJobManager {
             format!("IRONCLAW_ORCHESTRATOR_URL={}", orchestrator_url),
         ];
 
-        let mut binds = Vec::new();
-        if let Some(ref dir) = project_dir {
-            let canonical = bind_mount::validate_bind_mount_path(dir, job_id)?;
-            binds.push(format!("{}:/workspace:rw", canonical.display()));
-            env_vec.push("IRONCLAW_WORKSPACE=/workspace".to_string());
-        }
+        let binds = build_workspace_binds(project_dir.as_ref(), job_id, &mut env_vec)?;
 
         if mode == JobMode::ClaudeCode {
-            if let Some(ref api_key) = self.config.claude_code_api_key {
-                env_vec.push(format!("ANTHROPIC_API_KEY={}", api_key));
-            } else if let Some(ref oauth_token) = self.config.claude_code_oauth_token {
-                env_vec.push(format!("CLAUDE_CODE_OAUTH_TOKEN={}", oauth_token));
-            }
-            if !self.config.claude_code_allowed_tools.is_empty() {
-                env_vec.push(format!(
-                    "CLAUDE_CODE_ALLOWED_TOOLS={}",
-                    self.config.claude_code_allowed_tools.join(",")
-                ));
-            }
+            append_claude_code_env(&self.config, &mut env_vec);
         }
 
         let memory_mb = match mode {
@@ -102,45 +181,8 @@ impl ContainerJobManager {
         };
 
         use bollard::container::{Config, CreateContainerOptions};
-        use bollard::models::HostConfig;
-
-        let host_config = HostConfig {
-            binds: if binds.is_empty() { None } else { Some(binds) },
-            memory: Some((memory_mb * 1024 * 1024) as i64),
-            cpu_shares: Some(self.config.cpu_shares as i64),
-            network_mode: Some("bridge".to_string()),
-            extra_hosts: Some(vec!["host.docker.internal:host-gateway".to_string()]),
-            cap_drop: Some(vec!["ALL".to_string()]),
-            cap_add: Some(vec!["CHOWN".to_string()]),
-            security_opt: Some(vec!["no-new-privileges:true".to_string()]),
-            tmpfs: Some(
-                [("/tmp".to_string(), "size=512M".to_string())]
-                    .into_iter()
-                    .collect(),
-            ),
-            ..Default::default()
-        };
-
-        let cmd = match mode {
-            JobMode::Worker => vec![
-                "worker".to_string(),
-                "--job-id".to_string(),
-                job_id.to_string(),
-                "--orchestrator-url".to_string(),
-                orchestrator_url,
-            ],
-            JobMode::ClaudeCode => vec![
-                "claude-bridge".to_string(),
-                "--job-id".to_string(),
-                job_id.to_string(),
-                "--orchestrator-url".to_string(),
-                orchestrator_url,
-                "--max-turns".to_string(),
-                self.config.claude_code_max_turns.to_string(),
-                "--model".to_string(),
-                self.config.claude_code_model.clone(),
-            ],
-        };
+        let host_config = build_host_config(binds, memory_mb, self.config.cpu_shares);
+        let cmd = build_cmd(mode, job_id, &orchestrator_url, &self.config);
 
         let mut labels = std::collections::HashMap::new();
         labels.insert("ironclaw.job_id".to_string(), job_id.to_string());
@@ -160,12 +202,8 @@ impl ContainerJobManager {
             ..Default::default()
         };
 
-        let container_name = match mode {
-            JobMode::Worker => format!("ironclaw-worker-{}", job_id),
-            JobMode::ClaudeCode => format!("ironclaw-claude-{}", job_id),
-        };
         let options = CreateContainerOptions {
-            name: container_name,
+            name: container_name(mode, job_id),
             ..Default::default()
         };
 
