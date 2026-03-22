@@ -15,6 +15,7 @@ pub enum JobMode {
 }
 
 impl JobMode {
+    /// Return the stable string form used in environment and container metadata.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Worker => "worker",
@@ -125,10 +126,12 @@ impl std::fmt::Display for ContainerState {
 pub struct ContainerId(String);
 
 impl ContainerId {
+    /// Construct a managed container identifier from a Docker-provided value.
     pub fn new(container_id: impl Into<String>) -> Self {
         Self(container_id.into())
     }
 
+    /// Borrow the raw Docker container identifier as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -143,12 +146,19 @@ impl fmt::Display for ContainerId {
 /// Handle to a running container job.
 #[derive(Debug, Clone)]
 pub struct ContainerHandle {
+    /// Stable job identifier used to correlate orchestrator and Docker state.
     pub job_id: uuid::Uuid,
+    /// Docker container identifier once the container has been created.
     pub container_id: Option<ContainerId>,
+    /// Current lifecycle state tracked by the job manager.
     pub state: ContainerState,
+    /// Execution mode that determines which container entrypoint was launched.
     pub mode: JobMode,
+    /// Timestamp recorded when the handle was created.
     pub created_at: DateTime<Utc>,
+    /// Optional workspace directory bind-mounted into the container.
     pub project_dir: Option<PathBuf>,
+    /// Human-readable task description kept for status and diagnostics.
     pub task_description: String,
     /// Last status message reported by the worker (iteration count, progress, etc.).
     pub last_worker_status: Option<String>,
@@ -163,6 +173,8 @@ pub struct ContainerHandle {
 /// Result reported by a worker on completion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletionResult {
+    /// Whether the worker reported overall success for the job.
     pub success: bool,
+    /// Optional human-readable completion or error message from the worker.
     pub message: Option<String>,
 }

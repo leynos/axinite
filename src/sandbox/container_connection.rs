@@ -194,7 +194,6 @@ mod tests {
 
     use super::unix_socket_candidates_from_env;
 
-    #[cfg(unix)]
     #[test]
     fn test_unix_socket_candidates_include_rootless_paths() {
         let candidates = unix_socket_candidates_from_env(

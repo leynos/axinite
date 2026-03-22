@@ -135,7 +135,7 @@ impl ContainerJobManager {
     }
 
     /// Compatibility shim for in-module consumers that still need the raw map.
-    #[cfg(any(feature = "docker", test))]
+    #[cfg(test)]
     pub(crate) fn containers(
         &self,
     ) -> Arc<RwLock<std::collections::HashMap<Uuid, ContainerHandle>>> {

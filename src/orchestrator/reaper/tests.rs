@@ -5,6 +5,7 @@ use super::*;
 use std::collections::HashMap;
 
 use crate::context::{JobContext, JobState};
+use rstest::rstest;
 
 #[test]
 fn orphan_threshold_filters_young_containers() {
@@ -94,10 +95,13 @@ async fn make_terminal_job(
     (job_id, ctx)
 }
 
+#[rstest]
+#[case(JobState::Failed)]
+#[case(JobState::Cancelled)]
 #[tokio::test]
-async fn terminal_job_is_treated_as_orphaned() {
+async fn terminal_job_is_treated_as_orphaned(#[case] state: JobState) {
     let ctx_mgr = Arc::new(ContextManager::new(5));
-    let (_job_id, ctx) = make_terminal_job(&ctx_mgr, "test description", JobState::Failed).await;
+    let (_job_id, ctx) = make_terminal_job(&ctx_mgr, "test description", state).await;
     assert!(
         !ctx.state.is_active(),
         "Failed job should be treated as orphaned"
@@ -190,10 +194,13 @@ async fn active_job_prevents_cleanup_of_old_container() {
     assert!(is_active, "Active job should prevent cleanup");
 }
 
+#[rstest]
+#[case(JobState::Failed)]
+#[case(JobState::Cancelled)]
 #[tokio::test]
-async fn failed_job_allows_cleanup() {
+async fn failed_job_allows_cleanup(#[case] state: JobState) {
     let ctx_mgr = Arc::new(ContextManager::new(5));
-    let (_job_id, ctx) = make_terminal_job(&ctx_mgr, "test", JobState::Cancelled).await;
+    let (_job_id, ctx) = make_terminal_job(&ctx_mgr, "test", state).await;
     assert!(
         !ctx.state.is_active(),
         "Failed job (terminal state) should allow cleanup"

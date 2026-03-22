@@ -57,9 +57,9 @@ impl JobRegistry {
     }
 
     #[cfg(feature = "docker")]
-    pub(crate) async fn set_container_id(&self, job_id: Uuid, container_id: String) {
+    pub(crate) async fn set_container_id(&self, job_id: Uuid, container_id: ContainerId) {
         if let Some(handle) = self.inner.write().await.get_mut(&job_id) {
-            handle.container_id = Some(ContainerId::new(container_id));
+            handle.container_id = Some(container_id);
             handle.state = ContainerState::Running;
         }
     }
@@ -79,7 +79,7 @@ impl JobRegistry {
             .and_then(|handle| handle.container_id.clone())
     }
 
-    #[cfg(any(feature = "docker", test))]
+    #[cfg(test)]
     pub(crate) fn arc(&self) -> Arc<RwLock<HashMap<Uuid, ContainerHandle>>> {
         Arc::clone(&self.inner)
     }

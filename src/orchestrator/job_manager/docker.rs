@@ -241,7 +241,9 @@ impl ContainerJobManager {
             });
         }
 
-        self.registry.set_container_id(job_id, container_id).await;
+        self.registry
+            .set_container_id(job_id, ContainerId::new(container_id))
+            .await;
 
         tracing::info!(job_id = %job_id, "Created and started worker container");
 
