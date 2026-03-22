@@ -17,6 +17,8 @@ use crate::error::OrchestratorError;
 use crate::orchestrator::auth::{CredentialGrant, TokenStore};
 #[cfg(feature = "docker")]
 use crate::sandbox::connect_docker;
+#[cfg(not(feature = "docker"))]
+use crate::sandbox::container::DOCKER_FEATURE_DISABLED_REASON;
 #[cfg(feature = "docker")]
 use crate::sandbox::container::DockerConnection;
 
@@ -136,7 +138,6 @@ pub struct CompletionResult {
     pub message: Option<String>,
 }
 
-#[cfg(any(feature = "docker", test))]
 /// Validate that a project directory is under `~/.ironclaw/projects/`.
 ///
 /// Returns the canonicalized path if valid. Creates the base directory if
@@ -149,6 +150,7 @@ pub struct CompletionResult {
 /// system a malicious actor could swap a symlink after validation. This is
 /// acceptable in IronClaw's single-tenant design where the user controls
 /// the filesystem.
+#[cfg(any(feature = "docker", test))]
 fn validate_bind_mount_path(
     dir: &std::path::Path,
     job_id: Uuid,
@@ -212,27 +214,29 @@ fn validate_bind_mount_path(
 }
 
 /// Manages the lifecycle of Docker containers for sandboxed job execution.
+#[cfg(feature = "docker")]
 pub struct ContainerJobManager {
-    #[cfg(feature = "docker")]
     config: ContainerJobConfig,
     token_store: TokenStore,
     pub(crate) containers: Arc<RwLock<HashMap<Uuid, ContainerHandle>>>,
     /// Cached Docker connection (created on first use).
-    #[cfg(feature = "docker")]
     docker: Arc<RwLock<Option<DockerConnection>>>,
 }
 
+/// Manages the lifecycle of Docker containers for sandboxed job execution.
+#[cfg(not(feature = "docker"))]
+pub struct ContainerJobManager {
+    token_store: TokenStore,
+    pub(crate) containers: Arc<RwLock<HashMap<Uuid, ContainerHandle>>>,
+}
+
+#[cfg(feature = "docker")]
 impl ContainerJobManager {
     pub fn new(config: ContainerJobConfig, token_store: TokenStore) -> Self {
-        #[cfg(not(feature = "docker"))]
-        let _ = config;
-
         Self {
-            #[cfg(feature = "docker")]
             config,
             token_store,
             containers: Arc::new(RwLock::new(HashMap::new())),
-            #[cfg(feature = "docker")]
             docker: Arc::new(RwLock::new(None)),
         }
     }
@@ -254,7 +258,19 @@ impl ContainerJobManager {
         *self.docker.write().await = Some(docker.clone());
         Ok(docker)
     }
+}
 
+#[cfg(not(feature = "docker"))]
+impl ContainerJobManager {
+    pub fn new(_config: ContainerJobConfig, token_store: TokenStore) -> Self {
+        Self {
+            token_store,
+            containers: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+impl ContainerJobManager {
     /// Create and start a new container for a job.
     ///
     /// The caller provides the `job_id` so it can be persisted to the database
@@ -306,9 +322,11 @@ impl ContainerJobManager {
             }
         }
     }
+}
 
-    /// Inner implementation of container creation (separated for cleanup).
-    #[cfg(feature = "docker")]
+/// Inner implementation of container creation (separated for cleanup).
+#[cfg(feature = "docker")]
+impl ContainerJobManager {
     async fn create_job_inner(
         &self,
         job_id: Uuid,
@@ -474,8 +492,10 @@ impl ContainerJobManager {
 
         Ok(())
     }
+}
 
-    #[cfg(not(feature = "docker"))]
+#[cfg(not(feature = "docker"))]
+impl ContainerJobManager {
     async fn create_job_inner(
         &self,
         job_id: Uuid,
@@ -484,15 +504,56 @@ impl ContainerJobManager {
         _mode: JobMode,
     ) -> Result<(), OrchestratorError> {
         Err(OrchestratorError::Docker {
-            reason: format!(
-                "Docker support was not compiled in, cannot create sandbox job {}",
-                job_id
-            ),
+            reason: format!("{DOCKER_FEATURE_DISABLED_REASON}, cannot create sandbox job {job_id}"),
         })
     }
 
     /// Stop a running container job.
-    #[cfg(feature = "docker")]
+    pub async fn stop_job(&self, job_id: Uuid) -> Result<(), OrchestratorError> {
+        Err(OrchestratorError::Docker {
+            reason: format!("{DOCKER_FEATURE_DISABLED_REASON}, cannot stop sandbox job {job_id}"),
+        })
+    }
+
+    /// Mark a job as complete with a result. The container is stopped but the
+    /// handle is kept so `CreateJobTool` can read the completion message.
+    pub async fn complete_job(
+        &self,
+        job_id: Uuid,
+        result: CompletionResult,
+    ) -> Result<(), OrchestratorError> {
+        {
+            let mut containers = self.containers.write().await;
+            if let Some(handle) = containers.get_mut(&job_id) {
+                handle.completion_result = Some(result);
+                handle.state = ContainerState::Stopped;
+            }
+        }
+
+        if let Some(container_id) = self
+            .containers
+            .read()
+            .await
+            .get(&job_id)
+            .map(|h| h.container_id.clone())
+            .filter(|cid| !cid.is_empty())
+        {
+            tracing::warn!(
+                job_id = %job_id,
+                container_id = %container_id,
+                "Skipping completed container cleanup because Docker support was not compiled in"
+            );
+        }
+
+        self.token_store.revoke(job_id).await;
+
+        tracing::info!(job_id = %job_id, "Completed worker container");
+        Ok(())
+    }
+}
+
+#[cfg(feature = "docker")]
+impl ContainerJobManager {
     pub async fn stop_job(&self, job_id: Uuid) -> Result<(), OrchestratorError> {
         let container_id = {
             let containers = self.containers.read().await;
@@ -549,16 +610,6 @@ impl ContainerJobManager {
         Ok(())
     }
 
-    #[cfg(not(feature = "docker"))]
-    pub async fn stop_job(&self, job_id: Uuid) -> Result<(), OrchestratorError> {
-        Err(OrchestratorError::Docker {
-            reason: format!(
-                "Docker support was not compiled in, cannot stop sandbox job {}",
-                job_id
-            ),
-        })
-    }
-
     /// Mark a job as complete with a result. The container is stopped but the
     /// handle is kept so `CreateJobTool` can read the completion message.
     pub async fn complete_job(
@@ -576,14 +627,13 @@ impl ContainerJobManager {
         }
 
         // Stop container and revoke token (but keep handle in map)
-        let container_id = {
+        if let Some(cid) = {
             let containers = self.containers.read().await;
-            containers.get(&job_id).map(|h| h.container_id.clone())
-        };
-        if let Some(cid) = container_id
-            && !cid.is_empty()
-        {
-            #[cfg(feature = "docker")]
+            containers
+                .get(&job_id)
+                .map(|h| h.container_id.clone())
+                .filter(|cid| !cid.is_empty())
+        } {
             match self.docker().await {
                 Ok(docker) => {
                     if let Err(e) = docker
@@ -612,20 +662,15 @@ impl ContainerJobManager {
                     tracing::warn!(job_id = %job_id, error = %e, "Failed to connect to Docker for container cleanup");
                 }
             }
-
-            #[cfg(not(feature = "docker"))]
-            tracing::warn!(
-                job_id = %job_id,
-                container_id = %cid,
-                "Skipping completed container cleanup because Docker support was not compiled in"
-            );
         }
         self.token_store.revoke(job_id).await;
 
         tracing::info!(job_id = %job_id, "Completed worker container");
         Ok(())
     }
+}
 
+impl ContainerJobManager {
     /// Remove a completed job handle from memory (called after result is read).
     pub async fn cleanup_job(&self, job_id: Uuid) {
         self.containers.write().await.remove(&job_id);

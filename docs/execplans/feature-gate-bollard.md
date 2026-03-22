@@ -139,8 +139,8 @@ The direct bollard usage sites and their primary purposes are:
 - 2026-03-21: The branch needed a follow-on clean-build pass because stable
   no-Docker compilation was being poisoned by `cap-*` build-script probes that
   trusted an ambient `RUSTC_WRAPPER`. The fix was vendored patching of the
-  affected probe chain plus narrow cfg cleanup in the sandbox and orchestrator
-  modules.
+  affected probe chain plus narrow configuration (`cfg`) cleanup in the
+  sandbox and orchestrator modules.
 - 2026-03-21: The vendored `cap-*` workaround has now been retired. Fixing the
   ambient `notdeadyet` wrapper restored honest stdin-backed compiler probes,
   and the unpatched stable no-Docker acceptance check passed in a scratch copy

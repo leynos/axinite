@@ -50,8 +50,12 @@ use crate::sandbox::error::{Result, SandboxError};
 pub type DockerConnection = bollard::Docker;
 
 #[cfg(not(feature = "docker"))]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DockerConnection;
+
+#[cfg(not(feature = "docker"))]
+pub(crate) const DOCKER_FEATURE_DISABLED_REASON: &str =
+    "Docker support was not compiled in; rebuild with --features docker";
 
 /// Output from container execution.
 #[derive(Debug, Clone)]
@@ -70,16 +74,15 @@ pub struct ContainerOutput {
 
 /// Manages Docker container lifecycle.
 pub struct ContainerRunner {
-    #[cfg(feature = "docker")]
     docker: DockerConnection,
     image: String,
     proxy_port: u16,
 }
 
-#[cfg(any(feature = "docker", test))]
 /// Append `text` into `buffer` up to `limit` bytes without breaking UTF-8.
 ///
 /// Returns `true` when truncation occurred.
+#[cfg(any(feature = "docker", test))]
 fn append_with_limit(buffer: &mut String, text: &str, limit: usize) -> bool {
     if text.is_empty() {
         return false;
@@ -103,60 +106,70 @@ fn append_with_limit(buffer: &mut String, text: &str, limit: usize) -> bool {
 impl ContainerRunner {
     /// Create a new container runner.
     pub fn new(docker: DockerConnection, image: String, proxy_port: u16) -> Self {
-        #[cfg(not(feature = "docker"))]
-        let _ = docker;
-
         Self {
-            #[cfg(feature = "docker")]
             docker,
             image,
             proxy_port,
         }
     }
-}
 
-#[cfg(feature = "docker")]
-impl ContainerRunner {
     /// Check if the Docker daemon is available.
     pub async fn is_available(&self) -> bool {
-        self.docker.ping().await.is_ok()
+        docker_is_responsive(&self.docker).await
     }
 
     /// Check if the sandbox image exists locally.
     pub async fn image_exists(&self) -> bool {
-        self.docker.inspect_image(&self.image).await.is_ok()
+        #[cfg(feature = "docker")]
+        {
+            self.docker.inspect_image(&self.image).await.is_ok()
+        }
+
+        #[cfg(not(feature = "docker"))]
+        {
+            false
+        }
     }
 
     /// Pull the sandbox image.
     pub async fn pull_image(&self) -> Result<()> {
-        use bollard::image::CreateImageOptions;
+        #[cfg(feature = "docker")]
+        {
+            use bollard::image::CreateImageOptions;
 
-        tracing::info!("Pulling sandbox image: {}", self.image);
+            tracing::info!("Pulling sandbox image: {}", self.image);
 
-        let options = CreateImageOptions {
-            from_image: self.image.clone(),
-            ..Default::default()
-        };
+            let options = CreateImageOptions {
+                from_image: self.image.clone(),
+                ..Default::default()
+            };
 
-        let mut stream = self.docker.create_image(Some(options), None, None);
+            let mut stream = self.docker.create_image(Some(options), None, None);
 
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(info) => {
-                    if let Some(status) = info.status {
-                        tracing::debug!("Pull status: {}", status);
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(info) => {
+                        if let Some(status) = info.status {
+                            tracing::debug!("Pull status: {}", status);
+                        }
+                    }
+                    Err(e) => {
+                        return Err(SandboxError::ContainerCreationFailed {
+                            reason: format!("image pull failed: {}", e),
+                        });
                     }
                 }
-                Err(e) => {
-                    return Err(SandboxError::ContainerCreationFailed {
-                        reason: format!("image pull failed: {}", e),
-                    });
-                }
             }
+
+            tracing::info!("Successfully pulled image: {}", self.image);
+            Ok(())
         }
 
-        tracing::info!("Successfully pulled image: {}", self.image);
-        Ok(())
+        #[cfg(not(feature = "docker"))]
+        {
+            let _ = (&self.image, self.proxy_port);
+            Err(docker_feature_disabled_error())
+        }
     }
 
     /// Execute a command in a new container.
@@ -168,47 +181,60 @@ impl ContainerRunner {
         limits: &ResourceLimits,
         env: HashMap<String, String>,
     ) -> Result<ContainerOutput> {
-        let start_time = std::time::Instant::now();
+        #[cfg(feature = "docker")]
+        {
+            let start_time = std::time::Instant::now();
 
-        // Create the container
-        let container_id = self
-            .create_container(command, working_dir, policy, limits, env)
-            .await?;
+            let container_id = self
+                .create_container(command, working_dir, policy, limits, env)
+                .await?;
 
-        // Start the container
-        self.docker
-            .start_container(&container_id, None::<StartContainerOptions<String>>)
-            .await
-            .map_err(|e| SandboxError::ContainerStartFailed {
-                reason: e.to_string(),
-            })?;
-
-        // Wait for completion with timeout
-        let result = tokio::time::timeout(limits.timeout, async {
-            self.wait_for_container(&container_id, limits.max_output_bytes)
+            self.docker
+                .start_container(&container_id, None::<StartContainerOptions<String>>)
                 .await
-        })
-        .await;
+                .map_err(|e| SandboxError::ContainerStartFailed {
+                    reason: e.to_string(),
+                })?;
 
-        // Always clean up the container
-        let _ = self
-            .docker
-            .remove_container(
-                &container_id,
-                Some(RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
+            let result = tokio::time::timeout(limits.timeout, async {
+                self.wait_for_container(&container_id, limits.max_output_bytes)
+                    .await
+            })
             .await;
 
-        match result {
-            Ok(Ok(mut output)) => {
-                output.duration = start_time.elapsed();
-                Ok(output)
+            let _ = self
+                .docker
+                .remove_container(
+                    &container_id,
+                    Some(RemoveContainerOptions {
+                        force: true,
+                        ..Default::default()
+                    }),
+                )
+                .await;
+
+            match result {
+                Ok(Ok(mut output)) => {
+                    output.duration = start_time.elapsed();
+                    Ok(output)
+                }
+                Ok(Err(e)) => Err(e),
+                Err(_) => Err(SandboxError::Timeout(limits.timeout)),
             }
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err(SandboxError::Timeout(limits.timeout)),
+        }
+
+        #[cfg(not(feature = "docker"))]
+        {
+            let _ = (
+                command,
+                working_dir,
+                policy,
+                limits,
+                env,
+                &self.image,
+                self.proxy_port,
+            );
+            Err(docker_feature_disabled_error())
         }
     }
 
@@ -220,41 +246,201 @@ impl ContainerRunner {
         working_dir: &str,
         limits: &ResourceLimits,
     ) -> Result<ContainerOutput> {
-        let start_time = std::time::Instant::now();
+        #[cfg(feature = "docker")]
+        {
+            let start_time = std::time::Instant::now();
 
-        let exec = self
-            .docker
-            .create_exec(
-                container_id,
-                CreateExecOptions {
-                    cmd: Some(vec!["sh", "-c", command]),
-                    attach_stdout: Some(true),
-                    attach_stderr: Some(true),
-                    working_dir: Some(working_dir),
-                    ..Default::default()
-                },
+            let exec = self
+                .docker
+                .create_exec(
+                    container_id,
+                    CreateExecOptions {
+                        cmd: Some(vec!["sh", "-c", command]),
+                        attach_stdout: Some(true),
+                        attach_stderr: Some(true),
+                        working_dir: Some(working_dir),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|e| SandboxError::ExecutionFailed {
+                    reason: format!("exec create failed: {}", e),
+                })?;
+
+            let result = tokio::time::timeout(
+                limits.timeout,
+                self.run_exec(&exec.id, limits.max_output_bytes),
             )
-            .await
-            .map_err(|e| SandboxError::ExecutionFailed {
-                reason: format!("exec create failed: {}", e),
-            })?;
+            .await;
 
-        let result = tokio::time::timeout(
-            limits.timeout,
-            self.run_exec(&exec.id, limits.max_output_bytes),
-        )
-        .await;
-
-        match result {
-            Ok(Ok(mut output)) => {
-                output.duration = start_time.elapsed();
-                Ok(output)
+            match result {
+                Ok(Ok(mut output)) => {
+                    output.duration = start_time.elapsed();
+                    Ok(output)
+                }
+                Ok(Err(e)) => Err(e),
+                Err(_) => Err(SandboxError::Timeout(limits.timeout)),
             }
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err(SandboxError::Timeout(limits.timeout)),
+        }
+
+        #[cfg(not(feature = "docker"))]
+        {
+            let _ = (
+                container_id,
+                command,
+                working_dir,
+                limits,
+                &self.image,
+                self.proxy_port,
+            );
+            Err(docker_feature_disabled_error())
+        }
+    }
+}
+
+/// Connect to the Docker daemon.
+///
+/// Tries these locations in order:
+/// 1. `DOCKER_HOST` env var (bollard default)
+/// 2. `/var/run/docker.sock` (Linux default; also used by OrbStack and Podman Desktop on macOS)
+/// 3. `~/.docker/run/docker.sock` (Docker Desktop 4.13+ on macOS — primary user-owned socket)
+/// 4. `~/.colima/default/docker.sock` (Colima — popular lightweight Docker Desktop alternative)
+/// 5. `~/.rd/docker.sock` (Rancher Desktop on macOS)
+/// 6. `$XDG_RUNTIME_DIR/docker.sock` (common rootless Docker socket on Linux)
+/// 7. `/run/user/$UID/docker.sock` (rootless Docker fallback on Linux)
+pub async fn connect_docker() -> Result<DockerConnection> {
+    #[cfg(feature = "docker")]
+    {
+        connect_docker_inner().await
+    }
+
+    #[cfg(not(feature = "docker"))]
+    {
+        Err(docker_feature_disabled_error())
+    }
+}
+
+#[cfg(feature = "docker")]
+async fn connect_docker_inner() -> Result<DockerConnection> {
+    // First try bollard defaults (checks DOCKER_HOST env var, then /var/run/docker.sock).
+    // This covers Linux, OrbStack (updates the /var/run symlink), and any user with
+    // DOCKER_HOST set to their runtime's socket.
+    if let Ok(docker) = DockerConnection::connect_with_local_defaults()
+        && docker.ping().await.is_ok()
+    {
+        return Ok(docker);
+    }
+
+    #[cfg(unix)]
+    {
+        // Try well-known user-owned socket locations for desktop and rootless runtimes.
+        // Docker Desktop 4.13+ (stabilised in 4.18) stopped creating the
+        // /var/run/docker.sock symlink by default and moved the API socket
+        // to ~/.docker/run/docker.sock.
+        for sock in unix_socket_candidates() {
+            if sock.exists() {
+                let sock_str = sock.to_string_lossy();
+                if let Ok(docker) = DockerConnection::connect_with_socket(
+                    &sock_str,
+                    120,
+                    bollard::API_DEFAULT_VERSION,
+                ) && docker.ping().await.is_ok()
+                {
+                    return Ok(docker);
+                }
+            }
         }
     }
 
+    Err(SandboxError::DockerNotAvailable {
+        reason: "Could not connect to Docker daemon. Tried: $DOCKER_HOST, \
+            /var/run/docker.sock, ~/.docker/run/docker.sock, \
+            ~/.colima/default/docker.sock, ~/.rd/docker.sock, \
+            $XDG_RUNTIME_DIR/docker.sock, /run/user/$UID/docker.sock"
+            .to_string(),
+    })
+}
+
+#[cfg(not(feature = "docker"))]
+pub(crate) fn docker_feature_disabled_error() -> SandboxError {
+    SandboxError::DockerNotAvailable {
+        reason: DOCKER_FEATURE_DISABLED_REASON.to_string(),
+    }
+}
+
+#[cfg(all(unix, feature = "docker"))]
+fn unix_socket_candidates() -> Vec<PathBuf> {
+    unix_socket_candidates_from_env(
+        std::env::var_os("HOME").map(PathBuf::from),
+        std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
+        std::env::var("UID").ok(),
+    )
+}
+
+#[cfg(all(unix, any(feature = "docker", test)))]
+fn unix_socket_candidates_from_env(
+    home: Option<PathBuf>,
+    xdg_runtime_dir: Option<PathBuf>,
+    uid: Option<String>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    let mut push_unique = |path: PathBuf| {
+        if !candidates.iter().any(|existing| existing == &path) {
+            candidates.push(path);
+        }
+    };
+
+    if let Some(home) = home {
+        push_unique(home.join(".docker/run/docker.sock")); // Docker Desktop 4.13+
+        push_unique(home.join(".colima/default/docker.sock")); // Colima
+        push_unique(home.join(".rd/docker.sock")); // Rancher Desktop
+    }
+
+    if let Some(xdg_runtime_dir) = xdg_runtime_dir {
+        push_unique(xdg_runtime_dir.join("docker.sock"));
+    }
+
+    if let Some(uid) = uid.filter(|value| !value.is_empty()) {
+        push_unique(PathBuf::from(format!("/run/user/{uid}/docker.sock")));
+    }
+
+    candidates
+}
+
+pub async fn docker_is_responsive(docker: &DockerConnection) -> bool {
+    #[cfg(feature = "docker")]
+    {
+        docker.ping().await.is_ok()
+    }
+
+    #[cfg(not(feature = "docker"))]
+    {
+        let _ = docker;
+        false
+    }
+}
+
+pub async fn ensure_docker_responsive(docker: &DockerConnection) -> Result<()> {
+    #[cfg(feature = "docker")]
+    {
+        docker
+            .ping()
+            .await
+            .map(|_| ())
+            .map_err(|e| SandboxError::DockerNotAvailable {
+                reason: e.to_string(),
+            })
+    }
+
+    #[cfg(not(feature = "docker"))]
+    {
+        let _ = docker;
+        Err(docker_feature_disabled_error())
+    }
+}
+
+#[cfg(feature = "docker")]
+impl ContainerRunner {
     /// Create a container with the appropriate configuration.
     async fn create_container(
         &self,
@@ -266,13 +452,11 @@ impl ContainerRunner {
     ) -> Result<String> {
         let working_dir_str = working_dir.display().to_string();
 
-        // Build environment variables
         let mut env_vec: Vec<String> = env
             .into_iter()
             .map(|(k, v)| format!("{}={}", k, v))
             .collect();
 
-        // Add proxy environment (uses host.docker.internal for Mac/Windows, 172.17.0.1 for Linux)
         let proxy_host = if cfg!(target_os = "linux") {
             "172.17.0.1"
         } else {
@@ -298,21 +482,13 @@ impl ContainerRunner {
             ));
         }
 
-        // Build volume mounts based on policy
         let binds = match policy {
-            SandboxPolicy::ReadOnly => {
-                vec![format!("{}:/workspace:ro", working_dir_str)]
-            }
-            SandboxPolicy::WorkspaceWrite => {
-                vec![format!("{}:/workspace:rw", working_dir_str)]
-            }
-            SandboxPolicy::FullAccess => {
-                // Full access - mount more of the host
-                vec![
-                    format!("{}:/workspace:rw", working_dir_str),
-                    "/tmp:/tmp:rw".to_string(),
-                ]
-            }
+            SandboxPolicy::ReadOnly => vec![format!("{}:/workspace:ro", working_dir_str)],
+            SandboxPolicy::WorkspaceWrite => vec![format!("{}:/workspace:rw", working_dir_str)],
+            SandboxPolicy::FullAccess => vec![
+                format!("{}:/workspace:rw", working_dir_str),
+                "/tmp:/tmp:rw".to_string(),
+            ],
         };
 
         let host_config = HostConfig {
@@ -321,14 +497,10 @@ impl ContainerRunner {
             cpu_shares: Some(limits.cpu_shares as i64),
             auto_remove: Some(true),
             network_mode: Some("bridge".to_string()),
-            // Security: drop all capabilities and add back only what's needed
             cap_drop: Some(vec!["ALL".to_string()]),
             cap_add: Some(vec!["CHOWN".to_string()]),
-            // Prevent privilege escalation
             security_opt: Some(vec!["no-new-privileges:true".to_string()]),
-            // Read-only root filesystem (workspace is still writable if policy allows)
             readonly_rootfs: Some(policy != SandboxPolicy::FullAccess),
-            // Tmpfs mounts for /tmp and cargo cache
             tmpfs: Some(
                 [
                     ("/tmp".to_string(), "size=512M".to_string()),
@@ -353,7 +525,7 @@ impl ContainerRunner {
             working_dir: Some("/workspace".to_string()),
             env: Some(env_vec),
             host_config: Some(host_config),
-            user: Some("1000:1000".to_string()), // Non-root user
+            user: Some("1000:1000".to_string()),
             ..Default::default()
         };
 
@@ -379,7 +551,6 @@ impl ContainerRunner {
         container_id: &str,
         max_output: usize,
     ) -> Result<ContainerOutput> {
-        // Wait for the container to finish
         let mut wait_stream = self.docker.wait_container(
             container_id,
             Some(WaitContainerOptions {
@@ -401,14 +572,13 @@ impl ContainerRunner {
             }
         };
 
-        // Collect logs
         let (stdout, stderr, truncated) = self.collect_logs(container_id, max_output).await?;
 
         Ok(ContainerOutput {
             exit_code,
             stdout,
             stderr,
-            duration: Duration::ZERO, // Will be set by caller
+            duration: Duration::ZERO,
             truncated,
         })
     }
@@ -485,7 +655,6 @@ impl ContainerRunner {
             }
         }
 
-        // Get exec exit code
         let inspect =
             self.docker
                 .inspect_exec(exec_id)
@@ -504,152 +673,6 @@ impl ContainerRunner {
             truncated,
         })
     }
-}
-
-#[cfg(not(feature = "docker"))]
-impl ContainerRunner {
-    /// Check if the Docker daemon is available.
-    pub async fn is_available(&self) -> bool {
-        false
-    }
-
-    /// Check if the sandbox image exists locally.
-    pub async fn image_exists(&self) -> bool {
-        false
-    }
-
-    /// Pull the sandbox image.
-    pub async fn pull_image(&self) -> Result<()> {
-        let _ = (&self.image, self.proxy_port);
-        Err(feature_disabled_error())
-    }
-
-    /// Execute a command in a new container.
-    pub async fn execute(
-        &self,
-        _command: &str,
-        _working_dir: &Path,
-        _policy: SandboxPolicy,
-        _limits: &ResourceLimits,
-        _env: HashMap<String, String>,
-    ) -> Result<ContainerOutput> {
-        let _ = (&self.image, self.proxy_port);
-        Err(feature_disabled_error())
-    }
-
-    /// Execute a command in an existing container using exec.
-    pub async fn exec_in_container(
-        &self,
-        _container_id: &str,
-        _command: &str,
-        _working_dir: &str,
-        _limits: &ResourceLimits,
-    ) -> Result<ContainerOutput> {
-        let _ = (&self.image, self.proxy_port);
-        Err(feature_disabled_error())
-    }
-}
-
-/// Connect to the Docker daemon.
-///
-/// Tries these locations in order:
-/// 1. `DOCKER_HOST` env var (bollard default)
-/// 2. `/var/run/docker.sock` (Linux default; also used by OrbStack and Podman Desktop on macOS)
-/// 3. `~/.docker/run/docker.sock` (Docker Desktop 4.13+ on macOS — primary user-owned socket)
-/// 4. `~/.colima/default/docker.sock` (Colima — popular lightweight Docker Desktop alternative)
-/// 5. `~/.rd/docker.sock` (Rancher Desktop on macOS)
-/// 6. `$XDG_RUNTIME_DIR/docker.sock` (common rootless Docker socket on Linux)
-/// 7. `/run/user/$UID/docker.sock` (rootless Docker fallback on Linux)
-#[cfg(feature = "docker")]
-pub async fn connect_docker() -> Result<DockerConnection> {
-    // First try bollard defaults (checks DOCKER_HOST env var, then /var/run/docker.sock).
-    // This covers Linux, OrbStack (updates the /var/run symlink), and any user with
-    // DOCKER_HOST set to their runtime's socket.
-    if let Ok(docker) = DockerConnection::connect_with_local_defaults()
-        && docker.ping().await.is_ok()
-    {
-        return Ok(docker);
-    }
-
-    #[cfg(unix)]
-    {
-        // Try well-known user-owned socket locations for desktop and rootless runtimes.
-        // Docker Desktop 4.13+ (stabilised in 4.18) stopped creating the
-        // /var/run/docker.sock symlink by default and moved the API socket
-        // to ~/.docker/run/docker.sock.
-        for sock in unix_socket_candidates() {
-            if sock.exists() {
-                let sock_str = sock.to_string_lossy();
-                if let Ok(docker) = DockerConnection::connect_with_socket(
-                    &sock_str,
-                    120,
-                    bollard::API_DEFAULT_VERSION,
-                ) && docker.ping().await.is_ok()
-                {
-                    return Ok(docker);
-                }
-            }
-        }
-    }
-
-    Err(SandboxError::DockerNotAvailable {
-        reason: "Could not connect to Docker daemon. Tried: $DOCKER_HOST, \
-            /var/run/docker.sock, ~/.docker/run/docker.sock, \
-            ~/.colima/default/docker.sock, ~/.rd/docker.sock, \
-            $XDG_RUNTIME_DIR/docker.sock, /run/user/$UID/docker.sock"
-            .to_string(),
-    })
-}
-
-#[cfg(not(feature = "docker"))]
-pub async fn connect_docker() -> Result<DockerConnection> {
-    Err(feature_disabled_error())
-}
-
-#[cfg(not(feature = "docker"))]
-fn feature_disabled_error() -> SandboxError {
-    SandboxError::DockerNotAvailable {
-        reason: "Docker support was not compiled in; rebuild with --features docker".to_string(),
-    }
-}
-
-#[cfg(all(unix, feature = "docker"))]
-fn unix_socket_candidates() -> Vec<PathBuf> {
-    unix_socket_candidates_from_env(
-        std::env::var_os("HOME").map(PathBuf::from),
-        std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
-        std::env::var("UID").ok(),
-    )
-}
-
-#[cfg(all(unix, any(feature = "docker", test)))]
-fn unix_socket_candidates_from_env(
-    home: Option<PathBuf>,
-    xdg_runtime_dir: Option<PathBuf>,
-    uid: Option<String>,
-) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    let mut push_unique = |path: PathBuf| {
-        if !candidates.iter().any(|existing| existing == &path) {
-            candidates.push(path);
-        }
-    };
-
-    if let Some(home) = home {
-        push_unique(home.join(".docker/run/docker.sock")); // Docker Desktop 4.13+
-        push_unique(home.join(".colima/default/docker.sock")); // Colima
-        push_unique(home.join(".rd/docker.sock")); // Rancher Desktop
-    }
-
-    if let Some(xdg_runtime_dir) = xdg_runtime_dir {
-        push_unique(xdg_runtime_dir.join("docker.sock"));
-    }
-
-    if let Some(uid) = uid.filter(|value| !value.is_empty()) {
-        push_unique(PathBuf::from(format!("/run/user/{uid}/docker.sock")));
-    }
-
-    candidates
 }
 
 #[cfg(test)]

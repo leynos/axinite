@@ -11,8 +11,6 @@
 //! 2. Checks if each job is active in the ContextManager
 //! 3. Cleans up containers with inactive/missing jobs
 
-#[cfg(feature = "docker")]
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,6 +20,8 @@ use uuid::Uuid;
 use crate::context::ContextManager;
 use crate::orchestrator::job_manager::ContainerJobManager;
 use crate::sandbox::connect_docker;
+#[cfg(not(feature = "docker"))]
+use crate::sandbox::container::DOCKER_FEATURE_DISABLED_REASON;
 use crate::sandbox::container::DockerConnection;
 
 /// Configuration for the sandbox reaper.
@@ -47,11 +47,59 @@ impl Default for ReaperConfig {
 
 /// Background task that periodically cleans up orphaned Docker containers.
 pub struct SandboxReaper {
-    docker: DockerConnection,
-    #[cfg(feature = "docker")]
-    job_manager: Arc<ContainerJobManager>,
+    backend: ReaperBackend,
+    job_manager: Option<Arc<ContainerJobManager>>,
     context_manager: Arc<ContextManager>,
     config: ReaperConfig,
+}
+
+#[derive(Debug, Clone)]
+struct ReaperContainer {
+    id: String,
+    job_id: Uuid,
+    created_at: DateTime<Utc>,
+}
+
+enum ReaperBackend {
+    Docker(DockerConnection),
+    #[cfg(not(feature = "docker"))]
+    Noop,
+}
+
+impl ReaperBackend {
+    async fn list_ironclaw_containers(
+        &self,
+        label: &str,
+    ) -> Result<Vec<ReaperContainer>, crate::sandbox::SandboxError> {
+        match self {
+            Self::Docker(docker) => list_docker_containers(docker, label).await,
+            #[cfg(not(feature = "docker"))]
+            Self::Noop => Err(crate::sandbox::SandboxError::DockerNotAvailable {
+                reason: DOCKER_FEATURE_DISABLED_REASON.to_string(),
+            }),
+        }
+    }
+
+    async fn reap_container(
+        &self,
+        container_id: &str,
+        job_id: Uuid,
+        job_manager: Option<&ContainerJobManager>,
+    ) {
+        match self {
+            Self::Docker(docker) => {
+                reap_with_docker(docker, container_id, job_id, job_manager).await;
+            }
+            #[cfg(not(feature = "docker"))]
+            Self::Noop => {
+                tracing::warn!(
+                    job_id = %job_id,
+                    container_id = %container_id,
+                    "Skipping reaper cleanup because Docker support was not compiled in"
+                );
+            }
+        }
+    }
 }
 
 impl SandboxReaper {
@@ -62,13 +110,12 @@ impl SandboxReaper {
         config: ReaperConfig,
     ) -> Result<Self, crate::sandbox::SandboxError> {
         #[cfg(not(feature = "docker"))]
-        let _ = &job_manager;
+        let _unused_backend = ReaperBackend::Noop;
 
         let docker = connect_docker().await?;
         Ok(Self {
-            docker,
-            #[cfg(feature = "docker")]
-            job_manager,
+            backend: ReaperBackend::Docker(docker),
+            job_manager: Some(job_manager),
             context_manager,
             config,
         })
@@ -155,83 +202,18 @@ impl SandboxReaper {
     /// List all IronClaw-managed containers from Docker.
     ///
     /// Returns tuples of (container_id, job_id, created_at).
-    #[cfg(feature = "docker")]
-    async fn list_ironclaw_containers(
-        &self,
-    ) -> Result<Vec<(String, Uuid, DateTime<Utc>)>, bollard::errors::Error> {
-        use bollard::container::ListContainersOptions;
-
-        let mut filters = HashMap::new();
-        filters.insert("label", vec![self.config.container_label.as_str()]);
-
-        let options = ListContainersOptions {
-            all: true, // include stopped containers
-            filters,
-            ..Default::default()
-        };
-
-        let summaries = self.docker.list_containers(Some(options)).await?;
-        let mut result = Vec::new();
-
-        for summary in summaries {
-            let container_id = match summary.id {
-                Some(id) => id,
-                None => continue,
-            };
-
-            let labels = summary.labels.unwrap_or_default();
-
-            // Parse job_id from label (using configured label key for consistency)
-            let job_id = match labels
-                .get(&self.config.container_label)
-                .and_then(|s| s.parse::<Uuid>().ok())
-            {
-                Some(id) => id,
-                None => {
-                    tracing::warn!(
-                        container_id = %&container_id[..12.min(container_id.len())],
-                        label_key = %&self.config.container_label,
-                        "Reaper: ironclaw container missing valid job_id label"
-                    );
-                    continue;
-                }
-            };
-
-            // Parse created_at from label (set by us at creation time); fall back to Docker timestamp
-            let created_at = match labels
-                .get("ironclaw.created_at")
-                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                .map(|dt| dt.with_timezone(&Utc))
-                .or_else(|| {
-                    summary
-                        .created
-                        .and_then(|ts| DateTime::from_timestamp(ts, 0))
-                }) {
-                Some(ts) => ts,
-                None => {
-                    tracing::warn!(
-                        container_id = %&container_id[..12.min(container_id.len())],
-                        "Reaper: could not determine creation time for container, skipping"
-                    );
-                    continue;
-                }
-            };
-
-            result.push((container_id, job_id, created_at));
-        }
-
-        Ok(result)
-    }
-
-    #[cfg(not(feature = "docker"))]
     async fn list_ironclaw_containers(
         &self,
     ) -> Result<Vec<(String, Uuid, DateTime<Utc>)>, crate::sandbox::SandboxError> {
-        let _ = &self.docker;
-        Err(crate::sandbox::SandboxError::DockerNotAvailable {
-            reason: "Docker support was not compiled in; rebuild with --features docker"
-                .to_string(),
-        })
+        let items = self
+            .backend
+            .list_ironclaw_containers(&self.config.container_label)
+            .await?;
+
+        Ok(items
+            .into_iter()
+            .map(|container| (container.id, container.job_id, container.created_at))
+            .collect())
     }
 
     /// Stop and remove a single orphaned container.
@@ -239,10 +221,106 @@ impl SandboxReaper {
     /// First tries `job_manager.stop_job()` (which also revokes the auth token).
     /// Falls back to direct Docker API if the handle is no longer in the in-memory map
     /// (e.g., after a process restart).
-    #[cfg(feature = "docker")]
     async fn reap_container(&self, container_id: &str, job_id: Uuid) {
-        // Try the high-level stop first (handles token revocation)
-        match self.job_manager.stop_job(job_id).await {
+        self.backend
+            .reap_container(container_id, job_id, self.job_manager.as_deref())
+            .await;
+    }
+}
+
+#[cfg(feature = "docker")]
+async fn list_docker_containers(
+    docker: &DockerConnection,
+    label: &str,
+) -> Result<Vec<ReaperContainer>, crate::sandbox::SandboxError> {
+    use std::collections::HashMap;
+
+    use bollard::container::ListContainersOptions;
+
+    let mut filters = HashMap::new();
+    filters.insert("label", vec![label]);
+
+    let options = ListContainersOptions {
+        all: true,
+        filters,
+        ..Default::default()
+    };
+
+    let summaries = docker.list_containers(Some(options)).await.map_err(|e| {
+        crate::sandbox::SandboxError::DockerNotAvailable {
+            reason: e.to_string(),
+        }
+    })?;
+    let mut result = Vec::new();
+
+    for summary in summaries {
+        let container_id = match summary.id {
+            Some(id) => id,
+            None => continue,
+        };
+
+        let labels = summary.labels.unwrap_or_default();
+
+        let job_id = match labels.get(label).and_then(|s| s.parse::<Uuid>().ok()) {
+            Some(id) => id,
+            None => {
+                tracing::warn!(
+                    container_id = %&container_id[..12.min(container_id.len())],
+                    label_key = %label,
+                    "Reaper: ironclaw container missing valid job_id label"
+                );
+                continue;
+            }
+        };
+
+        let created_at = match labels
+            .get("ironclaw.created_at")
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc))
+            .or_else(|| {
+                summary
+                    .created
+                    .and_then(|ts| DateTime::from_timestamp(ts, 0))
+            }) {
+            Some(ts) => ts,
+            None => {
+                tracing::warn!(
+                    container_id = %&container_id[..12.min(container_id.len())],
+                    "Reaper: could not determine creation time for container, skipping"
+                );
+                continue;
+            }
+        };
+
+        result.push(ReaperContainer {
+            id: container_id,
+            job_id,
+            created_at,
+        });
+    }
+
+    Ok(result)
+}
+
+#[cfg(not(feature = "docker"))]
+async fn list_docker_containers(
+    _docker: &DockerConnection,
+    _label: &str,
+) -> Result<Vec<ReaperContainer>, crate::sandbox::SandboxError> {
+    Err(crate::sandbox::SandboxError::DockerNotAvailable {
+        reason: DOCKER_FEATURE_DISABLED_REASON.to_string(),
+    })
+}
+
+#[cfg(feature = "docker")]
+async fn reap_with_docker(
+    docker: &DockerConnection,
+    container_id: &str,
+    job_id: Uuid,
+    job_manager: Option<&ContainerJobManager>,
+) {
+    if let Some(job_manager) = job_manager {
+        match job_manager.stop_job(job_id).await {
             Ok(()) => {
                 tracing::info!(
                     job_id = %job_id,
@@ -258,58 +336,60 @@ impl SandboxReaper {
                 );
             }
         }
-
-        // Fall back: direct Docker stop + force remove
-        if let Err(e) = self
-            .docker
-            .stop_container(
-                container_id,
-                Some(bollard::container::StopContainerOptions { t: 10 }),
-            )
-            .await
-        {
-            tracing::debug!(
-                job_id = %job_id,
-                container_id = %&container_id[..12.min(container_id.len())],
-                error = %e,
-                "Reaper: stop_container failed (may already be stopped)"
-            );
-        }
-
-        if let Err(e) = self
-            .docker
-            .remove_container(
-                container_id,
-                Some(bollard::container::RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
-            .await
-        {
-            tracing::error!(
-                job_id = %job_id,
-                container_id = %&container_id[..12.min(container_id.len())],
-                error = %e,
-                "Reaper: failed to remove orphaned container"
-            );
-        } else {
-            tracing::info!(
-                job_id = %job_id,
-                container_id = %&container_id[..12.min(container_id.len())],
-                "Reaper: removed orphaned container via direct Docker API"
-            );
-        }
     }
 
-    #[cfg(not(feature = "docker"))]
-    async fn reap_container(&self, container_id: &str, job_id: Uuid) {
-        tracing::warn!(
+    if let Err(e) = docker
+        .stop_container(
+            container_id,
+            Some(bollard::container::StopContainerOptions { t: 10 }),
+        )
+        .await
+    {
+        tracing::debug!(
             job_id = %job_id,
-            container_id = %container_id,
-            "Skipping reaper cleanup because Docker support was not compiled in"
+            container_id = %&container_id[..12.min(container_id.len())],
+            error = %e,
+            "Reaper: stop_container failed (may already be stopped)"
         );
     }
+
+    if let Err(e) = docker
+        .remove_container(
+            container_id,
+            Some(bollard::container::RemoveContainerOptions {
+                force: true,
+                ..Default::default()
+            }),
+        )
+        .await
+    {
+        tracing::error!(
+            job_id = %job_id,
+            container_id = %&container_id[..12.min(container_id.len())],
+            error = %e,
+            "Reaper: failed to remove orphaned container"
+        );
+    } else {
+        tracing::info!(
+            job_id = %job_id,
+            container_id = %&container_id[..12.min(container_id.len())],
+            "Reaper: removed orphaned container via direct Docker API"
+        );
+    }
+}
+
+#[cfg(not(feature = "docker"))]
+async fn reap_with_docker(
+    _docker: &DockerConnection,
+    container_id: &str,
+    job_id: Uuid,
+    _job_manager: Option<&ContainerJobManager>,
+) {
+    tracing::warn!(
+        job_id = %job_id,
+        container_id = %container_id,
+        "Skipping reaper cleanup because Docker support was not compiled in"
+    );
 }
 
 #[cfg(test)]

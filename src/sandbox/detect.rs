@@ -149,8 +149,8 @@ pub async fn check_docker() -> DockerDetection {
     }
 }
 
-#[cfg(feature = "docker")]
 /// Check if the `docker` binary exists on PATH.
+#[cfg(feature = "docker")]
 fn docker_binary_exists() -> bool {
     #[cfg(unix)]
     {

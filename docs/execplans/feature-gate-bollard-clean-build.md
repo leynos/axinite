@@ -15,7 +15,7 @@ stable-toolchain build, remove the no-Docker warning fallout from the new stub
 paths, replay the full Axinite gate contract, and then retire the temporary
 vendored `cap-*` workaround once the underlying wrapper bug was fixed.
 
-Success is observable in three ways:
+Success is observable in these ways:
 
 1. Running the narrow stable check below succeeds without `RUSTC_BOOTSTRAP`:
 
@@ -143,7 +143,8 @@ repository-local vendored patch chain to be retired.
   Mitigation: rerun the narrow checks first, then the full gate stack, and fix
   findings in smallest-first order.
 
-- Risk: the no-Docker warnings may tempt a broad refactor into separate cfg
+- Risk: the no-Docker warnings may tempt a broad refactor into separate
+  configuration (`cfg`)
   modules, which could accidentally expand scope.
   Severity: medium
   Likelihood: medium
@@ -330,7 +331,7 @@ $ git push
   by cfg, the entire `make lint` matrix completed cleanly.
 - 2026-03-21: `make test` validated the vendored stable-build workaround under
   the full test feature set, not just the narrow no-Docker check. The branch
-  passed the WASM prebuild, `cargo nextest run --workspace --features
+  passed the WebAssembly (WASM) prebuild, `cargo nextest run --workspace --features
   test-helpers`, and `cargo test --manifest-path tools-src/github/Cargo.toml`
   without further source changes.
 - 2026-03-21: Fixing `~/.local/bin/notdeadyet` to keep `rustc` in the

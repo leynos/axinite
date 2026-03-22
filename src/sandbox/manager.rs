@@ -37,7 +37,8 @@ use tokio::sync::RwLock;
 
 use crate::sandbox::config::{ResourceLimits, SandboxConfig, SandboxPolicy};
 use crate::sandbox::container::{
-    ContainerOutput, ContainerRunner, DockerConnection, connect_docker,
+    ContainerOutput, ContainerRunner, DockerConnection, connect_docker, docker_is_responsive,
+    ensure_docker_responsive,
 };
 use crate::sandbox::error::{Result, SandboxError};
 use crate::sandbox::proxy::{HttpProxy, NetworkProxyBuilder};
@@ -89,6 +90,16 @@ pub struct SandboxManager {
 }
 
 impl SandboxManager {
+    async fn get_docker(&self) -> Result<DockerConnection> {
+        self.docker
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| SandboxError::DockerNotAvailable {
+                reason: "Docker connection not initialized".to_string(),
+            })
+    }
+
     /// Create a new sandbox manager.
     pub fn new(config: SandboxConfig) -> Self {
         Self {
@@ -111,10 +122,7 @@ impl SandboxManager {
         }
 
         match connect_docker().await {
-            #[cfg(feature = "docker")]
-            Ok(docker) => docker.ping().await.is_ok(),
-            #[cfg(not(feature = "docker"))]
-            Ok(_) => false,
+            Ok(docker) => docker_is_responsive(&docker).await,
             Err(_) => false,
         }
     }
@@ -135,22 +143,11 @@ impl SandboxManager {
         let docker = connect_docker().await?;
 
         // Check if Docker is responsive
-        #[cfg(feature = "docker")]
-        docker
-            .ping()
-            .await
-            .map_err(|e| SandboxError::DockerNotAvailable {
-                reason: e.to_string(),
-            })?;
+        ensure_docker_responsive(&docker).await?;
 
         // Check for / pull image using a temporary runner
-        #[cfg(feature = "docker")]
-        let checker_docker = docker.clone();
-        #[cfg(not(feature = "docker"))]
-        let checker_docker = docker;
-
         let checker = ContainerRunner::new(
-            checker_docker,
+            docker.clone(),
             self.config.image.clone(),
             self.config.proxy_port,
         );
@@ -234,17 +231,7 @@ impl SandboxManager {
         };
 
         // Reuse the stored Docker connection, create a runner with the current proxy port
-        let docker_guard = self.docker.read().await;
-        #[cfg(feature = "docker")]
-        let docker = docker_guard
-            .clone()
-            .ok_or_else(|| SandboxError::DockerNotAvailable {
-                reason: "Docker connection not initialized".to_string(),
-            })?;
-        #[cfg(not(feature = "docker"))]
-        let docker = (*docker_guard).ok_or_else(|| SandboxError::DockerNotAvailable {
-            reason: "Docker connection not initialized".to_string(),
-        })?;
+        let docker = self.get_docker().await?;
 
         let runner = ContainerRunner::new(docker, self.config.image.clone(), proxy_port);
 
