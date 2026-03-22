@@ -1,0 +1,165 @@
+---
+name: Mutation Testing
+# Runs cargo-mutants nightly against Rust source files changed in the past
+# 24 hours. Surviving mutants are uploaded as a downloadable artefact and
+# summarised in the job summary. The workflow can also be triggered manually
+# with an explicit list of source-file paths or globs to mutate.
+#
+# This workflow is NOT a required status check. Surviving mutants are
+# informational, not a merge gate.
+
+"on":
+  schedule:
+    - cron: "0 3 * * *"        # Nightly at 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to check out and mutate"
+        type: string
+        default: main
+      paths:
+        description: >-
+          Newline-separated list of source file paths or globs to mutate.
+          When empty, the same 24-hour diff logic as the scheduled run is used.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-testing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutate:
+    name: Mutation Testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          # workflow_dispatch supplies inputs.branch (default: main).
+          # Scheduled runs fall back to github.ref (the default branch).
+          ref: ${{ inputs.branch || github.ref }}
+          fetch-depth: 0        # Full history required for git log --since
+
+      - name: Compute file list
+        id: compute-files
+        env:
+          INPUT_PATHS: ${{ inputs.paths }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$INPUT_PATHS" ]]; then
+            # Manual dispatch with explicit paths: use them directly.
+            CHANGED_FILES="$INPUT_PATHS"
+          else
+            # Scheduled run: find .rs files changed in the past 24 hours.
+            CHANGED_FILES=$(
+              git log --since="24 hours ago" \
+                --diff-filter=ACMR --name-only --pretty=format: HEAD \
+              | grep '\.rs$' | sort -u || true
+            )
+          fi
+
+          if [[ -z "$CHANGED_FILES" ]]; then
+            echo "No Rust source files changed in the past 24 hours." \
+              "Skipping mutation run."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Files selected for mutation testing:"
+            echo "$CHANGED_FILES"
+            {
+              echo "files<<EOF"
+              echo "$CHANGED_FILES"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust
+        if: steps.compute-files.outputs.skip != 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - name: Install mold
+        if: steps.compute-files.outputs.skip != 'true'
+        uses: rui314/setup-mold@v1
+
+      - name: Rust cache
+        if: steps.compute-files.outputs.skip != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: mutation-testing
+
+      - name: Install cargo-mutants
+        if: steps.compute-files.outputs.skip != 'true'
+        uses: taiki-e/install-action@cargo-mutants
+
+      - name: Install cargo-nextest
+        if: steps.compute-files.outputs.skip != 'true'
+        uses: taiki-e/install-action@cargo-nextest
+
+      - name: Install cargo-component
+        if: steps.compute-files.outputs.skip != 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-component
+
+      - name: Build GitHub WASM tool (for metadata/schema tests)
+        if: steps.compute-files.outputs.skip != 'true'
+        run: make build-github-tool-wasm
+
+      - name: Build WASM channels (for integration tests)
+        if: steps.compute-files.outputs.skip != 'true'
+        run: ./scripts/build-wasm-extensions.sh --channels
+
+      - name: Run cargo-mutants
+        if: steps.compute-files.outputs.skip != 'true'
+        id: run-mutants
+        # continue-on-error so surviving mutants do not fail the job.
+        # Surviving mutants are informational; the artefact and summary
+        # steps below capture the results regardless of exit code.
+        continue-on-error: true
+        env:
+          FILES: ${{ steps.compute-files.outputs.files }}
+        run: |
+          set -uo pipefail
+
+          file_args=""
+          while IFS= read -r f; do
+            [[ -n "$f" ]] && file_args+=" --file $f"
+          done <<< "$FILES"
+
+          # shellcheck disable=SC2086
+          cargo mutants --no-shuffle --test-tool nextest \
+            --timeout-multiplier 3 \
+            --features test-helpers \
+            ${file_args}
+
+      - name: Print surviving mutants summary
+        if: steps.compute-files.outputs.skip != 'true'
+        run: |
+          echo "## Surviving mutants" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -s mutants.out/survived.txt ]]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat mutants.out/survived.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No surviving mutants." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload mutation report
+        if: steps.compute-files.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report
+          path: mutants.out/
+          retention-days: 14
