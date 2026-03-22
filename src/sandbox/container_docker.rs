@@ -1,3 +1,9 @@
+//! Docker-backed sandbox runner internals.
+//!
+//! This module contains the `docker`-feature implementation of
+//! [`ContainerRunner`]. It stays separate from the shared container module so
+//! Docker-specific lifecycle handling and dependency usage do not leak into the
+//! no-Docker build.
 use super::*;
 
 use bollard::container::{
@@ -63,14 +69,20 @@ impl ContainerRunner {
             binds: Some(binds),
             memory: Some((limits.memory_bytes) as i64),
             cpu_shares: Some(limits.cpu_shares as i64),
-            auto_remove: Some(true),
+            auto_remove: Some(false),
             network_mode: Some("bridge".to_string()),
             cap_drop: Some(vec!["ALL".to_string()]),
             cap_add: Some(vec!["CHOWN".to_string()]),
             security_opt: Some(vec!["no-new-privileges:true".to_string()]),
             readonly_rootfs: Some(policy != SandboxPolicy::FullAccess),
-            tmpfs: Some(
-                [
+            tmpfs: Some(match policy {
+                SandboxPolicy::FullAccess => [(
+                    "/home/sandbox/.cargo/registry".to_string(),
+                    "size=1G".to_string(),
+                )]
+                .into_iter()
+                .collect(),
+                _ => [
                     ("/tmp".to_string(), "size=512M".to_string()),
                     (
                         "/home/sandbox/.cargo/registry".to_string(),
@@ -79,7 +91,7 @@ impl ContainerRunner {
                 ]
                 .into_iter()
                 .collect(),
-            ),
+            }),
             ..Default::default()
         };
 

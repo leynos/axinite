@@ -5,7 +5,7 @@ use std::path::Path;
 #[cfg(any(feature = "docker", test))]
 use std::path::PathBuf;
 
-#[cfg(any(feature = "docker", test))]
+#[cfg(feature = "docker")]
 use crate::bootstrap::ironclaw_base_dir;
 #[cfg(any(feature = "docker", test))]
 use crate::error::OrchestratorError;
@@ -22,7 +22,7 @@ use crate::error::OrchestratorError;
 /// system a malicious actor could swap a symlink after validation. This is
 /// acceptable in IronClaw's single-tenant design where the user controls
 /// the filesystem.
-#[cfg(any(feature = "docker", test))]
+#[cfg(feature = "docker")]
 pub(crate) fn validate_bind_mount_path(
     dir: &std::path::Path,
     job_id: uuid::Uuid,
@@ -98,7 +98,7 @@ mod tests {
 
     use uuid::Uuid;
 
-    use super::{validate_bind_mount_path, validate_bind_mount_path_against_base};
+    use super::validate_bind_mount_path_against_base;
 
     #[test]
     fn test_validate_bind_mount_valid_path() {
@@ -117,9 +117,12 @@ mod tests {
     #[test]
     fn test_validate_bind_mount_rejects_outside_base() {
         let tmp = tempfile::tempdir().unwrap();
-        let outside = tmp.path().to_path_buf();
+        let base = tmp.path().join("projects");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
 
-        let result = validate_bind_mount_path(&outside, Uuid::new_v4());
+        let result = validate_bind_mount_path_against_base(&outside, &base, Uuid::new_v4());
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(

@@ -10,7 +10,7 @@
 ## Big Picture
 
 The bollard crate (Docker API client) and its transitive dependency surface
-are always compiled, even though Docker-based sandboxing is an optional
+is always compiled, even though Docker-based sandboxing is an optional
 deployment capability. Feature-gating it behind a `docker` feature
 (included in defaults) lets developers who do not use Docker sandboxing
 skip those crates.

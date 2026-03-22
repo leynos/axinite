@@ -20,7 +20,9 @@ async fn report_status_updates_handle(test_state: OrchestratorState) {
             job_id,
             crate::orchestrator::job_manager::ContainerHandle {
                 job_id,
-                container_id: "test-container".to_string(),
+                container_id: Some(crate::orchestrator::job_manager::ContainerId::new(
+                    "test-container",
+                )),
                 state: crate::orchestrator::job_manager::ContainerState::Running,
                 mode: crate::orchestrator::job_manager::JobMode::Worker,
                 created_at: chrono::Utc::now(),

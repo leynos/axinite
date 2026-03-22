@@ -6,7 +6,7 @@ use crate::sandbox::container::DOCKER_FEATURE_DISABLED_REASON;
 fn sample_handle(job_id: Uuid) -> ContainerHandle {
     ContainerHandle {
         job_id,
-        container_id: "container-123".to_string(),
+        container_id: Some(ContainerId::new("container-123")),
         state: ContainerState::Running,
         mode: JobMode::Worker,
         created_at: chrono::Utc::now(),

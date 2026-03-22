@@ -1,5 +1,6 @@
 //! Plain data types for container job management.
 
+use std::fmt;
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
@@ -29,7 +30,7 @@ impl std::fmt::Display for JobMode {
 }
 
 /// Configuration for the container job manager.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ContainerJobConfig {
     /// Docker image for worker containers.
     pub image: String,
@@ -54,6 +55,32 @@ pub struct ContainerJobConfig {
     pub claude_code_memory_limit_mb: u64,
     /// Allowed tool patterns for Claude Code (passed as CLAUDE_CODE_ALLOWED_TOOLS env var).
     pub claude_code_allowed_tools: Vec<String>,
+}
+
+impl fmt::Debug for ContainerJobConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ContainerJobConfig")
+            .field("image", &self.image)
+            .field("memory_limit_mb", &self.memory_limit_mb)
+            .field("cpu_shares", &self.cpu_shares)
+            .field("orchestrator_port", &self.orchestrator_port)
+            .field(
+                "claude_code_api_key",
+                &self.claude_code_api_key.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "claude_code_oauth_token",
+                &self.claude_code_oauth_token.as_ref().map(|_| "<redacted>"),
+            )
+            .field("claude_code_model", &self.claude_code_model)
+            .field("claude_code_max_turns", &self.claude_code_max_turns)
+            .field(
+                "claude_code_memory_limit_mb",
+                &self.claude_code_memory_limit_mb,
+            )
+            .field("claude_code_allowed_tools", &self.claude_code_allowed_tools)
+            .finish()
+    }
 }
 
 impl Default for ContainerJobConfig {
@@ -93,11 +120,31 @@ impl std::fmt::Display for ContainerState {
     }
 }
 
+/// Docker container identifier for a managed job.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ContainerId(String);
+
+impl ContainerId {
+    pub fn new(container_id: impl Into<String>) -> Self {
+        Self(container_id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ContainerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Handle to a running container job.
 #[derive(Debug, Clone)]
 pub struct ContainerHandle {
     pub job_id: uuid::Uuid,
-    pub container_id: String,
+    pub container_id: Option<ContainerId>,
     pub state: ContainerState,
     pub mode: JobMode,
     pub created_at: DateTime<Utc>,

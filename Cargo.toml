@@ -185,6 +185,9 @@ tempfile = { version = "3", optional = true }
 security-framework = "3"
 
 # Linux secret-service (GNOME Keyring, KWallet)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 secret-service = { version = "4", features = ["rt-tokio-crypto-rust"] }
 zbus = "4"

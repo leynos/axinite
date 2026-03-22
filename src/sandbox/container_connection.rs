@@ -1,3 +1,12 @@
+//! Docker connection discovery and feature-gated fallbacks.
+//!
+//! This module centralises Docker daemon discovery for sandbox execution. With
+//! the `docker` feature enabled it probes the default client settings first and
+//! then checks user-owned Unix sockets in this order:
+//! `~/.docker/run/docker.sock`, `~/.colima/default/docker.sock`,
+//! `~/.rd/docker.sock`, `$XDG_RUNTIME_DIR/docker.sock`, and
+//! `/run/user/<uid>/docker.sock`. Without the feature it returns a clear
+//! `DockerNotAvailable` error immediately so callers can degrade gracefully.
 #[cfg(all(unix, any(feature = "docker", test)))]
 use std::path::PathBuf;
 
@@ -87,7 +96,11 @@ fn unix_socket_candidates() -> Vec<PathBuf> {
     unix_socket_candidates_from_env(
         std::env::var_os("HOME").map(PathBuf::from),
         std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
-        std::env::var("UID").ok(),
+        Some({
+            // SAFETY: `geteuid` has no preconditions and simply returns the
+            // effective user ID for the current process.
+            unsafe { libc::geteuid() }.to_string()
+        }),
     )
 }
 
@@ -170,7 +183,7 @@ pub async fn ensure_docker_responsive(docker: &DockerConnection) -> Result<()> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::path::PathBuf;
 

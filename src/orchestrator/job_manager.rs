@@ -67,7 +67,7 @@ impl ContainerJobManager {
         // Record the handle
         let handle = ContainerHandle {
             job_id,
-            container_id: String::new(), // set after container creation
+            container_id: None, // set after container creation
             state: ContainerState::Creating,
             mode,
             created_at: chrono::Utc::now(),

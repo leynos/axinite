@@ -15,6 +15,8 @@ use uuid::Uuid;
 use crate::context::ContextManager;
 use crate::orchestrator::job_manager::ContainerJobManager;
 #[cfg(feature = "docker")]
+use crate::orchestrator::job_types::ContainerState;
+#[cfg(feature = "docker")]
 use crate::sandbox::connect_docker;
 #[cfg(feature = "docker")]
 use crate::sandbox::container::DockerConnection;
@@ -364,6 +366,12 @@ async fn reap_with_docker(
             "Reaper: failed to remove orphaned container"
         );
     } else {
+        job_manager
+            .registry
+            .set_state(job_id, ContainerState::Stopped)
+            .await;
+        job_manager.token_store().revoke(job_id).await;
+
         tracing::info!(
             job_id = %job_id,
             container_id = %&container_id[..12.min(container_id.len())],

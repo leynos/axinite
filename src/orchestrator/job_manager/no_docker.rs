@@ -57,12 +57,7 @@ impl ContainerJobManager {
     ) -> Result<(), OrchestratorError> {
         self.registry.set_completion(job_id, result).await;
 
-        if let Some(container_id) = self
-            .registry
-            .container_id(job_id)
-            .await
-            .filter(|container_id| !container_id.is_empty())
-        {
+        if let Some(container_id) = self.registry.container_id(job_id).await {
             tracing::warn!(
                 job_id = %job_id,
                 container_id = %container_id,

@@ -155,11 +155,7 @@ impl ContainerJobManager {
         } = params;
         let docker = self.docker().await?;
 
-        let orchestrator_host = if cfg!(target_os = "linux") {
-            "172.17.0.1"
-        } else {
-            "host.docker.internal"
-        };
+        let orchestrator_host = "host.docker.internal";
 
         let orchestrator_url = format!(
             "http://{}:{}",
@@ -259,18 +255,11 @@ impl ContainerJobManager {
             .await
             .ok_or(OrchestratorError::ContainerNotFound { job_id })?;
 
-        if container_id.is_empty() {
-            return Err(OrchestratorError::InvalidContainerState {
-                job_id,
-                state: "creating (no container ID yet)".to_string(),
-            });
-        }
-
         let docker = self.docker().await?;
 
         if let Err(e) = docker
             .stop_container(
-                &container_id,
+                container_id.as_str(),
                 Some(bollard::container::StopContainerOptions { t: 10 }),
             )
             .await
@@ -284,7 +273,7 @@ impl ContainerJobManager {
 
         if let Err(e) = docker
             .remove_container(
-                &container_id,
+                container_id.as_str(),
                 Some(bollard::container::RemoveContainerOptions {
                     force: true,
                     ..Default::default()
@@ -319,17 +308,12 @@ impl ContainerJobManager {
     ) -> Result<(), OrchestratorError> {
         self.registry.set_completion(job_id, result).await;
 
-        if let Some(container_id) = self
-            .registry
-            .container_id(job_id)
-            .await
-            .filter(|container_id| !container_id.is_empty())
-        {
+        if let Some(container_id) = self.registry.container_id(job_id).await {
             match self.docker().await {
                 Ok(docker) => {
                     if let Err(e) = docker
                         .stop_container(
-                            &container_id,
+                            container_id.as_str(),
                             Some(bollard::container::StopContainerOptions { t: 5 }),
                         )
                         .await
@@ -342,7 +326,7 @@ impl ContainerJobManager {
                     }
                     if let Err(e) = docker
                         .remove_container(
-                            &container_id,
+                            container_id.as_str(),
                             Some(bollard::container::RemoveContainerOptions {
                                 force: true,
                                 ..Default::default()

@@ -6,7 +6,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::orchestrator::job_types::{CompletionResult, ContainerHandle, ContainerState};
+use crate::orchestrator::job_types::{
+    CompletionResult, ContainerHandle, ContainerId, ContainerState,
+};
 
 pub(crate) struct JobRegistry {
     inner: Arc<RwLock<HashMap<Uuid, ContainerHandle>>>,
@@ -57,7 +59,7 @@ impl JobRegistry {
     #[cfg(feature = "docker")]
     pub(crate) async fn set_container_id(&self, job_id: Uuid, container_id: String) {
         if let Some(handle) = self.inner.write().await.get_mut(&job_id) {
-            handle.container_id = container_id;
+            handle.container_id = Some(ContainerId::new(container_id));
             handle.state = ContainerState::Running;
         }
     }
@@ -69,12 +71,12 @@ impl JobRegistry {
         }
     }
 
-    pub(crate) async fn container_id(&self, job_id: Uuid) -> Option<String> {
+    pub(crate) async fn container_id(&self, job_id: Uuid) -> Option<ContainerId> {
         self.inner
             .read()
             .await
             .get(&job_id)
-            .map(|handle| handle.container_id.clone())
+            .and_then(|handle| handle.container_id.clone())
     }
 
     #[cfg(any(feature = "docker", test))]
