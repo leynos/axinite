@@ -5,15 +5,15 @@
 
 ## Start here
 
-- [Welcome to axinite](welcome-to-axinite.md) introduces the project,
-  its current direction, and the main documents to read next.
+- [Welcome to axinite](welcome-to-axinite.md) introduces the project, its
+  current direction, and the main documents to read next.
 - [Developer's guide](developers-guide.md) is the maintainer-facing operating
   manual for building, testing, debugging, and extending axinite.
 - [Testing strategy](testing-strategy.md) explains how the repository designs
   tests, runs them locally, exercises them in CI, and supports periodic or ad
   hoc validation.
-- [User's guide](users-guide.md) explains current operator-visible behaviour
-  and day-to-day usage expectations for the shipped runtime.
+- [User's guide](users-guide.md) explains current operator-visible behaviour and
+  day-to-day usage expectations for the shipped runtime.
 - [Repository layout](repository-layout.md) maps the repository structure and
   shows where major subsystems, assets, and support files live.
 - [Documentation style guide](documentation-style-guide.md) defines the
@@ -24,9 +24,11 @@
 
 ## Architecture and subsystem design
 
-- [axinite architecture overview](axinite-architecture-overview.md) explains
-  the top-level runtime shape, major subsystems, and how the pieces fit
-  together.
+- [axinite architecture overview](axinite-architecture-overview.md) explains the
+  top-level runtime shape, major subsystems, and how the pieces fit together.
+- [Formal verification methods in Axinite](formal-verification-methods-in-axinite.md)
+  recommends where proof-oriented checks, model checking, and generated property
+  tests should land first, and why those targets have the highest return.
 - [Webhook server design](webhook-server-design.md) describes the unified
   webhook listener, route composition model, and rollback-focused restart
   behaviour.
@@ -52,8 +54,8 @@
   explains complexity metrics, the bumpy-road antipattern, and practical
   refactoring strategies for maintainers.
 - [Reliable testing in Rust via dependency injection](reliable-testing-in-rust-via-dependency-injection.md)
-  explains how to avoid global-state coupling in tests by injecting
-  environment, clock, and other system dependencies.
+  explains how to avoid global-state coupling in tests by injecting environment,
+  clock, and other system dependencies.
 - [`rstest-bdd` user's guide](rstest-bdd-users-guide.md) documents how to use
   the current `rstest-bdd` implementation from Gherkin features through step
   definitions and scenario execution.
@@ -68,12 +70,12 @@
 
 - [Configuration guide](configuration-guide.md) is the reference for command
   line options, environment variables, defaults, and configuration precedence.
-- [Large language model (LLM) providers](LLM_PROVIDERS.md) summarizes
-  supported model backends and provider-specific setup notes.
+- [Large language model (LLM) providers](LLM_PROVIDERS.md) summarizes supported
+  model backends and provider-specific setup notes.
 - [Telegram setup](TELEGRAM_SETUP.md) explains how to configure and run the
   Telegram channel integration.
-- [Building channels](BUILDING_CHANNELS.md) describes how to implement and
-  wire new channels into the application.
+- [Building channels](BUILDING_CHANNELS.md) describes how to implement and wire
+  new channels into the application.
 - [Writing WebAssembly tools for ironclaw](writing-web-assembly-tools-for-ironclaw.md)
   explains how extension authors build and package WebAssembly tools for the
   existing runtime and tool contract.
@@ -93,14 +95,14 @@
   - [Resolve meta tooling unavailability](plans/2026-03-09-resolve-meta-tooling-unavailability.md)
     captures the plan for restoring missing meta-tooling behaviour.
   - [Secret blocking overzealous](plans/2026-03-09-secret-blocking-overzealous.md)
-    tracks the work to tighten secret-blocking behaviour without breaking
-    valid flows.
+    tracks the work to tighten secret-blocking behaviour without breaking valid
+    flows.
   - [Use WIT v3 in extensions](plans/2026-03-09-use-wit-v3-in-extensions.md)
     plans the migration of extension interfaces to WIT v3.
   - [Invalid tool schema](plans/2026-03-10-invalid-tool-schema.md) records the
     investigation and fix plan for invalid tool-schema handling.
-  - [Compile-time reduction](plans/2026-03-12-compile-time-reduction.md)
-    tracks work to reduce build times and related tooling overhead.
+  - [Compile-time reduction](plans/2026-03-12-compile-time-reduction.md) tracks
+    work to reduce build times and related tooling overhead.
 - [ExecPlans directory](execplans/) collects approval-gated execution plans
   written in the Codex ExecPlan format for roadmap-scoped work.
   - [Migrate from async-trait to native async traits](execplans/migrate-async-trait.md)
@@ -150,8 +152,8 @@
     proposes projection classes, epistemic status, and promotion rules for
     memory.
   - [RFC 0015: Hierarchical memory materialization for memoryd](rfcs/0015-hierarchical-memory-materialization-for-memoryd.md)
-    outlines how `memoryd` can materialize episode, semantic-carrier, and
-    theme structures without replacing RFC 0014's projection taxonomy.
+    outlines how `memoryd` can materialize episode, semantic-carrier, and theme
+    structures without replacing RFC 0014's projection taxonomy.
   - [RFC 0016: Theme detection and sparsity rebalancing for memoryd](rfcs/0016-theme-detection-and-sparsity-rebalancing-for-memoryd.md)
     defines how `memoryd` maintains stable theme identities, balancing, and
     lineage over semantic carriers without promoting themes into a new truth
@@ -163,11 +165,11 @@
 ## ADRs
 
 - [ADR 001: OPA Rego as the policy engine for intent enforcement](adr-001-rego-policy-engine-for-intent-enforcement.md)
-  records the proposed policy-engine choice for deterministic,
-  machine-auditable intent gates.
+  records the proposed policy-engine choice for deterministic, machine-auditable
+  intent gates.
 - [ADR 002: Authoritative intent state must remain human-auditable](adr-002-authoritative-intent-state-must-remain-human-auditable.md)
-  records that provider-owned continuation state may optimize execution but
-  must never become the sole source of truth for intent or decision history.
+  records that provider-owned continuation state may optimize execution but must
+  never become the sole source of truth for intent or decision history.
 - [ADR 003: Theme management belongs in memoryd](adr-003-theme-management-belongs-in-memoryd.md)
   records that stable theme IDs, balancing policy, and lineage belong in the
   memory sidecar rather than in the clustering substrate.
@@ -178,5 +180,5 @@
   records that hierarchical recall should support both proxy-based and
   model-assisted gain estimation behind one expansion-gating interface.
 - [ADR 006: Dual-trait pattern for dyn-backed async interfaces](adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
-  records the proposed migration pattern for dyn-backed async traits,
-  balancing compilation speed against implementation maintainability.
+  records the proposed migration pattern for dyn-backed async traits, balancing
+  compilation speed against implementation maintainability.
