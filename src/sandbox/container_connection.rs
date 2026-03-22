@@ -76,11 +76,16 @@ async fn connect_docker_inner() -> Result<DockerConnection> {
     }
 
     Err(SandboxError::DockerNotAvailable {
-        reason: "Could not connect to Docker daemon. Tried: $DOCKER_HOST, \
-            /var/run/docker.sock, ~/.docker/run/docker.sock, \
-            ~/.colima/default/docker.sock, ~/.rd/docker.sock, \
-            $XDG_RUNTIME_DIR/docker.sock, /run/user/$UID/docker.sock"
-            .to_string(),
+        reason: concat!(
+            "Could not connect to Docker daemon. Tried: $DOCKER_HOST, ",
+            "/var/run/docker.sock, ",
+            "~/.docker/run/docker.sock, ",
+            "~/.colima/default/docker.sock, ",
+            "~/.rd/docker.sock, ",
+            "$XDG_RUNTIME_DIR/docker.sock, ",
+            "/run/user/$UID/docker.sock"
+        )
+        .to_string(),
     })
 }
 

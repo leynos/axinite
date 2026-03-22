@@ -18,6 +18,7 @@ pub struct ContainerJobManager {
 }
 
 impl ContainerJobManager {
+    /// Create the no-Docker job manager backend.
     pub fn new(_config: ContainerJobConfig, token_store: TokenStore) -> Self {
         Self {
             token_store,
@@ -41,15 +42,17 @@ impl ContainerJobManager {
         })
     }
 
-    /// Stop a running container job.
+    /// Return the Docker-disabled error for stop requests.
     pub async fn stop_job(&self, job_id: Uuid) -> Result<(), OrchestratorError> {
         Err(OrchestratorError::Docker {
             reason: format!("{DOCKER_FEATURE_DISABLED_REASON}, cannot stop sandbox job {job_id}"),
         })
     }
 
-    /// Mark a job as complete with a result. The container is stopped but the
-    /// handle is kept so `CreateJobTool` can read the completion message.
+    /// Record a job's completion result without performing Docker cleanup.
+    ///
+    /// This no-Docker fallback keeps the handle in memory so `CreateJobTool`
+    /// can still read the completion message after the job finishes.
     pub async fn complete_job(
         &self,
         job_id: Uuid,

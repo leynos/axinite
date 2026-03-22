@@ -88,6 +88,7 @@
 pub mod config;
 pub mod container;
 pub mod detect;
+mod docker;
 pub mod error;
 pub mod manager;
 pub mod proxy;

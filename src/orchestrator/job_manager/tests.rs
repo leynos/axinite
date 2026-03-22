@@ -46,7 +46,10 @@ async fn test_update_worker_status() {
     mgr.update_worker_status(job_id, Some("Iteration 3".to_string()), 3)
         .await;
 
-    let handle = mgr.get_handle(job_id).await.unwrap();
+    let handle = mgr
+        .get_handle(job_id)
+        .await
+        .expect("expected handle for job_id after status update");
     assert_eq!(handle.worker_iteration, 3);
     assert_eq!(handle.last_worker_status.as_deref(), Some("Iteration 3"));
 }
@@ -65,7 +68,7 @@ async fn create_job_fails_no_docker() {
     let error = manager
         .create_job(job_id, "test task", None, JobMode::Worker, grants)
         .await
-        .unwrap_err();
+        .expect_err("expected error when create_job is called without Docker support");
 
     match error {
         OrchestratorError::Docker { reason } => {
@@ -110,9 +113,15 @@ async fn complete_job_no_docker_retains_result_and_revokes_token() {
         message: Some("done".to_string()),
     };
 
-    manager.complete_job(job_id, result.clone()).await.unwrap();
+    manager
+        .complete_job(job_id, result.clone())
+        .await
+        .expect("expected complete_job to record completion without Docker");
 
-    let handle = manager.get_handle(job_id).await.unwrap();
+    let handle = manager
+        .get_handle(job_id)
+        .await
+        .expect("expected handle for job_id after no-Docker completion");
     assert_eq!(handle.state, ContainerState::Stopped);
     assert_eq!(handle.completion_result, Some(result));
     assert!(!token_store.validate(job_id, &token).await);

@@ -21,14 +21,14 @@ pub struct ContainerJobManager {
 }
 
 /// Build bind mounts and related environment for a job workspace.
-fn build_workspace_binds(
+async fn build_workspace_binds(
     project_dir: Option<&PathBuf>,
     job_id: Uuid,
     env_vec: &mut Vec<String>,
 ) -> Result<Vec<String>, OrchestratorError> {
     let mut binds = Vec::new();
     if let Some(dir) = project_dir {
-        let canonical = bind_mount::validate_bind_mount_path(dir, job_id)?;
+        let canonical = bind_mount::validate_bind_mount_path(dir, job_id).await?;
         binds.push(format!("{}:/workspace:rw", canonical.display()));
         env_vec.push("IRONCLAW_WORKSPACE=/workspace".to_string());
     }
@@ -168,7 +168,7 @@ impl ContainerJobManager {
             format!("IRONCLAW_ORCHESTRATOR_URL={}", orchestrator_url),
         ];
 
-        let binds = build_workspace_binds(project_dir.as_ref(), job_id, &mut env_vec)?;
+        let binds = build_workspace_binds(project_dir.as_ref(), job_id, &mut env_vec).await?;
 
         if mode == JobMode::ClaudeCode {
             append_claude_code_env(&self.config, &mut env_vec);

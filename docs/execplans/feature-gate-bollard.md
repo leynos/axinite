@@ -34,7 +34,7 @@ The direct bollard usage sites and their primary purposes are:
 - `src/sandbox/manager.rs`: high-level sandbox coordinator
 - `src/sandbox/error.rs`: error types, including
   `#[from] bollard::errors::Error`
-- `src/orchestrator/job_manager.rs`: persistent container job management
+- `src/orchestrator/job_manager/docker.rs`: persistent container job management
 - `src/orchestrator/reaper.rs`: orphaned container cleanup
 
 ### Public API leakage
@@ -130,7 +130,7 @@ The direct bollard usage sites and their primary purposes are:
 - **Orchestrator coupling:** The job manager and reaper may be tightly
   integrated with non-Docker orchestration logic. Audit before gating.
 
-## Progress Notes
+## Progress notes
 
 - 2026-03-20: Made `bollard` optional, added a default-on `docker` feature,
   and converted the sandbox/orchestrator internals to compile without Docker

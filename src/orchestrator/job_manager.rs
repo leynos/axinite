@@ -48,6 +48,11 @@ impl ContainerJobManager {
     /// before the container is created. Credential grants are stored in the
     /// TokenStore and served on-demand via the `/credentials` endpoint.
     /// Returns the auth token for the worker.
+    ///
+    /// When the crate is built without the `docker` feature, this returns
+    /// [`OrchestratorError::Docker`] instead of creating a container. Callers
+    /// should handle that variant explicitly when Docker sandboxing is
+    /// unavailable in the current build.
     pub async fn create_job(
         &self,
         job_id: Uuid,

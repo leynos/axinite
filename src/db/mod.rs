@@ -140,6 +140,9 @@ pub async fn create_secrets_store(
 
     let (_db, handles) = connect_with_handles(config).await?;
 
+    #[cfg(not(any(feature = "libsql", feature = "postgres")))]
+    let _ = &handles;
+
     match config.backend {
         #[cfg(feature = "libsql")]
         crate::config::DatabaseBackend::LibSql => {

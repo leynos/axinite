@@ -1,8 +1,8 @@
 # Recover clean build after bollard optionality
 
 This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`,
-`Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work
+`Constraints`, `Tolerances`, `Risks`, `Progress`, `Surprises & discoveries`,
+`Decision log`, and `Outcomes & retrospective` must be kept up to date as work
 proceeds.
 
 Status: COMPLETED AND RETIRED
@@ -299,7 +299,7 @@ $ git push
 - [x] Retire the repository-local `[patch.crates-io]` override and the vendored
   `third-party-patches/` carry path.
 
-## Surprises & Discoveries
+## Surprises & discoveries
 
 - 2026-03-21: The first blocker is not the new Docker optionality code. The
   narrow stable no-Docker build fails in `cap-primitives 3.4.5`, reached via
@@ -350,7 +350,7 @@ $ git push
   `cargo check --no-default-features --features libsql,test-helpers` on the
   stable toolchain. That made the vendored patch chain unnecessary.
 
-## Decision Log
+## Decision log
 
 - 2026-03-21: Create a sibling execplan rather than overloading
   `docs/execplans/feature-gate-bollard.md`.
@@ -414,12 +414,18 @@ $ git push
   use sites keeps both configurations honest without distorting the shared type
   surface.
 
-## Outcomes & Retrospective
+## Outcomes & retrospective
 
 The stable-toolchain blocker was caused by build-script feature probes trusting
 an ambient `RUSTC_WRAPPER` that falsely reported unstable support on stable.
-The durable branch-local fix was to vendor and patch the affected probe chain
-so it invokes `RUSTC` directly during capability detection.
+Vendoring the affected `cap-*` crates and patching their probes to invoke
+`RUSTC` directly was the interim recovery step that got the branch back to a
+clean stable build.
+
+The final resolution was patch retirement, not permanent vendoring. Repairing
+the ambient wrapper restored correct probe behaviour for plain `cargo`
+invocations, so the repository could remove the vendored patch chain and rely
+on upstream crates again without reintroducing the stable-build failure.
 
 The no-Docker warning fallout was resolved with narrow cfg-gating in the
 sandbox and orchestrator modules, plus one cfg-specific `clone_on_copy` fix in

@@ -125,6 +125,27 @@ fn parse_created_at_label(
         .or_else(|| created.and_then(|timestamp| DateTime::from_timestamp(timestamp, 0)))
 }
 
+fn orphan_threshold_duration(config: &ReaperConfig) -> chrono::Duration {
+    match chrono::Duration::from_std(config.orphan_threshold) {
+        Ok(duration) => duration,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "Reaper: failed to convert orphan_threshold to chrono::Duration, using default of 10 minutes"
+            );
+            chrono::Duration::minutes(10)
+        }
+    }
+}
+
+fn is_past_orphan_threshold(
+    created_at: DateTime<Utc>,
+    config: &ReaperConfig,
+    now: DateTime<Utc>,
+) -> bool {
+    now.signed_duration_since(created_at) >= orphan_threshold_duration(config)
+}
+
 impl SandboxReaper {
     /// Create a new reaper.
     ///
@@ -181,20 +202,10 @@ impl SandboxReaper {
         };
 
         let now = Utc::now();
-        let threshold = match chrono::Duration::from_std(self.config.orphan_threshold) {
-            Ok(duration) => duration,
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    "Reaper: failed to convert orphan_threshold to chrono::Duration, using default of 10 minutes"
-                );
-                chrono::Duration::minutes(10)
-            }
-        };
 
         for (container_id, job_id, created_at) in containers {
             let age = now.signed_duration_since(created_at);
-            if age < threshold {
+            if !is_past_orphan_threshold(created_at, &self.config, now) {
                 continue;
             }
 

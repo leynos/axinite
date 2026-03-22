@@ -3,16 +3,17 @@
 
 ## Status
 
-Accepted and retired. The branch originally carried a narrow vendored patch
-chain for the affected `cap-*` build-script probes. That workaround was
-removed once the ambient `RUSTC_WRAPPER` was fixed and the unpatched
-dependency graph passed the required stable acceptance command.
+Accepted
 
 ## Date
 
 2026-03-21
 
-## Context and problem statement
+This ADR records a decision whose interim vendored workaround was later
+retired once the ambient wrapper bug was fixed and the unpatched dependency
+graph passed the required stable acceptance command.
+
+## Context
 
 The `feature-gate-bollard` branch makes Docker-backed sandboxing optional at
 compile time, which introduces an important no-Docker acceptance path:
@@ -29,6 +30,8 @@ scripts probe unstable feature support and were treating the ambient
 wrapper returned success for a probe that direct `rustc` correctly rejected on
 stable, which caused the crates to enable nightly-only cfg paths and then fail
 later in compilation.
+
+## Problem statement
 
 The problem is not Docker optionality itself. The problem is that stable
 capability detection was coupled to an execution wrapper whose behaviour is not
