@@ -229,6 +229,8 @@ pub(super) fn build_tool_hint(
 
 #[cfg(test)]
 mod tests {
+    use rstest::{fixture, rstest};
+
     use crate::testing::{github_wasm_artifact, metadata_test_runtime};
     use crate::tools::Tool;
     use crate::tools::tool::HostedToolCatalogSource;
@@ -236,8 +238,8 @@ mod tests {
 
     use super::super::WasmToolWrapper;
 
-    #[tokio::test]
-    async fn test_exported_metadata_from_real_github_component() {
+    #[fixture]
+    async fn github_wrapper() -> WasmToolWrapper {
         let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
 
         let runtime = metadata_test_runtime().expect("create metadata test runtime");
@@ -246,7 +248,15 @@ mod tests {
             .prepare("github", &wasm_bytes, None)
             .await
             .expect("prepare github wasm component");
-        let wrapper = WasmToolWrapper::new(runtime, prepared, Capabilities::default());
+        WasmToolWrapper::new(runtime, prepared, Capabilities::default())
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_exported_metadata_from_real_github_component(
+        #[future] github_wrapper: WasmToolWrapper,
+    ) {
+        let wrapper = github_wrapper.await;
 
         let (description, schema) = wrapper
             .exported_metadata()
@@ -279,17 +289,12 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn wasm_tool_wrapper_reports_wasm_catalog_source() {
-        let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
-
-        let runtime = metadata_test_runtime().expect("create metadata test runtime");
-        let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm artifact");
-        let prepared = runtime
-            .prepare("github", &wasm_bytes, None)
-            .await
-            .expect("prepare github wasm component");
-        let wrapper = WasmToolWrapper::new(runtime, prepared, Capabilities::default());
+    async fn wasm_tool_wrapper_reports_wasm_catalog_source(
+        #[future] github_wrapper: WasmToolWrapper,
+    ) {
+        let wrapper = github_wrapper.await;
 
         assert_eq!(
             wrapper.hosted_tool_catalog_source(),

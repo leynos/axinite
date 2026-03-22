@@ -38,9 +38,10 @@ pub(super) struct HostedRemoteToolRequest {
 pub(super) async fn hosted_remote_tool_catalog(
     tools: &Arc<ToolRegistry>,
 ) -> (Vec<ToolDefinition>, Vec<String>, u64) {
-    let hosted_tools = tools
+    let mut hosted_tools = tools
         .hosted_tool_definitions(&HOSTED_REMOTE_TOOL_SOURCES)
         .await;
+    hosted_tools.sort_by(|a, b| a.name.cmp(&b.name));
     let toolset_instructions = Vec::new();
     let catalog_version = compute_catalog_version(&hosted_tools, &toolset_instructions);
     (hosted_tools, toolset_instructions, catalog_version)
