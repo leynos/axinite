@@ -234,8 +234,6 @@ async fn create_job_in_state(
 
 #[tokio::test]
 async fn reaper_cleanup_decision_matrix() {
-    use crate::context::JobState;
-
     let ctx_mgr = Arc::new(ContextManager::new(5));
 
     assert!(
