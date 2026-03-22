@@ -306,7 +306,7 @@ set -o pipefail; git diff --check | tee /tmp/diff-check-axinite-<wave>.out
 - [ ] Milestone 4: Convert the high-fanout core traits
 - [ ] Milestone 5: Clean up dependency and documentation state
 
-## Surprises & Discoveries
+## Surprises & discoveries
 
 - 2026-03-22: The earlier pilot work showed that the original migration scope
   estimate was too optimistic. The broad rollout must assume that most of the
@@ -316,7 +316,7 @@ set -o pipefail; git diff --check | tee /tmp/diff-check-axinite-<wave>.out
   plan can focus on family ordering and validation discipline rather than
   debating the migration mechanism again.
 
-## Decision Log
+## Decision log
 
 - 2026-03-22: Chose a wave-based refactor rather than a single large rewrite.
   Rationale: the pilot succeeded, but the remaining families have very
@@ -330,7 +330,7 @@ set -o pipefail; git diff --check | tee /tmp/diff-check-axinite-<wave>.out
   behaviour while preserving architecture, so the evidence must stay alongside
   the code changes.
 
-## Outcomes & Retrospective
+## Outcomes & retrospective
 
 This section is intentionally blank until execution begins. When work lands,
 record which families were migrated, which ones remained blocked, what evidence
