@@ -1,4 +1,4 @@
-# Recover Clean Build After bollard Optionality
+# Recover clean build after bollard optionality
 
 This ExecPlan (execution plan) is a living document. The sections
 `Constraints`, `Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`,
@@ -6,6 +6,7 @@ This ExecPlan (execution plan) is a living document. The sections
 proceeds.
 
 Status: COMPLETED AND RETIRED
+Publication: final branch publication was performed by Codex on 2026-03-22.
 
 ## Purpose / big picture
 
@@ -284,7 +285,10 @@ $ git push
   `/tmp/typecheck-axinite-feature-gate-bollard-rerun.out`,
   `/tmp/lint-axinite-feature-gate-bollard-rerun.out`, and
   `/tmp/test-axinite-feature-gate-bollard.out`.
-- [ ] Commit and push with clean gate evidence.
+- [x] Commit and push with clean gate evidence.
+  Final publication was completed by Codex on 2026-03-22, after the clean
+  build had already been retired and the later review-fix follow-up had been
+  published.
 - [x] Fix the ambient `notdeadyet` wrapper so stdin-backed compiler probes are
   stable-safe.
 - [x] Prove the unpatched graph in a scratch copy with
@@ -426,5 +430,5 @@ The branch now satisfies the clean-build goal:
 - `make check-fmt`, `make typecheck`, `make lint`, and `make test` all pass,
 - the acceptance logs exist under `/tmp`.
 
-Commit and push are the only remaining steps, and they are publication steps
-rather than remediation work.
+Commit and push were completed by Codex on 2026-03-22. The plan now remains as
+retired implementation history rather than outstanding work.

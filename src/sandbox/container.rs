@@ -189,12 +189,26 @@ impl ContainerRunner {
                 .create_container(command, working_dir, policy, limits, env)
                 .await?;
 
-            self.docker
+            if let Err(e) = self
+                .docker
                 .start_container(&container_id, None::<StartContainerOptions<String>>)
                 .await
-                .map_err(|e| SandboxError::ContainerStartFailed {
+            {
+                let _ = self
+                    .docker
+                    .remove_container(
+                        &container_id,
+                        Some(RemoveContainerOptions {
+                            force: true,
+                            ..Default::default()
+                        }),
+                    )
+                    .await;
+
+                return Err(SandboxError::ContainerStartFailed {
                     reason: e.to_string(),
-                })?;
+                });
+            }
 
             let result = tokio::time::timeout(limits.timeout, async {
                 self.wait_for_container(&container_id, limits.max_output_bytes)
@@ -299,6 +313,13 @@ impl ContainerRunner {
 }
 
 /// Connect to the Docker daemon.
+///
+/// When the crate is compiled without the `docker` feature, this returns
+/// `SandboxError::DockerNotAvailable` immediately via
+/// `docker_feature_disabled_error()`.
+///
+/// With the `docker` feature enabled, this delegates to
+/// `connect_docker_inner()` and tries these locations in order:
 ///
 /// Tries these locations in order:
 /// 1. `DOCKER_HOST` env var (bollard default)

@@ -28,14 +28,12 @@ orchestrator modules:
 
 The direct bollard usage sites and their primary purposes are:
 
-- `src/sandbox/container.rs` (~636 lines): container lifecycle
-  (`ContainerRunner`)
-- `src/sandbox/manager.rs` (~525 lines): high-level sandbox coordinator
-- `src/sandbox/error.rs` (~59 lines): error types, including
+- `src/sandbox/container.rs`: container lifecycle (`ContainerRunner`)
+- `src/sandbox/manager.rs`: high-level sandbox coordinator
+- `src/sandbox/error.rs`: error types, including
   `#[from] bollard::errors::Error`
-- `src/orchestrator/job_manager.rs` (~709 lines): persistent container job
-  management
-- `src/orchestrator/reaper.rs` (~970 lines): orphaned container cleanup
+- `src/orchestrator/job_manager.rs`: persistent container job management
+- `src/orchestrator/reaper.rs`: orphaned container cleanup
 
 ### Public API leakage
 
