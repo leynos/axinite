@@ -134,7 +134,7 @@ async fn assert_catalog_excludes_stub(excluded_stub: StubTool) {
 #[case(
     "job_events",
     "Protected job-events tool",
-    None,
+    Some(HostedToolCatalogSource::Mcp),
     serde_json::json!({"events": []})
 )]
 #[case(
