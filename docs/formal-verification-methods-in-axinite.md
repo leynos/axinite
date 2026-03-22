@@ -932,7 +932,7 @@ Axinite already has a sensible workflow split:
 - `e2e.yml` for scheduled and targeted browser E2E.[^3][^4][^5]
 
 Do **not** fold formal verification into coverage generation. It should be
-independently runnable, independently cachable, and independently diagnosable.
+independently runnable, independently cacheable, and independently diagnosable.
 
 ### Add one new workflow: `formal.yml`
 
@@ -1095,7 +1095,7 @@ relevant contracts.
 
 ## What to avoid
 
-A few anti-patterns are worth ruling out explicitly.
+A few antipatterns are worth ruling out explicitly.
 
 ### Do not verify the Tokio/Docker orchestration with Verus first
 
@@ -1151,7 +1151,7 @@ If Axinite does only the first tranche of this work, make it:
 4. Stateright on the job lifecycle.
 
 That would give Axinite the highest bug-finding return for the least
-organisational friction.
+organizational friction.
 
 ## References
 
