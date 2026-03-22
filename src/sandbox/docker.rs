@@ -36,8 +36,21 @@ impl DockerState {
     }
 
     pub(crate) async fn is_available(&self) -> bool {
+        {
+            let guard = self.inner.read().await;
+            if let Some(ref docker) = *guard {
+                return docker_is_responsive(docker).await;
+            }
+        }
+
         match connect_docker().await {
-            Ok(docker) => docker_is_responsive(&docker).await,
+            Ok(docker) => {
+                let is_responsive = docker_is_responsive(&docker).await;
+                if is_responsive {
+                    *self.inner.write().await = Some(docker);
+                }
+                is_responsive
+            }
             Err(_) => false,
         }
     }

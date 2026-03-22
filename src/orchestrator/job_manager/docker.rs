@@ -114,6 +114,81 @@ fn container_name(mode: JobMode, job_id: Uuid) -> String {
     }
 }
 
+/// Build the Docker container configuration for a job.
+fn build_container_config(
+    config: &ContainerJobConfig,
+    mode: JobMode,
+    job_id: Uuid,
+    cmd: Vec<String>,
+    env_vec: Vec<String>,
+    host_config: bollard::models::HostConfig,
+) -> bollard::container::Config<String> {
+    let mut labels = std::collections::HashMap::new();
+    labels.insert("ironclaw.job_id".to_string(), job_id.to_string());
+    labels.insert(
+        "ironclaw.created_at".to_string(),
+        chrono::Utc::now().to_rfc3339(),
+    );
+
+    let _ = mode;
+
+    bollard::container::Config {
+        image: Some(config.image.clone()),
+        cmd: Some(cmd),
+        env: Some(env_vec),
+        host_config: Some(host_config),
+        user: Some("1000:1000".to_string()),
+        working_dir: Some("/workspace".to_string()),
+        labels: Some(labels),
+        ..Default::default()
+    }
+}
+
+/// Create and start a Docker container, cleaning up if start fails.
+async fn create_and_start_container(
+    docker: &DockerConnection,
+    options: bollard::container::CreateContainerOptions<String>,
+    container_config: bollard::container::Config<String>,
+    job_id: Uuid,
+) -> Result<ContainerId, OrchestratorError> {
+    let response = docker
+        .create_container(Some(options), container_config)
+        .await
+        .map_err(|e| OrchestratorError::ContainerCreationFailed {
+            job_id,
+            reason: e.to_string(),
+        })?;
+
+    let container_id = response.id;
+
+    if let Err(e) = docker.start_container::<String>(&container_id, None).await {
+        if let Err(remove_error) = docker
+            .remove_container(
+                &container_id,
+                Some(bollard::container::RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+        {
+            tracing::warn!(
+                job_id = %job_id,
+                container_id = %container_id,
+                error = %remove_error,
+                "Failed to remove container after start failure"
+            );
+        }
+
+        return Err(OrchestratorError::ContainerCreationFailed {
+            job_id,
+            reason: format!("failed to start container: {}", e),
+        });
+    }
+
+    Ok(ContainerId::new(container_id))
+}
+
 impl ContainerJobManager {
     pub fn new(config: ContainerJobConfig, token_store: TokenStore) -> Self {
         Self {
@@ -179,71 +254,22 @@ impl ContainerJobManager {
             JobMode::Worker => self.config.memory_limit_mb,
         };
 
-        use bollard::container::{Config, CreateContainerOptions};
+        use bollard::container::CreateContainerOptions;
         let host_config = build_host_config(binds, memory_mb, self.config.cpu_shares);
         let cmd = build_cmd(mode, job_id, &orchestrator_url, &self.config);
 
-        let mut labels = std::collections::HashMap::new();
-        labels.insert("ironclaw.job_id".to_string(), job_id.to_string());
-        labels.insert(
-            "ironclaw.created_at".to_string(),
-            chrono::Utc::now().to_rfc3339(),
-        );
-
-        let container_config = Config {
-            image: Some(self.config.image.clone()),
-            cmd: Some(cmd),
-            env: Some(env_vec),
-            host_config: Some(host_config),
-            user: Some("1000:1000".to_string()),
-            working_dir: Some("/workspace".to_string()),
-            labels: Some(labels),
-            ..Default::default()
-        };
+        let container_config =
+            build_container_config(&self.config, mode, job_id, cmd, env_vec, host_config);
 
         let options = CreateContainerOptions {
             name: container_name(mode, job_id),
             ..Default::default()
         };
 
-        let response = docker
-            .create_container(Some(options), container_config)
-            .await
-            .map_err(|e| OrchestratorError::ContainerCreationFailed {
-                job_id,
-                reason: e.to_string(),
-            })?;
+        let container_id =
+            create_and_start_container(&docker, options, container_config, job_id).await?;
 
-        let container_id = response.id;
-
-        if let Err(e) = docker.start_container::<String>(&container_id, None).await {
-            if let Err(remove_error) = docker
-                .remove_container(
-                    &container_id,
-                    Some(bollard::container::RemoveContainerOptions {
-                        force: true,
-                        ..Default::default()
-                    }),
-                )
-                .await
-            {
-                tracing::warn!(
-                    job_id = %job_id,
-                    container_id = %container_id,
-                    error = %remove_error,
-                    "Failed to remove container after start failure"
-                );
-            }
-
-            return Err(OrchestratorError::ContainerCreationFailed {
-                job_id,
-                reason: format!("failed to start container: {}", e),
-            });
-        }
-
-        self.registry
-            .set_container_id(job_id, ContainerId::new(container_id))
-            .await;
+        self.registry.set_container_id(job_id, container_id).await;
 
         tracing::info!(job_id = %job_id, "Created and started worker container");
 

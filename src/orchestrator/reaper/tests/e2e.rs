@@ -4,6 +4,9 @@ use super::*;
 use crate::orchestrator::auth::TokenStore;
 use crate::orchestrator::job_manager::{ContainerJobConfig, ContainerJobManager};
 
+const LABEL_JOB_ID: &str = "ironclaw.job_id";
+const LABEL_CREATED_AT: &str = "ironclaw.created_at";
+
 fn should_run_e2e() -> bool {
     std::env::var("IRONCLAW_E2E_DOCKER_TESTS").is_ok()
 }
@@ -27,8 +30,8 @@ async fn create_labeled_container(
     let job_id_str = job_id.to_string();
     let created_at_str = (Utc::now() - age_offset).to_rfc3339();
     let mut labels: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
-    labels.insert("ironclaw.job_id", &job_id_str);
-    labels.insert("ironclaw.created_at", &created_at_str);
+    labels.insert(LABEL_JOB_ID, &job_id_str);
+    labels.insert(LABEL_CREATED_AT, &created_at_str);
 
     match docker
         .create_container(

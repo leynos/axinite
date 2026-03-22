@@ -12,6 +12,7 @@ use bollard::container::{
 use bollard::exec::StartExecResults;
 use bollard::models::HostConfig;
 use futures::StreamExt;
+use std::time::Instant;
 
 #[cfg(feature = "docker")]
 impl ContainerRunner {
@@ -128,6 +129,7 @@ impl ContainerRunner {
         container_id: &str,
         max_output: usize,
     ) -> Result<ContainerOutput> {
+        let start = Instant::now();
         let mut wait_stream = self.docker.wait_container(
             container_id,
             Some(WaitContainerOptions {
@@ -155,7 +157,7 @@ impl ContainerRunner {
             exit_code,
             stdout,
             stderr,
-            duration: Duration::ZERO,
+            duration: start.elapsed(),
             truncated,
         })
     }

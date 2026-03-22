@@ -1,3 +1,6 @@
+//! Tests for sandbox manager behaviour, direct execution, and builder
+//! configuration.
+
 use super::*;
 
 #[test]
@@ -84,7 +87,7 @@ async fn test_direct_execution_truncates_large_output() {
     // printf repeats a 100-char line 400 times = 40KB
     let result = manager
         .execute(
-            "printf 'A%.0s' $(seq 1 40000)",
+            "awk 'BEGIN { for (i = 0; i < 40000; ++i) printf \"A\" }'",
             Path::new("."),
             HashMap::new(),
         )

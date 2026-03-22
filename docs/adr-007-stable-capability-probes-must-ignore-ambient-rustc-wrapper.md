@@ -205,8 +205,8 @@ for `third-party-patches/`.
 
 This decision protected the repository's stable-toolchain contract at the
 architectural boundary where it was actually violated: compiler capability
-detection. It kept Docker feature-gating and sandbox behaviour independent from
-a separate build-environment fault, and it made the workaround explicit,
+detection. It kept Docker feature-gating and sandbox behaviour independent of a
+separate build-environment fault, and it made the workaround explicit,
 bounded, and removable.
 
 The retirement also preserves an important maintainability property:

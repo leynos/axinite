@@ -1,3 +1,6 @@
+//! Tests for job-manager orchestration behaviour and feature-conditional
+//! helpers.
+
 use super::*;
 
 #[cfg(not(feature = "docker"))]

@@ -95,6 +95,39 @@ async fn make_terminal_job(
     (job_id, ctx)
 }
 
+async fn ensure_job_state(
+    ctx_mgr: &Arc<ContextManager>,
+    description: &str,
+    state: JobState,
+    expected_is_active: bool,
+    assertion_message: &str,
+) {
+    let job_id = ctx_mgr
+        .create_job_for_user("default", "test", description)
+        .await
+        .expect("create_job_for_user failed in reaper_cleanup_decision_matrix");
+
+    if state != JobState::Pending {
+        ctx_mgr
+            .update_context(job_id, |ctx| {
+                ctx.state = state;
+            })
+            .await
+            .expect("update_context failed in reaper_cleanup_decision_matrix");
+    }
+
+    let ctx = ctx_mgr
+        .get_context(job_id)
+        .await
+        .expect("get_context failed in reaper_cleanup_decision_matrix");
+    assert_eq!(
+        ctx.state.is_active(),
+        expected_is_active,
+        "{}",
+        assertion_message
+    );
+}
+
 #[rstest]
 #[case(JobState::Failed)]
 #[case(JobState::Cancelled)]
@@ -231,79 +264,46 @@ fn reaper_config_can_be_customized() {
 async fn reaper_cleanup_decision_matrix() {
     let ctx_mgr = Arc::new(ContextManager::new(5));
 
-    let job1 = ctx_mgr
-        .create_job_for_user("default", "test", "test1")
-        .await
-        .expect("create_job_for_user failed for reaper_cleanup_decision_matrix job1");
-    let ctx1 = ctx_mgr
-        .get_context(job1)
-        .await
-        .expect("get_context failed for reaper_cleanup_decision_matrix job1");
-    assert!(ctx1.state.is_active(), "Pending job is active");
-
-    let job2 = ctx_mgr
-        .create_job_for_user("default", "test", "test2")
-        .await
-        .expect("create_job_for_user failed for reaper_cleanup_decision_matrix job2");
-    ctx_mgr
-        .update_context(job2, |ctx| {
-            ctx.state = JobState::InProgress;
-        })
-        .await
-        .expect("update_context failed when setting JobState::InProgress for job2");
-    let ctx2 = ctx_mgr
-        .get_context(job2)
-        .await
-        .expect("get_context failed for reaper_cleanup_decision_matrix job2");
-    assert!(ctx2.state.is_active(), "InProgress job is active");
-
-    let job3 = ctx_mgr
-        .create_job_for_user("default", "test", "test3")
-        .await
-        .expect("create_job_for_user failed for reaper_cleanup_decision_matrix job3");
-    ctx_mgr
-        .update_context(job3, |ctx| {
-            ctx.state = JobState::Completed;
-        })
-        .await
-        .expect("update_context failed when setting JobState::Completed for job3");
-    let ctx3 = ctx_mgr
-        .get_context(job3)
-        .await
-        .expect("get_context failed for reaper_cleanup_decision_matrix job3");
-    assert!(ctx3.state.is_active(), "Completed is still active");
-
-    let job4 = ctx_mgr
-        .create_job_for_user("default", "test", "test4")
-        .await
-        .expect("create_job_for_user failed for reaper_cleanup_decision_matrix job4");
-    ctx_mgr
-        .update_context(job4, |ctx| {
-            ctx.state = JobState::Failed;
-        })
-        .await
-        .expect("update_context failed when setting JobState::Failed for job4");
-    let ctx4 = ctx_mgr
-        .get_context(job4)
-        .await
-        .expect("get_context failed for reaper_cleanup_decision_matrix job4");
-    assert!(!ctx4.state.is_active(), "Failed job is terminal");
-
-    let job5 = ctx_mgr
-        .create_job_for_user("default", "test", "test5")
-        .await
-        .expect("create_job_for_user failed for reaper_cleanup_decision_matrix job5");
-    ctx_mgr
-        .update_context(job5, |ctx| {
-            ctx.state = JobState::Cancelled;
-        })
-        .await
-        .expect("update_context failed when setting JobState::Cancelled for job5");
-    let ctx5 = ctx_mgr
-        .get_context(job5)
-        .await
-        .expect("get_context failed for reaper_cleanup_decision_matrix job5");
-    assert!(!ctx5.state.is_active(), "Cancelled job is terminal");
+    ensure_job_state(
+        &ctx_mgr,
+        "test1",
+        JobState::Pending,
+        true,
+        "Pending job is active",
+    )
+    .await;
+    ensure_job_state(
+        &ctx_mgr,
+        "test2",
+        JobState::InProgress,
+        true,
+        "InProgress job is active",
+    )
+    .await;
+    ensure_job_state(
+        &ctx_mgr,
+        "test3",
+        JobState::Completed,
+        true,
+        "Completed is still active",
+    )
+    .await;
+    ensure_job_state(
+        &ctx_mgr,
+        "test4",
+        JobState::Failed,
+        false,
+        "Failed job is terminal",
+    )
+    .await;
+    ensure_job_state(
+        &ctx_mgr,
+        "test5",
+        JobState::Cancelled,
+        false,
+        "Cancelled job is terminal",
+    )
+    .await;
 
     let missing_job = Uuid::new_v4();
     let is_active = match ctx_mgr.get_context(missing_job).await {

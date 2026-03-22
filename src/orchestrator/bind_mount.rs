@@ -93,8 +93,6 @@ async fn validate_bind_mount_path_against_base(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use uuid::Uuid;
 
     use super::validate_bind_mount_path_against_base;
@@ -142,7 +140,7 @@ mod tests {
         let base = tmp.path().join("projects");
         std::fs::create_dir_all(&base)
             .expect("failed to create projects base for nonexistent bind-mount test");
-        let nonexistent = base.join(PathBuf::from("missing/project"));
+        let nonexistent = base.join("missing/project");
         let result =
             validate_bind_mount_path_against_base(&nonexistent, &base, Uuid::new_v4()).await;
         assert!(result.is_err());

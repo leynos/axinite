@@ -7,6 +7,8 @@ use std::path::PathBuf;
 
 use uuid::Uuid;
 
+#[cfg(test)]
+use std::collections::HashMap;
 #[cfg(any(feature = "docker", test))]
 use std::sync::Arc;
 #[cfg(any(feature = "docker", test))]
@@ -136,9 +138,7 @@ impl ContainerJobManager {
 
     /// Compatibility shim for in-module consumers that still need the raw map.
     #[cfg(test)]
-    pub(crate) fn containers(
-        &self,
-    ) -> Arc<RwLock<std::collections::HashMap<Uuid, ContainerHandle>>> {
+    pub(crate) fn containers(&self) -> Arc<RwLock<HashMap<Uuid, ContainerHandle>>> {
         self.registry.arc()
     }
 
