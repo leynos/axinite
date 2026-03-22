@@ -4,6 +4,8 @@
 use super::*;
 use std::collections::HashMap;
 
+use crate::context::{JobContext, JobState};
+
 #[test]
 fn orphan_threshold_filters_young_containers() {
     let cfg = ReaperConfig {
@@ -70,30 +72,32 @@ async fn missing_job_is_treated_as_orphaned() {
     assert!(!is_active, "Missing job should be treated as orphaned");
 }
 
-async fn make_terminal_job(ctx_mgr: &ContextManager, description: &str) -> Uuid {
-    use crate::context::JobState;
+async fn make_terminal_job(
+    ctx_mgr: &ContextManager,
+    description: &str,
+    state: JobState,
+) -> (Uuid, JobContext) {
     let job_id = ctx_mgr
         .create_job_for_user("default", "test", description)
         .await
         .expect("create_job_for_user failed in make_terminal_job");
     ctx_mgr
         .update_context(job_id, |ctx| {
-            ctx.state = JobState::Failed;
+            ctx.state = state;
         })
         .await
-        .expect("update_context failed when setting JobState::Failed in make_terminal_job");
-    job_id
+        .expect("update_context failed when setting terminal JobState in make_terminal_job");
+    let ctx = ctx_mgr
+        .get_context(job_id)
+        .await
+        .expect("get_context failed in make_terminal_job");
+    (job_id, ctx)
 }
 
 #[tokio::test]
 async fn terminal_job_is_treated_as_orphaned() {
     let ctx_mgr = Arc::new(ContextManager::new(5));
-    let job_id = make_terminal_job(&ctx_mgr, "test description").await;
-
-    let ctx = ctx_mgr
-        .get_context(job_id)
-        .await
-        .expect("get_context failed for terminal_job_is_treated_as_orphaned job_id");
+    let (_job_id, ctx) = make_terminal_job(&ctx_mgr, "test description", JobState::Failed).await;
     assert!(
         !ctx.state.is_active(),
         "Failed job should be treated as orphaned"
@@ -189,12 +193,7 @@ async fn active_job_prevents_cleanup_of_old_container() {
 #[tokio::test]
 async fn failed_job_allows_cleanup() {
     let ctx_mgr = Arc::new(ContextManager::new(5));
-    let job_id = make_terminal_job(&ctx_mgr, "test").await;
-
-    let ctx = ctx_mgr
-        .get_context(job_id)
-        .await
-        .expect("get_context failed for failed_job_allows_cleanup job_id");
+    let (_job_id, ctx) = make_terminal_job(&ctx_mgr, "test", JobState::Cancelled).await;
     assert!(
         !ctx.state.is_active(),
         "Failed job (terminal state) should allow cleanup"
@@ -223,8 +222,6 @@ fn reaper_config_can_be_customized() {
 
 #[tokio::test]
 async fn reaper_cleanup_decision_matrix() {
-    use crate::context::JobState;
-
     let ctx_mgr = Arc::new(ContextManager::new(5));
 
     let job1 = ctx_mgr
