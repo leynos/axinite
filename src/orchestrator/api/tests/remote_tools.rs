@@ -147,12 +147,12 @@ async fn remote_tool_catalog_excludes_job_events_named_tools() {
 #[tokio::test]
 async fn remote_tool_catalog_excludes_non_mcp_orchestrator_tools() {
     assert_catalog_excludes_stub(StubTool {
-        name: "tool_list",
+        name: "hosted_extension_catalog_builtin",
         description: "Hosted-safe extension-management built-in",
         catalog_source: None,
         output: StubOutput::Fixed(serde_json::json!({"extensions": []})),
         ..StubTool::hosted(
-            "tool_list",
+            "hosted_extension_catalog_builtin",
             "",
             serde_json::json!({"type": "object", "properties": {}}),
         )
