@@ -188,7 +188,8 @@ Remaining required `async-trait` surfaces as of 2026-03-22:
   `ChannelSecretUpdater`, `HttpInterceptor`, `CredentialResolver`, and
   `WasmToolStore`. Each still has live `&dyn`, `Arc<dyn>`, or other
   object-safe consumers in the current tree, including `&dyn
-  WasmToolStore` call sites in the WASM loader and registry paths.
+  WasmToolStore` call sites in the WebAssembly (WASM) loader and registry
+  paths.
 - The direct dependency therefore remains required in `Cargo.toml`, and
   the remaining implementation-side `#[async_trait]` uses remain coupled
   to those dyn-facing traits until their families are migrated.

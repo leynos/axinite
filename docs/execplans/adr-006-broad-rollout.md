@@ -1,8 +1,8 @@
 # Roll out ADR 006 across the remaining dyn-backed async trait families
 
 This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`,
-`Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work
+`Constraints`, `Tolerances`, `Risks`, `Progress`, `Surprises & discoveries`,
+`Decision log`, and `Outcomes & retrospective` must be kept up to date as work
 proceeds.
 
 Status: DRAFT
@@ -99,7 +99,7 @@ changes, and gate every commit.
   user-visible configuration contracts, stop and escalate.
 - Dependencies: if the work appears to require a new crate or a shared helper
   module outside the existing subsystem ownership boundaries, stop and justify
-  the trade-off in `Decision Log` before proceeding.
+  the trade-off in `Decision log` before proceeding.
 - Iterations: if one wave fails the same gate three times without a clear
   defect fix between attempts, stop and reassess the wave boundary.
 - Evidence: if `cargo check --timings` or an equivalent observable compile-time
@@ -190,7 +190,7 @@ These families are small enough to prove whether the pilot pattern scales
 across several subsystems without the blast radius of `Tool` or `Database`.
 `WasmToolStore` is especially important to keep in this wave because it still
 blocks the direct dependency audit through `&dyn WasmToolStore` consumers in
-the WASM loader and tool registry paths.
+the WebAssembly (WASM) loader and tool registry paths.
 
 Observable result: those trait families no longer use `#[async_trait]` in their
 production definitions and concrete implementations, and the affected module
