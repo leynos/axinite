@@ -38,13 +38,10 @@ async fn missing_job_is_treated_as_orphaned() {
     assert!(!is_active, "Missing job should be treated as orphaned");
 }
 
-#[tokio::test]
-async fn terminal_job_is_treated_as_orphaned() {
+async fn make_terminal_job(ctx_mgr: &ContextManager, description: &str) -> Uuid {
     use crate::context::JobState;
-
-    let ctx_mgr = Arc::new(ContextManager::new(5));
     let job_id = ctx_mgr
-        .create_job_for_user("default", "test", "test description")
+        .create_job_for_user("default", "test", description)
         .await
         .unwrap();
     ctx_mgr
@@ -53,6 +50,13 @@ async fn terminal_job_is_treated_as_orphaned() {
         })
         .await
         .unwrap();
+    job_id
+}
+
+#[tokio::test]
+async fn terminal_job_is_treated_as_orphaned() {
+    let ctx_mgr = Arc::new(ContextManager::new(5));
+    let job_id = make_terminal_job(&ctx_mgr, "test description").await;
 
     let ctx = ctx_mgr.get_context(job_id).await.unwrap();
     assert!(
@@ -143,20 +147,8 @@ async fn active_job_prevents_cleanup_of_old_container() {
 
 #[tokio::test]
 async fn failed_job_allows_cleanup() {
-    use crate::context::JobState;
-
     let ctx_mgr = Arc::new(ContextManager::new(5));
-    let job_id = ctx_mgr
-        .create_job_for_user("default", "test", "test")
-        .await
-        .unwrap();
-
-    ctx_mgr
-        .update_context(job_id, |ctx| {
-            ctx.state = JobState::Failed;
-        })
-        .await
-        .unwrap();
+    let job_id = make_terminal_job(&ctx_mgr, "test").await;
 
     let ctx = ctx_mgr.get_context(job_id).await.unwrap();
     assert!(
@@ -266,18 +258,27 @@ mod e2e_tests {
         std::env::var("IRONCLAW_E2E_DOCKER_TESTS").is_ok()
     }
 
-    /// Create a stopped ironclaw-labelled test container and return its response.
-    /// Returns `None` and prints a diagnostic if creation fails.
-    async fn create_labeled_test_container(
+    async fn connect_or_skip() -> Option<crate::sandbox::container::DockerConnection> {
+        match crate::sandbox::connect_docker().await {
+            Ok(docker) => Some(docker),
+            Err(e) => {
+                eprintln!("Skipping e2e test: Docker unavailable: {e}");
+                None
+            }
+        }
+    }
+
+    async fn create_labeled_container(
         docker: &crate::sandbox::container::DockerConnection,
         name: &str,
-        job_id_str: &str,
-        created_at_str: &str,
-    ) -> Option<bollard::models::ContainerCreateResponse> {
-        let mut labels: std::collections::HashMap<&str, &str> =
-            std::collections::HashMap::new();
-        labels.insert("ironclaw.job_id", job_id_str);
-        labels.insert("ironclaw.created_at", created_at_str);
+        job_id: Uuid,
+        age_offset: chrono::Duration,
+    ) -> Option<String> {
+        let job_id_str = job_id.to_string();
+        let created_at_str = (Utc::now() - age_offset).to_rfc3339();
+        let mut labels: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+        labels.insert("ironclaw.job_id", &job_id_str);
+        labels.insert("ironclaw.created_at", &created_at_str);
 
         match docker
             .create_container(
@@ -293,7 +294,7 @@ mod e2e_tests {
             )
             .await
         {
-            Ok(response) => Some(response),
+            Ok(response) => Some(response.id),
             Err(e) => {
                 eprintln!("Could not create test container '{name}': {e}");
                 None
@@ -308,36 +309,23 @@ mod e2e_tests {
             return;
         }
 
-        let docker = match crate::sandbox::connect_docker().await {
-            Ok(docker) => docker,
-            Err(e) => {
-                eprintln!("Skipping e2e test: Docker unavailable: {e}");
-                return;
-            }
+        let Some(docker) = connect_or_skip().await else {
+            return;
         };
 
         let job_id = Uuid::new_v4();
         let test_name = format!("ironclaw-reaper-test-{}", &job_id.to_string()[..8]);
-        let job_id_str = job_id.to_string();
-        let created_at_str = (Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
-
-        let Some(response) = create_labeled_test_container(
-            &docker,
-            &test_name,
-            &job_id_str,
-            &created_at_str,
-        )
-        .await
+        let Some(container_id) =
+            create_labeled_container(&docker, &test_name, job_id, chrono::Duration::hours(1)).await
         else {
             eprintln!("Skipping e2e test: Could not create test container");
             return;
         };
 
-        let container_id = &response.id;
-        let inspect = match docker.inspect_container(container_id, None).await {
+        let inspect = match docker.inspect_container(&container_id, None).await {
             Ok(container) => container,
             Err(e) => {
-                let _ = docker.remove_container(container_id, None).await;
+                let _ = docker.remove_container(&container_id, None).await;
                 eprintln!("Failed to inspect container: {e}");
                 return;
             }
@@ -350,7 +338,7 @@ mod e2e_tests {
             Some(job_id.to_string().as_str())
         );
 
-        let _ = docker.remove_container(container_id, None).await;
+        let _ = docker.remove_container(&container_id, None).await;
     }
 
     #[tokio::test]
@@ -360,24 +348,17 @@ mod e2e_tests {
             return;
         }
 
-        let docker = match crate::sandbox::connect_docker().await {
-            Ok(docker) => docker,
-            Err(e) => {
-                eprintln!("Skipping e2e test: Docker unavailable: {e}");
-                return;
-            }
+        let Some(docker) = connect_or_skip().await else {
+            return;
         };
 
         let orphaned_job_id = Uuid::new_v4();
         let test_name = format!("ironclaw-orphan-test-{}", &orphaned_job_id.to_string()[..8]);
-        let job_id_str = orphaned_job_id.to_string();
-        let created_at_str = (Utc::now() - chrono::Duration::hours(2)).to_rfc3339();
-
-        let Some(response) = create_labeled_test_container(
+        let Some(container_id) = create_labeled_container(
             &docker,
             &test_name,
-            &job_id_str,
-            &created_at_str,
+            orphaned_job_id,
+            chrono::Duration::hours(2),
         )
         .await
         else {
@@ -385,7 +366,6 @@ mod e2e_tests {
             return;
         };
 
-        let container_id = response.id.clone();
         assert!(docker.inspect_container(&container_id, None).await.is_ok());
 
         let _ = docker
@@ -422,12 +402,8 @@ mod e2e_tests {
             return;
         }
 
-        let docker = match crate::sandbox::connect_docker().await {
-            Ok(docker) => docker,
-            Err(e) => {
-                eprintln!("Skipping e2e test: Docker unavailable: {e}");
-                return;
-            }
+        let Some(docker) = connect_or_skip().await else {
+            return;
         };
 
         let recent_job_id = Uuid::new_v4();
@@ -435,13 +411,11 @@ mod e2e_tests {
         let recent_name = format!("ironclaw-recent-test-{}", &recent_job_id.to_string()[..8]);
         let old_name = format!("ironclaw-old-test-{}", &old_job_id.to_string()[..8]);
 
-        let recent_id_str = recent_job_id.to_string();
-        let recent_created_at_str = (Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
-        let Some(recent_response) = create_labeled_test_container(
+        let Some(recent_container_id) = create_labeled_container(
             &docker,
             &recent_name,
-            &recent_id_str,
-            &recent_created_at_str,
+            recent_job_id,
+            chrono::Duration::minutes(5),
         )
         .await
         else {
@@ -449,13 +423,11 @@ mod e2e_tests {
             return;
         };
 
-        let old_id_str = old_job_id.to_string();
-        let old_created_at_str = (Utc::now() - chrono::Duration::hours(2)).to_rfc3339();
-        let Some(old_response) =
-            create_labeled_test_container(&docker, &old_name, &old_id_str, &old_created_at_str)
+        let Some(old_container_id) =
+            create_labeled_container(&docker, &old_name, old_job_id, chrono::Duration::hours(2))
                 .await
         else {
-            let _ = docker.remove_container(&recent_response.id, None).await;
+            let _ = docker.remove_container(&recent_container_id, None).await;
             eprintln!("Skipping e2e test: Could not create old container");
             return;
         };
@@ -468,7 +440,7 @@ mod e2e_tests {
         assert!(recent_age < threshold);
         assert!(old_age >= threshold);
 
-        let _ = docker.remove_container(&recent_response.id, None).await;
-        let _ = docker.remove_container(&old_response.id, None).await;
+        let _ = docker.remove_container(&recent_container_id, None).await;
+        let _ = docker.remove_container(&old_container_id, None).await;
     }
 }
