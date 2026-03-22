@@ -85,6 +85,9 @@ pub fn create_secrets_store(
     crypto: std::sync::Arc<SecretsCrypto>,
     handles: &crate::db::DatabaseHandles,
 ) -> Option<std::sync::Arc<dyn SecretsStore + Send + Sync>> {
+    #[cfg(not(any(feature = "libsql", feature = "postgres")))]
+    let _ = (&crypto, handles);
+
     let store: Option<std::sync::Arc<dyn SecretsStore + Send + Sync>> = None;
 
     #[cfg(feature = "libsql")]

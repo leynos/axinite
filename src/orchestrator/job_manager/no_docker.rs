@@ -5,14 +5,14 @@ use crate::sandbox::container::DOCKER_FEATURE_DISABLED_REASON;
 /// Manages the lifecycle of Docker containers for sandboxed job execution.
 pub struct ContainerJobManager {
     pub(super) token_store: TokenStore,
-    pub(crate) containers: Arc<RwLock<HashMap<Uuid, ContainerHandle>>>,
+    pub(crate) registry: JobRegistry,
 }
 
 impl ContainerJobManager {
     pub fn new(_config: ContainerJobConfig, token_store: TokenStore) -> Self {
         Self {
             token_store,
-            containers: Arc::new(RwLock::new(HashMap::new())),
+            registry: JobRegistry::new(),
         }
     }
 
@@ -42,20 +42,12 @@ impl ContainerJobManager {
         job_id: Uuid,
         result: CompletionResult,
     ) -> Result<(), OrchestratorError> {
-        {
-            let mut containers = self.containers.write().await;
-            if let Some(handle) = containers.get_mut(&job_id) {
-                handle.completion_result = Some(result);
-                handle.state = ContainerState::Stopped;
-            }
-        }
+        self.registry.set_completion(job_id, result).await;
 
         if let Some(container_id) = self
-            .containers
-            .read()
+            .registry
+            .container_id(job_id)
             .await
-            .get(&job_id)
-            .map(|handle| handle.container_id.clone())
             .filter(|container_id| !container_id.is_empty())
         {
             tracing::warn!(

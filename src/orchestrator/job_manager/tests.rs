@@ -1,5 +1,4 @@
 use super::*;
-use std::path::PathBuf;
 
 #[cfg(not(feature = "docker"))]
 use crate::sandbox::container::DOCKER_FEATURE_DISABLED_REASON;
@@ -32,50 +31,6 @@ fn test_container_state_display() {
     assert_eq!(ContainerState::Stopped.to_string(), "stopped");
 }
 
-#[test]
-fn test_validate_bind_mount_valid_path() {
-    let base = crate::bootstrap::compute_ironclaw_base_dir().join("projects");
-    std::fs::create_dir_all(&base).unwrap();
-
-    let test_dir = base.join("test_validate_bind");
-    std::fs::create_dir_all(&test_dir).unwrap();
-
-    let result = validate_bind_mount_path(&test_dir, Uuid::new_v4());
-    assert!(result.is_ok());
-    let canonical = result.unwrap();
-    assert!(canonical.starts_with(base.canonicalize().unwrap()));
-
-    let _ = std::fs::remove_dir_all(&test_dir);
-}
-
-#[test]
-fn test_validate_bind_mount_rejects_outside_base() {
-    let tmp = tempfile::tempdir().unwrap();
-    let outside = tmp.path().to_path_buf();
-
-    let result = validate_bind_mount_path(&outside, Uuid::new_v4());
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("outside allowed base"),
-        "expected 'outside allowed base', got: {}",
-        err
-    );
-}
-
-#[test]
-fn test_validate_bind_mount_rejects_nonexistent() {
-    let nonexistent = PathBuf::from("/no/such/path/at/all");
-    let result = validate_bind_mount_path(&nonexistent, Uuid::new_v4());
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("canonicalize"),
-        "expected canonicalize error, got: {}",
-        err
-    );
-}
-
 #[tokio::test]
 async fn test_update_worker_status() {
     let store = TokenStore::new();
@@ -83,7 +38,8 @@ async fn test_update_worker_status() {
     let job_id = Uuid::new_v4();
 
     {
-        let mut containers = mgr.containers.write().await;
+        let containers = mgr.containers();
+        let mut containers = containers.write().await;
         containers.insert(job_id, sample_handle(job_id));
     }
 
@@ -144,7 +100,8 @@ async fn complete_job_no_docker_retains_result_and_revokes_token() {
         .await;
 
     {
-        let mut containers = manager.containers.write().await;
+        let containers = manager.containers();
+        let mut containers = containers.write().await;
         containers.insert(job_id, sample_handle(job_id));
     }
 

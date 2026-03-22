@@ -120,6 +120,9 @@ impl SandboxReaper {
         #[cfg(feature = "docker")]
         let backend = ReaperBackend::Docker(connect_docker().await?);
 
+        #[cfg(feature = "docker")]
+        let _ = job_manager.containers();
+
         #[cfg(not(feature = "docker"))]
         let backend = ReaperBackend::Noop;
 

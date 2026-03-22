@@ -1,5 +1,6 @@
 use super::*;
 
+use crate::orchestrator::bind_mount;
 use crate::sandbox::connect_docker;
 use crate::sandbox::container::DockerConnection;
 
@@ -7,7 +8,7 @@ use crate::sandbox::container::DockerConnection;
 pub struct ContainerJobManager {
     pub(super) config: ContainerJobConfig,
     pub(super) token_store: TokenStore,
-    pub(crate) containers: Arc<RwLock<HashMap<Uuid, ContainerHandle>>>,
+    pub(crate) registry: JobRegistry,
     /// Cached Docker connection (created on first use).
     pub(super) docker: Arc<RwLock<Option<DockerConnection>>>,
 }
@@ -17,7 +18,7 @@ impl ContainerJobManager {
         Self {
             config,
             token_store,
-            containers: Arc::new(RwLock::new(HashMap::new())),
+            registry: JobRegistry::new(),
             docker: Arc::new(RwLock::new(None)),
         }
     }
@@ -69,7 +70,7 @@ impl ContainerJobManager {
 
         let mut binds = Vec::new();
         if let Some(ref dir) = project_dir {
-            let canonical = validate_bind_mount_path(dir, job_id)?;
+            let canonical = bind_mount::validate_bind_mount_path(dir, job_id)?;
             binds.push(format!("{}:/workspace:rw", canonical.display()));
             env_vec.push("IRONCLAW_WORKSPACE=/workspace".to_string());
         }
@@ -179,10 +180,7 @@ impl ContainerJobManager {
                 reason: format!("failed to start container: {}", e),
             })?;
 
-        if let Some(handle) = self.containers.write().await.get_mut(&job_id) {
-            handle.container_id = container_id;
-            handle.state = ContainerState::Running;
-        }
+        self.registry.set_container_id(job_id, container_id).await;
 
         tracing::info!(job_id = %job_id, "Created and started worker container");
 
@@ -190,13 +188,11 @@ impl ContainerJobManager {
     }
 
     pub async fn stop_job(&self, job_id: Uuid) -> Result<(), OrchestratorError> {
-        let container_id = {
-            let containers = self.containers.read().await;
-            containers
-                .get(&job_id)
-                .map(|handle| handle.container_id.clone())
-                .ok_or(OrchestratorError::ContainerNotFound { job_id })?
-        };
+        let container_id = self
+            .registry
+            .container_id(job_id)
+            .await
+            .ok_or(OrchestratorError::ContainerNotFound { job_id })?;
 
         if container_id.is_empty() {
             return Err(OrchestratorError::InvalidContainerState {
@@ -238,9 +234,9 @@ impl ContainerJobManager {
             );
         }
 
-        if let Some(handle) = self.containers.write().await.get_mut(&job_id) {
-            handle.state = ContainerState::Stopped;
-        }
+        self.registry
+            .set_state(job_id, ContainerState::Stopped)
+            .await;
 
         self.token_store.revoke(job_id).await;
 
@@ -256,21 +252,14 @@ impl ContainerJobManager {
         job_id: Uuid,
         result: CompletionResult,
     ) -> Result<(), OrchestratorError> {
-        {
-            let mut containers = self.containers.write().await;
-            if let Some(handle) = containers.get_mut(&job_id) {
-                handle.completion_result = Some(result);
-                handle.state = ContainerState::Stopped;
-            }
-        }
+        self.registry.set_completion(job_id, result).await;
 
-        if let Some(container_id) = {
-            let containers = self.containers.read().await;
-            containers
-                .get(&job_id)
-                .map(|handle| handle.container_id.clone())
-                .filter(|container_id| !container_id.is_empty())
-        } {
+        if let Some(container_id) = self
+            .registry
+            .container_id(job_id)
+            .await
+            .filter(|container_id| !container_id.is_empty())
+        {
             match self.docker().await {
                 Ok(docker) => {
                     if let Err(e) = docker
