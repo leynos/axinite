@@ -459,7 +459,7 @@ intent explicit once the verification crate exists.
 
 ## Kani integration
 
-### Stateright tooling model
+### Kani tooling model
 
 Kani is a bounded model checker for Rust. The recommended project integration
 path is `cargo kani`, which runs proof harnesses against a Cargo package rather
@@ -600,7 +600,7 @@ That is small, stable, and checks a load-bearing security property.
 
 ## Stateright integration
 
-### Verus tooling model
+### Stateright tooling model
 
 Stateright is a Rust model checker for nondeterministic systems. Models
 implement a `Model` trait, are supplemented with `always` and `sometimes`
