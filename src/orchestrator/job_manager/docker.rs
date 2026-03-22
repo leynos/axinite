@@ -145,11 +145,14 @@ impl ContainerJobManager {
     /// Inner implementation of container creation (separated for cleanup).
     pub(super) async fn create_job_inner(
         &self,
-        job_id: Uuid,
-        token: &str,
-        project_dir: Option<PathBuf>,
-        mode: JobMode,
+        spec: CreateJobSpec,
     ) -> Result<(), OrchestratorError> {
+        let CreateJobSpec {
+            job_id,
+            token,
+            project_dir,
+            mode,
+        } = spec;
         let docker = self.docker().await?;
 
         let orchestrator_host = if cfg!(target_os = "linux") {

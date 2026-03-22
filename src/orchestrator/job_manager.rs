@@ -24,6 +24,18 @@ mod no_docker;
 #[cfg(test)]
 mod tests;
 
+/// All inputs needed to create and start a single container job.
+///
+/// Passed as a single parameter to `create_job_inner` to avoid an
+/// excess-arguments violation (CodeScene threshold = 4).
+pub(super) struct CreateJobSpec {
+    pub job_id: Uuid,
+    /// Auth token minted by the TokenStore for this job.
+    pub token: String,
+    pub project_dir: Option<PathBuf>,
+    pub mode: JobMode,
+}
+
 #[cfg(feature = "docker")]
 pub use docker::ContainerJobManager;
 #[cfg(not(feature = "docker"))]
@@ -70,7 +82,12 @@ impl ContainerJobManager {
         // Run the actual container creation. On any failure, revoke the token
         // and remove the handle so we don't leak resources.
         match self
-            .create_job_inner(job_id, &token, project_dir, mode)
+            .create_job_inner(CreateJobSpec {
+                job_id,
+                token: token.clone(),
+                project_dir,
+                mode,
+            })
             .await
         {
             Ok(()) => Ok(token),
