@@ -159,14 +159,14 @@ for `third-party-patches/`.
 
 ## Migration plan
 
-1. Keep the current vendored patch chain in place while the branch depends on
-   the affected crate versions and the ambient wrapper still taints probes.
-2. Test the unpatched graph on a dedicated scratch tree by removing the
-   relevant `[patch.crates-io]` entries and vendored directories.
-3. Remove the patch chain only after the unpatched branch passes the stable
-   no-Docker acceptance command and the full gate stack.
-4. Update this ADR, `docs/contents.md`, and any related implementation notes to
-   record the retirement.
+The vendored patch chain was kept in place while the branch depended on the
+affected crate versions and the ambient wrapper still tainted probes. The
+unpatched graph was tested on a dedicated scratch tree by removing the relevant
+`[patch.crates-io]` entries and vendored directories. The patch chain was
+retired and removed on 2026-03-21 after the unpatched branch passed the stable
+no-Docker acceptance command and the full gate stack. This ADR,
+`docs/contents.md`, and related implementation notes were updated to record the
+retirement.
 
 ## Known risks and limitations
 

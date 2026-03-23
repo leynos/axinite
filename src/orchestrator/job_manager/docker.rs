@@ -51,8 +51,11 @@ impl ContainerJobManager {
 
     /// Get or create a Docker connection.
     async fn docker(&self) -> Result<DockerConnection, OrchestratorError> {
-        if let Some(docker) = self.docker.read().await.clone() {
-            return Ok(docker);
+        {
+            let guard = self.docker.read().await;
+            if let Some(docker) = guard.as_ref() {
+                return Ok(docker.clone());
+            }
         }
 
         let docker = match connect_docker().await {
