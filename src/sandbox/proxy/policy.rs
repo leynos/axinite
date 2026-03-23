@@ -3,7 +3,8 @@
 //! Determines whether network requests should be allowed, denied,
 //! or allowed with credential injection.
 
-use async_trait::async_trait;
+use core::future::Future;
+use core::pin::Pin;
 
 use crate::sandbox::proxy::allowlist::DomainAllowlist;
 use crate::secrets::{CredentialLocation, CredentialMapping};
@@ -83,11 +84,32 @@ impl NetworkDecision {
     }
 }
 
+/// Boxed future used at the dyn network-policy-decider boundary.
+pub type NetworkPolicyDeciderFuture<'a> =
+    Pin<Box<dyn Future<Output = NetworkDecision> + Send + 'a>>;
+
 /// Trait for making network policy decisions.
-#[async_trait]
 pub trait NetworkPolicyDecider: Send + Sync {
     /// Decide whether a request should be allowed.
-    async fn decide(&self, request: &NetworkRequest) -> NetworkDecision;
+    fn decide<'a>(&'a self, request: &'a NetworkRequest) -> NetworkPolicyDeciderFuture<'a>;
+}
+
+/// Native async sibling trait for concrete network-policy-decider implementations.
+pub trait NativeNetworkPolicyDecider: Send + Sync {
+    /// See [`NetworkPolicyDecider::decide`].
+    fn decide<'a>(
+        &'a self,
+        request: &'a NetworkRequest,
+    ) -> impl Future<Output = NetworkDecision> + Send + 'a;
+}
+
+impl<T> NetworkPolicyDecider for T
+where
+    T: NativeNetworkPolicyDecider + Send + Sync,
+{
+    fn decide<'a>(&'a self, request: &'a NetworkRequest) -> NetworkPolicyDeciderFuture<'a> {
+        Box::pin(NativeNetworkPolicyDecider::decide(self, request))
+    }
 }
 
 /// Default policy decider that uses allowlist and credential mappings.
@@ -116,9 +138,8 @@ impl DefaultPolicyDecider {
     }
 }
 
-#[async_trait]
-impl NetworkPolicyDecider for DefaultPolicyDecider {
-    async fn decide(&self, request: &NetworkRequest) -> NetworkDecision {
+impl NativeNetworkPolicyDecider for DefaultPolicyDecider {
+    async fn decide<'a>(&'a self, request: &'a NetworkRequest) -> NetworkDecision {
         // First check if the domain is allowed
         let validation = self.allowlist.is_allowed(&request.host);
         if !validation.is_allowed()
@@ -164,9 +185,8 @@ fn host_matches_pattern(host: &str, pattern: &str) -> bool {
 /// A policy decider that allows everything (use with FullAccess policy).
 pub struct AllowAllDecider;
 
-#[async_trait]
-impl NetworkPolicyDecider for AllowAllDecider {
-    async fn decide(&self, _request: &NetworkRequest) -> NetworkDecision {
+impl NativeNetworkPolicyDecider for AllowAllDecider {
+    async fn decide<'a>(&'a self, _request: &'a NetworkRequest) -> NetworkDecision {
         NetworkDecision::Allow
     }
 }
@@ -184,9 +204,8 @@ impl DenyAllDecider {
     }
 }
 
-#[async_trait]
-impl NetworkPolicyDecider for DenyAllDecider {
-    async fn decide(&self, _request: &NetworkRequest) -> NetworkDecision {
+impl NativeNetworkPolicyDecider for DenyAllDecider {
+    async fn decide<'a>(&'a self, _request: &'a NetworkRequest) -> NetworkDecision {
         NetworkDecision::Deny {
             reason: self.reason.clone(),
         }
@@ -226,7 +245,7 @@ mod tests {
         let decider = DefaultPolicyDecider::new(allowlist, vec![]);
 
         let req = NetworkRequest::from_url("GET", "https://crates.io/api/v1/crates").unwrap();
-        let decision = decider.decide(&req).await;
+        let decision = NativeNetworkPolicyDecider::decide(&decider, &req).await;
 
         assert!(decision.is_allowed());
     }
@@ -237,7 +256,7 @@ mod tests {
         let decider = DefaultPolicyDecider::new(allowlist, vec![]);
 
         let req = NetworkRequest::from_url("GET", "https://evil.com/steal").unwrap();
-        let decision = decider.decide(&req).await;
+        let decision = NativeNetworkPolicyDecider::decide(&decider, &req).await;
 
         assert!(!decision.is_allowed());
     }
@@ -253,7 +272,7 @@ mod tests {
 
         let req =
             NetworkRequest::from_url("POST", "https://api.openai.com/v1/chat/completions").unwrap();
-        let decision = decider.decide(&req).await;
+        let decision = NativeNetworkPolicyDecider::decide(&decider, &req).await;
 
         match decision {
             NetworkDecision::AllowWithCredentials { secret_name, .. } => {
@@ -275,7 +294,7 @@ mod tests {
         let decider = DefaultPolicyDecider::new(allowlist, credentials);
 
         let req = NetworkRequest::from_url("GET", "https://api.example.com/data").unwrap();
-        let decision = decider.decide(&req).await;
+        let decision = NativeNetworkPolicyDecider::decide(&decider, &req).await;
 
         match decision {
             NetworkDecision::AllowWithCredentials { secret_name, .. } => {
@@ -285,7 +304,7 @@ mod tests {
         }
 
         let req2 = NetworkRequest::from_url("GET", "https://sub.example.com/data").unwrap();
-        let decision2 = decider.decide(&req2).await;
+        let decision2 = NativeNetworkPolicyDecider::decide(&decider, &req2).await;
         assert!(
             matches!(decision2, NetworkDecision::AllowWithCredentials { .. }),
             "Wildcard pattern should match sub.example.com too"
