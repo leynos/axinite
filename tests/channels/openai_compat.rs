@@ -6,7 +6,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use rust_decimal::Decimal;
 
 use ironclaw::channels::web::server::{GatewayState, start_server};
@@ -40,8 +39,7 @@ impl MockLlmProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for MockLlmProvider {
+impl ironclaw::llm::NativeLlmProvider for MockLlmProvider {
     fn model_name(&self) -> &str {
         "mock-model-v1"
     }
@@ -132,8 +130,7 @@ impl FixedModelProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for FixedModelProvider {
+impl ironclaw::llm::NativeLlmProvider for FixedModelProvider {
     fn model_name(&self) -> &str {
         self.model
     }

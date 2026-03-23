@@ -18,7 +18,6 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -512,8 +511,7 @@ impl RecordingLlm {
     }
 }
 
-#[async_trait]
-impl LlmProvider for RecordingLlm {
+impl crate::llm::NativeLlmProvider for RecordingLlm {
     fn model_name(&self) -> &str {
         self.inner.model_name()
     }

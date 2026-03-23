@@ -163,8 +163,7 @@ impl Default for StubLlm {
     }
 }
 
-#[async_trait]
-impl LlmProvider for StubLlm {
+impl crate::llm::NativeLlmProvider for StubLlm {
     fn model_name(&self) -> &str {
         &self.model_name
     }

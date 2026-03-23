@@ -46,8 +46,8 @@ pub use failover::{CooldownConfig, FailoverProvider};
 pub use nearai_chat::{ModelInfo, NearAiChatProvider};
 pub use provider::{
     ChatMessage, CompletionRequest, CompletionResponse, ContentPart, FinishReason, ImageUrl,
-    LlmProvider, ModelMetadata, Role, ToolCall, ToolCompletionRequest, ToolCompletionResponse,
-    ToolDefinition, ToolResult,
+    LlmFuture, LlmProvider, ModelMetadata, NativeLlmProvider, Role, ToolCall,
+    ToolCompletionRequest, ToolCompletionResponse, ToolDefinition, ToolResult,
 };
 pub use reasoning::{
     ActionPlan, Reasoning, ReasoningContext, RespondOutput, RespondResult, SILENT_REPLY_TOKEN,
@@ -164,7 +164,7 @@ async fn create_bedrock_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvid
     tracing::debug!(
         "Using AWS Bedrock (Converse API, region: {}, model: {})",
         br.region,
-        provider.active_model_name(),
+        crate::llm::NativeLlmProvider::active_model_name(&provider),
     );
     Ok(Arc::new(provider))
 }

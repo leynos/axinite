@@ -48,8 +48,7 @@ pub(super) fn build_rig_request(
     })
 }
 
-#[async_trait]
-impl<M> LlmProvider for RigAdapter<M>
+impl<M> NativeLlmProvider for RigAdapter<M>
 where
     M: CompletionModel + Send + Sync + 'static,
     M::Response: Send + Sync + Serialize + DeserializeOwned,

@@ -5,12 +5,11 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use rust_decimal::Decimal;
 
 use crate::error::LlmError;
 use crate::llm::{
-    CompletionRequest, CompletionResponse, LlmProvider, ToolCompletionRequest,
+    CompletionRequest, CompletionResponse, NativeLlmProvider, ToolCompletionRequest,
     ToolCompletionResponse,
 };
 use crate::worker::api::WorkerHttpClient;
@@ -30,8 +29,7 @@ impl ProxyLlmProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for ProxyLlmProvider {
+impl NativeLlmProvider for ProxyLlmProvider {
     fn model_name(&self) -> &str {
         &self.model_name
     }

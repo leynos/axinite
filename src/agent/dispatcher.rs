@@ -1029,7 +1029,6 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use async_trait::async_trait;
     use rust_decimal::Decimal;
 
     use crate::agent::agent_loop::{Agent, AgentDeps};
@@ -1052,8 +1051,7 @@ mod tests {
     /// Minimal LLM provider for unit tests that always returns a static response.
     struct StaticLlmProvider;
 
-    #[async_trait]
-    impl LlmProvider for StaticLlmProvider {
+    impl crate::llm::NativeLlmProvider for StaticLlmProvider {
         fn model_name(&self) -> &str {
             "static-mock"
         }
@@ -1720,8 +1718,7 @@ mod tests {
     /// and text when tools are empty (simulating force_text stripping tools).
     struct AlwaysToolCallProvider;
 
-    #[async_trait]
-    impl LlmProvider for AlwaysToolCallProvider {
+    impl crate::llm::NativeLlmProvider for AlwaysToolCallProvider {
         fn model_name(&self) -> &str {
             "always-tool-call"
         }
@@ -1874,8 +1871,7 @@ mod tests {
     /// returns text.
     struct FailingToolCallProvider;
 
-    #[async_trait]
-    impl LlmProvider for FailingToolCallProvider {
+    impl crate::llm::NativeLlmProvider for FailingToolCallProvider {
         fn model_name(&self) -> &str {
             "failing-tool-call"
         }

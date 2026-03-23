@@ -15,7 +15,6 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use rust_decimal::Decimal;
 use tokio::sync::Mutex;
 
@@ -235,8 +234,7 @@ fn is_transient(err: &LlmError) -> bool {
     )
 }
 
-#[async_trait]
-impl LlmProvider for CircuitBreakerProvider {
+impl crate::llm::NativeLlmProvider for CircuitBreakerProvider {
     fn model_name(&self) -> &str {
         self.inner.model_name()
     }
@@ -581,8 +579,7 @@ mod tests {
     /// Provider that hangs forever (tests timeout handling at the caller).
     struct HangingProvider;
 
-    #[async_trait]
-    impl LlmProvider for HangingProvider {
+    impl crate::llm::NativeLlmProvider for HangingProvider {
         fn model_name(&self) -> &str {
             "hanging"
         }

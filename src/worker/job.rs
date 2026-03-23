@@ -1351,8 +1351,7 @@ mod tests {
     use crate::config::SafetyConfig;
     use crate::context::JobContext;
     use crate::llm::{
-        CompletionRequest, CompletionResponse, LlmProvider, ToolCompletionRequest,
-        ToolCompletionResponse,
+        CompletionRequest, CompletionResponse, ToolCompletionRequest, ToolCompletionResponse,
     };
     use crate::safety::SafetyLayer;
     use crate::tools::{NativeTool, Tool, ToolError as ToolExecError, ToolOutput};
@@ -1398,8 +1397,7 @@ mod tests {
     /// Stub LLM provider (never called in these tests).
     struct StubLlm;
 
-    #[async_trait::async_trait]
-    impl LlmProvider for StubLlm {
+    impl crate::llm::NativeLlmProvider for StubLlm {
         fn model_name(&self) -> &str {
             "stub"
         }

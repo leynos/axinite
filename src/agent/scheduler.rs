@@ -708,8 +708,7 @@ mod tests {
     /// Minimal LLM provider stub for scheduler tests that don't exercise LLM calls.
     struct StubLlm;
 
-    #[async_trait::async_trait]
-    impl LlmProvider for StubLlm {
+    impl crate::llm::NativeLlmProvider for StubLlm {
         fn model_name(&self) -> &str {
             "stub"
         }

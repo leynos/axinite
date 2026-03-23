@@ -4,7 +4,6 @@
 //! `Arc<dyn LlmProvider>` without changing any of the agent, reasoning, or tool code.
 
 use crate::llm::config::CacheRetention;
-use async_trait::async_trait;
 use rig::OneOrMany;
 use rig::completion::{
     AssistantContent, CompletionModel, CompletionRequest as RigRequest,
@@ -25,7 +24,7 @@ use std::collections::HashSet;
 use crate::llm::costs;
 use crate::llm::error::LlmError;
 use crate::llm::provider::{
-    ChatMessage, CompletionRequest, CompletionResponse, FinishReason, LlmProvider,
+    ChatMessage, CompletionRequest, CompletionResponse, FinishReason, NativeLlmProvider,
     ToolCall as IronToolCall, ToolCompletionRequest, ToolCompletionResponse,
     ToolDefinition as IronToolDefinition, strip_unsupported_completion_params,
     strip_unsupported_tool_params,
