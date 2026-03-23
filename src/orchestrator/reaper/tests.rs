@@ -83,11 +83,11 @@ async fn create_active_job(ctx_mgr: &ContextManager, description: &str, tag: &st
     let job_id = ctx_mgr
         .create_job_for_user("default", "test", description)
         .await
-        .unwrap_or_else(|_| panic!("create_job_for_user failed for {tag}"));
+        .unwrap_or_else(|e| panic!("create_job_for_user failed for {tag}: {e:#?}"));
     ctx_mgr
         .get_context(job_id)
         .await
-        .unwrap_or_else(|_| panic!("get_context failed for {tag} job_id"))
+        .unwrap_or_else(|e| panic!("get_context failed for {tag} job_id: {e:#?}"))
         .state
         .is_active()
 }
