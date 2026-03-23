@@ -12,9 +12,10 @@
 //!                    └──► Later: Load ──► Verify hash ──► Return bytes
 //! ```
 
+use core::future::Future;
+use core::pin::Pin;
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 #[cfg(feature = "postgres")]
 use deadpool_postgres::Pool;
@@ -203,41 +204,168 @@ pub enum WasmStorageError {
     InvalidData(String),
 }
 
+/// Boxed future used at the dyn WASM-tool-store boundary.
+pub type WasmToolStoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Trait for WASM tool storage.
-#[async_trait]
 pub trait WasmToolStore: Send + Sync {
     /// Store a new WASM tool.
-    async fn store(&self, params: StoreToolParams) -> Result<StoredWasmTool, WasmStorageError>;
+    fn store<'a>(
+        &'a self,
+        params: StoreToolParams,
+    ) -> WasmToolStoreFuture<'a, Result<StoredWasmTool, WasmStorageError>>;
 
     /// Get tool metadata (without binary).
-    async fn get(&self, user_id: &str, name: &str) -> Result<StoredWasmTool, WasmStorageError>;
+    fn get<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> WasmToolStoreFuture<'a, Result<StoredWasmTool, WasmStorageError>>;
 
     /// Get tool with binary (verifies integrity).
-    async fn get_with_binary(
-        &self,
-        user_id: &str,
-        name: &str,
-    ) -> Result<StoredWasmToolWithBinary, WasmStorageError>;
+    fn get_with_binary<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> WasmToolStoreFuture<'a, Result<StoredWasmToolWithBinary, WasmStorageError>>;
 
     /// Get tool capabilities.
-    async fn get_capabilities(
-        &self,
+    fn get_capabilities<'a>(
+        &'a self,
         tool_id: Uuid,
-    ) -> Result<Option<StoredCapabilities>, WasmStorageError>;
+    ) -> WasmToolStoreFuture<'a, Result<Option<StoredCapabilities>, WasmStorageError>>;
 
     /// List all tools for a user.
-    async fn list(&self, user_id: &str) -> Result<Vec<StoredWasmTool>, WasmStorageError>;
+    fn list<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> WasmToolStoreFuture<'a, Result<Vec<StoredWasmTool>, WasmStorageError>>;
 
     /// Update tool status.
-    async fn update_status(
-        &self,
-        user_id: &str,
-        name: &str,
+    fn update_status<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
         status: ToolStatus,
-    ) -> Result<(), WasmStorageError>;
+    ) -> WasmToolStoreFuture<'a, Result<(), WasmStorageError>>;
 
     /// Delete a tool.
-    async fn delete(&self, user_id: &str, name: &str) -> Result<bool, WasmStorageError>;
+    fn delete<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> WasmToolStoreFuture<'a, Result<bool, WasmStorageError>>;
+}
+
+/// Native async sibling trait for concrete WASM-tool-store implementations.
+pub trait NativeWasmToolStore: Send + Sync {
+    /// See [`WasmToolStore::store`].
+    fn store(
+        &self,
+        params: StoreToolParams,
+    ) -> impl Future<Output = Result<StoredWasmTool, WasmStorageError>> + Send + '_;
+
+    /// See [`WasmToolStore::get`].
+    fn get<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> impl Future<Output = Result<StoredWasmTool, WasmStorageError>> + Send + 'a;
+
+    /// See [`WasmToolStore::get_with_binary`].
+    fn get_with_binary<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> impl Future<Output = Result<StoredWasmToolWithBinary, WasmStorageError>> + Send + 'a;
+
+    /// See [`WasmToolStore::get_capabilities`].
+    fn get_capabilities(
+        &self,
+        tool_id: Uuid,
+    ) -> impl Future<Output = Result<Option<StoredCapabilities>, WasmStorageError>> + Send + '_;
+
+    /// See [`WasmToolStore::list`].
+    fn list<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> impl Future<Output = Result<Vec<StoredWasmTool>, WasmStorageError>> + Send + 'a;
+
+    /// See [`WasmToolStore::update_status`].
+    fn update_status<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+        status: ToolStatus,
+    ) -> impl Future<Output = Result<(), WasmStorageError>> + Send + 'a;
+
+    /// See [`WasmToolStore::delete`].
+    fn delete<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> impl Future<Output = Result<bool, WasmStorageError>> + Send + 'a;
+}
+
+impl<T> WasmToolStore for T
+where
+    T: NativeWasmToolStore + Send + Sync,
+{
+    fn store<'a>(
+        &'a self,
+        params: StoreToolParams,
+    ) -> WasmToolStoreFuture<'a, Result<StoredWasmTool, WasmStorageError>> {
+        Box::pin(NativeWasmToolStore::store(self, params))
+    }
+
+    fn get<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> WasmToolStoreFuture<'a, Result<StoredWasmTool, WasmStorageError>> {
+        Box::pin(NativeWasmToolStore::get(self, user_id, name))
+    }
+
+    fn get_with_binary<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> WasmToolStoreFuture<'a, Result<StoredWasmToolWithBinary, WasmStorageError>> {
+        Box::pin(NativeWasmToolStore::get_with_binary(self, user_id, name))
+    }
+
+    fn get_capabilities<'a>(
+        &'a self,
+        tool_id: Uuid,
+    ) -> WasmToolStoreFuture<'a, Result<Option<StoredCapabilities>, WasmStorageError>> {
+        Box::pin(NativeWasmToolStore::get_capabilities(self, tool_id))
+    }
+
+    fn list<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> WasmToolStoreFuture<'a, Result<Vec<StoredWasmTool>, WasmStorageError>> {
+        Box::pin(NativeWasmToolStore::list(self, user_id))
+    }
+
+    fn update_status<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+        status: ToolStatus,
+    ) -> WasmToolStoreFuture<'a, Result<(), WasmStorageError>> {
+        Box::pin(NativeWasmToolStore::update_status(
+            self, user_id, name, status,
+        ))
+    }
+
+    fn delete<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> WasmToolStoreFuture<'a, Result<bool, WasmStorageError>> {
+        Box::pin(NativeWasmToolStore::delete(self, user_id, name))
+    }
 }
 
 /// Parameters for storing a new tool.
@@ -279,8 +407,7 @@ impl PostgresWasmToolStore {
 }
 
 #[cfg(feature = "postgres")]
-#[async_trait]
-impl WasmToolStore for PostgresWasmToolStore {
+impl NativeWasmToolStore for PostgresWasmToolStore {
     async fn store(&self, params: StoreToolParams) -> Result<StoredWasmTool, WasmStorageError> {
         let mut client = self
             .pool
@@ -609,8 +736,7 @@ impl LibSqlWasmToolStore {
 }
 
 #[cfg(feature = "libsql")]
-#[async_trait]
-impl WasmToolStore for LibSqlWasmToolStore {
+impl NativeWasmToolStore for LibSqlWasmToolStore {
     async fn store(&self, params: StoreToolParams) -> Result<StoredWasmTool, WasmStorageError> {
         let binary_hash = compute_binary_hash(&params.wasm_binary);
         let id = Uuid::new_v4();
