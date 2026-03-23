@@ -189,3 +189,6 @@
   records why the repository temporarily carried a narrow vendored `cap-*`
   probe patch chain, which non-patch alternatives existed, and what evidence
   retired the workaround.
+- [ADR 008: Mutation testing with cargo-mutants](adr-008-mutation-testing-with-cargo-mutants.md)
+  records the adoption of `cargo-mutants` for nightly mutation testing, scoped
+  to files changed in the past 24 hours, with manual dispatch support.
