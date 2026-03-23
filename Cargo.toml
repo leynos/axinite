@@ -149,7 +149,7 @@ aws-sdk-bedrockruntime = { version = "1", optional = true }
 aws-smithy-types = { version = "1", optional = true }
 
 # Docker sandbox
-bollard = "0.18"
+bollard = { version = "0.18", optional = true }
 
 # Archive extraction for WASM extension bundles
 flate2 = "1"
@@ -185,6 +185,9 @@ tempfile = { version = "3", optional = true }
 security-framework = "3"
 
 # Linux secret-service (GNOME Keyring, KWallet)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 secret-service = { version = "4", features = ["rt-tokio-crypto-rust"] }
 zbus = "4"
@@ -200,7 +203,7 @@ rstest = "0.26.1"
 tempfile = "3"
 
 [features]
-default = ["postgres", "libsql", "html-to-markdown"]
+default = ["postgres", "libsql", "html-to-markdown", "docker"]
 postgres = [
     "dep:deadpool-postgres",
     "dep:tokio-postgres",
@@ -218,6 +221,7 @@ html-to-markdown = ["dep:html-to-markdown-rs", "dep:readabilityrs"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types"]
 import = ["dep:rusqlite", "dep:json5"]
 test-helpers = ["dep:tempfile"]
+docker = ["dep:bollard"]
 
 [[test]]
 name = "html_to_markdown"

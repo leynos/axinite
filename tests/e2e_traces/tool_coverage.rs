@@ -116,7 +116,7 @@ async fn test_list_dir() {
     );
     let (trace, responses, rig) = run_trace(
         fixture_path,
-        "List the test directory",
+        "list the test directory",
         &[("/tmp/ironclaw_coverage_test_list_dir", test_dir.as_str())],
     )
     .await;

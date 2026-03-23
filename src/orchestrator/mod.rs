@@ -32,7 +32,10 @@
 
 pub mod api;
 pub mod auth;
+mod bind_mount;
 pub mod job_manager;
+mod job_registry;
+pub mod job_types;
 pub mod reaper;
 
 pub use api::OrchestratorApi;

@@ -2,13 +2,15 @@
 
 **Branch:** (to be created from `build-time`)
 **Date:** 2026-03-15
-**Status:** Plan ready; not yet started
-**Estimated impact:** ~156 fewer crates when `docker` feature is off
+**Status:** Completed
+**Measured impact:** 1 fewer crate when `docker` feature is off
+  (`cargo tree --prefix none | sort -u | wc -l`: 810 with default features,
+  809 with `postgres,libsql,html-to-markdown` and `docker` disabled)
 
 ## Big Picture
 
-The bollard crate (Docker API client) and its ~156 transitive dependencies
-are always compiled, even though Docker-based sandboxing is an optional
+The bollard crate (Docker API client) and its transitive dependency surface
+is always compiled, even though Docker-based sandboxing is an optional
 deployment capability. Feature-gating it behind a `docker` feature
 (included in defaults) lets developers who do not use Docker sandboxing
 skip those crates.
@@ -26,15 +28,14 @@ skip those crates.
 bollard is used in **5 source files**, confined to the sandbox and
 orchestrator modules:
 
-Table 1. Files with direct bollard usage and primary purpose.
+The direct bollard usage sites and their primary purposes are:
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/sandbox/container.rs` | ~636 | Container lifecycle (`ContainerRunner`) |
-| `src/sandbox/manager.rs` | ~525 | High-level sandbox coordinator |
-| `src/sandbox/error.rs` | ~59 | Error types (`#[from] bollard::errors::Error`) |
-| `src/orchestrator/job_manager.rs` | ~709 | Persistent container job management |
-| `src/orchestrator/reaper.rs` | ~970 | Orphaned container cleanup |
+- `src/sandbox/container.rs`: container lifecycle (`ContainerRunner`)
+- `src/sandbox/manager.rs`: high-level sandbox coordinator
+- `src/sandbox/error.rs`: error types, including
+  `#[from] bollard::errors::Error`
+- `src/orchestrator/job_manager/docker.rs`: persistent container job management
+- `src/orchestrator/reaper.rs`: orphaned container cleanup
 
 ### Public API leakage
 
@@ -48,19 +49,19 @@ Table 1. Files with direct bollard usage and primary purpose.
 
 ### Phase 1: Cargo.toml changes
 
-- [ ] Make bollard optional:
+- [x] Make bollard optional:
 
   ```toml
   bollard = { version = "0.18", optional = true }
   ```
 
-- [ ] Add `docker` feature:
+- [x] Add `docker` feature:
 
   ```toml
   docker = ["dep:bollard"]
   ```
 
-- [ ] Add `docker` to `default` features:
+- [x] Add `docker` to `default` features:
 
   ```toml
   default = ["postgres", "libsql", "html-to-markdown", "docker"]
@@ -68,12 +69,12 @@ Table 1. Files with direct bollard usage and primary purpose.
 
 ### Phase 2: Gate Docker modules
 
-- [ ] In `src/sandbox/container.rs`: gate entire file with
-  `#[cfg(feature = "docker")]`
-- [ ] In `src/sandbox/manager.rs`: gate Docker-specific functionality
-  (the module likely has non-Docker sandbox paths too — audit before
-  blanket-gating)
-- [ ] In `src/sandbox/error.rs`: gate the `Docker` error variant:
+- [x] In `src/sandbox/container.rs`: split Docker-backed internals behind
+  `#[cfg(feature = "docker")]` and keep no-Docker stubs returning clear
+  `DockerNotAvailable` errors.
+- [x] In `src/sandbox/manager.rs`: gate Docker-specific functionality
+  while preserving direct-execution paths.
+- [x] In `src/sandbox/error.rs`: gate the `Docker` error variant:
 
   ```rust
   #[cfg(feature = "docker")]
@@ -81,37 +82,41 @@ Table 1. Files with direct bollard usage and primary purpose.
   Docker(#[from] bollard::errors::Error),
   ```
 
-- [ ] In `src/orchestrator/job_manager.rs`: gate Docker-specific code
+- [x] In `src/orchestrator/job_manager.rs`: gate Docker-specific code
   paths with `#[cfg(feature = "docker")]`
-- [ ] In `src/orchestrator/reaper.rs`: gate Docker-specific code paths
+- [x] In `src/orchestrator/reaper.rs`: gate Docker-specific code paths
   with `#[cfg(feature = "docker")]`
 
 ### Phase 3: Handle transitive references
 
-- [ ] Audit `src/sandbox/mod.rs` exports — conditionally export
-  Docker-specific types
-- [ ] Audit `src/orchestrator/mod.rs` exports — conditionally export
-  Docker-specific types
-- [ ] Audit `src/app.rs` and `src/bootstrap.rs` for Docker setup code —
-  gate with `#[cfg(feature = "docker")]`
-- [ ] Check `src/config/` for Docker-specific configuration — gate or
-  provide defaults
+- [x] Audit `src/sandbox/mod.rs` exports — preserve module exports while
+  making Docker connection types feature-aware.
+- [x] Audit `src/orchestrator/mod.rs` exports — preserve exported setup
+  surface and rely on runtime `None`/`Disabled` results when Docker support
+  is absent.
+- [x] Audit `src/app.rs` and `src/bootstrap.rs` for Docker setup code —
+  no direct `bollard` references required after internal gating.
+- [x] Check `src/config/` for Docker-specific configuration — existing
+  defaults remain valid; no additional gating required.
 
 ### Phase 4: Gate Docker-dependent tests
 
-- [ ] Identify integration tests that require Docker (likely none compile
+- [x] Identify integration tests that require Docker (likely none compile
   against bollard directly, but some may test sandbox functionality)
-- [ ] Gate those tests with `#[cfg(feature = "docker")]`
+- [x] Gate those tests with `#[cfg(feature = "docker")]`
 
 ### Phase 5: Validate
 
-- [ ] `make all` passes (default features, includes `docker`)
-- [ ] `cargo check --no-default-features --features libsql,test-helpers`
+- [x] `make all` equivalent gates pass (default features, includes `docker`)
+- [x] `cargo check --no-default-features --features libsql,test-helpers`
   passes (no Docker)
-- [ ] `cargo check --all-features --features test-helpers` passes
-- [ ] Full test suite passes
-- [ ] Verify crate count reduction: compare `cargo tree --prefix none |
+- [x] `cargo check --all-features --features test-helpers` passes
+- [x] Full test suite passes
+- [x] Verify crate count reduction: compare `cargo tree --prefix none |
   sort -u | wc -l` with and without `docker` feature
+  Measured on 2026-03-22 as 810 crates with default features and 809 crates
+  with `docker` disabled while keeping `postgres`, `libsql`, and
+  `html-to-markdown` enabled.
 
 ## Risks
 
@@ -125,10 +130,35 @@ Table 1. Files with direct bollard usage and primary purpose.
 - **Orchestrator coupling:** The job manager and reaper may be tightly
   integrated with non-Docker orchestration logic. Audit before gating.
 
+## Progress notes
+
+- 2026-03-20: Made `bollard` optional, added a default-on `docker` feature,
+  and converted the sandbox/orchestrator internals to compile without Docker
+  support while still returning clear runtime errors when Docker-backed code
+  paths are invoked.
+- 2026-03-20: `check_docker()` now reports `Disabled` when the crate is built
+  without the `docker` feature, and Docker-backed tests are gated so the
+  no-Docker build has a dedicated compile path.
+- 2026-03-21: The branch needed a follow-on clean-build pass because stable
+  no-Docker compilation was being poisoned by `cap-*` build-script probes that
+  trusted an ambient `RUSTC_WRAPPER`. The fix was vendored patching of the
+  affected probe chain plus narrow configuration (`cfg`) cleanup in the
+  sandbox and orchestrator modules.
+- 2026-03-21: The vendored `cap-*` workaround has now been retired. Fixing the
+  ambient `notdeadyet` wrapper restored honest stdin-backed compiler probes,
+  and the unpatched stable no-Docker acceptance check passed in a scratch copy
+  before the repository-local patches were removed.
+- 2026-03-21: Validation is now complete. The branch passed
+  `make check-fmt`, `make typecheck`, `make lint`, and `make test`.
+  The stable no-Docker acceptance check also passes.
+- 2026-03-22: The crate-count validation was closed with a fresh measurement.
+  The current resolved graph drops from 810 unique crates to 809 when the
+  `docker` feature is disabled while keeping the other default features.
+
 ## Progress
 
-- [ ] Phase 1: Cargo.toml changes
-- [ ] Phase 2: Gate Docker modules
-- [ ] Phase 3: Handle transitive references
-- [ ] Phase 4: Gate Docker-dependent tests
-- [ ] Phase 5: Validate
+- [x] Phase 1: Cargo.toml changes
+- [x] Phase 2: Gate Docker modules
+- [x] Phase 3: Handle transitive references
+- [x] Phase 4: Gate Docker-dependent tests
+- [x] Phase 5: Validate

@@ -105,6 +105,7 @@ pub struct DockerDetection {
 /// 1. Checks if `docker` binary exists on PATH
 /// 2. If found, tries to connect and ping the Docker daemon via `connect_docker()`
 /// 3. Returns `Available`, `NotInstalled`, or `NotRunning`
+#[cfg(feature = "docker")]
 pub async fn check_docker() -> DockerDetection {
     let platform = Platform::current();
 
@@ -140,7 +141,16 @@ pub async fn check_docker() -> DockerDetection {
     }
 }
 
+#[cfg(not(feature = "docker"))]
+pub async fn check_docker() -> DockerDetection {
+    DockerDetection {
+        status: DockerStatus::Disabled,
+        platform: Platform::current(),
+    }
+}
+
 /// Check if the `docker` binary exists on PATH.
+#[cfg(feature = "docker")]
 fn docker_binary_exists() -> bool {
     #[cfg(unix)]
     {
@@ -162,7 +172,7 @@ fn docker_binary_exists() -> bool {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(feature = "docker", windows))]
 fn docker_cli_daemon_reachable() -> bool {
     let stdout = std::process::Stdio::null();
     let stderr = std::process::Stdio::null();
@@ -227,9 +237,13 @@ mod tests {
     #[tokio::test]
     async fn test_check_docker_returns_valid_status() {
         let result = check_docker().await;
+        #[cfg(feature = "docker")]
         match result.status {
             DockerStatus::Available | DockerStatus::NotInstalled | DockerStatus::NotRunning => {}
             DockerStatus::Disabled => panic!("check_docker should never return Disabled"),
         }
+
+        #[cfg(not(feature = "docker"))]
+        assert!(matches!(result.status, DockerStatus::Disabled));
     }
 }

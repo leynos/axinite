@@ -24,7 +24,10 @@ mod prompts;
 #[cfg(any(feature = "postgres", feature = "libsql"))]
 mod wizard;
 
-pub use channels::{ChannelSetupError, SecretsContext, setup_http, setup_tunnel};
+pub use channels::{
+    ChannelSetupError, SecretsContext, SignalSetupResult, WasmChannelSetupResult, setup_http,
+    setup_signal, setup_tunnel, setup_wasm_channel,
+};
 pub use prompts::{
     confirm, input, optional_input, print_error, print_header, print_info, print_step,
     print_success, secret_input, select_many, select_one,

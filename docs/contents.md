@@ -165,11 +165,11 @@
 ## ADRs
 
 - [ADR 001: OPA Rego as the policy engine for intent enforcement](adr-001-rego-policy-engine-for-intent-enforcement.md)
-  records the proposed policy-engine choice for deterministic, machine-auditable
-  intent gates.
+  records the proposed policy-engine choice for deterministic,
+  machine-auditable intent gates.
 - [ADR 002: Authoritative intent state must remain human-auditable](adr-002-authoritative-intent-state-must-remain-human-auditable.md)
-  records that provider-owned continuation state may optimize execution but must
-  never become the sole source of truth for intent or decision history.
+  records that provider-owned continuation state may optimize execution but
+  must never become the sole source of truth for intent or decision history.
 - [ADR 003: Theme management belongs in memoryd](adr-003-theme-management-belongs-in-memoryd.md)
   records that stable theme IDs, balancing policy, and lineage belong in the
   memory sidecar rather than in the clustering substrate.
@@ -180,5 +180,9 @@
   records that hierarchical recall should support both proxy-based and
   model-assisted gain estimation behind one expansion-gating interface.
 - [ADR 006: Dual-trait pattern for dyn-backed async interfaces](adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
-  records the proposed migration pattern for dyn-backed async traits, balancing
-  compilation speed against implementation maintainability.
+  records the proposed migration pattern for dyn-backed async traits,
+  balancing compilation speed against implementation maintainability.
+- [ADR 007: Stable capability probes must ignore ambient `RUSTC_WRAPPER`](adr-007-stable-capability-probes-must-ignore-ambient-rustc-wrapper.md)
+  records why the repository temporarily carried a narrow vendored `cap-*`
+  probe patch chain, which non-patch alternatives existed, and what evidence
+  retired the workaround.

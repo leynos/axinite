@@ -76,13 +76,12 @@ pub struct DatabaseHandles {
 pub async fn connect_with_handles(
     config: &crate::config::DatabaseConfig,
 ) -> Result<(Arc<dyn Database>, DatabaseHandles), DatabaseError> {
-    let mut handles = DatabaseHandles::default();
-
     match config.backend {
         #[cfg(feature = "libsql")]
         crate::config::DatabaseBackend::LibSql => {
             use secrecy::ExposeSecret as _;
 
+            let mut handles = DatabaseHandles::default();
             let default_path = crate::config::default_libsql_path();
             let db_path = config.libsql_path.as_deref().unwrap_or(&default_path);
 
@@ -109,6 +108,7 @@ pub async fn connect_with_handles(
         }
         #[cfg(feature = "postgres")]
         _ => {
+            let mut handles = DatabaseHandles::default();
             let pg = postgres::PgBackend::new(config)
                 .await
                 .map_err(|e| DatabaseError::Pool(e.to_string()))?;
@@ -135,7 +135,13 @@ pub async fn create_secrets_store(
     config: &crate::config::DatabaseConfig,
     crypto: Arc<crate::secrets::SecretsCrypto>,
 ) -> Result<Arc<dyn crate::secrets::SecretsStore + Send + Sync>, DatabaseError> {
+    #[cfg(not(any(feature = "libsql", feature = "postgres")))]
+    let _ = &crypto;
+
     let (_db, handles) = connect_with_handles(config).await?;
+
+    #[cfg(not(any(feature = "libsql", feature = "postgres")))]
+    let _ = &handles;
 
     match config.backend {
         #[cfg(feature = "libsql")]

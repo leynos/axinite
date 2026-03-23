@@ -14,12 +14,15 @@ async fn report_status_updates_handle(test_state: OrchestratorState) {
     let token = test_state.token_store.create_token(job_id).await;
 
     {
-        let mut containers = test_state.job_manager.containers.write().await;
+        let containers = test_state.job_manager.containers();
+        let mut containers = containers.write().await;
         containers.insert(
             job_id,
             crate::orchestrator::job_manager::ContainerHandle {
                 job_id,
-                container_id: "test-container".to_string(),
+                container_id: Some(crate::orchestrator::job_manager::ContainerId::new(
+                    "test-container",
+                )),
                 state: crate::orchestrator::job_manager::ContainerState::Running,
                 mode: crate::orchestrator::job_manager::JobMode::Worker,
                 created_at: chrono::Utc::now(),
