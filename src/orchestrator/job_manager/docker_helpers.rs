@@ -61,10 +61,23 @@ pub(super) fn build_host_config(
 ) -> bollard::models::HostConfig {
     use bollard::models::HostConfig;
 
-    let memory_bytes = memory_mb
-        .saturating_mul(1024)
-        .saturating_mul(1024)
-        .min(i64::MAX as u64) as i64;
+    let memory_bytes_u64 = memory_mb.saturating_mul(1024).saturating_mul(1024);
+
+    // Clamp to the maximum representable i64 value, but emit a warning so that
+    // misconfigurations (e.g. extremely large memory_mb values) are detectable.
+    let (memory_bytes, memory_clamped) = if memory_bytes_u64 > i64::MAX as u64 {
+        (i64::MAX, true)
+    } else {
+        (memory_bytes_u64 as i64, false)
+    };
+
+    if memory_clamped {
+        tracing::warn!(
+            memory_mb,
+            max_bytes = i64::MAX,
+            "Configured memory_mb exceeds HostConfig::memory capacity; clamping to i64::MAX bytes"
+        );
+    }
 
     HostConfig {
         binds: if binds.is_empty() { None } else { Some(binds) },

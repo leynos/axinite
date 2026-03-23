@@ -57,7 +57,23 @@ impl ContainerRunner {
                 "HTTPS_PROXY=http://{}:{}",
                 proxy_host, self.proxy_port
             ));
-            env_vec.push("NO_PROXY=localhost,127.0.0.1,::1".to_string());
+
+            // Merge localhost/loopback with any existing NO_PROXY configuration
+            let loopback_entries = "localhost,127.0.0.1,::1";
+            let existing_no_proxy = env_vec
+                .iter()
+                .find(|e| e.starts_with("NO_PROXY=") || e.starts_with("no_proxy="))
+                .and_then(|e| e.split_once('=').map(|(_, v)| v.to_string()));
+
+            let no_proxy_value = if let Some(existing) = existing_no_proxy {
+                // Remove the old NO_PROXY/no_proxy entry to avoid duplicates
+                env_vec.retain(|e| !e.starts_with("NO_PROXY=") && !e.starts_with("no_proxy="));
+                format!("{},{}", existing, loopback_entries)
+            } else {
+                loopback_entries.to_string()
+            };
+
+            env_vec.push(format!("NO_PROXY={}", no_proxy_value));
         }
 
         let binds = match policy {
@@ -170,9 +186,13 @@ impl ContainerRunner {
     }
 
     /// Collect stdout and stderr from a stream of log output.
+    ///
+    /// `source` is a label (e.g., "container logs", "exec output") used in
+    /// error messages to distinguish where the stream originated.
     async fn collect_output_from_stream<S>(
         stream: &mut S,
         max_output: usize,
+        source: &str,
     ) -> (String, String, bool)
     where
         S: futures::Stream<Item = std::result::Result<LogOutput, bollard::errors::Error>> + Unpin,
@@ -194,7 +214,7 @@ impl ContainerRunner {
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    tracing::warn!("Error reading output: {}", e);
+                    tracing::warn!("Error reading {}: {}", source, e);
                 }
             }
         }
@@ -217,7 +237,7 @@ impl ContainerRunner {
 
         let mut stream = self.docker.logs(container_id, Some(options));
         let (stdout, stderr, truncated) =
-            Self::collect_output_from_stream(&mut stream, max_output).await;
+            Self::collect_output_from_stream(&mut stream, max_output, "container logs").await;
 
         Ok((stdout, stderr, truncated))
     }
@@ -237,7 +257,7 @@ impl ContainerRunner {
 
         let (stdout, stderr, truncated) =
             if let StartExecResults::Attached { mut output, .. } = start_result {
-                Self::collect_output_from_stream(&mut output, max_output).await
+                Self::collect_output_from_stream(&mut output, max_output, "exec output").await
             } else {
                 (String::new(), String::new(), false)
             };
