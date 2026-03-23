@@ -51,7 +51,7 @@ table of survivors.
   required, stop and escalate.
 - Interface: no existing workflow or Makefile target may be modified.
 - Dependencies: no new runtime dependency on the Rust codebase. `cargo-mutants`
-  is a CI-only tool installed via `taiki-e/install-action`.
+  is a Continuous Integration (CI)-only tool installed via `taiki-e/install-action`.
 - Iterations: if the workflow YAML does not pass `actionlint` (if available) or
   manual review within 2 attempts, stop and escalate.
 - Ambiguity: if `cargo-mutants` does not support `--file` or `--re` filtering
@@ -218,7 +218,7 @@ previous one.
 Steps:
 
 1. **Checkout.** `actions/checkout@v6` with `fetch-depth: 0` (needed for
-   `git diff` on the 24-hour window). For `workflow_dispatch`, check out the
+   `git log -m --since="24 hours ago"` on the 24-hour window). For `workflow_dispatch`, check out the
    `inputs.branch` ref.
 
 2. **Compute file list.** A shell step that decides which files to mutate:
@@ -263,16 +263,15 @@ Steps:
     list and execute:
 
     ```bash
-    file_args=""
+    file_args=()
     while IFS= read -r f; do
-      [[ -n "$f" ]] && file_args+=" --file $f"
+      [[ -n "$f" ]] && file_args+=(--file "$f")
     done <<< "$FILES"
 
-    # shellcheck disable=SC2086
     cargo mutants --no-shuffle --test-tool nextest \
       --timeout-multiplier 3 \
       --features test-helpers \
-      ${file_args}
+      "${file_args[@]}"
     ```
 
     The step uses `continue-on-error: true` so surviving mutants do not fail
