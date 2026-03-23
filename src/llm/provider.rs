@@ -218,7 +218,7 @@ pub enum FinishReason {
 }
 
 /// Definition of a tool for the LLM.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolDefinition {
     pub name: String,
     pub description: String,

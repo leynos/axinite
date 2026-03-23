@@ -578,7 +578,7 @@ async fn worker_runtime_build_reasoning_context_merges_local_and_remote_tools() 
     let guidance_message = reason_ctx
         .messages
         .iter()
-        .find(|message| message.content.contains("Hosted remote-tool guidance"))
+        .find(|message| message.content.contains(HOSTED_GUIDANCE_HEADING))
         .expect("expected hosted remote-tool guidance message");
 
     assert!(
@@ -626,7 +626,7 @@ async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance() 
     let guidance_before = reason_ctx
         .messages
         .iter()
-        .filter(|message| message.content.contains("Hosted remote-tool guidance"))
+        .filter(|message| message.content.contains(HOSTED_GUIDANCE_HEADING))
         .count();
     assert_eq!(
         guidance_before, 1,
@@ -660,7 +660,7 @@ async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance() 
         reason_ctx
             .messages
             .iter()
-            .filter(|message| message.content.contains("Hosted remote-tool guidance"))
+            .filter(|message| message.content.contains(HOSTED_GUIDANCE_HEADING))
             .count(),
         1,
         "refresh should not duplicate hosted remote-tool guidance"
@@ -720,7 +720,7 @@ async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools() 
         reason_ctx
             .messages
             .iter()
-            .all(|message| !message.content.contains("Hosted remote-tool guidance")),
+            .all(|message| !message.content.contains(HOSTED_GUIDANCE_HEADING)),
         "degraded startup should not inject hosted guidance"
     );
 

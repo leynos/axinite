@@ -159,17 +159,9 @@ mod tests {
             .await
             .expect("proxy execution should succeed");
 
-        let actual_definition = ToolDefinition {
-            name: tool.name().to_string(),
-            description: tool.description().to_string(),
-            parameters: tool.parameters_schema(),
-        };
-        assert_eq!(actual_definition.name, expected_definition.name);
-        assert_eq!(
-            actual_definition.description,
-            expected_definition.description
-        );
-        assert_eq!(actual_definition.parameters, expected_definition.parameters);
+        assert_eq!(tool.name(), expected_definition.name);
+        assert_eq!(tool.description(), expected_definition.description);
+        assert_eq!(tool.parameters_schema(), expected_definition.parameters);
         assert_eq!(output.result["tool_name"], "github_search");
         assert_eq!(output.result["job_id"], job_id.to_string());
         assert_eq!(output.result["params"]["query"], "axinite");

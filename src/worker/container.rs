@@ -74,6 +74,15 @@ enum WorkerExecutionResult {
     TimedOut,
 }
 
+/// Heading used to tag hosted remote-tool guidance messages in reasoning context.
+pub(crate) const HOSTED_GUIDANCE_HEADING: &str = "Hosted remote-tool guidance";
+
+/// Canonical merge of every tool the worker can offer to the LLM.
+///
+/// Currently a pass-through to `ToolRegistry::tool_definitions`, but
+/// centralised here so the reasoning layer has a single call site to
+/// extend with sorting, filtering, or deduplication if merge policy
+/// evolves.
 async fn available_tool_definitions(tools: &ToolRegistry) -> Vec<crate::llm::ToolDefinition> {
     tools.tool_definitions().await
 }
@@ -289,7 +298,7 @@ impl WorkerRuntime {
         let mut reason_ctx = ReasoningContext::new().with_job(&job.description);
         if !self.toolset_instructions.is_empty() {
             reason_ctx.messages.push(ChatMessage::system(format!(
-                "Hosted remote-tool guidance:\n\n{}",
+                "{HOSTED_GUIDANCE_HEADING}:\n\n{}",
                 self.toolset_instructions.join("\n")
             )));
         }
