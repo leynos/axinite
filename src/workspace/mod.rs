@@ -56,7 +56,9 @@ pub use embeddings::{
 };
 #[cfg(feature = "postgres")]
 pub use repository::Repository;
-pub use search::{RankedResult, SearchConfig, SearchResult, reciprocal_rank_fusion};
+pub use search::{
+    RankedResult, SearchConfig, SearchResult, cosine_similarity, reciprocal_rank_fusion,
+};
 
 use std::sync::Arc;
 

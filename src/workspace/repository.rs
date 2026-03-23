@@ -398,16 +398,30 @@ impl Repository {
         config: &SearchConfig,
     ) -> Result<Vec<SearchResult>, WorkspaceError> {
         let fts_results = if config.use_fts {
-            self.fts_search(user_id, agent_id, query, config.pre_fusion_limit)
-                .await?
+            let results = self
+                .fts_search(user_id, agent_id, query, config.pre_fusion_limit)
+                .await?;
+            tracing::debug!(
+                "FTS search returned {} results (pre-fusion limit: {})",
+                results.len(),
+                config.pre_fusion_limit
+            );
+            results
         } else {
             Vec::new()
         };
 
         let vector_results = if config.use_vector {
             if let Some(embedding) = embedding {
-                self.vector_search(user_id, agent_id, embedding, config.pre_fusion_limit)
-                    .await?
+                let results = self
+                    .vector_search(user_id, agent_id, embedding, config.pre_fusion_limit)
+                    .await?;
+                tracing::debug!(
+                    "pgvector search returned {} results (pre-fusion limit: {})",
+                    results.len(),
+                    config.pre_fusion_limit
+                );
+                results
             } else {
                 Vec::new()
             }

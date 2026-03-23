@@ -56,6 +56,14 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
     );
 
     check(
+        "Workspace search",
+        check_workspace_search().await,
+        &mut passed,
+        &mut failed,
+        &mut skipped,
+    );
+
+    check(
         "Workspace directory",
         check_workspace_dir(),
         &mut passed,
@@ -320,6 +328,72 @@ async fn try_pg_connect() -> Result<(), String> {
 
 #[cfg(not(feature = "postgres"))]
 async fn try_pg_connect() -> Result<(), String> {
+    Err("postgres feature not compiled in".into())
+}
+
+// ── Workspace search ────────────────────────────────────────
+
+async fn check_workspace_search() -> CheckResult {
+    let backend = std::env::var("DATABASE_BACKEND")
+        .ok()
+        .unwrap_or_else(|| "postgres".into());
+
+    match backend.as_str() {
+        "libsql" | "turso" | "sqlite" => {
+            // libSQL uses brute-force cosine similarity after V9 migration
+            CheckResult::Pass("hybrid search (brute-force cosine)".into())
+        }
+        _ => {
+            // PostgreSQL with pgvector
+            #[cfg(feature = "postgres")]
+            {
+                if std::env::var("DATABASE_URL").is_ok() {
+                    match try_pgvector_check().await {
+                        Ok(()) => CheckResult::Pass("hybrid search (pgvector)".into()),
+                        Err(e) => {
+                            CheckResult::Fail(format!("pgvector extension check failed: {}", e))
+                        }
+                    }
+                } else {
+                    CheckResult::Skip("DATABASE_URL not set".into())
+                }
+            }
+            #[cfg(not(feature = "postgres"))]
+            {
+                CheckResult::Skip("postgres feature not compiled in".into())
+            }
+        }
+    }
+}
+
+#[cfg(feature = "postgres")]
+async fn try_pgvector_check() -> Result<(), String> {
+    let url = std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL not set".to_string())?;
+
+    let config = deadpool_postgres::Config {
+        url: Some(url),
+        ..Default::default()
+    };
+    let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_env())
+        .map_err(|e| format!("pool error: {e}"))?;
+
+    let client = tokio::time::timeout(std::time::Duration::from_secs(5), pool.get())
+        .await
+        .map_err(|_| "connection timeout (5s)".to_string())?
+        .map_err(|e| format!("{e}"))?;
+
+    // Check if pgvector extension is available
+    let row = client
+        .query_one("SELECT 1 FROM pg_extension WHERE extname = 'vector'", &[])
+        .await
+        .map_err(|e| format!("pgvector extension not found: {e}"))?;
+
+    drop(row);
+    Ok(())
+}
+
+#[cfg(not(feature = "postgres"))]
+async fn try_pgvector_check() -> Result<(), String> {
     Err("postgres feature not compiled in".into())
 }
 
@@ -609,6 +683,14 @@ mod tests {
     #[test]
     fn check_workspace_dir_does_not_panic() {
         let result = check_workspace_dir();
+        match result {
+            CheckResult::Pass(_) | CheckResult::Fail(_) | CheckResult::Skip(_) => {}
+        }
+    }
+
+    #[tokio::test]
+    async fn check_workspace_search_does_not_panic() {
+        let result = check_workspace_search().await;
         match result {
             CheckResult::Pass(_) | CheckResult::Fail(_) | CheckResult::Skip(_) => {}
         }

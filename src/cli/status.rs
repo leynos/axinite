@@ -81,6 +81,17 @@ pub async fn run_status_command() -> anyhow::Result<()> {
         }
     }
 
+    // Search capability
+    print!("  Search:      ");
+    match db_backend.as_str() {
+        "libsql" | "turso" | "sqlite" => {
+            println!("hybrid (brute-force cosine)");
+        }
+        _ => {
+            println!("hybrid (pgvector)");
+        }
+    }
+
     // Session / Auth
     print!("  Session:     ");
     let session_path = crate::config::llm::default_session_path();
