@@ -357,7 +357,7 @@ set -o pipefail; git diff --check | tee /tmp/diff-check-axinite-<wave>.out
 - [ ] Milestone 1: Normalize the migration playbook and baseline evidence
 - [x] Milestone 2: Convert the narrow internal dyn-backed traits
 - [x] Milestone 3: Convert the infrastructure-facing extension seams
-- [ ] Milestone 4: Convert the high-fanout core traits
+- [x] Milestone 4: Convert the high-fanout core traits
 - [ ] Milestone 5: Clean up dependency and documentation state
 
 Progress notes:
@@ -447,6 +447,24 @@ Progress notes:
   family (src/db/).
   Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
   3,066 library tests passed.
+- 2026-03-23: Completed Milestone 4 `Database` sub-wave. Converted the entire
+  `Database` supertrait family — all 7 sub-traits (`ConversationStore`,
+  `JobStore`, `SandboxStore`, `RoutineStore`, `ToolFailureStore`,
+  `WorkspaceStore`, `SettingsStore` already done) plus `Database` itself —
+  plus both backends (PostgreSQL and libSQL across 9 impl files).
+  Pattern: each dyn-safe sub-trait uses `fn<'a>(...) -> DbFuture<'a, T>`;
+  each `Native*` sibling uses RPITIT (`-> impl Future + Send + 'a`); a
+  blanket adapter bridges the two.
+  Ambiguous internal calls resolved using fully-qualified syntax in
+  `conversations.rs` (`NativeConversationStore::touch_conversation`) and
+  `workspace.rs` (`NativeWorkspaceStore::get_document_by_path`,
+  `NativeWorkspaceStore::delete_chunks`). `connect_with_handles` in `mod.rs`
+  updated to use `NativeDatabase::run_migrations(&backend)` to resolve E0034.
+  Post-wave footprint: 0 `async-trait|async_trait` matches in `src/**/*.rs`;
+  the `async-trait` crate remains in `Cargo.toml` pending the Milestone 5
+  dependency audit.
+  Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
+  3,066 library tests passed.
 
 ## Surprises & discoveries
 
@@ -486,6 +504,12 @@ Progress notes:
   libsql, in_memory).
 - 2026-03-23: `Observer` (in `src/observability/traits.rs`) is sync-only and
   needed no migration. It was excluded from the Milestone 3 wave.
+- 2026-03-23: rust-analyzer reported E0195 false positives during the
+  `Database` sub-wave for the newly converted `sandbox.rs` impl. `cargo check`
+  confirmed these were transient mid-migration noise: once all `#[async_trait]`
+  impls of the old dyn-safe traits were replaced with `impl Native*Store` blocks,
+  the errors disappeared. `async fn` in an impl correctly satisfies a
+  `fn<'a>(...) -> impl Future<...> + 'a` RPITIT trait method.
 - 2026-03-23: `NativeChannel` methods that take multiple borrowed arguments
   (`respond(&self, msg: &IncomingMessage, ...)`, `send_status(&self, ...,
   metadata: &serde_json::Value)`, `broadcast(&self, user_id: &str, ...)`)
