@@ -61,8 +61,11 @@ jobs:
             CHANGED_FILES="$INPUT_PATHS"
           else
             # Scheduled run: find .rs files changed in the past 24 hours.
+            # -m expands merge commits so that files introduced via a
+            # recently-landed merge branch are included even when the
+            # individual side-branch commits are older than 24 hours.
             CHANGED_FILES=$(
-              git log --since="24 hours ago" \
+              git log -m --since="24 hours ago" \
                 --diff-filter=ACMR --name-only --pretty=format: HEAD \
               | grep '\.rs$' | sort -u || true
             )

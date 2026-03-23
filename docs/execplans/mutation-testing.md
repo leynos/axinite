@@ -108,8 +108,8 @@ table of survivors.
 
 ## Decision log
 
-- Decision: scope nightly runs to files changed in 24 hours using `git diff`
-  and `cargo-mutants --file`.
+- Decision: scope nightly runs to files changed in 24 hours using
+  `git log -m --since` and `cargo-mutants --file`.
   Rationale: a full-workspace mutation run would take hours. Scoping to recent
   changes makes nightly runs tractable while still surfacing regressions near
   the point of introduction.
@@ -127,6 +127,14 @@ table of survivors.
   scoped nightly run while still preventing runaway jobs. Full-workspace runs
   triggered manually may need longer, but 120 minutes is a reasonable starting
   point — the timeout can be raised once real-world durations are observed.
+  Date/Author: 2026-03-22 / plan author.
+
+- Decision: pass `-m` to `git log` when computing the changed-file list.
+  Rationale: without `-m`, `git log --name-only` omits file paths from merge
+  commits. A recently-landed merge whose side-branch commits are older than 24
+  hours would produce an empty file list and cause mutation testing to be
+  silently skipped. `-m` expands each merge commit relative to its parents,
+  ensuring that files introduced via such a merge are captured.
   Date/Author: 2026-03-22 / plan author.
 
 ## Outcomes & retrospective
@@ -220,7 +228,7 @@ Steps:
      on the current branch:
 
      ```bash
-     git log --since="24 hours ago" --diff-filter=ACMR --name-only \
+     git log -m --since="24 hours ago" --diff-filter=ACMR --name-only \
        --pretty=format: HEAD | grep '\.rs$' | sort -u
      ```
 
@@ -367,8 +375,9 @@ Quality criteria:
 - The nightly trigger uses `cron: "0 3 * * *"`.
 - The `workflow_dispatch` trigger accepts `branch` (string, default `main`)
   and `paths` (string, default empty) inputs.
-- The job computes a changed-file list from `git log --since="24 hours ago"`
-  when no explicit paths are given, and exits early when the list is empty.
+- The job computes a changed-file list from
+  `git log -m --since="24 hours ago"` when no explicit paths are given, and
+  exits early when the list is empty.
 - `cargo-mutants` is invoked with `--file` arguments restricting mutations to
   the computed file list.
 - `mutants.out/` is uploaded as a 14-day artefact named `mutants-report`.

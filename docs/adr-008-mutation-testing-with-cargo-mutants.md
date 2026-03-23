@@ -83,10 +83,13 @@ mutant reports as workflow artefacts.
    `branch` (string, default `main`) and `paths` (string, default empty).
 2. **Scoping.** When `paths` is empty, the job computes the list of `.rs`
    files changed in the past 24 hours via
-   `git log --since="24 hours ago" --diff-filter=ACMR --name-only`. Each
-   file is passed to `cargo mutants` via the `--file` flag. If no files are
-   found, the job exits early with success. When `paths` is non-empty (manual
-   dispatch), those paths are used directly, giving developers surgical control.
+   `git log -m --since="24 hours ago" --diff-filter=ACMR --name-only`. The
+   `-m` flag ensures merge commits expand their file lists relative to each
+   parent, so a recently-landed merge that brings in older side-branch commits
+   is not silently skipped. Each file is passed to `cargo mutants` via the
+   `--file` flag. If no files are found, the job exits early with success.
+   When `paths` is non-empty (manual dispatch), those paths are used directly,
+   giving developers surgical control.
 3. **Execution.** The job installs `cargo-mutants` via `taiki-e/install-action`
    and runs `cargo mutants --test-tool nextest --features test-helpers` with
    the computed `--file` arguments. The step uses `continue-on-error: true`
@@ -141,7 +144,7 @@ Manual dispatch allows wider or narrower scope on demand.
 
 - **Schedule.** Nightly at 03:00 UTC (`cron: "0 3 * * *"`).
 - **Initial scope.** Files changed in the past 24 hours on the target branch,
-  computed via `git log --since="24 hours ago"`. Widening the scope is
+  computed via `git log -m --since="24 hours ago"`. Widening the scope is
   straightforward once triage cadence is understood.
 - **Summary destination.** Surviving mutants are posted to the GitHub Actions
   job summary (`$GITHUB_STEP_SUMMARY`) for immediate visibility, supplemented
