@@ -92,6 +92,11 @@ mod tests {
     #[derive(Clone)]
     struct TestState;
 
+    #[derive(Clone)]
+    struct RouteCapturingState {
+        received_requests: Arc<Mutex<Vec<(String, Uuid, String)>>>,
+    }
+
     async fn execute_tool(
         State(_state): State<TestState>,
         Path(job_id): Path<Uuid>,
@@ -165,6 +170,204 @@ mod tests {
         assert_eq!(output.cost, Some(Decimal::new(125, 2)));
         assert_eq!(output.raw.as_deref(), Some("proxy raw output"));
         assert_eq!(output.duration, std::time::Duration::from_millis(7));
+
+        server.abort();
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn worker_remote_tool_proxy_preserves_full_tool_output_fields() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        let router = Router::new()
+            .route(REMOTE_TOOL_EXECUTE_ROUTE, post(execute_tool))
+            .with_state(TestState);
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.expect("serve router");
+        });
+
+        let job_id = Uuid::new_v4();
+        let client = Arc::new(WorkerHttpClient::new(
+            format!("http://{}", addr),
+            job_id,
+            "test-token".to_string(),
+        ));
+        let proxy = WorkerRemoteToolProxy::new(
+            ToolDefinition {
+                name: "output_fidelity_tool".to_string(),
+                description: "Tests full output preservation".to_string(),
+                parameters: serde_json::json!({"type": "object", "properties": {}}),
+            },
+            client,
+        );
+
+        let output = proxy
+            .execute(serde_json::json!({"test": "data"}), &JobContext::default())
+            .await
+            .expect("proxy execution should succeed");
+
+        assert_eq!(output.result["job_id"], job_id.to_string());
+        assert_eq!(output.result["tool_name"], "output_fidelity_tool");
+        assert_eq!(output.result["params"]["test"], "data");
+        assert_eq!(
+            output.cost,
+            Some(Decimal::new(125, 2)),
+            "proxy must preserve cost field"
+        );
+        assert_eq!(
+            output.raw.as_deref(),
+            Some("proxy raw output"),
+            "proxy must preserve raw field"
+        );
+        assert_eq!(
+            output.duration,
+            std::time::Duration::from_millis(7),
+            "proxy must preserve duration field"
+        );
+
+        server.abort();
+        let _ = server.await;
+    }
+
+    #[tokio::test]
+    async fn worker_remote_tool_proxy_preserves_full_tool_definition_fields() {
+        let complex_definition = ToolDefinition {
+            name: "complex_proxy_fixture".to_string(),
+            description: concat!(
+                "A **complex** tool for testing proxy fidelity. ",
+                "Handles UTF-8: \u{1F680}\u{1F4A1}. ",
+                "Supports `inline code` and [markdown](https://example.com). ",
+                "Special chars: <>&\"'{}[]()."
+            )
+            .to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "title": "ComplexParams",
+                "description": "Nested schema with multiple property types",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query with constraints",
+                        "minLength": 1,
+                        "maxLength": 500
+                    },
+                    "options": {
+                        "type": "object",
+                        "description": "Nested configuration object",
+                        "properties": {
+                            "limit": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 100,
+                                "default": 10
+                            },
+                            "include_metadata": {
+                                "type": "boolean",
+                                "default": false
+                            }
+                        },
+                        "required": ["limit"]
+                    }
+                },
+                "required": ["query", "options"]
+            }),
+        };
+
+        let client = Arc::new(WorkerHttpClient::new(
+            "http://127.0.0.1:0".to_string(),
+            Uuid::new_v4(),
+            "test-token".to_string(),
+        ));
+        let proxy = WorkerRemoteToolProxy::new(complex_definition.clone(), client);
+
+        let reconstructed = ToolDefinition {
+            name: proxy.name().to_string(),
+            description: proxy.description().to_string(),
+            parameters: proxy.parameters_schema(),
+        };
+
+        assert_eq!(
+            reconstructed, complex_definition,
+            "proxy-reported fields must reconstruct the original definition exactly"
+        );
+    }
+
+    async fn execute_tool_with_route_capture(
+        State(state): State<RouteCapturingState>,
+        Path(job_id): Path<Uuid>,
+        axum::extract::OriginalUri(original_uri): axum::extract::OriginalUri,
+        Json(req): Json<RemoteToolExecutionRequest>,
+    ) -> Json<RemoteToolExecutionResponse> {
+        state.received_requests.lock().await.push((
+            original_uri.path().to_string(),
+            job_id,
+            req.tool_name.clone(),
+        ));
+        Json(RemoteToolExecutionResponse {
+            output: ToolOutput::success(
+                serde_json::json!({"executed": true}),
+                std::time::Duration::from_millis(5),
+            ),
+        })
+    }
+
+    #[tokio::test]
+    async fn worker_remote_tool_proxy_routes_execution_through_orchestrator_endpoint() {
+        let state = RouteCapturingState {
+            received_requests: Arc::new(Mutex::new(Vec::new())),
+        };
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        let router = Router::new()
+            .route(
+                REMOTE_TOOL_EXECUTE_ROUTE,
+                post(execute_tool_with_route_capture),
+            )
+            .with_state(state.clone());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.expect("serve router");
+        });
+
+        let job_id = Uuid::new_v4();
+        let client = Arc::new(WorkerHttpClient::new(
+            format!("http://{}", addr),
+            job_id,
+            "test-token".to_string(),
+        ));
+        let proxy = WorkerRemoteToolProxy::new(
+            ToolDefinition {
+                name: "route_test_tool".to_string(),
+                description: "Tests route path".to_string(),
+                parameters: serde_json::json!({"type": "object", "properties": {}}),
+            },
+            client,
+        );
+
+        proxy
+            .execute(serde_json::json!({}), &JobContext::default())
+            .await
+            .expect("proxy execution should succeed");
+
+        let requests = state.received_requests.lock().await;
+        assert_eq!(
+            requests.len(),
+            1,
+            "proxy must send exactly one request to the orchestrator"
+        );
+
+        let (route_path, received_job_id, tool_name) = &requests[0];
+        assert_eq!(
+            route_path,
+            format!("/worker/{}/tools/execute", job_id),
+            "proxy must route execution through the correct orchestrator endpoint"
+        );
+        assert_eq!(received_job_id, &job_id);
+        assert_eq!(tool_name, "route_test_tool");
 
         server.abort();
         let _ = server.await;

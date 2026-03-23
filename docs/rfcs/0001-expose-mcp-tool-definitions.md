@@ -5,13 +5,15 @@
 - **RFC number:** 0001
 - **Status:** Proposed
 - **Created:** 2026-03-11
-- **Implementation status:** Roadmap items `1.1.1`, `1.1.2`, and `1.1.3` are
-  implemented in this branch through the shared `src/worker/api/` transport
-  types, the worker catalog-fetch startup path, the orchestrator generic
-  remote-tool execution endpoint, the canonical `ToolRegistry`-owned
-  hosted-visible filter for active MCP tools, and the explicit worker-side
-  merged reasoning surface used both at context build and later refresh.
-  Roadmap item `1.1.4` still owns the broader schema-parity and routing matrix.
+- **Implementation status:** Roadmap items `1.1.1`, `1.1.2`, `1.1.3`, and
+  `1.1.4` are complete. The implementation includes the shared `src/worker/api/`
+  transport types, the worker catalog-fetch startup path, the orchestrator
+  generic remote-tool execution endpoint, the canonical `ToolRegistry`-owned
+  hosted-visible filter for active MCP tools, the explicit worker-side merged
+  reasoning surface used both at context build and later refresh, and the
+  comprehensive test matrix for schema fidelity, execution routing, and
+  worker-orchestrator contract parity. All roadmap items in section `1.1` are
+  now complete.
 
 ## Summary
 

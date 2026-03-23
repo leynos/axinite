@@ -330,3 +330,117 @@ async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools()
     let _ = server.await;
     Ok(())
 }
+
+fn complex_orchestrator_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "complex_fidelity_fixture".to_string(),
+        description: concat!(
+            "A **complex** tool for end-to-end fidelity testing. ",
+            "Handles UTF-8: \u{1F680}\u{1F4A1}. ",
+            "Supports `inline code` and [markdown](https://example.com). ",
+            "Special chars: <>&\"'{}[]()."
+        )
+        .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "title": "ComplexParams",
+            "description": "Nested schema with multiple property types",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query with constraints",
+                    "minLength": 1,
+                    "maxLength": 500
+                },
+                "options": {
+                    "type": "object",
+                    "description": "Nested configuration object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10
+                        },
+                        "include_metadata": {
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "filters": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": ["active", "archived", "draft"]
+                            }
+                        }
+                    },
+                    "required": ["limit"]
+                },
+                "callback_url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Optional webhook URL"
+                }
+            },
+            "required": ["query", "options"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+async fn remote_tool_catalog_with_complex_tool(
+    State(_state): State<TestState>,
+    Path(_job_id): Path<Uuid>,
+) -> Json<RemoteToolCatalogResponse> {
+    Json(RemoteToolCatalogResponse {
+        tools: vec![complex_orchestrator_tool_definition()],
+        toolset_instructions: vec![],
+        catalog_version: 99,
+    })
+}
+
+#[rstest]
+#[tokio::test]
+async fn hosted_worker_proxy_definition_matches_orchestrator_canonical_definition()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (base_url, server) = spawn_test_server(remote_tool_catalog_with_complex_tool).await?;
+
+    let client = Arc::new(WorkerHttpClient::new(
+        base_url.clone(),
+        Uuid::nil(),
+        "test".to_string(),
+    ));
+    let runtime = WorkerRuntime::from_client(
+        WorkerConfig {
+            job_id: Uuid::nil(),
+            orchestrator_url: base_url,
+            ..WorkerConfig::default()
+        },
+        client,
+    );
+
+    runtime.register_remote_tools().await?;
+
+    let proxy_tool = runtime
+        .tools
+        .get("complex_fidelity_fixture")
+        .await
+        .expect("complex tool proxy should be registered");
+
+    let proxy_definition = ToolDefinition {
+        name: proxy_tool.name().to_string(),
+        description: proxy_tool.description().to_string(),
+        parameters: proxy_tool.parameters_schema(),
+    };
+
+    let expected = complex_orchestrator_tool_definition();
+
+    assert_eq!(
+        proxy_definition, expected,
+        "worker-advertised proxy definition must match orchestrator canonical definition exactly"
+    );
+
+    server.abort();
+    let _ = server.await;
+    Ok(())
+}

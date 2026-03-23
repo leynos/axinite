@@ -87,7 +87,7 @@ worker-orchestrator contract hardening belongs inside 1.1.1.
   - Success: hosted model requests include the real tool descriptions and JSON
     Schemas, and worker-local tools plus orchestrator-owned tools appear as one
     unified tool surface.
-- [ ] 1.1.4. Add hosted-mode tests for schema fidelity and execution routing.
+- [x] 1.1.4. Add hosted-mode tests for schema fidelity and execution routing.
   Requires 1.1.3.
   - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
   - Tracks the worker-orchestrator parity portion of

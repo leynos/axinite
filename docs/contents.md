@@ -119,6 +119,9 @@
   - [Merge remote Model Context Protocol (MCP) tool definitions into the worker reasoning context](execplans/1-1-3-merge-mcp-defs-into-worker-reasoning-context.md)
     plans roadmap item `1.1.3` for the worker-side merged hosted-tool
     reasoning surface.
+  - [Add hosted-mode tests for schema fidelity and execution routing](execplans/1-1-4-tests-for-schema-fidelity-and-execution-routing.md)
+    plans roadmap item `1.1.4` for the test matrix that locks down MCP tool
+    contract fidelity and execution routing guarantees.
 
 ## RFCs
 
