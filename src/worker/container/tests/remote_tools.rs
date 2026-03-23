@@ -111,26 +111,17 @@ async fn build_runtime_with_remote_tools(base_url: &str) -> (WorkerRuntime, Arc<
 #[rstest]
 #[tokio::test]
 async fn hosted_worker_remote_tool_catalog_registers_remote_tools() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind listener");
-    let addr = listener.local_addr().expect("listener addr");
-    let router = Router::new()
-        .route(REMOTE_TOOL_CATALOG_ROUTE, get(remote_tool_catalog))
-        .with_state(TestState);
-    let server = tokio::spawn(async move {
-        axum::serve(listener, router).await.expect("serve router");
-    });
+    let (base_url, server) = spawn_hosted_guidance_catalog_server().await;
 
     let client = Arc::new(WorkerHttpClient::new(
-        format!("http://{}", addr),
+        base_url.clone(),
         Uuid::nil(),
         "test".to_string(),
     ));
     let runtime = WorkerRuntime::from_client(
         WorkerConfig {
             job_id: Uuid::nil(),
-            orchestrator_url: format!("http://{}", addr),
+            orchestrator_url: base_url,
             ..WorkerConfig::default()
         },
         client,
@@ -141,13 +132,14 @@ async fn hosted_worker_remote_tool_catalog_registers_remote_tools() {
         .await
         .expect("register hosted remote tools");
 
-    let names: Vec<String> = runtime
+    let mut names: Vec<String> = runtime
         .tools
         .tool_definitions()
         .await
         .into_iter()
         .map(|def| def.name)
         .collect();
+    names.sort();
 
     assert_eq!(names, expected_merged_tool_names());
 
@@ -191,14 +183,15 @@ async fn worker_runtime_build_reasoning_context_merges_local_and_remote_tools() 
             .contains("Prefer hosted remote tools for external systems."),
         "reasoning context should include the preserved orchestrator guidance"
     );
-    assert_eq!(
-        reason_ctx
-            .available_tools
-            .iter()
-            .map(|tool| tool.name.clone())
-            .collect::<Vec<_>>(),
-        expected_merged_tool_names()
-    );
+
+    let mut actual_tool_names: Vec<_> = reason_ctx
+        .available_tools
+        .iter()
+        .map(|tool| tool.name.clone())
+        .collect();
+    actual_tool_names.sort();
+
+    assert_eq!(actual_tool_names, expected_merged_tool_names());
 
     let remote_tool = reason_ctx
         .available_tools
@@ -252,14 +245,14 @@ async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance() 
         "before_llm_call should not terminate the loop"
     );
 
-    assert_eq!(
-        reason_ctx
-            .available_tools
-            .iter()
-            .map(|tool| tool.name.clone())
-            .collect::<Vec<_>>(),
-        expected_merged_tool_names()
-    );
+    let mut actual_tool_names: Vec<_> = reason_ctx
+        .available_tools
+        .iter()
+        .map(|tool| tool.name.clone())
+        .collect();
+    actual_tool_names.sort();
+
+    assert_eq!(actual_tool_names, expected_merged_tool_names());
     assert_eq!(
         reason_ctx
             .messages
