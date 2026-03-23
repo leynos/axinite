@@ -148,6 +148,17 @@ Re-audit snapshot as of 2026-03-21 after Phase 3 expansion:
   with ADR 006's dual-trait pattern while preserving
   `Arc<dyn SoftwareBuilder>` consumers in self-repair and the build tool.
 
+Re-audit snapshot as of 2026-03-22 during ADR 006 broad rollout execution:
+
+- `LoopDelegate` in `src/agent/agentic_loop.rs` now uses ADR 006's dual-trait
+  pattern while preserving `&dyn LoopDelegate` call sites in the shared
+  agentic loop and the chat, job, and container delegates.
+- `SelfRepair` in `src/agent/self_repair.rs` now uses ADR 006's dual-trait
+  pattern while preserving `Arc<dyn SelfRepair>` consumers in the repair task.
+- `TaskHandler` in `src/agent/task.rs` now uses ADR 006's dual-trait pattern
+  while preserving `Arc<dyn TaskHandler>` consumers in scheduler background
+  tasks.
+
 ### Phase 2: Migrate concrete-only traits (batch by module)
 
 For each module, in separate commits:
@@ -184,7 +195,6 @@ Remaining required `async-trait` surfaces as of 2026-03-22:
   still requires either ADR 006 migration work or broader architectural
   changes.
 - Internal dyn-backed traits that have not yet been converted to ADR 006:
-  `LoopDelegate`, `SelfRepair`, `TaskHandler`,
   `ChannelSecretUpdater`, `HttpInterceptor`, `CredentialResolver`, and
   `WasmToolStore`. Each still has live `&dyn`, `Arc<dyn>`, or other
   object-safe consumers in the current tree, including `&dyn
@@ -212,7 +222,7 @@ initial safe batch and ADR 006 pilots.
 | ---------- | ---------------- | -------------------- | ----------- |
 | Concrete-only traits (`WasmChannelStore`, `SuccessEvaluator`) | Completed | No dyn-backed consumers were found, so native async traits could replace `#[async_trait]` directly. | No follow-up needed unless new trait-object usage appears. |
 | Narrow dyn-backed pilots (`McpTransport`, `SettingsStore`, `SoftwareBuilder`) | Completed under ADR 006 | These families needed object-safe consumers to stay intact, so the dual-trait pattern replaced `#[async_trait]` while preserving existing dyn call sites. | Use these as the reference shape for future dyn-backed migrations. |
-| Remaining dyn-backed families (`Database`, `Channel`, `Tool`, `LlmProvider`, `WasmToolStore`, and smaller internal traits) | Still blocked from direct migration | Live `Arc<dyn Trait>`, `Box<dyn Trait>`, or `&dyn Trait` usage still makes native async traits alone non-object-safe on Rust 1.92. | Tackle family by family with ADR 006 or broader architectural refactors. |
+| Remaining dyn-backed families (`Database`, `Channel`, `Tool`, `LlmProvider`, `WasmToolStore`, and smaller internal traits) | Still blocked from direct migration | Live `Arc<dyn Trait>`, `Box<dyn Trait>`, or `&dyn Trait` usage still makes native async traits alone non-object-safe on Rust 1.92. | Continue with the remaining internal traits first (`ChannelSecretUpdater`, `HttpInterceptor`, `CredentialResolver`, `WasmToolStore`), then move to the infrastructure and core families. |
 
 The currently verified migration scope is **5 of 158 uses**. More may
 become migratable later, but only after removing trait-object usage or

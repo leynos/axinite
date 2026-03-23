@@ -265,6 +265,60 @@ no production trait family still requires it.
 Observable result: the docs accurately describe the new migration frontier, and
 the dependency state matches the code.
 
+## Approval gates
+
+Each rollout wave is a stop/go checkpoint. Do not start the next milestone
+until the current milestone has both the required approvals and the required
+evidence artefacts recorded in the progress notes or linked logs.
+
+Required evidence artefacts for every milestone:
+
+1. the baseline inventory log for the touched trait family or families,
+   including the starting `rg -n "async-trait|async_trait" src` footprint;
+2. `make check-fmt`, `make typecheck`, `make lint`, and `make test` logs saved
+   through `tee`;
+3. at least one `cargo check --timings` log or generated timing report for the
+   wave; and
+4. the post-wave `rg -n "async-trait|async_trait" src` delta showing what
+   moved.
+
+Milestone-specific approval gates:
+
+1. Milestone 1 requires approval from the rollout owner and the documentation
+   owner. The stop/go decision is whether the baseline logs, timing sample, and
+   refreshed migration execplan are all present and internally consistent.
+2. Milestone 2 requires approval from the rollout owner and the owning
+   subsystem maintainer for each touched family. The stop/go decision is
+   whether the narrow internal traits are migrated with the required evidence
+   artefacts and no unresolved behavioural regression in their focused proving
+   gates.
+3. Milestone 3 requires approval from the rollout owner, Architecture, and the
+   maintainer responsible for each extension seam family being migrated. The
+   stop/go decision is whether the extension seams remain dyn-friendly, the
+   evidence artefacts are complete, and no registry or fixture wiring drift is
+   left open.
+4. Milestone 4 requires approval from the rollout owner and Architecture
+   before each sub-wave starts. `Channel`, `Tool`, and `LlmProvider` may begin
+   only when the previous milestone has complete evidence artefacts and fresh
+   subsystem inventories for the selected family.
+5. Milestone 4 `Database` sub-wave has the strictest gate. It requires advance
+   approval from the Architecture, QA, and Platform leads, plus evidence items
+   1 to 4 above recorded for the immediately preceding sub-wave. Do not start
+   the database migration until backend parity risks, proving gates, and timing
+   expectations have all been reviewed explicitly.
+6. Milestone 5 requires approval from the rollout owner and the documentation
+   owner. The stop/go decision is whether the docs, dependency audit, and
+   remaining-family inventory all match the latest verified code state.
+
+Final sign-off before removing `async-trait` from `Cargo.toml`:
+
+1. record a fresh whole-tree audit with `rg -n "async-trait|async_trait" src`
+   and confirm that no production family still needs the crate;
+2. rerun `make check-fmt`, `make typecheck`, `make lint`, and `make test`,
+   saving each output through `tee`; and
+3. do not remove the dependency until those fresh repo gates succeed and the
+   audit evidence is attached to the progress notes.
+
 ## Validation and evidence
 
 Every wave should capture the same evidence pattern so a novice can tell
