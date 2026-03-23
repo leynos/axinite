@@ -49,70 +49,84 @@ impl HotReloadManager {
     /// Returns early on any error. Errors are logged but not panicked.
     pub async fn perform_reload(&self) -> Result<(), ReloadError> {
         // Step 1: Inject secrets into the environment overlay
-        if let Some(ref injector) = self.secret_injector
-            && let Err(e) = injector.inject().await
-        {
-            tracing::error!("Secret injection failed during reload: {}", e);
-            return Err(e.into());
-        }
+        self.try_inject_secrets().await?;
 
         // Step 2: Load new configuration
-        let new_config = match self.config_loader.load().await {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!("Config reload failed: {}", e);
-                return Err(e.into());
-            }
-        };
+        let new_config = self.load_new_config().await?;
 
         // Step 3: Parse HTTP config and restart listener if address changed
-        let new_http = match new_config.channels.http {
-            Some(c) => c,
-            None => {
-                tracing::warn!("HTTP channel no longer configured, skipping listener restart");
-                // No HTTP config means no listener to restart or secrets to update
-                return Ok(());
-            }
+        let Some(new_http) = new_config.channels.http else {
+            tracing::warn!("HTTP channel no longer configured, skipping listener restart");
+            // No HTTP config means no listener to restart or secrets to update
+            return Ok(());
         };
 
-        let new_addr: std::net::SocketAddr =
-            match format!("{}:{}", new_http.host, new_http.port).parse() {
-                Ok(a) => a,
-                Err(e) => {
-                    tracing::error!("Invalid socket address in reloaded config: {}", e);
-                    return Err(crate::error::ConfigError::InvalidValue {
-                        key: "http.host:http.port".to_string(),
-                        message: format!("Failed to parse socket address: {}", e),
-                    }
-                    .into());
-                }
-            };
-
-        // Check if listener restart is needed
-        let restart_needed = if let Some(ref controller) = self.listener_controller {
-            let old_addr = controller.current_addr();
-            old_addr != new_addr
-        } else {
-            false
-        };
-
-        if restart_needed {
-            if let Some(ref controller) = self.listener_controller {
-                let old_addr = controller.current_addr();
-                tracing::info!("Restarting HTTP listener: {} -> {}", old_addr, new_addr);
-                if let Err(e) = controller.restart_with_addr(new_addr).await {
-                    tracing::error!("Listener restart failed: {}", e);
-                    return Err(e.into());
-                }
-                tracing::info!("HTTP listener restarted on {}", new_addr);
-            }
-        } else {
-            tracing::debug!("HTTP listener address unchanged, skipping restart");
-        }
+        let new_addr = Self::parse_http_addr(&new_http)?;
+        self.maybe_restart_listener(new_addr).await?;
 
         // Step 4: Update channel secrets
+        self.update_channel_secrets(&new_http).await;
+
+        Ok(())
+    }
+
+    async fn try_inject_secrets(&self) -> Result<(), ReloadError> {
+        if let Some(ref injector) = self.secret_injector {
+            injector.inject().await.map_err(|e| {
+                tracing::error!("Secret injection failed during reload: {}", e);
+                e
+            })?;
+        }
+        Ok(())
+    }
+
+    async fn load_new_config(&self) -> Result<crate::config::Config, ReloadError> {
+        self.config_loader.load().await.map_err(|e| {
+            tracing::error!("Config reload failed: {}", e);
+            e.into()
+        })
+    }
+
+    fn parse_http_addr(
+        http: &crate::config::HttpConfig,
+    ) -> Result<std::net::SocketAddr, ReloadError> {
+        format!("{}:{}", http.host, http.port).parse().map_err(|e| {
+            tracing::error!("Invalid socket address in reloaded config: {}", e);
+            crate::error::ConfigError::InvalidValue {
+                key: "http.host:http.port".to_string(),
+                message: format!("Failed to parse socket address: {}", e),
+            }
+            .into()
+        })
+    }
+
+    async fn maybe_restart_listener(
+        &self,
+        new_addr: std::net::SocketAddr,
+    ) -> Result<(), ReloadError> {
+        let Some(ref controller) = self.listener_controller else {
+            return Ok(());
+        };
+
+        let old_addr = controller.current_addr();
+        if old_addr == new_addr {
+            tracing::debug!("HTTP listener address unchanged, skipping restart");
+            return Ok(());
+        }
+
+        tracing::info!("Restarting HTTP listener: {} -> {}", old_addr, new_addr);
+        controller.restart_with_addr(new_addr).await.map_err(|e| {
+            tracing::error!("Listener restart failed: {}", e);
+            e
+        })?;
+        tracing::info!("HTTP listener restarted on {}", new_addr);
+
+        Ok(())
+    }
+
+    async fn update_channel_secrets(&self, http: &crate::config::HttpConfig) {
         use secrecy::{ExposeSecret, SecretString};
-        let new_secret = new_http
+        let new_secret = http
             .webhook_secret
             .as_ref()
             .map(|s| SecretString::from(s.expose_secret().to_string()));
@@ -120,8 +134,6 @@ impl HotReloadManager {
         for updater in &self.secret_updaters {
             updater.update_secret(new_secret.clone()).await;
         }
-
-        Ok(())
     }
 }
 
