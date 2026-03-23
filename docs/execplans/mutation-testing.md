@@ -47,7 +47,7 @@ table of survivors.
 ## Tolerances (exception triggers)
 
 - Scope: the implementation must not touch more than 3 files (the workflow
-  YAML, the ADR update, and the contents file if needed). If more files are
+  YAML (YAML Ain't Markup Language), the ADR update, and the contents file if needed). If more files are
   required, stop and escalate.
 - Interface: no existing workflow or Makefile target may be modified.
 - Dependencies: no new runtime dependency on the Rust codebase. `cargo-mutants`

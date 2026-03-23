@@ -133,7 +133,7 @@ Manual dispatch allows wider or narrower scope on demand.
 
 - **Compute cost.** Mutation testing rebuilds and re-tests the project for
   every mutant. A full workspace run may take hours. The scheduled cadence and
-  optional package scoping mitigate this.
+  optional file scoping mitigate this.
 - **Flaky tests.** A test that fails intermittently may cause a mutant to
   appear caught or missed inconsistently. The existing test suite should be
   stabilized independently.
