@@ -418,6 +418,35 @@ Progress notes:
   and `Database` family (src/db/).
   Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
   3,066 library tests passed.
+- 2026-03-23: Completed Milestone 4 `LlmProvider` sub-wave. Introduced
+  `NativeLlmProvider` as the RPITIT sibling of the dyn-safe `LlmProvider`
+  boundary. Added `LlmFuture<'a, T>` alias and blanket adapter. Converted
+  23 `#[async_trait] impl LlmProvider for` blocks across 15 files in
+  `src/llm/`, `src/worker/`, `src/agent/`, `src/testing/`, and
+  `tests/support/`. Added default impls for `list_models` and `model_metadata`
+  so test stubs need not implement them.
+  Post-wave footprint: 33 matched lines for `async-trait|async_trait` in
+  `src/`; 22 remaining `#[async_trait]` attribute usages, all in `Channel`
+  family (src/channels/) and `Database` family (src/db/).
+  Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
+  3,066 library tests passed.
+- 2026-03-23: Completed Milestone 4 `Channel` sub-wave. Introduced
+  `NativeChannel` as the RPITIT sibling of the dyn-safe `Channel` boundary.
+  Added `ChannelFuture<'a, T>` alias and blanket adapter. Multi-reference
+  methods (`respond`, `send_status`, `broadcast`) required explicit `'a`
+  lifetime bounds (not just `'_`) to satisfy E0477 when futures capture both
+  `&self` and a second borrowed argument. Default `async { Ok(()) }` bodies
+  provided for `send_status`, `broadcast`, and `shutdown`. Converted 9
+  `#[async_trait] impl Channel for` blocks across `src/channels/`,
+  `src/testing/`, and `tests/support/`:
+  `HttpChannel`, `ReplChannel`, `SignalChannel`, `WasmChannel`,
+  `SharedWasmChannel`, `RelayChannel`, `GatewayChannel`, `StubChannel`,
+  `TestChannel`, `TestChannelHandle`.
+  Post-wave footprint: 33 matched lines for `async-trait|async_trait` in
+  `src/`; 22 remaining `#[async_trait]` attribute usages, all in `Database`
+  family (src/db/).
+  Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
+  3,066 library tests passed.
 
 ## Surprises & discoveries
 
@@ -457,6 +486,15 @@ Progress notes:
   libsql, in_memory).
 - 2026-03-23: `Observer` (in `src/observability/traits.rs`) is sync-only and
   needed no migration. It was excluded from the Milestone 3 wave.
+- 2026-03-23: `NativeChannel` methods that take multiple borrowed arguments
+  (`respond(&self, msg: &IncomingMessage, ...)`, `send_status(&self, ...,
+  metadata: &serde_json::Value)`, `broadcast(&self, user_id: &str, ...)`)
+  required explicit `'a` lifetime annotations on both `&'a self` and the
+  second reference parameter, with the return changed to
+  `impl Future<...> + Send + 'a`. Using the shorthand `'_` only captures
+  `&self`, which triggered E0477 because the future also captures the second
+  borrow. The same fix applies whenever a `NativeTrait` method takes more than
+  one borrowed argument.
 
 ## Decision log
 
