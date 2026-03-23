@@ -404,6 +404,20 @@ Progress notes:
   not-yet-migrated families (`Channel`, `Tool`, `LlmProvider`, `Database`).
   Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
   3,066 library tests passed.
+- 2026-03-23: Completed Milestone 4 `Tool` sub-wave. Introduced
+  `NativeTool` as the `impl Future` sibling of the dyn-safe `Tool` boundary.
+  Added `ToolFuture<'a, T>` alias for the boxed future so `Arc<dyn Tool>`
+  call sites need no changes. Converted all 64 `#[async_trait] impl Tool for`
+  blocks across 36 files plus the one test-double in `tests/e2e_traces/`.
+  Fixed E0034 ambiguous calls in `build_loop.rs`, `restart.rs`, `tool/tests.rs`,
+  and `registry/tests.rs` using fully-qualified `NativeTool::method(...)` syntax.
+  Re-exported `NativeTool` and `ToolFuture` from `tools/mod.rs`.
+  Post-wave footprint: 85 matched lines for `async-trait|async_trait` in
+  `src/`; 51 remaining `#[async_trait]` attribute usages, all in
+  `LlmProvider` family (src/llm/), `Channel` family (src/channels/),
+  and `Database` family (src/db/).
+  Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
+  3,066 library tests passed.
 
 ## Surprises & discoveries
 
