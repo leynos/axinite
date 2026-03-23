@@ -258,68 +258,39 @@ async fn create_job_in_state(
     Ok(is_active)
 }
 
+#[rstest]
+#[case(None, true, "pending_job")]
+#[case(Some(JobState::InProgress), true, "in_progress_job")]
+#[case(Some(JobState::Completed), true, "completed_job")]
+#[case(Some(JobState::Failed), false, "failed_job")]
+#[case(Some(JobState::Cancelled), false, "cancelled_job")]
 #[tokio::test]
-async fn reaper_cleanup_decision_matrix() -> Result<()> {
+async fn reaper_cleanup_decision_matrix(
+    #[case] state: Option<JobState>,
+    #[case] expected_active: bool,
+    #[case] name: &str,
+) -> Result<()> {
     let ctx_mgr = Arc::new(ContextManager::new(5));
 
-    assert!(
-        create_job_in_state(
-            &ctx_mgr,
-            "reaper_cleanup_decision_matrix job1",
-            "test1",
-            None,
-        )
-        .await?,
-        "Pending job is active"
-    );
-    assert!(
-        create_job_in_state(
-            &ctx_mgr,
-            "reaper_cleanup_decision_matrix job2",
-            "test2",
-            Some(JobState::InProgress),
-        )
-        .await?,
-        "InProgress job is active"
-    );
-    assert!(
-        create_job_in_state(
-            &ctx_mgr,
-            "reaper_cleanup_decision_matrix job3",
-            "test3",
-            Some(JobState::Completed),
-        )
-        .await?,
-        "Completed is still active"
-    );
-    assert!(
-        !create_job_in_state(
-            &ctx_mgr,
-            "reaper_cleanup_decision_matrix job4",
-            "test4",
-            Some(JobState::Failed),
-        )
-        .await?,
-        "Failed job is terminal"
-    );
-    assert!(
-        !create_job_in_state(
-            &ctx_mgr,
-            "reaper_cleanup_decision_matrix job5",
-            "test5",
-            Some(JobState::Cancelled),
-        )
-        .await?,
-        "Cancelled job is terminal"
+    let result = create_job_in_state(&ctx_mgr, name, "test", state).await?;
+    assert_eq!(
+        result, expected_active,
+        "Job state {:?} should have is_active() == {}",
+        state, expected_active
     );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn missing_job_is_treated_as_inactive() {
+    let ctx_mgr = Arc::new(ContextManager::new(5));
     let missing_job = Uuid::new_v4();
     let is_active = match ctx_mgr.get_context(missing_job).await {
         Ok(ctx) => ctx.state.is_active(),
         Err(_) => false,
     };
     assert!(!is_active, "Missing job should be treated as inactive");
-    Ok(())
 }
 
 #[cfg(all(test, feature = "docker", not(target_env = "msvc")))]
