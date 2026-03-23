@@ -15,7 +15,7 @@ log of surviving mutants as a downloadable GitHub Actions artefact. Developers
 can also trigger the workflow manually on any branch, supplying an explicit list
 of source paths to mutate.
 
-The surviving-mutant log is a concrete, prioritised backlog: each entry names a
+The surviving-mutant log is a concrete, prioritized backlog: each entry names a
 file, function, and mutation that no test caught, giving developers an immediate
 target for a new or stronger assertion.
 
@@ -131,7 +131,7 @@ table of survivors.
 
 - Decision: pass `-m` to `git log` when computing the changed-file list.
   Rationale: without `-m`, `git log --name-only` omits file paths from merge
-  commits. A recently-landed merge whose side-branch commits are older than 24
+  commits. A recently landed merge whose side-branch commits are older than 24
   hours would produce an empty file list and cause mutation testing to be
   silently skipped. `-m` expands each merge commit relative to its parents,
   ensuring that files introduced via such a merge are captured.

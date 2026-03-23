@@ -56,7 +56,7 @@ maintenance overhead and couples production code to a testing tool.
 
 ### Option C: Universal mutation frameworks (e.g. mutmut, Stryker)
 
-These tools target Python and JavaScript/TypeScript respectively. Adapting them
+These tools target Python and JavaScript/TypeScript, respectively. Adapting them
 to a Rust workspace would require custom integration work with no upstream
 support.
 
@@ -85,7 +85,7 @@ mutant reports as workflow artefacts.
    files changed in the past 24 hours via
    `git log -m --since="24 hours ago" --diff-filter=ACMR --name-only`. The
    `-m` flag ensures merge commits expand their file lists relative to each
-   parent, so a recently-landed merge that brings in older side-branch commits
+   parent, so a recently landed merge that brings in older side-branch commits
    is not silently skipped. Files under `tools-src/` and `channels-src/` are
    then excluded because those crates use separate manifests and are not
    workspace members; `cargo-mutants` operates on workspace members only. Each
@@ -137,7 +137,7 @@ Manual dispatch allows wider or narrower scope on demand.
   optional package scoping mitigate this.
 - **Flaky tests.** A test that fails intermittently may cause a mutant to
   appear caught or missed inconsistently. The existing test suite should be
-  stabilised independently.
+  stabilized independently.
 - **Equivalent mutants.** Some mutations produce semantically identical
   behaviour (e.g. replacing `>=` with `>` when the boundary value is never
   reached). These will appear as survivors and must be triaged manually.
