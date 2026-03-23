@@ -185,8 +185,7 @@ fn extract_content(event: &HookEvent) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hooks::hook::{HookFailureMode, HookPoint};
-    use async_trait::async_trait;
+    use crate::hooks::hook::{HookFailureMode, HookPoint, NativeHook};
     use std::time::Duration;
 
     /// A test hook that always returns ok.
@@ -195,18 +194,17 @@ mod tests {
         points: Vec<HookPoint>,
     }
 
-    #[async_trait]
-    impl Hook for PassthroughHook {
+    impl NativeHook for PassthroughHook {
         fn name(&self) -> &str {
             &self.name
         }
         fn hook_points(&self) -> &[HookPoint] {
             &self.points
         }
-        async fn execute(
-            &self,
-            _event: &HookEvent,
-            _ctx: &HookContext,
+        async fn execute<'a>(
+            &'a self,
+            _event: &'a HookEvent,
+            _ctx: &'a HookContext,
         ) -> Result<HookOutcome, HookError> {
             Ok(HookOutcome::ok())
         }
@@ -219,18 +217,17 @@ mod tests {
         points: Vec<HookPoint>,
     }
 
-    #[async_trait]
-    impl Hook for ModifyHook {
+    impl NativeHook for ModifyHook {
         fn name(&self) -> &str {
             &self.name
         }
         fn hook_points(&self) -> &[HookPoint] {
             &self.points
         }
-        async fn execute(
-            &self,
-            event: &HookEvent,
-            _ctx: &HookContext,
+        async fn execute<'a>(
+            &'a self,
+            event: &'a HookEvent,
+            _ctx: &'a HookContext,
         ) -> Result<HookOutcome, HookError> {
             let content = extract_content(event);
             Ok(HookOutcome::modify(format!("{}{}", content, self.suffix)))
@@ -244,18 +241,17 @@ mod tests {
         points: Vec<HookPoint>,
     }
 
-    #[async_trait]
-    impl Hook for RejectHook {
+    impl NativeHook for RejectHook {
         fn name(&self) -> &str {
             &self.name
         }
         fn hook_points(&self) -> &[HookPoint] {
             &self.points
         }
-        async fn execute(
-            &self,
-            _event: &HookEvent,
-            _ctx: &HookContext,
+        async fn execute<'a>(
+            &'a self,
+            _event: &'a HookEvent,
+            _ctx: &'a HookContext,
         ) -> Result<HookOutcome, HookError> {
             Ok(HookOutcome::reject(&self.reason))
         }
@@ -268,8 +264,7 @@ mod tests {
         failure_mode: HookFailureMode,
     }
 
-    #[async_trait]
-    impl Hook for ErrorHook {
+    impl NativeHook for ErrorHook {
         fn name(&self) -> &str {
             &self.name
         }
@@ -279,10 +274,10 @@ mod tests {
         fn failure_mode(&self) -> HookFailureMode {
             self.failure_mode
         }
-        async fn execute(
-            &self,
-            _event: &HookEvent,
-            _ctx: &HookContext,
+        async fn execute<'a>(
+            &'a self,
+            _event: &'a HookEvent,
+            _ctx: &'a HookContext,
         ) -> Result<HookOutcome, HookError> {
             Err(HookError::ExecutionFailed {
                 reason: "test error".into(),
@@ -297,8 +292,7 @@ mod tests {
         failure_mode: HookFailureMode,
     }
 
-    #[async_trait]
-    impl Hook for SlowHook {
+    impl NativeHook for SlowHook {
         fn name(&self) -> &str {
             &self.name
         }
@@ -311,10 +305,10 @@ mod tests {
         fn timeout(&self) -> Duration {
             Duration::from_millis(50)
         }
-        async fn execute(
-            &self,
-            _event: &HookEvent,
-            _ctx: &HookContext,
+        async fn execute<'a>(
+            &'a self,
+            _event: &'a HookEvent,
+            _ctx: &'a HookContext,
         ) -> Result<HookOutcome, HookError> {
             tokio::time::sleep(Duration::from_millis(200)).await;
             Ok(HookOutcome::ok())

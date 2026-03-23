@@ -847,9 +847,11 @@ mod tests {
         };
 
         // before_request should return None (pass through)
-        assert!(NativeHttpInterceptor::before_request(&interceptor, &req)
-            .await
-            .is_none());
+        assert!(
+            NativeHttpInterceptor::before_request(&interceptor, &req)
+                .await
+                .is_none()
+        );
 
         // after_response records the exchange
         let resp = HttpExchangeResponse {
