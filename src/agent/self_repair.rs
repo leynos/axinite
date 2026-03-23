@@ -1,9 +1,10 @@
 //! Self-repair for stuck jobs and broken tools.
 
+use core::future::Future;
+use core::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
@@ -48,20 +49,76 @@ pub enum RepairResult {
     ManualRequired { message: String },
 }
 
+/// Boxed future used at the dyn self-repair boundary.
+pub type SelfRepairFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Trait for self-repair implementations.
-#[async_trait]
 pub trait SelfRepair: Send + Sync {
     /// Detect stuck jobs.
-    async fn detect_stuck_jobs(&self) -> Vec<StuckJob>;
+    fn detect_stuck_jobs(&self) -> SelfRepairFuture<'_, Vec<StuckJob>>;
 
     /// Attempt to repair a stuck job.
-    async fn repair_stuck_job(&self, job: &StuckJob) -> Result<RepairResult, RepairError>;
+    fn repair_stuck_job<'a>(
+        &'a self,
+        job: &'a StuckJob,
+    ) -> SelfRepairFuture<'a, Result<RepairResult, RepairError>>;
 
     /// Detect broken tools.
-    async fn detect_broken_tools(&self) -> Vec<BrokenTool>;
+    fn detect_broken_tools(&self) -> SelfRepairFuture<'_, Vec<BrokenTool>>;
 
     /// Attempt to repair a broken tool.
-    async fn repair_broken_tool(&self, tool: &BrokenTool) -> Result<RepairResult, RepairError>;
+    fn repair_broken_tool<'a>(
+        &'a self,
+        tool: &'a BrokenTool,
+    ) -> SelfRepairFuture<'a, Result<RepairResult, RepairError>>;
+}
+
+/// Native async sibling trait for concrete self-repair implementations.
+pub trait NativeSelfRepair: Send + Sync {
+    /// Detect stuck jobs.
+    fn detect_stuck_jobs(&self) -> impl Future<Output = Vec<StuckJob>> + Send + '_;
+
+    /// Attempt to repair a stuck job.
+    fn repair_stuck_job<'a>(
+        &'a self,
+        job: &'a StuckJob,
+    ) -> impl Future<Output = Result<RepairResult, RepairError>> + Send + 'a;
+
+    /// Detect broken tools.
+    fn detect_broken_tools(&self) -> impl Future<Output = Vec<BrokenTool>> + Send + '_;
+
+    /// Attempt to repair a broken tool.
+    fn repair_broken_tool<'a>(
+        &'a self,
+        tool: &'a BrokenTool,
+    ) -> impl Future<Output = Result<RepairResult, RepairError>> + Send + 'a;
+}
+
+impl<T> SelfRepair for T
+where
+    T: NativeSelfRepair + Send + Sync,
+{
+    fn detect_stuck_jobs(&self) -> SelfRepairFuture<'_, Vec<StuckJob>> {
+        Box::pin(async move { NativeSelfRepair::detect_stuck_jobs(self).await })
+    }
+
+    fn repair_stuck_job<'a>(
+        &'a self,
+        job: &'a StuckJob,
+    ) -> SelfRepairFuture<'a, Result<RepairResult, RepairError>> {
+        Box::pin(async move { NativeSelfRepair::repair_stuck_job(self, job).await })
+    }
+
+    fn detect_broken_tools(&self) -> SelfRepairFuture<'_, Vec<BrokenTool>> {
+        Box::pin(async move { NativeSelfRepair::detect_broken_tools(self).await })
+    }
+
+    fn repair_broken_tool<'a>(
+        &'a self,
+        tool: &'a BrokenTool,
+    ) -> SelfRepairFuture<'a, Result<RepairResult, RepairError>> {
+        Box::pin(async move { NativeSelfRepair::repair_broken_tool(self, tool).await })
+    }
 }
 
 /// Default self-repair implementation.
@@ -115,8 +172,7 @@ impl DefaultSelfRepair {
     }
 }
 
-#[async_trait]
-impl SelfRepair for DefaultSelfRepair {
+impl NativeSelfRepair for DefaultSelfRepair {
     async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
         let stuck_ids = self.context_manager.find_stuck_jobs().await;
         let mut stuck_jobs = Vec::new();
@@ -147,7 +203,10 @@ impl SelfRepair for DefaultSelfRepair {
         stuck_jobs
     }
 
-    async fn repair_stuck_job(&self, job: &StuckJob) -> Result<RepairResult, RepairError> {
+    async fn repair_stuck_job<'a>(
+        &'a self,
+        job: &'a StuckJob,
+    ) -> Result<RepairResult, RepairError> {
         // Check if we've exceeded max repair attempts
         if job.repair_attempts >= self.max_repair_attempts {
             return Ok(RepairResult::ManualRequired {
@@ -205,7 +264,10 @@ impl SelfRepair for DefaultSelfRepair {
         }
     }
 
-    async fn repair_broken_tool(&self, tool: &BrokenTool) -> Result<RepairResult, RepairError> {
+    async fn repair_broken_tool<'a>(
+        &'a self,
+        tool: &'a BrokenTool,
+    ) -> Result<RepairResult, RepairError> {
         let Some(ref builder) = self.builder else {
             return Ok(RepairResult::ManualRequired {
                 message: format!("Builder not available for repairing tool '{}'", tool.name),
@@ -394,6 +456,70 @@ mod tests {
         assert!(matches!(manual, RepairResult::ManualRequired { .. }));
     }
 
+    struct PassiveSelfRepair;
+
+    impl NativeSelfRepair for PassiveSelfRepair {
+        async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
+            vec![]
+        }
+
+        async fn repair_stuck_job<'a>(
+            &'a self,
+            _job: &'a StuckJob,
+        ) -> Result<RepairResult, RepairError> {
+            Ok(RepairResult::ManualRequired {
+                message: "noop".to_string(),
+            })
+        }
+
+        async fn detect_broken_tools(&self) -> Vec<BrokenTool> {
+            vec![]
+        }
+
+        async fn repair_broken_tool<'a>(
+            &'a self,
+            _tool: &'a BrokenTool,
+        ) -> Result<RepairResult, RepairError> {
+            Ok(RepairResult::ManualRequired {
+                message: "noop".to_string(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn self_repair_blanket_adapter_uses_native_trait() {
+        let repair: Arc<dyn SelfRepair> = Arc::new(PassiveSelfRepair);
+
+        assert!(repair.detect_stuck_jobs().await.is_empty());
+        assert!(repair.detect_broken_tools().await.is_empty());
+
+        let stuck_job = StuckJob {
+            job_id: Uuid::new_v4(),
+            last_activity: Utc::now(),
+            stuck_duration: Duration::from_secs(120),
+            last_error: Some("stalled".to_string()),
+            repair_attempts: 1,
+        };
+        let broken_tool = BrokenTool {
+            name: "demo-tool".to_string(),
+            failure_count: 3,
+            last_error: Some("boom".to_string()),
+            first_failure: Utc::now(),
+            last_failure: Utc::now(),
+            last_build_result: None,
+            repair_attempts: 1,
+        };
+
+        assert!(matches!(
+            repair.repair_stuck_job(&stuck_job).await.unwrap(),
+            RepairResult::ManualRequired { .. }
+        ));
+        assert!(matches!(
+            repair.repair_broken_tool(&broken_tool).await.unwrap(),
+            RepairResult::ManualRequired { .. }
+        ));
+    }
+
     // === QA Plan - Self-repair stuck job tests ===
 
     #[tokio::test]
@@ -404,7 +530,7 @@ mod tests {
         cm.create_job("Job 1", "desc").await.unwrap();
 
         let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3);
-        let stuck = repair.detect_stuck_jobs().await;
+        let stuck = NativeSelfRepair::detect_stuck_jobs(&repair).await;
         assert!(stuck.is_empty());
     }
 
@@ -426,7 +552,7 @@ mod tests {
         .unwrap();
 
         let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3);
-        let stuck = repair.detect_stuck_jobs().await;
+        let stuck = NativeSelfRepair::detect_stuck_jobs(&repair).await;
         assert_eq!(stuck.len(), 1);
         assert_eq!(stuck[0].job_id, job_id);
     }
@@ -456,7 +582,9 @@ mod tests {
             repair_attempts: 0,
         };
 
-        let result = repair.repair_stuck_job(&stuck_job).await.unwrap();
+        let result = NativeSelfRepair::repair_stuck_job(&repair, &stuck_job)
+            .await
+            .unwrap();
         assert!(
             matches!(result, RepairResult::Success { .. }),
             "Expected Success, got: {:?}",
@@ -483,7 +611,9 @@ mod tests {
             repair_attempts: 2, // == max
         };
 
-        let result = repair.repair_stuck_job(&stuck_job).await.unwrap();
+        let result = NativeSelfRepair::repair_stuck_job(&repair, &stuck_job)
+            .await
+            .unwrap();
         assert!(
             matches!(result, RepairResult::ManualRequired { .. }),
             "Expected ManualRequired, got: {:?}",
@@ -497,7 +627,7 @@ mod tests {
         let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3);
 
         // No store configured, should return empty.
-        let broken = repair.detect_broken_tools().await;
+        let broken = NativeSelfRepair::detect_broken_tools(&repair).await;
         assert!(broken.is_empty());
     }
 
@@ -516,7 +646,9 @@ mod tests {
             repair_attempts: 0,
         };
 
-        let result = repair.repair_broken_tool(&broken).await.unwrap();
+        let result = NativeSelfRepair::repair_broken_tool(&repair, &broken)
+            .await
+            .unwrap();
         assert!(
             matches!(result, RepairResult::ManualRequired { .. }),
             "Expected ManualRequired without builder, got: {:?}",
