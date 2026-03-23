@@ -1,10 +1,9 @@
 //! OpenAI Whisper transcription provider.
 
-use async_trait::async_trait;
 use reqwest::multipart;
 use secrecy::{ExposeSecret, SecretString};
 
-use super::{AudioFormat, TranscriptionError, TranscriptionProvider};
+use super::{AudioFormat, NativeTranscriptionProvider, TranscriptionError};
 
 /// OpenAI Whisper speech-to-text provider.
 ///
@@ -56,11 +55,10 @@ impl OpenAiWhisperProvider {
     }
 }
 
-#[async_trait]
-impl TranscriptionProvider for OpenAiWhisperProvider {
-    async fn transcribe(
-        &self,
-        audio_data: &[u8],
+impl NativeTranscriptionProvider for OpenAiWhisperProvider {
+    async fn transcribe<'a>(
+        &'a self,
+        audio_data: &'a [u8],
         format: AudioFormat,
     ) -> Result<String, TranscriptionError> {
         if audio_data.is_empty() {
