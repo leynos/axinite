@@ -14,7 +14,9 @@ use futures::StreamExt;
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 
-use ironclaw::channels::{IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate};
+use ironclaw::channels::{
+    IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
+};
 use ironclaw::error::ChannelError;
 
 // ---------------------------------------------------------------------------

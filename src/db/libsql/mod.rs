@@ -19,9 +19,8 @@ mod workspace;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::db::Database;
+use crate::db::NativeDatabase;
 use crate::error::DatabaseError;
-use async_trait::async_trait;
 use libsql::{Connection, Database as LibSqlDatabase};
 
 use crate::db::libsql_migrations;
@@ -153,8 +152,7 @@ impl LibSqlBackend {
     }
 }
 
-#[async_trait]
-impl Database for LibSqlBackend {
+impl NativeDatabase for LibSqlBackend {
     async fn run_migrations(&self) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         // WAL mode persists in the database file: all future connections benefit.

@@ -5,7 +5,6 @@
 
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Pool;
 use rust_decimal::Decimal;
@@ -16,8 +15,8 @@ use crate::agent::routine::{Routine, RoutineRun, RunStatus};
 use crate::config::DatabaseConfig;
 use crate::context::{ActionRecord, JobContext, JobState};
 use crate::db::{
-    ConversationStore, Database, JobStore, NativeSettingsStore, RoutineStore, SandboxStore,
-    ToolFailureStore, WorkspaceStore,
+    NativeConversationStore, NativeDatabase, NativeJobStore, NativeRoutineStore,
+    NativeSandboxStore, NativeSettingsStore, NativeToolFailureStore, NativeWorkspaceStore,
 };
 use crate::error::{DatabaseError, WorkspaceError};
 use crate::history::{
@@ -56,8 +55,7 @@ impl PgBackend {
 
 // ==================== Database (supertrait) ====================
 
-#[async_trait]
-impl Database for PgBackend {
+impl NativeDatabase for PgBackend {
     async fn run_migrations(&self) -> Result<(), DatabaseError> {
         self.store.run_migrations().await
     }
@@ -65,8 +63,7 @@ impl Database for PgBackend {
 
 // ==================== ConversationStore ====================
 
-#[async_trait]
-impl ConversationStore for PgBackend {
+impl NativeConversationStore for PgBackend {
     async fn create_conversation(
         &self,
         channel: &str,
@@ -216,8 +213,7 @@ impl ConversationStore for PgBackend {
 
 // ==================== JobStore ====================
 
-#[async_trait]
-impl JobStore for PgBackend {
+impl NativeJobStore for PgBackend {
     async fn save_job(&self, ctx: &JobContext) -> Result<(), DatabaseError> {
         self.store.save_job(ctx).await
     }
@@ -308,8 +304,7 @@ impl JobStore for PgBackend {
 
 // ==================== SandboxStore ====================
 
-#[async_trait]
-impl SandboxStore for PgBackend {
+impl NativeSandboxStore for PgBackend {
     async fn save_sandbox_job(&self, job: &SandboxJobRecord) -> Result<(), DatabaseError> {
         self.store.save_sandbox_job(job).await
     }
@@ -397,8 +392,7 @@ impl SandboxStore for PgBackend {
 
 // ==================== RoutineStore ====================
 
-#[async_trait]
-impl RoutineStore for PgBackend {
+impl NativeRoutineStore for PgBackend {
     async fn create_routine(&self, routine: &Routine) -> Result<(), DatabaseError> {
         self.store.create_routine(routine).await
     }
@@ -499,8 +493,7 @@ impl RoutineStore for PgBackend {
 
 // ==================== ToolFailureStore ====================
 
-#[async_trait]
-impl ToolFailureStore for PgBackend {
+impl NativeToolFailureStore for PgBackend {
     async fn record_tool_failure(
         &self,
         tool_name: &str,
@@ -582,8 +575,7 @@ impl NativeSettingsStore for PgBackend {
 
 // ==================== WorkspaceStore ====================
 
-#[async_trait]
-impl WorkspaceStore for PgBackend {
+impl NativeWorkspaceStore for PgBackend {
     async fn get_document_by_path(
         &self,
         user_id: &str,

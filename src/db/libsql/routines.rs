@@ -1,6 +1,5 @@
 //! Routine-related RoutineStore implementation for LibSqlBackend.
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use libsql::params;
 use uuid::Uuid;
@@ -10,11 +9,10 @@ use super::{
     opt_text_owned, row_to_routine_libsql, row_to_routine_run_libsql,
 };
 use crate::agent::routine::{Routine, RoutineRun, RunStatus};
-use crate::db::RoutineStore;
+use crate::db::NativeRoutineStore;
 use crate::error::DatabaseError;
 
-#[async_trait]
-impl RoutineStore for LibSqlBackend {
+impl NativeRoutineStore for LibSqlBackend {
     async fn create_routine(&self, routine: &Routine) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         let trigger_type = routine.trigger.type_tag();

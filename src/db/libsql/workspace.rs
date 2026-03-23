@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use libsql::params;
 use uuid::Uuid;
 
@@ -10,7 +9,7 @@ use super::{
     LibSqlBackend, fmt_ts, get_i64, get_opt_text, get_opt_ts, get_text, get_ts,
     row_to_memory_document,
 };
-use crate::db::WorkspaceStore;
+use crate::db::NativeWorkspaceStore;
 use crate::error::WorkspaceError;
 use crate::workspace::{
     MemoryChunk, MemoryDocument, RankedResult, SearchConfig, SearchResult, WorkspaceEntry,
@@ -19,8 +18,7 @@ use crate::workspace::{
 
 use chrono::Utc;
 
-#[async_trait]
-impl WorkspaceStore for LibSqlBackend {
+impl NativeWorkspaceStore for LibSqlBackend {
     async fn get_document_by_path(
         &self,
         user_id: &str,
@@ -105,7 +103,7 @@ impl WorkspaceStore for LibSqlBackend {
         path: &str,
     ) -> Result<MemoryDocument, WorkspaceError> {
         // Try get
-        match self.get_document_by_path(user_id, agent_id, path).await {
+        match NativeWorkspaceStore::get_document_by_path(self, user_id, agent_id, path).await {
             Ok(doc) => return Ok(doc),
             Err(WorkspaceError::DocumentNotFound { .. }) => {}
             Err(e) => return Err(e),
@@ -133,7 +131,7 @@ impl WorkspaceStore for LibSqlBackend {
             reason: format!("Insert failed: {}", e),
         })?;
 
-        self.get_document_by_path(user_id, agent_id, path).await
+        NativeWorkspaceStore::get_document_by_path(self, user_id, agent_id, path).await
     }
 
     async fn update_document(&self, id: Uuid, content: &str) -> Result<(), WorkspaceError> {
@@ -161,8 +159,8 @@ impl WorkspaceStore for LibSqlBackend {
         agent_id: Option<Uuid>,
         path: &str,
     ) -> Result<(), WorkspaceError> {
-        let doc = self.get_document_by_path(user_id, agent_id, path).await?;
-        self.delete_chunks(doc.id).await?;
+        let doc = NativeWorkspaceStore::get_document_by_path(self, user_id, agent_id, path).await?;
+        NativeWorkspaceStore::delete_chunks(self, doc.id).await?;
 
         let conn = self
             .connect()

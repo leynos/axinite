@@ -1,6 +1,5 @@
 //! Sandbox-related SandboxStore implementation for LibSqlBackend.
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use libsql::params;
 use uuid::Uuid;
@@ -9,12 +8,11 @@ use super::{
     LibSqlBackend, fmt_opt_ts, fmt_ts, get_i64, get_json, get_opt_bool, get_opt_text, get_opt_ts,
     get_text, get_ts, opt_text,
 };
-use crate::db::SandboxStore;
+use crate::db::NativeSandboxStore;
 use crate::error::DatabaseError;
 use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
 
-#[async_trait]
-impl SandboxStore for LibSqlBackend {
+impl NativeSandboxStore for LibSqlBackend {
     async fn save_sandbox_job(&self, job: &SandboxJobRecord) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         conn.execute(

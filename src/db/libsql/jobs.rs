@@ -1,6 +1,5 @@
 //! Job-related JobStore implementation for LibSqlBackend.
 
-use async_trait::async_trait;
 use libsql::params;
 use rust_decimal::Decimal;
 use uuid::Uuid;
@@ -10,14 +9,13 @@ use super::{
     get_opt_text, get_opt_ts, get_text, get_ts, opt_text, opt_text_owned, parse_job_state,
 };
 use crate::context::{ActionRecord, JobContext, JobState};
-use crate::db::JobStore;
+use crate::db::NativeJobStore;
 use crate::error::DatabaseError;
 use crate::history::{AgentJobRecord, AgentJobSummary, LlmCallRecord};
 
 use chrono::Utc;
 
-#[async_trait]
-impl JobStore for LibSqlBackend {
+impl NativeJobStore for LibSqlBackend {
     async fn save_job(&self, ctx: &JobContext) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         let status = ctx.state.to_string();
