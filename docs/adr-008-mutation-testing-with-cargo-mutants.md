@@ -86,10 +86,12 @@ mutant reports as workflow artefacts.
    `git log -m --since="24 hours ago" --diff-filter=ACMR --name-only`. The
    `-m` flag ensures merge commits expand their file lists relative to each
    parent, so a recently-landed merge that brings in older side-branch commits
-   is not silently skipped. Each file is passed to `cargo mutants` via the
-   `--file` flag. If no files are found, the job exits early with success.
-   When `paths` is non-empty (manual dispatch), those paths are used directly,
-   giving developers surgical control.
+   is not silently skipped. Files under `tools-src/` and `channels-src/` are
+   then excluded because those crates use separate manifests and are not
+   workspace members; `cargo-mutants` operates on workspace members only. Each
+   remaining file is passed via `--file`. If no files remain, the job exits
+   early with success. When `paths` is non-empty (manual dispatch), those
+   paths are used directly, after the same non-workspace exclusion filter.
 3. **Execution.** The job installs `cargo-mutants` via `taiki-e/install-action`
    and runs `cargo mutants --test-tool nextest --features test-helpers` with
    the computed `--file` arguments. The step uses `continue-on-error: true`
@@ -97,9 +99,9 @@ mutant reports as workflow artefacts.
 4. **Output.** `cargo-mutants` writes results to `mutants.out/`. The workflow
    uploads the full output directory as a GitHub Actions artefact named
    `mutants-report` with a 14-day retention period.
-5. **Surviving mutant summary.** After the mutation run, a Markdown table of
-   survivors from `mutants.out/survived.txt` is appended to
-   `$GITHUB_STEP_SUMMARY`, visible in the Actions UI without downloading the
+5. **Surviving mutant summary.** After the mutation run, the contents of
+   `mutants.out/survived.txt` are appended to `$GITHUB_STEP_SUMMARY` as a
+   fenced code block, visible in the Actions UI without downloading the
    artefact.
 6. **Non-blocking.** The workflow is not a required status check. A surviving
    mutant is informational, not a gate failure.

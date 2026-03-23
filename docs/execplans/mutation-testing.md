@@ -118,8 +118,8 @@ table of survivors.
 - Decision: manual dispatch accepts a newline-separated list of paths rather
   than a package list.
   Rationale: `--file` operates on source-file paths, which is more granular
-  than `--package` and matches the mental model of "I changed these files and
-  want to check them." Developers can use globs (e.g. `src/agent/**/*.rs`).
+  than `--package` and matches the mental model of "these files changed;
+  mutate them." Developers can use globs (e.g. `src/agent/**/*.rs`).
   Date/Author: 2026-03-22 / plan author.
 
 - Decision: set `timeout-minutes: 120` on the mutation job.
@@ -232,8 +232,11 @@ Steps:
        --pretty=format: HEAD | grep '\.rs$' | sort -u
      ```
 
-   - If the list is empty, print a message and exit the job successfully
-     (no files to mutate).
+   - After computing the list, filter out files under `tools-src/` and
+     `channels-src/`: those crates use separate manifests and are not
+     workspace members; `cargo-mutants` cannot target them.
+   - If the resulting list is empty, print a message and exit the job
+     successfully (no files to mutate).
    - Write the file list to `$GITHUB_OUTPUT` as a multiline output named
      `files`.
 

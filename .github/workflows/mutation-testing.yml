@@ -71,6 +71,15 @@ jobs:
             )
           fi
 
+          # Exclude out-of-tree crates from the mutation scope.
+          # tools-src/ and channels-src/ use separate manifests and are
+          # not workspace members; cargo-mutants cannot target them.
+          CHANGED_FILES=$(
+            printf '%s\n' "$CHANGED_FILES" \
+            | grep -v -E '^(tools-src|channels-src)/' \
+            || true
+          )
+
           if [[ -z "$CHANGED_FILES" ]]; then
             echo "No Rust source files changed in the past 24 hours." \
               "Skipping mutation run."
@@ -134,7 +143,7 @@ jobs:
         env:
           FILES: ${{ steps.compute-files.outputs.files }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
 
           file_args=""
           while IFS= read -r f; do
@@ -166,3 +175,6 @@ jobs:
           name: mutants-report
           path: mutants.out/
           retention-days: 14
+          # Prevent a hard failure if cargo-mutants exits before creating
+          # the output directory (e.g. internal error or misconfiguration).
+          if-no-files-found: ignore
