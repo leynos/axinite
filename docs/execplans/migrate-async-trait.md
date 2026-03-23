@@ -177,6 +177,13 @@ Re-audit snapshot as of 2026-03-23 after Milestone 2 completion:
   217 matched lines for `async-trait|async_trait` in `src/`,
   150 remaining `#[async_trait]` attribute usages, all in Milestone 3/4
   families.
+- All six applicable Milestone 3 families are complete
+  (`NetworkPolicyDecider`, `TranscriptionProvider`, `Hook`,
+  `EmbeddingProvider`, `Tunnel`, `SecretsStore`). `Observer` is sync-only
+  and required no migration. Whole-tree footprint: 177 matched lines for
+  `async-trait|async_trait` in `src/`, 119 remaining `#[async_trait]`
+  attribute usages, all in Milestone 4 families (`Channel`, `Tool`,
+  `LlmProvider`, `Database`).
 
 ### Phase 2: Migrate concrete-only traits (batch by module)
 

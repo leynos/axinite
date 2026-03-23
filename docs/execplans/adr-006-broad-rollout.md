@@ -356,7 +356,7 @@ set -o pipefail; git diff --check | tee /tmp/diff-check-axinite-<wave>.out
 
 - [ ] Milestone 1: Normalize the migration playbook and baseline evidence
 - [x] Milestone 2: Convert the narrow internal dyn-backed traits
-- [ ] Milestone 3: Convert the infrastructure-facing extension seams
+- [x] Milestone 3: Convert the infrastructure-facing extension seams
 - [ ] Milestone 4: Convert the high-fanout core traits
 - [ ] Milestone 5: Clean up dependency and documentation state
 
@@ -387,6 +387,23 @@ Progress notes:
   and infrastructure extension seams targeted in Milestone 3).
   Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
   3,066 library tests passed.
+- 2026-03-23: Completed all six Milestone 3 families:
+  `NetworkPolicyDecider` (`src/sandbox/proxy/policy.rs`),
+  `TranscriptionProvider` (`src/transcription/mod.rs` + `openai.rs`),
+  `Hook` (`src/hooks/hook.rs`, `bundled.rs`, `mod.rs`, `registry.rs` +
+  `src/llm/recording.rs` for disambiguation),
+  `EmbeddingProvider` (`src/workspace/embeddings.rs` + `mod.rs`),
+  `Tunnel` (`src/tunnel/mod.rs` + `cloudflare.rs`, `tailscale.rs`,
+  `ngrok.rs`, `custom.rs`, `none.rs`), and
+  `SecretsStore` (`src/secrets/store.rs` + `mod.rs`).
+  `Observer` was skipped as it has only synchronous methods and
+  requires no migration.
+  Each family was committed atomically after the full quality gate passed.
+  Post-wave footprint: 177 matched lines for `async-trait|async_trait`
+  in `src/`; 119 remaining `#[async_trait]` attribute usages, all in
+  not-yet-migrated families (`Channel`, `Tool`, `LlmProvider`, `Database`).
+  Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
+  3,066 library tests passed.
 
 ## Surprises & discoveries
 
@@ -410,6 +427,22 @@ Progress notes:
   the blanket impl only covers `T: NativeHttpInterceptor`, not `Arc<T>`.
 - 2026-03-23: `WasmToolStore` required `cargo fmt` reformatting of the
   blanket adapter body after the edit (it wrapped a long `Box::pin` call).
+- 2026-03-23: `EmbeddingProvider` has a default `embed_batch` implementation
+  that calls `self.embed`. When both dyn-safe `EmbeddingProvider` and
+  `NativeEmbeddingProvider` are in scope, the call `self.embed_batch(...)` in
+  `embed` method bodies becomes ambiguous. Fixed with
+  `NativeEmbeddingProvider::embed_batch(self, ...)` fully-qualified syntax.
+- 2026-03-23: `SecretsStore::get_decrypted` and `is_accessible` call
+  `self.get()` and `self.exists()` internally. After the blanket impl was
+  added, these became ambiguous. Fixed with `NativeSecretsStore::get(self, ...)`
+  and `NativeSecretsStore::exists(self, ...)`.
+- 2026-03-23: Several `record_usage` implementations in `SecretsStore` used an
+  unnecessary `<'a>` lifetime parameter (`async fn record_usage<'a>(&'a self,
+  secret_id: Uuid)`) where `secret_id: Uuid` is not a reference. Clippy
+  flagged these; fixed by removing the lifetime in all three backends (postgres,
+  libsql, in_memory).
+- 2026-03-23: `Observer` (in `src/observability/traits.rs`) is sync-only and
+  needed no migration. It was excluded from the Milestone 3 wave.
 
 ## Decision log
 
