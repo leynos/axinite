@@ -12,6 +12,8 @@
 //!
 //! Enable by setting `IRONCLAW_RECORD_TRACE=1` at runtime.
 
+use core::future::Future;
+use core::pin::Pin;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -146,20 +148,67 @@ pub struct ExpectedToolResult {
 
 // ── HTTP interceptor ───────────────────────────────────────────────
 
+/// Boxed future used at the dyn HTTP-interceptor boundary.
+pub type HttpInterceptorFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Trait for intercepting HTTP requests from tools.
 ///
 /// During recording, the interceptor captures exchanges after the real
 /// request completes. During replay, it short-circuits with a recorded response.
-#[async_trait]
 pub trait HttpInterceptor: Send + Sync + std::fmt::Debug {
     /// Called before making an HTTP request.
     ///
     /// Return `Some(response)` to short-circuit (replay mode).
     /// Return `None` to let the real request proceed (recording mode).
-    async fn before_request(&self, request: &HttpExchangeRequest) -> Option<HttpExchangeResponse>;
+    fn before_request<'a>(
+        &'a self,
+        request: &'a HttpExchangeRequest,
+    ) -> HttpInterceptorFuture<'a, Option<HttpExchangeResponse>>;
 
     /// Called after a real HTTP request completes (recording mode only).
-    async fn after_response(&self, request: &HttpExchangeRequest, response: &HttpExchangeResponse);
+    fn after_response<'a>(
+        &'a self,
+        request: &'a HttpExchangeRequest,
+        response: &'a HttpExchangeResponse,
+    ) -> HttpInterceptorFuture<'a, ()>;
+}
+
+/// Native async sibling trait for concrete HTTP-interceptor implementations.
+pub trait NativeHttpInterceptor: Send + Sync + std::fmt::Debug {
+    /// See [`HttpInterceptor::before_request`].
+    fn before_request<'a>(
+        &'a self,
+        request: &'a HttpExchangeRequest,
+    ) -> impl Future<Output = Option<HttpExchangeResponse>> + Send + 'a;
+
+    /// See [`HttpInterceptor::after_response`].
+    fn after_response<'a>(
+        &'a self,
+        request: &'a HttpExchangeRequest,
+        response: &'a HttpExchangeResponse,
+    ) -> impl Future<Output = ()> + Send + 'a;
+}
+
+impl<T> HttpInterceptor for T
+where
+    T: NativeHttpInterceptor + Send + Sync + std::fmt::Debug,
+{
+    fn before_request<'a>(
+        &'a self,
+        request: &'a HttpExchangeRequest,
+    ) -> HttpInterceptorFuture<'a, Option<HttpExchangeResponse>> {
+        Box::pin(NativeHttpInterceptor::before_request(self, request))
+    }
+
+    fn after_response<'a>(
+        &'a self,
+        request: &'a HttpExchangeRequest,
+        response: &'a HttpExchangeResponse,
+    ) -> HttpInterceptorFuture<'a, ()> {
+        Box::pin(NativeHttpInterceptor::after_response(
+            self, request, response,
+        ))
+    }
 }
 
 /// Records HTTP exchanges during a live session.
@@ -187,14 +236,20 @@ impl RecordingHttpInterceptor {
     }
 }
 
-#[async_trait]
-impl HttpInterceptor for RecordingHttpInterceptor {
-    async fn before_request(&self, _request: &HttpExchangeRequest) -> Option<HttpExchangeResponse> {
+impl NativeHttpInterceptor for RecordingHttpInterceptor {
+    async fn before_request<'a>(
+        &'a self,
+        _request: &'a HttpExchangeRequest,
+    ) -> Option<HttpExchangeResponse> {
         // Recording mode: let the real request proceed
         None
     }
 
-    async fn after_response(&self, request: &HttpExchangeRequest, response: &HttpExchangeResponse) {
+    async fn after_response<'a>(
+        &'a self,
+        request: &'a HttpExchangeRequest,
+        response: &'a HttpExchangeResponse,
+    ) {
         self.exchanges.lock().await.push(HttpExchange {
             request: request.clone(),
             response: response.clone(),
@@ -219,9 +274,11 @@ impl ReplayingHttpInterceptor {
     }
 }
 
-#[async_trait]
-impl HttpInterceptor for ReplayingHttpInterceptor {
-    async fn before_request(&self, request: &HttpExchangeRequest) -> Option<HttpExchangeResponse> {
+impl NativeHttpInterceptor for ReplayingHttpInterceptor {
+    async fn before_request<'a>(
+        &'a self,
+        request: &'a HttpExchangeRequest,
+    ) -> Option<HttpExchangeResponse> {
         let mut queue = self.exchanges.lock().await;
         if let Some(exchange) = queue.pop_front() {
             // Soft-check: warn if the request doesn't match
@@ -249,10 +306,10 @@ impl HttpInterceptor for ReplayingHttpInterceptor {
         }
     }
 
-    async fn after_response(
-        &self,
-        _request: &HttpExchangeRequest,
-        _response: &HttpExchangeResponse,
+    async fn after_response<'a>(
+        &'a self,
+        _request: &'a HttpExchangeRequest,
+        _response: &'a HttpExchangeResponse,
     ) {
         // Replay mode: nothing to record
     }
@@ -739,22 +796,21 @@ mod tests {
             });
 
         // Simulate an HTTP exchange
-        recorder
-            .http_interceptor
-            .after_response(
-                &HttpExchangeRequest {
-                    method: "GET".to_string(),
-                    url: "https://api.example.com/data".to_string(),
-                    headers: Vec::new(),
-                    body: None,
-                },
-                &HttpExchangeResponse {
-                    status: 200,
-                    headers: Vec::new(),
-                    body: r#"{"ok": true}"#.to_string(),
-                },
-            )
-            .await;
+        NativeHttpInterceptor::after_response(
+            &*recorder.http_interceptor,
+            &HttpExchangeRequest {
+                method: "GET".to_string(),
+                url: "https://api.example.com/data".to_string(),
+                headers: Vec::new(),
+                body: None,
+            },
+            &HttpExchangeResponse {
+                status: 200,
+                headers: Vec::new(),
+                body: r#"{"ok": true}"#.to_string(),
+            },
+        )
+        .await;
 
         let request = CompletionRequest::new(vec![ChatMessage::user("hello")]);
         recorder.complete(request).await.unwrap();
@@ -791,7 +847,9 @@ mod tests {
         };
 
         // before_request should return None (pass through)
-        assert!(interceptor.before_request(&req).await.is_none());
+        assert!(NativeHttpInterceptor::before_request(&interceptor, &req)
+            .await
+            .is_none());
 
         // after_response records the exchange
         let resp = HttpExchangeResponse {
@@ -799,7 +857,7 @@ mod tests {
             headers: Vec::new(),
             body: "ok".to_string(),
         };
-        interceptor.after_response(&req, &resp).await;
+        NativeHttpInterceptor::after_response(&interceptor, &req, &resp).await;
 
         let exchanges = interceptor.take_exchanges().await;
         assert_eq!(exchanges.len(), 1);
@@ -830,12 +888,16 @@ mod tests {
             headers: Vec::new(),
             body: None,
         };
-        let resp = interceptor.before_request(&req).await.unwrap();
+        let resp = NativeHttpInterceptor::before_request(&interceptor, &req)
+            .await
+            .unwrap();
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body, r#"{"items": []}"#);
 
         // Second request: no more exchanges → 599
-        let resp = interceptor.before_request(&req).await.unwrap();
+        let resp = NativeHttpInterceptor::before_request(&interceptor, &req)
+            .await
+            .unwrap();
         assert_eq!(resp.status, 599);
     }
 
