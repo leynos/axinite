@@ -10,7 +10,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use chrono::Utc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -24,7 +23,7 @@ use crate::history::SandboxJobRecord;
 use crate::orchestrator::auth::CredentialGrant;
 use crate::orchestrator::job_manager::{ContainerJobManager, JobMode};
 use crate::secrets::SecretsStore;
-use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput, require_str};
+use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput, require_str};
 
 /// Lazy scheduler reference, filled after Agent::new creates the Scheduler.
 ///
@@ -676,8 +675,7 @@ fn resolve_project_dir(
     Ok((canonical_dir, browse_id))
 }
 
-#[async_trait]
-impl Tool for CreateJobTool {
+impl NativeTool for CreateJobTool {
     fn name(&self) -> &str {
         "create_job"
     }
@@ -816,8 +814,7 @@ impl ListJobsTool {
     }
 }
 
-#[async_trait]
-impl Tool for ListJobsTool {
+impl NativeTool for ListJobsTool {
     fn name(&self) -> &str {
         "list_jobs"
     }
@@ -909,8 +906,7 @@ impl JobStatusTool {
     }
 }
 
-#[async_trait]
-impl Tool for JobStatusTool {
+impl NativeTool for JobStatusTool {
     fn name(&self) -> &str {
         "job_status"
     }
@@ -988,8 +984,7 @@ impl CancelJobTool {
     }
 }
 
-#[async_trait]
-impl Tool for CancelJobTool {
+impl NativeTool for CancelJobTool {
     fn name(&self) -> &str {
         "cancel_job"
     }
@@ -1088,8 +1083,7 @@ impl JobEventsTool {
     }
 }
 
-#[async_trait]
-impl Tool for JobEventsTool {
+impl NativeTool for JobEventsTool {
     fn name(&self) -> &str {
         "job_events"
     }
@@ -1221,8 +1215,7 @@ impl JobPromptTool {
     }
 }
 
-#[async_trait]
-impl Tool for JobPromptTool {
+impl NativeTool for JobPromptTool {
     fn name(&self) -> &str {
         "job_prompt"
     }

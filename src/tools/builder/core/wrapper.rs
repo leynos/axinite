@@ -11,8 +11,7 @@ impl BuildSoftwareTool {
     }
 }
 
-#[async_trait]
-impl Tool for BuildSoftwareTool {
+impl NativeTool for BuildSoftwareTool {
     fn name(&self) -> &str {
         "build_software"
     }

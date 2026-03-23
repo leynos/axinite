@@ -23,12 +23,11 @@
 //! - In-flight jobs are paused during restart and resumed by the entrypoint
 //! - Future: Implement graceful shutdown with CancellationToken for proper resource cleanup
 
-use async_trait::async_trait;
 use std::time::Duration;
 
 use crate::context::JobContext;
 #[allow(unused_imports)]
-use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput};
+use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput};
 
 /// Tool for triggering a graceful process restart via exit code 0.
 ///
@@ -38,8 +37,7 @@ use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput};
 /// interface to prevent unauthorized restarts.
 pub struct RestartTool;
 
-#[async_trait]
-impl Tool for RestartTool {
+impl NativeTool for RestartTool {
     fn name(&self) -> &str {
         "restart"
     }
@@ -179,7 +177,7 @@ mod tests {
         // not at tool execution. Tool execution approval is for user-interactive approvals
         // that happen during job execution. The restart confirmation modal provides that gate.
         let tool = RestartTool;
-        let approval = tool.requires_approval(&serde_json::json!({}));
+        let approval = NativeTool::requires_approval(&tool, &serde_json::json!({}));
         // Default (Never) allows tool to execute in autonomous jobs created from approved commands
         assert!(matches!(approval, ApprovalRequirement::Never));
     }
@@ -187,13 +185,13 @@ mod tests {
     #[test]
     fn test_restart_tool_name() {
         let tool = RestartTool;
-        assert_eq!(tool.name(), "restart");
+        assert_eq!(NativeTool::name(&tool), "restart");
     }
 
     #[test]
     fn test_restart_tool_parameters_schema() {
         let tool = RestartTool;
-        let schema = tool.parameters_schema();
+        let schema = NativeTool::parameters_schema(&tool);
 
         // Verify schema has delay_secs property with bounds
         let props = schema.get("properties").unwrap();
@@ -207,7 +205,7 @@ mod tests {
     #[test]
     fn test_restart_tool_requires_sanitization() {
         let tool = RestartTool;
-        assert!(!tool.requires_sanitization());
+        assert!(!NativeTool::requires_sanitization(&tool));
     }
 
     #[tokio::test]
@@ -217,16 +215,14 @@ mod tests {
         let ctx = crate::context::JobContext::new("test", "test restart");
 
         // Test with valid delay
-        let result = tool
-            .execute(serde_json::json!({"delay_secs": 5}), &ctx)
-            .await;
+        let result = NativeTool::execute(&tool, serde_json::json!({"delay_secs": 5}), &ctx).await;
         assert!(result.is_ok());
         let output = result.unwrap();
         let text = output.result.as_str().expect("result should be a string");
         assert!(text.contains("Restarting in 5 second(s)"));
 
         // Test with no delay parameter (should use default 2)
-        let result = tool.execute(serde_json::json!({}), &ctx).await;
+        let result = NativeTool::execute(&tool, serde_json::json!({}), &ctx).await;
         assert!(result.is_ok());
         let output = result.unwrap();
         let text = output.result.as_str().expect("result should be a string");
@@ -261,7 +257,7 @@ mod tests {
     #[test]
     fn test_restart_tool_description() {
         let tool = RestartTool;
-        let desc = tool.description();
+        let desc = NativeTool::description(&tool);
         assert!(desc.contains("Restart"));
         assert!(desc.contains("IronClaw"));
         assert!(desc.contains("exits cleanly"));
@@ -271,7 +267,7 @@ mod tests {
     #[test]
     fn test_restart_tool_schema_completeness() {
         let tool = RestartTool;
-        let schema = tool.parameters_schema();
+        let schema = NativeTool::parameters_schema(&tool);
 
         // Verify schema structure
         assert_eq!(schema.get("type").unwrap().as_str().unwrap(), "object");
@@ -439,7 +435,7 @@ mod tests {
         let ctx = crate::context::JobContext::new("test", "test restart");
 
         // Empty object params should use all defaults
-        let result = tool.execute(serde_json::json!({}), &ctx).await;
+        let result = NativeTool::execute(&tool, serde_json::json!({}), &ctx).await;
         assert!(result.is_ok());
         let output = result.unwrap();
         let text = output.result.as_str().unwrap();
@@ -453,9 +449,10 @@ mod tests {
         let tool = RestartTool;
 
         // Approval requirement should be the same regardless of params
-        let approval1 = tool.requires_approval(&serde_json::json!({"delay_secs": 5}));
-        let approval2 = tool.requires_approval(&serde_json::json!({"delay_secs": 100}));
-        let approval3 = tool.requires_approval(&serde_json::json!({}));
+        let approval1 = NativeTool::requires_approval(&tool, &serde_json::json!({"delay_secs": 5}));
+        let approval2 =
+            NativeTool::requires_approval(&tool, &serde_json::json!({"delay_secs": 100}));
+        let approval3 = NativeTool::requires_approval(&tool, &serde_json::json!({}));
 
         // All should return the default (Never) since approval happens at command level
         assert!(matches!(approval1, ApprovalRequirement::Never));

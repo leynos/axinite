@@ -6,13 +6,11 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::context::JobContext;
 use crate::skills::LoadedSkill;
 use crate::skills::catalog::{CatalogEntry, SkillCatalog};
 use crate::skills::registry::SkillRegistry;
-use crate::tools::tool::{Tool, ToolError, ToolOutput, require_str};
+use crate::tools::tool::{NativeTool, ToolError, ToolOutput, require_str};
 
 mod install;
 mod remove;
@@ -48,8 +46,7 @@ impl SkillListTool {
     }
 }
 
-#[async_trait]
-impl Tool for SkillListTool {
+impl NativeTool for SkillListTool {
     fn name(&self) -> &str {
         "skill_list"
     }
@@ -243,8 +240,7 @@ impl SkillSearchTool {
     }
 }
 
-#[async_trait]
-impl Tool for SkillSearchTool {
+impl NativeTool for SkillSearchTool {
     fn name(&self) -> &str {
         "skill_search"
     }

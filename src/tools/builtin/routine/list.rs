@@ -15,8 +15,7 @@ impl RoutineListTool {
     }
 }
 
-#[async_trait]
-impl Tool for RoutineListTool {
+impl NativeTool for RoutineListTool {
     fn name(&self) -> &str {
         "routine_list"
     }

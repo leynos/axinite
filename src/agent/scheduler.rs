@@ -702,7 +702,7 @@ mod tests {
         ToolCompletionResponse,
     };
     use crate::safety::SafetyLayer;
-    use crate::tools::{ApprovalRequirement, Tool, ToolError, ToolOutput};
+    use crate::tools::{ApprovalRequirement, NativeTool, ToolError, ToolOutput};
     use rust_decimal_macros::dec;
 
     /// Minimal LLM provider stub for scheduler tests that don't exercise LLM calls.
@@ -846,8 +846,7 @@ mod tests {
     /// A tool that returns `UnlessAutoApproved`.
     struct SoftApprovalTool;
 
-    #[async_trait::async_trait]
-    impl Tool for SoftApprovalTool {
+    impl NativeTool for SoftApprovalTool {
         fn name(&self) -> &str {
             "soft_gate"
         }
@@ -878,8 +877,7 @@ mod tests {
     /// A tool that returns `Always`.
     struct HardApprovalTool;
 
-    #[async_trait::async_trait]
-    impl Tool for HardApprovalTool {
+    impl NativeTool for HardApprovalTool {
         fn name(&self) -> &str {
             "hard_gate"
         }

@@ -1,15 +1,12 @@
 //! Echo tool for testing.
 
-use async_trait::async_trait;
-
 use crate::context::JobContext;
-use crate::tools::tool::{Tool, ToolError, ToolOutput, require_str};
+use crate::tools::tool::{NativeTool, ToolError, ToolOutput, require_str};
 
 /// Simple echo tool for testing.
 pub struct EchoTool;
 
-#[async_trait]
-impl Tool for EchoTool {
+impl NativeTool for EchoTool {
     fn name(&self) -> &str {
         "echo"
     }

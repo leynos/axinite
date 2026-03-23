@@ -14,8 +14,7 @@ impl ToolListTool {
     }
 }
 
-#[async_trait]
-impl Tool for ToolListTool {
+impl NativeTool for ToolListTool {
     delegate_extension_tool_metadata!(ExtensionToolKind::List);
 
     async fn execute(
@@ -81,8 +80,7 @@ impl ToolRemoveTool {
     }
 }
 
-#[async_trait]
-impl Tool for ToolRemoveTool {
+impl NativeTool for ToolRemoveTool {
     delegate_extension_tool_metadata!(ExtensionToolKind::Remove);
 
     async fn execute(
@@ -121,8 +119,7 @@ impl ToolUpgradeTool {
     }
 }
 
-#[async_trait]
-impl Tool for ToolUpgradeTool {
+impl NativeTool for ToolUpgradeTool {
     delegate_extension_tool_metadata!(ExtensionToolKind::Upgrade);
 
     async fn execute(
@@ -168,8 +165,7 @@ impl ExtensionInfoTool {
     }
 }
 
-#[async_trait]
-impl Tool for ExtensionInfoTool {
+impl NativeTool for ExtensionInfoTool {
     delegate_extension_tool_metadata!(ExtensionToolKind::Info);
 
     async fn execute(

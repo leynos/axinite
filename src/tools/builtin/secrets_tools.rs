@@ -13,12 +13,10 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::context::JobContext;
 use crate::secrets::SecretsStore;
 use crate::tools::tool::{
-    ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput, require_str,
+    ApprovalRequirement, HostedToolEligibility, NativeTool, ToolError, ToolOutput, require_str,
 };
 
 // ── secret_list ──────────────────────────────────────────────────────────────
@@ -33,8 +31,7 @@ impl SecretListTool {
     }
 }
 
-#[async_trait]
-impl Tool for SecretListTool {
+impl NativeTool for SecretListTool {
     fn name(&self) -> &str {
         "secret_list"
     }
@@ -97,8 +94,7 @@ impl SecretDeleteTool {
     }
 }
 
-#[async_trait]
-impl Tool for SecretDeleteTool {
+impl NativeTool for SecretDeleteTool {
     fn name(&self) -> &str {
         "secret_delete"
     }

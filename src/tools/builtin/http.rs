@@ -5,14 +5,13 @@ use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
 
 use crate::context::JobContext;
 use crate::safety::LeakDetector;
 use crate::secrets::SecretsStore;
-use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput, require_str};
+use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput, require_str};
 use crate::tools::wasm::{InjectedCredentials, SharedCredentialRegistry, inject_credential};
 
 #[cfg(feature = "html-to-markdown")]
@@ -263,8 +262,7 @@ impl Default for HttpTool {
     }
 }
 
-#[async_trait]
-impl Tool for HttpTool {
+impl NativeTool for HttpTool {
     fn name(&self) -> &str {
         "http"
     }
@@ -526,8 +524,7 @@ impl Tool for HttpTool {
                 "status": status,
                 "saved_to": save_to,
                 "size_bytes": body_bytes.len(),
-                "headers": headers,
-            });
+                "headers": headers});
             return Ok(ToolOutput::success(result, start.elapsed()));
         }
 

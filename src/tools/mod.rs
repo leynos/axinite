@@ -30,6 +30,7 @@ pub use registry::{
     VisionToolsRegistration, WasmFromStorageRegistration,
 };
 pub use tool::{
-    ApprovalContext, ApprovalRequirement, HostedToolCatalogSource, HostedToolEligibility, Tool,
-    ToolDomain, ToolError, ToolOutput, ToolRateLimitConfig, redact_params, validate_tool_schema,
+    ApprovalContext, ApprovalRequirement, HostedToolCatalogSource, HostedToolEligibility,
+    NativeTool, Tool, ToolDomain, ToolError, ToolFuture, ToolOutput, ToolRateLimitConfig,
+    redact_params, validate_tool_schema,
 };

@@ -9,7 +9,7 @@ pub use approval_policy::{
     ToolDomain, ToolRateLimitConfig,
 };
 pub use schema_helpers::{redact_params, require_param, require_str, validate_tool_schema};
-pub use traits::{Tool, ToolError, ToolOutput};
+pub use traits::{NativeTool, Tool, ToolError, ToolFuture, ToolOutput};
 
 #[cfg(test)]
 mod tests;

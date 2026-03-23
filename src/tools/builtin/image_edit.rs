@@ -2,12 +2,13 @@
 
 use std::path::PathBuf;
 
-use async_trait::async_trait;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::context::JobContext;
 use crate::tools::builtin::path_utils::validate_path;
-use crate::tools::tool::{ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput};
+use crate::tools::tool::{
+    ApprovalRequirement, HostedToolEligibility, NativeTool, ToolError, ToolOutput,
+};
 
 /// Tool for editing images using an AI image editing API.
 pub struct ImageEditTool {
@@ -57,8 +58,7 @@ impl ImageEditTool {
     }
 }
 
-#[async_trait]
-impl Tool for ImageEditTool {
+impl NativeTool for ImageEditTool {
     fn name(&self) -> &str {
         "image_edit"
     }

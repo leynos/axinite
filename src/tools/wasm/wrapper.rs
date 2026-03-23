@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use wasmtime::Store;
 use wasmtime::component::Linker;
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
@@ -19,7 +18,7 @@ use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
 use crate::context::JobContext;
 use crate::safety::LeakDetector;
 use crate::secrets::SecretsStore;
-use crate::tools::tool::{HostedToolCatalogSource, Tool, ToolError, ToolOutput};
+use crate::tools::tool::{HostedToolCatalogSource, NativeTool, ToolError, ToolOutput};
 use crate::tools::wasm::capabilities::Capabilities;
 use crate::tools::wasm::credential_injector::{
     InjectedCredentials, host_matches_pattern, inject_credential,
@@ -710,8 +709,7 @@ impl WasmToolWrapper {
     }
 }
 
-#[async_trait]
-impl Tool for WasmToolWrapper {
+impl NativeTool for WasmToolWrapper {
     fn name(&self) -> &str {
         &self.prepared.name
     }

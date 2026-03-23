@@ -2,13 +2,11 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::context::JobContext;
 use crate::skills::registry::SkillRegistry;
 use crate::tools::builtin::skill_tools::object_schema;
 use crate::tools::tool::{
-    ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput, require_str,
+    ApprovalRequirement, HostedToolEligibility, NativeTool, ToolError, ToolOutput, require_str,
 };
 
 /// Tool for permanently deleting an installed skill from disk and the registry.
@@ -23,8 +21,7 @@ impl SkillRemoveTool {
     }
 }
 
-#[async_trait]
-impl Tool for SkillRemoveTool {
+impl NativeTool for SkillRemoveTool {
     fn name(&self) -> &str {
         "skill_remove"
     }
@@ -83,8 +80,7 @@ impl Tool for SkillRemoveTool {
         let output = serde_json::json!({
             "name": name,
             "status": "removed",
-            "message": format!("Skill '{}' has been removed.", name),
-        });
+            "message": format!("Skill '{}' has been removed.", name)});
 
         Ok(ToolOutput::success(output, start.elapsed()))
     }

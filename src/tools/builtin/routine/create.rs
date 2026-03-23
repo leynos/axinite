@@ -141,8 +141,7 @@ impl RoutineCreateTool {
     }
 }
 
-#[async_trait]
-impl Tool for RoutineCreateTool {
+impl NativeTool for RoutineCreateTool {
     fn name(&self) -> &str {
         "routine_create"
     }

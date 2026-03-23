@@ -1355,7 +1355,7 @@ mod tests {
         ToolCompletionResponse,
     };
     use crate::safety::SafetyLayer;
-    use crate::tools::{Tool, ToolError as ToolExecError, ToolOutput};
+    use crate::tools::{NativeTool, Tool, ToolError as ToolExecError, ToolOutput};
 
     /// A test tool that sleeps for a configurable duration before returning.
     struct SlowTool {
@@ -1365,8 +1365,7 @@ mod tests {
         max_active: Arc<AtomicUsize>,
     }
 
-    #[async_trait::async_trait]
-    impl Tool for SlowTool {
+    impl NativeTool for SlowTool {
         fn name(&self) -> &str {
             &self.tool_name
         }
@@ -1654,8 +1653,7 @@ mod tests {
     /// A tool that requires approval (UnlessAutoApproved).
     struct ApprovalTool;
 
-    #[async_trait::async_trait]
-    impl Tool for ApprovalTool {
+    impl NativeTool for ApprovalTool {
         fn name(&self) -> &str {
             "needs_approval"
         }
@@ -1689,8 +1687,7 @@ mod tests {
     /// A tool that always requires approval.
     struct AlwaysApprovalTool;
 
-    #[async_trait::async_trait]
-    impl Tool for AlwaysApprovalTool {
+    impl NativeTool for AlwaysApprovalTool {
         fn name(&self) -> &str {
             "always_approval"
         }

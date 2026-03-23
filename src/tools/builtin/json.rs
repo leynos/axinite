@@ -1,15 +1,12 @@
 //! JSON manipulation tool.
 
-use async_trait::async_trait;
-
 use crate::context::JobContext;
-use crate::tools::tool::{Tool, ToolError, ToolOutput, require_param, require_str};
+use crate::tools::tool::{NativeTool, ToolError, ToolOutput, require_param, require_str};
 
 /// Tool for JSON manipulation (parse, query, transform).
 pub struct JsonTool;
 
-#[async_trait]
-impl Tool for JsonTool {
+impl NativeTool for JsonTool {
     fn name(&self) -> &str {
         "json"
     }

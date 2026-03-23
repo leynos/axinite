@@ -15,8 +15,7 @@ impl RoutineFireTool {
     }
 }
 
-#[async_trait]
-impl Tool for RoutineFireTool {
+impl NativeTool for RoutineFireTool {
     fn name(&self) -> &str {
         "routine_fire"
     }

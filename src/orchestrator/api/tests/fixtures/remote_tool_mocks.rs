@@ -3,14 +3,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::context::JobContext;
 use crate::tools::{
-    ApprovalRequirement, HostedToolCatalogSource, HostedToolEligibility, Tool, ToolDomain,
-    ToolError, ToolOutput,
+    ApprovalRequirement, HostedToolCatalogSource, HostedToolEligibility, NativeTool, Tool,
+    ToolDomain, ToolError, ToolOutput,
 };
 
 /// Output behaviour for [`StubTool`].
@@ -54,8 +53,7 @@ impl StubTool {
     }
 }
 
-#[async_trait]
-impl Tool for StubTool {
+impl NativeTool for StubTool {
     fn name(&self) -> &str {
         self.name
     }
@@ -163,8 +161,7 @@ pub(crate) fn build_tool_fixture(kind: ToolFixture) -> Arc<dyn Tool> {
 /// Hosted-safe fixture whose approval requirement depends on input params.
 pub(crate) struct ParamAwareHostedTool;
 
-#[async_trait]
-impl Tool for ParamAwareHostedTool {
+impl NativeTool for ParamAwareHostedTool {
     fn name(&self) -> &str {
         "remote_tool_execute_param_aware"
     }
@@ -220,8 +217,7 @@ pub(crate) struct JobAwareTool {
     pub(crate) seen_job_id: Arc<Mutex<Option<Uuid>>>,
 }
 
-#[async_trait]
-impl Tool for JobAwareTool {
+impl NativeTool for JobAwareTool {
     fn name(&self) -> &str {
         "remote_tool_execute_job_id"
     }
@@ -278,8 +274,7 @@ pub(crate) struct ErrorTool {
     pub(crate) error_kind: ExecuteErrorKind,
 }
 
-#[async_trait]
-impl Tool for ErrorTool {
+impl NativeTool for ErrorTool {
     fn name(&self) -> &str {
         self.name
     }

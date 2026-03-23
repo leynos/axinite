@@ -1,17 +1,15 @@
 //! Time utility tool.
 
-use async_trait::async_trait;
 use chrono::{DateTime, LocalResult, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 
 use crate::context::JobContext;
-use crate::tools::tool::{Tool, ToolError, ToolOutput, require_str};
+use crate::tools::tool::{NativeTool, ToolError, ToolOutput, require_str};
 
 /// Tool for getting current time and date operations.
 pub struct TimeTool;
 
-#[async_trait]
-impl Tool for TimeTool {
+impl NativeTool for TimeTool {
     fn name(&self) -> &str {
         "time"
     }

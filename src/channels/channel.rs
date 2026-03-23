@@ -397,8 +397,7 @@ mod tests {
     /// Stub tool that marks `"value"` as sensitive.
     struct SecretTool;
 
-    #[async_trait]
-    impl crate::tools::Tool for SecretTool {
+    impl crate::tools::NativeTool for SecretTool {
         fn name(&self) -> &str {
             "secret_save"
         }

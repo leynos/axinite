@@ -16,8 +16,7 @@ impl RoutineDeleteTool {
     }
 }
 
-#[async_trait]
-impl Tool for RoutineDeleteTool {
+impl NativeTool for RoutineDeleteTool {
     fn name(&self) -> &str {
         "routine_delete"
     }

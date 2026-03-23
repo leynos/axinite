@@ -2,13 +2,14 @@
 
 use std::path::PathBuf;
 
-use async_trait::async_trait;
 use base64::Engine;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::context::JobContext;
 use crate::tools::builtin::path_utils::validate_path;
-use crate::tools::tool::{ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput};
+use crate::tools::tool::{
+    ApprovalRequirement, HostedToolEligibility, NativeTool, ToolError, ToolOutput,
+};
 
 /// Tool for analyzing images using a vision-capable model.
 pub struct ImageAnalyzeTool {
@@ -58,8 +59,7 @@ impl ImageAnalyzeTool {
     }
 }
 
-#[async_trait]
-impl Tool for ImageAnalyzeTool {
+impl NativeTool for ImageAnalyzeTool {
     fn name(&self) -> &str {
         "image_analyze"
     }

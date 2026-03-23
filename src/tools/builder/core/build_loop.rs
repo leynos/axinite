@@ -388,23 +388,23 @@ impl LlmSoftwareBuilder {
         match tool_name {
             "read_file" => {
                 let tool = crate::tools::builtin::ReadFileTool::new().with_base_dir(project_root);
-                tool.execute(params.clone(), &ctx).await
+                crate::tools::NativeTool::execute(&tool, params.clone(), &ctx).await
             }
             "write_file" => {
                 let tool = crate::tools::builtin::WriteFileTool::new().with_base_dir(project_root);
-                tool.execute(params.clone(), &ctx).await
+                crate::tools::NativeTool::execute(&tool, params.clone(), &ctx).await
             }
             "list_dir" => {
                 let tool = crate::tools::builtin::ListDirTool::new().with_base_dir(project_root);
-                tool.execute(params.clone(), &ctx).await
+                crate::tools::NativeTool::execute(&tool, params.clone(), &ctx).await
             }
             "apply_patch" => {
                 let tool = crate::tools::builtin::ApplyPatchTool::new().with_base_dir(project_root);
-                tool.execute(params.clone(), &ctx).await
+                crate::tools::NativeTool::execute(&tool, params.clone(), &ctx).await
             }
             "shell" => {
                 let tool = crate::tools::builtin::ShellTool::new().with_working_dir(project_root);
-                tool.execute(params.clone(), &ctx).await
+                crate::tools::NativeTool::execute(&tool, params.clone(), &ctx).await
             }
             _ => {
                 let tool = self.tools.get(tool_name).await.ok_or_else(|| {

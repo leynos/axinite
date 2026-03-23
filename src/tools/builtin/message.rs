@@ -5,13 +5,11 @@
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-use async_trait::async_trait;
-
 use crate::bootstrap::ironclaw_base_dir;
 use crate::channels::{ChannelManager, OutgoingResponse};
 use crate::context::JobContext;
 use crate::tools::tool::{
-    ApprovalRequirement, Tool, ToolError, ToolOutput, ToolRateLimitConfig, require_str,
+    ApprovalRequirement, NativeTool, ToolError, ToolOutput, ToolRateLimitConfig, require_str,
 };
 
 /// Tool for sending messages to channels.
@@ -59,8 +57,7 @@ impl MessageTool {
     }
 }
 
-#[async_trait]
-impl Tool for MessageTool {
+impl NativeTool for MessageTool {
     fn name(&self) -> &str {
         "message"
     }
@@ -635,8 +632,7 @@ mod tests {
         let mut ctx = crate::context::JobContext::new("routine-job", "price alert");
         ctx.metadata = serde_json::json!({
             "notify_channel": "telegram",
-            "notify_user": "123456789",
-        });
+            "notify_user": "123456789"});
 
         // No set_context called — simulates a routine full-job worker
         let result = tool
@@ -688,8 +684,7 @@ mod tests {
 
         let mut ctx = crate::context::JobContext::new("routine-job", "price alert");
         ctx.metadata = serde_json::json!({
-            "notify_user": "123456789",
-        });
+            "notify_user": "123456789"});
 
         let result = tool
             .execute(serde_json::json!({"content": "NEAR price is $5"}), &ctx)
