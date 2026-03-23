@@ -2,6 +2,8 @@
 
 use termimad::MadSkin;
 
+use super::input::SLASH_COMMANDS;
+
 /// Build a termimad skin with our color scheme.
 pub(super) fn make_skin() -> MadSkin {
     let mut skin = MadSkin::default();
@@ -25,27 +27,34 @@ pub(super) fn print_help() {
     let d = "\x1b[90m"; // dim gray (descriptions)
     let r = "\x1b[0m"; // reset
 
+    // Group commands by category
+    let general_cmds = &["/help", "/debug", "/quit", "/exit"];
+    let conversation_cmds = &["/undo", "/redo", "/clear", "/compact", "/new", "/interrupt"];
+
     println!();
     println!("  {h}IronClaw REPL{r}");
     println!();
     println!("  {h}Commands{r}");
-    println!("  {c}/help{r}              {d}show this help{r}");
-    println!("  {c}/debug{r}             {d}toggle verbose output{r}");
-    println!("  {c}/quit{r} {c}/exit{r}        {d}exit the repl{r}");
+    for cmd in SLASH_COMMANDS
+        .iter()
+        .filter(|c| general_cmds.contains(&c.name))
+    {
+        println!("  {c}{:<16}{r}  {d}{}{r}", cmd.name, cmd.description);
+    }
     println!();
     println!("  {h}Conversation{r}");
-    println!("  {c}/undo{r}              {d}undo the last turn{r}");
-    println!("  {c}/redo{r}              {d}redo an undone turn{r}");
-    println!("  {c}/clear{r}             {d}clear conversation{r}");
-    println!("  {c}/compact{r}           {d}compact context window{r}");
-    println!("  {c}/new{r}               {d}new conversation thread{r}");
-    println!("  {c}/interrupt{r}         {d}stop current operation{r}");
-    println!("  {c}esc{r}                {d}stop current operation{r}");
+    for cmd in SLASH_COMMANDS
+        .iter()
+        .filter(|c| conversation_cmds.contains(&c.name))
+    {
+        println!("  {c}{:<16}{r}  {d}{}{r}", cmd.name, cmd.description);
+    }
+    println!("  {c}esc{r}              {d}stop current operation{r}");
     println!();
     println!("  {h}Approval responses{r}");
-    println!("  {c}yes{r} ({c}y{r})            {d}approve tool execution{r}");
-    println!("  {c}no{r} ({c}n{r})             {d}deny tool execution{r}");
-    println!("  {c}always{r} ({c}a{r})         {d}approve for this session{r}");
+    println!("  {c}yes{r} ({c}y{r})         {d}approve tool execution{r}");
+    println!("  {c}no{r} ({c}n{r})          {d}deny tool execution{r}");
+    println!("  {c}always{r} ({c}a{r})      {d}approve for this session{r}");
     println!();
 }
 
@@ -57,13 +66,19 @@ pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> St
             for (key, value) in map {
                 let val_str = match value {
                     serde_json::Value::String(s) => {
-                        let display = if s.len() > 120 { &s[..120] } else { s };
+                        let display = if s.chars().count() > 120 {
+                            let truncated: String = s.chars().take(120).collect();
+                            format!("{truncated}...")
+                        } else {
+                            s.to_string()
+                        };
                         format!("\x1b[32m\"{display}\"\x1b[0m")
                     }
                     other => {
                         let rendered = other.to_string();
-                        if rendered.len() > 120 {
-                            format!("{}...", &rendered[..120])
+                        if rendered.chars().count() > 120 {
+                            let truncated: String = rendered.chars().take(120).collect();
+                            format!("{truncated}...")
                         } else {
                             rendered
                         }
@@ -75,8 +90,9 @@ pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> St
         }
         other => {
             let pretty = serde_json::to_string_pretty(other).unwrap_or_else(|_| other.to_string());
-            let truncated = if pretty.len() > 300 {
-                format!("{}...", &pretty[..300])
+            let truncated = if pretty.chars().count() > 300 {
+                let truncated_str: String = pretty.chars().take(300).collect();
+                format!("{truncated_str}...")
             } else {
                 pretty
             };

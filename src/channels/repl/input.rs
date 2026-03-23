@@ -12,31 +12,107 @@ use rustyline::{
     Cmd as ReadlineCmd, ConditionalEventHandler, Event, EventContext, Helper, RepeatCount,
 };
 
+/// Slash command entry with name and description.
+#[derive(Clone, Copy)]
+pub(super) struct SlashCommand {
+    pub(super) name: &'static str,
+    pub(super) description: &'static str,
+}
+
 /// Slash commands available in the REPL.
-pub(super) const SLASH_COMMANDS: &[&str] = &[
-    "/help",
-    "/quit",
-    "/exit",
-    "/debug",
-    "/model",
-    "/undo",
-    "/redo",
-    "/clear",
-    "/compact",
-    "/new",
-    "/interrupt",
-    "/version",
-    "/tools",
-    "/ping",
-    "/job",
-    "/status",
-    "/cancel",
-    "/list",
-    "/heartbeat",
-    "/summarize",
-    "/suggest",
-    "/thread",
-    "/resume",
+pub(super) const SLASH_COMMANDS: &[SlashCommand] = &[
+    SlashCommand {
+        name: "/help",
+        description: "show this help",
+    },
+    SlashCommand {
+        name: "/quit",
+        description: "exit the repl",
+    },
+    SlashCommand {
+        name: "/exit",
+        description: "exit the repl",
+    },
+    SlashCommand {
+        name: "/debug",
+        description: "toggle verbose output",
+    },
+    SlashCommand {
+        name: "/model",
+        description: "show or change model",
+    },
+    SlashCommand {
+        name: "/undo",
+        description: "undo the last turn",
+    },
+    SlashCommand {
+        name: "/redo",
+        description: "redo an undone turn",
+    },
+    SlashCommand {
+        name: "/clear",
+        description: "clear conversation",
+    },
+    SlashCommand {
+        name: "/compact",
+        description: "compact context window",
+    },
+    SlashCommand {
+        name: "/new",
+        description: "new conversation thread",
+    },
+    SlashCommand {
+        name: "/interrupt",
+        description: "stop current operation",
+    },
+    SlashCommand {
+        name: "/version",
+        description: "show version information",
+    },
+    SlashCommand {
+        name: "/tools",
+        description: "list available tools",
+    },
+    SlashCommand {
+        name: "/ping",
+        description: "test connection",
+    },
+    SlashCommand {
+        name: "/job",
+        description: "manage background jobs",
+    },
+    SlashCommand {
+        name: "/status",
+        description: "show system status",
+    },
+    SlashCommand {
+        name: "/cancel",
+        description: "cancel current operation",
+    },
+    SlashCommand {
+        name: "/list",
+        description: "list conversations",
+    },
+    SlashCommand {
+        name: "/heartbeat",
+        description: "send heartbeat",
+    },
+    SlashCommand {
+        name: "/summarize",
+        description: "summarize conversation",
+    },
+    SlashCommand {
+        name: "/suggest",
+        description: "get suggestions",
+    },
+    SlashCommand {
+        name: "/thread",
+        description: "manage conversation threads",
+    },
+    SlashCommand {
+        name: "/resume",
+        description: "resume a conversation",
+    },
 ];
 
 /// Rustyline helper for slash-command tab completion.
@@ -58,8 +134,8 @@ impl Completer for ReplHelper {
         let prefix = &line[..pos];
         let matches: Vec<String> = SLASH_COMMANDS
             .iter()
-            .filter(|cmd| cmd.starts_with(prefix))
-            .map(|cmd| cmd.to_string())
+            .filter(|cmd| cmd.name.starts_with(prefix))
+            .map(|cmd| cmd.name.to_string())
             .collect();
 
         Ok((0, matches))
@@ -76,8 +152,8 @@ impl Hinter for ReplHelper {
 
         SLASH_COMMANDS
             .iter()
-            .find(|cmd| cmd.starts_with(line) && **cmd != line)
-            .map(|cmd| cmd[line.len()..].to_string())
+            .find(|cmd| cmd.name.starts_with(line) && cmd.name != line)
+            .map(|cmd| cmd.name[line.len()..].to_string())
     }
 }
 
