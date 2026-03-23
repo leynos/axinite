@@ -66,7 +66,7 @@ table of survivors.
   Mitigation: `cargo-mutants` supports `--file <glob>` to restrict mutation
   to named source files. The workflow will compute the changed-file list via
   `git log -m --since="24 hours ago"` and pass each file as a `--file` argument. If no files changed,
-  the job exits early with success.
+  the job exits early successfully.
 
 - Risk: nightly runs on a large diff may still be expensive.
   Severity: low
@@ -87,7 +87,7 @@ table of survivors.
 - [x] Draft ExecPlan.
 - [x] Obtain approval.
 - [x] Create `.github/workflows/mutation-testing.yml`.
-- [x] Update ADR 008 status from `Proposed` to `Accepted` and record the
+- [x] Update Architecture Decision Record (ADR) 008 status from `Proposed` to `Accepted` and record the
       nightly + changed-files design decision.
 - [x] Update `docs/contents.md` if the ADR is not already listed.
 - [x] Validate the workflow YAML (syntax, act dry-run, or manual review).
@@ -161,7 +161,7 @@ are excluded from the workspace and built separately.
 Existing CI workflows live in `.github/workflows/`. The patterns relevant to
 this plan are:
 
-- `test.yml`: PR and push gate. Uses `dtolnay/rust-toolchain@stable`,
+- `test.yml`: Pull Request (PR) and push gate. Uses `dtolnay/rust-toolchain@stable`,
   `rui314/setup-mold@v1`, `Swatinem/rust-cache@v2`,
   `taiki-e/install-action@cargo-nextest`. Runs `make build-github-tool-wasm`
   before tests.
