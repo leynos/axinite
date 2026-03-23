@@ -35,7 +35,7 @@ table of survivors.
   mold linker, `Swatinem/rust-cache`, `taiki-e/install-action`).
 - The workflow file must live at `.github/workflows/mutation-testing.yml`.
 - All prose in the workflow file and ADR must follow `en-GB-oxendict` spelling.
-- The `tools-src/github` crate (WASM target) is excluded from the workspace
+- The `tools-src/github` crate (WebAssembly (WASM) target) is excluded from the workspace
   and uses a separate manifest. It must be excluded from the mutation run
   because `cargo-mutants` operates on workspace members.
 - The nightly scheduled run must scope mutations to files changed in the past
@@ -65,7 +65,7 @@ table of survivors.
   Likelihood: low
   Mitigation: `cargo-mutants` supports `--file <glob>` to restrict mutation
   to named source files. The workflow will compute the changed-file list via
-  `git diff` and pass each file as a `--file` argument. If no files changed,
+  `git log -m --since="24 hours ago"` and pass each file as a `--file` argument. If no files changed,
   the job exits early with success.
 
 - Risk: nightly runs on a large diff may still be expensive.
@@ -73,7 +73,7 @@ table of survivors.
   Likelihood: medium
   Mitigation: the 24-hour window naturally bounds the diff. If a bulk merge
   lands, the run may be slow but will complete; GitHub Actions has a 6-hour
-  job timeout by default, and we set a tighter `timeout-minutes`.
+  job timeout by default, and a tighter `timeout-minutes` is configured.
 
 - Risk: flaky tests may cause inconsistent mutant verdicts.
   Severity: medium
