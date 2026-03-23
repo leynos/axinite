@@ -23,6 +23,8 @@ pub use ngrok::NgrokTunnel;
 pub use none::NoneTunnel;
 pub use tailscale::TailscaleTunnel;
 
+use core::future::Future;
+use core::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::{Result, bail};
@@ -38,27 +40,84 @@ pub(crate) fn new_shared_url() -> SharedUrl {
 
 // ── Tunnel trait ─────────────────────────────────────────────────
 
+/// Boxed future used at the dyn tunnel boundary.
+pub type TunnelFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Provider-agnostic tunnel with lifecycle management.
 ///
 /// Implementations wrap an external tunnel binary. The gateway calls
 /// `start()` after binding its local port and `stop()` on shutdown.
-#[async_trait::async_trait]
 pub trait Tunnel: Send + Sync {
     /// Human-readable provider name (e.g. "cloudflare", "tailscale").
     fn name(&self) -> &str;
 
     /// Start the tunnel exposing `local_host:local_port` externally.
     /// Returns the public URL on success.
-    async fn start(&self, local_host: &str, local_port: u16) -> Result<String>;
+    fn start<'a>(
+        &'a self,
+        local_host: &'a str,
+        local_port: u16,
+    ) -> TunnelFuture<'a, Result<String>>;
 
     /// Stop the tunnel process gracefully.
-    async fn stop(&self) -> Result<()>;
+    fn stop(&self) -> TunnelFuture<'_, Result<()>>;
 
     /// Check if the tunnel process is still alive.
-    async fn health_check(&self) -> bool;
+    fn health_check(&self) -> TunnelFuture<'_, bool>;
 
     /// Return the public URL if the tunnel is running, `None` otherwise.
     fn public_url(&self) -> Option<String>;
+}
+
+/// Native async sibling trait for concrete tunnel implementations.
+pub trait NativeTunnel: Send + Sync {
+    /// See [`Tunnel::name`].
+    fn name(&self) -> &str;
+
+    /// See [`Tunnel::start`].
+    fn start<'a>(
+        &'a self,
+        local_host: &'a str,
+        local_port: u16,
+    ) -> impl Future<Output = Result<String>> + Send + 'a;
+
+    /// See [`Tunnel::stop`].
+    fn stop(&self) -> impl Future<Output = Result<()>> + Send + '_;
+
+    /// See [`Tunnel::health_check`].
+    fn health_check(&self) -> impl Future<Output = bool> + Send + '_;
+
+    /// See [`Tunnel::public_url`].
+    fn public_url(&self) -> Option<String>;
+}
+
+impl<T> Tunnel for T
+where
+    T: NativeTunnel + Send + Sync,
+{
+    fn name(&self) -> &str {
+        NativeTunnel::name(self)
+    }
+
+    fn start<'a>(
+        &'a self,
+        local_host: &'a str,
+        local_port: u16,
+    ) -> TunnelFuture<'a, Result<String>> {
+        Box::pin(NativeTunnel::start(self, local_host, local_port))
+    }
+
+    fn stop(&self) -> TunnelFuture<'_, Result<()>> {
+        Box::pin(NativeTunnel::stop(self))
+    }
+
+    fn health_check(&self) -> TunnelFuture<'_, bool> {
+        Box::pin(NativeTunnel::health_check(self))
+    }
+
+    fn public_url(&self) -> Option<String> {
+        NativeTunnel::public_url(self)
+    }
 }
 
 // ── Shared child-process handle ──────────────────────────────────

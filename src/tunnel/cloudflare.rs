@@ -5,7 +5,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::process::Command;
 
 use crate::tunnel::{
-    SharedProcess, SharedUrl, Tunnel, TunnelProcess, kill_shared, new_shared_process,
+    NativeTunnel, SharedProcess, SharedUrl, TunnelProcess, kill_shared, new_shared_process,
     new_shared_url,
 };
 
@@ -26,13 +26,12 @@ impl CloudflareTunnel {
     }
 }
 
-#[async_trait::async_trait]
-impl Tunnel for CloudflareTunnel {
+impl NativeTunnel for CloudflareTunnel {
     fn name(&self) -> &str {
         "cloudflare"
     }
 
-    async fn start(&self, local_host: &str, local_port: u16) -> Result<String> {
+    async fn start<'a>(&'a self, local_host: &'a str, local_port: u16) -> Result<String> {
         let origin = format!("http://{local_host}:{local_port}");
         let mut child = Command::new("cloudflared")
             .args([
@@ -125,16 +124,20 @@ mod tests {
 
     #[test]
     fn public_url_none_before_start() {
-        assert!(CloudflareTunnel::new("tok".into()).public_url().is_none());
+        assert!(NativeTunnel::public_url(&CloudflareTunnel::new("tok".into())).is_none());
     }
 
     #[tokio::test]
     async fn stop_without_start_is_ok() {
-        assert!(CloudflareTunnel::new("tok".into()).stop().await.is_ok());
+        assert!(
+            NativeTunnel::stop(&CloudflareTunnel::new("tok".into()))
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
     async fn health_false_before_start() {
-        assert!(!CloudflareTunnel::new("tok".into()).health_check().await);
+        assert!(!NativeTunnel::health_check(&CloudflareTunnel::new("tok".into())).await);
     }
 }

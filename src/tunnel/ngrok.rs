@@ -5,7 +5,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::process::Command;
 
 use crate::tunnel::{
-    SharedProcess, SharedUrl, Tunnel, TunnelProcess, kill_shared, new_shared_process,
+    NativeTunnel, SharedProcess, SharedUrl, TunnelProcess, kill_shared, new_shared_process,
     new_shared_url,
 };
 
@@ -28,13 +28,12 @@ impl NgrokTunnel {
     }
 }
 
-#[async_trait::async_trait]
-impl Tunnel for NgrokTunnel {
+impl NativeTunnel for NgrokTunnel {
     fn name(&self) -> &str {
         "ngrok"
     }
 
-    async fn start(&self, local_host: &str, local_port: u16) -> Result<String> {
+    async fn start<'a>(&'a self, local_host: &'a str, local_port: u16) -> Result<String> {
         let mut args = vec!["http".to_string(), format!("{local_host}:{local_port}")];
         if let Some(ref domain) = self.domain {
             args.push("--domain".into());
@@ -127,16 +126,20 @@ mod tests {
 
     #[test]
     fn public_url_none_before_start() {
-        assert!(NgrokTunnel::new("tok".into(), None).public_url().is_none());
+        assert!(NativeTunnel::public_url(&NgrokTunnel::new("tok".into(), None)).is_none());
     }
 
     #[tokio::test]
     async fn stop_without_start_is_ok() {
-        assert!(NgrokTunnel::new("tok".into(), None).stop().await.is_ok());
+        assert!(
+            NativeTunnel::stop(&NgrokTunnel::new("tok".into(), None))
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
     async fn health_false_before_start() {
-        assert!(!NgrokTunnel::new("tok".into(), None).health_check().await);
+        assert!(!NativeTunnel::health_check(&NgrokTunnel::new("tok".into(), None)).await);
     }
 }
