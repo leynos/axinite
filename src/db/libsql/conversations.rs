@@ -1,17 +1,15 @@
 //! Conversation-related ConversationStore implementation for LibSqlBackend.
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use libsql::params;
 use uuid::Uuid;
 
 use super::{LibSqlBackend, fmt_ts, get_i64, get_json, get_opt_text, get_text, get_ts, opt_text};
-use crate::db::ConversationStore;
+use crate::db::{EnsureConversationParams, NativeConversationStore};
 use crate::error::DatabaseError;
 use crate::history::{ConversationMessage, ConversationSummary};
 
-#[async_trait]
-impl ConversationStore for LibSqlBackend {
+impl NativeConversationStore for LibSqlBackend {
     async fn create_conversation(
         &self,
         channel: &str,
@@ -57,17 +55,20 @@ impl ConversationStore for LibSqlBackend {
             )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
-        self.touch_conversation(conversation_id).await?;
+        NativeConversationStore::touch_conversation(self, conversation_id).await?;
         Ok(id)
     }
 
     async fn ensure_conversation(
         &self,
-        id: Uuid,
-        channel: &str,
-        user_id: &str,
-        thread_id: Option<&str>,
+        params: EnsureConversationParams<'_>,
     ) -> Result<(), DatabaseError> {
+        let EnsureConversationParams {
+            id,
+            channel,
+            user_id,
+            thread_id,
+        } = params;
         let conn = self.connect().await?;
         let now = fmt_ts(&Utc::now());
         conn.execute(

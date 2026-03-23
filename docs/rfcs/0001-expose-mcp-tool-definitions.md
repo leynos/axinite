@@ -315,7 +315,7 @@ Active remote tool guidance:
 - The Notion MCP server may return workspace-scoped results rather than global search.
 ```
 
-This gives the model behavioral context without distorting tool signatures.
+This gives the model behavioural context without distorting tool signatures.
 
 ### 7. Refresh the catalogue when tool availability changes
 
@@ -437,7 +437,7 @@ from the catalogue.
 
 ## Testing Strategy
 
-The change needs both transport tests and behavioral tests.
+The change needs both transport tests and behavioural tests.
 
 ### Unit tests
 

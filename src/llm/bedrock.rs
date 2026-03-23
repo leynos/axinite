@@ -8,7 +8,6 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use async_trait::async_trait;
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_bedrockruntime::Client;
 use aws_sdk_bedrockruntime::operation::converse::ConverseError;
@@ -23,8 +22,8 @@ use rust_decimal::Decimal;
 use crate::llm::config::BedrockConfig;
 use crate::llm::error::LlmError;
 use crate::llm::provider::{
-    CompletionRequest, CompletionResponse, FinishReason, LlmProvider, ModelMetadata, ToolCall,
-    ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
+    CompletionRequest, CompletionResponse, FinishReason, ModelMetadata, NativeLlmProvider,
+    ToolCall, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
 };
 
 /// AWS Bedrock provider using the native Converse API.
@@ -81,8 +80,7 @@ impl BedrockProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for BedrockProvider {
+impl NativeLlmProvider for BedrockProvider {
     fn model_name(&self) -> &str {
         &self.display_model
     }

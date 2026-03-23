@@ -19,8 +19,7 @@ impl EventEmitTool {
     }
 }
 
-#[async_trait]
-impl Tool for EventEmitTool {
+impl NativeTool for EventEmitTool {
     fn name(&self) -> &str {
         "event_emit"
     }

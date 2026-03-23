@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use async_trait::async_trait;
 use tokio::sync::RwLock;
 
 use crate::context::JobContext;
@@ -21,8 +20,8 @@ use crate::tools::mcp::protocol::{
 use crate::tools::mcp::session::McpSessionManager;
 use crate::tools::mcp::transport::McpTransport;
 use crate::tools::tool::{
-    ApprovalRequirement, HostedToolCatalogSource, HostedToolEligibility, Tool, ToolError,
-    ToolOutput,
+    ApprovalRequirement, HostedToolCatalogSource, HostedToolEligibility, NativeTool, Tool,
+    ToolError, ToolOutput,
 };
 
 /// MCP client for communicating with MCP servers.
@@ -475,8 +474,7 @@ pub(super) struct McpToolWrapper {
     pub(super) client: Arc<McpClient>,
 }
 
-#[async_trait]
-impl Tool for McpToolWrapper {
+impl NativeTool for McpToolWrapper {
     fn name(&self) -> &str {
         &self.prefixed_name
     }

@@ -6,7 +6,7 @@ use rstest::{fixture, rstest};
 
 use super::*;
 use crate::tools::builtin::EchoTool;
-use crate::tools::tool::{HostedToolCatalogSource, HostedToolEligibility, Tool, ToolDomain};
+use crate::tools::tool::{HostedToolCatalogSource, HostedToolEligibility, NativeTool, ToolDomain};
 
 struct StubTool {
     name: &'static str,
@@ -71,8 +71,7 @@ async fn hosted_registry() -> ToolRegistry {
     registry
 }
 
-#[async_trait::async_trait]
-impl Tool for StubTool {
+impl NativeTool for StubTool {
     fn name(&self) -> &str {
         self.name
     }
@@ -245,8 +244,7 @@ async fn test_tool_definitions_sorted_alphabetically() {
 
     macro_rules! impl_tool {
         ($ty:ident, $name:expr) => {
-            #[async_trait::async_trait]
-            impl Tool for $ty {
+            impl NativeTool for $ty {
                 fn name(&self) -> &str {
                     $name
                 }

@@ -6,7 +6,9 @@
 //! - Usage tracking
 //! - Access control (which secrets a tool can use)
 
-use async_trait::async_trait;
+use core::future::Future;
+use core::pin::Pin;
+
 #[cfg(feature = "postgres")]
 use deadpool_postgres::Pool;
 use uuid::Uuid;
@@ -21,47 +23,198 @@ use secrecy::ExposeSecret;
 #[cfg(any(feature = "libsql", feature = "postgres"))]
 use std::sync::Arc;
 
+/// Boxed future used at the dyn secrets-store boundary.
+pub type SecretsStoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Trait for secret storage operations.
 ///
 /// Allows for different implementations (PostgreSQL, in-memory for testing).
-#[async_trait]
 pub trait SecretsStore: Send + Sync {
     /// Store a new secret.
-    async fn create(
-        &self,
-        user_id: &str,
+    fn create<'a>(
+        &'a self,
+        user_id: &'a str,
         params: CreateSecretParams,
-    ) -> Result<Secret, SecretError>;
+    ) -> SecretsStoreFuture<'a, Result<Secret, SecretError>>;
 
     /// Get a secret by name (encrypted form).
-    async fn get(&self, user_id: &str, name: &str) -> Result<Secret, SecretError>;
+    fn get<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> SecretsStoreFuture<'a, Result<Secret, SecretError>>;
 
     /// Get and decrypt a secret.
-    async fn get_decrypted(
-        &self,
-        user_id: &str,
-        name: &str,
-    ) -> Result<DecryptedSecret, SecretError>;
+    fn get_decrypted<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> SecretsStoreFuture<'a, Result<DecryptedSecret, SecretError>>;
 
     /// Check if a secret exists.
-    async fn exists(&self, user_id: &str, name: &str) -> Result<bool, SecretError>;
+    fn exists<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> SecretsStoreFuture<'a, Result<bool, SecretError>>;
 
     /// List all secret references for a user (no values).
-    async fn list(&self, user_id: &str) -> Result<Vec<SecretRef>, SecretError>;
+    fn list<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> SecretsStoreFuture<'a, Result<Vec<SecretRef>, SecretError>>;
 
     /// Delete a secret.
-    async fn delete(&self, user_id: &str, name: &str) -> Result<bool, SecretError>;
+    fn delete<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> SecretsStoreFuture<'a, Result<bool, SecretError>>;
 
     /// Update secret usage tracking.
-    async fn record_usage(&self, secret_id: Uuid) -> Result<(), SecretError>;
+    fn record_usage<'a>(
+        &'a self,
+        secret_id: Uuid,
+    ) -> SecretsStoreFuture<'a, Result<(), SecretError>>;
 
     /// Check if a secret is accessible by a tool (based on allowed_secrets).
-    async fn is_accessible(
-        &self,
-        user_id: &str,
-        secret_name: &str,
-        allowed_secrets: &[String],
-    ) -> Result<bool, SecretError>;
+    fn is_accessible<'a>(
+        &'a self,
+        user_id: &'a str,
+        secret_name: &'a str,
+        allowed_secrets: &'a [String],
+    ) -> SecretsStoreFuture<'a, Result<bool, SecretError>>;
+}
+
+/// Native async sibling trait for concrete secrets-store implementations.
+pub trait NativeSecretsStore: Send + Sync {
+    /// See [`SecretsStore::create`].
+    fn create<'a>(
+        &'a self,
+        user_id: &'a str,
+        params: CreateSecretParams,
+    ) -> impl Future<Output = Result<Secret, SecretError>> + Send + 'a;
+
+    /// See [`SecretsStore::get`].
+    fn get<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> impl Future<Output = Result<Secret, SecretError>> + Send + 'a;
+
+    /// See [`SecretsStore::get_decrypted`].
+    fn get_decrypted<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> impl Future<Output = Result<DecryptedSecret, SecretError>> + Send + 'a;
+
+    /// See [`SecretsStore::exists`].
+    fn exists<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> impl Future<Output = Result<bool, SecretError>> + Send + 'a;
+
+    /// See [`SecretsStore::list`].
+    fn list<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> impl Future<Output = Result<Vec<SecretRef>, SecretError>> + Send + 'a;
+
+    /// See [`SecretsStore::delete`].
+    fn delete<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> impl Future<Output = Result<bool, SecretError>> + Send + 'a;
+
+    /// See [`SecretsStore::record_usage`].
+    fn record_usage<'a>(
+        &'a self,
+        secret_id: Uuid,
+    ) -> impl Future<Output = Result<(), SecretError>> + Send + 'a;
+
+    /// See [`SecretsStore::is_accessible`].
+    fn is_accessible<'a>(
+        &'a self,
+        user_id: &'a str,
+        secret_name: &'a str,
+        allowed_secrets: &'a [String],
+    ) -> impl Future<Output = Result<bool, SecretError>> + Send + 'a;
+}
+
+impl<T> SecretsStore for T
+where
+    T: NativeSecretsStore + Send + Sync,
+{
+    fn create<'a>(
+        &'a self,
+        user_id: &'a str,
+        params: CreateSecretParams,
+    ) -> SecretsStoreFuture<'a, Result<Secret, SecretError>> {
+        Box::pin(NativeSecretsStore::create(self, user_id, params))
+    }
+
+    fn get<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> SecretsStoreFuture<'a, Result<Secret, SecretError>> {
+        Box::pin(NativeSecretsStore::get(self, user_id, name))
+    }
+
+    fn get_decrypted<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> SecretsStoreFuture<'a, Result<DecryptedSecret, SecretError>> {
+        Box::pin(NativeSecretsStore::get_decrypted(self, user_id, name))
+    }
+
+    fn exists<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> SecretsStoreFuture<'a, Result<bool, SecretError>> {
+        Box::pin(NativeSecretsStore::exists(self, user_id, name))
+    }
+
+    fn list<'a>(
+        &'a self,
+        user_id: &'a str,
+    ) -> SecretsStoreFuture<'a, Result<Vec<SecretRef>, SecretError>> {
+        Box::pin(NativeSecretsStore::list(self, user_id))
+    }
+
+    fn delete<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
+    ) -> SecretsStoreFuture<'a, Result<bool, SecretError>> {
+        Box::pin(NativeSecretsStore::delete(self, user_id, name))
+    }
+
+    fn record_usage<'a>(
+        &'a self,
+        secret_id: Uuid,
+    ) -> SecretsStoreFuture<'a, Result<(), SecretError>> {
+        Box::pin(NativeSecretsStore::record_usage(self, secret_id))
+    }
+
+    fn is_accessible<'a>(
+        &'a self,
+        user_id: &'a str,
+        secret_name: &'a str,
+        allowed_secrets: &'a [String],
+    ) -> SecretsStoreFuture<'a, Result<bool, SecretError>> {
+        Box::pin(NativeSecretsStore::is_accessible(
+            self,
+            user_id,
+            secret_name,
+            allowed_secrets,
+        ))
+    }
 }
 
 /// PostgreSQL implementation of SecretsStore.
@@ -80,11 +233,10 @@ impl PostgresSecretsStore {
 }
 
 #[cfg(feature = "postgres")]
-#[async_trait]
-impl SecretsStore for PostgresSecretsStore {
-    async fn create(
-        &self,
-        user_id: &str,
+impl NativeSecretsStore for PostgresSecretsStore {
+    async fn create<'a>(
+        &'a self,
+        user_id: &'a str,
         params: CreateSecretParams,
     ) -> Result<Secret, SecretError> {
         let client = self
@@ -131,7 +283,7 @@ impl SecretsStore for PostgresSecretsStore {
         Ok(row_to_secret(&row))
     }
 
-    async fn get(&self, user_id: &str, name: &str) -> Result<Secret, SecretError> {
+    async fn get<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<Secret, SecretError> {
         let name = name.to_lowercase();
         let client = self
             .pool
@@ -169,17 +321,17 @@ impl SecretsStore for PostgresSecretsStore {
         }
     }
 
-    async fn get_decrypted(
-        &self,
-        user_id: &str,
-        name: &str,
+    async fn get_decrypted<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
     ) -> Result<DecryptedSecret, SecretError> {
-        let secret = self.get(user_id, name).await?;
+        let secret = NativeSecretsStore::get(self, user_id, name).await?;
         self.crypto
             .decrypt(&secret.encrypted_value, &secret.key_salt)
     }
 
-    async fn exists(&self, user_id: &str, name: &str) -> Result<bool, SecretError> {
+    async fn exists<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<bool, SecretError> {
         let name = name.to_lowercase();
         let client = self
             .pool
@@ -198,7 +350,7 @@ impl SecretsStore for PostgresSecretsStore {
         Ok(row.get(0))
     }
 
-    async fn list(&self, user_id: &str) -> Result<Vec<SecretRef>, SecretError> {
+    async fn list<'a>(&'a self, user_id: &'a str) -> Result<Vec<SecretRef>, SecretError> {
         let client = self
             .pool
             .get()
@@ -222,7 +374,7 @@ impl SecretsStore for PostgresSecretsStore {
             .collect())
     }
 
-    async fn delete(&self, user_id: &str, name: &str) -> Result<bool, SecretError> {
+    async fn delete<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<bool, SecretError> {
         let name = name.to_lowercase();
         let client = self
             .pool
@@ -263,15 +415,15 @@ impl SecretsStore for PostgresSecretsStore {
         Ok(())
     }
 
-    async fn is_accessible(
-        &self,
-        user_id: &str,
-        secret_name: &str,
-        allowed_secrets: &[String],
+    async fn is_accessible<'a>(
+        &'a self,
+        user_id: &'a str,
+        secret_name: &'a str,
+        allowed_secrets: &'a [String],
     ) -> Result<bool, SecretError> {
         let secret_name_lower = secret_name.to_lowercase();
         // First check if the secret exists
-        if !self.exists(user_id, &secret_name_lower).await? {
+        if !NativeSecretsStore::exists(self, user_id, &secret_name_lower).await? {
             return Ok(false);
         }
 
@@ -344,11 +496,10 @@ impl LibSqlSecretsStore {
 }
 
 #[cfg(feature = "libsql")]
-#[async_trait]
-impl SecretsStore for LibSqlSecretsStore {
-    async fn create(
-        &self,
-        user_id: &str,
+impl NativeSecretsStore for LibSqlSecretsStore {
+    async fn create<'a>(
+        &'a self,
+        user_id: &'a str,
         params: CreateSecretParams,
     ) -> Result<Secret, SecretError> {
         let plaintext = params.value.expose_secret().as_bytes();
@@ -422,7 +573,7 @@ impl SecretsStore for LibSqlSecretsStore {
         Ok(secret)
     }
 
-    async fn get(&self, user_id: &str, name: &str) -> Result<Secret, SecretError> {
+    async fn get<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<Secret, SecretError> {
         let name = name.to_lowercase();
         let conn = self.connect().await?;
         let mut rows = conn
@@ -458,17 +609,17 @@ impl SecretsStore for LibSqlSecretsStore {
         }
     }
 
-    async fn get_decrypted(
-        &self,
-        user_id: &str,
-        name: &str,
+    async fn get_decrypted<'a>(
+        &'a self,
+        user_id: &'a str,
+        name: &'a str,
     ) -> Result<DecryptedSecret, SecretError> {
-        let secret = self.get(user_id, name).await?;
+        let secret = NativeSecretsStore::get(self, user_id, name).await?;
         self.crypto
             .decrypt(&secret.encrypted_value, &secret.key_salt)
     }
 
-    async fn exists(&self, user_id: &str, name: &str) -> Result<bool, SecretError> {
+    async fn exists<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<bool, SecretError> {
         let name = name.to_lowercase();
         let conn = self.connect().await?;
         let mut rows = conn
@@ -486,7 +637,7 @@ impl SecretsStore for LibSqlSecretsStore {
             .is_some())
     }
 
-    async fn list(&self, user_id: &str) -> Result<Vec<SecretRef>, SecretError> {
+    async fn list<'a>(&'a self, user_id: &'a str) -> Result<Vec<SecretRef>, SecretError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
@@ -510,7 +661,7 @@ impl SecretsStore for LibSqlSecretsStore {
         Ok(refs)
     }
 
-    async fn delete(&self, user_id: &str, name: &str) -> Result<bool, SecretError> {
+    async fn delete<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<bool, SecretError> {
         let name = name.to_lowercase();
         let conn = self.connect().await?;
         let affected = conn
@@ -542,14 +693,14 @@ impl SecretsStore for LibSqlSecretsStore {
         Ok(())
     }
 
-    async fn is_accessible(
-        &self,
-        user_id: &str,
-        secret_name: &str,
-        allowed_secrets: &[String],
+    async fn is_accessible<'a>(
+        &'a self,
+        user_id: &'a str,
+        secret_name: &'a str,
+        allowed_secrets: &'a [String],
     ) -> Result<bool, SecretError> {
         let secret_name_lower = secret_name.to_lowercase();
-        if !self.exists(user_id, &secret_name_lower).await? {
+        if !NativeSecretsStore::exists(self, user_id, &secret_name_lower).await? {
             return Ok(false);
         }
 
@@ -655,14 +806,13 @@ pub mod in_memory {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use async_trait::async_trait;
     use chrono::Utc;
     use secrecy::ExposeSecret;
     use tokio::sync::RwLock;
     use uuid::Uuid;
 
     use crate::secrets::crypto::SecretsCrypto;
-    use crate::secrets::store::SecretsStore;
+    use crate::secrets::store::NativeSecretsStore;
     use crate::secrets::types::{
         CreateSecretParams, DecryptedSecret, Secret, SecretError, SecretRef,
     };
@@ -681,11 +831,10 @@ pub mod in_memory {
         }
     }
 
-    #[async_trait]
-    impl SecretsStore for InMemorySecretsStore {
-        async fn create(
-            &self,
-            user_id: &str,
+    impl NativeSecretsStore for InMemorySecretsStore {
+        async fn create<'a>(
+            &'a self,
+            user_id: &'a str,
             params: CreateSecretParams,
         ) -> Result<Secret, SecretError> {
             let plaintext = params.value.expose_secret().as_bytes();
@@ -713,7 +862,7 @@ pub mod in_memory {
             Ok(secret)
         }
 
-        async fn get(&self, user_id: &str, name: &str) -> Result<Secret, SecretError> {
+        async fn get<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<Secret, SecretError> {
             let name = name.to_lowercase();
             let secret = self
                 .secrets
@@ -732,17 +881,21 @@ pub mod in_memory {
             Ok(secret)
         }
 
-        async fn get_decrypted(
-            &self,
-            user_id: &str,
-            name: &str,
+        async fn get_decrypted<'a>(
+            &'a self,
+            user_id: &'a str,
+            name: &'a str,
         ) -> Result<DecryptedSecret, SecretError> {
-            let secret = self.get(user_id, name).await?;
+            let secret = NativeSecretsStore::get(self, user_id, name).await?;
             self.crypto
                 .decrypt(&secret.encrypted_value, &secret.key_salt)
         }
 
-        async fn exists(&self, user_id: &str, name: &str) -> Result<bool, SecretError> {
+        async fn exists<'a>(
+            &'a self,
+            user_id: &'a str,
+            name: &'a str,
+        ) -> Result<bool, SecretError> {
             Ok(self
                 .secrets
                 .read()
@@ -750,7 +903,7 @@ pub mod in_memory {
                 .contains_key(&(user_id.to_string(), name.to_lowercase())))
         }
 
-        async fn list(&self, user_id: &str) -> Result<Vec<SecretRef>, SecretError> {
+        async fn list<'a>(&'a self, user_id: &'a str) -> Result<Vec<SecretRef>, SecretError> {
             Ok(self
                 .secrets
                 .read()
@@ -764,7 +917,11 @@ pub mod in_memory {
                 .collect())
         }
 
-        async fn delete(&self, user_id: &str, name: &str) -> Result<bool, SecretError> {
+        async fn delete<'a>(
+            &'a self,
+            user_id: &'a str,
+            name: &'a str,
+        ) -> Result<bool, SecretError> {
             Ok(self
                 .secrets
                 .write()
@@ -777,14 +934,14 @@ pub mod in_memory {
             Ok(())
         }
 
-        async fn is_accessible(
-            &self,
-            user_id: &str,
-            secret_name: &str,
-            allowed_secrets: &[String],
+        async fn is_accessible<'a>(
+            &'a self,
+            user_id: &'a str,
+            secret_name: &'a str,
+            allowed_secrets: &'a [String],
         ) -> Result<bool, SecretError> {
             let secret_name_lower = secret_name.to_lowercase();
-            if !self.exists(user_id, &secret_name_lower).await? {
+            if !NativeSecretsStore::exists(self, user_id, &secret_name_lower).await? {
                 return Ok(false);
             }
             for pattern in allowed_secrets {
@@ -805,7 +962,7 @@ pub mod in_memory {
 
 #[cfg(test)]
 mod tests {
-    use crate::secrets::store::SecretsStore;
+    use crate::secrets::store::NativeSecretsStore;
     use crate::secrets::types::CreateSecretParams;
     use crate::testing::credentials::{
         TEST_OPENAI_API_KEY_SHORT, TEST_SECRET_VALUE, TEST_STRIPE_KEY, test_secrets_store,
@@ -820,9 +977,13 @@ mod tests {
         let store = test_store();
         let params = CreateSecretParams::new("api_key", TEST_SECRET_VALUE);
 
-        store.create("user1", params).await.unwrap();
+        NativeSecretsStore::create(&store, "user1", params)
+            .await
+            .unwrap();
 
-        let decrypted = store.get_decrypted("user1", "api_key").await.unwrap();
+        let decrypted = NativeSecretsStore::get_decrypted(&store, "user1", "api_key")
+            .await
+            .unwrap();
         assert_eq!(decrypted.expose(), TEST_SECRET_VALUE);
     }
 
@@ -831,9 +992,19 @@ mod tests {
         let store = test_store();
         let params = CreateSecretParams::new("my_secret", "value");
 
-        assert!(!store.exists("user1", "my_secret").await.unwrap());
-        store.create("user1", params).await.unwrap();
-        assert!(store.exists("user1", "my_secret").await.unwrap());
+        assert!(
+            !NativeSecretsStore::exists(&store, "user1", "my_secret")
+                .await
+                .unwrap()
+        );
+        NativeSecretsStore::create(&store, "user1", params)
+            .await
+            .unwrap();
+        assert!(
+            NativeSecretsStore::exists(&store, "user1", "my_secret")
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
@@ -841,66 +1012,74 @@ mod tests {
         let store = test_store();
         let params = CreateSecretParams::new("to_delete", "value");
 
-        store.create("user1", params).await.unwrap();
-        assert!(store.exists("user1", "to_delete").await.unwrap());
+        NativeSecretsStore::create(&store, "user1", params)
+            .await
+            .unwrap();
+        assert!(
+            NativeSecretsStore::exists(&store, "user1", "to_delete")
+                .await
+                .unwrap()
+        );
 
-        store.delete("user1", "to_delete").await.unwrap();
-        assert!(!store.exists("user1", "to_delete").await.unwrap());
+        NativeSecretsStore::delete(&store, "user1", "to_delete")
+            .await
+            .unwrap();
+        assert!(
+            !NativeSecretsStore::exists(&store, "user1", "to_delete")
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
     async fn test_list() {
         let store = test_store();
 
-        store
-            .create("user1", CreateSecretParams::new("key1", "v1"))
+        NativeSecretsStore::create(&store, "user1", CreateSecretParams::new("key1", "v1"))
             .await
             .unwrap();
-        store
-            .create(
-                "user1",
-                CreateSecretParams::new("key2", "v2").with_provider("openai"),
-            )
-            .await
-            .unwrap();
-        store
-            .create("user2", CreateSecretParams::new("key3", "v3"))
+        NativeSecretsStore::create(
+            &store,
+            "user1",
+            CreateSecretParams::new("key2", "v2").with_provider("openai"),
+        )
+        .await
+        .unwrap();
+        NativeSecretsStore::create(&store, "user2", CreateSecretParams::new("key3", "v3"))
             .await
             .unwrap();
 
-        let list = store.list("user1").await.unwrap();
+        let list = NativeSecretsStore::list(&store, "user1").await.unwrap();
         assert_eq!(list.len(), 2);
     }
 
     #[tokio::test]
     async fn test_is_accessible() {
         let store = test_store();
-        store
-            .create(
-                "user1",
-                CreateSecretParams::new("openai_key", TEST_OPENAI_API_KEY_SHORT),
-            )
-            .await
-            .unwrap();
-        store
-            .create(
-                "user1",
-                CreateSecretParams::new("stripe_key", TEST_STRIPE_KEY),
-            )
-            .await
-            .unwrap();
+        NativeSecretsStore::create(
+            &store,
+            "user1",
+            CreateSecretParams::new("openai_key", TEST_OPENAI_API_KEY_SHORT),
+        )
+        .await
+        .unwrap();
+        NativeSecretsStore::create(
+            &store,
+            "user1",
+            CreateSecretParams::new("stripe_key", TEST_STRIPE_KEY),
+        )
+        .await
+        .unwrap();
 
         // Exact match
         let allowed = vec!["openai_key".to_string()];
         assert!(
-            store
-                .is_accessible("user1", "openai_key", &allowed)
+            NativeSecretsStore::is_accessible(&store, "user1", "openai_key", &allowed)
                 .await
                 .unwrap()
         );
         assert!(
-            !store
-                .is_accessible("user1", "stripe_key", &allowed)
+            !NativeSecretsStore::is_accessible(&store, "user1", "stripe_key", &allowed)
                 .await
                 .unwrap()
         );
@@ -908,14 +1087,12 @@ mod tests {
         // Glob pattern
         let allowed = vec!["openai_*".to_string()];
         assert!(
-            store
-                .is_accessible("user1", "openai_key", &allowed)
+            NativeSecretsStore::is_accessible(&store, "user1", "openai_key", &allowed)
                 .await
                 .unwrap()
         );
         assert!(
-            !store
-                .is_accessible("user1", "stripe_key", &allowed)
+            !NativeSecretsStore::is_accessible(&store, "user1", "stripe_key", &allowed)
                 .await
                 .unwrap()
         );
@@ -927,9 +1104,11 @@ mod tests {
         let expires_at = chrono::Utc::now() - chrono::Duration::hours(1);
         let params = CreateSecretParams::new("expired_key", "value").with_expiry(expires_at);
 
-        store.create("user1", params).await.unwrap();
+        NativeSecretsStore::create(&store, "user1", params)
+            .await
+            .unwrap();
 
-        let result = store.get("user1", "expired_key").await;
+        let result = NativeSecretsStore::get(&store, "user1", "expired_key").await;
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -943,9 +1122,11 @@ mod tests {
         let expires_at = chrono::Utc::now() + chrono::Duration::hours(1);
         let params = CreateSecretParams::new("fresh_key", "value").with_expiry(expires_at);
 
-        store.create("user1", params).await.unwrap();
+        NativeSecretsStore::create(&store, "user1", params)
+            .await
+            .unwrap();
 
-        let result = store.get("user1", "fresh_key").await;
+        let result = NativeSecretsStore::get(&store, "user1", "fresh_key").await;
         assert!(result.is_ok());
     }
 
@@ -953,23 +1134,27 @@ mod tests {
     async fn test_user_isolation() {
         let store = test_store();
 
-        store
-            .create(
-                "user1",
-                CreateSecretParams::new("shared_name", "user1_value"),
-            )
-            .await
-            .unwrap();
-        store
-            .create(
-                "user2",
-                CreateSecretParams::new("shared_name", "user2_value"),
-            )
-            .await
-            .unwrap();
+        NativeSecretsStore::create(
+            &store,
+            "user1",
+            CreateSecretParams::new("shared_name", "user1_value"),
+        )
+        .await
+        .unwrap();
+        NativeSecretsStore::create(
+            &store,
+            "user2",
+            CreateSecretParams::new("shared_name", "user2_value"),
+        )
+        .await
+        .unwrap();
 
-        let v1 = store.get_decrypted("user1", "shared_name").await.unwrap();
-        let v2 = store.get_decrypted("user2", "shared_name").await.unwrap();
+        let v1 = NativeSecretsStore::get_decrypted(&store, "user1", "shared_name")
+            .await
+            .unwrap();
+        let v2 = NativeSecretsStore::get_decrypted(&store, "user2", "shared_name")
+            .await
+            .unwrap();
 
         assert_eq!(v1.expose(), "user1_value");
         assert_eq!(v2.expose(), "user2_value");

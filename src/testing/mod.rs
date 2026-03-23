@@ -26,17 +26,22 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use async_trait::async_trait;
 use rust_decimal::Decimal;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 
 use crate::agent::AgentDeps;
 use crate::channels::{
-    Channel, ChannelManager, IncomingMessage, MessageStream, OutgoingResponse, StatusUpdate,
+    ChannelManager, IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
 };
 use crate::db::Database;
 use crate::error::{ChannelError, LlmError};
+
+#[cfg(test)]
+use crate::db::{
+    EnsureConversationParams, EstimationActualsParams, EstimationSnapshotParams,
+    RoutineRunCompletion, RoutineRuntimeUpdate, SandboxJobStatusUpdate,
+};
 use crate::llm::{
     CompletionRequest, CompletionResponse, FinishReason, LlmProvider, ToolCompletionRequest,
     ToolCompletionResponse,
@@ -163,8 +168,7 @@ impl Default for StubLlm {
     }
 }
 
-#[async_trait]
-impl LlmProvider for StubLlm {
+impl crate::llm::NativeLlmProvider for StubLlm {
     fn model_name(&self) -> &str {
         &self.model_name
     }
@@ -289,8 +293,7 @@ impl StubChannel {
     }
 }
 
-#[async_trait]
-impl Channel for StubChannel {
+impl NativeChannel for StubChannel {
     fn name(&self) -> &str {
         &self.name
     }
@@ -658,14 +661,24 @@ mod tests {
         let conv_id = uuid::Uuid::new_v4();
 
         // ensure_conversation should create the row.
-        db.ensure_conversation(conv_id, "web", "carol", None)
-            .await
-            .expect("ensure first");
+        db.ensure_conversation(EnsureConversationParams {
+            id: conv_id,
+            channel: "web",
+            user_id: "carol",
+            thread_id: None,
+        })
+        .await
+        .expect("ensure first");
 
         // Calling again with the same ID should not error.
-        db.ensure_conversation(conv_id, "web", "carol", None)
-            .await
-            .expect("ensure second (idempotent)");
+        db.ensure_conversation(EnsureConversationParams {
+            id: conv_id,
+            channel: "web",
+            user_id: "carol",
+            thread_id: None,
+        })
+        .await
+        .expect("ensure second (idempotent)");
 
         // Should be able to add messages to it.
         let msg_id = db
@@ -1010,14 +1023,10 @@ mod tests {
     }
 
     #[cfg(feature = "libsql")]
-    #[tokio::test]
-    async fn test_routine_crud() {
+    async fn create_routine_fixture(db: &Arc<dyn Database>) -> uuid::Uuid {
         use crate::agent::routine::{
-            NotifyConfig, Routine, RoutineAction, RoutineGuardrails, RoutineRun, RunStatus, Trigger,
+            NotifyConfig, Routine, RoutineAction, RoutineGuardrails, Trigger,
         };
-
-        let harness = TestHarnessBuilder::new().build().await;
-        let db = &harness.db;
 
         let routine_id = uuid::Uuid::new_v4();
         let routine = Routine {
@@ -1056,7 +1065,6 @@ mod tests {
             updated_at: chrono::Utc::now(),
         };
 
-        // Create
         db.create_routine(&routine).await.expect("create routine");
 
         // Get by ID
@@ -1098,7 +1106,13 @@ mod tests {
         assert!(!re_fetched.enabled);
         assert_eq!(re_fetched.description, "Updated description");
 
-        // Create a routine run
+        routine_id
+    }
+
+    #[cfg(feature = "libsql")]
+    async fn start_routine_run(db: &Arc<dyn Database>, routine_id: uuid::Uuid) -> uuid::Uuid {
+        use crate::agent::routine::{RoutineRun, RunStatus};
+
         let run_id = uuid::Uuid::new_v4();
         let run = RoutineRun {
             id: run_id,
@@ -1123,24 +1137,58 @@ mod tests {
         assert_eq!(runs.len(), 1);
         assert!(matches!(runs[0].status, RunStatus::Running));
 
-        // Complete the run
-        db.complete_routine_run(run_id, RunStatus::Ok, Some("All good"), Some(150))
-            .await
-            .expect("complete run");
+        run_id
+    }
+
+    #[cfg(feature = "libsql")]
+    async fn complete_routine_run_ok(db: &Arc<dyn Database>, run_id: uuid::Uuid) {
+        use crate::agent::routine::RunStatus;
+
+        db.complete_routine_run(RoutineRunCompletion {
+            id: run_id,
+            status: RunStatus::Ok,
+            result_summary: Some("All good"),
+            tokens_used: Some(150),
+        })
+        .await
+        .expect("complete run");
+    }
+
+    #[cfg(feature = "libsql")]
+    async fn assert_history_len(db: &Arc<dyn Database>, routine_id: uuid::Uuid, expected: usize) {
+        use crate::agent::routine::RunStatus;
 
         let runs = db
             .list_routine_runs(routine_id, 10)
             .await
             .expect("list runs after complete");
-        assert!(matches!(runs[0].status, RunStatus::Ok));
+        assert_eq!(runs.len(), expected);
+        if expected > 0 {
+            assert!(matches!(runs[0].status, RunStatus::Ok));
+        }
+    }
 
-        // Delete
+    #[cfg(feature = "libsql")]
+    async fn delete_routine_and_assert_absent(db: &Arc<dyn Database>, routine_id: uuid::Uuid) {
         let deleted = db.delete_routine(routine_id).await.expect("delete");
         assert!(deleted);
 
         // Delete non-existent
         let deleted = db.delete_routine(routine_id).await.expect("delete again");
         assert!(!deleted);
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_routine_crud() {
+        let harness = TestHarnessBuilder::new().build().await;
+        let db = &harness.db;
+
+        let routine_id = create_routine_fixture(db).await;
+        let run_id = start_routine_run(db, routine_id).await;
+        complete_routine_run_ok(db, run_id).await;
+        assert_history_len(db, routine_id, 1).await;
+        delete_routine_and_assert_absent(db, routine_id).await;
     }
 
     #[cfg(feature = "libsql")]
@@ -1189,14 +1237,14 @@ mod tests {
         db.create_routine(&routine).await.expect("create");
 
         let now = chrono::Utc::now();
-        db.update_routine_runtime(
-            routine_id,
-            now,
-            Some(now + chrono::TimeDelta::seconds(3600)),
-            5,
-            2,
-            &serde_json::json!({"last_result": "ok"}),
-        )
+        db.update_routine_runtime(RoutineRuntimeUpdate {
+            id: routine_id,
+            last_run_at: now,
+            next_fire_at: Some(now + chrono::TimeDelta::seconds(3600)),
+            run_count: 5,
+            consecutive_failures: 2,
+            state: &serde_json::json!({"last_result": "ok"}),
+        })
         .await
         .expect("update runtime");
 
@@ -1273,26 +1321,26 @@ mod tests {
         assert_eq!(fetched.status, "creating");
 
         // Update status to running
-        db.update_sandbox_job_status(
-            job_id,
-            "running",
-            None,
-            None,
-            Some(chrono::Utc::now()),
-            None,
-        )
+        db.update_sandbox_job_status(SandboxJobStatusUpdate {
+            id: job_id,
+            status: "running",
+            success: None,
+            message: None,
+            started_at: Some(chrono::Utc::now()),
+            completed_at: None,
+        })
         .await
         .expect("update to running");
 
         // Update to completed
-        db.update_sandbox_job_status(
-            job_id,
-            "completed",
-            Some(true),
-            Some("Done"),
-            None,
-            Some(chrono::Utc::now()),
-        )
+        db.update_sandbox_job_status(SandboxJobStatusUpdate {
+            id: job_id,
+            status: "completed",
+            success: Some(true),
+            message: Some("Done"),
+            started_at: None,
+            completed_at: Some(chrono::Utc::now()),
+        })
         .await
         .expect("update to completed");
 
@@ -1459,25 +1507,25 @@ mod tests {
 
         // Save estimation snapshot
         let snap_id = db
-            .save_estimation_snapshot(
+            .save_estimation_snapshot(EstimationSnapshotParams {
                 job_id,
-                "code_generation",
-                &["shell".to_string(), "write_file".to_string()],
-                Decimal::new(50, 2), // 0.50
-                120,
-                Decimal::new(500, 2), // 5.00
-            )
+                category: "code_generation",
+                tool_names: &["shell".to_string(), "write_file".to_string()],
+                estimated_cost: Decimal::new(50, 2), // 0.50
+                estimated_time_secs: 120,
+                estimated_value: Decimal::new(500, 2), // 5.00
+            })
             .await
             .expect("save snapshot");
         assert!(!snap_id.is_nil());
 
         // Update with actuals
-        db.update_estimation_actuals(
-            snap_id,
-            Decimal::new(45, 2), // 0.45
-            110,
-            Some(Decimal::new(600, 2)), // 6.00
-        )
+        db.update_estimation_actuals(EstimationActualsParams {
+            id: snap_id,
+            actual_cost: Decimal::new(45, 2), // 0.45
+            actual_time_secs: 110,
+            actual_value: Some(Decimal::new(600, 2)), // 6.00
+        })
         .await
         .expect("update actuals");
     }

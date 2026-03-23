@@ -1,7 +1,6 @@
 //! Routine-related RoutineStore implementation for LibSqlBackend.
 
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use libsql::params;
 use uuid::Uuid;
 
@@ -9,12 +8,11 @@ use super::{
     LibSqlBackend, ROUTINE_COLUMNS, ROUTINE_RUN_COLUMNS, fmt_opt_ts, fmt_ts, get_i64, opt_text,
     opt_text_owned, row_to_routine_libsql, row_to_routine_run_libsql,
 };
-use crate::agent::routine::{Routine, RoutineRun, RunStatus};
-use crate::db::RoutineStore;
+use crate::agent::routine::{Routine, RoutineRun};
+use crate::db::{NativeRoutineStore, RoutineRunCompletion, RoutineRuntimeUpdate};
 use crate::error::DatabaseError;
 
-#[async_trait]
-impl RoutineStore for LibSqlBackend {
+impl NativeRoutineStore for LibSqlBackend {
     async fn create_routine(&self, routine: &Routine) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         let trigger_type = routine.trigger.type_tag();
@@ -264,13 +262,16 @@ impl RoutineStore for LibSqlBackend {
 
     async fn update_routine_runtime(
         &self,
-        id: Uuid,
-        last_run_at: DateTime<Utc>,
-        next_fire_at: Option<DateTime<Utc>>,
-        run_count: u64,
-        consecutive_failures: u32,
-        state: &serde_json::Value,
+        params: RoutineRuntimeUpdate<'_>,
     ) -> Result<(), DatabaseError> {
+        let RoutineRuntimeUpdate {
+            id,
+            last_run_at,
+            next_fire_at,
+            run_count,
+            consecutive_failures,
+            state,
+        } = params;
         let conn = self.connect().await?;
         let now = fmt_ts(&Utc::now());
         conn.execute(
@@ -334,11 +335,14 @@ impl RoutineStore for LibSqlBackend {
 
     async fn complete_routine_run(
         &self,
-        id: Uuid,
-        status: RunStatus,
-        result_summary: Option<&str>,
-        tokens_used: Option<i32>,
+        params: RoutineRunCompletion<'_>,
     ) -> Result<(), DatabaseError> {
+        let RoutineRunCompletion {
+            id,
+            status,
+            result_summary,
+            tokens_used,
+        } = params;
         let conn = self.connect().await?;
         let now = fmt_ts(&Utc::now());
         conn.execute(

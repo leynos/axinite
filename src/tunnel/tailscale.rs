@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use tokio::process::Command;
 
 use crate::tunnel::{
-    SharedProcess, SharedUrl, Tunnel, kill_shared, new_shared_process, new_shared_url,
+    NativeTunnel, SharedProcess, SharedUrl, kill_shared, new_shared_process, new_shared_url,
 };
 
 /// Uses `tailscale serve` (tailnet-only) or `tailscale funnel` (public).
@@ -28,13 +28,12 @@ impl TailscaleTunnel {
     }
 }
 
-#[async_trait::async_trait]
-impl Tunnel for TailscaleTunnel {
+impl NativeTunnel for TailscaleTunnel {
     fn name(&self) -> &str {
         "tailscale"
     }
 
-    async fn start(&self, local_host: &str, local_port: u16) -> Result<String> {
+    async fn start<'a>(&'a self, local_host: &'a str, local_port: u16) -> Result<String> {
         let subcommand = if self.funnel { "funnel" } else { "serve" };
 
         let hostname = if let Some(ref h) = self.hostname {
@@ -153,16 +152,20 @@ mod tests {
 
     #[test]
     fn public_url_none_before_start() {
-        assert!(TailscaleTunnel::new(false, None).public_url().is_none());
+        assert!(NativeTunnel::public_url(&TailscaleTunnel::new(false, None)).is_none());
     }
 
     #[tokio::test]
     async fn health_false_before_start() {
-        assert!(!TailscaleTunnel::new(false, None).health_check().await);
+        assert!(!NativeTunnel::health_check(&TailscaleTunnel::new(false, None)).await);
     }
 
     #[tokio::test]
     async fn stop_without_start_is_ok() {
-        assert!(TailscaleTunnel::new(false, None).stop().await.is_ok());
+        assert!(
+            NativeTunnel::stop(&TailscaleTunnel::new(false, None))
+                .await
+                .is_ok()
+        );
     }
 }

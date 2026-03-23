@@ -8,7 +8,8 @@ mod openai;
 
 pub use self::openai::OpenAiWhisperProvider;
 
-use async_trait::async_trait;
+use core::future::Future;
+use core::pin::Pin;
 
 /// Supported audio formats for transcription.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,15 +66,43 @@ pub enum TranscriptionError {
     EmptyAudio,
 }
 
+/// Boxed future used at the dyn transcription-provider boundary.
+pub type TranscriptionProviderFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<String, TranscriptionError>> + Send + 'a>>;
+
 /// Trait for speech-to-text providers.
-#[async_trait]
 pub trait TranscriptionProvider: Send + Sync {
     /// Transcribe audio bytes into text.
-    async fn transcribe(
-        &self,
-        audio_data: &[u8],
+    fn transcribe<'a>(
+        &'a self,
+        audio_data: &'a [u8],
         format: AudioFormat,
-    ) -> Result<String, TranscriptionError>;
+    ) -> TranscriptionProviderFuture<'a>;
+}
+
+/// Native async sibling trait for concrete transcription-provider implementations.
+pub trait NativeTranscriptionProvider: Send + Sync {
+    /// See [`TranscriptionProvider::transcribe`].
+    fn transcribe<'a>(
+        &'a self,
+        audio_data: &'a [u8],
+        format: AudioFormat,
+    ) -> impl Future<Output = Result<String, TranscriptionError>> + Send + 'a;
+}
+
+impl<T> TranscriptionProvider for T
+where
+    T: NativeTranscriptionProvider + Send + Sync,
+{
+    fn transcribe<'a>(
+        &'a self,
+        audio_data: &'a [u8],
+        format: AudioFormat,
+    ) -> TranscriptionProviderFuture<'a> {
+        Box::pin(NativeTranscriptionProvider::transcribe(
+            self, audio_data, format,
+        ))
+    }
 }
 
 /// Middleware that processes audio attachments on incoming messages.
@@ -168,11 +197,10 @@ mod tests {
         result: Result<String, TranscriptionError>,
     }
 
-    #[async_trait]
-    impl TranscriptionProvider for MockProvider {
-        async fn transcribe(
-            &self,
-            _audio_data: &[u8],
+    impl NativeTranscriptionProvider for MockProvider {
+        async fn transcribe<'a>(
+            &'a self,
+            _audio_data: &'a [u8],
             _format: AudioFormat,
         ) -> Result<String, TranscriptionError> {
             match &self.result {

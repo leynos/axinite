@@ -2,14 +2,12 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::context::JobContext;
 use crate::skills::catalog::SkillCatalog;
 use crate::skills::registry::SkillRegistry;
 use crate::tools::builtin::skill_fetch::fetch_skill_content;
 use crate::tools::tool::{
-    ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput, require_str,
+    ApprovalRequirement, HostedToolEligibility, NativeTool, ToolError, ToolOutput, require_str,
 };
 
 /// Install skills from inline content, a URL, or a catalogue lookup.
@@ -51,8 +49,7 @@ impl SkillInstallTool {
     }
 }
 
-#[async_trait]
-impl Tool for SkillInstallTool {
+impl NativeTool for SkillInstallTool {
     fn name(&self) -> &str {
         "skill_install"
     }

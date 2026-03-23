@@ -1,6 +1,7 @@
+use core::future::Future;
+use core::pin::Pin;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -11,6 +12,9 @@ use super::approval_policy::{
     ApprovalRequirement, HostedToolCatalogSource, HostedToolEligibility, ToolDomain,
     ToolRateLimitConfig,
 };
+
+/// Boxed future used at the dyn `Tool` boundary.
+pub type ToolFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Error type for tool execution.
 #[derive(Debug, Error)]
@@ -115,7 +119,10 @@ impl ToolSchema {
 }
 
 /// Trait for tools that the agent can use.
-#[async_trait]
+///
+/// This is the dyn-safe object boundary. Concrete implementations should
+/// implement [`NativeTool`] instead; the blanket adapter provides this
+/// trait automatically.
 pub trait Tool: Send + Sync {
     /// Get the tool name.
     fn name(&self) -> &str;
@@ -127,11 +134,11 @@ pub trait Tool: Send + Sync {
     fn parameters_schema(&self) -> serde_json::Value;
 
     /// Execute the tool with the given parameters.
-    async fn execute(
-        &self,
+    fn execute<'a>(
+        &'a self,
         params: serde_json::Value,
-        ctx: &JobContext,
-    ) -> Result<ToolOutput, ToolError>;
+        ctx: &'a JobContext,
+    ) -> ToolFuture<'a, Result<ToolOutput, ToolError>>;
 
     /// Estimate the cost of running this tool with the given parameters.
     fn estimated_cost(&self, _params: &serde_json::Value) -> Option<Decimal> {
@@ -238,5 +245,153 @@ pub trait Tool: Send + Sync {
             description: self.description().to_string(),
             parameters: self.parameters_schema(),
         }
+    }
+}
+
+/// Native (non-dyn) sibling of [`Tool`] for concrete implementations.
+///
+/// Implement this trait instead of [`Tool`] directly. The blanket adapter
+/// below automatically implements [`Tool`] for every `T: NativeTool`.
+pub trait NativeTool: Send + Sync {
+    /// Get the tool name.
+    fn name(&self) -> &str;
+
+    /// Get a description of what the tool does.
+    fn description(&self) -> &str;
+
+    /// Get the JSON Schema for the tool's parameters.
+    fn parameters_schema(&self) -> serde_json::Value;
+
+    /// Execute the tool with the given parameters.
+    fn execute<'a>(
+        &'a self,
+        params: serde_json::Value,
+        ctx: &'a JobContext,
+    ) -> impl Future<Output = Result<ToolOutput, ToolError>> + Send + 'a;
+
+    /// Estimate the cost of running this tool with the given parameters.
+    fn estimated_cost(&self, _params: &serde_json::Value) -> Option<Decimal> {
+        None
+    }
+
+    /// Estimate how long this tool will take with the given parameters.
+    fn estimated_duration(&self, _params: &serde_json::Value) -> Option<Duration> {
+        None
+    }
+
+    /// Whether this tool's output needs sanitization.
+    fn requires_sanitization(&self) -> bool {
+        true
+    }
+
+    /// Whether this tool invocation requires user approval.
+    fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
+        ApprovalRequirement::Never
+    }
+
+    /// Whether hosted workers may advertise this tool in the remote catalog.
+    fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+        HostedToolEligibility::Eligible
+    }
+
+    /// Which hosted-catalogue source family this tool belongs to, if any.
+    fn hosted_tool_catalog_source(&self) -> Option<HostedToolCatalogSource> {
+        None
+    }
+
+    /// Maximum time this tool is allowed to run before the caller kills it.
+    fn execution_timeout(&self) -> Duration {
+        Duration::from_secs(60)
+    }
+
+    /// Where this tool should execute.
+    fn domain(&self) -> ToolDomain {
+        ToolDomain::Orchestrator
+    }
+
+    /// Parameter names whose values must be redacted before logging, hooks,
+    /// and approvals.
+    fn sensitive_params(&self) -> &[&str] {
+        &[]
+    }
+
+    /// Per-invocation rate limit for this tool.
+    fn rate_limit_config(&self) -> Option<ToolRateLimitConfig> {
+        None
+    }
+
+    /// Get the tool schema for LLM function calling.
+    fn schema(&self) -> ToolSchema {
+        ToolSchema {
+            name: self.name().to_string(),
+            description: self.description().to_string(),
+            parameters: self.parameters_schema(),
+        }
+    }
+}
+
+impl<T: NativeTool> Tool for T {
+    fn name(&self) -> &str {
+        NativeTool::name(self)
+    }
+
+    fn description(&self) -> &str {
+        NativeTool::description(self)
+    }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        NativeTool::parameters_schema(self)
+    }
+
+    fn execute<'a>(
+        &'a self,
+        params: serde_json::Value,
+        ctx: &'a JobContext,
+    ) -> ToolFuture<'a, Result<ToolOutput, ToolError>> {
+        Box::pin(NativeTool::execute(self, params, ctx))
+    }
+
+    fn estimated_cost(&self, params: &serde_json::Value) -> Option<Decimal> {
+        NativeTool::estimated_cost(self, params)
+    }
+
+    fn estimated_duration(&self, params: &serde_json::Value) -> Option<Duration> {
+        NativeTool::estimated_duration(self, params)
+    }
+
+    fn requires_sanitization(&self) -> bool {
+        NativeTool::requires_sanitization(self)
+    }
+
+    fn requires_approval(&self, params: &serde_json::Value) -> ApprovalRequirement {
+        NativeTool::requires_approval(self, params)
+    }
+
+    fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
+        NativeTool::hosted_tool_eligibility(self)
+    }
+
+    fn hosted_tool_catalog_source(&self) -> Option<HostedToolCatalogSource> {
+        NativeTool::hosted_tool_catalog_source(self)
+    }
+
+    fn execution_timeout(&self) -> Duration {
+        NativeTool::execution_timeout(self)
+    }
+
+    fn domain(&self) -> ToolDomain {
+        NativeTool::domain(self)
+    }
+
+    fn sensitive_params(&self) -> &[&str] {
+        NativeTool::sensitive_params(self)
+    }
+
+    fn rate_limit_config(&self) -> Option<ToolRateLimitConfig> {
+        NativeTool::rate_limit_config(self)
+    }
+
+    fn schema(&self) -> ToolSchema {
+        NativeTool::schema(self)
     }
 }

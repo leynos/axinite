@@ -3,7 +3,9 @@
 //! Embeddings convert text into dense vectors that capture semantic meaning.
 //! Similar concepts have similar vectors, enabling semantic search.
 
-use async_trait::async_trait;
+use core::future::Future;
+use core::pin::Pin;
+
 use serde::{Deserialize, Serialize};
 
 /// Error type for embedding operations.
@@ -33,8 +35,10 @@ impl From<reqwest::Error> for EmbeddingError {
     }
 }
 
+/// Boxed future used at the dyn embedding-provider boundary.
+pub type EmbeddingProviderFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Trait for embedding providers.
-#[async_trait]
 pub trait EmbeddingProvider: Send + Sync {
     /// Get the embedding dimension.
     fn dimension(&self) -> usize;
@@ -46,17 +50,80 @@ pub trait EmbeddingProvider: Send + Sync {
     fn max_input_length(&self) -> usize;
 
     /// Generate an embedding for a single text.
-    async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError>;
+    fn embed<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> EmbeddingProviderFuture<'a, Result<Vec<f32>, EmbeddingError>>;
+
+    /// Generate embeddings for multiple texts (batched).
+    fn embed_batch<'a>(
+        &'a self,
+        texts: &'a [String],
+    ) -> EmbeddingProviderFuture<'a, Result<Vec<Vec<f32>>, EmbeddingError>>;
+}
+
+/// Native async sibling trait for concrete embedding-provider implementations.
+pub trait NativeEmbeddingProvider: Send + Sync {
+    /// Get the embedding dimension.
+    fn dimension(&self) -> usize;
+
+    /// Get the model name.
+    fn model_name(&self) -> &str;
+
+    /// Maximum input length in characters.
+    fn max_input_length(&self) -> usize;
+
+    /// Generate an embedding for a single text.
+    fn embed<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> impl Future<Output = Result<Vec<f32>, EmbeddingError>> + Send + 'a;
 
     /// Generate embeddings for multiple texts (batched).
     ///
     /// Default implementation calls embed() for each text.
-    async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
-        let mut embeddings = Vec::with_capacity(texts.len());
-        for text in texts {
-            embeddings.push(self.embed(text).await?);
+    fn embed_batch<'a>(
+        &'a self,
+        texts: &'a [String],
+    ) -> impl Future<Output = Result<Vec<Vec<f32>>, EmbeddingError>> + Send + 'a {
+        async move {
+            let mut embeddings = Vec::with_capacity(texts.len());
+            for text in texts {
+                embeddings.push(self.embed(text).await?);
+            }
+            Ok(embeddings)
         }
-        Ok(embeddings)
+    }
+}
+
+impl<T> EmbeddingProvider for T
+where
+    T: NativeEmbeddingProvider + Send + Sync,
+{
+    fn dimension(&self) -> usize {
+        NativeEmbeddingProvider::dimension(self)
+    }
+
+    fn model_name(&self) -> &str {
+        NativeEmbeddingProvider::model_name(self)
+    }
+
+    fn max_input_length(&self) -> usize {
+        NativeEmbeddingProvider::max_input_length(self)
+    }
+
+    fn embed<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> EmbeddingProviderFuture<'a, Result<Vec<f32>, EmbeddingError>> {
+        Box::pin(NativeEmbeddingProvider::embed(self, text))
+    }
+
+    fn embed_batch<'a>(
+        &'a self,
+        texts: &'a [String],
+    ) -> EmbeddingProviderFuture<'a, Result<Vec<Vec<f32>>, EmbeddingError>> {
+        Box::pin(NativeEmbeddingProvider::embed_batch(self, texts))
     }
 }
 
@@ -132,8 +199,7 @@ struct OpenAiEmbeddingData {
     embedding: Vec<f32>,
 }
 
-#[async_trait]
-impl EmbeddingProvider for OpenAiEmbeddings {
+impl NativeEmbeddingProvider for OpenAiEmbeddings {
     fn dimension(&self) -> usize {
         self.dimension
     }
@@ -148,22 +214,25 @@ impl EmbeddingProvider for OpenAiEmbeddings {
         32_000
     }
 
-    async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        if text.len() > self.max_input_length() {
+    async fn embed<'a>(&'a self, text: &'a str) -> Result<Vec<f32>, EmbeddingError> {
+        if text.len() > NativeEmbeddingProvider::max_input_length(self) {
             return Err(EmbeddingError::TextTooLong {
                 length: text.len(),
-                max: self.max_input_length(),
+                max: NativeEmbeddingProvider::max_input_length(self),
             });
         }
 
-        let embeddings = self.embed_batch(&[text.to_string()]).await?;
+        let embeddings = NativeEmbeddingProvider::embed_batch(self, &[text.to_string()]).await?;
         embeddings
             .into_iter()
             .next()
             .ok_or_else(|| EmbeddingError::InvalidResponse("No embedding returned".to_string()))
     }
 
-    async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+    async fn embed_batch<'a>(
+        &'a self,
+        texts: &'a [String],
+    ) -> Result<Vec<Vec<f32>>, EmbeddingError> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
@@ -265,8 +334,7 @@ struct NearAiEmbeddingData {
     embedding: Vec<f32>,
 }
 
-#[async_trait]
-impl EmbeddingProvider for NearAiEmbeddings {
+impl NativeEmbeddingProvider for NearAiEmbeddings {
     fn dimension(&self) -> usize {
         self.dimension
     }
@@ -279,22 +347,25 @@ impl EmbeddingProvider for NearAiEmbeddings {
         32_000
     }
 
-    async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        if text.len() > self.max_input_length() {
+    async fn embed<'a>(&'a self, text: &'a str) -> Result<Vec<f32>, EmbeddingError> {
+        if text.len() > NativeEmbeddingProvider::max_input_length(self) {
             return Err(EmbeddingError::TextTooLong {
                 length: text.len(),
-                max: self.max_input_length(),
+                max: NativeEmbeddingProvider::max_input_length(self),
             });
         }
 
-        let embeddings = self.embed_batch(&[text.to_string()]).await?;
+        let embeddings = NativeEmbeddingProvider::embed_batch(self, &[text.to_string()]).await?;
         embeddings
             .into_iter()
             .next()
             .ok_or_else(|| EmbeddingError::InvalidResponse("No embedding returned".to_string()))
     }
 
-    async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+    async fn embed_batch<'a>(
+        &'a self,
+        texts: &'a [String],
+    ) -> Result<Vec<Vec<f32>>, EmbeddingError> {
         use secrecy::ExposeSecret;
 
         if texts.is_empty() {
@@ -397,8 +468,7 @@ struct OllamaEmbedResponse {
     embeddings: Vec<Vec<f32>>,
 }
 
-#[async_trait]
-impl EmbeddingProvider for OllamaEmbeddings {
+impl NativeEmbeddingProvider for OllamaEmbeddings {
     fn dimension(&self) -> usize {
         self.dimension
     }
@@ -412,22 +482,25 @@ impl EmbeddingProvider for OllamaEmbeddings {
         32_000
     }
 
-    async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        if text.len() > self.max_input_length() {
+    async fn embed<'a>(&'a self, text: &'a str) -> Result<Vec<f32>, EmbeddingError> {
+        if text.len() > NativeEmbeddingProvider::max_input_length(self) {
             return Err(EmbeddingError::TextTooLong {
                 length: text.len(),
-                max: self.max_input_length(),
+                max: NativeEmbeddingProvider::max_input_length(self),
             });
         }
 
-        let embeddings = self.embed_batch(&[text.to_string()]).await?;
+        let embeddings = NativeEmbeddingProvider::embed_batch(self, &[text.to_string()]).await?;
         embeddings
             .into_iter()
             .next()
             .ok_or_else(|| EmbeddingError::InvalidResponse("No embedding returned".to_string()))
     }
 
-    async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+    async fn embed_batch<'a>(
+        &'a self,
+        texts: &'a [String],
+    ) -> Result<Vec<Vec<f32>>, EmbeddingError> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
@@ -486,8 +559,7 @@ impl MockEmbeddings {
     }
 }
 
-#[async_trait]
-impl EmbeddingProvider for MockEmbeddings {
+impl NativeEmbeddingProvider for MockEmbeddings {
     fn dimension(&self) -> usize {
         self.dimension
     }
@@ -500,7 +572,7 @@ impl EmbeddingProvider for MockEmbeddings {
         10_000
     }
 
-    async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+    async fn embed<'a>(&'a self, text: &'a str) -> Result<Vec<f32>, EmbeddingError> {
         // Generate a deterministic embedding based on text hash
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -536,7 +608,9 @@ mod tests {
     async fn test_mock_embeddings() {
         let provider = MockEmbeddings::new(128);
 
-        let embedding = provider.embed("hello world").await.unwrap();
+        let embedding = NativeEmbeddingProvider::embed(&provider, "hello world")
+            .await
+            .unwrap();
         assert_eq!(embedding.len(), 128);
 
         // Check normalization (should be unit vector)
@@ -548,8 +622,12 @@ mod tests {
     async fn test_mock_embeddings_deterministic() {
         let provider = MockEmbeddings::new(64);
 
-        let emb1 = provider.embed("test").await.unwrap();
-        let emb2 = provider.embed("test").await.unwrap();
+        let emb1 = NativeEmbeddingProvider::embed(&provider, "test")
+            .await
+            .unwrap();
+        let emb2 = NativeEmbeddingProvider::embed(&provider, "test")
+            .await
+            .unwrap();
 
         // Same input should produce same embedding
         assert_eq!(emb1, emb2);
@@ -560,7 +638,9 @@ mod tests {
         let provider = MockEmbeddings::new(64);
 
         let texts = vec!["hello".to_string(), "world".to_string()];
-        let embeddings = provider.embed_batch(&texts).await.unwrap();
+        let embeddings = NativeEmbeddingProvider::embed_batch(&provider, &texts)
+            .await
+            .unwrap();
 
         assert_eq!(embeddings.len(), 2);
         assert_eq!(embeddings[0].len(), 64);
@@ -573,11 +653,17 @@ mod tests {
     #[test]
     fn test_openai_embeddings_config() {
         let provider = OpenAiEmbeddings::new("test-key");
-        assert_eq!(provider.dimension(), 1536);
-        assert_eq!(provider.model_name(), "text-embedding-3-small");
+        assert_eq!(NativeEmbeddingProvider::dimension(&provider), 1536);
+        assert_eq!(
+            NativeEmbeddingProvider::model_name(&provider),
+            "text-embedding-3-small"
+        );
 
         let provider = OpenAiEmbeddings::large("test-key");
-        assert_eq!(provider.dimension(), 3072);
-        assert_eq!(provider.model_name(), "text-embedding-3-large");
+        assert_eq!(NativeEmbeddingProvider::dimension(&provider), 3072);
+        assert_eq!(
+            NativeEmbeddingProvider::model_name(&provider),
+            "text-embedding-3-large"
+        );
     }
 }

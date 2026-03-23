@@ -38,8 +38,8 @@ pub mod web;
 mod webhook_server;
 
 pub use channel::{
-    AttachmentKind, Channel, ChannelSecretUpdater, IncomingAttachment, IncomingMessage,
-    MessageStream, OutgoingResponse, StatusUpdate,
+    AttachmentKind, Channel, ChannelFuture, ChannelSecretUpdater, IncomingAttachment,
+    IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
 };
 pub use http::{HttpChannel, HttpChannelState};
 pub use manager::ChannelManager;

@@ -6,17 +6,14 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::context::JobContext;
 use crate::error::WorkerError;
 use crate::llm::ToolDefinition;
 use crate::tools::ToolRegistry;
-use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput};
+use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput};
 use crate::worker::api::WorkerHttpClient;
 
-#[async_trait]
-impl Tool for WorkerRemoteToolProxy {
+impl NativeTool for WorkerRemoteToolProxy {
     fn name(&self) -> &str {
         &self.definition.name
     }

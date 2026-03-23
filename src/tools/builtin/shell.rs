@@ -49,14 +49,13 @@ use std::process::Stdio;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 use crate::context::JobContext;
 use crate::sandbox::{SandboxManager, SandboxPolicy};
 use crate::tools::tool::{
-    ApprovalRequirement, Tool, ToolDomain, ToolError, ToolOutput, require_str,
+    ApprovalRequirement, NativeTool, ToolDomain, ToolError, ToolOutput, require_str,
 };
 
 /// Maximum output size before truncation (64KB).
@@ -641,8 +640,7 @@ impl Default for ShellTool {
     }
 }
 
-#[async_trait]
-impl Tool for ShellTool {
+impl NativeTool for ShellTool {
     fn name(&self) -> &str {
         "shell"
     }

@@ -1,8 +1,6 @@
 //! Job-related JobStore implementation for LibSqlBackend.
 
-use async_trait::async_trait;
 use libsql::params;
-use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use super::{
@@ -10,14 +8,13 @@ use super::{
     get_opt_text, get_opt_ts, get_text, get_ts, opt_text, opt_text_owned, parse_job_state,
 };
 use crate::context::{ActionRecord, JobContext, JobState};
-use crate::db::JobStore;
+use crate::db::{EstimationActualsParams, EstimationSnapshotParams, NativeJobStore};
 use crate::error::DatabaseError;
 use crate::history::{AgentJobRecord, AgentJobSummary, LlmCallRecord};
 
 use chrono::Utc;
 
-#[async_trait]
-impl JobStore for LibSqlBackend {
+impl NativeJobStore for LibSqlBackend {
     async fn save_job(&self, ctx: &JobContext) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         let status = ctx.state.to_string();
@@ -377,13 +374,16 @@ impl JobStore for LibSqlBackend {
 
     async fn save_estimation_snapshot(
         &self,
-        job_id: Uuid,
-        category: &str,
-        tool_names: &[String],
-        estimated_cost: Decimal,
-        estimated_time_secs: i32,
-        estimated_value: Decimal,
+        params: EstimationSnapshotParams<'_>,
     ) -> Result<Uuid, DatabaseError> {
+        let EstimationSnapshotParams {
+            job_id,
+            category,
+            tool_names,
+            estimated_cost,
+            estimated_time_secs,
+            estimated_value,
+        } = params;
         let conn = self.connect().await?;
         let id = Uuid::new_v4();
         let tools_json = serde_json::to_string(tool_names)
@@ -411,11 +411,14 @@ impl JobStore for LibSqlBackend {
 
     async fn update_estimation_actuals(
         &self,
-        id: Uuid,
-        actual_cost: Decimal,
-        actual_time_secs: i32,
-        actual_value: Option<Decimal>,
+        params: EstimationActualsParams,
     ) -> Result<(), DatabaseError> {
+        let EstimationActualsParams {
+            id,
+            actual_cost,
+            actual_time_secs,
+            actual_value,
+        } = params;
         let conn = self.connect().await?;
         conn.execute(
                 "UPDATE estimation_snapshots SET actual_cost = ?2, actual_time_secs = ?3, actual_value = ?4 WHERE id = ?1",
@@ -423,7 +426,7 @@ impl JobStore for LibSqlBackend {
                     id.to_string(),
                     actual_cost.to_string(),
                     actual_time_secs as i64,
-                    actual_value.map(|d| d.to_string()).unwrap_or_default(),
+                    actual_value.map(|d| d.to_string()),
                 ],
             )
             .await

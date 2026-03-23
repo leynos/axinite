@@ -20,7 +20,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use async_trait::async_trait;
 use regex::Regex;
 use rust_decimal::Decimal;
 
@@ -847,8 +846,7 @@ impl SmartRoutingProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for SmartRoutingProvider {
+impl crate::llm::NativeLlmProvider for SmartRoutingProvider {
     fn model_name(&self) -> &str {
         self.primary.model_name()
     }

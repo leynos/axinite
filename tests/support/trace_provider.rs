@@ -4,13 +4,12 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use async_trait::async_trait;
 use rust_decimal::Decimal;
 
 use ironclaw::error::LlmError;
 use ironclaw::llm::recording::{RequestHint, TraceResponse, TraceStep};
 use ironclaw::llm::{
-    ChatMessage, CompletionRequest, CompletionResponse, FinishReason, LlmProvider, Role, ToolCall,
+    ChatMessage, CompletionRequest, CompletionResponse, FinishReason, Role, ToolCall,
     ToolCompletionRequest, ToolCompletionResponse,
 };
 
@@ -291,8 +290,7 @@ impl TraceLlm {
     }
 }
 
-#[async_trait]
-impl LlmProvider for TraceLlm {
+impl ironclaw::llm::NativeLlmProvider for TraceLlm {
     fn model_name(&self) -> &str {
         &self.model_name
     }

@@ -10,12 +10,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use futures::StreamExt;
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 
-use ironclaw::channels::{Channel, IncomingMessage, MessageStream, OutgoingResponse, StatusUpdate};
+use ironclaw::channels::{
+    IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
+};
 use ironclaw::error::ChannelError;
 
 // ---------------------------------------------------------------------------
@@ -202,8 +203,7 @@ impl TestChannel {
 // Channel trait implementation
 // ---------------------------------------------------------------------------
 
-#[async_trait]
-impl Channel for TestChannel {
+impl NativeChannel for TestChannel {
     fn name(&self) -> &str {
         "test"
     }

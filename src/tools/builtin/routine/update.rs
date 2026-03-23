@@ -176,8 +176,7 @@ impl RoutineUpdateTool {
     }
 }
 
-#[async_trait]
-impl Tool for RoutineUpdateTool {
+impl NativeTool for RoutineUpdateTool {
     fn name(&self) -> &str {
         "routine_update"
     }

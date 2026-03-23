@@ -10,8 +10,7 @@ impl RoutineHistoryTool {
     }
 }
 
-#[async_trait]
-impl Tool for RoutineHistoryTool {
+impl NativeTool for RoutineHistoryTool {
     fn name(&self) -> &str {
         "routine_history"
     }

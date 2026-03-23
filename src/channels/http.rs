@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
@@ -18,8 +17,8 @@ use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
 use crate::channels::{
-    AttachmentKind, Channel, ChannelSecretUpdater, IncomingAttachment, IncomingMessage,
-    MessageStream, OutgoingResponse,
+    AttachmentKind, IncomingAttachment, IncomingMessage, MessageStream, NativeChannel,
+    OutgoingResponse,
 };
 use crate::config::HttpConfig;
 use crate::error::ChannelError;
@@ -448,8 +447,7 @@ async fn process_message(
     )
 }
 
-#[async_trait]
-impl Channel for HttpChannel {
+impl NativeChannel for HttpChannel {
     fn name(&self) -> &str {
         "http"
     }
@@ -504,8 +502,7 @@ impl Channel for HttpChannel {
 
 /// Implement secret update for HTTP channel state.
 /// This allows SIGHUP handler to update secrets generically via the trait.
-#[async_trait]
-impl ChannelSecretUpdater for HttpChannelState {
+impl crate::channels::channel::NativeChannelSecretUpdater for HttpChannelState {
     async fn update_secret(&self, new_secret: Option<SecretString>) {
         *self.webhook_secret.write().await = new_secret;
         tracing::info!("HTTP webhook secret updated");

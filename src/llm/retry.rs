@@ -9,7 +9,6 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use rand::Rng;
 use rust_decimal::Decimal;
 
@@ -144,8 +143,7 @@ impl RetryProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for RetryProvider {
+impl crate::llm::NativeLlmProvider for RetryProvider {
     fn model_name(&self) -> &str {
         self.inner.model_name()
     }

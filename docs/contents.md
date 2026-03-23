@@ -106,8 +106,11 @@
 - [ExecPlans directory](execplans/) collects approval-gated execution plans
   written in the Codex ExecPlan format for roadmap-scoped work.
   - [Migrate from async-trait to native async traits](execplans/migrate-async-trait.md)
-    plans the staged migration away from `async-trait`, including the ADR 006
-    follow-on for dyn-backed traits.
+    records the staged migration away from `async-trait`, including the ADR
+    006 pilot results and the remaining dyn-backed follow-on work.
+  - [Roll out ADR 006 across the remaining dyn-backed async trait families](execplans/adr-006-broad-rollout.md)
+    drafts the broad follow-up refactor that scales the ADR 006 pilot pattern
+    across the remaining async interfaces.
   - [Worker-orchestrator transport for hosted remote tool catalogue fetch](execplans/1-1-1-worker-orchestrator-transport-for-remote-tool-catalog-fetch.md)
     plans roadmap item `1.1.1` for the shared hosted remote-tool transport.
   - [Filter the hosted-visible catalogue from the canonical ToolRegistry](execplans/1-1-2-filter-the-hosted-visible-catalogue.md)

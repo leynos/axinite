@@ -7,13 +7,12 @@
 
 use std::path::{Path, PathBuf};
 
-use async_trait::async_trait;
 use tokio::fs;
 
 use crate::context::JobContext;
 use crate::tools::builtin::path_utils::validate_path;
 use crate::tools::tool::{
-    ApprovalRequirement, Tool, ToolDomain, ToolError, ToolOutput, require_str,
+    ApprovalRequirement, NativeTool, ToolDomain, ToolError, ToolOutput, require_str,
 };
 use crate::workspace::paths as ws_paths;
 
@@ -70,8 +69,7 @@ impl ReadFileTool {
     }
 }
 
-#[async_trait]
-impl Tool for ReadFileTool {
+impl NativeTool for ReadFileTool {
     fn name(&self) -> &str {
         "read_file"
     }
@@ -196,8 +194,7 @@ impl WriteFileTool {
     }
 }
 
-#[async_trait]
-impl Tool for WriteFileTool {
+impl NativeTool for WriteFileTool {
     fn name(&self) -> &str {
         "write_file"
     }
@@ -311,8 +308,7 @@ impl ListDirTool {
     }
 }
 
-#[async_trait]
-impl Tool for ListDirTool {
+impl NativeTool for ListDirTool {
     fn name(&self) -> &str {
         "list_dir"
     }
@@ -508,8 +504,7 @@ impl ApplyPatchTool {
     }
 }
 
-#[async_trait]
-impl Tool for ApplyPatchTool {
+impl NativeTool for ApplyPatchTool {
     fn name(&self) -> &str {
         "apply_patch"
     }

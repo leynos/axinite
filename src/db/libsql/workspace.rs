@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use libsql::params;
 use uuid::Uuid;
 
@@ -10,17 +9,131 @@ use super::{
     LibSqlBackend, fmt_ts, get_i64, get_opt_text, get_opt_ts, get_text, get_ts,
     row_to_memory_document,
 };
-use crate::db::WorkspaceStore;
+use crate::db::{HybridSearchParams, InsertChunkParams, NativeWorkspaceStore};
 use crate::error::WorkspaceError;
 use crate::workspace::{
-    MemoryChunk, MemoryDocument, RankedResult, SearchConfig, SearchResult, WorkspaceEntry,
-    reciprocal_rank_fusion,
+    MemoryChunk, MemoryDocument, RankedResult, SearchResult, WorkspaceEntry, reciprocal_rank_fusion,
 };
 
 use chrono::Utc;
 
-#[async_trait]
-impl WorkspaceStore for LibSqlBackend {
+/// Execute full-text search and return ranked results.
+///
+/// Queries the memory_chunks_fts virtual table, joining with memory_chunks
+/// and memory_documents to fetch chunk content and document paths. Assigns
+/// rank based on result order.
+async fn fts_ranked_results(
+    conn: &libsql::Connection,
+    user_id: &str,
+    agent_id: Option<&str>,
+    query: &str,
+    limit: i64,
+) -> Result<Vec<RankedResult>, WorkspaceError> {
+    let mut rows = conn
+        .query(
+            r#"
+            SELECT c.id, c.document_id, d.path, c.content
+            FROM memory_chunks_fts fts
+            JOIN memory_chunks c ON c._rowid = fts.rowid
+            JOIN memory_documents d ON d.id = c.document_id
+            WHERE d.user_id = ?1 AND d.agent_id IS ?2
+              AND memory_chunks_fts MATCH ?3
+            ORDER BY rank
+            LIMIT ?4
+            "#,
+            params![user_id, agent_id, query, limit],
+        )
+        .await
+        .map_err(|e| WorkspaceError::SearchFailed {
+            reason: format!("FTS query failed: {}", e),
+        })?;
+
+    let mut results = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|e| WorkspaceError::SearchFailed {
+            reason: format!("FTS row fetch failed: {}", e),
+        })?
+    {
+        results.push(RankedResult {
+            chunk_id: get_text(&row, 0).parse().unwrap_or_default(),
+            document_id: get_text(&row, 1).parse().unwrap_or_default(),
+            document_path: get_text(&row, 2),
+            content: get_text(&row, 3),
+            rank: results.len() as u32 + 1,
+        });
+    }
+    Ok(results)
+}
+
+/// Execute vector similarity search and return ranked results.
+///
+/// Queries using libsql's vector_top_k function. If the vector index is
+/// missing (expected after V9 migration), logs at debug level and returns
+/// an empty vector, preserving the existing graceful fallback behaviour.
+async fn vector_ranked_results(
+    conn: &libsql::Connection,
+    user_id: &str,
+    agent_id: Option<&str>,
+    embedding: &[f32],
+    limit: i64,
+) -> Result<Vec<RankedResult>, WorkspaceError> {
+    let vector_json = format!(
+        "[{}]",
+        embedding
+            .iter()
+            .map(|f| f.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+
+    // vector_top_k requires a libsql_vector_idx index. After the V9
+    // migration the index is dropped (to support flexible embedding
+    // dimensions), so this query may fail. Fall back to FTS-only.
+    match conn
+        .query(
+            r#"
+            SELECT c.id, c.document_id, d.path, c.content
+            FROM vector_top_k('idx_memory_chunks_embedding', vector(?1), ?2) AS top_k
+            JOIN memory_chunks c ON c._rowid = top_k.id
+            JOIN memory_documents d ON d.id = c.document_id
+            WHERE d.user_id = ?3 AND d.agent_id IS ?4
+            "#,
+            params![vector_json, limit, user_id, agent_id],
+        )
+        .await
+    {
+        Ok(mut rows) => {
+            let mut results = Vec::new();
+            while let Some(row) = rows
+                .next()
+                .await
+                .map_err(|e| WorkspaceError::SearchFailed {
+                    reason: format!("Vector row fetch failed: {}", e),
+                })?
+            {
+                results.push(RankedResult {
+                    chunk_id: get_text(&row, 0).parse().unwrap_or_default(),
+                    document_id: get_text(&row, 1).parse().unwrap_or_default(),
+                    document_path: get_text(&row, 2),
+                    content: get_text(&row, 3),
+                    rank: results.len() as u32 + 1,
+                });
+            }
+            Ok(results)
+        }
+        Err(e) => {
+            tracing::debug!(
+                "Vector index query failed (expected after V9 migration), \
+                 falling back to FTS-only: {e}"
+            );
+            Ok(Vec::new())
+        }
+    }
+}
+
+impl NativeWorkspaceStore for LibSqlBackend {
     async fn get_document_by_path(
         &self,
         user_id: &str,
@@ -105,7 +218,7 @@ impl WorkspaceStore for LibSqlBackend {
         path: &str,
     ) -> Result<MemoryDocument, WorkspaceError> {
         // Try get
-        match self.get_document_by_path(user_id, agent_id, path).await {
+        match NativeWorkspaceStore::get_document_by_path(self, user_id, agent_id, path).await {
             Ok(doc) => return Ok(doc),
             Err(WorkspaceError::DocumentNotFound { .. }) => {}
             Err(e) => return Err(e),
@@ -133,7 +246,7 @@ impl WorkspaceStore for LibSqlBackend {
             reason: format!("Insert failed: {}", e),
         })?;
 
-        self.get_document_by_path(user_id, agent_id, path).await
+        NativeWorkspaceStore::get_document_by_path(self, user_id, agent_id, path).await
     }
 
     async fn update_document(&self, id: Uuid, content: &str) -> Result<(), WorkspaceError> {
@@ -161,8 +274,8 @@ impl WorkspaceStore for LibSqlBackend {
         agent_id: Option<Uuid>,
         path: &str,
     ) -> Result<(), WorkspaceError> {
-        let doc = self.get_document_by_path(user_id, agent_id, path).await?;
-        self.delete_chunks(doc.id).await?;
+        let doc = NativeWorkspaceStore::get_document_by_path(self, user_id, agent_id, path).await?;
+        NativeWorkspaceStore::delete_chunks(self, doc.id).await?;
 
         let conn = self
             .connect()
@@ -381,13 +494,13 @@ impl WorkspaceStore for LibSqlBackend {
         Ok(())
     }
 
-    async fn insert_chunk(
-        &self,
-        document_id: Uuid,
-        chunk_index: i32,
-        content: &str,
-        embedding: Option<&[f32]>,
-    ) -> Result<Uuid, WorkspaceError> {
+    async fn insert_chunk(&self, params: InsertChunkParams<'_>) -> Result<Uuid, WorkspaceError> {
+        let InsertChunkParams {
+            document_id,
+            chunk_index,
+            content,
+            embedding,
+        } = params;
         let conn = self
             .connect()
             .await
@@ -496,12 +609,15 @@ impl WorkspaceStore for LibSqlBackend {
 
     async fn hybrid_search(
         &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
-        query: &str,
-        embedding: Option<&[f32]>,
-        config: &SearchConfig,
+        params: HybridSearchParams<'_>,
     ) -> Result<Vec<SearchResult>, WorkspaceError> {
+        let HybridSearchParams {
+            user_id,
+            agent_id,
+            query,
+            embedding,
+            config,
+        } = params;
         let conn = self
             .connect()
             .await
@@ -512,107 +628,26 @@ impl WorkspaceStore for LibSqlBackend {
         let pre_limit = config.pre_fusion_limit as i64;
 
         let fts_results = if config.use_fts {
-            let mut rows = conn
-                .query(
-                    r#"
-                    SELECT c.id, c.document_id, d.path, c.content
-                    FROM memory_chunks_fts fts
-                    JOIN memory_chunks c ON c._rowid = fts.rowid
-                    JOIN memory_documents d ON d.id = c.document_id
-                    WHERE d.user_id = ?1 AND d.agent_id IS ?2
-                      AND memory_chunks_fts MATCH ?3
-                    ORDER BY rank
-                    LIMIT ?4
-                    "#,
-                    params![user_id, agent_id_str.as_deref(), query, pre_limit],
-                )
-                .await
-                .map_err(|e| WorkspaceError::SearchFailed {
-                    reason: format!("FTS query failed: {}", e),
-                })?;
-
-            let mut results = Vec::new();
-            while let Some(row) = rows
-                .next()
-                .await
-                .map_err(|e| WorkspaceError::SearchFailed {
-                    reason: format!("FTS row fetch failed: {}", e),
-                })?
-            {
-                results.push(RankedResult {
-                    chunk_id: get_text(&row, 0).parse().unwrap_or_default(),
-                    document_id: get_text(&row, 1).parse().unwrap_or_default(),
-                    document_path: get_text(&row, 2),
-                    content: get_text(&row, 3),
-                    rank: results.len() as u32 + 1,
-                });
-            }
-            results
+            fts_ranked_results(&conn, user_id, agent_id_str.as_deref(), query, pre_limit).await?
         } else {
             Vec::new()
         };
 
-        let vector_results = if let (true, Some(emb)) = (config.use_vector, embedding) {
-            let vector_json = format!(
-                "[{}]",
-                emb.iter()
-                    .map(|f| f.to_string())
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
-
-            // vector_top_k requires a libsql_vector_idx index. After the V9
-            // migration the index is dropped (to support flexible embedding
-            // dimensions), so this query may fail. Fall back to FTS-only.
-            match conn
-                .query(
-                    r#"
-                    SELECT c.id, c.document_id, d.path, c.content
-                    FROM vector_top_k('idx_memory_chunks_embedding', vector(?1), ?2) AS top_k
-                    JOIN memory_chunks c ON c._rowid = top_k.id
-                    JOIN memory_documents d ON d.id = c.document_id
-                    WHERE d.user_id = ?3 AND d.agent_id IS ?4
-                    "#,
-                    params![vector_json, pre_limit, user_id, agent_id_str.as_deref()],
-                )
-                .await
-            {
-                Ok(mut rows) => {
-                    let mut results = Vec::new();
-                    while let Some(row) =
-                        rows.next()
-                            .await
-                            .map_err(|e| WorkspaceError::SearchFailed {
-                                reason: format!("Vector row fetch failed: {}", e),
-                            })?
-                    {
-                        results.push(RankedResult {
-                            chunk_id: get_text(&row, 0).parse().unwrap_or_default(),
-                            document_id: get_text(&row, 1).parse().unwrap_or_default(),
-                            document_path: get_text(&row, 2),
-                            content: get_text(&row, 3),
-                            rank: results.len() as u32 + 1,
-                        });
-                    }
-                    results
-                }
-                Err(e) => {
-                    tracing::debug!(
-                        "Vector index query failed (expected after V9 migration), \
-                         falling back to FTS-only: {e}"
-                    );
-                    Vec::new()
-                }
+        let vector_results = if config.use_vector {
+            if let Some(emb) = embedding {
+                vector_ranked_results(&conn, user_id, agent_id_str.as_deref(), emb, pre_limit)
+                    .await?
+            } else {
+                Vec::new()
             }
         } else {
+            if embedding.is_some() {
+                tracing::warn!(
+                    "Embedding provided but vector search is disabled in config; using FTS-only results"
+                );
+            }
             Vec::new()
         };
-
-        if embedding.is_some() && !config.use_vector {
-            tracing::warn!(
-                "Embedding provided but vector search is disabled in config; using FTS-only results"
-            );
-        }
 
         Ok(reciprocal_rank_fusion(fts_results, vector_results, config))
     }

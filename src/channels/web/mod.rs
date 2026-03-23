@@ -34,12 +34,13 @@ pub mod test_helpers;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::agent::SessionManager;
-use crate::channels::{Channel, IncomingMessage, MessageStream, OutgoingResponse, StatusUpdate};
+use crate::channels::{
+    IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
+};
 use crate::config::GatewayConfig;
 use crate::db::Database;
 use crate::error::ChannelError;
@@ -255,8 +256,7 @@ impl GatewayChannel {
     }
 }
 
-#[async_trait]
-impl Channel for GatewayChannel {
+impl NativeChannel for GatewayChannel {
     fn name(&self) -> &str {
         "gateway"
     }

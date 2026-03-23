@@ -68,7 +68,7 @@ pub use crypto::SecretsCrypto;
 pub use store::LibSqlSecretsStore;
 #[cfg(feature = "postgres")]
 pub use store::PostgresSecretsStore;
-pub use store::SecretsStore;
+pub use store::{NativeSecretsStore, SecretsStore};
 pub use types::{
     CreateSecretParams, CredentialLocation, CredentialMapping, DecryptedSecret, Secret,
     SecretError, SecretRef,

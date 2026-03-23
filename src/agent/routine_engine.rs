@@ -26,7 +26,7 @@ use crate::agent::routine::{
 use crate::channels::{IncomingMessage, OutgoingResponse};
 use crate::config::RoutineConfig;
 use crate::context::JobContext;
-use crate::db::Database;
+use crate::db::{Database, RoutineRunCompletion, RoutineRuntimeUpdate};
 use crate::error::RoutineError;
 use crate::llm::{
     ChatMessage, CompletionRequest, FinishReason, LlmProvider, ToolCall, ToolCompletionRequest,
@@ -61,7 +61,10 @@ pub struct RoutineEngine {
 }
 
 impl RoutineEngine {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "requires multiple collaborator dependencies for engine initialization"
+    )]
     pub fn new(
         config: RoutineConfig,
         store: Arc<dyn Database>,
@@ -491,7 +494,12 @@ async fn execute_routine(ctx: EngineContext, routine: Routine, run: RoutineRun) 
     // Complete the run record
     if let Err(e) = ctx
         .store
-        .complete_routine_run(run.id, status, summary.as_deref(), tokens)
+        .complete_routine_run(RoutineRunCompletion {
+            id: run.id,
+            status,
+            result_summary: summary.as_deref(),
+            tokens_used: tokens,
+        })
         .await
     {
         tracing::error!(routine = %routine.name, "Failed to complete run record: {}", e);
@@ -517,14 +525,14 @@ async fn execute_routine(ctx: EngineContext, routine: Routine, run: RoutineRun) 
 
     if let Err(e) = ctx
         .store
-        .update_routine_runtime(
-            routine.id,
-            now,
-            next_fire,
-            routine.run_count + 1,
-            new_failures,
-            &routine.state,
-        )
+        .update_routine_runtime(RoutineRuntimeUpdate {
+            id: routine.id,
+            last_run_at: now,
+            next_fire_at: next_fire,
+            run_count: routine.run_count + 1,
+            consecutive_failures: new_failures,
+            state: &routine.state,
+        })
         .await
     {
         tracing::error!(routine = %routine.name, "Failed to update runtime state: {}", e);

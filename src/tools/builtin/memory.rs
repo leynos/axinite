@@ -14,10 +14,8 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::context::JobContext;
-use crate::tools::tool::{Tool, ToolError, ToolOutput, require_str};
+use crate::tools::tool::{NativeTool, ToolError, ToolOutput, require_str};
 use crate::workspace::{Workspace, paths};
 
 /// Identity files that the LLM must not overwrite via tool calls.
@@ -42,8 +40,7 @@ impl MemorySearchTool {
     }
 }
 
-#[async_trait]
-impl Tool for MemorySearchTool {
+impl NativeTool for MemorySearchTool {
     fn name(&self) -> &str {
         "memory_search"
     }
@@ -131,8 +128,7 @@ impl MemoryWriteTool {
     }
 }
 
-#[async_trait]
-impl Tool for MemoryWriteTool {
+impl NativeTool for MemoryWriteTool {
     fn name(&self) -> &str {
         "memory_write"
     }
@@ -323,8 +319,7 @@ impl MemoryReadTool {
     }
 }
 
-#[async_trait]
-impl Tool for MemoryReadTool {
+impl NativeTool for MemoryReadTool {
     fn name(&self) -> &str {
         "memory_read"
     }
@@ -437,8 +432,7 @@ impl MemoryTreeTool {
     }
 }
 
-#[async_trait]
-impl Tool for MemoryTreeTool {
+impl NativeTool for MemoryTreeTool {
     fn name(&self) -> &str {
         "memory_tree"
     }

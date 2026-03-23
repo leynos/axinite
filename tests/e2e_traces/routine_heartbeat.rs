@@ -14,7 +14,7 @@ use ironclaw::agent::routine_engine::RoutineEngine;
 use ironclaw::agent::{HeartbeatConfig, HeartbeatRunner};
 use ironclaw::channels::IncomingMessage;
 use ironclaw::config::{RoutineConfig, SafetyConfig};
-use ironclaw::db::Database;
+use ironclaw::db::{Database, RoutineRuntimeUpdate};
 use ironclaw::safety::SafetyLayer;
 use ironclaw::tools::ToolRegistry;
 use ironclaw::workspace::Workspace;
@@ -401,9 +401,16 @@ async fn routine_cooldown() {
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     // Update the routine's last_run_at to now (simulating it just ran).
-    db.update_routine_runtime(routine.id, Utc::now(), None, 1, 0, &serde_json::json!({}))
-        .await
-        .expect("update_routine_runtime");
+    db.update_routine_runtime(RoutineRuntimeUpdate {
+        id: routine.id,
+        last_run_at: Utc::now(),
+        next_fire_at: None,
+        run_count: 1,
+        consecutive_failures: 0,
+        state: &serde_json::json!({}),
+    })
+    .await
+    .expect("update_routine_runtime");
 
     // Refresh cache to pick up updated last_run_at.
     engine.refresh_event_cache().await;

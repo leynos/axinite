@@ -14,7 +14,6 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use rust_decimal::Decimal;
 
 use crate::llm::error::LlmError;
@@ -286,8 +285,7 @@ impl FailoverProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for FailoverProvider {
+impl crate::llm::NativeLlmProvider for FailoverProvider {
     fn model_name(&self) -> &str {
         self.providers[self.last_used.load(Ordering::Relaxed)].model_name()
     }
@@ -490,8 +488,7 @@ mod tests {
         }
     }
 
-    #[async_trait]
-    impl LlmProvider for MockProvider {
+    impl crate::llm::NativeLlmProvider for MockProvider {
         fn model_name(&self) -> &str {
             &self.name
         }
@@ -773,8 +770,7 @@ mod tests {
         }
     }
 
-    #[async_trait]
-    impl LlmProvider for MultiCallMockProvider {
+    impl crate::llm::NativeLlmProvider for MultiCallMockProvider {
         fn model_name(&self) -> &str {
             &self.name
         }

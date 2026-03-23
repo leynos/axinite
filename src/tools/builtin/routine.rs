@@ -12,7 +12,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -23,7 +22,7 @@ use crate::agent::routine_engine::RoutineEngine;
 use crate::context::JobContext;
 use crate::db::Database;
 use crate::tools::tool::HostedToolEligibility;
-use crate::tools::tool::{ApprovalRequirement, Tool, ToolError, ToolOutput, require_str};
+use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput, require_str};
 
 mod create;
 mod delete;

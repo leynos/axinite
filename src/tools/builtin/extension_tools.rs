@@ -5,13 +5,11 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::context::JobContext;
 use crate::extensions::{ExtensionKind, ExtensionManager};
 pub use crate::tools::builtin::extension_tool_metadata::ExtensionToolKind;
 use crate::tools::tool::{
-    ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput, require_str,
+    ApprovalRequirement, HostedToolEligibility, NativeTool, ToolError, ToolOutput, require_str,
 };
 
 macro_rules! delegate_extension_tool_metadata {
@@ -58,8 +56,7 @@ impl ToolSearchTool {
     }
 }
 
-#[async_trait]
-impl Tool for ToolSearchTool {
+impl NativeTool for ToolSearchTool {
     delegate_extension_tool_metadata!(ExtensionToolKind::Search);
 
     async fn execute(
@@ -103,8 +100,7 @@ impl ToolInstallTool {
     }
 }
 
-#[async_trait]
-impl Tool for ToolInstallTool {
+impl NativeTool for ToolInstallTool {
     delegate_extension_tool_metadata!(ExtensionToolKind::Install);
 
     async fn execute(
@@ -153,8 +149,7 @@ impl ToolAuthTool {
     }
 }
 
-#[async_trait]
-impl Tool for ToolAuthTool {
+impl NativeTool for ToolAuthTool {
     delegate_extension_tool_metadata!(ExtensionToolKind::Auth);
 
     async fn execute(
@@ -223,8 +218,7 @@ impl ToolActivateTool {
     }
 }
 
-#[async_trait]
-impl Tool for ToolActivateTool {
+impl NativeTool for ToolActivateTool {
     delegate_extension_tool_metadata!(ExtensionToolKind::Activate);
 
     async fn execute(

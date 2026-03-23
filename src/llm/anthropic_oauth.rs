@@ -8,7 +8,6 @@
 
 use std::collections::HashSet;
 
-use async_trait::async_trait;
 use reqwest::Client;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret, SecretString};
@@ -18,8 +17,8 @@ use crate::llm::config::RegistryProviderConfig;
 use crate::llm::costs;
 use crate::llm::error::LlmError;
 use crate::llm::provider::{
-    ChatMessage, CompletionRequest, CompletionResponse, FinishReason, LlmProvider, Role, ToolCall,
-    ToolCompletionRequest, ToolCompletionResponse, strip_unsupported_completion_params,
+    ChatMessage, CompletionRequest, CompletionResponse, FinishReason, NativeLlmProvider, Role,
+    ToolCall, ToolCompletionRequest, ToolCompletionResponse, strip_unsupported_completion_params,
     strip_unsupported_tool_params,
 };
 
@@ -214,8 +213,7 @@ impl AnthropicOAuthProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for AnthropicOAuthProvider {
+impl NativeLlmProvider for AnthropicOAuthProvider {
     async fn complete(&self, mut req: CompletionRequest) -> Result<CompletionResponse, LlmError> {
         let model = req.model.take().unwrap_or_else(|| self.active_model_name());
         self.strip_unsupported_completion_params(&mut req);

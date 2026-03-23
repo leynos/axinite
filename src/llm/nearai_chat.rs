@@ -9,7 +9,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use reqwest::Client;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::MathematicalOps;
@@ -19,8 +18,8 @@ use serde::{Deserialize, Serialize};
 use crate::llm::config::NearAiConfig;
 use crate::llm::error::LlmError;
 use crate::llm::provider::{
-    ChatMessage, CompletionRequest, CompletionResponse, FinishReason, LlmProvider, Role, ToolCall,
-    ToolCompletionRequest, ToolCompletionResponse,
+    ChatMessage, CompletionRequest, CompletionResponse, FinishReason, NativeLlmProvider, Role,
+    ToolCall, ToolCompletionRequest, ToolCompletionResponse,
 };
 use crate::llm::{costs, session::SessionManager};
 
@@ -465,8 +464,7 @@ impl NearAiChatProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for NearAiChatProvider {
+impl NativeLlmProvider for NearAiChatProvider {
     async fn complete(&self, req: CompletionRequest) -> Result<CompletionResponse, LlmError> {
         let model = req.model.unwrap_or_else(|| self.active_model_name());
         let mut raw_messages = req.messages;

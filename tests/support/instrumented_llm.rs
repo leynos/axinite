@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 
-use async_trait::async_trait;
 use rust_decimal::Decimal;
 use tokio::sync::Mutex;
 
@@ -94,8 +93,7 @@ impl InstrumentedLlm {
     }
 }
 
-#[async_trait]
-impl LlmProvider for InstrumentedLlm {
+impl ironclaw::llm::NativeLlmProvider for InstrumentedLlm {
     fn model_name(&self) -> &str {
         self.inner.model_name()
     }

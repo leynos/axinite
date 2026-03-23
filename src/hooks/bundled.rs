@@ -5,14 +5,14 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
 
 use crate::hooks::{
-    Hook, HookContext, HookError, HookEvent, HookFailureMode, HookOutcome, HookPoint, HookRegistry,
+    HookContext, HookError, HookEvent, HookFailureMode, HookOutcome, HookPoint, HookRegistry,
+    NativeHook,
 };
 
 const DEFAULT_RULE_PRIORITY: u32 = 100;
@@ -252,8 +252,7 @@ pub struct OutboundWebhookConfig {
 /// Built-in audit trail hook that logs lifecycle events.
 struct AuditLogHook;
 
-#[async_trait]
-impl Hook for AuditLogHook {
+impl NativeHook for AuditLogHook {
     fn name(&self) -> &str {
         "builtin.audit_log"
     }
@@ -262,14 +261,14 @@ impl Hook for AuditLogHook {
         &ALL_HOOK_POINTS
     }
 
-    async fn execute(
-        &self,
-        event: &HookEvent,
-        _ctx: &HookContext,
+    async fn execute<'a>(
+        &'a self,
+        event: &'a HookEvent,
+        _ctx: &'a HookContext,
     ) -> Result<HookOutcome, HookError> {
         tracing::debug!(
             target: "hooks::audit",
-            hook = self.name(),
+            hook = NativeHook::name(self),
             point = event.hook_point().as_str(),
             user_id = %event_user_id(event),
             "Lifecycle hook event"
@@ -365,8 +364,7 @@ impl RuleHook {
     }
 }
 
-#[async_trait]
-impl Hook for RuleHook {
+impl NativeHook for RuleHook {
     fn name(&self) -> &str {
         &self.name
     }
@@ -383,10 +381,10 @@ impl Hook for RuleHook {
         self.timeout
     }
 
-    async fn execute(
-        &self,
-        event: &HookEvent,
-        _ctx: &HookContext,
+    async fn execute<'a>(
+        &'a self,
+        event: &'a HookEvent,
+        _ctx: &'a HookContext,
     ) -> Result<HookOutcome, HookError> {
         let content = extract_primary_content(event);
 
@@ -517,8 +515,7 @@ enum OutboundWebhookEventSummary {
     },
 }
 
-#[async_trait]
-impl Hook for OutboundWebhookHook {
+impl NativeHook for OutboundWebhookHook {
     fn name(&self) -> &str {
         &self.name
     }
@@ -531,10 +528,10 @@ impl Hook for OutboundWebhookHook {
         self.timeout
     }
 
-    async fn execute(
-        &self,
-        event: &HookEvent,
-        ctx: &HookContext,
+    async fn execute<'a>(
+        &'a self,
+        event: &'a HookEvent,
+        ctx: &'a HookContext,
     ) -> Result<HookOutcome, HookError> {
         let payload = OutboundWebhookPayload {
             hook: self.name.clone(),

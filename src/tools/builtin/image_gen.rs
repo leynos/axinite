@@ -1,12 +1,11 @@
 //! Image generation tool using cloud API.
 
-use async_trait::async_trait;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::context::JobContext;
 use crate::tools::tool::{ApprovalRequirement, HostedToolEligibility};
-use crate::tools::{Tool, ToolError, ToolOutput};
+use crate::tools::{NativeTool, ToolError, ToolOutput};
 
 /// Tool for generating images using FLUX or compatible image generation APIs.
 pub struct ImageGenerateTool {
@@ -57,8 +56,7 @@ impl ImageGenerateTool {
     }
 }
 
-#[async_trait]
-impl Tool for ImageGenerateTool {
+impl NativeTool for ImageGenerateTool {
     fn name(&self) -> &str {
         "image_generate"
     }

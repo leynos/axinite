@@ -12,7 +12,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use rust_decimal::Decimal;
 
 use ironclaw::error::LlmError;
@@ -57,8 +56,7 @@ impl FlakeyProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for FlakeyProvider {
+impl ironclaw::llm::NativeLlmProvider for FlakeyProvider {
     fn model_name(&self) -> &str {
         &self.name
     }
@@ -134,8 +132,7 @@ impl HangingProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for HangingProvider {
+impl ironclaw::llm::NativeLlmProvider for HangingProvider {
     fn model_name(&self) -> &str {
         &self.name
     }
@@ -179,8 +176,7 @@ impl GarbageProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for GarbageProvider {
+impl ironclaw::llm::NativeLlmProvider for GarbageProvider {
     fn model_name(&self) -> &str {
         &self.name
     }
@@ -239,8 +235,7 @@ impl ReliableProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for ReliableProvider {
+impl ironclaw::llm::NativeLlmProvider for ReliableProvider {
     fn model_name(&self) -> &str {
         &self.name
     }
@@ -638,8 +633,7 @@ async fn test_failover_non_transient_stops_chain() {
     // Provider that returns a non-transient error.
     struct NonTransientProvider;
 
-    #[async_trait]
-    impl LlmProvider for NonTransientProvider {
+    impl ironclaw::llm::NativeLlmProvider for NonTransientProvider {
         fn model_name(&self) -> &str {
             "non-transient"
         }

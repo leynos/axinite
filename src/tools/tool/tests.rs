@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use async_trait::async_trait;
 use rstest::rstest;
 
 use super::*;
@@ -30,8 +29,7 @@ fn assert_schema_err_contains(schema: serde_json::Value, needle: &str) {
 #[derive(Debug)]
 pub struct EchoTool;
 
-#[async_trait]
-impl Tool for EchoTool {
+impl NativeTool for EchoTool {
     fn name(&self) -> &str {
         "echo"
     }
@@ -73,8 +71,7 @@ async fn test_echo_tool() {
     let tool = EchoTool;
     let ctx = JobContext::default();
 
-    let result = tool
-        .execute(serde_json::json!({"message": "hello"}), &ctx)
+    let result = NativeTool::execute(&tool, serde_json::json!({"message": "hello"}), &ctx)
         .await
         .unwrap();
 
@@ -84,7 +81,7 @@ async fn test_echo_tool() {
 #[test]
 fn test_tool_schema() {
     let tool = EchoTool;
-    let schema = tool.schema();
+    let schema = NativeTool::schema(&tool);
 
     assert_eq!(schema.name, "echo");
     assert!(!schema.description.is_empty());
@@ -93,7 +90,10 @@ fn test_tool_schema() {
 #[test]
 fn test_execution_timeout_default() {
     let tool = EchoTool;
-    assert_eq!(tool.execution_timeout(), Duration::from_secs(60));
+    assert_eq!(
+        NativeTool::execution_timeout(&tool),
+        Duration::from_secs(60)
+    );
 }
 
 #[test]
@@ -136,11 +136,11 @@ fn test_require_param_missing() {
 fn test_requires_approval_default() {
     let tool = EchoTool;
     assert_eq!(
-        tool.requires_approval(&serde_json::json!({"message": "hi"})),
+        NativeTool::requires_approval(&tool, &serde_json::json!({"message": "hi"})),
         ApprovalRequirement::Never
     );
     assert_eq!(
-        tool.hosted_tool_eligibility(),
+        NativeTool::hosted_tool_eligibility(&tool),
         HostedToolEligibility::Eligible
     );
     assert!(!ApprovalRequirement::Never.is_required());

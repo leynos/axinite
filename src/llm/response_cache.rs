@@ -21,7 +21,6 @@ use std::sync::{Arc, Mutex};
 
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 
@@ -171,8 +170,7 @@ fn cache_key(model: &str, request: &CompletionRequest) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-#[async_trait]
-impl LlmProvider for CachedProvider {
+impl crate::llm::NativeLlmProvider for CachedProvider {
     fn model_name(&self) -> &str {
         self.inner.model_name()
     }
@@ -335,8 +333,7 @@ mod tests {
         }
     }
 
-    #[async_trait]
-    impl LlmProvider for SwitchableStub {
+    impl crate::llm::NativeLlmProvider for SwitchableStub {
         fn model_name(&self) -> &str {
             "stub-model"
         }

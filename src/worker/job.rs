@@ -7,13 +7,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use crate::agent::agentic_loop::{
-    AgenticLoopConfig, LoopDelegate, LoopOutcome, LoopSignal, TextAction, run_agentic_loop,
+    AgenticLoopConfig, LoopOutcome, LoopSignal, NativeLoopDelegate, TextAction, run_agentic_loop,
     truncate_for_preview,
 };
 use crate::agent::scheduler::WorkerMessage;
@@ -1055,8 +1054,7 @@ impl<'a> JobDelegate<'a> {
     }
 }
 
-#[async_trait]
-impl<'a> LoopDelegate for JobDelegate<'a> {
+impl<'a> NativeLoopDelegate for JobDelegate<'a> {
     async fn check_signals(&self) -> LoopSignal {
         // Drain the entire message channel, prioritizing Stop over user messages.
         // Scope the lock so it's dropped before any .await below.
@@ -1353,11 +1351,10 @@ mod tests {
     use crate::config::SafetyConfig;
     use crate::context::JobContext;
     use crate::llm::{
-        CompletionRequest, CompletionResponse, LlmProvider, ToolCompletionRequest,
-        ToolCompletionResponse,
+        CompletionRequest, CompletionResponse, ToolCompletionRequest, ToolCompletionResponse,
     };
     use crate::safety::SafetyLayer;
-    use crate::tools::{Tool, ToolError as ToolExecError, ToolOutput};
+    use crate::tools::{NativeTool, Tool, ToolError as ToolExecError, ToolOutput};
 
     /// A test tool that sleeps for a configurable duration before returning.
     struct SlowTool {
@@ -1367,8 +1364,7 @@ mod tests {
         max_active: Arc<AtomicUsize>,
     }
 
-    #[async_trait::async_trait]
-    impl Tool for SlowTool {
+    impl NativeTool for SlowTool {
         fn name(&self) -> &str {
             &self.tool_name
         }
@@ -1401,8 +1397,7 @@ mod tests {
     /// Stub LLM provider (never called in these tests).
     struct StubLlm;
 
-    #[async_trait::async_trait]
-    impl LlmProvider for StubLlm {
+    impl crate::llm::NativeLlmProvider for StubLlm {
         fn model_name(&self) -> &str {
             "stub"
         }
@@ -1656,8 +1651,7 @@ mod tests {
     /// A tool that requires approval (UnlessAutoApproved).
     struct ApprovalTool;
 
-    #[async_trait::async_trait]
-    impl Tool for ApprovalTool {
+    impl NativeTool for ApprovalTool {
         fn name(&self) -> &str {
             "needs_approval"
         }
@@ -1691,8 +1685,7 @@ mod tests {
     /// A tool that always requires approval.
     struct AlwaysApprovalTool;
 
-    #[async_trait::async_trait]
-    impl Tool for AlwaysApprovalTool {
+    impl NativeTool for AlwaysApprovalTool {
         fn name(&self) -> &str {
             "always_approval"
         }

@@ -51,7 +51,8 @@ mod search;
 pub use chunker::{ChunkConfig, chunk_document};
 pub use document::{MemoryChunk, MemoryDocument, WorkspaceEntry, paths};
 pub use embeddings::{
-    EmbeddingProvider, MockEmbeddings, NearAiEmbeddings, OllamaEmbeddings, OpenAiEmbeddings,
+    EmbeddingProvider, MockEmbeddings, NativeEmbeddingProvider, NearAiEmbeddings, OllamaEmbeddings,
+    OpenAiEmbeddings,
 };
 #[cfg(feature = "postgres")]
 pub use repository::Repository;
@@ -64,6 +65,7 @@ use chrono::{NaiveDate, Utc};
 use deadpool_postgres::Pool;
 use uuid::Uuid;
 
+use crate::db::{HybridSearchParams, InsertChunkParams};
 use crate::error::WorkspaceError;
 
 /// Internal storage abstraction for Workspace.
@@ -187,8 +189,13 @@ impl WorkspaceStorage {
                     .await
             }
             Self::Db(db) => {
-                db.insert_chunk(document_id, chunk_index, content, embedding)
-                    .await
+                db.insert_chunk(InsertChunkParams {
+                    document_id,
+                    chunk_index,
+                    content,
+                    embedding,
+                })
+                .await
             }
         }
     }
@@ -239,8 +246,14 @@ impl WorkspaceStorage {
                     .await
             }
             Self::Db(db) => {
-                db.hybrid_search(user_id, agent_id, query, embedding, config)
-                    .await
+                db.hybrid_search(HybridSearchParams {
+                    user_id,
+                    agent_id,
+                    query,
+                    embedding,
+                    config,
+                })
+                .await
             }
         }
     }

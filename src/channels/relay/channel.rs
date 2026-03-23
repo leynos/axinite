@@ -7,11 +7,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use tokio::sync::{RwLock, mpsc};
 
 use crate::channels::relay::client::{RelayClient, RelayError};
-use crate::channels::{Channel, IncomingMessage, MessageStream, OutgoingResponse, StatusUpdate};
+use crate::channels::{
+    IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
+};
 use crate::error::ChannelError;
 
 /// Default channel name for the Slack relay integration.
@@ -164,8 +165,7 @@ impl RelayChannel {
     }
 }
 
-#[async_trait]
-impl Channel for RelayChannel {
+impl NativeChannel for RelayChannel {
     fn name(&self) -> &str {
         self.provider.channel_name()
     }

@@ -4,10 +4,11 @@
 //! They can represent full LLM-driven jobs, parallel tool batches,
 //! or background computations.
 
+use core::future::Future;
+use core::pin::Pin;
 use std::fmt;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -47,6 +48,9 @@ impl TaskOutput {
     }
 }
 
+/// Boxed future used at the dyn task boundary.
+pub type TaskHandlerFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Context passed to task handlers.
 #[derive(Debug, Clone)]
 pub struct TaskContext {
@@ -82,14 +86,37 @@ impl TaskContext {
 }
 
 /// Handler for custom background tasks.
-#[async_trait]
 pub trait TaskHandler: Send + Sync {
     /// Run the task and return the result.
-    async fn run(&self, ctx: TaskContext) -> Result<TaskOutput, Error>;
+    fn run(&self, ctx: TaskContext) -> TaskHandlerFuture<'_, Result<TaskOutput, Error>>;
 
     /// Get a description of this handler for logging.
     fn description(&self) -> &str {
         "background task"
+    }
+}
+
+/// Native async sibling trait for concrete task handlers.
+pub trait NativeTaskHandler: Send + Sync {
+    /// Run the task and return the result.
+    fn run(&self, ctx: TaskContext) -> impl Future<Output = Result<TaskOutput, Error>> + Send + '_;
+
+    /// Get a description of this handler for logging.
+    fn description(&self) -> &str {
+        "background task"
+    }
+}
+
+impl<T> TaskHandler for T
+where
+    T: NativeTaskHandler + Send + Sync,
+{
+    fn run(&self, ctx: TaskContext) -> TaskHandlerFuture<'_, Result<TaskOutput, Error>> {
+        Box::pin(async move { NativeTaskHandler::run(self, ctx).await })
+    }
+
+    fn description(&self) -> &str {
+        NativeTaskHandler::description(self)
     }
 }
 
@@ -250,6 +277,26 @@ pub enum TaskStatus {
 mod tests {
     use super::*;
 
+    struct EchoTaskHandler;
+
+    impl NativeTaskHandler for EchoTaskHandler {
+        async fn run(&self, ctx: TaskContext) -> Result<TaskOutput, Error> {
+            let task_id = ctx.task_id;
+            Ok(TaskOutput::new(
+                serde_json::json!({
+                    "task_id": task_id,
+                    "parent_id": ctx.parent_id,
+                    "metadata": ctx.metadata,
+                }),
+                Duration::from_secs(0),
+            ))
+        }
+
+        fn description(&self) -> &str {
+            "echo task"
+        }
+    }
+
     #[test]
     fn test_task_output() {
         let output = TaskOutput::text("hello", Duration::from_secs(1));
@@ -279,5 +326,20 @@ mod tests {
         assert!(task.id().is_none());
         assert_eq!(task.parent_id(), Some(parent_id));
         assert!(task.description().contains("tool:"));
+    }
+
+    #[tokio::test]
+    async fn test_task_handler_blanket_adapter_uses_native_trait() {
+        let handler: std::sync::Arc<dyn TaskHandler> = std::sync::Arc::new(EchoTaskHandler);
+        let ctx = TaskContext::new(Uuid::new_v4())
+            .with_parent(Uuid::new_v4())
+            .with_metadata(serde_json::json!({"kind": "demo"}));
+
+        let output = handler.run(ctx).await.unwrap();
+        assert_eq!(
+            output.result["metadata"],
+            serde_json::json!({"kind": "demo"})
+        );
+        assert_eq!(handler.description(), "echo task");
     }
 }

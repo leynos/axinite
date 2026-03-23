@@ -348,14 +348,53 @@ this repository.
    `SoftwareBuilder`. Those follow-on conversions showed that the
    sibling-trait pattern scales beyond the transport layer while keeping
    existing dyn-backed consumers intact.
-4. Follow up with more disciplined before-and-after measurements for the
-   remaining larger trait families, using the same gate set for this
-   stream and at least one `cargo check --timings` sample per major
-   migration step.
-5. Use the completed smaller pilots as the template for evaluating
-   larger remaining families such as `Tool`, `LlmProvider`, and the
-   `Database` family, with trait-specific rollout plans rather than a
-   single all-at-once rewrite.
+4. Completed the ADR 006 broad rollout across all remaining dyn-backed
+   families via the approval-gated plan in
+   `docs/execplans/adr-006-broad-rollout.md`. In order: 7 narrow internal
+   traits (Milestone 2), 6 infrastructure extension seams (Milestone 3), and
+   the 4 high-fanout core trait families — `Tool`, `LlmProvider`, `Channel`,
+   and `Database` — in separate sub-waves (Milestone 4). As of 2026-03-23,
+   zero production `#[async_trait]` attribute usages remain in `src/`.
+5. Removing `async-trait` from `Cargo.toml` is the remaining step (Milestone
+   5), pending a fresh tree audit.
+
+### Refinements discovered during the broad rollout
+
+**Multi-reference method lifetimes.** When a `NativeTrait` method takes more
+than one borrowed argument — `&self` plus another `&T` — both must carry an
+explicit named lifetime `'a` and the return type must include `+ 'a`:
+
+```rust,no_run
+fn respond<'a>(
+    &'a self,
+    msg: &'a IncomingMessage,
+    response: OutgoingResponse,
+) -> impl Future<Output = Result<(), E>> + Send + 'a;
+```
+
+Using the shorthand `'_` only captures `&self`, triggering E0477 ("does not
+fulfill the required lifetime") because the returned future also captures the
+second borrow. This affected `respond`, `send_status`, and `broadcast` in
+`NativeChannel`, and any similarly shaped method on other native traits.
+
+**E0034 ambiguity from blanket adapters.** Once a concrete type implements
+both `NativeFoo` directly and `Foo` via the blanket adapter, a plain
+`self.method()` call is ambiguous. Use fully qualified syntax to resolve it:
+
+```rust,no_run
+NativeFoo::method_name(self, arg1, arg2)
+```
+
+This was required in `Tool`, `Database` (for `run_migrations`), and in
+`EmbeddingProvider`, `SecretsStore`, and `WorkspaceStore` default methods
+that call sibling methods on `self`.
+
+**Default method bodies reduce test-double friction.** Providing
+`async { Ok(()) }` or equivalent default bodies for optional or no-op
+methods (`send_status`, `broadcast`, `shutdown` in `NativeChannel`;
+`list_models` and `model_metadata` in `NativeLlmProvider`) allows test
+doubles to implement only the methods relevant to their scenario. This is
+preferable to requiring boilerplate in every test double.
 
 ## Decision summary
 

@@ -33,7 +33,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -44,7 +43,9 @@ use crate::llm::{
     ChatMessage, LlmProvider, Reasoning, ReasoningContext, RespondResult, ToolDefinition,
 };
 use crate::tools::ToolRegistry;
-use crate::tools::tool::{ApprovalRequirement, HostedToolEligibility, Tool, ToolError, ToolOutput};
+use crate::tools::tool::{
+    ApprovalRequirement, HostedToolEligibility, NativeTool, ToolError, ToolOutput,
+};
 
 mod build_loop;
 mod builder_impl;

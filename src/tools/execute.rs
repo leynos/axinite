@@ -152,14 +152,13 @@ pub async fn execute_tool_simple(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::tool::{Tool, ToolError, ToolOutput};
+    use crate::tools::tool::{NativeTool, Tool, ToolError, ToolOutput};
     use std::sync::Arc;
     use std::time::Duration;
 
     struct EchoTool;
 
-    #[async_trait::async_trait]
-    impl Tool for EchoTool {
+    impl NativeTool for EchoTool {
         fn name(&self) -> &str {
             "echo"
         }
@@ -183,8 +182,7 @@ mod tests {
 
     struct FailTool;
 
-    #[async_trait::async_trait]
-    impl Tool for FailTool {
+    impl NativeTool for FailTool {
         fn name(&self) -> &str {
             "fail_tool"
         }
@@ -210,8 +208,7 @@ mod tests {
 
     struct SlowTool;
 
-    #[async_trait::async_trait]
-    impl Tool for SlowTool {
+    impl NativeTool for SlowTool {
         fn name(&self) -> &str {
             "slow_tool"
         }

@@ -32,7 +32,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
@@ -48,7 +47,9 @@ use crate::channels::wasm::host::{
 use crate::channels::wasm::router::RegisteredEndpoint;
 use crate::channels::wasm::runtime::{PreparedChannelModule, WasmChannelRuntime};
 use crate::channels::wasm::schema::ChannelConfig;
-use crate::channels::{Channel, IncomingMessage, MessageStream, OutgoingResponse, StatusUpdate};
+use crate::channels::{
+    IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
+};
 use crate::error::ChannelError;
 use crate::pairing::PairingStore;
 use crate::safety::LeakDetector;
@@ -2377,8 +2378,7 @@ impl WasmChannel {
     }
 }
 
-#[async_trait]
-impl Channel for WasmChannel {
+impl NativeChannel for WasmChannel {
     fn name(&self) -> &str {
         &self.name
     }
@@ -2599,8 +2599,7 @@ impl std::fmt::Debug for SharedWasmChannel {
     }
 }
 
-#[async_trait]
-impl Channel for SharedWasmChannel {
+impl NativeChannel for SharedWasmChannel {
     fn name(&self) -> &str {
         self.inner.name()
     }
@@ -3052,7 +3051,7 @@ fn read_attachments(paths: &[String]) -> Result<Vec<wit_channel::Attachment>, St
 mod tests {
     use std::sync::Arc;
 
-    use crate::channels::Channel;
+    use crate::channels::NativeChannel;
     use crate::channels::wasm::capabilities::ChannelCapabilities;
     use crate::channels::wasm::runtime::{
         PreparedChannelModule, WasmChannelRuntime, WasmChannelRuntimeConfig,

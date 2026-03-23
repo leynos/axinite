@@ -2,18 +2,17 @@
 
 use anyhow::Result;
 
-use crate::tunnel::Tunnel;
+use crate::tunnel::NativeTunnel;
 
 /// No-op tunnel, no external exposure. `public_url()` always returns `None`.
 pub struct NoneTunnel;
 
-#[async_trait::async_trait]
-impl Tunnel for NoneTunnel {
+impl NativeTunnel for NoneTunnel {
     fn name(&self) -> &str {
         "none"
     }
 
-    async fn start(&self, local_host: &str, local_port: u16) -> Result<String> {
+    async fn start<'a>(&'a self, local_host: &'a str, local_port: u16) -> Result<String> {
         Ok(format!("http://{local_host}:{local_port}"))
     }
 
@@ -36,27 +35,29 @@ mod tests {
 
     #[test]
     fn name_is_none() {
-        assert_eq!(NoneTunnel.name(), "none");
+        assert_eq!(NativeTunnel::name(&NoneTunnel), "none");
     }
 
     #[tokio::test]
     async fn start_returns_local_url() {
-        let url = NoneTunnel.start("127.0.0.1", 7788).await.unwrap();
+        let url = NativeTunnel::start(&NoneTunnel, "127.0.0.1", 7788)
+            .await
+            .unwrap();
         assert_eq!(url, "http://127.0.0.1:7788");
     }
 
     #[tokio::test]
     async fn stop_is_noop() {
-        assert!(NoneTunnel.stop().await.is_ok());
+        assert!(NativeTunnel::stop(&NoneTunnel).await.is_ok());
     }
 
     #[tokio::test]
     async fn health_is_always_true() {
-        assert!(NoneTunnel.health_check().await);
+        assert!(NativeTunnel::health_check(&NoneTunnel).await);
     }
 
     #[test]
     fn public_url_is_always_none() {
-        assert!(NoneTunnel.public_url().is_none());
+        assert!(NativeTunnel::public_url(&NoneTunnel).is_none());
     }
 }

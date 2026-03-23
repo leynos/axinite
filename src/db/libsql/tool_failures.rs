@@ -1,18 +1,16 @@
 //! Tool failure-related ToolFailureStore implementation for LibSqlBackend.
 
-use async_trait::async_trait;
 use libsql::params;
 use uuid::Uuid;
 
 use super::{LibSqlBackend, fmt_ts, get_i64, get_opt_text, get_text, get_ts};
 use crate::agent::BrokenTool;
-use crate::db::ToolFailureStore;
+use crate::db::NativeToolFailureStore;
 use crate::error::DatabaseError;
 
 use chrono::Utc;
 
-#[async_trait]
-impl ToolFailureStore for LibSqlBackend {
+impl NativeToolFailureStore for LibSqlBackend {
     async fn record_tool_failure(
         &self,
         tool_name: &str,

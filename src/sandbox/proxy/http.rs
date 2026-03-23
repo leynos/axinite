@@ -11,6 +11,8 @@
 //!                                                             └─► Log requests
 //! ```
 
+use core::future::Future;
+use core::pin::Pin;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -42,19 +44,35 @@ struct ProxyState {
     running: std::sync::atomic::AtomicBool,
 }
 
+/// Boxed future used at the dyn credential-resolver boundary.
+pub type CredentialResolverFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Resolves secret names to their values.
-#[async_trait::async_trait]
 pub trait CredentialResolver: Send + Sync {
     /// Get the value of a secret by name.
-    async fn resolve(&self, name: &str) -> Option<String>;
+    fn resolve<'a>(&'a self, name: &'a str) -> CredentialResolverFuture<'a, Option<String>>;
+}
+
+/// Native async sibling trait for concrete credential-resolver implementations.
+pub trait NativeCredentialResolver: Send + Sync {
+    /// See [`CredentialResolver::resolve`].
+    fn resolve<'a>(&'a self, name: &'a str) -> impl Future<Output = Option<String>> + Send + 'a;
+}
+
+impl<T> CredentialResolver for T
+where
+    T: NativeCredentialResolver + Send + Sync,
+{
+    fn resolve<'a>(&'a self, name: &'a str) -> CredentialResolverFuture<'a, Option<String>> {
+        Box::pin(NativeCredentialResolver::resolve(self, name))
+    }
 }
 
 /// A credential resolver that uses environment variables.
 pub struct EnvCredentialResolver;
 
-#[async_trait::async_trait]
-impl CredentialResolver for EnvCredentialResolver {
-    async fn resolve(&self, name: &str) -> Option<String> {
+impl NativeCredentialResolver for EnvCredentialResolver {
+    async fn resolve<'a>(&'a self, name: &'a str) -> Option<String> {
         std::env::var(name).ok()
     }
 }
@@ -62,9 +80,8 @@ impl CredentialResolver for EnvCredentialResolver {
 /// A credential resolver that returns nothing (for testing).
 pub struct NoCredentialResolver;
 
-#[async_trait::async_trait]
-impl CredentialResolver for NoCredentialResolver {
-    async fn resolve(&self, _name: &str) -> Option<String> {
+impl NativeCredentialResolver for NoCredentialResolver {
+    async fn resolve<'a>(&'a self, _name: &'a str) -> Option<String> {
         None
     }
 }

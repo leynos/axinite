@@ -14,10 +14,9 @@ use crate::agent::session::{PendingApproval, Session, ThreadState};
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::context::JobContext;
 use crate::error::Error;
-use async_trait::async_trait;
 
 use crate::agent::agentic_loop::{
-    AgenticLoopConfig, LoopDelegate, LoopOutcome, LoopSignal, TextAction,
+    AgenticLoopConfig, LoopOutcome, LoopSignal, NativeLoopDelegate, TextAction,
 };
 use crate::llm::{ChatMessage, Reasoning, ReasoningContext};
 use crate::tools::redact_params;
@@ -247,8 +246,7 @@ struct ChatDelegate<'a> {
     user_tz: chrono_tz::Tz,
 }
 
-#[async_trait]
-impl<'a> LoopDelegate for ChatDelegate<'a> {
+impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
     async fn check_signals(&self) -> LoopSignal {
         let sess = self.session.lock().await;
         if let Some(thread) = sess.threads.get(&self.thread_id)
@@ -1031,7 +1029,6 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use async_trait::async_trait;
     use rust_decimal::Decimal;
 
     use crate::agent::agent_loop::{Agent, AgentDeps};
@@ -1054,8 +1051,7 @@ mod tests {
     /// Minimal LLM provider for unit tests that always returns a static response.
     struct StaticLlmProvider;
 
-    #[async_trait]
-    impl LlmProvider for StaticLlmProvider {
+    impl crate::llm::NativeLlmProvider for StaticLlmProvider {
         fn model_name(&self) -> &str {
             "static-mock"
         }
@@ -1722,8 +1718,7 @@ mod tests {
     /// and text when tools are empty (simulating force_text stripping tools).
     struct AlwaysToolCallProvider;
 
-    #[async_trait]
-    impl LlmProvider for AlwaysToolCallProvider {
+    impl crate::llm::NativeLlmProvider for AlwaysToolCallProvider {
         fn model_name(&self) -> &str {
             "always-tool-call"
         }
@@ -1876,8 +1871,7 @@ mod tests {
     /// returns text.
     struct FailingToolCallProvider;
 
-    #[async_trait]
-    impl LlmProvider for FailingToolCallProvider {
+    impl crate::llm::NativeLlmProvider for FailingToolCallProvider {
         fn model_name(&self) -> &str {
             "failing-tool-call"
         }

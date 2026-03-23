@@ -5,7 +5,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::process::Command;
 
 use crate::tunnel::{
-    SharedProcess, SharedUrl, Tunnel, TunnelProcess, kill_shared, new_shared_process,
+    NativeTunnel, SharedProcess, SharedUrl, TunnelProcess, kill_shared, new_shared_process,
     new_shared_url,
 };
 
@@ -45,13 +45,12 @@ impl CustomTunnel {
     }
 }
 
-#[async_trait::async_trait]
-impl Tunnel for CustomTunnel {
+impl NativeTunnel for CustomTunnel {
     fn name(&self) -> &str {
         "custom"
     }
 
-    async fn start(&self, local_host: &str, local_port: u16) -> Result<String> {
+    async fn start<'a>(&'a self, local_host: &'a str, local_port: u16) -> Result<String> {
         let cmd = self
             .start_command
             .replace("{port}", &local_port.to_string())
@@ -155,7 +154,7 @@ mod tests {
     #[tokio::test]
     async fn empty_command_returns_error() {
         let tunnel = CustomTunnel::new("   ".into(), None, None);
-        let result = tunnel.start("127.0.0.1", 8080).await;
+        let result = NativeTunnel::start(&tunnel, "127.0.0.1", 8080).await;
         assert!(result.is_err());
         assert!(
             result
@@ -168,9 +167,11 @@ mod tests {
     #[tokio::test]
     async fn start_without_pattern_returns_local() {
         let tunnel = CustomTunnel::new("sleep 1".into(), None, None);
-        let url = tunnel.start("127.0.0.1", 4455).await.unwrap();
+        let url = NativeTunnel::start(&tunnel, "127.0.0.1", 4455)
+            .await
+            .unwrap();
         assert_eq!(url, "http://127.0.0.1:4455");
-        tunnel.stop().await.unwrap();
+        NativeTunnel::stop(&tunnel).await.unwrap();
     }
 
     #[tokio::test]
@@ -180,9 +181,11 @@ mod tests {
             None,
             Some("public.example".into()),
         );
-        let url = tunnel.start("localhost", 9999).await.unwrap();
+        let url = NativeTunnel::start(&tunnel, "localhost", 9999)
+            .await
+            .unwrap();
         assert_eq!(url, "https://public.example");
-        tunnel.stop().await.unwrap();
+        NativeTunnel::stop(&tunnel).await.unwrap();
     }
 
     #[tokio::test]
@@ -195,9 +198,11 @@ mod tests {
             None,
             Some("tunnel.io".into()),
         );
-        let url = tunnel.start("localhost", 9999).await.unwrap();
+        let url = NativeTunnel::start(&tunnel, "localhost", 9999)
+            .await
+            .unwrap();
         assert_eq!(url, "https://real.tunnel.io/abc");
-        tunnel.stop().await.unwrap();
+        NativeTunnel::stop(&tunnel).await.unwrap();
     }
 
     #[tokio::test]
@@ -207,9 +212,11 @@ mod tests {
             None,
             Some("http://".into()),
         );
-        let url = tunnel.start("10.1.2.3", 4321).await.unwrap();
+        let url = NativeTunnel::start(&tunnel, "10.1.2.3", 4321)
+            .await
+            .unwrap();
         assert_eq!(url, "http://10.1.2.3:4321");
-        tunnel.stop().await.unwrap();
+        NativeTunnel::stop(&tunnel).await.unwrap();
     }
 
     #[tokio::test]
@@ -221,7 +228,7 @@ mod tests {
             None,
         );
         assert!(
-            !tunnel.health_check().await,
+            !NativeTunnel::health_check(&tunnel).await,
             "Health check should fail for unreachable URL"
         );
     }

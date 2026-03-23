@@ -5,28 +5,26 @@
 
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Pool;
-use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::agent::BrokenTool;
-use crate::agent::routine::{Routine, RoutineRun, RunStatus};
+use crate::agent::routine::{Routine, RoutineRun};
 use crate::config::DatabaseConfig;
 use crate::context::{ActionRecord, JobContext, JobState};
 use crate::db::{
-    ConversationStore, Database, JobStore, NativeSettingsStore, RoutineStore, SandboxStore,
-    ToolFailureStore, WorkspaceStore,
+    EnsureConversationParams, EstimationActualsParams, EstimationSnapshotParams,
+    HybridSearchParams, InsertChunkParams, NativeConversationStore, NativeDatabase, NativeJobStore,
+    NativeRoutineStore, NativeSandboxStore, NativeSettingsStore, NativeToolFailureStore,
+    NativeWorkspaceStore, RoutineRunCompletion, RoutineRuntimeUpdate, SandboxJobStatusUpdate,
 };
 use crate::error::{DatabaseError, WorkspaceError};
 use crate::history::{
     AgentJobRecord, AgentJobSummary, ConversationMessage, ConversationSummary, JobEventRecord,
     LlmCallRecord, SandboxJobRecord, SandboxJobSummary, SettingRow, Store,
 };
-use crate::workspace::{
-    MemoryChunk, MemoryDocument, Repository, SearchConfig, SearchResult, WorkspaceEntry,
-};
+use crate::workspace::{MemoryChunk, MemoryDocument, Repository, SearchResult, WorkspaceEntry};
 
 /// PostgreSQL database backend.
 ///
@@ -56,8 +54,7 @@ impl PgBackend {
 
 // ==================== Database (supertrait) ====================
 
-#[async_trait]
-impl Database for PgBackend {
+impl NativeDatabase for PgBackend {
     async fn run_migrations(&self) -> Result<(), DatabaseError> {
         self.store.run_migrations().await
     }
@@ -65,8 +62,7 @@ impl Database for PgBackend {
 
 // ==================== ConversationStore ====================
 
-#[async_trait]
-impl ConversationStore for PgBackend {
+impl NativeConversationStore for PgBackend {
     async fn create_conversation(
         &self,
         channel: &str,
@@ -95,11 +91,14 @@ impl ConversationStore for PgBackend {
 
     async fn ensure_conversation(
         &self,
-        id: Uuid,
-        channel: &str,
-        user_id: &str,
-        thread_id: Option<&str>,
+        params: EnsureConversationParams<'_>,
     ) -> Result<(), DatabaseError> {
+        let EnsureConversationParams {
+            id,
+            channel,
+            user_id,
+            thread_id,
+        } = params;
         self.store
             .ensure_conversation(id, channel, user_id, thread_id)
             .await
@@ -216,8 +215,7 @@ impl ConversationStore for PgBackend {
 
 // ==================== JobStore ====================
 
-#[async_trait]
-impl JobStore for PgBackend {
+impl NativeJobStore for PgBackend {
     async fn save_job(&self, ctx: &JobContext) -> Result<(), DatabaseError> {
         self.store.save_job(ctx).await
     }
@@ -274,13 +272,16 @@ impl JobStore for PgBackend {
 
     async fn save_estimation_snapshot(
         &self,
-        job_id: Uuid,
-        category: &str,
-        tool_names: &[String],
-        estimated_cost: Decimal,
-        estimated_time_secs: i32,
-        estimated_value: Decimal,
+        params: EstimationSnapshotParams<'_>,
     ) -> Result<Uuid, DatabaseError> {
+        let EstimationSnapshotParams {
+            job_id,
+            category,
+            tool_names,
+            estimated_cost,
+            estimated_time_secs,
+            estimated_value,
+        } = params;
         self.store
             .save_estimation_snapshot(
                 job_id,
@@ -295,11 +296,14 @@ impl JobStore for PgBackend {
 
     async fn update_estimation_actuals(
         &self,
-        id: Uuid,
-        actual_cost: Decimal,
-        actual_time_secs: i32,
-        actual_value: Option<Decimal>,
+        params: EstimationActualsParams,
     ) -> Result<(), DatabaseError> {
+        let EstimationActualsParams {
+            id,
+            actual_cost,
+            actual_time_secs,
+            actual_value,
+        } = params;
         self.store
             .update_estimation_actuals(id, actual_cost, actual_time_secs, actual_value)
             .await
@@ -308,8 +312,7 @@ impl JobStore for PgBackend {
 
 // ==================== SandboxStore ====================
 
-#[async_trait]
-impl SandboxStore for PgBackend {
+impl NativeSandboxStore for PgBackend {
     async fn save_sandbox_job(&self, job: &SandboxJobRecord) -> Result<(), DatabaseError> {
         self.store.save_sandbox_job(job).await
     }
@@ -324,13 +327,16 @@ impl SandboxStore for PgBackend {
 
     async fn update_sandbox_job_status(
         &self,
-        id: Uuid,
-        status: &str,
-        success: Option<bool>,
-        message: Option<&str>,
-        started_at: Option<DateTime<Utc>>,
-        completed_at: Option<DateTime<Utc>>,
+        params: SandboxJobStatusUpdate<'_>,
     ) -> Result<(), DatabaseError> {
+        let SandboxJobStatusUpdate {
+            id,
+            status,
+            success,
+            message,
+            started_at,
+            completed_at,
+        } = params;
         self.store
             .update_sandbox_job_status(id, status, success, message, started_at, completed_at)
             .await
@@ -397,8 +403,7 @@ impl SandboxStore for PgBackend {
 
 // ==================== RoutineStore ====================
 
-#[async_trait]
-impl RoutineStore for PgBackend {
+impl NativeRoutineStore for PgBackend {
     async fn create_routine(&self, routine: &Routine) -> Result<(), DatabaseError> {
         self.store.create_routine(routine).await
     }
@@ -437,13 +442,16 @@ impl RoutineStore for PgBackend {
 
     async fn update_routine_runtime(
         &self,
-        id: Uuid,
-        last_run_at: DateTime<Utc>,
-        next_fire_at: Option<DateTime<Utc>>,
-        run_count: u64,
-        consecutive_failures: u32,
-        state: &serde_json::Value,
+        params: RoutineRuntimeUpdate<'_>,
     ) -> Result<(), DatabaseError> {
+        let RoutineRuntimeUpdate {
+            id,
+            last_run_at,
+            next_fire_at,
+            run_count,
+            consecutive_failures,
+            state,
+        } = params;
         self.store
             .update_routine_runtime(
                 id,
@@ -466,11 +474,14 @@ impl RoutineStore for PgBackend {
 
     async fn complete_routine_run(
         &self,
-        id: Uuid,
-        status: RunStatus,
-        result_summary: Option<&str>,
-        tokens_used: Option<i32>,
+        params: RoutineRunCompletion<'_>,
     ) -> Result<(), DatabaseError> {
+        let RoutineRunCompletion {
+            id,
+            status,
+            result_summary,
+            tokens_used,
+        } = params;
         self.store
             .complete_routine_run(id, status, result_summary, tokens_used)
             .await
@@ -499,8 +510,7 @@ impl RoutineStore for PgBackend {
 
 // ==================== ToolFailureStore ====================
 
-#[async_trait]
-impl ToolFailureStore for PgBackend {
+impl NativeToolFailureStore for PgBackend {
     async fn record_tool_failure(
         &self,
         tool_name: &str,
@@ -582,8 +592,7 @@ impl NativeSettingsStore for PgBackend {
 
 // ==================== WorkspaceStore ====================
 
-#[async_trait]
-impl WorkspaceStore for PgBackend {
+impl NativeWorkspaceStore for PgBackend {
     async fn get_document_by_path(
         &self,
         user_id: &str,
@@ -654,13 +663,13 @@ impl WorkspaceStore for PgBackend {
         self.repo.delete_chunks(document_id).await
     }
 
-    async fn insert_chunk(
-        &self,
-        document_id: Uuid,
-        chunk_index: i32,
-        content: &str,
-        embedding: Option<&[f32]>,
-    ) -> Result<Uuid, WorkspaceError> {
+    async fn insert_chunk(&self, params: InsertChunkParams<'_>) -> Result<Uuid, WorkspaceError> {
+        let InsertChunkParams {
+            document_id,
+            chunk_index,
+            content,
+            embedding,
+        } = params;
         self.repo
             .insert_chunk(document_id, chunk_index, content, embedding)
             .await
@@ -687,12 +696,15 @@ impl WorkspaceStore for PgBackend {
 
     async fn hybrid_search(
         &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
-        query: &str,
-        embedding: Option<&[f32]>,
-        config: &SearchConfig,
+        params: HybridSearchParams<'_>,
     ) -> Result<Vec<SearchResult>, WorkspaceError> {
+        let HybridSearchParams {
+            user_id,
+            agent_id,
+            query,
+            embedding,
+            config,
+        } = params;
         self.repo
             .hybrid_search(user_id, agent_id, query, embedding, config)
             .await

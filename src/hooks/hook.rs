@@ -2,7 +2,9 @@
 
 use std::time::Duration;
 
-use async_trait::async_trait;
+use core::future::Future;
+use core::pin::Pin;
+
 use serde::{Deserialize, Serialize};
 
 /// Points in the agent lifecycle where hooks can be attached.
@@ -185,10 +187,12 @@ impl Default for HookContext {
     }
 }
 
+/// Boxed future used at the dyn hook boundary.
+pub type HookFuture<'a> = Pin<Box<dyn Future<Output = Result<HookOutcome, HookError>> + Send + 'a>>;
+
 /// Trait for implementing lifecycle hooks.
 ///
 /// Hooks intercept and can modify agent operations at well-defined points.
-#[async_trait]
 pub trait Hook: Send + Sync {
     /// A unique name for this hook.
     fn name(&self) -> &str;
@@ -211,6 +215,64 @@ pub trait Hook: Send + Sync {
     }
 
     /// Execute the hook.
-    async fn execute(&self, event: &HookEvent, ctx: &HookContext)
-    -> Result<HookOutcome, HookError>;
+    fn execute<'a>(&'a self, event: &'a HookEvent, ctx: &'a HookContext) -> HookFuture<'a>;
+}
+
+/// Native async sibling trait for concrete hook implementations.
+///
+/// Implement this trait on concrete hook types. The blanket adapter
+/// automatically satisfies [`Hook`] (including the sync methods) so
+/// that they can be used as `Arc<dyn Hook>` or `Box<dyn Hook>`.
+///
+/// The sync methods (`name`, `hook_points`, `failure_mode`, `timeout`)
+/// must also be implemented here because the blanket impl for `Hook`
+/// delegates to them.
+pub trait NativeHook: Send + Sync {
+    /// See [`Hook::name`].
+    fn name(&self) -> &str;
+
+    /// See [`Hook::hook_points`].
+    fn hook_points(&self) -> &[HookPoint];
+
+    /// See [`Hook::failure_mode`].
+    fn failure_mode(&self) -> HookFailureMode {
+        HookFailureMode::FailOpen
+    }
+
+    /// See [`Hook::timeout`].
+    fn timeout(&self) -> Duration {
+        Duration::from_secs(5)
+    }
+
+    /// See [`Hook::execute`].
+    fn execute<'a>(
+        &'a self,
+        event: &'a HookEvent,
+        ctx: &'a HookContext,
+    ) -> impl Future<Output = Result<HookOutcome, HookError>> + Send + 'a;
+}
+
+impl<T> Hook for T
+where
+    T: NativeHook + Send + Sync,
+{
+    fn name(&self) -> &str {
+        NativeHook::name(self)
+    }
+
+    fn hook_points(&self) -> &[HookPoint] {
+        NativeHook::hook_points(self)
+    }
+
+    fn failure_mode(&self) -> HookFailureMode {
+        NativeHook::failure_mode(self)
+    }
+
+    fn timeout(&self) -> Duration {
+        NativeHook::timeout(self)
+    }
+
+    fn execute<'a>(&'a self, event: &'a HookEvent, ctx: &'a HookContext) -> HookFuture<'a> {
+        Box::pin(NativeHook::execute(self, event, ctx))
+    }
 }
