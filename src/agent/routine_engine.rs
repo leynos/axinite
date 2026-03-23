@@ -61,7 +61,10 @@ pub struct RoutineEngine {
 }
 
 impl RoutineEngine {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "requires multiple collaborator dependencies for engine initialization"
+    )]
     pub fn new(
         config: RoutineConfig,
         store: Arc<dyn Database>,

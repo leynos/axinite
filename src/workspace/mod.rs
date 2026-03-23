@@ -184,7 +184,10 @@ impl WorkspaceStorage {
     ) -> Result<Uuid, WorkspaceError> {
         match self {
             #[cfg(feature = "postgres")]
-            Self::Repo(repo) => repo.insert_chunk(document_id, chunk_index, content, embedding).await,
+            Self::Repo(repo) => {
+                repo.insert_chunk(document_id, chunk_index, content, embedding)
+                    .await
+            }
             Self::Db(db) => {
                 db.insert_chunk(InsertChunkParams {
                     document_id,
@@ -238,7 +241,10 @@ impl WorkspaceStorage {
     ) -> Result<Vec<SearchResult>, WorkspaceError> {
         match self {
             #[cfg(feature = "postgres")]
-            Self::Repo(repo) => repo.hybrid_search(user_id, agent_id, query, embedding, config).await,
+            Self::Repo(repo) => {
+                repo.hybrid_search(user_id, agent_id, query, embedding, config)
+                    .await
+            }
             Self::Db(db) => {
                 db.hybrid_search(HybridSearchParams {
                     user_id,

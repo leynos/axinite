@@ -436,13 +436,13 @@ Progress notes:
   methods (`respond`, `send_status`, `broadcast`) required explicit `'a`
   lifetime bounds (not just `'_`) to satisfy E0477 when futures capture both
   `&self` and a second borrowed argument. Default `async { Ok(()) }` bodies
-  provided for `send_status`, `broadcast`, and `shutdown`. Converted 9
+  provided for `send_status`, `broadcast`, and `shutdown`. Converted 10
   `#[async_trait] impl Channel for` blocks across `src/channels/`,
   `src/testing/`, and `tests/support/`:
   `HttpChannel`, `ReplChannel`, `SignalChannel`, `WasmChannel`,
   `SharedWasmChannel`, `RelayChannel`, `GatewayChannel`, `StubChannel`,
   `TestChannel`, `TestChannelHandle`.
-  Post-wave footprint: 33 matched lines for `async-trait|async_trait` in
+  Post-wave footprint: 24 matched lines for `async-trait|async_trait` in
   `src/`; 22 remaining `#[async_trait]` attribute usages, all in `Database`
   family (src/db/).
   Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
@@ -610,8 +610,8 @@ crate remains in `Cargo.toml` pending the Milestone 5 dependency audit.
 ### Recommendation on `async-trait` dependency
 
 Remove `async-trait` from `Cargo.toml` as part of Milestone 5. The current
-tree audit shows zero production and zero test uses of the attribute. The
-`cargo check --all-features` gate passes without it (to be confirmed by
-attempting removal with the full gate). Three doc-comment prose mentions that
-refer to the crate by name do not constitute a runtime dependency and need not
-be changed before removal.
+tree audit shows zero production and zero test uses of the attribute.
+**TODO**: Verify crate removal by attempting to remove `async-trait` from
+`Cargo.toml` and running `cargo check --all-features` to confirm no compilation
+failures. Three doc-comment prose mentions that refer to the crate by name do
+not constitute a runtime dependency and need not be changed before removal.

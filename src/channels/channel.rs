@@ -311,9 +311,11 @@ pub trait Channel: Send + Sync {
     /// Default implementation does nothing (for channels that don't support status).
     fn send_status<'a>(
         &'a self,
-        status: StatusUpdate,
-        metadata: &'a serde_json::Value,
-    ) -> ChannelFuture<'a, Result<(), ChannelError>>;
+        _status: StatusUpdate,
+        _metadata: &'a serde_json::Value,
+    ) -> ChannelFuture<'a, Result<(), ChannelError>> {
+        Box::pin(async { Ok(()) })
+    }
 
     /// Send a proactive message without a prior incoming message.
     ///
@@ -323,9 +325,11 @@ pub trait Channel: Send + Sync {
     /// Default implementation does nothing (for channels that don't support broadcast).
     fn broadcast<'a>(
         &'a self,
-        user_id: &'a str,
-        response: OutgoingResponse,
-    ) -> ChannelFuture<'a, Result<(), ChannelError>>;
+        _user_id: &'a str,
+        _response: OutgoingResponse,
+    ) -> ChannelFuture<'a, Result<(), ChannelError>> {
+        Box::pin(async { Ok(()) })
+    }
 
     /// Check if the channel is healthy.
     fn health_check<'a>(&'a self) -> ChannelFuture<'a, Result<(), ChannelError>>;

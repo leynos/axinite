@@ -1,6 +1,6 @@
 //! Routine-related RoutineStore implementation for LibSqlBackend.
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use libsql::params;
 use uuid::Uuid;
 
@@ -8,7 +8,7 @@ use super::{
     LibSqlBackend, ROUTINE_COLUMNS, ROUTINE_RUN_COLUMNS, fmt_opt_ts, fmt_ts, get_i64, opt_text,
     opt_text_owned, row_to_routine_libsql, row_to_routine_run_libsql,
 };
-use crate::agent::routine::{Routine, RoutineRun, RunStatus};
+use crate::agent::routine::{Routine, RoutineRun};
 use crate::db::{NativeRoutineStore, RoutineRunCompletion, RoutineRuntimeUpdate};
 use crate::error::DatabaseError;
 

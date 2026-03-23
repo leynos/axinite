@@ -238,14 +238,18 @@ Remaining required `async-trait` surfaces as of 2026-03-23 (after Milestone 4):
 
 ## Estimated scope
 
-Table 1. Migration scope by async-trait category.
+Table 1. Pre-ADR-006 migration scope by async-trait category (historical).
 
-| Category | Uses | Migratable |
-| ---------- | ------ | ------------ |
-| Core trait definitions | ~12 | No (dyn Trait) |
-| Core trait `impl` blocks | ~80 | No (must match trait) |
-| Confirmed safe trait definitions | 2 | **Yes** |
-| Confirmed safe impl blocks | 3 | **Yes** |
+| Category | Uses | Migratable (pre-ADR-006) | Post-ADR-006 Status |
+| ---------- | ------ | ------------ | ------------------- |
+| Core trait definitions | ~12 | No (dyn Trait) | **Migrated** via dual-trait pattern (ADR 006) |
+| Core trait `impl` blocks | ~80 | No (must match trait) | **Migrated** via dual-trait pattern (ADR 006) |
+| Confirmed safe trait definitions | 2 | **Yes** | **Completed** (Milestone 1) |
+| Confirmed safe impl blocks | 3 | **Yes** | **Completed** (Milestone 1) |
+
+See ADR 006 and Milestones 2–4 for the broad rollout that reduced production
+`#[async_trait]` usage to zero. Milestone 5 will remove the dependency from
+`Cargo.toml`.
 
 Table 2. Current status of the highest-value migration buckets after the
 initial safe batch and ADR 006 pilots.

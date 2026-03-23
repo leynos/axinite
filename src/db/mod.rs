@@ -256,6 +256,17 @@ pub async fn create_secrets_store(
 
 // ---- ConversationStore ----
 
+/// Object-safe persistence surface for conversation history and metadata.
+///
+/// This trait provides the dyn-safe boundary for conversation storage operations,
+/// enabling trait-object usage (e.g., `Arc<dyn ConversationStore>`). It uses boxed
+/// futures (`DbFuture<'a, T>`) to maintain object safety.
+///
+/// Companion trait: [`NativeConversationStore`] provides the same API using native
+/// async traits (RPITIT). A blanket adapter automatically bridges implementations
+/// of `NativeConversationStore` to satisfy this trait.
+///
+/// Thread-safety: All implementations must be `Send + Sync` to support concurrent access.
 pub trait ConversationStore: Send + Sync {
     fn create_conversation<'a>(
         &'a self,
@@ -573,6 +584,17 @@ impl<T: NativeConversationStore> ConversationStore for T {
 
 // ---- JobStore ----
 
+/// Object-safe persistence surface for agent jobs, LLM calls, and estimation snapshots.
+///
+/// This trait provides the dyn-safe boundary for job storage operations,
+/// enabling trait-object usage (e.g., `Arc<dyn JobStore>`). It uses boxed
+/// futures (`DbFuture<'a, T>`) to maintain object safety.
+///
+/// Companion trait: [`NativeJobStore`] provides the same API using native
+/// async traits (RPITIT). A blanket adapter automatically bridges implementations
+/// of `NativeJobStore` to satisfy this trait.
+///
+/// Thread-safety: All implementations must be `Send + Sync` to support concurrent access.
 pub trait JobStore: Send + Sync {
     fn save_job<'a>(&'a self, ctx: &'a JobContext) -> DbFuture<'a, Result<(), DatabaseError>>;
     fn get_job<'a>(&'a self, id: Uuid) -> DbFuture<'a, Result<Option<JobContext>, DatabaseError>>;
@@ -755,6 +777,17 @@ impl<T: NativeJobStore> JobStore for T {
 
 // ---- SandboxStore ----
 
+/// Object-safe persistence surface for sandbox job lifecycle and events.
+///
+/// This trait provides the dyn-safe boundary for sandbox job storage operations,
+/// enabling trait-object usage (e.g., `Arc<dyn SandboxStore>`). It uses boxed
+/// futures (`DbFuture<'a, T>`) to maintain object safety.
+///
+/// Companion trait: [`NativeSandboxStore`] provides the same API using native
+/// async traits (RPITIT). A blanket adapter automatically bridges implementations
+/// of `NativeSandboxStore` to satisfy this trait.
+///
+/// Thread-safety: All implementations must be `Send + Sync` to support concurrent access.
 pub trait SandboxStore: Send + Sync {
     fn save_sandbox_job<'a>(
         &'a self,
@@ -977,6 +1010,17 @@ impl<T: NativeSandboxStore> SandboxStore for T {
 
 // ---- RoutineStore ----
 
+/// Object-safe persistence surface for scheduled routines and their execution history.
+///
+/// This trait provides the dyn-safe boundary for routine storage operations,
+/// enabling trait-object usage (e.g., `Arc<dyn RoutineStore>`). It uses boxed
+/// futures (`DbFuture<'a, T>`) to maintain object safety.
+///
+/// Companion trait: [`NativeRoutineStore`] provides the same API using native
+/// async traits (RPITIT). A blanket adapter automatically bridges implementations
+/// of `NativeRoutineStore` to satisfy this trait.
+///
+/// Thread-safety: All implementations must be `Send + Sync` to support concurrent access.
 pub trait RoutineStore: Send + Sync {
     fn create_routine<'a>(
         &'a self,
@@ -1195,6 +1239,17 @@ impl<T: NativeRoutineStore> RoutineStore for T {
 
 // ---- ToolFailureStore ----
 
+/// Object-safe persistence surface for tool failure tracking and analysis.
+///
+/// This trait provides the dyn-safe boundary for tool failure storage operations,
+/// enabling trait-object usage (e.g., `Arc<dyn ToolFailureStore>`). It uses boxed
+/// futures (`DbFuture<'a, T>`) to maintain object safety.
+///
+/// Companion trait: [`NativeToolFailureStore`] provides the same API using native
+/// async traits (RPITIT). A blanket adapter automatically bridges implementations
+/// of `NativeToolFailureStore` to satisfy this trait.
+///
+/// Thread-safety: All implementations must be `Send + Sync` to support concurrent access.
 pub trait ToolFailureStore: Send + Sync {
     fn record_tool_failure<'a>(
         &'a self,
@@ -1423,6 +1478,17 @@ where
 
 // ---- WorkspaceStore ----
 
+/// Object-safe persistence surface for workspace documents, chunks, and semantic search.
+///
+/// This trait provides the dyn-safe boundary for workspace storage operations,
+/// enabling trait-object usage (e.g., `Arc<dyn WorkspaceStore>`). It uses boxed
+/// futures (`DbFuture<'a, T>`) to maintain object safety.
+///
+/// Companion trait: [`NativeWorkspaceStore`] provides the same API using native
+/// async traits (RPITIT). A blanket adapter automatically bridges implementations
+/// of `NativeWorkspaceStore` to satisfy this trait.
+///
+/// Thread-safety: All implementations must be `Send + Sync` to support concurrent access.
 pub trait WorkspaceStore: Send + Sync {
     fn get_document_by_path<'a>(
         &'a self,

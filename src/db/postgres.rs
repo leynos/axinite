@@ -7,28 +7,24 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Pool;
-use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::agent::BrokenTool;
-use crate::agent::routine::{Routine, RoutineRun, RunStatus};
+use crate::agent::routine::{Routine, RoutineRun};
 use crate::config::DatabaseConfig;
 use crate::context::{ActionRecord, JobContext, JobState};
 use crate::db::{
     EnsureConversationParams, EstimationActualsParams, EstimationSnapshotParams,
-    HybridSearchParams, InsertChunkParams, NativeConversationStore, NativeDatabase,
-    NativeJobStore, NativeRoutineStore, NativeSandboxStore, NativeSettingsStore,
-    NativeToolFailureStore, NativeWorkspaceStore, RoutineRunCompletion, RoutineRuntimeUpdate,
-    SandboxJobStatusUpdate,
+    HybridSearchParams, InsertChunkParams, NativeConversationStore, NativeDatabase, NativeJobStore,
+    NativeRoutineStore, NativeSandboxStore, NativeSettingsStore, NativeToolFailureStore,
+    NativeWorkspaceStore, RoutineRunCompletion, RoutineRuntimeUpdate, SandboxJobStatusUpdate,
 };
 use crate::error::{DatabaseError, WorkspaceError};
 use crate::history::{
     AgentJobRecord, AgentJobSummary, ConversationMessage, ConversationSummary, JobEventRecord,
     LlmCallRecord, SandboxJobRecord, SandboxJobSummary, SettingRow, Store,
 };
-use crate::workspace::{
-    MemoryChunk, MemoryDocument, Repository, SearchConfig, SearchResult, WorkspaceEntry,
-};
+use crate::workspace::{MemoryChunk, MemoryDocument, Repository, SearchResult, WorkspaceEntry};
 
 /// PostgreSQL database backend.
 ///

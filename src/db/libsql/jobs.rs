@@ -1,7 +1,6 @@
 //! Job-related JobStore implementation for LibSqlBackend.
 
 use libsql::params;
-use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use super::{
@@ -427,7 +426,7 @@ impl NativeJobStore for LibSqlBackend {
                     id.to_string(),
                     actual_cost.to_string(),
                     actual_time_secs as i64,
-                    actual_value.map(|d| d.to_string()).unwrap_or_default(),
+                    actual_value.map(|d| d.to_string()),
                 ],
             )
             .await

@@ -1,6 +1,6 @@
 //! Sandbox-related SandboxStore implementation for LibSqlBackend.
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use libsql::params;
 use uuid::Uuid;
 

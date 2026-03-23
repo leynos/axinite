@@ -12,7 +12,7 @@ use super::{
 use crate::db::{HybridSearchParams, InsertChunkParams, NativeWorkspaceStore};
 use crate::error::WorkspaceError;
 use crate::workspace::{
-    MemoryChunk, MemoryDocument, RankedResult, SearchConfig, SearchResult, WorkspaceEntry,
+    MemoryChunk, MemoryDocument, RankedResult, SearchResult, WorkspaceEntry,
     reciprocal_rank_fusion,
 };
 

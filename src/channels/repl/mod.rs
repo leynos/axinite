@@ -17,8 +17,8 @@
 //! - `yes`/`no`/`always` - Respond to tool approval prompts
 //! - `Esc` - Interrupt current operation
 
-pub mod formatting;
-pub mod input;
+mod formatting;
+mod input;
 
 use std::io::{self, IsTerminal, Write};
 use std::sync::Arc;
