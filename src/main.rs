@@ -703,15 +703,48 @@ async fn async_main() -> anyhow::Result<()> {
     #[cfg(unix)]
     {
         use ironclaw::channels::ChannelSecretUpdater;
+        use ironclaw::reload::{
+            ConfigLoader, DbConfigLoader, DbSecretInjector, EnvConfigLoader, HotReloadManager,
+            ListenerController, SecretInjector, WebhookListenerController,
+        };
+
         // Collect all channels that support secret updates
         let mut secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>> = Vec::new();
         if let Some(ref state) = http_channel_state {
             secret_updaters.push(Arc::clone(state) as Arc<dyn ChannelSecretUpdater>);
         }
 
-        let sighup_webhook_server = webhook_server.clone();
-        let sighup_settings_store_clone = sighup_settings_store.clone();
-        let sighup_secrets_store = components.secrets_store.clone();
+        // Instantiate config loader based on whether settings store is present
+        let config_loader: Arc<dyn ConfigLoader> = match &sighup_settings_store {
+            Some(store) => Arc::new(DbConfigLoader::new(
+                Arc::clone(store) as Arc<dyn ironclaw::db::SettingsStore>,
+                "default".to_string(),
+            )),
+            None => Arc::new(EnvConfigLoader::new()),
+        };
+
+        // Wrap webhook server in listener controller
+        let listener_controller: Option<Arc<dyn ListenerController>> =
+            webhook_server.as_ref().map(|ws| {
+                Arc::new(WebhookListenerController::new(Arc::clone(ws)))
+                    as Arc<dyn ListenerController>
+            });
+
+        // Wrap secrets store in secret injector
+        let secret_injector: Option<Arc<dyn SecretInjector>> =
+            components.secrets_store.as_ref().map(|ss| {
+                Arc::new(DbSecretInjector::new(Arc::clone(ss), "default".to_string()))
+                    as Arc<dyn SecretInjector>
+            });
+
+        // Construct hot-reload manager
+        let reload_manager = HotReloadManager::new(
+            config_loader,
+            listener_controller,
+            secret_injector,
+            secret_updaters,
+        );
+
         let mut shutdown_rx = shutdown_tx.subscribe();
 
         tokio::spawn(async move {
@@ -737,104 +770,9 @@ async fn async_main() -> anyhow::Result<()> {
                 }
                 tracing::info!("SIGHUP received — reloading HTTP webhook config");
 
-                // Inject channel secrets from database into thread-safe overlay
-                // (similar to inject_llm_keys_from_secrets for LLM providers)
-                if let Some(ref secrets_store) = sighup_secrets_store {
-                    // Inject HTTP webhook secret from encrypted store
-                    if let Ok(webhook_secret) = secrets_store
-                        .get_decrypted("default", "http_webhook_secret")
-                        .await
-                    {
-                        // Thread-safe: Uses INJECTED_VARS mutex instead of unsafe std::env::set_var
-                        // Config::from_env() will read from the overlay via optional_env()
-                        ironclaw::config::inject_single_var(
-                            "HTTP_WEBHOOK_SECRET",
-                            webhook_secret.expose(),
-                        );
-                        tracing::debug!("Injected HTTP_WEBHOOK_SECRET from secrets store");
-                    }
-                }
-
-                // Reload config (now with secrets injected into environment)
-                let new_config = match &sighup_settings_store_clone {
-                    Some(store) => {
-                        ironclaw::config::Config::from_db(store.as_ref(), "default").await
-                    }
-                    None => ironclaw::config::Config::from_env().await,
-                };
-
-                let new_config = match new_config {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::error!("SIGHUP config reload failed: {}", e);
-                        continue;
-                    }
-                };
-
-                let new_http = match new_config.channels.http {
-                    Some(c) => c,
-                    None => {
-                        tracing::warn!("SIGHUP: HTTP channel no longer configured, skipping");
-                        continue;
-                    }
-                };
-
-                // Compute new socket addr
-                let new_addr: std::net::SocketAddr =
-                    match format!("{}:{}", new_http.host, new_http.port).parse() {
-                        Ok(a) => a,
-                        Err(e) => {
-                            tracing::error!("SIGHUP: invalid addr in config: {}", e);
-                            continue;
-                        }
-                    };
-
-                // Restart listener if addr changed.
-                // Minimize lock scope: acquire, read old addr, release, then restart.
-                let mut restart_failed = false;
-                if let Some(ref ws_arc) = sighup_webhook_server {
-                    let old_addr = {
-                        let ws = ws_arc.lock().await;
-                        ws.current_addr()
-                    }; // Lock released here
-
-                    if old_addr != new_addr {
-                        tracing::info!(
-                            "SIGHUP: HTTP addr {} -> {}, restarting listener",
-                            old_addr,
-                            new_addr
-                        );
-                        // NOTE: Lock is held across restart_with_addr().await. This is
-                        // acceptable because SIGHUP is infrequent and restart is fast. A full
-                        // fix would require refactoring restart_with_addr to separate state
-                        // mutation from async I/O.
-                        let mut ws = ws_arc.lock().await;
-                        match ws.restart_with_addr(new_addr).await {
-                            Ok(()) => {
-                                tracing::info!("SIGHUP: webhook server restarted on {}", new_addr);
-                            }
-                            Err(e) => {
-                                tracing::error!("SIGHUP: listener restart failed: {}", e);
-                                restart_failed = true;
-                            }
-                        }
-                    } else {
-                        tracing::debug!("SIGHUP: addr unchanged ({})", old_addr);
-                    }
-                }
-
-                // Update secrets in all configured channels (if restart succeeded or wasn't needed)
-                if !restart_failed {
-                    use secrecy::{ExposeSecret, SecretString};
-                    let new_secret = new_http
-                        .webhook_secret
-                        .as_ref()
-                        .map(|s| SecretString::from(s.expose_secret().to_string()));
-
-                    // Update all channels that support secret swapping
-                    for updater in &secret_updaters {
-                        updater.update_secret(new_secret.clone()).await;
-                    }
+                // Perform hot-reload via manager
+                if let Err(e) = reload_manager.perform_reload().await {
+                    tracing::error!("Hot-reload failed: {}", e);
                 }
             }
         });

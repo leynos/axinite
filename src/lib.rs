@@ -61,6 +61,7 @@ pub mod observability;
 pub mod orchestrator;
 pub mod pairing;
 pub mod registry;
+pub mod reload;
 pub mod safety;
 pub mod sandbox;
 pub mod secrets;
