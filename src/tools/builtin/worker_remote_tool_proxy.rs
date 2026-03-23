@@ -82,6 +82,7 @@ mod tests {
     use axum::routing::post;
     use axum::{Json, Router};
     use rust_decimal::Decimal;
+    use tokio::sync::Mutex;
     use uuid::Uuid;
 
     use super::*;
@@ -363,7 +364,7 @@ mod tests {
         let (route_path, received_job_id, tool_name) = &requests[0];
         assert_eq!(
             route_path,
-            format!("/worker/{}/tools/execute", job_id),
+            &format!("/worker/{}/tools/execute", job_id),
             "proxy must route execution through the correct orchestrator endpoint"
         );
         assert_eq!(received_job_id, &job_id);
