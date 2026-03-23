@@ -65,8 +65,8 @@ impl ContainerJobManager {
         };
 
         let mut guard = self.docker.write().await;
-        if let Some(existing) = guard.clone() {
-            return Ok(existing);
+        if let Some(existing) = guard.as_ref() {
+            return Ok(existing.clone());
         }
         *guard = Some(docker.clone());
         Ok(docker)
