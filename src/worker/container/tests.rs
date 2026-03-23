@@ -164,14 +164,10 @@ fn expected_remote_tool_definition() -> ToolDefinition {
 }
 
 fn expected_merged_tool_names() -> Vec<String> {
-    vec![
-        "apply_patch".to_string(),
-        "hosted_worker_remote_tool_fixture".to_string(),
-        "list_dir".to_string(),
-        "read_file".to_string(),
-        "shell".to_string(),
-        "write_file".to_string(),
-    ]
+    let mut names = expected_local_tool_names();
+    names.push(expected_remote_tool_definition().name);
+    names.sort();
+    names
 }
 
 fn expected_local_tool_names() -> Vec<String> {
