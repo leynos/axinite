@@ -622,4 +622,63 @@ mod tests {
         let msg = IncomingMessage::new("test", "user1", "hello").with_timezone("America/New_York");
         assert_eq!(msg.timezone.as_deref(), Some("America/New_York"));
     }
+
+    /// Minimal channel for blanket-adapter smoke tests.
+    struct NoopChannel;
+
+    impl NativeChannel for NoopChannel {
+        fn name(&self) -> &str {
+            "noop"
+        }
+        async fn start(&self) -> Result<MessageStream, ChannelError> {
+            use futures::stream;
+            Ok(Box::pin(stream::empty()))
+        }
+        async fn respond(
+            &self,
+            _msg: &IncomingMessage,
+            _response: OutgoingResponse,
+        ) -> Result<(), ChannelError> {
+            Ok(())
+        }
+        async fn health_check(&self) -> Result<(), ChannelError> {
+            Ok(())
+        }
+    }
+
+    /// Verify the `impl<T: NativeChannel> Channel for T` blanket adapter boxes
+    /// futures correctly and the results cross the `dyn Channel` boundary.
+    #[tokio::test]
+    async fn native_channel_blanket_adapter_produces_correct_futures() {
+        let ch: Box<dyn Channel> = Box::new(NoopChannel);
+        ch.health_check()
+            .await
+            .expect("health_check should succeed");
+        let msg = IncomingMessage::new("noop", "u1", "hi");
+        let resp = OutgoingResponse {
+            content: "ok".into(),
+            thread_id: None,
+            attachments: vec![],
+            metadata: Default::default(),
+        };
+        ch.respond(&msg, resp)
+            .await
+            .expect("respond should succeed");
+    }
+
+    /// Minimal secret-updater for blanket-adapter smoke test.
+    struct NoopSecretUpdater;
+
+    impl NativeChannelSecretUpdater for NoopSecretUpdater {
+        async fn update_secret(&self, _new_secret: Option<secrecy::SecretString>) {}
+    }
+
+    /// Verify the `impl<T: NativeChannelSecretUpdater> ChannelSecretUpdater for T`
+    /// blanket adapter boxes the future correctly.
+    #[tokio::test]
+    async fn native_channel_secret_updater_blanket_adapter_boxes_future() {
+        let updater = NoopSecretUpdater;
+        let dyn_updater: &dyn ChannelSecretUpdater = &updater;
+        dyn_updater.update_secret(None).await;
+    }
 }

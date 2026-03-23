@@ -1,5 +1,5 @@
 //! Test rig channel adapter that exposes [`TestChannel`] through the runtime
-//! [`Channel`] trait.
+//! [`NativeChannel`] adapter.
 //!
 //! This support module lets integration tests share one in-memory
 //! [`TestChannel`] while still handing a trait object to the production

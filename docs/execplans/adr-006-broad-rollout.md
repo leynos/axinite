@@ -181,7 +181,7 @@ For each family:
 2. Add a `Native*` sibling trait in the owning module.
 3. Bridge the sibling trait back into the dyn-facing trait with a blanket
    implementation.
-4. Move concrete implementations and test doubles to the sibling trait unless a
+4. Move concrete implementations and test doubles to the sibling trait, unless a
    direct dyn-facing implementation is genuinely simpler.
 5. Verify the existing dyn-backed call sites remain unchanged or nearly
    unchanged.
@@ -321,7 +321,7 @@ Final sign-off before removing `async-trait` from `Cargo.toml`:
 
 ## Validation and evidence
 
-Every wave should capture the same evidence pattern so a novice can tell
+Every wave should capture the same evidence pattern, so a novice can tell
 whether the migration really succeeded:
 
 1. Before editing, record the relevant `async-trait` usage inventory for that
@@ -354,7 +354,7 @@ set -o pipefail; git diff --check | tee /tmp/diff-check-axinite-<wave>.out
 
 ## Progress
 
-- [ ] Milestone 1: Normalize the migration playbook and baseline evidence
+- [x] Milestone 1: Normalize the migration playbook and baseline evidence
 - [x] Milestone 2: Convert the narrow internal dyn-backed traits
 - [x] Milestone 3: Convert the infrastructure-facing extension seams
 - [x] Milestone 4: Convert the high-fanout core traits
@@ -410,7 +410,7 @@ Progress notes:
   call sites need no changes. Converted all 64 `#[async_trait] impl Tool for`
   blocks across 36 files plus the one test-double in `tests/e2e_traces/`.
   Fixed E0034 ambiguous calls in `build_loop.rs`, `restart.rs`, `tool/tests.rs`,
-  and `registry/tests.rs` using fully-qualified `NativeTool::method(...)` syntax.
+  and `registry/tests.rs` using fully qualified `NativeTool::method(...)` syntax.
   Re-exported `NativeTool` and `ToolFuture` from `tools/mod.rs`.
   Post-wave footprint: 85 matched lines for `async-trait|async_trait` in
   `src/`; 51 remaining `#[async_trait]` attribute usages, all in
@@ -482,7 +482,7 @@ Progress notes:
   `Arc<dyn TaskHandler>`.
 - 2026-03-23: When both `HttpInterceptor` (dyn-safe, boxed-future) and
   `NativeHttpInterceptor` (impl Future) are in scope for a concrete type, test
-  call sites become ambiguous. Resolved by using fully-qualified syntax in tests:
+  call sites become ambiguous. Resolved by using fully qualified syntax in tests:
   `NativeHttpInterceptor::method_name(&receiver, ...)`. In one case the receiver
   was `Arc<RecordingHttpInterceptor>` and needed explicit deref (`&*arc`) because
   the blanket impl only covers `T: NativeHttpInterceptor`, not `Arc<T>`.
@@ -492,7 +492,7 @@ Progress notes:
   that calls `self.embed`. When both dyn-safe `EmbeddingProvider` and
   `NativeEmbeddingProvider` are in scope, the call `self.embed_batch(...)` in
   `embed` method bodies becomes ambiguous. Fixed with
-  `NativeEmbeddingProvider::embed_batch(self, ...)` fully-qualified syntax.
+  `NativeEmbeddingProvider::embed_batch(self, ...)` fully qualified syntax.
 - 2026-03-23: `SecretsStore::get_decrypted` and `is_accessible` call
   `self.get()` and `self.exists()` internally. After the blanket impl was
   added, these became ambiguous. Fixed with `NativeSecretsStore::get(self, ...)`
