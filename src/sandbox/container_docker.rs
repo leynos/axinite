@@ -57,6 +57,7 @@ impl ContainerRunner {
                 "HTTPS_PROXY=http://{}:{}",
                 proxy_host, self.proxy_port
             ));
+            env_vec.push("NO_PROXY=localhost,127.0.0.1,::1".to_string());
         }
 
         let binds = match policy {
@@ -168,21 +169,14 @@ impl ContainerRunner {
         })
     }
 
-    /// Collect stdout and stderr from a container.
-    async fn collect_logs(
-        &self,
-        container_id: &str,
+    /// Collect stdout and stderr from a stream of log output.
+    async fn collect_output_from_stream<S>(
+        stream: &mut S,
         max_output: usize,
-    ) -> Result<(String, String, bool)> {
-        let options = LogsOptions::<String> {
-            stdout: true,
-            stderr: true,
-            follow: false,
-            ..Default::default()
-        };
-
-        let mut stream = self.docker.logs(container_id, Some(options));
-
+    ) -> (String, String, bool)
+    where
+        S: futures::Stream<Item = std::result::Result<LogOutput, bollard::errors::Error>> + Unpin,
+    {
         let mut stdout = String::new();
         let mut stderr = String::new();
         let mut truncated = false;
@@ -200,10 +194,30 @@ impl ContainerRunner {
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    tracing::warn!("Error reading container logs: {}", e);
+                    tracing::warn!("Error reading output: {}", e);
                 }
             }
         }
+
+        (stdout, stderr, truncated)
+    }
+
+    /// Collect stdout and stderr from a container.
+    async fn collect_logs(
+        &self,
+        container_id: &str,
+        max_output: usize,
+    ) -> Result<(String, String, bool)> {
+        let options = LogsOptions::<String> {
+            stdout: true,
+            stderr: true,
+            follow: false,
+            ..Default::default()
+        };
+
+        let mut stream = self.docker.logs(container_id, Some(options));
+        let (stdout, stderr, truncated) =
+            Self::collect_output_from_stream(&mut stream, max_output).await;
 
         Ok((stdout, stderr, truncated))
     }
@@ -221,29 +235,12 @@ impl ContainerRunner {
             }
         })?;
 
-        let mut stdout = String::new();
-        let mut stderr = String::new();
-        let mut truncated = false;
-        let half_max = max_output / 2;
-
-        if let StartExecResults::Attached { mut output, .. } = start_result {
-            while let Some(result) = output.next().await {
-                match result {
-                    Ok(LogOutput::StdOut { message }) => {
-                        let text = String::from_utf8_lossy(&message);
-                        truncated |= append_with_limit(&mut stdout, &text, half_max);
-                    }
-                    Ok(LogOutput::StdErr { message }) => {
-                        let text = String::from_utf8_lossy(&message);
-                        truncated |= append_with_limit(&mut stderr, &text, half_max);
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::warn!("Error reading exec output: {}", e);
-                    }
-                }
-            }
-        }
+        let (stdout, stderr, truncated) =
+            if let StartExecResults::Attached { mut output, .. } = start_result {
+                Self::collect_output_from_stream(&mut output, max_output).await
+            } else {
+                (String::new(), String::new(), false)
+            };
 
         let inspect =
             self.docker

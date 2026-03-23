@@ -61,9 +61,14 @@ pub(super) fn build_host_config(
 ) -> bollard::models::HostConfig {
     use bollard::models::HostConfig;
 
+    let memory_bytes = memory_mb
+        .saturating_mul(1024)
+        .saturating_mul(1024)
+        .min(i64::MAX as u64) as i64;
+
     HostConfig {
         binds: if binds.is_empty() { None } else { Some(binds) },
-        memory: Some((memory_mb * 1024 * 1024) as i64),
+        memory: Some(memory_bytes),
         cpu_shares: Some(cpu_shares as i64),
         network_mode: Some("bridge".to_string()),
         extra_hosts: Some(vec!["host.docker.internal:host-gateway".to_string()]),

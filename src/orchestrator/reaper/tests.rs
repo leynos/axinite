@@ -5,6 +5,7 @@ use super::*;
 use std::collections::HashMap;
 
 use crate::context::{JobContext, JobState};
+use anyhow::{Context as _, Result};
 use rstest::rstest;
 
 /// Build a standard 600-second-threshold `ReaperConfig`, fabricate a single
@@ -77,19 +78,20 @@ async fn make_terminal_job(
 
 /// Create a freshly-pending job and return whether its state `is_active()`.
 ///
-/// `tag` is embedded verbatim in `.expect(…)` diagnostics so that failure
-/// messages match the original per-test strings.
-async fn create_active_job(ctx_mgr: &ContextManager, description: &str, tag: &str) -> bool {
+/// `tag` is embedded verbatim in error context so that failure messages match
+/// the original per-test strings.
+async fn create_active_job(ctx_mgr: &ContextManager, description: &str, tag: &str) -> Result<bool> {
     let job_id = ctx_mgr
         .create_job_for_user("default", "test", description)
         .await
-        .unwrap_or_else(|e| panic!("create_job_for_user failed for {tag}: {e:#?}"));
-    ctx_mgr
+        .with_context(|| format!("create_job_for_user failed for {tag}"))?;
+    let is_active = ctx_mgr
         .get_context(job_id)
         .await
-        .unwrap_or_else(|e| panic!("get_context failed for {tag} job_id: {e:#?}"))
+        .with_context(|| format!("get_context failed for {tag} job_id"))?
         .state
-        .is_active()
+        .is_active();
+    Ok(is_active)
 }
 
 #[rstest]
@@ -108,13 +110,14 @@ async fn active_job_remains_active(
     #[case] description: &str,
     #[case] tag: &str,
     #[case] assertion_message: &str,
-) {
+) -> Result<()> {
     let ctx_mgr = Arc::new(ContextManager::new(5));
     assert!(
-        create_active_job(&ctx_mgr, description, tag).await,
+        create_active_job(&ctx_mgr, description, tag).await?,
         "{}",
         assertion_message
     );
+    Ok(())
 }
 
 #[rstest]
@@ -226,38 +229,37 @@ fn reaper_config_can_be_customized() {
 /// Create a job, optionally transition it to `new_state`, then return whether
 /// `ctx.state.is_active()` is `true` for the resulting context.
 ///
-/// `tag` is embedded verbatim in `.expect(…)` diagnostics so that failures
-/// match the original per-job error messages.
+/// `tag` is embedded verbatim in error context so that failures match the
+/// original per-job error messages.
 async fn create_job_in_state(
     ctx_mgr: &ContextManager,
     tag: &str,
     description: &str,
     new_state: Option<crate::context::JobState>,
-) -> bool {
+) -> Result<bool> {
     let job_id = ctx_mgr
         .create_job_for_user("default", "test", description)
         .await
-        .unwrap_or_else(|e| panic!("create_job_for_user failed for {tag}: {e:#?}"));
+        .with_context(|| format!("create_job_for_user failed for {tag}"))?;
     if let Some(state) = new_state {
         ctx_mgr
             .update_context(job_id, |ctx| {
                 ctx.state = state;
             })
             .await
-            .unwrap_or_else(|e| {
-                panic!("update_context failed when setting state for {tag}: {e:#?}")
-            });
+            .with_context(|| format!("update_context failed when setting state for {tag}"))?;
     }
-    ctx_mgr
+    let is_active = ctx_mgr
         .get_context(job_id)
         .await
-        .unwrap_or_else(|e| panic!("get_context failed for {tag}: {e:#?}"))
+        .with_context(|| format!("get_context failed for {tag}"))?
         .state
-        .is_active()
+        .is_active();
+    Ok(is_active)
 }
 
 #[tokio::test]
-async fn reaper_cleanup_decision_matrix() {
+async fn reaper_cleanup_decision_matrix() -> Result<()> {
     let ctx_mgr = Arc::new(ContextManager::new(5));
 
     assert!(
@@ -267,7 +269,7 @@ async fn reaper_cleanup_decision_matrix() {
             "test1",
             None,
         )
-        .await,
+        .await?,
         "Pending job is active"
     );
     assert!(
@@ -277,7 +279,7 @@ async fn reaper_cleanup_decision_matrix() {
             "test2",
             Some(JobState::InProgress),
         )
-        .await,
+        .await?,
         "InProgress job is active"
     );
     assert!(
@@ -287,7 +289,7 @@ async fn reaper_cleanup_decision_matrix() {
             "test3",
             Some(JobState::Completed),
         )
-        .await,
+        .await?,
         "Completed is still active"
     );
     assert!(
@@ -297,7 +299,7 @@ async fn reaper_cleanup_decision_matrix() {
             "test4",
             Some(JobState::Failed),
         )
-        .await,
+        .await?,
         "Failed job is terminal"
     );
     assert!(
@@ -307,7 +309,7 @@ async fn reaper_cleanup_decision_matrix() {
             "test5",
             Some(JobState::Cancelled),
         )
-        .await,
+        .await?,
         "Cancelled job is terminal"
     );
 
@@ -317,6 +319,7 @@ async fn reaper_cleanup_decision_matrix() {
         Err(_) => false,
     };
     assert!(!is_active, "Missing job should be treated as inactive");
+    Ok(())
 }
 
 #[cfg(all(test, feature = "docker", not(target_env = "msvc")))]
