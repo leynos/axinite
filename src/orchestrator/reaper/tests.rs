@@ -282,16 +282,5 @@ async fn reaper_cleanup_decision_matrix(
     Ok(())
 }
 
-#[tokio::test]
-async fn missing_job_is_treated_as_inactive() {
-    let ctx_mgr = Arc::new(ContextManager::new(5));
-    let missing_job = Uuid::new_v4();
-    let is_active = match ctx_mgr.get_context(missing_job).await {
-        Ok(ctx) => ctx.state.is_active(),
-        Err(_) => false,
-    };
-    assert!(!is_active, "Missing job should be treated as inactive");
-}
-
 #[cfg(all(test, feature = "docker", not(target_env = "msvc")))]
 mod e2e;

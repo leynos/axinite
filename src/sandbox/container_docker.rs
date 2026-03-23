@@ -60,35 +60,34 @@ impl ContainerRunner {
 
             // Merge localhost/loopback with any existing NO_PROXY configuration
             let loopback_entries = ["localhost", "127.0.0.1", "::1"];
-            let existing_no_proxy = env_vec
+
+            // Collect all NO_PROXY/no_proxy entries from env_vec
+            let all_no_proxy_values: Vec<String> = env_vec
                 .iter()
-                .find(|e| e.starts_with("NO_PROXY=") || e.starts_with("no_proxy="))
-                .and_then(|e| e.split_once('=').map(|(_, v)| v.to_string()));
+                .filter(|e| e.starts_with("NO_PROXY=") || e.starts_with("no_proxy="))
+                .filter_map(|e| e.split_once('=').map(|(_, v)| v.to_string()))
+                .collect();
 
-            let no_proxy_value = if let Some(existing) = existing_no_proxy {
-                // Remove the old NO_PROXY/no_proxy entry to avoid duplicates
-                env_vec.retain(|e| !e.starts_with("NO_PROXY=") && !e.starts_with("no_proxy="));
+            // Remove all existing NO_PROXY/no_proxy entries to avoid duplicates
+            env_vec.retain(|e| !e.starts_with("NO_PROXY=") && !e.starts_with("no_proxy="));
 
-                // Parse existing entries, filter out loopback tokens, and deduplicate
-                let mut entries: Vec<String> = existing
-                    .split(',')
-                    .map(|s| s.trim())
-                    .filter(|s| !loopback_entries.contains(s))
-                    .map(|s| s.to_string())
-                    .collect();
+            // Aggregate, split, and flatten all values
+            let mut entries: Vec<String> = all_no_proxy_values
+                .iter()
+                .flat_map(|val| val.split(','))
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty() && !loopback_entries.contains(s))
+                .map(|s| s.to_string())
+                .collect();
 
-                // Deduplicate using a set-like operation
-                entries.sort();
-                entries.dedup();
+            // Deduplicate
+            entries.sort();
+            entries.dedup();
 
-                // Combine existing (non-loopback) entries with loopback entries
-                let mut all_entries = entries;
-                all_entries.extend(loopback_entries.iter().map(|s| s.to_string()));
-                all_entries.join(",")
-            } else {
-                loopback_entries.join(",")
-            };
+            // Append loopback entries
+            entries.extend(loopback_entries.iter().map(|s| s.to_string()));
 
+            let no_proxy_value = entries.join(",");
             env_vec.push(format!("NO_PROXY={}", no_proxy_value));
         }
 
@@ -230,6 +229,7 @@ impl ContainerRunner {
                 }
                 Ok(_) => {}
                 Err(e) => {
+                    truncated = true;
                     tracing::warn!("Error reading {}: {}", source, e);
                 }
             }
