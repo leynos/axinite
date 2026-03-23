@@ -1,4 +1,3 @@
-<!-- markdownlint-disable-next-line MD013 -->
 # Architectural decision record (ADR) 008: Mutation testing with cargo-mutants
 
 ## Status
