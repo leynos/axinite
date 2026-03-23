@@ -10,6 +10,125 @@ use crate::db::{Database, SandboxJobStatusUpdate};
 
 use super::{LoadedSandboxJob, SandboxJobStatus, internal_error, load_sandbox_job_mode};
 
+/// Build a SandboxJobStatusUpdate with the provided fields.
+fn build_status_update_core<'a>(
+    id: Uuid,
+    status: &'a str,
+    success: Option<bool>,
+    message: Option<&'a str>,
+    started_at: Option<chrono::DateTime<chrono::Utc>>,
+    completed_at: Option<chrono::DateTime<chrono::Utc>>,
+) -> SandboxJobStatusUpdate<'a> {
+    SandboxJobStatusUpdate {
+        id,
+        status,
+        success,
+        message,
+        started_at,
+        completed_at,
+    }
+}
+
+/// Mark a sandbox job as running by updating its status with the provided timestamp.
+async fn mark_running(
+    db: &dyn Database,
+    id: Uuid,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(), crate::error::DatabaseError> {
+    db.update_sandbox_job_status(build_status_update_core(
+        id,
+        "running",
+        None,
+        None,
+        Some(now),
+        None,
+    ))
+    .await
+}
+
+/// Build a standard restart success response.
+fn ok_restart_response(
+    old_job_id: Uuid,
+    new_job_id: Uuid,
+) -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status": "restarted",
+            "old_job_id": old_job_id,
+            "new_job_id": new_job_id,
+        })),
+    )
+}
+
+/// Build a new sandbox job record for a restart operation.
+fn build_restart_record(
+    old_job: &crate::history::SandboxJobRecord,
+    new_job_id: Uuid,
+    base_task: String,
+    now: chrono::DateTime<chrono::Utc>,
+) -> crate::history::SandboxJobRecord {
+    crate::history::SandboxJobRecord {
+        id: new_job_id,
+        task: base_task,
+        status: "creating".to_string(),
+        user_id: old_job.user_id.clone(),
+        project_dir: old_job.project_dir.clone(),
+        success: None,
+        failure_reason: None,
+        created_at: now,
+        started_at: None,
+        completed_at: None,
+        credential_grants_json: old_job.credential_grants_json.clone(),
+    }
+}
+
+/// Parse credential grants from JSON, logging a warning on failure.
+fn parse_credential_grants(
+    job_id: Uuid,
+    json: &str,
+) -> Vec<crate::orchestrator::auth::CredentialGrant> {
+    serde_json::from_str(json).unwrap_or_else(|e| {
+        tracing::warn!(
+            job_id = %job_id,
+            "Failed to deserialize credential grants from stored job: {}. Restarted job will have no credentials.",
+            e
+        );
+        vec![]
+    })
+}
+
+/// Handle mark_running failure by stopping the job and updating status.
+async fn handle_mark_running_failure(
+    store: &Arc<dyn Database>,
+    job_manager: &crate::orchestrator::job_manager::ContainerJobManager,
+    new_job_id: Uuid,
+    error: crate::error::DatabaseError,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    if let Err(stop_error) = job_manager.stop_job(new_job_id).await {
+        tracing::error!(
+            %error,
+            stop_error = %stop_error,
+            job_id = %new_job_id,
+            "Failed to persist running sandbox state and stop restarted sandbox job"
+        );
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to persist running sandbox state".to_string(),
+        ));
+    }
+    mark_sandbox_restart_failed(
+        store,
+        new_job_id,
+        "Failed to persist running sandbox state".to_string(),
+    )
+    .await?;
+    Err(internal_error(
+        "Failed to persist running sandbox state",
+        error,
+    ))
+}
+
 pub(super) async fn restart_sandbox_job(
     state: &GatewayState,
     store: &Arc<dyn Database>,
@@ -46,33 +165,14 @@ pub(super) async fn restart_sandbox_job(
         _ => crate::orchestrator::job_manager::JobMode::Worker,
     };
 
-    let record = crate::history::SandboxJobRecord {
-        id: new_job_id,
-        task: base_task.clone(),
-        status: "creating".to_string(),
-        user_id: old_job.record.user_id.clone(),
-        project_dir: old_job.record.project_dir.clone(),
-        success: None,
-        failure_reason: None,
-        created_at: now,
-        started_at: None,
-        completed_at: None,
-        credential_grants_json: old_job.record.credential_grants_json.clone(),
-    };
+    let record = build_restart_record(&old_job.record, new_job_id, base_task.clone(), now);
     store
         .save_sandbox_job(&record)
         .await
         .map_err(|e| internal_error("Failed to save restarted sandbox job", e))?;
 
-    let credential_grants: Vec<crate::orchestrator::auth::CredentialGrant> =
-        serde_json::from_str(&old_job.record.credential_grants_json).unwrap_or_else(|e| {
-            tracing::warn!(
-                job_id = %old_job.record.id,
-                "Failed to deserialize credential grants from stored job: {}. Restarted job will have no credentials.",
-                e
-            );
-            vec![]
-        });
+    let credential_grants =
+        parse_credential_grants(old_job.record.id, &old_job.record.credential_grants_json);
 
     let project_dir = std::path::PathBuf::from(&old_job.record.project_dir);
     if let Err(error) = job_manager
@@ -90,46 +190,12 @@ pub(super) async fn restart_sandbox_job(
         return Err(internal_error("Failed to create container", error));
     }
 
-    if let Err(error) = store
-        .update_sandbox_job_status(SandboxJobStatusUpdate {
-            id: new_job_id,
-            status: "running",
-            success: None,
-            message: None,
-            started_at: Some(now),
-            completed_at: None,
-        })
-        .await
-    {
-        if let Err(stop_error) = job_manager.stop_job(new_job_id).await {
-            tracing::error!(
-                %error,
-                stop_error = %stop_error,
-                job_id = %new_job_id,
-                "Failed to persist running sandbox state and stop restarted sandbox job"
-            );
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to persist running sandbox state".to_string(),
-            ));
-        }
-        mark_sandbox_restart_failed(
-            store,
-            new_job_id,
-            "Failed to persist running sandbox state".to_string(),
-        )
-        .await?;
-        return Err(internal_error(
-            "Failed to persist running sandbox state",
-            error,
-        ));
+    if let Err(error) = mark_running(&**store, new_job_id, now).await {
+        return handle_mark_running_failure(store, job_manager, new_job_id, error).await;
     }
 
-    Ok(Json(serde_json::json!({
-        "status": "restarted",
-        "old_job_id": old_job_id,
-        "new_job_id": new_job_id,
-    })))
+    let (_status, json) = ok_restart_response(old_job_id, new_job_id);
+    Ok(json)
 }
 
 pub(super) async fn restart_agent_job(

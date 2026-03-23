@@ -425,160 +425,54 @@ pub trait NativeConversationStore: Send + Sync {
     ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
 }
 
-impl<T: NativeConversationStore> ConversationStore for T {
-    fn create_conversation<'a>(
-        &'a self,
-        channel: &'a str,
-        user_id: &'a str,
-        thread_id: Option<&'a str>,
-    ) -> DbFuture<'a, Result<Uuid, DatabaseError>> {
-        Box::pin(NativeConversationStore::create_conversation(
-            self, channel, user_id, thread_id,
-        ))
-    }
+/// Generate blanket adapter implementations that forward dyn-safe trait methods
+/// to native async trait methods via `Box::pin`.
+///
+/// This macro eliminates boilerplate for the ADR-006 dyn/native boundary pattern,
+/// where each object-safe `*Store` trait has a companion `Native*Store` trait
+/// with native async fn methods (RPITIT), and a blanket impl bridges the two.
+macro_rules! impl_db_forwarders {
+    (
+        dyn = $dyn_trait:path,
+        native = $native_trait:path,
+        methods = {
+            $(
+                fn $name:ident ( $($arg:ident : $argty:ty),* $(,)? ) -> $ret:ty ;
+            )*
+        }
+    ) => {
+        impl<T> $dyn_trait for T
+        where
+            T: $native_trait + Send + Sync,
+        {
+            $(
+                fn $name<'a>(&'a self, $($arg: $argty),*) -> DbFuture<'a, $ret> {
+                    Box::pin(<T as $native_trait>::$name(self, $($arg),*))
+                }
+            )*
+        }
+    };
+}
 
-    fn touch_conversation<'a>(&'a self, id: Uuid) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(NativeConversationStore::touch_conversation(self, id))
-    }
-
-    fn add_conversation_message<'a>(
-        &'a self,
-        conversation_id: Uuid,
-        role: &'a str,
-        content: &'a str,
-    ) -> DbFuture<'a, Result<Uuid, DatabaseError>> {
-        Box::pin(NativeConversationStore::add_conversation_message(
-            self,
-            conversation_id,
-            role,
-            content,
-        ))
-    }
-
-    fn ensure_conversation<'a>(
-        &'a self,
-        params: EnsureConversationParams<'a>,
-    ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(NativeConversationStore::ensure_conversation(self, params))
-    }
-
-    fn list_conversations_with_preview<'a>(
-        &'a self,
-        user_id: &'a str,
-        channel: &'a str,
-        limit: i64,
-    ) -> DbFuture<'a, Result<Vec<ConversationSummary>, DatabaseError>> {
-        Box::pin(NativeConversationStore::list_conversations_with_preview(
-            self, user_id, channel, limit,
-        ))
-    }
-
-    fn list_conversations_all_channels<'a>(
-        &'a self,
-        user_id: &'a str,
-        limit: i64,
-    ) -> DbFuture<'a, Result<Vec<ConversationSummary>, DatabaseError>> {
-        Box::pin(NativeConversationStore::list_conversations_all_channels(
-            self, user_id, limit,
-        ))
-    }
-
-    fn get_or_create_routine_conversation<'a>(
-        &'a self,
-        routine_id: Uuid,
-        routine_name: &'a str,
-        user_id: &'a str,
-    ) -> DbFuture<'a, Result<Uuid, DatabaseError>> {
-        Box::pin(NativeConversationStore::get_or_create_routine_conversation(
-            self,
-            routine_id,
-            routine_name,
-            user_id,
-        ))
-    }
-
-    fn get_or_create_heartbeat_conversation<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> DbFuture<'a, Result<Uuid, DatabaseError>> {
-        Box::pin(NativeConversationStore::get_or_create_heartbeat_conversation(self, user_id))
-    }
-
-    fn get_or_create_assistant_conversation<'a>(
-        &'a self,
-        user_id: &'a str,
-        channel: &'a str,
-    ) -> DbFuture<'a, Result<Uuid, DatabaseError>> {
-        Box::pin(
-            NativeConversationStore::get_or_create_assistant_conversation(self, user_id, channel),
-        )
-    }
-
-    fn create_conversation_with_metadata<'a>(
-        &'a self,
-        channel: &'a str,
-        user_id: &'a str,
-        metadata: &'a serde_json::Value,
-    ) -> DbFuture<'a, Result<Uuid, DatabaseError>> {
-        Box::pin(NativeConversationStore::create_conversation_with_metadata(
-            self, channel, user_id, metadata,
-        ))
-    }
-
-    fn list_conversation_messages_paginated<'a>(
-        &'a self,
-        conversation_id: Uuid,
-        before: Option<DateTime<Utc>>,
-        limit: i64,
-    ) -> DbFuture<'a, Result<(Vec<ConversationMessage>, bool), DatabaseError>> {
-        Box::pin(
-            NativeConversationStore::list_conversation_messages_paginated(
-                self,
-                conversation_id,
-                before,
-                limit,
-            ),
-        )
-    }
-
-    fn update_conversation_metadata_field<'a>(
-        &'a self,
-        id: Uuid,
-        key: &'a str,
-        value: &'a serde_json::Value,
-    ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(NativeConversationStore::update_conversation_metadata_field(
-            self, id, key, value,
-        ))
-    }
-
-    fn get_conversation_metadata<'a>(
-        &'a self,
-        id: Uuid,
-    ) -> DbFuture<'a, Result<Option<serde_json::Value>, DatabaseError>> {
-        Box::pin(NativeConversationStore::get_conversation_metadata(self, id))
-    }
-
-    fn list_conversation_messages<'a>(
-        &'a self,
-        conversation_id: Uuid,
-    ) -> DbFuture<'a, Result<Vec<ConversationMessage>, DatabaseError>> {
-        Box::pin(NativeConversationStore::list_conversation_messages(
-            self,
-            conversation_id,
-        ))
-    }
-
-    fn conversation_belongs_to_user<'a>(
-        &'a self,
-        conversation_id: Uuid,
-        user_id: &'a str,
-    ) -> DbFuture<'a, Result<bool, DatabaseError>> {
-        Box::pin(NativeConversationStore::conversation_belongs_to_user(
-            self,
-            conversation_id,
-            user_id,
-        ))
+impl_db_forwarders! {
+    dyn = crate::db::ConversationStore,
+    native = crate::db::NativeConversationStore,
+    methods = {
+        fn create_conversation(channel: &'a str, user_id: &'a str, thread_id: Option<&'a str>) -> Result<Uuid, DatabaseError>;
+        fn touch_conversation(id: Uuid) -> Result<(), DatabaseError>;
+        fn add_conversation_message(conversation_id: Uuid, role: &'a str, content: &'a str) -> Result<Uuid, DatabaseError>;
+        fn ensure_conversation(params: EnsureConversationParams<'a>) -> Result<(), DatabaseError>;
+        fn list_conversations_with_preview(user_id: &'a str, channel: &'a str, limit: i64) -> Result<Vec<ConversationSummary>, DatabaseError>;
+        fn list_conversations_all_channels(user_id: &'a str, limit: i64) -> Result<Vec<ConversationSummary>, DatabaseError>;
+        fn get_or_create_routine_conversation(routine_id: Uuid, routine_name: &'a str, user_id: &'a str) -> Result<Uuid, DatabaseError>;
+        fn get_or_create_heartbeat_conversation(user_id: &'a str) -> Result<Uuid, DatabaseError>;
+        fn get_or_create_assistant_conversation(user_id: &'a str, channel: &'a str) -> Result<Uuid, DatabaseError>;
+        fn create_conversation_with_metadata(channel: &'a str, user_id: &'a str, metadata: &'a serde_json::Value) -> Result<Uuid, DatabaseError>;
+        fn list_conversation_messages_paginated(conversation_id: Uuid, before: Option<DateTime<Utc>>, limit: i64) -> Result<(Vec<ConversationMessage>, bool), DatabaseError>;
+        fn update_conversation_metadata_field(id: Uuid, key: &'a str, value: &'a serde_json::Value) -> Result<(), DatabaseError>;
+        fn get_conversation_metadata(id: Uuid) -> Result<Option<serde_json::Value>, DatabaseError>;
+        fn list_conversation_messages(conversation_id: Uuid) -> Result<Vec<ConversationMessage>, DatabaseError>;
+        fn conversation_belongs_to_user(conversation_id: Uuid, user_id: &'a str) -> Result<bool, DatabaseError>;
     }
 }
 
