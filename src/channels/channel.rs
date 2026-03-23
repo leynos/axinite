@@ -4,7 +4,6 @@ use core::future::Future;
 use std::collections::HashMap;
 use std::pin::Pin;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use uuid::Uuid;
@@ -273,11 +272,17 @@ impl StatusUpdate {
     }
 }
 
+/// Boxed future used at the dyn `Channel` boundary.
+pub type ChannelFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Trait for message channels.
+///
+/// This is the dyn-safe object boundary. Concrete implementations should
+/// implement [`NativeChannel`] instead; the blanket adapter provides this
+/// trait automatically.
 ///
 /// Channels receive messages from external sources and convert them to
 /// a unified format. They also handle sending responses back.
-#[async_trait]
 pub trait Channel: Send + Sync {
     /// Get the channel name (e.g., "cli", "slack", "telegram", "http").
     fn name(&self) -> &str;
@@ -286,17 +291,17 @@ pub trait Channel: Send + Sync {
     ///
     /// Returns a stream of incoming messages. The channel should handle
     /// reconnection and error recovery internally.
-    async fn start(&self) -> Result<MessageStream, ChannelError>;
+    fn start<'a>(&'a self) -> ChannelFuture<'a, Result<MessageStream, ChannelError>>;
 
     /// Send a response back to the user.
     ///
     /// The response is sent in the context of the original message
     /// (same channel, same thread if applicable).
-    async fn respond(
-        &self,
-        msg: &IncomingMessage,
+    fn respond<'a>(
+        &'a self,
+        msg: &'a IncomingMessage,
         response: OutgoingResponse,
-    ) -> Result<(), ChannelError>;
+    ) -> ChannelFuture<'a, Result<(), ChannelError>>;
 
     /// Send a status update (thinking, tool execution, etc.).
     ///
@@ -304,13 +309,11 @@ pub trait Channel: Send + Sync {
     /// needed to deliver the status to the correct destination.
     ///
     /// Default implementation does nothing (for channels that don't support status).
-    async fn send_status(
-        &self,
-        _status: StatusUpdate,
-        _metadata: &serde_json::Value,
-    ) -> Result<(), ChannelError> {
-        Ok(())
-    }
+    fn send_status<'a>(
+        &'a self,
+        status: StatusUpdate,
+        metadata: &'a serde_json::Value,
+    ) -> ChannelFuture<'a, Result<(), ChannelError>>;
 
     /// Send a proactive message without a prior incoming message.
     ///
@@ -318,16 +321,14 @@ pub trait Channel: Send + Sync {
     /// The user_id helps target a specific user within the channel.
     ///
     /// Default implementation does nothing (for channels that don't support broadcast).
-    async fn broadcast(
-        &self,
-        _user_id: &str,
-        _response: OutgoingResponse,
-    ) -> Result<(), ChannelError> {
-        Ok(())
-    }
+    fn broadcast<'a>(
+        &'a self,
+        user_id: &'a str,
+        response: OutgoingResponse,
+    ) -> ChannelFuture<'a, Result<(), ChannelError>>;
 
     /// Check if the channel is healthy.
-    async fn health_check(&self) -> Result<(), ChannelError>;
+    fn health_check<'a>(&'a self) -> ChannelFuture<'a, Result<(), ChannelError>>;
 
     /// Get conversation context from message metadata for system prompt.
     ///
@@ -340,8 +341,108 @@ pub trait Channel: Send + Sync {
     }
 
     /// Gracefully shut down the channel.
-    async fn shutdown(&self) -> Result<(), ChannelError> {
-        Ok(())
+    fn shutdown<'a>(&'a self) -> ChannelFuture<'a, Result<(), ChannelError>>;
+}
+
+/// Native (non-dyn) sibling of [`Channel`] for concrete implementations.
+///
+/// Implement this trait instead of [`Channel`] directly. The blanket adapter
+/// below automatically implements [`Channel`] for every `T: NativeChannel`.
+pub trait NativeChannel: Send + Sync {
+    /// Get the channel name (e.g., "cli", "slack", "telegram", "http").
+    fn name(&self) -> &str;
+
+    /// Start listening for messages.
+    fn start(&self) -> impl Future<Output = Result<MessageStream, ChannelError>> + Send + '_;
+
+    /// Send a response back to the user.
+    fn respond<'a>(
+        &'a self,
+        msg: &'a IncomingMessage,
+        response: OutgoingResponse,
+    ) -> impl Future<Output = Result<(), ChannelError>> + Send + 'a;
+
+    /// Send a status update (thinking, tool execution, etc.).
+    ///
+    /// Default implementation does nothing (for channels that don't support status).
+    fn send_status<'a>(
+        &'a self,
+        _status: StatusUpdate,
+        _metadata: &'a serde_json::Value,
+    ) -> impl Future<Output = Result<(), ChannelError>> + Send + 'a {
+        async { Ok(()) }
+    }
+
+    /// Send a proactive message without a prior incoming message.
+    ///
+    /// Default implementation does nothing (for channels that don't support broadcast).
+    fn broadcast<'a>(
+        &'a self,
+        _user_id: &'a str,
+        _response: OutgoingResponse,
+    ) -> impl Future<Output = Result<(), ChannelError>> + Send + 'a {
+        async { Ok(()) }
+    }
+
+    /// Check if the channel is healthy.
+    fn health_check(&self) -> impl Future<Output = Result<(), ChannelError>> + Send + '_;
+
+    /// Get conversation context from message metadata for system prompt.
+    ///
+    /// Default implementation returns empty map.
+    fn conversation_context(&self, _metadata: &serde_json::Value) -> HashMap<String, String> {
+        HashMap::new()
+    }
+
+    /// Gracefully shut down the channel.
+    fn shutdown(&self) -> impl Future<Output = Result<(), ChannelError>> + Send + '_ {
+        async { Ok(()) }
+    }
+}
+
+impl<T: NativeChannel> Channel for T {
+    fn name(&self) -> &str {
+        NativeChannel::name(self)
+    }
+
+    fn start<'a>(&'a self) -> ChannelFuture<'a, Result<MessageStream, ChannelError>> {
+        Box::pin(NativeChannel::start(self))
+    }
+
+    fn respond<'a>(
+        &'a self,
+        msg: &'a IncomingMessage,
+        response: OutgoingResponse,
+    ) -> ChannelFuture<'a, Result<(), ChannelError>> {
+        Box::pin(NativeChannel::respond(self, msg, response))
+    }
+
+    fn send_status<'a>(
+        &'a self,
+        status: StatusUpdate,
+        metadata: &'a serde_json::Value,
+    ) -> ChannelFuture<'a, Result<(), ChannelError>> {
+        Box::pin(NativeChannel::send_status(self, status, metadata))
+    }
+
+    fn broadcast<'a>(
+        &'a self,
+        user_id: &'a str,
+        response: OutgoingResponse,
+    ) -> ChannelFuture<'a, Result<(), ChannelError>> {
+        Box::pin(NativeChannel::broadcast(self, user_id, response))
+    }
+
+    fn health_check<'a>(&'a self) -> ChannelFuture<'a, Result<(), ChannelError>> {
+        Box::pin(NativeChannel::health_check(self))
+    }
+
+    fn conversation_context(&self, metadata: &serde_json::Value) -> HashMap<String, String> {
+        NativeChannel::conversation_context(self, metadata)
+    }
+
+    fn shutdown<'a>(&'a self) -> ChannelFuture<'a, Result<(), ChannelError>> {
+        Box::pin(NativeChannel::shutdown(self))
     }
 }
 

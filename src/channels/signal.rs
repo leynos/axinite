@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use futures::StreamExt;
 use lru::LruCache;
 use reqwest::Client;
@@ -18,7 +17,9 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::bootstrap::ironclaw_base_dir;
-use crate::channels::{Channel, IncomingMessage, MessageStream, OutgoingResponse, StatusUpdate};
+use crate::channels::{
+    IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
+};
 use crate::config::SignalConfig;
 use crate::error::ChannelError;
 use crate::pairing::PairingStore;
@@ -833,8 +834,7 @@ impl SignalChannel {
     }
 }
 
-#[async_trait]
-impl Channel for SignalChannel {
+impl NativeChannel for SignalChannel {
     fn name(&self) -> &str {
         "signal"
     }

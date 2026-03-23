@@ -26,14 +26,13 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use async_trait::async_trait;
 use rust_decimal::Decimal;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 
 use crate::agent::AgentDeps;
 use crate::channels::{
-    Channel, ChannelManager, IncomingMessage, MessageStream, OutgoingResponse, StatusUpdate,
+    ChannelManager, IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
 };
 use crate::db::Database;
 use crate::error::{ChannelError, LlmError};
@@ -288,8 +287,7 @@ impl StubChannel {
     }
 }
 
-#[async_trait]
-impl Channel for StubChannel {
+impl NativeChannel for StubChannel {
     fn name(&self) -> &str {
         &self.name
     }

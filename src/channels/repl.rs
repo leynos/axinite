@@ -22,7 +22,6 @@ use std::io::{self, IsTerminal, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use async_trait::async_trait;
 use rustyline::completion::Completer;
 use rustyline::config::Config;
 use rustyline::error::ReadlineError;
@@ -39,7 +38,9 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::agent::truncate_for_preview;
 use crate::bootstrap::ironclaw_base_dir;
-use crate::channels::{Channel, IncomingMessage, MessageStream, OutgoingResponse, StatusUpdate};
+use crate::channels::{
+    IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
+};
 use crate::error::ChannelError;
 
 /// Max characters for tool result previews in the terminal.
@@ -283,8 +284,7 @@ fn history_path() -> std::path::PathBuf {
     ironclaw_base_dir().join("history")
 }
 
-#[async_trait]
-impl Channel for ReplChannel {
+impl NativeChannel for ReplChannel {
     fn name(&self) -> &str {
         "repl"
     }

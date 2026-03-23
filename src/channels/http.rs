@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
@@ -18,7 +17,8 @@ use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
 use crate::channels::{
-    AttachmentKind, Channel, IncomingAttachment, IncomingMessage, MessageStream, OutgoingResponse,
+    AttachmentKind, IncomingAttachment, IncomingMessage, MessageStream, NativeChannel,
+    OutgoingResponse,
 };
 use crate::config::HttpConfig;
 use crate::error::ChannelError;
@@ -447,8 +447,7 @@ async fn process_message(
     )
 }
 
-#[async_trait]
-impl Channel for HttpChannel {
+impl NativeChannel for HttpChannel {
     fn name(&self) -> &str {
         "http"
     }

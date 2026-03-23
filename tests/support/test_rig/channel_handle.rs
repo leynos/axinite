@@ -8,9 +8,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
-use ironclaw::channels::{Channel, IncomingMessage, MessageStream, OutgoingResponse, StatusUpdate};
+use ironclaw::channels::{IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate};
 use ironclaw::error::ChannelError;
 
 use crate::support::test_channel::TestChannel;
@@ -31,8 +29,7 @@ impl TestChannelHandle {
     }
 }
 
-#[async_trait]
-impl Channel for TestChannelHandle {
+impl NativeChannel for TestChannelHandle {
     fn name(&self) -> &str {
         self.inner.name()
     }
