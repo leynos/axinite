@@ -329,7 +329,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_tool_transport_types_round_trip_without_field_loss() {
+    fn remote_tool_catalog_response_round_trip_without_field_loss() {
         let catalog_response = RemoteToolCatalogResponse {
             tools: vec![ToolDefinition {
                 name: "test_tool".to_string(),
@@ -384,7 +384,10 @@ mod tests {
             deserialized.catalog_version,
             catalog_response.catalog_version
         );
+    }
 
+    #[test]
+    fn remote_tool_execution_request_round_trip_without_field_loss() {
         let execution_request = RemoteToolExecutionRequest {
             tool_name: "complex_tool".to_string(),
             params: serde_json::json!({
@@ -400,7 +403,10 @@ mod tests {
 
         assert_eq!(deserialized.tool_name, execution_request.tool_name);
         assert_eq!(deserialized.params, execution_request.params);
+    }
 
+    #[test]
+    fn remote_tool_execution_response_round_trip_without_field_loss() {
         let execution_response = RemoteToolExecutionResponse {
             output: ToolOutput::success(
                 serde_json::json!({"result": "success", "data": [1, 2, 3]}),
