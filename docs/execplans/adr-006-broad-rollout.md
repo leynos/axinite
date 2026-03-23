@@ -465,6 +465,14 @@ Progress notes:
   dependency audit.
   Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
   3,066 library tests passed.
+- 2026-03-23: Refactored `src/channels/repl.rs` (638 lines) into a submodule
+  as adjacent housekeeping during the same session: `repl/input.rs` carries
+  `SLASH_COMMANDS`, `ReplHelper`, and `EscInterruptHandler`;
+  `repl/formatting.rs` carries `make_skin`, `print_help`, and
+  `format_json_params`; `repl/mod.rs` retains `ReplChannel`, its
+  `NativeChannel` impl, and the existing unit test. This is unrelated to the
+  ADR 006 migration but was performed concurrently and gated with the same
+  ship checklist.
 
 ## Surprises & discoveries
 
@@ -541,7 +549,69 @@ Progress notes:
 
 ## Outcomes & retrospective
 
-This section is intentionally blank until execution begins. When work lands,
-record which families were migrated, which ones remained blocked, what evidence
-was captured, and whether the broad rollout changed the recommendation for
-keeping or removing `async-trait`.
+Milestones 1–4 completed on 2026-03-23. Milestone 5 (cleanup) is in progress.
+
+### Families migrated
+
+**Milestone 2 — narrow internal traits (7 families):**
+`LoopDelegate`, `SelfRepair`, `TaskHandler`, `ChannelSecretUpdater`,
+`HttpInterceptor`, `CredentialResolver`, `WasmToolStore`.
+
+**Milestone 3 — infrastructure extension seams (6 families):**
+`NetworkPolicyDecider`, `TranscriptionProvider`, `Hook`, `EmbeddingProvider`,
+`Tunnel`, `SecretsStore`. `Observer` was sync-only and required no migration.
+
+**Milestone 4 — high-fanout core traits (4 sub-waves):**
+`Tool` (64 impl blocks across 36 files), `LlmProvider` (23 impl blocks across
+15 files), `Channel` (9 impl blocks across 3 directories), and the `Database`
+family (7 sub-traits × 2 backends across 9 impl files).
+
+### Post-rollout footprint
+
+Zero production `#[async_trait]` attribute usages remain in `src/`. The three
+remaining matches from `rg "async.trait|async_trait" src/` are all prose in doc
+comments (`src/llm/CLAUDE.md`, `src/evaluation/success.rs`,
+`src/channels/wasm/storage.rs`), not macro invocations. The `async-trait`
+crate remains in `Cargo.toml` pending the Milestone 5 dependency audit.
+
+### Patterns that emerged
+
+1. **Multi-reference method lifetimes.** When a `NativeTrait` method takes more
+   than one borrowed argument (`&self` plus another `&T`), both must carry an
+   explicit `'a` lifetime and the return type must be `+ 'a`. The `'_`
+   shorthand only captures `&self`, triggering E0477 because the future also
+   captures the second borrow. First hit during the `Channel` migration (`respond`,
+   `send_status`, `broadcast`). Recorded in Surprises and in the project memory.
+
+2. **E0034 method ambiguity from blanket adapters.** Once a concrete type
+   implements both `NativeFoo` directly and `Foo` via the blanket adapter, a
+   plain `self.method()` call is ambiguous. Resolution: fully qualified syntax
+   `NativeFoo::method_name(self, ...)`. Required in the `Tool`, `Database`, and
+   `EmbeddingProvider` migrations.
+
+3. **E0195 rust-analyzer false positives.** rust-analyzer may report early/late-
+   bound lifetime mismatches on already-converted files mid-migration. These are
+   transient noise caused by not-yet-converted sibling files; `cargo check` is
+   the authoritative gate and correctly shows the errors only in the files still
+   using `#[async_trait]`.
+
+4. **Default method bodies reduce test-double friction.** Providing
+   `async { Ok(()) }` default bodies for optional methods (`send_status`,
+   `broadcast`, `shutdown` in `NativeChannel`; `list_models` and
+   `model_metadata` in `NativeLlmProvider`) lets test doubles omit boilerplate
+   that is irrelevant to the scenario under test.
+
+5. **Internal ambiguous calls inside default methods.** When a `Native*` trait
+   has a default method that calls another method on `self`, and the blanket
+   adapter is in scope, the call becomes ambiguous. Fix: qualify with
+   `NativeFoo::other_method(self, ...)`. Hit in `EmbeddingProvider`,
+   `SecretsStore`, and `WorkspaceStore`.
+
+### Recommendation on `async-trait` dependency
+
+Remove `async-trait` from `Cargo.toml` as part of Milestone 5. The current
+tree audit shows zero production and zero test uses of the attribute. The
+`cargo check --all-features` gate passes without it (to be confirmed by
+attempting removal with the full gate). Three doc-comment prose mentions that
+refer to the crate by name do not constitute a runtime dependency and need not
+be changed before removal.
