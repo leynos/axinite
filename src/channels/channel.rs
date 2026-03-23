@@ -1,5 +1,6 @@
 //! Channel trait and message types.
 
+use core::future::Future;
 use std::collections::HashMap;
 use std::pin::Pin;
 
@@ -344,12 +345,14 @@ pub trait Channel: Send + Sync {
     }
 }
 
+/// Boxed future used at the dyn channel-secret-updater boundary.
+pub type ChannelSecretUpdaterFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
+
 /// Trait for channels that support hot-secret-swapping during SIGHUP reload.
 ///
 /// This allows channels to update authentication credentials without restarting,
 /// enabling zero-downtime configuration reloads. Channels that don't support
 /// secret updates can simply not implement this trait.
-#[async_trait]
 pub trait ChannelSecretUpdater: Send + Sync {
     /// Update the secret for this channel.
     ///
@@ -359,7 +362,31 @@ pub trait ChannelSecretUpdater: Send + Sync {
     /// - Log appropriate errors/info messages
     ///
     /// The secret is optional (may be None if secret is no longer configured).
-    async fn update_secret(&self, new_secret: Option<secrecy::SecretString>);
+    fn update_secret<'a>(
+        &'a self,
+        new_secret: Option<secrecy::SecretString>,
+    ) -> ChannelSecretUpdaterFuture<'a>;
+}
+
+/// Native async sibling trait for concrete channel-secret-updater implementations.
+pub trait NativeChannelSecretUpdater: Send + Sync {
+    /// See [`ChannelSecretUpdater::update_secret`].
+    fn update_secret(
+        &self,
+        new_secret: Option<secrecy::SecretString>,
+    ) -> impl Future<Output = ()> + Send + '_;
+}
+
+impl<T> ChannelSecretUpdater for T
+where
+    T: NativeChannelSecretUpdater + Send + Sync,
+{
+    fn update_secret<'a>(
+        &'a self,
+        new_secret: Option<secrecy::SecretString>,
+    ) -> ChannelSecretUpdaterFuture<'a> {
+        Box::pin(NativeChannelSecretUpdater::update_secret(self, new_secret))
+    }
 }
 
 #[cfg(test)]
