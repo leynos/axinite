@@ -11,7 +11,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
-use super::WorkerHttpClient;
+use super::{WorkerHttpClient, available_tool_definitions};
 use crate::agent::agentic_loop::{
     LoopDelegate, LoopOutcome, LoopSignal, TextAction, truncate_for_preview,
 };
@@ -94,7 +94,7 @@ impl LoopDelegate for ContainerDelegate {
         }
 
         self.poll_and_inject_prompt(reason_ctx).await;
-        reason_ctx.available_tools = self.tools.tool_definitions().await;
+        reason_ctx.available_tools = available_tool_definitions(&self.tools).await;
 
         None
     }

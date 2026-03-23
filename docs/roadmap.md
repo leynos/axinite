@@ -80,7 +80,7 @@ worker-orchestrator contract hardening belongs inside 1.1.1.
   - Success: only active MCP tools that are executable in hosted mode are
     advertised, and unavailable or approval-incompatible tools are excluded
     rather than described optimistically.
-- [ ] 1.1.3. Merge remote MCP tool definitions into the worker reasoning
+- [x] 1.1.3. Merge remote MCP tool definitions into the worker reasoning
   context. Requires 1.1.1 and 1.1.2.
   - See [RFC 0001 §Summary](./rfcs/0001-expose-mcp-tool-definitions.md#summary)
     and [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).

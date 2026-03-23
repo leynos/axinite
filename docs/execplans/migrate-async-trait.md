@@ -22,6 +22,32 @@ extensibility traits). This means the migration is **partial**: traits used
 as trait objects must either remain with `async-trait` or adopt a manual
 boxing pattern.
 
+## Approval gates
+
+- Plan approved
+  Acceptance criteria: the migration scope, blocked surfaces, and roadmap
+  boundaries are explicit enough that later batches can proceed without
+  guessing which `async-trait` uses are in scope.
+  Sign-off: human reviewer approves the ExecPlan before implementation starts
+  or before the next migration batch proceeds.
+- Implementation complete
+  Acceptance criteria: the planned migration batch lands with the intended
+  trait classifications, blocked dyn-backed surfaces remain outside scope, and
+  any required follow-on docs are updated in the same pass.
+  Sign-off: implementer marks the batch complete before final validation.
+- Validation passed
+  Acceptance criteria: the required repository gates for the migration batch
+  pass, and the final plan notes record the command evidence and any residual
+  blocked work.
+  Sign-off: implementer records the gate results immediately before commit and
+  push.
+- Docs synced
+  Acceptance criteria: the execplan, linked ADRs, roadmap references, and
+  index entries reflect the delivered migration scope before the plan is
+  marked complete.
+  Sign-off: implementer completes the documentation pass as the final
+  pre-commit step.
+
 ## Constraints
 
 - Rust edition 2024, minimum version 1.92.
