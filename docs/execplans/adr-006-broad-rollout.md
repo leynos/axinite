@@ -355,7 +355,7 @@ set -o pipefail; git diff --check | tee /tmp/diff-check-axinite-<wave>.out
 ## Progress
 
 - [ ] Milestone 1: Normalize the migration playbook and baseline evidence
-- [ ] Milestone 2: Convert the narrow internal dyn-backed traits
+- [x] Milestone 2: Convert the narrow internal dyn-backed traits
 - [ ] Milestone 3: Convert the infrastructure-facing extension seams
 - [ ] Milestone 4: Convert the high-fanout core traits
 - [ ] Milestone 5: Clean up dependency and documentation state
@@ -375,6 +375,18 @@ Progress notes:
   with a blanket adapter in `src/agent/agentic_loop.rs`. The remaining
   compiler failures in `cargo check --tests` come from the separate
   `SelfRepair` migration, not from the loop family.
+- 2026-03-23: Completed all seven Milestone 2 families:
+  `CredentialResolver` (`src/sandbox/proxy/http.rs`),
+  `ChannelSecretUpdater` (`src/channels/channel.rs` + `http.rs`),
+  `HttpInterceptor` (`src/llm/recording.rs`), and
+  `WasmToolStore` (`src/tools/wasm/storage.rs`).
+  Each was committed atomically after the full quality gate passed.
+  Post-wave footprint: 217 matched lines for `async-trait|async_trait`
+  in `src/`; 150 remaining `#[async_trait]` attribute usages, all in
+  not-yet-migrated families (`Channel`, `Tool`, `LlmProvider`, `Database`,
+  and infrastructure extension seams targeted in Milestone 3).
+  Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
+  3,066 library tests passed.
 
 ## Surprises & discoveries
 
@@ -390,6 +402,14 @@ Progress notes:
   `TaskHandler` shared the same ADR 006 shape, while their dyn-backed call
   sites stayed stable as `&dyn LoopDelegate`, `Arc<dyn SelfRepair>`, and
   `Arc<dyn TaskHandler>`.
+- 2026-03-23: When both `HttpInterceptor` (dyn-safe, boxed-future) and
+  `NativeHttpInterceptor` (impl Future) are in scope for a concrete type, test
+  call sites become ambiguous. Resolved by using fully-qualified syntax in tests:
+  `NativeHttpInterceptor::method_name(&receiver, ...)`. In one case the receiver
+  was `Arc<RecordingHttpInterceptor>` and needed explicit deref (`&*arc`) because
+  the blanket impl only covers `T: NativeHttpInterceptor`, not `Arc<T>`.
+- 2026-03-23: `WasmToolStore` required `cargo fmt` reformatting of the
+  blanket adapter body after the edit (it wrapped a long `Box::pin` call).
 
 ## Decision log
 

@@ -159,6 +159,25 @@ Re-audit snapshot as of 2026-03-22 during ADR 006 broad rollout execution:
   while preserving `Arc<dyn TaskHandler>` consumers in scheduler background
   tasks.
 
+Re-audit snapshot as of 2026-03-23 after Milestone 2 completion:
+
+- `CredentialResolver` in `src/sandbox/proxy/http.rs` now uses ADR 006's
+  dual-trait pattern. `EnvCredentialResolver` and `NoCredentialResolver`
+  implement `NativeCredentialResolver` directly.
+- `ChannelSecretUpdater` in `src/channels/channel.rs` now uses ADR 006's
+  dual-trait pattern. `HttpChannelState` in `src/channels/http.rs` implements
+  `NativeChannelSecretUpdater` directly.
+- `HttpInterceptor` in `src/llm/recording.rs` now uses ADR 006's dual-trait
+  pattern. `RecordingHttpInterceptor` and `ReplayingHttpInterceptor` implement
+  `NativeHttpInterceptor` directly.
+- `WasmToolStore` in `src/tools/wasm/storage.rs` now uses ADR 006's dual-trait
+  pattern. `PostgresWasmToolStore` and `LibSqlWasmToolStore` implement
+  `NativeWasmToolStore` directly.
+- All seven Milestone 2 families are complete. Whole-tree footprint:
+  217 matched lines for `async-trait|async_trait` in `src/`,
+  150 remaining `#[async_trait]` attribute usages, all in Milestone 3/4
+  families.
+
 ### Phase 2: Migrate concrete-only traits (batch by module)
 
 For each module, in separate commits:
@@ -184,7 +203,7 @@ For each module, in separate commits:
 - [x] Confirm whether `async-trait` can be removed from `[dependencies]`
 - [x] Document which trait families still require it and why
 
-Remaining required `async-trait` surfaces as of 2026-03-22:
+Remaining required `async-trait` surfaces as of 2026-03-23 (after Milestone 2):
 
 - Core extensibility traits still used through trait objects:
   `Database`, `Channel`, `Tool`, `LlmProvider`,
@@ -192,14 +211,7 @@ Remaining required `async-trait` surfaces as of 2026-03-22:
   `Tunnel`, `SecretsStore`, and `TranscriptionProvider`. These
   interfaces still flow through `Arc<dyn Trait>`, `Box<dyn Trait>`, or
   equivalent dyn-backed call sites, so removing `async-trait` from them
-  still requires either ADR 006 migration work or broader architectural
-  changes.
-- Internal dyn-backed traits that have not yet been converted to ADR 006:
-  `ChannelSecretUpdater`, `HttpInterceptor`, `CredentialResolver`, and
-  `WasmToolStore`. Each still has live `&dyn`, `Arc<dyn>`, or other
-  object-safe consumers in the current tree, including `&dyn
-  WasmToolStore` call sites in the WebAssembly (WASM) loader and registry
-  paths.
+  still requires ADR 006 migration work (Milestones 3 and 4).
 - The direct dependency therefore remains required in `Cargo.toml`, and
   the remaining implementation-side `#[async_trait]` uses remain coupled
   to those dyn-facing traits until their families are migrated.
