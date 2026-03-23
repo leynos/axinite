@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use crate::db::EnsureConversationParams;
+
 use axum::{
     Json, Router,
     extract::State,
@@ -133,7 +135,12 @@ pub async fn chat_new_thread_handler(
 
     if let Some(ref store) = state.store {
         if let Err(e) = store
-            .ensure_conversation(thread_id, "gateway", &state.user_id, None)
+            .ensure_conversation(EnsureConversationParams {
+                id: thread_id,
+                channel: "gateway",
+                user_id: &state.user_id,
+                thread_id: None,
+            })
             .await
         {
             tracing::warn!("Failed to persist new thread: {}", e);

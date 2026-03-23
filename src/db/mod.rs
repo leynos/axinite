@@ -44,6 +44,81 @@ use crate::workspace::{SearchConfig, SearchResult};
 /// Boxed future used at dyn-backed database trait boundaries.
 pub type DbFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+// ==================== Parameter Structs ====================
+//
+// These structs reduce argument counts for database methods with many parameters.
+
+/// Parameters for `ensure_conversation`.
+pub struct EnsureConversationParams<'a> {
+    pub id: Uuid,
+    pub channel: &'a str,
+    pub user_id: &'a str,
+    pub thread_id: Option<&'a str>,
+}
+
+/// Parameters for `save_estimation_snapshot`.
+pub struct EstimationSnapshotParams<'a> {
+    pub job_id: Uuid,
+    pub category: &'a str,
+    pub tool_names: &'a [String],
+    pub estimated_cost: Decimal,
+    pub estimated_time_secs: i32,
+    pub estimated_value: Decimal,
+}
+
+/// Parameters for `update_estimation_actuals`.
+pub struct EstimationActualsParams {
+    pub id: Uuid,
+    pub actual_cost: Decimal,
+    pub actual_time_secs: i32,
+    pub actual_value: Option<Decimal>,
+}
+
+/// Parameters for `update_sandbox_job_status`.
+pub struct SandboxJobStatusUpdate<'a> {
+    pub id: Uuid,
+    pub status: &'a str,
+    pub success: Option<bool>,
+    pub message: Option<&'a str>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+/// Parameters for `update_routine_runtime`.
+pub struct RoutineRuntimeUpdate<'a> {
+    pub id: Uuid,
+    pub last_run_at: DateTime<Utc>,
+    pub next_fire_at: Option<DateTime<Utc>>,
+    pub run_count: u64,
+    pub consecutive_failures: u32,
+    pub state: &'a serde_json::Value,
+}
+
+/// Parameters for `complete_routine_run`.
+pub struct RoutineRunCompletion<'a> {
+    pub id: Uuid,
+    pub status: RunStatus,
+    pub result_summary: Option<&'a str>,
+    pub tokens_used: Option<i32>,
+}
+
+/// Parameters for `insert_chunk`.
+pub struct InsertChunkParams<'a> {
+    pub document_id: Uuid,
+    pub chunk_index: i32,
+    pub content: &'a str,
+    pub embedding: Option<&'a [f32]>,
+}
+
+/// Parameters for `hybrid_search`.
+pub struct HybridSearchParams<'a> {
+    pub user_id: &'a str,
+    pub agent_id: Option<Uuid>,
+    pub query: &'a str,
+    pub embedding: Option<&'a [f32]>,
+    pub config: &'a SearchConfig,
+}
+
 /// Create a database backend from configuration, run migrations, and return it.
 ///
 /// This is the shared helper for CLI commands and other call sites that need
@@ -197,10 +272,7 @@ pub trait ConversationStore: Send + Sync {
     ) -> DbFuture<'a, Result<Uuid, DatabaseError>>;
     fn ensure_conversation<'a>(
         &'a self,
-        id: Uuid,
-        channel: &'a str,
-        user_id: &'a str,
-        thread_id: Option<&'a str>,
+        params: EnsureConversationParams<'a>,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
     fn list_conversations_with_preview<'a>(
         &'a self,
@@ -281,10 +353,7 @@ pub trait NativeConversationStore: Send + Sync {
     ) -> impl Future<Output = Result<Uuid, DatabaseError>> + Send + 'a;
     fn ensure_conversation<'a>(
         &'a self,
-        id: Uuid,
-        channel: &'a str,
-        user_id: &'a str,
-        thread_id: Option<&'a str>,
+        params: EnsureConversationParams<'a>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
     fn list_conversations_with_preview<'a>(
         &'a self,
@@ -377,14 +446,9 @@ impl<T: NativeConversationStore> ConversationStore for T {
 
     fn ensure_conversation<'a>(
         &'a self,
-        id: Uuid,
-        channel: &'a str,
-        user_id: &'a str,
-        thread_id: Option<&'a str>,
+        params: EnsureConversationParams<'a>,
     ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(NativeConversationStore::ensure_conversation(
-            self, id, channel, user_id, thread_id,
-        ))
+        Box::pin(NativeConversationStore::ensure_conversation(self, params))
     }
 
     fn list_conversations_with_preview<'a>(
@@ -542,19 +606,11 @@ pub trait JobStore: Send + Sync {
     ) -> DbFuture<'a, Result<Uuid, DatabaseError>>;
     fn save_estimation_snapshot<'a>(
         &'a self,
-        job_id: Uuid,
-        category: &'a str,
-        tool_names: &'a [String],
-        estimated_cost: Decimal,
-        estimated_time_secs: i32,
-        estimated_value: Decimal,
+        params: EstimationSnapshotParams<'a>,
     ) -> DbFuture<'a, Result<Uuid, DatabaseError>>;
     fn update_estimation_actuals<'a>(
         &'a self,
-        id: Uuid,
-        actual_cost: Decimal,
-        actual_time_secs: i32,
-        actual_value: Option<Decimal>,
+        params: EstimationActualsParams,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
 }
 
@@ -606,19 +662,11 @@ pub trait NativeJobStore: Send + Sync {
     ) -> impl Future<Output = Result<Uuid, DatabaseError>> + Send + 'a;
     fn save_estimation_snapshot<'a>(
         &'a self,
-        job_id: Uuid,
-        category: &'a str,
-        tool_names: &'a [String],
-        estimated_cost: Decimal,
-        estimated_time_secs: i32,
-        estimated_value: Decimal,
+        params: EstimationSnapshotParams<'a>,
     ) -> impl Future<Output = Result<Uuid, DatabaseError>> + Send + 'a;
     fn update_estimation_actuals<'a>(
         &'a self,
-        id: Uuid,
-        actual_cost: Decimal,
-        actual_time_secs: i32,
-        actual_value: Option<Decimal>,
+        params: EstimationActualsParams,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
 }
 
@@ -692,38 +740,16 @@ impl<T: NativeJobStore> JobStore for T {
 
     fn save_estimation_snapshot<'a>(
         &'a self,
-        job_id: Uuid,
-        category: &'a str,
-        tool_names: &'a [String],
-        estimated_cost: Decimal,
-        estimated_time_secs: i32,
-        estimated_value: Decimal,
+        params: EstimationSnapshotParams<'a>,
     ) -> DbFuture<'a, Result<Uuid, DatabaseError>> {
-        Box::pin(NativeJobStore::save_estimation_snapshot(
-            self,
-            job_id,
-            category,
-            tool_names,
-            estimated_cost,
-            estimated_time_secs,
-            estimated_value,
-        ))
+        Box::pin(NativeJobStore::save_estimation_snapshot(self, params))
     }
 
     fn update_estimation_actuals<'a>(
         &'a self,
-        id: Uuid,
-        actual_cost: Decimal,
-        actual_time_secs: i32,
-        actual_value: Option<Decimal>,
+        params: EstimationActualsParams,
     ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(NativeJobStore::update_estimation_actuals(
-            self,
-            id,
-            actual_cost,
-            actual_time_secs,
-            actual_value,
-        ))
+        Box::pin(NativeJobStore::update_estimation_actuals(self, params))
     }
 }
 
@@ -743,12 +769,7 @@ pub trait SandboxStore: Send + Sync {
     ) -> DbFuture<'a, Result<Vec<SandboxJobRecord>, DatabaseError>>;
     fn update_sandbox_job_status<'a>(
         &'a self,
-        id: Uuid,
-        status: &'a str,
-        success: Option<bool>,
-        message: Option<&'a str>,
-        started_at: Option<DateTime<Utc>>,
-        completed_at: Option<DateTime<Utc>>,
+        params: SandboxJobStatusUpdate<'a>,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
     fn cleanup_stale_sandbox_jobs<'a>(&'a self) -> DbFuture<'a, Result<u64, DatabaseError>>;
     fn sandbox_job_summary<'a>(&'a self) -> DbFuture<'a, Result<SandboxJobSummary, DatabaseError>>;
@@ -808,12 +829,7 @@ pub trait NativeSandboxStore: Send + Sync {
     ) -> impl Future<Output = Result<Vec<SandboxJobRecord>, DatabaseError>> + Send + 'a;
     fn update_sandbox_job_status<'a>(
         &'a self,
-        id: Uuid,
-        status: &'a str,
-        success: Option<bool>,
-        message: Option<&'a str>,
-        started_at: Option<DateTime<Utc>>,
-        completed_at: Option<DateTime<Utc>>,
+        params: SandboxJobStatusUpdate<'a>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
     fn cleanup_stale_sandbox_jobs<'a>(
         &'a self,
@@ -880,22 +896,9 @@ impl<T: NativeSandboxStore> SandboxStore for T {
 
     fn update_sandbox_job_status<'a>(
         &'a self,
-        id: Uuid,
-        status: &'a str,
-        success: Option<bool>,
-        message: Option<&'a str>,
-        started_at: Option<DateTime<Utc>>,
-        completed_at: Option<DateTime<Utc>>,
+        params: SandboxJobStatusUpdate<'a>,
     ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(NativeSandboxStore::update_sandbox_job_status(
-            self,
-            id,
-            status,
-            success,
-            message,
-            started_at,
-            completed_at,
-        ))
+        Box::pin(NativeSandboxStore::update_sandbox_job_status(self, params))
     }
 
     fn cleanup_stale_sandbox_jobs<'a>(&'a self) -> DbFuture<'a, Result<u64, DatabaseError>> {
@@ -998,12 +1001,7 @@ pub trait RoutineStore: Send + Sync {
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
     fn update_routine_runtime<'a>(
         &'a self,
-        id: Uuid,
-        last_run_at: DateTime<Utc>,
-        next_fire_at: Option<DateTime<Utc>>,
-        run_count: u64,
-        consecutive_failures: u32,
-        state: &'a serde_json::Value,
+        params: RoutineRuntimeUpdate<'a>,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
     fn delete_routine<'a>(&'a self, id: Uuid) -> DbFuture<'a, Result<bool, DatabaseError>>;
     fn create_routine_run<'a>(
@@ -1012,10 +1010,7 @@ pub trait RoutineStore: Send + Sync {
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
     fn complete_routine_run<'a>(
         &'a self,
-        id: Uuid,
-        status: RunStatus,
-        result_summary: Option<&'a str>,
-        tokens_used: Option<i32>,
+        params: RoutineRunCompletion<'a>,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
     fn list_routine_runs<'a>(
         &'a self,
@@ -1067,12 +1062,7 @@ pub trait NativeRoutineStore: Send + Sync {
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
     fn update_routine_runtime<'a>(
         &'a self,
-        id: Uuid,
-        last_run_at: DateTime<Utc>,
-        next_fire_at: Option<DateTime<Utc>>,
-        run_count: u64,
-        consecutive_failures: u32,
-        state: &'a serde_json::Value,
+        params: RoutineRuntimeUpdate<'a>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
     fn delete_routine<'a>(
         &'a self,
@@ -1084,10 +1074,7 @@ pub trait NativeRoutineStore: Send + Sync {
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
     fn complete_routine_run<'a>(
         &'a self,
-        id: Uuid,
-        status: RunStatus,
-        result_summary: Option<&'a str>,
-        tokens_used: Option<i32>,
+        params: RoutineRunCompletion<'a>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
     fn list_routine_runs<'a>(
         &'a self,
@@ -1153,22 +1140,9 @@ impl<T: NativeRoutineStore> RoutineStore for T {
 
     fn update_routine_runtime<'a>(
         &'a self,
-        id: Uuid,
-        last_run_at: DateTime<Utc>,
-        next_fire_at: Option<DateTime<Utc>>,
-        run_count: u64,
-        consecutive_failures: u32,
-        state: &'a serde_json::Value,
+        params: RoutineRuntimeUpdate<'a>,
     ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(NativeRoutineStore::update_routine_runtime(
-            self,
-            id,
-            last_run_at,
-            next_fire_at,
-            run_count,
-            consecutive_failures,
-            state,
-        ))
+        Box::pin(NativeRoutineStore::update_routine_runtime(self, params))
     }
 
     fn delete_routine<'a>(&'a self, id: Uuid) -> DbFuture<'a, Result<bool, DatabaseError>> {
@@ -1184,18 +1158,9 @@ impl<T: NativeRoutineStore> RoutineStore for T {
 
     fn complete_routine_run<'a>(
         &'a self,
-        id: Uuid,
-        status: RunStatus,
-        result_summary: Option<&'a str>,
-        tokens_used: Option<i32>,
+        params: RoutineRunCompletion<'a>,
     ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(NativeRoutineStore::complete_routine_run(
-            self,
-            id,
-            status,
-            result_summary,
-            tokens_used,
-        ))
+        Box::pin(NativeRoutineStore::complete_routine_run(self, params))
     }
 
     fn list_routine_runs<'a>(
@@ -1505,10 +1470,7 @@ pub trait WorkspaceStore: Send + Sync {
     fn delete_chunks<'a>(&'a self, document_id: Uuid) -> DbFuture<'a, Result<(), WorkspaceError>>;
     fn insert_chunk<'a>(
         &'a self,
-        document_id: Uuid,
-        chunk_index: i32,
-        content: &'a str,
-        embedding: Option<&'a [f32]>,
+        params: InsertChunkParams<'a>,
     ) -> DbFuture<'a, Result<Uuid, WorkspaceError>>;
     fn update_chunk_embedding<'a>(
         &'a self,
@@ -1523,11 +1485,7 @@ pub trait WorkspaceStore: Send + Sync {
     ) -> DbFuture<'a, Result<Vec<MemoryChunk>, WorkspaceError>>;
     fn hybrid_search<'a>(
         &'a self,
-        user_id: &'a str,
-        agent_id: Option<Uuid>,
-        query: &'a str,
-        embedding: Option<&'a [f32]>,
-        config: &'a SearchConfig,
+        params: HybridSearchParams<'a>,
     ) -> DbFuture<'a, Result<Vec<SearchResult>, WorkspaceError>>;
 }
 
@@ -1582,10 +1540,7 @@ pub trait NativeWorkspaceStore: Send + Sync {
     ) -> impl Future<Output = Result<(), WorkspaceError>> + Send + 'a;
     fn insert_chunk<'a>(
         &'a self,
-        document_id: Uuid,
-        chunk_index: i32,
-        content: &'a str,
-        embedding: Option<&'a [f32]>,
+        params: InsertChunkParams<'a>,
     ) -> impl Future<Output = Result<Uuid, WorkspaceError>> + Send + 'a;
     fn update_chunk_embedding<'a>(
         &'a self,
@@ -1600,11 +1555,7 @@ pub trait NativeWorkspaceStore: Send + Sync {
     ) -> impl Future<Output = Result<Vec<MemoryChunk>, WorkspaceError>> + Send + 'a;
     fn hybrid_search<'a>(
         &'a self,
-        user_id: &'a str,
-        agent_id: Option<Uuid>,
-        query: &'a str,
-        embedding: Option<&'a [f32]>,
-        config: &'a SearchConfig,
+        params: HybridSearchParams<'a>,
     ) -> impl Future<Output = Result<Vec<SearchResult>, WorkspaceError>> + Send + 'a;
 }
 
@@ -1694,18 +1645,9 @@ impl<T: NativeWorkspaceStore> WorkspaceStore for T {
 
     fn insert_chunk<'a>(
         &'a self,
-        document_id: Uuid,
-        chunk_index: i32,
-        content: &'a str,
-        embedding: Option<&'a [f32]>,
+        params: InsertChunkParams<'a>,
     ) -> DbFuture<'a, Result<Uuid, WorkspaceError>> {
-        Box::pin(NativeWorkspaceStore::insert_chunk(
-            self,
-            document_id,
-            chunk_index,
-            content,
-            embedding,
-        ))
+        Box::pin(NativeWorkspaceStore::insert_chunk(self, params))
     }
 
     fn update_chunk_embedding<'a>(
@@ -1731,15 +1673,9 @@ impl<T: NativeWorkspaceStore> WorkspaceStore for T {
 
     fn hybrid_search<'a>(
         &'a self,
-        user_id: &'a str,
-        agent_id: Option<Uuid>,
-        query: &'a str,
-        embedding: Option<&'a [f32]>,
-        config: &'a SearchConfig,
+        params: HybridSearchParams<'a>,
     ) -> DbFuture<'a, Result<Vec<SearchResult>, WorkspaceError>> {
-        Box::pin(NativeWorkspaceStore::hybrid_search(
-            self, user_id, agent_id, query, embedding, config,
-        ))
+        Box::pin(NativeWorkspaceStore::hybrid_search(self, params))
     }
 }
 

@@ -34,7 +34,10 @@ use crate::agent::AgentDeps;
 use crate::channels::{
     ChannelManager, IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
 };
-use crate::db::Database;
+use crate::db::{
+    Database, EnsureConversationParams, EstimationActualsParams, EstimationSnapshotParams,
+    RoutineRunCompletion, RoutineRuntimeUpdate, SandboxJobStatusUpdate,
+};
 use crate::error::{ChannelError, LlmError};
 use crate::llm::{
     CompletionRequest, CompletionResponse, FinishReason, LlmProvider, ToolCompletionRequest,
@@ -655,14 +658,24 @@ mod tests {
         let conv_id = uuid::Uuid::new_v4();
 
         // ensure_conversation should create the row.
-        db.ensure_conversation(conv_id, "web", "carol", None)
-            .await
-            .expect("ensure first");
+        db.ensure_conversation(EnsureConversationParams {
+            id: conv_id,
+            channel: "web",
+            user_id: "carol",
+            thread_id: None,
+        })
+        .await
+        .expect("ensure first");
 
         // Calling again with the same ID should not error.
-        db.ensure_conversation(conv_id, "web", "carol", None)
-            .await
-            .expect("ensure second (idempotent)");
+        db.ensure_conversation(EnsureConversationParams {
+            id: conv_id,
+            channel: "web",
+            user_id: "carol",
+            thread_id: None,
+        })
+        .await
+        .expect("ensure second (idempotent)");
 
         // Should be able to add messages to it.
         let msg_id = db
@@ -1121,9 +1134,14 @@ mod tests {
         assert!(matches!(runs[0].status, RunStatus::Running));
 
         // Complete the run
-        db.complete_routine_run(run_id, RunStatus::Ok, Some("All good"), Some(150))
-            .await
-            .expect("complete run");
+        db.complete_routine_run(RoutineRunCompletion {
+            id: run_id,
+            status: RunStatus::Ok,
+            result_summary: Some("All good"),
+            tokens_used: Some(150),
+        })
+        .await
+        .expect("complete run");
 
         let runs = db
             .list_routine_runs(routine_id, 10)
@@ -1186,14 +1204,14 @@ mod tests {
         db.create_routine(&routine).await.expect("create");
 
         let now = chrono::Utc::now();
-        db.update_routine_runtime(
-            routine_id,
-            now,
-            Some(now + chrono::TimeDelta::seconds(3600)),
-            5,
-            2,
-            &serde_json::json!({"last_result": "ok"}),
-        )
+        db.update_routine_runtime(RoutineRuntimeUpdate {
+            id: routine_id,
+            last_run_at: now,
+            next_fire_at: Some(now + chrono::TimeDelta::seconds(3600)),
+            run_count: 5,
+            consecutive_failures: 2,
+            state: &serde_json::json!({"last_result": "ok"}),
+        })
         .await
         .expect("update runtime");
 
@@ -1270,26 +1288,26 @@ mod tests {
         assert_eq!(fetched.status, "creating");
 
         // Update status to running
-        db.update_sandbox_job_status(
-            job_id,
-            "running",
-            None,
-            None,
-            Some(chrono::Utc::now()),
-            None,
-        )
+        db.update_sandbox_job_status(SandboxJobStatusUpdate {
+            id: job_id,
+            status: "running",
+            success: None,
+            message: None,
+            started_at: Some(chrono::Utc::now()),
+            completed_at: None,
+        })
         .await
         .expect("update to running");
 
         // Update to completed
-        db.update_sandbox_job_status(
-            job_id,
-            "completed",
-            Some(true),
-            Some("Done"),
-            None,
-            Some(chrono::Utc::now()),
-        )
+        db.update_sandbox_job_status(SandboxJobStatusUpdate {
+            id: job_id,
+            status: "completed",
+            success: Some(true),
+            message: Some("Done"),
+            started_at: None,
+            completed_at: Some(chrono::Utc::now()),
+        })
         .await
         .expect("update to completed");
 
@@ -1456,25 +1474,25 @@ mod tests {
 
         // Save estimation snapshot
         let snap_id = db
-            .save_estimation_snapshot(
+            .save_estimation_snapshot(EstimationSnapshotParams {
                 job_id,
-                "code_generation",
-                &["shell".to_string(), "write_file".to_string()],
-                Decimal::new(50, 2), // 0.50
-                120,
-                Decimal::new(500, 2), // 5.00
-            )
+                category: "code_generation",
+                tool_names: &["shell".to_string(), "write_file".to_string()],
+                estimated_cost: Decimal::new(50, 2), // 0.50
+                estimated_time_secs: 120,
+                estimated_value: Decimal::new(500, 2), // 5.00
+            })
             .await
             .expect("save snapshot");
         assert!(!snap_id.is_nil());
 
         // Update with actuals
-        db.update_estimation_actuals(
-            snap_id,
-            Decimal::new(45, 2), // 0.45
-            110,
-            Some(Decimal::new(600, 2)), // 6.00
-        )
+        db.update_estimation_actuals(EstimationActualsParams {
+            id: snap_id,
+            actual_cost: Decimal::new(45, 2), // 0.45
+            actual_time_secs: 110,
+            actual_value: Some(Decimal::new(600, 2)), // 6.00
+        })
         .await
         .expect("update actuals");
     }

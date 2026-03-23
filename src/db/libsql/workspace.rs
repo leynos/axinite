@@ -9,7 +9,7 @@ use super::{
     LibSqlBackend, fmt_ts, get_i64, get_opt_text, get_opt_ts, get_text, get_ts,
     row_to_memory_document,
 };
-use crate::db::NativeWorkspaceStore;
+use crate::db::{HybridSearchParams, InsertChunkParams, NativeWorkspaceStore};
 use crate::error::WorkspaceError;
 use crate::workspace::{
     MemoryChunk, MemoryDocument, RankedResult, SearchConfig, SearchResult, WorkspaceEntry,
@@ -379,13 +379,13 @@ impl NativeWorkspaceStore for LibSqlBackend {
         Ok(())
     }
 
-    async fn insert_chunk(
-        &self,
-        document_id: Uuid,
-        chunk_index: i32,
-        content: &str,
-        embedding: Option<&[f32]>,
-    ) -> Result<Uuid, WorkspaceError> {
+    async fn insert_chunk(&self, params: InsertChunkParams<'_>) -> Result<Uuid, WorkspaceError> {
+        let InsertChunkParams {
+            document_id,
+            chunk_index,
+            content,
+            embedding,
+        } = params;
         let conn = self
             .connect()
             .await
@@ -494,12 +494,15 @@ impl NativeWorkspaceStore for LibSqlBackend {
 
     async fn hybrid_search(
         &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
-        query: &str,
-        embedding: Option<&[f32]>,
-        config: &SearchConfig,
+        params: HybridSearchParams<'_>,
     ) -> Result<Vec<SearchResult>, WorkspaceError> {
+        let HybridSearchParams {
+            user_id,
+            agent_id,
+            query,
+            embedding,
+            config,
+        } = params;
         let conn = self
             .connect()
             .await

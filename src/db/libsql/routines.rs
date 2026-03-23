@@ -9,7 +9,7 @@ use super::{
     opt_text_owned, row_to_routine_libsql, row_to_routine_run_libsql,
 };
 use crate::agent::routine::{Routine, RoutineRun, RunStatus};
-use crate::db::NativeRoutineStore;
+use crate::db::{NativeRoutineStore, RoutineRunCompletion, RoutineRuntimeUpdate};
 use crate::error::DatabaseError;
 
 impl NativeRoutineStore for LibSqlBackend {
@@ -262,13 +262,16 @@ impl NativeRoutineStore for LibSqlBackend {
 
     async fn update_routine_runtime(
         &self,
-        id: Uuid,
-        last_run_at: DateTime<Utc>,
-        next_fire_at: Option<DateTime<Utc>>,
-        run_count: u64,
-        consecutive_failures: u32,
-        state: &serde_json::Value,
+        params: RoutineRuntimeUpdate<'_>,
     ) -> Result<(), DatabaseError> {
+        let RoutineRuntimeUpdate {
+            id,
+            last_run_at,
+            next_fire_at,
+            run_count,
+            consecutive_failures,
+            state,
+        } = params;
         let conn = self.connect().await?;
         let now = fmt_ts(&Utc::now());
         conn.execute(
@@ -332,11 +335,14 @@ impl NativeRoutineStore for LibSqlBackend {
 
     async fn complete_routine_run(
         &self,
-        id: Uuid,
-        status: RunStatus,
-        result_summary: Option<&str>,
-        tokens_used: Option<i32>,
+        params: RoutineRunCompletion<'_>,
     ) -> Result<(), DatabaseError> {
+        let RoutineRunCompletion {
+            id,
+            status,
+            result_summary,
+            tokens_used,
+        } = params;
         let conn = self.connect().await?;
         let now = fmt_ts(&Utc::now());
         conn.execute(

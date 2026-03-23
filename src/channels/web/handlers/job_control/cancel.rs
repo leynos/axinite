@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use uuid::Uuid;
 
 use crate::channels::web::server::GatewayState;
-use crate::db::Database;
+use crate::db::{Database, SandboxJobStatusUpdate};
 
 use super::internal_error;
 
@@ -24,14 +24,14 @@ pub(super) async fn cancel_sandbox_job(
         .await
         .map_err(|e| internal_error("Failed to stop sandbox job", e))?;
     store
-        .update_sandbox_job_status(
-            job_id,
-            "failed",
-            Some(false),
-            Some("Cancelled by user"),
-            None,
-            Some(chrono::Utc::now()),
-        )
+        .update_sandbox_job_status(SandboxJobStatusUpdate {
+            id: job_id,
+            status: "failed",
+            success: Some(false),
+            message: Some("Cancelled by user"),
+            started_at: None,
+            completed_at: Some(chrono::Utc::now()),
+        })
         .await
         .map_err(|e| internal_error("Failed to update sandbox job status", e))
 }

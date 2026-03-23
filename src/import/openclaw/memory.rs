@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::db::Database;
+use crate::db::{Database, InsertChunkParams};
 use crate::import::{ImportError, ImportOptions};
 
 use super::reader::OpenClawMemoryChunk;
@@ -21,12 +21,12 @@ pub async fn import_chunk(
 
     // Insert chunk
     let chunk_id = db
-        .insert_chunk(
-            doc.id,
-            chunk.chunk_index,
-            &chunk.content,
-            None, // Don't set embedding yet if dimensions might not match
-        )
+        .insert_chunk(InsertChunkParams {
+            document_id: doc.id,
+            chunk_index: chunk.chunk_index,
+            content: &chunk.content,
+            embedding: None, // Don't set embedding yet if dimensions might not match
+        })
         .await
         .map_err(|e| ImportError::Database(e.to_string()))?;
 

@@ -9,6 +9,8 @@ use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
+use crate::db::EnsureConversationParams;
+
 use crate::agent::Agent;
 use crate::agent::compaction::ContextCompactor;
 use crate::agent::dispatcher::{
@@ -439,7 +441,12 @@ impl Agent {
         };
 
         if let Err(e) = store
-            .ensure_conversation(thread_id, "gateway", user_id, None)
+            .ensure_conversation(EnsureConversationParams {
+                id: thread_id,
+                channel: "gateway",
+                user_id,
+                thread_id: None,
+            })
             .await
         {
             tracing::warn!("Failed to ensure conversation {}: {}", thread_id, e);
@@ -471,7 +478,12 @@ impl Agent {
         };
 
         if let Err(e) = store
-            .ensure_conversation(thread_id, "gateway", user_id, None)
+            .ensure_conversation(EnsureConversationParams {
+                id: thread_id,
+                channel: "gateway",
+                user_id,
+                thread_id: None,
+            })
             .await
         {
             tracing::warn!("Failed to ensure conversation {}: {}", thread_id, e);
@@ -544,7 +556,12 @@ impl Agent {
         };
 
         if let Err(e) = store
-            .ensure_conversation(thread_id, "gateway", user_id, None)
+            .ensure_conversation(EnsureConversationParams {
+                id: thread_id,
+                channel: "gateway",
+                user_id,
+                thread_id: None,
+            })
             .await
         {
             tracing::warn!("Failed to ensure conversation {}: {}", thread_id, e);

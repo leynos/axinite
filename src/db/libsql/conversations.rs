@@ -5,7 +5,7 @@ use libsql::params;
 use uuid::Uuid;
 
 use super::{LibSqlBackend, fmt_ts, get_i64, get_json, get_opt_text, get_text, get_ts, opt_text};
-use crate::db::NativeConversationStore;
+use crate::db::{EnsureConversationParams, NativeConversationStore};
 use crate::error::DatabaseError;
 use crate::history::{ConversationMessage, ConversationSummary};
 
@@ -61,11 +61,14 @@ impl NativeConversationStore for LibSqlBackend {
 
     async fn ensure_conversation(
         &self,
-        id: Uuid,
-        channel: &str,
-        user_id: &str,
-        thread_id: Option<&str>,
+        params: EnsureConversationParams<'_>,
     ) -> Result<(), DatabaseError> {
+        let EnsureConversationParams {
+            id,
+            channel,
+            user_id,
+            thread_id,
+        } = params;
         let conn = self.connect().await?;
         let now = fmt_ts(&Utc::now());
         conn.execute(

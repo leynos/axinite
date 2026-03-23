@@ -6,7 +6,7 @@ use axum::{Json, http::StatusCode};
 use uuid::Uuid;
 
 use crate::channels::web::server::GatewayState;
-use crate::db::Database;
+use crate::db::{Database, SandboxJobStatusUpdate};
 
 use super::{LoadedSandboxJob, SandboxJobStatus, internal_error, load_sandbox_job_mode};
 
@@ -91,7 +91,14 @@ pub(super) async fn restart_sandbox_job(
     }
 
     if let Err(error) = store
-        .update_sandbox_job_status(new_job_id, "running", None, None, Some(now), None)
+        .update_sandbox_job_status(SandboxJobStatusUpdate {
+            id: new_job_id,
+            status: "running",
+            success: None,
+            message: None,
+            started_at: Some(now),
+            completed_at: None,
+        })
         .await
     {
         if let Err(stop_error) = job_manager.stop_job(new_job_id).await {
@@ -192,14 +199,14 @@ async fn mark_sandbox_restart_failed(
     message: String,
 ) -> Result<(), (StatusCode, String)> {
     store
-        .update_sandbox_job_status(
-            job_id,
-            "failed",
-            Some(false),
-            Some(&message),
-            None,
-            Some(chrono::Utc::now()),
-        )
+        .update_sandbox_job_status(SandboxJobStatusUpdate {
+            id: job_id,
+            status: "failed",
+            success: Some(false),
+            message: Some(&message),
+            started_at: None,
+            completed_at: Some(chrono::Utc::now()),
+        })
         .await
         .map_err(|e| internal_error("Failed to update sandbox job status", e))
 }

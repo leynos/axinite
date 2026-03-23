@@ -18,7 +18,7 @@ use crate::bootstrap::ironclaw_base_dir;
 use crate::channels::IncomingMessage;
 use crate::channels::web::types::SseEvent;
 use crate::context::{ContextManager, JobContext, JobState};
-use crate::db::Database;
+use crate::db::{Database, SandboxJobStatusUpdate};
 use crate::history::SandboxJobRecord;
 use crate::orchestrator::auth::CredentialGrant;
 use crate::orchestrator::job_manager::{ContainerJobManager, JobMode};
@@ -238,14 +238,14 @@ impl CreateJobTool {
             let status = status.to_string();
             tokio::spawn(async move {
                 if let Err(e) = store
-                    .update_sandbox_job_status(
-                        job_id,
-                        &status,
+                    .update_sandbox_job_status(SandboxJobStatusUpdate {
+                        id: job_id,
+                        status: &status,
                         success,
-                        message.as_deref(),
+                        message: message.as_deref(),
                         started_at,
                         completed_at,
-                    )
+                    })
                     .await
                 {
                     tracing::warn!(job_id = %job_id, "Failed to update sandbox job status: {}", e);

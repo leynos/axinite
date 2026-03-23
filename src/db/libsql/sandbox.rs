@@ -8,7 +8,7 @@ use super::{
     LibSqlBackend, fmt_opt_ts, fmt_ts, get_i64, get_json, get_opt_bool, get_opt_text, get_opt_ts,
     get_text, get_ts, opt_text,
 };
-use crate::db::NativeSandboxStore;
+use crate::db::{NativeSandboxStore, SandboxJobStatusUpdate};
 use crate::error::DatabaseError;
 use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
 
@@ -123,13 +123,16 @@ impl NativeSandboxStore for LibSqlBackend {
 
     async fn update_sandbox_job_status(
         &self,
-        id: Uuid,
-        status: &str,
-        success: Option<bool>,
-        message: Option<&str>,
-        started_at: Option<DateTime<Utc>>,
-        completed_at: Option<DateTime<Utc>>,
+        params: SandboxJobStatusUpdate<'_>,
     ) -> Result<(), DatabaseError> {
+        let SandboxJobStatusUpdate {
+            id,
+            status,
+            success,
+            message,
+            started_at,
+            completed_at,
+        } = params;
         let conn = self.connect().await?;
         conn.execute(
             r#"
