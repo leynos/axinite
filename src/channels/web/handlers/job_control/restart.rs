@@ -10,39 +10,20 @@ use crate::db::{Database, SandboxJobStatusUpdate};
 
 use super::{LoadedSandboxJob, SandboxJobStatus, internal_error, load_sandbox_job_mode};
 
-/// Build a SandboxJobStatusUpdate with the provided fields.
-fn build_status_update_core<'a>(
-    id: Uuid,
-    status: &'a str,
-    success: Option<bool>,
-    message: Option<&'a str>,
-    started_at: Option<chrono::DateTime<chrono::Utc>>,
-    completed_at: Option<chrono::DateTime<chrono::Utc>>,
-) -> SandboxJobStatusUpdate<'a> {
-    SandboxJobStatusUpdate {
-        id,
-        status,
-        success,
-        message,
-        started_at,
-        completed_at,
-    }
-}
-
 /// Mark a sandbox job as running by updating its status with the provided timestamp.
 async fn mark_running(
     db: &dyn Database,
     id: Uuid,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<(), crate::error::DatabaseError> {
-    db.update_sandbox_job_status(build_status_update_core(
+    db.update_sandbox_job_status(SandboxJobStatusUpdate {
         id,
-        "running",
-        None,
-        None,
-        Some(now),
-        None,
-    ))
+        status: "running",
+        success: None,
+        message: None,
+        started_at: Some(now),
+        completed_at: None,
+    })
     .await
 }
 

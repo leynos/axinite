@@ -181,7 +181,7 @@ pub async fn connect_with_handles(
             Ok((Arc::new(backend) as Arc<dyn Database>, handles))
         }
         #[cfg(feature = "postgres")]
-        _ => {
+        crate::config::DatabaseBackend::Postgres => {
             let mut handles = DatabaseHandles::default();
             let pg = postgres::PgBackend::new(config)
                 .await
@@ -194,8 +194,12 @@ pub async fn connect_with_handles(
             Ok((Arc::new(pg) as Arc<dyn Database>, handles))
         }
         #[cfg(not(feature = "postgres"))]
-        _ => Err(DatabaseError::Pool(
-            "No database backend available. Enable 'postgres' or 'libsql' feature.".to_string(),
+        crate::config::DatabaseBackend::Postgres => Err(DatabaseError::Pool(
+            "postgres feature not enabled".to_string(),
+        )),
+        #[cfg(not(feature = "libsql"))]
+        crate::config::DatabaseBackend::LibSql => Err(DatabaseError::Pool(
+            "libsql feature not enabled".to_string(),
         )),
     }
 }
@@ -229,7 +233,7 @@ pub async fn create_secrets_store(
             )))
         }
         #[cfg(feature = "postgres")]
-        _ => {
+        crate::config::DatabaseBackend::Postgres => {
             let pg_pool = handles.pg_pool.ok_or_else(|| {
                 DatabaseError::Pool(
                     "PostgreSQL handle missing after connect_with_handles".to_string(),
@@ -241,9 +245,12 @@ pub async fn create_secrets_store(
             )))
         }
         #[cfg(not(feature = "postgres"))]
-        _ => Err(DatabaseError::Pool(
-            "No database backend available for secrets. Enable 'postgres' or 'libsql' feature."
-                .to_string(),
+        crate::config::DatabaseBackend::Postgres => Err(DatabaseError::Pool(
+            "postgres feature not enabled".to_string(),
+        )),
+        #[cfg(not(feature = "libsql"))]
+        crate::config::DatabaseBackend::LibSql => Err(DatabaseError::Pool(
+            "libsql feature not enabled".to_string(),
         )),
     }
 }

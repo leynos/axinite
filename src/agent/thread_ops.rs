@@ -29,6 +29,21 @@ use crate::tools::redact_params;
 
 use message_rebuild::rebuild_chat_messages_from_db;
 
+/// Helper to build EnsureConversationParams for gateway conversations.
+///
+/// Gateway conversations use channel="gateway", id=thread_id, and thread_id=None.
+fn gateway_conversation_params(
+    thread_id: uuid::Uuid,
+    user_id: &str,
+) -> EnsureConversationParams<'_> {
+    EnsureConversationParams {
+        id: thread_id,
+        channel: "gateway",
+        user_id,
+        thread_id: None,
+    }
+}
+
 impl Agent {
     /// Hydrate a historical thread from DB into memory if not already present.
     ///
@@ -445,12 +460,7 @@ impl Agent {
         };
 
         if let Err(e) = store
-            .ensure_conversation(EnsureConversationParams {
-                id: thread_id,
-                channel: "gateway",
-                user_id,
-                thread_id: None,
-            })
+            .ensure_conversation(gateway_conversation_params(thread_id, user_id))
             .await
         {
             tracing::warn!("Failed to ensure conversation {}: {}", thread_id, e);
@@ -482,12 +492,7 @@ impl Agent {
         };
 
         if let Err(e) = store
-            .ensure_conversation(EnsureConversationParams {
-                id: thread_id,
-                channel: "gateway",
-                user_id,
-                thread_id: None,
-            })
+            .ensure_conversation(gateway_conversation_params(thread_id, user_id))
             .await
         {
             tracing::warn!("Failed to ensure conversation {}: {}", thread_id, e);
@@ -560,12 +565,7 @@ impl Agent {
         };
 
         if let Err(e) = store
-            .ensure_conversation(EnsureConversationParams {
-                id: thread_id,
-                channel: "gateway",
-                user_id,
-                thread_id: None,
-            })
+            .ensure_conversation(gateway_conversation_params(thread_id, user_id))
             .await
         {
             tracing::warn!("Failed to ensure conversation {}: {}", thread_id, e);

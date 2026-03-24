@@ -29,53 +29,55 @@ pub(super) fn rebuild_chat_messages_from_db(
                         continue;
                     }
 
-                    // Check if this is an enriched row (has call_id) or legacy
-                    let has_call_id = calls
-                        .first()
-                        .and_then(|c| c.get("call_id"))
-                        .and_then(|v| v.as_str())
-                        .is_some();
+                    // Validate that all entries have both call_id and name
+                    let all_valid = calls.iter().all(|c| {
+                        c.get("call_id").and_then(|v| v.as_str()).is_some()
+                            && c.get("name").and_then(|v| v.as_str()).is_some()
+                    });
 
-                    if has_call_id {
-                        // Build assistant_with_tool_calls + tool_result messages
-                        let tool_calls: Vec<ToolCall> = calls
-                            .iter()
-                            .map(|c| ToolCall {
-                                id: c["call_id"].as_str().unwrap_or("call_0").to_string(),
-                                name: c["name"].as_str().unwrap_or("unknown").to_string(),
-                                arguments: c
-                                    .get("parameters")
-                                    .cloned()
-                                    .unwrap_or(serde_json::json!({})),
-                            })
-                            .collect();
-
-                        // The assistant text for tool_calls is always None here;
-                        // the final assistant response comes as a separate
-                        // "assistant" row after this tool_calls row.
-                        result.push(ChatMessage::assistant_with_tool_calls(None, tool_calls));
-
-                        // Emit tool_result messages for each call
-                        for c in &calls {
-                            let call_id = c["call_id"].as_str().unwrap_or("call_0").to_string();
-                            let name = c["name"].as_str().unwrap_or("unknown").to_string();
-                            let content = if let Some(err) = c.get("error").and_then(|v| v.as_str())
-                            {
-                                format!("Error: {}", err)
-                            } else if let Some(res) = c.get("result").and_then(|v| v.as_str()) {
-                                res.to_string()
-                            } else if let Some(preview) =
-                                c.get("result_preview").and_then(|v| v.as_str())
-                            {
-                                preview.to_string()
-                            } else {
-                                "OK".to_string()
-                            };
-                            result.push(ChatMessage::tool_result(call_id, name, content));
-                        }
+                    if !all_valid {
+                        // Malformed row: skip the entire tool_calls entry and log a warning
+                        tracing::warn!(
+                            "Skipping malformed tool_calls row: missing call_id or name in at least one entry"
+                        );
+                        continue;
                     }
-                    // Legacy rows without call_id: skip (will appear as
-                    // simple user/assistant pairs, same as before this fix).
+
+                    // Build assistant_with_tool_calls + tool_result messages
+                    let tool_calls: Vec<ToolCall> = calls
+                        .iter()
+                        .map(|c| ToolCall {
+                            id: c["call_id"].as_str().expect("validated above").to_string(),
+                            name: c["name"].as_str().expect("validated above").to_string(),
+                            arguments: c
+                                .get("parameters")
+                                .cloned()
+                                .unwrap_or(serde_json::json!({})),
+                        })
+                        .collect();
+
+                    // The assistant text for tool_calls is always None here;
+                    // the final assistant response comes as a separate
+                    // "assistant" row after this tool_calls row.
+                    result.push(ChatMessage::assistant_with_tool_calls(None, tool_calls));
+
+                    // Emit tool_result messages for each call
+                    for c in &calls {
+                        let call_id = c["call_id"].as_str().expect("validated above").to_string();
+                        let name = c["name"].as_str().expect("validated above").to_string();
+                        let content = if let Some(err) = c.get("error").and_then(|v| v.as_str()) {
+                            format!("Error: {}", err)
+                        } else if let Some(res) = c.get("result").and_then(|v| v.as_str()) {
+                            res.to_string()
+                        } else if let Some(preview) =
+                            c.get("result_preview").and_then(|v| v.as_str())
+                        {
+                            preview.to_string()
+                        } else {
+                            "OK".to_string()
+                        };
+                        result.push(ChatMessage::tool_result(call_id, name, content));
+                    }
                 }
             }
             _ => {} // Skip unknown roles
@@ -144,7 +146,10 @@ mod tests {
         // assistant with tool_calls
         assert_eq!(result[1].role, crate::llm::Role::Assistant);
         assert!(result[1].tool_calls.is_some());
-        let tcs = result[1].tool_calls.as_ref().unwrap();
+        let tcs = result[1]
+            .tool_calls
+            .as_ref()
+            .expect("expected tool_calls to be Some for assistant message");
         assert_eq!(tcs.len(), 2);
         assert_eq!(tcs[0].name, "memory_search");
         assert_eq!(tcs[0].id, "call_0");

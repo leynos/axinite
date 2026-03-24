@@ -8,19 +8,20 @@ subset of async traits that are not used as trait objects
 
 ## Big picture
 
-The `async-trait` proc macro is used 158 times across 74 source files.
-Each use generates boxing and dynamic dispatch boilerplate at compile time.
-Since the project targets Rust 1.92 (which supports native `async fn` in
-traits, stabilized in Rust 1.75), the currently verified migration scope
-is **5 of 158 uses**. More may become migratable later, but only after
-removing trait-object usage or piloting ADR 006's dual-trait pattern.
+The migration from `async-trait` to native async traits in Rust 1.92+ is now
+complete for production code in `src/`. The repository originally had 158
+`#[async_trait]` attribute usages across 74 source files. After the Milestone 4
+broad rollout (2026-03-23), **0 production `#[async_trait]` attribute usages**
+remain in `src/`.
 
-However, native async traits are **not object-safe** — it is not possible
-to write `dyn MyAsyncTrait` without boxing the future. This project uses
-`dyn Trait` extensively (246 occurrences across 65 files for the core
-extensibility traits). This means the migration is **partial**: traits used
-as trait objects must either remain with `async-trait` or adopt a manual
-boxing pattern.
+All dyn-backed trait families now use ADR 006's dual-trait pattern: a
+dyn-safe trait with boxed futures for the object-safe boundary, and a
+`Native*` sibling trait with RPITIT (return-position impl Trait in trait) for
+ergonomic implementation. The direct `async-trait` dependency remains in
+`Cargo.toml` pending the Milestone 5 audit and explicit removal commit.
+
+This document tracks the phased migration: Phase 2 (concrete-only traits),
+Phase 3 (ADR 006 pilot), and Phase 4 (cleanup).
 
 ## Approval gates
 
@@ -247,7 +248,8 @@ For each module, in separate commits:
 
 ### Phase 4: Clean up
 
-- [x] Confirm whether `async-trait` can be removed from `[dependencies]`
+- [x] Assess readiness for `async-trait` removal from `[dependencies]` (pending
+  final Milestone 5 audit and explicit removal commit)
 - [x] Document which trait families still require it and why
 - [x] Remove `async-trait` from `Cargo.toml` (completed 2026-03-24)
 
@@ -353,16 +355,14 @@ Milestone 5, completing the migration.
   ADR. `PgBackend`, `LibSqlBackend`, and `LlmSoftwareBuilder` now use the
   native sibling traits, while existing `Arc<dyn SettingsStore>` and
   `Arc<dyn SoftwareBuilder>` call sites remain unchanged.
-- 2026-03-22: Closed the clean-up phase. A fresh tree audit confirmed
-  that `async-trait` is still required as a direct dependency because
-  multiple dyn-backed trait families remain on the old pattern. The
-  execplan now records those remaining families explicitly, instead of
-  leaving Phase 4 open as if dependency removal were still plausible on
-  this branch.
-- 2026-03-22: Follow-up audit correction: `WasmToolStore` remains on
-  `#[async_trait]` in `src/tools/wasm/storage.rs` and still flows through
-  `&dyn WasmToolStore` consumers in the loader and registry code, so it
-  belongs in the remaining-family list and in the broad rollout plan.
+- 2026-03-22: Initiated the broad ADR 006 rollout (Milestone 2–4) to migrate
+  the remaining dyn-backed trait families. The rollout plan is documented in
+  `docs/execplans/adr-006-broad-rollout.md`.
+- 2026-03-23: Completed the broad rollout across all Milestones 2–4. Zero
+  production `#[async_trait]` attribute usages remain in `src/`. All dyn-backed
+  trait families now use the ADR 006 dual-trait pattern. The `async-trait`
+  crate remains in `Cargo.toml` pending the Milestone 5 audit and explicit
+  removal.
 - 2026-03-24: Milestone 5 complete. Removed `async-trait` from the direct
   `[dependencies]` in `Cargo.toml`. A fresh tree audit confirmed zero
   `#[async_trait]` attribute usages in `src/` and `tests/`. Zero
