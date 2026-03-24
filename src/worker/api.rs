@@ -17,12 +17,15 @@ mod types;
 use error_mapping::map_remote_tool_status;
 
 pub use types::{
-    CompletionReport, CredentialResponse, FinishReason as ProxyFinishReason, JobDescription,
-    JobEventPayload, JobEventType, PromptResponse, ProxyCompletionRequest, ProxyCompletionResponse,
+    COMPLETE_PATH, COMPLETE_ROUTE, CREDENTIALS_PATH, CREDENTIALS_ROUTE, CompletionReport,
+    CredentialResponse, EVENT_PATH, EVENT_ROUTE, FinishReason as ProxyFinishReason, JOB_PATH,
+    JOB_ROUTE, JobDescription, JobEventPayload, JobEventType, LLM_COMPLETE_PATH,
+    LLM_COMPLETE_ROUTE, LLM_COMPLETE_WITH_TOOLS_PATH, LLM_COMPLETE_WITH_TOOLS_ROUTE, PROMPT_PATH,
+    PROMPT_ROUTE, PromptResponse, ProxyCompletionRequest, ProxyCompletionResponse,
     ProxyToolCompletionRequest, ProxyToolCompletionResponse, REMOTE_TOOL_CATALOG_PATH,
     REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_PATH, REMOTE_TOOL_EXECUTE_ROUTE,
     RemoteToolCatalogResponse, RemoteToolExecutionRequest, RemoteToolExecutionResponse,
-    StatusUpdate, WorkerState,
+    STATUS_PATH, STATUS_ROUTE, StatusUpdate, WORKER_HEALTH_ROUTE, WorkerState,
 };
 /// HTTP client that a container worker uses to talk to the orchestrator.
 pub struct WorkerHttpClient {
@@ -147,7 +150,7 @@ impl WorkerHttpClient {
 
     /// Fetch the job description from the orchestrator.
     pub async fn get_job(&self) -> Result<JobDescription, WorkerError> {
-        self.get_json("job", "GET /job").await
+        self.get_json(JOB_PATH, "GET /job").await
     }
 
     /// Proxy an LLM completion request through the orchestrator.
@@ -164,7 +167,7 @@ impl WorkerHttpClient {
         };
 
         let proxy_resp: ProxyCompletionResponse = self
-            .post_json("llm/complete", &proxy_req, "LLM complete")
+            .post_json(LLM_COMPLETE_PATH, &proxy_req, "LLM complete")
             .await?;
 
         Ok(CompletionResponse {
@@ -192,7 +195,11 @@ impl WorkerHttpClient {
         };
 
         let proxy_resp: ProxyToolCompletionResponse = self
-            .post_json("llm/complete_with_tools", &proxy_req, "LLM tool complete")
+            .post_json(
+                LLM_COMPLETE_WITH_TOOLS_PATH,
+                &proxy_req,
+                "LLM tool complete",
+            )
             .await?;
 
         Ok(ToolCompletionResponse {
@@ -247,7 +254,7 @@ impl WorkerHttpClient {
     pub async fn report_status(&self, update: &StatusUpdate) -> Result<(), WorkerError> {
         let resp = self
             .client
-            .post(self.url("status"))
+            .post(self.url(STATUS_PATH))
             .bearer_auth(&self.token)
             .json(update)
             .send()
@@ -286,7 +293,7 @@ impl WorkerHttpClient {
     pub async fn post_event(&self, payload: &JobEventPayload) {
         let resp = self
             .client
-            .post(self.url("event"))
+            .post(self.url(EVENT_PATH))
             .bearer_auth(&self.token)
             .json(payload)
             .send()
@@ -318,7 +325,7 @@ impl WorkerHttpClient {
     pub async fn poll_prompt(&self) -> Result<Option<PromptResponse>, WorkerError> {
         let resp = self
             .client
-            .get(self.url("prompt"))
+            .get(self.url(PROMPT_PATH))
             .bearer_auth(&self.token)
             .send()
             .await
@@ -354,7 +361,7 @@ impl WorkerHttpClient {
     pub async fn fetch_credentials(&self) -> Result<Vec<CredentialResponse>, WorkerError> {
         let resp = self
             .client
-            .get(self.url("credentials"))
+            .get(self.url(CREDENTIALS_PATH))
             .bearer_auth(&self.token)
             .send()
             .await
@@ -388,7 +395,7 @@ impl WorkerHttpClient {
     /// Signal job completion to the orchestrator.
     pub async fn report_complete(&self, report: &CompletionReport) -> Result<(), WorkerError> {
         let _: serde_json::Value = self
-            .post_json("complete", report, "report complete")
+            .post_json(COMPLETE_PATH, report, "report complete")
             .await?;
         Ok(())
     }

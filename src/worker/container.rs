@@ -88,26 +88,12 @@ async fn available_tool_definitions(tools: &ToolRegistry) -> Vec<crate::llm::Too
 }
 
 impl WorkerRuntime {
-    /// Create a new worker runtime.
+    /// Create a new worker runtime with an explicit client.
     ///
-    /// Reads `IRONCLAW_WORKER_TOKEN` from the environment for auth.
-    pub fn new(config: WorkerConfig) -> Result<Self, WorkerError> {
-        let client = Arc::new(WorkerHttpClient::from_env(
-            config.orchestrator_url.clone(),
-            config.job_id,
-        )?);
-
-        Ok(Self::from_client(config, client))
-    }
-
-    /// Construct a worker runtime from a pre-validated [`WorkerHttpClient`].
-    ///
-    /// Unlike [`Self::new`], this path performs no fallible initialization:
-    /// `new` returns `Result<Self, WorkerError>` because it builds the client
-    /// with [`WorkerHttpClient::from_env`] using the supplied [`WorkerConfig`],
-    /// while `from_client` takes an `Arc<WorkerHttpClient>` that has already
-    /// completed that validation and therefore returns `Self` directly.
-    fn from_client(config: WorkerConfig, client: Arc<WorkerHttpClient>) -> Self {
+    /// This is the primary constructor for `WorkerRuntime`. It takes a
+    /// pre-constructed client, making dependency injection straightforward
+    /// and allowing tests to provide mock clients without environment setup.
+    pub fn new(config: WorkerConfig, client: Arc<WorkerHttpClient>) -> Self {
         let llm: Arc<dyn LlmProvider> = Arc::new(ProxyLlmProvider::new(
             Arc::clone(&client),
             "proxied".to_string(),
@@ -129,6 +115,20 @@ impl WorkerRuntime {
             toolset_instructions: Vec::new(),
             extra_env: Arc::new(HashMap::new()),
         }
+    }
+
+    /// Create a new worker runtime from environment variables.
+    ///
+    /// Reads `IRONCLAW_WORKER_TOKEN` from the environment for auth.
+    /// This is a convenience constructor for production use; tests should
+    /// prefer [`Self::new`] with an explicit client.
+    pub fn from_env(config: WorkerConfig) -> Result<Self, WorkerError> {
+        let client = Arc::new(WorkerHttpClient::from_env(
+            config.orchestrator_url.clone(),
+            config.job_id,
+        )?);
+
+        Ok(Self::new(config, client))
     }
 
     fn build_tools() -> Arc<ToolRegistry> {

@@ -22,15 +22,9 @@ pub enum WorkerState {
     Unknown,
 }
 
-impl WorkerState {
-    pub const fn as_wire(self) -> &'static str {
-        match self {
-            Self::InProgress => "in_progress",
-            Self::Running => "running",
-            Self::Completed => "completed",
-            Self::Failed => "failed",
-            Self::Unknown => "unknown",
-        }
+impl std::fmt::Display for WorkerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_wire())
     }
 }
 
@@ -49,8 +43,8 @@ pub const REMOTE_TOOL_CATALOG_ROUTE: &str = "/worker/{job_id}/tools/catalog";
 /// Axum route for hosted remote-tool execution.
 pub const REMOTE_TOOL_EXECUTE_ROUTE: &str = "/worker/{job_id}/tools/execute";
 
-/// Status update sent from worker to orchestrator.
-#[derive(Debug, Serialize, Deserialize)]
+/// Relative worker path for job description endpoint.
+pub const JOB_PATH: &str = "job";
 pub struct StatusUpdate {
     pub state: WorkerState,
     pub message: Option<String>,
@@ -243,16 +237,9 @@ pub enum JobEventType {
     Unknown,
 }
 
-impl JobEventType {
-    pub const fn as_wire(self) -> &'static str {
-        match self {
-            Self::Status => "status",
-            Self::Message => "message",
-            Self::ToolUse => "tool_use",
-            Self::ToolResult => "tool_result",
-            Self::Result => "result",
-            Self::Unknown => "unknown",
-        }
+impl std::fmt::Display for JobEventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_wire())
     }
 }
 
@@ -296,3 +283,51 @@ impl std::fmt::Debug for CredentialResponse {
             .finish()
     }
 }
+
+/// Axum route for completion report endpoint.
+pub const COMPLETE_ROUTE: &str = "/worker/{job_id}/complete";
+
+/// Relative worker path for completion report endpoint.
+pub const COMPLETE_PATH: &str = "complete";
+
+/// Axum route for job event endpoint.
+pub const EVENT_ROUTE: &str = "/worker/{job_id}/event";
+
+/// Relative worker path for job event endpoint.
+pub const EVENT_PATH: &str = "event";
+
+/// Axum route for prompt polling endpoint.
+pub const PROMPT_ROUTE: &str = "/worker/{job_id}/prompt";
+
+/// Relative worker path for prompt polling endpoint.
+pub const PROMPT_PATH: &str = "prompt";
+
+/// Relative worker path for LLM tool completion endpoint.
+pub const LLM_COMPLETE_WITH_TOOLS_PATH: &str = "llm/complete_with_tools";
+
+/// Relative worker path for status update endpoint.
+pub const STATUS_PATH: &str = "status";
+
+/// Relative worker path for credentials endpoint.
+pub const CREDENTIALS_PATH: &str = "credentials";
+
+/// Axum route for status update endpoint.
+pub const STATUS_ROUTE: &str = "/worker/{job_id}/status";
+
+/// Axum route for LLM completion endpoint.
+pub const LLM_COMPLETE_ROUTE: &str = "/worker/{job_id}/llm/complete";
+
+/// Axum route for LLM tool completion endpoint.
+pub const LLM_COMPLETE_WITH_TOOLS_ROUTE: &str = "/worker/{job_id}/llm/complete_with_tools";
+
+/// Relative worker path for LLM completion endpoint.
+pub const LLM_COMPLETE_PATH: &str = "llm/complete";
+
+/// Axum route for job description endpoint.
+pub const JOB_ROUTE: &str = "/worker/{job_id}/job";
+
+/// Axum route for credentials endpoint.
+pub const CREDENTIALS_ROUTE: &str = "/worker/{job_id}/credentials";
+
+/// Axum route for health check endpoint (no job_id path component).
+pub const WORKER_HEALTH_ROUTE: &str = "/health";
