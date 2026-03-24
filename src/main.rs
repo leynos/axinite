@@ -214,15 +214,18 @@ async fn async_main() -> anyhow::Result<()> {
     // ── Phase 1-5: Build all core components via AppBuilder ────────────
 
     let flags = AppBuilderFlags { no_db: cli.no_db };
-    let components = AppBuilder::new(
+    let (components, side_effects) = AppBuilder::new(
         config,
         flags,
         toml_path.map(std::path::PathBuf::from),
         session.clone(),
         Arc::clone(&log_broadcaster),
     )
-    .build_all()
+    .build_components()
     .await?;
+
+    // Start runtime side effects (stale job cleanup, workspace seeding, embedding backfill)
+    side_effects.start().await;
 
     let config = components.config;
 

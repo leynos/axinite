@@ -302,10 +302,16 @@ impl TestRigBuilder {
         );
         builder.with_database(db);
         builder.with_llm(llm);
-        builder
-            .build_all()
+
+        // Use build_components() and discard RuntimeSideEffects to avoid
+        // unnecessary background I/O (stale job cleanup, workspace seeding,
+        // embedding backfill) during test setup.
+        let (components, _side_effects) = builder
+            .build_components()
             .await
-            .context("AppBuilder::build_all() failed in test rig")
+            .context("AppBuilder::build_components() failed in test rig")?;
+
+        Ok(components)
     }
 
     fn build_agent_deps(

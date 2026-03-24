@@ -6,6 +6,48 @@
 //! - Tests can construct a full `AppComponents` without wiring channels
 //! - Main stays focused on CLI dispatch and channel setup
 //! - Each init phase is independently testable
+//!
+//! ## Two-Phase Bootstrap Pattern
+//!
+//! This module follows hexagonal architecture principles by separating pure
+//! component assembly from mechanism-heavy activation:
+//!
+//! 1. **Assembly phase** (`build_components()`): Constructs all components
+//!    and returns them along with a `RuntimeSideEffects` struct containing
+//!    deferred background work.
+//!
+//! 2. **Activation phase** (`RuntimeSideEffects::start()`): Spawns
+//!    fire-and-forget background tasks such as stale job cleanup, workspace
+//!    seeding, and embedding backfill.
+//!
+//! This separation allows tests to validate composition without paying for
+//! unrelated I/O and background task overhead.
+//!
+//! ### Usage
+//!
+//! **Production code** (immediate startup desired):
+//! ```ignore
+//! let components = AppBuilder::new(config, flags, toml_path, session, log_broadcaster)
+//!     .build_all()  // convenience wrapper
+//!     .await?;
+//! ```
+//!
+//! **Tests** (precise control over side-effect timing):
+//! ```ignore
+//! let (components, _side_effects) = AppBuilder::new(config, flags, None, session, log_broadcaster)
+//!     .build_components()
+//!     .await?;
+//! // side_effects intentionally not started — avoids background I/O
+//! ```
+//!
+//! **Explicit control** (coordinating startup with other systems):
+//! ```ignore
+//! let (components, side_effects) = AppBuilder::new(...)
+//!     .build_components()
+//!     .await?;
+//! // ... perform additional setup ...
+//! side_effects.start().await;
+//! ```
 
 use std::sync::Arc;
 
@@ -25,6 +67,89 @@ use crate::tools::wasm::SharedCredentialRegistry;
 use crate::tools::wasm::WasmToolRuntime;
 use crate::tools::{ImageToolsRegistration, ToolRegistry, VisionToolsRegistration};
 use crate::workspace::{EmbeddingProvider, Workspace};
+
+/// Encapsulates fire-and-forget background tasks that should be started
+/// after component assembly completes.
+///
+/// Separating these deferred effects from pure construction allows tests
+/// to validate composition without paying for unrelated I/O and background work.
+pub struct RuntimeSideEffects {
+    db: Option<Arc<dyn Database>>,
+    workspace: Option<Arc<Workspace>>,
+    workspace_import_dir: Option<std::path::PathBuf>,
+    embeddings_available: bool,
+}
+
+impl RuntimeSideEffects {
+    /// Start all deferred background work.
+    ///
+    /// This method is fire-and-forget; callers need not await completion
+    /// unless ordering guarantees are required.
+    pub async fn start(self) {
+        // Spawn stale sandbox cleanup task
+        if let Some(db) = self.db {
+            let db_cleanup = Arc::clone(&db);
+            tokio::spawn(async move {
+                if let Err(e) = db_cleanup.cleanup_stale_sandbox_jobs().await {
+                    tracing::warn!("Failed to cleanup stale sandbox jobs: {}", e);
+                }
+            });
+        }
+
+        // Workspace import, seeding, and embedding backfill
+        if let Some(ws) = self.workspace {
+            // Import workspace files from disk FIRST if WORKSPACE_IMPORT_DIR is set.
+            // This lets Docker images / deployment scripts ship customized
+            // workspace templates (e.g., AGENTS.md, TOOLS.md) that override
+            // the generic seeds. Only imports files that don't already exist
+            // in the database — never overwrites user edits.
+            //
+            // Runs before seed_if_empty() so that custom templates take priority
+            // over generic seeds. seed_if_empty() then fills any remaining gaps.
+            if let Some(import_path) = self.workspace_import_dir {
+                match ws.import_from_directory(&import_path).await {
+                    Ok(count) if count > 0 => {
+                        tracing::debug!(
+                            "Imported {} workspace file(s) from {}",
+                            count,
+                            import_path.display()
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to import workspace files from {}: {}",
+                            import_path.display(),
+                            e
+                        );
+                    }
+                }
+            }
+
+            match ws.seed_if_empty().await {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!("Failed to seed workspace: {}", e);
+                }
+            }
+
+            if self.embeddings_available {
+                let ws_bg = Arc::clone(&ws);
+                tokio::spawn(async move {
+                    match ws_bg.backfill_embeddings().await {
+                        Ok(count) if count > 0 => {
+                            tracing::debug!("Backfilled embeddings for {} chunks", count);
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::warn!("Failed to backfill embeddings: {}", e);
+                        }
+                    }
+                });
+            }
+        }
+    }
+}
 
 /// Fully initialized application components, ready for channel wiring
 /// and agent construction.
@@ -166,14 +291,6 @@ impl AppBuilder {
         }
 
         self.session.attach_store(db.clone(), "default").await;
-
-        // Fire-and-forget housekeeping — no need to block startup.
-        let db_cleanup = db.clone();
-        tokio::spawn(async move {
-            if let Err(e) = db_cleanup.cleanup_stale_sandbox_jobs().await {
-                tracing::warn!("Failed to cleanup stale sandbox jobs: {}", e);
-            }
-        });
 
         self.db = Some(db);
         Ok(())
@@ -672,8 +789,17 @@ impl AppBuilder {
         ))
     }
 
-    /// Run all init phases in order and return the assembled components.
-    pub async fn build_all(mut self) -> Result<AppComponents, anyhow::Error> {
+    /// Run all init phases in order and return the assembled components
+    /// along with deferred runtime side effects.
+    ///
+    /// Use this method when you need control over when side effects start,
+    /// such as in tests or when coordinating startup with other systems.
+    ///
+    /// For production use, consider using the `build_all()` convenience
+    /// wrapper which immediately starts side effects.
+    pub async fn build_components(
+        mut self,
+    ) -> Result<(AppComponents, RuntimeSideEffects), anyhow::Error> {
         self.init_database().await?;
         self.init_secrets().await?;
 
@@ -707,55 +833,10 @@ impl AppBuilder {
             dev_loaded_tool_names,
         ) = self.init_extensions(&tools, &hooks).await?;
 
-        // Seed workspace and backfill embeddings
-        if let Some(ref ws) = workspace {
-            // Import workspace files from disk FIRST if WORKSPACE_IMPORT_DIR is set.
-            // This lets Docker images / deployment scripts ship customized
-            // workspace templates (e.g., AGENTS.md, TOOLS.md) that override
-            // the generic seeds. Only imports files that don't already exist
-            // in the database — never overwrites user edits.
-            //
-            // Runs before seed_if_empty() so that custom templates take priority
-            // over generic seeds. seed_if_empty() then fills any remaining gaps.
-            if let Ok(import_dir) = std::env::var("WORKSPACE_IMPORT_DIR") {
-                let import_path = std::path::Path::new(&import_dir);
-                match ws.import_from_directory(import_path).await {
-                    Ok(count) if count > 0 => {
-                        tracing::debug!("Imported {} workspace file(s) from {}", count, import_dir);
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to import workspace files from {}: {}",
-                            import_dir,
-                            e
-                        );
-                    }
-                }
-            }
-
-            match ws.seed_if_empty().await {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!("Failed to seed workspace: {}", e);
-                }
-            }
-
-            if embeddings.is_some() {
-                let ws_bg = Arc::clone(ws);
-                tokio::spawn(async move {
-                    match ws_bg.backfill_embeddings().await {
-                        Ok(count) if count > 0 => {
-                            tracing::debug!("Backfilled embeddings for {} chunks", count);
-                        }
-                        Ok(_) => {}
-                        Err(e) => {
-                            tracing::warn!("Failed to backfill embeddings: {}", e);
-                        }
-                    }
-                });
-            }
-        }
+        // Capture workspace import directory if set
+        let workspace_import_dir = std::env::var("WORKSPACE_IMPORT_DIR")
+            .ok()
+            .map(std::path::PathBuf::from);
 
         // Skills system
         let (skill_registry, skill_catalog) = if self.config.skills.enabled {
@@ -786,16 +867,16 @@ impl AppBuilder {
             tools.count()
         );
 
-        Ok(AppComponents {
+        let components = AppComponents {
             config: self.config,
-            db: self.db,
+            db: self.db.clone(),
             secrets_store: self.secrets_store,
             llm,
             cheap_llm,
             safety,
             tools,
-            embeddings,
-            workspace,
+            embeddings: embeddings.clone(),
+            workspace: workspace.clone(),
             extension_manager,
             mcp_session_manager,
             mcp_process_manager,
@@ -810,6 +891,27 @@ impl AppBuilder {
             session: self.session,
             catalog_entries,
             dev_loaded_tool_names,
-        })
+        };
+
+        let side_effects = RuntimeSideEffects {
+            db: self.db,
+            workspace,
+            workspace_import_dir,
+            embeddings_available: embeddings.is_some(),
+        };
+
+        Ok((components, side_effects))
+    }
+
+    /// Convenience wrapper that builds components and immediately starts
+    /// all runtime side effects.
+    ///
+    /// For production use where immediate startup is desired. Tests and
+    /// scenarios requiring precise control over side-effect timing should
+    /// use `build_components()` directly.
+    pub async fn build_all(self) -> Result<AppComponents, anyhow::Error> {
+        let (components, side_effects) = self.build_components().await?;
+        side_effects.start().await;
+        Ok(components)
     }
 }
