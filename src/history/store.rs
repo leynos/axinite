@@ -1445,11 +1445,14 @@ impl Store {
     /// Idempotent: inserts on first call, bumps `last_activity` on subsequent calls.
     pub async fn ensure_conversation(
         &self,
-        id: Uuid,
-        channel: &str,
-        user_id: &str,
-        thread_id: Option<&str>,
+        params: crate::db::EnsureConversationParams<'_>,
     ) -> Result<(), DatabaseError> {
+        let crate::db::EnsureConversationParams {
+            id,
+            channel,
+            user_id,
+            thread_id,
+        } = params;
         let conn = self.conn().await?;
         conn.execute(
             r#"

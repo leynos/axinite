@@ -206,6 +206,68 @@ mod tests {
         assert_eq!(result.len(), 2);
     }
 
+    /// Regression: tool_calls entries missing `name` but having `call_id`
+    /// must be skipped. Before the fix, these were silently processed with
+    /// a fallback name of `"unknown"`, producing invalid tool-call messages.
+    #[test]
+    fn test_rebuild_skips_tool_calls_missing_name() {
+        let tool_json = serde_json::json!([
+            {"call_id": "call_0", "parameters": {"q": "x"}, "result": "ok"}
+        ]);
+        let messages = vec![
+            make_db_msg("user", "Hi"),
+            make_db_msg("tool_calls", &tool_json.to_string()),
+            make_db_msg("assistant", "Done"),
+        ];
+        let result = rebuild_chat_messages_from_db(&messages);
+
+        // Malformed row is skipped; only user + assistant survive
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].role, crate::llm::Role::User);
+        assert_eq!(result[1].role, crate::llm::Role::Assistant);
+    }
+
+    /// Regression: when one entry in a tool_calls array is valid but another
+    /// is missing required fields, the entire row must be skipped. Before
+    /// the fix, the valid entry would be processed and the invalid entry
+    /// would get fallback defaults.
+    #[test]
+    fn test_rebuild_skips_entire_row_when_any_entry_is_invalid() {
+        let tool_json = serde_json::json!([
+            {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found"},
+            {"name": "write", "parameters": {"path": "a.txt"}, "result": "ok"}
+        ]);
+        let messages = vec![
+            make_db_msg("user", "Go"),
+            make_db_msg("tool_calls", &tool_json.to_string()),
+            make_db_msg("assistant", "Done"),
+        ];
+        let result = rebuild_chat_messages_from_db(&messages);
+
+        // Second entry lacks call_id -> entire row skipped
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].role, crate::llm::Role::User);
+        assert_eq!(result[1].role, crate::llm::Role::Assistant);
+    }
+
+    /// Regression: tool_calls entries with null call_id or name values
+    /// (as opposed to missing keys) must also be skipped.
+    #[test]
+    fn test_rebuild_skips_tool_calls_with_null_fields() {
+        let tool_json = serde_json::json!([
+            {"name": null, "call_id": "call_0", "parameters": {}, "result": "ok"}
+        ]);
+        let messages = vec![
+            make_db_msg("user", "Hi"),
+            make_db_msg("tool_calls", &tool_json.to_string()),
+            make_db_msg("assistant", "Done"),
+        ];
+        let result = rebuild_chat_messages_from_db(&messages);
+
+        // null name fails the as_str() check -> row skipped
+        assert_eq!(result.len(), 2);
+    }
+
     #[test]
     fn test_rebuild_chat_messages_multi_turn_with_tools() {
         let tool_json_1 = serde_json::json!([

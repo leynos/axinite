@@ -119,6 +119,42 @@ pub struct HybridSearchParams<'a> {
     pub config: &'a SearchConfig,
 }
 
+// ==================== Newtypes ====================
+//
+// These newtypes provide type safety for commonly-used string parameters.
+
+/// User identifier newtype for settings store methods.
+#[derive(Debug, Clone, Copy)]
+pub struct UserId<'a>(pub &'a str);
+
+impl<'a> UserId<'a> {
+    pub fn as_str(self) -> &'a str {
+        self.0
+    }
+}
+
+impl<'a> From<&'a str> for UserId<'a> {
+    fn from(s: &'a str) -> Self {
+        Self(s)
+    }
+}
+
+/// Setting key newtype for settings store methods.
+#[derive(Debug, Clone, Copy)]
+pub struct SettingKey<'a>(pub &'a str);
+
+impl<'a> SettingKey<'a> {
+    pub fn as_str(self) -> &'a str {
+        self.0
+    }
+}
+
+impl<'a> From<&'a str> for SettingKey<'a> {
+    fn from(s: &'a str) -> Self {
+        Self(s)
+    }
+}
+
 /// Create a database backend from configuration, run migrations, and return it.
 ///
 /// This is the shared helper for CLI commands and other call sites that need
@@ -1293,41 +1329,41 @@ pub trait SettingsStore: Send + Sync {
 pub trait NativeSettingsStore: Send + Sync {
     fn get_setting<'a>(
         &'a self,
-        user_id: &'a str,
-        key: &'a str,
+        user_id: UserId<'a>,
+        key: SettingKey<'a>,
     ) -> impl Future<Output = Result<Option<serde_json::Value>, DatabaseError>> + Send + 'a;
     fn get_setting_full<'a>(
         &'a self,
-        user_id: &'a str,
-        key: &'a str,
+        user_id: UserId<'a>,
+        key: SettingKey<'a>,
     ) -> impl Future<Output = Result<Option<SettingRow>, DatabaseError>> + Send + 'a;
     fn set_setting<'a>(
         &'a self,
-        user_id: &'a str,
-        key: &'a str,
+        user_id: UserId<'a>,
+        key: SettingKey<'a>,
         value: &'a serde_json::Value,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
     fn delete_setting<'a>(
         &'a self,
-        user_id: &'a str,
-        key: &'a str,
+        user_id: UserId<'a>,
+        key: SettingKey<'a>,
     ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
     fn list_settings<'a>(
         &'a self,
-        user_id: &'a str,
+        user_id: UserId<'a>,
     ) -> impl Future<Output = Result<Vec<SettingRow>, DatabaseError>> + Send + 'a;
     fn get_all_settings<'a>(
         &'a self,
-        user_id: &'a str,
+        user_id: UserId<'a>,
     ) -> impl Future<Output = Result<HashMap<String, serde_json::Value>, DatabaseError>> + Send + 'a;
     fn set_all_settings<'a>(
         &'a self,
-        user_id: &'a str,
+        user_id: UserId<'a>,
         settings: &'a HashMap<String, serde_json::Value>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
     fn has_settings<'a>(
         &'a self,
-        user_id: &'a str,
+        user_id: UserId<'a>,
     ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
 }
 
@@ -1340,7 +1376,11 @@ where
         user_id: &'a str,
         key: &'a str,
     ) -> DbFuture<'a, Result<Option<serde_json::Value>, DatabaseError>> {
-        Box::pin(NativeSettingsStore::get_setting(self, user_id, key))
+        Box::pin(NativeSettingsStore::get_setting(
+            self,
+            UserId::from(user_id),
+            SettingKey::from(key),
+        ))
     }
 
     fn get_setting_full<'a>(
@@ -1348,7 +1388,11 @@ where
         user_id: &'a str,
         key: &'a str,
     ) -> DbFuture<'a, Result<Option<SettingRow>, DatabaseError>> {
-        Box::pin(NativeSettingsStore::get_setting_full(self, user_id, key))
+        Box::pin(NativeSettingsStore::get_setting_full(
+            self,
+            UserId::from(user_id),
+            SettingKey::from(key),
+        ))
     }
 
     fn set_setting<'a>(
@@ -1357,7 +1401,12 @@ where
         key: &'a str,
         value: &'a serde_json::Value,
     ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(NativeSettingsStore::set_setting(self, user_id, key, value))
+        Box::pin(NativeSettingsStore::set_setting(
+            self,
+            UserId::from(user_id),
+            SettingKey::from(key),
+            value,
+        ))
     }
 
     fn delete_setting<'a>(
@@ -1365,21 +1414,31 @@ where
         user_id: &'a str,
         key: &'a str,
     ) -> DbFuture<'a, Result<bool, DatabaseError>> {
-        Box::pin(NativeSettingsStore::delete_setting(self, user_id, key))
+        Box::pin(NativeSettingsStore::delete_setting(
+            self,
+            UserId::from(user_id),
+            SettingKey::from(key),
+        ))
     }
 
     fn list_settings<'a>(
         &'a self,
         user_id: &'a str,
     ) -> DbFuture<'a, Result<Vec<SettingRow>, DatabaseError>> {
-        Box::pin(NativeSettingsStore::list_settings(self, user_id))
+        Box::pin(NativeSettingsStore::list_settings(
+            self,
+            UserId::from(user_id),
+        ))
     }
 
     fn get_all_settings<'a>(
         &'a self,
         user_id: &'a str,
     ) -> DbFuture<'a, Result<HashMap<String, serde_json::Value>, DatabaseError>> {
-        Box::pin(NativeSettingsStore::get_all_settings(self, user_id))
+        Box::pin(NativeSettingsStore::get_all_settings(
+            self,
+            UserId::from(user_id),
+        ))
     }
 
     fn set_all_settings<'a>(
@@ -1388,12 +1447,17 @@ where
         settings: &'a HashMap<String, serde_json::Value>,
     ) -> DbFuture<'a, Result<(), DatabaseError>> {
         Box::pin(NativeSettingsStore::set_all_settings(
-            self, user_id, settings,
+            self,
+            UserId::from(user_id),
+            settings,
         ))
     }
 
     fn has_settings<'a>(&'a self, user_id: &'a str) -> DbFuture<'a, Result<bool, DatabaseError>> {
-        Box::pin(NativeSettingsStore::has_settings(self, user_id))
+        Box::pin(NativeSettingsStore::has_settings(
+            self,
+            UserId::from(user_id),
+        ))
     }
 }
 
