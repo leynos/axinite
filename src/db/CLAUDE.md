@@ -24,7 +24,18 @@ cargo check --all-features                            # both
 
 | File | Role |
 |------|------|
-| `mod.rs` | `Database` supertrait + 7 sub-traits (~78 async methods total) — add new ops here first |
+| `mod.rs` | Thin index: re-exports from `params`, `traits`, and `forwarders`; factory functions (`connect_from_config`, `connect_with_handles`, `create_secrets_store`) |
+| `params.rs` | `DbFuture<'a, T>` alias and all parameter-object structs |
+| `traits/mod.rs` | Re-exports all trait names from per-store submodules |
+| `traits/conversation.rs` | `ConversationStore` + `NativeConversationStore` |
+| `traits/job.rs` | `JobStore` + `NativeJobStore` |
+| `traits/sandbox.rs` | `SandboxStore` + `NativeSandboxStore` |
+| `traits/routine.rs` | `RoutineStore` + `NativeRoutineStore` |
+| `traits/tool_failure.rs` | `ToolFailureStore` + `NativeToolFailureStore` |
+| `traits/settings.rs` | `SettingsStore` + `NativeSettingsStore` |
+| `traits/workspace.rs` | `WorkspaceStore` + `NativeWorkspaceStore` |
+| `traits/database.rs` | `Database` + `NativeDatabase` supertrait |
+| `forwarders.rs` | Private `impl_db_forwarders!` macro + blanket dyn↔native adapters |
 | `postgres.rs` | PostgreSQL backend — delegates to `Store` + `Repository` in `history/` |
 | `libsql/mod.rs` | libSQL/Turso backend struct, connection helpers, row parsing utilities |
 | `libsql/conversations.rs` | `ConversationStore` impl |
@@ -58,7 +69,9 @@ The `Database` supertrait is composed of seven sub-traits. Leaf consumers can de
 ## Adding a New Persistence Operation
 
 1. Decide which sub-trait the method belongs to, or create a new sub-trait
-2. Add the async method signature to that sub-trait in `mod.rs`
+2. Add the method signature to both the dyn-safe and `Native*` traits in
+   the relevant `traits/<store>.rs` file, and add the forwarder in
+   `forwarders.rs`
 3. Implement in `postgres.rs` (delegate to `Store` or `Repository`)
 4. Implement in `libsql/<module>.rs` (SQLite-dialect SQL, use `self.connect().await?` per operation)
 5. Add migration if needed:
