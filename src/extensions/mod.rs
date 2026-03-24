@@ -20,12 +20,27 @@ pub mod discovery;
 pub mod manager;
 pub mod registry;
 
-pub use discovery::OnlineDiscovery;
+pub use discovery::{NoOpDiscovery, OnlineDiscovery};
 pub use manager::ExtensionManager;
 pub use registry::ExtensionRegistry;
 
+use async_trait::async_trait;
+
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
+
+/// Port abstraction for discovering extensions.
+///
+/// Implemented by [`OnlineDiscovery`] for live internet-based search.
+/// Test fixtures can implement this to inject stub discovery results.
+#[async_trait]
+pub trait DiscoveryPort: Send + Sync {
+    /// Search for extensions matching the query string.
+    ///
+    /// Returns zero or more registry entries that may have been
+    /// discovered online, validated, or retrieved from a cache.
+    async fn discover(&self, query: &str) -> Vec<RegistryEntry>;
+}
 
 /// The kind of extension, determining how it's installed, authenticated, and activated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

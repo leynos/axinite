@@ -105,6 +105,9 @@ pub(super) fn build_test_ext_mgr(
     let mcp_sm = Arc::new(crate::tools::mcp::session::McpSessionManager::new());
     let mcp_pm = Arc::new(crate::tools::mcp::process::McpProcessManager::new());
     Arc::new(ExtensionManager::new(
+        Arc::new(crate::extensions::NoOpDiscovery),
+        None, // relay_config
+        None, // gateway_token
         mcp_sm,
         mcp_pm,
         secrets,

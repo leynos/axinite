@@ -14,7 +14,6 @@ use crate::channels::ChannelManager;
 use crate::channels::wasm::{
     RegisteredEndpoint, SharedWasmChannel, WasmChannelLoader, WasmChannelRouter, WasmChannelRuntime,
 };
-use crate::extensions::discovery::OnlineDiscovery;
 use crate::extensions::registry::ExtensionRegistry;
 use crate::extensions::{
     ActivateResult, AuthResult, ExtensionError, ExtensionKind, ExtensionSource, InstallResult,
@@ -69,7 +68,7 @@ pub struct SetupResult {
 /// Central manager for extension lifecycle operations.
 pub struct ExtensionManager {
     registry: ExtensionRegistry,
-    discovery: OnlineDiscovery,
+    discovery: Arc<dyn crate::extensions::DiscoveryPort + Send + Sync>,
 
     // MCP infrastructure
     mcp_session_manager: Arc<McpSessionManager>,
@@ -148,6 +147,9 @@ fn sanitize_url_for_logging(url: &str) -> String {
 impl ExtensionManager {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        discovery: Arc<dyn crate::extensions::DiscoveryPort + Send + Sync>,
+        relay_config: Option<crate::config::RelayConfig>,
+        gateway_token: Option<String>,
         mcp_session_manager: Arc<McpSessionManager>,
         mcp_process_manager: Arc<crate::tools::mcp::process::McpProcessManager>,
         secrets: Arc<dyn SecretsStore + Send + Sync>,
@@ -168,7 +170,7 @@ impl ExtensionManager {
         };
         Self {
             registry,
-            discovery: OnlineDiscovery::new(),
+            discovery,
             mcp_session_manager,
             mcp_process_manager,
             mcp_clients: RwLock::new(HashMap::new()),
@@ -189,8 +191,8 @@ impl ExtensionManager {
             activation_errors: RwLock::new(HashMap::new()),
             sse_sender: RwLock::new(None),
             pending_oauth_flows: crate::cli::oauth_defaults::new_pending_oauth_registry(),
-            gateway_token: std::env::var("GATEWAY_AUTH_TOKEN").ok(),
-            relay_config: crate::config::RelayConfig::from_env(),
+            gateway_token,
+            relay_config,
         }
     }
 
@@ -4236,6 +4238,9 @@ mod tests {
         let mcp = Arc::new(McpSessionManager::new());
 
         crate::extensions::manager::ExtensionManager::new(
+            Arc::new(crate::extensions::NoOpDiscovery),
+            None, // relay_config
+            None, // gateway_token
             mcp,
             Arc::new(McpProcessManager::new()),
             secrets,
@@ -4408,6 +4413,9 @@ mod tests {
         let crypto = Arc::new(SecretsCrypto::new(master_key).unwrap());
 
         ExtensionManager::new(
+            Arc::new(crate::extensions::NoOpDiscovery),
+            None, // relay_config
+            None, // gateway_token
             Arc::new(McpSessionManager::new()),
             Arc::new(McpProcessManager::new()),
             Arc::new(InMemorySecretsStore::new(crypto)),

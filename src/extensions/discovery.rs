@@ -9,9 +9,10 @@
 
 use std::time::Duration;
 
+use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::extensions::{AuthHint, ExtensionKind, ExtensionSource, RegistryEntry};
+use crate::extensions::{AuthHint, DiscoveryPort, ExtensionKind, ExtensionSource, RegistryEntry};
 
 /// Handles online discovery of MCP servers.
 pub struct OnlineDiscovery {
@@ -200,6 +201,13 @@ impl Default for OnlineDiscovery {
     }
 }
 
+#[async_trait]
+impl DiscoveryPort for OnlineDiscovery {
+    async fn discover(&self, query: &str) -> Vec<RegistryEntry> {
+        self.discover(query).await
+    }
+}
+
 /// Validate that a URL is a real MCP server by checking .well-known endpoints.
 ///
 /// Tries:
@@ -283,6 +291,18 @@ struct GitHubRepo {
     homepage: Option<String>,
     #[serde(default)]
     topics: Vec<String>,
+}
+
+/// No-op discovery stub for tests requiring network isolation.
+///
+/// Always returns an empty vector, simulating no discovered extensions.
+pub struct NoOpDiscovery;
+
+#[async_trait]
+impl DiscoveryPort for NoOpDiscovery {
+    async fn discover(&self, _query: &str) -> Vec<RegistryEntry> {
+        Vec::new()
+    }
 }
 
 #[cfg(test)]
