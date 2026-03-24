@@ -2,6 +2,8 @@
 //!
 //! Encapsulates all database interactions for the default user and session tokens,
 //! keeping hard-coded identifiers and DB logic out of the orchestration code.
+//!
+//! This module is ready for integration but not yet wired into SetupWizard.
 
 use crate::db::{Database, SettingKey, UserId};
 use crate::error::DatabaseError;
@@ -16,10 +18,12 @@ const DEFAULT_USER_ID: &str = "default";
 const NEARAI_SESSION_TOKEN_KEY: &str = "nearai.session_token";
 
 /// Helper for persisting default user settings during setup wizard.
+#[allow(dead_code)]
 pub struct DefaultSettingsPersistence {
     backend: Arc<dyn Database>,
 }
 
+#[allow(dead_code)]
 impl DefaultSettingsPersistence {
     /// Create a new persistence helper for the given database backend.
     pub fn new(backend: Arc<dyn Database>) -> Self {

@@ -106,7 +106,15 @@ impl OpenClawImporter {
         if !self.opts.dry_run {
             // Group 1: Settings (should be idempotent via upsert)
             for (key, value) in settings_map {
-                if let Err(e) = self.db.set_setting(&self.opts.user_id, &key, &value).await {
+                if let Err(e) = self
+                    .db
+                    .set_setting(
+                        self.opts.user_id.as_str().into(),
+                        key.as_str().into(),
+                        &value,
+                    )
+                    .await
+                {
                     tracing::warn!("Failed to import setting {}: {}", key, e);
                 } else {
                     stats.settings += 1;

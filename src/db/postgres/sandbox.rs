@@ -130,7 +130,7 @@ mod tests {
         } = update;
 
         // Verify fields are correctly extracted
-        assert_eq!(success.expect("expected `success` to be Some(true)"), true);
+        assert!(success.expect("expected `success` to be Some(true)"));
         assert_eq!(
             message.expect("expected `message` to be Some"),
             "Test message"

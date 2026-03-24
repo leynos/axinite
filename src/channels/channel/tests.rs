@@ -29,66 +29,70 @@ impl crate::tools::NativeTool for SecretTool {
     }
 }
 
+/// Test parameters for StatusUpdate::tool_completed behavior.
+struct ToolCompletedTestCase {
+    tool_name: &'static str,
+    params: serde_json::Value,
+    result: Result<String, crate::error::Error>,
+    has_tool: bool,
+    expected_success: bool,
+    should_have_params: bool,
+    must_contain: Option<&'static str>,
+    must_not_contain: Option<&'static str>,
+    additional_check: Option<&'static str>,
+}
+
 /// Parameterized tests for StatusUpdate::tool_completed behavior.
 #[rstest]
-#[case::failure_with_redaction(
-    "secret_save",
-    serde_json::json!({"name": "api_key", "value": TEST_REDACT_SECRET_123}),
-    Err(crate::error::ToolError::ExecutionFailed {
+#[case::failure_with_redaction(ToolCompletedTestCase {
+    tool_name: "secret_save",
+    params: serde_json::json!({"name": "api_key", "value": TEST_REDACT_SECRET_123}),
+    result: Err(crate::error::ToolError::ExecutionFailed {
         name: "secret_save".into(),
         reason: "db error".into(),
     }.into()),
-    true, // has_tool
-    false, // expected_success
-    true, // should_have_params
-    Some("[REDACTED]"), // must_contain
-    Some(TEST_REDACT_SECRET_123), // must_not_contain
-    Some("api_key") // additional_check
-)]
-#[case::success_no_params(
-    "secret_save",
-    serde_json::json!({"name": "key", "value": "secret"}),
-    Ok("done".to_string()),
-    false, // has_tool
-    true, // expected_success
-    false, // should_have_params
-    None,
-    None,
-    None
-)]
-#[case::failure_no_tool_unredacted(
-    "shell",
-    serde_json::json!({"cmd": "ls -la"}),
-    Err(crate::error::ToolError::ExecutionFailed {
+    has_tool: true,
+    expected_success: false,
+    should_have_params: true,
+    must_contain: Some("[REDACTED]"),
+    must_not_contain: Some(TEST_REDACT_SECRET_123),
+    additional_check: Some("api_key"),
+})]
+#[case::success_no_params(ToolCompletedTestCase {
+    tool_name: "secret_save",
+    params: serde_json::json!({"name": "key", "value": "secret"}),
+    result: Ok("done".to_string()),
+    has_tool: false,
+    expected_success: true,
+    should_have_params: false,
+    must_contain: None,
+    must_not_contain: None,
+    additional_check: None,
+})]
+#[case::failure_no_tool_unredacted(ToolCompletedTestCase {
+    tool_name: "shell",
+    params: serde_json::json!({"cmd": "ls -la"}),
+    result: Err(crate::error::ToolError::ExecutionFailed {
         name: "shell".into(),
         reason: "timeout".into(),
     }.into()),
-    false, // has_tool
-    false, // expected_success
-    true, // should_have_params
-    Some("ls -la"), // must_contain
-    None,
-    None
-)]
-fn tool_completed_parameterized(
-    #[case] tool_name: &str,
-    #[case] params: serde_json::Value,
-    #[case] result: Result<String, crate::error::Error>,
-    #[case] has_tool: bool,
-    #[case] expected_success: bool,
-    #[case] should_have_params: bool,
-    #[case] must_contain: Option<&str>,
-    #[case] must_not_contain: Option<&str>,
-    #[case] additional_check: Option<&str>,
-) {
+    has_tool: false,
+    expected_success: false,
+    should_have_params: true,
+    must_contain: Some("ls -la"),
+    must_not_contain: None,
+    additional_check: None,
+})]
+fn tool_completed_parameterized(#[case] tc: ToolCompletedTestCase) {
     let tool_inst = SecretTool;
-    let tool_ref: Option<&dyn crate::tools::Tool> = if has_tool {
+    let tool_ref: Option<&dyn crate::tools::Tool> = if tc.has_tool {
         Some(&tool_inst as &dyn crate::tools::Tool)
     } else {
         None
     };
 
-    let status = StatusUpdate::tool_completed(tool_name.into(), &result, &params, tool_ref);
+    let status =
+        StatusUpdate::tool_completed(tc.tool_name.into(), &tc.result, &tc.params, tool_ref);
 
     if let StatusUpdate::ToolCompleted {
         success,
@@ -97,19 +101,19 @@ fn tool_completed_parameterized(
         ..
     } = &status
     {
-        assert_eq!(*success, expected_success);
+        assert_eq!(*success, tc.expected_success);
 
-        if expected_success {
+        if tc.expected_success {
             assert!(error.is_none());
         } else {
             assert!(error.is_some());
         }
 
-        if should_have_params {
+        if tc.should_have_params {
             let param_str = parameters
                 .as_ref()
                 .expect("should have parameters when expected");
-            if let Some(must_have) = must_contain {
+            if let Some(must_have) = tc.must_contain {
                 assert!(
                     param_str.contains(must_have),
                     "params should contain '{}': {}",
@@ -117,7 +121,7 @@ fn tool_completed_parameterized(
                     param_str
                 );
             }
-            if let Some(must_not_have) = must_not_contain {
+            if let Some(must_not_have) = tc.must_not_contain {
                 assert!(
                     !param_str.contains(must_not_have),
                     "params should NOT contain '{}': {}",
@@ -125,7 +129,7 @@ fn tool_completed_parameterized(
                     param_str
                 );
             }
-            if let Some(check) = additional_check {
+            if let Some(check) = tc.additional_check {
                 assert!(
                     param_str.contains(check),
                     "params should contain '{}': {}",
