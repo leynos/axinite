@@ -725,9 +725,7 @@ mod tests {
     /// returns the expected fallback value.
     #[test]
     fn test_cosine_similarity_different_lengths_does_not_panic() {
-        let result = std::panic::catch_unwind(|| {
-            cosine_similarity(&[1.0, 2.0, 3.0], &[1.0, 2.0])
-        });
+        let result = std::panic::catch_unwind(|| cosine_similarity(&[1.0, 2.0, 3.0], &[1.0, 2.0]));
         assert!(
             result.is_ok(),
             "cosine_similarity must not panic on length-mismatched vectors"
