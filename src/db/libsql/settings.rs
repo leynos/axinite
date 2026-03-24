@@ -14,8 +14,8 @@ use chrono::Utc;
 impl NativeSettingsStore for LibSqlBackend {
     async fn get_setting(
         &self,
-        user_id: UserId<'_>,
-        key: SettingKey<'_>,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<serde_json::Value>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
@@ -38,8 +38,8 @@ impl NativeSettingsStore for LibSqlBackend {
 
     async fn get_setting_full(
         &self,
-        user_id: UserId<'_>,
-        key: SettingKey<'_>,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<SettingRow>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
@@ -66,8 +66,8 @@ impl NativeSettingsStore for LibSqlBackend {
 
     async fn set_setting(
         &self,
-        user_id: UserId<'_>,
-        key: SettingKey<'_>,
+        user_id: UserId,
+        key: SettingKey,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
@@ -89,8 +89,8 @@ impl NativeSettingsStore for LibSqlBackend {
 
     async fn delete_setting(
         &self,
-        user_id: UserId<'_>,
-        key: SettingKey<'_>,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<bool, DatabaseError> {
         let conn = self.connect().await?;
         let count = conn
@@ -103,7 +103,7 @@ impl NativeSettingsStore for LibSqlBackend {
         Ok(count > 0)
     }
 
-    async fn list_settings(&self, user_id: UserId<'_>) -> Result<Vec<SettingRow>, DatabaseError> {
+    async fn list_settings(&self, user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
@@ -130,7 +130,7 @@ impl NativeSettingsStore for LibSqlBackend {
 
     async fn get_all_settings(
         &self,
-        user_id: UserId<'_>,
+        user_id: UserId,
     ) -> Result<HashMap<String, serde_json::Value>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
@@ -154,7 +154,7 @@ impl NativeSettingsStore for LibSqlBackend {
 
     async fn set_all_settings(
         &self,
-        user_id: UserId<'_>,
+        user_id: UserId,
         settings: &HashMap<String, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
@@ -193,7 +193,7 @@ impl NativeSettingsStore for LibSqlBackend {
         Ok(())
     }
 
-    async fn has_settings(&self, user_id: UserId<'_>) -> Result<bool, DatabaseError> {
+    async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(

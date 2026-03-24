@@ -40,7 +40,7 @@ impl PgBackend {
     /// Get a clone of the connection pool.
     ///
     /// Useful for sharing with components that still need raw pool access.
-    pub fn pool(&self) -> Pool {
+    pub(crate) fn pool(&self) -> Pool {
         self.store.pool()
     }
 }

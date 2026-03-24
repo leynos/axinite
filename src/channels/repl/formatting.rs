@@ -120,12 +120,8 @@ pub(super) fn render_approval_card(
         .unwrap_or(80);
     let box_width = (term_width.saturating_sub(4)).clamp(40, 60);
 
-    // Short request ID for the bottom border
-    let short_id = if request_id.len() > 8 {
-        &request_id[..8]
-    } else {
-        request_id
-    };
+    // Short request ID for the bottom border (UTF-8 safe truncation)
+    let short_id: String = request_id.chars().take(8).collect();
 
     // Top border: ┌ tool_name requires approval ───
     let top_label = format!(" {tool_name} requires approval ");

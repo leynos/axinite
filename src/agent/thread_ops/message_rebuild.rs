@@ -38,21 +38,34 @@ pub(super) fn rebuild_chat_messages_from_db(
                     if !all_valid {
                         // Malformed row: skip the entire tool_calls entry and log a warning
                         tracing::warn!(
+                            content = %msg.content,
                             "Skipping malformed tool_calls row: missing call_id or name in at least one entry"
                         );
                         continue;
                     }
 
                     // Build assistant_with_tool_calls + tool_result messages
-                    let tool_calls: Vec<ToolCall> = calls
+                    // Parse and validate all fields once, storing them for reuse
+                    let parsed_calls: Vec<(String, String, serde_json::Value)> = calls
                         .iter()
-                        .map(|c| ToolCall {
-                            id: c["call_id"].as_str().expect("validated above").to_string(),
-                            name: c["name"].as_str().expect("validated above").to_string(),
-                            arguments: c
+                        .filter_map(|c| {
+                            let call_id = c.get("call_id")?.as_str()?.to_string();
+                            let name = c.get("name")?.as_str()?.to_string();
+                            let arguments = c
                                 .get("parameters")
                                 .cloned()
-                                .unwrap_or(serde_json::json!({})),
+                                .unwrap_or(serde_json::json!({}));
+                            Some((call_id, name, arguments))
+                        })
+                        .collect();
+
+                    // Build ToolCall structs from parsed data
+                    let tool_calls: Vec<ToolCall> = parsed_calls
+                        .iter()
+                        .map(|(id, name, arguments)| ToolCall {
+                            id: id.clone(),
+                            name: name.clone(),
+                            arguments: arguments.clone(),
                         })
                         .collect();
 
@@ -61,10 +74,9 @@ pub(super) fn rebuild_chat_messages_from_db(
                     // "assistant" row after this tool_calls row.
                     result.push(ChatMessage::assistant_with_tool_calls(None, tool_calls));
 
-                    // Emit tool_result messages for each call
-                    for c in &calls {
-                        let call_id = c["call_id"].as_str().expect("validated above").to_string();
-                        let name = c["name"].as_str().expect("validated above").to_string();
+                    // Emit tool_result messages for each call using the parsed data
+                    for (idx, (call_id, name, _)) in parsed_calls.iter().enumerate() {
+                        let c = &calls[idx];
                         let content = if let Some(err) = c.get("error").and_then(|v| v.as_str()) {
                             format!("Error: {}", err)
                         } else if let Some(res) = c.get("result").and_then(|v| v.as_str()) {
@@ -76,7 +88,11 @@ pub(super) fn rebuild_chat_messages_from_db(
                         } else {
                             "OK".to_string()
                         };
-                        result.push(ChatMessage::tool_result(call_id, name, content));
+                        result.push(ChatMessage::tool_result(
+                            call_id.clone(),
+                            name.clone(),
+                            content,
+                        ));
                     }
                 }
             }
@@ -91,6 +107,7 @@ pub(super) fn rebuild_chat_messages_from_db(
 mod tests {
     use super::*;
     use crate::history::ConversationMessage;
+    use rstest::rstest;
 
     fn make_db_msg(role: &str, content: &str) -> ConversationMessage {
         ConversationMessage {
@@ -221,35 +238,21 @@ mod tests {
         assert_eq!(result.len(), 2);
     }
 
-    /// Regression: tool_calls entries missing `name` but having `call_id`
-    /// must be skipped. Before the fix, these were silently processed with
-    /// a fallback name of `"unknown"`, producing invalid tool-call messages.
-    #[test]
-    fn test_rebuild_skips_tool_calls_missing_name() {
-        assert_malformed_tool_calls_skipped(serde_json::json!([
-            {"call_id": "call_0", "parameters": {"q": "x"}, "result": "ok"}
-        ]));
-    }
-
-    /// Regression: when one entry in a tool_calls array is valid but another
-    /// is missing required fields, the entire row must be skipped. Before
-    /// the fix, the valid entry would be processed and the invalid entry
-    /// would get fallback defaults.
-    #[test]
-    fn test_rebuild_skips_entire_row_when_any_entry_is_invalid() {
-        assert_malformed_tool_calls_skipped(serde_json::json!([
-            {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found"},
-            {"name": "write", "parameters": {"path": "a.txt"}, "result": "ok"}
-        ]));
-    }
-
-    /// Regression: tool_calls entries with null call_id or name values
-    /// (as opposed to missing keys) must also be skipped.
-    #[test]
-    fn test_rebuild_skips_tool_calls_with_null_fields() {
-        assert_malformed_tool_calls_skipped(serde_json::json!([
-            {"name": null, "call_id": "call_0", "parameters": {}, "result": "ok"}
-        ]));
+    /// Regression tests for malformed tool_calls entries that must be skipped.
+    /// Before fixes, these were silently processed with fallback values or partial data.
+    #[rstest]
+    #[case::missing_name(serde_json::json!([
+        {"call_id": "call_0", "parameters": {"q": "x"}, "result": "ok"}
+    ]))]
+    #[case::mixed_valid_invalid(serde_json::json!([
+        {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found"},
+        {"name": "write", "parameters": {"path": "a.txt"}, "result": "ok"}
+    ]))]
+    #[case::null_fields(serde_json::json!([
+        {"name": null, "call_id": "call_0", "parameters": {}, "result": "ok"}
+    ]))]
+    fn test_rebuild_skips_malformed_tool_calls(#[case] malformed_json: serde_json::Value) {
+        assert_malformed_tool_calls_skipped(malformed_json);
     }
 
     #[test]

@@ -124,34 +124,34 @@ pub struct HybridSearchParams<'a> {
 // These newtypes provide type safety for commonly-used string parameters.
 
 /// User identifier newtype for settings store methods.
-#[derive(Debug, Clone, Copy)]
-pub struct UserId<'a>(pub &'a str);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UserId(String);
 
-impl<'a> UserId<'a> {
-    pub fn as_str(self) -> &'a str {
-        self.0
+impl UserId {
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
-impl<'a> From<&'a str> for UserId<'a> {
-    fn from(s: &'a str) -> Self {
-        Self(s)
+impl From<&str> for UserId {
+    fn from(s: &str) -> Self {
+        Self(s.to_owned())
     }
 }
 
 /// Setting key newtype for settings store methods.
-#[derive(Debug, Clone, Copy)]
-pub struct SettingKey<'a>(pub &'a str);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SettingKey(String);
 
-impl<'a> SettingKey<'a> {
-    pub fn as_str(self) -> &'a str {
-        self.0
+impl SettingKey {
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
-impl<'a> From<&'a str> for SettingKey<'a> {
-    fn from(s: &'a str) -> Self {
-        Self(s)
+impl From<&str> for SettingKey {
+    fn from(s: &str) -> Self {
+        Self(s.to_owned())
     }
 }
 
@@ -478,7 +478,9 @@ pub trait NativeConversationStore: Send + Sync {
 /// ## Why this macro is only used for ConversationStore
 ///
 /// The other store traits (JobStore, SandboxStore, RoutineStore, ToolFailureStore,
-/// SettingsStore, WorkspaceStore) require manual blanket impls because:
+/// WorkspaceStore) require manual blanket impls because:
+///
+/// Note: SettingsStore now uses the `settings_delegate!` macro for its blanket impl.
 ///
 /// 1. **Generic type parameters with lifetimes**: Some methods accept types like
 ///    `LlmCallRecord<'a>` that carry their own lifetime parameters, which the
@@ -1329,41 +1331,41 @@ pub trait SettingsStore: Send + Sync {
 pub trait NativeSettingsStore: Send + Sync {
     fn get_setting<'a>(
         &'a self,
-        user_id: UserId<'a>,
-        key: SettingKey<'a>,
+        user_id: UserId,
+        key: SettingKey,
     ) -> impl Future<Output = Result<Option<serde_json::Value>, DatabaseError>> + Send + 'a;
     fn get_setting_full<'a>(
         &'a self,
-        user_id: UserId<'a>,
-        key: SettingKey<'a>,
+        user_id: UserId,
+        key: SettingKey,
     ) -> impl Future<Output = Result<Option<SettingRow>, DatabaseError>> + Send + 'a;
     fn set_setting<'a>(
         &'a self,
-        user_id: UserId<'a>,
-        key: SettingKey<'a>,
+        user_id: UserId,
+        key: SettingKey,
         value: &'a serde_json::Value,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
     fn delete_setting<'a>(
         &'a self,
-        user_id: UserId<'a>,
-        key: SettingKey<'a>,
+        user_id: UserId,
+        key: SettingKey,
     ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
     fn list_settings<'a>(
         &'a self,
-        user_id: UserId<'a>,
+        user_id: UserId,
     ) -> impl Future<Output = Result<Vec<SettingRow>, DatabaseError>> + Send + 'a;
     fn get_all_settings<'a>(
         &'a self,
-        user_id: UserId<'a>,
+        user_id: UserId,
     ) -> impl Future<Output = Result<HashMap<String, serde_json::Value>, DatabaseError>> + Send + 'a;
     fn set_all_settings<'a>(
         &'a self,
-        user_id: UserId<'a>,
+        user_id: UserId,
         settings: &'a HashMap<String, serde_json::Value>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
     fn has_settings<'a>(
         &'a self,
-        user_id: UserId<'a>,
+        user_id: UserId,
     ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
 }
 
@@ -1763,5 +1765,139 @@ mod tests {
         let exists = store.exists("test_user", "nonexistent_secret").await;
         assert!(exists.is_ok());
         assert!(!exists.unwrap());
+    }
+
+    #[test]
+    fn test_user_id_newtype() {
+        // Test From trait
+        let user_id = UserId::from("test_user");
+        assert_eq!(user_id.as_str(), "test_user");
+
+        // Test Clone
+        let cloned = user_id.clone();
+        assert_eq!(cloned.as_str(), "test_user");
+
+        // Test PartialEq
+        assert_eq!(user_id, cloned);
+        let other = UserId::from("other_user");
+        assert_ne!(user_id, other);
+
+        // Test Hash (via collection)
+        let mut set = std::collections::HashSet::new();
+        set.insert(user_id.clone());
+        assert!(set.contains(&user_id));
+        assert!(!set.contains(&other));
+    }
+
+    #[test]
+    fn test_setting_key_newtype() {
+        // Test From trait
+        let key = SettingKey::from("api_key");
+        assert_eq!(key.as_str(), "api_key");
+
+        // Test Clone
+        let cloned = key.clone();
+        assert_eq!(cloned.as_str(), "api_key");
+
+        // Test PartialEq
+        assert_eq!(key, cloned);
+        let other = SettingKey::from("other_key");
+        assert_ne!(key, other);
+
+        // Test Hash (via collection)
+        let mut set = std::collections::HashSet::new();
+        set.insert(key.clone());
+        assert!(set.contains(&key));
+        assert!(!set.contains(&other));
+    }
+
+    // Dummy implementation for testing settings_delegate macro
+    struct DummySettingsStore;
+
+    impl NativeSettingsStore for DummySettingsStore {
+        async fn get_setting(
+            &self,
+            user_id: UserId,
+            key: SettingKey,
+        ) -> Result<Option<serde_json::Value>, DatabaseError> {
+            if user_id.as_str() == "test_user" && key.as_str() == "test_key" {
+                Ok(Some(serde_json::json!("test_value")))
+            } else {
+                Ok(None)
+            }
+        }
+
+        async fn get_setting_full(
+            &self,
+            _user_id: UserId,
+            _key: SettingKey,
+        ) -> Result<Option<SettingRow>, DatabaseError> {
+            Ok(None)
+        }
+
+        async fn set_setting(
+            &self,
+            _user_id: UserId,
+            _key: SettingKey,
+            _value: &serde_json::Value,
+        ) -> Result<(), DatabaseError> {
+            Ok(())
+        }
+
+        async fn delete_setting(
+            &self,
+            _user_id: UserId,
+            _key: SettingKey,
+        ) -> Result<bool, DatabaseError> {
+            Ok(true)
+        }
+
+        async fn list_settings(&self, _user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
+            Ok(vec![])
+        }
+
+        async fn get_all_settings(
+            &self,
+            _user_id: UserId,
+        ) -> Result<HashMap<String, serde_json::Value>, DatabaseError> {
+            Ok(HashMap::new())
+        }
+
+        async fn set_all_settings(
+            &self,
+            _user_id: UserId,
+            _settings: &HashMap<String, serde_json::Value>,
+        ) -> Result<(), DatabaseError> {
+            Ok(())
+        }
+
+        async fn has_settings(&self, _user_id: UserId) -> Result<bool, DatabaseError> {
+            Ok(false)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_settings_delegate_macro() {
+        let store = DummySettingsStore;
+
+        // Test that the blanket impl (via settings_delegate! macro) correctly wraps &str into newtypes
+        let result = SettingsStore::get_setting(&store, "test_user", "test_key").await;
+        assert!(result.is_ok());
+        let value = result.unwrap();
+        assert_eq!(value, Some(serde_json::json!("test_value")));
+
+        // Test with non-matching values
+        let result = SettingsStore::get_setting(&store, "wrong_user", "test_key").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+
+        // Test other methods to ensure macro generates them correctly
+        let result = SettingsStore::delete_setting(&store, "test_user", "test_key").await;
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+
+        let result = SettingsStore::has_settings(&store, "test_user").await;
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
     }
 }

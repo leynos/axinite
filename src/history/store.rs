@@ -1985,8 +1985,8 @@ impl Store {
     /// Get a single setting by key.
     pub async fn get_setting(
         &self,
-        user_id: crate::db::UserId<'_>,
-        key: crate::db::SettingKey<'_>,
+        user_id: crate::db::UserId,
+        key: crate::db::SettingKey,
     ) -> Result<Option<serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
@@ -2001,8 +2001,8 @@ impl Store {
     /// Get a single setting with full metadata.
     pub async fn get_setting_full(
         &self,
-        user_id: crate::db::UserId<'_>,
-        key: crate::db::SettingKey<'_>,
+        user_id: crate::db::UserId,
+        key: crate::db::SettingKey,
     ) -> Result<Option<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
@@ -2021,8 +2021,8 @@ impl Store {
     /// Set a single setting (upsert).
     pub async fn set_setting(
         &self,
-        user_id: crate::db::UserId<'_>,
-        key: crate::db::SettingKey<'_>,
+        user_id: crate::db::UserId,
+        key: crate::db::SettingKey,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
@@ -2043,8 +2043,8 @@ impl Store {
     /// Delete a single setting (reset to default).
     pub async fn delete_setting(
         &self,
-        user_id: crate::db::UserId<'_>,
-        key: crate::db::SettingKey<'_>,
+        user_id: crate::db::UserId,
+        key: crate::db::SettingKey,
     ) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let count = conn
@@ -2059,7 +2059,7 @@ impl Store {
     /// List all settings for a user (with metadata).
     pub async fn list_settings(
         &self,
-        user_id: crate::db::UserId<'_>,
+        user_id: crate::db::UserId,
     ) -> Result<Vec<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
@@ -2081,7 +2081,7 @@ impl Store {
     /// Get all settings as a flat key-value map.
     pub async fn get_all_settings(
         &self,
-        user_id: crate::db::UserId<'_>,
+        user_id: crate::db::UserId,
     ) -> Result<std::collections::HashMap<String, serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
@@ -2105,7 +2105,7 @@ impl Store {
     /// Each entry is upserted individually within a single transaction.
     pub async fn set_all_settings(
         &self,
-        user_id: crate::db::UserId<'_>,
+        user_id: crate::db::UserId,
         settings: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let mut conn = self.conn().await?;
@@ -2130,10 +2130,7 @@ impl Store {
     }
 
     /// Check if the settings table has any rows for a user.
-    pub async fn has_settings(
-        &self,
-        user_id: crate::db::UserId<'_>,
-    ) -> Result<bool, DatabaseError> {
+    pub async fn has_settings(&self, user_id: crate::db::UserId) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_one(

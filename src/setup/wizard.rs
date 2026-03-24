@@ -294,7 +294,10 @@ impl SetupWizard {
         // may not be persisted in the settings map.
         if let Some(ref pool) = self.db_pool {
             let store = crate::history::Store::from_pool(pool.clone());
-            if let Ok(map) = store.get_all_settings(crate::db::UserId("default")).await {
+            if let Ok(map) = store
+                .get_all_settings(crate::db::UserId::from("default"))
+                .await
+            {
                 self.settings = Settings::from_db_map(&map);
                 self.settings.database_backend = Some("postgres".to_string());
                 self.settings.database_url = Some(url);
@@ -2499,7 +2502,7 @@ impl SetupWizard {
             if let Some(ref pool) = self.db_pool {
                 let store = crate::history::Store::from_pool(pool.clone());
                 store
-                    .set_all_settings(crate::db::UserId("default"), &db_map)
+                    .set_all_settings(crate::db::UserId::from("default"), &db_map)
                     .await
                     .map_err(|e| {
                         SetupError::Database(format!("Failed to save settings to database: {}", e))
@@ -2710,8 +2713,8 @@ impl SetupWizard {
             let store = crate::history::Store::from_pool(pool.clone());
             if let Err(e) = store
                 .set_setting(
-                    crate::db::UserId("default"),
-                    crate::db::SettingKey("nearai.session_token"),
+                    crate::db::UserId::from("default"),
+                    crate::db::SettingKey::from("nearai.session_token"),
                     &value,
                 )
                 .await
@@ -2773,7 +2776,10 @@ impl SetupWizard {
         let loaded = if !loaded {
             if let Some(ref pool) = self.db_pool {
                 let store = crate::history::Store::from_pool(pool.clone());
-                match store.get_all_settings(crate::db::UserId("default")).await {
+                match store
+                    .get_all_settings(crate::db::UserId::from("default"))
+                    .await
+                {
                     Ok(db_map) if !db_map.is_empty() => {
                         let existing = Settings::from_db_map(&db_map);
                         self.settings.merge_from(&existing);
