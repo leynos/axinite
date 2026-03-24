@@ -1367,98 +1367,49 @@ pub trait NativeSettingsStore: Send + Sync {
     ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
 }
 
+macro_rules! settings_delegate {
+    (uid_key, $name:ident ( $($extra_arg:ident : $extra_ty:ty),* ) -> $ret:ty) => {
+        fn $name<'a>(
+            &'a self,
+            user_id: &'a str,
+            key: &'a str,
+            $( $extra_arg: $extra_ty, )*
+        ) -> DbFuture<'a, $ret> {
+            Box::pin(NativeSettingsStore::$name(
+                self,
+                UserId::from(user_id),
+                SettingKey::from(key),
+                $( $extra_arg, )*
+            ))
+        }
+    };
+    (uid, $name:ident ( $($extra_arg:ident : $extra_ty:ty),* ) -> $ret:ty) => {
+        fn $name<'a>(
+            &'a self,
+            user_id: &'a str,
+            $( $extra_arg: $extra_ty, )*
+        ) -> DbFuture<'a, $ret> {
+            Box::pin(NativeSettingsStore::$name(
+                self,
+                UserId::from(user_id),
+                $( $extra_arg, )*
+            ))
+        }
+    };
+}
+
 impl<T> SettingsStore for T
 where
     T: NativeSettingsStore + Send + Sync,
 {
-    fn get_setting<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-    ) -> DbFuture<'a, Result<Option<serde_json::Value>, DatabaseError>> {
-        Box::pin(NativeSettingsStore::get_setting(
-            self,
-            UserId::from(user_id),
-            SettingKey::from(key),
-        ))
-    }
-
-    fn get_setting_full<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-    ) -> DbFuture<'a, Result<Option<SettingRow>, DatabaseError>> {
-        Box::pin(NativeSettingsStore::get_setting_full(
-            self,
-            UserId::from(user_id),
-            SettingKey::from(key),
-        ))
-    }
-
-    fn set_setting<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-        value: &'a serde_json::Value,
-    ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(NativeSettingsStore::set_setting(
-            self,
-            UserId::from(user_id),
-            SettingKey::from(key),
-            value,
-        ))
-    }
-
-    fn delete_setting<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-    ) -> DbFuture<'a, Result<bool, DatabaseError>> {
-        Box::pin(NativeSettingsStore::delete_setting(
-            self,
-            UserId::from(user_id),
-            SettingKey::from(key),
-        ))
-    }
-
-    fn list_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> DbFuture<'a, Result<Vec<SettingRow>, DatabaseError>> {
-        Box::pin(NativeSettingsStore::list_settings(
-            self,
-            UserId::from(user_id),
-        ))
-    }
-
-    fn get_all_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> DbFuture<'a, Result<HashMap<String, serde_json::Value>, DatabaseError>> {
-        Box::pin(NativeSettingsStore::get_all_settings(
-            self,
-            UserId::from(user_id),
-        ))
-    }
-
-    fn set_all_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-        settings: &'a HashMap<String, serde_json::Value>,
-    ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(NativeSettingsStore::set_all_settings(
-            self,
-            UserId::from(user_id),
-            settings,
-        ))
-    }
-
-    fn has_settings<'a>(&'a self, user_id: &'a str) -> DbFuture<'a, Result<bool, DatabaseError>> {
-        Box::pin(NativeSettingsStore::has_settings(
-            self,
-            UserId::from(user_id),
-        ))
-    }
+    settings_delegate!(uid_key, get_setting()      -> Result<Option<serde_json::Value>, DatabaseError>);
+    settings_delegate!(uid_key, get_setting_full() -> Result<Option<SettingRow>, DatabaseError>);
+    settings_delegate!(uid_key, set_setting(value: &'a serde_json::Value) -> Result<(), DatabaseError>);
+    settings_delegate!(uid_key, delete_setting()   -> Result<bool, DatabaseError>);
+    settings_delegate!(uid, list_settings()        -> Result<Vec<SettingRow>, DatabaseError>);
+    settings_delegate!(uid, get_all_settings()     -> Result<HashMap<String, serde_json::Value>, DatabaseError>);
+    settings_delegate!(uid, set_all_settings(settings: &'a HashMap<String, serde_json::Value>) -> Result<(), DatabaseError>);
+    settings_delegate!(uid, has_settings()         -> Result<bool, DatabaseError>);
 }
 
 // ---- WorkspaceStore ----
