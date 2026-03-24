@@ -23,6 +23,10 @@ use chrono::Utc;
 /// Returns an empty vector if the blob length is not a multiple of 4.
 fn deserialize_embedding(blob: &[u8]) -> Vec<f32> {
     if !blob.len().is_multiple_of(4) {
+        tracing::warn!(
+            "Embedding blob length {} is not a multiple of 4; skipping",
+            blob.len()
+        );
         return Vec::new();
     }
 
@@ -88,8 +92,20 @@ impl LibSqlBackend {
                 reason: format!("Row fetch failed: {}", e),
             })?
         {
-            let chunk_id: Uuid = get_text(&row, 0).parse().unwrap_or_default();
-            let document_id: Uuid = get_text(&row, 1).parse().unwrap_or_default();
+            let chunk_id: Uuid = match get_text(&row, 0).parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!("Invalid chunk_id UUID in memory_chunks: {e}");
+                    continue;
+                }
+            };
+            let document_id: Uuid = match get_text(&row, 1).parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!("Invalid document_id UUID in memory_chunks: {e}");
+                    continue;
+                }
+            };
             let document_path = get_text(&row, 2);
             let content = get_text(&row, 3);
 

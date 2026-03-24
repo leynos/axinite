@@ -392,11 +392,6 @@ async fn try_pgvector_check() -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(feature = "postgres"))]
-async fn try_pgvector_check() -> Result<(), String> {
-    Err("postgres feature not compiled in".into())
-}
-
 // ── Workspace directory ─────────────────────────────────────
 
 fn check_workspace_dir() -> CheckResult {

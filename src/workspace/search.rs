@@ -242,6 +242,11 @@ pub fn reciprocal_rank_fusion(
 ///
 /// Returns 0.0 if either vector has zero magnitude to avoid NaN.
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    debug_assert_eq!(
+        a.len(),
+        b.len(),
+        "cosine_similarity called with vectors of differing lengths"
+    );
     if a.len() != b.len() {
         return 0.0;
     }
@@ -264,7 +269,8 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         return 0.0;
     }
 
-    dot_product / (magnitude_a * magnitude_b)
+    let sim = dot_product / (magnitude_a * magnitude_b);
+    if sim.is_nan() { 0.0 } else { sim }
 }
 
 #[cfg(test)]
