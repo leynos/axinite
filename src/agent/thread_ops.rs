@@ -4,14 +4,13 @@
 //! processing, undo/redo, approval, auth, persistence) from the core loop.
 
 mod message_rebuild;
+mod persistence;
 
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use uuid::Uuid;
-
-use crate::db::EnsureConversationParams;
 
 use crate::agent::Agent;
 use crate::agent::compaction::ContextCompactor;
@@ -28,21 +27,7 @@ use crate::llm::ChatMessage;
 use crate::tools::redact_params;
 
 use message_rebuild::rebuild_chat_messages_from_db;
-
-/// Helper to build EnsureConversationParams for gateway conversations.
-///
-/// Gateway conversations use channel="gateway", id=thread_id, and thread_id=None.
-fn gateway_conversation_params(
-    thread_id: uuid::Uuid,
-    user_id: &str,
-) -> EnsureConversationParams<'_> {
-    EnsureConversationParams {
-        id: thread_id,
-        channel: "gateway",
-        user_id,
-        thread_id: None,
-    }
-}
+use persistence::gateway_conversation_params;
 
 impl Agent {
     /// Hydrate a historical thread from DB into memory if not already present.

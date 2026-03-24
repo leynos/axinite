@@ -1289,42 +1289,45 @@ impl<T: NativeToolFailureStore> ToolFailureStore for T {
 
 // ---- SettingsStore (already migrated to DbFuture pattern) ----
 
+/// Object-safe persistence surface for user settings.
+///
+/// Uses owned `UserId` and `SettingKey` newtypes to push conversion to the trait boundary.
 pub trait SettingsStore: Send + Sync {
     fn get_setting<'a>(
         &'a self,
-        user_id: &'a str,
-        key: &'a str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> DbFuture<'a, Result<Option<serde_json::Value>, DatabaseError>>;
     fn get_setting_full<'a>(
         &'a self,
-        user_id: &'a str,
-        key: &'a str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> DbFuture<'a, Result<Option<SettingRow>, DatabaseError>>;
     fn set_setting<'a>(
         &'a self,
-        user_id: &'a str,
-        key: &'a str,
+        user_id: UserId,
+        key: SettingKey,
         value: &'a serde_json::Value,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
     fn delete_setting<'a>(
         &'a self,
-        user_id: &'a str,
-        key: &'a str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> DbFuture<'a, Result<bool, DatabaseError>>;
     fn list_settings<'a>(
         &'a self,
-        user_id: &'a str,
+        user_id: UserId,
     ) -> DbFuture<'a, Result<Vec<SettingRow>, DatabaseError>>;
     fn get_all_settings<'a>(
         &'a self,
-        user_id: &'a str,
+        user_id: UserId,
     ) -> DbFuture<'a, Result<HashMap<String, serde_json::Value>, DatabaseError>>;
     fn set_all_settings<'a>(
         &'a self,
-        user_id: &'a str,
+        user_id: UserId,
         settings: &'a HashMap<String, serde_json::Value>,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
-    fn has_settings<'a>(&'a self, user_id: &'a str) -> DbFuture<'a, Result<bool, DatabaseError>>;
+    fn has_settings<'a>(&'a self, user_id: UserId) -> DbFuture<'a, Result<bool, DatabaseError>>;
 }
 
 /// Native async sibling trait for concrete settings-store implementations.
@@ -1373,14 +1376,14 @@ macro_rules! settings_delegate {
     (uid_key, $name:ident ( $($extra_arg:ident : $extra_ty:ty),* ) -> $ret:ty) => {
         fn $name<'a>(
             &'a self,
-            user_id: &'a str,
-            key: &'a str,
+            user_id: UserId,
+            key: SettingKey,
             $( $extra_arg: $extra_ty, )*
         ) -> DbFuture<'a, $ret> {
             Box::pin(NativeSettingsStore::$name(
                 self,
-                UserId::from(user_id),
-                SettingKey::from(key),
+                user_id,
+                key,
                 $( $extra_arg, )*
             ))
         }
@@ -1388,12 +1391,12 @@ macro_rules! settings_delegate {
     (uid, $name:ident ( $($extra_arg:ident : $extra_ty:ty),* ) -> $ret:ty) => {
         fn $name<'a>(
             &'a self,
-            user_id: &'a str,
+            user_id: UserId,
             $( $extra_arg: $extra_ty, )*
         ) -> DbFuture<'a, $ret> {
             Box::pin(NativeSettingsStore::$name(
                 self,
-                UserId::from(user_id),
+                user_id,
                 $( $extra_arg, )*
             ))
         }
@@ -1880,23 +1883,26 @@ mod tests {
     async fn test_settings_delegate_macro() {
         let store = DummySettingsStore;
 
-        // Test that the blanket impl (via settings_delegate! macro) correctly wraps &str into newtypes
-        let result = SettingsStore::get_setting(&store, "test_user", "test_key").await;
+        // Test that the blanket impl (via settings_delegate! macro) correctly accepts newtypes
+        let result =
+            SettingsStore::get_setting(&store, "test_user".into(), "test_key".into()).await;
         assert!(result.is_ok());
         let value = result.unwrap();
         assert_eq!(value, Some(serde_json::json!("test_value")));
 
         // Test with non-matching values
-        let result = SettingsStore::get_setting(&store, "wrong_user", "test_key").await;
+        let result =
+            SettingsStore::get_setting(&store, "wrong_user".into(), "test_key".into()).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
 
         // Test other methods to ensure macro generates them correctly
-        let result = SettingsStore::delete_setting(&store, "test_user", "test_key").await;
+        let result =
+            SettingsStore::delete_setting(&store, "test_user".into(), "test_key".into()).await;
         assert!(result.is_ok());
         assert!(result.unwrap());
 
-        let result = SettingsStore::has_settings(&store, "test_user").await;
+        let result = SettingsStore::has_settings(&store, "test_user".into()).await;
         assert!(result.is_ok());
         assert!(!result.unwrap());
     }

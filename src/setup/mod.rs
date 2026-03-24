@@ -20,6 +20,8 @@
 //! ```
 
 mod channels;
+#[cfg(any(feature = "postgres", feature = "libsql"))]
+mod persistence;
 mod prompts;
 #[cfg(any(feature = "postgres", feature = "libsql"))]
 mod wizard;

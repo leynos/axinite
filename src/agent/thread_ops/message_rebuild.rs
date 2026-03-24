@@ -37,8 +37,21 @@ pub(super) fn rebuild_chat_messages_from_db(
 
                     if !all_valid {
                         // Malformed row: skip the entire tool_calls entry and log a warning
+                        // Log only msg.id and structural hints to avoid leaking sensitive tool arguments/results
+                        let total_calls = calls.len();
+                        let invalid_indices: Vec<usize> = calls
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, c)| {
+                                c.get("call_id").and_then(|v| v.as_str()).is_none()
+                                    || c.get("name").and_then(|v| v.as_str()).is_none()
+                            })
+                            .map(|(idx, _)| idx)
+                            .collect();
                         tracing::warn!(
-                            content = %msg.content,
+                            message_id = %msg.id,
+                            total_calls = total_calls,
+                            invalid_indices = ?invalid_indices,
                             "Skipping malformed tool_calls row: missing call_id or name in at least one entry"
                         );
                         continue;

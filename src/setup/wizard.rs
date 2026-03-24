@@ -331,7 +331,7 @@ impl SetupWizard {
         // may not be persisted in the settings map.
         if let Some(ref db) = self.db_backend {
             use crate::db::SettingsStore as _;
-            if let Ok(map) = db.get_all_settings("default").await {
+            if let Ok(map) = db.get_all_settings("default".into()).await {
                 self.settings = Settings::from_db_map(&map);
                 self.settings.database_backend = Some("libsql".to_string());
                 self.settings.libsql_path = Some(path);
@@ -2520,7 +2520,7 @@ impl SetupWizard {
             if let Some(ref backend) = self.db_backend {
                 use crate::db::SettingsStore as _;
                 backend
-                    .set_all_settings("default", &db_map)
+                    .set_all_settings("default".into(), &db_map)
                     .await
                     .map_err(|e| {
                         SetupError::Database(format!("Failed to save settings to database: {}", e))
@@ -2730,7 +2730,7 @@ impl SetupWizard {
         if let Some(ref backend) = self.db_backend {
             use crate::db::SettingsStore as _;
             if let Err(e) = backend
-                .set_setting("default", "nearai.session_token", &value)
+                .set_setting("default".into(), "nearai.session_token".into(), &value)
                 .await
             {
                 tracing::debug!("Could not persist session token to libsql: {}", e);
@@ -2803,7 +2803,7 @@ impl SetupWizard {
         let loaded = if !loaded {
             if let Some(ref backend) = self.db_backend {
                 use crate::db::SettingsStore as _;
-                match backend.get_all_settings("default").await {
+                match backend.get_all_settings("default".into()).await {
                     Ok(db_map) if !db_map.is_empty() => {
                         let existing = Settings::from_db_map(&db_map);
                         self.settings.merge_from(&existing);

@@ -302,7 +302,11 @@ impl ExtensionManager {
             .collect();
         let value = serde_json::json!(names);
         if let Err(e) = store
-            .set_setting(&self.user_id, "activated_channels", &value)
+            .set_setting(
+                self.user_id.as_str().into(),
+                "activated_channels".into(),
+                &value,
+            )
             .await
         {
             tracing::warn!(error = %e, "Failed to persist activated_channels setting");
@@ -317,7 +321,10 @@ impl ExtensionManager {
         let Some(ref store) = self.store else {
             return Vec::new();
         };
-        match store.get_setting(&self.user_id, "activated_channels").await {
+        match store
+            .get_setting(self.user_id.as_str().into(), "activated_channels".into())
+            .await
+        {
             Ok(Some(value)) => match serde_json::from_value(value) {
                 Ok(names) => names,
                 Err(e) => {
@@ -3309,7 +3316,7 @@ impl ExtensionManager {
         // Get team_id from settings
         let team_id = if let Some(ref store) = self.store {
             store
-                .get_setting(&self.user_id, &team_id_key)
+                .get_setting(self.user_id.as_str().into(), team_id_key.as_str().into())
                 .await
                 .ok()
                 .flatten()

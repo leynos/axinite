@@ -130,10 +130,11 @@ mod tests {
         } = update;
 
         // Verify fields are correctly extracted
-        assert!(success.is_some());
-        assert_eq!(success.unwrap(), true);
-        assert!(message.is_some());
-        assert_eq!(message.unwrap(), "Test message");
+        assert_eq!(success.expect("expected `success` to be Some(true)"), true);
+        assert_eq!(
+            message.expect("expected `message` to be Some"),
+            "Test message"
+        );
         assert_eq!(status, "completed");
         assert!(started_at.is_some());
         assert!(completed_at.is_some());

@@ -105,10 +105,22 @@ pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> St
     }
 }
 
-/// Render a tool approval card to stderr.
+/// Truncate content to fit within card width, respecting UTF-8 boundaries.
+///
+/// Adds "…" if truncated. The returned string will fit within `max_width` characters.
+fn truncate_card_content(text: &str, max_width: usize) -> String {
+    if text.chars().count() <= max_width {
+        text.to_string()
+    } else {
+        let truncated: String = text.chars().take(max_width.saturating_sub(1)).collect();
+        format!("{}…", truncated)
+    }
+}
+
+/// Constructs and returns lines for a tool approval card.
 ///
 /// Draws a bordered box with tool name, description, parameters, and approval options.
-/// Returns the lines to be printed.
+/// The returned lines are intended for printing by the caller.
 pub(super) fn render_approval_card(
     request_id: &str,
     tool_name: &str,
@@ -119,6 +131,7 @@ pub(super) fn render_approval_card(
         .map(|(w, _)| w as usize)
         .unwrap_or(80);
     let box_width = (term_width.saturating_sub(4)).clamp(40, 60);
+    let content_width = box_width.saturating_sub(4); // Account for "│ " prefix and padding
 
     // Short request ID for the bottom border (UTF-8 safe truncation)
     let short_id: String = request_id.chars().take(8).collect();
@@ -139,13 +152,16 @@ pub(super) fn render_approval_card(
         "\u{2500}".repeat(bot_fill)
     );
 
+    // Truncate description to fit within card
+    let truncated_desc = truncate_card_content(description, content_width);
+
     let mut lines = Vec::new();
     lines.push(String::new()); // blank line
     lines.push(format!("  {top_border}"));
-    lines.push(format!("  \u{2502} \x1b[90m{description}\x1b[0m"));
+    lines.push(format!("  \u{2502} \x1b[90m{truncated_desc}\x1b[0m"));
     lines.push("  \u{2502}".to_string());
 
-    // Params
+    // Params - each line is already formatted with prefix, just add them
     let param_lines = format_json_params(parameters, "  \u{2502}   ");
     for line in param_lines.lines() {
         lines.push(line.to_string());
