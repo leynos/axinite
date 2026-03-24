@@ -442,7 +442,34 @@ async fn remote_tool_catalog_version_is_deterministic_and_sensitive_to_content()
 }
 
 #[tokio::test]
-async fn orchestrator_responses_deserialize_into_worker_shared_types() {
+async fn remote_tool_catalog_version_independent_of_registration_order() {
+    let registry_a = Arc::new(ToolRegistry::new());
+    registry_a
+        .register(build_tool_fixture(ToolFixture::CatalogAlpha))
+        .await;
+    registry_a
+        .register(build_tool_fixture(ToolFixture::CatalogBeta))
+        .await;
+
+    let registry_b = Arc::new(ToolRegistry::new());
+    registry_b
+        .register(build_tool_fixture(ToolFixture::CatalogBeta))
+        .await;
+    registry_b
+        .register(build_tool_fixture(ToolFixture::CatalogAlpha))
+        .await;
+
+    let (_tools_a, _instructions_a, version_a) = hosted_remote_tool_catalog(&registry_a).await;
+    let (_tools_b, _instructions_b, version_b) = hosted_remote_tool_catalog(&registry_b).await;
+
+    assert_eq!(
+        version_a, version_b,
+        "catalog version must be independent of tool registration order"
+    );
+}
+
+#[tokio::test]
+async fn orchestrator_catalog_response_round_trips_through_worker_shared_types() {
     let registry = Arc::new(ToolRegistry::new());
     registry.register(Arc::new(complex_tool_stub())).await;
 
@@ -464,7 +491,10 @@ async fn orchestrator_responses_deserialize_into_worker_shared_types() {
     assert_eq!(deserialized.tools[0], tools[0]);
     assert_eq!(deserialized.toolset_instructions, instructions);
     assert_eq!(deserialized.catalog_version, version);
+}
 
+#[tokio::test]
+async fn worker_execution_request_round_trips_through_shared_types() {
     let execution_request = crate::worker::api::RemoteToolExecutionRequest {
         tool_name: "remote_tool_fidelity_fixture".to_string(),
         params: serde_json::json!({"query": "test", "options": {"limit": 10}}),
@@ -478,7 +508,10 @@ async fn orchestrator_responses_deserialize_into_worker_shared_types() {
 
     assert_eq!(deserialized.tool_name, execution_request.tool_name);
     assert_eq!(deserialized.params, execution_request.params);
+}
 
+#[tokio::test]
+async fn orchestrator_execution_response_round_trips_through_worker_shared_types() {
     let execution_output = crate::tools::ToolOutput::success(
         serde_json::json!({"result": "executed"}),
         std::time::Duration::from_millis(15),
