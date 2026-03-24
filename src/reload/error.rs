@@ -9,7 +9,7 @@ pub enum ReloadError {
     #[error("Config reload failed: {0}")]
     Config(#[from] ConfigError),
 
-    #[error("Listener restart failed: {0}")]
+    #[error("Channel operation failed: {0}")]
     Channel(#[from] ChannelError),
 
     #[error("Secret injection failed: {0}")]

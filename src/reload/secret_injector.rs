@@ -36,8 +36,15 @@ impl DbSecretInjector {
 #[async_trait]
 impl SecretInjector for DbSecretInjector {
     async fn inject(&self) -> Result<(), SecretError> {
-        // Inject HTTP webhook secret from encrypted store.
-        // If the secret does not exist, log and continue — absence is not an error.
+        self.inject_webhook_secret().await
+    }
+}
+
+impl DbSecretInjector {
+    /// Inject HTTP webhook secret from encrypted store.
+    ///
+    /// If the secret does not exist, logs and returns Ok — absence is not an error.
+    async fn inject_webhook_secret(&self) -> Result<(), SecretError> {
         match self
             .secrets_store
             .get_decrypted(&self.user_id, "http_webhook_secret")

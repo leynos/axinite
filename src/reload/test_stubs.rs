@@ -14,7 +14,7 @@ use crate::secrets::SecretError;
 /// Stub config loader that returns a pre-configured result.
 pub struct StubConfigLoader {
     config: Option<Config>,
-    error: Option<String>,
+    error: Option<Arc<ConfigError>>,
 }
 
 impl StubConfigLoader {
@@ -28,7 +28,7 @@ impl StubConfigLoader {
     pub fn new_error(error: ConfigError) -> Self {
         Self {
             config: None,
-            error: Some(error.to_string()),
+            error: Some(Arc::new(error)),
         }
     }
 }
@@ -38,11 +38,16 @@ impl ConfigLoader for StubConfigLoader {
     async fn load(&self) -> Result<Config, ConfigError> {
         match &self.config {
             Some(c) => Ok(c.clone()),
-            None => Err(ConfigError::MissingEnvVar(
-                self.error
-                    .clone()
-                    .unwrap_or_else(|| "Test error".to_string()),
-            )),
+            None => {
+                // Clone the Arc and extract error via Display -> String -> MissingEnvVar
+                // This preserves the error message while keeping StubConfigLoader cloneable
+                let err_msg = self
+                    .error
+                    .as_ref()
+                    .map(|e| e.to_string())
+                    .unwrap_or_else(|| "Test error".to_string());
+                Err(ConfigError::MissingEnvVar(err_msg))
+            }
         }
     }
 }
@@ -72,14 +77,14 @@ impl StubListenerController {
     }
 
     /// Returns a copy of all restart calls made to this controller.
-    pub fn restart_calls(&self) -> Vec<SocketAddr> {
-        self.restart_calls.try_lock().unwrap().clone()
+    pub async fn restart_calls(&self) -> Vec<SocketAddr> {
+        self.restart_calls.lock().await.clone()
     }
 }
 
 #[async_trait]
 impl ListenerController for StubListenerController {
-    fn current_addr(&self) -> SocketAddr {
+    async fn current_addr(&self) -> SocketAddr {
         self.current_addr
     }
 
@@ -112,8 +117,8 @@ impl StubSecretInjector {
     }
 
     /// Returns true if inject() was called.
-    pub fn was_called(&self) -> bool {
-        *self.called.try_lock().unwrap()
+    pub async fn was_called(&self) -> bool {
+        *self.called.lock().await
     }
 }
 

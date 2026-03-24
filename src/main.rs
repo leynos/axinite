@@ -703,10 +703,6 @@ async fn async_main() -> anyhow::Result<()> {
     #[cfg(unix)]
     {
         use ironclaw::channels::ChannelSecretUpdater;
-        use ironclaw::reload::{
-            ConfigLoader, DbConfigLoader, DbSecretInjector, EnvConfigLoader, HotReloadManager,
-            ListenerController, SecretInjector, WebhookListenerController,
-        };
 
         // Collect all channels that support secret updates
         let mut secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>> = Vec::new();
@@ -714,34 +710,13 @@ async fn async_main() -> anyhow::Result<()> {
             secret_updaters.push(Arc::clone(state) as Arc<dyn ChannelSecretUpdater>);
         }
 
-        // Instantiate config loader based on whether settings store is present
-        let config_loader: Arc<dyn ConfigLoader> = match &sighup_settings_store {
-            Some(store) => Arc::new(DbConfigLoader::new(
-                Arc::clone(store) as Arc<dyn ironclaw::db::SettingsStore>,
-                "default".to_string(),
-            )),
-            None => Arc::new(EnvConfigLoader::new()),
-        };
-
-        // Wrap webhook server in listener controller
-        let listener_controller: Option<Arc<dyn ListenerController>> =
-            webhook_server.as_ref().map(|ws| {
-                Arc::new(WebhookListenerController::new(Arc::clone(ws)))
-                    as Arc<dyn ListenerController>
-            });
-
-        // Wrap secrets store in secret injector
-        let secret_injector: Option<Arc<dyn SecretInjector>> =
-            components.secrets_store.as_ref().map(|ss| {
-                Arc::new(DbSecretInjector::new(Arc::clone(ss), "default".to_string()))
-                    as Arc<dyn SecretInjector>
-            });
-
-        // Construct hot-reload manager
-        let reload_manager = HotReloadManager::new(
-            config_loader,
-            listener_controller,
-            secret_injector,
+        // Construct hot-reload manager using the factory
+        let reload_manager = ironclaw::reload::create_hot_reload_manager(
+            sighup_settings_store
+                .clone()
+                .map(|s| s as Arc<dyn ironclaw::db::SettingsStore>),
+            webhook_server.clone(),
+            components.secrets_store.clone(),
             secret_updaters,
         );
 

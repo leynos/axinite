@@ -16,7 +16,7 @@ use crate::error::ChannelError;
 #[async_trait]
 pub trait ListenerController: Send + Sync {
     /// Get the current bind address.
-    fn current_addr(&self) -> SocketAddr;
+    async fn current_addr(&self) -> SocketAddr;
 
     /// Restart the listener on a new address.
     ///
@@ -37,18 +37,8 @@ impl WebhookListenerController {
 
 #[async_trait]
 impl ListenerController for WebhookListenerController {
-    fn current_addr(&self) -> SocketAddr {
-        // Note: This is a blocking read, but the lock should be uncontended
-        // in the common case. The underlying WebhookServer stores addr in
-        // a plain field, not behind async I/O.
-        //
-        // We cannot make this `async fn` because the trait signature requires
-        // a synchronous return, and the WebhookServer's current_addr() does
-        // not need to be async.
-        //
-        // If contention becomes an issue in the future, consider storing the
-        // address in an AtomicU64 or similar lockless structure.
-        let server = self.server.blocking_lock();
+    async fn current_addr(&self) -> SocketAddr {
+        let server = self.server.lock().await;
         server.current_addr()
     }
 

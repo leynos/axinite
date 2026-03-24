@@ -49,10 +49,18 @@ impl HotReloadManager {
     /// Returns early on any error. Errors are logged but not panicked.
     pub async fn perform_reload(&self) -> Result<(), ReloadError> {
         // Step 1: Inject secrets into the environment overlay
-        self.try_inject_secrets().await?;
+        if let Some(ref injector) = self.secret_injector
+            && let Err(e) = injector.inject().await
+        {
+            tracing::error!("Secret injection failed during reload: {}", e);
+            // Secret injection failures are non-fatal by design; continue reload.
+        }
 
         // Step 2: Load new configuration
-        let new_config = self.load_new_config().await?;
+        let new_config = self.config_loader.load().await.map_err(|e| {
+            tracing::error!("Config reload failed: {}", e);
+            ReloadError::from(e)
+        })?;
 
         // Step 3: Parse HTTP config and restart listener if address changed
         let Some(new_http) = new_config.channels.http else {
@@ -68,23 +76,6 @@ impl HotReloadManager {
         self.update_channel_secrets(&new_http).await;
 
         Ok(())
-    }
-
-    async fn try_inject_secrets(&self) -> Result<(), ReloadError> {
-        if let Some(ref injector) = self.secret_injector {
-            injector.inject().await.map_err(|e| {
-                tracing::error!("Secret injection failed during reload: {}", e);
-                e
-            })?;
-        }
-        Ok(())
-    }
-
-    async fn load_new_config(&self) -> Result<crate::config::Config, ReloadError> {
-        self.config_loader.load().await.map_err(|e| {
-            tracing::error!("Config reload failed: {}", e);
-            e.into()
-        })
     }
 
     fn parse_http_addr(
@@ -108,7 +99,7 @@ impl HotReloadManager {
             return Ok(());
         };
 
-        let old_addr = controller.current_addr();
+        let old_addr = controller.current_addr().await;
         if old_addr == new_addr {
             tracing::debug!("HTTP listener address unchanged, skipping restart");
             return Ok(());
@@ -161,8 +152,8 @@ mod tests {
         let injector = Arc::new(StubSecretInjector::new(false));
         let injector_clone = Arc::clone(&injector);
 
-        let addr1: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-        let addr2: SocketAddr = "127.0.0.1:8081".parse().unwrap();
+        let addr1: SocketAddr = "127.0.0.1:8080".parse().expect("valid test socket address");
+        let addr2: SocketAddr = "127.0.0.1:8081".parse().expect("valid test socket address");
 
         let controller = Arc::new(StubListenerController::new(addr1));
         let controller_clone = Arc::clone(&controller);
@@ -190,12 +181,12 @@ mod tests {
 
         // Verify injector was called
         assert!(
-            injector_clone.was_called(),
+            injector_clone.was_called().await,
             "SecretInjector should be invoked"
         );
 
         // Verify listener restart was called with new address
-        let restarts = controller_clone.restart_calls();
+        let restarts = controller_clone.restart_calls().await;
         assert_eq!(restarts.len(), 1, "Listener should be restarted once");
         assert_eq!(restarts[0], addr2, "Listener should restart on new address");
     }
@@ -204,7 +195,7 @@ mod tests {
     async fn config_load_failure_prevents_listener_restart() {
         let injector = Arc::new(StubSecretInjector::new(false));
         let controller = Arc::new(StubListenerController::new(
-            "127.0.0.1:8080".parse().unwrap(),
+            "127.0.0.1:8080".parse().expect("valid test socket address"),
         ));
         let controller_clone = Arc::clone(&controller);
 
@@ -223,7 +214,7 @@ mod tests {
         assert!(result.is_err(), "Reload should fail on config error");
 
         // Verify listener was never restarted
-        let restarts = controller_clone.restart_calls();
+        let restarts = controller_clone.restart_calls().await;
         assert_eq!(
             restarts.len(),
             0,
@@ -235,7 +226,7 @@ mod tests {
     async fn listener_restart_failure_prevents_secret_update() {
         let injector = Arc::new(StubSecretInjector::new(false));
 
-        let addr1: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr1: SocketAddr = "127.0.0.1:8080".parse().expect("valid test socket address");
         let controller = Arc::new(StubListenerController::new_with_restart_failure(addr1));
 
         let http_config = HttpConfig {
@@ -267,7 +258,7 @@ mod tests {
     async fn address_unchanged_skips_listener_restart() {
         let injector = Arc::new(StubSecretInjector::new(false));
 
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid test socket address");
         let controller = Arc::new(StubListenerController::new(addr));
         let controller_clone = Arc::clone(&controller);
 
@@ -293,7 +284,7 @@ mod tests {
         assert!(result.is_ok(), "Reload should succeed");
 
         // Verify listener was not restarted
-        let restarts = controller_clone.restart_calls();
+        let restarts = controller_clone.restart_calls().await;
         assert_eq!(
             restarts.len(),
             0,
