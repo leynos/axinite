@@ -61,6 +61,42 @@ fn parse_tool_call_entries(
         .collect())
 }
 
+/// Parse JSON array from enriched tool_calls row content.
+///
+/// Returns `None` if parsing fails or the array is empty.
+fn parse_calls_json(message_id: uuid::Uuid, content: &str) -> Option<Vec<serde_json::Value>> {
+    let calls = match serde_json::from_str::<Vec<serde_json::Value>>(content) {
+        Ok(calls) => calls,
+        Err(error) => {
+            tracing::warn!(
+                message_id = %message_id,
+                error = %error,
+                "Skipping tool_calls row with invalid JSON"
+            );
+            return None;
+        }
+    };
+
+    if calls.is_empty() {
+        tracing::trace!(message_id = %message_id, "Skipping empty tool_calls row");
+        return None;
+    }
+
+    Some(calls)
+}
+
+/// Build a `ToolCall` list from validated call entries.
+fn build_tool_calls(parsed_calls: &[(String, String, serde_json::Value)]) -> Vec<ToolCall> {
+    parsed_calls
+        .iter()
+        .map(|(id, name, arguments)| ToolCall {
+            id: id.clone(),
+            name: name.clone(),
+            arguments: arguments.clone(),
+        })
+        .collect()
+}
+
 /// Extracts the result-content string for a single tool call entry.
 ///
 /// Prefers `error` (formatted as `"Error: …"`), then `result`, then
@@ -74,7 +110,7 @@ fn tool_result_content(
     safety: &crate::safety::SafetyLayer,
 ) -> String {
     let raw_content = if let Some(err) = call.get("error").and_then(|v| v.as_str()) {
-        format!("Error: {}", err)
+        format!("Error: {err}")
     } else if let Some(res) = call.get("result").and_then(|v| v.as_str()) {
         res.to_string()
     } else if let Some(preview) = call.get("result_preview").and_then(|v| v.as_str()) {
@@ -85,6 +121,45 @@ fn tool_result_content(
 
     let sanitized = safety.sanitize_tool_output(tool_name, &raw_content);
     safety.wrap_for_llm(tool_name, &sanitized.content, sanitized.was_modified)
+}
+
+/// Process a `tool_calls` row and append reconstructed messages.
+///
+/// Skips legacy rows (without call_id), malformed rows, and malformed JSON.
+fn handle_tool_calls_row(
+    out: &mut Vec<ChatMessage>,
+    message: &ConversationMessage,
+    safety: &crate::safety::SafetyLayer,
+) {
+    let Some(calls) = parse_calls_json(message.id, &message.content) else {
+        return;
+    };
+
+    let parsed_calls = match parse_tool_call_entries(&calls) {
+        Ok(parsed_calls) => parsed_calls,
+        Err(invalid_indices) => {
+            tracing::warn!(
+                message_id = %message.id,
+                total_calls = calls.len(),
+                invalid_indices = ?invalid_indices,
+                "Skipping malformed tool_calls row: missing call_id or name in at least one entry"
+            );
+            return;
+        }
+    };
+
+    out.push(ChatMessage::assistant_with_tool_calls(
+        None,
+        build_tool_calls(&parsed_calls),
+    ));
+
+    for (idx, (call_id, name, _)) in parsed_calls.iter().enumerate() {
+        out.push(ChatMessage::tool_result(
+            call_id.clone(),
+            name.clone(),
+            tool_result_content(&calls[idx], name, safety),
+        ));
+    }
 }
 
 /// Rebuild full LLM-compatible `ChatMessage` sequence from DB messages.
@@ -110,54 +185,7 @@ pub(super) fn rebuild_chat_messages_from_db(
         match msg.role.as_str() {
             "user" => result.push(ChatMessage::user(&msg.content)),
             "assistant" => result.push(ChatMessage::assistant(&msg.content)),
-            "tool_calls" => {
-                let calls = match serde_json::from_str::<Vec<serde_json::Value>>(&msg.content) {
-                    Ok(calls) => calls,
-                    Err(e) => {
-                        tracing::warn!(
-                            message_id = %msg.id,
-                            error = %e,
-                            "Skipping tool_calls row with invalid JSON"
-                        );
-                        continue;
-                    }
-                };
-
-                if calls.is_empty() {
-                    continue;
-                }
-
-                match parse_tool_call_entries(&calls) {
-                    Err(invalid_indices) => {
-                        tracing::warn!(
-                            message_id = %msg.id,
-                            total_calls = calls.len(),
-                            invalid_indices = ?invalid_indices,
-                            "Skipping malformed tool_calls row: missing call_id or name in at least one entry"
-                        );
-                        continue;
-                    }
-                    Ok(parsed_calls) => {
-                        let tool_calls: Vec<ToolCall> = parsed_calls
-                            .iter()
-                            .map(|(id, name, arguments)| ToolCall {
-                                id: id.clone(),
-                                name: name.clone(),
-                                arguments: arguments.clone(),
-                            })
-                            .collect();
-                        result.push(ChatMessage::assistant_with_tool_calls(None, tool_calls));
-
-                        for (idx, (call_id, name, _)) in parsed_calls.iter().enumerate() {
-                            result.push(ChatMessage::tool_result(
-                                call_id.clone(),
-                                name.clone(),
-                                tool_result_content(&calls[idx], name, safety),
-                            ));
-                        }
-                    }
-                }
-            }
+            "tool_calls" => handle_tool_calls_row(&mut result, msg, safety),
             _ => {} // Skip unknown roles
         }
     }
