@@ -79,9 +79,6 @@ iana-time-zone = "0.1"
 rust_decimal = { version = "1", features = ["serde", "serde-with-str", "maths"] }
 rust_decimal_macros = "1"
 
-# Async traits
-async-trait = "0.1"
-
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
 

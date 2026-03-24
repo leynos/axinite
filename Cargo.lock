@@ -3364,7 +3364,6 @@ dependencies = [
  "aes-gcm",
  "aho-corasick",
  "anyhow",
- "async-trait",
  "aws-config",
  "aws-sdk-bedrockruntime",
  "aws-smithy-types",
