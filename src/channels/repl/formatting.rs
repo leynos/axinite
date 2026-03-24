@@ -104,3 +104,64 @@ pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> St
         }
     }
 }
+
+/// Render a tool approval card to stderr.
+///
+/// Draws a bordered box with tool name, description, parameters, and approval options.
+/// Returns the lines to be printed.
+pub(super) fn render_approval_card(
+    request_id: &str,
+    tool_name: &str,
+    description: &str,
+    parameters: &serde_json::Value,
+) -> Vec<String> {
+    let term_width = crossterm::terminal::size()
+        .map(|(w, _)| w as usize)
+        .unwrap_or(80);
+    let box_width = (term_width.saturating_sub(4)).clamp(40, 60);
+
+    // Short request ID for the bottom border
+    let short_id = if request_id.len() > 8 {
+        &request_id[..8]
+    } else {
+        request_id
+    };
+
+    // Top border: ┌ tool_name requires approval ───
+    let top_label = format!(" {tool_name} requires approval ");
+    let top_fill = box_width.saturating_sub(top_label.len() + 1);
+    let top_border = format!(
+        "\u{250C}\x1b[33m{top_label}\x1b[0m{}",
+        "\u{2500}".repeat(top_fill)
+    );
+
+    // Bottom border: └─ short_id ─────
+    let bot_label = format!(" {short_id} ");
+    let bot_fill = box_width.saturating_sub(bot_label.len() + 2);
+    let bot_border = format!(
+        "\u{2514}\u{2500}\x1b[90m{bot_label}\x1b[0m{}",
+        "\u{2500}".repeat(bot_fill)
+    );
+
+    let mut lines = Vec::new();
+    lines.push(String::new()); // blank line
+    lines.push(format!("  {top_border}"));
+    lines.push(format!("  \u{2502} \x1b[90m{description}\x1b[0m"));
+    lines.push("  \u{2502}".to_string());
+
+    // Params
+    let param_lines = format_json_params(parameters, "  \u{2502}   ");
+    for line in param_lines.lines() {
+        lines.push(line.to_string());
+    }
+
+    lines.push("  \u{2502}".to_string());
+    lines.push(
+        "  \u{2502} \x1b[32myes\x1b[0m (y) / \x1b[34malways\x1b[0m (a) / \x1b[31mno\x1b[0m (n)"
+            .to_string(),
+    );
+    lines.push(format!("  {bot_border}"));
+    lines.push(String::new()); // blank line
+
+    lines
+}

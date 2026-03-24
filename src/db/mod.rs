@@ -438,6 +438,26 @@ pub trait NativeConversationStore: Send + Sync {
 /// This macro eliminates boilerplate for the ADR-006 dyn/native boundary pattern,
 /// where each object-safe `*Store` trait has a companion `Native*Store` trait
 /// with native async fn methods (RPITIT), and a blanket impl bridges the two.
+///
+/// ## Why this macro is only used for ConversationStore
+///
+/// The other store traits (JobStore, SandboxStore, RoutineStore, ToolFailureStore,
+/// SettingsStore, WorkspaceStore) require manual blanket impls because:
+///
+/// 1. **Generic type parameters with lifetimes**: Some methods accept types like
+///    `LlmCallRecord<'a>` that carry their own lifetime parameters, which the
+///    current macro cannot handle (it only supports `&'a T` references).
+///
+/// 2. **Struct parameter patterns**: Methods that destructure struct parameters
+///    (e.g., `SandboxJobStatusUpdate { id, status, ... }`) would require macro
+///    support for struct destructuring in the forwarding call.
+///
+/// 3. **Complexity vs. benefit**: Extending the macro to handle all edge cases
+///    (nested lifetimes, generic parameters, pattern destructuring) would make
+///    it significantly more complex than the manual impls it replaces.
+///
+/// The manual impls are straightforward and follow the same Box::pin pattern,
+/// making them easy to verify and maintain without macro indirection.
 macro_rules! impl_db_forwarders {
     (
         dyn = $dyn_trait:path,
@@ -1320,7 +1340,7 @@ where
         user_id: &'a str,
         key: &'a str,
     ) -> DbFuture<'a, Result<Option<serde_json::Value>, DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::get_setting(self, user_id, key).await })
+        Box::pin(NativeSettingsStore::get_setting(self, user_id, key))
     }
 
     fn get_setting_full<'a>(
@@ -1328,7 +1348,7 @@ where
         user_id: &'a str,
         key: &'a str,
     ) -> DbFuture<'a, Result<Option<SettingRow>, DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::get_setting_full(self, user_id, key).await })
+        Box::pin(NativeSettingsStore::get_setting_full(self, user_id, key))
     }
 
     fn set_setting<'a>(
@@ -1337,7 +1357,7 @@ where
         key: &'a str,
         value: &'a serde_json::Value,
     ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::set_setting(self, user_id, key, value).await })
+        Box::pin(NativeSettingsStore::set_setting(self, user_id, key, value))
     }
 
     fn delete_setting<'a>(
@@ -1345,21 +1365,21 @@ where
         user_id: &'a str,
         key: &'a str,
     ) -> DbFuture<'a, Result<bool, DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::delete_setting(self, user_id, key).await })
+        Box::pin(NativeSettingsStore::delete_setting(self, user_id, key))
     }
 
     fn list_settings<'a>(
         &'a self,
         user_id: &'a str,
     ) -> DbFuture<'a, Result<Vec<SettingRow>, DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::list_settings(self, user_id).await })
+        Box::pin(NativeSettingsStore::list_settings(self, user_id))
     }
 
     fn get_all_settings<'a>(
         &'a self,
         user_id: &'a str,
     ) -> DbFuture<'a, Result<HashMap<String, serde_json::Value>, DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::get_all_settings(self, user_id).await })
+        Box::pin(NativeSettingsStore::get_all_settings(self, user_id))
     }
 
     fn set_all_settings<'a>(
@@ -1367,13 +1387,13 @@ where
         user_id: &'a str,
         settings: &'a HashMap<String, serde_json::Value>,
     ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(
-            async move { NativeSettingsStore::set_all_settings(self, user_id, settings).await },
-        )
+        Box::pin(NativeSettingsStore::set_all_settings(
+            self, user_id, settings,
+        ))
     }
 
     fn has_settings<'a>(&'a self, user_id: &'a str) -> DbFuture<'a, Result<bool, DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::has_settings(self, user_id).await })
+        Box::pin(NativeSettingsStore::has_settings(self, user_id))
     }
 }
 
