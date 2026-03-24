@@ -101,6 +101,37 @@ mod tests {
         }
     }
 
+    /// Asserts the result contains exactly one `User` message followed by one
+    /// `Assistant` message. Used to verify that a malformed or legacy
+    /// `tool_calls` row is skipped entirely.
+    fn assert_only_user_and_assistant(result: &[ChatMessage]) {
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].role, crate::llm::Role::User);
+        assert_eq!(result[1].role, crate::llm::Role::Assistant);
+    }
+
+    /// Asserts the message at `idx` has `tool_calls` set and returns a reference
+    /// to the inner slice for further inspection.
+    fn assert_has_tool_calls(result: &[ChatMessage], idx: usize) -> &[crate::llm::ToolCall] {
+        result[idx]
+            .tool_calls
+            .as_deref()
+            .unwrap_or_else(|| panic!("expected tool_calls to be Some on message at index {idx}"))
+    }
+
+    /// Assert that a `tool_calls` row whose JSON content is `tool_json` is
+    /// skipped entirely, leaving only the surrounding user and assistant
+    /// messages in the output.
+    fn assert_malformed_tool_calls_skipped(tool_json: serde_json::Value) {
+        let messages = vec![
+            make_db_msg("user", "Hi"),
+            make_db_msg("tool_calls", &tool_json.to_string()),
+            make_db_msg("assistant", "Done"),
+        ];
+        let result = rebuild_chat_messages_from_db(&messages);
+        assert_only_user_and_assistant(&result);
+    }
+
     #[test]
     fn test_rebuild_chat_messages_user_assistant_only() {
         let messages = vec![
@@ -108,9 +139,7 @@ mod tests {
             make_db_msg("assistant", "Hi there!"),
         ];
         let result = rebuild_chat_messages_from_db(&messages);
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].role, crate::llm::Role::User);
-        assert_eq!(result[1].role, crate::llm::Role::Assistant);
+        assert_only_user_and_assistant(&result);
     }
 
     #[test]
@@ -146,10 +175,7 @@ mod tests {
         // assistant with tool_calls
         assert_eq!(result[1].role, crate::llm::Role::Assistant);
         assert!(result[1].tool_calls.is_some());
-        let tcs = result[1]
-            .tool_calls
-            .as_ref()
-            .expect("expected tool_calls to be Some for assistant message");
+        let tcs = assert_has_tool_calls(&result, 1);
         assert_eq!(tcs.len(), 2);
         assert_eq!(tcs[0].name, "memory_search");
         assert_eq!(tcs[0].id, "call_0");
@@ -172,20 +198,9 @@ mod tests {
     #[test]
     fn test_rebuild_chat_messages_legacy_tool_calls_skipped() {
         // Legacy format: no call_id field
-        let tool_json = serde_json::json!([
+        assert_malformed_tool_calls_skipped(serde_json::json!([
             {"name": "echo", "result_preview": "hello"}
-        ]);
-        let messages = vec![
-            make_db_msg("user", "Hi"),
-            make_db_msg("tool_calls", &tool_json.to_string()),
-            make_db_msg("assistant", "Done"),
-        ];
-        let result = rebuild_chat_messages_from_db(&messages);
-
-        // Legacy rows are skipped, only user + assistant
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].role, crate::llm::Role::User);
-        assert_eq!(result[1].role, crate::llm::Role::Assistant);
+        ]));
     }
 
     #[test]
@@ -211,20 +226,9 @@ mod tests {
     /// a fallback name of `"unknown"`, producing invalid tool-call messages.
     #[test]
     fn test_rebuild_skips_tool_calls_missing_name() {
-        let tool_json = serde_json::json!([
+        assert_malformed_tool_calls_skipped(serde_json::json!([
             {"call_id": "call_0", "parameters": {"q": "x"}, "result": "ok"}
-        ]);
-        let messages = vec![
-            make_db_msg("user", "Hi"),
-            make_db_msg("tool_calls", &tool_json.to_string()),
-            make_db_msg("assistant", "Done"),
-        ];
-        let result = rebuild_chat_messages_from_db(&messages);
-
-        // Malformed row is skipped; only user + assistant survive
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].role, crate::llm::Role::User);
-        assert_eq!(result[1].role, crate::llm::Role::Assistant);
+        ]));
     }
 
     /// Regression: when one entry in a tool_calls array is valid but another
@@ -233,39 +237,19 @@ mod tests {
     /// would get fallback defaults.
     #[test]
     fn test_rebuild_skips_entire_row_when_any_entry_is_invalid() {
-        let tool_json = serde_json::json!([
+        assert_malformed_tool_calls_skipped(serde_json::json!([
             {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found"},
             {"name": "write", "parameters": {"path": "a.txt"}, "result": "ok"}
-        ]);
-        let messages = vec![
-            make_db_msg("user", "Go"),
-            make_db_msg("tool_calls", &tool_json.to_string()),
-            make_db_msg("assistant", "Done"),
-        ];
-        let result = rebuild_chat_messages_from_db(&messages);
-
-        // Second entry lacks call_id -> entire row skipped
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].role, crate::llm::Role::User);
-        assert_eq!(result[1].role, crate::llm::Role::Assistant);
+        ]));
     }
 
     /// Regression: tool_calls entries with null call_id or name values
     /// (as opposed to missing keys) must also be skipped.
     #[test]
     fn test_rebuild_skips_tool_calls_with_null_fields() {
-        let tool_json = serde_json::json!([
+        assert_malformed_tool_calls_skipped(serde_json::json!([
             {"name": null, "call_id": "call_0", "parameters": {}, "result": "ok"}
-        ]);
-        let messages = vec![
-            make_db_msg("user", "Hi"),
-            make_db_msg("tool_calls", &tool_json.to_string()),
-            make_db_msg("assistant", "Done"),
-        ];
-        let result = rebuild_chat_messages_from_db(&messages);
-
-        // null name fails the as_str() check -> row skipped
-        assert_eq!(result.len(), 2);
+        ]));
     }
 
     #[test]

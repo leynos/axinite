@@ -173,7 +173,12 @@ impl NativeSettingsStore for LibSqlBackend {
                         value = excluded.value,
                         updated_at = ?4
                     "#,
-                    params![user_id.as_str(), key.as_str(), value.to_string(), now.as_str()],
+                    params![
+                        user_id.as_str(),
+                        key.as_str(),
+                        value.to_string(),
+                        now.as_str()
+                    ],
                 )
                 .await
             {
