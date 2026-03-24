@@ -183,6 +183,9 @@ fn test_manager_stub() -> Arc<ExtensionManager> {
     let crypto = Arc::new(SecretsCrypto::new(master_key).expect("create secrets crypto"));
 
     Arc::new(ExtensionManager::new(
+        Arc::new(crate::extensions::NoOpDiscovery),
+        None, // relay_config
+        None, // gateway_token
         Arc::new(McpSessionManager::new()),
         Arc::new(crate::tools::mcp::McpProcessManager::new()),
         Arc::new(InMemorySecretsStore::new(crypto)),

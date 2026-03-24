@@ -195,6 +195,9 @@ async fn extension_manager_with_process_manager_constructs() {
     let channels_dir = tempfile::tempdir().expect("channels_dir");
 
     let manager = ExtensionManager::new(
+        Arc::new(ironclaw::extensions::NoOpDiscovery),
+        None, // relay_config
+        None, // gateway_token
         Arc::new(McpSessionManager::new()),
         Arc::new(McpProcessManager::new()),
         secrets,

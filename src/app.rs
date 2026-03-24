@@ -635,7 +635,14 @@ impl AppBuilder {
             Arc::new(InMemorySecretsStore::new(crypto))
         };
         let extension_manager = {
+            let discovery = Arc::new(crate::extensions::OnlineDiscovery::new());
+            let relay_config = crate::config::RelayConfig::from_env();
+            let gateway_token = std::env::var("GATEWAY_AUTH_TOKEN").ok();
+
             let manager = Arc::new(ExtensionManager::new(
+                discovery,
+                relay_config,
+                gateway_token,
                 Arc::clone(&mcp_session_manager),
                 Arc::clone(&mcp_process_manager),
                 ext_secrets,
