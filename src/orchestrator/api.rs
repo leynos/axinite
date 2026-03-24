@@ -24,7 +24,11 @@ mod handler_support;
 mod handlers;
 mod remote_tools;
 
-use crate::worker::api::{REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_ROUTE};
+use crate::worker::api::{
+    COMPLETE_ROUTE, CREDENTIALS_ROUTE, EVENT_ROUTE, JOB_ROUTE, LLM_COMPLETE_ROUTE,
+    LLM_COMPLETE_WITH_TOOLS_ROUTE, PROMPT_ROUTE, REMOTE_TOOL_CATALOG_ROUTE,
+    REMOTE_TOOL_EXECUTE_ROUTE, STATUS_ROUTE, WORKER_HEALTH_ROUTE,
+};
 use handler_support::{get_credentials_handler, get_prompt_handler};
 use handlers::{
     execute_remote_tool, get_job, get_remote_tool_catalog, health_check, job_event_handler,
@@ -65,25 +69,22 @@ impl OrchestratorApi {
     pub fn router(state: OrchestratorState) -> Router {
         Router::new()
             // Worker routes: authenticated via route_layer middleware.
-            .route("/worker/{job_id}/job", get(get_job))
-            .route("/worker/{job_id}/llm/complete", post(llm_complete))
-            .route(
-                "/worker/{job_id}/llm/complete_with_tools",
-                post(llm_complete_with_tools),
-            )
+            .route(JOB_ROUTE, get(get_job))
+            .route(LLM_COMPLETE_ROUTE, post(llm_complete))
+            .route(LLM_COMPLETE_WITH_TOOLS_ROUTE, post(llm_complete_with_tools))
             .route(REMOTE_TOOL_CATALOG_ROUTE, get(get_remote_tool_catalog))
             .route(REMOTE_TOOL_EXECUTE_ROUTE, post(execute_remote_tool))
-            .route("/worker/{job_id}/status", post(report_status))
-            .route("/worker/{job_id}/complete", post(report_complete))
-            .route("/worker/{job_id}/event", post(job_event_handler))
-            .route("/worker/{job_id}/prompt", get(get_prompt_handler))
-            .route("/worker/{job_id}/credentials", get(get_credentials_handler))
+            .route(STATUS_ROUTE, post(report_status))
+            .route(COMPLETE_ROUTE, post(report_complete))
+            .route(EVENT_ROUTE, post(job_event_handler))
+            .route(PROMPT_ROUTE, get(get_prompt_handler))
+            .route(CREDENTIALS_ROUTE, get(get_credentials_handler))
             .route_layer(axum::middleware::from_fn_with_state(
                 state.token_store.clone(),
                 worker_auth_middleware,
             ))
             // Unauthenticated routes (added after the layer).
-            .route("/health", get(health_check))
+            .route(WORKER_HEALTH_ROUTE, get(health_check))
             .with_state(state)
     }
 
