@@ -81,6 +81,12 @@ impl HotReloadManager {
     fn parse_http_addr(
         http: &crate::config::HttpConfig,
     ) -> Result<std::net::SocketAddr, ReloadError> {
+        // Prefer structured construction when host is a valid IP (handles IPv6 correctly).
+        if let Ok(ip) = http.host.parse::<std::net::IpAddr>() {
+            return Ok(std::net::SocketAddr::new(ip, http.port));
+        }
+
+        // Fall back to string-based parse for hostname-style values.
         format!("{}:{}", http.host, http.port).parse().map_err(|e| {
             tracing::error!("Invalid socket address in reloaded config: {}", e);
             crate::error::ConfigError::InvalidValue {
@@ -132,7 +138,9 @@ impl HotReloadManager {
 mod tests {
     use super::*;
     use crate::config::HttpConfig;
-    use crate::reload::test_stubs::{StubConfigLoader, StubListenerController, StubSecretInjector};
+    use crate::reload::test_stubs::{
+        SpySecretUpdater, StubConfigLoader, StubListenerController, StubSecretInjector,
+    };
     use secrecy::SecretString;
     use std::net::SocketAddr;
 
@@ -169,11 +177,14 @@ mod tests {
             http_config,
         ))));
 
+        let spy = Arc::new(SpySecretUpdater::new());
+        let spy_clone = Arc::clone(&spy);
+
         let manager = HotReloadManager::new(
             loader as Arc<dyn ConfigLoader>,
             Some(controller as Arc<dyn ListenerController>),
             Some(injector as Arc<dyn SecretInjector>),
-            vec![],
+            vec![spy as Arc<dyn crate::channels::ChannelSecretUpdater>],
         );
 
         let result = manager.perform_reload().await;
@@ -189,6 +200,13 @@ mod tests {
         let restarts = controller_clone.restart_calls().await;
         assert_eq!(restarts.len(), 1, "Listener should be restarted once");
         assert_eq!(restarts[0], addr2, "Listener should restart on new address");
+
+        // Verify channel secret updater was called
+        assert_eq!(
+            spy_clone.call_count().await,
+            1,
+            "ChannelSecretUpdater should be called once on successful reload"
+        );
     }
 
     #[tokio::test]
@@ -203,11 +221,14 @@ mod tests {
             crate::error::ConfigError::MissingEnvVar("TEST".to_string()),
         ));
 
+        let spy = Arc::new(SpySecretUpdater::new());
+        let spy_clone = Arc::clone(&spy);
+
         let manager = HotReloadManager::new(
             loader as Arc<dyn ConfigLoader>,
             Some(controller as Arc<dyn ListenerController>),
             Some(injector as Arc<dyn SecretInjector>),
-            vec![],
+            vec![spy as Arc<dyn crate::channels::ChannelSecretUpdater>],
         );
 
         let result = manager.perform_reload().await;
@@ -219,6 +240,12 @@ mod tests {
             restarts.len(),
             0,
             "Listener should not be restarted after config load failure"
+        );
+
+        // Verify channel secret updater was not called
+        assert!(
+            spy_clone.was_not_called().await,
+            "ChannelSecretUpdater should not be called after config load failure"
         );
     }
 
@@ -240,17 +267,26 @@ mod tests {
             http_config,
         ))));
 
+        let spy = Arc::new(SpySecretUpdater::new());
+        let spy_clone = Arc::clone(&spy);
+
         let manager = HotReloadManager::new(
             loader as Arc<dyn ConfigLoader>,
             Some(controller as Arc<dyn ListenerController>),
             Some(injector as Arc<dyn SecretInjector>),
-            vec![],
+            vec![spy as Arc<dyn crate::channels::ChannelSecretUpdater>],
         );
 
         let result = manager.perform_reload().await;
         assert!(
             result.is_err(),
             "Reload should fail when listener restart fails"
+        );
+
+        // Verify channel secret updater was not called after listener failure
+        assert!(
+            spy_clone.was_not_called().await,
+            "ChannelSecretUpdater should not be called after listener restart failure"
         );
     }
 
@@ -273,11 +309,14 @@ mod tests {
             http_config,
         ))));
 
+        let spy = Arc::new(SpySecretUpdater::new());
+        let spy_clone = Arc::clone(&spy);
+
         let manager = HotReloadManager::new(
             loader as Arc<dyn ConfigLoader>,
             Some(controller as Arc<dyn ListenerController>),
             Some(injector as Arc<dyn SecretInjector>),
-            vec![],
+            vec![spy as Arc<dyn crate::channels::ChannelSecretUpdater>],
         );
 
         let result = manager.perform_reload().await;
@@ -289,6 +328,13 @@ mod tests {
             restarts.len(),
             0,
             "Listener should not be restarted when address is unchanged"
+        );
+
+        // Verify channel secret updater was still called (secrets update even without restart)
+        assert_eq!(
+            spy_clone.call_count().await,
+            1,
+            "ChannelSecretUpdater should be called even when address is unchanged"
         );
     }
 }

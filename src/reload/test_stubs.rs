@@ -6,6 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
+use crate::channels::ChannelSecretUpdater;
 use crate::config::Config;
 use crate::error::{ChannelError, ConfigError};
 use crate::reload::{ConfigLoader, ListenerController, SecretInjector};
@@ -39,16 +40,33 @@ impl ConfigLoader for StubConfigLoader {
         match &self.config {
             Some(c) => Ok(c.clone()),
             None => {
-                // Clone the Arc and extract error via Display -> String -> MissingEnvVar
-                // This preserves the error message while keeping StubConfigLoader cloneable
-                let err_msg = self
-                    .error
-                    .as_ref()
-                    .map(|e| e.to_string())
-                    .unwrap_or_else(|| "Test error".to_string());
-                Err(ConfigError::MissingEnvVar(err_msg))
+                Err(reconstruct_config_error(self.error.as_ref().expect(
+                    "StubConfigLoader: either config or error must be set",
+                )))
             }
         }
+    }
+}
+
+/// Reconstruct a [`ConfigError`] from an `Arc` reference.
+///
+/// `ConfigError` does not implement `Clone` (the `Io` variant wraps
+/// `std::io::Error`), so we match each variant and rebuild it from its
+/// string fields. The `Io` variant is approximated as a `ParseError` in
+/// test stubs because `std::io::Error` is not cloneable.
+fn reconstruct_config_error(err: &ConfigError) -> ConfigError {
+    match err {
+        ConfigError::MissingEnvVar(s) => ConfigError::MissingEnvVar(s.clone()),
+        ConfigError::MissingRequired { key, hint } => ConfigError::MissingRequired {
+            key: key.clone(),
+            hint: hint.clone(),
+        },
+        ConfigError::InvalidValue { key, message } => ConfigError::InvalidValue {
+            key: key.clone(),
+            message: message.clone(),
+        },
+        ConfigError::ParseError(s) => ConfigError::ParseError(s.clone()),
+        ConfigError::Io(e) => ConfigError::ParseError(format!("IO (reconstructed): {e}")),
     }
 }
 
@@ -134,5 +152,35 @@ impl SecretInjector for StubSecretInjector {
         } else {
             Ok(())
         }
+    }
+}
+
+/// Spy implementation of [`ChannelSecretUpdater`] that records every call.
+pub struct SpySecretUpdater {
+    calls: Arc<Mutex<Vec<Option<secrecy::SecretString>>>>,
+}
+
+impl SpySecretUpdater {
+    pub fn new() -> Self {
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Returns the number of times `update_secret` was called.
+    pub async fn call_count(&self) -> usize {
+        self.calls.lock().await.len()
+    }
+
+    /// Returns true if `update_secret` was never called.
+    pub async fn was_not_called(&self) -> bool {
+        self.calls.lock().await.is_empty()
+    }
+}
+
+#[async_trait]
+impl ChannelSecretUpdater for SpySecretUpdater {
+    async fn update_secret(&self, new_secret: Option<secrecy::SecretString>) {
+        self.calls.lock().await.push(new_secret);
     }
 }

@@ -58,7 +58,10 @@ impl DbSecretInjector {
                 Ok(())
             }
             Err(SecretError::NotFound(_)) => {
-                tracing::debug!("HTTP_WEBHOOK_SECRET not found in secrets store; continuing");
+                crate::config::remove_injected_var("HTTP_WEBHOOK_SECRET");
+                tracing::debug!(
+                    "HTTP_WEBHOOK_SECRET not found in secrets store; cleared overlay entry"
+                );
                 Ok(())
             }
             Err(e) => Err(e),
