@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::db::{NativeSandboxStore, SandboxJobStatusUpdate};
 use crate::error::DatabaseError;
-use crate::history::{SandboxJobRecord, SandboxJobSummary};
+use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
 
 use super::PgBackend;
 
@@ -60,22 +60,39 @@ impl NativeSandboxStore for PgBackend {
         self.store.sandbox_job_summary_for_user(user_id).await
     }
 
-    async fn mark_sandbox_job_started(&self, id: Uuid) -> Result<(), DatabaseError> {
-        self.store.mark_sandbox_job_started(id).await
-    }
-
-    async fn mark_sandbox_job_completed(
+    async fn sandbox_job_belongs_to_user(
         &self,
-        id: Uuid,
-        success: bool,
-        message: Option<&str>,
-    ) -> Result<(), DatabaseError> {
+        job_id: Uuid,
+        user_id: &str,
+    ) -> Result<bool, DatabaseError> {
         self.store
-            .mark_sandbox_job_completed(id, success, message)
+            .sandbox_job_belongs_to_user(job_id, user_id)
             .await
     }
 
-    async fn delete_sandbox_job(&self, id: Uuid) -> Result<(), DatabaseError> {
-        self.store.delete_sandbox_job(id).await
+    async fn update_sandbox_job_mode(&self, id: Uuid, mode: &str) -> Result<(), DatabaseError> {
+        self.store.update_sandbox_job_mode(id, mode).await
+    }
+
+    async fn get_sandbox_job_mode(&self, id: Uuid) -> Result<Option<String>, DatabaseError> {
+        self.store.get_sandbox_job_mode(id).await
+    }
+
+    async fn save_job_event(
+        &self,
+        job_id: Uuid,
+        event_type: &str,
+        data: &serde_json::Value,
+    ) -> Result<(), DatabaseError> {
+        self.store.save_job_event(job_id, event_type, data).await
+    }
+
+    async fn list_job_events(
+        &self,
+        job_id: Uuid,
+        before_id: Option<i64>,
+        limit: Option<i64>,
+    ) -> Result<Vec<JobEventRecord>, DatabaseError> {
+        self.store.list_job_events(job_id, before_id, limit).await
     }
 }

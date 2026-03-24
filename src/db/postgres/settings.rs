@@ -34,18 +34,11 @@ impl NativeSettingsStore for PgBackend {
         self.store.set_setting(user_id, key, value).await
     }
 
-    async fn delete_setting(
-        &self,
-        user_id: &str,
-        key: &str,
-    ) -> Result<bool, DatabaseError> {
+    async fn delete_setting(&self, user_id: &str, key: &str) -> Result<bool, DatabaseError> {
         self.store.delete_setting(user_id, key).await
     }
 
-    async fn list_settings(
-        &self,
-        user_id: &str,
-    ) -> Result<Vec<SettingRow>, DatabaseError> {
+    async fn list_settings(&self, user_id: &str) -> Result<Vec<SettingRow>, DatabaseError> {
         self.store.list_settings(user_id).await
     }
 

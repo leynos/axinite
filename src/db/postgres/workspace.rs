@@ -82,11 +82,12 @@ impl NativeWorkspaceStore for PgBackend {
     async fn insert_chunk(&self, params: InsertChunkParams<'_>) -> Result<Uuid, WorkspaceError> {
         let InsertChunkParams {
             document_id,
-            chunk_text,
+            chunk_index,
+            content,
             embedding,
         } = params;
         self.repo
-            .insert_chunk(document_id, chunk_text, embedding)
+            .insert_chunk(document_id, chunk_index, content, embedding)
             .await
     }
 

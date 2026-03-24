@@ -126,22 +126,17 @@ impl NativeChannel for ReplChannel {
             }
 
             // Set up rustyline
-            let builder = match Config::builder().history_ignore_dups(true) {
-                Ok(b) => b,
+            //
+            // `history_ignore_dups` returns `Result` (it validates the
+            // underlying config value), while the remaining builder methods
+            // and `.build()` are infallible.
+            let config = match Config::builder().history_ignore_dups(true) {
+                Ok(b) => b
+                    .auto_add_history(true)
+                    .completion_type(CompletionType::List)
+                    .build(),
                 Err(e) => {
                     eprintln!("Failed to configure line editor: {e}");
-                    return;
-                }
-            };
-
-            let config = match builder
-                .auto_add_history(true)
-                .completion_type(CompletionType::List)
-                .build()
-            {
-                Ok(cfg) => cfg,
-                Err(e) => {
-                    eprintln!("Failed to build line editor config: {e}");
                     return;
                 }
             };

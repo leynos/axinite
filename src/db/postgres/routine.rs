@@ -1,6 +1,5 @@
 //! RoutineStore implementation for PostgreSQL backend.
 
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::agent::routine::{Routine, RoutineRun};
@@ -70,12 +69,12 @@ impl NativeRoutineStore for PgBackend {
             .await
     }
 
-    async fn delete_routine(&self, id: Uuid) -> Result<(), DatabaseError> {
+    async fn delete_routine(&self, id: Uuid) -> Result<bool, DatabaseError> {
         self.store.delete_routine(id).await
     }
 
-    async fn log_routine_run(&self, run: &RoutineRun) -> Result<(), DatabaseError> {
-        self.store.log_routine_run(run).await
+    async fn create_routine_run(&self, run: &RoutineRun) -> Result<(), DatabaseError> {
+        self.store.create_routine_run(run).await
     }
 
     async fn complete_routine_run(
@@ -83,13 +82,13 @@ impl NativeRoutineStore for PgBackend {
         params: RoutineRunCompletion<'_>,
     ) -> Result<(), DatabaseError> {
         let RoutineRunCompletion {
-            run_id,
-            success,
-            failure_reason,
-            output,
+            id,
+            status,
+            result_summary,
+            tokens_used,
         } = params;
         self.store
-            .complete_routine_run(run_id, success, failure_reason, output)
+            .complete_routine_run(id, status, result_summary, tokens_used)
             .await
     }
 
@@ -101,10 +100,15 @@ impl NativeRoutineStore for PgBackend {
         self.store.list_routine_runs(routine_id, limit).await
     }
 
-    async fn cleanup_stale_routine_runs(
+    async fn count_running_routine_runs(&self, routine_id: Uuid) -> Result<i64, DatabaseError> {
+        self.store.count_running_routine_runs(routine_id).await
+    }
+
+    async fn link_routine_run_to_job(
         &self,
-        started_before: DateTime<Utc>,
-    ) -> Result<u64, DatabaseError> {
-        self.store.cleanup_stale_routine_runs(started_before).await
+        run_id: Uuid,
+        job_id: Uuid,
+    ) -> Result<(), DatabaseError> {
+        self.store.link_routine_run_to_job(run_id, job_id).await
     }
 }
