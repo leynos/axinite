@@ -53,7 +53,10 @@ impl OpenClawImporter {
     }
 
     /// Persist settings to the database (Group 1: idempotent via upsert).
-    async fn persist_settings(&self, settings_map: std::collections::HashMap<String, serde_json::Value>) -> usize {
+    async fn persist_settings(
+        &self,
+        settings_map: std::collections::HashMap<String, serde_json::Value>,
+    ) -> usize {
         let mut count = 0;
         for (key, value) in settings_map {
             if let Err(e) = self
