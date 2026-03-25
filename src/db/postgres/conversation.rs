@@ -9,22 +9,9 @@ use crate::history::{ConversationMessage, ConversationSummary};
 
 use super::PgBackend;
 
-macro_rules! delegate_to_store {
-    (
-        $(
-            async fn $method:ident ( &self $(, $arg:ident : $ty:ty)* ) -> $ret:ty ;
-        )*
-    ) => {
-        $(
-            async fn $method ( &self $(, $arg : $ty )* ) -> $ret {
-                self.store . $method ( $( $arg ),* ) .await
-            }
-        )*
-    };
-}
-
 impl NativeConversationStore for PgBackend {
-    delegate_to_store! {
+    delegate_async! {
+        to store;
         async fn create_conversation(&self, channel: &str, user_id: &str, thread_id: Option<&str>) -> Result<Uuid, DatabaseError>;
         async fn touch_conversation(&self, id: Uuid) -> Result<(), DatabaseError>;
         async fn add_conversation_message(&self, conversation_id: Uuid, role: &str, content: &str) -> Result<Uuid, DatabaseError>;

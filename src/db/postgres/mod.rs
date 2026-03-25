@@ -3,6 +3,39 @@
 //! Delegates to the existing `Store` (history) and `Repository` (workspace)
 //! implementations, avoiding SQL duplication.
 
+/// Unified macro for delegating async trait methods to an inner field.
+///
+/// This reduces boilerplate when implementing traits by forwarding method calls
+/// to a contained store, repository, or other backend.
+///
+/// # Usage
+///
+/// ```ignore
+/// impl MyTrait for MyStruct {
+///     delegate_async! {
+///         to store;
+///         async fn get_item(&self, id: Uuid) -> Result<Item, Error>;
+///         async fn list_items(&self) -> Result<Vec<Item>, Error>;
+///     }
+/// }
+/// ```
+///
+/// The `to` clause should be just the field name (e.g., `store`, `repo`), not `self.store`.
+macro_rules! delegate_async {
+    (
+        to $field:ident;
+        $(
+            async fn $method:ident ( &self $(, $arg:ident : $ty:ty)* ) -> $ret:ty ;
+        )*
+    ) => {
+        $(
+            async fn $method ( &self $(, $arg : $ty )* ) -> $ret {
+                self . $field . $method ( $( $arg ),* ) .await
+            }
+        )*
+    };
+}
+
 mod conversation;
 mod job;
 mod routine;

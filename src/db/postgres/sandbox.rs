@@ -8,41 +8,13 @@ use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
 
 use super::PgBackend;
 
-/// Macro to generate simple async forwarding methods to the underlying store.
-///
-/// This reduces boilerplate for methods that just delegate to `self.store.method_name(args).await`.
-/// The `update_sandbox_job_status` method is kept explicit since it requires destructuring.
-macro_rules! forward_to_store {
-    // No args, simple return type
-    ($fn_name:ident() -> $ret:ty) => {
-        async fn $fn_name(&self) -> $ret {
-            self.store.$fn_name().await
-        }
-    };
-    // Single arg
-    ($fn_name:ident($arg1:ident: $t1:ty) -> $ret:ty) => {
-        async fn $fn_name(&self, $arg1: $t1) -> $ret {
-            self.store.$fn_name($arg1).await
-        }
-    };
-    // Two args
-    ($fn_name:ident($arg1:ident: $t1:ty, $arg2:ident: $t2:ty) -> $ret:ty) => {
-        async fn $fn_name(&self, $arg1: $t1, $arg2: $t2) -> $ret {
-            self.store.$fn_name($arg1, $arg2).await
-        }
-    };
-    // Three args
-    ($fn_name:ident($arg1:ident: $t1:ty, $arg2:ident: $t2:ty, $arg3:ident: $t3:ty) -> $ret:ty) => {
-        async fn $fn_name(&self, $arg1: $t1, $arg2: $t2, $arg3: $t3) -> $ret {
-            self.store.$fn_name($arg1, $arg2, $arg3).await
-        }
-    };
-}
-
 impl NativeSandboxStore for PgBackend {
-    forward_to_store!(save_sandbox_job(job: &SandboxJobRecord) -> Result<(), DatabaseError>);
-    forward_to_store!(get_sandbox_job(id: Uuid) -> Result<Option<SandboxJobRecord>, DatabaseError>);
-    forward_to_store!(list_sandbox_jobs() -> Result<Vec<SandboxJobRecord>, DatabaseError>);
+    delegate_async! {
+        to store;
+        async fn save_sandbox_job(&self, job: &SandboxJobRecord) -> Result<(), DatabaseError>;
+        async fn get_sandbox_job(&self, id: Uuid) -> Result<Option<SandboxJobRecord>, DatabaseError>;
+        async fn list_sandbox_jobs(&self) -> Result<Vec<SandboxJobRecord>, DatabaseError>;
+    }
 
     async fn update_sandbox_job_status(
         &self,
@@ -61,15 +33,18 @@ impl NativeSandboxStore for PgBackend {
             .await
     }
 
-    forward_to_store!(cleanup_stale_sandbox_jobs() -> Result<u64, DatabaseError>);
-    forward_to_store!(sandbox_job_summary() -> Result<SandboxJobSummary, DatabaseError>);
-    forward_to_store!(list_sandbox_jobs_for_user(user_id: &str) -> Result<Vec<SandboxJobRecord>, DatabaseError>);
-    forward_to_store!(sandbox_job_summary_for_user(user_id: &str) -> Result<SandboxJobSummary, DatabaseError>);
-    forward_to_store!(sandbox_job_belongs_to_user(job_id: Uuid, user_id: &str) -> Result<bool, DatabaseError>);
-    forward_to_store!(update_sandbox_job_mode(id: Uuid, mode: &str) -> Result<(), DatabaseError>);
-    forward_to_store!(get_sandbox_job_mode(id: Uuid) -> Result<Option<String>, DatabaseError>);
-    forward_to_store!(save_job_event(job_id: Uuid, event_type: &str, data: &serde_json::Value) -> Result<(), DatabaseError>);
-    forward_to_store!(list_job_events(job_id: Uuid, before_id: Option<i64>, limit: Option<i64>) -> Result<Vec<JobEventRecord>, DatabaseError>);
+    delegate_async! {
+        to store;
+        async fn cleanup_stale_sandbox_jobs(&self) -> Result<u64, DatabaseError>;
+        async fn sandbox_job_summary(&self) -> Result<SandboxJobSummary, DatabaseError>;
+        async fn list_sandbox_jobs_for_user(&self, user_id: &str) -> Result<Vec<SandboxJobRecord>, DatabaseError>;
+        async fn sandbox_job_summary_for_user(&self, user_id: &str) -> Result<SandboxJobSummary, DatabaseError>;
+        async fn sandbox_job_belongs_to_user(&self, job_id: Uuid, user_id: &str) -> Result<bool, DatabaseError>;
+        async fn update_sandbox_job_mode(&self, id: Uuid, mode: &str) -> Result<(), DatabaseError>;
+        async fn get_sandbox_job_mode(&self, id: Uuid) -> Result<Option<String>, DatabaseError>;
+        async fn save_job_event(&self, job_id: Uuid, event_type: &str, data: &serde_json::Value) -> Result<(), DatabaseError>;
+        async fn list_job_events(&self, job_id: Uuid, before_id: Option<i64>, limit: Option<i64>) -> Result<Vec<JobEventRecord>, DatabaseError>;
+    }
 }
 
 #[cfg(test)]

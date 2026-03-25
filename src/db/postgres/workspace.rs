@@ -8,22 +8,9 @@ use crate::workspace::{MemoryChunk, MemoryDocument, SearchResult, WorkspaceEntry
 
 use super::PgBackend;
 
-macro_rules! delegate_to_repo {
-    (
-        $(
-            async fn $method:ident ( &self $(, $arg:ident : $ty:ty)* ) -> $ret:ty ;
-        )*
-    ) => {
-        $(
-            async fn $method ( &self $(, $arg : $ty )* ) -> $ret {
-                self.repo . $method ( $( $arg ),* ) .await
-            }
-        )*
-    };
-}
-
 impl NativeWorkspaceStore for PgBackend {
-    delegate_to_repo! {
+    delegate_async! {
+        to repo;
         async fn get_document_by_path(&self, user_id: &str, agent_id: Option<Uuid>, path: &str) -> Result<MemoryDocument, WorkspaceError>;
         async fn get_document_by_id(&self, id: Uuid) -> Result<MemoryDocument, WorkspaceError>;
         async fn get_or_create_document_by_path(&self, user_id: &str, agent_id: Option<Uuid>, path: &str) -> Result<MemoryDocument, WorkspaceError>;

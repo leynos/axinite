@@ -11,22 +11,9 @@ use super::PgBackend;
 // TODO(refactor): This delegation macro is very similar to `delegate_to_repo` in workspace.rs
 // and `settings_delegate` in mod.rs. Consider consolidating these into a shared helper macro
 // or at least standardizing on one pattern to reduce duplication and cognitive overhead.
-macro_rules! delegate_to_store {
-    (
-        $(
-            async fn $method:ident ( &self $(, $arg:ident : $ty:ty)* ) -> $ret:ty ;
-        )*
-    ) => {
-        $(
-            async fn $method ( &self $(, $arg : $ty )* ) -> $ret {
-                self.store . $method ( $( $arg ),* ) .await
-            }
-        )*
-    };
-}
-
 impl NativeSettingsStore for PgBackend {
-    delegate_to_store! {
+    delegate_async! {
+        to store;
         async fn get_setting(&self, user_id: UserId, key: SettingKey) -> Result<Option<serde_json::Value>, DatabaseError>;
         async fn get_setting_full(&self, user_id: UserId, key: SettingKey) -> Result<Option<SettingRow>, DatabaseError>;
         async fn set_setting(&self, user_id: UserId, key: SettingKey, value: &serde_json::Value) -> Result<(), DatabaseError>;
