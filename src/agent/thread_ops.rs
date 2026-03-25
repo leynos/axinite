@@ -72,7 +72,7 @@ impl Agent {
                 .await
                 .unwrap_or_default();
             msg_count = db_messages.len();
-            chat_messages = rebuild_chat_messages_from_db(&db_messages);
+            chat_messages = rebuild_chat_messages_from_db(&db_messages, self.safety());
         } else {
             msg_count = 0;
         }

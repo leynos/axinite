@@ -315,12 +315,12 @@ impl SetupWizard {
 
         // Load existing settings from DB, then restore connection fields that
         // may not be persisted in the settings map.
-        if let Some(persistence) = self.default_settings_persistence() {
-            if let Ok(map) = persistence.get_all_settings_map().await {
-                self.settings = Settings::from_db_map(&map);
-                self.settings.database_backend = Some("postgres".to_string());
-                self.settings.database_url = Some(url);
-            }
+        if let Some(persistence) = self.default_settings_persistence()
+            && let Ok(map) = persistence.get_all_settings_map().await
+        {
+            self.settings = Settings::from_db_map(&map);
+            self.settings.database_backend = Some("postgres".to_string());
+            self.settings.database_url = Some(url);
         }
 
         Ok(())
@@ -348,14 +348,14 @@ impl SetupWizard {
 
         // Load existing settings from DB, then restore connection fields that
         // may not be persisted in the settings map.
-        if let Some(persistence) = self.default_settings_persistence() {
-            if let Ok(map) = persistence.get_all_settings_map().await {
-                self.settings = Settings::from_db_map(&map);
-                self.settings.database_backend = Some("libsql".to_string());
-                self.settings.libsql_path = Some(path);
-                if let Some(url) = turso_url {
-                    self.settings.libsql_url = Some(url);
-                }
+        if let Some(persistence) = self.default_settings_persistence()
+            && let Ok(map) = persistence.get_all_settings_map().await
+        {
+            self.settings = Settings::from_db_map(&map);
+            self.settings.database_backend = Some("libsql".to_string());
+            self.settings.libsql_path = Some(path);
+            if let Some(url) = turso_url {
+                self.settings.libsql_url = Some(url);
             }
         }
 

@@ -49,8 +49,15 @@ fn parse_tool_call_entries(
 ///
 /// Prefers `error` (formatted as `"Error: …"`), then `result`, then
 /// `result_preview`, defaulting to `"OK"`.
-fn tool_result_content(call: &serde_json::Value) -> String {
-    if let Some(err) = call.get("error").and_then(|v| v.as_str()) {
+///
+/// Applies `SafetyLayer` sanitization and wrapping to the raw content
+/// before returning it (sanitizer → validator → policy → leak-detector).
+fn tool_result_content(
+    call: &serde_json::Value,
+    tool_name: &str,
+    safety: &crate::safety::SafetyLayer,
+) -> String {
+    let raw_content = if let Some(err) = call.get("error").and_then(|v| v.as_str()) {
         format!("Error: {}", err)
     } else if let Some(res) = call.get("result").and_then(|v| v.as_str()) {
         res.to_string()
@@ -58,7 +65,10 @@ fn tool_result_content(call: &serde_json::Value) -> String {
         preview.to_string()
     } else {
         "OK".to_string()
-    }
+    };
+
+    let sanitized = safety.sanitize_tool_output(tool_name, &raw_content);
+    safety.wrap_for_llm(tool_name, &sanitized.content, sanitized.was_modified)
 }
 
 /// Rebuild full LLM-compatible `ChatMessage` sequence from DB messages.
@@ -67,8 +77,12 @@ fn tool_result_content(call: &serde_json::Value) -> String {
 /// and `tool_result` messages so that the LLM sees the complete tool execution
 /// history on thread hydration. Falls back gracefully for legacy rows that
 /// lack the enriched fields (`call_id`, `parameters`, `result`).
+///
+/// Hydrated tool results pass through `SafetyLayer` (sanitizer → validator →
+/// policy → leak-detector) before being added to the message sequence.
 pub(super) fn rebuild_chat_messages_from_db(
     db_messages: &[ConversationMessage],
+    safety: &crate::safety::SafetyLayer,
 ) -> Vec<ChatMessage> {
     let mut result = Vec::new();
 
@@ -106,7 +120,7 @@ pub(super) fn rebuild_chat_messages_from_db(
                                 result.push(ChatMessage::tool_result(
                                     call_id.clone(),
                                     name.clone(),
-                                    tool_result_content(&calls[idx]),
+                                    tool_result_content(&calls[idx], name, safety),
                                 ));
                             }
                         }
@@ -123,7 +137,9 @@ pub(super) fn rebuild_chat_messages_from_db(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::SafetyConfig;
     use crate::history::ConversationMessage;
+    use crate::safety::SafetyLayer;
     use rstest::rstest;
 
     fn make_db_msg(role: &str, content: &str) -> ConversationMessage {
@@ -133,6 +149,13 @@ mod tests {
             content: content.to_string(),
             created_at: chrono::Utc::now(),
         }
+    }
+
+    fn test_safety_layer() -> SafetyLayer {
+        SafetyLayer::new(&SafetyConfig {
+            injection_check_enabled: false,
+            max_output_length: 100_000,
+        })
     }
 
     /// Asserts the result contains exactly one `User` message followed by one
@@ -157,27 +180,30 @@ mod tests {
     /// skipped entirely, leaving only the surrounding user and assistant
     /// messages in the output.
     fn assert_malformed_tool_calls_skipped(tool_json: serde_json::Value) {
+        let safety = test_safety_layer();
         let messages = vec![
             make_db_msg("user", "Hi"),
             make_db_msg("tool_calls", &tool_json.to_string()),
             make_db_msg("assistant", "Done"),
         ];
-        let result = rebuild_chat_messages_from_db(&messages);
+        let result = rebuild_chat_messages_from_db(&messages, &safety);
         assert_only_user_and_assistant(&result);
     }
 
     #[test]
     fn test_rebuild_chat_messages_user_assistant_only() {
+        let safety = test_safety_layer();
         let messages = vec![
             make_db_msg("user", "Hello"),
             make_db_msg("assistant", "Hi there!"),
         ];
-        let result = rebuild_chat_messages_from_db(&messages);
+        let result = rebuild_chat_messages_from_db(&messages, &safety);
         assert_only_user_and_assistant(&result);
     }
 
     #[test]
     fn test_rebuild_chat_messages_with_enriched_tool_calls() {
+        let safety = test_safety_layer();
         let tool_json = serde_json::json!([
             {
                 "name": "memory_search",
@@ -198,7 +224,7 @@ mod tests {
             make_db_msg("tool_calls", &tool_json.to_string()),
             make_db_msg("assistant", "I found some results."),
         ];
-        let result = rebuild_chat_messages_from_db(&messages);
+        let result = rebuild_chat_messages_from_db(&messages, &safety);
 
         // user + assistant_with_tool_calls + tool_result*2 + assistant
         assert_eq!(result.len(), 5);
@@ -239,18 +265,20 @@ mod tests {
 
     #[test]
     fn test_rebuild_chat_messages_empty() {
-        let result = rebuild_chat_messages_from_db(&[]);
+        let safety = test_safety_layer();
+        let result = rebuild_chat_messages_from_db(&[], &safety);
         assert!(result.is_empty());
     }
 
     #[test]
     fn test_rebuild_chat_messages_malformed_tool_calls_json() {
+        let safety = test_safety_layer();
         let messages = vec![
             make_db_msg("user", "Hi"),
             make_db_msg("tool_calls", "not valid json"),
             make_db_msg("assistant", "Done"),
         ];
-        let result = rebuild_chat_messages_from_db(&messages);
+        let result = rebuild_chat_messages_from_db(&messages, &safety);
         // Malformed JSON is silently skipped
         assert_eq!(result.len(), 2);
     }
@@ -274,6 +302,7 @@ mod tests {
 
     #[test]
     fn test_rebuild_chat_messages_multi_turn_with_tools() {
+        let safety = test_safety_layer();
         let tool_json_1 = serde_json::json!([
             {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found it"}
         ]);
@@ -288,7 +317,7 @@ mod tests {
             make_db_msg("tool_calls", &tool_json_2.to_string()),
             make_db_msg("assistant", "Written"),
         ];
-        let result = rebuild_chat_messages_from_db(&messages);
+        let result = rebuild_chat_messages_from_db(&messages, &safety);
 
         // Turn 1: user + assistant_with_calls + tool_result + assistant = 4
         // Turn 2: user + assistant_with_calls + tool_result + assistant = 4

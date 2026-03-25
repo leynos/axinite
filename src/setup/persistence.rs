@@ -29,6 +29,7 @@ impl DefaultSettingsPersistence {
     }
 
     /// Load all settings for the default user from the database.
+    #[allow(dead_code)]
     pub async fn load_default_settings(&self) -> Result<Settings, DatabaseError> {
         let map = self
             .backend
@@ -46,6 +47,7 @@ impl DefaultSettingsPersistence {
     }
 
     /// Load the session token for the default user.
+    #[allow(dead_code)]
     pub async fn load_session_token(&self) -> Result<Option<serde_json::Value>, DatabaseError> {
         self.backend
             .get_setting(
@@ -67,6 +69,7 @@ impl DefaultSettingsPersistence {
     }
 
     /// Check if default user has any settings in the database.
+    #[allow(dead_code)]
     pub async fn has_default_settings(&self) -> Result<bool, DatabaseError> {
         self.backend
             .has_settings(UserId::from(DEFAULT_USER_ID))

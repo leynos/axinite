@@ -1257,10 +1257,8 @@ impl<T: NativeToolFailureStore> ToolFailureStore for T {
 }
 
 // ---- SettingsStore (already migrated to DbFuture pattern) ----
+// Moved to src/db/settings.rs
 
-/// Object-safe persistence surface for user settings.
-///
-/// Uses owned `UserId` and `SettingKey` newtypes to push conversion to the trait boundary.
 // ---- WorkspaceStore ----
 
 /// Object-safe persistence surface for workspace documents, chunks, and semantic search.
