@@ -138,20 +138,23 @@ impl SetupWizard {
     /// Construct a DefaultSettingsPersistence from the current database backend.
     ///
     /// Returns None if no backend has been initialized yet.
+    /// Routes based on `settings.database_backend` to avoid misrouting when both handles exist.
     fn default_settings_persistence(&self) -> Option<DefaultSettingsPersistence> {
-        #[cfg(feature = "postgres")]
-        {
-            if let Some(ref pool) = self.db_pool {
-                let backend = Arc::new(crate::db::postgres::PgBackend::from_pool(pool.clone()));
-                return Some(DefaultSettingsPersistence::new(backend));
+        match self.settings.database_backend.as_deref() {
+            #[cfg(feature = "postgres")]
+            Some("postgres") => {
+                if let Some(ref pool) = self.db_pool {
+                    let backend = Arc::new(crate::db::postgres::PgBackend::from_pool(pool.clone()));
+                    return Some(DefaultSettingsPersistence::new(backend));
+                }
             }
-        }
-
-        #[cfg(feature = "libsql")]
-        {
-            if let Some(ref backend) = self.db_backend {
-                return Some(DefaultSettingsPersistence::new(backend.clone()));
+            #[cfg(feature = "libsql")]
+            Some("libsql") => {
+                if let Some(ref backend) = self.db_backend {
+                    return Some(DefaultSettingsPersistence::new(backend.clone()));
+                }
             }
+            _ => {}
         }
 
         None
@@ -665,6 +668,7 @@ impl SetupWizard {
         }
 
         self.db_pool = Some(pool);
+        self.db_backend = None; // Clear stale libSQL handle
         Ok(())
     }
 
@@ -692,6 +696,7 @@ impl SetupWizard {
         };
 
         self.db_backend = Some(Arc::new(backend));
+        self.db_pool = None; // Clear stale PostgreSQL handle
         Ok(())
     }
 

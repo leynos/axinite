@@ -9,7 +9,7 @@ use crate::workspace::{MemoryChunk, MemoryDocument, SearchResult, WorkspaceEntry
 use super::PgBackend;
 
 impl NativeWorkspaceStore for PgBackend {
-    delegate_async! {
+    crate::delegate_async! {
         to repo;
         async fn get_document_by_path(&self, user_id: &str, agent_id: Option<Uuid>, path: &str) -> Result<MemoryDocument, WorkspaceError>;
         async fn get_document_by_id(&self, id: Uuid) -> Result<MemoryDocument, WorkspaceError>;

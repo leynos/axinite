@@ -10,7 +10,7 @@ use crate::history::{ConversationMessage, ConversationSummary};
 use super::PgBackend;
 
 impl NativeConversationStore for PgBackend {
-    delegate_async! {
+    crate::delegate_async! {
         to store;
         async fn create_conversation(&self, channel: &str, user_id: &str, thread_id: Option<&str>) -> Result<Uuid, DatabaseError>;
         async fn touch_conversation(&self, id: Uuid) -> Result<(), DatabaseError>;

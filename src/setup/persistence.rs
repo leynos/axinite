@@ -2,8 +2,6 @@
 //!
 //! Encapsulates all database interactions for the default user and session tokens,
 //! keeping hard-coded identifiers and DB logic out of the orchestration code.
-//!
-//! This module is ready for integration but not yet wired into SetupWizard.
 
 use crate::db::{Database, SettingKey, UserId};
 use crate::error::DatabaseError;
@@ -28,32 +26,11 @@ impl DefaultSettingsPersistence {
         Self { backend }
     }
 
-    /// Load all settings for the default user from the database.
-    #[allow(dead_code)]
-    pub async fn load_default_settings(&self) -> Result<Settings, DatabaseError> {
-        let map = self
-            .backend
-            .get_all_settings(UserId::from(DEFAULT_USER_ID))
-            .await?;
-        Ok(Settings::from_db_map(&map))
-    }
-
     /// Save all settings for the default user to the database.
     pub async fn save_default_settings(&self, settings: &Settings) -> Result<(), DatabaseError> {
         let db_map = settings.to_db_map();
         self.backend
             .set_all_settings(UserId::from(DEFAULT_USER_ID), &db_map)
-            .await
-    }
-
-    /// Load the session token for the default user.
-    #[allow(dead_code)]
-    pub async fn load_session_token(&self) -> Result<Option<serde_json::Value>, DatabaseError> {
-        self.backend
-            .get_setting(
-                UserId::from(DEFAULT_USER_ID),
-                SettingKey::from(NEARAI_SESSION_TOKEN_KEY),
-            )
             .await
     }
 
@@ -65,14 +42,6 @@ impl DefaultSettingsPersistence {
                 SettingKey::from(NEARAI_SESSION_TOKEN_KEY),
                 value,
             )
-            .await
-    }
-
-    /// Check if default user has any settings in the database.
-    #[allow(dead_code)]
-    pub async fn has_default_settings(&self) -> Result<bool, DatabaseError> {
-        self.backend
-            .has_settings(UserId::from(DEFAULT_USER_ID))
             .await
     }
 

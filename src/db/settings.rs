@@ -166,49 +166,18 @@ pub trait NativeSettingsStore: Send + Sync {
     ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
 }
 
-macro_rules! settings_delegate {
-    (uid_key, $name:ident ( $($extra_arg:ident : $extra_ty:ty),* ) -> $ret:ty) => {
-        fn $name<'a>(
-            &'a self,
-            user_id: UserId,
-            key: SettingKey,
-            $( $extra_arg: $extra_ty, )*
-        ) -> DbFuture<'a, $ret> {
-            Box::pin(NativeSettingsStore::$name(
-                self,
-                user_id,
-                key,
-                $( $extra_arg, )*
-            ))
-        }
-    };
-    (uid, $name:ident ( $($extra_arg:ident : $extra_ty:ty),* ) -> $ret:ty) => {
-        fn $name<'a>(
-            &'a self,
-            user_id: UserId,
-            $( $extra_arg: $extra_ty, )*
-        ) -> DbFuture<'a, $ret> {
-            Box::pin(NativeSettingsStore::$name(
-                self,
-                user_id,
-                $( $extra_arg, )*
-            ))
-        }
-    };
-}
-
 impl<T> SettingsStore for T
 where
     T: NativeSettingsStore + Send + Sync,
 {
-    settings_delegate!(uid_key, get_setting()      -> Result<Option<serde_json::Value>, DatabaseError>);
-    settings_delegate!(uid_key, get_setting_full() -> Result<Option<SettingRow>, DatabaseError>);
-    settings_delegate!(uid_key, set_setting(value: &'a serde_json::Value) -> Result<(), DatabaseError>);
-    settings_delegate!(uid_key, delete_setting()   -> Result<bool, DatabaseError>);
-    settings_delegate!(uid, list_settings()        -> Result<Vec<SettingRow>, DatabaseError>);
-    settings_delegate!(uid, get_all_settings()     -> Result<HashMap<String, serde_json::Value>, DatabaseError>);
-    settings_delegate!(uid, set_all_settings(settings: &'a HashMap<String, serde_json::Value>) -> Result<(), DatabaseError>);
-    settings_delegate!(uid, has_settings()         -> Result<bool, DatabaseError>);
+    crate::impl_settings_forwarders!(uid_key, get_setting()      -> Result<Option<serde_json::Value>, DatabaseError>);
+    crate::impl_settings_forwarders!(uid_key, get_setting_full() -> Result<Option<SettingRow>, DatabaseError>);
+    crate::impl_settings_forwarders!(uid_key, set_setting(value: &'a serde_json::Value) -> Result<(), DatabaseError>);
+    crate::impl_settings_forwarders!(uid_key, delete_setting()   -> Result<bool, DatabaseError>);
+    crate::impl_settings_forwarders!(uid, list_settings()        -> Result<Vec<SettingRow>, DatabaseError>);
+    crate::impl_settings_forwarders!(uid, get_all_settings()     -> Result<HashMap<String, serde_json::Value>, DatabaseError>);
+    crate::impl_settings_forwarders!(uid, set_all_settings(settings: &'a HashMap<String, serde_json::Value>) -> Result<(), DatabaseError>);
+    crate::impl_settings_forwarders!(uid, has_settings()         -> Result<bool, DatabaseError>);
 }
 
 #[cfg(test)]

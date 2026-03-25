@@ -488,6 +488,98 @@ macro_rules! impl_db_forwarders {
     };
 }
 
+/// Unified macro for delegating async trait methods to an inner field.
+///
+/// This reduces boilerplate when implementing traits by forwarding method calls
+/// to a contained store, repository, or other backend.
+///
+/// # Usage
+///
+/// ```ignore
+/// impl MyTrait for MyStruct {
+///     delegate_async! {
+///         to store;
+///         async fn get_item(&self, id: Uuid) -> Result<Item, Error>;
+///         async fn list_items(&self) -> Result<Vec<Item>, Error>;
+///     }
+/// }
+/// ```
+///
+/// The `to` clause should be just the field name (e.g., `store`, `repo`), not `self.store`.
+#[macro_export]
+macro_rules! delegate_async {
+    (
+        to $field:ident;
+        $(
+            async fn $method:ident ( &self $(, $arg:ident : $ty:ty)* ) -> $ret:ty ;
+        )*
+    ) => {
+        $(
+            async fn $method ( &self $(, $arg : $ty )* ) -> $ret {
+                self . $field . $method ( $( $arg ),* ) .await
+            }
+        )*
+    };
+}
+
+/// Generates individual forwarder methods that wrap native trait calls in Box::pin.
+///
+/// Unlike `impl_db_forwarders!` which generates the entire impl block, this macro
+/// only generates method bodies for use within an existing impl block. This is useful
+/// when implementing the dyn-safe boundary trait by forwarding to the native trait.
+///
+/// # Arms
+///
+/// - `uid_key, method_name(...) -> RetType` — Forwards a method with both `user_id: UserId`
+///   and `key: SettingKey` parameters, plus any extra arguments.
+/// - `uid, method_name(...) -> RetType` — Forwards a method with only `user_id: UserId`
+///   parameter, plus any extra arguments.
+///
+/// Both arms wrap the native trait call in `Box::pin()` to satisfy the DbFuture return type.
+///
+/// # Usage
+///
+/// ```ignore
+/// impl<T> SettingsStore for T
+/// where
+///     T: NativeSettingsStore + Send + Sync,
+/// {
+///     impl_settings_forwarders!(uid_key, get_setting() -> Result<Option<serde_json::Value>, DatabaseError>);
+///     impl_settings_forwarders!(uid, list_settings() -> Result<Vec<SettingRow>, DatabaseError>);
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_settings_forwarders {
+    (uid_key, $name:ident ( $($extra_arg:ident : $extra_ty:ty),* ) -> $ret:ty) => {
+        fn $name<'a>(
+            &'a self,
+            user_id: UserId,
+            key: SettingKey,
+            $( $extra_arg: $extra_ty, )*
+        ) -> DbFuture<'a, $ret> {
+            Box::pin(NativeSettingsStore::$name(
+                self,
+                user_id,
+                key,
+                $( $extra_arg, )*
+            ))
+        }
+    };
+    (uid, $name:ident ( $($extra_arg:ident : $extra_ty:ty),* ) -> $ret:ty) => {
+        fn $name<'a>(
+            &'a self,
+            user_id: UserId,
+            $( $extra_arg: $extra_ty, )*
+        ) -> DbFuture<'a, $ret> {
+            Box::pin(NativeSettingsStore::$name(
+                self,
+                user_id,
+                $( $extra_arg, )*
+            ))
+        }
+    };
+}
+
 impl_db_forwarders! {
     dyn = crate::db::ConversationStore,
     native = crate::db::NativeConversationStore,

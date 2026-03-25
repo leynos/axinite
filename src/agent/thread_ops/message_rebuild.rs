@@ -91,38 +91,49 @@ pub(super) fn rebuild_chat_messages_from_db(
             "user" => result.push(ChatMessage::user(&msg.content)),
             "assistant" => result.push(ChatMessage::assistant(&msg.content)),
             "tool_calls" => {
-                if let Ok(calls) = serde_json::from_str::<Vec<serde_json::Value>>(&msg.content) {
-                    if calls.is_empty() {
+                let calls = match serde_json::from_str::<Vec<serde_json::Value>>(&msg.content) {
+                    Ok(calls) => calls,
+                    Err(e) => {
+                        tracing::warn!(
+                            message_id = %msg.id,
+                            error = %e,
+                            "Skipping tool_calls row with invalid JSON"
+                        );
                         continue;
                     }
-                    match parse_tool_call_entries(&calls) {
-                        Err(invalid_indices) => {
-                            tracing::warn!(
-                                message_id = %msg.id,
-                                total_calls = calls.len(),
-                                invalid_indices = ?invalid_indices,
-                                "Skipping malformed tool_calls row: missing call_id or name in at least one entry"
-                            );
-                            continue;
-                        }
-                        Ok(parsed_calls) => {
-                            let tool_calls: Vec<ToolCall> = parsed_calls
-                                .iter()
-                                .map(|(id, name, arguments)| ToolCall {
-                                    id: id.clone(),
-                                    name: name.clone(),
-                                    arguments: arguments.clone(),
-                                })
-                                .collect();
-                            result.push(ChatMessage::assistant_with_tool_calls(None, tool_calls));
+                };
 
-                            for (idx, (call_id, name, _)) in parsed_calls.iter().enumerate() {
-                                result.push(ChatMessage::tool_result(
-                                    call_id.clone(),
-                                    name.clone(),
-                                    tool_result_content(&calls[idx], name, safety),
-                                ));
-                            }
+                if calls.is_empty() {
+                    continue;
+                }
+
+                match parse_tool_call_entries(&calls) {
+                    Err(invalid_indices) => {
+                        tracing::warn!(
+                            message_id = %msg.id,
+                            total_calls = calls.len(),
+                            invalid_indices = ?invalid_indices,
+                            "Skipping malformed tool_calls row: missing call_id or name in at least one entry"
+                        );
+                        continue;
+                    }
+                    Ok(parsed_calls) => {
+                        let tool_calls: Vec<ToolCall> = parsed_calls
+                            .iter()
+                            .map(|(id, name, arguments)| ToolCall {
+                                id: id.clone(),
+                                name: name.clone(),
+                                arguments: arguments.clone(),
+                            })
+                            .collect();
+                        result.push(ChatMessage::assistant_with_tool_calls(None, tool_calls));
+
+                        for (idx, (call_id, name, _)) in parsed_calls.iter().enumerate() {
+                            result.push(ChatMessage::tool_result(
+                                call_id.clone(),
+                                name.clone(),
+                                tool_result_content(&calls[idx], name, safety),
+                            ));
                         }
                     }
                 }
@@ -241,14 +252,18 @@ mod tests {
         assert_eq!(tcs[0].id, "call_0");
         assert_eq!(tcs[1].name, "echo");
 
-        // tool results
+        // tool results - verify they contain both the original content and safety wrapper
         assert_eq!(result[2].role, crate::llm::Role::Tool);
         assert_eq!(result[2].tool_call_id, Some("call_0".to_string()));
         assert!(result[2].content.contains("Found 3 results"));
+        assert!(result[2].content.contains("<tool_output"));
+        assert!(result[2].content.contains("name=\"memory_search\""));
 
         assert_eq!(result[3].role, crate::llm::Role::Tool);
         assert_eq!(result[3].tool_call_id, Some("call_1".to_string()));
         assert!(result[3].content.contains("Error: timeout"));
+        assert!(result[3].content.contains("<tool_output"));
+        assert!(result[3].content.contains("name=\"echo\""));
 
         // final assistant
         assert_eq!(result[4].role, crate::llm::Role::Assistant);
