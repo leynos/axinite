@@ -106,7 +106,15 @@ fn tool_completed_parameterized(#[case] tc: ToolCompletedTestCase) {
         if tc.expected_success {
             assert!(error.is_none());
         } else {
-            assert!(error.is_some());
+            let err_msg = error
+                .as_ref()
+                .expect("error should be Some when expected_success is false");
+            // Assert error contains expected reason from the test case
+            assert!(
+                err_msg.contains("db error") || err_msg.contains("timeout"),
+                "error message should contain expected reason: {}",
+                err_msg
+            );
         }
 
         if tc.should_have_params {

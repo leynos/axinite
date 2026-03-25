@@ -128,6 +128,16 @@ pub struct HybridSearchParams<'a> {
 pub struct UserId(String);
 
 impl UserId {
+    /// Returns the user identifier as a string slice.
+    ///
+    /// This provides read-only access to the underlying user ID string
+    /// for use with external APIs or database queries.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let user_id = UserId::from("alice");
+    /// assert_eq!(user_id.as_str(), "alice");
+    /// ```
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -144,6 +154,16 @@ impl From<&str> for UserId {
 pub struct SettingKey(String);
 
 impl SettingKey {
+    /// Returns the setting key as a string slice.
+    ///
+    /// This provides read-only access to the underlying setting key string
+    /// for use with external APIs or database queries.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let key = SettingKey::from("theme");
+    /// assert_eq!(key.as_str(), "theme");
+    /// ```
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -1886,24 +1906,23 @@ mod tests {
         // Test that the blanket impl (via settings_delegate! macro) correctly accepts newtypes
         let result =
             SettingsStore::get_setting(&store, "test_user".into(), "test_key".into()).await;
-        assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result.expect("get_setting for test_user/test_key failed");
         assert_eq!(value, Some(serde_json::json!("test_value")));
 
         // Test with non-matching values
         let result =
             SettingsStore::get_setting(&store, "wrong_user".into(), "test_key".into()).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), None);
+        let value = result.expect("get_setting for wrong_user/test_key failed");
+        assert_eq!(value, None);
 
         // Test other methods to ensure macro generates them correctly
         let result =
             SettingsStore::delete_setting(&store, "test_user".into(), "test_key".into()).await;
-        assert!(result.is_ok());
-        assert!(result.unwrap());
+        let deleted = result.expect("delete_setting for test_user/test_key failed");
+        assert!(deleted);
 
         let result = SettingsStore::has_settings(&store, "test_user".into()).await;
-        assert!(result.is_ok());
-        assert!(!result.unwrap());
+        let has = result.expect("has_settings for test_user failed");
+        assert!(!has);
     }
 }

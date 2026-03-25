@@ -7,6 +7,60 @@
 use crate::history::ConversationMessage;
 use crate::llm::{ChatMessage, ToolCall};
 
+/// Validates and parses a `tool_calls` JSON array.
+///
+/// Returns `Ok(parsed)` where each entry is `(call_id, name, arguments)` if
+/// every entry contains a non-null `call_id` and `name`.
+///
+/// Returns `Err(invalid_indices)` if any entry is malformed; the Vec contains
+/// the zero-based positions of the offending entries for diagnostic logging.
+fn parse_tool_call_entries(
+    calls: &[serde_json::Value],
+) -> Result<Vec<(String, String, serde_json::Value)>, Vec<usize>> {
+    let invalid_indices: Vec<usize> = calls
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| {
+            c.get("call_id").and_then(|v| v.as_str()).is_none()
+                || c.get("name").and_then(|v| v.as_str()).is_none()
+        })
+        .map(|(idx, _)| idx)
+        .collect();
+
+    if !invalid_indices.is_empty() {
+        return Err(invalid_indices);
+    }
+
+    Ok(calls
+        .iter()
+        .filter_map(|c| {
+            let call_id = c.get("call_id")?.as_str()?.to_string();
+            let name = c.get("name")?.as_str()?.to_string();
+            let arguments = c
+                .get("parameters")
+                .cloned()
+                .unwrap_or(serde_json::json!({}));
+            Some((call_id, name, arguments))
+        })
+        .collect())
+}
+
+/// Extracts the result-content string for a single tool call entry.
+///
+/// Prefers `error` (formatted as `"Error: …"`), then `result`, then
+/// `result_preview`, defaulting to `"OK"`.
+fn tool_result_content(call: &serde_json::Value) -> String {
+    if let Some(err) = call.get("error").and_then(|v| v.as_str()) {
+        format!("Error: {}", err)
+    } else if let Some(res) = call.get("result").and_then(|v| v.as_str()) {
+        res.to_string()
+    } else if let Some(preview) = call.get("result_preview").and_then(|v| v.as_str()) {
+        preview.to_string()
+    } else {
+        "OK".to_string()
+    }
+}
+
 /// Rebuild full LLM-compatible `ChatMessage` sequence from DB messages.
 ///
 /// Parses `role="tool_calls"` rows to reconstruct `assistant_with_tool_calls`
@@ -23,89 +77,39 @@ pub(super) fn rebuild_chat_messages_from_db(
             "user" => result.push(ChatMessage::user(&msg.content)),
             "assistant" => result.push(ChatMessage::assistant(&msg.content)),
             "tool_calls" => {
-                // Try to parse the enriched JSON and rebuild tool messages.
                 if let Ok(calls) = serde_json::from_str::<Vec<serde_json::Value>>(&msg.content) {
                     if calls.is_empty() {
                         continue;
                     }
+                    match parse_tool_call_entries(&calls) {
+                        Err(invalid_indices) => {
+                            tracing::warn!(
+                                message_id = %msg.id,
+                                total_calls = calls.len(),
+                                invalid_indices = ?invalid_indices,
+                                "Skipping malformed tool_calls row: missing call_id or name in at least one entry"
+                            );
+                            continue;
+                        }
+                        Ok(parsed_calls) => {
+                            let tool_calls: Vec<ToolCall> = parsed_calls
+                                .iter()
+                                .map(|(id, name, arguments)| ToolCall {
+                                    id: id.clone(),
+                                    name: name.clone(),
+                                    arguments: arguments.clone(),
+                                })
+                                .collect();
+                            result.push(ChatMessage::assistant_with_tool_calls(None, tool_calls));
 
-                    // Validate that all entries have both call_id and name
-                    let all_valid = calls.iter().all(|c| {
-                        c.get("call_id").and_then(|v| v.as_str()).is_some()
-                            && c.get("name").and_then(|v| v.as_str()).is_some()
-                    });
-
-                    if !all_valid {
-                        // Malformed row: skip the entire tool_calls entry and log a warning
-                        // Log only msg.id and structural hints to avoid leaking sensitive tool arguments/results
-                        let total_calls = calls.len();
-                        let invalid_indices: Vec<usize> = calls
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, c)| {
-                                c.get("call_id").and_then(|v| v.as_str()).is_none()
-                                    || c.get("name").and_then(|v| v.as_str()).is_none()
-                            })
-                            .map(|(idx, _)| idx)
-                            .collect();
-                        tracing::warn!(
-                            message_id = %msg.id,
-                            total_calls = total_calls,
-                            invalid_indices = ?invalid_indices,
-                            "Skipping malformed tool_calls row: missing call_id or name in at least one entry"
-                        );
-                        continue;
-                    }
-
-                    // Build assistant_with_tool_calls + tool_result messages
-                    // Parse and validate all fields once, storing them for reuse
-                    let parsed_calls: Vec<(String, String, serde_json::Value)> = calls
-                        .iter()
-                        .filter_map(|c| {
-                            let call_id = c.get("call_id")?.as_str()?.to_string();
-                            let name = c.get("name")?.as_str()?.to_string();
-                            let arguments = c
-                                .get("parameters")
-                                .cloned()
-                                .unwrap_or(serde_json::json!({}));
-                            Some((call_id, name, arguments))
-                        })
-                        .collect();
-
-                    // Build ToolCall structs from parsed data
-                    let tool_calls: Vec<ToolCall> = parsed_calls
-                        .iter()
-                        .map(|(id, name, arguments)| ToolCall {
-                            id: id.clone(),
-                            name: name.clone(),
-                            arguments: arguments.clone(),
-                        })
-                        .collect();
-
-                    // The assistant text for tool_calls is always None here;
-                    // the final assistant response comes as a separate
-                    // "assistant" row after this tool_calls row.
-                    result.push(ChatMessage::assistant_with_tool_calls(None, tool_calls));
-
-                    // Emit tool_result messages for each call using the parsed data
-                    for (idx, (call_id, name, _)) in parsed_calls.iter().enumerate() {
-                        let c = &calls[idx];
-                        let content = if let Some(err) = c.get("error").and_then(|v| v.as_str()) {
-                            format!("Error: {}", err)
-                        } else if let Some(res) = c.get("result").and_then(|v| v.as_str()) {
-                            res.to_string()
-                        } else if let Some(preview) =
-                            c.get("result_preview").and_then(|v| v.as_str())
-                        {
-                            preview.to_string()
-                        } else {
-                            "OK".to_string()
-                        };
-                        result.push(ChatMessage::tool_result(
-                            call_id.clone(),
-                            name.clone(),
-                            content,
-                        ));
+                            for (idx, (call_id, name, _)) in parsed_calls.iter().enumerate() {
+                                result.push(ChatMessage::tool_result(
+                                    call_id.clone(),
+                                    name.clone(),
+                                    tool_result_content(&calls[idx]),
+                                ));
+                            }
+                        }
                     }
                 }
             }
