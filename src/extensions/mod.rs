@@ -24,22 +24,48 @@ pub use discovery::{NoOpDiscovery, OnlineDiscovery};
 pub use manager::ExtensionManager;
 pub use registry::ExtensionRegistry;
 
-use async_trait::async_trait;
+use std::future::Future;
+use std::pin::Pin;
 
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
-/// Port abstraction for discovering extensions.
+/// Boxed future alias for dyn-safe discovery methods.
+pub type DiscoveryFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Object-safe port for discovering extensions (dyn-facing).
 ///
-/// Implemented by [`OnlineDiscovery`] for live internet-based search.
-/// Test fixtures can implement this to inject stub discovery results.
-#[async_trait]
+/// Concrete implementations should implement [`NativeDiscoveryPort`] instead;
+/// the blanket adapter boxes futures at the dispatch boundary automatically.
+///
+/// Used behind `Arc<dyn DiscoveryPort>` in [`ExtensionManager`].
 pub trait DiscoveryPort: Send + Sync {
+    /// Search for extensions matching the query string.
+    fn discover<'a>(&'a self, query: &'a str) -> DiscoveryFuture<'a, Vec<RegistryEntry>>;
+}
+
+/// Native async sibling trait for concrete discovery implementations.
+///
+/// Implement this on your type and the blanket adapter provides
+/// the dyn-safe [`DiscoveryPort`] for free.
+pub trait NativeDiscoveryPort: Send + Sync {
     /// Search for extensions matching the query string.
     ///
     /// Returns zero or more registry entries that may have been
     /// discovered online, validated, or retrieved from a cache.
-    async fn discover(&self, query: &str) -> Vec<RegistryEntry>;
+    fn discover<'a>(
+        &'a self,
+        query: &'a str,
+    ) -> impl Future<Output = Vec<RegistryEntry>> + Send + 'a;
+}
+
+impl<T> DiscoveryPort for T
+where
+    T: NativeDiscoveryPort + Send + Sync,
+{
+    fn discover<'a>(&'a self, query: &'a str) -> DiscoveryFuture<'a, Vec<RegistryEntry>> {
+        Box::pin(NativeDiscoveryPort::discover(self, query))
+    }
 }
 
 /// The kind of extension, determining how it's installed, authenticated, and activated.
