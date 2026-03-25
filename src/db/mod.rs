@@ -1752,6 +1752,31 @@ impl<T: NativeDatabase> Database for T {
 mod tests {
     use super::*;
 
+    /// Asserts the standard string-newtype contract for a type that implements
+    /// `From<&str>`, `Clone`, `PartialEq`, `Eq`, `Hash`, and `as_str() -> &str`.
+    macro_rules! assert_string_newtype_contract {
+        ($Type:ty, $primary:expr, $other:expr) => {{
+            // From + as_str
+            let value = <$Type>::from($primary);
+            assert_eq!(value.as_str(), $primary);
+
+            // Clone
+            let cloned = value.clone();
+            assert_eq!(cloned.as_str(), $primary);
+
+            // PartialEq
+            assert_eq!(value, cloned);
+            let other = <$Type>::from($other);
+            assert_ne!(value, other);
+
+            // Hash (via HashSet round-trip)
+            let mut set = std::collections::HashSet::new();
+            set.insert(value.clone());
+            assert!(set.contains(&value));
+            assert!(!set.contains(&other));
+        }};
+    }
+
     /// Regression test: `create_secrets_store` selects the correct backend at
     /// runtime based on `DatabaseConfig`, not at compile time. Previously the
     /// CLI duplicated this logic with compile-time `#[cfg]` gates that always
@@ -1792,46 +1817,12 @@ mod tests {
 
     #[test]
     fn test_user_id_newtype() {
-        // Test From trait
-        let user_id = UserId::from("test_user");
-        assert_eq!(user_id.as_str(), "test_user");
-
-        // Test Clone
-        let cloned = user_id.clone();
-        assert_eq!(cloned.as_str(), "test_user");
-
-        // Test PartialEq
-        assert_eq!(user_id, cloned);
-        let other = UserId::from("other_user");
-        assert_ne!(user_id, other);
-
-        // Test Hash (via collection)
-        let mut set = std::collections::HashSet::new();
-        set.insert(user_id.clone());
-        assert!(set.contains(&user_id));
-        assert!(!set.contains(&other));
+        assert_string_newtype_contract!(UserId, "test_user", "other_user");
     }
 
     #[test]
     fn test_setting_key_newtype() {
-        // Test From trait
-        let key = SettingKey::from("api_key");
-        assert_eq!(key.as_str(), "api_key");
-
-        // Test Clone
-        let cloned = key.clone();
-        assert_eq!(cloned.as_str(), "api_key");
-
-        // Test PartialEq
-        assert_eq!(key, cloned);
-        let other = SettingKey::from("other_key");
-        assert_ne!(key, other);
-
-        // Test Hash (via collection)
-        let mut set = std::collections::HashSet::new();
-        set.insert(key.clone());
-        assert!(set.contains(&key));
-        assert!(!set.contains(&other));
+        assert_string_newtype_contract!(SettingKey, "api_key", "other_key");
     }
 
     // Dummy implementation for testing settings_delegate macro
