@@ -118,4 +118,227 @@ mod tests {
         // the update_sandbox_job_status implementation
         let _ = (id, status, success, message, started_at, completed_at);
     }
+
+    /// Behavioral tests for NativeSandboxStore on PgBackend.
+    /// These verify field pass-through and method delegation work correctly.
+    #[cfg(feature = "libsql")]
+    mod behavioral {
+        use super::*;
+        use crate::testing::test_db;
+
+        #[tokio::test]
+        async fn test_update_sandbox_job_status_field_passthrough() {
+            let (db, _temp) = test_db().await;
+
+            // Create a test job first
+            let job_id = Uuid::new_v4();
+            let job = SandboxJobRecord {
+                id: job_id,
+                task: "test_task".to_string(),
+                status: "pending".to_string(),
+                user_id: "test_user".to_string(),
+                project_dir: "/tmp/test".to_string(),
+                success: None,
+                failure_reason: None,
+                created_at: Utc::now(),
+                started_at: None,
+                completed_at: None,
+                credential_grants_json: "[]".to_string(),
+            };
+
+            db.save_sandbox_job(&job)
+                .await
+                .expect("failed to save test job");
+
+            // Prepare full status update with all fields populated
+            let started = Utc::now();
+            let completed = Utc::now();
+            let update = SandboxJobStatusUpdate {
+                id: job_id,
+                status: "completed",
+                success: Some(true),
+                message: Some("All tests passed"),
+                started_at: Some(started),
+                completed_at: Some(completed),
+            };
+
+            // Update through the trait method
+            db.update_sandbox_job_status(update)
+                .await
+                .expect("update_sandbox_job_status should succeed");
+
+            // Verify all fields were passed through correctly
+            let retrieved = db
+                .get_sandbox_job(job_id)
+                .await
+                .expect("get_sandbox_job should succeed")
+                .expect("job should exist");
+
+            assert_eq!(retrieved.status, "completed");
+            assert_eq!(retrieved.success, Some(true));
+            assert_eq!(
+                retrieved.failure_reason,
+                Some("All tests passed".to_string())
+            );
+            assert!(retrieved.started_at.is_some());
+            assert!(retrieved.completed_at.is_some());
+        }
+
+        #[tokio::test]
+        async fn test_list_sandbox_jobs_for_user() {
+            let (db, _temp) = test_db().await;
+
+            // Create jobs for two different users
+            let user1_job = SandboxJobRecord {
+                id: Uuid::new_v4(),
+                task: "task1".to_string(),
+                status: "pending".to_string(),
+                user_id: "user1".to_string(),
+                project_dir: "/tmp/user1".to_string(),
+                success: None,
+                failure_reason: None,
+                created_at: Utc::now(),
+                started_at: None,
+                completed_at: None,
+                credential_grants_json: "[]".to_string(),
+            };
+
+            let user2_job = SandboxJobRecord {
+                id: Uuid::new_v4(),
+                task: "task2".to_string(),
+                status: "pending".to_string(),
+                user_id: "user2".to_string(),
+                project_dir: "/tmp/user2".to_string(),
+                success: None,
+                failure_reason: None,
+                created_at: Utc::now(),
+                started_at: None,
+                completed_at: None,
+                credential_grants_json: "[]".to_string(),
+            };
+
+            db.save_sandbox_job(&user1_job)
+                .await
+                .expect("failed to save user1 job");
+            db.save_sandbox_job(&user2_job)
+                .await
+                .expect("failed to save user2 job");
+
+            // List jobs for user1
+            let user1_jobs = db
+                .list_sandbox_jobs_for_user("user1")
+                .await
+                .expect("list_sandbox_jobs_for_user should succeed");
+
+            assert_eq!(user1_jobs.len(), 1);
+            assert_eq!(user1_jobs[0].user_id, "user1");
+            assert_eq!(user1_jobs[0].id, user1_job.id);
+
+            // List jobs for user2
+            let user2_jobs = db
+                .list_sandbox_jobs_for_user("user2")
+                .await
+                .expect("list_sandbox_jobs_for_user should succeed");
+
+            assert_eq!(user2_jobs.len(), 1);
+            assert_eq!(user2_jobs[0].user_id, "user2");
+            assert_eq!(user2_jobs[0].id, user2_job.id);
+
+            // Verify user3 has no jobs
+            let user3_jobs = db
+                .list_sandbox_jobs_for_user("user3")
+                .await
+                .expect("list_sandbox_jobs_for_user should succeed");
+
+            assert!(user3_jobs.is_empty());
+        }
+
+        #[tokio::test]
+        async fn test_sandbox_job_summary_for_user() {
+            let (db, _temp) = test_db().await;
+
+            // Create multiple jobs with different statuses for one user
+            let pending_job = SandboxJobRecord {
+                id: Uuid::new_v4(),
+                task: "pending_task".to_string(),
+                status: "pending".to_string(),
+                user_id: "test_user".to_string(),
+                project_dir: "/tmp/pending".to_string(),
+                success: None,
+                failure_reason: None,
+                created_at: Utc::now(),
+                started_at: None,
+                completed_at: None,
+                credential_grants_json: "[]".to_string(),
+            };
+
+            let completed_job = SandboxJobRecord {
+                id: Uuid::new_v4(),
+                task: "completed_task".to_string(),
+                status: "completed".to_string(),
+                user_id: "test_user".to_string(),
+                project_dir: "/tmp/completed".to_string(),
+                success: Some(true),
+                failure_reason: Some("Success".to_string()),
+                created_at: Utc::now(),
+                started_at: Some(Utc::now()),
+                completed_at: Some(Utc::now()),
+                credential_grants_json: "[]".to_string(),
+            };
+
+            db.save_sandbox_job(&pending_job)
+                .await
+                .expect("failed to save pending job");
+            db.save_sandbox_job(&completed_job)
+                .await
+                .expect("failed to save completed job");
+
+            // Get summary for user
+            let summary = db
+                .sandbox_job_summary_for_user("test_user")
+                .await
+                .expect("sandbox_job_summary_for_user should succeed");
+
+            assert!(summary.total > 0);
+            // Note: actual summary structure depends on SandboxJobSummary implementation
+        }
+
+        #[tokio::test]
+        async fn test_sandbox_job_belongs_to_user() {
+            let (db, _temp) = test_db().await;
+
+            let job_id = Uuid::new_v4();
+            let job = SandboxJobRecord {
+                id: job_id,
+                task: "ownership_test".to_string(),
+                status: "pending".to_string(),
+                user_id: "owner".to_string(),
+                project_dir: "/tmp/owner".to_string(),
+                success: None,
+                failure_reason: None,
+                created_at: Utc::now(),
+                started_at: None,
+                completed_at: None,
+                credential_grants_json: "[]".to_string(),
+            };
+
+            db.save_sandbox_job(&job).await.expect("failed to save job");
+
+            // Test ownership check
+            let belongs = db
+                .sandbox_job_belongs_to_user(job_id, "owner")
+                .await
+                .expect("sandbox_job_belongs_to_user should succeed");
+
+            assert!(belongs, "job should belong to owner");
+
+            // Test non-ownership
+            let not_belongs = db
+                .sandbox_job_belongs_to_user(job_id, "other_user")
+                .await
+                .expect("sandbox_job_belongs_to_user should succeed");
+
+            assert!(!not_belongs, "job should not belong to other_user");
+        }
+    }
 }
