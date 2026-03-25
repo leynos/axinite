@@ -70,6 +70,16 @@ impl PgBackend {
         Ok(Self { store, repo })
     }
 
+    /// Create a PostgreSQL backend from an existing connection pool.
+    ///
+    /// This is useful when the pool has already been created and initialized
+    /// (e.g., during setup wizard flows).
+    pub fn from_pool(pool: Pool) -> Self {
+        let store = Store::from_pool(pool);
+        let repo = Repository::new(store.pool());
+        Self { store, repo }
+    }
+
     /// Get a clone of the connection pool.
     ///
     /// Useful for sharing with components that still need raw pool access.

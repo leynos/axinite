@@ -18,12 +18,10 @@ const DEFAULT_USER_ID: &str = "default";
 const NEARAI_SESSION_TOKEN_KEY: &str = "nearai.session_token";
 
 /// Helper for persisting default user settings during setup wizard.
-#[allow(dead_code)]
 pub struct DefaultSettingsPersistence {
     backend: Arc<dyn Database>,
 }
 
-#[allow(dead_code)]
 impl DefaultSettingsPersistence {
     /// Create a new persistence helper for the given database backend.
     pub fn new(backend: Arc<dyn Database>) -> Self {
