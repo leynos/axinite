@@ -130,8 +130,8 @@ Key notes:
   if `set_model()` was called — only `NearAiChatProvider` supports
   this).
 - `cost_per_token()` returns `(Decimal, Decimal)` using `rust_decimal`.
-  Look up via `costs::model_cost()` in your constructor; fall back to
-  `costs::default_cost()` for unknowns.
+  Look up via `costs::model_cost()` in the provider's constructor; fall
+  back to `costs::default_cost()` for unknowns.
 - `RigAdapter` ignores per-request model overrides (logs a warning).
   Only `NearAiChatProvider` supports per-request model overrides via
   `CompletionRequest::model`.
