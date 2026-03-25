@@ -355,8 +355,10 @@ this repository.
    the 4 high-fanout core trait families — `Tool`, `LlmProvider`, `Channel`,
    and `Database` — in separate sub-waves (Milestone 4). As of 2026-03-23,
    zero production `#[async_trait]` attribute usages remain in `src/`.
-5. Removing `async-trait` from `Cargo.toml` is the remaining step (Milestone
-   5), pending a fresh tree audit.
+5. Removed `async-trait` from `Cargo.toml` (Milestone 5, 2026-03-24). A
+   fresh tree audit confirmed zero attribute usages and zero imports in
+   the codebase. The crate remains as a transitive dependency through
+   upstream crates.
 
 ### Refinements discovered during the broad rollout
 

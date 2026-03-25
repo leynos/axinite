@@ -95,20 +95,27 @@ Configure via `NearAiConfig.max_retries` (env: `NEARAI_MAX_RETRIES`; default: 3)
 
 ## LlmProvider Trait
 
-The full trait (all methods must be implemented or rely on defaults):
+Uses the ADR 006 dual-trait pattern. `LlmProvider` is the dyn-safe object
+boundary (used as `Arc<dyn LlmProvider>`). `NativeLlmProvider` is the
+ergonomic sibling for concrete implementations. A blanket adapter bridges
+`NativeLlmProvider` into `LlmProvider` automatically.
+
+New providers should implement `NativeLlmProvider` (all methods must be
+implemented or rely on defaults):
 
 ```rust
-#[async_trait]
-pub trait LlmProvider: Send + Sync {
+pub trait NativeLlmProvider: Send + Sync {
     // Required
     fn model_name(&self) -> &str;
     fn cost_per_token(&self) -> (Decimal, Decimal);  // (input, output) per token
-    async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, LlmError>;
-    async fn complete_with_tools(&self, request: ToolCompletionRequest) -> Result<ToolCompletionResponse, LlmError>;
+    fn complete(&self, request: CompletionRequest)
+        -> impl Future<Output = Result<CompletionResponse, LlmError>> + Send + '_;
+    fn complete_with_tools(&self, request: ToolCompletionRequest)
+        -> impl Future<Output = Result<ToolCompletionResponse, LlmError>> + Send + '_;
 
     // Optional (have defaults)
-    async fn list_models(&self) -> Result<Vec<String>, LlmError> { Ok(vec![]) }
-    async fn model_metadata(&self) -> Result<ModelMetadata, LlmError> { /* name only */ }
+    fn list_models(&self) -> impl Future<Output = Result<Vec<String>, LlmError>> + Send + '_ { async { Ok(vec![]) } }
+    fn model_metadata(&self) -> impl Future<Output = Result<ModelMetadata, LlmError>> + Send + '_ { /* name only */ }
     fn effective_model_name(&self, requested_model: Option<&str>) -> String { /* uses active */ }
     fn active_model_name(&self) -> String { self.model_name().to_string() }
     fn set_model(&self, _model: &str) -> Result<(), LlmError> { /* Err: not supported */ }
@@ -117,13 +124,23 @@ pub trait LlmProvider: Send + Sync {
 ```
 
 Key notes:
-- `model_name()` returns the configured model name; `active_model_name()` returns the currently active model (may differ if `set_model()` was called — only `NearAiChatProvider` supports this).
-- `cost_per_token()` returns `(Decimal, Decimal)` using `rust_decimal`. Look up via `costs::model_cost()` in your constructor; fall back to `costs::default_cost()` for unknowns.
-- `RigAdapter` ignores per-request model overrides (logs a warning). Only `NearAiChatProvider` supports per-request model overrides via `CompletionRequest::model`.
-- `complete_with_tools()` is never cached (tool calls can have side effects) — `CachedProvider` always passes them through.
+
+- `model_name()` returns the configured model name;
+  `active_model_name()` returns the currently active model (may differ
+  if `set_model()` was called — only `NearAiChatProvider` supports
+  this).
+- `cost_per_token()` returns `(Decimal, Decimal)` using `rust_decimal`.
+  Look up via `costs::model_cost()` in the provider's constructor; fall
+  back to `costs::default_cost()` for unknowns.
+- `RigAdapter` ignores per-request model overrides (logs a warning).
+  Only `NearAiChatProvider` supports per-request model overrides via
+  `CompletionRequest::model`.
+- `complete_with_tools()` is never cached (tool calls can have side
+  effects) — `CachedProvider` always passes them through.
 
 To add a new provider:
-1. Create `src/llm/myprovider.rs` implementing `LlmProvider`
+
+1. Create `src/llm/myprovider.rs` implementing `NativeLlmProvider`
 2. Add variant to `LlmBackend` in `mod.rs`
 3. Wire into the factory match in `mod.rs`
 4. Add env vars to `config/llm.rs` and `.env.example`

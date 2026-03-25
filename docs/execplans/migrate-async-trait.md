@@ -2,7 +2,7 @@
 
 **Branch:** `migrate-async-trait`
 **Date:** 2026-03-15
-**Status:** In progress
+**Status:** Complete
 **Estimated impact:** Reduced proc-macro expansion overhead for the small
 subset of async traits that are not used as trait objects
 
@@ -249,18 +249,22 @@ For each module, in separate commits:
 
 - [x] Confirm whether `async-trait` can be removed from `[dependencies]`
 - [x] Document which trait families still require it and why
+- [x] Remove `async-trait` from `Cargo.toml` (completed 2026-03-24)
 
-Remaining required `async-trait` surfaces as of 2026-03-23 (after Milestone 4):
+Final `async-trait` status as of 2026-03-24 (after Milestone 5):
 
 - No production trait families require `async-trait` for their definitions or
   impl blocks. All dyn-backed families have been migrated to the ADR 006
   dual-trait pattern.
-- The direct `async-trait` dependency remains in `Cargo.toml` pending the
-  Milestone 5 tree audit and explicit removal commit. Three doc-comment prose
-  mentions of the crate name remain in `src/` but are not attribute usages.
-- The crate is also present as a transitive dependency through crates that
-  have not yet updated their own code, so `cargo tree` may still show it even
-  after the direct dependency is removed from `Cargo.toml`.
+- The direct `async-trait` dependency has been removed from `Cargo.toml` as
+  part of the Milestone 5 cleanup. Zero `#[async_trait]` attribute usages
+  remain anywhere in `src/` or `tests/`. Three doc-comment prose mentions of
+  the crate name remain in `src/` but are not attribute usages and do not
+  constitute a runtime dependency.
+- The crate remains present as a transitive dependency through upstream crates
+  (wasmtime, tokio-postgres, refinery, zbus, testcontainers, and others) that
+  have not yet updated their own code. `cargo tree -i async-trait` will still
+  show it, but `ironclaw` itself no longer imports or uses it directly.
 
 ## Estimated scope
 
@@ -274,7 +278,7 @@ Table 1. Pre-ADR-006 migration scope by async-trait category (historical).
 | Confirmed safe impl blocks | 3 | **Yes** | **Completed** (Milestone 1) |
 
 See ADR 006 and Milestones 2–4 for the broad rollout that reduced production
-`#[async_trait]` usage to zero. Milestone 5 will remove the dependency from
+`#[async_trait]` usage to zero. Milestone 5 removed the direct dependency from
 `Cargo.toml`.
 
 Table 2. Current status of the highest-value migration buckets after the
@@ -284,13 +288,13 @@ initial safe batch and ADR 006 pilots.
 | ---------- | ---------------- | -------------------- | ----------- |
 | Concrete-only traits (`WasmChannelStore`, `SuccessEvaluator`) | Completed | No dyn-backed consumers were found, so native async traits could replace `#[async_trait]` directly. | No follow-up needed unless new trait-object usage appears. |
 | Narrow dyn-backed pilots (`McpTransport`, `SettingsStore`, `SoftwareBuilder`) | Completed under ADR 006 | These families needed object-safe consumers to stay intact, so the dual-trait pattern replaced `#[async_trait]` while preserving existing dyn call sites. | Use these as the reference shape for future dyn-backed migrations. |
-| Remaining dyn-backed families (`Database`, `Channel`, `Tool`, `LlmProvider`, `WasmToolStore`, and smaller internal traits) | Completed under ADR 006 | All planned families migrated via the dual-trait pattern across Milestones 2–4. Zero production `#[async_trait]` attribute usages remain in `src/`. | Remove `async-trait` from `Cargo.toml` (Milestone 5) and update governing docs. |
+| Remaining dyn-backed families (`Database`, `Channel`, `Tool`, `LlmProvider`, `WasmToolStore`, and smaller internal traits) | Completed under ADR 006 | All planned families migrated via the dual-trait pattern across Milestones 2–4. Zero production `#[async_trait]` attribute usages remain in `src/`. | Completed: `async-trait` removed from `Cargo.toml` (Milestone 5); governing docs updated. |
 
 The original directly-migratable scope was **5 of 158 uses**. The ADR 006
 broad rollout (Milestones 2–4) migrated the remaining dyn-backed families,
 bringing the production `#[async_trait]` footprint to **0 of 158 uses**.
-Removing the direct `async-trait` dependency from `Cargo.toml` is the
-remaining action in Milestone 5.
+The direct `async-trait` dependency was removed from `Cargo.toml` in
+Milestone 5, completing the migration.
 
 ## Risks
 
@@ -359,3 +363,11 @@ remaining action in Milestone 5.
   `#[async_trait]` in `src/tools/wasm/storage.rs` and still flows through
   `&dyn WasmToolStore` consumers in the loader and registry code, so it
   belongs in the remaining-family list and in the broad rollout plan.
+- 2026-03-24: Milestone 5 complete. Removed `async-trait` from the direct
+  `[dependencies]` in `Cargo.toml`. A fresh tree audit confirmed zero
+  `#[async_trait]` attribute usages in `src/` and `tests/`. Zero
+  `use async_trait` imports exist anywhere in the codebase. The crate
+  remains as a transitive dependency through upstream crates (wasmtime,
+  tokio-postgres, refinery, zbus, testcontainers). All feature
+  combinations (`--all-features`, `--no-default-features --features
+  libsql`) compile cleanly after removal.

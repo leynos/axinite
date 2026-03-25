@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Decision log`, and `Outcomes & retrospective` must be kept up to date as work
 proceeds.
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -358,7 +358,7 @@ set -o pipefail; git diff --check | tee /tmp/diff-check-axinite-<wave>.out
 - [x] Milestone 2: Convert the narrow internal dyn-backed traits
 - [x] Milestone 3: Convert the infrastructure-facing extension seams
 - [x] Milestone 4: Convert the high-fanout core traits
-- [ ] Milestone 5: Clean up dependency and documentation state
+- [x] Milestone 5: Clean up dependency and documentation state
 
 Progress notes:
 
@@ -474,6 +474,25 @@ Progress notes:
   ADR 006 migration but was performed concurrently and gated with the same
   ship checklist.
 
+- 2026-03-24: Completed Milestone 5 (dependency and documentation cleanup).
+  Removed `async-trait` from the direct `[dependencies]` in `Cargo.toml`.
+  Fresh tree audit confirmed:
+  - Zero `#[async_trait]` attribute usages in `src/` or `tests/`.
+  - Zero `use async_trait` imports anywhere in the codebase.
+  - Three doc-comment prose mentions of "async-trait" remain in
+    `src/evaluation/success.rs`, `src/channels/wasm/storage.rs`, and
+    `src/db/mod.rs` (plus `src/llm/CLAUDE.md`); none are macro invocations.
+  - `async-trait` remains as a transitive dependency through upstream crates
+    (wasmtime, tokio-postgres, refinery, zbus, testcontainers).
+  - All feature combinations (`--all-features`, `--no-default-features
+    --features libsql`) compile cleanly after removal.
+  Updated docs:
+  - `docs/execplans/migrate-async-trait.md`: status set to Complete, Phase 4
+    cleanup marked done, final audit and removal recorded in progress notes.
+  - `docs/adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`:
+    migration plan step 5 updated to reflect completed removal.
+  - `docs/contents.md`: entry descriptions updated to reflect completed state.
+
 ## Surprises & discoveries
 
 - 2026-03-22: The earlier pilot work showed that the original migration scope
@@ -549,7 +568,8 @@ Progress notes:
 
 ## Outcomes & retrospective
 
-Milestones 1–4 completed on 2026-03-23. Milestone 5 (cleanup) is in progress.
+Milestones 1–4 completed on 2026-03-23. Milestone 5 (cleanup) completed on
+2026-03-24.
 
 ### Families migrated
 
@@ -568,11 +588,13 @@ family (7 sub-traits × 2 backends across 9 impl files).
 
 ### Post-rollout footprint
 
-Zero production `#[async_trait]` attribute usages remain in `src/`. The three
-remaining matches from `rg "async.trait|async_trait" src/` are all prose in doc
-comments (`src/llm/CLAUDE.md`, `src/evaluation/success.rs`,
-`src/channels/wasm/storage.rs`), not macro invocations. The `async-trait`
-crate remains in `Cargo.toml` pending the Milestone 5 dependency audit.
+Zero production `#[async_trait]` attribute usages remain in `src/`. The
+remaining matches from `rg "async.trait|async_trait" src/` are all prose in
+doc comments (`src/llm/CLAUDE.md`, `src/evaluation/success.rs`,
+`src/channels/wasm/storage.rs`, and `src/db/mod.rs`), not macro invocations.
+The `async-trait` crate has been removed from `Cargo.toml` as a direct
+dependency (Milestone 5, 2026-03-24). It remains as a transitive dependency
+through upstream crates.
 
 ### Patterns that emerged
 
@@ -607,11 +629,10 @@ crate remains in `Cargo.toml` pending the Milestone 5 dependency audit.
    `NativeFoo::other_method(self, ...)`. Hit in `EmbeddingProvider`,
    `SecretsStore`, and `WorkspaceStore`.
 
-### Recommendation on `async-trait` dependency
+### `async-trait` dependency status
 
-Remove `async-trait` from `Cargo.toml` as part of Milestone 5. The current
-tree audit shows zero production and zero test uses of the attribute.
-**TODO**: Verify crate removal by attempting to remove `async-trait` from
-`Cargo.toml` and running `cargo check --all-features` to confirm no compilation
-failures. Three doc-comment prose mentions that refer to the crate by name do
-not constitute a runtime dependency and need not be changed before removal.
+Removed `async-trait` from `Cargo.toml` on 2026-03-24 (Milestone 5). A fresh
+tree audit confirmed zero production and zero test uses of the attribute.
+`cargo check --all-features` and `cargo check --no-default-features --features
+libsql` both pass cleanly. Three doc-comment prose mentions that refer to the
+crate by name remain in `src/` and do not constitute a runtime dependency.
