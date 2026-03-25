@@ -95,6 +95,15 @@ impl WebhookServer {
                 reason: format!("Failed to bind to {}: {}", self.config.addr, e),
             })?;
 
+        // Overwrite the configured address with the concrete socket address
+        // so that an ephemeral `:0` bind is resolved to the real port.
+        self.config.addr = listener
+            .local_addr()
+            .map_err(|e| ChannelError::StartupFailed {
+                name: "webhook_server".to_string(),
+                reason: format!("Failed to get listener local address: {e}"),
+            })?;
+
         self.spawn_with_listener(listener, app);
         Ok(())
     }
@@ -164,6 +173,42 @@ impl WebhookServer {
         }
     }
 
+    /// Gracefully shut down the current listener and rebind using a pre-bound
+    /// listener. Mirrors [`restart_with_addr`] but eliminates the TOCTOU
+    /// window between port reservation and bind, making it suitable for tests.
+    #[cfg(test)]
+    pub async fn restart_with_listener(
+        &mut self,
+        listener: tokio::net::TcpListener,
+    ) -> Result<(), ChannelError> {
+        let app = self
+            .merged_router
+            .clone()
+            .ok_or_else(|| ChannelError::StartupFailed {
+                name: "webhook_server".to_string(),
+                reason: "restart_with_listener called before start()".to_string(),
+            })?;
+
+        let new_addr = listener
+            .local_addr()
+            .map_err(|e| ChannelError::StartupFailed {
+                name: "webhook_server".to_string(),
+                reason: format!("Failed to get listener local address: {e}"),
+            })?;
+
+        // Shut down the old listener before spawning on the new one.
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.await;
+        }
+
+        self.config.addr = new_addr;
+        self.spawn_with_listener(listener, app);
+        Ok(())
+    }
+
     /// Return the current bind address.
     pub fn current_addr(&self) -> SocketAddr {
         self.config.addr
@@ -200,19 +245,24 @@ mod tests {
             .local_addr()
             .expect("Failed to get local addr for port 1");
 
-        // Reserve port 2 for the restart target. Hold the std listener so
-        // the OS cannot reclaim the port, then release it just before
-        // restart_with_addr (which re-binds internally).
+        // Bind port 2 and keep the std listener alive to convert to tokio
+        // without a TOCTOU gap.
         let std_listener2 = StdTcpListener::bind("127.0.0.1:0").expect("Failed to bind port 2");
+        std_listener2
+            .set_nonblocking(true)
+            .expect("Failed to set non-blocking on port 2");
         let addr2 = std_listener2
             .local_addr()
             .expect("Failed to get local addr for port 2");
 
         assert_ne!(addr1, addr2, "Should have different addresses");
 
-        // Convert listener 1 to tokio and hand directly to the server.
+        // Convert both listeners to tokio up-front so the ports stay bound
+        // continuously; no TOCTOU window.
         let tokio_listener1 = tokio::net::TcpListener::from_std(std_listener1)
             .expect("Failed to convert port 1 to tokio listener");
+        let tokio_listener2 = tokio::net::TcpListener::from_std(std_listener2)
+            .expect("Failed to convert port 2 to tokio listener");
 
         let mut server = WebhookServer::new(WebhookServerConfig { addr: addr1 });
 
@@ -245,13 +295,12 @@ mod tests {
             "First server should respond to health check"
         );
 
-        // Release port 2 so restart_with_addr can bind it.
-        drop(std_listener2);
-
+        // Hand the pre-bound listener directly to the server — no TOCTOU
+        // gap because the port was never released.
         server
-            .restart_with_addr(addr2)
+            .restart_with_listener(tokio_listener2)
             .await
-            .expect("Failed to restart with new addr");
+            .expect("Failed to restart with new listener");
 
         assert_eq!(
             server.current_addr(),
