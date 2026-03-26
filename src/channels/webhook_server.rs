@@ -230,39 +230,28 @@ mod tests {
     use super::*;
     use axum::Json;
     use serde_json::json;
+    use std::net::TcpListener as StdTcpListener;
+
+    /// Bind an ephemeral port on localhost, enable non-blocking mode, and
+    /// convert it to a `tokio::net::TcpListener`, returning the listener and
+    /// its resolved [`SocketAddr`]. The port remains bound throughout so
+    /// there is no TOCTOU window between discovery and first use.
+    fn bind_ephemeral_tokio_listener() -> (tokio::net::TcpListener, std::net::SocketAddr) {
+        let std_listener =
+            StdTcpListener::bind("127.0.0.1:0").expect("Failed to bind ephemeral port");
+        std_listener
+            .set_nonblocking(true)
+            .expect("Failed to set non-blocking");
+        let addr = std_listener.local_addr().expect("Failed to get local addr");
+        let tokio_listener = tokio::net::TcpListener::from_std(std_listener)
+            .expect("Failed to convert to tokio listener");
+        (tokio_listener, addr)
+    }
 
     #[tokio::test]
     async fn test_restart_with_addr_rebinds_listener() {
-        use std::net::TcpListener as StdTcpListener;
-
-        // Bind port 1 and keep the std listener alive to convert to tokio
-        // without a TOCTOU gap.
-        let std_listener1 = StdTcpListener::bind("127.0.0.1:0").expect("Failed to bind port 1");
-        std_listener1
-            .set_nonblocking(true)
-            .expect("Failed to set non-blocking on port 1");
-        let addr1 = std_listener1
-            .local_addr()
-            .expect("Failed to get local addr for port 1");
-
-        // Bind port 2 and keep the std listener alive to convert to tokio
-        // without a TOCTOU gap.
-        let std_listener2 = StdTcpListener::bind("127.0.0.1:0").expect("Failed to bind port 2");
-        std_listener2
-            .set_nonblocking(true)
-            .expect("Failed to set non-blocking on port 2");
-        let addr2 = std_listener2
-            .local_addr()
-            .expect("Failed to get local addr for port 2");
-
-        assert_ne!(addr1, addr2, "Should have different addresses");
-
-        // Convert both listeners to tokio up-front so the ports stay bound
-        // continuously; no TOCTOU window.
-        let tokio_listener1 = tokio::net::TcpListener::from_std(std_listener1)
-            .expect("Failed to convert port 1 to tokio listener");
-        let tokio_listener2 = tokio::net::TcpListener::from_std(std_listener2)
-            .expect("Failed to convert port 2 to tokio listener");
+        let (tokio_listener1, addr1) = bind_ephemeral_tokio_listener();
+        let (tokio_listener2, addr2) = bind_ephemeral_tokio_listener();
 
         let mut server = WebhookServer::new(WebhookServerConfig { addr: addr1 });
 
@@ -341,16 +330,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_restart_with_addr_rollback_on_bind_failure() {
-        use std::net::TcpListener as StdTcpListener;
-
-        // Bind an ephemeral port and keep the std listener alive so we can
-        // convert it to tokio without a TOCTOU gap.
-        let std_listener =
-            StdTcpListener::bind("127.0.0.1:0").expect("Failed to bind ephemeral port");
-        std_listener
-            .set_nonblocking(true)
-            .expect("Failed to set non-blocking");
-        let addr1 = std_listener.local_addr().expect("Failed to get local addr");
+        let (tokio_listener, addr1) = bind_ephemeral_tokio_listener();
 
         // Bind a second ephemeral port and hold it open — this is the
         // "occupied" address that restart_with_addr must fail to bind.
@@ -358,11 +338,6 @@ mod tests {
         let blocked_addr = blocker
             .local_addr()
             .expect("Failed to get blocker local addr");
-
-        // Convert the first listener to tokio and hand it to the server,
-        // eliminating any window where the port could be stolen.
-        let tokio_listener = tokio::net::TcpListener::from_std(std_listener)
-            .expect("Failed to convert to tokio listener");
 
         let mut server = WebhookServer::new(WebhookServerConfig { addr: addr1 });
 
