@@ -235,6 +235,44 @@ pub fn reciprocal_rank_fusion(
     results
 }
 
+/// Compute cosine similarity between two embedding vectors.
+///
+/// Returns a value in the range [-1.0, 1.0] where 1.0 means identical
+/// direction, 0.0 means orthogonal, and -1.0 means opposite direction.
+///
+/// Returns 0.0 if either vector has zero magnitude to avoid NaN.
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() {
+        tracing::warn!(
+            a_len = a.len(),
+            b_len = b.len(),
+            "cosine_similarity called with vectors of differing lengths"
+        );
+        return 0.0;
+    }
+
+    let mut dot_product = 0.0;
+    let mut magnitude_a = 0.0;
+    let mut magnitude_b = 0.0;
+
+    for i in 0..a.len() {
+        dot_product += a[i] * b[i];
+        magnitude_a += a[i] * a[i];
+        magnitude_b += b[i] * b[i];
+    }
+
+    magnitude_a = magnitude_a.sqrt();
+    magnitude_b = magnitude_b.sqrt();
+
+    // Avoid division by zero
+    if magnitude_a == 0.0 || magnitude_b == 0.0 {
+        return 0.0;
+    }
+
+    let sim = dot_product / (magnitude_a * magnitude_b);
+    if sim.is_nan() { 0.0 } else { sim }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -626,5 +664,96 @@ mod tests {
         assert_eq!(config.limit, 10);
         assert_eq!(config.rrf_k, 60);
         assert!((config.min_score - 0.0).abs() < f32::EPSILON);
+    }
+
+    // --- cosine_similarity tests ---
+
+    #[test]
+    fn test_cosine_similarity_identical() {
+        let a = [1.0, 2.0, 3.0];
+        let b = [1.0, 2.0, 3.0];
+        let sim = cosine_similarity(&a, &b);
+        assert!((sim - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_opposite() {
+        let a = [1.0, 2.0, 3.0];
+        let b = [-1.0, -2.0, -3.0];
+        let sim = cosine_similarity(&a, &b);
+        assert!((sim - (-1.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_orthogonal() {
+        let a = [1.0, 0.0];
+        let b = [0.0, 1.0];
+        let sim = cosine_similarity(&a, &b);
+        assert!((sim - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_different_lengths() {
+        let a = [1.0, 2.0, 3.0];
+        let b = [1.0, 2.0];
+        let sim = cosine_similarity(&a, &b);
+        assert_eq!(sim, 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_zero_vector() {
+        let a = [0.0, 0.0, 0.0];
+        let b = [1.0, 2.0, 3.0];
+        let sim = cosine_similarity(&a, &b);
+        assert_eq!(sim, 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_both_zero() {
+        let a = [0.0, 0.0];
+        let b = [0.0, 0.0];
+        let sim = cosine_similarity(&a, &b);
+        assert_eq!(sim, 0.0);
+    }
+
+    // --- Regression tests for bug fixes ---
+
+    /// Regression: `cosine_similarity` previously contained a `debug_assert_eq!`
+    /// on vector lengths that panicked in debug/test builds before the graceful
+    /// `return 0.0` path could execute.  The fix replaced the assertion with
+    /// `tracing::warn!`.  This test verifies the function does not panic and
+    /// returns the expected fallback value.
+    #[test]
+    fn test_cosine_similarity_different_lengths_does_not_panic() {
+        let result = std::panic::catch_unwind(|| cosine_similarity(&[1.0, 2.0, 3.0], &[1.0, 2.0]));
+        assert!(
+            result.is_ok(),
+            "cosine_similarity must not panic on length-mismatched vectors"
+        );
+        assert_eq!(
+            result.expect("already asserted Ok"),
+            0.0,
+            "cosine_similarity must return 0.0 for length-mismatched vectors"
+        );
+    }
+
+    /// Regression: `cosine_similarity` could return `NaN` when both vectors
+    /// contained infinity values, producing `inf / inf`.  The fix added a
+    /// NaN guard that maps the result to 0.0.
+    #[test]
+    fn test_cosine_similarity_never_returns_nan() {
+        let cases: Vec<(&[f32], &[f32])> = vec![
+            (&[f32::INFINITY, 0.0], &[f32::INFINITY, 0.0]),
+            (&[f32::NEG_INFINITY, 1.0], &[f32::NEG_INFINITY, 1.0]),
+            (&[f32::INFINITY, f32::NEG_INFINITY], &[1.0, 1.0]),
+            (&[f32::NAN, 1.0], &[1.0, 1.0]),
+        ];
+        for (a, b) in cases {
+            let sim = cosine_similarity(a, b);
+            assert!(
+                !sim.is_nan(),
+                "cosine_similarity returned NaN for a={a:?}, b={b:?}"
+            );
+        }
     }
 }

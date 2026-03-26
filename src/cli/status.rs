@@ -34,26 +34,23 @@ fn load_settings_from(json_path: &std::path::Path, toml_path: &std::path::Path) 
     settings
 }
 
-/// Run the status command, printing system health info.
-pub async fn run_status_command() -> anyhow::Result<()> {
-    let settings = load_settings();
+fn default_tools_dir() -> PathBuf {
+    ironclaw_base_dir().join("tools")
+}
 
-    println!("IronClaw Status");
-    println!("===============\n");
+fn default_channels_dir() -> PathBuf {
+    ironclaw_base_dir().join("channels")
+}
 
-    // Version
-    println!(
-        "  Version:     {} v{}",
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION")
-    );
-
-    // Database
-    print!("  Database:    ");
-    let db_backend = std::env::var("DATABASE_BACKEND")
+fn db_backend_name() -> String {
+    std::env::var("DATABASE_BACKEND")
         .ok()
-        .unwrap_or_else(|| "postgres".to_string());
-    match db_backend.as_str() {
+        .unwrap_or_else(|| "postgres".to_string())
+}
+
+async fn print_database_status(db_backend: &str) {
+    print!("  Database:    ");
+    match db_backend {
         "libsql" | "turso" | "sqlite" => {
             let path = std::env::var("LIBSQL_PATH")
                 .map(std::path::PathBuf::from)
@@ -80,8 +77,21 @@ pub async fn run_status_command() -> anyhow::Result<()> {
             }
         }
     }
+}
 
-    // Session / Auth
+fn print_search_status(db_backend: &str) {
+    print!("  Search:      ");
+    match db_backend {
+        "libsql" | "turso" | "sqlite" => {
+            println!("hybrid (brute-force cosine)");
+        }
+        _ => {
+            println!("hybrid (pgvector)");
+        }
+    }
+}
+
+fn print_session_status() {
     print!("  Session:     ");
     let session_path = crate::config::llm::default_session_path();
     if session_path.exists() {
@@ -89,7 +99,9 @@ pub async fn run_status_command() -> anyhow::Result<()> {
     } else {
         println!("not found (run `ironclaw onboard`)");
     }
+}
 
+fn print_secrets_status() {
     // Secrets (auto-detect from env only; skip keychain probe to avoid
     // triggering macOS system password dialogs on a simple status check)
     print!("  Secrets:     ");
@@ -97,13 +109,14 @@ pub async fn run_status_command() -> anyhow::Result<()> {
         println!("configured (env)");
     } else {
         // We don't probe the keychain here because get_generic_password()
-        // triggers macOS unlock+authorization dialogs, which is bad UX for
+        // triggers macOS unlock+authorisation dialogs, which is bad UX for
         // a read-only status command. If onboarding completed with keychain
         // storage, the key is there; we just can't cheaply verify it.
         println!("env not set (keychain may be configured)");
     }
+}
 
-    // Embeddings
+fn print_embeddings_status(settings: &Settings) {
     print!("  Embeddings:  ");
     let emb_enabled = settings.embeddings.enabled
         || std::env::var("OPENAI_API_KEY").is_ok()
@@ -118,22 +131,19 @@ pub async fn run_status_command() -> anyhow::Result<()> {
     } else {
         println!("disabled");
     }
+}
 
-    // WASM tools
+fn print_wasm_tools_status(tools_dir: &std::path::Path) {
     print!("  WASM Tools:  ");
-    let tools_dir = settings
-        .wasm
-        .tools_dir
-        .clone()
-        .unwrap_or_else(default_tools_dir);
     if tools_dir.exists() {
-        let count = count_wasm_files(&tools_dir);
+        let count = count_wasm_files(tools_dir);
         println!("{} installed ({})", count, tools_dir.display());
     } else {
         println!("directory not found ({})", tools_dir.display());
     }
+}
 
-    // WASM channels
+fn print_channels_status(settings: &Settings) {
     print!("  Channels:    ");
     let channels_dir = settings
         .channels
@@ -154,8 +164,9 @@ pub async fn run_status_command() -> anyhow::Result<()> {
         }
     }
     println!("{}", channel_info.join(", "));
+}
 
-    // Heartbeat
+fn print_heartbeat_status(settings: &Settings) {
     print!("  Heartbeat:   ");
     let hb_enabled = settings.heartbeat.enabled
         || std::env::var("HEARTBEAT_ENABLED")
@@ -166,8 +177,9 @@ pub async fn run_status_command() -> anyhow::Result<()> {
     } else {
         println!("disabled");
     }
+}
 
-    // MCP servers
+async fn print_mcp_status() {
     print!("  MCP Servers: ");
     match crate::tools::mcp::config::load_mcp_servers().await {
         Ok(servers) => {
@@ -177,6 +189,38 @@ pub async fn run_status_command() -> anyhow::Result<()> {
         }
         Err(_) => println!("none configured"),
     }
+}
+
+/// Run the status command, printing system health info.
+pub async fn run_status_command() -> anyhow::Result<()> {
+    let settings = load_settings();
+
+    println!("IronClaw Status");
+    println!("===============\n");
+
+    // Version
+    println!(
+        "  Version:     {} v{}",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION")
+    );
+
+    let db_backend = db_backend_name();
+    print_database_status(&db_backend).await;
+    print_search_status(&db_backend);
+    print_session_status();
+    print_secrets_status();
+    print_embeddings_status(&settings);
+    print_wasm_tools_status(
+        &settings
+            .wasm
+            .tools_dir
+            .clone()
+            .unwrap_or_else(default_tools_dir),
+    );
+    print_channels_status(&settings);
+    print_heartbeat_status(&settings);
+    print_mcp_status().await;
 
     // Config path
     println!(
@@ -226,14 +270,6 @@ fn count_wasm_files(dir: &std::path::Path) -> usize {
                 .count()
         })
         .unwrap_or(0)
-}
-
-fn default_tools_dir() -> PathBuf {
-    ironclaw_base_dir().join("tools")
-}
-
-fn default_channels_dir() -> PathBuf {
-    ironclaw_base_dir().join("channels")
 }
 
 #[cfg(test)]

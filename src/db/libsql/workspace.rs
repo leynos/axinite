@@ -12,10 +12,169 @@ use super::{
 use crate::db::{HybridSearchParams, InsertChunkParams, NativeWorkspaceStore};
 use crate::error::WorkspaceError;
 use crate::workspace::{
-    MemoryChunk, MemoryDocument, RankedResult, SearchResult, WorkspaceEntry, reciprocal_rank_fusion,
+    MemoryChunk, MemoryDocument, RankedResult, SearchResult, WorkspaceEntry, cosine_similarity,
+    reciprocal_rank_fusion,
 };
 
 use chrono::Utc;
+
+struct Candidate {
+    chunk_id: Uuid,
+    document_id: Uuid,
+    document_path: String,
+    content: String,
+    similarity: f32,
+}
+
+fn rank_candidates(mut candidates: Vec<Candidate>, limit: usize) -> Vec<RankedResult> {
+    // Sort by similarity descending
+    candidates.sort_by(|a, b| {
+        b.similarity
+            .partial_cmp(&a.similarity)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let total_candidates = candidates.len();
+
+    // Take top N and convert to RankedResult with 1-based rank
+    let results: Vec<_> = candidates
+        .into_iter()
+        .take(limit)
+        .enumerate()
+        .map(|(idx, c)| RankedResult {
+            chunk_id: c.chunk_id,
+            document_id: c.document_id,
+            document_path: c.document_path,
+            content: c.content,
+            rank: (idx + 1) as u32,
+        })
+        .collect();
+
+    tracing::debug!(
+        "Brute-force vector search scanned {} candidates, returned {} results",
+        total_candidates,
+        results.len()
+    );
+
+    results
+}
+
+/// Deserialize an embedding from a BLOB (4-byte little-endian f32 values).
+///
+/// Returns an empty vector if the blob length is not a multiple of 4.
+fn deserialize_embedding(blob: &[u8]) -> Vec<f32> {
+    if !blob.len().is_multiple_of(4) {
+        tracing::warn!(
+            "Embedding blob length {} is not a multiple of 4; skipping",
+            blob.len()
+        );
+        return Vec::new();
+    }
+
+    blob.chunks_exact(4)
+        .map(|chunk| {
+            let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
+            f32::from_le_bytes(bytes)
+        })
+        .collect()
+}
+
+impl LibSqlBackend {
+    async fn collect_candidates(
+        &self,
+        rows: &mut libsql::Rows,
+        query_embedding: &[f32],
+    ) -> Result<Vec<Candidate>, WorkspaceError> {
+        let mut candidates = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| WorkspaceError::SearchFailed {
+                reason: format!("Row fetch failed: {}", e),
+            })?
+        {
+            let chunk_id: Uuid = match get_text(&row, 0).parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!("Invalid chunk_id UUID in memory_chunks: {e}");
+                    continue;
+                }
+            };
+            let document_id: Uuid = match get_text(&row, 1).parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!("Invalid document_id UUID in memory_chunks: {e}");
+                    continue;
+                }
+            };
+            let document_path = get_text(&row, 2);
+            let content = get_text(&row, 3);
+
+            // Deserialize the embedding BLOB
+            let embedding_blob = match row.get_value(4) {
+                Ok(libsql::Value::Blob(bytes)) => bytes,
+                _ => continue,
+            };
+            let chunk_embedding = deserialize_embedding(&embedding_blob);
+            if chunk_embedding.is_empty() {
+                continue;
+            }
+
+            // Compute cosine similarity
+            let similarity = cosine_similarity(query_embedding, &chunk_embedding);
+
+            candidates.push(Candidate {
+                chunk_id,
+                document_id,
+                document_path,
+                content,
+                similarity,
+            });
+        }
+        Ok(candidates)
+    }
+
+    /// Brute-force vector search using cosine similarity in Rust.
+    ///
+    /// Loads all chunks with embeddings for the given user/agent, computes
+    /// cosine similarity against the query embedding, and returns the top matches.
+    /// This is used as a fallback when the vector index is not available (post-V9 migration).
+    async fn brute_force_vector_search(
+        &self,
+        user_id: &str,
+        agent_id: Option<Uuid>,
+        embedding: &[f32],
+        limit: usize,
+    ) -> Result<Vec<RankedResult>, WorkspaceError> {
+        let conn = self
+            .connect()
+            .await
+            .map_err(|e| WorkspaceError::SearchFailed {
+                reason: e.to_string(),
+            })?;
+        let agent_id_str = agent_id.map(|id| id.to_string());
+
+        // Load all chunks with embeddings
+        let mut rows = conn
+            .query(
+                r#"
+                SELECT c.id, c.document_id, d.path, c.content, c.embedding
+                FROM memory_chunks c
+                JOIN memory_documents d ON d.id = c.document_id
+                WHERE d.user_id = ?1 AND d.agent_id IS ?2
+                  AND c.embedding IS NOT NULL
+                "#,
+                params![user_id, agent_id_str.as_deref()],
+            )
+            .await
+            .map_err(|e| WorkspaceError::SearchFailed {
+                reason: format!("Query failed: {}", e),
+            })?;
+
+        let candidates = self.collect_candidates(&mut rows, embedding).await?;
+        Ok(rank_candidates(candidates, limit))
+    }
+}
 
 /// Execute full-text search and return ranked results.
 ///
@@ -628,15 +787,44 @@ impl NativeWorkspaceStore for LibSqlBackend {
         let pre_limit = config.pre_fusion_limit as i64;
 
         let fts_results = if config.use_fts {
-            fts_ranked_results(&conn, user_id, agent_id_str.as_deref(), query, pre_limit).await?
+            let results =
+                fts_ranked_results(&conn, user_id, agent_id_str.as_deref(), query, pre_limit)
+                    .await?;
+            tracing::debug!(
+                "FTS search returned {} results (pre-fusion limit: {})",
+                results.len(),
+                pre_limit
+            );
+            results
         } else {
             Vec::new()
         };
 
         let vector_results = if config.use_vector {
             if let Some(emb) = embedding {
-                vector_ranked_results(&conn, user_id, agent_id_str.as_deref(), emb, pre_limit)
-                    .await?
+                // Try the vector index first; fall back to brute-force
+                // cosine similarity if the index is gone (post-V9 migration).
+                let indexed =
+                    vector_ranked_results(&conn, user_id, agent_id_str.as_deref(), emb, pre_limit)
+                        .await?;
+                if indexed.is_empty() {
+                    tracing::info!(
+                        "Vector index returned no results, using brute-force vector search"
+                    );
+                    self.brute_force_vector_search(user_id, agent_id, emb, pre_limit as usize)
+                        .await
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("Brute-force vector search failed: {e}");
+                            Vec::new()
+                        })
+                } else {
+                    tracing::debug!(
+                        "Vector index search returned {} results (pre-fusion limit: {})",
+                        indexed.len(),
+                        pre_limit
+                    );
+                    indexed
+                }
             } else {
                 Vec::new()
             }
@@ -650,5 +838,60 @@ impl NativeWorkspaceStore for LibSqlBackend {
         };
 
         Ok(reciprocal_rank_fusion(fts_results, vector_results, config))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_embedding_valid() {
+        let floats = [1.0f32, 2.0, 3.0];
+        let bytes: Vec<u8> = floats.iter().flat_map(|f| f.to_le_bytes()).collect();
+
+        let result = deserialize_embedding(&bytes);
+
+        assert_eq!(result.len(), 3);
+        assert!((result[0] - 1.0).abs() < 0.001);
+        assert!((result[1] - 2.0).abs() < 0.001);
+        assert!((result[2] - 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_deserialize_embedding_empty() {
+        let result = deserialize_embedding(&[]);
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_deserialize_embedding_invalid_length() {
+        // 7 bytes is not a multiple of 4
+        let result = deserialize_embedding(&[1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_deserialize_embedding_single_value() {
+        let value = 42.5f32;
+        let bytes = value.to_le_bytes();
+
+        let result = deserialize_embedding(&bytes);
+
+        assert_eq!(result.len(), 1);
+        assert!((result[0] - 42.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_deserialize_embedding_negative_values() {
+        let floats = [-1.5f32, 0.0, 2.75];
+        let bytes: Vec<u8> = floats.iter().flat_map(|f| f.to_le_bytes()).collect();
+
+        let result = deserialize_embedding(&bytes);
+
+        assert_eq!(result.len(), 3);
+        assert!((result[0] - (-1.5)).abs() < 0.001);
+        assert!((result[1] - 0.0).abs() < 0.001);
+        assert!((result[2] - 2.75).abs() < 0.001);
     }
 }
