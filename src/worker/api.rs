@@ -24,7 +24,7 @@ pub use types::{
     ProxyToolCompletionRequest, ProxyToolCompletionResponse, REMOTE_TOOL_CATALOG_PATH,
     REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_PATH, REMOTE_TOOL_EXECUTE_ROUTE,
     RemoteToolCatalogResponse, RemoteToolExecutionRequest, RemoteToolExecutionResponse,
-    STATUS_PATH, STATUS_ROUTE, StatusUpdate, WORKER_HEALTH_ROUTE, WorkerState,
+    STATUS_PATH, STATUS_ROUTE, StatusUpdate, WORKER_HEALTH_PATH, WORKER_HEALTH_ROUTE, WorkerState,
 };
 /// HTTP client that a container worker uses to talk to the orchestrator.
 pub struct WorkerHttpClient {

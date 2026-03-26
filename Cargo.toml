@@ -176,6 +176,7 @@ hex = "0.4.3"
 rusqlite = { version = "0.32", optional = true }
 json5 = { version = "0.4", optional = true }
 tempfile = { version = "3", optional = true }
+const_format = { version = "0.2.35", default-features = false }
 
 # macOS keychain
 [target.'cfg(target_os = "macos")'.dependencies]
