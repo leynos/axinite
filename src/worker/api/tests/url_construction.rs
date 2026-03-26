@@ -4,9 +4,7 @@ use rstest::rstest;
 use uuid::Uuid;
 
 use crate::testing::credentials::TEST_BEARER_TOKEN;
-use crate::worker::api::{
-    WorkerHttpClient, REMOTE_TOOL_CATALOG_PATH, REMOTE_TOOL_CATALOG_ROUTE,
-};
+use crate::worker::api::{REMOTE_TOOL_CATALOG_PATH, REMOTE_TOOL_CATALOG_ROUTE, WorkerHttpClient};
 
 #[rstest]
 #[case("llm/complete")]

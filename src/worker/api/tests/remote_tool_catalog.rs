@@ -7,7 +7,9 @@ use crate::error::WorkerError;
 use crate::testing::credentials::TEST_BEARER_TOKEN;
 use crate::worker::api::WorkerHttpClient;
 
-use super::fixtures::{remote_tool_failure_server, RemoteToolFailureRoute, RemoteToolFailureServerFactory};
+use super::fixtures::{
+    RemoteToolFailureRoute, RemoteToolFailureServerFactory, remote_tool_failure_server,
+};
 
 #[rstest]
 #[tokio::test]

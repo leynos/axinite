@@ -21,6 +21,7 @@ mod credentials;
 mod events;
 mod fixtures;
 mod prompts;
+mod remote_tool_fidelity;
 mod remote_tools;
 mod remote_tools_param_aware;
 mod status;

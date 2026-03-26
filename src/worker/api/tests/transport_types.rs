@@ -3,22 +3,22 @@
 use rstest::rstest;
 
 use crate::worker::api::{
-    RemoteToolCatalogResponse, RemoteToolExecutionRequest, RemoteToolExecutionResponse,
-    REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_ROUTE,
+    REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_ROUTE, RemoteToolCatalogResponse,
+    RemoteToolExecutionRequest, RemoteToolExecutionResponse,
 };
 
-use super::fixtures::{sample_catalog_response, sample_execution_request, sample_execution_response};
+use super::fixtures::{
+    sample_catalog_response, sample_execution_request, sample_execution_response,
+};
 
 #[test]
 fn worker_and_orchestrator_share_remote_tool_route_constants() {
     assert_eq!(
-        REMOTE_TOOL_CATALOG_ROUTE,
-        "/worker/{job_id}/tools/catalog",
+        REMOTE_TOOL_CATALOG_ROUTE, "/worker/{job_id}/tools/catalog",
         "catalog route constant must match the expected orchestrator route"
     );
     assert_eq!(
-        REMOTE_TOOL_EXECUTE_ROUTE,
-        "/worker/{job_id}/tools/execute",
+        REMOTE_TOOL_EXECUTE_ROUTE, "/worker/{job_id}/tools/execute",
         "execute route constant must match the expected orchestrator route"
     );
 
@@ -42,8 +42,8 @@ fn worker_and_orchestrator_share_remote_tool_route_constants() {
 fn remote_tool_catalog_response_round_trip_without_field_loss(
     sample_catalog_response: RemoteToolCatalogResponse,
 ) {
-    let serialized =
-        serde_json::to_string(&sample_catalog_response).expect("serialize RemoteToolCatalogResponse");
+    let serialized = serde_json::to_string(&sample_catalog_response)
+        .expect("serialize RemoteToolCatalogResponse");
     let deserialized: RemoteToolCatalogResponse =
         serde_json::from_str(&serialized).expect("deserialize RemoteToolCatalogResponse");
 
@@ -83,7 +83,10 @@ fn remote_tool_execution_response_round_trip_without_field_loss(
         deserialized.output.cost,
         sample_execution_response.output.cost
     );
-    assert_eq!(deserialized.output.raw, sample_execution_response.output.raw);
+    assert_eq!(
+        deserialized.output.raw,
+        sample_execution_response.output.raw
+    );
     assert_eq!(
         deserialized.output.duration,
         sample_execution_response.output.duration
