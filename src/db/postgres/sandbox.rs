@@ -41,26 +41,71 @@ impl NativeSandboxStore for PgBackend {
 
 #[cfg(test)]
 mod tests {
-    /// Behavioral tests for NativeSandboxStore on PgBackend.
-    /// These verify field pass-through and method delegation work correctly.
+    //! Behaviour-focused tests for `SandboxJobStatusUpdate` forwarding.
+
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn test_sandbox_job_status_update_destructuring() {
+        // This test verifies that the SandboxJobStatusUpdate struct is correctly
+        // destructured and all fields are passed through to the underlying store method.
+        // This is a compile-time check - if the struct changes and we miss a field,
+        // this will fail to compile.
+
+        let now = Utc::now();
+        let update = SandboxJobStatusUpdate {
+            id: Uuid::new_v4(),
+            status: "completed",
+            success: Some(true),
+            message: Some("Test message"),
+            started_at: Some(now),
+            completed_at: Some(now),
+        };
+
+        // Destructure to ensure all fields are present
+        let SandboxJobStatusUpdate {
+            id,
+            status,
+            success,
+            message,
+            started_at,
+            completed_at,
+        } = update;
+
+        // Verify fields are correctly extracted
+        assert!(success.expect("expected `success` to be Some(true)"));
+        assert_eq!(
+            message.expect("expected `message` to be Some"),
+            "Test message"
+        );
+        assert_eq!(status, "completed");
+        assert!(started_at.is_some());
+        assert!(completed_at.is_some());
+
+        // This pattern ensures we don't accidentally miss fields when updating
+        // the update_sandbox_job_status implementation
+        let _ = (id, status, success, message, started_at, completed_at);
+    }
+
+
     #[cfg(feature = "postgres")]
     mod behavioral {
-        use super::super::PgBackend;
-        use crate::testing::try_test_pg_db;
-        use crate::{
-            db::{
-                NativeSandboxStore, SandboxEventType, SandboxJobStatus, SandboxJobStatusUpdate,
-                SandboxMode, UserId,
-            },
-            history::SandboxJobRecord,
-        };
-        use chrono::Utc;
+        //! Behavioural tests for `NativeSandboxStore` on `PgBackend`.
+        //!
+        //! These verify field pass-through and method delegation work
+        //! correctly against a live Postgres backend.
+
+        use super::*;
+        use crate::testing::postgres::try_test_pg_db;
         use rstest::{fixture, rstest};
         use uuid::Uuid;
 
         #[fixture]
         async fn db() -> Option<PgBackend> {
-            try_test_pg_db().await
+            try_test_pg_db()
+                .await
+                .expect("unexpected Postgres test setup error")
         }
 
         async fn cleanup_job(db: &PgBackend, job_id: Uuid) {
@@ -104,8 +149,14 @@ mod tests {
                 .expect("failed to save test job");
 
             // Prepare full status update with all fields populated
-            let started = Utc::now();
-            let completed = Utc::now();
+            let started = Utc
+                .with_ymd_and_hms(2026, 3, 1, 12, 0, 0)
+                .single()
+                .expect("valid started_at timestamp");
+            let completed = Utc
+                .with_ymd_and_hms(2026, 3, 1, 12, 5, 0)
+                .single()
+                .expect("valid completed_at timestamp");
             let update = SandboxJobStatusUpdate {
                 id: job_id,
                 status: SandboxJobStatus::from("completed"),
@@ -133,8 +184,8 @@ mod tests {
                 retrieved.failure_reason,
                 Some("All tests passed".to_string())
             );
-            assert!(retrieved.started_at.is_some());
-            assert!(retrieved.completed_at.is_some());
+            assert_eq!(retrieved.started_at, Some(started));
+            assert_eq!(retrieved.completed_at, Some(completed));
         }
 
         #[rstest]

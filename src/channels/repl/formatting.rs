@@ -1,5 +1,8 @@
 //! Terminal formatting helpers: termimad skin, help text, and JSON param display.
 
+use std::sync::OnceLock;
+
+use regex::Regex;
 use termimad::MadSkin;
 
 use super::input::SLASH_COMMANDS;
@@ -109,11 +112,76 @@ pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> St
 ///
 /// Adds "…" if truncated. The returned string will fit within `max_width` characters.
 fn truncate_card_content(text: &str, max_width: usize) -> String {
-    if text.chars().count() <= max_width {
+    if max_width == 0 {
+        return String::new();
+    }
+
+    if visible_char_count(text) <= max_width {
         text.to_string()
     } else {
-        let truncated: String = text.chars().take(max_width.saturating_sub(1)).collect();
-        format!("{}…", truncated)
+        let visible_limit = max_width.saturating_sub(1);
+        let mut truncated = String::new();
+        let mut visible_count = 0;
+        let mut cursor = 0;
+        let mut has_active_style = false;
+
+        for ansi_match in ansi_sgr_regex().find_iter(text) {
+            if visible_count >= visible_limit {
+                break;
+            }
+
+            append_visible_chars(
+                &text[cursor..ansi_match.start()],
+                visible_limit,
+                &mut visible_count,
+                &mut truncated,
+            );
+
+            if visible_count >= visible_limit {
+                break;
+            }
+
+            let ansi_sequence = ansi_match.as_str();
+            truncated.push_str(ansi_sequence);
+            has_active_style = ansi_sequence != "\x1b[0m";
+            cursor = ansi_match.end();
+        }
+
+        if visible_count < visible_limit {
+            append_visible_chars(
+                &text[cursor..],
+                visible_limit,
+                &mut visible_count,
+                &mut truncated,
+            );
+        }
+
+        truncated.push('…');
+        if has_active_style && !truncated.ends_with("\x1b[0m") {
+            truncated.push_str("\x1b[0m");
+        }
+
+        truncated
+    }
+}
+
+fn ansi_sgr_regex() -> &'static Regex {
+    static ANSI_SGR_REGEX: OnceLock<Regex> = OnceLock::new();
+    ANSI_SGR_REGEX
+        .get_or_init(|| Regex::new(r"\x1b\[[0-9;]*m").expect("ANSI SGR regex should compile"))
+}
+
+fn visible_char_count(text: &str) -> usize {
+    ansi_sgr_regex().replace_all(text, "").chars().count()
+}
+
+fn append_visible_chars(text: &str, limit: usize, visible_count: &mut usize, output: &mut String) {
+    for ch in text.chars() {
+        if *visible_count >= limit {
+            break;
+        }
+        output.push(ch);
+        *visible_count += 1;
     }
 }
 
@@ -177,4 +245,47 @@ pub(super) fn render_approval_card(
     lines.push(String::new()); // blank line
 
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn strip_ansi(text: &str) -> String {
+        ansi_sgr_regex().replace_all(text, "").into_owned()
+    }
+
+    #[test]
+    fn truncate_card_content_preserves_visible_width_for_plain_text() {
+        let truncated = truncate_card_content("abcdefghij", 6);
+
+        assert_eq!(truncated, "abcde…");
+    }
+
+    #[test]
+    fn truncate_card_content_handles_ansi_sequences_without_corruption() {
+        let line = "\x1b[36mkey\x1b[0m: \x1b[32m\"abcdefghijklmnop\"\x1b[0m";
+
+        let truncated = truncate_card_content(line, 10);
+
+        assert_eq!(strip_ansi(&truncated), "key: \"abc…");
+        assert!(truncated.ends_with("\x1b[0m"));
+        assert_eq!(visible_char_count(&truncated), 10);
+    }
+
+    #[test]
+    fn truncate_card_content_preserves_format_json_params_output() {
+        let rendered = format_json_params(
+            &serde_json::json!({
+                "status": "abcdefghijklmnopqrstuvwxyz"
+            }),
+            "",
+        );
+
+        let truncated = truncate_card_content(&rendered, 14);
+
+        assert_eq!(strip_ansi(&truncated), "status: \"abcd…");
+        assert!(truncated.ends_with("\x1b[0m"));
+        assert_eq!(visible_char_count(&truncated), 14);
+    }
 }
