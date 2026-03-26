@@ -91,6 +91,7 @@ async fn worker_runtime_reports_failed_status_for_pre_loop_errors(
 
     let error = harness
         .take_runtime()
+        .expect("harness must contain a runtime")
         .run()
         .await
         .expect_err("expected runtime to fail before the execution loop");
@@ -118,7 +119,11 @@ async fn worker_runtime_emits_failed_status_for_initial_status_rejections() -> a
     let job_id = Uuid::new_v4();
     let mut harness = setup_runtime_test(Arc::clone(&state), job_id).await?;
 
-    let error = harness.take_runtime().run().await;
+    let error = harness
+        .take_runtime()
+        .expect("harness must contain a runtime")
+        .run()
+        .await;
     let error = error.expect_err("expected runtime to fail when the initial status is rejected");
 
     assert!(
@@ -167,8 +172,7 @@ async fn worker_runtime_sanitizes_failure_messages(
     let harness = setup_runtime_test(Arc::clone(&state), job_id).await?;
 
     harness
-        .runtime
-        .as_ref()
+        .runtime()
         .expect("runtime test harness should contain a runtime")
         .report_completion(execution, 7)
         .await

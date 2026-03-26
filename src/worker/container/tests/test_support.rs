@@ -16,20 +16,28 @@ use uuid::Uuid;
 use crate::worker::api::{CompletionReport, CredentialResponse, JobDescription, StatusUpdate};
 use crate::worker::container::{WorkerConfig, WorkerHttpClient, WorkerRuntime};
 
+/// Shared state for recording HTTP interactions from the worker runtime during tests.
+///
+/// Each queue field pre-loads HTTP status codes that route handlers will return, allowing
+/// tests to simulate orchestrator responses (success, rejection, server errors). The `Vec`
+/// fields record the payloads sent by the worker, enabling assertions on reported state.
 #[derive(Default)]
 pub struct RuntimeTestState {
+    /// Queue of HTTP status codes for `/worker/{job_id}/job` responses.
     pub job_statuses: Mutex<VecDeque<StatusCode>>,
+    /// Queue of HTTP status codes for `/worker/{job_id}/credentials` responses.
     pub credential_statuses: Mutex<VecDeque<StatusCode>>,
+    /// Queue of HTTP status codes for `/worker/{job_id}/status` responses.
     pub status_statuses: Mutex<VecDeque<StatusCode>>,
+    /// Recorded `StatusUpdate` payloads sent to `/worker/{job_id}/status`.
     pub statuses: Mutex<Vec<StatusUpdate>>,
+    /// Recorded `CompletionReport` payloads sent to `/worker/{job_id}/complete`.
     pub completions: Mutex<Vec<CompletionReport>>,
+    /// Recorded result event payloads sent to `/worker/{job_id}/event`.
     pub result_events: Mutex<Vec<serde_json::Value>>,
 }
 
-pub async fn take_next_status(
-    queue: &Mutex<VecDeque<StatusCode>>,
-    default: StatusCode,
-) -> StatusCode {
+async fn take_next_status(queue: &Mutex<VecDeque<StatusCode>>, default: StatusCode) -> StatusCode {
     queue.lock().await.pop_front().unwrap_or(default)
 }
 
@@ -85,6 +93,12 @@ async fn prompt_handler() -> impl IntoResponse {
     StatusCode::NO_CONTENT
 }
 
+/// Binds an ephemeral TCP port, spawns an Axum server emulating the orchestrator API,
+/// and returns the base URL, shutdown channel, and server task handle.
+///
+/// The server implements the worker HTTP contract (`/worker/{job_id}/job`,
+/// `/worker/{job_id}/credentials`, `/worker/{job_id}/status`, etc.) using the provided
+/// `RuntimeTestState` to script responses and record requests.
 pub async fn spawn_runtime_test_server(
     state: Arc<RuntimeTestState>,
 ) -> std::io::Result<(
@@ -115,6 +129,10 @@ pub async fn spawn_runtime_test_server(
     Ok((format!("http://{}", addr), shutdown_tx, handle))
 }
 
+/// Constructs a `WorkerRuntime` backed by a `WorkerHttpClient` pointing at the given
+/// orchestrator URL and job ID.
+///
+/// Uses a fixed test token (`"test-token"`) and default configuration suitable for unit tests.
 pub fn build_test_runtime(orchestrator_url: String, job_id: Uuid) -> WorkerRuntime {
     let client = Arc::new(WorkerHttpClient::new(
         orchestrator_url.clone(),
@@ -131,17 +149,28 @@ pub fn build_test_runtime(orchestrator_url: String, job_id: Uuid) -> WorkerRunti
     )
 }
 
+/// Test harness that owns the `WorkerRuntime` under test and coordinates graceful shutdown
+/// of the mock orchestrator server.
+///
+/// Dropping the harness triggers server shutdown and awaits task completion asynchronously.
 pub struct RuntimeTestHarness {
-    pub runtime: Option<WorkerRuntime>,
+    runtime: Option<WorkerRuntime>,
     shutdown_tx: Option<oneshot::Sender<()>>,
     handle: Option<tokio::task::JoinHandle<std::io::Result<()>>>,
 }
 
 impl RuntimeTestHarness {
-    pub fn take_runtime(&mut self) -> WorkerRuntime {
-        self.runtime
-            .take()
-            .expect("runtime test harness should contain a runtime")
+    /// Consumes and returns the inner `WorkerRuntime`, leaving `None` in its place.
+    ///
+    /// Returns `None` if the runtime has already been taken or if the harness was constructed
+    /// without a runtime.
+    pub fn take_runtime(&mut self) -> Option<WorkerRuntime> {
+        self.runtime.take()
+    }
+
+    /// Returns a reference to the inner `WorkerRuntime`, if present.
+    pub fn runtime(&self) -> Option<&WorkerRuntime> {
+        self.runtime.as_ref()
     }
 
     async fn shutdown_handle(
@@ -172,6 +201,11 @@ impl Drop for RuntimeTestHarness {
     }
 }
 
+/// Wires a `RuntimeTestState` to a mock orchestrator server and returns a fully populated
+/// `RuntimeTestHarness`.
+///
+/// Spawns the test server on an ephemeral port, constructs a `WorkerRuntime` configured to
+/// connect to that server, and packages the runtime with shutdown plumbing for cleanup.
 pub async fn setup_runtime_test(
     state: Arc<RuntimeTestState>,
     job_id: Uuid,
