@@ -66,60 +66,31 @@ mod tests {
     use mockall::predicate::*;
     use mockall::*;
 
-    // Define a trait that Repository implements (for testing purposes)
+    // Define a trait with owned types for mockall compatibility.
+    // mockall cannot generate universally-quantified predicates for
+    // `Option<&[f32]>`, so the mock trait uses `Option<Vec<f32>>` and the
+    // adapter converts at the call boundary.
     #[automock]
     trait WorkspaceRepository: Send + Sync {
-        async fn insert_chunk<'a>(
-            &self,
-            document_id: Uuid,
-            chunk_index: i32,
-            content: &'a str,
-            embedding: Option<&'a [f32]>,
-        ) -> Result<Uuid, WorkspaceError>;
-
-        async fn hybrid_search<'a>(
-            &self,
-            user_id: &'a str,
-            agent_id: Option<Uuid>,
-            query: &'a str,
-            embedding: Option<&'a [f32]>,
-            config: &'a SearchConfig,
-        ) -> Result<Vec<SearchResult>, WorkspaceError>;
-    }
-
-    // Wrapper to adapt the real Repository to our trait
-    struct RepositoryAdapter {
-        inner: crate::workspace::Repository,
-    }
-
-    impl WorkspaceRepository for RepositoryAdapter {
         async fn insert_chunk(
             &self,
             document_id: Uuid,
             chunk_index: i32,
-            content: &str,
-            embedding: Option<&[f32]>,
-        ) -> Result<Uuid, WorkspaceError> {
-            self.inner
-                .insert_chunk(document_id, chunk_index, content, embedding)
-                .await
-        }
+            content: String,
+            embedding: Option<Vec<f32>>,
+        ) -> Result<Uuid, WorkspaceError>;
 
         async fn hybrid_search(
             &self,
-            user_id: &str,
+            user_id: String,
             agent_id: Option<Uuid>,
-            query: &str,
-            embedding: Option<&[f32]>,
-            config: &SearchConfig,
-        ) -> Result<Vec<SearchResult>, WorkspaceError> {
-            self.inner
-                .hybrid_search(user_id, agent_id, query, embedding, config)
-                .await
-        }
+            query: String,
+            embedding: Option<Vec<f32>>,
+            config: SearchConfig,
+        ) -> Result<Vec<SearchResult>, WorkspaceError>;
     }
 
-    // Test-only constructor for PgBackend with a mock repository
+    // Test-only wrapper for PgBackend with a mock repository
     struct MockPgBackend {
         mock_repo: MockWorkspaceRepository,
     }
@@ -129,7 +100,10 @@ mod tests {
             Self { mock_repo }
         }
 
-        async fn insert_chunk(&self, params: InsertChunkParams<'_>) -> Result<Uuid, WorkspaceError> {
+        async fn insert_chunk(
+            &self,
+            params: InsertChunkParams<'_>,
+        ) -> Result<Uuid, WorkspaceError> {
             let InsertChunkParams {
                 document_id,
                 chunk_index,
@@ -137,7 +111,12 @@ mod tests {
                 embedding,
             } = params;
             self.mock_repo
-                .insert_chunk(document_id, chunk_index, content, embedding)
+                .insert_chunk(
+                    document_id,
+                    chunk_index,
+                    content.to_owned(),
+                    embedding.map(|e| e.to_vec()),
+                )
                 .await
         }
 
@@ -153,7 +132,13 @@ mod tests {
                 config,
             } = params;
             self.mock_repo
-                .hybrid_search(user_id, agent_id, query, embedding, config)
+                .hybrid_search(
+                    user_id.to_owned(),
+                    agent_id,
+                    query.to_owned(),
+                    embedding.map(|e| e.to_vec()),
+                    config.clone(),
+                )
                 .await
         }
     }
@@ -174,10 +159,8 @@ mod tests {
             .with(
                 eq(test_doc_id),
                 eq(test_chunk_index),
-                eq(test_content),
-                function(move |emb: &Option<&[f32]>| {
-                    emb.map(|e| e.to_vec()) == Some(test_embedding.clone())
-                }),
+                eq(test_content.to_owned()),
+                eq(Some(test_embedding.clone())),
             )
             .times(1)
             .returning(move |_, _, _, _| Ok(expected_chunk_id));
@@ -216,8 +199,8 @@ mod tests {
             .with(
                 eq(test_doc_id),
                 eq(test_chunk_index),
-                eq(test_content),
-                eq(None::<&[f32]>),
+                eq(test_content.to_owned()),
+                eq(None::<Vec<f32>>),
             )
             .times(1)
             .returning(move |_, _, _, _| Ok(expected_chunk_id));
@@ -261,19 +244,11 @@ mod tests {
         mock_repo
             .expect_hybrid_search()
             .with(
-                eq(test_user_id),
+                eq(test_user_id.to_owned()),
                 eq(test_agent_id),
-                eq(test_query),
-                function(move |emb: &Option<&[f32]>| {
-                    emb.map(|e| e.to_vec()) == Some(test_embedding.clone())
-                }),
-                function(move |cfg: &SearchConfig| {
-                    cfg.limit == test_config.limit
-                        && cfg.rrf_k == test_config.rrf_k
-                        && cfg.use_fts == test_config.use_fts
-                        && cfg.use_vector == test_config.use_vector
-                        && (cfg.min_score - test_config.min_score).abs() < 0.001
-                }),
+                eq(test_query.to_owned()),
+                eq(Some(test_embedding.clone())),
+                eq(test_config.clone()),
             )
             .times(1)
             .returning(|_, _, _, _, _| Ok(vec![]));
@@ -317,16 +292,11 @@ mod tests {
         mock_repo
             .expect_hybrid_search()
             .with(
-                eq(test_user_id),
+                eq(test_user_id.to_owned()),
                 eq(None::<Uuid>),
-                eq(test_query),
-                eq(None::<&[f32]>),
-                function(move |cfg: &SearchConfig| {
-                    cfg.limit == test_config.limit
-                        && cfg.rrf_k == test_config.rrf_k
-                        && cfg.use_fts == test_config.use_fts
-                        && !cfg.use_vector
-                }),
+                eq(test_query.to_owned()),
+                eq(None::<Vec<f32>>),
+                eq(test_config.clone()),
             )
             .times(1)
             .returning(|_, _, _, _, _| Ok(vec![]));

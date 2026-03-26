@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Configuration for hybrid search.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SearchConfig {
     /// Maximum number of results to return.
     pub limit: usize,
