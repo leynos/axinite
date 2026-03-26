@@ -5,6 +5,7 @@
 //! status updates, and credential delivery, including shared types such as
 //! [`ChatMessage`], [`ToolCall`], [`ToolDefinition`], and [`ToolOutput`].
 
+use const_format::concatcp;
 use serde::{Deserialize, Serialize};
 
 use crate::llm::{ChatMessage, ToolCall, ToolDefinition};
@@ -28,20 +29,25 @@ impl std::fmt::Display for WorkerState {
     }
 }
 
+/// Route prefix for all per-job worker endpoints.
+const WORKER_PREFIX: &str = "/worker/{job_id}/";
+
 impl std::fmt::Display for WorkerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_wire())
     }
 }
 
+/// Route prefix for all per-job worker endpoints.
+const WORKER_PREFIX: &str = "/worker/{job_id}/";
 /// Relative worker path for the hosted remote-tool catalogue endpoint.
 pub const REMOTE_TOOL_CATALOG_PATH: &str = "tools/catalog";
 /// Relative worker path for hosted remote-tool execution.
 pub const REMOTE_TOOL_EXECUTE_PATH: &str = "tools/execute";
 /// Axum route for the hosted remote-tool catalogue endpoint.
-pub const REMOTE_TOOL_CATALOG_ROUTE: &str = "/worker/{job_id}/tools/catalog";
+pub const REMOTE_TOOL_CATALOG_ROUTE: &str = concatcp!(WORKER_PREFIX, REMOTE_TOOL_CATALOG_PATH);
 /// Axum route for hosted remote-tool execution.
-pub const REMOTE_TOOL_EXECUTE_ROUTE: &str = "/worker/{job_id}/tools/execute";
+pub const REMOTE_TOOL_EXECUTE_ROUTE: &str = concatcp!(WORKER_PREFIX, REMOTE_TOOL_EXECUTE_PATH);
 
 /// Relative worker path for job description endpoint.
 pub const JOB_PATH: &str = "job";
@@ -284,20 +290,49 @@ impl std::fmt::Debug for CredentialResponse {
     }
 }
 
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_route_constants_are_correctly_derived() {
+        // Verify that ROUTE constants are correctly derived from PATH constants
+        assert_eq!(JOB_ROUTE, "/worker/{job_id}/job");
+        assert_eq!(LLM_COMPLETE_ROUTE, "/worker/{job_id}/llm/complete");
+        assert_eq!(
+            LLM_COMPLETE_WITH_TOOLS_ROUTE,
+            "/worker/{job_id}/llm/complete_with_tools"
+        );
+        assert_eq!(STATUS_ROUTE, "/worker/{job_id}/status");
+        assert_eq!(COMPLETE_ROUTE, "/worker/{job_id}/complete");
+        assert_eq!(EVENT_ROUTE, "/worker/{job_id}/event");
+        assert_eq!(PROMPT_ROUTE, "/worker/{job_id}/prompt");
+        assert_eq!(CREDENTIALS_ROUTE, "/worker/{job_id}/credentials");
+        assert_eq!(
+            REMOTE_TOOL_CATALOG_ROUTE,
+            "/worker/{job_id}/tools/catalog"
+        );
+        assert_eq!(
+            REMOTE_TOOL_EXECUTE_ROUTE,
+            "/worker/{job_id}/tools/execute"
+        );
+        assert_eq!(WORKER_HEALTH_ROUTE, "/health");
+    }
+}
+
 /// Axum route for completion report endpoint.
-pub const COMPLETE_ROUTE: &str = "/worker/{job_id}/complete";
+pub const COMPLETE_ROUTE: &str = concatcp!(WORKER_PREFIX, COMPLETE_PATH);
 
 /// Relative worker path for completion report endpoint.
 pub const COMPLETE_PATH: &str = "complete";
 
 /// Axum route for job event endpoint.
-pub const EVENT_ROUTE: &str = "/worker/{job_id}/event";
+pub const EVENT_ROUTE: &str = concatcp!(WORKER_PREFIX, EVENT_PATH);
 
 /// Relative worker path for job event endpoint.
 pub const EVENT_PATH: &str = "event";
 
 /// Axum route for prompt polling endpoint.
-pub const PROMPT_ROUTE: &str = "/worker/{job_id}/prompt";
+pub const PROMPT_ROUTE: &str = concatcp!(WORKER_PREFIX, PROMPT_PATH);
 
 /// Relative worker path for prompt polling endpoint.
 pub const PROMPT_PATH: &str = "prompt";
@@ -312,22 +347,25 @@ pub const STATUS_PATH: &str = "status";
 pub const CREDENTIALS_PATH: &str = "credentials";
 
 /// Axum route for status update endpoint.
-pub const STATUS_ROUTE: &str = "/worker/{job_id}/status";
+pub const STATUS_ROUTE: &str = concatcp!(WORKER_PREFIX, STATUS_PATH);
 
 /// Axum route for LLM completion endpoint.
-pub const LLM_COMPLETE_ROUTE: &str = "/worker/{job_id}/llm/complete";
+pub const LLM_COMPLETE_ROUTE: &str = concatcp!(WORKER_PREFIX, LLM_COMPLETE_PATH);
 
 /// Axum route for LLM tool completion endpoint.
-pub const LLM_COMPLETE_WITH_TOOLS_ROUTE: &str = "/worker/{job_id}/llm/complete_with_tools";
+pub const LLM_COMPLETE_WITH_TOOLS_ROUTE: &str =
+    concatcp!(WORKER_PREFIX, LLM_COMPLETE_WITH_TOOLS_PATH);
 
 /// Relative worker path for LLM completion endpoint.
 pub const LLM_COMPLETE_PATH: &str = "llm/complete";
 
 /// Axum route for job description endpoint.
-pub const JOB_ROUTE: &str = "/worker/{job_id}/job";
+pub const JOB_ROUTE: &str = concatcp!(WORKER_PREFIX, JOB_PATH);
 
 /// Axum route for credentials endpoint.
-pub const CREDENTIALS_ROUTE: &str = "/worker/{job_id}/credentials";
+pub const CREDENTIALS_ROUTE: &str = concatcp!(WORKER_PREFIX, CREDENTIALS_PATH);
 
+/// Relative path for health check endpoint (no job_id path component).
+pub const WORKER_HEALTH_PATH: &str = "health";
 /// Axum route for health check endpoint (no job_id path component).
-pub const WORKER_HEALTH_ROUTE: &str = "/health";
+pub const WORKER_HEALTH_ROUTE: &str = concatcp!("/", WORKER_HEALTH_PATH);
