@@ -135,10 +135,10 @@ async fn orchestrator_catalog_response_round_trips_through_worker_shared_types()
         serde_json::from_str(&serialized)
             .expect("orchestrator response must deserialize into shared type");
 
-    assert_eq!(deserialized.tools.len(), tools.len());
-    assert_eq!(deserialized.tools[0], tools[0]);
-    assert_eq!(deserialized.toolset_instructions, instructions);
-    assert_eq!(deserialized.catalog_version, version);
+    assert_eq!(
+        deserialized, catalog_response,
+        "catalog response must round-trip without field loss"
+    );
 }
 
 #[tokio::test]

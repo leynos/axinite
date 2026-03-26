@@ -332,60 +332,15 @@ async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools()
 }
 
 fn complex_orchestrator_tool_definition() -> ToolDefinition {
-    ToolDefinition {
-        name: "complex_fidelity_fixture".to_string(),
-        description: concat!(
+    crate::test_support::build_complex_tool_definition(
+        "complex_fidelity_fixture",
+        concat!(
             "A **complex** tool for end-to-end fidelity testing. ",
             "Handles UTF-8: \u{1F680}\u{1F4A1}. ",
             "Supports `inline code` and [markdown](https://example.com). ",
             "Special chars: <>&\"'{}[]()."
-        )
-        .to_string(),
-        parameters: serde_json::json!({
-            "type": "object",
-            "title": "ComplexParams",
-            "description": "Nested schema with multiple property types",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query with constraints",
-                    "minLength": 1,
-                    "maxLength": 500
-                },
-                "options": {
-                    "type": "object",
-                    "description": "Nested configuration object",
-                    "properties": {
-                        "limit": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 100,
-                            "default": 10
-                        },
-                        "include_metadata": {
-                            "type": "boolean",
-                            "default": false
-                        },
-                        "filters": {
-                            "type": "array",
-                            "items": {
-                                "type": "string",
-                                "enum": ["active", "archived", "draft"]
-                            }
-                        }
-                    },
-                    "required": ["limit"]
-                },
-                "callback_url": {
-                    "type": "string",
-                    "format": "uri",
-                    "description": "Optional webhook URL"
-                }
-            },
-            "required": ["query", "options"],
-            "additionalProperties": false
-        }),
-    }
+        ),
+    )
 }
 
 async fn remote_tool_catalog_with_complex_tool(

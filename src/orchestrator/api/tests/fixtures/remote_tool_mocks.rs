@@ -313,60 +313,15 @@ impl NativeTool for ErrorTool {
 /// the journey from orchestrator registry through the catalogue endpoint to the
 /// worker-side proxy without field loss or transformation.
 pub(crate) fn complex_tool_definition() -> crate::llm::ToolDefinition {
-    crate::llm::ToolDefinition {
-        name: "remote_tool_fidelity_fixture".to_string(),
-        description: concat!(
+    crate::test_support::build_complex_tool_definition(
+        "remote_tool_fidelity_fixture",
+        concat!(
             "A **complex** tool for testing schema fidelity. ",
             "Handles UTF-8: \u{1F680}\u{1F4A1}. ",
             "Supports `inline code` and [markdown](https://example.com). ",
             "Special chars: <>&\"'{}[]()."
-        )
-        .to_string(),
-        parameters: serde_json::json!({
-            "type": "object",
-            "title": "ComplexParams",
-            "description": "Nested schema with multiple property types",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query with constraints",
-                    "minLength": 1,
-                    "maxLength": 500
-                },
-                "options": {
-                    "type": "object",
-                    "description": "Nested configuration object",
-                    "properties": {
-                        "limit": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 100,
-                            "default": 10
-                        },
-                        "include_metadata": {
-                            "type": "boolean",
-                            "default": false
-                        },
-                        "filters": {
-                            "type": "array",
-                            "items": {
-                                "type": "string",
-                                "enum": ["active", "archived", "draft"]
-                            }
-                        }
-                    },
-                    "required": ["limit"]
-                },
-                "callback_url": {
-                    "type": "string",
-                    "format": "uri",
-                    "description": "Optional webhook URL"
-                }
-            },
-            "required": ["query", "options"],
-            "additionalProperties": false
-        }),
-    }
+        ),
+    )
 }
 
 /// Returns a [`StubTool`] configured with the complex tool definition from

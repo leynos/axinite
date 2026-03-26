@@ -42,7 +42,7 @@ pub enum ToolError {
 }
 
 /// Output from a tool execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolOutput {
     /// The result data.
     pub result: serde_json::Value,

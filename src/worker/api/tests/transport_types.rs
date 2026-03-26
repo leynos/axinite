@@ -13,27 +13,23 @@ use super::fixtures::{
 
 #[test]
 fn worker_and_orchestrator_share_remote_tool_route_constants() {
-    assert_eq!(
-        REMOTE_TOOL_CATALOG_ROUTE, "/worker/{job_id}/tools/catalog",
-        "catalog route constant must match the expected orchestrator route"
-    );
-    assert_eq!(
-        REMOTE_TOOL_EXECUTE_ROUTE, "/worker/{job_id}/tools/execute",
-        "execute route constant must match the expected orchestrator route"
-    );
+    // These constants are declared in worker::api::types but are shared with the
+    // orchestrator. The orchestrator imports them from worker::api to ensure both
+    // sides use identical route paths for hosted remote-tool operations.
 
-    let test_job_id = "12345678-1234-1234-1234-123456789012";
-    let catalog_route = REMOTE_TOOL_CATALOG_ROUTE.replace("{job_id}", test_job_id);
-    let execute_route = REMOTE_TOOL_EXECUTE_ROUTE.replace("{job_id}", test_job_id);
+    let job_id = "12345678-1234-1234-1234-123456789012";
+
+    let catalog_route = REMOTE_TOOL_CATALOG_ROUTE.replace("{job_id}", job_id);
+    let execute_route = REMOTE_TOOL_EXECUTE_ROUTE.replace("{job_id}", job_id);
 
     assert_eq!(
         catalog_route,
-        format!("/worker/{}/tools/catalog", test_job_id),
+        format!("/worker/{}/tools/catalog", job_id),
         "catalog route must expand job_id parameter correctly"
     );
     assert_eq!(
         execute_route,
-        format!("/worker/{}/tools/execute", test_job_id),
+        format!("/worker/{}/tools/execute", job_id),
         "execute route must expand job_id parameter correctly"
     );
 }
@@ -62,8 +58,10 @@ fn remote_tool_execution_request_round_trip_without_field_loss(
     let deserialized: RemoteToolExecutionRequest =
         serde_json::from_str(&serialized).expect("deserialize RemoteToolExecutionRequest");
 
-    assert_eq!(deserialized.tool_name, sample_execution_request.tool_name);
-    assert_eq!(deserialized.params, sample_execution_request.params);
+    assert_eq!(
+        deserialized, sample_execution_request,
+        "execution request must round-trip without field loss"
+    );
 }
 
 #[rstest]
@@ -76,19 +74,7 @@ fn remote_tool_execution_response_round_trip_without_field_loss(
         serde_json::from_str(&serialized).expect("deserialize RemoteToolExecutionResponse");
 
     assert_eq!(
-        deserialized.output.result,
-        sample_execution_response.output.result
-    );
-    assert_eq!(
-        deserialized.output.cost,
-        sample_execution_response.output.cost
-    );
-    assert_eq!(
-        deserialized.output.raw,
-        sample_execution_response.output.raw
-    );
-    assert_eq!(
-        deserialized.output.duration,
-        sample_execution_response.output.duration
+        deserialized, sample_execution_response,
+        "execution response must round-trip without field loss"
     );
 }

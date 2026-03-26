@@ -188,7 +188,7 @@ pub struct ProxyToolCompletionResponse {
 ///
 /// `tool_name` is the orchestrator tool identifier. `params` must match that
 /// tool's JSON Schema because the orchestrator validates and executes the call.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct RemoteToolExecutionRequest {
     /// Stable hosted remote-tool identifier known to both worker and orchestrator.
     pub tool_name: String,
@@ -200,7 +200,7 @@ pub struct RemoteToolExecutionRequest {
 ///
 /// `output` is the tool's `ToolOutput`, including its result payload and
 /// reported side-effect metadata such as duration and optional cost.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct RemoteToolExecutionResponse {
     /// Tool execution output returned by the orchestrator.
     pub output: ToolOutput,

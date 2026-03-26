@@ -86,29 +86,10 @@ pub fn remote_tool_failure_server() -> RemoteToolFailureServerFactory {
 #[fixture]
 pub fn sample_catalog_response() -> RemoteToolCatalogResponse {
     RemoteToolCatalogResponse {
-        tools: vec![crate::llm::ToolDefinition {
-            name: "test_tool".to_string(),
-            description: "A **complex** test tool with UTF-8: \u{1F680}\u{1F4A1}.".to_string(),
-            parameters: json!({
-                "type": "object",
-                "title": "TestParams",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 100
-                    },
-                    "options": {
-                        "type": "object",
-                        "properties": {
-                            "limit": {"type": "integer", "minimum": 1, "maximum": 50}
-                        },
-                        "required": ["limit"]
-                    }
-                },
-                "required": ["query", "options"]
-            }),
-        }],
+        tools: vec![crate::test_support::build_complex_tool_definition(
+            "test_tool",
+            "A **complex** test tool with UTF-8: \u{1F680}\u{1F4A1}.",
+        )],
         toolset_instructions: vec![
             "Prefer remote tools for external systems.".to_string(),
             "Use local tools for filesystem operations.".to_string(),
