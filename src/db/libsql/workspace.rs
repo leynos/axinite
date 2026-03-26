@@ -18,6 +18,47 @@ use crate::workspace::{
 
 use chrono::Utc;
 
+struct Candidate {
+    chunk_id: Uuid,
+    document_id: Uuid,
+    document_path: String,
+    content: String,
+    similarity: f32,
+}
+
+fn rank_candidates(mut candidates: Vec<Candidate>, limit: usize) -> Vec<RankedResult> {
+    // Sort by similarity descending
+    candidates.sort_by(|a, b| {
+        b.similarity
+            .partial_cmp(&a.similarity)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let total_candidates = candidates.len();
+
+    // Take top N and convert to RankedResult with 1-based rank
+    let results: Vec<_> = candidates
+        .into_iter()
+        .take(limit)
+        .enumerate()
+        .map(|(idx, c)| RankedResult {
+            chunk_id: c.chunk_id,
+            document_id: c.document_id,
+            document_path: c.document_path,
+            content: c.content,
+            rank: (idx + 1) as u32,
+        })
+        .collect();
+
+    tracing::debug!(
+        "Brute-force vector search scanned {} candidates, returned {} results",
+        total_candidates,
+        results.len()
+    );
+
+    results
+}
+
 /// Deserialize an embedding from a BLOB (4-byte little-endian f32 values).
 ///
 /// Returns an empty vector if the blob length is not a multiple of 4.
@@ -39,6 +80,60 @@ fn deserialize_embedding(blob: &[u8]) -> Vec<f32> {
 }
 
 impl LibSqlBackend {
+    async fn collect_candidates(
+        &self,
+        rows: &mut libsql::Rows,
+        query_embedding: &[f32],
+    ) -> Result<Vec<Candidate>, WorkspaceError> {
+        let mut candidates = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| WorkspaceError::SearchFailed {
+                reason: format!("Row fetch failed: {}", e),
+            })?
+        {
+            let chunk_id: Uuid = match get_text(&row, 0).parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!("Invalid chunk_id UUID in memory_chunks: {e}");
+                    continue;
+                }
+            };
+            let document_id: Uuid = match get_text(&row, 1).parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!("Invalid document_id UUID in memory_chunks: {e}");
+                    continue;
+                }
+            };
+            let document_path = get_text(&row, 2);
+            let content = get_text(&row, 3);
+
+            // Deserialize the embedding BLOB
+            let embedding_blob = match row.get_value(4) {
+                Ok(libsql::Value::Blob(bytes)) => bytes,
+                _ => continue,
+            };
+            let chunk_embedding = deserialize_embedding(&embedding_blob);
+            if chunk_embedding.is_empty() {
+                continue;
+            }
+
+            // Compute cosine similarity
+            let similarity = cosine_similarity(query_embedding, &chunk_embedding);
+
+            candidates.push(Candidate {
+                chunk_id,
+                document_id,
+                document_path,
+                content,
+                similarity,
+            });
+        }
+        Ok(candidates)
+    }
+
     /// Brute-force vector search using cosine similarity in Rust.
     ///
     /// Loads all chunks with embeddings for the given user/agent, computes
@@ -76,91 +171,8 @@ impl LibSqlBackend {
                 reason: format!("Query failed: {}", e),
             })?;
 
-        struct Candidate {
-            chunk_id: Uuid,
-            document_id: Uuid,
-            document_path: String,
-            content: String,
-            similarity: f32,
-        }
-
-        let mut candidates = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .await
-            .map_err(|e| WorkspaceError::SearchFailed {
-                reason: format!("Row fetch failed: {}", e),
-            })?
-        {
-            let chunk_id: Uuid = match get_text(&row, 0).parse() {
-                Ok(id) => id,
-                Err(e) => {
-                    tracing::warn!("Invalid chunk_id UUID in memory_chunks: {e}");
-                    continue;
-                }
-            };
-            let document_id: Uuid = match get_text(&row, 1).parse() {
-                Ok(id) => id,
-                Err(e) => {
-                    tracing::warn!("Invalid document_id UUID in memory_chunks: {e}");
-                    continue;
-                }
-            };
-            let document_path = get_text(&row, 2);
-            let content = get_text(&row, 3);
-
-            // Deserialize the embedding BLOB
-            let embedding_blob = match row.get_value(4) {
-                Ok(libsql::Value::Blob(bytes)) => bytes,
-                _ => continue,
-            };
-            let chunk_embedding = deserialize_embedding(&embedding_blob);
-            if chunk_embedding.is_empty() {
-                continue;
-            }
-
-            // Compute cosine similarity
-            let similarity = cosine_similarity(embedding, &chunk_embedding);
-
-            candidates.push(Candidate {
-                chunk_id,
-                document_id,
-                document_path,
-                content,
-                similarity,
-            });
-        }
-
-        // Sort by similarity descending
-        candidates.sort_by(|a, b| {
-            b.similarity
-                .partial_cmp(&a.similarity)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        let total_candidates = candidates.len();
-
-        // Take top N and convert to RankedResult with 1-based rank
-        let results: Vec<_> = candidates
-            .into_iter()
-            .take(limit)
-            .enumerate()
-            .map(|(idx, c)| RankedResult {
-                chunk_id: c.chunk_id,
-                document_id: c.document_id,
-                document_path: c.document_path,
-                content: c.content,
-                rank: (idx + 1) as u32,
-            })
-            .collect();
-
-        tracing::debug!(
-            "Brute-force vector search scanned {} candidates, returned {} results",
-            total_candidates,
-            results.len()
-        );
-
-        Ok(results)
+        let candidates = self.collect_candidates(&mut rows, embedding).await?;
+        Ok(rank_candidates(candidates, limit))
     }
 }
 
