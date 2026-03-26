@@ -138,7 +138,7 @@ pub(super) fn render_approval_card(
 
     // Top border: ┌ tool_name requires approval ───
     let top_label = format!(" {tool_name} requires approval ");
-    let top_fill = box_width.saturating_sub(top_label.len() + 1);
+    let top_fill = box_width.saturating_sub(top_label.chars().count() + 1);
     let top_border = format!(
         "\u{250C}\x1b[33m{top_label}\x1b[0m{}",
         "\u{2500}".repeat(top_fill)
@@ -146,7 +146,7 @@ pub(super) fn render_approval_card(
 
     // Bottom border: └─ short_id ─────
     let bot_label = format!(" {short_id} ");
-    let bot_fill = box_width.saturating_sub(bot_label.len() + 2);
+    let bot_fill = box_width.saturating_sub(bot_label.chars().count() + 2);
     let bot_border = format!(
         "\u{2514}\u{2500}\x1b[90m{bot_label}\x1b[0m{}",
         "\u{2500}".repeat(bot_fill)

@@ -72,6 +72,35 @@ pub async fn test_db() -> (Arc<dyn Database>, TempDir) {
     (Arc::new(backend) as Arc<dyn Database>, dir)
 }
 
+/// Create a PostgreSQL-backed test database.
+///
+/// Reads the test database URL from the `TEST_DATABASE_URL` environment variable,
+/// or falls back to a default local Postgres instance.
+/// Returns the `PgBackend` instance for testing.
+#[cfg(feature = "postgres")]
+pub async fn test_pg_db() -> crate::db::postgres::PgBackend {
+    use crate::config::{DatabaseBackend, DatabaseConfig, SslMode};
+    use crate::db::postgres::PgBackend;
+    use secrecy::SecretString;
+
+    let url = std::env::var("TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://localhost/ironclaw_test".to_string());
+
+    let config = DatabaseConfig {
+        backend: DatabaseBackend::Postgres,
+        url: SecretString::from(url),
+        pool_size: 5,
+        ssl_mode: SslMode::Prefer,
+        libsql_path: None,
+        libsql_url: None,
+        libsql_auth_token: None,
+    };
+
+    PgBackend::new(&config)
+        .await
+        .expect("failed to create test PgBackend")
+}
+
 /// What kind of error the stub should produce when failing.
 #[derive(Clone, Copy, Debug)]
 pub enum StubErrorKind {

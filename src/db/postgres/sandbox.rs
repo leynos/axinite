@@ -96,19 +96,21 @@ mod tests {
 
     /// Behavioral tests for NativeSandboxStore on PgBackend.
     /// These verify field pass-through and method delegation work correctly.
-    #[cfg(feature = "libsql")]
+    #[cfg(feature = "postgres")]
     mod behavioral {
         use super::*;
-        use crate::testing::test_db;
+        use crate::testing::test_pg_db;
+        use rstest::{fixture, rstest};
 
-        #[tokio::test]
-        async fn test_update_sandbox_job_status_field_passthrough() {
-            let (db, _temp) = test_db().await;
+        #[fixture]
+        async fn db() -> PgBackend {
+            test_pg_db().await
+        }
 
-            // Create a test job first
-            let job_id = Uuid::new_v4();
-            let job = SandboxJobRecord {
-                id: job_id,
+        #[fixture]
+        fn pending_job() -> SandboxJobRecord {
+            SandboxJobRecord {
+                id: Uuid::new_v4(),
                 task: "test_task".to_string(),
                 status: "pending".to_string(),
                 user_id: "test_user".to_string(),
@@ -119,9 +121,19 @@ mod tests {
                 started_at: None,
                 completed_at: None,
                 credential_grants_json: "[]".to_string(),
-            };
+            }
+        }
 
-            db.save_sandbox_job(&job)
+        #[rstest]
+        #[tokio::test]
+        async fn test_update_sandbox_job_status_field_passthrough(
+            #[future] db: PgBackend,
+            pending_job: SandboxJobRecord,
+        ) {
+            let db = db.await;
+            let job_id = pending_job.id;
+
+            db.save_sandbox_job(&pending_job)
                 .await
                 .expect("failed to save test job");
 
@@ -159,38 +171,25 @@ mod tests {
             assert!(retrieved.completed_at.is_some());
         }
 
+        #[rstest]
         #[tokio::test]
-        async fn test_list_sandbox_jobs_for_user() {
-            let (db, _temp) = test_db().await;
+        async fn test_list_sandbox_jobs_for_user(
+            #[future] db: PgBackend,
+            pending_job: SandboxJobRecord,
+        ) {
+            let db = db.await;
 
             // Create jobs for two different users
-            let user1_job = SandboxJobRecord {
-                id: Uuid::new_v4(),
-                task: "task1".to_string(),
-                status: "pending".to_string(),
-                user_id: "user1".to_string(),
-                project_dir: "/tmp/user1".to_string(),
-                success: None,
-                failure_reason: None,
-                created_at: Utc::now(),
-                started_at: None,
-                completed_at: None,
-                credential_grants_json: "[]".to_string(),
-            };
+            let mut user1_job = pending_job.clone();
+            user1_job.user_id = "user1".to_string();
+            user1_job.task = "task1".to_string();
+            user1_job.project_dir = "/tmp/user1".to_string();
 
-            let user2_job = SandboxJobRecord {
-                id: Uuid::new_v4(),
-                task: "task2".to_string(),
-                status: "pending".to_string(),
-                user_id: "user2".to_string(),
-                project_dir: "/tmp/user2".to_string(),
-                success: None,
-                failure_reason: None,
-                created_at: Utc::now(),
-                started_at: None,
-                completed_at: None,
-                credential_grants_json: "[]".to_string(),
-            };
+            let mut user2_job = pending_job.clone();
+            user2_job.id = Uuid::new_v4();
+            user2_job.user_id = "user2".to_string();
+            user2_job.task = "task2".to_string();
+            user2_job.project_dir = "/tmp/user2".to_string();
 
             db.save_sandbox_job(&user1_job)
                 .await
@@ -228,45 +227,45 @@ mod tests {
             assert!(user3_jobs.is_empty());
         }
 
+        #[rstest]
         #[tokio::test]
-        async fn test_sandbox_job_summary_for_user() {
-            let (db, _temp) = test_db().await;
+        async fn test_sandbox_job_summary_for_user(
+            #[future] db: PgBackend,
+            pending_job: SandboxJobRecord,
+        ) {
+            let db = db.await;
 
             // Create multiple jobs with different statuses for one user
-            let pending_job = SandboxJobRecord {
-                id: Uuid::new_v4(),
-                task: "pending_task".to_string(),
-                status: "pending".to_string(),
-                user_id: "test_user".to_string(),
-                project_dir: "/tmp/pending".to_string(),
-                success: None,
-                failure_reason: None,
-                created_at: Utc::now(),
-                started_at: None,
-                completed_at: None,
-                credential_grants_json: "[]".to_string(),
-            };
+            let mut pending = pending_job.clone();
+            pending.task = "pending_task".to_string();
+            pending.project_dir = "/tmp/pending".to_string();
 
-            let completed_job = SandboxJobRecord {
-                id: Uuid::new_v4(),
-                task: "completed_task".to_string(),
-                status: "completed".to_string(),
-                user_id: "test_user".to_string(),
-                project_dir: "/tmp/completed".to_string(),
-                success: Some(true),
-                failure_reason: Some("Success".to_string()),
-                created_at: Utc::now(),
-                started_at: Some(Utc::now()),
-                completed_at: Some(Utc::now()),
-                credential_grants_json: "[]".to_string(),
-            };
+            let mut completed_job = pending_job.clone();
+            completed_job.id = Uuid::new_v4();
+            completed_job.task = "completed_task".to_string();
+            completed_job.status = "completed".to_string();
+            completed_job.project_dir = "/tmp/completed".to_string();
+            completed_job.success = Some(true);
+            completed_job.failure_reason = Some("Success".to_string());
+            completed_job.started_at = Some(Utc::now());
+            completed_job.completed_at = Some(Utc::now());
 
-            db.save_sandbox_job(&pending_job)
+            let mut other_user_job = pending_job.clone();
+            other_user_job.id = Uuid::new_v4();
+            other_user_job.user_id = "other_user".to_string();
+            other_user_job.task = "other_task".to_string();
+            other_user_job.status = "pending".to_string();
+            other_user_job.project_dir = "/tmp/other".to_string();
+
+            db.save_sandbox_job(&pending)
                 .await
                 .expect("failed to save pending job");
             db.save_sandbox_job(&completed_job)
                 .await
                 .expect("failed to save completed job");
+            db.save_sandbox_job(&other_user_job)
+                .await
+                .expect("failed to save other user job");
 
             // Get summary for user
             let summary = db
@@ -274,28 +273,22 @@ mod tests {
                 .await
                 .expect("sandbox_job_summary_for_user should succeed");
 
-            assert!(summary.total > 0);
-            // Note: actual summary structure depends on SandboxJobSummary implementation
+            assert_eq!(summary.total, 2);
         }
 
+        #[rstest]
         #[tokio::test]
-        async fn test_sandbox_job_belongs_to_user() {
-            let (db, _temp) = test_db().await;
+        async fn test_sandbox_job_belongs_to_user(
+            #[future] db: PgBackend,
+            pending_job: SandboxJobRecord,
+        ) {
+            let db = db.await;
 
-            let job_id = Uuid::new_v4();
-            let job = SandboxJobRecord {
-                id: job_id,
-                task: "ownership_test".to_string(),
-                status: "pending".to_string(),
-                user_id: "owner".to_string(),
-                project_dir: "/tmp/owner".to_string(),
-                success: None,
-                failure_reason: None,
-                created_at: Utc::now(),
-                started_at: None,
-                completed_at: None,
-                credential_grants_json: "[]".to_string(),
-            };
+            let mut job = pending_job.clone();
+            job.user_id = "owner".to_string();
+            job.task = "ownership_test".to_string();
+            job.project_dir = "/tmp/owner".to_string();
+            let job_id = job.id;
 
             db.save_sandbox_job(&job).await.expect("failed to save job");
 
