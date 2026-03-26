@@ -140,12 +140,18 @@ impl TraceLlm {
 
     fn validate_hint(&self, hint: &RequestHint, messages: &[ChatMessage]) {
         if let Some(ref expected_substr) = hint.last_user_message_contains {
+            let expected_substr = expected_substr.to_lowercase();
             let last_user = messages
                 .iter()
                 .rev()
                 .find(|message| matches!(message.role, Role::User));
             let matched = last_user
-                .map(|message| message.content.contains(expected_substr.as_str()))
+                .map(|message| {
+                    message
+                        .content
+                        .to_lowercase()
+                        .contains(expected_substr.as_str())
+                })
                 .unwrap_or(false);
             if !matched {
                 self.hint_mismatches.fetch_add(1, Ordering::Relaxed);

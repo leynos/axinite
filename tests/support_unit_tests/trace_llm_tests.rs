@@ -295,6 +295,15 @@ hint_test!(
 );
 
 hint_test!(
+    validates_request_hints_case_insensitively,
+    user = "Write a file to a bad path then recover",
+    contains = "write",
+    min = 1,
+    response = "matched",
+    expect_mismatches = 0
+);
+
+hint_test!(
     hint_mismatch_warns_but_continues,
     user = "apple",
     contains = "banana",
