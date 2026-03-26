@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use crate::bootstrap::ironclaw_base_dir;
-use crate::config::helpers::{optional_env, parse_bool_env, parse_optional_env};
+use crate::config::EnvContext;
+use crate::config::helpers::{optional_env_from, parse_bool_env_from, parse_optional_env_from};
 use crate::error::ConfigError;
 
 /// Skills system configuration.
@@ -44,17 +45,23 @@ fn default_installed_skills_dir() -> PathBuf {
 }
 
 impl SkillsConfig {
+    // Backwards-compatible ambient entrypoint retained for existing callers.
+    #[allow(dead_code)]
     pub(crate) fn resolve() -> Result<Self, ConfigError> {
+        Self::resolve_from(&EnvContext::capture_ambient())
+    }
+
+    pub(crate) fn resolve_from(ctx: &EnvContext) -> Result<Self, ConfigError> {
         Ok(Self {
-            enabled: parse_bool_env("SKILLS_ENABLED", true)?,
-            local_dir: optional_env("SKILLS_DIR")?
+            enabled: parse_bool_env_from(ctx, "SKILLS_ENABLED", true)?,
+            local_dir: optional_env_from(ctx, "SKILLS_DIR")?
                 .map(PathBuf::from)
-                .unwrap_or_else(default_skills_dir),
-            installed_dir: optional_env("SKILLS_INSTALLED_DIR")?
+                .unwrap_or_else(|| ctx.ironclaw_base_dir().join("skills")),
+            installed_dir: optional_env_from(ctx, "SKILLS_INSTALLED_DIR")?
                 .map(PathBuf::from)
-                .unwrap_or_else(default_installed_skills_dir),
-            max_active_skills: parse_optional_env("SKILLS_MAX_ACTIVE", 3)?,
-            max_context_tokens: parse_optional_env("SKILLS_MAX_CONTEXT_TOKENS", 4000)?,
+                .unwrap_or_else(|| ctx.ironclaw_base_dir().join("installed_skills")),
+            max_active_skills: parse_optional_env_from(ctx, "SKILLS_MAX_ACTIVE", 3)?,
+            max_context_tokens: parse_optional_env_from(ctx, "SKILLS_MAX_CONTEXT_TOKENS", 4000)?,
         })
     }
 }

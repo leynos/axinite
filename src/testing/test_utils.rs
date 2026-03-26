@@ -1,9 +1,11 @@
-//! Shared test-only utilities for env-mutation guards and similar fixtures.
+//! Shared test utilities for env-mutation guards and config snapshots.
 
 use std::collections::HashMap;
 use std::sync::MutexGuard;
 
 use crate::config::helpers::ENV_MUTEX;
+use crate::config::{Config, EnvContext};
+use crate::settings::Settings;
 
 /// Guard that snapshots a set of env vars, serializes mutations under
 /// [`ENV_MUTEX`], and restores the original values on drop.
@@ -66,4 +68,24 @@ impl Drop for EnvVarsGuard {
             }
         }
     }
+}
+
+/// Create an empty explicit config context for tests.
+pub fn test_env_context() -> EnvContext {
+    EnvContext::default()
+}
+
+/// Create a test context populated with explicit env values.
+pub fn test_env_context_with(vars: &[(&str, &str)]) -> EnvContext {
+    vars.iter()
+        .fold(EnvContext::default(), |ctx, (key, value)| {
+            ctx.with_env(*key, *value)
+        })
+}
+
+/// Build a config from an explicit test context.
+pub async fn test_config_from_context(ctx: &EnvContext) -> Config {
+    Config::from_context(ctx, &Settings::default())
+        .await
+        .expect("test config context should resolve")
 }

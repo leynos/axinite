@@ -1,5 +1,6 @@
 use crate::bootstrap::ironclaw_base_dir;
-use crate::config::helpers::{parse_bool_env, parse_optional_env};
+use crate::config::EnvContext;
+use crate::config::helpers::{parse_bool_env_from, parse_optional_env_from};
 use crate::error::ConfigError;
 
 /// Memory hygiene configuration.
@@ -30,15 +31,26 @@ impl Default for HygieneConfig {
 }
 
 impl HygieneConfig {
+    // Backwards-compatible ambient entrypoint retained for existing callers.
+    #[allow(dead_code)]
     pub(crate) fn resolve() -> Result<Self, ConfigError> {
+        Self::resolve_from(&EnvContext::capture_ambient())
+    }
+
+    pub(crate) fn resolve_from(ctx: &EnvContext) -> Result<Self, ConfigError> {
         Ok(Self {
-            enabled: parse_bool_env("MEMORY_HYGIENE_ENABLED", true)?,
-            daily_retention_days: parse_optional_env("MEMORY_HYGIENE_DAILY_RETENTION_DAYS", 30)?,
-            conversation_retention_days: parse_optional_env(
+            enabled: parse_bool_env_from(ctx, "MEMORY_HYGIENE_ENABLED", true)?,
+            daily_retention_days: parse_optional_env_from(
+                ctx,
+                "MEMORY_HYGIENE_DAILY_RETENTION_DAYS",
+                30,
+            )?,
+            conversation_retention_days: parse_optional_env_from(
+                ctx,
                 "MEMORY_HYGIENE_CONVERSATION_RETENTION_DAYS",
                 7,
             )?,
-            cadence_hours: parse_optional_env("MEMORY_HYGIENE_CADENCE_HOURS", 12)?,
+            cadence_hours: parse_optional_env_from(ctx, "MEMORY_HYGIENE_CADENCE_HOURS", 12)?,
         })
     }
 

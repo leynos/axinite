@@ -274,7 +274,7 @@ impl TestRigBuilder {
         tokio::fs::create_dir_all(&installed_skills_dir)
             .await
             .context("failed to create test rig installed_skills dir")?;
-        let mut config = Config::for_testing(db_path, skills_dir, installed_skills_dir);
+        let mut config = Config::for_testing(db_path, skills_dir, installed_skills_dir).await;
         config.agent.max_tool_iterations = self.max_tool_iterations;
         config.safety.injection_check_enabled = self.injection_check;
         config.skills.enabled = self.enable_skills;

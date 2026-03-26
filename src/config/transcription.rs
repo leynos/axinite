@@ -1,6 +1,7 @@
 use secrecy::SecretString;
 
-use crate::config::helpers::{optional_env, parse_bool_env};
+use crate::config::EnvContext;
+use crate::config::helpers::{optional_env_from, parse_bool_env_from};
 use crate::error::ConfigError;
 use crate::settings::Settings;
 
@@ -32,20 +33,28 @@ impl Default for TranscriptionConfig {
 }
 
 impl TranscriptionConfig {
+    // Backwards-compatible ambient entrypoint retained for existing callers.
+    #[allow(dead_code)]
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
-        let enabled = parse_bool_env(
+        Self::resolve_from(&EnvContext::capture_ambient(), settings)
+    }
+
+    pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
+        let enabled = parse_bool_env_from(
+            ctx,
             "TRANSCRIPTION_ENABLED",
             settings.transcription.as_ref().is_some_and(|t| t.enabled),
         )?;
 
-        let provider =
-            optional_env("TRANSCRIPTION_PROVIDER")?.unwrap_or_else(|| "openai".to_string());
+        let provider = optional_env_from(ctx, "TRANSCRIPTION_PROVIDER")?
+            .unwrap_or_else(|| "openai".to_string());
 
-        let openai_api_key = optional_env("OPENAI_API_KEY")?.map(SecretString::from);
+        let openai_api_key = optional_env_from(ctx, "OPENAI_API_KEY")?.map(SecretString::from);
 
-        let model = optional_env("TRANSCRIPTION_MODEL")?.unwrap_or_else(|| "whisper-1".to_string());
+        let model = optional_env_from(ctx, "TRANSCRIPTION_MODEL")?
+            .unwrap_or_else(|| "whisper-1".to_string());
 
-        let base_url = optional_env("TRANSCRIPTION_BASE_URL")?;
+        let base_url = optional_env_from(ctx, "TRANSCRIPTION_BASE_URL")?;
 
         Ok(Self {
             enabled,

@@ -1,5 +1,6 @@
 use crate::error::ConfigError;
 
+use super::EnvContext;
 use super::INJECTED_VARS;
 
 /// Crate-wide mutex for tests that mutate process environment variables.
@@ -8,8 +9,16 @@ use super::INJECTED_VARS;
 /// Per-module mutexes do NOT prevent races between modules running in
 /// parallel.  Every `unsafe { set_var / remove_var }` call in tests
 /// MUST hold this single lock.
-#[cfg(test)]
+// Shared env-mutation guard retained for integration tests and helper modules.
+#[allow(dead_code)]
 pub(crate) static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub(crate) fn optional_env_from(
+    ctx: &EnvContext,
+    key: &str,
+) -> Result<Option<String>, ConfigError> {
+    Ok(ctx.get_owned(key))
+}
 
 pub(crate) fn optional_env(key: &str) -> Result<Option<String>, ConfigError> {
     // Check real env vars first (always win over injected secrets)
@@ -37,6 +46,28 @@ pub(crate) fn optional_env(key: &str) -> Result<Option<String>, ConfigError> {
     Ok(None)
 }
 
+pub(crate) fn parse_optional_env_from<T>(
+    ctx: &EnvContext,
+    key: &str,
+    default: T,
+) -> Result<T, ConfigError>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    optional_env_from(ctx, key)?
+        .map(|s| {
+            s.parse().map_err(|e| ConfigError::InvalidValue {
+                key: key.to_string(),
+                message: format!("{e}"),
+            })
+        })
+        .transpose()
+        .map(|opt| opt.unwrap_or(default))
+}
+
+// Backwards-compatible ambient helper retained for existing callers.
+#[allow(dead_code)]
 pub(crate) fn parse_optional_env<T>(key: &str, default: T) -> Result<T, ConfigError>
 where
     T: std::str::FromStr,
@@ -56,6 +87,8 @@ where
 /// Parse a boolean from an env var with a default.
 ///
 /// Accepts "true"/"1" as true, "false"/"0" as false.
+// Backwards-compatible ambient helper retained for existing callers.
+#[allow(dead_code)]
 pub(crate) fn parse_bool_env(key: &str, default: bool) -> Result<bool, ConfigError> {
     match optional_env(key)? {
         Some(s) => match s.to_lowercase().as_str() {
@@ -70,8 +103,28 @@ pub(crate) fn parse_bool_env(key: &str, default: bool) -> Result<bool, ConfigErr
     }
 }
 
+pub(crate) fn parse_bool_env_from(
+    ctx: &EnvContext,
+    key: &str,
+    default: bool,
+) -> Result<bool, ConfigError> {
+    match optional_env_from(ctx, key)? {
+        Some(s) => match s.to_lowercase().as_str() {
+            "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            _ => Err(ConfigError::InvalidValue {
+                key: key.to_string(),
+                message: format!("must be 'true' or 'false', got '{s}'"),
+            }),
+        },
+        None => Ok(default),
+    }
+}
+
 /// Parse an env var into `Option<T>` — returns `None` when unset,
 /// `Some(parsed)` when set to a valid value.
+// Backwards-compatible ambient helper retained for existing callers.
+#[allow(dead_code)]
 pub(crate) fn parse_option_env<T>(key: &str) -> Result<Option<T>, ConfigError>
 where
     T: std::str::FromStr,
@@ -87,10 +140,38 @@ where
         .transpose()
 }
 
+pub(crate) fn parse_option_env_from<T>(
+    ctx: &EnvContext,
+    key: &str,
+) -> Result<Option<T>, ConfigError>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    optional_env_from(ctx, key)?
+        .map(|s| {
+            s.parse().map_err(|e| ConfigError::InvalidValue {
+                key: key.to_string(),
+                message: format!("{e}"),
+            })
+        })
+        .transpose()
+}
+
 /// Parse a string from an env var with a default.
+// Backwards-compatible ambient helper retained for existing callers.
+#[allow(dead_code)]
 pub(crate) fn parse_string_env(
     key: &str,
     default: impl Into<String>,
 ) -> Result<String, ConfigError> {
     Ok(optional_env(key)?.unwrap_or_else(|| default.into()))
+}
+
+pub(crate) fn parse_string_env_from(
+    ctx: &EnvContext,
+    key: &str,
+    default: impl Into<String>,
+) -> Result<String, ConfigError> {
+    Ok(optional_env_from(ctx, key)?.unwrap_or_else(|| default.into()))
 }

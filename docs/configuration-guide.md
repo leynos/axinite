@@ -32,6 +32,13 @@ Two bootstrap details matter in practice:
    `~/.ironclaw/ironclaw.db` exists, startup auto-selects the `libsql`
    backend.
 
+For maintainers and tests, the config layer also exposes
+`crate::config::EnvContext`, an explicit snapshot of environment variables and
+injected secret overlays. `Config::from_context(...)` resolves against that
+snapshot instead of re-reading ambient process state, which keeps precedence
+deterministic and removes the need for global environment mutation in many
+tests.
+
 ## 2. Global `ironclaw` CLI options
 
 These options apply to the root parser and are available before any

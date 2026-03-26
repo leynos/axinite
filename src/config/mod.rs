@@ -8,6 +8,7 @@
 mod agent;
 mod builder;
 mod channels;
+mod context;
 mod database;
 mod embeddings;
 mod heartbeat;
@@ -34,6 +35,7 @@ use crate::settings::Settings;
 pub use self::agent::AgentConfig;
 pub use self::builder::BuilderModeConfig;
 pub use self::channels::{ChannelsConfig, CliConfig, GatewayConfig, HttpConfig, SignalConfig};
+pub use self::context::EnvContext;
 pub use self::database::{DatabaseBackend, DatabaseConfig, SslMode, default_libsql_path};
 pub use self::embeddings::EmbeddingsConfig;
 pub use self::heartbeat::HeartbeatConfig;
@@ -102,68 +104,52 @@ impl Config {
     /// - Heartbeat, routines, sandbox, builder all disabled
     /// - Safety with injection check off, 100k output limit
     #[cfg(feature = "libsql")]
-    pub fn for_testing(
+    pub async fn for_testing(
         libsql_path: std::path::PathBuf,
         skills_dir: std::path::PathBuf,
         installed_skills_dir: std::path::PathBuf,
     ) -> Self {
-        Self {
-            database: DatabaseConfig {
-                backend: DatabaseBackend::LibSql,
-                url: secrecy::SecretString::from("unused://test".to_string()),
-                pool_size: 1,
-                ssl_mode: SslMode::Disable,
-                libsql_path: Some(libsql_path),
-                libsql_url: None,
-                libsql_auth_token: None,
-            },
-            llm: LlmConfig::for_testing(),
-            embeddings: EmbeddingsConfig::default(),
-            tunnel: TunnelConfig::default(),
-            channels: ChannelsConfig {
-                cli: CliConfig { enabled: false },
-                http: None,
-                gateway: None,
-                signal: None,
-                wasm_channels_dir: std::env::temp_dir().join("ironclaw-test-channels"),
-                wasm_channels_enabled: false,
-                wasm_channel_owner_ids: HashMap::new(),
-            },
-            agent: AgentConfig::for_testing(),
-            safety: SafetyConfig {
-                max_output_length: 100_000,
-                injection_check_enabled: false,
-            },
-            wasm: WasmConfig {
-                enabled: false,
-                ..WasmConfig::default()
-            },
-            secrets: SecretsConfig::default(),
-            builder: BuilderModeConfig {
-                enabled: false,
-                ..BuilderModeConfig::default()
-            },
-            heartbeat: HeartbeatConfig::default(),
-            hygiene: HygieneConfig::default(),
-            routines: RoutineConfig {
-                enabled: false,
-                ..RoutineConfig::default()
-            },
-            sandbox: SandboxModeConfig {
-                enabled: false,
-                ..SandboxModeConfig::default()
-            },
-            claude_code: ClaudeCodeConfig::default(),
-            skills: SkillsConfig {
-                enabled: true,
-                local_dir: skills_dir,
-                installed_dir: installed_skills_dir,
-                ..SkillsConfig::default()
-            },
-            transcription: TranscriptionConfig::default(),
-            observability: crate::observability::ObservabilityConfig::default(),
-            relay: None,
-        }
+        let settings = Settings::default();
+        let test_channels_dir = skills_dir
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("ironclaw-test-channels");
+        let ctx = EnvContext::default()
+            .with_env("DATABASE_BACKEND", "libsql")
+            .with_env("DATABASE_URL", "unused://test")
+            .with_env("DATABASE_POOL_SIZE", "1")
+            .with_env("DATABASE_SSLMODE", "disable")
+            .with_env("LIBSQL_PATH", libsql_path.to_string_lossy())
+            .with_env("WASM_CHANNELS_DIR", test_channels_dir.to_string_lossy())
+            .with_env("CLI_ENABLED", "false")
+            .with_env("WASM_CHANNELS_ENABLED", "false")
+            .with_env("SAFETY_INJECTION_CHECK_ENABLED", "false")
+            .with_env("WASM_ENABLED", "false")
+            .with_env("BUILDER_ENABLED", "false")
+            .with_env("ROUTINES_ENABLED", "false")
+            .with_env("SANDBOX_ENABLED", "false")
+            .with_env("SKILLS_ENABLED", "true")
+            .with_env("SKILLS_DIR", skills_dir.to_string_lossy())
+            .with_env(
+                "SKILLS_INSTALLED_DIR",
+                installed_skills_dir.to_string_lossy(),
+            );
+
+        let mut config = Self::from_context(&ctx, &settings)
+            .await
+            .expect("test config should resolve");
+        config.llm = LlmConfig::for_testing();
+        config.agent = AgentConfig::for_testing();
+        config.embeddings = EmbeddingsConfig::default();
+        config.tunnel = TunnelConfig::default();
+        config.heartbeat = HeartbeatConfig::default();
+        config.hygiene = HygieneConfig::default();
+        config.claude_code = ClaudeCodeConfig::default();
+        config.transcription = TranscriptionConfig::default();
+        config.observability = crate::observability::ObservabilityConfig::default();
+        config.relay = None;
+        config
     }
 
     /// Load configuration from environment variables and the database.
@@ -187,7 +173,7 @@ impl Config {
         crate::bootstrap::load_ironclaw_env();
 
         // Load all settings from DB into a Settings struct
-        let mut db_settings = match store.get_all_settings(user_id.into()).await {
+        let db_settings = match store.get_all_settings(user_id.into()).await {
             Ok(map) => Settings::from_db_map(&map),
             Err(e) => {
                 tracing::warn!("Failed to load settings from DB, using defaults: {}", e);
@@ -195,10 +181,14 @@ impl Config {
             }
         };
 
-        // Overlay TOML config file (values win over DB settings)
-        Self::apply_toml_overlay(&mut db_settings, toml_path)?;
+        let ctx = EnvContext::capture_ambient();
+        if let Some(path) = toml_path {
+            return Self::from_context_with_toml(&ctx, &db_settings, path).await;
+        }
 
-        Self::build(&db_settings).await
+        let mut merged = db_settings.clone();
+        Self::apply_toml_overlay_at(&mut merged, &Settings::default_toml_path(), true)?;
+        Self::from_context(&ctx, &merged).await
     }
 
     /// Load configuration from environment variables only (no database).
@@ -219,12 +209,15 @@ impl Config {
     ) -> Result<Self, ConfigError> {
         let _ = dotenvy::dotenv();
         crate::bootstrap::load_ironclaw_env();
-        let mut settings = Settings::load();
+        let settings = Settings::load();
+        let ctx = EnvContext::capture_ambient();
+        if let Some(path) = toml_path {
+            return Self::from_context_with_toml(&ctx, &settings, path).await;
+        }
 
-        // Overlay TOML config file (values win over JSON settings)
-        Self::apply_toml_overlay(&mut settings, toml_path)?;
-
-        Self::build(&settings).await
+        let mut merged = settings.clone();
+        Self::apply_toml_overlay_at(&mut merged, &Settings::default_toml_path(), true)?;
+        Self::from_context(&ctx, &merged).await
     }
 
     /// Load and merge a TOML config file into settings.
@@ -267,6 +260,81 @@ impl Config {
         Ok(())
     }
 
+    fn apply_toml_overlay_at(
+        settings: &mut Settings,
+        path: &std::path::Path,
+        optional_when_missing: bool,
+    ) -> Result<(), ConfigError> {
+        match Settings::load_toml(path) {
+            Ok(Some(toml_settings)) => {
+                settings.merge_from(&toml_settings);
+                tracing::debug!("Loaded TOML config from {}", path.display());
+            }
+            Ok(None) => {
+                if !optional_when_missing {
+                    return Err(ConfigError::ParseError(format!(
+                        "Config file not found: {}",
+                        path.display()
+                    )));
+                }
+            }
+            Err(e) => {
+                if !optional_when_missing {
+                    return Err(ConfigError::ParseError(format!(
+                        "Failed to load config file {}: {}",
+                        path.display(),
+                        e
+                    )));
+                }
+                tracing::warn!("Failed to load default config file: {}", e);
+            }
+        }
+        Ok(())
+    }
+
+    /// Build config from an explicit environment snapshot and settings.
+    ///
+    /// Prefer this over `from_env*` and `from_db*` when the caller already has
+    /// a stable snapshot of config inputs and wants deterministic resolution
+    /// without ambient process reads during config construction.
+    pub async fn from_context(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
+        Ok(Self {
+            database: DatabaseConfig::resolve_from(ctx)?,
+            llm: LlmConfig::resolve_from(ctx, settings)?,
+            embeddings: EmbeddingsConfig::resolve_from(ctx, settings)?,
+            tunnel: TunnelConfig::resolve_from(ctx, settings)?,
+            channels: ChannelsConfig::resolve_from(ctx, settings)?,
+            agent: AgentConfig::resolve_from(ctx, settings)?,
+            safety: SafetyConfig::resolve_from(ctx)?,
+            wasm: WasmConfig::resolve_from(ctx)?,
+            secrets: SecretsConfig::resolve_from(ctx).await?,
+            builder: BuilderModeConfig::resolve_from(ctx)?,
+            heartbeat: HeartbeatConfig::resolve_from(ctx, settings)?,
+            hygiene: HygieneConfig::resolve_from(ctx)?,
+            routines: RoutineConfig::resolve_from(ctx)?,
+            sandbox: SandboxModeConfig::resolve_from(ctx)?,
+            claude_code: ClaudeCodeConfig::resolve_from(ctx)?,
+            skills: SkillsConfig::resolve_from(ctx)?,
+            transcription: TranscriptionConfig::resolve_from(ctx, settings)?,
+            observability: crate::observability::ObservabilityConfig {
+                backend: ctx
+                    .get_owned("OBSERVABILITY_BACKEND")
+                    .unwrap_or_else(|| "none".into()),
+            },
+            relay: RelayConfig::from_context(ctx),
+        })
+    }
+
+    pub async fn from_context_with_toml(
+        ctx: &EnvContext,
+        settings: &Settings,
+        toml_path: &std::path::Path,
+    ) -> Result<Self, ConfigError> {
+        let mut merged = settings.clone();
+        Self::apply_toml_overlay_at(&mut merged, toml_path, false)?;
+        Self::from_context(ctx, &merged).await
+    }
+
     /// Re-resolve only the LLM config after credential injection.
     ///
     /// Called by `AppBuilder::init_secrets()` after injecting API keys into
@@ -293,31 +361,13 @@ impl Config {
         Ok(())
     }
 
-    /// Build config from settings (shared by from_env and from_db).
-    async fn build(settings: &Settings) -> Result<Self, ConfigError> {
-        Ok(Self {
-            database: DatabaseConfig::resolve()?,
-            llm: LlmConfig::resolve(settings)?,
-            embeddings: EmbeddingsConfig::resolve(settings)?,
-            tunnel: TunnelConfig::resolve(settings)?,
-            channels: ChannelsConfig::resolve(settings)?,
-            agent: AgentConfig::resolve(settings)?,
-            safety: SafetyConfig::resolve()?,
-            wasm: WasmConfig::resolve()?,
-            secrets: SecretsConfig::resolve().await?,
-            builder: BuilderModeConfig::resolve()?,
-            heartbeat: HeartbeatConfig::resolve(settings)?,
-            hygiene: HygieneConfig::resolve()?,
-            routines: RoutineConfig::resolve()?,
-            sandbox: SandboxModeConfig::resolve()?,
-            claude_code: ClaudeCodeConfig::resolve()?,
-            skills: SkillsConfig::resolve()?,
-            transcription: TranscriptionConfig::resolve(settings)?,
-            observability: crate::observability::ObservabilityConfig {
-                backend: std::env::var("OBSERVABILITY_BACKEND").unwrap_or_else(|_| "none".into()),
-            },
-            relay: RelayConfig::from_env(),
-        })
+    pub fn re_resolve_llm_from(
+        &mut self,
+        ctx: &EnvContext,
+        settings: &Settings,
+    ) -> Result<(), ConfigError> {
+        self.llm = LlmConfig::resolve_from(ctx, settings)?;
+        Ok(())
     }
 }
 
@@ -334,54 +384,37 @@ pub async fn inject_llm_keys_from_secrets(
     secrets: &dyn crate::secrets::SecretsStore,
     user_id: &str,
 ) {
-    // Static mappings for well-known providers.
-    // The registry's setup hints define secret_name -> env_var mappings,
-    // so new providers added to providers.json get injection automatically.
-    let mut mappings: Vec<(&str, &str)> = vec![
-        ("llm_nearai_api_key", "NEARAI_API_KEY"),
-        ("llm_anthropic_oauth_token", "ANTHROPIC_OAUTH_TOKEN"),
-    ];
-
-    // Dynamically discover secret->env mappings from the provider registry.
-    // Uses selectable() which deduplicates user overrides correctly.
-    let registry = crate::llm::ProviderRegistry::load();
-    let dynamic_mappings: Vec<(String, String)> = registry
-        .selectable()
-        .iter()
-        .filter_map(|def| {
-            def.api_key_env.as_ref().and_then(|env_var| {
-                def.setup
-                    .as_ref()
-                    .and_then(|s| s.secret_name())
-                    .map(|secret_name| (secret_name.to_string(), env_var.clone()))
-            })
-        })
-        .collect();
-    for (secret, env_var) in &dynamic_mappings {
-        mappings.push((secret, env_var));
-    }
-
     let mut injected = HashMap::new();
-
-    for (secret_name, env_var) in mappings {
-        match std::env::var(env_var) {
+    for (secret_name, env_var) in secret_mappings() {
+        match std::env::var(&env_var) {
             Ok(val) if !val.is_empty() => continue,
             _ => {}
         }
-        match secrets.get_decrypted(user_id, secret_name).await {
-            Ok(decrypted) => {
-                injected.insert(env_var.to_string(), decrypted.expose().to_string());
-                tracing::debug!("Loaded secret '{}' for env var '{}'", secret_name, env_var);
-            }
-            Err(_) => {
-                // Secret doesn't exist, that's fine
-            }
+        if let Ok(decrypted) = secrets.get_decrypted(user_id, &secret_name).await {
+            injected.insert(env_var.to_string(), decrypted.expose().to_string());
+            tracing::debug!("Loaded secret '{}' for env var '{}'", secret_name, env_var);
         }
     }
 
     inject_os_credential_store_tokens(&mut injected);
 
     merge_injected_vars(injected);
+}
+
+pub async fn inject_llm_keys_into_context(
+    ctx: &mut EnvContext,
+    secrets: &dyn crate::secrets::SecretsStore,
+    user_id: &str,
+) {
+    for (secret_name, env_var) in secret_mappings() {
+        if ctx.get(&env_var).is_some() {
+            continue;
+        }
+        if let Ok(decrypted) = secrets.get_decrypted(user_id, &secret_name).await {
+            ctx.inject_secret(&env_var, decrypted.expose().to_string());
+            tracing::debug!("Loaded secret '{}' for env var '{}'", secret_name, env_var);
+        }
+    }
 }
 
 /// Load tokens from OS credential stores (no DB required).
@@ -394,6 +427,36 @@ pub fn inject_os_credentials() {
     let mut injected = HashMap::new();
     inject_os_credential_store_tokens(&mut injected);
     merge_injected_vars(injected);
+}
+
+pub fn inject_os_credentials_into_context(ctx: &mut EnvContext) {
+    let mut injected = HashMap::new();
+    inject_os_credential_store_tokens(&mut injected);
+    ctx.merge_secrets(injected);
+}
+
+fn secret_mappings() -> Vec<(String, String)> {
+    let mut mappings: Vec<(String, String)> = vec![
+        (
+            "llm_nearai_api_key".to_string(),
+            "NEARAI_API_KEY".to_string(),
+        ),
+        (
+            "llm_anthropic_oauth_token".to_string(),
+            "ANTHROPIC_OAUTH_TOKEN".to_string(),
+        ),
+    ];
+
+    let registry = crate::llm::ProviderRegistry::load();
+    mappings.extend(registry.selectable().iter().filter_map(|def| {
+        def.api_key_env.as_ref().and_then(|env_var| {
+            def.setup
+                .as_ref()
+                .and_then(|s| s.secret_name())
+                .map(|secret_name| (secret_name.to_string(), env_var.clone()))
+        })
+    }));
+    mappings
 }
 
 /// Merge new entries into the global injected-vars overlay.

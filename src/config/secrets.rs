@@ -1,6 +1,7 @@
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::config::helpers::optional_env;
+use crate::config::EnvContext;
+use crate::config::helpers::optional_env_from;
 use crate::error::ConfigError;
 
 /// Secrets management configuration.
@@ -29,10 +30,18 @@ impl SecretsConfig {
     ///
     /// Sequential probe: SECRETS_MASTER_KEY env var first, then OS keychain.
     /// No saved "source" needed; just try each source in order.
+    // Backwards-compatible ambient entrypoint retained for existing callers.
+    #[allow(dead_code)]
     pub(crate) async fn resolve() -> Result<Self, ConfigError> {
+        Self::resolve_from(&EnvContext::capture_ambient()).await
+    }
+
+    pub(crate) async fn resolve_from(ctx: &EnvContext) -> Result<Self, ConfigError> {
         use crate::settings::KeySource;
 
-        let (master_key, source) = if let Some(env_key) = optional_env("SECRETS_MASTER_KEY")? {
+        let (master_key, source) = if let Some(env_key) =
+            optional_env_from(ctx, "SECRETS_MASTER_KEY")?
+        {
             (Some(SecretString::from(env_key)), KeySource::Env)
         } else {
             // Probe the OS keychain; if a key is stored, use it

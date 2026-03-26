@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::config::helpers::{optional_env, parse_bool_env, parse_optional_env};
+use crate::config::EnvContext;
+use crate::config::helpers::{optional_env_from, parse_bool_env_from, parse_optional_env_from};
 use crate::error::ConfigError;
 use crate::llm::SessionManager;
 use crate::settings::Settings;
@@ -56,23 +57,32 @@ fn default_dimension_for_model(model: &str) -> usize {
 }
 
 impl EmbeddingsConfig {
+    // Backwards-compatible ambient entrypoint retained for existing callers.
+    #[allow(dead_code)]
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
-        let openai_api_key = optional_env("OPENAI_API_KEY")?.map(SecretString::from);
+        Self::resolve_from(&EnvContext::capture_ambient(), settings)
+    }
 
-        let provider = optional_env("EMBEDDING_PROVIDER")?
+    pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
+        let openai_api_key = optional_env_from(ctx, "OPENAI_API_KEY")?.map(SecretString::from);
+
+        let provider = optional_env_from(ctx, "EMBEDDING_PROVIDER")?
             .unwrap_or_else(|| settings.embeddings.provider.clone());
 
-        let model =
-            optional_env("EMBEDDING_MODEL")?.unwrap_or_else(|| settings.embeddings.model.clone());
+        let model = optional_env_from(ctx, "EMBEDDING_MODEL")?
+            .unwrap_or_else(|| settings.embeddings.model.clone());
 
-        let ollama_base_url = optional_env("OLLAMA_BASE_URL")?
+        let ollama_base_url = optional_env_from(ctx, "OLLAMA_BASE_URL")?
             .or_else(|| settings.ollama_base_url.clone())
             .unwrap_or_else(|| "http://localhost:11434".to_string());
 
-        let dimension =
-            parse_optional_env("EMBEDDING_DIMENSION", default_dimension_for_model(&model))?;
+        let dimension = parse_optional_env_from(
+            ctx,
+            "EMBEDDING_DIMENSION",
+            default_dimension_for_model(&model),
+        )?;
 
-        let enabled = parse_bool_env("EMBEDDING_ENABLED", settings.embeddings.enabled)?;
+        let enabled = parse_bool_env_from(ctx, "EMBEDDING_ENABLED", settings.embeddings.enabled)?;
 
         Ok(Self {
             enabled,

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use crate::config::helpers::{parse_bool_env, parse_option_env, parse_optional_env};
+use crate::config::EnvContext;
+use crate::config::helpers::{parse_bool_env_from, parse_option_env_from, parse_optional_env_from};
 use crate::error::ConfigError;
 use crate::settings::Settings;
 
@@ -56,47 +57,66 @@ impl AgentConfig {
         }
     }
 
+    // Backwards-compatible ambient entrypoint retained for existing callers.
+    #[allow(dead_code)]
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
+        Self::resolve_from(&EnvContext::capture_ambient(), settings)
+    }
+
+    pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
         Ok(Self {
-            name: parse_optional_env("AGENT_NAME", settings.agent.name.clone())?,
-            max_parallel_jobs: parse_optional_env(
+            name: parse_optional_env_from(ctx, "AGENT_NAME", settings.agent.name.clone())?,
+            max_parallel_jobs: parse_optional_env_from(
+                ctx,
                 "AGENT_MAX_PARALLEL_JOBS",
                 settings.agent.max_parallel_jobs as usize,
             )?,
-            job_timeout: Duration::from_secs(parse_optional_env(
+            job_timeout: Duration::from_secs(parse_optional_env_from(
+                ctx,
                 "AGENT_JOB_TIMEOUT_SECS",
                 settings.agent.job_timeout_secs,
             )?),
-            stuck_threshold: Duration::from_secs(parse_optional_env(
+            stuck_threshold: Duration::from_secs(parse_optional_env_from(
+                ctx,
                 "AGENT_STUCK_THRESHOLD_SECS",
                 settings.agent.stuck_threshold_secs,
             )?),
-            repair_check_interval: Duration::from_secs(parse_optional_env(
+            repair_check_interval: Duration::from_secs(parse_optional_env_from(
+                ctx,
                 "SELF_REPAIR_CHECK_INTERVAL_SECS",
                 settings.agent.repair_check_interval_secs,
             )?),
-            max_repair_attempts: parse_optional_env(
+            max_repair_attempts: parse_optional_env_from(
+                ctx,
                 "SELF_REPAIR_MAX_ATTEMPTS",
                 settings.agent.max_repair_attempts,
             )?,
-            use_planning: parse_bool_env("AGENT_USE_PLANNING", settings.agent.use_planning)?,
-            session_idle_timeout: Duration::from_secs(parse_optional_env(
+            use_planning: parse_bool_env_from(
+                ctx,
+                "AGENT_USE_PLANNING",
+                settings.agent.use_planning,
+            )?,
+            session_idle_timeout: Duration::from_secs(parse_optional_env_from(
+                ctx,
                 "SESSION_IDLE_TIMEOUT_SECS",
                 settings.agent.session_idle_timeout_secs,
             )?),
-            allow_local_tools: parse_bool_env("ALLOW_LOCAL_TOOLS", false)?,
-            max_cost_per_day_cents: parse_option_env("MAX_COST_PER_DAY_CENTS")?,
-            max_actions_per_hour: parse_option_env("MAX_ACTIONS_PER_HOUR")?,
-            max_tool_iterations: parse_optional_env(
+            allow_local_tools: parse_bool_env_from(ctx, "ALLOW_LOCAL_TOOLS", false)?,
+            max_cost_per_day_cents: parse_option_env_from(ctx, "MAX_COST_PER_DAY_CENTS")?,
+            max_actions_per_hour: parse_option_env_from(ctx, "MAX_ACTIONS_PER_HOUR")?,
+            max_tool_iterations: parse_optional_env_from(
+                ctx,
                 "AGENT_MAX_TOOL_ITERATIONS",
                 settings.agent.max_tool_iterations,
             )?,
-            auto_approve_tools: parse_bool_env(
+            auto_approve_tools: parse_bool_env_from(
+                ctx,
                 "AGENT_AUTO_APPROVE_TOOLS",
                 settings.agent.auto_approve_tools,
             )?,
             default_timezone: {
-                let tz: String = parse_optional_env(
+                let tz: String = parse_optional_env_from(
+                    ctx,
                     "DEFAULT_TIMEZONE",
                     settings.agent.default_timezone.clone(),
                 )?;
@@ -108,7 +128,8 @@ impl AgentConfig {
                 }
                 tz
             },
-            max_tokens_per_job: parse_optional_env(
+            max_tokens_per_job: parse_optional_env_from(
+                ctx,
                 "AGENT_MAX_TOKENS_PER_JOB",
                 settings.agent.max_tokens_per_job,
             )?,
