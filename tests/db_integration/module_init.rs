@@ -177,32 +177,32 @@ async fn both_secrets_factories_produce_compatible_stores() {
 }
 
 // ---------------------------------------------------------------------------
-// ExtensionManager constructs with McpProcessManager
+// ExtensionManager constructs with activation ports
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn extension_manager_with_process_manager_constructs() {
+async fn extension_manager_with_activation_ports_constructs() {
     use ironclaw::extensions::ExtensionManager;
     use ironclaw::secrets::InMemorySecretsStore;
     use ironclaw::tools::ToolRegistry;
-    use ironclaw::tools::mcp::McpProcessManager;
-    use ironclaw::tools::mcp::McpSessionManager;
 
     let crypto = test_crypto();
     let secrets: Arc<dyn SecretsStore + Send + Sync> = Arc::new(InMemorySecretsStore::new(crypto));
     let tools = Arc::new(ToolRegistry::new());
     let tools_dir = tempfile::tempdir().expect("tools_dir");
     let channels_dir = tempfile::tempdir().expect("channels_dir");
+    let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
 
     let manager = ExtensionManager::new(
         Arc::new(ironclaw::extensions::NoOpDiscovery),
         None, // relay_config
         None, // gateway_token
-        Arc::new(McpSessionManager::new()),
-        Arc::new(McpProcessManager::new()),
+        Arc::new(ironclaw::extensions::NoOpMcpActivation),
+        Arc::new(ironclaw::extensions::NoOpWasmToolActivation),
+        Arc::new(ironclaw::extensions::NoOpWasmChannelActivation),
+        mcp_clients,
         secrets,
         tools,
-        None,
         None,
         tools_dir.path().to_path_buf(),
         channels_dir.path().to_path_buf(),

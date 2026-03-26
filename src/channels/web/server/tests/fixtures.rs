@@ -102,17 +102,17 @@ pub(super) fn build_test_ext_mgr(
     secrets: Arc<dyn crate::secrets::SecretsStore + Send + Sync>,
 ) -> Arc<ExtensionManager> {
     let tool_registry = Arc::new(ToolRegistry::new());
-    let mcp_sm = Arc::new(crate::tools::mcp::session::McpSessionManager::new());
-    let mcp_pm = Arc::new(crate::tools::mcp::process::McpProcessManager::new());
+    let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
     Arc::new(ExtensionManager::new(
         Arc::new(crate::extensions::NoOpDiscovery),
         None, // relay_config
         None, // gateway_token
-        mcp_sm,
-        mcp_pm,
+        Arc::new(crate::extensions::NoOpMcpActivation),
+        Arc::new(crate::extensions::NoOpWasmToolActivation),
+        Arc::new(crate::extensions::NoOpWasmChannelActivation),
+        mcp_clients,
         secrets,
         tool_registry,
-        None,
         None,
         PathBuf::from("/tmp/wasm_tools"),
         PathBuf::from("/tmp/wasm_channels"),

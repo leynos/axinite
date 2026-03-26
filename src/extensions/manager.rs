@@ -31,8 +31,7 @@ use crate::tools::mcp::auth::{
     find_available_port, is_authenticated, register_client,
 };
 use crate::tools::mcp::config::McpServerConfig;
-use crate::tools::mcp::session::McpSessionManager;
-use crate::tools::wasm::{WasmToolLoader, WasmToolRuntime, discover_tools};
+use crate::tools::wasm::discover_tools;
 
 /// Pending OAuth authorization state.
 struct PendingAuth {
@@ -71,14 +70,19 @@ pub struct ExtensionManager {
     registry: ExtensionRegistry,
     discovery: Arc<dyn crate::extensions::DiscoveryPort + Send + Sync>,
 
+    // ── Activation ports (hexagonal seams) ──────────────────────────────
+    mcp_activation: Arc<dyn crate::extensions::McpActivationPort>,
+    wasm_tool_activation: Arc<dyn crate::extensions::WasmToolActivationPort>,
+    wasm_channel_activation: Arc<dyn crate::extensions::WasmChannelActivationPort>,
+
     // MCP infrastructure
-    mcp_session_manager: Arc<McpSessionManager>,
-    mcp_process_manager: Arc<crate::tools::mcp::process::McpProcessManager>,
     /// Active MCP clients keyed by server name.
-    mcp_clients: RwLock<HashMap<String, Arc<McpClient>>>,
+    ///
+    /// Wrapped in `Arc` so the live MCP activation adapter can share this
+    /// mutable registry with the manager.
+    mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
 
     // WASM tool infrastructure
-    wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
     wasm_tools_dir: PathBuf,
     wasm_channels_dir: PathBuf,
 
@@ -98,11 +102,14 @@ pub struct ExtensionManager {
     /// Optional database store for DB-backed MCP config.
     store: Option<Arc<dyn crate::db::Database>>,
     /// Names of WASM channels that were successfully loaded at startup.
-    active_channel_names: RwLock<HashSet<String>>,
+    ///
+    /// Wrapped in `Arc` so the live channel activation adapter can share
+    /// this set with the manager.
+    active_channel_names: Arc<RwLock<HashSet<String>>>,
     /// Installed channel-relay extensions (no on-disk artifact, tracked in memory).
     installed_relay_extensions: RwLock<HashSet<String>>,
     /// Last activation error for each WASM channel (ephemeral, cleared on success).
-    activation_errors: RwLock<HashMap<String, String>>,
+    activation_errors: Arc<RwLock<HashMap<String, String>>>,
     /// SSE broadcast sender (set post-construction via `set_sse_sender()`).
     sse_sender:
         RwLock<Option<tokio::sync::broadcast::Sender<crate::channels::web::types::SseEvent>>>,
@@ -146,17 +153,30 @@ fn sanitize_url_for_logging(url: &str) -> String {
 }
 
 impl ExtensionManager {
+    /// Construct a new extension manager.
+    ///
+    /// # Activation ports
+    ///
+    /// The three activation port parameters (`mcp_activation`,
+    /// `wasm_tool_activation`, `wasm_channel_activation`) decouple activation
+    /// I/O from policy logic.  Production callers supply
+    /// [`LiveMcpActivation`], [`LiveWasmToolActivation`], and
+    /// [`LiveWasmChannelActivation`]; tests inject no-op stubs.
+    ///
+    /// `mcp_clients` is shared between the manager and the live MCP adapter
+    /// so that both see the same set of active connections.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         discovery: Arc<dyn crate::extensions::DiscoveryPort + Send + Sync>,
         relay_config: Option<crate::config::RelayConfig>,
         gateway_token: Option<String>,
-        mcp_session_manager: Arc<McpSessionManager>,
-        mcp_process_manager: Arc<crate::tools::mcp::process::McpProcessManager>,
+        mcp_activation: Arc<dyn crate::extensions::McpActivationPort>,
+        wasm_tool_activation: Arc<dyn crate::extensions::WasmToolActivationPort>,
+        wasm_channel_activation: Arc<dyn crate::extensions::WasmChannelActivationPort>,
+        mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
         secrets: Arc<dyn SecretsStore + Send + Sync>,
         tool_registry: Arc<ToolRegistry>,
         hooks: Option<Arc<HookRegistry>>,
-        wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
         wasm_tools_dir: PathBuf,
         wasm_channels_dir: PathBuf,
         tunnel_url: Option<String>,
@@ -172,10 +192,10 @@ impl ExtensionManager {
         Self {
             registry,
             discovery,
-            mcp_session_manager,
-            mcp_process_manager,
-            mcp_clients: RwLock::new(HashMap::new()),
-            wasm_tool_runtime,
+            mcp_activation,
+            wasm_tool_activation,
+            wasm_channel_activation,
+            mcp_clients,
             wasm_tools_dir,
             wasm_channels_dir,
             channel_runtime: RwLock::new(None),
@@ -187,9 +207,9 @@ impl ExtensionManager {
             tunnel_url,
             user_id,
             store,
-            active_channel_names: RwLock::new(HashSet::new()),
+            active_channel_names: Arc::new(RwLock::new(HashSet::new())),
             installed_relay_extensions: RwLock::new(HashSet::new()),
-            activation_errors: RwLock::new(HashMap::new()),
+            activation_errors: Arc::new(RwLock::new(HashMap::new())),
             sse_sender: RwLock::new(None),
             pending_oauth_flows: crate::cli::oauth_defaults::new_pending_oauth_registry(),
             gateway_token,
@@ -479,10 +499,18 @@ impl ExtensionManager {
         let kind = self.determine_installed_kind(name).await?;
 
         match kind {
-            ExtensionKind::McpServer => self.activate_mcp(name).await,
-            ExtensionKind::WasmTool => self.activate_wasm_tool(name).await,
-            ExtensionKind::WasmChannel => self.activate_wasm_channel(name).await,
-            ExtensionKind::ChannelRelay => self.activate_channel_relay(name).await,
+            ExtensionKind::McpServer => self.mcp_activation.activate_mcp(name).await,
+            ExtensionKind::WasmTool => self.wasm_tool_activation.activate_wasm_tool(name).await,
+            ExtensionKind::WasmChannel => {
+                self.wasm_channel_activation
+                    .activate_wasm_channel(name)
+                    .await
+            }
+            ExtensionKind::ChannelRelay => {
+                self.wasm_channel_activation
+                    .activate_channel_relay(name)
+                    .await
+            }
         }
     }
 
@@ -2655,168 +2683,18 @@ impl ExtensionManager {
         ))
     }
 
-    async fn activate_mcp(&self, name: &str) -> Result<ActivateResult, ExtensionError> {
-        // Check if already activated
-        {
-            let clients = self.mcp_clients.read().await;
-            if clients.contains_key(name) {
-                // Already connected, just return the tool names
-                let tools: Vec<String> = self
-                    .tool_registry
-                    .list()
-                    .await
-                    .into_iter()
-                    .filter(|t| t.starts_with(&format!("{}_", name)))
-                    .collect();
-
-                return Ok(ActivateResult {
-                    name: name.to_string(),
-                    kind: ExtensionKind::McpServer,
-                    tools_loaded: tools,
-                    message: format!("MCP server '{}' already active", name),
-                });
-            }
-        }
-
-        let server = self
-            .get_mcp_server(name)
-            .await
-            .map_err(|e| ExtensionError::NotInstalled(e.to_string()))?;
-
-        let client = crate::tools::mcp::create_client_from_config(
-            server.clone(),
-            &self.mcp_session_manager,
-            &self.mcp_process_manager,
-            Some(Arc::clone(&self.secrets)),
-            &self.user_id,
-        )
-        .await
-        .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
-
-        // Try to list and create tools
-        let mcp_tools = client
-            .list_tools()
-            .await
-            .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
-
-        let tool_impls = client
-            .create_tools()
-            .await
-            .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
-
-        let tool_names: Vec<String> = mcp_tools
-            .iter()
-            .map(|t| format!("{}_{}", name, t.name))
-            .collect();
-
-        for tool in tool_impls {
-            self.tool_registry.register(tool).await;
-        }
-
-        // Store the client
-        self.mcp_clients
-            .write()
-            .await
-            .insert(name.to_string(), Arc::new(client));
-
-        tracing::info!(
-            "Activated MCP server '{}' with {} tools",
-            name,
-            tool_names.len()
-        );
-
-        Ok(ActivateResult {
-            name: name.to_string(),
-            kind: ExtensionKind::McpServer,
-            tools_loaded: tool_names,
-            message: format!("Connected to '{}' and loaded tools", name),
-        })
-    }
-
-    async fn activate_wasm_tool(&self, name: &str) -> Result<ActivateResult, ExtensionError> {
-        // Check if already active
-        if self.tool_registry.has(name).await {
-            return Ok(ActivateResult {
-                name: name.to_string(),
-                kind: ExtensionKind::WasmTool,
-                tools_loaded: vec![name.to_string()],
-                message: format!("WASM tool '{}' already active", name),
-            });
-        }
-
-        let runtime = self.wasm_tool_runtime.as_ref().ok_or_else(|| {
-            ExtensionError::ActivationFailed("WASM runtime not available".to_string())
-        })?;
-
-        let wasm_path = self.wasm_tools_dir.join(format!("{}.wasm", name));
-        if !wasm_path.exists() {
-            return Err(ExtensionError::NotInstalled(format!(
-                "WASM tool '{}' not found at {}",
-                name,
-                wasm_path.display()
-            )));
-        }
-
-        let cap_path = self
-            .wasm_tools_dir
-            .join(format!("{}.capabilities.json", name));
-        let cap_path_option = if cap_path.exists() {
-            Some(cap_path.as_path())
-        } else {
-            None
-        };
-
-        let loader = WasmToolLoader::new(Arc::clone(runtime), Arc::clone(&self.tool_registry))
-            .with_secrets_store(Arc::clone(&self.secrets));
-        loader
-            .load_from_files(name, &wasm_path, cap_path_option)
-            .await
-            .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
-
-        if let Some(ref hooks) = self.hooks
-            && let Some(cap_path) = cap_path_option
-        {
-            let source = format!("plugin.tool:{}", name);
-            let registration =
-                crate::hooks::bootstrap::register_plugin_bundle_from_capabilities_file(
-                    hooks, &source, cap_path,
-                )
-                .await;
-
-            if registration.total_registered() > 0 {
-                tracing::info!(
-                    extension = name,
-                    hooks = registration.hooks,
-                    outbound_webhooks = registration.outbound_webhooks,
-                    "Registered plugin hooks for activated WASM tool"
-                );
-            }
-
-            if registration.errors > 0 {
-                tracing::warn!(
-                    extension = name,
-                    errors = registration.errors,
-                    "Some plugin hooks failed to register"
-                );
-            }
-        }
-
-        tracing::info!("Activated WASM tool '{}'", name);
-
-        Ok(ActivateResult {
-            name: name.to_string(),
-            kind: ExtensionKind::WasmTool,
-            tools_loaded: vec![name.to_string()],
-            message: format!("WASM tool '{}' loaded and ready", name),
-        })
-    }
-
     /// Activate a WASM channel at runtime without restarting.
     ///
     /// Loads the channel from its WASM file, injects credentials and config,
     /// registers it with the webhook router, and hot-adds it to the channel manager
     /// so its stream feeds into the agent loop.
-    async fn activate_wasm_channel(&self, name: &str) -> Result<ActivateResult, ExtensionError> {
+    ///
+    /// Called by the [`LiveWasmChannelActivation`] adapter; not intended for
+    /// direct use outside the activation port.
+    pub(crate) async fn activate_wasm_channel_inner(
+        &self,
+        name: &str,
+    ) -> Result<ActivateResult, ExtensionError> {
         // If already active, re-inject credentials and refresh webhook secret.
         // Handles the case where a channel was loaded at startup before the
         // user saved secrets via the web UI.
@@ -3307,7 +3185,13 @@ impl ExtensionManager {
     }
 
     /// Activate a channel-relay extension.
-    async fn activate_channel_relay(&self, name: &str) -> Result<ActivateResult, ExtensionError> {
+    ///
+    /// Called by the [`LiveWasmChannelActivation`] adapter; not intended for
+    /// direct use outside the activation port.
+    pub(crate) async fn activate_channel_relay_inner(
+        &self,
+        name: &str,
+    ) -> Result<ActivateResult, ExtensionError> {
         let token_key = format!("relay:{}:stream_token", name);
         let team_id_key = format!("relay:{}:team_id", name);
 
@@ -3398,7 +3282,9 @@ impl ExtensionManager {
             .write()
             .await
             .insert(name.to_string());
-        self.activate_channel_relay(name).await?;
+        self.wasm_channel_activation
+            .activate_channel_relay(name)
+            .await?;
         Ok(())
     }
 
@@ -3691,7 +3577,7 @@ impl ExtensionManager {
 
         // For tools, save and attempt auto-activation, then check auth.
         if kind == ExtensionKind::WasmTool {
-            match self.activate_wasm_tool(name).await {
+            match self.wasm_tool_activation.activate_wasm_tool(name).await {
                 Ok(result) => {
                     // Delete existing OAuth token so auth() starts a fresh flow.
                     // Done AFTER activation succeeds to avoid losing tokens on failure.
@@ -3756,7 +3642,11 @@ impl ExtensionManager {
         }
 
         // Try to hot-activate the channel now that secrets are saved
-        match self.activate_wasm_channel(name).await {
+        match self
+            .wasm_channel_activation
+            .activate_wasm_channel(name)
+            .await
+        {
             Ok(result) => {
                 self.activation_errors.write().await.remove(name);
                 self.broadcast_extension_status(name, "active", None).await;
@@ -4228,83 +4118,10 @@ mod tests {
     // after startup (e.g. via the web UI) would fail with "WASM runtime not
     // available" because the ExtensionManager had `wasm_tool_runtime: None`.
 
-    /// Build a minimal ExtensionManager suitable for unit tests.
-    fn make_test_manager(
-        wasm_runtime: Option<Arc<crate::tools::wasm::WasmToolRuntime>>,
-        tools_dir: std::path::PathBuf,
-    ) -> crate::extensions::manager::ExtensionManager {
-        use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
-        use crate::tools::mcp::process::McpProcessManager;
-        use crate::tools::mcp::session::McpSessionManager;
-
-        let key = secrecy::SecretString::from(crate::secrets::keychain::generate_master_key_hex());
-        let crypto = Arc::new(SecretsCrypto::new(key).expect("crypto"));
-        let secrets: Arc<dyn crate::secrets::SecretsStore + Send + Sync> =
-            Arc::new(InMemorySecretsStore::new(crypto));
-        let tools = Arc::new(crate::tools::ToolRegistry::new());
-        let mcp = Arc::new(McpSessionManager::new());
-
-        crate::extensions::manager::ExtensionManager::new(
-            Arc::new(crate::extensions::NoOpDiscovery),
-            None, // relay_config
-            None, // gateway_token
-            mcp,
-            Arc::new(McpProcessManager::new()),
-            secrets,
-            tools,
-            None, // hooks
-            wasm_runtime,
-            tools_dir.clone(),
-            tools_dir, // channels dir (unused here)
-            None,      // tunnel_url
-            "test".to_string(),
-            None, // db
-            vec![],
-        )
-    }
-
-    #[tokio::test]
-    async fn test_activate_wasm_tool_with_runtime_passes_runtime_check() {
-        // When the ExtensionManager has a WASM runtime, activation should get
-        // past the "WASM runtime not available" check. It will still fail
-        // because no .wasm file exists on disk — but the error message should
-        // be "not found", NOT "WASM runtime not available".
-        let dir = tempfile::tempdir().expect("temp dir");
-        let config = crate::tools::wasm::WasmRuntimeConfig::for_testing();
-        let runtime = Arc::new(crate::tools::wasm::WasmToolRuntime::new(config).expect("runtime"));
-        let mgr = make_test_manager(Some(runtime), dir.path().to_path_buf());
-
-        let err = mgr.activate("nonexistent").await.unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            !msg.contains("WASM runtime not available"),
-            "Should not fail on runtime check, got: {msg}"
-        );
-        assert!(
-            msg.contains("not found")
-                || msg.contains("not installed")
-                || msg.contains("Not installed"),
-            "Should fail on missing file, got: {msg}"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_activate_wasm_tool_without_runtime_fails_with_runtime_error() {
-        // When the ExtensionManager has no WASM runtime (None), activation
-        // must fail with the "WASM runtime not available" message.
-        let dir = tempfile::tempdir().expect("temp dir");
-        // Write a fake .wasm file so we don't fail on "not found" first.
-        std::fs::write(dir.path().join("fake.wasm"), b"not-a-real-wasm").unwrap();
-
-        let mgr = make_test_manager(None, dir.path().to_path_buf());
-
-        let err = mgr.activate("fake").await.unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("WASM runtime not available"),
-            "Expected runtime not available error, got: {msg}"
-        );
-    }
+    // NOTE: The WASM runtime availability tests that were here have been
+    // removed. The runtime check now lives in `LiveWasmToolActivation`
+    // (the activation adapter) — not in ExtensionManager. Tests for that
+    // behaviour belong in the adapter's own test module.
 
     #[test]
     fn test_capabilities_files_also_separate() {
@@ -4410,24 +4227,24 @@ mod tests {
         use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
         use crate::testing::credentials::TEST_CRYPTO_KEY;
         use crate::tools::ToolRegistry;
-        use crate::tools::mcp::process::McpProcessManager;
-        use crate::tools::mcp::session::McpSessionManager;
 
         std::fs::create_dir_all(&tools_dir).ok();
         std::fs::create_dir_all(&channels_dir).ok();
 
         let master_key = secrecy::SecretString::from(TEST_CRYPTO_KEY.to_string());
         let crypto = Arc::new(SecretsCrypto::new(master_key).unwrap());
+        let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
 
         ExtensionManager::new(
             Arc::new(crate::extensions::NoOpDiscovery),
             None, // relay_config
             None, // gateway_token
-            Arc::new(McpSessionManager::new()),
-            Arc::new(McpProcessManager::new()),
+            Arc::new(crate::extensions::NoOpMcpActivation),
+            Arc::new(crate::extensions::NoOpWasmToolActivation),
+            Arc::new(crate::extensions::NoOpWasmChannelActivation),
+            mcp_clients,
             Arc::new(InMemorySecretsStore::new(crypto)),
             Arc::new(ToolRegistry::new()),
-            None,
             None,
             tools_dir,
             channels_dir,
@@ -4535,7 +4352,7 @@ mod tests {
         // installed_relay_extensions when a ChannelRelay registry entry existed,
         // even though the user never installed it. It should be read-only.
         let dir = tempfile::tempdir().expect("temp dir");
-        let mgr = make_test_manager(None, dir.path().to_path_buf());
+        let mgr = make_manager_custom_dirs(dir.path().to_path_buf(), dir.path().to_path_buf());
 
         // The manager has no relay extensions installed
         assert!(
@@ -4557,7 +4374,7 @@ mod tests {
     #[tokio::test]
     async fn test_is_relay_channel_detects_stored_token() {
         let dir = tempfile::tempdir().expect("temp dir");
-        let mgr = make_test_manager(None, dir.path().to_path_buf());
+        let mgr = make_manager_custom_dirs(dir.path().to_path_buf(), dir.path().to_path_buf());
 
         // No token stored → not a relay channel
         assert!(!mgr.is_relay_channel("slack-relay").await);
@@ -4580,7 +4397,7 @@ mod tests {
         // Regression: remove() only checked channel_runtime for shutdown, missing
         // relay-only mode where only relay_channel_manager is set.
         let dir = tempfile::tempdir().expect("temp dir");
-        let mgr = make_test_manager(None, dir.path().to_path_buf());
+        let mgr = make_manager_custom_dirs(dir.path().to_path_buf(), dir.path().to_path_buf());
 
         // Set up relay channel manager with a stub channel
         let cm = Arc::new(crate::channels::ChannelManager::new());
