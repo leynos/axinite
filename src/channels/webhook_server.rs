@@ -174,8 +174,13 @@ impl WebhookServer {
     }
 
     /// Gracefully shut down the current listener and rebind using a pre-bound
-    /// listener. Mirrors [`restart_with_addr`] but eliminates the TOCTOU
-    /// window between port reservation and bind, making it suitable for tests.
+    /// listener. Eliminates the TOCTOU window between port reservation and
+    /// bind, making it suitable for tests.
+    ///
+    /// **Important:** Unlike [`restart_with_addr`], this method does NOT
+    /// provide rollback semantics. It stops and shuts down the current listener
+    /// before spawning the replacement. The new listener is assumed to already
+    /// be successfully bound.
     #[cfg(test)]
     pub async fn restart_with_listener(
         &mut self,
@@ -196,7 +201,9 @@ impl WebhookServer {
                 reason: format!("Failed to get listener local address: {e}"),
             })?;
 
-        // Shut down the old listener before spawning on the new one.
+        // Stop the old listener before spawning the new one. Unlike
+        // restart_with_addr, we do not provide rollback semantics because the
+        // new listener is already bound and assumed to be valid.
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());
         }
