@@ -69,21 +69,21 @@ mod tests {
     // Define a trait that Repository implements (for testing purposes)
     #[automock]
     trait WorkspaceRepository: Send + Sync {
-        async fn insert_chunk(
+        async fn insert_chunk<'a>(
             &self,
             document_id: Uuid,
             chunk_index: i32,
-            content: &str,
-            embedding: Option<&[f32]>,
+            content: &'a str,
+            embedding: Option<&'a [f32]>,
         ) -> Result<Uuid, WorkspaceError>;
 
-        async fn hybrid_search(
+        async fn hybrid_search<'a>(
             &self,
-            user_id: &str,
+            user_id: &'a str,
             agent_id: Option<Uuid>,
-            query: &str,
-            embedding: Option<&[f32]>,
-            config: &SearchConfig,
+            query: &'a str,
+            embedding: Option<&'a [f32]>,
+            config: &'a SearchConfig,
         ) -> Result<Vec<SearchResult>, WorkspaceError>;
     }
 
@@ -267,7 +267,7 @@ mod tests {
                 function(move |emb: &Option<&[f32]>| {
                     emb.map(|e| e.to_vec()) == Some(test_embedding.clone())
                 }),
-                function(move |cfg: &&SearchConfig| {
+                function(move |cfg: &SearchConfig| {
                     cfg.limit == test_config.limit
                         && cfg.rrf_k == test_config.rrf_k
                         && cfg.use_fts == test_config.use_fts
@@ -321,7 +321,7 @@ mod tests {
                 eq(None::<Uuid>),
                 eq(test_query),
                 eq(None::<&[f32]>),
-                function(move |cfg: &&SearchConfig| {
+                function(move |cfg: &SearchConfig| {
                     cfg.limit == test_config.limit
                         && cfg.rrf_k == test_config.rrf_k
                         && cfg.use_fts == test_config.use_fts
