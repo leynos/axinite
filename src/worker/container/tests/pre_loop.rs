@@ -17,6 +17,47 @@ enum PreLoopFailureCase {
     HydrateCredentials,
 }
 
+async fn assert_startup_failure_completions(state: &RuntimeTestState) {
+    let completions = state.completions.lock().await;
+    assert_eq!(
+        completions.len(),
+        1,
+        "expected a terminal completion report"
+    );
+    assert_eq!(
+        completions[0].message.as_deref(),
+        Some("Worker failed during startup")
+    );
+    drop(completions);
+
+    let result_events = state.result_events.lock().await;
+    assert_eq!(result_events.len(), 1, "expected a terminal result event");
+    assert_eq!(result_events[0]["message"], "Worker failed during startup");
+    assert_eq!(result_events[0]["success"], false);
+}
+
+async fn assert_startup_failure(state: &RuntimeTestState) {
+    let statuses = state.statuses.lock().await;
+    assert_eq!(
+        statuses.len(),
+        1,
+        "expected exactly one terminal status update, got {statuses:?}"
+    );
+    let failed_status = statuses
+        .first()
+        .filter(|status| status.state == WorkerState::Failed)
+        .expect("expected a terminal failed status update");
+    assert_eq!(failed_status.iteration, 100);
+    assert_eq!(
+        failed_status.message.as_deref(),
+        Some("pre-loop failure"),
+        "expected a sanitised pre-loop failure message, got {failed_status:?}"
+    );
+    drop(statuses);
+
+    assert_startup_failure_completions(state).await;
+}
+
 #[rstest]
 #[case(PreLoopFailureCase::GetJob)]
 #[case(PreLoopFailureCase::HydrateCredentials)]
@@ -58,39 +99,7 @@ async fn worker_runtime_reports_failed_status_for_pre_loop_errors(
         "pre-loop failure should preserve the original error"
     );
 
-    let statuses = state.statuses.lock().await;
-    assert_eq!(
-        statuses.len(),
-        1,
-        "expected exactly one terminal status update, got {statuses:?}"
-    );
-    let failed_status = statuses
-        .first()
-        .filter(|status| status.state == WorkerState::Failed)
-        .expect("expected a terminal failed status update");
-    assert_eq!(failed_status.iteration, 100);
-    assert_eq!(
-        failed_status.message.as_deref(),
-        Some("pre-loop failure"),
-        "expected a sanitised pre-loop failure message, got {failed_status:?}"
-    );
-
-    let completions = state.completions.lock().await;
-    assert_eq!(
-        completions.len(),
-        1,
-        "expected a terminal completion report"
-    );
-    assert_eq!(
-        completions[0].message.as_deref(),
-        Some("Worker failed during startup")
-    );
-    drop(completions);
-
-    let result_events = state.result_events.lock().await;
-    assert_eq!(result_events.len(), 1, "expected a terminal result event");
-    assert_eq!(result_events[0]["message"], "Worker failed during startup");
-    assert_eq!(result_events[0]["success"], false);
+    assert_startup_failure(&state).await;
 
     Ok(())
 }
@@ -132,23 +141,9 @@ async fn worker_runtime_emits_failed_status_for_initial_status_rejections() -> a
         "expected a sanitised pre-loop failure status payload, got {:?}",
         statuses[1]
     );
+    drop(statuses);
 
-    let completions = state.completions.lock().await;
-    assert_eq!(
-        completions.len(),
-        1,
-        "expected a terminal completion report"
-    );
-    assert_eq!(
-        completions[0].message.as_deref(),
-        Some("Worker failed during startup")
-    );
-    drop(completions);
-
-    let result_events = state.result_events.lock().await;
-    assert_eq!(result_events.len(), 1, "expected a terminal result event");
-    assert_eq!(result_events[0]["message"], "Worker failed during startup");
-    assert_eq!(result_events[0]["success"], false);
+    assert_startup_failure_completions(&state).await;
 
     Ok(())
 }

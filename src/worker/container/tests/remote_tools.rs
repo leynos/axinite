@@ -73,21 +73,34 @@ async fn remote_tool_catalog_error(
 #[derive(Clone)]
 struct TestState;
 
-async fn spawn_hosted_guidance_catalog_server() -> (String, tokio::task::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind listener");
-    let addr = listener.local_addr().expect("listener addr");
+async fn spawn_test_server<H, T>(
+    handler: H,
+) -> Result<(String, tokio::task::JoinHandle<()>), Box<dyn std::error::Error>>
+where
+    H: axum::handler::Handler<T, TestState> + Clone + Send + 'static,
+    T: 'static,
+{
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
     let router = Router::new()
-        .route(REMOTE_TOOL_CATALOG_ROUTE, get(remote_tool_catalog))
+        .route(REMOTE_TOOL_CATALOG_ROUTE, get(handler))
         .with_state(TestState);
     let server = tokio::spawn(async move {
-        axum::serve(listener, router).await.expect("serve router");
+        axum::serve(listener, router)
+            .await
+            .expect("serve router in test server")
     });
-    (format!("http://{addr}"), server)
+    Ok((format!("http://{addr}"), server))
 }
 
-async fn build_runtime_with_remote_tools(base_url: &str) -> (WorkerRuntime, Arc<WorkerHttpClient>) {
+async fn spawn_hosted_guidance_catalog_server()
+-> Result<(String, tokio::task::JoinHandle<()>), Box<dyn std::error::Error>> {
+    spawn_test_server(remote_tool_catalog).await
+}
+
+async fn build_runtime_with_remote_tools(
+    base_url: &str,
+) -> Result<(WorkerRuntime, Arc<WorkerHttpClient>), Box<dyn std::error::Error>> {
     let client = Arc::new(WorkerHttpClient::new(
         base_url.to_string(),
         Uuid::nil(),
@@ -101,17 +114,15 @@ async fn build_runtime_with_remote_tools(base_url: &str) -> (WorkerRuntime, Arc<
         },
         Arc::clone(&client),
     );
-    runtime.toolset_instructions = runtime
-        .register_remote_tools()
-        .await
-        .expect("register hosted remote tools");
-    (runtime, client)
+    runtime.toolset_instructions = runtime.register_remote_tools().await?;
+    Ok((runtime, client))
 }
 
 #[rstest]
 #[tokio::test]
-async fn hosted_worker_remote_tool_catalog_registers_remote_tools() {
-    let (base_url, server) = spawn_hosted_guidance_catalog_server().await;
+async fn hosted_worker_remote_tool_catalog_registers_remote_tools()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (base_url, server) = spawn_hosted_guidance_catalog_server().await?;
 
     let client = Arc::new(WorkerHttpClient::new(
         base_url.clone(),
@@ -127,10 +138,7 @@ async fn hosted_worker_remote_tool_catalog_registers_remote_tools() {
         client,
     );
 
-    runtime
-        .register_remote_tools()
-        .await
-        .expect("register hosted remote tools");
+    runtime.register_remote_tools().await?;
 
     let mut names: Vec<String> = runtime
         .tools
@@ -155,13 +163,15 @@ async fn hosted_worker_remote_tool_catalog_registers_remote_tools() {
 
     server.abort();
     let _ = server.await;
+    Ok(())
 }
 
 #[rstest]
 #[tokio::test]
-async fn worker_runtime_build_reasoning_context_merges_local_and_remote_tools() {
-    let (base_url, server) = spawn_hosted_guidance_catalog_server().await;
-    let (runtime, _client) = build_runtime_with_remote_tools(&base_url).await;
+async fn worker_runtime_build_reasoning_context_merges_local_and_remote_tools()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (base_url, server) = spawn_hosted_guidance_catalog_server().await?;
+    let (runtime, _client) = build_runtime_with_remote_tools(&base_url).await?;
 
     let reason_ctx = runtime
         .build_reasoning_context(&JobDescription {
@@ -204,13 +214,15 @@ async fn worker_runtime_build_reasoning_context_merges_local_and_remote_tools() 
 
     server.abort();
     let _ = server.await;
+    Ok(())
 }
 
 #[rstest]
 #[tokio::test]
-async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance() {
-    let (base_url, server) = spawn_hosted_guidance_catalog_server().await;
-    let (runtime, client) = build_runtime_with_remote_tools(&base_url).await;
+async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (base_url, server) = spawn_hosted_guidance_catalog_server().await?;
+    let (runtime, client) = build_runtime_with_remote_tools(&base_url).await?;
 
     let mut reason_ctx = runtime
         .build_reasoning_context(&JobDescription {
@@ -265,31 +277,24 @@ async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance() 
 
     server.abort();
     let _ = server.await;
+    Ok(())
 }
 
 #[rstest]
 #[tokio::test]
-async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind listener");
-    let addr = listener.local_addr().expect("listener addr");
-    let router = Router::new()
-        .route(REMOTE_TOOL_CATALOG_ROUTE, get(remote_tool_catalog_error))
-        .with_state(TestState);
-    let server = tokio::spawn(async move {
-        axum::serve(listener, router).await.expect("serve router");
-    });
+async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (base_url, server) = spawn_test_server(remote_tool_catalog_error).await?;
 
     let client = Arc::new(WorkerHttpClient::new(
-        format!("http://{}", addr),
+        base_url.clone(),
         Uuid::nil(),
         "test".to_string(),
     ));
     let runtime = WorkerRuntime::from_client(
         WorkerConfig {
             job_id: Uuid::nil(),
-            orchestrator_url: format!("http://{}", addr),
+            orchestrator_url: base_url,
             ..WorkerConfig::default()
         },
         client,
@@ -305,14 +310,14 @@ async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools() 
         })
         .await;
 
-    assert_eq!(
-        reason_ctx
-            .available_tools
-            .iter()
-            .map(|tool| tool.name.clone())
-            .collect::<Vec<_>>(),
-        expected_local_tool_names()
-    );
+    let mut actual_tool_names: Vec<_> = reason_ctx
+        .available_tools
+        .iter()
+        .map(|tool| tool.name.clone())
+        .collect();
+    actual_tool_names.sort();
+
+    assert_eq!(actual_tool_names, expected_local_tool_names());
     assert!(
         reason_ctx
             .messages
@@ -323,4 +328,5 @@ async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools() 
 
     server.abort();
     let _ = server.await;
+    Ok(())
 }
