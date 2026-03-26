@@ -177,20 +177,21 @@ fn test_manager_stub() -> Arc<ExtensionManager> {
     use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
     use crate::testing::credentials::TEST_CRYPTO_KEY;
     use crate::tools::ToolRegistry;
-    use crate::tools::mcp::session::McpSessionManager;
 
     let master_key = secrecy::SecretString::from(TEST_CRYPTO_KEY.to_string());
     let crypto = Arc::new(SecretsCrypto::new(master_key).expect("create secrets crypto"));
+    let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
 
     Arc::new(ExtensionManager::new(
         Arc::new(crate::extensions::NoOpDiscovery),
         None, // relay_config
         None, // gateway_token
-        Arc::new(McpSessionManager::new()),
-        Arc::new(crate::tools::mcp::McpProcessManager::new()),
+        Arc::new(crate::extensions::NoOpMcpActivation),
+        Arc::new(crate::extensions::NoOpWasmToolActivation),
+        Arc::new(crate::extensions::NoOpWasmChannelActivation),
+        mcp_clients,
         Arc::new(InMemorySecretsStore::new(crypto)),
         Arc::new(ToolRegistry::new()),
-        None,
         None,
         std::env::temp_dir().join("ironclaw-test-tools"),
         std::env::temp_dir().join("ironclaw-test-channels"),

@@ -16,10 +16,17 @@
 //!    -> tool_activate("telegram")  -> configures credentials, starts channel
 //! ```
 
+pub mod activation;
 pub mod discovery;
 pub mod manager;
 pub mod registry;
 
+pub use activation::{
+    LiveMcpActivation, LiveWasmChannelActivation, LiveWasmToolActivation, McpActivationPort,
+    NativeMcpActivationPort, NativeWasmChannelActivationPort, NativeWasmToolActivationPort,
+    NoOpMcpActivation, NoOpWasmChannelActivation, NoOpWasmToolActivation,
+    WasmChannelActivationPort, WasmToolActivationPort,
+};
 pub use discovery::{NoOpDiscovery, OnlineDiscovery};
 pub use manager::ExtensionManager;
 pub use registry::ExtensionRegistry;

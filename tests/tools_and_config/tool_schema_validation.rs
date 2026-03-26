@@ -22,8 +22,6 @@ struct ExtensionManagerFixture {
 #[fixture]
 fn extension_manager_fixture() -> ExtensionManagerFixture {
     use ironclaw::secrets::{InMemorySecretsStore, SecretsCrypto};
-    use ironclaw::tools::mcp::McpProcessManager;
-    use ironclaw::tools::mcp::session::McpSessionManager;
 
     let dir = tempfile::tempdir().expect("temp dir");
     let tools_dir = dir.path().join("tools");
@@ -34,17 +32,21 @@ fn extension_manager_fixture() -> ExtensionManagerFixture {
     let master_key = secrecy::SecretString::from("0123456789abcdef0123456789abcdef".to_string());
     let crypto = std::sync::Arc::new(SecretsCrypto::new(master_key).expect("crypto"));
 
+    let mcp_clients =
+        std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
+
     ExtensionManagerFixture {
         _dir: dir,
         manager: std::sync::Arc::new(ironclaw::extensions::ExtensionManager::new(
             std::sync::Arc::new(ironclaw::extensions::NoOpDiscovery),
             None, // relay_config
             None, // gateway_token
-            std::sync::Arc::new(McpSessionManager::new()),
-            std::sync::Arc::new(McpProcessManager::new()),
+            std::sync::Arc::new(ironclaw::extensions::NoOpMcpActivation),
+            std::sync::Arc::new(ironclaw::extensions::NoOpWasmToolActivation),
+            std::sync::Arc::new(ironclaw::extensions::NoOpWasmChannelActivation),
+            mcp_clients,
             std::sync::Arc::new(InMemorySecretsStore::new(crypto)),
             std::sync::Arc::new(ToolRegistry::new()),
-            None,
             None,
             tools_dir,
             channels_dir,
