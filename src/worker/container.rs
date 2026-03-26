@@ -21,14 +21,14 @@ use crate::llm::{ChatMessage, LlmProvider, Reasoning, ReasoningContext};
 use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
 use crate::tools::builtin::worker_remote_tool_proxy::register_worker_remote_tool_proxies;
-use crate::worker::api::{
-    CompletionReport, JobEventPayload, JobEventType, StatusUpdate, WorkerHttpClient, WorkerState,
-};
+use crate::worker::api::{WorkerHttpClient, WorkerState};
 use crate::worker::proxy_llm::ProxyLlmProvider;
 
 mod delegate;
+mod reporting;
 
 use delegate::ContainerDelegate;
+use reporting::WorkerExecutionResult;
 
 /// Configuration for the worker runtime.
 pub struct WorkerConfig {
@@ -66,12 +66,6 @@ pub struct WorkerRuntime {
     ///
     /// Wrapped in `Arc` to avoid deep-cloning the map on every tool invocation.
     extra_env: Arc<HashMap<String, String>>,
-}
-
-enum WorkerExecutionResult {
-    Outcome(LoopOutcome),
-    Failed(crate::error::Error),
-    TimedOut,
 }
 
 /// Heading used to tag hosted remote-tool guidance messages in reasoning context.
@@ -212,53 +206,6 @@ impl WorkerRuntime {
         Ok(())
     }
 
-    async fn fail_pre_loop<T>(&self, stage: &str, error: WorkerError) -> Result<T, WorkerError> {
-        tracing::error!(
-            job_id = %self.config.job_id,
-            stage,
-            error = %error,
-            "Worker failed before the execution loop started"
-        );
-
-        if let Err(report_error) = self
-            .report_worker_status(
-                WorkerState::Failed,
-                Some("pre-loop failure".to_string()),
-                100,
-            )
-            .await
-        {
-            tracing::warn!(
-                job_id = %self.config.job_id,
-                stage,
-                error = %report_error,
-                "Failed to emit terminal pre-loop worker status"
-            );
-        }
-
-        if let Err(report_error) = self.report_failure(0, "Worker failed during startup").await {
-            tracing::warn!(
-                job_id = %self.config.job_id,
-                stage,
-                error = %report_error,
-                "Failed to emit terminal pre-loop completion"
-            );
-        }
-
-        Err(error)
-    }
-
-    async fn report_worker_status(
-        &self,
-        state: WorkerState,
-        message: Option<String>,
-        iteration: u32,
-    ) -> Result<(), WorkerError> {
-        self.client
-            .report_status(&StatusUpdate::new(state, message, iteration))
-            .await
-    }
-
     async fn run_job_loop(
         &self,
         job: &crate::worker::api::JobDescription,
@@ -316,91 +263,6 @@ Work independently to complete this job. Report when done."#,
         )));
         reason_ctx.available_tools = available_tool_definitions(&self.tools).await;
         reason_ctx
-    }
-
-    async fn report_completion(
-        &self,
-        execution: WorkerExecutionResult,
-        iterations: u32,
-    ) -> Result<(), WorkerError> {
-        match execution {
-            WorkerExecutionResult::Outcome(LoopOutcome::Response(output)) => {
-                tracing::info!("Worker completed job {} successfully", self.config.job_id);
-                self.post_event(
-                    JobEventType::Result,
-                    serde_json::json!({
-                        "success": true,
-                        "message": truncate_for_preview(&output, 2000),
-                    }),
-                )
-                .await;
-                self.client
-                    .report_complete(&CompletionReport {
-                        success: true,
-                        message: Some(output),
-                        iterations,
-                    })
-                    .await
-            }
-            WorkerExecutionResult::Outcome(LoopOutcome::MaxIterations) => {
-                let msg = format!("max iterations ({}) exceeded", self.config.max_iterations);
-                tracing::warn!("Worker failed for job {}: {}", self.config.job_id, msg);
-                self.report_failure(iterations, &format!("Execution failed: {}", msg))
-                    .await
-            }
-            WorkerExecutionResult::Outcome(LoopOutcome::Stopped | LoopOutcome::NeedApproval(_)) => {
-                tracing::info!("Worker for job {} stopped", self.config.job_id);
-                self.post_event(
-                    JobEventType::Result,
-                    serde_json::json!({
-                        "success": false,
-                        "message": "Execution stopped",
-                        "iterations": iterations,
-                    }),
-                )
-                .await;
-                self.client
-                    .report_complete(&CompletionReport {
-                        success: false,
-                        message: Some("Execution stopped".to_string()),
-                        iterations,
-                    })
-                    .await
-            }
-            WorkerExecutionResult::Failed(error) => {
-                tracing::error!("Worker failed for job {}: {}", self.config.job_id, error);
-                self.report_failure(iterations, "Execution failed").await
-            }
-            WorkerExecutionResult::TimedOut => {
-                tracing::warn!("Worker timed out for job {}", self.config.job_id);
-                self.report_failure(iterations, "Execution timed out").await
-            }
-        }
-    }
-
-    async fn report_failure(&self, iterations: u32, message: &str) -> Result<(), WorkerError> {
-        self.post_event(
-            JobEventType::Result,
-            serde_json::json!({
-                "success": false,
-                "message": message,
-            }),
-        )
-        .await;
-        self.client
-            .report_complete(&CompletionReport {
-                success: false,
-                message: Some(message.to_string()),
-                iterations,
-            })
-            .await
-    }
-
-    /// Post a job event to the orchestrator (fire-and-forget).
-    async fn post_event(&self, event_type: JobEventType, data: serde_json::Value) {
-        self.client
-            .post_event(&JobEventPayload { event_type, data })
-            .await;
     }
 
     async fn register_remote_tools(&self) -> Result<Vec<String>, WorkerError> {
