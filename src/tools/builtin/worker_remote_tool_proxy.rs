@@ -81,6 +81,7 @@ mod tests {
     use axum::extract::{Path, State};
     use axum::routing::post;
     use axum::{Json, Router};
+    use rstest::{fixture, rstest};
     use rust_decimal::Decimal;
     use tokio::sync::Mutex;
     use uuid::Uuid;
@@ -115,6 +116,40 @@ mod tests {
             .with_cost(Decimal::new(125, 2))
             .with_raw("proxy raw output"),
         })
+    }
+
+    /// Bundles the in-process execute-route server and a pre-wired HTTP client.
+    struct ProxyTestServer {
+        client: Arc<WorkerHttpClient>,
+        job_id: Uuid,
+        server: tokio::task::JoinHandle<()>,
+    }
+
+    /// Spins up a local Axum server wired to `execute_tool` and returns a
+    /// `WorkerHttpClient` pointed at it, together with the job id in use.
+    #[fixture]
+    async fn proxy_test_server() -> ProxyTestServer {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        let router = Router::new()
+            .route(REMOTE_TOOL_EXECUTE_ROUTE, post(execute_tool))
+            .with_state(TestState);
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.expect("serve router");
+        });
+        let job_id = Uuid::new_v4();
+        let client = Arc::new(WorkerHttpClient::new(
+            format!("http://{}", addr),
+            job_id,
+            "test-token".to_string(),
+        ));
+        ProxyTestServer {
+            client,
+            job_id,
+            server,
+        }
     }
 
     #[tokio::test]
@@ -176,25 +211,16 @@ mod tests {
         let _ = server.await;
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn worker_remote_tool_proxy_preserves_full_tool_output_fields() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind listener");
-        let addr = listener.local_addr().expect("listener addr");
-        let router = Router::new()
-            .route(REMOTE_TOOL_EXECUTE_ROUTE, post(execute_tool))
-            .with_state(TestState);
-        let server = tokio::spawn(async move {
-            axum::serve(listener, router).await.expect("serve router");
-        });
-
-        let job_id = Uuid::new_v4();
-        let client = Arc::new(WorkerHttpClient::new(
-            format!("http://{}", addr),
+    async fn worker_remote_tool_proxy_preserves_full_tool_output_fields(
+        #[future] proxy_test_server: ProxyTestServer,
+    ) {
+        let ProxyTestServer {
+            client,
             job_id,
-            "test-token".to_string(),
-        ));
+            server,
+        } = proxy_test_server.await;
         let proxy = WorkerRemoteToolProxy::new(
             ToolDefinition {
                 name: "output_fidelity_tool".to_string(),
