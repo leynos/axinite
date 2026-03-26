@@ -248,8 +248,9 @@ For each module, in separate commits:
 
 ### Phase 4: Clean up
 
-- [x] Assess readiness for `async-trait` removal from `[dependencies]` (assessed
-  2026-03-23; approved and completed in Milestone 5 on 2026-03-24)
+- [x] Assess readiness for `async-trait` removal from
+  `[dependencies]` (assessed 2026-03-23; approved and
+  completed in Milestone 5 on 2026-03-24)
 - [x] Document which trait families still require it and why
 - [x] Remove `async-trait` from `Cargo.toml` (completed 2026-03-24)
 
@@ -358,11 +359,12 @@ Milestone 5, completing the migration.
 - 2026-03-22: Initiated the broad ADR 006 rollout (Milestone 2–4) to migrate
   the remaining dyn-backed trait families. The rollout plan is documented in
   `docs/execplans/adr-006-broad-rollout.md`.
-- 2026-03-23: Completed the broad rollout across all Milestones 2–4. Zero
-  production `#[async_trait]` attribute usages remain in `src/`. All dyn-backed
-  trait families now use the ADR 006 dual-trait pattern. The `async-trait`
-  crate remains in `Cargo.toml` pending the Milestone 5 audit and explicit
-  removal.
+- 2026-03-23: Completed the broad rollout across all
+  Milestones 2–4. Zero production `#[async_trait]` attribute
+  usages remain in `src/`. All dyn-backed trait families now
+  use the ADR 006 dual-trait pattern. The `async-trait` crate
+  remains in `Cargo.toml` pending the Milestone 5 audit and
+  explicit removal.
 - 2026-03-24: Milestone 5 complete. Removed `async-trait` from the direct
   `[dependencies]` in `Cargo.toml`. A fresh tree audit confirmed zero
   `#[async_trait]` attribute usages in `src/` and `tests/`. Zero

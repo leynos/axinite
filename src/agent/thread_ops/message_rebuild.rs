@@ -9,11 +9,17 @@ use crate::llm::{ChatMessage, ToolCall};
 
 /// Validates and parses a `tool_calls` JSON array.
 ///
-/// Returns `Ok(parsed)` where each entry is `(call_id, name, arguments)` if
-/// every entry contains a non-null `call_id` and `name`.
+/// Enforces presence and validity of both `call_id` and `name` on every
+/// entry: each must be a non-null, non-empty, non-whitespace-only string.
 ///
-/// Returns `Err(invalid_indices)` if any entry is malformed; the Vec contains
-/// the zero-based positions of the offending entries for diagnostic logging.
+/// Returns `Ok(Vec<(call_id, name, arguments)>)` when all entries pass
+/// validation.
+///
+/// Returns `Err(Vec<usize>)` if any entry is malformed (missing, null,
+/// empty, or whitespace-only `call_id` or `name`); the `Vec` contains the
+/// zero-based indices of the offending entries for diagnostic logging.
+/// Legacy rows without `call_id` are rejected — no silent coercion or
+/// fallback is applied.
 fn parse_tool_call_entries(
     calls: &[serde_json::Value],
 ) -> Result<Vec<(String, String, serde_json::Value)>, Vec<usize>> {
@@ -83,13 +89,17 @@ fn tool_result_content(
 
 /// Rebuild full LLM-compatible `ChatMessage` sequence from DB messages.
 ///
-/// Parses `role="tool_calls"` rows to reconstruct `assistant_with_tool_calls`
-/// and `tool_result` messages so that the LLM sees the complete tool execution
-/// history on thread hydration. Falls back gracefully for legacy rows that
-/// lack the enriched fields (`call_id`, `parameters`, `result`).
+/// Parses `role="tool_calls"` rows to reconstruct
+/// `assistant_with_tool_calls` and `tool_result` messages so that the LLM
+/// sees the complete tool execution history on thread hydration.
 ///
-/// Hydrated tool results pass through `SafetyLayer` (sanitizer → validator →
-/// policy → leak-detector) before being added to the message sequence.
+/// Each tool-call entry must contain valid, non-empty `call_id` and `name`
+/// strings. Rows with any malformed entries (missing, null, empty, or
+/// whitespace-only fields) are skipped entirely — legacy rows without
+/// `call_id` are no longer accepted or silently coerced.
+///
+/// Hydrated tool results pass through `SafetyLayer` (sanitizer → validator
+/// → policy → leak-detector) before being added to the message sequence.
 pub(super) fn rebuild_chat_messages_from_db(
     db_messages: &[ConversationMessage],
     safety: &crate::safety::SafetyLayer,
@@ -161,7 +171,7 @@ mod tests {
     use crate::config::SafetyConfig;
     use crate::history::ConversationMessage;
     use crate::safety::SafetyLayer;
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
 
     fn make_db_msg(role: &str, content: &str) -> ConversationMessage {
         ConversationMessage {
@@ -172,6 +182,7 @@ mod tests {
         }
     }
 
+    #[fixture]
     fn test_safety_layer() -> SafetyLayer {
         SafetyLayer::new(&SafetyConfig {
             injection_check_enabled: false,
@@ -200,20 +211,19 @@ mod tests {
     /// Assert that a `tool_calls` row whose JSON content is `tool_json` is
     /// skipped entirely, leaving only the surrounding user and assistant
     /// messages in the output.
-    fn assert_malformed_tool_calls_skipped(tool_json: serde_json::Value) {
-        let safety = test_safety_layer();
+    fn assert_malformed_tool_calls_skipped(safety: &SafetyLayer, tool_json: serde_json::Value) {
         let messages = vec![
             make_db_msg("user", "Hi"),
             make_db_msg("tool_calls", &tool_json.to_string()),
             make_db_msg("assistant", "Done"),
         ];
-        let result = rebuild_chat_messages_from_db(&messages, &safety);
+        let result = rebuild_chat_messages_from_db(&messages, safety);
         assert_only_user_and_assistant(&result);
     }
 
-    #[test]
-    fn test_rebuild_chat_messages_user_assistant_only() {
-        let safety = test_safety_layer();
+    #[rstest]
+    fn test_rebuild_chat_messages_user_assistant_only(test_safety_layer: SafetyLayer) {
+        let safety = test_safety_layer;
         let messages = vec![
             make_db_msg("user", "Hello"),
             make_db_msg("assistant", "Hi there!"),
@@ -222,9 +232,9 @@ mod tests {
         assert_only_user_and_assistant(&result);
     }
 
-    #[test]
-    fn test_rebuild_chat_messages_with_enriched_tool_calls() {
-        let safety = test_safety_layer();
+    #[rstest]
+    fn test_rebuild_chat_messages_with_enriched_tool_calls(test_safety_layer: SafetyLayer) {
+        let safety = test_safety_layer;
         let tool_json = serde_json::json!([
             {
                 "name": "memory_search",
@@ -280,24 +290,27 @@ mod tests {
         assert_eq!(result[4].content, "I found some results.");
     }
 
-    #[test]
-    fn test_rebuild_chat_messages_legacy_tool_calls_skipped() {
+    #[rstest]
+    fn test_rebuild_chat_messages_legacy_tool_calls_skipped(test_safety_layer: SafetyLayer) {
         // Legacy format: no call_id field
-        assert_malformed_tool_calls_skipped(serde_json::json!([
-            {"name": "echo", "result_preview": "hello"}
-        ]));
+        assert_malformed_tool_calls_skipped(
+            &test_safety_layer,
+            serde_json::json!([
+                {"name": "echo", "result_preview": "hello"}
+            ]),
+        );
     }
 
-    #[test]
-    fn test_rebuild_chat_messages_empty() {
-        let safety = test_safety_layer();
+    #[rstest]
+    fn test_rebuild_chat_messages_empty(test_safety_layer: SafetyLayer) {
+        let safety = test_safety_layer;
         let result = rebuild_chat_messages_from_db(&[], &safety);
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn test_rebuild_chat_messages_malformed_tool_calls_json() {
-        let safety = test_safety_layer();
+    #[rstest]
+    fn test_rebuild_chat_messages_malformed_tool_calls_json(test_safety_layer: SafetyLayer) {
+        let safety = test_safety_layer;
         let messages = vec![
             make_db_msg("user", "Hi"),
             make_db_msg("tool_calls", "not valid json"),
@@ -333,13 +346,16 @@ mod tests {
     #[case::whitespace_name(serde_json::json!([
         {"name": "  \t  ", "call_id": "call_0", "parameters": {}, "result": "ok"}
     ]))]
-    fn test_rebuild_skips_malformed_tool_calls(#[case] malformed_json: serde_json::Value) {
-        assert_malformed_tool_calls_skipped(malformed_json);
+    fn test_rebuild_skips_malformed_tool_calls(
+        test_safety_layer: SafetyLayer,
+        #[case] malformed_json: serde_json::Value,
+    ) {
+        assert_malformed_tool_calls_skipped(&test_safety_layer, malformed_json);
     }
 
-    #[test]
-    fn test_rebuild_chat_messages_multi_turn_with_tools() {
-        let safety = test_safety_layer();
+    #[rstest]
+    fn test_rebuild_chat_messages_multi_turn_with_tools(test_safety_layer: SafetyLayer) {
+        let safety = test_safety_layer;
         let tool_json_1 = serde_json::json!([
             {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found it"}
         ]);
@@ -370,5 +386,68 @@ mod tests {
         assert!(result[5].tool_calls.is_some());
         assert_eq!(result[6].role, crate::llm::Role::Tool);
         assert_eq!(result[7].content, "Written");
+    }
+
+    #[rstest]
+    fn test_tool_result_content_uses_result_preview_fallback(test_safety_layer: SafetyLayer) {
+        // Entry has result_preview but no result or error — should
+        // use result_preview as the content source.
+        let tool_json = serde_json::json!([
+            {
+                "name": "search",
+                "call_id": "call_preview",
+                "parameters": {"q": "test"},
+                "result_preview": "Preview of search results…"
+            }
+        ]);
+        let messages = vec![
+            make_db_msg("user", "Search"),
+            make_db_msg("tool_calls", &tool_json.to_string()),
+            make_db_msg("assistant", "Done"),
+        ];
+        let result = rebuild_chat_messages_from_db(&messages, &test_safety_layer);
+
+        // user + assistant_with_tool_calls + tool_result + assistant
+        assert_eq!(result.len(), 4);
+        let tcs = assert_has_tool_calls(&result, 1);
+        assert_eq!(tcs[0].name, "search");
+
+        assert_eq!(result[2].role, crate::llm::Role::Tool);
+        assert_eq!(result[2].tool_call_id, Some("call_preview".to_string()));
+        assert!(
+            result[2].content.contains("Preview of search results"),
+            "tool result should contain the result_preview text"
+        );
+        assert!(result[2].content.contains("<tool_output"));
+        assert!(result[2].content.contains("name=\"search\""));
+    }
+
+    #[rstest]
+    fn test_tool_result_content_defaults_to_ok(test_safety_layer: SafetyLayer) {
+        // Entry has neither error, result, nor result_preview —
+        // should default to "OK".
+        let tool_json = serde_json::json!([
+            {
+                "name": "noop",
+                "call_id": "call_ok",
+                "parameters": {}
+            }
+        ]);
+        let messages = vec![
+            make_db_msg("user", "Run noop"),
+            make_db_msg("tool_calls", &tool_json.to_string()),
+            make_db_msg("assistant", "Done"),
+        ];
+        let result = rebuild_chat_messages_from_db(&messages, &test_safety_layer);
+
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[2].role, crate::llm::Role::Tool);
+        assert_eq!(result[2].tool_call_id, Some("call_ok".to_string()));
+        assert!(
+            result[2].content.contains("OK"),
+            "tool result should contain the default 'OK' text"
+        );
+        assert!(result[2].content.contains("<tool_output"));
+        assert!(result[2].content.contains("name=\"noop\""));
     }
 }

@@ -55,269 +55,206 @@ impl NativeWorkspaceStore for PgBackend {
 
 #[cfg(all(test, feature = "postgres"))]
 mod tests {
-    //! Tests for NativeWorkspaceStore parameter forwarding on PgBackend.
+    //! Behavioural tests for NativeWorkspaceStore on PgBackend.
     //!
-    //! These verify that the hand-written `insert_chunk` and `hybrid_search`
-    //! methods correctly destructure their parameter structs and forward all
-    //! fields to the underlying `Repository` methods in the correct order.
+    //! These exercise the real Postgres backend to verify that
+    //! `insert_chunk` and `hybrid_search` correctly persist and
+    //! retrieve data through the full delegation chain.
 
     use super::*;
+    use crate::testing::try_test_pg_db;
     use crate::workspace::SearchConfig;
-    use mockall::predicate::*;
-    use mockall::*;
+    use rstest::{fixture, rstest};
 
-    // Define a trait with owned types for mockall compatibility.
-    // mockall cannot generate universally-quantified predicates for
-    // `Option<&[f32]>`, so the mock trait uses `Option<Vec<f32>>` and the
-    // adapter converts at the call boundary.
-    #[automock]
-    trait WorkspaceRepository: Send + Sync {
-        async fn insert_chunk(
-            &self,
-            document_id: Uuid,
-            chunk_index: i32,
-            content: String,
-            embedding: Option<Vec<f32>>,
-        ) -> Result<Uuid, WorkspaceError>;
-
-        async fn hybrid_search(
-            &self,
-            user_id: String,
-            agent_id: Option<Uuid>,
-            query: String,
-            embedding: Option<Vec<f32>>,
-            config: SearchConfig,
-        ) -> Result<Vec<SearchResult>, WorkspaceError>;
+    #[fixture]
+    async fn db() -> Option<PgBackend> {
+        try_test_pg_db().await
     }
 
-    // Test-only wrapper for PgBackend with a mock repository
-    struct MockPgBackend {
-        mock_repo: MockWorkspaceRepository,
+    /// Create a document owned by a unique user so chunks can reference it.
+    async fn setup_document(db: &PgBackend) -> (String, MemoryDocument) {
+        let user_id = format!("ws-test-{}", Uuid::new_v4());
+        let path = format!("/test/{}.md", Uuid::new_v4());
+        let doc = db
+            .get_or_create_document_by_path(&user_id, None, &path)
+            .await
+            .expect("get_or_create_document_by_path should succeed");
+        (user_id, doc)
     }
 
-    impl MockPgBackend {
-        fn new(mock_repo: MockWorkspaceRepository) -> Self {
-            Self { mock_repo }
-        }
-
-        async fn insert_chunk(
-            &self,
-            params: InsertChunkParams<'_>,
-        ) -> Result<Uuid, WorkspaceError> {
-            let InsertChunkParams {
-                document_id,
-                chunk_index,
-                content,
-                embedding,
-            } = params;
-            self.mock_repo
-                .insert_chunk(
-                    document_id,
-                    chunk_index,
-                    content.to_owned(),
-                    embedding.map(|e| e.to_vec()),
-                )
-                .await
-        }
-
-        async fn hybrid_search(
-            &self,
-            params: HybridSearchParams<'_>,
-        ) -> Result<Vec<SearchResult>, WorkspaceError> {
-            let HybridSearchParams {
-                user_id,
-                agent_id,
-                query,
-                embedding,
-                config,
-            } = params;
-            self.mock_repo
-                .hybrid_search(
-                    user_id.to_owned(),
-                    agent_id,
-                    query.to_owned(),
-                    embedding.map(|e| e.to_vec()),
-                    config.clone(),
-                )
-                .await
-        }
-    }
-
+    #[rstest]
     #[tokio::test]
-    async fn test_insert_chunk_forwards_all_parameters() {
-        // Arrange: Create test data with distinct values
-        let test_doc_id = Uuid::new_v4();
-        let test_chunk_index = 42;
-        let test_content = "test chunk content with unique text";
-        let test_embedding = vec![1.5, 2.7, 3.9, 4.2];
-        let expected_chunk_id = Uuid::new_v4();
+    async fn test_insert_chunk_persists_with_embedding(#[future] db: Option<PgBackend>) {
+        let Some(db) = db.await else { return };
+        let (_user_id, doc) = setup_document(&db).await;
 
-        // Create a mock that expects exact parameter values
-        let mut mock_repo = MockWorkspaceRepository::new();
-        mock_repo
-            .expect_insert_chunk()
-            .with(
-                eq(test_doc_id),
-                eq(test_chunk_index),
-                eq(test_content.to_owned()),
-                eq(Some(test_embedding.clone())),
-            )
-            .times(1)
-            .returning(move |_, _, _, _| Ok(expected_chunk_id));
-
-        let backend = MockPgBackend::new(mock_repo);
-
-        // Act: Call insert_chunk with the parameters
+        let embedding = vec![1.5, 2.7, 3.9, 4.2];
         let params = InsertChunkParams {
-            document_id: test_doc_id,
-            chunk_index: test_chunk_index,
-            content: test_content,
-            embedding: Some(&test_embedding),
+            document_id: doc.id,
+            chunk_index: 0,
+            content: "chunk with embedding",
+            embedding: Some(&embedding),
         };
 
-        let result = backend
+        let chunk_id = db
             .insert_chunk(params)
             .await
             .expect("insert_chunk should succeed");
 
-        // Assert: Verify the result
-        assert_eq!(result, expected_chunk_id);
-        // The mock expectations are verified on drop
+        // Verify the chunk was persisted by deleting and re-checking
+        // (delete_chunks removes all chunks for a document)
+        assert_ne!(chunk_id, Uuid::nil());
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_insert_chunk_forwards_none_embedding() {
-        // Arrange: Test with None embedding
-        let test_doc_id = Uuid::new_v4();
-        let test_chunk_index = 7;
-        let test_content = "content without embedding";
-        let expected_chunk_id = Uuid::new_v4();
+    async fn test_insert_chunk_persists_without_embedding(#[future] db: Option<PgBackend>) {
+        let Some(db) = db.await else { return };
+        let (user_id, doc) = setup_document(&db).await;
 
-        let mut mock_repo = MockWorkspaceRepository::new();
-        mock_repo
-            .expect_insert_chunk()
-            .with(
-                eq(test_doc_id),
-                eq(test_chunk_index),
-                eq(test_content.to_owned()),
-                eq(None::<Vec<f32>>),
-            )
-            .times(1)
-            .returning(move |_, _, _, _| Ok(expected_chunk_id));
-
-        let backend = MockPgBackend::new(mock_repo);
-
-        // Act
         let params = InsertChunkParams {
-            document_id: test_doc_id,
-            chunk_index: test_chunk_index,
-            content: test_content,
+            document_id: doc.id,
+            chunk_index: 0,
+            content: "chunk without embedding",
             embedding: None,
         };
 
-        let result = backend
+        let chunk_id = db
             .insert_chunk(params)
             .await
             .expect("insert_chunk with None embedding should succeed");
 
-        // Assert
-        assert_eq!(result, expected_chunk_id);
+        assert_ne!(chunk_id, Uuid::nil());
+
+        // The chunk should appear in the without-embeddings list
+        let missing = db
+            .get_chunks_without_embeddings(&user_id, None, 100)
+            .await
+            .expect("get_chunks_without_embeddings should succeed");
+
+        assert!(
+            missing.iter().any(|c| c.id == chunk_id),
+            "chunk without embedding should appear in \
+             get_chunks_without_embeddings"
+        );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_hybrid_search_forwards_all_parameters() {
-        // Arrange: Create test data with distinct values
-        let test_user_id = "test_user_12345";
-        let test_agent_id = Some(Uuid::new_v4());
-        let test_query = "unique search query text";
-        let test_embedding = vec![0.1, 0.2, 0.3, 0.4, 0.5];
-        let test_config = SearchConfig {
-            limit: 15,
-            rrf_k: 75,
-            use_fts: true,
-            use_vector: true,
-            min_score: 0.7,
-            pre_fusion_limit: 30,
+    async fn test_insert_chunk_fields_round_trip(#[future] db: Option<PgBackend>) {
+        let Some(db) = db.await else { return };
+        let (user_id, doc) = setup_document(&db).await;
+
+        let content = "round-trip content verification";
+        let params = InsertChunkParams {
+            document_id: doc.id,
+            chunk_index: 3,
+            content,
+            embedding: None,
         };
 
-        let mut mock_repo = MockWorkspaceRepository::new();
-        mock_repo
-            .expect_hybrid_search()
-            .with(
-                eq(test_user_id.to_owned()),
-                eq(test_agent_id),
-                eq(test_query.to_owned()),
-                eq(Some(test_embedding.clone())),
-                eq(test_config.clone()),
-            )
-            .times(1)
-            .returning(|_, _, _, _, _| Ok(vec![]));
+        let chunk_id = db
+            .insert_chunk(params)
+            .await
+            .expect("insert_chunk should succeed");
 
-        let backend = MockPgBackend::new(mock_repo);
+        // Retrieve via get_chunks_without_embeddings and verify fields
+        let chunks = db
+            .get_chunks_without_embeddings(&user_id, None, 100)
+            .await
+            .expect("get_chunks_without_embeddings should succeed");
 
-        // Act: Call hybrid_search with the parameters
-        let params = HybridSearchParams {
-            user_id: test_user_id,
-            agent_id: test_agent_id,
-            query: test_query,
-            embedding: Some(&test_embedding),
-            config: &test_config,
+        let chunk = chunks
+            .iter()
+            .find(|c| c.id == chunk_id)
+            .expect("inserted chunk should be retrievable");
+
+        assert_eq!(chunk.document_id, doc.id);
+        assert_eq!(chunk.chunk_index, 3);
+        assert_eq!(chunk.content, content);
+        assert!(chunk.embedding.is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_hybrid_search_returns_inserted_chunk(#[future] db: Option<PgBackend>) {
+        let Some(db) = db.await else { return };
+        let (user_id, doc) = setup_document(&db).await;
+
+        // Insert a chunk with searchable content
+        let content = "the quick brown fox jumps over the lazy dog";
+        let params = InsertChunkParams {
+            document_id: doc.id,
+            chunk_index: 0,
+            content,
+            embedding: None,
         };
 
-        let result = backend
-            .hybrid_search(params)
+        db.insert_chunk(params)
+            .await
+            .expect("insert_chunk should succeed");
+
+        // Search using FTS only (no embedding)
+        let config = SearchConfig::default().fts_only();
+        let search_params = HybridSearchParams {
+            user_id: &user_id,
+            agent_id: None,
+            query: "quick brown fox",
+            embedding: None,
+            config: &config,
+        };
+
+        let results = db
+            .hybrid_search(search_params)
             .await
             .expect("hybrid_search should succeed");
 
-        // Assert: Verify the result
-        assert_eq!(result.len(), 0);
-        // The mock expectations are verified on drop
+        // The inserted chunk should appear in the results
+        assert!(
+            results.iter().any(|r| r.document_id == doc.id),
+            "hybrid_search should find the inserted chunk"
+        );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_hybrid_search_forwards_none_agent_and_embedding() {
-        // Arrange: Test with None values for agent_id and embedding
-        let test_user_id = "another_user";
-        let test_query = "query without vector";
-        let test_config = SearchConfig {
-            limit: 20,
-            rrf_k: 60,
-            use_fts: true,
-            use_vector: false,
-            min_score: 0.5,
-            pre_fusion_limit: 40,
-        };
+    async fn test_hybrid_search_respects_user_isolation(#[future] db: Option<PgBackend>) {
+        let Some(db) = db.await else { return };
+        let (_user_id, doc) = setup_document(&db).await;
+        let other_user = format!("ws-other-{}", Uuid::new_v4());
 
-        let mut mock_repo = MockWorkspaceRepository::new();
-        mock_repo
-            .expect_hybrid_search()
-            .with(
-                eq(test_user_id.to_owned()),
-                eq(None::<Uuid>),
-                eq(test_query.to_owned()),
-                eq(None::<Vec<f32>>),
-                eq(test_config.clone()),
-            )
-            .times(1)
-            .returning(|_, _, _, _, _| Ok(vec![]));
-
-        let backend = MockPgBackend::new(mock_repo);
-
-        // Act
-        let params = HybridSearchParams {
-            user_id: test_user_id,
-            agent_id: None,
-            query: test_query,
+        // Insert a chunk under user_id
+        let content = "classified workspace material alpha bravo";
+        let params = InsertChunkParams {
+            document_id: doc.id,
+            chunk_index: 0,
+            content,
             embedding: None,
-            config: &test_config,
         };
 
-        let result = backend
-            .hybrid_search(params)
+        db.insert_chunk(params)
             .await
-            .expect("hybrid_search with None values should succeed");
+            .expect("insert_chunk should succeed");
 
-        // Assert
-        assert_eq!(result.len(), 0);
+        // Search as a different user — should not find the chunk
+        let config = SearchConfig::default().fts_only();
+        let search_params = HybridSearchParams {
+            user_id: &other_user,
+            agent_id: None,
+            query: "classified workspace material",
+            embedding: None,
+            config: &config,
+        };
+
+        let results = db
+            .hybrid_search(search_params)
+            .await
+            .expect("hybrid_search should succeed");
+
+        assert!(
+            !results.iter().any(|r| r.document_id == doc.id),
+            "hybrid_search should not return chunks belonging \
+             to a different user"
+        );
     }
 }

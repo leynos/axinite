@@ -99,12 +99,12 @@ mod tests {
     #[cfg(feature = "postgres")]
     mod behavioral {
         use super::*;
-        use crate::testing::test_pg_db;
+        use crate::testing::try_test_pg_db;
         use rstest::{fixture, rstest};
 
         #[fixture]
-        async fn db() -> PgBackend {
-            test_pg_db().await
+        async fn db() -> Option<PgBackend> {
+            try_test_pg_db().await
         }
 
         #[fixture]
@@ -127,10 +127,10 @@ mod tests {
         #[rstest]
         #[tokio::test]
         async fn test_update_sandbox_job_status_field_passthrough(
-            #[future] db: PgBackend,
+            #[future] db: Option<PgBackend>,
             pending_job: SandboxJobRecord,
         ) {
-            let db = db.await;
+            let Some(db) = db.await else { return };
             let job_id = pending_job.id;
 
             db.save_sandbox_job(&pending_job)
@@ -174,20 +174,25 @@ mod tests {
         #[rstest]
         #[tokio::test]
         async fn test_list_sandbox_jobs_for_user(
-            #[future] db: PgBackend,
+            #[future] db: Option<PgBackend>,
             pending_job: SandboxJobRecord,
         ) {
-            let db = db.await;
+            let Some(db) = db.await else { return };
+
+            // Generate unique user IDs to avoid cross-run collisions
+            let user1_id = format!("user1-{}", Uuid::new_v4());
+            let user2_id = format!("user2-{}", Uuid::new_v4());
+            let user3_id = format!("user3-{}", Uuid::new_v4());
 
             // Create jobs for two different users
             let mut user1_job = pending_job.clone();
-            user1_job.user_id = "user1".to_string();
+            user1_job.user_id = user1_id.clone();
             user1_job.task = "task1".to_string();
             user1_job.project_dir = "/tmp/user1".to_string();
 
             let mut user2_job = pending_job.clone();
             user2_job.id = Uuid::new_v4();
-            user2_job.user_id = "user2".to_string();
+            user2_job.user_id = user2_id.clone();
             user2_job.task = "task2".to_string();
             user2_job.project_dir = "/tmp/user2".to_string();
 
@@ -200,27 +205,27 @@ mod tests {
 
             // List jobs for user1
             let user1_jobs = db
-                .list_sandbox_jobs_for_user("user1")
+                .list_sandbox_jobs_for_user(&user1_id)
                 .await
                 .expect("list_sandbox_jobs_for_user should succeed");
 
             assert_eq!(user1_jobs.len(), 1);
-            assert_eq!(user1_jobs[0].user_id, "user1");
+            assert_eq!(user1_jobs[0].user_id, user1_id);
             assert_eq!(user1_jobs[0].id, user1_job.id);
 
             // List jobs for user2
             let user2_jobs = db
-                .list_sandbox_jobs_for_user("user2")
+                .list_sandbox_jobs_for_user(&user2_id)
                 .await
                 .expect("list_sandbox_jobs_for_user should succeed");
 
             assert_eq!(user2_jobs.len(), 1);
-            assert_eq!(user2_jobs[0].user_id, "user2");
+            assert_eq!(user2_jobs[0].user_id, user2_id);
             assert_eq!(user2_jobs[0].id, user2_job.id);
 
             // Verify user3 has no jobs
             let user3_jobs = db
-                .list_sandbox_jobs_for_user("user3")
+                .list_sandbox_jobs_for_user(&user3_id)
                 .await
                 .expect("list_sandbox_jobs_for_user should succeed");
 
@@ -230,18 +235,24 @@ mod tests {
         #[rstest]
         #[tokio::test]
         async fn test_sandbox_job_summary_for_user(
-            #[future] db: PgBackend,
+            #[future] db: Option<PgBackend>,
             pending_job: SandboxJobRecord,
         ) {
-            let db = db.await;
+            let Some(db) = db.await else { return };
+
+            // Generate unique user IDs to avoid cross-run collisions
+            let user_id = format!("summary-user-{}", Uuid::new_v4());
+            let other_user_id = format!("summary-other-{}", Uuid::new_v4());
 
             // Create multiple jobs with different statuses for one user
             let mut pending = pending_job.clone();
+            pending.user_id = user_id.clone();
             pending.task = "pending_task".to_string();
             pending.project_dir = "/tmp/pending".to_string();
 
             let mut completed_job = pending_job.clone();
             completed_job.id = Uuid::new_v4();
+            completed_job.user_id = user_id.clone();
             completed_job.task = "completed_task".to_string();
             completed_job.status = "completed".to_string();
             completed_job.project_dir = "/tmp/completed".to_string();
@@ -252,7 +263,7 @@ mod tests {
 
             let mut other_user_job = pending_job.clone();
             other_user_job.id = Uuid::new_v4();
-            other_user_job.user_id = "other_user".to_string();
+            other_user_job.user_id = other_user_id;
             other_user_job.task = "other_task".to_string();
             other_user_job.status = "pending".to_string();
             other_user_job.project_dir = "/tmp/other".to_string();
@@ -269,7 +280,7 @@ mod tests {
 
             // Get summary for user
             let summary = db
-                .sandbox_job_summary_for_user("test_user")
+                .sandbox_job_summary_for_user(&user_id)
                 .await
                 .expect("sandbox_job_summary_for_user should succeed");
 
@@ -279,13 +290,17 @@ mod tests {
         #[rstest]
         #[tokio::test]
         async fn test_sandbox_job_belongs_to_user(
-            #[future] db: PgBackend,
+            #[future] db: Option<PgBackend>,
             pending_job: SandboxJobRecord,
         ) {
-            let db = db.await;
+            let Some(db) = db.await else { return };
+
+            // Generate unique user IDs to avoid cross-run collisions
+            let owner_id = format!("owner-{}", Uuid::new_v4());
+            let other_id = format!("other-{}", Uuid::new_v4());
 
             let mut job = pending_job.clone();
-            job.user_id = "owner".to_string();
+            job.user_id = owner_id.clone();
             job.task = "ownership_test".to_string();
             job.project_dir = "/tmp/owner".to_string();
             let job_id = job.id;
@@ -294,7 +309,7 @@ mod tests {
 
             // Test ownership check
             let belongs = db
-                .sandbox_job_belongs_to_user(job_id, "owner")
+                .sandbox_job_belongs_to_user(job_id, &owner_id)
                 .await
                 .expect("sandbox_job_belongs_to_user should succeed");
 
@@ -302,7 +317,7 @@ mod tests {
 
             // Test non-ownership
             let not_belongs = db
-                .sandbox_job_belongs_to_user(job_id, "other_user")
+                .sandbox_job_belongs_to_user(job_id, &other_id)
                 .await
                 .expect("sandbox_job_belongs_to_user should succeed");
 

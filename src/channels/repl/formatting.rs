@@ -138,9 +138,10 @@ pub(super) fn render_approval_card(
 
     // Top border: ┌ tool_name requires approval ───
     let top_label = format!(" {tool_name} requires approval ");
-    let top_fill = box_width.saturating_sub(top_label.chars().count() + 1);
+    let truncated_label = truncate_card_content(&top_label, box_width);
+    let top_fill = box_width.saturating_sub(truncated_label.chars().count() + 1);
     let top_border = format!(
-        "\u{250C}\x1b[33m{top_label}\x1b[0m{}",
+        "\u{250C}\x1b[33m{truncated_label}\x1b[0m{}",
         "\u{2500}".repeat(top_fill)
     );
 
@@ -161,10 +162,10 @@ pub(super) fn render_approval_card(
     lines.push(format!("  \u{2502} \x1b[90m{truncated_desc}\x1b[0m"));
     lines.push("  \u{2502}".to_string());
 
-    // Params - each line is already formatted with prefix, just add them
+    // Params - truncate each line to fit within the card width
     let param_lines = format_json_params(parameters, "  \u{2502}   ");
     for line in param_lines.lines() {
-        lines.push(line.to_string());
+        lines.push(truncate_card_content(line, box_width));
     }
 
     lines.push("  \u{2502}".to_string());
