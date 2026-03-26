@@ -9,6 +9,132 @@ use std::path::PathBuf;
 use crate::bootstrap::ironclaw_base_dir;
 use crate::settings::Settings;
 
+async fn run_core_checks(
+    settings: &Settings,
+    passed: &mut u32,
+    failed: &mut u32,
+    skipped: &mut u32,
+) {
+    check(
+        "Settings file",
+        check_settings_file(),
+        passed,
+        failed,
+        skipped,
+    );
+    check(
+        "NEAR AI session",
+        check_nearai_session().await,
+        passed,
+        failed,
+        skipped,
+    );
+    check(
+        "LLM configuration",
+        check_llm_config(settings),
+        passed,
+        failed,
+        skipped,
+    );
+    check(
+        "Database backend",
+        check_database().await,
+        passed,
+        failed,
+        skipped,
+    );
+    check(
+        "Workspace search",
+        check_workspace_search().await,
+        passed,
+        failed,
+        skipped,
+    );
+    check(
+        "Workspace directory",
+        check_workspace_dir(),
+        passed,
+        failed,
+        skipped,
+    );
+}
+
+async fn run_subsystem_checks(
+    settings: &Settings,
+    passed: &mut u32,
+    failed: &mut u32,
+    skipped: &mut u32,
+) {
+    check(
+        "Embeddings",
+        check_embeddings(settings),
+        passed,
+        failed,
+        skipped,
+    );
+    check(
+        "Routines config",
+        check_routines_config(),
+        passed,
+        failed,
+        skipped,
+    );
+    check(
+        "Gateway config",
+        check_gateway_config(settings),
+        passed,
+        failed,
+        skipped,
+    );
+    check(
+        "MCP servers",
+        check_mcp_config().await,
+        passed,
+        failed,
+        skipped,
+    );
+    check("Skills", check_skills().await, passed, failed, skipped);
+    check("Secrets", check_secrets(settings), passed, failed, skipped);
+    check(
+        "Service",
+        check_service_installed(),
+        passed,
+        failed,
+        skipped,
+    );
+}
+
+async fn run_external_binary_checks(passed: &mut u32, failed: &mut u32, skipped: &mut u32) {
+    check(
+        "Docker daemon",
+        check_docker_daemon().await,
+        passed,
+        failed,
+        skipped,
+    );
+    check(
+        "cloudflared",
+        check_binary("cloudflared", &["--version"]),
+        passed,
+        failed,
+        skipped,
+    );
+    check(
+        "ngrok",
+        check_binary("ngrok", &["version"]),
+        passed,
+        failed,
+        skipped,
+    );
+    check(
+        "tailscale",
+        check_binary("tailscale", &["version"]),
+        passed,
+        failed,
+        skipped,
+    );
+}
+
 /// Run all diagnostic checks and print results.
 pub async fn run_doctor_command() -> anyhow::Result<()> {
     println!("IronClaw Doctor");
@@ -21,147 +147,9 @@ pub async fn run_doctor_command() -> anyhow::Result<()> {
     // Load settings once for checks that need them.
     let settings = Settings::load();
 
-    // ── Settings & core config ─────────────────────────────────
-
-    check(
-        "Settings file",
-        check_settings_file(),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "NEAR AI session",
-        check_nearai_session().await,
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "LLM configuration",
-        check_llm_config(&settings),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "Database backend",
-        check_database().await,
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "Workspace search",
-        check_workspace_search().await,
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "Workspace directory",
-        check_workspace_dir(),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    // ── Subsystem configuration checks ─────────────────────────
-
-    check(
-        "Embeddings",
-        check_embeddings(&settings),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "Routines config",
-        check_routines_config(),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "Gateway config",
-        check_gateway_config(&settings),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "MCP servers",
-        check_mcp_config().await,
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "Skills",
-        check_skills().await,
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "Secrets",
-        check_secrets(&settings),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "Service",
-        check_service_installed(),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    // ── External binary checks ────────────────────────────────
-
-    check(
-        "Docker daemon",
-        check_docker_daemon().await,
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "cloudflared",
-        check_binary("cloudflared", &["--version"]),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "ngrok",
-        check_binary("ngrok", &["version"]),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
-
-    check(
-        "tailscale",
-        check_binary("tailscale", &["version"]),
-        &mut passed,
-        &mut failed,
-        &mut skipped,
-    );
+    run_core_checks(&settings, &mut passed, &mut failed, &mut skipped).await;
+    run_subsystem_checks(&settings, &mut passed, &mut failed, &mut skipped).await;
+    run_external_binary_checks(&mut passed, &mut failed, &mut skipped).await;
 
     // ── Summary ───────────────────────────────────────────────
 
