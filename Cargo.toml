@@ -198,6 +198,7 @@ pretty_assertions = "1"
 insta = "1.46.3"
 rstest = "0.26.1"
 tempfile = "3"
+mockall = "0.13"
 
 [features]
 default = ["postgres", "libsql", "html-to-markdown", "docker"]

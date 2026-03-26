@@ -29,10 +29,13 @@ pub async fn settings_list_handler(
         .store
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
-    let rows = store.list_settings(&state.user_id).await.map_err(|e| {
-        tracing::error!("Failed to list settings: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let rows = store
+        .list_settings(state.user_id.as_str().into())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to list settings: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     let settings = rows
         .into_iter()
@@ -55,7 +58,7 @@ pub async fn settings_get_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     let row = store
-        .get_setting_full(&state.user_id, &key)
+        .get_setting_full(state.user_id.as_str().into(), key.as_str().into())
         .await
         .map_err(|e| {
             tracing::error!("Failed to get setting '{}': {}", key, e);
@@ -80,7 +83,11 @@ pub async fn settings_set_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     store
-        .set_setting(&state.user_id, &key, &body.value)
+        .set_setting(
+            state.user_id.as_str().into(),
+            key.as_str().into(),
+            &body.value,
+        )
         .await
         .map_err(|e| {
             tracing::error!("Failed to set setting '{}': {}", key, e);
@@ -99,7 +106,7 @@ pub async fn settings_delete_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     store
-        .delete_setting(&state.user_id, &key)
+        .delete_setting(state.user_id.as_str().into(), key.as_str().into())
         .await
         .map_err(|e| {
             tracing::error!("Failed to delete setting '{}': {}", key, e);
@@ -116,10 +123,13 @@ pub async fn settings_export_handler(
         .store
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
-    let settings = store.get_all_settings(&state.user_id).await.map_err(|e| {
-        tracing::error!("Failed to export settings: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let settings = store
+        .get_all_settings(state.user_id.as_str().into())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to export settings: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     Ok(Json(SettingsExportResponse { settings }))
 }
@@ -133,7 +143,7 @@ pub async fn settings_import_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     store
-        .set_all_settings(&state.user_id, &body.settings)
+        .set_all_settings(state.user_id.as_str().into(), &body.settings)
         .await
         .map_err(|e| {
             tracing::error!("Failed to import settings: {}", e);

@@ -29,6 +29,7 @@ use crate::settings::{KeySource, Settings};
 use crate::setup::channels::{
     SecretsContext, setup_http, setup_signal, setup_tunnel, setup_wasm_channel,
 };
+use crate::setup::persistence::DefaultSettingsPersistence;
 use crate::setup::prompts::{
     confirm, input, optional_input, print_error, print_header, print_info, print_step,
     print_success, secret_input, select_many, select_one,
@@ -90,7 +91,7 @@ pub struct SetupWizard {
     db_pool: Option<deadpool_postgres::Pool>,
     /// libSQL backend (created during setup, libsql only).
     #[cfg(feature = "libsql")]
-    db_backend: Option<crate::db::libsql::LibSqlBackend>,
+    db_backend: Option<Arc<crate::db::libsql::LibSqlBackend>>,
     /// Secrets crypto (created during setup).
     secrets_crypto: Option<Arc<SecretsCrypto>>,
     /// Cached API key from provider setup (used by model fetcher without env mutation).
@@ -132,6 +133,31 @@ impl SetupWizard {
     pub fn with_session(mut self, session: Arc<SessionManager>) -> Self {
         self.session_manager = Some(session);
         self
+    }
+
+    /// Construct a DefaultSettingsPersistence from the current database backend.
+    ///
+    /// Returns None if no backend has been initialized yet.
+    /// Routes based on `settings.database_backend` to avoid misrouting when both handles exist.
+    fn default_settings_persistence(&self) -> Option<DefaultSettingsPersistence> {
+        match self.settings.database_backend.as_deref() {
+            #[cfg(feature = "postgres")]
+            Some("postgres") => {
+                if let Some(ref pool) = self.db_pool {
+                    let backend = Arc::new(crate::db::postgres::PgBackend::from_pool(pool.clone()));
+                    return Some(DefaultSettingsPersistence::new(backend));
+                }
+            }
+            #[cfg(feature = "libsql")]
+            Some("libsql") => {
+                if let Some(ref backend) = self.db_backend {
+                    return Some(DefaultSettingsPersistence::new(backend.clone()));
+                }
+            }
+            _ => {}
+        }
+
+        None
     }
 
     /// Run the setup wizard.
@@ -292,13 +318,12 @@ impl SetupWizard {
 
         // Load existing settings from DB, then restore connection fields that
         // may not be persisted in the settings map.
-        if let Some(ref pool) = self.db_pool {
-            let store = crate::history::Store::from_pool(pool.clone());
-            if let Ok(map) = store.get_all_settings("default").await {
-                self.settings = Settings::from_db_map(&map);
-                self.settings.database_backend = Some("postgres".to_string());
-                self.settings.database_url = Some(url);
-            }
+        if let Some(persistence) = self.default_settings_persistence()
+            && let Ok(map) = persistence.get_all_settings_map().await
+        {
+            self.settings = Settings::from_db_map(&map);
+            self.settings.database_backend = Some("postgres".to_string());
+            self.settings.database_url = Some(url);
         }
 
         Ok(())
@@ -326,15 +351,14 @@ impl SetupWizard {
 
         // Load existing settings from DB, then restore connection fields that
         // may not be persisted in the settings map.
-        if let Some(ref db) = self.db_backend {
-            use crate::db::SettingsStore as _;
-            if let Ok(map) = db.get_all_settings("default").await {
-                self.settings = Settings::from_db_map(&map);
-                self.settings.database_backend = Some("libsql".to_string());
-                self.settings.libsql_path = Some(path);
-                if let Some(url) = turso_url {
-                    self.settings.libsql_url = Some(url);
-                }
+        if let Some(persistence) = self.default_settings_persistence()
+            && let Ok(map) = persistence.get_all_settings_map().await
+        {
+            self.settings = Settings::from_db_map(&map);
+            self.settings.database_backend = Some("libsql".to_string());
+            self.settings.libsql_path = Some(path);
+            if let Some(url) = turso_url {
+                self.settings.libsql_url = Some(url);
             }
         }
 
@@ -644,6 +668,10 @@ impl SetupWizard {
         }
 
         self.db_pool = Some(pool);
+        #[cfg(feature = "libsql")]
+        {
+            self.db_backend = None; // Clear stale libSQL handle
+        }
         Ok(())
     }
 
@@ -670,7 +698,11 @@ impl SetupWizard {
                 .map_err(|e| SetupError::Database(format!("Failed to open database: {}", e)))?
         };
 
-        self.db_backend = Some(backend);
+        self.db_backend = Some(Arc::new(backend));
+        #[cfg(feature = "postgres")]
+        {
+            self.db_pool = None; // Clear stale PostgreSQL handle
+        }
         Ok(())
     }
 
@@ -2491,46 +2523,17 @@ impl SetupWizard {
     /// Returns `Ok(true)` if settings were saved, `Ok(false)` if no database
     /// connection is available yet (e.g., before Step 1 completes).
     async fn persist_settings(&self) -> Result<bool, SetupError> {
-        let db_map = self.settings.to_db_map();
-        let saved = false;
-
-        #[cfg(feature = "postgres")]
-        let saved = if !saved {
-            if let Some(ref pool) = self.db_pool {
-                let store = crate::history::Store::from_pool(pool.clone());
-                store
-                    .set_all_settings("default", &db_map)
-                    .await
-                    .map_err(|e| {
-                        SetupError::Database(format!("Failed to save settings to database: {}", e))
-                    })?;
-                true
-            } else {
-                false
-            }
+        if let Some(persistence) = self.default_settings_persistence() {
+            persistence
+                .save_default_settings(&self.settings)
+                .await
+                .map_err(|e| {
+                    SetupError::Database(format!("Failed to save settings to database: {}", e))
+                })?;
+            Ok(true)
         } else {
-            saved
-        };
-
-        #[cfg(feature = "libsql")]
-        let saved = if !saved {
-            if let Some(ref backend) = self.db_backend {
-                use crate::db::SettingsStore as _;
-                backend
-                    .set_all_settings("default", &db_map)
-                    .await
-                    .map_err(|e| {
-                        SetupError::Database(format!("Failed to save settings to database: {}", e))
-                    })?;
-                true
-            } else {
-                false
-            }
-        } else {
-            saved
-        };
-
-        Ok(saved)
+            Ok(false)
+        }
     }
 
     /// Write bootstrap environment variables to `~/.ironclaw/.env`.
@@ -2705,28 +2708,9 @@ impl SetupWizard {
             Err(_) => return,
         };
 
-        #[cfg(feature = "postgres")]
-        if let Some(ref pool) = self.db_pool {
-            let store = crate::history::Store::from_pool(pool.clone());
-            if let Err(e) = store
-                .set_setting("default", "nearai.session_token", &value)
-                .await
-            {
-                tracing::debug!("Could not persist session token to postgres: {}", e);
-            } else {
-                tracing::debug!("Session token persisted to database");
-                return;
-            }
-        }
-
-        #[cfg(feature = "libsql")]
-        if let Some(ref backend) = self.db_backend {
-            use crate::db::SettingsStore as _;
-            if let Err(e) = backend
-                .set_setting("default", "nearai.session_token", &value)
-                .await
-            {
-                tracing::debug!("Could not persist session token to libsql: {}", e);
+        if let Some(persistence) = self.default_settings_persistence() {
+            if let Err(e) = persistence.save_session_token(&value).await {
+                tracing::debug!("Could not persist session token to database: {}", e);
             } else {
                 tracing::debug!("Session token persisted to database");
             }
@@ -2763,58 +2747,19 @@ impl SetupWizard {
     /// prefers the `other` argument's non-default values. Without this,
     /// stale DB values would overwrite fresh user choices.
     async fn try_load_existing_settings(&mut self) {
-        let loaded = false;
-
-        #[cfg(feature = "postgres")]
-        let loaded = if !loaded {
-            if let Some(ref pool) = self.db_pool {
-                let store = crate::history::Store::from_pool(pool.clone());
-                match store.get_all_settings("default").await {
-                    Ok(db_map) if !db_map.is_empty() => {
-                        let existing = Settings::from_db_map(&db_map);
-                        self.settings.merge_from(&existing);
-                        tracing::info!("Loaded {} existing settings from database", db_map.len());
-                        true
-                    }
-                    Ok(_) => false,
-                    Err(e) => {
-                        tracing::debug!("Could not load existing settings: {}", e);
-                        false
-                    }
+        if let Some(persistence) = self.default_settings_persistence() {
+            match persistence.get_all_settings_map().await {
+                Ok(db_map) if !db_map.is_empty() => {
+                    let existing = Settings::from_db_map(&db_map);
+                    self.settings.merge_from(&existing);
+                    tracing::info!("Loaded {} existing settings from database", db_map.len());
                 }
-            } else {
-                false
-            }
-        } else {
-            loaded
-        };
-
-        #[cfg(feature = "libsql")]
-        let loaded = if !loaded {
-            if let Some(ref backend) = self.db_backend {
-                use crate::db::SettingsStore as _;
-                match backend.get_all_settings("default").await {
-                    Ok(db_map) if !db_map.is_empty() => {
-                        let existing = Settings::from_db_map(&db_map);
-                        self.settings.merge_from(&existing);
-                        tracing::info!("Loaded {} existing settings from database", db_map.len());
-                        true
-                    }
-                    Ok(_) => false,
-                    Err(e) => {
-                        tracing::debug!("Could not load existing settings: {}", e);
-                        false
-                    }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::debug!("Could not load existing settings: {}", e);
                 }
-            } else {
-                false
             }
-        } else {
-            loaded
-        };
-
-        // Suppress unused variable warning when only one backend is compiled.
-        let _ = loaded;
+        }
     }
 
     /// Save settings to the database and `~/.ironclaw/.env`, then print summary.

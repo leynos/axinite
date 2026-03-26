@@ -583,7 +583,7 @@ Milestones 1–4 completed on 2026-03-23. Milestone 5 (cleanup) completed on
 
 **Milestone 4 — high-fanout core traits (4 sub-waves):**
 `Tool` (64 impl blocks across 36 files), `LlmProvider` (23 impl blocks across
-15 files), `Channel` (9 impl blocks across 3 directories), and the `Database`
+15 files), `NativeChannel` (11 impl blocks across 3 directories), and the `Database`
 family (7 sub-traits × 2 backends across 9 impl files).
 
 ### Post-rollout footprint

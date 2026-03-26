@@ -97,7 +97,7 @@ const DEFAULT_USER_ID: &str = "default";
 /// Load settings: DB if available, else disk.
 async fn load_settings(store: Option<&dyn crate::db::Database>) -> Settings {
     if let Some(store) = store {
-        match store.get_all_settings(DEFAULT_USER_ID).await {
+        match store.get_all_settings(DEFAULT_USER_ID.into()).await {
             Ok(map) if !map.is_empty() => return Settings::from_db_map(&map),
             _ => {}
         }
@@ -173,7 +173,7 @@ async fn set_setting(
         Err(_) => serde_json::Value::String(value.to_string()),
     };
     store
-        .set_setting(DEFAULT_USER_ID, path, &json_value)
+        .set_setting(DEFAULT_USER_ID.into(), path.into(), &json_value)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to save to database: {}", e))?;
 
@@ -192,7 +192,7 @@ async fn reset_setting(store: Option<&dyn crate::db::Database>, path: &str) -> a
         anyhow::anyhow!("Database connection required to reset settings. Check DATABASE_URL.")
     })?;
     store
-        .delete_setting(DEFAULT_USER_ID, path)
+        .delete_setting(DEFAULT_USER_ID.into(), path.into())
         .await
         .map_err(|e| anyhow::anyhow!("Failed to delete setting from database: {}", e))?;
 

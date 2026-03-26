@@ -4,14 +4,13 @@
 //! processing, undo/redo, approval, auth, persistence) from the core loop.
 
 mod message_rebuild;
+mod persistence;
 
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use uuid::Uuid;
-
-use crate::db::EnsureConversationParams;
 
 use crate::agent::Agent;
 use crate::agent::compaction::ContextCompactor;
@@ -28,6 +27,7 @@ use crate::llm::ChatMessage;
 use crate::tools::redact_params;
 
 use message_rebuild::rebuild_chat_messages_from_db;
+use persistence::gateway_conversation_params;
 
 impl Agent {
     /// Hydrate a historical thread from DB into memory if not already present.
@@ -72,7 +72,7 @@ impl Agent {
                 .await
                 .unwrap_or_default();
             msg_count = db_messages.len();
-            chat_messages = rebuild_chat_messages_from_db(&db_messages);
+            chat_messages = rebuild_chat_messages_from_db(&db_messages, self.safety());
         } else {
             msg_count = 0;
         }
@@ -445,12 +445,7 @@ impl Agent {
         };
 
         if let Err(e) = store
-            .ensure_conversation(EnsureConversationParams {
-                id: thread_id,
-                channel: "gateway",
-                user_id,
-                thread_id: None,
-            })
+            .ensure_conversation(gateway_conversation_params(thread_id, user_id))
             .await
         {
             tracing::warn!("Failed to ensure conversation {}: {}", thread_id, e);
@@ -482,12 +477,7 @@ impl Agent {
         };
 
         if let Err(e) = store
-            .ensure_conversation(EnsureConversationParams {
-                id: thread_id,
-                channel: "gateway",
-                user_id,
-                thread_id: None,
-            })
+            .ensure_conversation(gateway_conversation_params(thread_id, user_id))
             .await
         {
             tracing::warn!("Failed to ensure conversation {}: {}", thread_id, e);
@@ -560,12 +550,7 @@ impl Agent {
         };
 
         if let Err(e) = store
-            .ensure_conversation(EnsureConversationParams {
-                id: thread_id,
-                channel: "gateway",
-                user_id,
-                thread_id: None,
-            })
+            .ensure_conversation(gateway_conversation_params(thread_id, user_id))
             .await
         {
             tracing::warn!("Failed to ensure conversation {}: {}", thread_id, e);

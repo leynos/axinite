@@ -37,7 +37,7 @@ use crate::channels::{
 };
 use crate::error::ChannelError;
 
-use formatting::{format_json_params, make_skin, print_help};
+use formatting::{make_skin, print_help, render_approval_card};
 use input::{EscInterruptHandler, ReplHelper};
 
 /// Max characters for tool result previews in the terminal.
@@ -126,12 +126,20 @@ impl NativeChannel for ReplChannel {
             }
 
             // Set up rustyline
-            let config = Config::builder()
-                .history_ignore_dups(true)
-                .expect("valid config")
-                .auto_add_history(true)
-                .completion_type(CompletionType::List)
-                .build();
+            //
+            // `history_ignore_dups` returns `Result` (it validates the
+            // underlying config value), while the remaining builder methods
+            // and `.build()` are infallible.
+            let config = match Config::builder().history_ignore_dups(true) {
+                Ok(b) => b
+                    .auto_add_history(true)
+                    .completion_type(CompletionType::List)
+                    .build(),
+                Err(e) => {
+                    eprintln!("Failed to configure line editor: {e}");
+                    return;
+                }
+            };
 
             let mut rl = match Editor::with_config(config) {
                 Ok(editor) => editor,
@@ -341,53 +349,11 @@ impl NativeChannel for ReplChannel {
                 description,
                 parameters,
             } => {
-                let term_width = crossterm::terminal::size()
-                    .map(|(w, _)| w as usize)
-                    .unwrap_or(80);
-                let box_width = (term_width.saturating_sub(4)).clamp(40, 60);
-
-                // Short request ID for the bottom border
-                let short_id = if request_id.len() > 8 {
-                    &request_id[..8]
-                } else {
-                    &request_id
-                };
-
-                // Top border: ┌ tool_name requires approval ───
-                let top_label = format!(" {tool_name} requires approval ");
-                let top_fill = box_width.saturating_sub(top_label.len() + 1);
-                let top_border = format!(
-                    "\u{250C}\x1b[33m{top_label}\x1b[0m{}",
-                    "\u{2500}".repeat(top_fill)
-                );
-
-                // Bottom border: └─ short_id ─────
-                let bot_label = format!(" {short_id} ");
-                let bot_fill = box_width.saturating_sub(bot_label.len() + 2);
-                let bot_border = format!(
-                    "\u{2514}\u{2500}\x1b[90m{bot_label}\x1b[0m{}",
-                    "\u{2500}".repeat(bot_fill)
-                );
-
-                eprintln!();
-                eprintln!("  {top_border}");
-                eprintln!("  \u{2502} \x1b[90m{description}\x1b[0m");
-                eprintln!("  \u{2502}");
-
-                // Params
-                let param_lines = format_json_params(&parameters, "  \u{2502}   ");
-                // The format_json_params already includes the indent prefix
-                // but we need to handle the case where each line already starts with it
-                for line in param_lines.lines() {
+                let lines =
+                    render_approval_card(&request_id, &tool_name, &description, &parameters);
+                for line in lines {
                     eprintln!("{line}");
                 }
-
-                eprintln!("  \u{2502}");
-                eprintln!(
-                    "  \u{2502} \x1b[32myes\x1b[0m (y) / \x1b[34malways\x1b[0m (a) / \x1b[31mno\x1b[0m (n)"
-                );
-                eprintln!("  {bot_border}");
-                eprintln!();
             }
             StatusUpdate::AuthRequired {
                 extension_name,

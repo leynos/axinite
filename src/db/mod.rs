@@ -21,7 +21,8 @@ pub mod libsql;
 #[cfg(feature = "libsql")]
 pub mod libsql_migrations;
 
-use std::collections::HashMap;
+pub mod settings;
+
 use std::sync::Arc;
 use std::{future::Future, pin::Pin};
 
@@ -36,13 +37,16 @@ use crate::error::DatabaseError;
 use crate::error::WorkspaceError;
 use crate::history::{
     AgentJobRecord, AgentJobSummary, ConversationMessage, ConversationSummary, JobEventRecord,
-    LlmCallRecord, SandboxJobRecord, SandboxJobSummary, SettingRow,
+    LlmCallRecord, SandboxJobRecord, SandboxJobSummary,
 };
 use crate::workspace::{MemoryChunk, MemoryDocument, WorkspaceEntry};
 use crate::workspace::{SearchConfig, SearchResult};
 
 /// Boxed future used at dyn-backed database trait boundaries.
 pub type DbFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+// Re-export settings types for backward compatibility
+pub use settings::{NativeSettingsStore, SettingKey, SettingsStore, UserId};
 
 // ==================== Parameter Structs ====================
 //
@@ -119,6 +123,7 @@ pub struct HybridSearchParams<'a> {
     pub config: &'a SearchConfig,
 }
 
+// ==================== Newtypes ====================
 /// Create a database backend from configuration, run migrations, and return it.
 ///
 /// This is the shared helper for CLI commands and other call sites that need
@@ -181,7 +186,7 @@ pub async fn connect_with_handles(
             Ok((Arc::new(backend) as Arc<dyn Database>, handles))
         }
         #[cfg(feature = "postgres")]
-        _ => {
+        crate::config::DatabaseBackend::Postgres => {
             let mut handles = DatabaseHandles::default();
             let pg = postgres::PgBackend::new(config)
                 .await
@@ -194,8 +199,12 @@ pub async fn connect_with_handles(
             Ok((Arc::new(pg) as Arc<dyn Database>, handles))
         }
         #[cfg(not(feature = "postgres"))]
-        _ => Err(DatabaseError::Pool(
-            "No database backend available. Enable 'postgres' or 'libsql' feature.".to_string(),
+        crate::config::DatabaseBackend::Postgres => Err(DatabaseError::Pool(
+            "postgres feature not enabled".to_string(),
+        )),
+        #[cfg(not(feature = "libsql"))]
+        crate::config::DatabaseBackend::LibSql => Err(DatabaseError::Pool(
+            "libsql feature not enabled".to_string(),
         )),
     }
 }
@@ -229,7 +238,7 @@ pub async fn create_secrets_store(
             )))
         }
         #[cfg(feature = "postgres")]
-        _ => {
+        crate::config::DatabaseBackend::Postgres => {
             let pg_pool = handles.pg_pool.ok_or_else(|| {
                 DatabaseError::Pool(
                     "PostgreSQL handle missing after connect_with_handles".to_string(),
@@ -241,9 +250,12 @@ pub async fn create_secrets_store(
             )))
         }
         #[cfg(not(feature = "postgres"))]
-        _ => Err(DatabaseError::Pool(
-            "No database backend available for secrets. Enable 'postgres' or 'libsql' feature."
-                .to_string(),
+        crate::config::DatabaseBackend::Postgres => Err(DatabaseError::Pool(
+            "postgres feature not enabled".to_string(),
+        )),
+        #[cfg(not(feature = "libsql"))]
+        crate::config::DatabaseBackend::LibSql => Err(DatabaseError::Pool(
+            "libsql feature not enabled".to_string(),
         )),
     }
 }
@@ -431,6 +443,28 @@ pub trait NativeConversationStore: Send + Sync {
 /// This macro eliminates boilerplate for the ADR-006 dyn/native boundary pattern,
 /// where each object-safe `*Store` trait has a companion `Native*Store` trait
 /// with native async fn methods (RPITIT), and a blanket impl bridges the two.
+///
+/// ## Why this macro is only used for ConversationStore
+///
+/// The other store traits (JobStore, SandboxStore, RoutineStore, ToolFailureStore,
+/// WorkspaceStore) require manual blanket impls because:
+///
+/// Note: SettingsStore now uses the `impl_settings_forwarders!` macro for its blanket impl.
+///
+/// 1. **Generic type parameters with lifetimes**: Some methods accept types like
+///    `LlmCallRecord<'a>` that carry their own lifetime parameters, which the
+///    current macro cannot handle (it only supports `&'a T` references).
+///
+/// 2. **Struct parameter patterns**: Methods that destructure struct parameters
+///    (e.g., `SandboxJobStatusUpdate { id, status, ... }`) would require macro
+///    support for struct destructuring in the forwarding call.
+///
+/// 3. **Complexity vs. benefit**: Extending the macro to handle all edge cases
+///    (nested lifetimes, generic parameters, pattern destructuring) would make
+///    it significantly more complex than the manual impls it replaces.
+///
+/// The manual impls are straightforward and follow the same Box::pin pattern,
+/// making them easy to verify and maintain without macro indirection.
 macro_rules! impl_db_forwarders {
     (
         dyn = $dyn_trait:path,
@@ -450,6 +484,98 @@ macro_rules! impl_db_forwarders {
                     Box::pin(<T as $native_trait>::$name(self, $($arg),*))
                 }
             )*
+        }
+    };
+}
+
+/// Unified macro for delegating async trait methods to an inner field.
+///
+/// This reduces boilerplate when implementing traits by forwarding method calls
+/// to a contained store, repository, or other backend.
+///
+/// # Usage
+///
+/// ```ignore
+/// impl MyTrait for MyStruct {
+///     delegate_async! {
+///         to store;
+///         async fn get_item(&self, id: Uuid) -> Result<Item, Error>;
+///         async fn list_items(&self) -> Result<Vec<Item>, Error>;
+///     }
+/// }
+/// ```
+///
+/// The `to` clause should be just the field name (e.g., `store`, `repo`), not `self.store`.
+#[macro_export]
+macro_rules! delegate_async {
+    (
+        to $field:ident;
+        $(
+            async fn $method:ident ( &self $(, $arg:ident : $ty:ty)* ) -> $ret:ty ;
+        )*
+    ) => {
+        $(
+            async fn $method ( &self $(, $arg : $ty )* ) -> $ret {
+                self . $field . $method ( $( $arg ),* ) .await
+            }
+        )*
+    };
+}
+
+/// Generates individual forwarder methods that wrap native trait calls in Box::pin.
+///
+/// Unlike `impl_db_forwarders!` which generates the entire impl block, this macro
+/// only generates method bodies for use within an existing impl block. This is useful
+/// when implementing the dyn-safe boundary trait by forwarding to the native trait.
+///
+/// # Arms
+///
+/// - `uid_key, method_name(...) -> RetType` — Forwards a method with both `user_id: UserId`
+///   and `key: SettingKey` parameters, plus any extra arguments.
+/// - `uid, method_name(...) -> RetType` — Forwards a method with only `user_id: UserId`
+///   parameter, plus any extra arguments.
+///
+/// Both arms wrap the native trait call in `Box::pin()` to satisfy the DbFuture return type.
+///
+/// # Usage
+///
+/// ```ignore
+/// impl<T> SettingsStore for T
+/// where
+///     T: NativeSettingsStore + Send + Sync,
+/// {
+///     impl_settings_forwarders!(uid_key, get_setting() -> Result<Option<serde_json::Value>, DatabaseError>);
+///     impl_settings_forwarders!(uid, list_settings() -> Result<Vec<SettingRow>, DatabaseError>);
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_settings_forwarders {
+    (uid_key, $name:ident ( $($extra_arg:ident : $extra_ty:ty),* ) -> $ret:ty) => {
+        fn $name<'a>(
+            &'a self,
+            user_id: UserId,
+            key: SettingKey,
+            $( $extra_arg: $extra_ty, )*
+        ) -> DbFuture<'a, $ret> {
+            Box::pin(NativeSettingsStore::$name(
+                self,
+                user_id,
+                key,
+                $( $extra_arg, )*
+            ))
+        }
+    };
+    (uid, $name:ident ( $($extra_arg:ident : $extra_ty:ty),* ) -> $ret:ty) => {
+        fn $name<'a>(
+            &'a self,
+            user_id: UserId,
+            $( $extra_arg: $extra_ty, )*
+        ) -> DbFuture<'a, $ret> {
+            Box::pin(NativeSettingsStore::$name(
+                self,
+                user_id,
+                $( $extra_arg, )*
+            ))
         }
     };
 }
@@ -1223,152 +1349,7 @@ impl<T: NativeToolFailureStore> ToolFailureStore for T {
 }
 
 // ---- SettingsStore (already migrated to DbFuture pattern) ----
-
-pub trait SettingsStore: Send + Sync {
-    fn get_setting<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-    ) -> DbFuture<'a, Result<Option<serde_json::Value>, DatabaseError>>;
-    fn get_setting_full<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-    ) -> DbFuture<'a, Result<Option<SettingRow>, DatabaseError>>;
-    fn set_setting<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-        value: &'a serde_json::Value,
-    ) -> DbFuture<'a, Result<(), DatabaseError>>;
-    fn delete_setting<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-    ) -> DbFuture<'a, Result<bool, DatabaseError>>;
-    fn list_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> DbFuture<'a, Result<Vec<SettingRow>, DatabaseError>>;
-    fn get_all_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> DbFuture<'a, Result<HashMap<String, serde_json::Value>, DatabaseError>>;
-    fn set_all_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-        settings: &'a HashMap<String, serde_json::Value>,
-    ) -> DbFuture<'a, Result<(), DatabaseError>>;
-    fn has_settings<'a>(&'a self, user_id: &'a str) -> DbFuture<'a, Result<bool, DatabaseError>>;
-}
-
-/// Native async sibling trait for concrete settings-store implementations.
-pub trait NativeSettingsStore: Send + Sync {
-    fn get_setting<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-    ) -> impl Future<Output = Result<Option<serde_json::Value>, DatabaseError>> + Send + 'a;
-    fn get_setting_full<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-    ) -> impl Future<Output = Result<Option<SettingRow>, DatabaseError>> + Send + 'a;
-    fn set_setting<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-        value: &'a serde_json::Value,
-    ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
-    fn delete_setting<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-    ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
-    fn list_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> impl Future<Output = Result<Vec<SettingRow>, DatabaseError>> + Send + 'a;
-    fn get_all_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> impl Future<Output = Result<HashMap<String, serde_json::Value>, DatabaseError>> + Send + 'a;
-    fn set_all_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-        settings: &'a HashMap<String, serde_json::Value>,
-    ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
-    fn has_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
-}
-
-impl<T> SettingsStore for T
-where
-    T: NativeSettingsStore + Send + Sync,
-{
-    fn get_setting<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-    ) -> DbFuture<'a, Result<Option<serde_json::Value>, DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::get_setting(self, user_id, key).await })
-    }
-
-    fn get_setting_full<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-    ) -> DbFuture<'a, Result<Option<SettingRow>, DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::get_setting_full(self, user_id, key).await })
-    }
-
-    fn set_setting<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-        value: &'a serde_json::Value,
-    ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::set_setting(self, user_id, key, value).await })
-    }
-
-    fn delete_setting<'a>(
-        &'a self,
-        user_id: &'a str,
-        key: &'a str,
-    ) -> DbFuture<'a, Result<bool, DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::delete_setting(self, user_id, key).await })
-    }
-
-    fn list_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> DbFuture<'a, Result<Vec<SettingRow>, DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::list_settings(self, user_id).await })
-    }
-
-    fn get_all_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> DbFuture<'a, Result<HashMap<String, serde_json::Value>, DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::get_all_settings(self, user_id).await })
-    }
-
-    fn set_all_settings<'a>(
-        &'a self,
-        user_id: &'a str,
-        settings: &'a HashMap<String, serde_json::Value>,
-    ) -> DbFuture<'a, Result<(), DatabaseError>> {
-        Box::pin(
-            async move { NativeSettingsStore::set_all_settings(self, user_id, settings).await },
-        )
-    }
-
-    fn has_settings<'a>(&'a self, user_id: &'a str) -> DbFuture<'a, Result<bool, DatabaseError>> {
-        Box::pin(async move { NativeSettingsStore::has_settings(self, user_id).await })
-    }
-}
+// Moved to src/db/settings.rs
 
 // ---- WorkspaceStore ----
 
