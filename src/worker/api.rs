@@ -12,9 +12,8 @@ use crate::llm::{
 };
 use crate::tools::ToolOutput;
 
+mod client_methods;
 mod types;
-
-use error_mapping::map_remote_tool_status;
 
 pub use types::{
     COMPLETE_PATH, COMPLETE_ROUTE, CREDENTIALS_PATH, CREDENTIALS_ROUTE, CompletionReport,
@@ -249,159 +248,34 @@ impl WorkerHttpClient {
 
         Ok(proxy_resp.output)
     }
+}
 
-    /// Report status to the orchestrator.
-    pub async fn report_status(&self, update: &StatusUpdate) -> Result<(), WorkerError> {
-        let resp = self
-            .client
-            .post(self.url(STATUS_PATH))
-            .bearer_auth(&self.token)
-            .json(update)
-            .send()
-            .await
-            .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.orchestrator_url.clone(),
-                reason: e.to_string(),
-            })?;
+/// Map HTTP response status to appropriate WorkerError for remote tool execution.
+async fn map_remote_tool_status(resp: reqwest::Response) -> WorkerError {
+    let status = resp.status();
+    let retry_after = resp
+        .headers()
+        .get("retry-after")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(std::time::Duration::from_secs);
+    let body = resp.text().await.unwrap_or_default();
+    let reason = format!(
+        "Remote tool execution: orchestrator returned {}: {}",
+        status, body
+    );
 
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(WorkerError::OrchestratorRejected {
-                job_id: self.job_id,
-                reason: format!("status endpoint returned {}: {}", status, body),
-            });
-        }
-
-        Ok(())
-    }
-
-    /// Report a non-terminal status update without failing the worker on rejection.
-    pub async fn report_status_lossy(&self, update: &StatusUpdate) {
-        if let Err(error) = self.report_status(update).await {
-            tracing::warn!(
-                job_id = %self.job_id,
-                state = %update.state,
-                iteration = update.iteration,
-                error = %error,
-                "Worker status report failed"
-            );
-        }
-    }
-
-    /// Post a job event to the orchestrator (fire-and-forget style, logs on failure).
-    pub async fn post_event(&self, payload: &JobEventPayload) {
-        let resp = self
-            .client
-            .post(self.url(EVENT_PATH))
-            .bearer_auth(&self.token)
-            .json(payload)
-            .send()
-            .await;
-
-        match resp {
-            Ok(r) if !r.status().is_success() => {
-                tracing::debug!(
-                    job_id = %self.job_id,
-                    event_type = %payload.event_type,
-                    status = %r.status(),
-                    "Job event POST rejected"
-                );
-            }
-            Err(e) => {
-                tracing::debug!(
-                    job_id = %self.job_id,
-                    event_type = %payload.event_type,
-                    "Job event POST failed: {}", e
-                );
-            }
-            _ => {}
-        }
-    }
-
-    /// Poll the orchestrator for a follow-up prompt.
-    ///
-    /// Returns `None` if no prompt is available (204 No Content).
-    pub async fn poll_prompt(&self) -> Result<Option<PromptResponse>, WorkerError> {
-        let resp = self
-            .client
-            .get(self.url(PROMPT_PATH))
-            .bearer_auth(&self.token)
-            .send()
-            .await
-            .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.orchestrator_url.clone(),
-                reason: e.to_string(),
-            })?;
-
-        if resp.status() == reqwest::StatusCode::NO_CONTENT {
-            return Ok(None);
-        }
-
-        if !resp.status().is_success() {
-            return Err(WorkerError::OrchestratorRejected {
-                job_id: self.job_id,
-                reason: format!("prompt endpoint returned {}", resp.status()),
-            });
-        }
-
-        let prompt: PromptResponse =
-            resp.json().await.map_err(|e| WorkerError::LlmProxyFailed {
-                reason: format!("failed to parse prompt response: {}", e),
-            })?;
-
-        Ok(Some(prompt))
-    }
-
-    /// Fetch credentials granted to this job from the orchestrator.
-    ///
-    /// Returns an empty vec if no credentials are granted (204 No Content)
-    /// or if the endpoint returns 404. The caller should set each credential
-    /// as an environment variable before starting the execution loop.
-    pub async fn fetch_credentials(&self) -> Result<Vec<CredentialResponse>, WorkerError> {
-        let resp = self
-            .client
-            .get(self.url(CREDENTIALS_PATH))
-            .bearer_auth(&self.token)
-            .send()
-            .await
-            .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.orchestrator_url.clone(),
-                reason: e.to_string(),
-            })?;
-
-        // 204 or 404 means no credentials granted, not an error
-        if resp.status() == reqwest::StatusCode::NO_CONTENT
-            || resp.status() == reqwest::StatusCode::NOT_FOUND
-        {
-            return Ok(vec![]);
-        }
-
-        if !resp.status().is_success() {
-            return Err(WorkerError::SecretResolveFailed {
-                secret_name: "(all)".to_string(),
-                reason: format!("credentials endpoint returned {}", resp.status()),
-            });
-        }
-
-        resp.json()
-            .await
-            .map_err(|e| WorkerError::SecretResolveFailed {
-                secret_name: "(all)".to_string(),
-                reason: format!("failed to parse credentials response: {}", e),
-            })
-    }
-
-    /// Signal job completion to the orchestrator.
-    pub async fn report_complete(&self, report: &CompletionReport) -> Result<(), WorkerError> {
-        let _: serde_json::Value = self
-            .post_json(COMPLETE_PATH, report, "report complete")
-            .await?;
-        Ok(())
+    match status {
+        reqwest::StatusCode::BAD_REQUEST => WorkerError::BadRequest { reason },
+        reqwest::StatusCode::FORBIDDEN => WorkerError::Unauthorized { reason },
+        reqwest::StatusCode::TOO_MANY_REQUESTS => WorkerError::RateLimited {
+            reason,
+            retry_after,
+        },
+        reqwest::StatusCode::BAD_GATEWAY => WorkerError::BadGateway { reason },
+        _ => WorkerError::RemoteToolFailed { reason },
     }
 }
 
 #[cfg(test)]
 mod tests;
-
-mod error_mapping;
