@@ -248,8 +248,8 @@ For each module, in separate commits:
 
 ### Phase 4: Clean up
 
-- [x] Assess readiness for `async-trait` removal from `[dependencies]` (pending
-  final Milestone 5 audit and explicit removal commit)
+- [x] Assess readiness for `async-trait` removal from `[dependencies]` (assessed
+  2026-03-23; approved and completed in Milestone 5 on 2026-03-24)
 - [x] Document which trait families still require it and why
 - [x] Remove `async-trait` from `Cargo.toml` (completed 2026-03-24)
 

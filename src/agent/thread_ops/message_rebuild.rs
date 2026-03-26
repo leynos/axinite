@@ -304,7 +304,7 @@ mod tests {
             make_db_msg("assistant", "Done"),
         ];
         let result = rebuild_chat_messages_from_db(&messages, &safety);
-        // Malformed JSON is silently skipped
+        // Malformed JSON is skipped with a warning (logs message_id and parse error)
         assert_eq!(result.len(), 2);
     }
 
