@@ -656,11 +656,13 @@ impl AppBuilder {
                 ));
             let wasm_tool_activation: Arc<dyn crate::extensions::WasmToolActivationPort> =
                 Arc::new(crate::extensions::LiveWasmToolActivation::new(
-                    wasm_tool_runtime.clone(),
-                    self.config.wasm.tools_dir.clone(),
-                    Arc::clone(tools),
-                    Arc::clone(&ext_secrets),
-                    Some(Arc::clone(hooks)),
+                    crate::extensions::LiveWasmToolActivationConfig {
+                        wasm_tool_runtime: wasm_tool_runtime.clone(),
+                        wasm_tools_dir: self.config.wasm.tools_dir.clone(),
+                        tool_registry: Arc::clone(tools),
+                        secrets: Arc::clone(&ext_secrets),
+                        hooks: Some(Arc::clone(hooks)),
+                    },
                 ));
             let live_wasm_channel = Arc::new(crate::extensions::LiveWasmChannelActivation::new());
             let wasm_channel_activation: Arc<dyn crate::extensions::WasmChannelActivationPort> =

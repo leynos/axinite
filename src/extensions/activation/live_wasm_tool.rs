@@ -22,20 +22,23 @@ pub struct LiveWasmToolActivation {
     hooks: Option<Arc<HookRegistry>>,
 }
 
+/// Configuration for [`LiveWasmToolActivation`].
+pub struct LiveWasmToolActivationConfig {
+    pub wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
+    pub wasm_tools_dir: PathBuf,
+    pub tool_registry: Arc<ToolRegistry>,
+    pub secrets: Arc<dyn SecretsStore + Send + Sync>,
+    pub hooks: Option<Arc<HookRegistry>>,
+}
+
 impl LiveWasmToolActivation {
-    pub fn new(
-        wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
-        wasm_tools_dir: PathBuf,
-        tool_registry: Arc<ToolRegistry>,
-        secrets: Arc<dyn SecretsStore + Send + Sync>,
-        hooks: Option<Arc<HookRegistry>>,
-    ) -> Self {
+    pub fn new(config: LiveWasmToolActivationConfig) -> Self {
         Self {
-            wasm_tool_runtime,
-            wasm_tools_dir,
-            tool_registry,
-            secrets,
-            hooks,
+            wasm_tool_runtime: config.wasm_tool_runtime,
+            wasm_tools_dir: config.wasm_tools_dir,
+            tool_registry: config.tool_registry,
+            secrets: config.secrets,
+            hooks: config.hooks,
         }
     }
 }
