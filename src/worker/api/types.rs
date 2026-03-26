@@ -307,14 +307,8 @@ mod tests {
         assert_eq!(EVENT_ROUTE, "/worker/{job_id}/event");
         assert_eq!(PROMPT_ROUTE, "/worker/{job_id}/prompt");
         assert_eq!(CREDENTIALS_ROUTE, "/worker/{job_id}/credentials");
-        assert_eq!(
-            REMOTE_TOOL_CATALOG_ROUTE,
-            "/worker/{job_id}/tools/catalog"
-        );
-        assert_eq!(
-            REMOTE_TOOL_EXECUTE_ROUTE,
-            "/worker/{job_id}/tools/execute"
-        );
+        assert_eq!(REMOTE_TOOL_CATALOG_ROUTE, "/worker/{job_id}/tools/catalog");
+        assert_eq!(REMOTE_TOOL_EXECUTE_ROUTE, "/worker/{job_id}/tools/execute");
         assert_eq!(WORKER_HEALTH_ROUTE, "/health");
     }
 }
