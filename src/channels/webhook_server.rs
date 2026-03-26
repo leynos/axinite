@@ -309,7 +309,7 @@ mod tests {
         );
         assert_ne!(
             addr1, addr2,
-            "Address should change after restart_with_addr"
+            "Address should change after restart_with_listener"
         );
 
         // Verify the new server is actually listening on the new address
