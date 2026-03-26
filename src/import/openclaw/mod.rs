@@ -94,8 +94,8 @@ impl OpenClawImporter {
 
     /// Persist workspace documents (Group 3).
     async fn persist_workspace(&self, reader: &OpenClawReader) -> usize {
-        if reader.list_workspace_files().is_ok() {
-            match self
+        match reader.list_workspace_files() {
+            Ok(_) => match self
                 .workspace
                 .import_from_directory(&self.opts.openclaw_path.join("workspace"))
                 .await
@@ -105,9 +105,11 @@ impl OpenClawImporter {
                     tracing::warn!("Failed to import workspace documents: {}", e);
                     0
                 }
+            },
+            Err(e) => {
+                tracing::warn!("Failed to enumerate workspace files: {}", e);
+                0
             }
-        } else {
-            0
         }
     }
 
@@ -199,8 +201,14 @@ impl OpenClawImporter {
             // DRY RUN: Count only
             stats.settings = settings_map.len();
             stats.secrets = creds.len();
-            if let Ok(count) = reader.list_workspace_files() {
-                stats.documents = count;
+            match reader.list_workspace_files() {
+                Ok(count) => stats.documents = count,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to enumerate workspace files for dry-run count: {}",
+                        e
+                    );
+                }
             }
             stats.chunks = all_chunks.len();
             stats.conversations = all_conversations.len();

@@ -21,8 +21,18 @@ fn parse_tool_call_entries(
         .iter()
         .enumerate()
         .filter(|(_, c)| {
-            c.get("call_id").and_then(|v| v.as_str()).is_none()
-                || c.get("name").and_then(|v| v.as_str()).is_none()
+            // Reject missing, null, or empty/whitespace-only strings
+            let call_id_invalid = c
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().is_empty())
+                .unwrap_or(true);
+            let name_invalid = c
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().is_empty())
+                .unwrap_or(true);
+            call_id_invalid || name_invalid
         })
         .map(|(idx, _)| idx)
         .collect();
@@ -310,6 +320,18 @@ mod tests {
     ]))]
     #[case::null_fields(serde_json::json!([
         {"name": null, "call_id": "call_0", "parameters": {}, "result": "ok"}
+    ]))]
+    #[case::empty_call_id(serde_json::json!([
+        {"name": "search", "call_id": "", "parameters": {}, "result": "ok"}
+    ]))]
+    #[case::empty_name(serde_json::json!([
+        {"name": "", "call_id": "call_0", "parameters": {}, "result": "ok"}
+    ]))]
+    #[case::whitespace_call_id(serde_json::json!([
+        {"name": "search", "call_id": "   ", "parameters": {}, "result": "ok"}
+    ]))]
+    #[case::whitespace_name(serde_json::json!([
+        {"name": "  \t  ", "call_id": "call_0", "parameters": {}, "result": "ok"}
     ]))]
     fn test_rebuild_skips_malformed_tool_calls(#[case] malformed_json: serde_json::Value) {
         assert_malformed_tool_calls_skipped(malformed_json);

@@ -449,7 +449,7 @@ pub trait NativeConversationStore: Send + Sync {
 /// The other store traits (JobStore, SandboxStore, RoutineStore, ToolFailureStore,
 /// WorkspaceStore) require manual blanket impls because:
 ///
-/// Note: SettingsStore now uses the `settings_delegate!` macro for its blanket impl.
+/// Note: SettingsStore now uses the `impl_settings_forwarders!` macro for its blanket impl.
 ///
 /// 1. **Generic type parameters with lifetimes**: Some methods accept types like
 ///    `LlmCallRecord<'a>` that carry their own lifetime parameters, which the

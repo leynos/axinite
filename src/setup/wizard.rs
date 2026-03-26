@@ -668,7 +668,10 @@ impl SetupWizard {
         }
 
         self.db_pool = Some(pool);
-        self.db_backend = None; // Clear stale libSQL handle
+        #[cfg(feature = "libsql")]
+        {
+            self.db_backend = None; // Clear stale libSQL handle
+        }
         Ok(())
     }
 
@@ -696,7 +699,10 @@ impl SetupWizard {
         };
 
         self.db_backend = Some(Arc::new(backend));
-        self.db_pool = None; // Clear stale PostgreSQL handle
+        #[cfg(feature = "postgres")]
+        {
+            self.db_pool = None; // Clear stale PostgreSQL handle
+        }
         Ok(())
     }
 

@@ -8,9 +8,6 @@ use crate::history::SettingRow;
 
 use super::PgBackend;
 
-// TODO(refactor): This delegation macro is very similar to `delegate_to_repo` in workspace.rs
-// and `settings_delegate` in mod.rs. Consider consolidating these into a shared helper macro
-// or at least standardizing on one pattern to reduce duplication and cognitive overhead.
 impl NativeSettingsStore for PgBackend {
     crate::delegate_async! {
         to store;

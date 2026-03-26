@@ -49,6 +49,12 @@ impl From<&str> for UserId {
     }
 }
 
+impl From<String> for UserId {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
 /// Setting key newtype for settings store methods.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SettingKey(String);
@@ -72,6 +78,12 @@ impl SettingKey {
 impl From<&str> for SettingKey {
     fn from(s: &str) -> Self {
         Self(s.to_owned())
+    }
+}
+
+impl From<String> for SettingKey {
+    fn from(s: String) -> Self {
+        Self(s)
     }
 }
 
@@ -219,7 +231,7 @@ mod tests {
         assert_string_newtype_contract!(SettingKey, "api_key", "other_key");
     }
 
-    // Dummy implementation for testing settings_delegate macro
+    // Dummy implementation for testing impl_settings_forwarders macro
     struct DummySettingsStore;
 
     impl NativeSettingsStore for DummySettingsStore {
@@ -285,10 +297,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_settings_delegate_macro() {
+    async fn test_settings_forwarders_macro() {
         let store = DummySettingsStore;
 
-        // Test that the blanket impl (via settings_delegate! macro) correctly accepts newtypes
+        // Test that the blanket impl (via impl_settings_forwarders! macro) correctly accepts newtypes
         let result =
             SettingsStore::get_setting(&store, "test_user".into(), "test_key".into()).await;
         let value = result.expect("get_setting for test_user/test_key failed");

@@ -17,8 +17,8 @@ remain in `src/`.
 All dyn-backed trait families now use ADR 006's dual-trait pattern: a
 dyn-safe trait with boxed futures for the object-safe boundary, and a
 `Native*` sibling trait with RPITIT (return-position impl Trait in trait) for
-ergonomic implementation. The direct `async-trait` dependency remains in
-`Cargo.toml` pending the Milestone 5 audit and explicit removal commit.
+ergonomic implementation. The direct `async-trait` dependency was removed from
+`Cargo.toml` on 2026-03-24 (Milestone 5).
 
 This document tracks the phased migration: Phase 2 (concrete-only traits),
 Phase 3 (ADR 006 pilot), and Phase 4 (cleanup).
