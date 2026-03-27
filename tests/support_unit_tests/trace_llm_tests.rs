@@ -120,10 +120,23 @@ fn make_completion_request(user_msg: &str) -> CompletionRequest {
     CompletionRequest::new(vec![ChatMessage::user(user_msg)])
 }
 
+fn single_text_step_llm(
+    user_msg: &str,
+    content: &str,
+    input_tokens: u32,
+    output_tokens: u32,
+) -> TraceLlm {
+    let trace = LlmTrace::single_turn(
+        "test-model",
+        user_msg,
+        vec![text_step(content, input_tokens, output_tokens)],
+    );
+    TraceLlm::from_trace(trace)
+}
+
 #[tokio::test]
 async fn replays_text_response() {
-    let trace = LlmTrace::single_turn("test-model", "hi", vec![text_step("Hello world", 100, 20)]);
-    let llm = TraceLlm::from_trace(trace);
+    let llm = single_text_step_llm("hi", "Hello world", 100, 20);
 
     let resp = llm.complete_with_tools(make_request("hi")).await.unwrap();
 
@@ -261,8 +274,7 @@ async fn from_json_file() {
 
 #[tokio::test]
 async fn complete_text_step() {
-    let trace = LlmTrace::single_turn("test-model", "hi", vec![text_step("plain text", 30, 8)]);
-    let llm = TraceLlm::from_trace(trace);
+    let llm = single_text_step_llm("hi", "plain text", 30, 8);
 
     let resp = llm.complete(make_completion_request("hi")).await.unwrap();
 
