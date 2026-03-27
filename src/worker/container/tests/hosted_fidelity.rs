@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path, State};
-use rstest::rstest;
+use rstest::{fixture, rstest};
 use uuid::Uuid;
 
 use crate::llm::ToolDefinition;
@@ -16,6 +16,15 @@ use crate::worker::api::{RemoteToolCatalogResponse, WorkerHttpClient};
 use crate::worker::container::{WorkerConfig, WorkerRuntime};
 
 use super::remote_tools::{TestState, spawn_test_server};
+
+/// Test harness containing a [`WorkerRuntime`] configured with remote tools
+/// and the server join handle for shutdown.
+pub struct HostedCatalogHarness {
+    /// The worker runtime with remote tools registered.
+    pub runtime: WorkerRuntime,
+    /// Join handle for the background test server.
+    pub server: tokio::task::JoinHandle<()>,
+}
 
 fn complex_orchestrator_tool_definition() -> ToolDefinition {
     crate::test_support::build_complex_tool_definition(
@@ -40,10 +49,10 @@ async fn remote_tool_catalog_with_complex_tool(
     })
 }
 
-#[rstest]
-#[tokio::test]
-async fn hosted_worker_proxy_definition_matches_orchestrator_canonical_definition()
--> Result<(), Box<dyn std::error::Error>> {
+/// Creates a [`HostedCatalogHarness`] with a test server serving the complex
+/// tool catalog.
+#[fixture]
+async fn hosted_catalog_harness() -> Result<HostedCatalogHarness, Box<dyn std::error::Error>> {
     let (base_url, server) = spawn_test_server(remote_tool_catalog_with_complex_tool).await?;
 
     let client = Arc::new(WorkerHttpClient::new(
@@ -59,6 +68,16 @@ async fn hosted_worker_proxy_definition_matches_orchestrator_canonical_definitio
         },
         client,
     );
+
+    Ok(HostedCatalogHarness { runtime, server })
+}
+
+#[rstest]
+#[tokio::test]
+async fn hosted_worker_proxy_definition_matches_orchestrator_canonical_definition(
+    #[future] hosted_catalog_harness: Result<HostedCatalogHarness, Box<dyn std::error::Error>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let HostedCatalogHarness { runtime, server } = hosted_catalog_harness.await?;
 
     runtime.register_remote_tools().await?;
 
