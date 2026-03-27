@@ -26,6 +26,27 @@ fn test_url_construction(#[case] path: &str) {
     );
 }
 
+#[rstest]
+#[case("llm/complete")]
+#[case("credentials")]
+fn test_url_construction_with_trailing_slash(#[case] path: &str) {
+    let client = WorkerHttpClient::new(
+        "http://host.docker.internal:50051/".to_string(),
+        Uuid::nil(),
+        TEST_BEARER_TOKEN.to_string(),
+    );
+
+    assert_eq!(
+        client.url(path),
+        format!(
+            "http://host.docker.internal:50051/worker/{}/{}",
+            Uuid::nil(),
+            path
+        ),
+        "trailing slash in base URL must be normalised away"
+    );
+}
+
 #[test]
 fn remote_tool_catalog_url_construction() {
     let client = WorkerHttpClient::new(

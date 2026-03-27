@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: COMPLETE
+Status: IN-PROGRESS
 
 ## Purpose / big picture
 
@@ -33,7 +33,7 @@ fail with a clear, diagnostic message.
 
 This plan tracks the worker-orchestrator parity portion of
 [Issue #16](https://github.com/leynos/axinite/issues/16) and addresses
-[RFC 0001 §Migration Plan](docs/rfcs/0001-expose-mcp-tool-definitions.md#migration-plan)
+[RFC 0001 §Migration Plan](../rfcs/0001-expose-mcp-tool-definitions.md#migration-plan)
 step 5.
 
 ## Approval gates
@@ -725,6 +725,7 @@ cite the exact log paths.
 - [x] Evaluate and implement behavioural tests (milestone 5).
 - [x] Synchronize documentation (milestone 6).
 - [x] Run full validation gates and publish (milestone 7).
+- [ ] Address code-review follow-ups (post-review).
 
 ### Milestone 1 findings
 
@@ -844,7 +845,8 @@ these gaps.
 
 All milestones completed successfully. The test matrix is now in place and
 enforces the schema-fidelity, execution-routing, and contract-parity guarantees
-named in RFC 0001 and roadmap item `1.1.4`.
+named in RFC 0001 and roadmap item `1.1.4`. Code-review follow-ups are being
+addressed in a subsequent pass (see progress checklist above).
 
 ### Files added or modified
 

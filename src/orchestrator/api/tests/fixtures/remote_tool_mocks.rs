@@ -331,14 +331,9 @@ pub(crate) fn complex_tool_definition() -> crate::llm::ToolDefinition {
 /// making it suitable for round-trip fidelity tests.
 pub(crate) fn complex_tool_stub() -> StubTool {
     let def = complex_tool_definition();
-    StubTool {
-        name: "remote_tool_fidelity_fixture",
-        description: def.description,
-        parameters: def.parameters,
-        domain: ToolDomain::Orchestrator,
-        always_approve: false,
-        eligibility: HostedToolEligibility::Eligible,
-        catalog_source: Some(HostedToolCatalogSource::Mcp),
-        output: StubOutput::EchoParams,
-    }
+    StubTool::hosted(
+        "remote_tool_fidelity_fixture",
+        def.description,
+        def.parameters,
+    )
 }

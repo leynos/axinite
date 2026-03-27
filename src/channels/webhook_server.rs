@@ -58,33 +58,6 @@ impl WebhookServer {
         self.bind_and_spawn(app).await
     }
 
-    /// Accept a pre-bound listener, merge route fragments, and spawn the
-    /// server. Eliminates the TOCTOU window that `start()` has between port
-    /// discovery and the actual bind, making it suitable for tests that
-    /// allocate ephemeral ports.
-    #[cfg(test)]
-    pub async fn start_with_listener(
-        &mut self,
-        listener: tokio::net::TcpListener,
-    ) -> Result<(), ChannelError> {
-        let mut app = Router::new();
-        for fragment in self.routes.drain(..) {
-            app = app.merge(fragment);
-        }
-        self.merged_router = Some(app.clone());
-
-        let local_addr = listener
-            .local_addr()
-            .map_err(|e| ChannelError::StartupFailed {
-                name: "webhook_server".to_string(),
-                reason: format!("Failed to get listener local address: {e}"),
-            })?;
-        self.config.addr = local_addr;
-
-        self.spawn_with_listener(listener, app);
-        Ok(())
-    }
-
     /// Bind a listener to the configured address and spawn the server task.
     /// Private helper used by both start() and restart_with_addr().
     async fn bind_and_spawn(&mut self, app: Router) -> Result<(), ChannelError> {
@@ -95,22 +68,8 @@ impl WebhookServer {
                 reason: format!("Failed to bind to {}: {}", self.config.addr, e),
             })?;
 
-        // Overwrite the configured address with the concrete socket address
-        // so that an ephemeral `:0` bind is resolved to the real port.
-        self.config.addr = listener
-            .local_addr()
-            .map_err(|e| ChannelError::StartupFailed {
-                name: "webhook_server".to_string(),
-                reason: format!("Failed to get listener local address: {e}"),
-            })?;
+        tracing::info!("Webhook server listening on {}", self.config.addr);
 
-        self.spawn_with_listener(listener, app);
-        Ok(())
-    }
-
-    /// Spawn the axum server on an already-bound listener.
-    fn spawn_with_listener(&mut self, listener: tokio::net::TcpListener, app: Router) {
-        let addr = self.config.addr;
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         self.shutdown_tx = Some(shutdown_tx);
 
@@ -126,8 +85,8 @@ impl WebhookServer {
             }
         });
 
-        tracing::info!("Webhook server listening on {}", addr);
         self.handle = Some(handle);
+        Ok(())
     }
 
     /// Gracefully shut down the current listener and rebind to a new address.
@@ -173,46 +132,6 @@ impl WebhookServer {
         }
     }
 
-    /// Gracefully shut down the current listener and rebind using a pre-bound
-    /// listener. Eliminates the TOCTOU window between port reservation and
-    /// bind, making it suitable for tests.
-    ///
-    /// Unlike [`restart_with_addr`], this test-only helper does not support
-    /// rollback. [`restart_with_addr`] binds the replacement first and can keep
-    /// the old listener alive if that bind fails. This method shuts down the
-    /// old listener before calling [`Self::spawn_with_listener`], so there is
-    /// no rollback path if spawning were to fail. That trade-off is acceptable
-    /// in tests because [`Self::spawn_with_listener`] is infallible.
-    #[cfg(test)]
-    pub async fn restart_with_listener(
-        &mut self,
-        listener: tokio::net::TcpListener,
-    ) -> Result<(), ChannelError> {
-        let app = self
-            .merged_router
-            .clone()
-            .ok_or_else(|| ChannelError::StartupFailed {
-                name: "webhook_server".to_string(),
-                reason: "restart_with_listener called before start()".to_string(),
-            })?;
-
-        let new_addr = listener
-            .local_addr()
-            .map_err(|e| ChannelError::StartupFailed {
-                name: "webhook_server".to_string(),
-                reason: format!("Failed to get listener local address: {e}"),
-            })?;
-
-        // Stop the old listener before spawning the new one. Unlike
-        // restart_with_addr, we do not provide rollback semantics because the
-        // new listener is already bound and assumed to be valid.
-        self.shutdown().await;
-
-        self.config.addr = new_addr;
-        self.spawn_with_listener(listener, app);
-        Ok(())
-    }
-
     /// Return the current bind address.
     pub fn current_addr(&self) -> SocketAddr {
         self.config.addr
@@ -231,66 +150,68 @@ impl WebhookServer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::net::TcpListener as StdTcpListener;
+
     use axum::Json;
     use rstest::{fixture, rstest};
     use serde_json::json;
-    use std::net::TcpListener as StdTcpListener;
 
-    /// Bind an ephemeral port on localhost, enable non-blocking mode, and
-    /// convert it to a `tokio::net::TcpListener`, returning the listener and
-    /// its resolved [`SocketAddr`]. The port remains bound throughout so
-    /// there is no TOCTOU window between discovery and first use.
+    use super::*;
+
+    /// A started webhook server with a `/health` route and a pre-built client.
+    struct StartedWebhookServer {
+        server: WebhookServer,
+        addr: SocketAddr,
+        client: reqwest::Client,
+    }
+
+    /// Finds an available port, creates a [`WebhookServer`] with a `/health`
+    /// route, starts the server, and returns the address and a client.
     #[fixture]
-    fn bind_ephemeral_tokio_listener() -> (tokio::net::TcpListener, std::net::SocketAddr) {
-        let std_listener =
-            StdTcpListener::bind("127.0.0.1:0").expect("Failed to bind ephemeral port");
-        std_listener
-            .set_nonblocking(true)
-            .expect("Failed to set non-blocking");
-        let addr = std_listener.local_addr().expect("Failed to get local addr");
-        let tokio_listener = tokio::net::TcpListener::from_std(std_listener)
-            .expect("Failed to convert to tokio listener");
-        (tokio_listener, addr)
+    async fn started_webhook_server() -> StartedWebhookServer {
+        let port = {
+            let listener =
+                StdTcpListener::bind("127.0.0.1:0").expect("find available port for fixture");
+            listener
+                .local_addr()
+                .expect("get local addr for fixture")
+                .port()
+        };
+        let addr: SocketAddr = format!("127.0.0.1:{}", port)
+            .parse()
+            .expect("parse fixture address");
+        let mut server = WebhookServer::new(WebhookServerConfig { addr });
+        server.add_routes(Router::new().route(
+            "/health",
+            axum::routing::get(|| async { Json(json!({"status": "ok"})) }),
+        ));
+        server.start().await.expect("start fixture webhook server");
+        StartedWebhookServer {
+            server,
+            addr,
+            client: reqwest::Client::new(),
+        }
     }
 
     #[rstest]
     #[tokio::test]
     async fn test_restart_with_addr_rebinds_listener(
-        #[from(bind_ephemeral_tokio_listener)] listener_and_addr1: (
-            tokio::net::TcpListener,
-            std::net::SocketAddr,
-        ),
-        #[from(bind_ephemeral_tokio_listener)] listener_and_addr2: (
-            tokio::net::TcpListener,
-            std::net::SocketAddr,
-        ),
+        #[future] started_webhook_server: StartedWebhookServer,
     ) {
-        let (tokio_listener1, addr1) = listener_and_addr1;
-        let (tokio_listener2, addr2) = listener_and_addr2;
+        let StartedWebhookServer {
+            mut server,
+            addr: addr1,
+            client,
+        } = started_webhook_server.await;
 
-        let mut server = WebhookServer::new(WebhookServerConfig { addr: addr1 });
-
-        let test_router = axum::Router::new().route(
-            "/health",
-            axum::routing::get(|| async { Json(json!({"status": "ok"})) }),
-        );
-        server.add_routes(test_router);
-
-        server
-            .start_with_listener(tokio_listener1)
-            .await
-            .expect("Failed to start server");
         assert_eq!(
             server.current_addr(),
             addr1,
             "Server should be bound to initial address"
         );
 
-        // Verify the first server is actually listening
-        let client = reqwest::Client::new();
         let response = client
-            .get(format!("http://{addr1}/health"))
+            .get(format!("http://{}/health", addr1))
             .send()
             .await
             .expect("Failed to send request to first server");
@@ -300,12 +221,23 @@ mod tests {
             "First server should respond to health check"
         );
 
-        // Hand the pre-bound listener directly to the server — no TOCTOU
-        // gap because the port was never released.
+        // Find a second available port and restart
+        let port2 = {
+            let listener =
+                StdTcpListener::bind("127.0.0.1:0").expect("Failed to find available port 2");
+            listener
+                .local_addr()
+                .expect("Failed to get local addr")
+                .port()
+        };
+        let addr2: SocketAddr = format!("127.0.0.1:{}", port2)
+            .parse()
+            .expect("parse second address");
+
         server
-            .restart_with_listener(tokio_listener2)
+            .restart_with_addr(addr2)
             .await
-            .expect("Failed to restart with new listener");
+            .expect("Failed to restart with new addr");
 
         assert_eq!(
             server.current_addr(),
@@ -314,12 +246,11 @@ mod tests {
         );
         assert_ne!(
             addr1, addr2,
-            "Address should change after restart_with_listener"
+            "Address should change after restart_with_addr"
         );
 
-        // Verify the new server is actually listening on the new address
         let response = client
-            .get(format!("http://{addr2}/health"))
+            .get(format!("http://{}/health", addr2))
             .send()
             .await
             .expect("Failed to send request to restarted server");
@@ -329,10 +260,9 @@ mod tests {
             "Restarted server should respond to health check on new address"
         );
 
-        // Verify the old address is no longer responding
         let old_result = tokio::time::timeout(
             std::time::Duration::from_millis(200),
-            client.get(format!("http://{addr1}/health")).send(),
+            client.get(format!("http://{}/health", addr1)).send(),
         )
         .await;
         assert!(
@@ -340,72 +270,60 @@ mod tests {
             "Old address should not respond after server restarts"
         );
 
-        // Clean up
         server.shutdown().await;
     }
 
     #[rstest]
     #[tokio::test]
     async fn test_restart_with_addr_rollback_on_bind_failure(
-        bind_ephemeral_tokio_listener: (tokio::net::TcpListener, std::net::SocketAddr),
+        #[future] started_webhook_server: StartedWebhookServer,
     ) {
-        let (tokio_listener, addr1) = bind_ephemeral_tokio_listener;
+        let StartedWebhookServer {
+            mut server,
+            addr: addr1,
+            client,
+        } = started_webhook_server.await;
 
-        // Bind a second ephemeral port and hold it open — this is the
-        // "occupied" address that restart_with_addr must fail to bind.
-        let blocker = StdTcpListener::bind("127.0.0.1:0").expect("Failed to bind blocker port");
-        let blocked_addr = blocker
-            .local_addr()
-            .expect("Failed to get blocker local addr");
-
-        let mut server = WebhookServer::new(WebhookServerConfig { addr: addr1 });
-
-        let test_router = axum::Router::new().route(
-            "/health",
-            axum::routing::get(|| async { Json(json!({"status": "ok"})) }),
-        );
-        server.add_routes(test_router);
-
-        server
-            .start_with_listener(tokio_listener)
-            .await
-            .expect("Failed to start server");
-
-        // Verify the server is listening
-        let client = reqwest::Client::new();
         let response = client
-            .get(format!("http://{addr1}/health"))
+            .get(format!("http://{}/health", addr1))
             .send()
             .await
             .expect("Failed to send request");
         assert_eq!(response.status(), 200, "Server should be listening");
 
-        // Attempt restart on the occupied address (should fail because
-        // blocker still holds the port).
-        let result = server.restart_with_addr(blocked_addr).await;
-        assert!(result.is_err(), "Restart with occupied address should fail");
+        // Bind a temporary listener to create a conflict
+        let conflict_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("Failed to bind conflict listener");
+        let conflict_addr = conflict_listener
+            .local_addr()
+            .expect("Failed to get conflict address");
 
-        // Verify the old address is still responding (rollback succeeded)
+        let result = server.restart_with_addr(conflict_addr).await;
+        assert!(
+            result.is_err(),
+            "Restart with already-bound address should fail"
+        );
+
+        drop(conflict_listener);
+
         let response = client
-            .get(format!("http://{addr1}/health"))
+            .get(format!("http://{}/health", addr1))
             .send()
             .await
-            .expect("Failed to send request to old address");
+            .expect("Failed to send request to old address after failed restart");
         assert_eq!(
             response.status(),
             200,
             "Old listener should still be running after failed restart"
         );
 
-        // Verify the server address is unchanged
         assert_eq!(
             server.current_addr(),
             addr1,
             "Server address should be restored after failed restart"
         );
 
-        // Clean up — drop blocker so its port is released
-        drop(blocker);
         server.shutdown().await;
     }
 }

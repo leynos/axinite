@@ -5,6 +5,11 @@ use std::sync::Arc;
 use rstest::rstest;
 
 use super::super::remote_tools::hosted_remote_tool_catalog;
+
+/// Upper bound for reading hosted remote-tool catalogue response bodies in
+/// tests. Large enough to accommodate growth in the canonical fixture without
+/// triggering a silent truncation.
+const MAX_REMOTE_TOOL_CATALOG_BYTES: usize = 64 * 1024;
 use super::fixtures::remote_tool_mocks::{
     ToolFixture, build_tool_fixture, complex_tool_definition, complex_tool_stub,
 };
@@ -39,7 +44,7 @@ async fn remote_tool_catalog_preserves_full_tool_definition_payload(test_state: 
         .expect("send hosted remote-tool catalog request");
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(resp.into_body(), 4096)
+    let body = axum::body::to_bytes(resp.into_body(), MAX_REMOTE_TOOL_CATALOG_BYTES)
         .await
         .expect("read hosted remote-tool catalog response body");
     let catalog: crate::worker::api::RemoteToolCatalogResponse =

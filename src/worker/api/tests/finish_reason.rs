@@ -1,4 +1,4 @@
-//! Finish reason deserialization and conversion tests.
+//! Finish reason deserialisation and conversion tests.
 
 use rstest::rstest;
 use serde_json::json;
@@ -64,11 +64,16 @@ fn test_status_update_new_serializes_worker_state() {
 
 #[test]
 fn test_status_update_deserializes_worker_state() {
-    use crate::worker::api::StatusUpdate;
+    use crate::worker::api::{StatusUpdate, WorkerState};
 
     let json = r#"{"state":"completed","message":"done","iteration":5}"#;
     let update: StatusUpdate =
         serde_json::from_str(json).expect("failed to deserialize StatusUpdate");
+    assert_eq!(
+        update.state,
+        WorkerState::Completed,
+        "\"state\":\"completed\" must map to WorkerState::Completed"
+    );
     assert_eq!(update.message, Some("done".to_string()));
     assert_eq!(update.iteration, 5);
 }

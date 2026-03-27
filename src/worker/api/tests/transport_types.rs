@@ -1,4 +1,4 @@
-//! Transport type serialization fidelity tests.
+//! Transport type serialisation fidelity tests.
 
 use rstest::rstest;
 
