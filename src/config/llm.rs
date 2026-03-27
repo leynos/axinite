@@ -11,6 +11,20 @@ use crate::llm::registry::{ProviderProtocol, ProviderRegistry};
 use crate::llm::session::SessionConfig;
 use crate::settings::Settings;
 
+struct ProviderResolutionInputs {
+    canonical_id: String,
+    protocol: ProviderProtocol,
+    api_key_env: Option<String>,
+    base_url_env: Option<String>,
+    model_env: String,
+    default_model: String,
+    default_base_url: Option<String>,
+    extra_headers_env: Option<String>,
+    api_key_required: bool,
+    base_url_required: bool,
+    unsupported_params: Vec<String>,
+}
+
 impl LlmConfig {
     /// Create a test-friendly config without reading env vars.
     #[cfg(feature = "libsql")]
@@ -55,16 +69,10 @@ impl LlmConfig {
             .unwrap_or_else(|| default.to_string()))
     }
 
-    // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
-    pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
-        Self::resolve_from(&EnvContext::capture_ambient(), settings)
-    }
-
-    pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
-        let registry = ProviderRegistry::load();
-
-        // Determine backend: env var > settings > default ("nearai")
+    fn resolve_backend_name(
+        ctx: &EnvContext,
+        settings: &Settings,
+    ) -> Result<(String, bool, bool), ConfigError> {
         let backend = if let Some(b) = optional_env_from(ctx, "LLM_BACKEND")? {
             b
         } else if let Some(ref b) = settings.llm_backend {
@@ -73,32 +81,41 @@ impl LlmConfig {
             "nearai".to_string()
         };
 
-        // Validate the backend is known
         let backend_lower = backend.to_lowercase();
         let is_nearai =
             backend_lower == "nearai" || backend_lower == "near_ai" || backend_lower == "near";
         let is_bedrock =
             backend_lower == "bedrock" || backend_lower == "aws_bedrock" || backend_lower == "aws";
 
-        if !is_nearai && !is_bedrock && registry.find(&backend_lower).is_none() {
-            tracing::warn!(
-                "Unknown LLM backend '{}'. Will attempt as openai_compatible fallback.",
-                backend
-            );
+        if !is_nearai && !is_bedrock {
+            let registry = ProviderRegistry::load();
+            if registry.find(&backend_lower).is_none() {
+                tracing::warn!(
+                    "Unknown LLM backend '{}'. Will attempt as openai_compatible fallback.",
+                    backend
+                );
+            }
         }
 
-        // Session config (used by NearAI provider for OAuth/session-token auth)
-        let session = SessionConfig {
+        Ok((backend_lower, is_nearai, is_bedrock))
+    }
+
+    fn resolve_session_config(ctx: &EnvContext) -> Result<SessionConfig, ConfigError> {
+        Ok(SessionConfig {
             auth_base_url: optional_env_from(ctx, "NEARAI_AUTH_URL")?
                 .unwrap_or_else(|| "https://private.near.ai".to_string()),
             session_path: optional_env_from(ctx, "NEARAI_SESSION_PATH")?
                 .map(PathBuf::from)
                 .unwrap_or_else(|| ctx.ironclaw_base_dir().join("session.json")),
-        };
+        })
+    }
 
-        // Always resolve NEAR AI config (used for embeddings even when not the primary backend)
+    fn resolve_nearai_config(
+        ctx: &EnvContext,
+        settings: &Settings,
+    ) -> Result<NearAiConfig, ConfigError> {
         let nearai_api_key = optional_env_from(ctx, "NEARAI_API_KEY")?.map(SecretString::from);
-        let nearai = NearAiConfig {
+        Ok(NearAiConfig {
             model: Self::resolve_model(ctx, "NEARAI_MODEL", settings, "zai-org/GLM-latest")?,
             cheap_model: optional_env_from(ctx, "NEARAI_CHEAP_MODEL")?,
             base_url: optional_env_from(ctx, "NEARAI_BASE_URL")?.unwrap_or_else(|| {
@@ -137,9 +154,206 @@ impl LlmConfig {
             )?,
             failover_cooldown_threshold: parse_optional_env_from(ctx, "LLM_FAILOVER_THRESHOLD", 3)?,
             smart_routing_cascade: parse_optional_env_from(ctx, "SMART_ROUTING_CASCADE", true)?,
+        })
+    }
+
+    fn resolve_bedrock_config(
+        ctx: &EnvContext,
+        settings: &Settings,
+        is_bedrock: bool,
+    ) -> Result<Option<BedrockConfig>, ConfigError> {
+        if !is_bedrock {
+            return Ok(None);
+        }
+        let explicit_region =
+            optional_env_from(ctx, "BEDROCK_REGION")?.or_else(|| settings.bedrock_region.clone());
+        if explicit_region.is_none() {
+            tracing::info!("BEDROCK_REGION not set, defaulting to us-east-1");
+        }
+        let region = explicit_region.unwrap_or_else(|| "us-east-1".to_string());
+        let model = optional_env_from(ctx, "BEDROCK_MODEL")?
+            .or_else(|| settings.selected_model.clone())
+            .ok_or_else(|| ConfigError::MissingRequired {
+                key: "BEDROCK_MODEL".to_string(),
+                hint: "Set BEDROCK_MODEL when LLM_BACKEND=bedrock".to_string(),
+            })?;
+        let cross_region = optional_env_from(ctx, "BEDROCK_CROSS_REGION")?
+            .or_else(|| settings.bedrock_cross_region.clone());
+        if let Some(ref cr) = cross_region
+            && !matches!(cr.as_str(), "us" | "eu" | "apac" | "global")
+        {
+            return Err(ConfigError::InvalidValue {
+                key: "BEDROCK_CROSS_REGION".to_string(),
+                message: format!(
+                    "'{}' is not valid, expected one of: us, eu, apac, global",
+                    cr
+                ),
+            });
+        }
+        let profile =
+            optional_env_from(ctx, "AWS_PROFILE")?.or_else(|| settings.bedrock_profile.clone());
+        Ok(Some(BedrockConfig {
+            region,
+            model,
+            cross_region,
+            profile,
+        }))
+    }
+
+    fn resolve_provider_credentials(
+        ctx: &EnvContext,
+        canonical_id: &str,
+        api_key_env: Option<&str>,
+        api_key_required: bool,
+        backend: &str,
+    ) -> Result<(Option<SecretString>, Option<SecretString>), ConfigError> {
+        let api_key = if let Some(env_var) = api_key_env {
+            optional_env_from(ctx, env_var)?.map(SecretString::from)
+        } else {
+            None
         };
 
-        // Resolve registry provider config (for non-NearAI, non-Bedrock backends)
+        if api_key_required
+            && api_key.is_none()
+            && let Some(env_var) = api_key_env
+        {
+            tracing::debug!(
+                "API key not found in {env_var} for backend '{backend}'. \
+                 Will be injected from secrets store if available."
+            );
+        }
+
+        let oauth_token = if canonical_id == "anthropic" {
+            optional_env_from(ctx, "ANTHROPIC_OAUTH_TOKEN")?.map(SecretString::from)
+        } else {
+            None
+        };
+
+        let api_key = if api_key.is_none() && oauth_token.is_some() {
+            Some(SecretString::from(OAUTH_PLACEHOLDER.to_string()))
+        } else {
+            api_key
+        };
+
+        Ok((api_key, oauth_token))
+    }
+
+    fn resolve_provider_base_url(
+        ctx: &EnvContext,
+        base_url_env: Option<&str>,
+        backend: &str,
+        settings: &Settings,
+        default_base_url: Option<&str>,
+        base_url_required: bool,
+    ) -> Result<String, ConfigError> {
+        let base_url = if let Some(env_var) = base_url_env {
+            optional_env_from(ctx, env_var)?
+        } else {
+            None
+        }
+        .or_else(|| match backend {
+            "ollama" => settings.ollama_base_url.clone(),
+            "openai_compatible" | "openrouter" => settings.openai_compatible_base_url.clone(),
+            _ => None,
+        })
+        .or_else(|| default_base_url.map(String::from))
+        .unwrap_or_default();
+
+        if base_url_required
+            && base_url.is_empty()
+            && let Some(env_var) = base_url_env
+        {
+            return Err(ConfigError::MissingRequired {
+                key: env_var.to_string(),
+                hint: format!("Set {env_var} when LLM_BACKEND={backend}"),
+            });
+        }
+
+        Ok(base_url)
+    }
+
+    fn resolve_cache_retention(
+        ctx: &EnvContext,
+        canonical_id: &str,
+    ) -> Result<CacheRetention, ConfigError> {
+        if canonical_id != "anthropic" {
+            return Ok(CacheRetention::default());
+        }
+        Ok(optional_env_from(ctx, "ANTHROPIC_CACHE_RETENTION")?
+            .and_then(|val| match val.parse::<CacheRetention>() {
+                Ok(r) => Some(r),
+                Err(e) => {
+                    tracing::warn!("Invalid ANTHROPIC_CACHE_RETENTION: {e}; defaulting to short");
+                    None
+                }
+            })
+            .unwrap_or_default())
+    }
+
+    fn resolve_provider_definition(
+        registry: &ProviderRegistry,
+        backend: &str,
+    ) -> ProviderResolutionInputs {
+        let def = registry
+            .find(backend)
+            .or_else(|| registry.find("openai_compatible"));
+
+        if let Some(def) = def {
+            ProviderResolutionInputs {
+                canonical_id: def.id.clone(),
+                protocol: def.protocol,
+                api_key_env: def.api_key_env.clone(),
+                base_url_env: def.base_url_env.clone(),
+                model_env: def.model_env.clone(),
+                default_model: def.default_model.clone(),
+                default_base_url: def.default_base_url.clone(),
+                extra_headers_env: def.extra_headers_env.clone(),
+                api_key_required: def.api_key_required,
+                base_url_required: def.base_url_required,
+                unsupported_params: def.unsupported_params.clone(),
+            }
+        } else {
+            ProviderResolutionInputs {
+                canonical_id: backend.to_string(),
+                protocol: ProviderProtocol::OpenAiCompletions,
+                api_key_env: Some("LLM_API_KEY".to_string()),
+                base_url_env: Some("LLM_BASE_URL".to_string()),
+                model_env: "LLM_MODEL".to_string(),
+                default_model: "default".to_string(),
+                default_base_url: None,
+                extra_headers_env: Some("LLM_EXTRA_HEADERS".to_string()),
+                api_key_required: false,
+                base_url_required: true,
+                unsupported_params: Vec::new(),
+            }
+        }
+    }
+
+    fn resolve_extra_headers(
+        ctx: &EnvContext,
+        extra_headers_env: Option<&str>,
+    ) -> Result<Vec<(String, String)>, ConfigError> {
+        if let Some(env_var) = extra_headers_env {
+            optional_env_from(ctx, env_var)?
+                .map(|val| parse_extra_headers(&val))
+                .transpose()
+                .map(|headers| headers.unwrap_or_default())
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    // Backwards-compatible ambient entrypoint retained for existing callers.
+    #[allow(dead_code)]
+    pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
+        Self::resolve_from(&EnvContext::capture_ambient(), settings)
+    }
+
+    pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
+        let registry = ProviderRegistry::load();
+        let (backend_lower, is_nearai, is_bedrock) = Self::resolve_backend_name(ctx, settings)?;
+        let session = Self::resolve_session_config(ctx)?;
+        let nearai = Self::resolve_nearai_config(ctx, settings)?;
         let provider = if is_nearai || is_bedrock {
             None
         } else {
@@ -150,45 +364,7 @@ impl LlmConfig {
                 settings,
             )?)
         };
-
-        let bedrock = if is_bedrock {
-            let explicit_region = optional_env_from(ctx, "BEDROCK_REGION")?
-                .or_else(|| settings.bedrock_region.clone());
-            if explicit_region.is_none() {
-                tracing::info!("BEDROCK_REGION not set, defaulting to us-east-1");
-            }
-            let region = explicit_region.unwrap_or_else(|| "us-east-1".to_string());
-            let model = optional_env_from(ctx, "BEDROCK_MODEL")?
-                .or_else(|| settings.selected_model.clone())
-                .ok_or_else(|| ConfigError::MissingRequired {
-                    key: "BEDROCK_MODEL".to_string(),
-                    hint: "Set BEDROCK_MODEL when LLM_BACKEND=bedrock".to_string(),
-                })?;
-            let cross_region = optional_env_from(ctx, "BEDROCK_CROSS_REGION")?
-                .or_else(|| settings.bedrock_cross_region.clone());
-            if let Some(ref cr) = cross_region
-                && !matches!(cr.as_str(), "us" | "eu" | "apac" | "global")
-            {
-                return Err(ConfigError::InvalidValue {
-                    key: "BEDROCK_CROSS_REGION".to_string(),
-                    message: format!(
-                        "'{}' is not valid, expected one of: us, eu, apac, global",
-                        cr
-                    ),
-                });
-            }
-            let profile =
-                optional_env_from(ctx, "AWS_PROFILE")?.or_else(|| settings.bedrock_profile.clone());
-            Some(BedrockConfig {
-                region,
-                model,
-                cross_region,
-                profile,
-            })
-        } else {
-            None
-        };
-
+        let bedrock = Self::resolve_bedrock_config(ctx, settings, is_bedrock)?;
         let request_timeout_secs = parse_optional_env_from(ctx, "LLM_REQUEST_TIMEOUT_SECS", 120)?;
 
         Ok(Self {
@@ -216,155 +392,36 @@ impl LlmConfig {
         registry: &ProviderRegistry,
         settings: &Settings,
     ) -> Result<RegistryProviderConfig, ConfigError> {
-        // Look up provider definition. Fall back to openai_compatible if unknown.
-        let def = registry
-            .find(backend)
-            .or_else(|| registry.find("openai_compatible"));
-
-        let (
-            canonical_id,
-            protocol,
-            api_key_env,
-            base_url_env,
-            model_env,
-            default_model,
-            default_base_url,
-            extra_headers_env,
-            api_key_required,
-            base_url_required,
-            unsupported_params,
-        ) = if let Some(def) = def {
-            (
-                def.id.as_str(),
-                def.protocol,
-                def.api_key_env.as_deref(),
-                def.base_url_env.as_deref(),
-                def.model_env.as_str(),
-                def.default_model.as_str(),
-                def.default_base_url.as_deref(),
-                def.extra_headers_env.as_deref(),
-                def.api_key_required,
-                def.base_url_required,
-                def.unsupported_params.clone(),
-            )
-        } else {
-            // Absolute fallback: treat as generic openai_completions
-            (
-                backend,
-                ProviderProtocol::OpenAiCompletions,
-                Some("LLM_API_KEY"),
-                Some("LLM_BASE_URL"),
-                "LLM_MODEL",
-                "default",
-                None,
-                Some("LLM_EXTRA_HEADERS"),
-                false,
-                true,
-                Vec::new(),
-            )
-        };
-
-        // Resolve API key from env
-        let api_key = if let Some(env_var) = api_key_env {
-            optional_env_from(ctx, env_var)?.map(SecretString::from)
-        } else {
-            None
-        };
-
-        if api_key_required && api_key.is_none() {
-            // Don't hard-fail here. The key might be injected later from the secrets store
-            // via inject_llm_keys_from_secrets(). Log a warning instead.
-            if let Some(env_var) = api_key_env {
-                tracing::debug!(
-                    "API key not found in {env_var} for backend '{backend}'. \
-                     Will be injected from secrets store if available."
-                );
-            }
-        }
-
-        // Resolve base URL: env var > settings (backward compat) > registry default
-        let base_url = if let Some(env_var) = base_url_env {
-            optional_env_from(ctx, env_var)?
-        } else {
-            None
-        }
-        .or_else(|| {
-            // Backward compat: check legacy settings fields
-            match backend {
-                "ollama" => settings.ollama_base_url.clone(),
-                "openai_compatible" | "openrouter" => settings.openai_compatible_base_url.clone(),
-                _ => None,
-            }
-        })
-        .or_else(|| default_base_url.map(String::from))
-        .unwrap_or_default();
-
-        if base_url_required
-            && base_url.is_empty()
-            && let Some(env_var) = base_url_env
-        {
-            return Err(ConfigError::MissingRequired {
-                key: env_var.to_string(),
-                hint: format!("Set {env_var} when LLM_BACKEND={backend}"),
-            });
-        }
-
-        // Resolve model
-        let model = Self::resolve_model(ctx, model_env, settings, default_model)?;
-
-        // Resolve extra headers
-        let extra_headers = if let Some(env_var) = extra_headers_env {
-            optional_env_from(ctx, env_var)?
-                .map(|val| parse_extra_headers(&val))
-                .transpose()?
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-
-        // Resolve OAuth token (Anthropic-specific: `claude login` flow).
-        // Only check for OAuth token when the provider is actually Anthropic.
-        let oauth_token = if canonical_id == "anthropic" {
-            optional_env_from(ctx, "ANTHROPIC_OAUTH_TOKEN")?.map(SecretString::from)
-        } else {
-            None
-        };
-        let api_key = if api_key.is_none() && oauth_token.is_some() {
-            // OAuth token present but no API key: use a placeholder so the
-            // config block is populated. The provider factory will route to
-            // the OAuth provider instead of rig-core's x-api-key client.
-            Some(SecretString::from(OAUTH_PLACEHOLDER.to_string()))
-        } else {
-            api_key
-        };
-
-        // Resolve Anthropic prompt cache retention from env (default: Short).
-        let cache_retention: CacheRetention = if canonical_id == "anthropic" {
-            optional_env_from(ctx, "ANTHROPIC_CACHE_RETENTION")?
-                .and_then(|val| match val.parse::<CacheRetention>() {
-                    Ok(r) => Some(r),
-                    Err(e) => {
-                        tracing::warn!(
-                            "Invalid ANTHROPIC_CACHE_RETENTION: {e}; defaulting to short"
-                        );
-                        None
-                    }
-                })
-                .unwrap_or_default()
-        } else {
-            CacheRetention::default()
-        };
+        let inputs = Self::resolve_provider_definition(registry, backend);
+        let (api_key, oauth_token) = Self::resolve_provider_credentials(
+            ctx,
+            &inputs.canonical_id,
+            inputs.api_key_env.as_deref(),
+            inputs.api_key_required,
+            backend,
+        )?;
+        let base_url = Self::resolve_provider_base_url(
+            ctx,
+            inputs.base_url_env.as_deref(),
+            backend,
+            settings,
+            inputs.default_base_url.as_deref(),
+            inputs.base_url_required,
+        )?;
+        let model = Self::resolve_model(ctx, &inputs.model_env, settings, &inputs.default_model)?;
+        let extra_headers = Self::resolve_extra_headers(ctx, inputs.extra_headers_env.as_deref())?;
+        let cache_retention = Self::resolve_cache_retention(ctx, &inputs.canonical_id)?;
 
         Ok(RegistryProviderConfig {
-            protocol,
-            provider_id: canonical_id.to_string(),
+            protocol: inputs.protocol,
+            provider_id: inputs.canonical_id,
             api_key,
             base_url,
             model,
             extra_headers,
             oauth_token,
             cache_retention,
-            unsupported_params,
+            unsupported_params: inputs.unsupported_params,
         })
     }
 }
