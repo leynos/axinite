@@ -484,7 +484,7 @@ Location: `src/tools/builtin/worker_remote_tool_proxy.rs` (tests module).
 
 Add or extend a test that asserts the full `ToolOutput` returned by the
 proxy matches the `ToolOutput` returned by the mock orchestrator, including
-`result`, `cost`, `raw`, and `duration` fields. This catches field loss
+`result`, `cost`, `raw`, and `duration_ms` fields. This catches field loss
 in the execution response path.
 
 Name the test
@@ -893,7 +893,7 @@ The implementation added 9 new test functions covering:
 4. Catalogue version determinism and content sensitivity (milestone 2).
 5. Proxy execution routing through the correct orchestrator endpoint path
    (milestone 3).
-6. Full `ToolOutput` field preservation including cost, raw, and duration
+6. Full `ToolOutput` field preservation including cost, raw, and duration_ms
    (milestone 3).
 7. Route constant sharing and correctness between worker and orchestrator
    (milestone 4).
@@ -904,9 +904,8 @@ The implementation added 9 new test functions covering:
 
 All tests use in-process mock servers and fixtures, avoiding external
 dependencies. All tests follow existing `rstest` patterns and naming conventions.
-The format check (`make check-fmt`) passed after running `cargo fmt --all`.
-Markdown linting has minor pre-existing issues in `docs/roadmap.md` (multiple
-consecutive blank lines) that are unrelated to this ExecPlan.
+The format check (`make check-fmt`) passed after running `cargo fmt --all`. All
+validation gates have been run and passed successfully.
 
 ### Validation evidence
 
