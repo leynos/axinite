@@ -59,7 +59,9 @@ fn test_status_update_new_serializes_worker_state() {
 
     let update = StatusUpdate::new(WorkerState::Running, None, 0);
     let json = serde_json::to_string(&update).expect("failed to serialize StatusUpdate");
-    assert!(json.contains(r#""state":"running""#));
+    let value: serde_json::Value =
+        serde_json::from_str(&json).expect("failed to parse serialized StatusUpdate");
+    assert_eq!(value["state"], "running");
 }
 
 #[test]
