@@ -5,6 +5,24 @@ use crate::config::helpers::{parse_bool_env_from, parse_option_env_from, parse_o
 use crate::error::ConfigError;
 use crate::settings::Settings;
 
+fn resolve_default_timezone(
+    ctx: &crate::config::EnvContext,
+    settings: &crate::settings::Settings,
+) -> Result<String, crate::error::ConfigError> {
+    let tz: String = crate::config::helpers::parse_optional_env_from(
+        ctx,
+        "DEFAULT_TIMEZONE",
+        settings.agent.default_timezone.clone(),
+    )?;
+    if crate::timezone::parse_timezone(&tz).is_none() {
+        return Err(crate::error::ConfigError::InvalidValue {
+            key: "DEFAULT_TIMEZONE".into(),
+            message: format!("invalid IANA timezone: '{tz}'"),
+        });
+    }
+    Ok(tz)
+}
+
 /// Agent behavior configuration.
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
@@ -114,20 +132,7 @@ impl AgentConfig {
                 "AGENT_AUTO_APPROVE_TOOLS",
                 settings.agent.auto_approve_tools,
             )?,
-            default_timezone: {
-                let tz: String = parse_optional_env_from(
-                    ctx,
-                    "DEFAULT_TIMEZONE",
-                    settings.agent.default_timezone.clone(),
-                )?;
-                if crate::timezone::parse_timezone(&tz).is_none() {
-                    return Err(ConfigError::InvalidValue {
-                        key: "DEFAULT_TIMEZONE".into(),
-                        message: format!("invalid IANA timezone: '{tz}'"),
-                    });
-                }
-                tz
-            },
+            default_timezone: resolve_default_timezone(ctx, settings)?,
             max_tokens_per_job: parse_optional_env_from(
                 ctx,
                 "AGENT_MAX_TOKENS_PER_JOB",

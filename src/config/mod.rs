@@ -232,32 +232,8 @@ impl Config {
         let path = explicit_path
             .map(std::path::PathBuf::from)
             .unwrap_or_else(Settings::default_toml_path);
-
-        match Settings::load_toml(&path) {
-            Ok(Some(toml_settings)) => {
-                settings.merge_from(&toml_settings);
-                tracing::debug!("Loaded TOML config from {}", path.display());
-            }
-            Ok(None) => {
-                if explicit_path.is_some() {
-                    return Err(ConfigError::ParseError(format!(
-                        "Config file not found: {}",
-                        path.display()
-                    )));
-                }
-            }
-            Err(e) => {
-                if explicit_path.is_some() {
-                    return Err(ConfigError::ParseError(format!(
-                        "Failed to load config file {}: {}",
-                        path.display(),
-                        e
-                    )));
-                }
-                tracing::warn!("Failed to load default config file: {}", e);
-            }
-        }
-        Ok(())
+        // An explicit path must exist; the default path may be absent.
+        Self::apply_toml_overlay_at(settings, &path, explicit_path.is_none())
     }
 
     fn apply_toml_overlay_at(

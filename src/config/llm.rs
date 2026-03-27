@@ -11,18 +11,111 @@ use crate::llm::registry::{ProviderProtocol, ProviderRegistry};
 use crate::llm::session::SessionConfig;
 use crate::settings::Settings;
 
-struct ProviderResolutionInputs {
-    canonical_id: String,
-    protocol: ProviderProtocol,
-    api_key_env: Option<String>,
-    base_url_env: Option<String>,
-    model_env: String,
-    default_model: String,
-    default_base_url: Option<String>,
-    extra_headers_env: Option<String>,
+fn resolve_api_key(
+    ctx: &EnvContext,
+    api_key_env: Option<&str>,
     api_key_required: bool,
+    backend: &str,
+) -> Result<Option<SecretString>, ConfigError> {
+    let key = if let Some(env_var) = api_key_env {
+        optional_env_from(ctx, env_var)?.map(SecretString::from)
+    } else {
+        None
+    };
+    if api_key_required
+        && key.is_none()
+        && let Some(env_var) = api_key_env
+    {
+        tracing::debug!(
+            "API key not found in {env_var} for backend '{backend}'. \
+             Will be injected from secrets store if available."
+        );
+    }
+    Ok(key)
+}
+
+fn resolve_base_url(
+    ctx: &EnvContext,
+    base_url_env: Option<&str>,
     base_url_required: bool,
-    unsupported_params: Vec<String>,
+    backend: &str,
+    settings: &Settings,
+    default_base_url: Option<&str>,
+) -> Result<String, ConfigError> {
+    let base_url = if let Some(env_var) = base_url_env {
+        optional_env_from(ctx, env_var)?
+    } else {
+        None
+    }
+    .or_else(|| match backend {
+        "ollama" => settings.ollama_base_url.clone(),
+        "openai_compatible" | "openrouter" => settings.openai_compatible_base_url.clone(),
+        _ => None,
+    })
+    .or_else(|| default_base_url.map(String::from))
+    .unwrap_or_default();
+
+    if base_url_required
+        && base_url.is_empty()
+        && let Some(env_var) = base_url_env
+    {
+        return Err(ConfigError::MissingRequired {
+            key: env_var.to_string(),
+            hint: format!("Set {env_var} when LLM_BACKEND={backend}"),
+        });
+    }
+    Ok(base_url)
+}
+
+fn resolve_extra_headers(
+    ctx: &EnvContext,
+    extra_headers_env: Option<&str>,
+) -> Result<Vec<(String, String)>, ConfigError> {
+    let headers = if let Some(env_var) = extra_headers_env {
+        optional_env_from(ctx, env_var)?
+            .map(|val| parse_extra_headers(&val))
+            .transpose()?
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    Ok(headers)
+}
+
+fn resolve_anthropic_credentials(
+    ctx: &EnvContext,
+    canonical_id: &str,
+    api_key: Option<SecretString>,
+) -> Result<(Option<SecretString>, Option<SecretString>), ConfigError> {
+    let oauth_token = if canonical_id == "anthropic" {
+        optional_env_from(ctx, "ANTHROPIC_OAUTH_TOKEN")?.map(SecretString::from)
+    } else {
+        None
+    };
+    let api_key = if api_key.is_none() && oauth_token.is_some() {
+        Some(SecretString::from(OAUTH_PLACEHOLDER.to_string()))
+    } else {
+        api_key
+    };
+    Ok((api_key, oauth_token))
+}
+
+fn resolve_provider_cache_retention(
+    ctx: &EnvContext,
+    canonical_id: &str,
+) -> Result<CacheRetention, ConfigError> {
+    if canonical_id != "anthropic" {
+        return Ok(CacheRetention::default());
+    }
+    Ok(optional_env_from(ctx, "ANTHROPIC_CACHE_RETENTION")?
+        .and_then(|val| match val.parse::<CacheRetention>() {
+            Ok(r) => Some(r),
+            Err(e) => {
+                tracing::warn!("Invalid ANTHROPIC_CACHE_RETENTION: {e}; defaulting to short");
+                None
+            }
+        })
+        .unwrap_or_default())
 }
 
 impl LlmConfig {
@@ -200,149 +293,6 @@ impl LlmConfig {
         }))
     }
 
-    fn resolve_provider_credentials(
-        ctx: &EnvContext,
-        canonical_id: &str,
-        api_key_env: Option<&str>,
-        api_key_required: bool,
-        backend: &str,
-    ) -> Result<(Option<SecretString>, Option<SecretString>), ConfigError> {
-        let api_key = if let Some(env_var) = api_key_env {
-            optional_env_from(ctx, env_var)?.map(SecretString::from)
-        } else {
-            None
-        };
-
-        if api_key_required
-            && api_key.is_none()
-            && let Some(env_var) = api_key_env
-        {
-            tracing::debug!(
-                "API key not found in {env_var} for backend '{backend}'. \
-                 Will be injected from secrets store if available."
-            );
-        }
-
-        let oauth_token = if canonical_id == "anthropic" {
-            optional_env_from(ctx, "ANTHROPIC_OAUTH_TOKEN")?.map(SecretString::from)
-        } else {
-            None
-        };
-
-        let api_key = if api_key.is_none() && oauth_token.is_some() {
-            Some(SecretString::from(OAUTH_PLACEHOLDER.to_string()))
-        } else {
-            api_key
-        };
-
-        Ok((api_key, oauth_token))
-    }
-
-    fn resolve_provider_base_url(
-        ctx: &EnvContext,
-        base_url_env: Option<&str>,
-        backend: &str,
-        settings: &Settings,
-        default_base_url: Option<&str>,
-        base_url_required: bool,
-    ) -> Result<String, ConfigError> {
-        let base_url = if let Some(env_var) = base_url_env {
-            optional_env_from(ctx, env_var)?
-        } else {
-            None
-        }
-        .or_else(|| match backend {
-            "ollama" => settings.ollama_base_url.clone(),
-            "openai_compatible" | "openrouter" => settings.openai_compatible_base_url.clone(),
-            _ => None,
-        })
-        .or_else(|| default_base_url.map(String::from))
-        .unwrap_or_default();
-
-        if base_url_required
-            && base_url.is_empty()
-            && let Some(env_var) = base_url_env
-        {
-            return Err(ConfigError::MissingRequired {
-                key: env_var.to_string(),
-                hint: format!("Set {env_var} when LLM_BACKEND={backend}"),
-            });
-        }
-
-        Ok(base_url)
-    }
-
-    fn resolve_cache_retention(
-        ctx: &EnvContext,
-        canonical_id: &str,
-    ) -> Result<CacheRetention, ConfigError> {
-        if canonical_id != "anthropic" {
-            return Ok(CacheRetention::default());
-        }
-        Ok(optional_env_from(ctx, "ANTHROPIC_CACHE_RETENTION")?
-            .and_then(|val| match val.parse::<CacheRetention>() {
-                Ok(r) => Some(r),
-                Err(e) => {
-                    tracing::warn!("Invalid ANTHROPIC_CACHE_RETENTION: {e}; defaulting to short");
-                    None
-                }
-            })
-            .unwrap_or_default())
-    }
-
-    fn resolve_provider_definition(
-        registry: &ProviderRegistry,
-        backend: &str,
-    ) -> ProviderResolutionInputs {
-        let def = registry
-            .find(backend)
-            .or_else(|| registry.find("openai_compatible"));
-
-        if let Some(def) = def {
-            ProviderResolutionInputs {
-                canonical_id: def.id.clone(),
-                protocol: def.protocol,
-                api_key_env: def.api_key_env.clone(),
-                base_url_env: def.base_url_env.clone(),
-                model_env: def.model_env.clone(),
-                default_model: def.default_model.clone(),
-                default_base_url: def.default_base_url.clone(),
-                extra_headers_env: def.extra_headers_env.clone(),
-                api_key_required: def.api_key_required,
-                base_url_required: def.base_url_required,
-                unsupported_params: def.unsupported_params.clone(),
-            }
-        } else {
-            ProviderResolutionInputs {
-                canonical_id: backend.to_string(),
-                protocol: ProviderProtocol::OpenAiCompletions,
-                api_key_env: Some("LLM_API_KEY".to_string()),
-                base_url_env: Some("LLM_BASE_URL".to_string()),
-                model_env: "LLM_MODEL".to_string(),
-                default_model: "default".to_string(),
-                default_base_url: None,
-                extra_headers_env: Some("LLM_EXTRA_HEADERS".to_string()),
-                api_key_required: false,
-                base_url_required: true,
-                unsupported_params: Vec::new(),
-            }
-        }
-    }
-
-    fn resolve_extra_headers(
-        ctx: &EnvContext,
-        extra_headers_env: Option<&str>,
-    ) -> Result<Vec<(String, String)>, ConfigError> {
-        if let Some(env_var) = extra_headers_env {
-            optional_env_from(ctx, env_var)?
-                .map(|val| parse_extra_headers(&val))
-                .transpose()
-                .map(|headers| headers.unwrap_or_default())
-        } else {
-            Ok(Vec::new())
-        }
-    }
-
     // Backwards-compatible ambient entrypoint retained for existing callers.
     #[allow(dead_code)]
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
@@ -392,36 +342,76 @@ impl LlmConfig {
         registry: &ProviderRegistry,
         settings: &Settings,
     ) -> Result<RegistryProviderConfig, ConfigError> {
-        let inputs = Self::resolve_provider_definition(registry, backend);
-        let (api_key, oauth_token) = Self::resolve_provider_credentials(
+        let def = registry
+            .find(backend)
+            .or_else(|| registry.find("openai_compatible"));
+
+        let (
+            canonical_id,
+            protocol,
+            api_key_env,
+            base_url_env,
+            model_env,
+            default_model,
+            default_base_url,
+            extra_headers_env,
+            api_key_required,
+            base_url_required,
+            unsupported_params,
+        ) = if let Some(def) = def {
+            (
+                def.id.as_str(),
+                def.protocol,
+                def.api_key_env.as_deref(),
+                def.base_url_env.as_deref(),
+                def.model_env.as_str(),
+                def.default_model.as_str(),
+                def.default_base_url.as_deref(),
+                def.extra_headers_env.as_deref(),
+                def.api_key_required,
+                def.base_url_required,
+                def.unsupported_params.clone(),
+            )
+        } else {
+            (
+                backend,
+                ProviderProtocol::OpenAiCompletions,
+                Some("LLM_API_KEY"),
+                Some("LLM_BASE_URL"),
+                "LLM_MODEL",
+                "default",
+                None,
+                Some("LLM_EXTRA_HEADERS"),
+                false,
+                true,
+                Vec::new(),
+            )
+        };
+
+        let api_key = resolve_api_key(ctx, api_key_env, api_key_required, backend)?;
+        let base_url = resolve_base_url(
             ctx,
-            &inputs.canonical_id,
-            inputs.api_key_env.as_deref(),
-            inputs.api_key_required,
-            backend,
-        )?;
-        let base_url = Self::resolve_provider_base_url(
-            ctx,
-            inputs.base_url_env.as_deref(),
+            base_url_env,
+            base_url_required,
             backend,
             settings,
-            inputs.default_base_url.as_deref(),
-            inputs.base_url_required,
+            default_base_url,
         )?;
-        let model = Self::resolve_model(ctx, &inputs.model_env, settings, &inputs.default_model)?;
-        let extra_headers = Self::resolve_extra_headers(ctx, inputs.extra_headers_env.as_deref())?;
-        let cache_retention = Self::resolve_cache_retention(ctx, &inputs.canonical_id)?;
+        let model = Self::resolve_model(ctx, model_env, settings, default_model)?;
+        let extra_headers = resolve_extra_headers(ctx, extra_headers_env)?;
+        let (api_key, oauth_token) = resolve_anthropic_credentials(ctx, canonical_id, api_key)?;
+        let cache_retention = resolve_provider_cache_retention(ctx, canonical_id)?;
 
         Ok(RegistryProviderConfig {
-            protocol: inputs.protocol,
-            provider_id: inputs.canonical_id,
+            protocol,
+            provider_id: canonical_id.to_string(),
             api_key,
             base_url,
             model,
             extra_headers,
             oauth_token,
             cache_retention,
-            unsupported_params: inputs.unsupported_params,
+            unsupported_params,
         })
     }
 }
