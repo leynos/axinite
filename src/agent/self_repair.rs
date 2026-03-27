@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::context::{ContextManager, JobState};
@@ -124,8 +125,6 @@ where
 /// Default self-repair implementation.
 pub struct DefaultSelfRepair {
     context_manager: Arc<ContextManager>,
-    // TODO: use for time-based stuck detection (currently only max_repair_attempts is checked)
-    #[allow(dead_code)]
     stuck_threshold: Duration,
     max_repair_attempts: u32,
     store: Option<Arc<dyn Database>>,
@@ -176,23 +175,21 @@ impl NativeSelfRepair for DefaultSelfRepair {
     async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
         let stuck_ids = self.context_manager.find_stuck_jobs().await;
         let mut stuck_jobs = Vec::new();
+        let now = Utc::now();
 
         for job_id in stuck_ids {
             if let Ok(ctx) = self.context_manager.get_context(job_id).await
                 && ctx.state == JobState::Stuck
+                && let Some(stuck_since) = ctx.stuck_since()
             {
-                let stuck_duration = ctx
-                    .started_at
-                    .map(|start| {
-                        let now = Utc::now();
-                        let duration = now.signed_duration_since(start);
-                        Duration::from_secs(duration.num_seconds().max(0) as u64)
-                    })
-                    .unwrap_or_default();
+                let stuck_duration = duration_since(now, stuck_since);
+                if stuck_duration < self.stuck_threshold {
+                    continue;
+                }
 
                 stuck_jobs.push(StuckJob {
                     job_id,
-                    last_activity: ctx.started_at.unwrap_or(ctx.created_at),
+                    last_activity: stuck_since,
                     stuck_duration,
                     last_error: None,
                     repair_attempts: ctx.repair_attempts,
@@ -381,66 +378,154 @@ impl NativeSelfRepair for DefaultSelfRepair {
     }
 }
 
+fn duration_since(now: DateTime<Utc>, start: DateTime<Utc>) -> Duration {
+    let duration = now.signed_duration_since(start);
+    Duration::from_secs(duration.num_seconds().max(0) as u64)
+}
+
+/// Notification emitted by the background repair loop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepairNotification {
+    pub message: String,
+}
+
 /// Background repair task that periodically checks for and repairs issues.
 pub struct RepairTask {
     repair: Arc<dyn SelfRepair>,
     check_interval: Duration,
+    shutdown_rx: oneshot::Receiver<()>,
+    notification_tx: Option<mpsc::Sender<RepairNotification>>,
 }
 
 impl RepairTask {
     /// Create a new repair task.
-    pub fn new(repair: Arc<dyn SelfRepair>, check_interval: Duration) -> Self {
+    pub fn new(
+        repair: Arc<dyn SelfRepair>,
+        check_interval: Duration,
+        shutdown_rx: oneshot::Receiver<()>,
+    ) -> Self {
         Self {
             repair,
             check_interval,
+            shutdown_rx,
+            notification_tx: None,
         }
     }
 
+    /// Forward noteworthy repair outcomes to an external observer.
+    pub fn with_notification_tx(
+        mut self,
+        notification_tx: mpsc::Sender<RepairNotification>,
+    ) -> Self {
+        self.notification_tx = Some(notification_tx);
+        self
+    }
+
     /// Run the repair task.
-    pub async fn run(&self) {
+    pub async fn run(self) {
+        let Self {
+            repair,
+            check_interval,
+            shutdown_rx,
+            mut notification_tx,
+        } = self;
+        let mut shutdown = std::pin::pin!(shutdown_rx);
+
         loop {
-            tokio::time::sleep(self.check_interval).await;
-
-            // Check for stuck jobs
-            let stuck_jobs = self.repair.detect_stuck_jobs().await;
-            for job in stuck_jobs {
-                match self.repair.repair_stuck_job(&job).await {
-                    Ok(RepairResult::Success { message }) => {
-                        tracing::info!(job = %job.job_id, status = "success", "Stuck job repair completed: {}", message);
-                    }
-                    Ok(RepairResult::Retry { message }) => {
-                        tracing::debug!(job = %job.job_id, status = "retry", "Stuck job repair needs retry: {}", message);
-                    }
-                    Ok(RepairResult::Failed { message }) => {
-                        tracing::error!(job = %job.job_id, status = "failed", "Stuck job repair failed: {}", message);
-                    }
-                    Ok(RepairResult::ManualRequired { message }) => {
-                        tracing::warn!(job = %job.job_id, status = "manual", "Stuck job repair requires manual intervention: {}", message);
-                    }
-                    Err(e) => {
-                        tracing::error!(job = %job.job_id, "Stuck job repair error: {}", e);
-                    }
+            tokio::select! {
+                _ = &mut shutdown => {
+                    tracing::debug!("Repair task received shutdown signal");
+                    break;
                 }
-            }
-
-            // Check for broken tools
-            let broken_tools = self.repair.detect_broken_tools().await;
-            for tool in broken_tools {
-                match self.repair.repair_broken_tool(&tool).await {
-                    Ok(result) => {
-                        tracing::debug!(tool = %tool.name, status = "completed", "Tool repair completed: {:?}", result);
+                _ = tokio::time::sleep(check_interval) => {
+                    // Check for stuck jobs
+                    let stuck_jobs = repair.detect_stuck_jobs().await;
+                    for job in stuck_jobs {
+                        match repair.repair_stuck_job(&job).await {
+                            Ok(RepairResult::Success { message }) => {
+                                tracing::info!(job = %job.job_id, status = "success", "Stuck job repair completed: {}", message);
+                                send_notification(
+                                    notification_tx.as_mut(),
+                                    format!(
+                                        "Job {} was stuck for {}s, recovery succeeded: {}",
+                                        job.job_id,
+                                        job.stuck_duration.as_secs(),
+                                        message
+                                    ),
+                                )
+                                .await;
+                            }
+                            Ok(RepairResult::Retry { message }) => {
+                                tracing::debug!(job = %job.job_id, status = "retry", "Stuck job repair needs retry: {}", message);
+                            }
+                            Ok(RepairResult::Failed { message }) => {
+                                tracing::error!(job = %job.job_id, status = "failed", "Stuck job repair failed: {}", message);
+                                send_notification(
+                                    notification_tx.as_mut(),
+                                    format!(
+                                        "Job {} was stuck for {}s, recovery failed permanently: {}",
+                                        job.job_id,
+                                        job.stuck_duration.as_secs(),
+                                        message
+                                    ),
+                                )
+                                .await;
+                            }
+                            Ok(RepairResult::ManualRequired { message }) => {
+                                tracing::warn!(job = %job.job_id, status = "manual", "Stuck job repair requires manual intervention: {}", message);
+                                send_notification(
+                                    notification_tx.as_mut(),
+                                    format!("Job {} needs manual intervention: {}", job.job_id, message),
+                                )
+                                .await;
+                            }
+                            Err(e) => {
+                                tracing::error!(job = %job.job_id, "Stuck job repair error: {}", e);
+                            }
+                        }
                     }
-                    Err(e) => {
-                        tracing::error!(tool = %tool.name, "Tool repair error: {}", e);
+
+                    // Check for broken tools
+                    let broken_tools = repair.detect_broken_tools().await;
+                    for tool in broken_tools {
+                        match repair.repair_broken_tool(&tool).await {
+                            Ok(RepairResult::Success { message }) => {
+                                tracing::debug!(tool = %tool.name, status = "completed", "Tool repair completed: {:?}", message);
+                                send_notification(
+                                    notification_tx.as_mut(),
+                                    format!("Tool '{}' repaired: {}", tool.name, message),
+                                )
+                                .await;
+                            }
+                            Ok(result) => {
+                                tracing::debug!(tool = %tool.name, status = "completed", "Tool repair completed: {:?}", result);
+                            }
+                            Err(e) => {
+                                tracing::error!(tool = %tool.name, "Tool repair error: {}", e);
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+async fn send_notification(
+    notification_tx: Option<&mut mpsc::Sender<RepairNotification>>,
+    message: String,
+) {
+    if let Some(tx) = notification_tx
+        && let Err(error) = tx.send(RepairNotification { message }).await
+    {
+        tracing::debug!("Dropping repair notification because receiver closed: {error}");
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use super::*;
 
     #[test]
@@ -551,10 +636,63 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3);
+        let repair = DefaultSelfRepair::new(cm, Duration::from_secs(0), 3);
         let stuck = NativeSelfRepair::detect_stuck_jobs(&repair).await;
         assert_eq!(stuck.len(), 1);
         assert_eq!(stuck[0].job_id, job_id);
+    }
+
+    #[tokio::test]
+    async fn detect_stuck_jobs_uses_stuck_threshold_from_latest_stuck_transition() {
+        let cm = Arc::new(ContextManager::new(10));
+        let job_id = cm.create_job("Stuck job", "desc").await.unwrap();
+
+        cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
+            .await
+            .unwrap()
+            .unwrap();
+        cm.update_context(job_id, |ctx| ctx.transition_to(JobState::Stuck, None))
+            .await
+            .unwrap()
+            .unwrap();
+        cm.update_context(job_id, |ctx| {
+            let stuck_since = Utc::now() - chrono::Duration::seconds(30);
+            let Some(last_transition) = ctx.transitions.last_mut() else {
+                return Err("missing stuck transition".to_string());
+            };
+            last_transition.timestamp = stuck_since;
+            Ok(())
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        let repair = DefaultSelfRepair::new(Arc::clone(&cm), Duration::from_secs(60), 3);
+        assert!(
+            NativeSelfRepair::detect_stuck_jobs(&repair)
+                .await
+                .is_empty()
+        );
+
+        cm.update_context(job_id, |ctx| {
+            let stuck_since = Utc::now() - chrono::Duration::seconds(120);
+            let Some(last_transition) = ctx.transitions.last_mut() else {
+                return Err("missing stuck transition".to_string());
+            };
+            last_transition.timestamp = stuck_since;
+            Ok(())
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        let stuck_jobs = NativeSelfRepair::detect_stuck_jobs(&repair).await;
+        assert_eq!(stuck_jobs.len(), 1);
+        assert_eq!(
+            stuck_jobs[0].last_activity,
+            cm.get_context(job_id).await.unwrap().stuck_since().unwrap()
+        );
+        assert!(stuck_jobs[0].stuck_duration >= Duration::from_secs(60));
     }
 
     #[tokio::test]
@@ -654,5 +792,55 @@ mod tests {
             "Expected ManualRequired without builder, got: {:?}",
             result
         );
+    }
+
+    struct CountingSelfRepair {
+        detect_stuck_jobs_calls: Arc<AtomicUsize>,
+    }
+
+    impl NativeSelfRepair for CountingSelfRepair {
+        async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
+            self.detect_stuck_jobs_calls.fetch_add(1, Ordering::SeqCst);
+            vec![]
+        }
+
+        async fn repair_stuck_job<'a>(
+            &'a self,
+            _job: &'a StuckJob,
+        ) -> Result<RepairResult, RepairError> {
+            Ok(RepairResult::Success {
+                message: "noop".to_string(),
+            })
+        }
+
+        async fn detect_broken_tools(&self) -> Vec<BrokenTool> {
+            vec![]
+        }
+
+        async fn repair_broken_tool<'a>(
+            &'a self,
+            _tool: &'a BrokenTool,
+        ) -> Result<RepairResult, RepairError> {
+            Ok(RepairResult::Success {
+                message: "noop".to_string(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn repair_task_stops_on_shutdown_before_running_a_cycle() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let repair: Arc<dyn SelfRepair> = Arc::new(CountingSelfRepair {
+            detect_stuck_jobs_calls: Arc::clone(&calls),
+        });
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let task = RepairTask::new(repair, Duration::from_secs(60), shutdown_rx);
+
+        shutdown_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), task.run())
+            .await
+            .expect("repair task should stop promptly after shutdown");
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 }

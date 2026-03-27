@@ -315,6 +315,15 @@ impl JobContext {
         })
     }
 
+    /// Return when the job most recently entered the stuck state.
+    pub fn stuck_since(&self) -> Option<DateTime<Utc>> {
+        self.transitions
+            .iter()
+            .rev()
+            .find(|transition| transition.to == JobState::Stuck)
+            .map(|transition| transition.timestamp)
+    }
+
     /// Mark the job as stuck.
     pub fn mark_stuck(&mut self, reason: impl Into<String>) -> Result<(), String> {
         self.transition_to(JobState::Stuck, Some(reason.into()))
@@ -460,5 +469,31 @@ mod tests {
         ctx.attempt_recovery().unwrap();
         assert_eq!(ctx.state, JobState::InProgress);
         assert_eq!(ctx.repair_attempts, 1);
+    }
+
+    #[test]
+    fn test_stuck_since_returns_none_when_job_was_never_stuck() {
+        let mut ctx = JobContext::new("Test", "Test job");
+        ctx.transition_to(JobState::InProgress, None).unwrap();
+
+        assert_eq!(ctx.stuck_since(), None);
+    }
+
+    #[test]
+    fn test_stuck_since_returns_latest_stuck_transition() {
+        let mut ctx = JobContext::new("Test", "Test job");
+        ctx.transition_to(JobState::InProgress, None).unwrap();
+        ctx.mark_stuck("First stall").unwrap();
+        let first_stuck_at = ctx
+            .stuck_since()
+            .expect("first stuck transition should be recorded");
+        ctx.attempt_recovery().unwrap();
+        ctx.mark_stuck("Second stall").unwrap();
+
+        let latest_stuck_at = ctx
+            .stuck_since()
+            .expect("latest stuck transition should be recorded");
+
+        assert!(latest_stuck_at >= first_stuck_at);
     }
 }

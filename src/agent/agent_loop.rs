@@ -10,11 +10,12 @@
 use std::sync::Arc;
 
 use futures::StreamExt;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::agent::context_monitor::ContextMonitor;
 use crate::agent::heartbeat::spawn_heartbeat;
 use crate::agent::routine_engine::{RoutineEngine, spawn_cron_ticker};
-use crate::agent::self_repair::{DefaultSelfRepair, RepairResult, SelfRepair};
+use crate::agent::self_repair::{DefaultSelfRepair, RepairNotification, RepairTask};
 use crate::agent::session_manager::SessionManager;
 use crate::agent::submission::{Submission, SubmissionParser, SubmissionResult};
 use crate::agent::{HeartbeatConfig as AgentHeartbeatConfig, Router, Scheduler};
@@ -264,77 +265,16 @@ impl Agent {
         ));
         let repair_interval = self.config.repair_check_interval;
         let repair_channels = self.channels.clone();
-        let repair_handle = tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(repair_interval).await;
-
-                // Check stuck jobs
-                let stuck_jobs = repair.detect_stuck_jobs().await;
-                for job in stuck_jobs {
-                    tracing::info!("Attempting to repair stuck job {}", job.job_id);
-                    let result = repair.repair_stuck_job(&job).await;
-                    let notification = match &result {
-                        Ok(RepairResult::Success { message }) => {
-                            tracing::info!("Repair succeeded: {}", message);
-                            Some(format!(
-                                "Job {} was stuck for {}s, recovery succeeded: {}",
-                                job.job_id,
-                                job.stuck_duration.as_secs(),
-                                message
-                            ))
-                        }
-                        Ok(RepairResult::Failed { message }) => {
-                            tracing::error!("Repair failed: {}", message);
-                            Some(format!(
-                                "Job {} was stuck for {}s, recovery failed permanently: {}",
-                                job.job_id,
-                                job.stuck_duration.as_secs(),
-                                message
-                            ))
-                        }
-                        Ok(RepairResult::ManualRequired { message }) => {
-                            tracing::warn!("Manual intervention needed: {}", message);
-                            Some(format!(
-                                "Job {} needs manual intervention: {}",
-                                job.job_id, message
-                            ))
-                        }
-                        Ok(RepairResult::Retry { message }) => {
-                            tracing::warn!("Repair needs retry: {}", message);
-                            None // Don't spam the user on retries
-                        }
-                        Err(e) => {
-                            tracing::error!("Repair error: {}", e);
-                            None
-                        }
-                    };
-
-                    if let Some(msg) = notification {
-                        let response = OutgoingResponse::text(format!("Self-Repair: {}", msg));
-                        let _ = repair_channels.broadcast_all("default", response).await;
-                    }
-                }
-
-                // Check broken tools
-                let broken_tools = repair.detect_broken_tools().await;
-                for tool in broken_tools {
-                    tracing::info!("Attempting to repair broken tool: {}", tool.name);
-                    match repair.repair_broken_tool(&tool).await {
-                        Ok(RepairResult::Success { message }) => {
-                            let response = OutgoingResponse::text(format!(
-                                "Self-Repair: Tool '{}' repaired: {}",
-                                tool.name, message
-                            ));
-                            let _ = repair_channels.broadcast_all("default", response).await;
-                        }
-                        Ok(result) => {
-                            tracing::info!("Tool repair result: {:?}", result);
-                        }
-                        Err(e) => {
-                            tracing::error!("Tool repair error: {}", e);
-                        }
-                    }
-                }
+        let (repair_shutdown_tx, repair_shutdown_rx) = oneshot::channel();
+        let (repair_notify_tx, mut repair_notify_rx) = mpsc::channel::<RepairNotification>(16);
+        let repair_task = RepairTask::new(repair, repair_interval, repair_shutdown_rx)
+            .with_notification_tx(repair_notify_tx);
+        let repair_handle = tokio::spawn(repair_task.run());
+        let repair_notify_handle = tokio::spawn(async move {
+            while let Some(notification) = repair_notify_rx.recv().await {
+                let response =
+                    OutgoingResponse::text(format!("Self-Repair: {}", notification.message));
+                let _ = repair_channels.broadcast_all("default", response).await;
             }
         });
 
@@ -656,7 +596,11 @@ impl Agent {
 
         // Cleanup
         tracing::debug!("Agent shutting down...");
-        repair_handle.abort();
+        let _ = repair_shutdown_tx.send(());
+        if let Err(error) = repair_handle.await {
+            tracing::debug!("Repair task join finished with error: {}", error);
+        }
+        repair_notify_handle.abort();
         pruning_handle.abort();
         if let Some(handle) = heartbeat_handle {
             handle.abort();
