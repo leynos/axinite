@@ -567,21 +567,14 @@ impl Scheduler {
                 })
                 .await?;
 
-            // Persist cancellation (fire-and-forget)
-            if let Some(ref store) = self.store {
-                let store = store.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = store
-                        .update_job_status(
-                            job_id,
-                            JobState::Cancelled,
-                            Some("Stopped by scheduler"),
-                        )
-                        .await
-                    {
-                        tracing::warn!("Failed to persist cancellation for job {}: {}", job_id, e);
-                    }
-                });
+            // Persist cancellation before returning so durable state matches
+            // the in-memory terminal transition.
+            if let Some(ref store) = self.store
+                && let Err(e) = store
+                    .update_job_status(job_id, JobState::Cancelled, Some("Stopped by scheduler"))
+                    .await
+            {
+                tracing::warn!("Failed to persist cancellation for job {}: {}", job_id, e);
             }
 
             tracing::info!("Stopped job {}", job_id);
@@ -697,6 +690,8 @@ impl Scheduler {
 mod tests {
     use super::*;
     use crate::config::SafetyConfig;
+    #[cfg(feature = "libsql")]
+    use crate::db::libsql::LibSqlBackend;
     use crate::llm::{
         CompletionRequest, CompletionResponse, LlmError, LlmProvider, ToolCompletionRequest,
         ToolCompletionResponse,
@@ -766,6 +761,50 @@ mod tests {
         Scheduler::new(config, cm, llm, safety, tools, None, hooks)
     }
 
+    #[cfg(feature = "libsql")]
+    async fn make_test_scheduler_with_store(
+        max_tokens_per_job: u64,
+    ) -> (Scheduler, Arc<dyn Database>, tempfile::TempDir) {
+        use tempfile::tempdir;
+
+        let config = AgentConfig {
+            name: "test".to_string(),
+            max_parallel_jobs: 5,
+            job_timeout: std::time::Duration::from_secs(30),
+            stuck_threshold: std::time::Duration::from_secs(300),
+            repair_check_interval: std::time::Duration::from_secs(3600),
+            max_repair_attempts: 0,
+            use_planning: false,
+            session_idle_timeout: std::time::Duration::from_secs(3600),
+            allow_local_tools: true,
+            max_cost_per_day_cents: None,
+            max_actions_per_hour: None,
+            max_tool_iterations: 10,
+            auto_approve_tools: true,
+            default_timezone: "UTC".to_string(),
+            max_tokens_per_job,
+        };
+        let cm = Arc::new(ContextManager::new(5));
+        let llm: Arc<dyn LlmProvider> = Arc::new(StubLlm);
+        let safety = Arc::new(SafetyLayer::new(&SafetyConfig {
+            max_output_length: 100_000,
+            injection_check_enabled: false,
+        }));
+        let tools = Arc::new(ToolRegistry::new());
+        let hooks = Arc::new(HookRegistry::default());
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("scheduler-test.db");
+        let backend = LibSqlBackend::new_local(&path).await.unwrap();
+        backend.run_migrations().await.unwrap();
+        let store: Arc<dyn Database> = Arc::new(backend);
+
+        (
+            Scheduler::new(config, cm, llm, safety, tools, Some(store.clone()), hooks),
+            store,
+            dir,
+        )
+    }
+
     #[tokio::test]
     async fn test_dispatch_job_caps_user_max_tokens() {
         let sched = make_test_scheduler(1000);
@@ -829,6 +868,46 @@ mod tests {
             Some("custom_value"),
             "metadata should be set atomically with token budget"
         );
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_stop_persists_cancellation_before_returning() {
+        let (sched, store, _dir) = make_test_scheduler_with_store(1000).await;
+        let job_id = sched
+            .context_manager
+            .create_job_for_user("user1", "test", "desc")
+            .await
+            .unwrap();
+        sched
+            .context_manager
+            .update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
+            .await
+            .unwrap()
+            .unwrap();
+
+        let ctx = sched.context_manager.get_context(job_id).await.unwrap();
+        store.save_job(&ctx).await.unwrap();
+
+        let (tx, mut rx) = mpsc::channel(1);
+        let handle = tokio::spawn(async move {
+            let _ = rx.recv().await;
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        sched
+            .jobs
+            .write()
+            .await
+            .insert(job_id, ScheduledJob { handle, tx });
+
+        sched.stop(job_id).await.unwrap();
+
+        let job = store
+            .get_job(job_id)
+            .await
+            .unwrap()
+            .expect("job should exist");
+        assert_eq!(job.state, JobState::Cancelled);
     }
 
     #[test]

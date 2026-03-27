@@ -102,19 +102,16 @@ impl Worker {
         self.deps.use_planning
     }
 
-    /// Fire-and-forget persistence of job status.
-    fn persist_status(&self, status: JobState, reason: Option<String>) {
+    /// Persist a terminal job status before returning to the caller.
+    async fn persist_status(&self, status: JobState, reason: Option<String>) {
         if let Some(store) = self.store() {
-            let store = store.clone();
             let job_id = self.job_id;
-            tokio::spawn(async move {
-                if let Err(e) = store
-                    .update_job_status(job_id, status, reason.as_deref())
-                    .await
-                {
-                    tracing::warn!("Failed to persist status for job {}: {}", job_id, e);
-                }
-            });
+            if let Err(e) = store
+                .update_job_status(job_id, status, reason.as_deref())
+                .await
+            {
+                tracing::warn!("Failed to persist status for job {}: {}", job_id, e);
+            }
         }
     }
 
@@ -134,9 +131,25 @@ impl Worker {
             });
         }
 
+        self.broadcast_event(event_type, &data);
+    }
+
+    /// Persist a terminal result event before returning to the caller.
+    async fn log_result_event(&self, event_type: &str, data: serde_json::Value) {
+        let job_id = self.job_id;
+        if let Some(store) = self.store()
+            && let Err(e) = store.save_job_event(job_id, event_type, &data).await
+        {
+            tracing::warn!("Failed to persist event for job {}: {}", job_id, e);
+        }
+
+        self.broadcast_event(event_type, &data);
+    }
+
+    fn broadcast_event(&self, event_type: &str, data: &serde_json::Value) {
         // Broadcast SSE for live web UI updates
         if let Some(ref tx) = self.deps.sse_tx {
-            let job_id_str = job_id.to_string();
+            let job_id_str = self.job_id.to_string();
             let event = match event_type {
                 "message" => Some(SseEvent::JobMessage {
                     job_id: job_id_str,
@@ -932,18 +945,20 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: s,
             })?;
 
-        self.log_event(
+        self.log_result_event(
             "result",
             serde_json::json!({
                 "status": "completed",
                 "success": true,
                 "message": "Job completed successfully",
             }),
-        );
+        )
+        .await;
         self.persist_status(
             JobState::Completed,
             Some("Job completed successfully".to_string()),
-        );
+        )
+        .await;
         Ok(())
     }
 
@@ -958,15 +973,17 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: s,
             })?;
 
-        self.log_event(
+        self.log_result_event(
             "result",
             serde_json::json!({
                 "status": "failed",
                 "success": false,
                 "message": format!("Execution failed: {}", reason),
             }),
-        );
-        self.persist_status(JobState::Failed, Some(reason.to_string()));
+        )
+        .await;
+        self.persist_status(JobState::Failed, Some(reason.to_string()))
+            .await;
         Ok(())
     }
 
@@ -979,15 +996,17 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: s,
             })?;
 
-        self.log_event(
+        self.log_result_event(
             "result",
             serde_json::json!({
                 "status": "stuck",
                 "success": false,
                 "message": format!("Job stuck: {}", reason),
             }),
-        );
-        self.persist_status(JobState::Stuck, Some(reason.to_string()));
+        )
+        .await;
+        self.persist_status(JobState::Stuck, Some(reason.to_string()))
+            .await;
         Ok(())
     }
 }
@@ -1345,11 +1364,10 @@ impl From<TaskOutput> for Result<String, Error> {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use crate::llm::ToolSelection;
-
     use super::*;
     use crate::config::SafetyConfig;
     use crate::context::JobContext;
+    use crate::llm::ToolSelection;
     use crate::llm::{
         CompletionRequest, CompletionResponse, ToolCompletionRequest, ToolCompletionResponse,
     };
@@ -1446,6 +1464,48 @@ mod tests {
         };
 
         Worker::new(job_id, deps)
+    }
+
+    #[cfg(feature = "libsql")]
+    async fn make_worker_with_store(
+        tools: Vec<Arc<dyn Tool>>,
+    ) -> (Worker, Arc<dyn Database>, tempfile::TempDir) {
+        use crate::db::libsql::LibSqlBackend;
+        use tempfile::tempdir;
+
+        let registry = ToolRegistry::new();
+        for t in tools {
+            registry.register(t).await;
+        }
+
+        let cm = Arc::new(crate::context::ContextManager::new(5));
+        let job_id = cm.create_job("test", "test job").await.unwrap();
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("worker-test.db");
+        let backend = LibSqlBackend::new_local(&path).await.unwrap();
+        backend.run_migrations().await.unwrap();
+        let store: Arc<dyn Database> = Arc::new(backend);
+        let ctx = cm.get_context(job_id).await.unwrap();
+        store.save_job(&ctx).await.unwrap();
+
+        let deps = WorkerDeps {
+            context_manager: cm,
+            llm: Arc::new(StubLlm),
+            safety: Arc::new(SafetyLayer::new(&SafetyConfig {
+                max_output_length: 100_000,
+                injection_check_enabled: false,
+            })),
+            tools: Arc::new(registry),
+            store: Some(store.clone()),
+            hooks: Arc::new(crate::hooks::HookRegistry::new()),
+            timeout: Duration::from_secs(30),
+            use_planning: false,
+            sse_tx: None,
+            approval_context: None,
+            http_interceptor: None,
+        };
+
+        (Worker::new(job_id, deps), store, dir)
     }
 
     #[test]
@@ -1613,6 +1673,38 @@ mod tests {
             result.is_err(),
             "Completed → Completed transition should be rejected by state machine"
         );
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_mark_completed_persists_result_before_returning() {
+        let (worker, store, _dir) = make_worker_with_store(vec![]).await;
+
+        worker
+            .context_manager()
+            .update_context(worker.job_id, |ctx| {
+                ctx.transition_to(JobState::InProgress, None)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        worker.mark_completed().await.unwrap();
+
+        let job = store
+            .get_job(worker.job_id)
+            .await
+            .unwrap()
+            .expect("job should exist");
+        assert_eq!(job.state, JobState::Completed);
+
+        let events = store
+            .list_job_events(worker.job_id, None, None)
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "result");
+        assert_eq!(events[0].data["status"], "completed");
     }
 
     /// Build a Worker with the given approval context.
