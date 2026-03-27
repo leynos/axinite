@@ -64,11 +64,9 @@ struct GatewaySetup {
     routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
 }
 
-/// Dispatch CLI subcommands.
-///
-/// Returns `Ok(Some(()))` for commands that were handled (caller should exit),
-/// or `Ok(None)` for the fall-through run case.
-async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<Option<()>> {
+/// Handles all user-facing CLI tool subcommands (Tool through Import).
+/// Returns `Ok(Some(()))` when a command was handled, `Ok(None)` to fall through.
+async fn dispatch_cli_tool_commands(cli: &Cli) -> anyhow::Result<Option<()>> {
     match &cli.command {
         Some(Command::Tool(tool_cmd)) => {
             init_cli_tracing();
@@ -127,6 +125,14 @@ async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<Option<()>> {
             ironclaw::cli::run_import_command(import_cmd, &config).await?;
             Ok(Some(()))
         }
+        _ => Ok(None),
+    }
+}
+
+/// Handles worker, bridge, and onboarding subcommands.
+/// Returns `Ok(Some(()))` when a command was handled, `Ok(None)` to fall through.
+async fn dispatch_agent_commands(cli: &Cli) -> anyhow::Result<Option<()>> {
+    match &cli.command {
         Some(Command::Worker {
             job_id,
             orchestrator_url,
@@ -171,8 +177,19 @@ async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<Option<()>> {
             }
             Ok(Some(()))
         }
-        None | Some(Command::Run) => Ok(None),
+        _ => Ok(None),
     }
+}
+
+/// Dispatch CLI subcommands.
+///
+/// Returns `Ok(Some(()))` for commands that were handled (caller should exit),
+/// or `Ok(None)` for the fall-through run case.
+async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<Option<()>> {
+    if dispatch_cli_tool_commands(cli).await?.is_some() {
+        return Ok(Some(()));
+    }
+    dispatch_agent_commands(cli).await
 }
 
 /// Set up all channels (REPL, WASM, Signal, HTTP, webhook server).
