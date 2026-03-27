@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use axum::Json;
 use axum::extract::{Path, State};
 use rstest::{fixture, rstest};
@@ -55,19 +56,19 @@ async fn remote_tool_catalog_with_complex_tool(
 async fn hosted_catalog_harness() -> Result<HostedCatalogHarness, Box<dyn std::error::Error>> {
     let (base_url, server) = spawn_test_server(remote_tool_catalog_with_complex_tool).await?;
 
-    let client = Arc::new(WorkerHttpClient::new(
-        base_url.clone(),
-        Uuid::nil(),
-        "test".to_string(),
-    ));
-    let runtime = WorkerRuntime::from_client(
+    let client = Arc::new(
+        WorkerHttpClient::new(base_url.clone(), Uuid::nil(), "test".to_string())
+            .context("test client should build")?,
+    );
+    let runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: base_url,
             ..WorkerConfig::default()
         },
         client,
-    );
+    )
+    .context("test runtime should build")?;
 
     Ok(HostedCatalogHarness { runtime, server })
 }

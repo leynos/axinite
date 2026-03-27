@@ -14,7 +14,8 @@ fn test_url_construction(#[case] path: &str) {
         "http://host.docker.internal:50051".to_string(),
         Uuid::nil(),
         TEST_BEARER_TOKEN.to_string(),
-    );
+    )
+    .expect("test client should build");
 
     assert_eq!(
         client.url(path),
@@ -34,7 +35,8 @@ fn test_url_construction_with_trailing_slash(#[case] path: &str) {
         "http://host.docker.internal:50051/".to_string(),
         Uuid::nil(),
         TEST_BEARER_TOKEN.to_string(),
-    );
+    )
+    .expect("test client should build");
 
     assert_eq!(
         client.url(path),
@@ -53,7 +55,8 @@ fn remote_tool_catalog_url_construction() {
         "http://host.docker.internal:50051".to_string(),
         Uuid::nil(),
         TEST_BEARER_TOKEN.to_string(),
-    );
+    )
+    .expect("test client should build");
 
     assert_eq!(
         client.url(REMOTE_TOOL_CATALOG_PATH),
