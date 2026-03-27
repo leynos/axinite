@@ -38,9 +38,13 @@ pub(super) struct ContainerDelegate {
 
 impl ContainerDelegate {
     pub(super) async fn post_event(&self, event_type: JobEventType, data: serde_json::Value) {
-        self.client
+        if let Err(e) = self
+            .client
             .post_event(&JobEventPayload { event_type, data })
-            .await;
+            .await
+        {
+            tracing::debug!(error = %e, "Failed to post event");
+        }
     }
 
     async fn poll_and_inject_prompt(&self, reason_ctx: &mut ReasoningContext) {

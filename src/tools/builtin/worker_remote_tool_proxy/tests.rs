@@ -65,11 +65,10 @@ async fn proxy_test_server() -> anyhow::Result<ProxyTestServer> {
         let _ = axum::serve(listener, router).await;
     });
     let job_id = Uuid::new_v4();
-    let client = Arc::new(WorkerHttpClient::new(
-        format!("http://{}", addr),
-        job_id,
-        "test-token".to_string(),
-    ));
+    let client = Arc::new(
+        WorkerHttpClient::new(format!("http://{}", addr), job_id, "test-token".to_string())
+            .context("test client should build")?,
+    );
     Ok(ProxyTestServer {
         client,
         job_id,
@@ -243,11 +242,10 @@ async fn worker_remote_tool_proxy_routes_execution_through_orchestrator_endpoint
     });
 
     let job_id = Uuid::new_v4();
-    let client = Arc::new(WorkerHttpClient::new(
-        format!("http://{}", addr),
-        job_id,
-        "test-token".to_string(),
-    ));
+    let client = Arc::new(
+        WorkerHttpClient::new(format!("http://{}", addr), job_id, "test-token".to_string())
+            .context("test client should build")?,
+    );
     let proxy = WorkerRemoteToolProxy::new(
         ToolDefinition {
             name: "route_test_tool".to_string(),

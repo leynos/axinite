@@ -134,11 +134,10 @@ pub async fn spawn_runtime_test_server(
 ///
 /// Uses a fixed test token (`"test-token"`) and default configuration suitable for unit tests.
 pub fn build_test_runtime(orchestrator_url: String, job_id: Uuid) -> WorkerRuntime {
-    let client = Arc::new(WorkerHttpClient::new(
-        orchestrator_url.clone(),
-        job_id,
-        "test-token".to_string(),
-    ));
+    let client = Arc::new(
+        WorkerHttpClient::new(orchestrator_url.clone(), job_id, "test-token".to_string())
+            .expect("test client should build"),
+    );
     WorkerRuntime::new(
         WorkerConfig {
             job_id,
@@ -147,6 +146,7 @@ pub fn build_test_runtime(orchestrator_url: String, job_id: Uuid) -> WorkerRunti
         },
         client,
     )
+    .expect("test runtime should build")
 }
 
 /// Test harness that owns the `WorkerRuntime` under test and coordinates graceful shutdown

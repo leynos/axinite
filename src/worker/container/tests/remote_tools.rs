@@ -107,11 +107,10 @@ async fn spawn_hosted_guidance_catalog_server()
 async fn build_runtime_with_remote_tools(
     base_url: &str,
 ) -> Result<(WorkerRuntime, Arc<WorkerHttpClient>), Box<dyn std::error::Error>> {
-    let client = Arc::new(WorkerHttpClient::new(
-        base_url.to_string(),
-        Uuid::nil(),
-        "test".to_string(),
-    ));
+    let client = Arc::new(
+        WorkerHttpClient::new(base_url.to_string(), Uuid::nil(), "test".to_string())
+            .expect("test client should build"),
+    );
     let mut runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
@@ -119,7 +118,7 @@ async fn build_runtime_with_remote_tools(
             ..WorkerConfig::default()
         },
         Arc::clone(&client),
-    );
+    )?;
     runtime.toolset_instructions = runtime.register_remote_tools().await?;
     Ok((runtime, client))
 }
@@ -130,11 +129,10 @@ async fn hosted_worker_remote_tool_catalog_registers_remote_tools()
 -> Result<(), Box<dyn std::error::Error>> {
     let (base_url, server) = spawn_hosted_guidance_catalog_server().await?;
 
-    let client = Arc::new(WorkerHttpClient::new(
-        base_url.clone(),
-        Uuid::nil(),
-        "test".to_string(),
-    ));
+    let client = Arc::new(
+        WorkerHttpClient::new(base_url.clone(), Uuid::nil(), "test".to_string())
+            .expect("test client should build"),
+    );
     let runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
@@ -142,7 +140,7 @@ async fn hosted_worker_remote_tool_catalog_registers_remote_tools()
             ..WorkerConfig::default()
         },
         client,
-    );
+    )?;
 
     runtime.register_remote_tools().await?;
 
@@ -285,11 +283,10 @@ async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools()
 -> Result<(), Box<dyn std::error::Error>> {
     let (base_url, server) = spawn_test_server(remote_tool_catalog_error).await?;
 
-    let client = Arc::new(WorkerHttpClient::new(
-        base_url.clone(),
-        Uuid::nil(),
-        "test".to_string(),
-    ));
+    let client = Arc::new(
+        WorkerHttpClient::new(base_url.clone(), Uuid::nil(), "test".to_string())
+            .expect("test client should build"),
+    );
     let runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
@@ -297,7 +294,7 @@ async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools()
             ..WorkerConfig::default()
         },
         client,
-    );
+    )?;
 
     runtime.register_remote_tools_with_degraded_startup().await;
 
