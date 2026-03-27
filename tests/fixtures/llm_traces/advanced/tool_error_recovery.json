@@ -10,7 +10,7 @@
             "id": "call_bad_write",
             "name": "write_file",
             "arguments": {
-              "path": "/nonexistent_root_path/deeply/nested/impossible.txt",
+              "path": "/dev/null/deeply/nested/impossible.txt",
               "content": "this will fail"
             }
           }

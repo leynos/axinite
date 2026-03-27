@@ -13,7 +13,7 @@
           {
             "id": "call_bad_write",
             "name": "write_file",
-            "arguments": { "path": "/nonexistent_root_dir_xyz/impossible/file.txt", "content": "test" }
+            "arguments": { "path": "/dev/null/impossible/file.txt", "content": "test" }
           }
         ],
         "input_tokens": 100,
