@@ -22,7 +22,8 @@ async fn remote_tool_catalog_reports_non_success_statuses(
         server.base_url.clone(),
         Uuid::new_v4(),
         TEST_BEARER_TOKEN.to_string(),
-    );
+    )
+    .expect("test client should build");
 
     let err = client
         .get_remote_tool_catalog()

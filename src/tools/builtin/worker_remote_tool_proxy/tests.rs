@@ -182,11 +182,10 @@ async fn worker_remote_tool_proxy_preserves_full_tool_definition_fields() {
         "Complex tool for proxy definition fidelity testing",
     );
 
-    let client = Arc::new(WorkerHttpClient::new(
-        "http://127.0.0.1:0".to_string(),
-        Uuid::new_v4(),
-        "test-token".to_string(),
-    ));
+    let client = Arc::new(
+        WorkerHttpClient::new("http://127.0.0.1:0".to_string(), Uuid::new_v4(), "test-token".to_string())
+            .expect("test client should build"),
+    );
     let proxy = WorkerRemoteToolProxy::new(complex_definition.clone(), client);
 
     let reconstructed = ToolDefinition {
