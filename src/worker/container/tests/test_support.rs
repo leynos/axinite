@@ -139,7 +139,7 @@ pub fn build_test_runtime(orchestrator_url: String, job_id: Uuid) -> WorkerRunti
         job_id,
         "test-token".to_string(),
     ));
-    WorkerRuntime::from_client(
+    WorkerRuntime::new(
         WorkerConfig {
             job_id,
             orchestrator_url,

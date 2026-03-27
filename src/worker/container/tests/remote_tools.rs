@@ -112,7 +112,7 @@ async fn build_runtime_with_remote_tools(
         Uuid::nil(),
         "test".to_string(),
     ));
-    let mut runtime = WorkerRuntime::from_client(
+    let runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: base_url.to_string(),
@@ -120,7 +120,6 @@ async fn build_runtime_with_remote_tools(
         },
         Arc::clone(&client),
     );
-    runtime.toolset_instructions = runtime.register_remote_tools().await?;
     Ok((runtime, client))
 }
 
@@ -135,7 +134,7 @@ async fn hosted_worker_remote_tool_catalog_registers_remote_tools()
         Uuid::nil(),
         "test".to_string(),
     ));
-    let runtime = WorkerRuntime::from_client(
+    let runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: base_url,
@@ -146,22 +145,15 @@ async fn hosted_worker_remote_tool_catalog_registers_remote_tools()
 
     runtime.register_remote_tools().await?;
 
-    let mut names: Vec<String> = runtime
-        .tools
-        .tool_definitions()
-        .await
-        .into_iter()
-        .map(|def| def.name)
-        .collect();
+    let definitions: Vec<crate::llm::ToolDefinition> = runtime.tools.tool_definitions().await;
+    let mut names: Vec<String> = definitions.into_iter().map(|def| def.name).collect();
     names.sort();
 
     assert_eq!(names, expected_merged_tool_names());
 
-    let remote_tool = runtime
-        .tools
-        .get("hosted_worker_remote_tool_fixture")
-        .await
-        .expect("hosted remote tool should be registered");
+    let remote_tool: Option<std::sync::Arc<dyn crate::tools::Tool>> =
+        runtime.tools.get("hosted_worker_remote_tool_fixture").await;
+    let remote_tool = remote_tool.expect("hosted remote tool should be registered");
     let expected = expected_remote_tool_definition();
     assert_eq!(remote_tool.name(), expected.name);
     assert_eq!(remote_tool.description(), expected.description);
@@ -297,7 +289,7 @@ async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools()
         Uuid::nil(),
         "test".to_string(),
     ));
-    let runtime = WorkerRuntime::from_client(
+    let runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: base_url,
