@@ -126,6 +126,74 @@ impl AppBuilder {
         tools.register_image_tools(ImageToolsRegistration::new(api_base, api_key, gen_model));
     }
 
+    // Many parameters required to construct ExtensionManager; this is an extraction
+    // of the original inline block to reduce cyclomatic complexity of init_extensions.
+    #[allow(clippy::too_many_arguments)]
+    async fn build_extension_manager(
+        &self,
+        tools: &Arc<ToolRegistry>,
+        hooks: &Arc<HookRegistry>,
+        mcp_session_manager: &Arc<McpSessionManager>,
+        mcp_process_manager: &Arc<McpProcessManager>,
+        ext_secrets: Arc<dyn crate::secrets::SecretsStore + Send + Sync>,
+        wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
+        catalog_entries: Vec<crate::extensions::RegistryEntry>,
+    ) -> Option<Arc<ExtensionManager>> {
+        let discovery = Arc::new(crate::extensions::OnlineDiscovery::new());
+        let relay_config = crate::config::RelayConfig::from_env();
+        let gateway_token = std::env::var("GATEWAY_AUTH_TOKEN").ok();
+
+        let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
+
+        let mcp_activation: Arc<dyn crate::extensions::McpActivationPort> =
+            Arc::new(crate::extensions::LiveMcpActivation::new(
+                Arc::clone(mcp_session_manager),
+                Arc::clone(mcp_process_manager),
+                Arc::clone(&mcp_clients),
+                Arc::clone(&ext_secrets),
+                Arc::clone(tools),
+                "default".to_string(),
+                self.db.clone(),
+            ));
+        let wasm_tool_activation: Arc<dyn crate::extensions::WasmToolActivationPort> =
+            Arc::new(crate::extensions::LiveWasmToolActivation::new(
+                crate::extensions::LiveWasmToolActivationConfig {
+                    wasm_tool_runtime,
+                    wasm_tools_dir: self.config.wasm.tools_dir.clone(),
+                    tool_registry: Arc::clone(tools),
+                    secrets: Arc::clone(&ext_secrets),
+                    hooks: Some(Arc::clone(hooks)),
+                },
+            ));
+        let live_wasm_channel = Arc::new(crate::extensions::LiveWasmChannelActivation::new());
+        let wasm_channel_activation: Arc<dyn crate::extensions::WasmChannelActivationPort> =
+            Arc::clone(&live_wasm_channel) as _;
+
+        let manager = Arc::new(ExtensionManager::new(
+            discovery,
+            relay_config,
+            gateway_token,
+            mcp_activation,
+            wasm_tool_activation,
+            wasm_channel_activation,
+            mcp_clients,
+            ext_secrets,
+            Arc::clone(tools),
+            Some(Arc::clone(hooks)),
+            self.config.wasm.tools_dir.clone(),
+            self.config.channels.wasm_channels_dir.clone(),
+            self.config.tunnel.public_url.clone(),
+            "default".to_string(),
+            self.db.clone(),
+            catalog_entries,
+        ));
+
+        live_wasm_channel.set_manager(Arc::clone(&manager)).await;
+        tools.register_extension_tools(Arc::clone(&manager));
+        tracing::debug!("Extension manager initialized with in-chat discovery tools");
+        Some(manager)
+    }
+
     /// Phase 1: Initialize database backend.
     ///
     /// Creates the database connection, runs migrations, reloads config
@@ -634,66 +702,17 @@ impl AppBuilder {
             tracing::debug!("Using ephemeral in-memory secrets store for extension manager");
             Arc::new(InMemorySecretsStore::new(crypto))
         };
-        let extension_manager = {
-            let discovery = Arc::new(crate::extensions::OnlineDiscovery::new());
-            let relay_config = crate::config::RelayConfig::from_env();
-            let gateway_token = std::env::var("GATEWAY_AUTH_TOKEN").ok();
-
-            // Shared MCP client map: the live adapter and the manager both
-            // read/write active connections through the same Arc.
-            let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
-
-            // ── Activation adapters ─────────────────────────────────────
-            let mcp_activation: Arc<dyn crate::extensions::McpActivationPort> =
-                Arc::new(crate::extensions::LiveMcpActivation::new(
-                    Arc::clone(&mcp_session_manager),
-                    Arc::clone(&mcp_process_manager),
-                    Arc::clone(&mcp_clients),
-                    Arc::clone(&ext_secrets),
-                    Arc::clone(tools),
-                    "default".to_string(),
-                    self.db.clone(),
-                ));
-            let wasm_tool_activation: Arc<dyn crate::extensions::WasmToolActivationPort> =
-                Arc::new(crate::extensions::LiveWasmToolActivation::new(
-                    crate::extensions::LiveWasmToolActivationConfig {
-                        wasm_tool_runtime: wasm_tool_runtime.clone(),
-                        wasm_tools_dir: self.config.wasm.tools_dir.clone(),
-                        tool_registry: Arc::clone(tools),
-                        secrets: Arc::clone(&ext_secrets),
-                        hooks: Some(Arc::clone(hooks)),
-                    },
-                ));
-            let live_wasm_channel = Arc::new(crate::extensions::LiveWasmChannelActivation::new());
-            let wasm_channel_activation: Arc<dyn crate::extensions::WasmChannelActivationPort> =
-                Arc::clone(&live_wasm_channel) as _;
-
-            let manager = Arc::new(ExtensionManager::new(
-                discovery,
-                relay_config,
-                gateway_token,
-                mcp_activation,
-                wasm_tool_activation,
-                wasm_channel_activation,
-                mcp_clients,
+        let extension_manager = self
+            .build_extension_manager(
+                tools,
+                hooks,
+                &mcp_session_manager,
+                &mcp_process_manager,
                 ext_secrets,
-                Arc::clone(tools),
-                Some(Arc::clone(hooks)),
-                self.config.wasm.tools_dir.clone(),
-                self.config.channels.wasm_channels_dir.clone(),
-                self.config.tunnel.public_url.clone(),
-                "default".to_string(),
-                self.db.clone(),
+                wasm_tool_runtime.clone(),
                 catalog_entries.clone(),
-            ));
-
-            // Wire the live channel adapter to the manager (post-construction).
-            live_wasm_channel.set_manager(Arc::clone(&manager)).await;
-
-            tools.register_extension_tools(Arc::clone(&manager));
-            tracing::debug!("Extension manager initialized with in-chat discovery tools");
-            Some(manager)
-        };
+            )
+            .await;
 
         // register_builder_tool() already calls register_dev_tools() internally,
         // so only register them here when the builder didn't already do it.
