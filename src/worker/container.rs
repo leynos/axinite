@@ -88,23 +88,34 @@ impl WorkerRuntime {
     /// pre-constructed client, making dependency injection straightforward
     /// and allowing tests to provide mock clients without environment setup.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the provided `client` job_id or orchestrator_url doesn't match
-    /// the values in `config`. This validates configuration consistency at
-    /// construction time to prevent subtle runtime errors.
-    pub fn new(config: WorkerConfig, client: Arc<WorkerHttpClient>) -> Self {
+    /// Returns `WorkerError::ConfigMismatch` if the provided `client` job_id or
+    /// orchestrator_url doesn't match the values in `config`. This validates
+    /// configuration consistency at construction time to prevent subtle runtime
+    /// errors.
+    pub fn new(config: WorkerConfig, client: Arc<WorkerHttpClient>) -> Result<Self, WorkerError> {
         // Validate that config and client are consistent
-        assert_eq!(
-            config.job_id,
-            client.job_id(),
-            "WorkerConfig job_id must match WorkerHttpClient job_id"
-        );
-        assert_eq!(
-            config.orchestrator_url.trim_end_matches('/'),
-            client.orchestrator_url(),
-            "WorkerConfig orchestrator_url must match WorkerHttpClient orchestrator_url"
-        );
+        if config.job_id != client.job_id() {
+            return Err(WorkerError::ConfigMismatch {
+                field: "job_id".to_string(),
+                reason: format!(
+                    "WorkerConfig job_id ({}) must match WorkerHttpClient job_id ({})",
+                    config.job_id,
+                    client.job_id()
+                ),
+            });
+        }
+        if config.orchestrator_url.trim_end_matches('/') != client.orchestrator_url() {
+            return Err(WorkerError::ConfigMismatch {
+                field: "orchestrator_url".to_string(),
+                reason: format!(
+                    "WorkerConfig orchestrator_url ({}) must match WorkerHttpClient orchestrator_url ({})",
+                    config.orchestrator_url.trim_end_matches('/'),
+                    client.orchestrator_url()
+                ),
+            });
+        }
 
         let llm: Arc<dyn LlmProvider> = Arc::new(ProxyLlmProvider::new(
             Arc::clone(&client),
@@ -118,7 +129,7 @@ impl WorkerRuntime {
 
         let tools = Self::build_tools();
 
-        Self {
+        Ok(Self {
             config,
             client,
             llm,
@@ -126,7 +137,7 @@ impl WorkerRuntime {
             tools,
             toolset_instructions: Vec::new(),
             extra_env: Arc::new(HashMap::new()),
-        }
+        })
     }
 
     /// Create a new worker runtime from environment variables.
@@ -140,7 +151,7 @@ impl WorkerRuntime {
             config.job_id,
         )?);
 
-        Ok(Self::new(config, client))
+        Self::new(config, client)
     }
 
     fn build_tools() -> Arc<ToolRegistry> {
@@ -303,6 +314,7 @@ Work independently to complete this job. Report when done."#,
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     async fn register_remote_tools_with_degraded_startup(&self) {
         if let Err(error) = self.register_remote_tools().await {
             tracing::warn!(

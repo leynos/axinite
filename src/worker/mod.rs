@@ -57,8 +57,9 @@ pub async fn run_worker(
         timeout: std::time::Duration::from_secs(600),
     };
 
-    let rt = WorkerRuntime::from_env(config)
-        .map_err(|e| anyhow::anyhow!("Worker init failed: {}", e))?;
+    use anyhow::Context as _;
+
+    let rt = WorkerRuntime::from_env(config).context("Worker init failed")?;
 
     rt.run()
         .await

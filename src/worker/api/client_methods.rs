@@ -48,34 +48,31 @@ impl WorkerHttpClient {
         }
     }
 
-    /// Post a job event to the orchestrator (fire-and-forget style, logs on failure).
-    pub async fn post_event(&self, payload: &JobEventPayload) {
+    /// Post a job event to the orchestrator.
+    ///
+    /// Returns `Ok(())` on success, or `WorkerError::ConnectionFailed` if the
+    /// request fails or returns a non-success status.
+    pub async fn post_event(&self, payload: &JobEventPayload) -> Result<(), WorkerError> {
         let resp = self
             .client
             .post(self.url(EVENT_PATH))
             .bearer_auth(&self.token)
             .json(payload)
             .send()
-            .await;
+            .await
+            .map_err(|e| WorkerError::ConnectionFailed {
+                url: self.url(EVENT_PATH),
+                reason: format!("job event POST failed: {}", e),
+            })?;
 
-        match resp {
-            Ok(r) if !r.status().is_success() => {
-                tracing::debug!(
-                    job_id = %self.job_id,
-                    event_type = %payload.event_type,
-                    status = %r.status(),
-                    "Job event POST rejected"
-                );
-            }
-            Err(e) => {
-                tracing::debug!(
-                    job_id = %self.job_id,
-                    event_type = %payload.event_type,
-                    "Job event POST failed: {}", e
-                );
-            }
-            _ => {}
+        if !resp.status().is_success() {
+            return Err(WorkerError::ConnectionFailed {
+                url: self.url(EVENT_PATH),
+                reason: format!("job event POST returned {}", resp.status()),
+            });
         }
+
+        Ok(())
     }
 
     /// Poll the orchestrator for a follow-up prompt.
@@ -114,9 +111,9 @@ impl WorkerHttpClient {
 
     /// Fetch credentials granted to this job from the orchestrator.
     ///
-    /// Returns an empty vec if no credentials are granted (204 No Content)
-    /// or if the endpoint returns 404. The caller should set each credential
-    /// as an environment variable before starting the execution loop.
+    /// Returns an empty vec if no credentials are granted (204 No Content).
+    /// The caller should set each credential as an environment variable before
+    /// starting the execution loop.
     pub async fn fetch_credentials(&self) -> Result<Vec<CredentialResponse>, WorkerError> {
         let resp = self
             .client
@@ -129,10 +126,8 @@ impl WorkerHttpClient {
                 reason: e.to_string(),
             })?;
 
-        // 204 or 404 means no credentials granted, not an error
-        if resp.status() == reqwest::StatusCode::NO_CONTENT
-            || resp.status() == reqwest::StatusCode::NOT_FOUND
-        {
+        // 204 means no credentials granted, not an error
+        if resp.status() == reqwest::StatusCode::NO_CONTENT {
             return Ok(vec![]);
         }
 

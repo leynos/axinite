@@ -58,16 +58,20 @@ impl WorkerHttpClient {
     }
 
     /// Create with an explicit token (for testing).
-    pub fn new(orchestrator_url: String, job_id: Uuid, token: String) -> Self {
-        Self {
-            client: reqwest::Client::builder()
-                .timeout(REQUEST_TIMEOUT)
-                .build()
-                .unwrap_or_default(),
+    pub fn new(orchestrator_url: String, job_id: Uuid, token: String) -> Result<Self, WorkerError> {
+        let client = reqwest::Client::builder()
+            .timeout(REQUEST_TIMEOUT)
+            .build()
+            .map_err(|e| WorkerError::ConnectionFailed {
+                url: orchestrator_url.clone(),
+                reason: format!("failed to build HTTP client: {}", e),
+            })?;
+        Ok(Self {
+            client,
             orchestrator_url: orchestrator_url.trim_end_matches('/').to_string(),
             job_id,
             token,
-        }
+        })
     }
 
     /// Get the base orchestrator URL.

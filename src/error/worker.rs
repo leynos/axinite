@@ -76,4 +76,11 @@ pub enum WorkerError {
     /// The worker token environment variable was not available at startup.
     #[error("Missing worker token (IRONCLAW_WORKER_TOKEN not set)")]
     MissingToken,
+
+    /// The worker configuration does not match the provided HTTP client.
+    ///
+    /// `field` identifies which configuration field mismatched (e.g., "job_id"
+    /// or "orchestrator_url"), and `reason` describes the mismatch.
+    #[error("Worker configuration mismatch for {field}: {reason}")]
+    ConfigMismatch { field: String, reason: String },
 }

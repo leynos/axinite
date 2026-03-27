@@ -47,7 +47,7 @@ async fn assert_startup_failure(state: &RuntimeTestState) {
         .first()
         .filter(|status| status.state == WorkerState::Failed)
         .expect("expected a terminal failed status update");
-    assert_eq!(failed_status.iteration, 100);
+    assert_eq!(failed_status.iteration, 0);
     assert_eq!(
         failed_status.message.as_deref(),
         Some("pre-loop failure"),
@@ -139,7 +139,7 @@ async fn worker_runtime_emits_failed_status_for_initial_status_rejections() -> a
     );
     assert_eq!(statuses[0].state, WorkerState::InProgress);
     assert_eq!(statuses[1].state, WorkerState::Failed);
-    assert_eq!(statuses[1].iteration, 100);
+    assert_eq!(statuses[1].iteration, 0);
     assert_eq!(
         statuses[1].message.as_deref(),
         Some("pre-loop failure"),

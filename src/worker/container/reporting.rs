@@ -39,11 +39,7 @@ impl WorkerRuntime {
         );
 
         if let Err(report_error) = self
-            .report_worker_status(
-                WorkerState::Failed,
-                Some("pre-loop failure".to_string()),
-                100,
-            )
+            .report_worker_status(WorkerState::Failed, Some("pre-loop failure".to_string()), 0)
             .await
         {
             tracing::warn!(
@@ -54,10 +50,7 @@ impl WorkerRuntime {
             );
         }
 
-        if let Err(report_error) = self
-            .report_failure(100, "Worker failed during startup")
-            .await
-        {
+        if let Err(report_error) = self.report_failure(0, "Worker failed during startup").await {
             tracing::warn!(
                 job_id = %self.config.job_id,
                 stage,
@@ -179,8 +172,16 @@ impl WorkerRuntime {
             .await;
 
             match result {
-                Ok(()) => {
+                Ok(Ok(())) => {
                     tracing::debug!(job_id = %job_id, ?event_type, "Posted job event");
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!(
+                        job_id = %job_id,
+                        ?event_type,
+                        error = %e,
+                        "Job event post failed"
+                    );
                 }
                 Err(_) => {
                     tracing::warn!(

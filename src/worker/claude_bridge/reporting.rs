@@ -51,7 +51,9 @@ impl ClaudeBridgeRuntime {
             event_type,
             data: data.clone(),
         };
-        self.client.post_event(&payload).await;
+        if let Err(e) = self.client.post_event(&payload).await {
+            tracing::debug!(error = %e, "Failed to report event");
+        }
     }
 
     pub(super) async fn poll_for_prompt(&self) -> Result<Option<PromptResponse>, WorkerError> {
