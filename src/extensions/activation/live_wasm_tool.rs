@@ -41,6 +41,42 @@ impl LiveWasmToolActivation {
             hooks: config.hooks,
         }
     }
+
+    fn resolve_cap_path(&self, name: &str) -> Option<PathBuf> {
+        let path = self
+            .wasm_tools_dir
+            .join(format!("{}.capabilities.json", name));
+        path.exists().then_some(path)
+    }
+
+    async fn register_hooks_for_tool(
+        &self,
+        hooks: &Arc<HookRegistry>,
+        name: &str,
+        cap_path: &std::path::Path,
+    ) {
+        let source = format!("plugin.tool:{}", name);
+        let registration = crate::hooks::bootstrap::register_plugin_bundle_from_capabilities_file(
+            hooks, &source, cap_path,
+        )
+        .await;
+
+        if registration.total_registered() > 0 {
+            tracing::info!(
+                extension = name,
+                hooks = registration.hooks,
+                outbound_webhooks = registration.outbound_webhooks,
+                "Registered plugin hooks for activated WASM tool"
+            );
+        }
+        if registration.errors > 0 {
+            tracing::warn!(
+                extension = name,
+                errors = registration.errors,
+                "Some plugin hooks failed to register"
+            );
+        }
+    }
 }
 
 impl NativeWasmToolActivationPort for LiveWasmToolActivation {
@@ -48,7 +84,6 @@ impl NativeWasmToolActivationPort for LiveWasmToolActivation {
         &'a self,
         name: &'a str,
     ) -> Result<ActivateResult, ExtensionError> {
-        // Check if already active
         if self.tool_registry.has(name).await {
             return Ok(ActivateResult {
                 name: name.to_string(),
@@ -71,48 +106,17 @@ impl NativeWasmToolActivationPort for LiveWasmToolActivation {
             )));
         }
 
-        let cap_path = self
-            .wasm_tools_dir
-            .join(format!("{}.capabilities.json", name));
-        let cap_path_option = if cap_path.exists() {
-            Some(cap_path.as_path())
-        } else {
-            None
-        };
+        let cap_path = self.resolve_cap_path(name);
 
         let loader = WasmToolLoader::new(Arc::clone(runtime), Arc::clone(&self.tool_registry))
             .with_secrets_store(Arc::clone(&self.secrets));
         loader
-            .load_from_files(name, &wasm_path, cap_path_option)
+            .load_from_files(name, &wasm_path, cap_path.as_deref())
             .await
             .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
 
-        if let Some(ref hooks) = self.hooks
-            && let Some(cap_path) = cap_path_option
-        {
-            let source = format!("plugin.tool:{}", name);
-            let registration =
-                crate::hooks::bootstrap::register_plugin_bundle_from_capabilities_file(
-                    hooks, &source, cap_path,
-                )
-                .await;
-
-            if registration.total_registered() > 0 {
-                tracing::info!(
-                    extension = name,
-                    hooks = registration.hooks,
-                    outbound_webhooks = registration.outbound_webhooks,
-                    "Registered plugin hooks for activated WASM tool"
-                );
-            }
-
-            if registration.errors > 0 {
-                tracing::warn!(
-                    extension = name,
-                    errors = registration.errors,
-                    "Some plugin hooks failed to register"
-                );
-            }
+        if let (Some(hooks), Some(cap)) = (&self.hooks, &cap_path) {
+            self.register_hooks_for_tool(hooks, name, cap).await;
         }
 
         tracing::info!("Activated WASM tool '{}'", name);
