@@ -168,41 +168,39 @@ mod tests {
     /// Finds an available port, creates a [`WebhookServer`] with a `/health`
     /// route, starts the server, and returns the address and a client.
     #[fixture]
-    async fn started_webhook_server() -> StartedWebhookServer {
+    async fn started_webhook_server()
+    -> Result<StartedWebhookServer, Box<dyn std::error::Error + Send + Sync>> {
         let port = {
-            let listener =
-                StdTcpListener::bind("127.0.0.1:0").expect("find available port for fixture");
-            listener
-                .local_addr()
-                .expect("get local addr for fixture")
-                .port()
+            let listener = StdTcpListener::bind("127.0.0.1:0")?;
+            listener.local_addr()?.port()
         };
-        let addr: SocketAddr = format!("127.0.0.1:{}", port)
-            .parse()
-            .expect("parse fixture address");
+        let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()?;
         let mut server = WebhookServer::new(WebhookServerConfig { addr });
         server.add_routes(Router::new().route(
             "/health",
             axum::routing::get(|| async { Json(json!({"status": "ok"})) }),
         ));
-        server.start().await.expect("start fixture webhook server");
-        StartedWebhookServer {
+        server.start().await?;
+        Ok(StartedWebhookServer {
             server,
             addr,
             client: reqwest::Client::new(),
-        }
+        })
     }
 
     #[rstest]
     #[tokio::test]
     async fn test_restart_with_addr_rebinds_listener(
-        #[future] started_webhook_server: StartedWebhookServer,
-    ) {
+        #[future] started_webhook_server: Result<
+            StartedWebhookServer,
+            Box<dyn std::error::Error + Send + Sync>,
+        >,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let StartedWebhookServer {
             mut server,
             addr: addr1,
             client,
-        } = started_webhook_server.await;
+        } = started_webhook_server.await?;
 
         assert_eq!(
             server.current_addr(),
@@ -213,8 +211,7 @@ mod tests {
         let response = client
             .get(format!("http://{}/health", addr1))
             .send()
-            .await
-            .expect("Failed to send request to first server");
+            .await?;
         assert_eq!(
             response.status(),
             200,
@@ -223,21 +220,12 @@ mod tests {
 
         // Find a second available port and restart
         let port2 = {
-            let listener =
-                StdTcpListener::bind("127.0.0.1:0").expect("Failed to find available port 2");
-            listener
-                .local_addr()
-                .expect("Failed to get local addr")
-                .port()
+            let listener = StdTcpListener::bind("127.0.0.1:0")?;
+            listener.local_addr()?.port()
         };
-        let addr2: SocketAddr = format!("127.0.0.1:{}", port2)
-            .parse()
-            .expect("parse second address");
+        let addr2: SocketAddr = format!("127.0.0.1:{}", port2).parse()?;
 
-        server
-            .restart_with_addr(addr2)
-            .await
-            .expect("Failed to restart with new addr");
+        server.restart_with_addr(addr2).await?;
 
         assert_eq!(
             server.current_addr(),
@@ -252,8 +240,7 @@ mod tests {
         let response = client
             .get(format!("http://{}/health", addr2))
             .send()
-            .await
-            .expect("Failed to send request to restarted server");
+            .await?;
         assert_eq!(
             response.status(),
             200,
@@ -266,38 +253,37 @@ mod tests {
         )
         .await;
         assert!(
-            old_result.is_err() || old_result.as_ref().unwrap().is_err(),
+            old_result.is_err() || old_result.ok().and_then(|r| r.ok()).is_none(),
             "Old address should not respond after server restarts"
         );
 
         server.shutdown().await;
+        Ok(())
     }
 
     #[rstest]
     #[tokio::test]
     async fn test_restart_with_addr_rollback_on_bind_failure(
-        #[future] started_webhook_server: StartedWebhookServer,
-    ) {
+        #[future] started_webhook_server: Result<
+            StartedWebhookServer,
+            Box<dyn std::error::Error + Send + Sync>,
+        >,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let StartedWebhookServer {
             mut server,
             addr: addr1,
             client,
-        } = started_webhook_server.await;
+        } = started_webhook_server.await?;
 
         let response = client
             .get(format!("http://{}/health", addr1))
             .send()
-            .await
-            .expect("Failed to send request");
+            .await?;
         assert_eq!(response.status(), 200, "Server should be listening");
 
         // Bind a temporary listener to create a conflict
-        let conflict_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("Failed to bind conflict listener");
-        let conflict_addr = conflict_listener
-            .local_addr()
-            .expect("Failed to get conflict address");
+        let conflict_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let conflict_addr = conflict_listener.local_addr()?;
 
         let result = server.restart_with_addr(conflict_addr).await;
         assert!(
@@ -310,8 +296,7 @@ mod tests {
         let response = client
             .get(format!("http://{}/health", addr1))
             .send()
-            .await
-            .expect("Failed to send request to old address after failed restart");
+            .await?;
         assert_eq!(
             response.status(),
             200,
@@ -325,5 +310,6 @@ mod tests {
         );
 
         server.shutdown().await;
+        Ok(())
     }
 }
