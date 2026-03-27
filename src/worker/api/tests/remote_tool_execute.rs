@@ -22,8 +22,8 @@ async fn remote_tool_execute_preserves_non_success_statuses(
     remote_tool_failure_server: RemoteToolFailureServerFactory,
     #[case] route: RemoteToolFailureRoute,
     #[case] expected_message: &str,
-) {
-    let server = remote_tool_failure_server(route).await;
+) -> anyhow::Result<()> {
+    let server = remote_tool_failure_server(route).await?;
 
     let client = WorkerHttpClient::new(
         server.base_url,
@@ -67,4 +67,5 @@ async fn remote_tool_execute_preserves_non_success_statuses(
 
     server.handle.abort();
     let _ = server.handle.await;
+    Ok(())
 }

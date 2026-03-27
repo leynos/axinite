@@ -30,7 +30,7 @@ pub enum RemoteToolFailureRoute {
 }
 
 pub type RemoteToolFailureServerFuture =
-    Pin<Box<dyn Future<Output = RemoteToolFailureServer> + Send>>;
+    Pin<Box<dyn Future<Output = Result<RemoteToolFailureServer, anyhow::Error>> + Send>>;
 
 pub struct RemoteToolFailureServer {
     pub base_url: String,
@@ -44,10 +44,8 @@ pub type RemoteToolFailureServerFactory =
 pub fn remote_tool_failure_server() -> RemoteToolFailureServerFactory {
     Box::new(|route| {
         Box::pin(async move {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .expect("bind listener");
-            let addr = listener.local_addr().expect("listener addr");
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
             let router = match route {
                 RemoteToolFailureRoute::Catalog => Router::new()
                     .route(REMOTE_TOOL_CATALOG_ROUTE, get(reject_catalog))
@@ -72,13 +70,13 @@ pub fn remote_tool_failure_server() -> RemoteToolFailureServerFactory {
                     .with_state(TestState),
             };
             let handle = tokio::spawn(async move {
-                axum::serve(listener, router).await.expect("serve router");
+                let _ = axum::serve(listener, router).await;
             });
 
-            RemoteToolFailureServer {
+            Ok(RemoteToolFailureServer {
                 base_url: format!("http://{}", addr),
                 handle,
-            }
+            })
         })
     })
 }

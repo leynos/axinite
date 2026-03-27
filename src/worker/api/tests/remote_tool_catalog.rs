@@ -15,8 +15,8 @@ use super::fixtures::{
 #[tokio::test]
 async fn remote_tool_catalog_reports_non_success_statuses(
     remote_tool_failure_server: RemoteToolFailureServerFactory,
-) {
-    let server = remote_tool_failure_server(RemoteToolFailureRoute::Catalog).await;
+) -> anyhow::Result<()> {
+    let server = remote_tool_failure_server(RemoteToolFailureRoute::Catalog).await?;
 
     let client = WorkerHttpClient::new(
         server.base_url,
@@ -38,4 +38,5 @@ async fn remote_tool_catalog_reports_non_success_statuses(
 
     server.handle.abort();
     let _ = server.handle.await;
+    Ok(())
 }

@@ -25,7 +25,7 @@ pub(crate) enum StubOutput {
 /// General-purpose parameterised stub implementing [`Tool`].
 pub(crate) struct StubTool {
     pub(crate) name: &'static str,
-    pub(crate) description: &'static str,
+    pub(crate) description: String,
     pub(crate) parameters: serde_json::Value,
     pub(crate) domain: ToolDomain,
     pub(crate) always_approve: bool,
@@ -37,12 +37,12 @@ pub(crate) struct StubTool {
 impl StubTool {
     pub(crate) fn hosted(
         name: &'static str,
-        description: &'static str,
+        description: impl Into<String>,
         parameters: serde_json::Value,
     ) -> Self {
         Self {
             name,
-            description,
+            description: description.into(),
             parameters,
             domain: ToolDomain::Orchestrator,
             always_approve: false,
@@ -59,7 +59,7 @@ impl NativeTool for StubTool {
     }
 
     fn description(&self) -> &str {
-        self.description
+        &self.description
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -333,7 +333,7 @@ pub(crate) fn complex_tool_stub() -> StubTool {
     let def = complex_tool_definition();
     StubTool {
         name: "remote_tool_fidelity_fixture",
-        description: "A **complex** tool for testing schema fidelity. Handles UTF-8: \u{1F680}\u{1F4A1}. Supports `inline code` and [markdown](https://example.com). Special chars: <>&\"'{}[]().",
+        description: def.description,
         parameters: def.parameters,
         domain: ToolDomain::Orchestrator,
         always_approve: false,

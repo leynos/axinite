@@ -17,6 +17,33 @@ fn worker_and_orchestrator_share_remote_tool_route_constants() {
     // orchestrator. The orchestrator imports them from worker::api to ensure both
     // sides use identical route paths for hosted remote-tool operations.
 
+    // Verify the raw route constants contain the expected placeholder and path
+    // segments so route parity holds by construction, not just by expansion.
+    assert!(
+        REMOTE_TOOL_CATALOG_ROUTE.contains("{job_id}"),
+        "catalog route constant must contain the {{job_id}} placeholder"
+    );
+    assert!(
+        REMOTE_TOOL_CATALOG_ROUTE.contains("/worker/"),
+        "catalog route constant must include the /worker/ prefix"
+    );
+    assert!(
+        REMOTE_TOOL_CATALOG_ROUTE.contains("/tools/catalog"),
+        "catalog route constant must include the /tools/catalog segment"
+    );
+    assert!(
+        REMOTE_TOOL_EXECUTE_ROUTE.contains("{job_id}"),
+        "execute route constant must contain the {{job_id}} placeholder"
+    );
+    assert!(
+        REMOTE_TOOL_EXECUTE_ROUTE.contains("/worker/"),
+        "execute route constant must include the /worker/ prefix"
+    );
+    assert!(
+        REMOTE_TOOL_EXECUTE_ROUTE.contains("/tools/execute"),
+        "execute route constant must include the /tools/execute segment"
+    );
+
     let job_id = "12345678-1234-1234-1234-123456789012";
 
     let catalog_route = REMOTE_TOOL_CATALOG_ROUTE.replace("{job_id}", job_id);

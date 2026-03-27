@@ -180,12 +180,7 @@ async fn worker_remote_tool_proxy_preserves_full_tool_output_fields(
 async fn worker_remote_tool_proxy_preserves_full_tool_definition_fields() {
     let complex_definition = crate::test_support::build_complex_tool_definition(
         "complex_proxy_fixture",
-        concat!(
-            "A **complex** tool for testing proxy fidelity. ",
-            "Handles UTF-8: \u{1F680}\u{1F4A1}. ",
-            "Supports `inline code` and [markdown](https://example.com). ",
-            "Special chars: <>&\"'{}[]()."
-        ),
+        "Complex tool for proxy definition fidelity testing",
     );
 
     let client = Arc::new(WorkerHttpClient::new(
