@@ -70,10 +70,16 @@ async fn remote_tool_catalog_error(
     )
 }
 
+/// Minimal shared Axum state for test catalog routers.
 #[derive(Clone)]
-struct TestState;
+pub(super) struct TestState;
 
-async fn spawn_test_server<H, T>(
+/// Spawns an ephemeral Axum server that serves the remote-tool catalog route.
+///
+/// `H` is any Axum handler compatible with [`TestState`], and `T` is its
+/// extractor tuple. Returns the `http://host:port` base URL and a join
+/// handle for the background server task.
+pub(super) async fn spawn_test_server<H, T>(
     handler: H,
 ) -> Result<(String, tokio::task::JoinHandle<()>), Box<dyn std::error::Error>>
 where

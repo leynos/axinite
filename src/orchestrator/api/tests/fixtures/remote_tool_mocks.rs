@@ -25,7 +25,7 @@ pub(crate) enum StubOutput {
 /// General-purpose parameterised stub implementing [`Tool`].
 pub(crate) struct StubTool {
     pub(crate) name: &'static str,
-    pub(crate) description: &'static str,
+    pub(crate) description: String,
     pub(crate) parameters: serde_json::Value,
     pub(crate) domain: ToolDomain,
     pub(crate) always_approve: bool,
@@ -37,12 +37,12 @@ pub(crate) struct StubTool {
 impl StubTool {
     pub(crate) fn hosted(
         name: &'static str,
-        description: &'static str,
+        description: impl Into<String>,
         parameters: serde_json::Value,
     ) -> Self {
         Self {
             name,
-            description,
+            description: description.into(),
             parameters,
             domain: ToolDomain::Orchestrator,
             always_approve: false,
@@ -59,7 +59,7 @@ impl NativeTool for StubTool {
     }
 
     fn description(&self) -> &str {
-        self.description
+        &self.description
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -303,4 +303,37 @@ impl NativeTool for ErrorTool {
     fn hosted_tool_catalog_source(&self) -> Option<HostedToolCatalogSource> {
         Some(HostedToolCatalogSource::Mcp)
     }
+}
+
+/// Returns a complex `ToolDefinition` with nested JSON Schema structures, a
+/// multi-sentence description with special characters and Markdown formatting,
+/// and multiple required fields.
+///
+/// This fixture is used to test that the full `ToolDefinition` payload survives
+/// the journey from orchestrator registry through the catalogue endpoint to the
+/// worker-side proxy without field loss or transformation.
+pub(crate) fn complex_tool_definition() -> crate::llm::ToolDefinition {
+    crate::test_support::build_complex_tool_definition(
+        "remote_tool_fidelity_fixture",
+        concat!(
+            "A **complex** tool for testing schema fidelity. ",
+            "Handles UTF-8: \u{1F680}\u{1F4A1}. ",
+            "Supports `inline code` and [markdown](https://example.com). ",
+            "Special chars: <>&\"'{}[]()."
+        ),
+    )
+}
+
+/// Returns a [`StubTool`] configured with the complex tool definition from
+/// [`complex_tool_definition`].
+///
+/// The returned tool is hosted-safe and will echo its params on execution,
+/// making it suitable for round-trip fidelity tests.
+pub(crate) fn complex_tool_stub() -> StubTool {
+    let def = complex_tool_definition();
+    StubTool::hosted(
+        "remote_tool_fidelity_fixture",
+        def.description,
+        def.parameters,
+    )
 }

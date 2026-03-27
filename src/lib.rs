@@ -82,6 +82,9 @@ pub mod testing_wasm;
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod testing;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 pub use config::Config;
 pub use error::{Error, Result};
 

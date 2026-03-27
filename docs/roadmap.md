@@ -87,7 +87,7 @@ worker-orchestrator contract hardening belongs inside 1.1.1.
   - Success: hosted model requests include the real tool descriptions and JSON
     Schemas, and worker-local tools plus orchestrator-owned tools appear as one
     unified tool surface.
-- [ ] 1.1.4. Add hosted-mode tests for schema fidelity and execution routing.
+- [x] 1.1.4. Add hosted-mode tests for schema fidelity and execution routing.
   Requires 1.1.3.
   - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
   - Tracks the worker-orchestrator parity portion of
@@ -1339,7 +1339,6 @@ provenance, transformation policy, and per-channel capability negotiation before
     place, unsupported media falls back predictably, and automated tests cover
     preview, cache reuse, transcription, TTS, and transformed-media flows.
 
-
 ## 7. Raise assurance for safety and lifecycle invariants
 
 Phase objective: add proof-oriented and generated verification where Axinite's
@@ -1405,7 +1404,6 @@ host-matching contract used by installer- and allowlist-adjacent code.
     and make installer regressions fail on structured generated input instead of
     one-off examples only.
 
-
 ### 7.3. Bounded checking for allowlist and host-matcher semantics
 
 Objective: use Kani where the highest-value invariants are small, deterministic,
@@ -1447,7 +1445,6 @@ feeds 7.5 if the extracted matcher proves stable enough for a later full proof.
     explores larger host and path combinations, and unwind bounds stay close to
     the harnesses they justify.
 
-
 ### 7.4. Model-check the job lifecycle with Stateright
 
 Objective: model the scheduler, worker, token, reaper, and retained-result
@@ -1486,7 +1483,6 @@ contract work exposes adjacent semantic cleanup patterns.
     scheduled runs can extend depth and state count, and any safety-property
     counterexample is surfaced as a dedicated formal-verification failure.
 
-
 ### 7.5. Add a narrow later-stage Verus proof path
 
 Objective: keep a proof-only path available for the few invariants that remain
@@ -1508,7 +1504,6 @@ production code have already converged on one matcher contract.
   - Success: Verus proves the chosen exact-host and wildcard-host semantics,
     suffix spoofing remains impossible in the proof model, and proof execution
     stays isolated from the normal Cargo-driven test path.
-
 
 ### 7.1. Formal-verification infrastructure and workflow split
 
