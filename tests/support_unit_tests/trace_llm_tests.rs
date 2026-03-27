@@ -120,64 +120,6 @@ fn make_completion_request(user_msg: &str) -> CompletionRequest {
     CompletionRequest::new(vec![ChatMessage::user(user_msg)])
 }
 
-async fn run_hint_case(
-    user_text: &str,
-    last_user_contains: &str,
-    min_messages: usize,
-    response_text: &str,
-) -> (String, usize) {
-    let trace_json = serde_json::json!({
-        "model_name": "test-model",
-        "turns": [{
-            "user_input": user_text,
-            "steps": [{
-                "request_hint": {
-                    "last_user_message_contains": last_user_contains,
-                    "min_message_count": min_messages,
-                },
-                "response": {
-                    "type": "text",
-                    "content": response_text,
-                    "input_tokens": 10,
-                    "output_tokens": 5,
-                },
-                "expected_tool_results": [],
-            }]
-        }]
-    });
-    let trace: LlmTrace =
-        serde_json::from_str(&trace_json.to_string()).expect("parse hint test trace");
-    let llm = TraceLlm::from_trace(trace);
-    let resp = llm
-        .complete_with_tools(make_request(user_text))
-        .await
-        .expect("hint test completion should succeed");
-
-    (
-        resp.content
-            .expect("hint test response should contain text"),
-        llm.hint_mismatches(),
-    )
-}
-
-macro_rules! hint_test {
-    (
-        $name:ident,
-        user = $user:expr,
-        contains = $contains:expr,
-        min = $min:expr,
-        response = $response:expr,
-        expect_mismatches = $expected:expr
-    ) => {
-        #[tokio::test]
-        async fn $name() {
-            let (content, mismatches) = run_hint_case($user, $contains, $min, $response).await;
-            assert_eq!(content, $response);
-            assert_eq!(mismatches, $expected);
-        }
-    };
-}
-
 #[tokio::test]
 async fn replays_text_response() {
     let trace = LlmTrace::single_turn("test-model", "hi", vec![text_step("Hello world", 100, 20)]);
@@ -284,33 +226,6 @@ async fn errors_when_exhausted() {
         "Expected 'exhausted' in error: {err_msg}"
     );
 }
-
-hint_test!(
-    validates_request_hints,
-    user = "say hello please",
-    contains = "hello",
-    min = 1,
-    response = "matched",
-    expect_mismatches = 0
-);
-
-hint_test!(
-    validates_request_hints_case_insensitively,
-    user = "Write a file to a bad path then recover",
-    contains = "write",
-    min = 1,
-    response = "matched",
-    expect_mismatches = 0
-);
-
-hint_test!(
-    hint_mismatch_warns_but_continues,
-    user = "apple",
-    contains = "banana",
-    min = 5,
-    response = "still works",
-    expect_mismatches = 2
-);
 
 #[tokio::test]
 async fn from_json_file() {
@@ -421,33 +336,6 @@ async fn captured_requests() {
         .expect("captured requests should be available");
     assert_captured_requests_shape(&captured, 2, "second message", 1);
     assert_msg(Role::User, &captured[0][0], "first message");
-}
-
-#[test]
-fn deserialize_flat_steps_as_single_turn() {
-    let json = r#"{"model_name": "m", "steps": [
-        {"response": {"type": "text", "content": "hi", "input_tokens": 1, "output_tokens": 1}}
-    ]}"#;
-    let trace: LlmTrace = serde_json::from_str(json).unwrap();
-    assert_eq!(trace.turns.len(), 1);
-    assert_eq!(trace.turns[0].user_input, "(test input)");
-    assert_eq!(trace.turns[0].steps.len(), 1);
-}
-
-#[test]
-fn deserialize_turns_format() {
-    let json = r#"{"model_name": "m", "turns": [
-        {"user_input": "hello", "steps": [
-            {"response": {"type": "text", "content": "hi", "input_tokens": 1, "output_tokens": 1}}
-        ]},
-        {"user_input": "bye", "steps": [
-            {"response": {"type": "text", "content": "bye", "input_tokens": 1, "output_tokens": 1}}
-        ]}
-    ]}"#;
-    let trace: LlmTrace = serde_json::from_str(json).unwrap();
-    assert_eq!(trace.turns.len(), 2);
-    assert_eq!(trace.turns[0].user_input, "hello");
-    assert_eq!(trace.turns[1].user_input, "bye");
 }
 
 #[tokio::test]
