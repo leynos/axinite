@@ -112,7 +112,7 @@ async fn build_runtime_with_remote_tools(
         Uuid::nil(),
         "test".to_string(),
     ));
-    let runtime = WorkerRuntime::new(
+    let mut runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: base_url.to_string(),
@@ -120,6 +120,7 @@ async fn build_runtime_with_remote_tools(
         },
         Arc::clone(&client),
     );
+    runtime.toolset_instructions = runtime.register_remote_tools().await?;
     Ok((runtime, client))
 }
 
