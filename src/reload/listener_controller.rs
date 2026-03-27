@@ -1,27 +1,61 @@
 //! Listener control abstraction for hot-reload.
 
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use tokio::sync::Mutex;
 
 use crate::channels::WebhookServer;
 use crate::error::ChannelError;
 
+/// Boxed future used at the dyn listener-controller boundary.
+pub type ListenerControllerFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Trait for controlling HTTP listeners during hot-reload.
 ///
 /// Implementations manage listener restarts without exposing
 /// internal server details.
-#[async_trait]
 pub trait ListenerController: Send + Sync {
     /// Get the current bind address.
-    async fn current_addr(&self) -> SocketAddr;
+    fn current_addr<'a>(&'a self) -> ListenerControllerFuture<'a, SocketAddr>;
 
     /// Restart the listener on a new address.
     ///
     /// If the restart fails, the listener should remain on the old address.
-    async fn restart_with_addr(&self, addr: SocketAddr) -> Result<(), ChannelError>;
+    fn restart_with_addr<'a>(
+        &'a self,
+        addr: SocketAddr,
+    ) -> ListenerControllerFuture<'a, Result<(), ChannelError>>;
+}
+
+/// Native async sibling trait for concrete listener-controller implementations.
+pub trait NativeListenerController: Send + Sync {
+    /// See [`ListenerController::current_addr`].
+    fn current_addr(&self) -> impl Future<Output = SocketAddr> + Send + '_;
+
+    /// See [`ListenerController::restart_with_addr`].
+    fn restart_with_addr(
+        &self,
+        addr: SocketAddr,
+    ) -> impl Future<Output = Result<(), ChannelError>> + Send + '_;
+}
+
+impl<T> ListenerController for T
+where
+    T: NativeListenerController + Send + Sync,
+{
+    fn current_addr<'a>(&'a self) -> ListenerControllerFuture<'a, SocketAddr> {
+        Box::pin(NativeListenerController::current_addr(self))
+    }
+
+    fn restart_with_addr<'a>(
+        &'a self,
+        addr: SocketAddr,
+    ) -> ListenerControllerFuture<'a, Result<(), ChannelError>> {
+        Box::pin(NativeListenerController::restart_with_addr(self, addr))
+    }
 }
 
 /// Listener controller for the webhook server.
@@ -35,8 +69,7 @@ impl WebhookListenerController {
     }
 }
 
-#[async_trait]
-impl ListenerController for WebhookListenerController {
+impl NativeListenerController for WebhookListenerController {
     async fn current_addr(&self) -> SocketAddr {
         let server = self.server.lock().await;
         server.current_addr()

@@ -1,21 +1,39 @@
 //! Secret injection abstraction for hot-reload.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use crate::secrets::{SecretError, SecretsStore};
+
+/// Boxed future used at the dyn secret-injector boundary.
+pub type SecretInjectorFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(), SecretError>> + Send + 'a>>;
 
 /// Trait for injecting secrets into the environment overlay.
 ///
 /// Implementations fetch secrets from storage and inject them
 /// into the thread-safe overlay used by config loading.
-#[async_trait]
 pub trait SecretInjector: Send + Sync {
     /// Inject secrets into the environment overlay.
     ///
     /// Failures should be logged but not treated as fatal reload errors.
-    async fn inject(&self) -> Result<(), SecretError>;
+    fn inject<'a>(&'a self) -> SecretInjectorFuture<'a>;
+}
+
+/// Native async sibling trait for concrete secret-injector implementations.
+pub trait NativeSecretInjector: Send + Sync {
+    /// See [`SecretInjector::inject`].
+    fn inject(&self) -> impl Future<Output = Result<(), SecretError>> + Send + '_;
+}
+
+impl<T> SecretInjector for T
+where
+    T: NativeSecretInjector + Send + Sync,
+{
+    fn inject<'a>(&'a self) -> SecretInjectorFuture<'a> {
+        Box::pin(NativeSecretInjector::inject(self))
+    }
 }
 
 /// Secret injector that reads from a database-backed secrets store.
@@ -33,8 +51,7 @@ impl DbSecretInjector {
     }
 }
 
-#[async_trait]
-impl SecretInjector for DbSecretInjector {
+impl NativeSecretInjector for DbSecretInjector {
     async fn inject(&self) -> Result<(), SecretError> {
         self.inject_webhook_secret().await
     }

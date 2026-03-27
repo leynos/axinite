@@ -8,11 +8,11 @@
 //! The [`HotReloadManager`] orchestrates these boundaries without knowing
 //! implementation details, making reload logic testable via hand-rolled stubs.
 
-mod config_loader;
+pub(crate) mod config_loader;
 mod error;
-mod listener_controller;
+pub(crate) mod listener_controller;
 mod manager;
-mod secret_injector;
+pub(crate) mod secret_injector;
 
 #[cfg(test)]
 mod test_stubs;

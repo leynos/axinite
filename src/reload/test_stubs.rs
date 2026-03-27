@@ -1,15 +1,18 @@
 //! Hand-rolled test stubs for hot-reload components.
 
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use tokio::sync::Mutex;
 
 use crate::channels::ChannelSecretUpdater;
 use crate::config::Config;
 use crate::error::{ChannelError, ConfigError};
-use crate::reload::{ConfigLoader, ListenerController, SecretInjector};
+use crate::reload::config_loader::NativeConfigLoader;
+use crate::reload::listener_controller::NativeListenerController;
+use crate::reload::secret_injector::NativeSecretInjector;
 use crate::secrets::SecretError;
 
 /// Stub config loader that returns a pre-configured result.
@@ -34,8 +37,7 @@ impl StubConfigLoader {
     }
 }
 
-#[async_trait]
-impl ConfigLoader for StubConfigLoader {
+impl NativeConfigLoader for StubConfigLoader {
     async fn load(&self) -> Result<Config, ConfigError> {
         match &self.config {
             Some(c) => Ok(c.clone()),
@@ -100,8 +102,7 @@ impl StubListenerController {
     }
 }
 
-#[async_trait]
-impl ListenerController for StubListenerController {
+impl NativeListenerController for StubListenerController {
     async fn current_addr(&self) -> SocketAddr {
         self.current_addr
     }
@@ -140,8 +141,7 @@ impl StubSecretInjector {
     }
 }
 
-#[async_trait]
-impl SecretInjector for StubSecretInjector {
+impl NativeSecretInjector for StubSecretInjector {
     async fn inject(&self) -> Result<(), SecretError> {
         *self.called.lock().await = true;
 
@@ -178,9 +178,13 @@ impl SpySecretUpdater {
     }
 }
 
-#[async_trait]
 impl ChannelSecretUpdater for SpySecretUpdater {
-    async fn update_secret(&self, new_secret: Option<secrecy::SecretString>) {
-        self.calls.lock().await.push(new_secret);
+    fn update_secret<'a>(
+        &'a self,
+        new_secret: Option<secrecy::SecretString>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            self.calls.lock().await.push(new_secret);
+        })
     }
 }
