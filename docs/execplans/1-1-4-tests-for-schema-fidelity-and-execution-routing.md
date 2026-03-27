@@ -214,7 +214,7 @@ The following project documents inform test design and code style:
   stop and document the failure in `Surprises & Discoveries` before
   continuing.
 
-- BDD harness: if adding `rstest-bdd` behavioural coverage for any test
+- Behaviour-driven development (BDD) harness: if adding `rstest-bdd` behavioural coverage for any test
   family requires a brand-new feature-test harness, external services, or
   Docker orchestration, document that explicitly in `Decision Log` and fall
   back to in-process `rstest` integration coverage.
