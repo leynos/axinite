@@ -5,6 +5,18 @@ use crate::db::postgres::PgBackend;
 use crate::error::DatabaseError;
 use secrecy::SecretString;
 
+const UNAVAILABLE_PATTERNS: &[&str] = &[
+    "connection refused",
+    "timed out",
+    "timeout",
+    "failed to lookup address information",
+    "name or service not known",
+    "temporary failure in name resolution",
+    "network is unreachable",
+    "no such file or directory",
+    "could not connect to server",
+];
+
 /// Create a PostgreSQL-backed test database.
 ///
 /// Reads the test database URL from the `TEST_DATABASE_URL` environment
@@ -48,13 +60,5 @@ pub async fn try_test_pg_db() -> Result<Option<PgBackend>, DatabaseError> {
 fn is_database_unavailable(error: &DatabaseError) -> bool {
     let lowered = format!("{error:?} {error}").to_lowercase();
 
-    lowered.contains("connection refused")
-        || lowered.contains("timed out")
-        || lowered.contains("timeout")
-        || lowered.contains("failed to lookup address information")
-        || lowered.contains("name or service not known")
-        || lowered.contains("temporary failure in name resolution")
-        || lowered.contains("network is unreachable")
-        || lowered.contains("no such file or directory")
-        || lowered.contains("could not connect to server")
+    UNAVAILABLE_PATTERNS.iter().any(|p| lowered.contains(p))
 }
