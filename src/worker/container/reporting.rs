@@ -4,6 +4,8 @@
 //! completion reports, and job events. It encapsulates the reporting protocol
 //! and provides a clean interface for the main worker loop.
 
+use std::sync::Arc;
+
 use crate::agent::agentic_loop::{LoopOutcome, truncate_for_preview};
 use crate::error::WorkerError;
 use crate::worker::api::{
@@ -37,11 +39,7 @@ impl WorkerRuntime {
         );
 
         if let Err(report_error) = self
-            .report_worker_status(
-                WorkerState::Failed,
-                Some("pre-loop failure".to_string()),
-                100,
-            )
+            .report_worker_status(WorkerState::Failed, Some("pre-loop failure".to_string()), 0)
             .await
         {
             tracing::warn!(
@@ -91,8 +89,7 @@ impl WorkerRuntime {
                         "success": true,
                         "message": truncate_for_preview(&output, 2000),
                     }),
-                )
-                .await;
+                );
                 self.client
                     .report_complete(&CompletionReport {
                         success: true,
@@ -116,8 +113,7 @@ impl WorkerRuntime {
                         "message": "Execution stopped",
                         "iterations": iterations,
                     }),
-                )
-                .await;
+                );
                 self.client
                     .report_complete(&CompletionReport {
                         success: false,
@@ -149,8 +145,7 @@ impl WorkerRuntime {
                 "success": false,
                 "message": message,
             }),
-        )
-        .await;
+        );
         self.client
             .report_complete(&CompletionReport {
                 success: false,
@@ -161,9 +156,33 @@ impl WorkerRuntime {
     }
 
     /// Post a job event to the orchestrator (fire-and-forget).
-    pub(super) async fn post_event(&self, event_type: JobEventType, data: serde_json::Value) {
-        self.client
-            .post_event(&JobEventPayload { event_type, data })
+    ///
+    /// Spawns a background task with a bounded timeout to ensure slow event
+    /// endpoints cannot delay authoritative completion reports.
+    pub(super) fn post_event(&self, event_type: JobEventType, data: serde_json::Value) {
+        let client = Arc::clone(&self.client);
+        let job_id = self.config.job_id;
+
+        tokio::spawn(async move {
+            let payload = JobEventPayload { event_type, data };
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                client.post_event(&payload),
+            )
             .await;
+
+            match result {
+                Ok(()) => {
+                    tracing::debug!(job_id = %job_id, ?event_type, "Posted job event");
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        job_id = %job_id,
+                        ?event_type,
+                        "Job event post timed out after 5s"
+                    );
+                }
+            }
+        });
     }
 }

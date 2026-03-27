@@ -292,24 +292,26 @@ impl std::fmt::Debug for CredentialResponse {
 
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn test_route_constants_are_correctly_derived() {
+    #[rstest]
+    #[case(JOB_ROUTE, "/worker/{job_id}/job")]
+    #[case(LLM_COMPLETE_ROUTE, "/worker/{job_id}/llm/complete")]
+    #[case(
+        LLM_COMPLETE_WITH_TOOLS_ROUTE,
+        "/worker/{job_id}/llm/complete_with_tools"
+    )]
+    #[case(STATUS_ROUTE, "/worker/{job_id}/status")]
+    #[case(COMPLETE_ROUTE, "/worker/{job_id}/complete")]
+    #[case(EVENT_ROUTE, "/worker/{job_id}/event")]
+    #[case(PROMPT_ROUTE, "/worker/{job_id}/prompt")]
+    #[case(CREDENTIALS_ROUTE, "/worker/{job_id}/credentials")]
+    #[case(REMOTE_TOOL_CATALOG_ROUTE, "/worker/{job_id}/tools/catalog")]
+    #[case(REMOTE_TOOL_EXECUTE_ROUTE, "/worker/{job_id}/tools/execute")]
+    #[case(WORKER_HEALTH_ROUTE, "/health")]
+    fn test_route_constants_are_correctly_derived(#[case] route: &str, #[case] expected: &str) {
         // Verify that ROUTE constants are correctly derived from PATH constants
-        assert_eq!(JOB_ROUTE, "/worker/{job_id}/job");
-        assert_eq!(LLM_COMPLETE_ROUTE, "/worker/{job_id}/llm/complete");
-        assert_eq!(
-            LLM_COMPLETE_WITH_TOOLS_ROUTE,
-            "/worker/{job_id}/llm/complete_with_tools"
-        );
-        assert_eq!(STATUS_ROUTE, "/worker/{job_id}/status");
-        assert_eq!(COMPLETE_ROUTE, "/worker/{job_id}/complete");
-        assert_eq!(EVENT_ROUTE, "/worker/{job_id}/event");
-        assert_eq!(PROMPT_ROUTE, "/worker/{job_id}/prompt");
-        assert_eq!(CREDENTIALS_ROUTE, "/worker/{job_id}/credentials");
-        assert_eq!(REMOTE_TOOL_CATALOG_ROUTE, "/worker/{job_id}/tools/catalog");
-        assert_eq!(REMOTE_TOOL_EXECUTE_ROUTE, "/worker/{job_id}/tools/execute");
-        assert_eq!(WORKER_HEALTH_ROUTE, "/health");
+        assert_eq!(route, expected);
     }
 }
 
