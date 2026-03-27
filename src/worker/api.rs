@@ -75,6 +75,11 @@ impl WorkerHttpClient {
         &self.orchestrator_url
     }
 
+    /// Get the job ID.
+    pub fn job_id(&self) -> Uuid {
+        self.job_id
+    }
+
     fn url(&self, path: &str) -> String {
         format!("{}/worker/{}/{}", self.orchestrator_url, self.job_id, path)
     }

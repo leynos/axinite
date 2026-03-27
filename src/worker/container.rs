@@ -87,7 +87,25 @@ impl WorkerRuntime {
     /// This is the primary constructor for `WorkerRuntime`. It takes a
     /// pre-constructed client, making dependency injection straightforward
     /// and allowing tests to provide mock clients without environment setup.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided `client` job_id or orchestrator_url doesn't match
+    /// the values in `config`. This validates configuration consistency at
+    /// construction time to prevent subtle runtime errors.
     pub fn new(config: WorkerConfig, client: Arc<WorkerHttpClient>) -> Self {
+        // Validate that config and client are consistent
+        assert_eq!(
+            config.job_id,
+            client.job_id(),
+            "WorkerConfig job_id must match WorkerHttpClient job_id"
+        );
+        assert_eq!(
+            config.orchestrator_url.trim_end_matches('/'),
+            client.orchestrator_url(),
+            "WorkerConfig orchestrator_url must match WorkerHttpClient orchestrator_url"
+        );
+
         let llm: Arc<dyn LlmProvider> = Arc::new(ProxyLlmProvider::new(
             Arc::clone(&client),
             "proxied".to_string(),
