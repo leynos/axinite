@@ -97,7 +97,8 @@ fn deserialize_flat_steps_as_single_turn() {
     let json = r#"{"model_name": "m", "steps": [
         {"response": {"type": "text", "content": "hi", "input_tokens": 1, "output_tokens": 1}}
     ]}"#;
-    let trace: LlmTrace = serde_json::from_str(json).unwrap();
+    let trace: LlmTrace = serde_json::from_str(json)
+        .expect("deserialize_flat_steps_as_single_turn: failed to parse JSON into LlmTrace");
     assert_eq!(trace.turns.len(), 1);
     assert_eq!(trace.turns[0].user_input, "(test input)");
     assert_eq!(trace.turns[0].steps.len(), 1);
@@ -113,7 +114,8 @@ fn deserialize_turns_format() {
             {"response": {"type": "text", "content": "bye", "input_tokens": 1, "output_tokens": 1}}
         ]}
     ]}"#;
-    let trace: LlmTrace = serde_json::from_str(json).unwrap();
+    let trace: LlmTrace = serde_json::from_str(json)
+        .expect("failed to deserialize LlmTrace in deserialize_turns_format test");
     assert_eq!(trace.turns.len(), 2);
     assert_eq!(trace.turns[0].user_input, "hello");
     assert_eq!(trace.turns[1].user_input, "bye");
