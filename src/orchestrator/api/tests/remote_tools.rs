@@ -27,7 +27,7 @@ async fn populate_catalog_visibility_fixtures(tools: &ToolRegistry) {
     tools
         .register(Arc::new(StubTool {
             name: "hosted_extension_catalog_builtin",
-            description: "Hosted-safe extension-management built-in",
+            description: "Hosted-safe extension-management built-in".to_string(),
             catalog_source: None,
             output: StubOutput::Fixed(serde_json::json!({"extensions": []})),
             ..StubTool::hosted(
@@ -40,7 +40,7 @@ async fn populate_catalog_visibility_fixtures(tools: &ToolRegistry) {
     tools
         .register(Arc::new(StubTool {
             name: "create_job",
-            description: "Protected orchestration tool",
+            description: "Protected orchestration tool".to_string(),
             output: StubOutput::Fixed(serde_json::json!({"created": true})),
             ..StubTool::hosted(
                 "create_job",
@@ -52,7 +52,7 @@ async fn populate_catalog_visibility_fixtures(tools: &ToolRegistry) {
     tools
         .register(Arc::new(StubTool {
             name: "job_events",
-            description: "Protected job-events tool",
+            description: "Protected job-events tool".to_string(),
             output: StubOutput::Fixed(serde_json::json!({"events": []})),
             ..StubTool::hosted(
                 "job_events",
@@ -158,7 +158,7 @@ async fn remote_tool_catalog_excludes_ineligible_tools(
 ) {
     assert_catalog_excludes_stub(StubTool {
         name,
-        description,
+        description: description.to_string(),
         catalog_source,
         output: StubOutput::Fixed(output),
         ..StubTool::hosted(
@@ -256,7 +256,7 @@ async fn remote_tool_execute_rejects_protected_orchestration_tools(test_state: O
         test_state,
         Arc::new(StubTool {
             name: "create_job",
-            description: "Protected orchestration tool",
+            description: "Protected orchestration tool".to_string(),
             output: StubOutput::Fixed(serde_json::json!({"created":true})),
             ..StubTool::hosted(
                 "create_job",

@@ -4,6 +4,7 @@ use rstest::rstest;
 
 use super::*;
 
+mod hosted_fidelity;
 mod pre_loop;
 mod remote_tools;
 pub mod test_support;
