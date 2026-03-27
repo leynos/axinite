@@ -16,30 +16,58 @@ use crate::worker::api::{
     RemoteToolExecutionRequest,
 };
 
+/// Unit type used as shared Axum state for failure-mode test routers.
+///
+/// Implements `Clone` and `Copy` so it can be cheaply shared across
+/// handler extractors without allocation.
 #[derive(Clone, Copy)]
 pub struct TestState;
 
+/// Selects which remote-tool API route the failure server should reject.
+///
+/// Each variant maps to a distinct HTTP status code returned by the mock
+/// server, letting tests exercise individual error-handling paths in the
+/// remote-tool client.
 #[derive(Clone, Copy)]
 pub enum RemoteToolFailureRoute {
+    /// Returns `403 Forbidden` on the catalog endpoint.
     Catalog,
+    /// Returns `400 Bad Request` on the execute endpoint.
     ExecuteBadRequest,
+    /// Returns `403 Forbidden` on the execute endpoint.
     ExecuteForbidden,
+    /// Returns `429 Too Many Requests` (with `Retry-After`) on execute.
     ExecuteRateLimited,
+    /// Returns `502 Bad Gateway` on the execute endpoint.
     ExecuteBadGateway,
+    /// Returns `500 Internal Server Error` on the execute endpoint.
     ExecuteInternalError,
 }
 
+/// A pinned, boxed future that resolves to a [`RemoteToolFailureServer`] or
+/// an error. Returned by the factory closure so that server creation can be
+/// performed asynchronously.
 pub type RemoteToolFailureServerFuture =
     Pin<Box<dyn Future<Output = Result<RemoteToolFailureServer, anyhow::Error>> + Send>>;
 
+/// A running mock server that rejects requests on a chosen route.
 pub struct RemoteToolFailureServer {
+    /// The `http://host:port` base URL of the listening server.
     pub base_url: String,
+    /// Join handle for the background Tokio task serving requests.
     pub handle: tokio::task::JoinHandle<()>,
 }
 
+/// Thread-safe factory that spawns a [`RemoteToolFailureServer`] configured
+/// to fail on the given [`RemoteToolFailureRoute`].
 pub type RemoteToolFailureServerFactory =
     Box<dyn Fn(RemoteToolFailureRoute) -> RemoteToolFailureServerFuture + Send + Sync>;
 
+/// Returns a factory closure that spawns a failure-mode mock server.
+///
+/// Call the returned closure with a [`RemoteToolFailureRoute`] to start a
+/// server bound to an ephemeral port that rejects requests on the chosen
+/// route with an appropriate HTTP error status.
 #[fixture]
 pub fn remote_tool_failure_server() -> RemoteToolFailureServerFactory {
     Box::new(|route| {
