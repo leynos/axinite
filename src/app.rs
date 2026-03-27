@@ -789,6 +789,51 @@ impl AppBuilder {
         ))
     }
 
+    /// Phase 6: Discover and register skills.
+    ///
+    /// Returns `(None, None)` when the skills feature is disabled.
+    async fn init_skills(
+        &self,
+        tools: &Arc<ToolRegistry>,
+    ) -> (
+        Option<Arc<std::sync::RwLock<SkillRegistry>>>,
+        Option<Arc<SkillCatalog>>,
+    ) {
+        if !self.config.skills.enabled {
+            return (None, None);
+        }
+        let mut registry = SkillRegistry::new(self.config.skills.local_dir.clone())
+            .with_installed_dir(self.config.skills.installed_dir.clone());
+        let loaded = registry.discover_all().await;
+        if !loaded.is_empty() {
+            tracing::debug!("Loaded {} skill(s): {}", loaded.len(), loaded.join(", "));
+        }
+        let registry = Arc::new(std::sync::RwLock::new(registry));
+        let catalog = crate::skills::catalog::shared_catalog();
+        tools.register_skill_tools(Arc::clone(&registry), Arc::clone(&catalog));
+        (Some(registry), Some(catalog))
+    }
+
+    /// Phase 7: Construct runtime resource guards.
+    ///
+    /// Creates the `ContextManager` (parallel-job limiter) and `CostGuard`
+    /// (per-day/per-hour spend limiter) from resolved config.
+    fn init_runtime_context(
+        &self,
+    ) -> (
+        Arc<ContextManager>,
+        Arc<crate::agent::cost_guard::CostGuard>,
+    ) {
+        let context_manager = Arc::new(ContextManager::new(self.config.agent.max_parallel_jobs));
+        let cost_guard = Arc::new(crate::agent::cost_guard::CostGuard::new(
+            crate::agent::cost_guard::CostGuardConfig {
+                max_cost_per_day_cents: self.config.agent.max_cost_per_day_cents,
+                max_actions_per_hour: self.config.agent.max_actions_per_hour,
+            },
+        ));
+        (context_manager, cost_guard)
+    }
+
     /// Run all init phases in order and return the assembled components
     /// along with deferred runtime side effects.
     ///
@@ -838,29 +883,11 @@ impl AppBuilder {
             .ok()
             .map(std::path::PathBuf::from);
 
-        // Skills system
-        let (skill_registry, skill_catalog) = if self.config.skills.enabled {
-            let mut registry = SkillRegistry::new(self.config.skills.local_dir.clone())
-                .with_installed_dir(self.config.skills.installed_dir.clone());
-            let loaded = registry.discover_all().await;
-            if !loaded.is_empty() {
-                tracing::debug!("Loaded {} skill(s): {}", loaded.len(), loaded.join(", "));
-            }
-            let registry = Arc::new(std::sync::RwLock::new(registry));
-            let catalog = crate::skills::catalog::shared_catalog();
-            tools.register_skill_tools(Arc::clone(&registry), Arc::clone(&catalog));
-            (Some(registry), Some(catalog))
-        } else {
-            (None, None)
-        };
+        // Phase 6 – skills
+        let (skill_registry, skill_catalog) = self.init_skills(&tools).await;
 
-        let context_manager = Arc::new(ContextManager::new(self.config.agent.max_parallel_jobs));
-        let cost_guard = Arc::new(crate::agent::cost_guard::CostGuard::new(
-            crate::agent::cost_guard::CostGuardConfig {
-                max_cost_per_day_cents: self.config.agent.max_cost_per_day_cents,
-                max_actions_per_hour: self.config.agent.max_actions_per_hour,
-            },
-        ));
+        // Phase 7 – runtime context
+        let (context_manager, cost_guard) = self.init_runtime_context();
 
         tracing::debug!(
             "Tool registry initialized with {} total tools",

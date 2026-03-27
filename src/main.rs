@@ -41,56 +41,91 @@ fn main() -> anyhow::Result<()> {
         .block_on(async_main())
 }
 
-async fn async_main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+/// Holds all channel setup state.
+struct ChannelSetup {
+    channels: ChannelManager,
+    channel_names: Vec<String>,
+    loaded_wasm_channel_names: Vec<String>,
+    #[allow(clippy::type_complexity)]
+    wasm_channel_runtime_state: Option<(
+        Arc<WasmChannelRuntime>,
+        Arc<PairingStore>,
+        Arc<WasmChannelRouter>,
+    )>,
+    webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
+    #[cfg(unix)]
+    http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
+}
 
-    // Handle non-agent commands first (they don't need full setup)
+/// Holds gateway channel setup state.
+struct GatewaySetup {
+    gateway_url: Option<String>,
+    sse_sender: Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
+    routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
+}
+
+/// Dispatch CLI subcommands.
+///
+/// Returns `Ok(Some(()))` for commands that were handled (caller should exit),
+/// or `Ok(None)` for the fall-through run case.
+async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<Option<()>> {
     match &cli.command {
         Some(Command::Tool(tool_cmd)) => {
             init_cli_tracing();
-            return run_tool_command(tool_cmd.clone()).await;
+            run_tool_command(tool_cmd.clone()).await?;
+            Ok(Some(()))
         }
         Some(Command::Config(config_cmd)) => {
             init_cli_tracing();
-            return ironclaw::cli::run_config_command(config_cmd.clone()).await;
+            ironclaw::cli::run_config_command(config_cmd.clone()).await?;
+            Ok(Some(()))
         }
         Some(Command::Registry(registry_cmd)) => {
             init_cli_tracing();
-            return ironclaw::cli::run_registry_command(registry_cmd.clone()).await;
+            ironclaw::cli::run_registry_command(registry_cmd.clone()).await?;
+            Ok(Some(()))
         }
         Some(Command::Mcp(mcp_cmd)) => {
             init_cli_tracing();
-            return run_mcp_command(*mcp_cmd.clone()).await;
+            run_mcp_command(*mcp_cmd.clone()).await?;
+            Ok(Some(()))
         }
         Some(Command::Memory(mem_cmd)) => {
             init_cli_tracing();
-            return ironclaw::cli::run_memory_command(mem_cmd).await;
+            ironclaw::cli::run_memory_command(mem_cmd).await?;
+            Ok(Some(()))
         }
         Some(Command::Pairing(pairing_cmd)) => {
             init_cli_tracing();
-            return run_pairing_command(pairing_cmd.clone()).map_err(|e| anyhow::anyhow!("{}", e));
+            run_pairing_command(pairing_cmd.clone()).map_err(|e| anyhow::anyhow!("{}", e))?;
+            Ok(Some(()))
         }
         Some(Command::Service(service_cmd)) => {
             init_cli_tracing();
-            return run_service_command(service_cmd);
+            run_service_command(service_cmd)?;
+            Ok(Some(()))
         }
         Some(Command::Doctor) => {
             init_cli_tracing();
-            return ironclaw::cli::run_doctor_command().await;
+            ironclaw::cli::run_doctor_command().await?;
+            Ok(Some(()))
         }
         Some(Command::Status) => {
             init_cli_tracing();
-            return run_status_command().await;
+            run_status_command().await?;
+            Ok(Some(()))
         }
         Some(Command::Completion(completion)) => {
             init_cli_tracing();
-            return completion.run();
+            completion.run()?;
+            Ok(Some(()))
         }
         #[cfg(feature = "import")]
         Some(Command::Import(import_cmd)) => {
             init_cli_tracing();
             let config = ironclaw::config::Config::from_env().await?;
-            return ironclaw::cli::run_import_command(import_cmd, &config).await;
+            ironclaw::cli::run_import_command(import_cmd, &config).await?;
+            Ok(Some(()))
         }
         Some(Command::Worker {
             job_id,
@@ -98,7 +133,8 @@ async fn async_main() -> anyhow::Result<()> {
             max_iterations,
         }) => {
             init_worker_tracing();
-            return ironclaw::worker::run_worker(*job_id, orchestrator_url, *max_iterations).await;
+            ironclaw::worker::run_worker(*job_id, orchestrator_url, *max_iterations).await?;
+            Ok(Some(()))
         }
         Some(Command::ClaudeBridge {
             job_id,
@@ -107,13 +143,9 @@ async fn async_main() -> anyhow::Result<()> {
             model,
         }) => {
             init_worker_tracing();
-            return ironclaw::worker::run_claude_bridge(
-                *job_id,
-                orchestrator_url,
-                *max_turns,
-                model,
-            )
-            .await;
+            ironclaw::worker::run_claude_bridge(*job_id, orchestrator_url, *max_turns, model)
+                .await?;
+            Ok(Some(()))
         }
         Some(Command::Onboard {
             skip_auth,
@@ -137,119 +169,18 @@ async fn async_main() -> anyhow::Result<()> {
                 let _ = (skip_auth, channels_only, provider_only, quick);
                 eprintln!("Onboarding wizard requires the 'postgres' or 'libsql' feature.");
             }
-            return Ok(());
+            Ok(Some(()))
         }
-        None | Some(Command::Run) => {
-            // Continue to run agent
-        }
+        None | Some(Command::Run) => Ok(None),
     }
+}
 
-    // ── PID lock (prevent multiple instances) ────────────────────────
-    let _pid_lock = match ironclaw::bootstrap::PidLock::acquire() {
-        Ok(lock) => Some(lock),
-        Err(ironclaw::bootstrap::PidLockError::AlreadyRunning { pid }) => {
-            anyhow::bail!(
-                "Another IronClaw instance is already running (PID {}). \
-                 If this is incorrect, remove the stale PID file: {}",
-                pid,
-                ironclaw::bootstrap::pid_lock_path().display()
-            );
-        }
-        Err(e) => {
-            eprintln!("Warning: Could not acquire PID lock: {}", e);
-            eprintln!("Continuing without PID lock protection.");
-            None
-        }
-    };
-
-    // ── Agent startup ──────────────────────────────────────────────────
-
-    // Enhanced first-run detection
-    #[cfg(any(feature = "postgres", feature = "libsql"))]
-    if !cli.no_onboard
-        && let Some(reason) = ironclaw::setup::check_onboard_needed()
-    {
-        println!("Onboarding needed: {}", reason);
-        println!();
-        let mut wizard = SetupWizard::with_config(SetupConfig {
-            quick: true,
-            ..Default::default()
-        });
-        wizard.run().await?;
-    }
-
-    // Load initial config from env + disk + optional TOML (before DB is available).
-    // Credentials may be missing at this point — that's fine. LlmConfig::resolve()
-    // defers gracefully, and AppBuilder::build_all() re-resolves after loading
-    // secrets from the encrypted DB.
-    let toml_path = cli.config.as_deref();
-    let config = match Config::from_env_with_toml(toml_path).await {
-        Ok(c) => c,
-        Err(ironclaw::error::ConfigError::MissingRequired { key, hint }) => {
-            anyhow::bail!(
-                "Configuration error: Missing required setting '{}'. {}. \
-                 Run 'ironclaw onboard' to configure, or set the required environment variables.",
-                key,
-                hint
-            );
-        }
-        Err(e) => return Err(e.into()),
-    };
-
-    // Initialize session manager before channel setup
-    let session = create_session_manager(config.llm.session.clone()).await;
-
-    // Create log broadcaster before tracing init so the WebLogLayer can capture all events.
-    let log_broadcaster = Arc::new(LogBroadcaster::new());
-
-    // Initialize tracing with a reloadable EnvFilter so the gateway can switch
-    // log levels at runtime without restarting.
-    let log_level_handle =
-        ironclaw::channels::web::log_layer::init_tracing(Arc::clone(&log_broadcaster));
-
-    tracing::debug!("Starting IronClaw...");
-    tracing::debug!("Loaded configuration for agent: {}", config.agent.name);
-    tracing::debug!("LLM backend: {}", config.llm.backend);
-
-    // ── Phase 1-5: Build all core components via AppBuilder ────────────
-
-    let flags = AppBuilderFlags { no_db: cli.no_db };
-    let (components, side_effects) = AppBuilder::new(
-        config,
-        flags,
-        toml_path.map(std::path::PathBuf::from),
-        session.clone(),
-        Arc::clone(&log_broadcaster),
-    )
-    .build_components()
-    .await?;
-
-    // Start runtime side effects (stale job cleanup, workspace seeding, embedding backfill)
-    side_effects.start().await;
-
-    let config = components.config;
-
-    // ── Tunnel setup ───────────────────────────────────────────────────
-
-    let (config, active_tunnel) = ironclaw::tunnel::start_managed_tunnel(config).await;
-
-    // ── Orchestrator / container job manager ────────────────────────────
-
-    let orch = ironclaw::orchestrator::setup_orchestrator(
-        &config,
-        &components.llm,
-        &components.tools,
-        components.db.as_ref(),
-        components.secrets_store.as_ref(),
-    )
-    .await;
-    let container_job_manager = orch.container_job_manager;
-    let job_event_tx = orch.job_event_tx;
-    let prompt_queue = orch.prompt_queue;
-    let docker_status = orch.docker_status;
-
-    // ── Channel setup ──────────────────────────────────────────────────
-
+/// Set up all channels (REPL, WASM, Signal, HTTP, webhook server).
+async fn setup_channels(
+    config: &Config,
+    cli: &Cli,
+    components: &ironclaw::app::AppComponents,
+) -> anyhow::Result<ChannelSetup> {
     let channels = ChannelManager::new();
     let mut channel_names: Vec<String> = Vec::new();
     let mut loaded_wasm_channel_names: Vec<String> = Vec::new();
@@ -287,7 +218,7 @@ async fn async_main() -> anyhow::Result<()> {
     // Load WASM channels and register their webhook routes.
     if config.channels.wasm_channels_enabled && config.channels.wasm_channels_dir.exists() {
         let wasm_result = ironclaw::channels::wasm::setup_wasm_channels(
-            &config,
+            config,
             &components.secrets_store,
             components.extension_manager.as_ref(),
             components.db.as_ref(),
@@ -381,6 +312,380 @@ async fn async_main() -> anyhow::Result<()> {
         None
     };
 
+    Ok(ChannelSetup {
+        channels,
+        channel_names,
+        loaded_wasm_channel_names,
+        wasm_channel_runtime_state,
+        webhook_server,
+        #[cfg(unix)]
+        http_channel_state,
+    })
+}
+
+/// Set up the gateway channel.
+#[allow(clippy::too_many_arguments)]
+async fn setup_gateway_channel(
+    config: &Config,
+    components: &ironclaw::app::AppComponents,
+    session_manager: &Arc<ironclaw::agent::SessionManager>,
+    log_broadcaster: &Arc<LogBroadcaster>,
+    log_level_handle: &Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    scheduler_slot: &ironclaw::tools::builtin::SchedulerSlot,
+    container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+    job_event_tx: &Option<
+        tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
+    >,
+    prompt_queue: &Arc<
+        tokio::sync::Mutex<
+            std::collections::HashMap<
+                uuid::Uuid,
+                std::collections::VecDeque<ironclaw::orchestrator::api::PendingPrompt>,
+            >,
+        >,
+    >,
+    channel_manager: &ChannelManager,
+    channel_names: &mut Vec<String>,
+) -> anyhow::Result<GatewaySetup> {
+    let mut gateway_url: Option<String> = None;
+    let mut sse_sender: Option<
+        tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
+    > = None;
+    let mut routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot> = None;
+
+    if let Some(ref gw_config) = config.channels.gateway {
+        let mut gw =
+            GatewayChannel::new(gw_config.clone()).with_llm_provider(Arc::clone(&components.llm));
+        if let Some(ref ws) = components.workspace {
+            gw = gw.with_workspace(Arc::clone(ws));
+        }
+        gw = gw.with_session_manager(Arc::clone(session_manager));
+        gw = gw.with_log_broadcaster(Arc::clone(log_broadcaster));
+        gw = gw.with_log_level_handle(Arc::clone(log_level_handle));
+        gw = gw.with_tool_registry(Arc::clone(&components.tools));
+        if let Some(ref ext_mgr) = components.extension_manager {
+            gw = gw.with_extension_manager(Arc::clone(ext_mgr));
+        }
+        if !components.catalog_entries.is_empty() {
+            gw = gw.with_registry_entries(components.catalog_entries.clone());
+        }
+        if let Some(ref d) = components.db {
+            gw = gw.with_store(Arc::clone(d));
+        }
+        if let Some(jm) = container_job_manager {
+            gw = gw.with_job_manager(Arc::clone(jm));
+        }
+        gw = gw.with_scheduler(scheduler_slot.clone());
+        if let Some(ref sr) = components.skill_registry {
+            gw = gw.with_skill_registry(Arc::clone(sr));
+        }
+        if let Some(ref sc) = components.skill_catalog {
+            gw = gw.with_skill_catalog(Arc::clone(sc));
+        }
+        gw = gw.with_cost_guard(Arc::clone(&components.cost_guard));
+        if config.sandbox.enabled {
+            gw = gw.with_prompt_queue(Arc::clone(prompt_queue));
+
+            if let Some(tx) = job_event_tx {
+                let mut rx = tx.subscribe();
+                let gw_state = Arc::clone(gw.state());
+                tokio::spawn(async move {
+                    while let Ok((_job_id, event)) = rx.recv().await {
+                        gw_state.sse.broadcast(event);
+                    }
+                });
+            }
+        }
+
+        gateway_url = Some(format!(
+            "http://{}:{}/?token={}",
+            gw_config.host,
+            gw_config.port,
+            gw.auth_token()
+        ));
+
+        tracing::debug!("Web UI: http://{}:{}/", gw_config.host, gw_config.port);
+
+        // Capture SSE sender and routine engine slot before moving gw into channels.
+        // IMPORTANT: This must come after all `with_*` calls since `rebuild_state`
+        // creates a new SseManager, which would orphan this sender.
+        sse_sender = Some(gw.state().sse.sender());
+        routine_engine_slot = Some(Arc::clone(&gw.state().routine_engine));
+
+        channel_names.push("gateway".to_string());
+        channel_manager.add(Box::new(gw)).await;
+    }
+
+    Ok(GatewaySetup {
+        gateway_url,
+        sse_sender,
+        routine_engine_slot,
+    })
+}
+
+/// Spawn SIGHUP handler for hot-reloading HTTP webhook config.
+#[cfg(unix)]
+fn spawn_sighup_handler(
+    webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
+    settings_store: Option<Arc<dyn ironclaw::db::SettingsStore>>,
+    secrets_store: Option<Arc<dyn ironclaw::secrets::SecretsStore + Send + Sync>>,
+    http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
+    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+) {
+    use ironclaw::channels::ChannelSecretUpdater;
+    // Collect all channels that support secret updates
+    let mut secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>> = Vec::new();
+    if let Some(ref state) = http_channel_state {
+        secret_updaters.push(Arc::clone(state) as Arc<dyn ChannelSecretUpdater>);
+    }
+
+    tokio::spawn(async move {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut sighup = match signal(SignalKind::hangup()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("Failed to register SIGHUP handler: {}", e);
+                return;
+            }
+        };
+
+        loop {
+            // Exit loop on shutdown signal or when SIGHUP is received
+            tokio::select! {
+                _ = shutdown_rx.recv() => {
+                    tracing::debug!("SIGHUP handler shutting down");
+                    break;
+                }
+                _ = sighup.recv() => {
+                    // Handle SIGHUP signal
+                }
+            }
+            tracing::info!("SIGHUP received — reloading HTTP webhook config");
+
+            // Inject channel secrets from database into thread-safe overlay
+            // (similar to inject_llm_keys_from_secrets for LLM providers)
+            if let Some(ref secrets_store) = secrets_store {
+                // Inject HTTP webhook secret from encrypted store
+                if let Ok(webhook_secret) = secrets_store
+                    .get_decrypted("default", "http_webhook_secret")
+                    .await
+                {
+                    // Thread-safe: Uses INJECTED_VARS mutex instead of unsafe std::env::set_var
+                    // Config::from_env() will read from the overlay via optional_env()
+                    ironclaw::config::inject_single_var(
+                        "HTTP_WEBHOOK_SECRET",
+                        webhook_secret.expose(),
+                    );
+                    tracing::debug!("Injected HTTP_WEBHOOK_SECRET from secrets store");
+                }
+            }
+
+            // Reload config (now with secrets injected into environment)
+            let new_config = match &settings_store {
+                Some(store) => ironclaw::config::Config::from_db(store.as_ref(), "default").await,
+                None => ironclaw::config::Config::from_env().await,
+            };
+
+            let new_config = match new_config {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!("SIGHUP config reload failed: {}", e);
+                    continue;
+                }
+            };
+
+            let new_http = match new_config.channels.http {
+                Some(c) => c,
+                None => {
+                    tracing::warn!("SIGHUP: HTTP channel no longer configured, skipping");
+                    continue;
+                }
+            };
+
+            // Compute new socket addr
+            let new_addr: std::net::SocketAddr =
+                match format!("{}:{}", new_http.host, new_http.port).parse() {
+                    Ok(a) => a,
+                    Err(e) => {
+                        tracing::error!("SIGHUP: invalid addr in config: {}", e);
+                        continue;
+                    }
+                };
+
+            // Restart listener if addr changed.
+            // Minimize lock scope: acquire, read old addr, release, then restart.
+            let mut restart_failed = false;
+            if let Some(ref ws_arc) = webhook_server {
+                let old_addr = {
+                    let ws = ws_arc.lock().await;
+                    ws.current_addr()
+                }; // Lock released here
+
+                if old_addr != new_addr {
+                    tracing::info!(
+                        "SIGHUP: HTTP addr {} -> {}, restarting listener",
+                        old_addr,
+                        new_addr
+                    );
+                    // NOTE: Lock is held across restart_with_addr().await. This is
+                    // acceptable because SIGHUP is infrequent and restart is fast. A full
+                    // fix would require refactoring restart_with_addr to separate state
+                    // mutation from async I/O.
+                    let mut ws = ws_arc.lock().await;
+                    match ws.restart_with_addr(new_addr).await {
+                        Ok(()) => {
+                            tracing::info!("SIGHUP: webhook server restarted on {}", new_addr);
+                        }
+                        Err(e) => {
+                            tracing::error!("SIGHUP: listener restart failed: {}", e);
+                            restart_failed = true;
+                        }
+                    }
+                } else {
+                    tracing::debug!("SIGHUP: addr unchanged ({})", old_addr);
+                }
+            }
+
+            // Update secrets in all configured channels (if restart succeeded or wasn't needed)
+            if !restart_failed {
+                use secrecy::{ExposeSecret, SecretString};
+                let new_secret = new_http
+                    .webhook_secret
+                    .as_ref()
+                    .map(|s| SecretString::from(s.expose_secret().to_string()));
+
+                // Update all channels that support secret swapping
+                for updater in &secret_updaters {
+                    updater.update_secret(new_secret.clone()).await;
+                }
+            }
+        }
+    });
+}
+
+async fn async_main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    // Handle non-agent commands first (they don't need full setup)
+    if dispatch_subcommand(&cli).await?.is_some() {
+        return Ok(());
+    }
+
+    // ── PID lock (prevent multiple instances) ────────────────────────
+    let _pid_lock = match ironclaw::bootstrap::PidLock::acquire() {
+        Ok(lock) => Some(lock),
+        Err(ironclaw::bootstrap::PidLockError::AlreadyRunning { pid }) => {
+            anyhow::bail!(
+                "Another IronClaw instance is already running (PID {}). \
+                 If this is incorrect, remove the stale PID file: {}",
+                pid,
+                ironclaw::bootstrap::pid_lock_path().display()
+            );
+        }
+        Err(e) => {
+            eprintln!("Warning: Could not acquire PID lock: {}", e);
+            eprintln!("Continuing without PID lock protection.");
+            None
+        }
+    };
+
+    // ── Agent startup ──────────────────────────────────────────────────
+
+    // Enhanced first-run detection
+    #[cfg(any(feature = "postgres", feature = "libsql"))]
+    if !cli.no_onboard
+        && let Some(reason) = ironclaw::setup::check_onboard_needed()
+    {
+        println!("Onboarding needed: {}", reason);
+        println!();
+        let mut wizard = SetupWizard::with_config(SetupConfig {
+            quick: true,
+            ..Default::default()
+        });
+        wizard.run().await?;
+    }
+
+    // Load initial config from env + disk + optional TOML (before DB is available).
+    // Credentials may be missing at this point — that's fine. LlmConfig::resolve()
+    // defers gracefully, and AppBuilder::build_all() re-resolves after loading
+    // secrets from the encrypted DB.
+    let toml_path = cli.config.as_deref();
+    let config = match Config::from_env_with_toml(toml_path).await {
+        Ok(c) => c,
+        Err(ironclaw::error::ConfigError::MissingRequired { key, hint }) => {
+            anyhow::bail!(
+                "Configuration error: Missing required setting '{}'. {}. \
+                 Run 'ironclaw onboard' to configure, or set the required environment variables.",
+                key,
+                hint
+            );
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Initialize session manager before channel setup
+    let session = create_session_manager(config.llm.session.clone()).await;
+
+    // Create log broadcaster before tracing init so the WebLogLayer can capture all events.
+    let log_broadcaster = Arc::new(LogBroadcaster::new());
+
+    // Initialize tracing with a reloadable EnvFilter so the gateway can switch
+    // log levels at runtime without restarting.
+    let log_level_handle =
+        ironclaw::channels::web::log_layer::init_tracing(Arc::clone(&log_broadcaster));
+
+    tracing::debug!("Starting IronClaw...");
+    tracing::debug!("Loaded configuration for agent: {}", config.agent.name);
+    tracing::debug!("LLM backend: {}", config.llm.backend);
+
+    // ── Phase 1-5: Build all core components via AppBuilder ────────────
+
+    let flags = AppBuilderFlags { no_db: cli.no_db };
+    let (components, side_effects) = AppBuilder::new(
+        config,
+        flags,
+        toml_path.map(std::path::PathBuf::from),
+        session.clone(),
+        Arc::clone(&log_broadcaster),
+    )
+    .build_components()
+    .await?;
+
+    // Start runtime side effects (stale job cleanup, workspace seeding, embedding backfill)
+    side_effects.start().await;
+
+    // ── Tunnel setup ───────────────────────────────────────────────────
+
+    // Clone config for tunnel (which may modify it), then replace components.config
+    let (config, active_tunnel) =
+        ironclaw::tunnel::start_managed_tunnel(components.config.clone()).await;
+
+    // ── Orchestrator / container job manager ────────────────────────────
+
+    let orch = ironclaw::orchestrator::setup_orchestrator(
+        &config,
+        &components.llm,
+        &components.tools,
+        components.db.as_ref(),
+        components.secrets_store.as_ref(),
+    )
+    .await;
+    let container_job_manager = orch.container_job_manager;
+    let job_event_tx = orch.job_event_tx;
+    let prompt_queue = orch.prompt_queue;
+    let docker_status = orch.docker_status;
+
+    // ── Channel setup ──────────────────────────────────────────────────
+
+    let channel_setup = setup_channels(&config, &cli, &components).await?;
+    let channels = channel_setup.channels;
+    let mut channel_names = channel_setup.channel_names;
+    let loaded_wasm_channel_names = channel_setup.loaded_wasm_channel_names;
+    let mut wasm_channel_runtime_state = channel_setup.wasm_channel_runtime_state;
+    let webhook_server = channel_setup.webhook_server;
+    #[cfg(unix)]
+    let http_channel_state = channel_setup.http_channel_state;
+
     // Register lifecycle hooks.
     let active_tool_names = components.tools.list().await;
 
@@ -433,73 +738,23 @@ async fn async_main() -> anyhow::Result<()> {
 
     // ── Gateway channel ────────────────────────────────────────────────
 
-    let mut gateway_url: Option<String> = None;
-    let mut sse_sender: Option<
-        tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
-    > = None;
-    let mut routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot> = None;
-    if let Some(ref gw_config) = config.channels.gateway {
-        let mut gw =
-            GatewayChannel::new(gw_config.clone()).with_llm_provider(Arc::clone(&components.llm));
-        if let Some(ref ws) = components.workspace {
-            gw = gw.with_workspace(Arc::clone(ws));
-        }
-        gw = gw.with_session_manager(Arc::clone(&session_manager));
-        gw = gw.with_log_broadcaster(Arc::clone(&log_broadcaster));
-        gw = gw.with_log_level_handle(Arc::clone(&log_level_handle));
-        gw = gw.with_tool_registry(Arc::clone(&components.tools));
-        if let Some(ref ext_mgr) = components.extension_manager {
-            gw = gw.with_extension_manager(Arc::clone(ext_mgr));
-        }
-        if !components.catalog_entries.is_empty() {
-            gw = gw.with_registry_entries(components.catalog_entries.clone());
-        }
-        if let Some(ref d) = components.db {
-            gw = gw.with_store(Arc::clone(d));
-        }
-        if let Some(ref jm) = container_job_manager {
-            gw = gw.with_job_manager(Arc::clone(jm));
-        }
-        gw = gw.with_scheduler(scheduler_slot.clone());
-        if let Some(ref sr) = components.skill_registry {
-            gw = gw.with_skill_registry(Arc::clone(sr));
-        }
-        if let Some(ref sc) = components.skill_catalog {
-            gw = gw.with_skill_catalog(Arc::clone(sc));
-        }
-        gw = gw.with_cost_guard(Arc::clone(&components.cost_guard));
-        if config.sandbox.enabled {
-            gw = gw.with_prompt_queue(Arc::clone(&prompt_queue));
-
-            if let Some(ref tx) = job_event_tx {
-                let mut rx = tx.subscribe();
-                let gw_state = Arc::clone(gw.state());
-                tokio::spawn(async move {
-                    while let Ok((_job_id, event)) = rx.recv().await {
-                        gw_state.sse.broadcast(event);
-                    }
-                });
-            }
-        }
-
-        gateway_url = Some(format!(
-            "http://{}:{}/?token={}",
-            gw_config.host,
-            gw_config.port,
-            gw.auth_token()
-        ));
-
-        tracing::debug!("Web UI: http://{}:{}/", gw_config.host, gw_config.port);
-
-        // Capture SSE sender and routine engine slot before moving gw into channels.
-        // IMPORTANT: This must come after all `with_*` calls since `rebuild_state`
-        // creates a new SseManager, which would orphan this sender.
-        sse_sender = Some(gw.state().sse.sender());
-        routine_engine_slot = Some(Arc::clone(&gw.state().routine_engine));
-
-        channel_names.push("gateway".to_string());
-        channels.add(Box::new(gw)).await;
-    }
+    let gateway_setup = setup_gateway_channel(
+        &config,
+        &components,
+        &session_manager,
+        &log_broadcaster,
+        &log_level_handle,
+        &scheduler_slot,
+        &container_job_manager,
+        &job_event_tx,
+        &prompt_queue,
+        &channels,
+        &mut channel_names,
+    )
+    .await?;
+    let gateway_url = gateway_setup.gateway_url;
+    let sse_sender = gateway_setup.sse_sender;
+    let routine_engine_slot = gateway_setup.routine_engine_slot;
 
     // ── Boot screen ────────────────────────────────────────────────────
 
@@ -705,142 +960,14 @@ async fn async_main() -> anyhow::Result<()> {
 
     #[cfg(unix)]
     {
-        use ironclaw::channels::ChannelSecretUpdater;
-        // Collect all channels that support secret updates
-        let mut secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>> = Vec::new();
-        if let Some(ref state) = http_channel_state {
-            secret_updaters.push(Arc::clone(state) as Arc<dyn ChannelSecretUpdater>);
-        }
-
-        let sighup_webhook_server = webhook_server.clone();
-        let sighup_settings_store_clone = sighup_settings_store.clone();
-        let sighup_secrets_store = components.secrets_store.clone();
-        let mut shutdown_rx = shutdown_tx.subscribe();
-
-        tokio::spawn(async move {
-            use tokio::signal::unix::{SignalKind, signal};
-            let mut sighup = match signal(SignalKind::hangup()) {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!("Failed to register SIGHUP handler: {}", e);
-                    return;
-                }
-            };
-
-            loop {
-                // Exit loop on shutdown signal or when SIGHUP is received
-                tokio::select! {
-                    _ = shutdown_rx.recv() => {
-                        tracing::debug!("SIGHUP handler shutting down");
-                        break;
-                    }
-                    _ = sighup.recv() => {
-                        // Handle SIGHUP signal
-                    }
-                }
-                tracing::info!("SIGHUP received — reloading HTTP webhook config");
-
-                // Inject channel secrets from database into thread-safe overlay
-                // (similar to inject_llm_keys_from_secrets for LLM providers)
-                if let Some(ref secrets_store) = sighup_secrets_store {
-                    // Inject HTTP webhook secret from encrypted store
-                    if let Ok(webhook_secret) = secrets_store
-                        .get_decrypted("default", "http_webhook_secret")
-                        .await
-                    {
-                        // Thread-safe: Uses INJECTED_VARS mutex instead of unsafe std::env::set_var
-                        // Config::from_env() will read from the overlay via optional_env()
-                        ironclaw::config::inject_single_var(
-                            "HTTP_WEBHOOK_SECRET",
-                            webhook_secret.expose(),
-                        );
-                        tracing::debug!("Injected HTTP_WEBHOOK_SECRET from secrets store");
-                    }
-                }
-
-                // Reload config (now with secrets injected into environment)
-                let new_config = match &sighup_settings_store_clone {
-                    Some(store) => {
-                        ironclaw::config::Config::from_db(store.as_ref(), "default").await
-                    }
-                    None => ironclaw::config::Config::from_env().await,
-                };
-
-                let new_config = match new_config {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracing::error!("SIGHUP config reload failed: {}", e);
-                        continue;
-                    }
-                };
-
-                let new_http = match new_config.channels.http {
-                    Some(c) => c,
-                    None => {
-                        tracing::warn!("SIGHUP: HTTP channel no longer configured, skipping");
-                        continue;
-                    }
-                };
-
-                // Compute new socket addr
-                let new_addr: std::net::SocketAddr =
-                    match format!("{}:{}", new_http.host, new_http.port).parse() {
-                        Ok(a) => a,
-                        Err(e) => {
-                            tracing::error!("SIGHUP: invalid addr in config: {}", e);
-                            continue;
-                        }
-                    };
-
-                // Restart listener if addr changed.
-                // Minimize lock scope: acquire, read old addr, release, then restart.
-                let mut restart_failed = false;
-                if let Some(ref ws_arc) = sighup_webhook_server {
-                    let old_addr = {
-                        let ws = ws_arc.lock().await;
-                        ws.current_addr()
-                    }; // Lock released here
-
-                    if old_addr != new_addr {
-                        tracing::info!(
-                            "SIGHUP: HTTP addr {} -> {}, restarting listener",
-                            old_addr,
-                            new_addr
-                        );
-                        // NOTE: Lock is held across restart_with_addr().await. This is
-                        // acceptable because SIGHUP is infrequent and restart is fast. A full
-                        // fix would require refactoring restart_with_addr to separate state
-                        // mutation from async I/O.
-                        let mut ws = ws_arc.lock().await;
-                        match ws.restart_with_addr(new_addr).await {
-                            Ok(()) => {
-                                tracing::info!("SIGHUP: webhook server restarted on {}", new_addr);
-                            }
-                            Err(e) => {
-                                tracing::error!("SIGHUP: listener restart failed: {}", e);
-                                restart_failed = true;
-                            }
-                        }
-                    } else {
-                        tracing::debug!("SIGHUP: addr unchanged ({})", old_addr);
-                    }
-                }
-
-                // Update secrets in all configured channels (if restart succeeded or wasn't needed)
-                if !restart_failed {
-                    use secrecy::{ExposeSecret, SecretString};
-                    let new_secret = new_http
-                        .webhook_secret
-                        .as_ref()
-                        .map(|s| SecretString::from(s.expose_secret().to_string()));
-
-                    // Update all channels that support secret swapping
-                    for updater in &secret_updaters {
-                        updater.update_secret(new_secret.clone()).await;
-                    }
-                }
-            }
-        });
+        let shutdown_rx = shutdown_tx.subscribe();
+        spawn_sighup_handler(
+            webhook_server.clone(),
+            sighup_settings_store,
+            components.secrets_store.clone(),
+            http_channel_state,
+            shutdown_rx,
+        );
     }
 
     agent.run().await?;
