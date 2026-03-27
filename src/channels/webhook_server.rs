@@ -177,10 +177,12 @@ impl WebhookServer {
     /// listener. Eliminates the TOCTOU window between port reservation and
     /// bind, making it suitable for tests.
     ///
-    /// **Important:** Unlike [`restart_with_addr`], this method does NOT
-    /// provide rollback semantics. It stops and shuts down the current listener
-    /// before spawning the replacement. The new listener is assumed to already
-    /// be successfully bound.
+    /// Unlike [`restart_with_addr`], this test-only helper does not support
+    /// rollback. [`restart_with_addr`] binds the replacement first and can keep
+    /// the old listener alive if that bind fails. This method shuts down the
+    /// old listener before calling [`Self::spawn_with_listener`], so there is
+    /// no rollback path if spawning were to fail. That trade-off is acceptable
+    /// in tests because [`Self::spawn_with_listener`] is infallible.
     #[cfg(test)]
     pub async fn restart_with_listener(
         &mut self,
@@ -204,12 +206,7 @@ impl WebhookServer {
         // Stop the old listener before spawning the new one. Unlike
         // restart_with_addr, we do not provide rollback semantics because the
         // new listener is already bound and assumed to be valid.
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(());
-        }
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.await;
-        }
+        self.shutdown().await;
 
         self.config.addr = new_addr;
         self.spawn_with_listener(listener, app);
@@ -236,6 +233,7 @@ impl WebhookServer {
 mod tests {
     use super::*;
     use axum::Json;
+    use rstest::{fixture, rstest};
     use serde_json::json;
     use std::net::TcpListener as StdTcpListener;
 
@@ -243,6 +241,7 @@ mod tests {
     /// convert it to a `tokio::net::TcpListener`, returning the listener and
     /// its resolved [`SocketAddr`]. The port remains bound throughout so
     /// there is no TOCTOU window between discovery and first use.
+    #[fixture]
     fn bind_ephemeral_tokio_listener() -> (tokio::net::TcpListener, std::net::SocketAddr) {
         let std_listener =
             StdTcpListener::bind("127.0.0.1:0").expect("Failed to bind ephemeral port");
@@ -255,10 +254,20 @@ mod tests {
         (tokio_listener, addr)
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_restart_with_addr_rebinds_listener() {
-        let (tokio_listener1, addr1) = bind_ephemeral_tokio_listener();
-        let (tokio_listener2, addr2) = bind_ephemeral_tokio_listener();
+    async fn test_restart_with_addr_rebinds_listener(
+        #[from(bind_ephemeral_tokio_listener)] listener_and_addr1: (
+            tokio::net::TcpListener,
+            std::net::SocketAddr,
+        ),
+        #[from(bind_ephemeral_tokio_listener)] listener_and_addr2: (
+            tokio::net::TcpListener,
+            std::net::SocketAddr,
+        ),
+    ) {
+        let (tokio_listener1, addr1) = listener_and_addr1;
+        let (tokio_listener2, addr2) = listener_and_addr2;
 
         let mut server = WebhookServer::new(WebhookServerConfig { addr: addr1 });
 
@@ -335,9 +344,12 @@ mod tests {
         server.shutdown().await;
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_restart_with_addr_rollback_on_bind_failure() {
-        let (tokio_listener, addr1) = bind_ephemeral_tokio_listener();
+    async fn test_restart_with_addr_rollback_on_bind_failure(
+        bind_ephemeral_tokio_listener: (tokio::net::TcpListener, std::net::SocketAddr),
+    ) {
+        let (tokio_listener, addr1) = bind_ephemeral_tokio_listener;
 
         // Bind a second ephemeral port and hold it open — this is the
         // "occupied" address that restart_with_addr must fail to bind.
