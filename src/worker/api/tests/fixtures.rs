@@ -58,6 +58,12 @@ pub struct RemoteToolFailureServer {
     pub handle: tokio::task::JoinHandle<()>,
 }
 
+impl Drop for RemoteToolFailureServer {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
+}
+
 /// Thread-safe factory that spawns a [`RemoteToolFailureServer`] configured
 /// to fail on the given [`RemoteToolFailureRoute`].
 pub type RemoteToolFailureServerFactory =

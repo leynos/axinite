@@ -26,7 +26,7 @@ async fn remote_tool_execute_preserves_non_success_statuses(
     let server = remote_tool_failure_server(route).await?;
 
     let client = WorkerHttpClient::new(
-        server.base_url,
+        server.base_url.clone(),
         Uuid::new_v4(),
         TEST_BEARER_TOKEN.to_string(),
     );
@@ -65,7 +65,5 @@ async fn remote_tool_execute_preserves_non_success_statuses(
         (_, other) => panic!("unexpected worker error: {other:?}"),
     }
 
-    server.handle.abort();
-    let _ = server.handle.await;
     Ok(())
 }
