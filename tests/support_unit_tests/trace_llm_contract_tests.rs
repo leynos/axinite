@@ -2,6 +2,7 @@
 
 use crate::support::trace_llm::*;
 use ironclaw::llm::{ChatMessage, LlmProvider, ToolCompletionRequest};
+use rstest::rstest;
 
 fn make_request(user_msg: &str) -> ToolCompletionRequest {
     ToolCompletionRequest::new(vec![ChatMessage::user(user_msg)], vec![])
@@ -47,50 +48,22 @@ async fn run_hint_case(
     )
 }
 
-macro_rules! hint_test {
-    (
-        $name:ident,
-        user = $user:expr,
-        contains = $contains:expr,
-        min = $min:expr,
-        response = $response:expr,
-        expect_mismatches = $expected:expr
-    ) => {
-        #[tokio::test]
-        async fn $name() {
-            let (content, mismatches) = run_hint_case($user, $contains, $min, $response).await;
-            assert_eq!(content, $response);
-            assert_eq!(mismatches, $expected);
-        }
-    };
+#[rstest]
+#[case("say hello please", "hello", 1, "matched", 0)]
+#[case("Write a file to a bad path then recover", "write", 1, "matched", 0)]
+#[case("apple", "banana", 5, "still works", 2)]
+#[tokio::test]
+async fn validates_request_hints_contract(
+    #[case] user: &str,
+    #[case] contains: &str,
+    #[case] min: usize,
+    #[case] response: &str,
+    #[case] expected_mismatches: usize,
+) {
+    let (content, mismatches) = run_hint_case(user, contains, min, response).await;
+    assert_eq!(content, response);
+    assert_eq!(mismatches, expected_mismatches);
 }
-
-hint_test!(
-    validates_request_hints,
-    user = "say hello please",
-    contains = "hello",
-    min = 1,
-    response = "matched",
-    expect_mismatches = 0
-);
-
-hint_test!(
-    validates_request_hints_case_insensitively,
-    user = "Write a file to a bad path then recover",
-    contains = "write",
-    min = 1,
-    response = "matched",
-    expect_mismatches = 0
-);
-
-hint_test!(
-    hint_mismatch_warns_but_continues,
-    user = "apple",
-    contains = "banana",
-    min = 5,
-    response = "still works",
-    expect_mismatches = 2
-);
 
 #[test]
 fn deserialize_flat_steps_as_single_turn() {
