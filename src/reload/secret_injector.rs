@@ -43,6 +43,12 @@ pub struct DbSecretInjector {
 }
 
 impl DbSecretInjector {
+    /// Create a new database-backed secret injector.
+    ///
+    /// On each hot-reload cycle, `secrets_store` is queried for secrets belonging to `user_id`.
+    ///
+    /// `secrets_store` — database-backed store for encrypted secrets.
+    /// `user_id` — identifier of the user whose secrets should be loaded.
     pub fn new(secrets_store: Arc<dyn SecretsStore + Send + Sync>, user_id: String) -> Self {
         Self {
             secrets_store,
