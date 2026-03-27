@@ -1,6 +1,7 @@
-//! Trace LLM request-hint and deserialization contract tests.
+//! Trace LLM request-hint and deserialisation contract tests.
 
 use crate::support::trace_llm::*;
+use anyhow::{Context, Result};
 use ironclaw::llm::{ChatMessage, LlmProvider, ToolCompletionRequest};
 use rstest::rstest;
 
@@ -13,7 +14,7 @@ async fn run_hint_case(
     last_user_contains: &str,
     min_messages: usize,
     response_text: &str,
-) -> (String, usize) {
+) -> Result<(String, usize)> {
     let trace_json = serde_json::json!({
         "model_name": "test-model",
         "turns": [{
@@ -33,19 +34,19 @@ async fn run_hint_case(
             }]
         }]
     });
-    let trace: LlmTrace =
-        serde_json::from_str(&trace_json.to_string()).expect("parse hint test trace");
+    let trace: LlmTrace = serde_json::from_str(&trace_json.to_string())
+        .context("failed to parse hint test trace into LlmTrace")?;
     let llm = TraceLlm::from_trace(trace);
     let resp = llm
         .complete_with_tools(make_request(user_text))
         .await
-        .expect("hint test completion should succeed");
+        .context("TraceLlm hint test completion should succeed")?;
 
-    (
+    Ok((
         resp.content
-            .expect("hint test response should contain text"),
+            .context("TraceLlm hint test response should contain text content")?,
         llm.hint_mismatches(),
-    )
+    ))
 }
 
 #[rstest]
@@ -59,10 +60,11 @@ async fn validates_request_hints_contract(
     #[case] min: usize,
     #[case] response: &str,
     #[case] expected_mismatches: usize,
-) {
-    let (content, mismatches) = run_hint_case(user, contains, min, response).await;
+) -> Result<()> {
+    let (content, mismatches) = run_hint_case(user, contains, min, response).await?;
     assert_eq!(content, response);
     assert_eq!(mismatches, expected_mismatches);
+    Ok(())
 }
 
 #[test]
