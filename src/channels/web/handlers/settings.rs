@@ -30,7 +30,7 @@ pub async fn settings_list_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     let rows = store
-        .list_settings(state.user_id.as_str().into())
+        .list_settings(state.user_id.as_str())
         .await
         .map_err(|e| {
             tracing::error!("Failed to list settings: {}", e);
@@ -58,7 +58,7 @@ pub async fn settings_get_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     let row = store
-        .get_setting_full(state.user_id.as_str().into(), key.as_str().into())
+        .get_setting_full(state.user_id.as_str(), key.as_str())
         .await
         .map_err(|e| {
             tracing::error!("Failed to get setting '{}': {}", key, e);
@@ -83,11 +83,7 @@ pub async fn settings_set_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     store
-        .set_setting(
-            state.user_id.as_str().into(),
-            key.as_str().into(),
-            &body.value,
-        )
+        .set_setting(state.user_id.as_str(), key.as_str(), &body.value)
         .await
         .map_err(|e| {
             tracing::error!("Failed to set setting '{}': {}", key, e);
@@ -106,7 +102,7 @@ pub async fn settings_delete_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     store
-        .delete_setting(state.user_id.as_str().into(), key.as_str().into())
+        .delete_setting(state.user_id.as_str(), key.as_str())
         .await
         .map_err(|e| {
             tracing::error!("Failed to delete setting '{}': {}", key, e);
@@ -124,7 +120,7 @@ pub async fn settings_export_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     let settings = store
-        .get_all_settings(state.user_id.as_str().into())
+        .get_all_settings(state.user_id.as_str())
         .await
         .map_err(|e| {
             tracing::error!("Failed to export settings: {}", e);
@@ -143,7 +139,7 @@ pub async fn settings_import_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     store
-        .set_all_settings(state.user_id.as_str().into(), &body.settings)
+        .set_all_settings(state.user_id.as_str(), &body.settings)
         .await
         .map_err(|e| {
             tracing::error!("Failed to import settings: {}", e);

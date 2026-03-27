@@ -61,11 +61,7 @@ impl OpenClawImporter {
         for (key, value) in settings_map {
             if let Err(e) = self
                 .db
-                .set_setting(
-                    self.opts.user_id.as_str().into(),
-                    key.as_str().into(),
-                    &value,
-                )
+                .set_setting(self.opts.user_id.as_str(), key.as_str(), &value)
                 .await
             {
                 tracing::warn!("Failed to import setting {}: {}", key, e);

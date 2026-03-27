@@ -40,6 +40,23 @@ use std::sync::Arc;
 
 use crate::error::DatabaseError;
 
+/// Unified macro for delegating async trait methods to an inner field.
+#[macro_export]
+macro_rules! delegate_async {
+    (
+        to $field:ident;
+        $(
+            async fn $method:ident ( &self $(, $arg:ident : $ty:ty)* ) -> $ret:ty ;
+        )*
+    ) => {
+        $(
+            async fn $method(&self $(, $arg : $ty )*) -> $ret {
+                self.$field.$method($( $arg ),*).await
+            }
+        )*
+    };
+}
+
 /// Create a database backend from configuration, run migrations, and return it.
 ///
 /// This is the shared helper for CLI commands and other call sites that need

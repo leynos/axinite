@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use libsql::params;
 
 use super::{LibSqlBackend, fmt_ts, get_i64, get_json, get_text, get_ts};
-use crate::db::{NativeSettingsStore, SettingKey, UserId};
+use crate::db::NativeSettingsStore;
 use crate::error::DatabaseError;
 use crate::history::SettingRow;
 
@@ -14,14 +14,14 @@ use chrono::Utc;
 impl NativeSettingsStore for LibSqlBackend {
     async fn get_setting(
         &self,
-        user_id: UserId,
-        key: SettingKey,
+        user_id: &str,
+        key: &str,
     ) -> Result<Option<serde_json::Value>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
                 "SELECT value FROM settings WHERE user_id = ?1 AND key = ?2",
-                params![user_id.as_str(), key.as_str()],
+                params![user_id, key],
             )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -38,14 +38,14 @@ impl NativeSettingsStore for LibSqlBackend {
 
     async fn get_setting_full(
         &self,
-        user_id: UserId,
-        key: SettingKey,
+        user_id: &str,
+        key: &str,
     ) -> Result<Option<SettingRow>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = ?1 AND key = ?2",
-                params![user_id.as_str(), key.as_str()],
+                params![user_id, key],
             )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -66,8 +66,8 @@ impl NativeSettingsStore for LibSqlBackend {
 
     async fn set_setting(
         &self,
-        user_id: UserId,
-        key: SettingKey,
+        user_id: &str,
+        key: &str,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
@@ -80,35 +80,31 @@ impl NativeSettingsStore for LibSqlBackend {
                     value = excluded.value,
                     updated_at = ?4
                 "#,
-            params![user_id.as_str(), key.as_str(), value.to_string(), now],
+            params![user_id, key, value.to_string(), now],
         )
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
         Ok(())
     }
 
-    async fn delete_setting(
-        &self,
-        user_id: UserId,
-        key: SettingKey,
-    ) -> Result<bool, DatabaseError> {
+    async fn delete_setting(&self, user_id: &str, key: &str) -> Result<bool, DatabaseError> {
         let conn = self.connect().await?;
         let count = conn
             .execute(
                 "DELETE FROM settings WHERE user_id = ?1 AND key = ?2",
-                params![user_id.as_str(), key.as_str()],
+                params![user_id, key],
             )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
         Ok(count > 0)
     }
 
-    async fn list_settings(&self, user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
+    async fn list_settings(&self, user_id: &str) -> Result<Vec<SettingRow>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = ?1 ORDER BY key",
-                params![user_id.as_str()],
+                params![user_id],
             )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -130,13 +126,13 @@ impl NativeSettingsStore for LibSqlBackend {
 
     async fn get_all_settings(
         &self,
-        user_id: UserId,
+        user_id: &str,
     ) -> Result<HashMap<String, serde_json::Value>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
                 "SELECT key, value FROM settings WHERE user_id = ?1",
-                params![user_id.as_str()],
+                params![user_id],
             )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -154,7 +150,7 @@ impl NativeSettingsStore for LibSqlBackend {
 
     async fn set_all_settings(
         &self,
-        user_id: UserId,
+        user_id: &str,
         settings: &HashMap<String, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
@@ -173,12 +169,7 @@ impl NativeSettingsStore for LibSqlBackend {
                         value = excluded.value,
                         updated_at = ?4
                     "#,
-                    params![
-                        user_id.as_str(),
-                        key.as_str(),
-                        value.to_string(),
-                        now.as_str()
-                    ],
+                    params![user_id, key.as_str(), value.to_string(), now.as_str()],
                 )
                 .await
             {
@@ -193,12 +184,12 @@ impl NativeSettingsStore for LibSqlBackend {
         Ok(())
     }
 
-    async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError> {
+    async fn has_settings(&self, user_id: &str) -> Result<bool, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
                 "SELECT COUNT(*) as cnt FROM settings WHERE user_id = ?1",
-                params![user_id.as_str()],
+                params![user_id],
             )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;

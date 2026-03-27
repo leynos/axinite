@@ -301,24 +301,21 @@ mod tests {
         let store = DummySettingsStore;
 
         // Test that the blanket impl (via impl_settings_forwarders! macro) correctly accepts newtypes
-        let result =
-            SettingsStore::get_setting(&store, "test_user".into(), "test_key".into()).await;
+        let result = SettingsStore::get_setting(&store, "test_user", "test_key").await;
         let value = result.expect("get_setting for test_user/test_key failed");
         assert_eq!(value, Some(serde_json::json!("test_value")));
 
         // Test with non-matching values
-        let result =
-            SettingsStore::get_setting(&store, "wrong_user".into(), "test_key".into()).await;
+        let result = SettingsStore::get_setting(&store, "wrong_user", "test_key").await;
         let value = result.expect("get_setting for wrong_user/test_key failed");
         assert_eq!(value, None);
 
         // Test other methods to ensure macro generates them correctly
-        let result =
-            SettingsStore::delete_setting(&store, "test_user".into(), "test_key".into()).await;
+        let result = SettingsStore::delete_setting(&store, "test_user", "test_key").await;
         let deleted = result.expect("delete_setting for test_user/test_key failed");
         assert!(deleted);
 
-        let result = SettingsStore::has_settings(&store, "test_user".into()).await;
+        let result = SettingsStore::has_settings(&store, "test_user").await;
         let has = result.expect("has_settings for test_user failed");
         assert!(!has);
     }

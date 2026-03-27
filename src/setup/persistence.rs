@@ -3,7 +3,7 @@
 //! Encapsulates all database interactions for the default user and session tokens,
 //! keeping hard-coded identifiers and DB logic out of the orchestration code.
 
-use crate::db::{Database, SettingKey, UserId};
+use crate::db::Database;
 use crate::error::DatabaseError;
 use crate::settings::Settings;
 use std::collections::HashMap;
@@ -30,18 +30,14 @@ impl DefaultSettingsPersistence {
     pub async fn save_default_settings(&self, settings: &Settings) -> Result<(), DatabaseError> {
         let db_map = settings.to_db_map();
         self.backend
-            .set_all_settings(UserId::from(DEFAULT_USER_ID), &db_map)
+            .set_all_settings(DEFAULT_USER_ID, &db_map)
             .await
     }
 
     /// Save the session token for the default user.
     pub async fn save_session_token(&self, value: &serde_json::Value) -> Result<(), DatabaseError> {
         self.backend
-            .set_setting(
-                UserId::from(DEFAULT_USER_ID),
-                SettingKey::from(NEARAI_SESSION_TOKEN_KEY),
-                value,
-            )
+            .set_setting(DEFAULT_USER_ID, NEARAI_SESSION_TOKEN_KEY, value)
             .await
     }
 
@@ -49,8 +45,6 @@ impl DefaultSettingsPersistence {
     pub async fn get_all_settings_map(
         &self,
     ) -> Result<HashMap<String, serde_json::Value>, DatabaseError> {
-        self.backend
-            .get_all_settings(UserId::from(DEFAULT_USER_ID))
-            .await
+        self.backend.get_all_settings(DEFAULT_USER_ID).await
     }
 }
