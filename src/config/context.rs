@@ -8,6 +8,7 @@
 //! isolated tests.
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use crate::config::INJECTED_VARS;
@@ -24,7 +25,7 @@ pub struct EnvContext {
 impl EnvContext {
     /// Capture the current process environment and injected secret overlay.
     pub fn capture_ambient() -> Self {
-        let env_vars = std::env::vars().collect();
+        let env_vars = collect_utf8_env_vars(std::env::vars_os());
         let secrets = match INJECTED_VARS.lock() {
             Ok(map) => map.clone(),
             Err(poisoned) => poisoned.into_inner().clone(),
@@ -104,6 +105,19 @@ impl EnvContext {
     }
 }
 
+fn collect_utf8_env_vars(
+    vars: impl IntoIterator<Item = (OsString, OsString)>,
+) -> HashMap<String, String> {
+    vars.into_iter()
+        .filter_map(
+            |(key, value)| match (key.into_string(), value.into_string()) {
+                (Ok(key), Ok(value)) => Some((key, value)),
+                _ => None,
+            },
+        )
+        .collect()
+}
+
 fn default_base_dir() -> PathBuf {
     if let Some(home) = dirs::home_dir() {
         home.join(".ironclaw")
@@ -118,6 +132,7 @@ fn default_base_dir() -> PathBuf {
 mod tests {
     use super::EnvContext;
     use std::collections::HashMap;
+    use std::ffi::OsString;
     use std::path::PathBuf;
 
     #[test]
@@ -155,5 +170,28 @@ mod tests {
         let ctx = EnvContext::default().with_env("IRONCLAW_BASE_DIR", "/tmp/axinite");
 
         assert_eq!(ctx.ironclaw_base_dir(), PathBuf::from("/tmp/axinite"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ambient_snapshot_skips_non_utf8_entries() {
+        use super::collect_utf8_env_vars;
+        use std::os::unix::ffi::OsStringExt;
+
+        let env_vars = collect_utf8_env_vars([
+            (OsString::from("VALID_KEY"), OsString::from("valid")),
+            (
+                OsString::from_vec(b"BAD\xffKEY".to_vec()),
+                OsString::from("ignored"),
+            ),
+            (
+                OsString::from("BAD_VALUE"),
+                OsString::from_vec(b"bad\xffvalue".to_vec()),
+            ),
+        ]);
+
+        assert_eq!(env_vars.get("VALID_KEY"), Some(&String::from("valid")));
+        assert!(!env_vars.contains_key("BAD_VALUE"));
+        assert_eq!(env_vars.len(), 1);
     }
 }

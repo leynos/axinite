@@ -183,6 +183,7 @@ impl Config {
         config.agent = AgentConfig::for_testing();
         config.embeddings = EmbeddingsConfig::default();
         config.tunnel = TunnelConfig::default();
+        config.secrets = SecretsConfig::default();
         config.heartbeat = HeartbeatConfig::default();
         config.hygiene = HygieneConfig::default();
         config.claude_code = ClaudeCodeConfig::default();
