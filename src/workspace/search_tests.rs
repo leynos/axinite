@@ -70,6 +70,44 @@ fn assert_hybrid_chunk(result: &SearchResult, fts_rank: u32, vector_rank: u32) {
     assert_eq!(result.vector_rank, Some(vector_rank));
 }
 
+/// Runs RRF with three ranked inputs fed through one method slot only.
+/// Pass `use_fts = true` to supply through the FTS argument; `false` for
+/// the vector argument.
+fn build_single_method_rrf_results(use_fts: bool) -> Vec<SearchResult> {
+    let config = SearchConfig::default().with_limit(10);
+    let doc = Uuid::new_v4();
+    let inputs = vec![
+        make_result(Uuid::new_v4(), doc, 1),
+        make_result(Uuid::new_v4(), doc, 2),
+        make_result(Uuid::new_v4(), doc, 3),
+    ];
+    if use_fts {
+        reciprocal_rank_fusion(inputs, Vec::new(), &config)
+    } else {
+        reciprocal_rank_fusion(Vec::new(), inputs, &config)
+    }
+}
+
+/// Asserts that a single-method [`SearchConfig`] (FTS-only or vector-only)
+/// has the expected default field values.
+fn assert_single_method_config(use_fts: bool, use_vector: bool) {
+    let config = if use_fts {
+        SearchConfig::default().fts_only()
+    } else {
+        SearchConfig::default().vector_only()
+    };
+    assert_config(
+        &config,
+        &ExpectedSearchConfig {
+            limit: 10,
+            rrf_k: 60,
+            min_score: 0.0,
+            use_fts,
+            use_vector,
+        },
+    );
+}
+
 #[test]
 fn test_rrf_propagates_document_path() {
     // Regression test: search results must carry the source document's file
@@ -284,21 +322,7 @@ fn test_rrf_both_empty() {
 
 #[test]
 fn test_rrf_fts_only_no_vector() {
-    let config = SearchConfig::default().with_limit(10);
-
-    let chunk1 = Uuid::new_v4();
-    let chunk2 = Uuid::new_v4();
-    let chunk3 = Uuid::new_v4();
-    let doc = Uuid::new_v4();
-
-    let fts_results = vec![
-        make_result(chunk1, doc, 1),
-        make_result(chunk2, doc, 2),
-        make_result(chunk3, doc, 3),
-    ];
-
-    let results = reciprocal_rank_fusion(fts_results, Vec::new(), &config);
-
+    let results = build_single_method_rrf_results(true);
     assert_eq!(results.len(), 3);
     assert_all_fts_only(&results);
     assert_scores_descending(&results);
@@ -306,21 +330,7 @@ fn test_rrf_fts_only_no_vector() {
 
 #[test]
 fn test_rrf_vector_only_no_fts() {
-    let config = SearchConfig::default().with_limit(10);
-
-    let chunk1 = Uuid::new_v4();
-    let chunk2 = Uuid::new_v4();
-    let chunk3 = Uuid::new_v4();
-    let doc = Uuid::new_v4();
-
-    let vector_results = vec![
-        make_result(chunk1, doc, 1),
-        make_result(chunk2, doc, 2),
-        make_result(chunk3, doc, 3),
-    ];
-
-    let results = reciprocal_rank_fusion(Vec::new(), vector_results, &config);
-
+    let results = build_single_method_rrf_results(false);
     assert_eq!(results.len(), 3);
     assert_all_vector_only(&results);
     assert_scores_descending(&results);
@@ -410,32 +420,10 @@ fn test_rrf_min_score_one_filters_all() {
 
 #[test]
 fn test_search_config_fts_only() {
-    let config = SearchConfig::default().fts_only();
-
-    assert_config(
-        &config,
-        &ExpectedSearchConfig {
-            limit: 10,
-            rrf_k: 60,
-            min_score: 0.0,
-            use_fts: true,
-            use_vector: false,
-        },
-    );
+    assert_single_method_config(true, false);
 }
 
 #[test]
 fn test_search_config_vector_only() {
-    let config = SearchConfig::default().vector_only();
-
-    assert_config(
-        &config,
-        &ExpectedSearchConfig {
-            limit: 10,
-            rrf_k: 60,
-            min_score: 0.0,
-            use_fts: false,
-            use_vector: true,
-        },
-    );
+    assert_single_method_config(false, true);
 }

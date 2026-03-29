@@ -145,17 +145,10 @@ impl ReplChannel {
 
     fn print_approval_needed(
         &self,
-        request_id: &str,
-        tool_name: &str,
-        description: &str,
+        request: &ToolApprovalRequest<'_>,
         parameters: &serde_json::Value,
     ) {
-        let request = ToolApprovalRequest {
-            request_id,
-            tool_name,
-            description,
-        };
-        for line in render_approval_card(&request, parameters) {
+        for line in render_approval_card(request, parameters) {
             eprintln!("{line}");
         }
     }
@@ -415,7 +408,14 @@ impl NativeChannel for ReplChannel {
                 tool_name,
                 description,
                 parameters,
-            } => self.print_approval_needed(&request_id, &tool_name, &description, &parameters),
+            } => {
+                let request = ToolApprovalRequest {
+                    request_id: &request_id,
+                    tool_name: &tool_name,
+                    description: &description,
+                };
+                self.print_approval_needed(&request, &parameters);
+            }
             StatusUpdate::AuthRequired {
                 extension_name,
                 instructions,
