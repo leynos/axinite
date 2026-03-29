@@ -41,6 +41,37 @@ pub(crate) fn intern_env_key(key: &str) -> EnvKey {
     EnvKey(leaked)
 }
 
+/// Shared parse logic for `parse_option_env` and `parse_option_env_from`.
+/// Returns `None` when the raw value is absent; `Some(parsed)` when present and valid.
+fn parse_option_core<T>(key: EnvKey, raw: Option<String>) -> Result<Option<T>, ConfigError>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    raw.map(|s| {
+        s.parse().map_err(|e| ConfigError::InvalidValue {
+            key: key.to_string(),
+            message: format!("{e}"),
+        })
+    })
+    .transpose()
+}
+
+/// Shared parse logic for `parse_bool_env` and `parse_bool_env_from`.
+fn parse_bool_core(key: EnvKey, raw: Option<String>, default: bool) -> Result<bool, ConfigError> {
+    match raw {
+        Some(s) => match s.to_lowercase().as_str() {
+            "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            _ => Err(ConfigError::InvalidValue {
+                key: key.to_string(),
+                message: format!("must be 'true' or 'false', got '{s}'"),
+            }),
+        },
+        None => Ok(default),
+    }
+}
+
 /// Crate-wide mutex for tests that mutate process environment variables.
 ///
 /// The process environment is global state shared across all threads.
@@ -93,15 +124,7 @@ where
     T: std::str::FromStr,
     T::Err: std::fmt::Display,
 {
-    optional_env_from(ctx, key)?
-        .map(|s| {
-            s.parse().map_err(|e| ConfigError::InvalidValue {
-                key: key.to_string(),
-                message: format!("{e}"),
-            })
-        })
-        .transpose()
-        .map(|opt| opt.unwrap_or(default))
+    parse_option_core(key, optional_env_from(ctx, key)?).map(|opt| opt.unwrap_or(default))
 }
 
 // Backwards-compatible ambient helper retained for existing callers.
@@ -111,15 +134,7 @@ where
     T: std::str::FromStr,
     T::Err: std::fmt::Display,
 {
-    optional_env(key)?
-        .map(|s| {
-            s.parse().map_err(|e| ConfigError::InvalidValue {
-                key: key.to_string(),
-                message: format!("{e}"),
-            })
-        })
-        .transpose()
-        .map(|opt| opt.unwrap_or(default))
+    parse_option_core(key, optional_env(key)?).map(|opt| opt.unwrap_or(default))
 }
 
 /// Parse a boolean from an env var with a default.
@@ -128,17 +143,7 @@ where
 // Backwards-compatible ambient helper retained for existing callers.
 #[allow(dead_code)]
 pub(crate) fn parse_bool_env(key: EnvKey, default: bool) -> Result<bool, ConfigError> {
-    match optional_env(key)? {
-        Some(s) => match s.to_lowercase().as_str() {
-            "true" | "1" => Ok(true),
-            "false" | "0" => Ok(false),
-            _ => Err(ConfigError::InvalidValue {
-                key: key.to_string(),
-                message: format!("must be 'true' or 'false', got '{s}'"),
-            }),
-        },
-        None => Ok(default),
-    }
+    parse_bool_core(key, optional_env(key)?, default)
 }
 
 pub(crate) fn parse_bool_env_from(
@@ -146,17 +151,7 @@ pub(crate) fn parse_bool_env_from(
     key: EnvKey,
     default: bool,
 ) -> Result<bool, ConfigError> {
-    match optional_env_from(ctx, key)? {
-        Some(s) => match s.to_lowercase().as_str() {
-            "true" | "1" => Ok(true),
-            "false" | "0" => Ok(false),
-            _ => Err(ConfigError::InvalidValue {
-                key: key.to_string(),
-                message: format!("must be 'true' or 'false', got '{s}'"),
-            }),
-        },
-        None => Ok(default),
-    }
+    parse_bool_core(key, optional_env_from(ctx, key)?, default)
 }
 
 /// Parse an env var into `Option<T>` — returns `None` when unset,
@@ -168,14 +163,7 @@ where
     T: std::str::FromStr,
     T::Err: std::fmt::Display,
 {
-    optional_env(key)?
-        .map(|s| {
-            s.parse().map_err(|e| ConfigError::InvalidValue {
-                key: key.to_string(),
-                message: format!("{e}"),
-            })
-        })
-        .transpose()
+    parse_option_core(key, optional_env(key)?)
 }
 
 pub(crate) fn parse_option_env_from<T>(
@@ -186,14 +174,7 @@ where
     T: std::str::FromStr,
     T::Err: std::fmt::Display,
 {
-    optional_env_from(ctx, key)?
-        .map(|s| {
-            s.parse().map_err(|e| ConfigError::InvalidValue {
-                key: key.to_string(),
-                message: format!("{e}"),
-            })
-        })
-        .transpose()
+    parse_option_core(key, optional_env_from(ctx, key)?)
 }
 
 /// Parse a string from an env var with a default.
