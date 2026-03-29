@@ -1,5 +1,6 @@
 //! Tests for the worker HTTP client and its shared API type conversions.
 
+mod client_construction;
 mod finish_reason;
 mod fixtures;
 mod remote_tool_catalog;

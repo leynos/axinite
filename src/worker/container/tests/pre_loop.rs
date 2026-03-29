@@ -8,8 +8,71 @@ use uuid::Uuid;
 
 use super::test_support::{RuntimeTestState, setup_runtime_test};
 use crate::error::{Error, ToolError};
-use crate::worker::api::WorkerState;
-use crate::worker::container::{WorkerError, WorkerExecutionResult};
+use crate::worker::api::{WorkerHttpClient, WorkerState};
+use crate::worker::container::{WorkerConfig, WorkerError, WorkerExecutionResult, WorkerRuntime};
+
+/// Regression test: WorkerRuntime::new should return ConfigMismatch error
+/// when config job_id doesn't match client job_id.
+#[tokio::test]
+async fn worker_runtime_new_returns_error_on_job_id_mismatch() {
+    let job_id = Uuid::new_v4();
+    let different_job_id = Uuid::new_v4();
+
+    let client = Arc::new(
+        WorkerHttpClient::new(
+            "http://localhost:50051".to_string(),
+            job_id,
+            "test".to_string(),
+        )
+        .expect("test client should build"),
+    );
+
+    let result = WorkerRuntime::new(
+        WorkerConfig {
+            job_id: different_job_id,
+            orchestrator_url: "http://localhost:50051".to_string(),
+            ..WorkerConfig::default()
+        },
+        client,
+    );
+
+    match result {
+        Err(WorkerError::ConfigMismatch { field, .. }) => assert_eq!(field, "job_id"),
+        Ok(_) => panic!("expected ConfigMismatch error for job_id, got Ok"),
+        Err(other) => panic!("expected ConfigMismatch error for job_id, got {:?}", other),
+    }
+}
+
+/// Regression test: WorkerRuntime::new should return ConfigMismatch error
+/// when config orchestrator_url doesn't match client orchestrator_url.
+#[tokio::test]
+async fn worker_runtime_new_returns_error_on_orchestrator_url_mismatch() {
+    let job_id = Uuid::new_v4();
+
+    let client = Arc::new(
+        WorkerHttpClient::new(
+            "http://localhost:50051".to_string(),
+            job_id,
+            "test".to_string(),
+        )
+        .expect("test client should build"),
+    );
+
+    let result = WorkerRuntime::new(
+        WorkerConfig {
+            job_id,
+            orchestrator_url: "http://different-host:50052".to_string(),
+            ..WorkerConfig::default()
+        },
+        client,
+    );
+
+    match result {
+        Err(WorkerError::ConfigMismatch { field, .. }) => assert_eq!(field, "orchestrator_url"),
+        Ok(_) => panic!("expected ConfigMismatch error for orchestrator_url, got Ok"),
+        Err(other) => panic!("expected ConfigMismatch error for orchestrator_url, got {:?}", other),
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 enum PreLoopFailureCase {
