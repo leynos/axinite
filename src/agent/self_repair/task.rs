@@ -167,12 +167,12 @@ async fn run_broken_tool_repairs(
                     ),
                 );
             }
-            Ok(result) => {
+            Ok(RepairResult::Retry { message }) => {
                 tracing::debug!(
                     tool = %tool.name,
-                    status = "completed",
-                    "Tool repair completed with unexpected result: {:?}",
-                    result
+                    status = "retry",
+                    "Tool repair needs retry: {}",
+                    message
                 );
             }
             Err(e) => {

@@ -188,7 +188,7 @@ impl ContextManager {
     }
 
     /// Find contexts for stuck jobs.
-    pub async fn find_stuck_contexts(&self) -> Vec<JobContext> {
+    pub(crate) async fn find_stuck_contexts(&self) -> Vec<JobContext> {
         self.contexts
             .read()
             .await

@@ -324,16 +324,19 @@ mod tests {
     #[tokio::test]
     async fn detect_stuck_jobs_uses_stuck_threshold_from_latest_stuck_transition() {
         let cm = Arc::new(ContextManager::new(10));
-        let job_id = cm.create_job("Stuck job", "desc").await.unwrap();
+        let job_id = cm
+            .create_job("Stuck job", "desc")
+            .await
+            .expect("failed to await create_job");
 
         cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
             .await
-            .unwrap()
-            .unwrap();
+            .expect("failed to await update_context")
+            .expect("expected in-progress transition to succeed");
         cm.update_context(job_id, |ctx| ctx.transition_to(JobState::Stuck, None))
             .await
-            .unwrap()
-            .unwrap();
+            .expect("failed to await update_context")
+            .expect("expected stuck transition to succeed");
         cm.update_context(job_id, |ctx| {
             let stuck_since = Utc::now() - chrono::Duration::seconds(30);
             let Some(last_transition) = ctx.transitions.last_mut() else {
@@ -343,8 +346,8 @@ mod tests {
             Ok(())
         })
         .await
-        .unwrap()
-        .unwrap();
+        .expect("failed to await update_context")
+        .expect("expected first stuck timestamp update to succeed");
 
         let repair = DefaultSelfRepair::new(Arc::clone(&cm), Duration::from_secs(60), 3);
         assert!(
@@ -362,8 +365,8 @@ mod tests {
             Ok(())
         })
         .await
-        .unwrap()
-        .unwrap();
+        .expect("failed to await update_context")
+        .expect("expected second stuck timestamp update to succeed");
 
         let stuck_jobs = NativeSelfRepair::detect_stuck_jobs(&repair).await;
         assert_eq!(stuck_jobs.len(), 1);

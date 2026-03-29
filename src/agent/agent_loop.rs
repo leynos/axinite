@@ -258,11 +258,15 @@ impl Agent {
         let mut message_stream = self.channels.start_all().await?;
 
         // Start self-repair task with notification forwarding
-        let repair = Arc::new(DefaultSelfRepair::new(
+        let mut repair = DefaultSelfRepair::new(
             self.context_manager.clone(),
             self.config.stuck_threshold,
             self.config.max_repair_attempts,
-        ));
+        );
+        if let Some(store) = self.store() {
+            repair = repair.with_store(Arc::clone(store));
+        }
+        let repair = Arc::new(repair);
         let repair_interval = self.config.repair_check_interval;
         let repair_channels = self.channels.clone();
         let (repair_shutdown_tx, repair_shutdown_rx) = oneshot::channel();
