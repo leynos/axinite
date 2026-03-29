@@ -130,7 +130,7 @@ impl AppBuilder {
     /// so that both see the same set of active connections.
     #[expect(
         clippy::too_many_arguments,
-        reason = "FIXME: Group parameters into a config struct (https://github.com/leynos/axinite/issues/XXX)"
+        reason = "FIXME: Group parameters into a config struct (https://github.com/leynos/axinite/issues/85)"
     )]
     async fn build_extension_manager(
         &self,
