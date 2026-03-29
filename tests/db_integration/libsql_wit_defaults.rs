@@ -50,20 +50,7 @@ CREATE TABLE IF NOT EXISTS wasm_channels (
 );
 "#;
 
-#[tokio::test]
-async fn libsql_run_migrations_upgrades_legacy_wasm_wit_defaults() {
-    let dir = tempfile::tempdir().expect("temp dir");
-    let db_path = dir.path().join("legacy-wit-defaults.db");
-    let backend = LibSqlBackend::new_local(&db_path).await.expect("backend");
-
-    let conn = backend.connect().await.expect("connect");
-    conn.execute_batch(LEGACY_WASM_WIT_SCHEMA)
-        .await
-        .expect("seed legacy schema");
-
-    backend.run_migrations().await.expect("run migrations");
-
-    let conn = backend.connect().await.expect("connect after migration");
+async fn insert_test_wasm_tool(conn: &libsql::Connection) {
     conn.execute(
         r#"
         INSERT INTO wasm_tools (
@@ -83,7 +70,9 @@ async fn libsql_run_migrations_upgrades_legacy_wasm_wit_defaults() {
     )
     .await
     .expect("insert wasm tool without wit_version");
+}
 
+async fn insert_test_wasm_channel(conn: &libsql::Connection) {
     conn.execute(
         r#"
         INSERT INTO wasm_channels (
@@ -102,75 +91,96 @@ async fn libsql_run_migrations_upgrades_legacy_wasm_wit_defaults() {
     )
     .await
     .expect("insert wasm channel without wit_version");
+}
 
-    let mut tool_rows = conn
-        .query(
-            "SELECT wit_version FROM wasm_tools WHERE id = ?1",
-            libsql::params!["tool-1"],
-        )
+async fn assert_wit_version(conn: &libsql::Connection, table: &str, id: &str, expected: &str) {
+    let query = format!("SELECT wit_version FROM {table} WHERE id = ?1");
+    let mut rows = conn
+        .query(&query, libsql::params![id])
         .await
-        .expect("query tool");
-    let tool_row = tool_rows
+        .unwrap_or_else(|error| panic!("query {table} wit_version: {error}"));
+    let row = rows
         .next()
         .await
-        .expect("tool rows")
-        .expect("tool row");
-    let tool_wit_version: String = tool_row.get(0).expect("tool wit_version");
-    assert_eq!(tool_wit_version, "0.3.0");
+        .unwrap_or_else(|error| panic!("read {table} wit_version row: {error}"))
+        .unwrap_or_else(|| panic!("missing {table} row for id {id}"));
+    let actual: String = row
+        .get(0)
+        .unwrap_or_else(|error| panic!("read {table} wit_version value: {error}"));
+    assert_eq!(actual, expected);
+}
 
-    let mut channel_rows = conn
-        .query(
-            "SELECT wit_version FROM wasm_channels WHERE id = ?1",
-            libsql::params!["channel-1"],
-        )
-        .await
-        .expect("query channel");
-    let channel_row = channel_rows
-        .next()
-        .await
-        .expect("channel rows")
-        .expect("channel row");
-    let channel_wit_version: String = channel_row.get(0).expect("channel wit_version");
-    assert_eq!(channel_wit_version, "0.3.0");
-
+async fn assert_migration_absent(conn: &libsql::Connection, version: i64) {
     let mut old_version_rows = conn
         .query(
             "SELECT name FROM _migrations WHERE version = ?1",
-            libsql::params![10],
+            libsql::params![version],
         )
         .await
-        .expect("query migration marker for version 10");
+        .unwrap_or_else(|error| panic!("query migration marker for version {version}: {error}"));
     assert!(
         old_version_rows
             .next()
             .await
-            .expect("read migration row for version 10")
+            .unwrap_or_else(|error| panic!("read migration row for version {version}: {error}"))
             .is_none(),
-        "unexpected _migrations row for version 10; migration numbering regressed"
+        "unexpected _migrations row for version {version}; migration numbering regressed"
     );
+}
 
-    for (version, expected_name) in [
-        (12_i64, "wasm_wit_default_0_3_0"),
-        (13_i64, "job_token_budget"),
-        (14_i64, "drop_redundant_wasm_tools_name_index"),
-    ] {
+async fn assert_migration_entries(conn: &libsql::Connection, entries: &[(i64, &str)]) {
+    for (version, expected_name) in entries {
         let mut migration_rows = conn
             .query(
                 "SELECT name FROM _migrations WHERE version = ?1",
-                libsql::params![version],
+                libsql::params![*version],
             )
             .await
-            .expect("query migration marker");
+            .unwrap_or_else(|error| {
+                panic!("query migration marker for version {version}: {error}")
+            });
         let migration_row = migration_rows
             .next()
             .await
-            .expect("read migration row for expected version")
+            .unwrap_or_else(|error| panic!("read migration row for version {version}: {error}"))
             .unwrap_or_else(|| {
                 panic!(
                     "expected _migrations row for version {version}; migration sequences diverged"
                 )
             });
-        let migration_name: String = migration_row.get(0).expect("migration name");
-        assert_eq!(migration_name, expected_name);
+        let migration_name: String = migration_row
+            .get(0)
+            .unwrap_or_else(|error| panic!("read migration name for version {version}: {error}"));
+        assert_eq!(migration_name, *expected_name);
     }
+}
+
+#[tokio::test]
+async fn libsql_run_migrations_upgrades_legacy_wasm_wit_defaults() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let db_path = dir.path().join("legacy-wit-defaults.db");
+    let backend = LibSqlBackend::new_local(&db_path).await.expect("backend");
+
+    let conn = backend.connect().await.expect("connect");
+    conn.execute_batch(LEGACY_WASM_WIT_SCHEMA)
+        .await
+        .expect("seed legacy schema");
+
+    backend.run_migrations().await.expect("run migrations");
+
+    let conn = backend.connect().await.expect("connect after migration");
+    insert_test_wasm_tool(&conn).await;
+    insert_test_wasm_channel(&conn).await;
+    assert_wit_version(&conn, "wasm_tools", "tool-1", "0.3.0").await;
+    assert_wit_version(&conn, "wasm_channels", "channel-1", "0.3.0").await;
+    assert_migration_absent(&conn, 10).await;
+    assert_migration_entries(
+        &conn,
+        &[
+            (12_i64, "wasm_wit_default_0_3_0"),
+            (13_i64, "job_token_budget"),
+            (14_i64, "drop_redundant_wasm_tools_name_index"),
+        ],
+    )
+    .await;
 }
