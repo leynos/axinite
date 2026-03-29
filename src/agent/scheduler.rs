@@ -537,23 +537,28 @@ impl Scheduler {
 
     /// Stop a running job.
     pub async fn stop(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
-        let scheduled = {
-            let mut jobs = self.jobs.write().await;
-            jobs.remove(&job_id)
+        let tx = {
+            let jobs = self.jobs.read().await;
+            jobs.get(&job_id).map(|scheduled| scheduled.tx.clone())
         };
 
-        if let Some(scheduled) = scheduled {
+        if let Some(tx) = tx {
             let reason = reason.to_string();
 
             // Send stop signal
-            let _ = scheduled.tx.send(WorkerMessage::Stop).await;
+            let _ = tx.send(WorkerMessage::Stop).await;
 
             // Give it a moment to clean up
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
             // Abort if still running
-            if !scheduled.handle.is_finished() {
-                scheduled.handle.abort();
+            {
+                let jobs = self.jobs.read().await;
+                if let Some(scheduled) = jobs.get(&job_id)
+                    && !scheduled.handle.is_finished()
+                {
+                    scheduled.handle.abort();
+                }
             }
 
             // Update job state
@@ -580,6 +585,7 @@ impl Scheduler {
                 tracing::warn!("Failed to persist cancellation for job {}: {}", job_id, e);
             }
 
+            self.jobs.write().await.remove(&job_id);
             tracing::info!("Stopped job {}", job_id);
         }
 
@@ -667,11 +673,15 @@ impl Scheduler {
     pub async fn stop_all(&self) {
         let job_ids: Vec<Uuid> = self.jobs.read().await.keys().cloned().collect();
         let stop_timeout = tokio::time::Duration::from_secs(5);
+        let stop_futures = job_ids.into_iter().map(|job_id| async move {
+            (
+                job_id,
+                tokio::time::timeout(stop_timeout, self.stop(job_id, "Stopped by scheduler")).await,
+            )
+        });
 
-        for job_id in job_ids {
-            match tokio::time::timeout(stop_timeout, self.stop(job_id, "Stopped by scheduler"))
-                .await
-            {
+        for (job_id, result) in futures::future::join_all(stop_futures).await {
+            match result {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
                     tracing::warn!(job_id = %job_id, %error, "Failed to stop job during shutdown");
