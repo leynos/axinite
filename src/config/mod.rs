@@ -304,6 +304,20 @@ impl Config {
     /// Prefer this over `from_env*` and `from_db*` when the caller already has
     /// a stable snapshot of config inputs and wants deterministic resolution
     /// without ambient process reads during config construction.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn example() -> Result<(), crate::error::ConfigError> {
+    /// let ctx = crate::config::EnvContext::default()
+    ///     .with_env("DATABASE_BACKEND", "libsql")
+    ///     .with_env("DATABASE_URL", "unused://test")
+    ///     .with_env("LLM_BACKEND", "nearai");
+    /// let settings = crate::settings::Settings::default();
+    /// let _config = crate::config::Config::from_context(&ctx, &settings).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn from_context(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
         Ok(Self {
             database: DatabaseConfig::resolve_from(ctx)?,
@@ -332,6 +346,29 @@ impl Config {
         })
     }
 
+    /// Build config from an explicit context plus a required TOML overlay.
+    ///
+    /// Use this when the caller already owns an [`EnvContext`] snapshot and
+    /// wants the same deterministic resolution path as [`Self::from_context`],
+    /// but with one additional TOML file merged into the supplied settings
+    /// before config construction.
+    ///
+    /// Unlike the ambient `from_env_with_toml` and `from_db_with_toml`
+    /// entrypoints, this method does not capture process environment or load
+    /// bootstrap files on its own.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn example(path: &std::path::Path) -> Result<(), crate::error::ConfigError> {
+    /// let ctx = crate::config::EnvContext::default()
+    ///     .with_env("DATABASE_BACKEND", "libsql")
+    ///     .with_env("DATABASE_URL", "unused://test");
+    /// let settings = crate::settings::Settings::default();
+    /// let _config = crate::config::Config::from_context_with_toml(&ctx, &settings, path).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn from_context_with_toml(
         ctx: &EnvContext,
         settings: &Settings,
@@ -367,6 +404,28 @@ impl Config {
         Ok(())
     }
 
+    /// Re-resolve just the LLM portion of config from an explicit snapshot.
+    ///
+    /// This is the explicit-context companion to [`Self::re_resolve_llm`].
+    /// Use it after mutating an [`EnvContext`] with credential overlays so the
+    /// provider selection, base URL, and auth settings are recomputed without
+    /// rebuilding unrelated config sections.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # async fn example() -> Result<(), crate::error::ConfigError> {
+    /// let settings = crate::settings::Settings::default();
+    /// let mut ctx = crate::config::EnvContext::default()
+    ///     .with_env("DATABASE_BACKEND", "libsql")
+    ///     .with_env("DATABASE_URL", "unused://test")
+    ///     .with_env("LLM_BACKEND", "anthropic");
+    /// let mut config = crate::config::Config::from_context(&ctx, &settings).await?;
+    /// ctx.inject_secret("ANTHROPIC_API_KEY", "secret");
+    /// config.re_resolve_llm_from(&ctx, &settings)?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn re_resolve_llm_from(
         &mut self,
         ctx: &EnvContext,
@@ -406,6 +465,22 @@ pub async fn inject_llm_keys_from_secrets(
     merge_injected_vars(injected);
 }
 
+/// Inject decrypted LLM credentials into an explicit [`EnvContext`].
+///
+/// This mirrors [`inject_llm_keys_from_secrets`] without mutating the process
+/// environment or the global injected overlay. Existing values already present
+/// in `ctx` still win over secrets-store values.
+///
+/// # Examples
+///
+/// ```no_run
+/// # async fn example(
+/// #     secrets: &dyn crate::secrets::SecretsStore,
+/// # ) {
+/// let mut ctx = crate::config::EnvContext::default();
+/// crate::config::inject_llm_keys_into_context(&mut ctx, secrets, "user-123").await;
+/// # }
+/// ```
 pub async fn inject_llm_keys_into_context(
     ctx: &mut EnvContext,
     secrets: &dyn crate::secrets::SecretsStore,
@@ -436,6 +511,18 @@ pub fn inject_os_credentials() {
     merge_injected_vars(injected);
 }
 
+/// Inject OAuth tokens from OS credential stores into an explicit context.
+///
+/// This is the explicit-context equivalent of [`inject_os_credentials`]. It is
+/// typically used during startup after capturing ambient env vars but before
+/// calling [`Config::from_context`] or [`Config::re_resolve_llm_from`].
+///
+/// # Examples
+///
+/// ```no_run
+/// let mut ctx = crate::config::EnvContext::capture_ambient();
+/// crate::config::inject_os_credentials_into_context(&mut ctx);
+/// ```
 pub fn inject_os_credentials_into_context(ctx: &mut EnvContext) {
     let mut injected = HashMap::new();
     inject_os_credential_store_tokens(&mut injected);
@@ -506,5 +593,132 @@ fn inject_os_credential_store_tokens(injected: &mut HashMap<String, String>) {
     if let Some(fresh) = crate::config::ClaudeCodeConfig::extract_oauth_token() {
         injected.insert("ANTHROPIC_OAUTH_TOKEN".to_string(), fresh);
         tracing::debug!("Refreshed ANTHROPIC_OAUTH_TOKEN from OS credential store");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+
+    use super::{Config, DatabaseBackend, EnvContext};
+    use crate::settings::Settings;
+
+    fn base_context(base_dir: &Path) -> EnvContext {
+        EnvContext::default()
+            .with_env("IRONCLAW_BASE_DIR", base_dir.to_string_lossy())
+            .with_env("DATABASE_BACKEND", "libsql")
+            .with_env("DATABASE_URL", "unused://test")
+    }
+
+    #[tokio::test]
+    async fn from_context_resolves_explicit_snapshot_inputs() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let base_dir = dir.path().join("ironclaw-home");
+        let mut settings = Settings::default();
+        settings.agent.name = "settings-agent".to_string();
+        settings.heartbeat.enabled = true;
+        settings
+            .channels
+            .wasm_channel_owner_ids
+            .insert("signal".to_string(), 7);
+
+        let ctx = base_context(&base_dir)
+            .with_env("AGENT_NAME", "env-agent")
+            .with_env("CLI_ENABLED", "false")
+            .with_env("SAFETY_INJECTION_CHECK_ENABLED", "false")
+            .with_env("LLM_BACKEND", "nearai")
+            .with_env("NEARAI_MODEL", "env-model")
+            .with_env("TELEGRAM_OWNER_ID", "99")
+            .with_env("TRANSCRIPTION_ENABLED", "true")
+            .with_env("OPENAI_API_KEY", "openai-test-key");
+
+        let config = Config::from_context(&ctx, &settings)
+            .await
+            .expect("explicit context should resolve");
+
+        assert_eq!(config.database.backend, DatabaseBackend::LibSql);
+        assert_eq!(config.database.url(), "unused://test");
+        assert_eq!(config.agent.name, "env-agent");
+        assert!(config.heartbeat.enabled);
+        assert!(!config.channels.cli.enabled);
+        assert_eq!(config.channels.wasm_channels_dir, base_dir.join("channels"));
+        assert_eq!(config.skills.local_dir, base_dir.join("skills"));
+        assert_eq!(
+            config.skills.installed_dir,
+            base_dir.join("installed_skills")
+        );
+        assert_eq!(
+            config.channels.wasm_channel_owner_ids.get("signal"),
+            Some(&7)
+        );
+        assert_eq!(
+            config.channels.wasm_channel_owner_ids.get("telegram"),
+            Some(&99)
+        );
+        assert!(!config.safety.injection_check_enabled);
+        assert_eq!(config.llm.nearai.model, "env-model");
+        assert!(config.transcription.enabled);
+        assert_eq!(
+            config
+                .transcription
+                .openai_api_key
+                .as_ref()
+                .map(secrecy::ExposeSecret::expose_secret),
+            Some("openai-test-key")
+        );
+    }
+
+    #[tokio::test]
+    async fn from_context_with_toml_merges_settings_before_resolution() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let base_dir = dir.path().join("ironclaw-home");
+        let toml_path = dir.path().join("config.toml");
+        fs::write(
+            &toml_path,
+            concat!(
+                "[agent]\n",
+                "name = \"toml-agent\"\n\n",
+                "[heartbeat]\n",
+                "enabled = true\n",
+                "interval_secs = 900\n",
+            ),
+        )
+        .expect("write TOML overlay");
+
+        let mut settings = Settings::default();
+        settings.agent.name = "settings-agent".to_string();
+
+        let ctx = base_context(&base_dir).with_env("AGENT_NAME", "env-agent");
+        let config = Config::from_context_with_toml(&ctx, &settings, &toml_path)
+            .await
+            .expect("context plus TOML should resolve");
+
+        assert_eq!(config.agent.name, "env-agent");
+        assert!(config.heartbeat.enabled);
+        assert_eq!(config.heartbeat.interval_secs, 900);
+    }
+
+    #[tokio::test]
+    async fn re_resolve_llm_from_rebuilds_llm_against_updated_snapshot() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let base_dir = dir.path().join("ironclaw-home");
+        let settings = Settings::default();
+        let ctx_a = base_context(&base_dir)
+            .with_env("LLM_BACKEND", "nearai")
+            .with_env("NEARAI_MODEL", "model-a");
+        let ctx_b = base_context(&base_dir)
+            .with_env("LLM_BACKEND", "nearai")
+            .with_env("NEARAI_MODEL", "model-b");
+
+        let mut config = Config::from_context(&ctx_a, &settings)
+            .await
+            .expect("initial context should resolve");
+        assert_eq!(config.llm.nearai.model, "model-a");
+
+        config
+            .re_resolve_llm_from(&ctx_b, &settings)
+            .expect("updated context should re-resolve");
+        assert_eq!(config.llm.nearai.model, "model-b");
     }
 }

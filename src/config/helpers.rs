@@ -1,3 +1,21 @@
+//! Shared environment-reading helpers for configuration resolution.
+//!
+//! This module centralises the small pieces of policy that sit between raw
+//! process environment access and the higher-level `resolve_from(...)`
+//! routines in `crate::config`.
+//!
+//! - [`EnvKey`] makes environment-variable names explicit at call sites.
+//! - `*_from(...)` helpers read from an explicit [`EnvContext`] snapshot for
+//!   deterministic config construction.
+//! - Ambient `*_env(...)` wrappers are retained for compatibility and still
+//!   honour the injected secret overlay after checking the real process
+//!   environment first.
+//! - Shared parsing cores keep error formatting and boolean semantics
+//!   consistent across both resolution paths.
+//!
+//! Prefer the context-aware helpers when building config from an explicit
+//! startup snapshot or test fixture.
+
 use crate::error::ConfigError;
 
 use super::EnvContext;
