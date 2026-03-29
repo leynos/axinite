@@ -94,8 +94,8 @@ pub fn test_env_context_with(vars: &[(&str, &str)]) -> EnvContext {
 /// The config is resolved through [`Config::from_context`] using
 /// [`Settings::default`], so tests can exercise the explicit snapshot path
 /// without touching ambient state.
-pub async fn test_config_from_context(ctx: &EnvContext) -> Config {
-    Config::from_context(ctx, &Settings::default())
-        .await
-        .expect("test config context should resolve")
+pub async fn test_config_from_context(
+    ctx: &EnvContext,
+) -> Result<Config, crate::error::ConfigError> {
+    Config::from_context(ctx, &Settings::default()).await
 }

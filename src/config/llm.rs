@@ -450,7 +450,7 @@ impl LlmConfig {
             ctx,
             &BaseUrlSpec {
                 env_var: spec.base_url_env.as_deref(),
-                backend,
+                backend: &spec.canonical_id,
                 default: spec.default_base_url.as_deref(),
                 required: spec.base_url_required,
             },
@@ -830,6 +830,31 @@ mod tests {
         unsafe {
             std::env::remove_var("LLM_BACKEND");
             std::env::remove_var("LLM_BASE_URL");
+        }
+    }
+
+    #[test]
+    fn unknown_backend_uses_openai_compatible_settings_base_url() {
+        let _guard = ENV_MUTEX.lock().expect("env mutex poisoned");
+        clear_openai_compatible_env();
+        // SAFETY: Under ENV_MUTEX.
+        unsafe {
+            std::env::set_var("LLM_BACKEND", "some_custom_provider");
+        }
+
+        let settings = Settings {
+            openai_compatible_base_url: Some("http://settings-url/v1".to_string()),
+            ..Default::default()
+        };
+
+        let cfg = LlmConfig::resolve(&settings).expect("resolve should succeed");
+        let provider = cfg.provider.expect("should have provider config");
+        assert_eq!(provider.provider_id, "openai_compatible");
+        assert_eq!(provider.base_url, "http://settings-url/v1");
+
+        // SAFETY: Under ENV_MUTEX.
+        unsafe {
+            std::env::remove_var("LLM_BACKEND");
         }
     }
 

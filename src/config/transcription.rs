@@ -46,7 +46,14 @@ impl TranscriptionConfig {
         )?;
 
         let provider = optional_env_from(ctx, EnvKey("TRANSCRIPTION_PROVIDER"))?
-            .unwrap_or_else(|| "openai".to_string());
+            .unwrap_or_else(|| "openai".to_string())
+            .to_lowercase();
+        if provider != "openai" {
+            return Err(ConfigError::InvalidValue {
+                key: "TRANSCRIPTION_PROVIDER".to_string(),
+                message: format!("unsupported transcription provider '{}'", provider),
+            });
+        }
 
         let openai_api_key =
             optional_env_from(ctx, EnvKey("OPENAI_API_KEY"))?.map(SecretString::from);
@@ -90,3 +97,15 @@ impl TranscriptionConfig {
 const _: () = {
     let _ = TranscriptionConfig::resolve;
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_from_rejects_unknown_provider() {
+        let ctx = EnvContext::default().with_env("TRANSCRIPTION_PROVIDER", "whispr");
+        let result = TranscriptionConfig::resolve_from(&ctx, &Settings::default());
+        assert!(result.is_err(), "unknown provider should fail fast");
+    }
+}

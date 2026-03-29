@@ -75,3 +75,7 @@ impl RoutineConfig {
         })
     }
 }
+
+const _: () = {
+    let _ = RoutineConfig::resolve;
+};

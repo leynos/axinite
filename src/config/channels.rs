@@ -102,15 +102,28 @@ fn parse_csv_list(val: &str) -> Vec<String> {
         .collect()
 }
 
-fn resolve_http_config(ctx: &EnvContext) -> Result<Option<HttpConfig>, ConfigError> {
-    if optional_env_from(ctx, EnvKey("HTTP_PORT"))?.is_none()
-        && optional_env_from(ctx, EnvKey("HTTP_HOST"))?.is_none()
-    {
+fn resolve_http_config(
+    ctx: &EnvContext,
+    settings: &Settings,
+) -> Result<Option<HttpConfig>, ConfigError> {
+    let host = optional_env_from(ctx, EnvKey("HTTP_HOST"))?
+        .or_else(|| settings.channels.http_host.clone());
+    let port = optional_env_from(ctx, EnvKey("HTTP_PORT"))?
+        .map(|s| {
+            s.parse::<u16>().map_err(|e| ConfigError::InvalidValue {
+                key: "HTTP_PORT".to_string(),
+                message: format!("{e}"),
+            })
+        })
+        .transpose()?
+        .or(settings.channels.http_port);
+
+    if !settings.channels.http_enabled && host.is_none() && port.is_none() {
         return Ok(None);
     }
     Ok(Some(HttpConfig {
-        host: optional_env_from(ctx, EnvKey("HTTP_HOST"))?.unwrap_or_else(|| "0.0.0.0".to_string()),
-        port: parse_optional_env_from(ctx, EnvKey("HTTP_PORT"), 8080)?,
+        host: host.unwrap_or_else(|| "0.0.0.0".to_string()),
+        port: port.unwrap_or(8080),
         webhook_secret: optional_env_from(ctx, EnvKey("HTTP_WEBHOOK_SECRET"))?
             .map(SecretString::from),
         user_id: optional_env_from(ctx, EnvKey("HTTP_USER_ID"))?
@@ -132,17 +145,27 @@ fn resolve_gateway_config(ctx: &EnvContext) -> Result<Option<GatewayConfig>, Con
     }))
 }
 
-fn resolve_signal_config(ctx: &EnvContext) -> Result<Option<SignalConfig>, ConfigError> {
-    let Some(http_url) = optional_env_from(ctx, EnvKey("SIGNAL_HTTP_URL"))? else {
+fn resolve_signal_config(
+    ctx: &EnvContext,
+    settings: &Settings,
+) -> Result<Option<SignalConfig>, ConfigError> {
+    let Some(http_url) = optional_env_from(ctx, EnvKey("SIGNAL_HTTP_URL"))?.or_else(|| {
+        settings
+            .channels
+            .signal_enabled
+            .then(|| settings.channels.signal_http_url.clone())
+            .flatten()
+    }) else {
         return Ok(None);
     };
-    let account = optional_env_from(ctx, EnvKey("SIGNAL_ACCOUNT"))?.ok_or_else(|| {
-        ConfigError::InvalidValue {
+    let account = optional_env_from(ctx, EnvKey("SIGNAL_ACCOUNT"))?
+        .or_else(|| settings.channels.signal_account.clone())
+        .ok_or_else(|| ConfigError::InvalidValue {
             key: "SIGNAL_ACCOUNT".to_string(),
             message: "SIGNAL_ACCOUNT is required when SIGNAL_HTTP_URL is set".to_string(),
-        }
-    })?;
+        })?;
     let allow_from = optional_env_from(ctx, EnvKey("SIGNAL_ALLOW_FROM"))?
+        .or_else(|| settings.channels.signal_allow_from.clone())
         .map(|s| parse_csv_list(&s))
         .unwrap_or_else(|| vec![account.clone()]);
     Ok(Some(SignalConfig {
@@ -150,13 +173,17 @@ fn resolve_signal_config(ctx: &EnvContext) -> Result<Option<SignalConfig>, Confi
         account,
         allow_from,
         allow_from_groups: optional_env_from(ctx, EnvKey("SIGNAL_ALLOW_FROM_GROUPS"))?
+            .or_else(|| settings.channels.signal_allow_from_groups.clone())
             .map(|s| parse_csv_list(&s))
             .unwrap_or_default(),
         dm_policy: optional_env_from(ctx, EnvKey("SIGNAL_DM_POLICY"))?
+            .or_else(|| settings.channels.signal_dm_policy.clone())
             .unwrap_or_else(|| "pairing".to_string()),
         group_policy: optional_env_from(ctx, EnvKey("SIGNAL_GROUP_POLICY"))?
+            .or_else(|| settings.channels.signal_group_policy.clone())
             .unwrap_or_else(|| "allowlist".to_string()),
         group_allow_from: optional_env_from(ctx, EnvKey("SIGNAL_GROUP_ALLOW_FROM"))?
+            .or_else(|| settings.channels.signal_group_allow_from.clone())
             .map(|s| parse_csv_list(&s))
             .unwrap_or_default(),
         ignore_attachments: parse_bool_env_from(ctx, EnvKey("SIGNAL_IGNORE_ATTACHMENTS"), false)?,
@@ -193,9 +220,9 @@ impl ChannelsConfig {
             cli: CliConfig {
                 enabled: parse_bool_env_from(ctx, EnvKey("CLI_ENABLED"), true)?,
             },
-            http: resolve_http_config(ctx)?,
+            http: resolve_http_config(ctx, settings)?,
             gateway: resolve_gateway_config(ctx)?,
-            signal: resolve_signal_config(ctx)?,
+            signal: resolve_signal_config(ctx, settings)?,
             wasm_channels_dir: optional_env_from(ctx, EnvKey("WASM_CHANNELS_DIR"))?
                 .map(PathBuf::from)
                 .unwrap_or_else(|| ctx.ironclaw_base_dir().join("channels")),
@@ -213,7 +240,9 @@ fn default_channels_dir() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::EnvContext;
     use crate::config::channels::*;
+    use crate::settings::Settings;
 
     #[test]
     fn cli_config_fields() {
@@ -248,6 +277,47 @@ mod tests {
         };
         assert!(cfg.webhook_secret.is_some());
         assert_eq!(cfg.port, 9090);
+    }
+
+    #[test]
+    fn resolve_from_uses_settings_http_config_when_env_absent() {
+        let settings = Settings {
+            channels: crate::settings::ChannelSettings {
+                http_enabled: true,
+                http_host: Some("127.0.0.1".to_string()),
+                http_port: Some(9090),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let cfg = ChannelsConfig::resolve_from(&EnvContext::default(), &settings)
+            .expect("settings-backed HTTP config should resolve");
+        let http = cfg.http.expect("HTTP config should be present");
+        assert_eq!(http.host, "127.0.0.1");
+        assert_eq!(http.port, 9090);
+    }
+
+    #[test]
+    fn resolve_from_uses_settings_signal_config_when_env_absent() {
+        let settings = Settings {
+            channels: crate::settings::ChannelSettings {
+                signal_enabled: true,
+                signal_http_url: Some("http://127.0.0.1:8080".to_string()),
+                signal_account: Some("+15551234567".to_string()),
+                signal_dm_policy: Some("open".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let cfg = ChannelsConfig::resolve_from(&EnvContext::default(), &settings)
+            .expect("settings-backed Signal config should resolve");
+        let signal = cfg.signal.expect("Signal config should be present");
+        assert_eq!(signal.http_url, "http://127.0.0.1:8080");
+        assert_eq!(signal.account, "+15551234567");
+        assert_eq!(signal.allow_from, vec!["+15551234567".to_string()]);
+        assert_eq!(signal.dm_policy, "open");
     }
 
     #[test]

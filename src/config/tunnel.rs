@@ -1,5 +1,5 @@
 use crate::config::EnvContext;
-use crate::config::helpers::{EnvKey, optional_env_from};
+use crate::config::helpers::{EnvKey, optional_env_from, parse_bool_env_from};
 use crate::error::ConfigError;
 use crate::settings::Settings;
 
@@ -58,9 +58,11 @@ impl TunnelConfig {
                     .or_else(|| settings.tunnel.cf_token.clone())
                     .map(|token| crate::tunnel::CloudflareTunnelConfig { token }),
                 tailscale: Some(crate::tunnel::TailscaleTunnelConfig {
-                    funnel: optional_env_from(ctx, EnvKey("TUNNEL_TS_FUNNEL"))?
-                        .map(|s| s == "true" || s == "1")
-                        .unwrap_or(settings.tunnel.ts_funnel),
+                    funnel: parse_bool_env_from(
+                        ctx,
+                        EnvKey("TUNNEL_TS_FUNNEL"),
+                        settings.tunnel.ts_funnel,
+                    )?,
                     hostname: optional_env_from(ctx, EnvKey("TUNNEL_TS_HOSTNAME"))?
                         .or_else(|| settings.tunnel.ts_hostname.clone()),
                 }),

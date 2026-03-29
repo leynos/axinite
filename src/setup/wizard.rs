@@ -2950,11 +2950,22 @@ enum AnthropicAuth {
     OAuth(String),
 }
 
-fn resolve_anthropic_auth(cached_key: Option<&str>) -> Option<AnthropicAuth> {
-    let api_key = cached_key
-        .map(String::from)
-        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
-        .filter(|key| !key.is_empty() && key != crate::config::OAUTH_PLACEHOLDER);
+fn resolve_anthropic_auth(cached_credential: Option<&str>) -> Option<AnthropicAuth> {
+    if let Some(credential) = cached_credential.filter(|credential| {
+        !credential.is_empty() && *credential != crate::config::OAUTH_PLACEHOLDER
+    }) {
+        return if credential.starts_with("sk-ant-oat") {
+            Some(AnthropicAuth::OAuth(credential.to_string()))
+        } else {
+            Some(AnthropicAuth::ApiKey(credential.to_string()))
+        };
+    }
+
+    let api_key =
+        crate::config::helpers::optional_env(crate::config::helpers::EnvKey("ANTHROPIC_API_KEY"))
+            .ok()
+            .flatten()
+            .filter(|key| !key.is_empty() && key != crate::config::OAUTH_PLACEHOLDER);
     if let Some(api_key) = api_key {
         return Some(AnthropicAuth::ApiKey(api_key));
     }
@@ -3720,6 +3731,19 @@ mod tests {
             models.iter().any(|(id, _)| id.contains("claude")),
             "static defaults should include a Claude model"
         );
+    }
+
+    #[test]
+    fn test_resolve_anthropic_auth_treats_cached_oauth_as_oauth() {
+        let auth = resolve_anthropic_auth(Some("sk-ant-oat01-test-token"));
+        assert!(matches!(auth, Some(AnthropicAuth::OAuth(_))));
+    }
+
+    #[test]
+    fn test_resolve_anthropic_auth_reads_api_key_from_overlay_helper() {
+        let _guard = EnvGuard::set("ANTHROPIC_API_KEY", "sk-ant-api-test");
+        let auth = resolve_anthropic_auth(None);
+        assert!(matches!(auth, Some(AnthropicAuth::ApiKey(_))));
     }
 
     #[tokio::test]

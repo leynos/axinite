@@ -69,7 +69,17 @@ impl EmbeddingsConfig {
             optional_env_from(ctx, EnvKey("OPENAI_API_KEY"))?.map(SecretString::from);
 
         let provider = optional_env_from(ctx, EnvKey("EMBEDDING_PROVIDER"))?
-            .unwrap_or_else(|| settings.embeddings.provider.clone());
+            .unwrap_or_else(|| settings.embeddings.provider.clone())
+            .to_lowercase();
+        if !matches!(provider.as_str(), "openai" | "nearai" | "ollama") {
+            return Err(ConfigError::InvalidValue {
+                key: "EMBEDDING_PROVIDER".to_string(),
+                message: format!(
+                    "unsupported embeddings provider '{}', expected one of: openai, nearai, ollama",
+                    provider
+                ),
+            });
+        }
 
         let model = optional_env_from(ctx, EnvKey("EMBEDDING_MODEL"))?
             .unwrap_or_else(|| settings.embeddings.model.clone());
@@ -262,5 +272,12 @@ mod tests {
         unsafe {
             std::env::remove_var("EMBEDDING_ENABLED");
         }
+    }
+
+    #[test]
+    fn embeddings_reject_unknown_provider() {
+        let ctx = EnvContext::default().with_env("EMBEDDING_PROVIDER", "ollma");
+        let result = EmbeddingsConfig::resolve_from(&ctx, &Settings::default());
+        assert!(result.is_err(), "unknown provider should fail fast");
     }
 }

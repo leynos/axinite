@@ -119,6 +119,9 @@ impl Config {
             }
             if let Ok(decrypted) = secrets.get_decrypted(user_id, &secret_name).await {
                 let value = decrypted.expose().to_string();
+                if value.trim().is_empty() {
+                    continue;
+                }
                 set_value(&env_var, value);
                 tracing::debug!("Loaded secret '{}' for env var '{}'", secret_name, env_var);
             }
@@ -172,13 +175,11 @@ impl Config {
         libsql_path: std::path::PathBuf,
         skills_dir: std::path::PathBuf,
         installed_skills_dir: std::path::PathBuf,
-    ) -> Self {
+    ) -> Result<Self, ConfigError> {
         let settings = Settings::default();
         let ctx = Self::for_testing_context(&libsql_path, &skills_dir, &installed_skills_dir);
 
-        let mut config = Self::from_context(&ctx, &settings)
-            .await
-            .expect("test config should resolve");
+        let mut config = Self::from_context(&ctx, &settings).await?;
         config.llm = LlmConfig::for_testing();
         config.agent = AgentConfig::for_testing();
         config.embeddings = EmbeddingsConfig::default();
@@ -190,7 +191,7 @@ impl Config {
         config.transcription = TranscriptionConfig::default();
         config.observability = crate::observability::ObservabilityConfig::default();
         config.relay = None;
-        config
+        Ok(config)
     }
 
     /// Load configuration from environment variables and the database.
@@ -497,6 +498,7 @@ pub async fn inject_llm_keys_into_context(
     )
     .await;
     ctx.merge_secrets(injected);
+    inject_os_credentials_into_context(ctx);
 }
 
 /// Load tokens from OS credential stores (no DB required).

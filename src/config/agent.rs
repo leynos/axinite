@@ -6,18 +6,16 @@ use crate::config::helpers::{
 };
 use crate::error::ConfigError;
 use crate::settings::Settings;
+use crate::timezone::parse_timezone;
 
-fn resolve_default_timezone(
-    ctx: &crate::config::EnvContext,
-    settings: &crate::settings::Settings,
-) -> Result<String, crate::error::ConfigError> {
-    let tz: String = crate::config::helpers::parse_optional_env_from(
+fn resolve_default_timezone(ctx: &EnvContext, settings: &Settings) -> Result<String, ConfigError> {
+    let tz: String = parse_optional_env_from(
         ctx,
         EnvKey("DEFAULT_TIMEZONE"),
         settings.agent.default_timezone.clone(),
     )?;
-    if crate::timezone::parse_timezone(&tz).is_none() {
-        return Err(crate::error::ConfigError::InvalidValue {
+    if parse_timezone(&tz).is_none() {
+        return Err(ConfigError::InvalidValue {
             key: "DEFAULT_TIMEZONE".into(),
             message: format!("invalid IANA timezone: '{tz}'"),
         });
