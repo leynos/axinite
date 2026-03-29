@@ -666,9 +666,24 @@ impl Scheduler {
     /// Stop all jobs.
     pub async fn stop_all(&self) {
         let job_ids: Vec<Uuid> = self.jobs.read().await.keys().cloned().collect();
+        let stop_timeout = tokio::time::Duration::from_secs(5);
 
         for job_id in job_ids {
-            let _ = self.stop(job_id, "Stopped by scheduler").await;
+            match tokio::time::timeout(stop_timeout, self.stop(job_id, "Stopped by scheduler"))
+                .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(job_id = %job_id, %error, "Failed to stop job during shutdown");
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        job_id = %job_id,
+                        timeout_seconds = stop_timeout.as_secs(),
+                        "Timed out stopping job during shutdown"
+                    );
+                }
+            }
         }
 
         // Abort all subtasks
