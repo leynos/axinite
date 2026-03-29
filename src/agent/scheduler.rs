@@ -795,10 +795,15 @@ mod tests {
         }));
         let tools = Arc::new(ToolRegistry::new());
         let hooks = Arc::new(HookRegistry::default());
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("failed to create tempdir");
         let path = dir.path().join("scheduler-test.db");
-        let backend = LibSqlBackend::new_local(&path).await.unwrap();
-        backend.run_migrations().await.unwrap();
+        let backend = LibSqlBackend::new_local(&path)
+            .await
+            .expect("failed to open libsql backend");
+        backend
+            .run_migrations()
+            .await
+            .expect("failed to run migrations");
         let store: Arc<dyn Database> = Arc::new(backend);
 
         (
@@ -881,16 +886,20 @@ mod tests {
             .context_manager
             .create_job_for_user("user1", "test", "desc")
             .await
-            .unwrap();
+            .expect("failed to create job");
         sched
             .context_manager
             .update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
             .await
-            .unwrap()
-            .unwrap();
+            .expect("failed to update context")
+            .expect("failed to transition to in-progress");
 
-        let ctx = sched.context_manager.get_context(job_id).await.unwrap();
-        store.save_job(&ctx).await.unwrap();
+        let ctx = sched
+            .context_manager
+            .get_context(job_id)
+            .await
+            .expect("failed to get context");
+        store.save_job(&ctx).await.expect("failed to save job");
 
         let (tx, mut rx) = mpsc::channel(1);
         let handle = tokio::spawn(async move {
@@ -903,12 +912,12 @@ mod tests {
             .await
             .insert(job_id, ScheduledJob { handle, tx });
 
-        sched.stop(job_id).await.unwrap();
+        sched.stop(job_id).await.expect("failed to stop job");
 
         let job = store
             .get_job(job_id)
             .await
-            .unwrap()
+            .expect("failed to load job")
             .expect("job should exist");
         assert_eq!(job.state, JobState::Cancelled);
     }

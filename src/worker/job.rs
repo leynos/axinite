@@ -66,6 +66,11 @@ struct ToolExecResult {
     result: Result<String, Error>,
 }
 
+enum WorkerLoopOutcome {
+    Completed,
+    Exited,
+}
+
 impl Worker {
     /// Create a new worker for a specific job.
     pub fn new(job_id: Uuid, deps: WorkerDeps) -> Self {
@@ -135,7 +140,7 @@ impl Worker {
     }
 
     /// Persist a terminal result event before returning to the caller.
-    async fn log_result_event(&self, event_type: &str, data: serde_json::Value) {
+    async fn log_terminal_result_event(&self, event_type: &str, data: serde_json::Value) {
         let job_id = self.job_id;
         if let Some(store) = self.store()
             && let Err(e) = store.save_job_event(job_id, event_type, &data).await
@@ -262,7 +267,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         .await;
 
         match result {
-            Ok(Ok(())) => {
+            Ok(Ok(WorkerLoopOutcome::Completed)) => {
                 tracing::info!("Worker for job {} completed successfully", self.job_id);
                 // Only mark completed if still in an active, non-stuck state.
                 let current_state = self
@@ -290,9 +295,14 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                     }
                 }
             }
+            Ok(Ok(WorkerLoopOutcome::Exited)) => {}
             Ok(Err(e)) => {
                 tracing::error!("Worker for job {} failed: {}", self.job_id, e);
-                self.mark_failed(&e.to_string()).await?;
+                let reason = match e {
+                    Error::Job(crate::error::JobError::Failed { reason, .. }) => reason,
+                    other => other.to_string(),
+                };
+                self.mark_failed(&reason).await?;
             }
             Err(_) => {
                 tracing::warn!("Worker for job {} timed out", self.job_id);
@@ -308,7 +318,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         rx: &mut mpsc::Receiver<WorkerMessage>,
         reasoning: &Reasoning,
         reason_ctx: &mut ReasoningContext,
-    ) -> Result<(), Error> {
+    ) -> Result<WorkerLoopOutcome, Error> {
         const MAX_WORKER_ITERATIONS: usize = 500;
         let max_iterations = self
             .context_manager()
@@ -370,14 +380,19 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
 
         // If we have a plan, execute it.
         if let Some(ref plan) = plan {
-            self.execute_plan(rx, reasoning, reason_ctx, plan).await?;
+            if matches!(
+                self.execute_plan(rx, reasoning, reason_ctx, plan).await?,
+                WorkerLoopOutcome::Completed
+            ) {
+                return Ok(WorkerLoopOutcome::Completed);
+            }
 
             if let Ok(ctx) = self.context_manager().get_context(self.job_id).await
                 && (ctx.state.is_terminal()
                     || ctx.state == JobState::Stuck
                     || ctx.state == JobState::Completed)
             {
-                return Ok(());
+                return Ok(WorkerLoopOutcome::Exited);
             }
         }
 
@@ -397,20 +412,14 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         let outcome = run_agentic_loop(&delegate, reasoning, reason_ctx, &config).await?;
 
         match outcome {
-            LoopOutcome::Response(_) => {
-                // Completion was already handled in handle_text_response via mark_completed
+            LoopOutcome::Response(_) => Ok(WorkerLoopOutcome::Completed),
+            LoopOutcome::MaxIterations => Err(crate::error::JobError::Failed {
+                id: self.job_id,
+                reason: "Maximum iterations exceeded: job hit the iteration cap".to_string(),
             }
-            LoopOutcome::MaxIterations => {
-                self.mark_failed("Maximum iterations exceeded: job hit the iteration cap")
-                    .await?;
-            }
-            LoopOutcome::Stopped => {
-                // Stop signal handled — nothing more to do
-            }
-            LoopOutcome::NeedApproval(_) => {}
+            .into()),
+            LoopOutcome::Stopped | LoopOutcome::NeedApproval(_) => Ok(WorkerLoopOutcome::Exited),
         }
-
-        Ok(())
     }
 
     /// Execute multiple tools in parallel using a JoinSet.
@@ -819,7 +828,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         reasoning: &Reasoning,
         reason_ctx: &mut ReasoningContext,
         plan: &ActionPlan,
-    ) -> Result<(), Error> {
+    ) -> Result<WorkerLoopOutcome, Error> {
         for (i, action) in plan.actions.iter().enumerate() {
             // Check for stop signal and injected user messages
             while let Ok(msg) = rx.try_recv() {
@@ -829,7 +838,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                             "Worker for job {} received stop signal during plan execution",
                             self.job_id
                         );
-                        return Ok(());
+                        return Ok(WorkerLoopOutcome::Exited);
                     }
                     WorkerMessage::Ping => {
                         tracing::trace!("Worker for job {} received ping", self.job_id);
@@ -854,7 +863,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                                 "message": "Plan interrupted by user message, re-evaluating...",
                             }),
                         );
-                        return Ok(());
+                        return Ok(WorkerLoopOutcome::Exited);
                     }
                 }
             }
@@ -906,7 +915,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         reason_ctx.messages.push(ChatMessage::assistant(&response));
 
         if crate::util::llm_signals_completion(&response) {
-            self.mark_completed().await?;
+            return Ok(WorkerLoopOutcome::Completed);
         } else {
             tracing::info!(
                 "Job {} plan completed but work remains, falling back to direct selection",
@@ -920,7 +929,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
             );
         }
 
-        Ok(())
+        Ok(WorkerLoopOutcome::Exited)
     }
 
     async fn execute_tool(
@@ -945,7 +954,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: s,
             })?;
 
-        self.log_result_event(
+        self.log_terminal_result_event(
             "result",
             serde_json::json!({
                 "status": "completed",
@@ -973,7 +982,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: s,
             })?;
 
-        self.log_result_event(
+        self.log_terminal_result_event(
             "result",
             serde_json::json!({
                 "status": "failed",
@@ -996,7 +1005,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: s,
             })?;
 
-        self.log_result_event(
+        self.log_terminal_result_event(
             "result",
             serde_json::json!({
                 "status": "stuck",
@@ -1045,12 +1054,9 @@ impl<'a> JobDelegate<'a> {
         );
 
         if count >= Self::MAX_CONSECUTIVE_RATE_LIMITS {
-            self.worker
-                .mark_failed("Persistent rate limiting: exceeded retry limit")
-                .await?;
-            return Err(crate::error::LlmError::RateLimited {
-                provider: "rate-limit-exhausted".to_string(),
-                retry_after: None,
+            return Err(crate::error::JobError::Failed {
+                id: self.worker.job_id,
+                reason: "Persistent rate limiting: exceeded retry limit".to_string(),
             }
             .into());
         }
@@ -1210,7 +1216,11 @@ impl<'a> NativeLoopDelegate for JobDelegate<'a> {
                         .update_context(self.worker.job_id, |ctx| ctx.add_tokens(total_tokens))
                         .await?
                 {
-                    self.worker.mark_failed(&msg).await?;
+                    return Err(crate::error::JobError::Failed {
+                        id: self.worker.job_id,
+                        reason: msg,
+                    }
+                    .into());
                 }
 
                 Ok(output)
@@ -1236,13 +1246,6 @@ impl<'a> NativeLoopDelegate for JobDelegate<'a> {
 
         // Check for explicit completion
         if crate::util::llm_signals_completion(text) {
-            if let Err(e) = self.worker.mark_completed().await {
-                tracing::warn!(
-                    "Failed to mark job {} as completed: {}",
-                    self.worker.job_id,
-                    e
-                );
-            }
             return TextAction::Return(LoopOutcome::Response(text.to_string()));
         }
 
