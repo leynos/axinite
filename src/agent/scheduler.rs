@@ -828,6 +828,30 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "libsql")]
+    async fn register_job_in_scheduler(sched: &Scheduler, store: &Arc<dyn Database>, job_id: Uuid) {
+        let ctx = sched
+            .context_manager
+            .get_context(job_id)
+            .await
+            .expect("failed to get context");
+        store
+            .save_job(&ctx)
+            .await
+            .expect("failed to save job to store");
+
+        let (tx, mut rx) = mpsc::channel(1);
+        let handle = tokio::spawn(async move {
+            let _ = rx.recv().await;
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        sched
+            .jobs
+            .write()
+            .await
+            .insert(job_id, ScheduledJob { handle, tx });
+    }
+
     #[tokio::test]
     async fn test_dispatch_job_caps_user_max_tokens() {
         let sched = make_test_scheduler(1000);
@@ -909,23 +933,7 @@ mod tests {
             .expect("failed to update context")
             .expect("failed to transition to in-progress");
 
-        let ctx = sched
-            .context_manager
-            .get_context(job_id)
-            .await
-            .expect("failed to get context");
-        store.save_job(&ctx).await.expect("failed to save job");
-
-        let (tx, mut rx) = mpsc::channel(1);
-        let handle = tokio::spawn(async move {
-            let _ = rx.recv().await;
-            tokio::time::sleep(Duration::from_secs(60)).await;
-        });
-        sched
-            .jobs
-            .write()
-            .await
-            .insert(job_id, ScheduledJob { handle, tx });
+        register_job_in_scheduler(&sched, &store, job_id).await;
 
         sched
             .stop(job_id, "Stopped by scheduler")
@@ -960,23 +968,7 @@ mod tests {
             .expect("failed to update context")
             .expect("failed to transition to completed");
 
-        let ctx = sched
-            .context_manager
-            .get_context(job_id)
-            .await
-            .expect("failed to get context");
-        store.save_job(&ctx).await.expect("failed to save job");
-
-        let (tx, mut rx) = mpsc::channel(1);
-        let handle = tokio::spawn(async move {
-            let _ = rx.recv().await;
-            tokio::time::sleep(Duration::from_secs(60)).await;
-        });
-        sched
-            .jobs
-            .write()
-            .await
-            .insert(job_id, ScheduledJob { handle, tx });
+        register_job_in_scheduler(&sched, &store, job_id).await;
 
         let error = sched
             .stop(job_id, "Cancelled by user")
