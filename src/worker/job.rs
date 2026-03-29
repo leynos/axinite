@@ -123,7 +123,12 @@ impl Worker {
         Ok(())
     }
 
-    /// Fire-and-forget persistence of a job event and SSE broadcast.
+    /// Fire-and-forget persistence and SSE broadcast for non-terminal job
+    /// events only.
+    ///
+    /// `log_event` spawns the database write and does not await persistence.
+    /// Terminal events must use `log_terminal_result_event`, which awaits
+    /// persistence before broadcasting.
     fn log_event(&self, event_type: &str, data: serde_json::Value) {
         let job_id = self.job_id;
 
@@ -307,13 +312,10 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                     }
                 }
             }
-            Ok(Ok(WorkerLoopOutcome::ContinueDirectSelection)) => {
-                tracing::warn!(
-                    job_id = %self.job_id,
-                    "execution_loop returned ContinueDirectSelection to run(); treating as early exit"
-                );
-            }
             Ok(Ok(WorkerLoopOutcome::Exited)) => {}
+            Ok(Ok(WorkerLoopOutcome::ContinueDirectSelection)) => {
+                unreachable!("execution_loop should not return ContinueDirectSelection");
+            }
             Ok(Err(e)) => {
                 tracing::error!("Worker for job {} failed: {}", self.job_id, e);
                 let reason = match e {

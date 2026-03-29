@@ -143,9 +143,13 @@ async fn test_dispatch_job_caps_user_max_tokens() {
     let job_id = sched
         .dispatch_job("user1", "test", "desc", Some(meta))
         .await
-        .unwrap();
+        .expect("dispatch_job failed for caps test");
 
-    let ctx = sched.context_manager.get_context(job_id).await.unwrap();
+    let ctx = sched
+        .context_manager
+        .get_context(job_id)
+        .await
+        .expect("context_manager.get_context missing for caps test");
     assert_eq!(ctx.max_tokens, 1000, "should cap at configured limit");
 }
 
@@ -156,9 +160,13 @@ async fn test_dispatch_job_unlimited_config_preserves_user_tokens() {
     let job_id = sched
         .dispatch_job("user1", "test", "desc", Some(meta))
         .await
-        .unwrap();
+        .expect("dispatch_job failed for unlimited test");
 
-    let ctx = sched.context_manager.get_context(job_id).await.unwrap();
+    let ctx = sched
+        .context_manager
+        .get_context(job_id)
+        .await
+        .expect("context_manager.get_context missing for unlimited test");
     assert_eq!(
         ctx.max_tokens, 5000,
         "unlimited config should preserve user value"
@@ -171,9 +179,13 @@ async fn test_dispatch_job_no_user_tokens_uses_config() {
     let job_id = sched
         .dispatch_job("user1", "test", "desc", None)
         .await
-        .unwrap();
+        .expect("dispatch_job failed for default tokens test");
 
-    let ctx = sched.context_manager.get_context(job_id).await.unwrap();
+    let ctx = sched
+        .context_manager
+        .get_context(job_id)
+        .await
+        .expect("context_manager.get_context missing for default tokens test");
     assert_eq!(
         ctx.max_tokens, 2000,
         "should use config default when no user value"
@@ -190,9 +202,13 @@ async fn test_dispatch_job_atomic_metadata_and_tokens() {
     let job_id = sched
         .dispatch_job("user1", "test", "desc", Some(meta))
         .await
-        .unwrap();
+        .expect("dispatch_job failed for metadata test");
 
-    let ctx = sched.context_manager.get_context(job_id).await.unwrap();
+    let ctx = sched
+        .context_manager
+        .get_context(job_id)
+        .await
+        .expect("context_manager.get_context missing for metadata test");
     assert_eq!(ctx.max_tokens, 3000, "should use user value within limit");
     assert_eq!(
         ctx.metadata.get("custom_key").and_then(|v| v.as_str()),

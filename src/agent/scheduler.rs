@@ -553,16 +553,6 @@ impl Scheduler {
         // Give it a moment to clean up
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-        // Abort if still running
-        {
-            let jobs = self.jobs.read().await;
-            if let Some(scheduled) = jobs.get(&job_id)
-                && !scheduled.handle.is_finished()
-            {
-                scheduled.handle.abort();
-            }
-        }
-
         // Update job state
         self.context_manager
             .update_context(job_id, |ctx| {
@@ -579,16 +569,26 @@ impl Scheduler {
 
         // Persist cancellation before returning so durable state matches
         // the in-memory terminal transition.
+        let mut should_abort = true;
         if let Some(ref store) = self.store
             && let Err(e) = store
                 .update_job_status(job_id, JobState::Cancelled, Some(reason.as_str()))
                 .await
         {
             tracing::warn!("Failed to persist cancellation for job {}: {}", job_id, e);
+            should_abort = false;
         }
 
-        self.jobs.write().await.remove(&job_id);
-        tracing::info!("Stopped job {}", job_id);
+        if should_abort {
+            let mut jobs = self.jobs.write().await;
+            if let Some(scheduled) = jobs.get(&job_id)
+                && !scheduled.handle.is_finished()
+            {
+                scheduled.handle.abort();
+            }
+            jobs.remove(&job_id);
+            tracing::info!("Stopped job {}", job_id);
+        }
 
         Ok(())
     }
