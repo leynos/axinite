@@ -109,6 +109,31 @@ fn has_unavailable_connection_cause(error: &tokio_postgres::Error) -> bool {
     false
 }
 
+mod tests {
+    use super::*;
+    use deadpool_postgres::TimeoutType;
+
+    #[test]
+    fn database_unavailable_detects_pool_timeouts() {
+        let error = DatabaseError::PoolRuntime(PoolError::Timeout(TimeoutType::Wait));
+
+        assert!(
+            is_database_unavailable(&error),
+            "pool wait timeouts should be treated as skippable database outages"
+        );
+    }
+
+    #[test]
+    fn database_unavailable_rejects_configuration_errors() {
+        let error = DatabaseError::Pool("invalid connection string".to_string());
+
+        assert!(
+            !is_database_unavailable(&error),
+            "configuration errors must not be treated as skippable database outages"
+        );
+    }
+}
+
 fn is_postgres_unavailable(error: &tokio_postgres::Error) -> bool {
     error.is_closed() || has_unavailable_connection_cause(error)
 }
