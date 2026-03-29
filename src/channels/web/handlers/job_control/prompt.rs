@@ -43,7 +43,7 @@ pub async fn jobs_prompt_handler(
 
     if let Some(job) = super::load_sandbox_job(store, job_id).await? {
         let mode = super::load_sandbox_job_mode(store, job_id).await?;
-        if mode == Some(super::SandboxJobMode::ClaudeCode) {
+        if mode == Some(crate::db::SandboxMode::ClaudeCode) {
             if !super::sandbox_job_accepts_prompts(job.status) {
                 return Err((
                     StatusCode::CONFLICT,

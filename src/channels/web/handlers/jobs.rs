@@ -185,7 +185,7 @@ pub async fn jobs_detail_handler(
         }
 
         let mode = store.get_sandbox_job_mode(job.id).await.ok().flatten();
-        let is_claude_code = mode.as_deref() == Some("claude_code");
+        let is_claude_code = mode == Some(crate::db::SandboxMode::ClaudeCode);
 
         return Ok(Json(JobDetailResponse {
             id: job.id,
@@ -199,7 +199,9 @@ pub async fn jobs_detail_handler(
             elapsed_secs,
             project_dir: Some(job.project_dir.clone()),
             browse_url: Some(format!("/projects/{browse_id}/")),
-            job_mode: mode.filter(|m| m != "worker"),
+            job_mode: mode
+                .filter(|mode| *mode != crate::db::SandboxMode::Worker)
+                .map(|mode| mode.to_string()),
             transitions,
             can_restart: state.job_manager.is_some(),
             can_prompt: is_claude_code && state.prompt_queue.is_some(),

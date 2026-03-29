@@ -140,7 +140,7 @@ pub(super) async fn restart_sandbox_job(
     let new_job_id = Uuid::new_v4();
     let now = chrono::Utc::now();
     let mode = match load_sandbox_job_mode(store, old_job_id).await? {
-        Some(super::SandboxJobMode::ClaudeCode) => {
+        Some(crate::db::SandboxMode::ClaudeCode) => {
             crate::orchestrator::job_manager::JobMode::ClaudeCode
         }
         _ => crate::orchestrator::job_manager::JobMode::Worker,

@@ -2,7 +2,9 @@
 
 use uuid::Uuid;
 
-use crate::db::{NativeSandboxStore, SandboxJobStatusUpdate};
+use crate::db::{
+    NativeSandboxStore, SandboxEventType, SandboxJobStatusUpdate, SandboxMode, UserId,
+};
 use crate::error::DatabaseError;
 use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
 
@@ -37,12 +39,12 @@ impl NativeSandboxStore for PgBackend {
         to store;
         async fn cleanup_stale_sandbox_jobs(&self) -> Result<u64, DatabaseError>;
         async fn sandbox_job_summary(&self) -> Result<SandboxJobSummary, DatabaseError>;
-        async fn list_sandbox_jobs_for_user(&self, user_id: &str) -> Result<Vec<SandboxJobRecord>, DatabaseError>;
-        async fn sandbox_job_summary_for_user(&self, user_id: &str) -> Result<SandboxJobSummary, DatabaseError>;
-        async fn sandbox_job_belongs_to_user(&self, job_id: Uuid, user_id: &str) -> Result<bool, DatabaseError>;
-        async fn update_sandbox_job_mode(&self, id: Uuid, mode: &str) -> Result<(), DatabaseError>;
-        async fn get_sandbox_job_mode(&self, id: Uuid) -> Result<Option<String>, DatabaseError>;
-        async fn save_job_event(&self, job_id: Uuid, event_type: &str, data: &serde_json::Value) -> Result<(), DatabaseError>;
+        async fn list_sandbox_jobs_for_user(&self, user_id: UserId) -> Result<Vec<SandboxJobRecord>, DatabaseError>;
+        async fn sandbox_job_summary_for_user(&self, user_id: UserId) -> Result<SandboxJobSummary, DatabaseError>;
+        async fn sandbox_job_belongs_to_user(&self, job_id: Uuid, user_id: UserId) -> Result<bool, DatabaseError>;
+        async fn update_sandbox_job_mode(&self, id: Uuid, mode: SandboxMode) -> Result<(), DatabaseError>;
+        async fn get_sandbox_job_mode(&self, id: Uuid) -> Result<Option<SandboxMode>, DatabaseError>;
+        async fn save_job_event(&self, job_id: Uuid, event_type: SandboxEventType, data: &serde_json::Value) -> Result<(), DatabaseError>;
         async fn list_job_events(&self, job_id: Uuid, before_id: Option<i64>, limit: Option<i64>) -> Result<Vec<JobEventRecord>, DatabaseError>;
     }
 }
@@ -205,7 +207,7 @@ mod tests {
 
             // List jobs for user1
             let user1_jobs = db
-                .list_sandbox_jobs_for_user(&user1_id)
+                .list_sandbox_jobs_for_user(UserId::from(user1_id.clone()))
                 .await
                 .expect("list_sandbox_jobs_for_user should succeed");
 
@@ -215,7 +217,7 @@ mod tests {
 
             // List jobs for user2
             let user2_jobs = db
-                .list_sandbox_jobs_for_user(&user2_id)
+                .list_sandbox_jobs_for_user(UserId::from(user2_id.clone()))
                 .await
                 .expect("list_sandbox_jobs_for_user should succeed");
 
@@ -225,7 +227,7 @@ mod tests {
 
             // Verify user3 has no jobs
             let user3_jobs = db
-                .list_sandbox_jobs_for_user(&user3_id)
+                .list_sandbox_jobs_for_user(UserId::from(user3_id.clone()))
                 .await
                 .expect("list_sandbox_jobs_for_user should succeed");
 
@@ -280,7 +282,7 @@ mod tests {
 
             // Get summary for user
             let summary = db
-                .sandbox_job_summary_for_user(&user_id)
+                .sandbox_job_summary_for_user(UserId::from(user_id.clone()))
                 .await
                 .expect("sandbox_job_summary_for_user should succeed");
 
@@ -309,7 +311,7 @@ mod tests {
 
             // Test ownership check
             let belongs = db
-                .sandbox_job_belongs_to_user(job_id, &owner_id)
+                .sandbox_job_belongs_to_user(job_id, UserId::from(owner_id.clone()))
                 .await
                 .expect("sandbox_job_belongs_to_user should succeed");
 
@@ -317,7 +319,7 @@ mod tests {
 
             // Test non-ownership
             let not_belongs = db
-                .sandbox_job_belongs_to_user(job_id, &other_id)
+                .sandbox_job_belongs_to_user(job_id, UserId::from(other_id.clone()))
                 .await
                 .expect("sandbox_job_belongs_to_user should succeed");
 

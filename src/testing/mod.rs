@@ -1511,19 +1511,19 @@ mod tests {
 
         // Per-user list
         let user_jobs = db
-            .list_sandbox_jobs_for_user("user1")
+            .list_sandbox_jobs_for_user(crate::db::UserId::from("user1"))
             .await
             .expect("user list");
         assert!(!user_jobs.is_empty());
 
         // Ownership check
         let belongs = db
-            .sandbox_job_belongs_to_user(job_id, "user1")
+            .sandbox_job_belongs_to_user(job_id, crate::db::UserId::from("user1"))
             .await
             .expect("belongs check");
         assert!(belongs);
         let not_belongs = db
-            .sandbox_job_belongs_to_user(job_id, "other_user")
+            .sandbox_job_belongs_to_user(job_id, crate::db::UserId::from("other_user"))
             .await
             .expect("belongs check");
         assert!(!not_belongs);
@@ -1556,10 +1556,10 @@ mod tests {
         // Default mode
         let mode = db.get_sandbox_job_mode(job_id).await.expect("get mode");
         // Default is "worker" per schema or NULL
-        assert!(mode.is_none() || mode.as_deref() == Some("worker"));
+        assert!(mode.is_none() || mode == Some(crate::db::SandboxMode::Worker));
 
         // Update mode
-        db.update_sandbox_job_mode(job_id, "claude_code")
+        db.update_sandbox_job_mode(job_id, crate::db::SandboxMode::ClaudeCode)
             .await
             .expect("update mode");
         let mode = db
@@ -1567,7 +1567,7 @@ mod tests {
             .await
             .expect("get mode")
             .expect("should have mode");
-        assert_eq!(mode, "claude_code");
+        assert_eq!(mode, crate::db::SandboxMode::ClaudeCode);
     }
 
     #[cfg(feature = "libsql")]
@@ -1598,7 +1598,7 @@ mod tests {
         // Save events
         db.save_job_event(
             job_id,
-            "tool_call",
+            crate::db::SandboxEventType::from("tool_call"),
             &serde_json::json!({"tool": "shell", "args": {"command": "ls"}}),
         )
         .await
@@ -1606,7 +1606,7 @@ mod tests {
 
         db.save_job_event(
             job_id,
-            "tool_result",
+            crate::db::SandboxEventType::from("tool_result"),
             &serde_json::json!({"output": "file1.txt\nfile2.txt"}),
         )
         .await
@@ -1614,7 +1614,7 @@ mod tests {
 
         db.save_job_event(
             job_id,
-            "llm_response",
+            crate::db::SandboxEventType::from("llm_response"),
             &serde_json::json!({"content": "Found 2 files"}),
         )
         .await

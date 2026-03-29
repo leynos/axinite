@@ -322,9 +322,9 @@ sequenceDiagram
     Caller->>ArcDynDatabase: create_conversation(channel, user_id, thread_id)
     ArcDynDatabase->>DynConversation: dispatch create_conversation
     DynConversation->>NativeImpl: create_conversation(channel, user_id, thread_id)
-    Note over DynConversation,NativeImpl: Forwarder impl calls native async method and Box_pin to DbFuture
+    Note over DynConversation,NativeImpl: Forwarder impl calls native async method and Box::pin to DbFuture
 
-    NativeImpl->>NativeImpl: execute backend specific SQL
+    NativeImpl->>NativeImpl: execute backend-specific SQL
     NativeImpl-->>DynConversation: Result Uuid
     DynConversation-->>ArcDynDatabase: DbFuture resolving to Result Uuid
     ArcDynDatabase-->>Caller: Result Uuid

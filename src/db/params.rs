@@ -4,7 +4,7 @@
 //! parameters.  The boxed-future alias lives here so that every trait
 //! submodule can import it from a single canonical location.
 
-use core::{future::Future, pin::Pin};
+use core::{fmt, future::Future, pin::Pin};
 
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
@@ -38,6 +38,12 @@ impl From<String> for UserId {
     }
 }
 
+impl fmt::Display for UserId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Strongly typed settings key for settings-store methods.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SettingKey(String);
@@ -57,6 +63,74 @@ impl From<&str> for SettingKey {
 impl From<String> for SettingKey {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+
+impl fmt::Display for SettingKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Supported execution modes for sandbox jobs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SandboxMode {
+    Worker,
+    ClaudeCode,
+}
+
+impl SandboxMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Worker => "worker",
+            Self::ClaudeCode => "claude_code",
+        }
+    }
+}
+
+impl fmt::Display for SandboxMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl TryFrom<&str> for SandboxMode {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "worker" => Ok(Self::Worker),
+            "claude_code" => Ok(Self::ClaudeCode),
+            other => Err(format!("unexpected sandbox mode '{other}'")),
+        }
+    }
+}
+
+/// Strongly typed sandbox job event discriminator.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SandboxEventType(String);
+
+impl SandboxEventType {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for SandboxEventType {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<String> for SandboxEventType {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl fmt::Display for SandboxEventType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

@@ -371,7 +371,7 @@ impl CreateJobTool {
             let job_id_copy = job_id;
             tokio::spawn(async move {
                 if let Err(e) = store
-                    .update_sandbox_job_mode(job_id_copy, "claude_code")
+                    .update_sandbox_job_mode(job_id_copy, crate::db::SandboxMode::ClaudeCode)
                     .await
                 {
                     tracing::warn!(job_id = %job_id_copy, "Failed to set job mode: {}", e);

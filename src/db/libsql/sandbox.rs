@@ -8,7 +8,9 @@ use super::{
     LibSqlBackend, fmt_opt_ts, fmt_ts, get_i64, get_json, get_opt_bool, get_opt_text, get_opt_ts,
     get_text, get_ts, opt_text,
 };
-use crate::db::{NativeSandboxStore, SandboxJobStatusUpdate};
+use crate::db::{
+    NativeSandboxStore, SandboxEventType, SandboxJobStatusUpdate, SandboxMode, UserId,
+};
 use crate::error::DatabaseError;
 use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
 
@@ -213,7 +215,7 @@ impl NativeSandboxStore for LibSqlBackend {
 
     async fn list_sandbox_jobs_for_user(
         &self,
-        user_id: &str,
+        user_id: UserId,
     ) -> Result<Vec<SandboxJobRecord>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
@@ -224,7 +226,7 @@ impl NativeSandboxStore for LibSqlBackend {
                 FROM agent_jobs WHERE source = 'sandbox' AND user_id = ?1
                 ORDER BY created_at DESC
                 "#,
-                libsql::params![user_id],
+                libsql::params![user_id.as_str()],
             )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -254,13 +256,13 @@ impl NativeSandboxStore for LibSqlBackend {
 
     async fn sandbox_job_summary_for_user(
         &self,
-        user_id: &str,
+        user_id: UserId,
     ) -> Result<SandboxJobSummary, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
                 "SELECT status, COUNT(*) as cnt FROM agent_jobs WHERE source = 'sandbox' AND user_id = ?1 GROUP BY status",
-                libsql::params![user_id],
+                libsql::params![user_id.as_str()],
             )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -289,13 +291,13 @@ impl NativeSandboxStore for LibSqlBackend {
     async fn sandbox_job_belongs_to_user(
         &self,
         job_id: Uuid,
-        user_id: &str,
+        user_id: UserId,
     ) -> Result<bool, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
                 "SELECT 1 FROM agent_jobs WHERE id = ?1 AND user_id = ?2 AND source = 'sandbox'",
-                libsql::params![job_id.to_string(), user_id],
+                libsql::params![job_id.to_string(), user_id.as_str()],
             )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -306,18 +308,22 @@ impl NativeSandboxStore for LibSqlBackend {
         Ok(found.is_some())
     }
 
-    async fn update_sandbox_job_mode(&self, id: Uuid, mode: &str) -> Result<(), DatabaseError> {
+    async fn update_sandbox_job_mode(
+        &self,
+        id: Uuid,
+        mode: SandboxMode,
+    ) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         conn.execute(
             "UPDATE agent_jobs SET job_mode = ?2 WHERE id = ?1",
-            params![id.to_string(), mode],
+            params![id.to_string(), mode.as_str()],
         )
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
         Ok(())
     }
 
-    async fn get_sandbox_job_mode(&self, id: Uuid) -> Result<Option<String>, DatabaseError> {
+    async fn get_sandbox_job_mode(&self, id: Uuid) -> Result<Option<SandboxMode>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
@@ -332,7 +338,9 @@ impl NativeSandboxStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
-            Some(row) => Ok(Some(get_text(&row, 0))),
+            Some(row) => SandboxMode::try_from(get_text(&row, 0).as_str())
+                .map(Some)
+                .map_err(DatabaseError::Serialization),
             None => Ok(None),
         }
     }
@@ -340,13 +348,13 @@ impl NativeSandboxStore for LibSqlBackend {
     async fn save_job_event(
         &self,
         job_id: Uuid,
-        event_type: &str,
+        event_type: SandboxEventType,
         data: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         conn.execute(
             "INSERT INTO job_events (job_id, event_type, data) VALUES (?1, ?2, ?3)",
-            params![job_id.to_string(), event_type, data.to_string()],
+            params![job_id.to_string(), event_type.as_str(), data.to_string()],
         )
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;

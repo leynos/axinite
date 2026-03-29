@@ -119,12 +119,12 @@ impl_db_forwarders! {
         fn update_sandbox_job_status(params: SandboxJobStatusUpdate<'a>) -> Result<(), DatabaseError>;
         fn cleanup_stale_sandbox_jobs() -> Result<u64, DatabaseError>;
         fn sandbox_job_summary() -> Result<SandboxJobSummary, DatabaseError>;
-        fn list_sandbox_jobs_for_user(user_id: &'a str) -> Result<Vec<SandboxJobRecord>, DatabaseError>;
-        fn sandbox_job_summary_for_user(user_id: &'a str) -> Result<SandboxJobSummary, DatabaseError>;
-        fn sandbox_job_belongs_to_user(job_id: Uuid, user_id: &'a str) -> Result<bool, DatabaseError>;
-        fn update_sandbox_job_mode(id: Uuid, mode: &'a str) -> Result<(), DatabaseError>;
-        fn get_sandbox_job_mode(id: Uuid) -> Result<Option<String>, DatabaseError>;
-        fn save_job_event(job_id: Uuid, event_type: &'a str, data: &'a serde_json::Value) -> Result<(), DatabaseError>;
+        fn list_sandbox_jobs_for_user(user_id: UserId) -> Result<Vec<SandboxJobRecord>, DatabaseError>;
+        fn sandbox_job_summary_for_user(user_id: UserId) -> Result<SandboxJobSummary, DatabaseError>;
+        fn sandbox_job_belongs_to_user(job_id: Uuid, user_id: UserId) -> Result<bool, DatabaseError>;
+        fn update_sandbox_job_mode(id: Uuid, mode: SandboxMode) -> Result<(), DatabaseError>;
+        fn get_sandbox_job_mode(id: Uuid) -> Result<Option<SandboxMode>, DatabaseError>;
+        fn save_job_event(job_id: Uuid, event_type: SandboxEventType, data: &'a serde_json::Value) -> Result<(), DatabaseError>;
         fn list_job_events(job_id: Uuid, before_id: Option<i64>, limit: Option<i64>) -> Result<Vec<JobEventRecord>, DatabaseError>;
     }
 }

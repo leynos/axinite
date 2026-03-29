@@ -138,7 +138,10 @@ impl Worker {
             let et = event_type.to_string();
             let d = data.clone();
             tokio::spawn(async move {
-                if let Err(e) = store.save_job_event(job_id, &et, &d).await {
+                if let Err(e) = store
+                    .save_job_event(job_id, crate::db::SandboxEventType::from(et), &d)
+                    .await
+                {
                     tracing::warn!("Failed to persist event for job {}: {}", job_id, e);
                 }
             });

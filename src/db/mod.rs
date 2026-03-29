@@ -23,6 +23,8 @@ pub mod libsql;
 #[cfg(feature = "libsql")]
 pub mod libsql_migrations;
 
+pub mod settings;
+
 mod params;
 pub use params::*;
 
