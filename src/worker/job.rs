@@ -109,16 +109,18 @@ impl Worker {
     }
 
     /// Persist a terminal job status before returning to the caller.
-    async fn persist_status(&self, status: JobState, reason: Option<String>) {
+    async fn persist_status(&self, status: JobState, reason: Option<String>) -> Result<(), Error> {
         if let Some(store) = self.store() {
             let job_id = self.job_id;
-            if let Err(e) = store
+            store
                 .update_job_status(job_id, status, reason.as_deref())
                 .await
-            {
-                tracing::warn!("Failed to persist status for job {}: {}", job_id, e);
-            }
+                .map_err(|e| crate::error::JobError::PersistenceError {
+                    id: job_id,
+                    reason: e.to_string(),
+                })?;
         }
+        Ok(())
     }
 
     /// Fire-and-forget persistence of a job event and SSE broadcast.
@@ -141,15 +143,24 @@ impl Worker {
     }
 
     /// Persist a terminal result event before returning to the caller.
-    async fn log_terminal_result_event(&self, event_type: &str, data: serde_json::Value) {
+    async fn log_terminal_result_event(
+        &self,
+        event_type: &str,
+        data: serde_json::Value,
+    ) -> Result<(), Error> {
         let job_id = self.job_id;
-        if let Some(store) = self.store()
-            && let Err(e) = store.save_job_event(job_id, event_type, &data).await
-        {
-            tracing::warn!("Failed to persist event for job {}: {}", job_id, e);
+        if let Some(store) = self.store() {
+            store
+                .save_job_event(job_id, event_type, &data)
+                .await
+                .map_err(|e| crate::error::JobError::PersistenceError {
+                    id: job_id,
+                    reason: e.to_string(),
+                })?;
         }
 
         self.broadcast_event(event_type, &data);
+        Ok(())
     }
 
     fn broadcast_event(&self, event_type: &str, data: &serde_json::Value) {
@@ -968,12 +979,12 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 "message": "Job completed successfully",
             }),
         )
-        .await;
+        .await?;
         self.persist_status(
             JobState::Completed,
             Some("Job completed successfully".to_string()),
         )
-        .await;
+        .await?;
         Ok(())
     }
 
@@ -996,9 +1007,9 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 "message": format!("Execution failed: {}", reason),
             }),
         )
-        .await;
+        .await?;
         self.persist_status(JobState::Failed, Some(reason.to_string()))
-            .await;
+            .await?;
         Ok(())
     }
 
@@ -1019,9 +1030,9 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 "message": format!("Job stuck: {}", reason),
             }),
         )
-        .await;
+        .await?;
         self.persist_status(JobState::Stuck, Some(reason.to_string()))
-            .await;
+            .await?;
         Ok(())
     }
 }

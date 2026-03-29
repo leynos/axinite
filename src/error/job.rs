@@ -28,4 +28,7 @@ pub enum JobError {
 
     #[error("Job {id} context error: {reason}")]
     ContextError { id: Uuid, reason: String },
+
+    #[error("Job {id} persistence error: {reason}")]
+    PersistenceError { id: Uuid, reason: String },
 }
