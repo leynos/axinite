@@ -36,7 +36,6 @@ impl Default for BuilderModeConfig {
 
 impl BuilderModeConfig {
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve() -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient())
     }
@@ -65,3 +64,7 @@ impl BuilderModeConfig {
         }
     }
 }
+
+const _: () = {
+    let _ = BuilderModeConfig::resolve;
+};

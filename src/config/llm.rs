@@ -4,7 +4,7 @@ use secrecy::SecretString;
 
 use crate::bootstrap::ironclaw_base_dir;
 use crate::config::EnvContext;
-use crate::config::helpers::{EnvKey, intern_env_key, optional_env_from, parse_optional_env_from};
+use crate::config::helpers::{EnvKey, optional_env_from, parse_optional_env_from};
 use crate::error::ConfigError;
 use crate::llm::config::*;
 use crate::llm::registry::{ProviderProtocol, ProviderRegistry};
@@ -18,7 +18,7 @@ fn resolve_api_key(
     backend: &str,
 ) -> Result<Option<SecretString>, ConfigError> {
     let key = if let Some(env_var) = api_key_env {
-        optional_env_from(ctx, intern_env_key(env_var))?.map(SecretString::from)
+        ctx.get_owned(env_var).map(SecretString::from)
     } else {
         None
     };
@@ -48,7 +48,7 @@ fn resolve_base_url(
     settings: &Settings,
 ) -> Result<String, ConfigError> {
     let base_url = if let Some(env_var) = spec.env_var {
-        optional_env_from(ctx, intern_env_key(env_var))?
+        ctx.get_owned(env_var)
     } else {
         None
     }
@@ -77,7 +77,7 @@ fn resolve_extra_headers(
     extra_headers_env: Option<&str>,
 ) -> Result<Vec<(String, String)>, ConfigError> {
     let headers = if let Some(env_var) = extra_headers_env {
-        optional_env_from(ctx, intern_env_key(env_var))?
+        ctx.get_owned(env_var)
             .map(|val| parse_extra_headers(&val))
             .transpose()?
             .unwrap_or_default()
@@ -199,7 +199,8 @@ impl LlmConfig {
         settings: &Settings,
         default: &str,
     ) -> Result<String, ConfigError> {
-        Ok(optional_env_from(ctx, intern_env_key(env_var))?
+        Ok(ctx
+            .get_owned(env_var)
             .or_else(|| settings.selected_model.clone())
             .unwrap_or_else(|| default.to_string()))
     }
@@ -386,7 +387,6 @@ impl LlmConfig {
     }
 
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient(), settings)
     }

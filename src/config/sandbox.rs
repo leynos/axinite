@@ -48,7 +48,6 @@ impl Default for SandboxModeConfig {
 
 impl SandboxModeConfig {
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve() -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient())
     }
@@ -183,6 +182,10 @@ impl Default for ClaudeCodeConfig {
     }
 }
 
+const _: () = {
+    let _ = SandboxModeConfig::resolve;
+};
+
 impl ClaudeCodeConfig {
     /// Load from environment variables only (used inside containers where
     /// there is no database or full config).
@@ -241,7 +244,6 @@ impl ClaudeCodeConfig {
     }
 
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve() -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient())
     }
@@ -275,6 +277,10 @@ impl ClaudeCodeConfig {
         })
     }
 }
+
+const _: () = {
+    let _ = ClaudeCodeConfig::resolve;
+};
 
 /// Parse the OAuth access token from a Claude Code credentials JSON blob.
 ///

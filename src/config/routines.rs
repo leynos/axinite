@@ -37,7 +37,6 @@ impl Default for RoutineConfig {
 
 impl RoutineConfig {
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve() -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient())
     }

@@ -78,7 +78,6 @@ impl AgentConfig {
     }
 
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient(), settings)
     }
@@ -143,6 +142,10 @@ impl AgentConfig {
         })
     }
 }
+
+const _: () = {
+    let _ = AgentConfig::resolve;
+};
 
 #[cfg(test)]
 mod tests {

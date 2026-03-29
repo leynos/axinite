@@ -40,7 +40,6 @@ impl Default for HeartbeatConfig {
 
 impl HeartbeatConfig {
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient(), settings)
     }
@@ -101,6 +100,10 @@ impl HeartbeatConfig {
         })
     }
 }
+
+const _: () = {
+    let _ = HeartbeatConfig::resolve;
+};
 
 #[cfg(test)]
 mod tests {

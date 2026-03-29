@@ -48,7 +48,6 @@ fn default_installed_skills_dir() -> PathBuf {
 
 impl SkillsConfig {
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve() -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient())
     }
@@ -71,3 +70,7 @@ impl SkillsConfig {
         })
     }
 }
+
+const _: () = {
+    let _ = SkillsConfig::resolve;
+};

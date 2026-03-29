@@ -48,7 +48,6 @@ fn default_tools_dir() -> PathBuf {
 
 impl WasmConfig {
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve() -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient())
     }
@@ -99,3 +98,7 @@ impl WasmConfig {
         }
     }
 }
+
+const _: () = {
+    let _ = WasmConfig::resolve;
+};

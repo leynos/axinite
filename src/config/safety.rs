@@ -11,7 +11,6 @@ pub struct SafetyConfig {
 
 impl SafetyConfig {
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve() -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient())
     }
@@ -31,3 +30,7 @@ impl SafetyConfig {
         })
     }
 }
+
+const _: () = {
+    let _ = SafetyConfig::resolve;
+};

@@ -34,7 +34,6 @@ impl Default for TranscriptionConfig {
 
 impl TranscriptionConfig {
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient(), settings)
     }
@@ -87,3 +86,7 @@ impl TranscriptionConfig {
         Some(Box::new(provider))
     }
 }
+
+const _: () = {
+    let _ = TranscriptionConfig::resolve;
+};

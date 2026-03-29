@@ -23,24 +23,6 @@ impl std::fmt::Display for EnvKey {
     }
 }
 
-pub(crate) fn intern_env_key(key: &str) -> EnvKey {
-    static INTERNED_KEYS: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, &'static str>>,
-    > = std::sync::OnceLock::new();
-
-    let mut keys = INTERNED_KEYS
-        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Some(existing) = keys.get(key) {
-        return EnvKey(existing);
-    }
-
-    let leaked = Box::leak(key.to_string().into_boxed_str());
-    keys.insert(leaked.to_string(), leaked);
-    EnvKey(leaked)
-}
-
 /// Shared parse logic for `parse_option_env` and `parse_option_env_from`.
 /// Returns `None` when the raw value is absent; `Some(parsed)` when present and valid.
 fn parse_option_core<T>(key: EnvKey, raw: Option<String>) -> Result<Option<T>, ConfigError>
@@ -79,7 +61,6 @@ fn parse_bool_core(key: EnvKey, raw: Option<String>, default: bool) -> Result<bo
 /// parallel.  Every `unsafe { set_var / remove_var }` call in tests
 /// MUST hold this single lock.
 // Shared env-mutation guard retained for integration tests and helper modules.
-#[allow(dead_code)]
 pub(crate) static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub(crate) fn optional_env_from(
@@ -128,7 +109,6 @@ where
 }
 
 // Backwards-compatible ambient helper retained for existing callers.
-#[allow(dead_code)]
 pub(crate) fn parse_optional_env<T>(key: EnvKey, default: T) -> Result<T, ConfigError>
 where
     T: std::str::FromStr,
@@ -141,7 +121,6 @@ where
 ///
 /// Accepts "true"/"1" as true, "false"/"0" as false.
 // Backwards-compatible ambient helper retained for existing callers.
-#[allow(dead_code)]
 pub(crate) fn parse_bool_env(key: EnvKey, default: bool) -> Result<bool, ConfigError> {
     parse_bool_core(key, optional_env(key)?, default)
 }
@@ -157,7 +136,6 @@ pub(crate) fn parse_bool_env_from(
 /// Parse an env var into `Option<T>` — returns `None` when unset,
 /// `Some(parsed)` when set to a valid value.
 // Backwards-compatible ambient helper retained for existing callers.
-#[allow(dead_code)]
 pub(crate) fn parse_option_env<T>(key: EnvKey) -> Result<Option<T>, ConfigError>
 where
     T: std::str::FromStr,
@@ -179,7 +157,6 @@ where
 
 /// Parse a string from an env var with a default.
 // Backwards-compatible ambient helper retained for existing callers.
-#[allow(dead_code)]
 pub(crate) fn parse_string_env(
     key: EnvKey,
     default: impl Into<String>,
@@ -194,3 +171,10 @@ pub(crate) fn parse_string_env_from(
 ) -> Result<String, ConfigError> {
     Ok(optional_env_from(ctx, key)?.unwrap_or_else(|| default.into()))
 }
+
+const _: () = {
+    let _: fn(EnvKey, String) -> Result<String, ConfigError> = parse_optional_env::<String>;
+    let _: fn(EnvKey, bool) -> Result<bool, ConfigError> = parse_bool_env;
+    let _: fn(EnvKey) -> Result<Option<String>, ConfigError> = parse_option_env::<String>;
+    let _: fn(EnvKey, String) -> Result<String, ConfigError> = parse_string_env;
+};

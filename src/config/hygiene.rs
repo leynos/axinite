@@ -32,7 +32,6 @@ impl Default for HygieneConfig {
 
 impl HygieneConfig {
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve() -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient())
     }
@@ -70,3 +69,7 @@ impl HygieneConfig {
         }
     }
 }
+
+const _: () = {
+    let _ = HygieneConfig::resolve;
+};

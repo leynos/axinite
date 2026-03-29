@@ -60,7 +60,6 @@ fn default_dimension_for_model(model: &str) -> usize {
 
 impl EmbeddingsConfig {
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient(), settings)
     }

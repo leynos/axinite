@@ -31,7 +31,6 @@ impl SecretsConfig {
     /// Sequential probe: SECRETS_MASTER_KEY env var first, then OS keychain.
     /// No saved "source" needed; just try each source in order.
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) async fn resolve() -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient()).await
     }
@@ -77,3 +76,7 @@ impl SecretsConfig {
         self.master_key.as_ref()
     }
 }
+
+const _: () = {
+    let _ = SecretsConfig::resolve;
+};

@@ -106,7 +106,6 @@ pub struct DatabaseConfig {
 
 impl DatabaseConfig {
     // Backwards-compatible ambient entrypoint retained for existing callers.
-    #[allow(dead_code)]
     pub(crate) fn resolve() -> Result<Self, ConfigError> {
         Self::resolve_from(&EnvContext::capture_ambient())
     }
@@ -187,6 +186,10 @@ impl DatabaseConfig {
         self.url.expose_secret()
     }
 }
+
+const _: () = {
+    let _ = DatabaseConfig::resolve;
+};
 
 impl SslMode {
     /// Read from `DATABASE_SSLMODE` env var, defaulting to `Prefer`.

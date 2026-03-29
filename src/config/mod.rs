@@ -95,27 +95,49 @@ pub struct Config {
 }
 
 impl Config {
-    /// Create a full Config for integration tests without reading env vars.
-    ///
-    /// Requires the `libsql` feature. Sets up:
-    /// - libSQL database at the given path
-    /// - WASM and embeddings disabled
-    /// - Skills enabled with the given directories
-    /// - Heartbeat, routines, sandbox, builder all disabled
-    /// - Safety with injection check off, 100k output limit
+    fn merged_settings_with_toml(
+        base: &Settings,
+        toml_path: Option<&std::path::Path>,
+    ) -> Result<Settings, ConfigError> {
+        let mut merged = base.clone();
+        Self::apply_toml_overlay(&mut merged, toml_path)?;
+        Ok(merged)
+    }
+
+    async fn inject_llm_keys_with<HasValue, SetValue>(
+        secrets: &dyn crate::secrets::SecretsStore,
+        user_id: &str,
+        mut has_value: HasValue,
+        mut set_value: SetValue,
+    ) where
+        HasValue: FnMut(&str) -> bool,
+        SetValue: FnMut(&str, String),
+    {
+        for (secret_name, env_var) in secret_mappings() {
+            if has_value(&env_var) {
+                continue;
+            }
+            if let Ok(decrypted) = secrets.get_decrypted(user_id, &secret_name).await {
+                let value = decrypted.expose().to_string();
+                set_value(&env_var, value);
+                tracing::debug!("Loaded secret '{}' for env var '{}'", secret_name, env_var);
+            }
+        }
+    }
+
     #[cfg(feature = "libsql")]
-    pub async fn for_testing(
-        libsql_path: std::path::PathBuf,
-        skills_dir: std::path::PathBuf,
-        installed_skills_dir: std::path::PathBuf,
-    ) -> Self {
-        let settings = Settings::default();
+    fn for_testing_context(
+        libsql_path: &std::path::Path,
+        skills_dir: &std::path::Path,
+        installed_skills_dir: &std::path::Path,
+    ) -> EnvContext {
         let test_channels_dir = skills_dir
             .parent()
             .map(std::path::Path::to_path_buf)
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join("ironclaw-test-channels");
-        let ctx = EnvContext::default()
+
+        EnvContext::default()
             .with_env("DATABASE_BACKEND", "libsql")
             .with_env("DATABASE_URL", "unused://test")
             .with_env("DATABASE_POOL_SIZE", "1")
@@ -134,7 +156,25 @@ impl Config {
             .with_env(
                 "SKILLS_INSTALLED_DIR",
                 installed_skills_dir.to_string_lossy(),
-            );
+            )
+    }
+
+    /// Create a full Config for integration tests without reading env vars.
+    ///
+    /// Requires the `libsql` feature. Sets up:
+    /// - libSQL database at the given path
+    /// - WASM and embeddings disabled
+    /// - Skills enabled with the given directories
+    /// - Heartbeat, routines, sandbox, builder all disabled
+    /// - Safety with injection check off, 100k output limit
+    #[cfg(feature = "libsql")]
+    pub async fn for_testing(
+        libsql_path: std::path::PathBuf,
+        skills_dir: std::path::PathBuf,
+        installed_skills_dir: std::path::PathBuf,
+    ) -> Self {
+        let settings = Settings::default();
+        let ctx = Self::for_testing_context(&libsql_path, &skills_dir, &installed_skills_dir);
 
         let mut config = Self::from_context(&ctx, &settings)
             .await
@@ -182,12 +222,7 @@ impl Config {
         };
 
         let ctx = EnvContext::capture_ambient();
-        if let Some(path) = toml_path {
-            return Self::from_context_with_toml(&ctx, &db_settings, path).await;
-        }
-
-        let mut merged = db_settings.clone();
-        Self::apply_toml_overlay_at(&mut merged, &Settings::default_toml_path(), true)?;
+        let merged = Self::merged_settings_with_toml(&db_settings, toml_path)?;
         Self::from_context(&ctx, &merged).await
     }
 
@@ -211,12 +246,7 @@ impl Config {
         crate::bootstrap::load_ironclaw_env();
         let settings = Settings::load();
         let ctx = EnvContext::capture_ambient();
-        if let Some(path) = toml_path {
-            return Self::from_context_with_toml(&ctx, &settings, path).await;
-        }
-
-        let mut merged = settings.clone();
-        Self::apply_toml_overlay_at(&mut merged, &Settings::default_toml_path(), true)?;
+        let merged = Self::merged_settings_with_toml(&settings, toml_path)?;
         Self::from_context(&ctx, &merged).await
     }
 
@@ -306,8 +336,7 @@ impl Config {
         settings: &Settings,
         toml_path: &std::path::Path,
     ) -> Result<Self, ConfigError> {
-        let mut merged = settings.clone();
-        Self::apply_toml_overlay_at(&mut merged, toml_path, false)?;
+        let merged = Self::merged_settings_with_toml(settings, Some(toml_path))?;
         Self::from_context(ctx, &merged).await
     }
 
@@ -361,16 +390,15 @@ pub async fn inject_llm_keys_from_secrets(
     user_id: &str,
 ) {
     let mut injected = HashMap::new();
-    for (secret_name, env_var) in secret_mappings() {
-        match std::env::var(&env_var) {
-            Ok(val) if !val.is_empty() => continue,
-            _ => {}
-        }
-        if let Ok(decrypted) = secrets.get_decrypted(user_id, &secret_name).await {
-            injected.insert(env_var.to_string(), decrypted.expose().to_string());
-            tracing::debug!("Loaded secret '{}' for env var '{}'", secret_name, env_var);
-        }
-    }
+    Config::inject_llm_keys_with(
+        secrets,
+        user_id,
+        |env_var| matches!(std::env::var(env_var), Ok(val) if !val.is_empty()),
+        |env_var, value| {
+            injected.insert(env_var.to_string(), value);
+        },
+    )
+    .await;
 
     inject_os_credential_store_tokens(&mut injected);
 
@@ -382,15 +410,17 @@ pub async fn inject_llm_keys_into_context(
     secrets: &dyn crate::secrets::SecretsStore,
     user_id: &str,
 ) {
-    for (secret_name, env_var) in secret_mappings() {
-        if ctx.get(&env_var).is_some() {
-            continue;
-        }
-        if let Ok(decrypted) = secrets.get_decrypted(user_id, &secret_name).await {
-            ctx.inject_secret(&env_var, decrypted.expose().to_string());
-            tracing::debug!("Loaded secret '{}' for env var '{}'", secret_name, env_var);
-        }
-    }
+    let mut injected = HashMap::new();
+    Config::inject_llm_keys_with(
+        secrets,
+        user_id,
+        |env_var| ctx.get(env_var).is_some(),
+        |env_var, value| {
+            injected.insert(env_var.to_string(), value);
+        },
+    )
+    .await;
+    ctx.merge_secrets(injected);
 }
 
 /// Load tokens from OS credential stores (no DB required).
