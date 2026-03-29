@@ -21,7 +21,7 @@
 /// - PL/pgSQL functions -> SQLite triggers
 pub const SCHEMA: &str = include_str!("../../migrations/libsql_schema.sql");
 
-const V10_WASM_TOOLS_COLUMNS: &str = r#"    id TEXT PRIMARY KEY,
+const V12_WASM_TOOLS_COLUMNS: &str = r#"    id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     version TEXT NOT NULL DEFAULT '1.0.0',
@@ -37,14 +37,14 @@ const V10_WASM_TOOLS_COLUMNS: &str = r#"    id TEXT PRIMARY KEY,
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     UNIQUE (user_id, name, version)"#;
 
-const V10_WASM_TOOLS_COPY_COLUMNS: &str = r#"id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
+const V12_WASM_TOOLS_COPY_COLUMNS: &str = r#"id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
     parameters_schema, source_url, trust_level, status, created_at, updated_at"#;
 
-const V10_WASM_TOOLS_POST_REBUILD_SQL: &str = r#"CREATE INDEX IF NOT EXISTS idx_wasm_tools_user ON wasm_tools(user_id);
+const V12_WASM_TOOLS_POST_REBUILD_SQL: &str = r#"CREATE INDEX IF NOT EXISTS idx_wasm_tools_user ON wasm_tools(user_id);
 CREATE INDEX IF NOT EXISTS idx_wasm_tools_status ON wasm_tools(status);
 CREATE INDEX IF NOT EXISTS idx_wasm_tools_trust ON wasm_tools(trust_level);"#;
 
-const V10_WASM_CHANNELS_COLUMNS: &str = r#"    id TEXT PRIMARY KEY,
+const V12_WASM_CHANNELS_COLUMNS: &str = r#"    id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     version TEXT NOT NULL DEFAULT '0.1.0',
@@ -58,7 +58,7 @@ const V10_WASM_CHANNELS_COLUMNS: &str = r#"    id TEXT PRIMARY KEY,
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     UNIQUE (user_id, name)"#;
 
-const V10_WASM_CHANNELS_COPY_COLUMNS: &str = r#"id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
+const V12_WASM_CHANNELS_COPY_COLUMNS: &str = r#"id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
     capabilities_json, status, created_at, updated_at"#;
 
 /// Incremental migrations applied after the base schema.
@@ -317,15 +317,15 @@ fn v12_wasm_wit_default_migration_sql() -> String {
     append_table_rebuild_sql(
         &mut sql,
         "wasm_tools",
-        V10_WASM_TOOLS_COLUMNS,
-        V10_WASM_TOOLS_COPY_COLUMNS,
-        Some(V10_WASM_TOOLS_POST_REBUILD_SQL),
+        V12_WASM_TOOLS_COLUMNS,
+        V12_WASM_TOOLS_COPY_COLUMNS,
+        Some(V12_WASM_TOOLS_POST_REBUILD_SQL),
     );
     append_table_rebuild_sql(
         &mut sql,
         "wasm_channels",
-        V10_WASM_CHANNELS_COLUMNS,
-        V10_WASM_CHANNELS_COPY_COLUMNS,
+        V12_WASM_CHANNELS_COLUMNS,
+        V12_WASM_CHANNELS_COPY_COLUMNS,
         None,
     );
 
