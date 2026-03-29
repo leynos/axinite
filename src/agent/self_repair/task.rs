@@ -115,12 +115,17 @@ async fn run_broken_tool_repairs(
     repair: &dyn SelfRepair,
     notification_tx: &mut Option<mpsc::Sender<RepairNotification>>,
     shutdown: &mut std::pin::Pin<&mut oneshot::Receiver<()>>,
+    escalated_tools: &mut HashSet<String>,
 ) -> bool {
     let broken_tools = tokio::select! {
         biased;
         _ = shutdown.as_mut() => return false,
         broken_tools = repair.detect_broken_tools() => broken_tools,
     };
+    let broken_tool_names = broken_tools
+        .iter()
+        .map(|tool| tool.name.clone())
+        .collect::<HashSet<_>>();
 
     for tool in broken_tools {
         match tokio::select! {
@@ -153,19 +158,21 @@ async fn run_broken_tool_repairs(
                 );
             }
             Ok(RepairResult::ManualRequired { message }) => {
-                tracing::warn!(
-                    tool = %tool.name,
-                    status = "manual",
-                    "Tool repair requires manual intervention: {}",
-                    message
-                );
-                send_notification(
-                    notification_tx.as_mut(),
-                    format!(
-                        "Tool '{}' needs manual intervention: {}",
-                        tool.name, message
-                    ),
-                );
+                if escalated_tools.insert(tool.name.clone()) {
+                    tracing::warn!(
+                        tool = %tool.name,
+                        status = "manual",
+                        "Tool repair requires manual intervention: {}",
+                        message
+                    );
+                    send_notification(
+                        notification_tx.as_mut(),
+                        format!(
+                            "Tool '{}' needs manual intervention: {}",
+                            tool.name, message
+                        ),
+                    );
+                }
             }
             Ok(RepairResult::Retry { message }) => {
                 tracing::debug!(
@@ -181,6 +188,8 @@ async fn run_broken_tool_repairs(
         }
     }
 
+    escalated_tools.retain(|tool_name| broken_tool_names.contains(tool_name));
+
     true
 }
 
@@ -195,6 +204,7 @@ impl RepairTask {
         } = self;
         let mut shutdown = std::pin::pin!(shutdown_rx);
         let mut escalated_jobs = HashSet::new();
+        let mut escalated_tools = HashSet::new();
 
         loop {
             tokio::select! {
@@ -207,7 +217,12 @@ impl RepairTask {
                         tracing::debug!("Repair task received shutdown signal");
                         break;
                     }
-                    if !run_broken_tool_repairs(&*repair, &mut notification_tx, &mut shutdown).await {
+                    if !run_broken_tool_repairs(
+                        &*repair,
+                        &mut notification_tx,
+                        &mut shutdown,
+                        &mut escalated_tools,
+                    ).await {
                         tracing::debug!("Repair task received shutdown signal");
                         break;
                     }

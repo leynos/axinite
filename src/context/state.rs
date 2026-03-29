@@ -462,11 +462,12 @@ mod tests {
     #[test]
     fn test_stuck_recovery() {
         let mut ctx = JobContext::new("Test", "Test job");
-        ctx.transition_to(JobState::InProgress, None).unwrap();
-        ctx.mark_stuck("Timed out").unwrap();
+        ctx.transition_to(JobState::InProgress, None)
+            .expect("transition_to failed");
+        ctx.mark_stuck("Timed out").expect("mark_stuck failed");
         assert_eq!(ctx.state, JobState::Stuck);
 
-        ctx.attempt_recovery().unwrap();
+        ctx.attempt_recovery().expect("attempt_recovery failed");
         assert_eq!(ctx.state, JobState::InProgress);
         assert_eq!(ctx.repair_attempts, 1);
     }
@@ -474,7 +475,8 @@ mod tests {
     #[test]
     fn test_stuck_since_returns_none_when_job_was_never_stuck() {
         let mut ctx = JobContext::new("Test", "Test job");
-        ctx.transition_to(JobState::InProgress, None).unwrap();
+        ctx.transition_to(JobState::InProgress, None)
+            .expect("failed to transition JobContext to InProgress");
 
         assert_eq!(ctx.stuck_since(), None);
     }
@@ -482,17 +484,18 @@ mod tests {
     #[test]
     fn test_stuck_since_returns_latest_stuck_transition() {
         let mut ctx = JobContext::new("Test", "Test job");
-        ctx.transition_to(JobState::InProgress, None).unwrap();
+        ctx.transition_to(JobState::InProgress, None)
+            .expect("transition_to failed");
         let first_stuck_at = ctx.created_at + chrono::Duration::seconds(1);
         let second_stuck_at = first_stuck_at + chrono::Duration::seconds(1);
 
-        ctx.mark_stuck("First stall").unwrap();
+        ctx.mark_stuck("First stall").expect("mark_stuck failed");
         ctx.transitions
             .last_mut()
             .expect("first stuck transition should exist")
             .timestamp = first_stuck_at;
-        ctx.attempt_recovery().unwrap();
-        ctx.mark_stuck("Second stall").unwrap();
+        ctx.attempt_recovery().expect("attempt_recovery failed");
+        ctx.mark_stuck("Second stall").expect("mark_stuck failed");
         ctx.transitions
             .last_mut()
             .expect("second stuck transition should exist")
