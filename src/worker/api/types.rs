@@ -48,6 +48,40 @@ pub const REMOTE_TOOL_EXECUTE_PATH: &str = "tools/execute";
 pub const REMOTE_TOOL_CATALOG_ROUTE: &str = "/worker/{job_id}/tools/catalog";
 /// Axum route for hosted remote-tool execution.
 pub const REMOTE_TOOL_EXECUTE_ROUTE: &str = "/worker/{job_id}/tools/execute";
+/// Relative worker path for fetching the current job description.
+pub const WORKER_JOB_PATH: &str = "job";
+/// Axum route for fetching the current job description.
+pub const WORKER_JOB_ROUTE: &str = "/worker/{job_id}/job";
+/// Relative worker path for proxied completion requests.
+pub const WORKER_LLM_COMPLETE_PATH: &str = "llm/complete";
+/// Axum route for proxied completion requests.
+pub const WORKER_LLM_COMPLETE_ROUTE: &str = "/worker/{job_id}/llm/complete";
+/// Relative worker path for proxied tool-capable completion requests.
+pub const WORKER_LLM_COMPLETE_WITH_TOOLS_PATH: &str = "llm/complete_with_tools";
+/// Axum route for proxied tool-capable completion requests.
+pub const WORKER_LLM_COMPLETE_WITH_TOOLS_ROUTE: &str = "/worker/{job_id}/llm/complete_with_tools";
+/// Relative worker path for worker status updates.
+pub const WORKER_STATUS_PATH: &str = "status";
+/// Axum route for worker status updates.
+pub const WORKER_STATUS_ROUTE: &str = "/worker/{job_id}/status";
+/// Relative worker path for completion reports.
+pub const WORKER_COMPLETE_PATH: &str = "complete";
+/// Axum route for completion reports.
+pub const WORKER_COMPLETE_ROUTE: &str = "/worker/{job_id}/complete";
+/// Relative worker path for job event delivery.
+pub const WORKER_EVENT_PATH: &str = "event";
+/// Axum route for job event delivery.
+pub const WORKER_EVENT_ROUTE: &str = "/worker/{job_id}/event";
+/// Relative worker path for follow-up prompt polling.
+pub const WORKER_PROMPT_PATH: &str = "prompt";
+/// Axum route for follow-up prompt polling.
+pub const WORKER_PROMPT_ROUTE: &str = "/worker/{job_id}/prompt";
+/// Relative worker path for credential polling.
+pub const WORKER_CREDENTIALS_PATH: &str = "credentials";
+/// Axum route for credential polling.
+pub const WORKER_CREDENTIALS_ROUTE: &str = "/worker/{job_id}/credentials";
+/// Axum route for the unauthenticated worker health check.
+pub const WORKER_HEALTH_ROUTE: &str = "/health";
 
 /// Status update sent from worker to orchestrator.
 #[derive(Debug, Serialize, Deserialize)]
