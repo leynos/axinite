@@ -3,6 +3,8 @@
 *A security-minded personal AI assistant forked from IronClaw, built to keep
 your data local and your tooling under your control.*
 
+![Axinite](https://raw.githubusercontent.com/leynos/axinite/refs/heads/staging/axinite-mascot-smol.jpg)
+
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 Axinite inherits a large share of IronClaw's runtime, CLI surface, and
