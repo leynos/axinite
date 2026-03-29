@@ -115,63 +115,6 @@ pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> St
     }
 }
 
-/// Truncate content to fit within card width, respecting UTF-8 boundaries.
-///
-/// Adds "…" if truncated. The returned string will fit within `max_width` characters.
-fn truncate_card_content(text: &str, max_width: usize) -> String {
-    if max_width == 0 {
-        return String::new();
-    }
-
-    if visible_char_count(text) <= max_width {
-        text.to_string()
-    } else {
-        let visible_limit = max_width.saturating_sub(1);
-        let mut truncated = String::new();
-        let mut visible_count = 0;
-        let mut cursor = 0;
-        let mut has_active_style = false;
-
-        for ansi_match in ansi_sgr_regex().find_iter(text) {
-            if visible_count >= visible_limit {
-                break;
-            }
-
-            append_visible_chars(
-                &text[cursor..ansi_match.start()],
-                visible_limit,
-                &mut visible_count,
-                &mut truncated,
-            );
-
-            if visible_count >= visible_limit {
-                break;
-            }
-
-            let ansi_sequence = ansi_match.as_str();
-            truncated.push_str(ansi_sequence);
-            has_active_style = ansi_sequence != "\x1b[0m";
-            cursor = ansi_match.end();
-        }
-
-        if visible_count < visible_limit {
-            append_visible_chars(
-                &text[cursor..],
-                visible_limit,
-                &mut visible_count,
-                &mut truncated,
-            );
-        }
-
-        truncated.push('…');
-        if has_active_style && !truncated.ends_with("\x1b[0m") {
-            truncated.push_str("\x1b[0m");
-        }
-
-        truncated
-    }
-}
-
 fn ansi_sgr_regex() -> &'static Regex {
     static ANSI_SGR_REGEX: OnceLock<Regex> = OnceLock::new();
     ANSI_SGR_REGEX
@@ -190,6 +133,65 @@ fn append_visible_chars(text: &str, limit: usize, visible_count: &mut usize, out
         output.push(ch);
         *visible_count += 1;
     }
+}
+
+/// Scan `text` for ANSI SGR sequences, copying at most `visible_limit` visible
+/// characters into a new `String`. Returns the accumulated string and a flag
+/// indicating whether an active (non-reset) style sequence was the last one emitted.
+fn truncate_ansi_aware(text: &str, visible_limit: usize) -> (String, bool) {
+    let mut truncated = String::new();
+    let mut visible_count = 0;
+    let mut cursor = 0;
+    let mut has_active_style = false;
+
+    for ansi_match in ansi_sgr_regex().find_iter(text) {
+        if visible_count >= visible_limit {
+            break;
+        }
+        append_visible_chars(
+            &text[cursor..ansi_match.start()],
+            visible_limit,
+            &mut visible_count,
+            &mut truncated,
+        );
+        if visible_count >= visible_limit {
+            break;
+        }
+        let ansi_sequence = ansi_match.as_str();
+        truncated.push_str(ansi_sequence);
+        has_active_style = ansi_sequence != "\x1b[0m";
+        cursor = ansi_match.end();
+    }
+
+    if visible_count < visible_limit {
+        append_visible_chars(
+            &text[cursor..],
+            visible_limit,
+            &mut visible_count,
+            &mut truncated,
+        );
+    }
+
+    (truncated, has_active_style)
+}
+
+/// Truncate content to fit within card width, respecting UTF-8 boundaries.
+///
+/// Adds "…" if truncated. The returned string will fit within `max_width` characters.
+fn truncate_card_content(text: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+    if visible_char_count(text) <= max_width {
+        return text.to_string();
+    }
+    let visible_limit = max_width.saturating_sub(1);
+    let (mut truncated, has_active_style) = truncate_ansi_aware(text, visible_limit);
+    truncated.push('…');
+    if has_active_style && !truncated.ends_with("\x1b[0m") {
+        truncated.push_str("\x1b[0m");
+    }
+    truncated
 }
 
 /// Constructs and returns lines for a tool approval card.
