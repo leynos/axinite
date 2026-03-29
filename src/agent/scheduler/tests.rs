@@ -1,3 +1,7 @@
+//! Scheduler tests covering token-budget wiring, cancellation persistence, and
+//! approval-gated tool execution with the scheduler's safety, LLM, tool, and
+//! optional libSQL-backed dependencies.
+
 use super::*;
 use crate::config::SafetyConfig;
 #[cfg(feature = "libsql")]
@@ -270,26 +274,19 @@ async fn test_stop_does_not_overwrite_completed_jobs() {
     assert_eq!(job.state, JobState::Completed);
 }
 
-#[test]
-fn test_scheduler_creation() {
-    // Would need to mock dependencies for proper testing
+struct TestApprovalTool {
+    name: &'static str,
+    description: &'static str,
+    output_text: &'static str,
+    approval_requirement: ApprovalRequirement,
 }
 
-#[tokio::test]
-async fn test_spawn_batch_empty() {
-    // This test would need mock dependencies.
-    // For now just verify the empty case doesn't panic.
-}
-
-/// A tool that returns `UnlessAutoApproved`.
-struct SoftApprovalTool;
-
-impl NativeTool for SoftApprovalTool {
+impl NativeTool for TestApprovalTool {
     fn name(&self) -> &str {
-        "soft_gate"
+        self.name
     }
     fn description(&self) -> &str {
-        "needs soft approval"
+        self.description
     }
     fn parameters_schema(&self) -> serde_json::Value {
         serde_json::json!({"type": "object", "properties": {}})
@@ -300,43 +297,12 @@ impl NativeTool for SoftApprovalTool {
         _ctx: &JobContext,
     ) -> Result<ToolOutput, ToolError> {
         Ok(ToolOutput::text(
-            "soft_ok",
+            self.output_text,
             std::time::Instant::now().elapsed(),
         ))
     }
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-        ApprovalRequirement::UnlessAutoApproved
-    }
-    fn requires_sanitization(&self) -> bool {
-        false
-    }
-}
-
-/// A tool that returns `Always`.
-struct HardApprovalTool;
-
-impl NativeTool for HardApprovalTool {
-    fn name(&self) -> &str {
-        "hard_gate"
-    }
-    fn description(&self) -> &str {
-        "needs hard approval"
-    }
-    fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({"type": "object", "properties": {}})
-    }
-    async fn execute(
-        &self,
-        _params: serde_json::Value,
-        _ctx: &JobContext,
-    ) -> Result<ToolOutput, ToolError> {
-        Ok(ToolOutput::text(
-            "hard_ok",
-            std::time::Instant::now().elapsed(),
-        ))
-    }
-    fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-        ApprovalRequirement::Always
+        self.approval_requirement
     }
     fn requires_sanitization(&self) -> bool {
         false
@@ -350,15 +316,32 @@ async fn setup_tools_and_job() -> (
     Uuid,
 ) {
     let registry = ToolRegistry::new();
-    registry.register(Arc::new(SoftApprovalTool)).await;
-    registry.register(Arc::new(HardApprovalTool)).await;
+    registry
+        .register(Arc::new(TestApprovalTool {
+            name: "soft_gate",
+            description: "needs soft approval",
+            output_text: "soft_ok",
+            approval_requirement: ApprovalRequirement::UnlessAutoApproved,
+        }))
+        .await;
+    registry
+        .register(Arc::new(TestApprovalTool {
+            name: "hard_gate",
+            description: "needs hard approval",
+            output_text: "hard_ok",
+            approval_requirement: ApprovalRequirement::Always,
+        }))
+        .await;
 
     let cm = Arc::new(ContextManager::new(5));
-    let job_id = cm.create_job("test", "approval test").await.unwrap();
+    let job_id = cm
+        .create_job("test", "approval test")
+        .await
+        .expect("failed to create test job in setup_tools_and_job");
     cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
         .await
-        .unwrap()
-        .unwrap();
+        .expect("failed to update test job context in setup_tools_and_job")
+        .expect("failed to transition test job to JobState::InProgress in setup_tools_and_job");
 
     let safety = Arc::new(SafetyLayer::new(&SafetyConfig {
         max_output_length: 100_000,
