@@ -13,8 +13,8 @@ use crate::worker::container::{WorkerConfig, WorkerError, WorkerExecutionResult,
 
 /// Regression test: WorkerRuntime::new should return ConfigMismatch error
 /// when config job_id doesn't match client job_id.
-#[tokio::test]
-async fn worker_runtime_new_returns_error_on_job_id_mismatch() {
+#[test]
+fn worker_runtime_new_returns_error_on_job_id_mismatch() {
     let job_id = Uuid::new_v4();
     let different_job_id = Uuid::new_v4();
 
@@ -45,8 +45,8 @@ async fn worker_runtime_new_returns_error_on_job_id_mismatch() {
 
 /// Regression test: WorkerRuntime::new should return ConfigMismatch error
 /// when config orchestrator_url doesn't match client orchestrator_url.
-#[tokio::test]
-async fn worker_runtime_new_returns_error_on_orchestrator_url_mismatch() {
+#[test]
+fn worker_runtime_new_returns_error_on_orchestrator_url_mismatch() {
     let job_id = Uuid::new_v4();
 
     let client = Arc::new(
@@ -70,7 +70,10 @@ async fn worker_runtime_new_returns_error_on_orchestrator_url_mismatch() {
     match result {
         Err(WorkerError::ConfigMismatch { field, .. }) => assert_eq!(field, "orchestrator_url"),
         Ok(_) => panic!("expected ConfigMismatch error for orchestrator_url, got Ok"),
-        Err(other) => panic!("expected ConfigMismatch error for orchestrator_url, got {:?}", other),
+        Err(other) => panic!(
+            "expected ConfigMismatch error for orchestrator_url, got {:?}",
+            other
+        ),
     }
 }
 

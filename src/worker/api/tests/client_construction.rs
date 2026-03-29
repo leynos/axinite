@@ -6,11 +6,10 @@ use uuid::Uuid;
 use crate::testing::credentials::TEST_BEARER_TOKEN;
 use crate::worker::api::WorkerHttpClient;
 
-/// Regression test: WorkerHttpClient::new should return ConnectionFailed
-/// when given an invalid timeout configuration.
+/// Regression test: WorkerHttpClient::new succeeds with valid URLs.
 ///
-/// This test verifies that the fallible constructor properly propagates
-/// reqwest client build errors instead of panicking or using unwrap.
+/// This test verifies that the fallible constructor properly constructs
+/// a WorkerHttpClient with valid URLs without panicking or unwrap,
 #[rstest]
 #[case("http://localhost:50051")]
 #[case("http://example.com")]
