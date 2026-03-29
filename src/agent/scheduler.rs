@@ -539,55 +539,56 @@ impl Scheduler {
     pub async fn stop(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
         let tx = {
             let jobs = self.jobs.read().await;
-            jobs.get(&job_id).map(|scheduled| scheduled.tx.clone())
+            match jobs.get(&job_id) {
+                Some(scheduled) => scheduled.tx.clone(),
+                None => return Err(JobError::NotFound { id: job_id }),
+            }
         };
 
-        if let Some(tx) = tx {
-            let reason = reason.to_string();
+        let reason = reason.to_string();
 
-            // Send stop signal
-            let _ = tx.send(WorkerMessage::Stop).await;
+        // Send stop signal
+        let _ = tx.send(WorkerMessage::Stop).await;
 
-            // Give it a moment to clean up
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        // Give it a moment to clean up
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-            // Abort if still running
+        // Abort if still running
+        {
+            let jobs = self.jobs.read().await;
+            if let Some(scheduled) = jobs.get(&job_id)
+                && !scheduled.handle.is_finished()
             {
-                let jobs = self.jobs.read().await;
-                if let Some(scheduled) = jobs.get(&job_id)
-                    && !scheduled.handle.is_finished()
-                {
-                    scheduled.handle.abort();
-                }
+                scheduled.handle.abort();
             }
-
-            // Update job state
-            self.context_manager
-                .update_context(job_id, |ctx| {
-                    let current_state = ctx.state;
-                    ctx.transition_to(JobState::Cancelled, Some(reason.clone()))
-                        .map_err(|_| current_state)
-                })
-                .await?
-                .map_err(|state| JobError::InvalidTransition {
-                    id: job_id,
-                    state: state.to_string(),
-                    target: JobState::Cancelled.to_string(),
-                })?;
-
-            // Persist cancellation before returning so durable state matches
-            // the in-memory terminal transition.
-            if let Some(ref store) = self.store
-                && let Err(e) = store
-                    .update_job_status(job_id, JobState::Cancelled, Some(reason.as_str()))
-                    .await
-            {
-                tracing::warn!("Failed to persist cancellation for job {}: {}", job_id, e);
-            }
-
-            self.jobs.write().await.remove(&job_id);
-            tracing::info!("Stopped job {}", job_id);
         }
+
+        // Update job state
+        self.context_manager
+            .update_context(job_id, |ctx| {
+                let current_state = ctx.state;
+                ctx.transition_to(JobState::Cancelled, Some(reason.clone()))
+                    .map_err(|_| current_state)
+            })
+            .await?
+            .map_err(|state| JobError::InvalidTransition {
+                id: job_id,
+                state: state.to_string(),
+                target: JobState::Cancelled.to_string(),
+            })?;
+
+        // Persist cancellation before returning so durable state matches
+        // the in-memory terminal transition.
+        if let Some(ref store) = self.store
+            && let Err(e) = store
+                .update_job_status(job_id, JobState::Cancelled, Some(reason.as_str()))
+                .await
+        {
+            tracing::warn!("Failed to persist cancellation for job {}: {}", job_id, e);
+        }
+
+        self.jobs.write().await.remove(&job_id);
+        tracing::info!("Stopped job {}", job_id);
 
         Ok(())
     }

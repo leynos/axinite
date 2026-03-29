@@ -274,6 +274,18 @@ async fn test_stop_does_not_overwrite_completed_jobs() {
     assert_eq!(job.state, JobState::Completed);
 }
 
+#[tokio::test]
+async fn test_stop_returns_not_found_for_unknown_job() {
+    let sched = make_test_scheduler(1000);
+    let job_id = Uuid::new_v4();
+
+    let error = sched
+        .stop(job_id, "Stopped by scheduler")
+        .await
+        .expect_err("unknown job should not stop successfully");
+    assert!(matches!(error, JobError::NotFound { id } if id == job_id));
+}
+
 struct TestApprovalTool {
     name: &'static str,
     description: &'static str,
