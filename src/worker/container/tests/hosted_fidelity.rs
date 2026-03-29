@@ -60,7 +60,7 @@ async fn hosted_catalog_harness() -> Result<HostedCatalogHarness, Box<dyn std::e
         Uuid::nil(),
         "test".to_string(),
     ));
-    let runtime = WorkerRuntime::from_client(
+    let runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: base_url,

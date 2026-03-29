@@ -2,8 +2,9 @@
 
 use rstest::rstest;
 
-use super::fixtures::test_state;
+use super::fixtures::{test_state, worker_uri};
 use super::*;
+use crate::worker::api::WORKER_PROMPT_ROUTE;
 
 #[rstest]
 #[tokio::test]
@@ -13,7 +14,7 @@ async fn prompt_returns_204_when_queue_empty(test_state: OrchestratorState) {
     let router = OrchestratorApi::router(test_state);
 
     let req = Request::builder()
-        .uri(format!("/worker/{}/prompt", job_id))
+        .uri(worker_uri(WORKER_PROMPT_ROUTE, job_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("build empty prompt poll request");
@@ -41,7 +42,7 @@ async fn prompt_returns_queued_prompt(test_state: OrchestratorState) {
 
     let router = OrchestratorApi::router(test_state);
     let req = Request::builder()
-        .uri(format!("/worker/{}/prompt", job_id))
+        .uri(worker_uri(WORKER_PROMPT_ROUTE, job_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("build queued prompt poll request");

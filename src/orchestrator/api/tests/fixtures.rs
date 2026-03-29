@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use rstest::fixture;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 use super::*;
 
@@ -26,4 +27,8 @@ pub(super) fn test_state() -> OrchestratorState {
         secrets_store: None,
         user_id: "default".to_string(),
     }
+}
+
+pub(super) fn worker_uri(route: &str, job_id: Uuid) -> String {
+    route.replace("{job_id}", &job_id.to_string())
 }

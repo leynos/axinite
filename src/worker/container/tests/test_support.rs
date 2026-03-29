@@ -13,7 +13,11 @@ use tokio::sync::Mutex;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
-use crate::worker::api::{CompletionReport, CredentialResponse, JobDescription, StatusUpdate};
+use crate::worker::api::{
+    CompletionReport, CredentialResponse, JobDescription, StatusUpdate, WORKER_COMPLETE_ROUTE,
+    WORKER_CREDENTIALS_ROUTE, WORKER_EVENT_ROUTE, WORKER_JOB_ROUTE, WORKER_PROMPT_ROUTE,
+    WORKER_STATUS_ROUTE,
+};
 use crate::worker::container::{WorkerConfig, WorkerHttpClient, WorkerRuntime};
 
 /// Shared state for recording HTTP interactions from the worker runtime during tests.
@@ -110,12 +114,12 @@ pub async fn spawn_runtime_test_server(
     let addr = listener.local_addr()?;
 
     let app = Router::new()
-        .route("/worker/{job_id}/job", get(job_handler))
-        .route("/worker/{job_id}/credentials", get(credentials_handler))
-        .route("/worker/{job_id}/prompt", get(prompt_handler))
-        .route("/worker/{job_id}/status", post(status_handler))
-        .route("/worker/{job_id}/complete", post(complete_handler))
-        .route("/worker/{job_id}/event", post(event_handler))
+        .route(WORKER_JOB_ROUTE, get(job_handler))
+        .route(WORKER_CREDENTIALS_ROUTE, get(credentials_handler))
+        .route(WORKER_PROMPT_ROUTE, get(prompt_handler))
+        .route(WORKER_STATUS_ROUTE, post(status_handler))
+        .route(WORKER_COMPLETE_ROUTE, post(complete_handler))
+        .route(WORKER_EVENT_ROUTE, post(event_handler))
         .with_state(state);
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -139,7 +143,7 @@ pub fn build_test_runtime(orchestrator_url: String, job_id: Uuid) -> WorkerRunti
         job_id,
         "test-token".to_string(),
     ));
-    WorkerRuntime::from_client(
+    WorkerRuntime::new(
         WorkerConfig {
             job_id,
             orchestrator_url,

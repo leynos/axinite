@@ -5,9 +5,10 @@ use std::sync::Arc;
 use rstest::rstest;
 use secrecy::SecretString;
 
-use super::fixtures::test_state;
+use super::fixtures::{test_state, worker_uri};
 use super::*;
 use crate::testing::credentials::test_secrets_store;
+use crate::worker::api::WORKER_CREDENTIALS_ROUTE;
 
 fn with_secrets_store(
     mut state: OrchestratorState,
@@ -25,7 +26,7 @@ async fn credentials_returns_204_when_no_grants(test_state: OrchestratorState) {
     let router = OrchestratorApi::router(test_state);
 
     let req = Request::builder()
-        .uri(format!("/worker/{}/credentials", job_id))
+        .uri(worker_uri(WORKER_CREDENTIALS_ROUTE, job_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("build credentials request without grants");
@@ -56,7 +57,7 @@ async fn credentials_returns_503_when_no_secrets_store(test_state: OrchestratorS
 
     let router = OrchestratorApi::router(test_state);
     let req = Request::builder()
-        .uri(format!("/worker/{}/credentials", job_id))
+        .uri(worker_uri(WORKER_CREDENTIALS_ROUTE, job_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("build credentials request without secrets store");
@@ -102,7 +103,7 @@ async fn credentials_returns_secrets_when_store_configured(test_state: Orchestra
 
     let router = OrchestratorApi::router(state);
     let req = Request::builder()
-        .uri(format!("/worker/{}/credentials", job_id))
+        .uri(worker_uri(WORKER_CREDENTIALS_ROUTE, job_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("build credentials request with configured store");

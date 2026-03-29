@@ -4,11 +4,14 @@ use rstest::rstest;
 use uuid::Uuid;
 
 use crate::testing::credentials::TEST_BEARER_TOKEN;
-use crate::worker::api::{REMOTE_TOOL_CATALOG_PATH, REMOTE_TOOL_CATALOG_ROUTE, WorkerHttpClient};
+use crate::worker::api::{
+    REMOTE_TOOL_CATALOG_PATH, REMOTE_TOOL_CATALOG_ROUTE, WORKER_CREDENTIALS_PATH,
+    WORKER_LLM_COMPLETE_PATH, WorkerHttpClient,
+};
 
 #[rstest]
-#[case("llm/complete")]
-#[case("credentials")]
+#[case(WORKER_LLM_COMPLETE_PATH)]
+#[case(WORKER_CREDENTIALS_PATH)]
 fn test_url_construction(#[case] path: &str) {
     let client = WorkerHttpClient::new(
         "http://host.docker.internal:50051".to_string(),
@@ -27,8 +30,8 @@ fn test_url_construction(#[case] path: &str) {
 }
 
 #[rstest]
-#[case("llm/complete")]
-#[case("credentials")]
+#[case(WORKER_LLM_COMPLETE_PATH)]
+#[case(WORKER_CREDENTIALS_PATH)]
 fn test_url_construction_with_trailing_slash(#[case] path: &str) {
     let client = WorkerHttpClient::new(
         "http://host.docker.internal:50051/".to_string(),

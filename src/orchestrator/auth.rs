@@ -150,6 +150,7 @@ fn extract_job_id_from_path(path: &str) -> Option<Uuid> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::worker::api::{WORKER_JOB_ROUTE, WORKER_LLM_COMPLETE_ROUTE};
 
     #[tokio::test]
     async fn test_token_create_and_validate() {
@@ -179,11 +180,12 @@ mod tests {
     #[test]
     fn test_extract_job_id() {
         let id = Uuid::new_v4();
-        let path = format!("/worker/{}/llm/complete", id);
+        let path = WORKER_LLM_COMPLETE_ROUTE.replace("{job_id}", &id.to_string());
         assert_eq!(extract_job_id_from_path(&path), Some(id));
 
         assert_eq!(extract_job_id_from_path("/other/path"), None);
-        assert_eq!(extract_job_id_from_path("/worker/not-a-uuid/foo"), None);
+        let invalid_job_path = WORKER_JOB_ROUTE.replace("{job_id}", "not-a-uuid");
+        assert_eq!(extract_job_id_from_path(&invalid_job_path), None);
     }
 
     #[test]

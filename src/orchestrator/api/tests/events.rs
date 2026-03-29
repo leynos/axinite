@@ -3,6 +3,7 @@
 use rstest::{fixture, rstest};
 
 use super::*;
+use crate::worker::api::WORKER_EVENT_ROUTE;
 
 #[fixture]
 fn event_test_state() -> (
@@ -49,7 +50,7 @@ async fn job_event_broadcasts_message(
 
     let req = Request::builder()
         .method("POST")
-        .uri(format!("/worker/{}/event", job_id))
+        .uri(super::fixtures::worker_uri(WORKER_EVENT_ROUTE, job_id))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
         .body(Body::from(
@@ -102,7 +103,7 @@ async fn job_event_handles_tool_use(
 
     let req = Request::builder()
         .method("POST")
-        .uri(format!("/worker/{}/event", job_id))
+        .uri(super::fixtures::worker_uri(WORKER_EVENT_ROUTE, job_id))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
         .body(Body::from(
@@ -145,7 +146,7 @@ async fn job_event_handles_unknown_type(
 
     let req = Request::builder()
         .method("POST")
-        .uri(format!("/worker/{}/event", job_id))
+        .uri(super::fixtures::worker_uri(WORKER_EVENT_ROUTE, job_id))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
         .body(Body::from(

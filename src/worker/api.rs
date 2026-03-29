@@ -151,7 +151,7 @@ impl WorkerHttpClient {
 
     /// Fetch the job description from the orchestrator.
     pub async fn get_job(&self) -> Result<JobDescription, WorkerError> {
-        self.get_json("job", "GET /job").await
+        self.get_json(WORKER_JOB_PATH, "GET /job").await
     }
 
     /// Proxy an LLM completion request through the orchestrator.
@@ -168,7 +168,7 @@ impl WorkerHttpClient {
         };
 
         let proxy_resp: ProxyCompletionResponse = self
-            .post_json("llm/complete", &proxy_req, "LLM complete")
+            .post_json(WORKER_LLM_COMPLETE_PATH, &proxy_req, "LLM complete")
             .await?;
 
         Ok(CompletionResponse {
@@ -196,7 +196,11 @@ impl WorkerHttpClient {
         };
 
         let proxy_resp: ProxyToolCompletionResponse = self
-            .post_json("llm/complete_with_tools", &proxy_req, "LLM tool complete")
+            .post_json(
+                WORKER_LLM_COMPLETE_WITH_TOOLS_PATH,
+                &proxy_req,
+                "LLM tool complete",
+            )
             .await?;
 
         Ok(ToolCompletionResponse {
@@ -251,7 +255,7 @@ impl WorkerHttpClient {
     pub async fn report_status(&self, update: &StatusUpdate) -> Result<(), WorkerError> {
         let resp = self
             .client
-            .post(self.url("status"))
+            .post(self.url(WORKER_STATUS_PATH))
             .bearer_auth(&self.token)
             .json(update)
             .send()
@@ -290,7 +294,7 @@ impl WorkerHttpClient {
     pub async fn post_event(&self, payload: &JobEventPayload) {
         let resp = self
             .client
-            .post(self.url("event"))
+            .post(self.url(WORKER_EVENT_PATH))
             .bearer_auth(&self.token)
             .json(payload)
             .send()
@@ -322,7 +326,7 @@ impl WorkerHttpClient {
     pub async fn poll_prompt(&self) -> Result<Option<PromptResponse>, WorkerError> {
         let resp = self
             .client
-            .get(self.url("prompt"))
+            .get(self.url(WORKER_PROMPT_PATH))
             .bearer_auth(&self.token)
             .send()
             .await
@@ -358,7 +362,7 @@ impl WorkerHttpClient {
     pub async fn fetch_credentials(&self) -> Result<Vec<CredentialResponse>, WorkerError> {
         let resp = self
             .client
-            .get(self.url("credentials"))
+            .get(self.url(WORKER_CREDENTIALS_PATH))
             .bearer_auth(&self.token)
             .send()
             .await
@@ -392,7 +396,7 @@ impl WorkerHttpClient {
     /// Signal job completion to the orchestrator.
     pub async fn report_complete(&self, report: &CompletionReport) -> Result<(), WorkerError> {
         let _: serde_json::Value = self
-            .post_json("complete", report, "report complete")
+            .post_json(WORKER_COMPLETE_PATH, report, "report complete")
             .await?;
         Ok(())
     }

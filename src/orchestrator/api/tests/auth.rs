@@ -2,8 +2,9 @@
 
 use rstest::rstest;
 
-use super::fixtures::test_state;
+use super::fixtures::{test_state, worker_uri};
 use super::*;
+use crate::worker::api::{WORKER_HEALTH_ROUTE, WORKER_JOB_ROUTE};
 
 #[rstest]
 #[tokio::test]
@@ -11,7 +12,7 @@ async fn health_requires_no_auth(test_state: OrchestratorState) {
     let router = OrchestratorApi::router(test_state);
 
     let req = Request::builder()
-        .uri("/health")
+        .uri(WORKER_HEALTH_ROUTE)
         .body(Body::empty())
         .expect("build health check request");
 
@@ -29,7 +30,7 @@ async fn worker_route_rejects_missing_token(test_state: OrchestratorState) {
 
     let job_id = Uuid::new_v4();
     let req = Request::builder()
-        .uri(format!("/worker/{}/job", job_id))
+        .uri(worker_uri(WORKER_JOB_ROUTE, job_id))
         .body(Body::empty())
         .expect("build worker job request without auth");
 
@@ -47,7 +48,7 @@ async fn worker_route_rejects_wrong_token(test_state: OrchestratorState) {
 
     let job_id = Uuid::new_v4();
     let req = Request::builder()
-        .uri(format!("/worker/{}/job", job_id))
+        .uri(worker_uri(WORKER_JOB_ROUTE, job_id))
         .header("Authorization", "Bearer totally-bogus")
         .body(Body::empty())
         .expect("build worker job request with invalid token");
@@ -68,7 +69,7 @@ async fn worker_route_accepts_valid_token(test_state: OrchestratorState) {
     let router = OrchestratorApi::router(test_state);
 
     let req = Request::builder()
-        .uri(format!("/worker/{}/job", job_id))
+        .uri(worker_uri(WORKER_JOB_ROUTE, job_id))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
         .expect("build worker job request with valid token");
@@ -90,7 +91,7 @@ async fn token_for_job_a_rejected_on_job_b(test_state: OrchestratorState) {
     let router = OrchestratorApi::router(test_state);
 
     let req = Request::builder()
-        .uri(format!("/worker/{}/job", job_b))
+        .uri(worker_uri(WORKER_JOB_ROUTE, job_b))
         .header("Authorization", format!("Bearer {}", token_a))
         .body(Body::empty())
         .expect("build worker job request with mismatched token");

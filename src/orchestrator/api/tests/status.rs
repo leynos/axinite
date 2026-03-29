@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use rstest::rstest;
 
-use super::fixtures::test_state;
+use super::fixtures::{test_state, worker_uri};
 use super::*;
+use crate::worker::api::WORKER_STATUS_ROUTE;
 
 #[rstest]
 #[tokio::test]
@@ -46,7 +47,7 @@ async fn report_status_updates_handle(test_state: OrchestratorState) {
 
     let req = Request::builder()
         .method("POST")
-        .uri(format!("/worker/{}/status", job_id))
+        .uri(worker_uri(WORKER_STATUS_ROUTE, job_id))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
         .body(Body::from(

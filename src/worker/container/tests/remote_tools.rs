@@ -112,7 +112,7 @@ async fn build_runtime_with_remote_tools(
         Uuid::nil(),
         "test".to_string(),
     ));
-    let mut runtime = WorkerRuntime::from_client(
+    let mut runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: base_url.to_string(),
@@ -135,7 +135,7 @@ async fn hosted_worker_remote_tool_catalog_registers_remote_tools()
         Uuid::nil(),
         "test".to_string(),
     ));
-    let runtime = WorkerRuntime::from_client(
+    let runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: base_url,
@@ -297,7 +297,7 @@ async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools()
         Uuid::nil(),
         "test".to_string(),
     ));
-    let runtime = WorkerRuntime::from_client(
+    let runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: base_url,
