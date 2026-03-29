@@ -9,6 +9,32 @@ struct TestApprovalTool {
     approval_requirement: ApprovalRequirement,
 }
 
+struct ToolGatingFixture {
+    tools: Arc<ToolRegistry>,
+    cm: Arc<ContextManager>,
+    safety: Arc<SafetyLayer>,
+    job_id: Uuid,
+}
+
+impl ToolGatingFixture {
+    async fn run(
+        &self,
+        approval_ctx: Option<ApprovalContext>,
+        tool_name: &'static str,
+    ) -> Result<TaskOutput, Error> {
+        Scheduler::execute_tool_task(
+            self.tools.clone(),
+            self.cm.clone(),
+            self.safety.clone(),
+            approval_ctx,
+            self.job_id,
+            tool_name,
+            serde_json::json!({}),
+        )
+        .await
+    }
+}
+
 impl NativeTool for TestApprovalTool {
     fn name(&self) -> &str {
         self.name
@@ -37,12 +63,7 @@ impl NativeTool for TestApprovalTool {
     }
 }
 
-async fn setup_tools_and_job() -> (
-    Arc<ToolRegistry>,
-    Arc<ContextManager>,
-    Arc<SafetyLayer>,
-    Uuid,
-) {
+async fn setup_tools_and_job() -> ToolGatingFixture {
     let registry = ToolRegistry::new();
     registry
         .register(Arc::new(TestApprovalTool {
@@ -76,27 +97,12 @@ async fn setup_tools_and_job() -> (
         injection_check_enabled: false,
     }));
 
-    (Arc::new(registry), cm, safety, job_id)
-}
-
-async fn run_tool(
-    tools: Arc<ToolRegistry>,
-    cm: Arc<ContextManager>,
-    safety: Arc<SafetyLayer>,
-    approval_ctx: Option<ApprovalContext>,
-    job_id: Uuid,
-    tool_name: &'static str,
-) -> Result<TaskOutput, Error> {
-    Scheduler::execute_tool_task(
-        tools,
+    ToolGatingFixture {
+        tools: Arc::new(registry),
         cm,
         safety,
-        approval_ctx,
         job_id,
-        tool_name,
-        serde_json::json!({}),
-    )
-    .await
+    }
 }
 
 fn assert_auth_required(
@@ -121,22 +127,14 @@ fn assert_executed(
 
 #[tokio::test]
 async fn test_execute_tool_task_blocks_without_context() {
-    let (tools, cm, safety, job_id) = setup_tools_and_job().await;
+    let f = setup_tools_and_job().await;
     assert_auth_required(
-        run_tool(
-            tools.clone(),
-            cm.clone(),
-            safety.clone(),
-            None,
-            job_id,
-            "soft_gate",
-        )
-        .await,
+        f.run(None, "soft_gate").await,
         "soft_gate",
         "soft_gate should be blocked without context",
     );
     assert_auth_required(
-        run_tool(tools, cm, safety, None, job_id, "hard_gate").await,
+        f.run(None, "hard_gate").await,
         "hard_gate",
         "hard_gate should be blocked without context",
     );
@@ -144,23 +142,15 @@ async fn test_execute_tool_task_blocks_without_context() {
 
 #[tokio::test]
 async fn test_execute_tool_task_autonomous_unblocks_soft() {
-    let (tools, cm, safety, job_id) = setup_tools_and_job().await;
-    let ctx = Some(ApprovalContext::autonomous());
+    let f = setup_tools_and_job().await;
+    let ctx = ApprovalContext::autonomous();
     assert_executed(
-        run_tool(
-            tools.clone(),
-            cm.clone(),
-            safety.clone(),
-            ctx.clone(),
-            job_id,
-            "soft_gate",
-        )
-        .await,
+        f.run(Some(ctx.clone()), "soft_gate").await,
         "soft_ok",
         "soft_gate should pass with autonomous context",
     );
     assert_auth_required(
-        run_tool(tools, cm, safety, ctx, job_id, "hard_gate").await,
+        f.run(Some(ctx), "hard_gate").await,
         "hard_gate",
         "hard_gate should still be blocked without explicit permission",
     );
@@ -168,24 +158,16 @@ async fn test_execute_tool_task_autonomous_unblocks_soft() {
 
 #[tokio::test]
 async fn test_execute_tool_task_autonomous_with_permissions() {
-    let (tools, cm, safety, job_id) = setup_tools_and_job().await;
+    let f = setup_tools_and_job().await;
     let ctx = ApprovalContext::autonomous_with_tools(["hard_gate".to_string()]);
 
     assert_executed(
-        run_tool(
-            tools.clone(),
-            cm.clone(),
-            safety.clone(),
-            Some(ctx.clone()),
-            job_id,
-            "soft_gate",
-        )
-        .await,
+        f.run(Some(ctx.clone()), "soft_gate").await,
         "soft_ok",
         "soft_gate should pass",
     );
     assert_executed(
-        run_tool(tools, cm, safety, Some(ctx), job_id, "hard_gate").await,
+        f.run(Some(ctx), "hard_gate").await,
         "hard_ok",
         "hard_gate should pass with explicit permission",
     );
