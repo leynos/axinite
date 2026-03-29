@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use secrecy::SecretString;
 
 use crate::config::EnvContext;
-use crate::config::helpers::{optional_env_from, parse_bool_env_from, parse_optional_env_from};
+use crate::config::helpers::{
+    EnvKey, optional_env_from, parse_bool_env_from, parse_optional_env_from,
+};
 use crate::error::ConfigError;
 use crate::settings::Settings;
 
@@ -101,60 +103,64 @@ fn parse_csv_list(val: &str) -> Vec<String> {
 }
 
 fn resolve_http_config(ctx: &EnvContext) -> Result<Option<HttpConfig>, ConfigError> {
-    if optional_env_from(ctx, "HTTP_PORT")?.is_none()
-        && optional_env_from(ctx, "HTTP_HOST")?.is_none()
+    if optional_env_from(ctx, EnvKey("HTTP_PORT"))?.is_none()
+        && optional_env_from(ctx, EnvKey("HTTP_HOST"))?.is_none()
     {
         return Ok(None);
     }
     Ok(Some(HttpConfig {
-        host: optional_env_from(ctx, "HTTP_HOST")?.unwrap_or_else(|| "0.0.0.0".to_string()),
-        port: parse_optional_env_from(ctx, "HTTP_PORT", 8080)?,
-        webhook_secret: optional_env_from(ctx, "HTTP_WEBHOOK_SECRET")?.map(SecretString::from),
-        user_id: optional_env_from(ctx, "HTTP_USER_ID")?.unwrap_or_else(|| "http".to_string()),
+        host: optional_env_from(ctx, EnvKey("HTTP_HOST"))?.unwrap_or_else(|| "0.0.0.0".to_string()),
+        port: parse_optional_env_from(ctx, EnvKey("HTTP_PORT"), 8080)?,
+        webhook_secret: optional_env_from(ctx, EnvKey("HTTP_WEBHOOK_SECRET"))?
+            .map(SecretString::from),
+        user_id: optional_env_from(ctx, EnvKey("HTTP_USER_ID"))?
+            .unwrap_or_else(|| "http".to_string()),
     }))
 }
 
 fn resolve_gateway_config(ctx: &EnvContext) -> Result<Option<GatewayConfig>, ConfigError> {
-    if !parse_bool_env_from(ctx, "GATEWAY_ENABLED", true)? {
+    if !parse_bool_env_from(ctx, EnvKey("GATEWAY_ENABLED"), true)? {
         return Ok(None);
     }
     Ok(Some(GatewayConfig {
-        host: optional_env_from(ctx, "GATEWAY_HOST")?.unwrap_or_else(|| "127.0.0.1".to_string()),
-        port: parse_optional_env_from(ctx, "GATEWAY_PORT", 3000)?,
-        auth_token: optional_env_from(ctx, "GATEWAY_AUTH_TOKEN")?,
-        user_id: optional_env_from(ctx, "GATEWAY_USER_ID")?
+        host: optional_env_from(ctx, EnvKey("GATEWAY_HOST"))?
+            .unwrap_or_else(|| "127.0.0.1".to_string()),
+        port: parse_optional_env_from(ctx, EnvKey("GATEWAY_PORT"), 3000)?,
+        auth_token: optional_env_from(ctx, EnvKey("GATEWAY_AUTH_TOKEN"))?,
+        user_id: optional_env_from(ctx, EnvKey("GATEWAY_USER_ID"))?
             .unwrap_or_else(|| "default".to_string()),
     }))
 }
 
 fn resolve_signal_config(ctx: &EnvContext) -> Result<Option<SignalConfig>, ConfigError> {
-    let Some(http_url) = optional_env_from(ctx, "SIGNAL_HTTP_URL")? else {
+    let Some(http_url) = optional_env_from(ctx, EnvKey("SIGNAL_HTTP_URL"))? else {
         return Ok(None);
     };
-    let account =
-        optional_env_from(ctx, "SIGNAL_ACCOUNT")?.ok_or_else(|| ConfigError::InvalidValue {
+    let account = optional_env_from(ctx, EnvKey("SIGNAL_ACCOUNT"))?.ok_or_else(|| {
+        ConfigError::InvalidValue {
             key: "SIGNAL_ACCOUNT".to_string(),
             message: "SIGNAL_ACCOUNT is required when SIGNAL_HTTP_URL is set".to_string(),
-        })?;
-    let allow_from = optional_env_from(ctx, "SIGNAL_ALLOW_FROM")?
+        }
+    })?;
+    let allow_from = optional_env_from(ctx, EnvKey("SIGNAL_ALLOW_FROM"))?
         .map(|s| parse_csv_list(&s))
         .unwrap_or_else(|| vec![account.clone()]);
     Ok(Some(SignalConfig {
         http_url,
         account,
         allow_from,
-        allow_from_groups: optional_env_from(ctx, "SIGNAL_ALLOW_FROM_GROUPS")?
+        allow_from_groups: optional_env_from(ctx, EnvKey("SIGNAL_ALLOW_FROM_GROUPS"))?
             .map(|s| parse_csv_list(&s))
             .unwrap_or_default(),
-        dm_policy: optional_env_from(ctx, "SIGNAL_DM_POLICY")?
+        dm_policy: optional_env_from(ctx, EnvKey("SIGNAL_DM_POLICY"))?
             .unwrap_or_else(|| "pairing".to_string()),
-        group_policy: optional_env_from(ctx, "SIGNAL_GROUP_POLICY")?
+        group_policy: optional_env_from(ctx, EnvKey("SIGNAL_GROUP_POLICY"))?
             .unwrap_or_else(|| "allowlist".to_string()),
-        group_allow_from: optional_env_from(ctx, "SIGNAL_GROUP_ALLOW_FROM")?
+        group_allow_from: optional_env_from(ctx, EnvKey("SIGNAL_GROUP_ALLOW_FROM"))?
             .map(|s| parse_csv_list(&s))
             .unwrap_or_default(),
-        ignore_attachments: parse_bool_env_from(ctx, "SIGNAL_IGNORE_ATTACHMENTS", false)?,
-        ignore_stories: parse_bool_env_from(ctx, "SIGNAL_IGNORE_STORIES", true)?,
+        ignore_attachments: parse_bool_env_from(ctx, EnvKey("SIGNAL_IGNORE_ATTACHMENTS"), false)?,
+        ignore_stories: parse_bool_env_from(ctx, EnvKey("SIGNAL_IGNORE_STORIES"), true)?,
     }))
 }
 
@@ -163,7 +169,7 @@ fn resolve_wasm_owner_ids(
     settings: &Settings,
 ) -> Result<HashMap<String, i64>, ConfigError> {
     let mut ids = settings.channels.wasm_channel_owner_ids.clone();
-    if let Some(id_str) = optional_env_from(ctx, "TELEGRAM_OWNER_ID")? {
+    if let Some(id_str) = optional_env_from(ctx, EnvKey("TELEGRAM_OWNER_ID"))? {
         let id: i64 =
             id_str
                 .parse()
@@ -186,15 +192,15 @@ impl ChannelsConfig {
     pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
         Ok(Self {
             cli: CliConfig {
-                enabled: parse_bool_env_from(ctx, "CLI_ENABLED", true)?,
+                enabled: parse_bool_env_from(ctx, EnvKey("CLI_ENABLED"), true)?,
             },
             http: resolve_http_config(ctx)?,
             gateway: resolve_gateway_config(ctx)?,
             signal: resolve_signal_config(ctx)?,
-            wasm_channels_dir: optional_env_from(ctx, "WASM_CHANNELS_DIR")?
+            wasm_channels_dir: optional_env_from(ctx, EnvKey("WASM_CHANNELS_DIR"))?
                 .map(PathBuf::from)
                 .unwrap_or_else(|| ctx.ironclaw_base_dir().join("channels")),
-            wasm_channels_enabled: parse_bool_env_from(ctx, "WASM_CHANNELS_ENABLED", true)?,
+            wasm_channels_enabled: parse_bool_env_from(ctx, EnvKey("WASM_CHANNELS_ENABLED"), true)?,
             wasm_channel_owner_ids: resolve_wasm_owner_ids(ctx, settings)?,
         })
     }

@@ -1,7 +1,7 @@
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::config::EnvContext;
-use crate::config::helpers::optional_env_from;
+use crate::config::helpers::{EnvKey, optional_env_from};
 use crate::error::ConfigError;
 
 /// Secrets management configuration.
@@ -40,7 +40,7 @@ impl SecretsConfig {
         use crate::settings::KeySource;
 
         let (master_key, source) = if let Some(env_key) =
-            optional_env_from(ctx, "SECRETS_MASTER_KEY")?
+            optional_env_from(ctx, EnvKey("SECRETS_MASTER_KEY"))?
         {
             (Some(SecretString::from(env_key)), KeySource::Env)
         } else {

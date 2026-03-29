@@ -4,7 +4,7 @@ use secrecy::SecretString;
 
 use crate::bootstrap::ironclaw_base_dir;
 use crate::config::EnvContext;
-use crate::config::helpers::{optional_env_from, parse_optional_env_from};
+use crate::config::helpers::{EnvKey, intern_env_key, optional_env_from, parse_optional_env_from};
 use crate::error::ConfigError;
 use crate::llm::config::*;
 use crate::llm::registry::{ProviderProtocol, ProviderRegistry};
@@ -18,7 +18,7 @@ fn resolve_api_key(
     backend: &str,
 ) -> Result<Option<SecretString>, ConfigError> {
     let key = if let Some(env_var) = api_key_env {
-        optional_env_from(ctx, env_var)?.map(SecretString::from)
+        optional_env_from(ctx, intern_env_key(env_var))?.map(SecretString::from)
     } else {
         None
     };
@@ -48,7 +48,7 @@ fn resolve_base_url(
     settings: &Settings,
 ) -> Result<String, ConfigError> {
     let base_url = if let Some(env_var) = spec.env_var {
-        optional_env_from(ctx, env_var)?
+        optional_env_from(ctx, intern_env_key(env_var))?
     } else {
         None
     }
@@ -77,7 +77,7 @@ fn resolve_extra_headers(
     extra_headers_env: Option<&str>,
 ) -> Result<Vec<(String, String)>, ConfigError> {
     let headers = if let Some(env_var) = extra_headers_env {
-        optional_env_from(ctx, env_var)?
+        optional_env_from(ctx, intern_env_key(env_var))?
             .map(|val| parse_extra_headers(&val))
             .transpose()?
             .unwrap_or_default()
@@ -93,7 +93,7 @@ fn resolve_anthropic_credentials(
     api_key: Option<SecretString>,
 ) -> Result<(Option<SecretString>, Option<SecretString>), ConfigError> {
     let oauth_token = if canonical_id == "anthropic" {
-        optional_env_from(ctx, "ANTHROPIC_OAUTH_TOKEN")?.map(SecretString::from)
+        optional_env_from(ctx, EnvKey("ANTHROPIC_OAUTH_TOKEN"))?.map(SecretString::from)
     } else {
         None
     };
@@ -112,7 +112,7 @@ fn resolve_provider_cache_retention(
     if canonical_id != "anthropic" {
         return Ok(CacheRetention::default());
     }
-    Ok(optional_env_from(ctx, "ANTHROPIC_CACHE_RETENTION")?
+    Ok(optional_env_from(ctx, EnvKey("ANTHROPIC_CACHE_RETENTION"))?
         .and_then(|val| match val.parse::<CacheRetention>() {
             Ok(r) => Some(r),
             Err(e) => {
@@ -199,7 +199,7 @@ impl LlmConfig {
         settings: &Settings,
         default: &str,
     ) -> Result<String, ConfigError> {
-        Ok(optional_env_from(ctx, env_var)?
+        Ok(optional_env_from(ctx, intern_env_key(env_var))?
             .or_else(|| settings.selected_model.clone())
             .unwrap_or_else(|| default.to_string()))
     }
@@ -251,7 +251,7 @@ impl LlmConfig {
         ctx: &EnvContext,
         settings: &Settings,
     ) -> Result<(String, bool, bool), ConfigError> {
-        let backend = if let Some(b) = optional_env_from(ctx, "LLM_BACKEND")? {
+        let backend = if let Some(b) = optional_env_from(ctx, EnvKey("LLM_BACKEND"))? {
             b
         } else if let Some(ref b) = settings.llm_backend {
             b.clone()
@@ -280,9 +280,9 @@ impl LlmConfig {
 
     fn resolve_session_config(ctx: &EnvContext) -> Result<SessionConfig, ConfigError> {
         Ok(SessionConfig {
-            auth_base_url: optional_env_from(ctx, "NEARAI_AUTH_URL")?
+            auth_base_url: optional_env_from(ctx, EnvKey("NEARAI_AUTH_URL"))?
                 .unwrap_or_else(|| "https://private.near.ai".to_string()),
-            session_path: optional_env_from(ctx, "NEARAI_SESSION_PATH")?
+            session_path: optional_env_from(ctx, EnvKey("NEARAI_SESSION_PATH"))?
                 .map(PathBuf::from)
                 .unwrap_or_else(|| ctx.ironclaw_base_dir().join("session.json")),
         })
@@ -292,11 +292,12 @@ impl LlmConfig {
         ctx: &EnvContext,
         settings: &Settings,
     ) -> Result<NearAiConfig, ConfigError> {
-        let nearai_api_key = optional_env_from(ctx, "NEARAI_API_KEY")?.map(SecretString::from);
+        let nearai_api_key =
+            optional_env_from(ctx, EnvKey("NEARAI_API_KEY"))?.map(SecretString::from);
         Ok(NearAiConfig {
             model: Self::resolve_model(ctx, "NEARAI_MODEL", settings, "zai-org/GLM-latest")?,
-            cheap_model: optional_env_from(ctx, "NEARAI_CHEAP_MODEL")?,
-            base_url: optional_env_from(ctx, "NEARAI_BASE_URL")?.unwrap_or_else(|| {
+            cheap_model: optional_env_from(ctx, EnvKey("NEARAI_CHEAP_MODEL"))?,
+            base_url: optional_env_from(ctx, EnvKey("NEARAI_BASE_URL"))?.unwrap_or_else(|| {
                 if nearai_api_key.is_some() {
                     "https://cloud-api.near.ai".to_string()
                 } else {
@@ -304,9 +305,9 @@ impl LlmConfig {
                 }
             }),
             api_key: nearai_api_key,
-            fallback_model: optional_env_from(ctx, "NEARAI_FALLBACK_MODEL")?,
-            max_retries: parse_optional_env_from(ctx, "NEARAI_MAX_RETRIES", 3)?,
-            circuit_breaker_threshold: optional_env_from(ctx, "CIRCUIT_BREAKER_THRESHOLD")?
+            fallback_model: optional_env_from(ctx, EnvKey("NEARAI_FALLBACK_MODEL"))?,
+            max_retries: parse_optional_env_from(ctx, EnvKey("NEARAI_MAX_RETRIES"), 3)?,
+            circuit_breaker_threshold: optional_env_from(ctx, EnvKey("CIRCUIT_BREAKER_THRESHOLD"))?
                 .map(|s| s.parse())
                 .transpose()
                 .map_err(|e| ConfigError::InvalidValue {
@@ -315,23 +316,39 @@ impl LlmConfig {
                 })?,
             circuit_breaker_recovery_secs: parse_optional_env_from(
                 ctx,
-                "CIRCUIT_BREAKER_RECOVERY_SECS",
+                EnvKey("CIRCUIT_BREAKER_RECOVERY_SECS"),
                 30,
             )?,
-            response_cache_enabled: parse_optional_env_from(ctx, "RESPONSE_CACHE_ENABLED", false)?,
-            response_cache_ttl_secs: parse_optional_env_from(ctx, "RESPONSE_CACHE_TTL_SECS", 3600)?,
+            response_cache_enabled: parse_optional_env_from(
+                ctx,
+                EnvKey("RESPONSE_CACHE_ENABLED"),
+                false,
+            )?,
+            response_cache_ttl_secs: parse_optional_env_from(
+                ctx,
+                EnvKey("RESPONSE_CACHE_TTL_SECS"),
+                3600,
+            )?,
             response_cache_max_entries: parse_optional_env_from(
                 ctx,
-                "RESPONSE_CACHE_MAX_ENTRIES",
+                EnvKey("RESPONSE_CACHE_MAX_ENTRIES"),
                 1000,
             )?,
             failover_cooldown_secs: parse_optional_env_from(
                 ctx,
-                "LLM_FAILOVER_COOLDOWN_SECS",
+                EnvKey("LLM_FAILOVER_COOLDOWN_SECS"),
                 300,
             )?,
-            failover_cooldown_threshold: parse_optional_env_from(ctx, "LLM_FAILOVER_THRESHOLD", 3)?,
-            smart_routing_cascade: parse_optional_env_from(ctx, "SMART_ROUTING_CASCADE", true)?,
+            failover_cooldown_threshold: parse_optional_env_from(
+                ctx,
+                EnvKey("LLM_FAILOVER_THRESHOLD"),
+                3,
+            )?,
+            smart_routing_cascade: parse_optional_env_from(
+                ctx,
+                EnvKey("SMART_ROUTING_CASCADE"),
+                true,
+            )?,
         })
     }
 
@@ -343,23 +360,23 @@ impl LlmConfig {
         if !is_bedrock {
             return Ok(None);
         }
-        let explicit_region =
-            optional_env_from(ctx, "BEDROCK_REGION")?.or_else(|| settings.bedrock_region.clone());
+        let explicit_region = optional_env_from(ctx, EnvKey("BEDROCK_REGION"))?
+            .or_else(|| settings.bedrock_region.clone());
         if explicit_region.is_none() {
             tracing::info!("BEDROCK_REGION not set, defaulting to us-east-1");
         }
         let region = explicit_region.unwrap_or_else(|| "us-east-1".to_string());
-        let model = optional_env_from(ctx, "BEDROCK_MODEL")?
+        let model = optional_env_from(ctx, EnvKey("BEDROCK_MODEL"))?
             .or_else(|| settings.selected_model.clone())
             .ok_or_else(|| ConfigError::MissingRequired {
                 key: "BEDROCK_MODEL".to_string(),
                 hint: "Set BEDROCK_MODEL when LLM_BACKEND=bedrock".to_string(),
             })?;
-        let cross_region = optional_env_from(ctx, "BEDROCK_CROSS_REGION")?
+        let cross_region = optional_env_from(ctx, EnvKey("BEDROCK_CROSS_REGION"))?
             .or_else(|| settings.bedrock_cross_region.clone());
         validate_bedrock_cross_region(&cross_region)?;
-        let profile =
-            optional_env_from(ctx, "AWS_PROFILE")?.or_else(|| settings.bedrock_profile.clone());
+        let profile = optional_env_from(ctx, EnvKey("AWS_PROFILE"))?
+            .or_else(|| settings.bedrock_profile.clone());
         Ok(Some(BedrockConfig {
             region,
             model,
@@ -390,7 +407,8 @@ impl LlmConfig {
             )?)
         };
         let bedrock = Self::resolve_bedrock_config(ctx, settings, is_bedrock)?;
-        let request_timeout_secs = parse_optional_env_from(ctx, "LLM_REQUEST_TIMEOUT_SECS", 120)?;
+        let request_timeout_secs =
+            parse_optional_env_from(ctx, EnvKey("LLM_REQUEST_TIMEOUT_SECS"), 120)?;
 
         Ok(Self {
             backend: if is_nearai {

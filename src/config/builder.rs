@@ -2,7 +2,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::config::EnvContext;
-use crate::config::helpers::{optional_env_from, parse_bool_env_from, parse_optional_env_from};
+use crate::config::helpers::{
+    EnvKey, optional_env_from, parse_bool_env_from, parse_optional_env_from,
+};
 use crate::error::ConfigError;
 
 /// Builder mode configuration.
@@ -41,11 +43,11 @@ impl BuilderModeConfig {
 
     pub(crate) fn resolve_from(ctx: &EnvContext) -> Result<Self, ConfigError> {
         Ok(Self {
-            enabled: parse_bool_env_from(ctx, "BUILDER_ENABLED", true)?,
-            build_dir: optional_env_from(ctx, "BUILDER_DIR")?.map(PathBuf::from),
-            max_iterations: parse_optional_env_from(ctx, "BUILDER_MAX_ITERATIONS", 20)?,
-            timeout_secs: parse_optional_env_from(ctx, "BUILDER_TIMEOUT_SECS", 600)?,
-            auto_register: parse_bool_env_from(ctx, "BUILDER_AUTO_REGISTER", true)?,
+            enabled: parse_bool_env_from(ctx, EnvKey("BUILDER_ENABLED"), true)?,
+            build_dir: optional_env_from(ctx, EnvKey("BUILDER_DIR"))?.map(PathBuf::from),
+            max_iterations: parse_optional_env_from(ctx, EnvKey("BUILDER_MAX_ITERATIONS"), 20)?,
+            timeout_secs: parse_optional_env_from(ctx, EnvKey("BUILDER_TIMEOUT_SECS"), 600)?,
+            auto_register: parse_bool_env_from(ctx, EnvKey("BUILDER_AUTO_REGISTER"), true)?,
         })
     }
 

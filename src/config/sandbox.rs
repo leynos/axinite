@@ -1,6 +1,6 @@
 use crate::config::EnvContext;
 use crate::config::helpers::{
-    optional_env_from, parse_bool_env_from, parse_optional_env_from, parse_string_env_from,
+    EnvKey, optional_env_from, parse_bool_env_from, parse_optional_env_from, parse_string_env_from,
 };
 use crate::error::ConfigError;
 
@@ -54,14 +54,14 @@ impl SandboxModeConfig {
     }
 
     pub(crate) fn resolve_from(ctx: &EnvContext) -> Result<Self, ConfigError> {
-        let extra_domains = optional_env_from(ctx, "SANDBOX_EXTRA_DOMAINS")?
+        let extra_domains = optional_env_from(ctx, EnvKey("SANDBOX_EXTRA_DOMAINS"))?
             .map(|s| s.split(',').map(|d| d.trim().to_string()).collect())
             .unwrap_or_default();
 
         let reaper_interval_secs: u64 =
-            parse_optional_env_from(ctx, "SANDBOX_REAPER_INTERVAL_SECS", 300)?;
+            parse_optional_env_from(ctx, EnvKey("SANDBOX_REAPER_INTERVAL_SECS"), 300)?;
         let orphan_threshold_secs: u64 =
-            parse_optional_env_from(ctx, "SANDBOX_ORPHAN_THRESHOLD_SECS", 600)?;
+            parse_optional_env_from(ctx, EnvKey("SANDBOX_ORPHAN_THRESHOLD_SECS"), 600)?;
 
         // Validate that reaper timings are non-zero to prevent tokio::time::interval panics
         if reaper_interval_secs == 0 {
@@ -79,13 +79,13 @@ impl SandboxModeConfig {
         }
 
         Ok(Self {
-            enabled: parse_bool_env_from(ctx, "SANDBOX_ENABLED", true)?,
-            policy: parse_string_env_from(ctx, "SANDBOX_POLICY", "readonly")?,
-            timeout_secs: parse_optional_env_from(ctx, "SANDBOX_TIMEOUT_SECS", 120)?,
-            memory_limit_mb: parse_optional_env_from(ctx, "SANDBOX_MEMORY_LIMIT_MB", 2048)?,
-            cpu_shares: parse_optional_env_from(ctx, "SANDBOX_CPU_SHARES", 1024)?,
-            image: parse_string_env_from(ctx, "SANDBOX_IMAGE", "ironclaw-worker:latest")?,
-            auto_pull_image: parse_bool_env_from(ctx, "SANDBOX_AUTO_PULL", true)?,
+            enabled: parse_bool_env_from(ctx, EnvKey("SANDBOX_ENABLED"), true)?,
+            policy: parse_string_env_from(ctx, EnvKey("SANDBOX_POLICY"), "readonly")?,
+            timeout_secs: parse_optional_env_from(ctx, EnvKey("SANDBOX_TIMEOUT_SECS"), 120)?,
+            memory_limit_mb: parse_optional_env_from(ctx, EnvKey("SANDBOX_MEMORY_LIMIT_MB"), 2048)?,
+            cpu_shares: parse_optional_env_from(ctx, EnvKey("SANDBOX_CPU_SHARES"), 1024)?,
+            image: parse_string_env_from(ctx, EnvKey("SANDBOX_IMAGE"), "ironclaw-worker:latest")?,
+            auto_pull_image: parse_bool_env_from(ctx, EnvKey("SANDBOX_AUTO_PULL"), true)?,
             extra_allowed_domains: extra_domains,
             reaper_interval_secs,
             orphan_threshold_secs,
@@ -249,18 +249,22 @@ impl ClaudeCodeConfig {
     pub(crate) fn resolve_from(ctx: &EnvContext) -> Result<Self, ConfigError> {
         let defaults = Self::default();
         Ok(Self {
-            enabled: parse_bool_env_from(ctx, "CLAUDE_CODE_ENABLED", defaults.enabled)?,
-            config_dir: optional_env_from(ctx, "CLAUDE_CONFIG_DIR")?
+            enabled: parse_bool_env_from(ctx, EnvKey("CLAUDE_CODE_ENABLED"), defaults.enabled)?,
+            config_dir: optional_env_from(ctx, EnvKey("CLAUDE_CONFIG_DIR"))?
                 .map(std::path::PathBuf::from)
                 .unwrap_or(defaults.config_dir),
-            model: parse_string_env_from(ctx, "CLAUDE_CODE_MODEL", defaults.model)?,
-            max_turns: parse_optional_env_from(ctx, "CLAUDE_CODE_MAX_TURNS", defaults.max_turns)?,
+            model: parse_string_env_from(ctx, EnvKey("CLAUDE_CODE_MODEL"), defaults.model)?,
+            max_turns: parse_optional_env_from(
+                ctx,
+                EnvKey("CLAUDE_CODE_MAX_TURNS"),
+                defaults.max_turns,
+            )?,
             memory_limit_mb: parse_optional_env_from(
                 ctx,
-                "CLAUDE_CODE_MEMORY_LIMIT_MB",
+                EnvKey("CLAUDE_CODE_MEMORY_LIMIT_MB"),
                 defaults.memory_limit_mb,
             )?,
-            allowed_tools: optional_env_from(ctx, "CLAUDE_CODE_ALLOWED_TOOLS")?
+            allowed_tools: optional_env_from(ctx, EnvKey("CLAUDE_CODE_ALLOWED_TOOLS"))?
                 .map(|s| {
                     s.split(',')
                         .map(|t| t.trim().to_string())

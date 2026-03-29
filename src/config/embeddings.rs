@@ -3,7 +3,9 @@ use std::sync::Arc;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::config::EnvContext;
-use crate::config::helpers::{optional_env_from, parse_bool_env_from, parse_optional_env_from};
+use crate::config::helpers::{
+    EnvKey, optional_env_from, parse_bool_env_from, parse_optional_env_from,
+};
 use crate::error::ConfigError;
 use crate::llm::SessionManager;
 use crate::settings::Settings;
@@ -64,25 +66,30 @@ impl EmbeddingsConfig {
     }
 
     pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
-        let openai_api_key = optional_env_from(ctx, "OPENAI_API_KEY")?.map(SecretString::from);
+        let openai_api_key =
+            optional_env_from(ctx, EnvKey("OPENAI_API_KEY"))?.map(SecretString::from);
 
-        let provider = optional_env_from(ctx, "EMBEDDING_PROVIDER")?
+        let provider = optional_env_from(ctx, EnvKey("EMBEDDING_PROVIDER"))?
             .unwrap_or_else(|| settings.embeddings.provider.clone());
 
-        let model = optional_env_from(ctx, "EMBEDDING_MODEL")?
+        let model = optional_env_from(ctx, EnvKey("EMBEDDING_MODEL"))?
             .unwrap_or_else(|| settings.embeddings.model.clone());
 
-        let ollama_base_url = optional_env_from(ctx, "OLLAMA_BASE_URL")?
+        let ollama_base_url = optional_env_from(ctx, EnvKey("OLLAMA_BASE_URL"))?
             .or_else(|| settings.ollama_base_url.clone())
             .unwrap_or_else(|| "http://localhost:11434".to_string());
 
         let dimension = parse_optional_env_from(
             ctx,
-            "EMBEDDING_DIMENSION",
+            EnvKey("EMBEDDING_DIMENSION"),
             default_dimension_for_model(&model),
         )?;
 
-        let enabled = parse_bool_env_from(ctx, "EMBEDDING_ENABLED", settings.embeddings.enabled)?;
+        let enabled = parse_bool_env_from(
+            ctx,
+            EnvKey("EMBEDDING_ENABLED"),
+            settings.embeddings.enabled,
+        )?;
 
         Ok(Self {
             enabled,

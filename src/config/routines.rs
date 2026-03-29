@@ -1,5 +1,5 @@
 use crate::config::EnvContext;
-use crate::config::helpers::{parse_bool_env_from, parse_optional_env_from};
+use crate::config::helpers::{EnvKey, parse_bool_env_from, parse_optional_env_from};
 use crate::error::ConfigError;
 
 /// Routines configuration.
@@ -44,16 +44,32 @@ impl RoutineConfig {
 
     pub(crate) fn resolve_from(ctx: &EnvContext) -> Result<Self, ConfigError> {
         let max_iterations: u32 =
-            parse_optional_env_from(ctx, "ROUTINES_LIGHTWEIGHT_MAX_ITERATIONS", 3)?;
+            parse_optional_env_from(ctx, EnvKey("ROUTINES_LIGHTWEIGHT_MAX_ITERATIONS"), 3)?;
         Ok(Self {
-            enabled: parse_bool_env_from(ctx, "ROUTINES_ENABLED", true)?,
-            cron_check_interval_secs: parse_optional_env_from(ctx, "ROUTINES_CRON_INTERVAL", 15)?,
-            max_concurrent_routines: parse_optional_env_from(ctx, "ROUTINES_MAX_CONCURRENT", 10)?,
-            default_cooldown_secs: parse_optional_env_from(ctx, "ROUTINES_DEFAULT_COOLDOWN", 300)?,
-            max_lightweight_tokens: parse_optional_env_from(ctx, "ROUTINES_MAX_TOKENS", 4096)?,
+            enabled: parse_bool_env_from(ctx, EnvKey("ROUTINES_ENABLED"), true)?,
+            cron_check_interval_secs: parse_optional_env_from(
+                ctx,
+                EnvKey("ROUTINES_CRON_INTERVAL"),
+                15,
+            )?,
+            max_concurrent_routines: parse_optional_env_from(
+                ctx,
+                EnvKey("ROUTINES_MAX_CONCURRENT"),
+                10,
+            )?,
+            default_cooldown_secs: parse_optional_env_from(
+                ctx,
+                EnvKey("ROUTINES_DEFAULT_COOLDOWN"),
+                300,
+            )?,
+            max_lightweight_tokens: parse_optional_env_from(
+                ctx,
+                EnvKey("ROUTINES_MAX_TOKENS"),
+                4096,
+            )?,
             lightweight_tools_enabled: parse_bool_env_from(
                 ctx,
-                "ROUTINES_LIGHTWEIGHT_TOOLS",
+                EnvKey("ROUTINES_LIGHTWEIGHT_TOOLS"),
                 true,
             )?,
             lightweight_max_iterations: max_iterations.min(5), // cap at 5

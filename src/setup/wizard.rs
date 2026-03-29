@@ -2439,15 +2439,19 @@ impl SetupWizard {
         // Uses `optional_env()` which reads both real env vars and the
         // injected overlay (secrets DB, wizard-set values).
         let has_credentials = || {
-            let has_api_key = crate::config::helpers::optional_env("ANTHROPIC_API_KEY")
+            let has_api_key = crate::config::helpers::optional_env(crate::config::helpers::EnvKey(
+                "ANTHROPIC_API_KEY",
+            ))
+            .ok()
+            .flatten()
+            .is_some_and(|v| !v.is_empty() && v != OAUTH_PLACEHOLDER);
+            let has_oauth = crate::config::ClaudeCodeConfig::extract_oauth_token().is_some()
+                || crate::config::helpers::optional_env(crate::config::helpers::EnvKey(
+                    "ANTHROPIC_OAUTH_TOKEN",
+                ))
                 .ok()
                 .flatten()
-                .is_some_and(|v| !v.is_empty() && v != OAUTH_PLACEHOLDER);
-            let has_oauth = crate::config::ClaudeCodeConfig::extract_oauth_token().is_some()
-                || crate::config::helpers::optional_env("ANTHROPIC_OAUTH_TOKEN")
-                    .ok()
-                    .flatten()
-                    .is_some_and(|v| !v.is_empty());
+                .is_some_and(|v| !v.is_empty());
             has_api_key || has_oauth
         };
 
@@ -2960,10 +2964,12 @@ async fn fetch_anthropic_models(cached_key: Option<&str>) -> Vec<(String, String
 
     // Fall back to OAuth token if no API key
     let oauth_token = if api_key.is_none() {
-        crate::config::helpers::optional_env("ANTHROPIC_OAUTH_TOKEN")
-            .ok()
-            .flatten()
-            .filter(|t| !t.is_empty())
+        crate::config::helpers::optional_env(crate::config::helpers::EnvKey(
+            "ANTHROPIC_OAUTH_TOKEN",
+        ))
+        .ok()
+        .flatten()
+        .filter(|t| !t.is_empty())
     } else {
         None
     };

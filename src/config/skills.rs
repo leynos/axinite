@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use crate::bootstrap::ironclaw_base_dir;
 use crate::config::EnvContext;
-use crate::config::helpers::{optional_env_from, parse_bool_env_from, parse_optional_env_from};
+use crate::config::helpers::{
+    EnvKey, optional_env_from, parse_bool_env_from, parse_optional_env_from,
+};
 use crate::error::ConfigError;
 
 /// Skills system configuration.
@@ -53,15 +55,19 @@ impl SkillsConfig {
 
     pub(crate) fn resolve_from(ctx: &EnvContext) -> Result<Self, ConfigError> {
         Ok(Self {
-            enabled: parse_bool_env_from(ctx, "SKILLS_ENABLED", true)?,
-            local_dir: optional_env_from(ctx, "SKILLS_DIR")?
+            enabled: parse_bool_env_from(ctx, EnvKey("SKILLS_ENABLED"), true)?,
+            local_dir: optional_env_from(ctx, EnvKey("SKILLS_DIR"))?
                 .map(PathBuf::from)
                 .unwrap_or_else(|| ctx.ironclaw_base_dir().join("skills")),
-            installed_dir: optional_env_from(ctx, "SKILLS_INSTALLED_DIR")?
+            installed_dir: optional_env_from(ctx, EnvKey("SKILLS_INSTALLED_DIR"))?
                 .map(PathBuf::from)
                 .unwrap_or_else(|| ctx.ironclaw_base_dir().join("installed_skills")),
-            max_active_skills: parse_optional_env_from(ctx, "SKILLS_MAX_ACTIVE", 3)?,
-            max_context_tokens: parse_optional_env_from(ctx, "SKILLS_MAX_CONTEXT_TOKENS", 4000)?,
+            max_active_skills: parse_optional_env_from(ctx, EnvKey("SKILLS_MAX_ACTIVE"), 3)?,
+            max_context_tokens: parse_optional_env_from(
+                ctx,
+                EnvKey("SKILLS_MAX_CONTEXT_TOKENS"),
+                4000,
+            )?,
         })
     }
 }

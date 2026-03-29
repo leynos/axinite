@@ -4,7 +4,7 @@ use secrecy::{ExposeSecret, SecretString};
 
 use crate::bootstrap::ironclaw_base_dir;
 use crate::config::EnvContext;
-use crate::config::helpers::{optional_env_from, parse_optional_env_from};
+use crate::config::helpers::{EnvKey, optional_env_from, parse_optional_env_from};
 use crate::error::ConfigError;
 
 /// Which database backend to use.
@@ -112,20 +112,20 @@ impl DatabaseConfig {
     }
 
     pub(crate) fn resolve_from(ctx: &EnvContext) -> Result<Self, ConfigError> {
-        let backend: DatabaseBackend = if let Some(b) = optional_env_from(ctx, "DATABASE_BACKEND")?
-        {
-            b.parse().map_err(|e| ConfigError::InvalidValue {
-                key: "DATABASE_BACKEND".to_string(),
-                message: e,
-            })?
-        } else {
-            DatabaseBackend::default()
-        };
+        let backend: DatabaseBackend =
+            if let Some(b) = optional_env_from(ctx, EnvKey("DATABASE_BACKEND"))? {
+                b.parse().map_err(|e| ConfigError::InvalidValue {
+                    key: "DATABASE_BACKEND".to_string(),
+                    message: e,
+                })?
+            } else {
+                DatabaseBackend::default()
+            };
 
         // PostgreSQL URL is required only when using the postgres backend.
         // For libsql backend, default to an empty placeholder.
         // DATABASE_URL is loaded from ~/.ironclaw/.env via dotenvy early in startup.
-        let url = optional_env_from(ctx, "DATABASE_URL")?
+        let url = optional_env_from(ctx, EnvKey("DATABASE_URL"))?
             .or_else(|| {
                 if backend == DatabaseBackend::LibSql {
                     Some("unused://libsql".to_string())
@@ -138,9 +138,10 @@ impl DatabaseConfig {
                 hint: "Run 'ironclaw onboard' or set DATABASE_URL environment variable".to_string(),
             })?;
 
-        let pool_size = parse_optional_env_from(ctx, "DATABASE_POOL_SIZE", 10)?;
+        let pool_size = parse_optional_env_from(ctx, EnvKey("DATABASE_POOL_SIZE"), 10)?;
 
-        let ssl_mode: SslMode = if let Some(s) = optional_env_from(ctx, "DATABASE_SSLMODE")? {
+        let ssl_mode: SslMode = if let Some(s) = optional_env_from(ctx, EnvKey("DATABASE_SSLMODE"))?
+        {
             s.parse().map_err(|e| ConfigError::InvalidValue {
                 key: "DATABASE_SSLMODE".to_string(),
                 message: e,
@@ -149,7 +150,7 @@ impl DatabaseConfig {
             SslMode::default()
         };
 
-        let libsql_path = optional_env_from(ctx, "LIBSQL_PATH")?
+        let libsql_path = optional_env_from(ctx, EnvKey("LIBSQL_PATH"))?
             .map(PathBuf::from)
             .or_else(|| {
                 if backend == DatabaseBackend::LibSql {
@@ -159,9 +160,9 @@ impl DatabaseConfig {
                 }
             });
 
-        let libsql_url = optional_env_from(ctx, "LIBSQL_URL")?;
+        let libsql_url = optional_env_from(ctx, EnvKey("LIBSQL_URL"))?;
         let libsql_auth_token =
-            optional_env_from(ctx, "LIBSQL_AUTH_TOKEN")?.map(SecretString::from);
+            optional_env_from(ctx, EnvKey("LIBSQL_AUTH_TOKEN"))?.map(SecretString::from);
 
         if libsql_url.is_some() && libsql_auth_token.is_none() {
             return Err(ConfigError::MissingRequired {

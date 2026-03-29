@@ -1,6 +1,6 @@
 use crate::config::EnvContext;
 use crate::config::helpers::{
-    optional_env_from, parse_bool_env_from, parse_option_env_from, parse_optional_env_from,
+    EnvKey, optional_env_from, parse_bool_env_from, parse_option_env_from, parse_optional_env_from,
 };
 use crate::error::ConfigError;
 use crate::settings::Settings;
@@ -47,17 +47,21 @@ impl HeartbeatConfig {
 
     pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
         Ok(Self {
-            enabled: parse_bool_env_from(ctx, "HEARTBEAT_ENABLED", settings.heartbeat.enabled)?,
+            enabled: parse_bool_env_from(
+                ctx,
+                EnvKey("HEARTBEAT_ENABLED"),
+                settings.heartbeat.enabled,
+            )?,
             interval_secs: parse_optional_env_from(
                 ctx,
-                "HEARTBEAT_INTERVAL_SECS",
+                EnvKey("HEARTBEAT_INTERVAL_SECS"),
                 settings.heartbeat.interval_secs,
             )?,
-            notify_channel: optional_env_from(ctx, "HEARTBEAT_NOTIFY_CHANNEL")?
+            notify_channel: optional_env_from(ctx, EnvKey("HEARTBEAT_NOTIFY_CHANNEL"))?
                 .or_else(|| settings.heartbeat.notify_channel.clone()),
-            notify_user: optional_env_from(ctx, "HEARTBEAT_NOTIFY_USER")?
+            notify_user: optional_env_from(ctx, EnvKey("HEARTBEAT_NOTIFY_USER"))?
                 .or_else(|| settings.heartbeat.notify_user.clone()),
-            quiet_hours_start: parse_option_env_from::<u32>(ctx, "HEARTBEAT_QUIET_START")?
+            quiet_hours_start: parse_option_env_from::<u32>(ctx, EnvKey("HEARTBEAT_QUIET_START"))?
                 .or(settings.heartbeat.quiet_hours_start)
                 .map(|h| {
                     if h > 23 {
@@ -69,7 +73,7 @@ impl HeartbeatConfig {
                     Ok(h)
                 })
                 .transpose()?,
-            quiet_hours_end: parse_option_env_from::<u32>(ctx, "HEARTBEAT_QUIET_END")?
+            quiet_hours_end: parse_option_env_from::<u32>(ctx, EnvKey("HEARTBEAT_QUIET_END"))?
                 .or(settings.heartbeat.quiet_hours_end)
                 .map(|h| {
                     if h > 23 {
@@ -82,7 +86,7 @@ impl HeartbeatConfig {
                 })
                 .transpose()?,
             timezone: {
-                let tz = optional_env_from(ctx, "HEARTBEAT_TIMEZONE")?
+                let tz = optional_env_from(ctx, EnvKey("HEARTBEAT_TIMEZONE"))?
                     .or_else(|| settings.heartbeat.timezone.clone());
                 if let Some(ref tz_str) = tz
                     && crate::timezone::parse_timezone(tz_str).is_none()
