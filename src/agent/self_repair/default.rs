@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::context::{ContextManager, JobState};
+use crate::context::ContextManager;
 use crate::db::Database;
 use crate::error::RepairError;
 use crate::tools::builder::ProjectName;
@@ -61,26 +61,16 @@ impl DefaultSelfRepair {
         self.tools = Some(tools);
         self
     }
-
-    async fn get_stuck_context(
-        &self,
-        job_id: Uuid,
-    ) -> Option<(crate::context::JobContext, DateTime<Utc>)> {
-        let ctx = self.context_manager.get_context(job_id).await.ok()?;
-        (ctx.state == JobState::Stuck).then_some(())?;
-        let stuck_since = ctx.stuck_since()?;
-        Some((ctx, stuck_since))
-    }
 }
 
 impl NativeSelfRepair for DefaultSelfRepair {
     async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
-        let stuck_ids = self.context_manager.find_stuck_jobs().await;
+        let stuck_contexts = self.context_manager.find_stuck_contexts().await;
         let mut stuck_jobs = Vec::new();
         let now = Utc::now();
 
-        for job_id in stuck_ids {
-            let Some((ctx, stuck_since)) = self.get_stuck_context(job_id).await else {
+        for ctx in stuck_contexts {
+            let Some(stuck_since) = ctx.stuck_since() else {
                 continue;
             };
             let stuck_duration = duration_since(now, stuck_since);
@@ -89,7 +79,7 @@ impl NativeSelfRepair for DefaultSelfRepair {
             }
 
             stuck_jobs.push(StuckJob {
-                job_id,
+                job_id: ctx.job_id,
                 last_activity: stuck_since,
                 stuck_duration,
                 last_error: None,

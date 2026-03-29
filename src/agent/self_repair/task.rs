@@ -44,10 +44,20 @@ impl RepairTask {
 async fn run_stuck_job_repairs(
     repair: &dyn SelfRepair,
     notification_tx: &mut Option<mpsc::Sender<RepairNotification>>,
-) {
-    let stuck_jobs = repair.detect_stuck_jobs().await;
+    shutdown: &mut std::pin::Pin<&mut oneshot::Receiver<()>>,
+) -> bool {
+    let stuck_jobs = tokio::select! {
+        biased;
+        _ = shutdown.as_mut() => return false,
+        stuck_jobs = repair.detect_stuck_jobs() => stuck_jobs,
+    };
+
     for job in stuck_jobs {
-        match repair.repair_stuck_job(&job).await {
+        match tokio::select! {
+            biased;
+            _ = shutdown.as_mut() => return false,
+            result = repair.repair_stuck_job(&job) => result,
+        } {
             Ok(RepairResult::Success { message }) => {
                 tracing::info!(job = %job.job_id, status = "success", "Stuck job repair completed: {}", message);
                 send_notification(
@@ -58,8 +68,7 @@ async fn run_stuck_job_repairs(
                         job.stuck_duration.as_secs(),
                         message
                     ),
-                )
-                .await;
+                );
             }
             Ok(RepairResult::Retry { message }) => {
                 tracing::debug!(job = %job.job_id, status = "retry", "Stuck job repair needs retry: {}", message);
@@ -74,38 +83,52 @@ async fn run_stuck_job_repairs(
                         job.stuck_duration.as_secs(),
                         message
                     ),
-                )
-                .await;
+                );
             }
             Ok(RepairResult::ManualRequired { message }) => {
                 tracing::warn!(job = %job.job_id, status = "manual", "Stuck job repair requires manual intervention: {}", message);
                 send_notification(
                     notification_tx.as_mut(),
                     format!("Job {} needs manual intervention: {}", job.job_id, message),
-                )
-                .await;
+                );
             }
             Err(e) => {
                 tracing::error!(job = %job.job_id, "Stuck job repair error: {}", e);
             }
         }
     }
+
+    true
 }
 
 async fn run_broken_tool_repairs(
     repair: &dyn SelfRepair,
     notification_tx: &mut Option<mpsc::Sender<RepairNotification>>,
-) {
-    let broken_tools = repair.detect_broken_tools().await;
+    shutdown: &mut std::pin::Pin<&mut oneshot::Receiver<()>>,
+) -> bool {
+    let broken_tools = tokio::select! {
+        biased;
+        _ = shutdown.as_mut() => return false,
+        broken_tools = repair.detect_broken_tools() => broken_tools,
+    };
+
     for tool in broken_tools {
-        match repair.repair_broken_tool(&tool).await {
+        match tokio::select! {
+            biased;
+            _ = shutdown.as_mut() => return false,
+            result = repair.repair_broken_tool(&tool) => result,
+        } {
             Ok(RepairResult::Success { message }) => {
-                tracing::debug!(tool = %tool.name, status = "completed", "Tool repair completed: {:?}", message);
+                tracing::info!(
+                    tool = %tool.name,
+                    status = "success",
+                    "Tool repair completed: {}",
+                    message
+                );
                 send_notification(
                     notification_tx.as_mut(),
                     format!("Tool '{}' repaired: {}", tool.name, message),
-                )
-                .await;
+                );
             }
             Ok(result) => {
                 tracing::debug!(tool = %tool.name, status = "completed", "Tool repair completed: {:?}", result);
@@ -115,6 +138,8 @@ async fn run_broken_tool_repairs(
             }
         }
     }
+
+    true
 }
 
 impl RepairTask {
@@ -135,28 +160,41 @@ impl RepairTask {
                     break;
                 }
                 _ = tokio::time::sleep(check_interval) => {
-                    run_stuck_job_repairs(&*repair, &mut notification_tx).await;
-                    run_broken_tool_repairs(&*repair, &mut notification_tx).await;
+                    if !run_stuck_job_repairs(&*repair, &mut notification_tx, &mut shutdown).await {
+                        tracing::debug!("Repair task received shutdown signal");
+                        break;
+                    }
+                    if !run_broken_tool_repairs(&*repair, &mut notification_tx, &mut shutdown).await {
+                        tracing::debug!("Repair task received shutdown signal");
+                        break;
+                    }
                 }
             }
         }
     }
 }
 
-async fn send_notification(
+fn send_notification(
     notification_tx: Option<&mut mpsc::Sender<RepairNotification>>,
     message: String,
 ) {
-    if let Some(tx) = notification_tx
-        && let Err(error) = tx.send(RepairNotification { message }).await
-    {
-        tracing::debug!("Dropping repair notification because receiver closed: {error}");
+    if let Some(tx) = notification_tx {
+        match tx.try_send(RepairNotification { message }) {
+            Ok(()) => {}
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                tracing::debug!("Dropping repair notification because channel is full");
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                tracing::debug!("Dropping repair notification because receiver closed");
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
@@ -210,11 +248,85 @@ mod tests {
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let task = RepairTask::new(repair, Duration::from_secs(60), shutdown_rx);
 
-        shutdown_tx.send(()).unwrap();
+        shutdown_tx
+            .send(())
+            .expect("shutdown signal should send successfully");
         tokio::time::timeout(Duration::from_secs(1), task.run())
             .await
             .expect("repair task should stop promptly after shutdown");
 
         assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    struct BlockingSelfRepair {
+        repair_started_tx: Mutex<Option<oneshot::Sender<()>>>,
+    }
+
+    impl NativeSelfRepair for BlockingSelfRepair {
+        async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
+            vec![StuckJob {
+                job_id: uuid::Uuid::new_v4(),
+                last_activity: chrono::Utc::now(),
+                stuck_duration: Duration::from_secs(120),
+                last_error: None,
+                repair_attempts: 0,
+            }]
+        }
+
+        async fn repair_stuck_job<'a>(
+            &'a self,
+            _job: &'a StuckJob,
+        ) -> Result<RepairResult, RepairError> {
+            if let Some(tx) = self
+                .repair_started_tx
+                .lock()
+                .expect("repair-started sender lock should not be poisoned")
+                .take()
+            {
+                tx.send(())
+                    .expect("repair-started signal should send successfully");
+            }
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            Ok(RepairResult::Success {
+                message: "noop".to_string(),
+            })
+        }
+
+        async fn detect_broken_tools(&self) -> Vec<BrokenTool> {
+            vec![]
+        }
+
+        async fn repair_broken_tool<'a>(
+            &'a self,
+            _tool: &'a BrokenTool,
+        ) -> Result<RepairResult, RepairError> {
+            Ok(RepairResult::Success {
+                message: "noop".to_string(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn repair_task_stops_on_shutdown_during_active_cycle() {
+        let (repair_started_tx, repair_started_rx) = oneshot::channel();
+        let repair: Arc<dyn SelfRepair> = Arc::new(BlockingSelfRepair {
+            repair_started_tx: Mutex::new(Some(repair_started_tx)),
+        });
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let task = RepairTask::new(repair, Duration::from_millis(10), shutdown_rx);
+        let handle = tokio::spawn(task.run());
+
+        tokio::time::timeout(Duration::from_secs(1), repair_started_rx)
+            .await
+            .expect("repair cycle should start before shutdown")
+            .expect("repair-started signal should be received");
+
+        shutdown_tx
+            .send(())
+            .expect("shutdown signal should send successfully");
+        tokio::time::timeout(Duration::from_secs(1), handle)
+            .await
+            .expect("repair task should stop promptly during an active cycle")
+            .expect("repair task should join cleanly");
     }
 }

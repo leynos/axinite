@@ -600,7 +600,9 @@ impl Agent {
         if let Err(error) = repair_handle.await {
             tracing::debug!("Repair task join finished with error: {}", error);
         }
-        repair_notify_handle.abort();
+        if let Err(error) = repair_notify_handle.await {
+            tracing::debug!("Repair notification task exited with error: {}", error);
+        }
         pruning_handle.abort();
         if let Some(handle) = heartbeat_handle {
             handle.abort();

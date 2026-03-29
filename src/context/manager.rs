@@ -187,6 +187,17 @@ impl ContextManager {
             .collect()
     }
 
+    /// Find contexts for stuck jobs.
+    pub async fn find_stuck_contexts(&self) -> Vec<JobContext> {
+        self.contexts
+            .read()
+            .await
+            .values()
+            .filter(|ctx| ctx.state == crate::context::JobState::Stuck)
+            .cloned()
+            .collect()
+    }
+
     /// Get summary of all jobs.
     pub async fn summary(&self) -> ContextSummary {
         let contexts = self.contexts.read().await;
