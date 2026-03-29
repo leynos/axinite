@@ -12,6 +12,7 @@ use crate::llm::{
 };
 use crate::safety::SafetyLayer;
 use crate::tools::{ApprovalRequirement, NativeTool, ToolError, ToolOutput};
+use rstest::rstest;
 use rust_decimal_macros::dec;
 
 /// Minimal LLM provider stub for scheduler tests that don't exercise LLM calls.
@@ -136,60 +137,38 @@ async fn register_job_in_scheduler(sched: &Scheduler, store: &Arc<dyn Database>,
         .insert(job_id, ScheduledJob { handle, tx });
 }
 
+#[rstest]
+#[case(
+    1000,
+    Some(serde_json::json!({ "max_tokens": 5000 })),
+    1000,
+    "should cap at configured limit"
+)]
+#[case(
+    0,
+    Some(serde_json::json!({ "max_tokens": 5000 })),
+    5000,
+    "unlimited config should preserve user value"
+)]
+#[case(2000, None, 2000, "should use config default when no user value")]
 #[tokio::test]
-async fn test_dispatch_job_caps_user_max_tokens() {
-    let sched = make_test_scheduler(1000);
-    let meta = serde_json::json!({ "max_tokens": 5000 });
+async fn test_dispatch_job_token_budget(
+    #[case] max_tokens_per_job: u64,
+    #[case] meta: Option<serde_json::Value>,
+    #[case] expected_max_tokens: u64,
+    #[case] msg: &'static str,
+) {
+    let sched = make_test_scheduler(max_tokens_per_job);
     let job_id = sched
-        .dispatch_job("user1", "test", "desc", Some(meta))
+        .dispatch_job("user1", "test", "desc", meta)
         .await
-        .expect("dispatch_job failed for caps test");
-
+        .expect("dispatch_job should succeed");
     let ctx = sched
         .context_manager
         .get_context(job_id)
         .await
-        .expect("context_manager.get_context missing for caps test");
-    assert_eq!(ctx.max_tokens, 1000, "should cap at configured limit");
-}
-
-#[tokio::test]
-async fn test_dispatch_job_unlimited_config_preserves_user_tokens() {
-    let sched = make_test_scheduler(0); // 0 = unlimited
-    let meta = serde_json::json!({ "max_tokens": 5000 });
-    let job_id = sched
-        .dispatch_job("user1", "test", "desc", Some(meta))
-        .await
-        .expect("dispatch_job failed for unlimited test");
-
-    let ctx = sched
-        .context_manager
-        .get_context(job_id)
-        .await
-        .expect("context_manager.get_context missing for unlimited test");
-    assert_eq!(
-        ctx.max_tokens, 5000,
-        "unlimited config should preserve user value"
-    );
-}
-
-#[tokio::test]
-async fn test_dispatch_job_no_user_tokens_uses_config() {
-    let sched = make_test_scheduler(2000);
-    let job_id = sched
-        .dispatch_job("user1", "test", "desc", None)
-        .await
-        .expect("dispatch_job failed for default tokens test");
-
-    let ctx = sched
-        .context_manager
-        .get_context(job_id)
-        .await
-        .expect("context_manager.get_context missing for default tokens test");
-    assert_eq!(
-        ctx.max_tokens, 2000,
-        "should use config default when no user value"
-    );
+        .expect("get_context should succeed");
+    assert_eq!(ctx.max_tokens, expected_max_tokens, "{msg}");
 }
 
 #[tokio::test]
@@ -379,78 +358,90 @@ async fn setup_tools_and_job() -> (
     (Arc::new(registry), cm, safety, job_id)
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Task requires this exact helper signature"
+)]
+async fn assert_tool_gating(
+    tools: Arc<ToolRegistry>,
+    cm: Arc<ContextManager>,
+    safety: Arc<SafetyLayer>,
+    approval_ctx: Option<ApprovalContext>,
+    job_id: Uuid,
+    tool_name: &'static str,
+    expect_ok: bool,
+    msg: &'static str,
+) {
+    let result = Scheduler::execute_tool_task(
+        tools,
+        cm,
+        safety,
+        approval_ctx,
+        job_id,
+        tool_name,
+        serde_json::json!({}),
+    )
+    .await;
+    if expect_ok {
+        assert!(result.is_ok(), "{msg}");
+    } else {
+        assert!(result.is_err(), "{msg}");
+    }
+}
+
 #[tokio::test]
 async fn test_execute_tool_task_blocks_without_context() {
     let (tools, cm, safety, job_id) = setup_tools_and_job().await;
-
-    // Without approval context, UnlessAutoApproved is blocked
-    let result = Scheduler::execute_tool_task(
+    assert_tool_gating(
         tools.clone(),
         cm.clone(),
         safety.clone(),
         None,
         job_id,
         "soft_gate",
-        serde_json::json!({}),
+        false,
+        "soft_gate should be blocked without context",
     )
     .await;
-    assert!(
-        result.is_err(),
-        "soft_gate should be blocked without context"
-    );
-
-    // Always is also blocked
-    let result = Scheduler::execute_tool_task(
+    assert_tool_gating(
         tools,
         cm,
         safety,
         None,
         job_id,
         "hard_gate",
-        serde_json::json!({}),
+        false,
+        "hard_gate should be blocked without context",
     )
     .await;
-    assert!(
-        result.is_err(),
-        "hard_gate should be blocked without context"
-    );
 }
 
 #[tokio::test]
 async fn test_execute_tool_task_autonomous_unblocks_soft() {
     let (tools, cm, safety, job_id) = setup_tools_and_job().await;
-
-    // Autonomous context auto-approves UnlessAutoApproved
-    let result = Scheduler::execute_tool_task(
+    let ctx = Some(ApprovalContext::autonomous());
+    assert_tool_gating(
         tools.clone(),
         cm.clone(),
         safety.clone(),
-        Some(ApprovalContext::autonomous()),
+        ctx.clone(),
         job_id,
         "soft_gate",
-        serde_json::json!({}),
+        true,
+        "soft_gate should pass with autonomous context",
     )
     .await;
-    assert!(
-        result.is_ok(),
-        "soft_gate should pass with autonomous context"
-    );
-
-    // But still blocks Always
-    let result = Scheduler::execute_tool_task(
+    assert_tool_gating(
         tools,
         cm,
         safety,
-        Some(ApprovalContext::autonomous()),
+        ctx,
         job_id,
         "hard_gate",
-        serde_json::json!({}),
+        false,
+        "hard_gate should still be blocked without explicit permission",
     )
     .await;
-    assert!(
-        result.is_err(),
-        "hard_gate should still be blocked without explicit permission"
-    );
 }
 
 #[tokio::test]
