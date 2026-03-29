@@ -2945,8 +2945,70 @@ fn mask_password_in_url(url: &str) -> String {
 /// Fetch models from the Anthropic API.
 ///
 /// Returns `(model_id, display_label)` pairs. Falls back to static defaults on error.
-async fn fetch_anthropic_models(cached_key: Option<&str>) -> Vec<(String, String)> {
-    let static_defaults = vec![
+enum AnthropicAuth {
+    ApiKey(String),
+    OAuth(String),
+}
+
+fn resolve_anthropic_auth(cached_key: Option<&str>) -> Option<AnthropicAuth> {
+    let api_key = cached_key
+        .map(String::from)
+        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
+        .filter(|key| !key.is_empty() && key != crate::config::OAUTH_PLACEHOLDER);
+    if let Some(api_key) = api_key {
+        return Some(AnthropicAuth::ApiKey(api_key));
+    }
+
+    crate::config::helpers::optional_env(crate::config::helpers::EnvKey("ANTHROPIC_OAUTH_TOKEN"))
+        .ok()
+        .flatten()
+        .filter(|token| !token.is_empty())
+        .map(AnthropicAuth::OAuth)
+}
+
+fn anthropic_request(client: &reqwest::Client, auth: &AnthropicAuth) -> reqwest::RequestBuilder {
+    let request = client
+        .get("https://api.anthropic.com/v1/models")
+        .header("anthropic-version", "2023-06-01")
+        .timeout(std::time::Duration::from_secs(5));
+
+    match auth {
+        AnthropicAuth::ApiKey(key) => request.header("x-api-key", key),
+        AnthropicAuth::OAuth(token) => request
+            .bearer_auth(token)
+            .header("anthropic-beta", "oauth-2025-04-20"),
+    }
+}
+
+async fn parse_anthropic_models_response(
+    resp: reqwest::Response,
+) -> Result<Vec<(String, String)>, reqwest::Error> {
+    #[derive(serde::Deserialize)]
+    struct ModelEntry {
+        id: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ModelsResponse {
+        data: Vec<ModelEntry>,
+    }
+
+    let body = resp.json::<ModelsResponse>().await?;
+    let mut models: Vec<(String, String)> = body
+        .data
+        .into_iter()
+        .filter(|model| !model.id.contains("embedding") && !model.id.contains("audio"))
+        .map(|model| {
+            let label = model.id.clone();
+            (model.id, label)
+        })
+        .collect();
+    models.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(models)
+}
+
+fn anthropic_static_defaults() -> Vec<(String, String)> {
+    vec![
         (
             "claude-opus-4-6".into(),
             "Claude Opus 4.6 (latest flagship)".into(),
@@ -2955,77 +3017,23 @@ async fn fetch_anthropic_models(cached_key: Option<&str>) -> Vec<(String, String
         ("claude-opus-4-5".into(), "Claude Opus 4.5".into()),
         ("claude-sonnet-4-5".into(), "Claude Sonnet 4.5".into()),
         ("claude-haiku-4-5".into(), "Claude Haiku 4.5 (fast)".into()),
-    ];
+    ]
+}
 
-    let api_key = cached_key
-        .map(String::from)
-        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
-        .filter(|k| !k.is_empty() && k != crate::config::OAUTH_PLACEHOLDER);
-
-    // Fall back to OAuth token if no API key
-    let oauth_token = if api_key.is_none() {
-        crate::config::helpers::optional_env(crate::config::helpers::EnvKey(
-            "ANTHROPIC_OAUTH_TOKEN",
-        ))
-        .ok()
-        .flatten()
-        .filter(|t| !t.is_empty())
-    } else {
-        None
+async fn fetch_anthropic_models(cached_key: Option<&str>) -> Vec<(String, String)> {
+    let defaults = anthropic_static_defaults();
+    let Some(auth) = resolve_anthropic_auth(cached_key) else {
+        return defaults;
     };
-
-    let (key_or_token, is_oauth) = match (api_key, oauth_token) {
-        (Some(k), _) => (k, false),
-        (None, Some(t)) => (t, true),
-        (None, None) => return static_defaults,
-    };
-
     let client = reqwest::Client::new();
-    let mut request = client
-        .get("https://api.anthropic.com/v1/models")
-        .header("anthropic-version", "2023-06-01")
-        .timeout(std::time::Duration::from_secs(5));
-
-    if is_oauth {
-        request = request
-            .bearer_auth(&key_or_token)
-            .header("anthropic-beta", "oauth-2025-04-20");
-    } else {
-        request = request.header("x-api-key", &key_or_token);
-    }
-
-    let resp = match request.send().await {
+    let req = anthropic_request(&client, &auth);
+    let resp = match req.send().await {
         Ok(r) if r.status().is_success() => r,
-        _ => return static_defaults,
+        _ => return defaults,
     };
-
-    #[derive(serde::Deserialize)]
-    struct ModelEntry {
-        id: String,
-    }
-    #[derive(serde::Deserialize)]
-    struct ModelsResponse {
-        data: Vec<ModelEntry>,
-    }
-
-    match resp.json::<ModelsResponse>().await {
-        Ok(body) => {
-            let mut models: Vec<(String, String)> = body
-                .data
-                .into_iter()
-                .filter(|m| !m.id.contains("embedding") && !m.id.contains("audio"))
-                .map(|m| {
-                    let label = m.id.clone();
-                    (m.id, label)
-                })
-                .collect();
-            if models.is_empty() {
-                return static_defaults;
-            }
-            models.sort_by(|a, b| a.0.cmp(&b.0));
-            models
-        }
-        Err(_) => static_defaults,
+    match parse_anthropic_models_response(resp).await {
+        Ok(list) if !list.is_empty() => list,
+        _ => defaults,
     }
 }
 
