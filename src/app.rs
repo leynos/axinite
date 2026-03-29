@@ -148,16 +148,17 @@ impl AppBuilder {
 
         let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
 
-        let mcp_activation: Arc<dyn crate::extensions::McpActivationPort> =
-            Arc::new(crate::extensions::LiveMcpActivation::new(
-                Arc::clone(mcp_session_manager),
-                Arc::clone(mcp_process_manager),
-                Arc::clone(&mcp_clients),
-                Arc::clone(&ext_secrets),
-                Arc::clone(tools),
-                "default".to_string(),
-                self.db.clone(),
-            ));
+        let mcp_activation: Arc<dyn crate::extensions::McpActivationPort> = Arc::new(
+            crate::extensions::LiveMcpActivation::new(crate::extensions::LiveMcpActivationConfig {
+                mcp_session_manager: Arc::clone(mcp_session_manager),
+                mcp_process_manager: Arc::clone(mcp_process_manager),
+                mcp_clients: Arc::clone(&mcp_clients),
+                secrets: Arc::clone(&ext_secrets),
+                tool_registry: Arc::clone(tools),
+                user_id: "default".to_string(),
+                store: self.db.clone(),
+            }),
+        );
         let wasm_tool_activation: Arc<dyn crate::extensions::WasmToolActivationPort> =
             Arc::new(crate::extensions::LiveWasmToolActivation::new(
                 crate::extensions::LiveWasmToolActivationConfig {

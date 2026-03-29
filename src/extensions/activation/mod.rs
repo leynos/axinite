@@ -15,6 +15,11 @@
 //! └──────────────────────┘     └───────────────────────┘
 //! ```
 
+use std::future::Future;
+use std::pin::Pin;
+
+use super::{ActivateResult, ExtensionError};
+
 mod live_mcp;
 mod live_wasm_channel;
 mod live_wasm_tool;
@@ -23,18 +28,13 @@ mod noop;
 mod wasm_channel;
 mod wasm_tool;
 
-pub use live_mcp::LiveMcpActivation;
+pub use live_mcp::{LiveMcpActivation, LiveMcpActivationConfig};
 pub use live_wasm_channel::LiveWasmChannelActivation;
 pub use live_wasm_tool::{LiveWasmToolActivation, LiveWasmToolActivationConfig};
 pub use mcp::*;
 pub use noop::*;
 pub use wasm_channel::*;
 pub use wasm_tool::*;
-
-use std::future::Future;
-use std::pin::Pin;
-
-use super::{ActivateResult, ExtensionError};
 
 /// Boxed future alias for dyn-safe activation methods.
 pub type ActivationFuture<'a> =

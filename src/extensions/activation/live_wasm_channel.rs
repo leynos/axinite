@@ -35,13 +35,20 @@ impl LiveWasmChannelActivation {
 
     /// Inject the manager reference once it is available.
     pub fn set_manager(&self, manager: Arc<ExtensionManager>) {
-        let _ = self.manager.set(manager);
+        match self.manager.set(manager) {
+            Ok(_) => {}
+            Err(_) => {
+                tracing::debug!(
+                    "LiveWasmChannelActivation::set_manager called twice; ignoring second call"
+                );
+            }
+        }
     }
 
     fn require_manager(&self) -> Result<&Arc<ExtensionManager>, ExtensionError> {
         self.manager.get().ok_or_else(|| {
             ExtensionError::ActivationFailed(
-                "Channel activation adapter not initialized".to_string(),
+                "Channel activation adapter not initialised".to_string(),
             )
         })
     }

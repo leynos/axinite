@@ -18,6 +18,19 @@ use crate::tools::mcp::McpClient;
 use crate::tools::mcp::config::McpServerConfig;
 use crate::tools::mcp::session::McpSessionManager;
 
+/// Configuration for [`LiveMcpActivation`].
+pub struct LiveMcpActivationConfig {
+    pub mcp_session_manager: Arc<McpSessionManager>,
+    pub mcp_process_manager: Arc<crate::tools::mcp::process::McpProcessManager>,
+    /// Shared with [`ExtensionManager`] so both see the same set of active
+    /// MCP clients.
+    pub mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
+    pub secrets: Arc<dyn SecretsStore + Send + Sync>,
+    pub tool_registry: Arc<ToolRegistry>,
+    pub user_id: String,
+    pub store: Option<Arc<dyn crate::db::Database>>,
+}
+
 /// Live adapter wiring MCP activation to the real MCP client infrastructure.
 pub struct LiveMcpActivation {
     mcp_session_manager: Arc<McpSessionManager>,
@@ -32,23 +45,15 @@ pub struct LiveMcpActivation {
 }
 
 impl LiveMcpActivation {
-    pub fn new(
-        mcp_session_manager: Arc<McpSessionManager>,
-        mcp_process_manager: Arc<crate::tools::mcp::process::McpProcessManager>,
-        mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
-        secrets: Arc<dyn SecretsStore + Send + Sync>,
-        tool_registry: Arc<ToolRegistry>,
-        user_id: String,
-        store: Option<Arc<dyn crate::db::Database>>,
-    ) -> Self {
+    pub fn new(config: LiveMcpActivationConfig) -> Self {
         Self {
-            mcp_session_manager,
-            mcp_process_manager,
-            mcp_clients,
-            secrets,
-            tool_registry,
-            user_id,
-            store,
+            mcp_session_manager: config.mcp_session_manager,
+            mcp_process_manager: config.mcp_process_manager,
+            mcp_clients: config.mcp_clients,
+            secrets: config.secrets,
+            tool_registry: config.tool_registry,
+            user_id: config.user_id,
+            store: config.store,
         }
     }
 
