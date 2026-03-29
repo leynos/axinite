@@ -229,7 +229,7 @@ pub(super) fn render_approval_card(
     let term_width = crossterm::terminal::size()
         .map(|(w, _)| w as usize)
         .unwrap_or(80);
-    let box_width = term_width.saturating_sub(4).min(60);
+    let box_width = term_width.saturating_sub(4).clamp(40, 60);
     let content_width = box_width.saturating_sub(4); // Account for "│ " prefix and padding
 
     // Sanitize user-controlled inputs

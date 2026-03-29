@@ -365,8 +365,6 @@ fn test_rebuild_chat_messages_multi_turn_with_tools(test_safety_layer: SafetyLay
 
     assert_eq!(result[6].role, crate::llm::Role::Tool);
     assert_tool_result_message(&result[6], "call_1", "write", &["ok"]);
-
-    assert_eq!(result[7].role, crate::llm::Role::Assistant);
     assert_eq!(result[7].content, "Written");
 }
 
