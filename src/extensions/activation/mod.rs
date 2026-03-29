@@ -1,11 +1,10 @@
 //! Activation ports for decoupling extension lifecycle policy from runtime
 //! mechanisms.
 //!
-//! Each port isolates one activation path behind a minimal trait interface,
-//! following the ADR 006 dual-trait pattern (dyn-safe + native async + blanket
-//! adapter). The [`ExtensionManager`](super::ExtensionManager) dispatches to
-//! these ports without depending on concrete runtimes, making each activation
-//! path independently testable.
+//! Each port isolates one activation path behind a minimal object-safe trait
+//! interface returning boxed futures. The [`ExtensionManager`](super::ExtensionManager)
+//! dispatches to these ports without depending on concrete runtimes, making each
+//! activation path independently testable.
 //!
 //! ```text
 //! ┌──────────────────────┐     ┌───────────────────────┐

@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::extensions::activation::NativeWasmToolActivationPort;
+use crate::extensions::activation::{ActivationFuture, WasmToolActivationPort};
 use crate::extensions::{ActivateResult, ExtensionError, ExtensionKind};
 use crate::hooks::HookRegistry;
 use crate::secrets::SecretsStore;
@@ -79,8 +79,14 @@ impl LiveWasmToolActivation {
     }
 }
 
-impl NativeWasmToolActivationPort for LiveWasmToolActivation {
-    async fn activate_wasm_tool<'a>(
+impl WasmToolActivationPort for LiveWasmToolActivation {
+    fn activate_wasm_tool<'a>(&'a self, name: &'a str) -> ActivationFuture<'a> {
+        Box::pin(async move { self.activate_wasm_tool_inner(name).await })
+    }
+}
+
+impl LiveWasmToolActivation {
+    async fn activate_wasm_tool_inner<'a>(
         &'a self,
         name: &'a str,
     ) -> Result<ActivateResult, ExtensionError> {
