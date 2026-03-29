@@ -85,16 +85,17 @@ fn is_pool_unavailable(error: &PoolError) -> bool {
     match error {
         PoolError::Timeout(_) | PoolError::Closed => true,
         PoolError::Backend(postgres_error) => is_postgres_unavailable(postgres_error),
-        PoolError::PostCreateHook(hook_error) => hook_error
-            .source()
-            .and_then(|source| source.downcast_ref::<tokio_postgres::Error>())
-            .is_some_and(is_postgres_unavailable),
+        PoolError::PostCreateHook(hook_error) => error_chain_has_unavailable_pattern(hook_error),
         PoolError::NoRuntimeSpecified => false,
     }
 }
 
 fn has_unavailable_connection_cause(error: &tokio_postgres::Error) -> bool {
-    let mut current = error.source();
+    error_chain_has_unavailable_pattern(error)
+}
+
+fn error_chain_has_unavailable_pattern(error: &dyn std::error::Error) -> bool {
+    let mut current = Some(error);
     while let Some(source) = current {
         let lowered = source.to_string().to_lowercase();
         if UNAVAILABLE_PATTERNS
@@ -130,6 +131,28 @@ mod tests {
         assert!(
             !is_database_unavailable(&error),
             "configuration errors must not be treated as skippable database outages"
+        );
+    }
+
+    #[test]
+    fn database_unavailable_detects_top_level_postgres_timeout_messages() {
+        let error = DatabaseError::Postgres(tokio_postgres::Error::__private_api_timeout());
+
+        assert!(
+            is_database_unavailable(&error),
+            "top-level Postgres timeout messages should be treated as skippable database outages"
+        );
+    }
+
+    #[test]
+    fn database_unavailable_detects_post_create_hook_message_matches() {
+        let hook_error =
+            deadpool_postgres::HookError::message("connection refused while warming pool");
+        let error = DatabaseError::PoolRuntime(PoolError::PostCreateHook(hook_error));
+
+        assert!(
+            is_database_unavailable(&error),
+            "post-create hook errors with unavailable connection messages should be skippable"
         );
     }
 }
