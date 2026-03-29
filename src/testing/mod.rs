@@ -981,6 +981,60 @@ mod tests {
         assert!(!deleted);
     }
 
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_settings_crud_with_owned_user_and_key_strings() {
+        let harness = TestHarnessBuilder::new().build().await;
+        let db = &harness.db;
+
+        // Regression coverage for the settings API compatibility fix: callers
+        // often hold owned strings and borrow them across awaited dyn-store
+        // calls, rather than passing string literals directly.
+        let user_id = "owned-user".to_string();
+        let key = "theme".to_string();
+        let initial_value = serde_json::json!("dark");
+        let updated_value = serde_json::json!("light");
+
+        db.set_setting(&user_id, &key, &initial_value)
+            .await
+            .expect("set setting from owned strings");
+
+        let stored = db
+            .get_setting(&user_id, &key)
+            .await
+            .expect("get setting from owned strings")
+            .expect("setting should exist");
+        assert_eq!(stored, initial_value);
+
+        let listed = db.list_settings(&user_id).await.expect("list settings");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].key, key);
+        assert_eq!(listed[0].value, initial_value);
+
+        db.set_setting(&user_id, &key, &updated_value)
+            .await
+            .expect("update setting from owned strings");
+
+        let stored = db
+            .get_setting(&user_id, &key)
+            .await
+            .expect("get updated setting")
+            .expect("updated setting should exist");
+        assert_eq!(stored, updated_value);
+
+        let deleted = db
+            .delete_setting(&user_id, &key)
+            .await
+            .expect("delete setting from owned strings");
+        assert!(deleted);
+        assert!(
+            db.get_setting(&user_id, &key)
+                .await
+                .expect("get deleted setting")
+                .is_none()
+        );
+    }
+
     #[tokio::test]
     async fn test_harness_with_channel() {
         let harness = TestHarnessBuilder::new().with_stub_channel().build().await;
