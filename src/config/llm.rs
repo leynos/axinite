@@ -138,6 +138,13 @@ fn validate_bedrock_cross_region(cross_region: &Option<String>) -> Result<(), Co
     Ok(())
 }
 
+struct ProviderKeySpec<'a> {
+    canonical_id: &'a str,
+    api_key_env: Option<&'a str>,
+    api_key_required: bool,
+    backend: &'a str,
+}
+
 impl LlmConfig {
     /// Create a test-friendly config without reading env vars.
     #[cfg(feature = "libsql")]
@@ -180,6 +187,14 @@ impl LlmConfig {
         Ok(optional_env_from(ctx, env_var)?
             .or_else(|| settings.selected_model.clone())
             .unwrap_or_else(|| default.to_string()))
+    }
+
+    fn resolve_provider_credentials(
+        ctx: &EnvContext,
+        spec: &ProviderKeySpec<'_>,
+    ) -> Result<(Option<SecretString>, Option<SecretString>), ConfigError> {
+        let api_key = resolve_api_key(ctx, spec.api_key_env, spec.api_key_required, spec.backend)?;
+        resolve_anthropic_credentials(ctx, spec.canonical_id, api_key)
     }
 
     fn resolve_backend_name(
@@ -398,7 +413,15 @@ impl LlmConfig {
             )
         };
 
-        let api_key = resolve_api_key(ctx, api_key_env, api_key_required, backend)?;
+        let (api_key, oauth_token) = Self::resolve_provider_credentials(
+            ctx,
+            &ProviderKeySpec {
+                canonical_id,
+                api_key_env,
+                api_key_required,
+                backend,
+            },
+        )?;
         let base_url = resolve_base_url(
             ctx,
             &BaseUrlSpec {
@@ -411,7 +434,6 @@ impl LlmConfig {
         )?;
         let model = Self::resolve_model(ctx, model_env, settings, default_model)?;
         let extra_headers = resolve_extra_headers(ctx, extra_headers_env)?;
-        let (api_key, oauth_token) = resolve_anthropic_credentials(ctx, canonical_id, api_key)?;
         let cache_retention = resolve_provider_cache_retention(ctx, canonical_id)?;
 
         Ok(RegistryProviderConfig {
