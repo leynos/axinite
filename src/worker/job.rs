@@ -331,6 +331,98 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         Ok(())
     }
 
+    /// Generate an execution plan when planning is enabled.
+    ///
+    /// Returns `None` when planning is disabled or when the planner fails (in
+    /// which case a warning is logged and direct tool selection is used
+    /// instead).
+    async fn generate_plan(
+        &self,
+        reasoning: &Reasoning,
+        reason_ctx: &mut ReasoningContext,
+    ) -> Option<ActionPlan> {
+        if !self.use_planning() {
+            return None;
+        }
+        match reasoning.plan(reason_ctx).await {
+            Ok(p) => {
+                tracing::info!(
+                    "Created plan for job {}: {} actions, {:.0}% confidence",
+                    self.job_id,
+                    p.actions.len(),
+                    p.confidence * 100.0
+                );
+                reason_ctx.messages.push(ChatMessage::assistant(format!(
+                    "I've created a plan to accomplish this goal: {}\n\nSteps:\n{}",
+                    p.goal,
+                    p.actions
+                        .iter()
+                        .enumerate()
+                        .map(|(i, a)| format!("{}. {} - {}", i + 1, a.tool_name, a.reasoning))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )));
+                self.log_event(
+                    "message",
+                    serde_json::json!({
+                        "role": "assistant",
+                        "content": format!(
+                            "Plan: {}\n\n{}",
+                            p.goal,
+                            p.actions
+                                .iter()
+                                .enumerate()
+                                .map(|(i, a)| format!("{}. {} - {}", i + 1, a.tool_name, a.reasoning))
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        ),
+                    }),
+                );
+                Some(p)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Planning failed for job {}, falling back to direct selection: {}",
+                    self.job_id,
+                    e
+                );
+                None
+            }
+        }
+    }
+
+    /// Run the planning phase and, if a plan is produced, execute it.
+    ///
+    /// Returns `Ok(Some(outcome))` when the caller should terminate with
+    /// `outcome`, or `Ok(None)` when the loop should continue with direct tool
+    /// selection.
+    async fn maybe_plan_and_execute(
+        &self,
+        rx: &mut mpsc::Receiver<WorkerMessage>,
+        reasoning: &Reasoning,
+        reason_ctx: &mut ReasoningContext,
+    ) -> Result<Option<WorkerLoopOutcome>, Error> {
+        let Some(plan) = self.generate_plan(reasoning, reason_ctx).await else {
+            return Ok(None);
+        };
+
+        match self.execute_plan(rx, reasoning, reason_ctx, &plan).await? {
+            WorkerLoopOutcome::Completed => return Ok(Some(WorkerLoopOutcome::Completed)),
+            WorkerLoopOutcome::Exited => return Ok(Some(WorkerLoopOutcome::Exited)),
+            WorkerLoopOutcome::ContinueDirectSelection => {}
+        }
+
+        if let Ok(ctx) = self.context_manager().get_context(self.job_id).await
+            && (ctx.state.is_terminal()
+                || ctx.state == JobState::Stuck
+                || ctx.state == JobState::Completed)
+        {
+            return Ok(Some(WorkerLoopOutcome::Exited));
+        }
+
+        Ok(None)
+    }
+
     async fn execution_loop(
         &self,
         rx: &mut mpsc::Receiver<WorkerMessage>,
@@ -350,67 +442,11 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         // Initial tool definitions for planning (will be refreshed in loop)
         reason_ctx.available_tools = self.tools().tool_definitions().await;
 
-        // Generate plan if planning is enabled
-        let plan = if self.use_planning() {
-            match reasoning.plan(reason_ctx).await {
-                Ok(p) => {
-                    tracing::info!(
-                        "Created plan for job {}: {} actions, {:.0}% confidence",
-                        self.job_id,
-                        p.actions.len(),
-                        p.confidence * 100.0
-                    );
-
-                    // Add plan to context as assistant message
-                    reason_ctx.messages.push(ChatMessage::assistant(format!(
-                        "I've created a plan to accomplish this goal: {}\n\nSteps:\n{}",
-                        p.goal,
-                        p.actions
-                            .iter()
-                            .enumerate()
-                            .map(|(i, a)| format!("{}. {} - {}", i + 1, a.tool_name, a.reasoning))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    )));
-
-                    self.log_event("message", serde_json::json!({
-                        "role": "assistant",
-                        "content": format!("Plan: {}\n\n{}", p.goal,
-                            p.actions.iter().enumerate()
-                                .map(|(i, a)| format!("{}. {} - {}", i + 1, a.tool_name, a.reasoning))
-                                .collect::<Vec<_>>().join("\n"))
-                    }));
-
-                    Some(p)
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Planning failed for job {}, falling back to direct selection: {}",
-                        self.job_id,
-                        e
-                    );
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        // If we have a plan, execute it.
-        if let Some(ref plan) = plan {
-            match self.execute_plan(rx, reasoning, reason_ctx, plan).await? {
-                WorkerLoopOutcome::Completed => return Ok(WorkerLoopOutcome::Completed),
-                WorkerLoopOutcome::Exited => return Ok(WorkerLoopOutcome::Exited),
-                WorkerLoopOutcome::ContinueDirectSelection => {}
-            }
-
-            if let Ok(ctx) = self.context_manager().get_context(self.job_id).await
-                && (ctx.state.is_terminal()
-                    || ctx.state == JobState::Stuck
-                    || ctx.state == JobState::Completed)
-            {
-                return Ok(WorkerLoopOutcome::Exited);
-            }
+        if let Some(outcome) = self
+            .maybe_plan_and_execute(rx, reasoning, reason_ctx)
+            .await?
+        {
+            return Ok(outcome);
         }
 
         // Build the delegate and run the shared agentic loop
