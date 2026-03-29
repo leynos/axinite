@@ -49,6 +49,7 @@ impl NativeSandboxStore for PgBackend {
 
 #[cfg(test)]
 mod tests {
+    //! Tests for this module.
     use super::*;
     use chrono::Utc;
 

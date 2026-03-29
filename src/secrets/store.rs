@@ -962,6 +962,7 @@ pub mod in_memory {
 
 #[cfg(test)]
 mod tests {
+    //! Tests for this module.
     use crate::secrets::store::NativeSecretsStore;
     use crate::secrets::types::CreateSecretParams;
     use crate::testing::credentials::{

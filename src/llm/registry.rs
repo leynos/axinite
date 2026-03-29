@@ -323,6 +323,7 @@ fn user_providers_path() -> Option<std::path::PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    //! Tests for this module.
     use super::*;
 
     #[test]

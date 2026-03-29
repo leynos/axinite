@@ -1,6 +1,8 @@
 CARGO ?= cargo
 NEXTEST ?= cargo nextest
+WHITAKER ?= whitaker
 TEST_FEATURES ?= --features test-helpers
+WHITAKER_RUSTFLAGS ?= -D warnings
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
@@ -27,6 +29,11 @@ lint:
 	$(CARGO) clippy --all --benches --tests --examples --no-default-features --features libsql,test-helpers -- -D warnings
 	$(CARGO) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
 	$(CARGO) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
+	# Whitaker is disabled for now until the current lint backlog is reduced.
+	# DYLINT_RUSTFLAGS="$(WHITAKER_RUSTFLAGS)" $(WHITAKER) --all -- --workspace --all-targets $(TEST_FEATURES)
+	# DYLINT_RUSTFLAGS="$(WHITAKER_RUSTFLAGS)" $(WHITAKER) --all -- --workspace --all-targets --no-default-features --features libsql,test-helpers
+	# DYLINT_RUSTFLAGS="$(WHITAKER_RUSTFLAGS)" $(WHITAKER) --all -- --workspace --all-targets --all-features $(TEST_FEATURES)
+	# DYLINT_RUSTFLAGS="$(WHITAKER_RUSTFLAGS)" $(WHITAKER) --all --manifest-path $(GITHUB_TOOL_MANIFEST) -- --all-targets
 
 test:
 	$(MAKE) build-github-tool-wasm

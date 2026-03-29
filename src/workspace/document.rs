@@ -163,6 +163,7 @@ impl MemoryChunk {
 
 #[cfg(test)]
 mod tests {
+    //! Tests for this module.
     use super::*;
 
     #[test]
