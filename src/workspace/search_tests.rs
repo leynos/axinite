@@ -42,23 +42,26 @@ fn assert_scores_descending(results: &[SearchResult]) {
     }
 }
 
-fn assert_config(
-    config: &SearchConfig,
+/// Expected field values when asserting a [`SearchConfig`] in tests.
+struct ExpectedSearchConfig {
     limit: usize,
     rrf_k: u32,
     min_score: f32,
     use_fts: bool,
     use_vector: bool,
-) {
-    assert_eq!(config.limit, limit);
-    assert_eq!(config.rrf_k, rrf_k);
+}
+
+fn assert_config(config: &SearchConfig, expected: &ExpectedSearchConfig) {
+    assert_eq!(config.limit, expected.limit, "config.limit");
+    assert_eq!(config.rrf_k, expected.rrf_k, "config.rrf_k");
     assert!(
-        (config.min_score - min_score).abs() < f32::EPSILON,
-        "expected min_score {min_score}, got {}",
+        (config.min_score - expected.min_score).abs() < f32::EPSILON,
+        "expected min_score {}, got {}",
+        expected.min_score,
         config.min_score
     );
-    assert_eq!(config.use_fts, use_fts);
-    assert_eq!(config.use_vector, use_vector);
+    assert_eq!(config.use_fts, expected.use_fts, "config.use_fts");
+    assert_eq!(config.use_vector, expected.use_vector, "config.use_vector");
 }
 
 fn assert_hybrid_chunk(result: &SearchResult, fts_rank: u32, vector_rank: u32) {
@@ -250,7 +253,16 @@ fn test_search_config_builders() {
         .with_rrf_k(30)
         .with_min_score(0.1);
 
-    assert_config(&config, 20, 30, 0.1, true, true);
+    assert_config(
+        &config,
+        &ExpectedSearchConfig {
+            limit: 20,
+            rrf_k: 30,
+            min_score: 0.1,
+            use_fts: true,
+            use_vector: true,
+        },
+    );
 
     let fts_only = SearchConfig::default().fts_only();
     assert!(fts_only.use_fts);
@@ -400,12 +412,30 @@ fn test_rrf_min_score_one_filters_all() {
 fn test_search_config_fts_only() {
     let config = SearchConfig::default().fts_only();
 
-    assert_config(&config, 10, 60, 0.0, true, false);
+    assert_config(
+        &config,
+        &ExpectedSearchConfig {
+            limit: 10,
+            rrf_k: 60,
+            min_score: 0.0,
+            use_fts: true,
+            use_vector: false,
+        },
+    );
 }
 
 #[test]
 fn test_search_config_vector_only() {
     let config = SearchConfig::default().vector_only();
 
-    assert_config(&config, 10, 60, 0.0, false, true);
+    assert_config(
+        &config,
+        &ExpectedSearchConfig {
+            limit: 10,
+            rrf_k: 60,
+            min_score: 0.0,
+            use_fts: false,
+            use_vector: true,
+        },
+    );
 }

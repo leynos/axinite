@@ -95,6 +95,105 @@ impl Default for ReplChannel {
     }
 }
 
+impl ReplChannel {
+    fn print_thinking(&self, msg: &str) {
+        let display = truncate_for_preview(msg, CLI_STATUS_MAX);
+        eprintln!("  \x1b[90m\u{25CB} {display}\x1b[0m");
+    }
+
+    fn print_tool_started(&self, name: &str) {
+        eprintln!("  \x1b[33m\u{25CB} {name}\x1b[0m");
+    }
+
+    fn print_tool_completed(&self, name: &str, success: bool) {
+        if success {
+            eprintln!("  \x1b[32m\u{25CF} {name}\x1b[0m");
+        } else {
+            eprintln!("  \x1b[31m\u{2717} {name} (failed)\x1b[0m");
+        }
+    }
+
+    fn print_tool_result(&self, preview: &str) {
+        let display = truncate_for_preview(preview, CLI_TOOL_RESULT_MAX);
+        eprintln!("    \x1b[90m{display}\x1b[0m");
+    }
+
+    fn print_stream_chunk(&self, chunk: &str) {
+        if !self.is_streaming.swap(true, Ordering::Relaxed) {
+            let width = crossterm::terminal::size()
+                .map(|(w, _)| w as usize)
+                .unwrap_or(80);
+            eprintln!("\x1b[90m{}\x1b[0m", "\u{2500}".repeat(width.min(80)));
+        }
+        print!("{chunk}");
+        let _ = io::stdout().flush();
+    }
+
+    fn print_job_started(&self, job_id: &str, title: &str, browse_url: &str) {
+        eprintln!(
+            "  \x1b[36m[job]\x1b[0m {title} \x1b[90m({job_id})\x1b[0m \x1b[4m{browse_url}\x1b[0m"
+        );
+    }
+
+    fn print_status(&self, msg: &str) {
+        let approval_related = msg.contains("approval") || msg.contains("Approval");
+        if self.is_debug() || approval_related {
+            let display = truncate_for_preview(msg, CLI_STATUS_MAX);
+            eprintln!("  \x1b[90m{display}\x1b[0m");
+        }
+    }
+
+    fn print_approval_needed(
+        &self,
+        request_id: &str,
+        tool_name: &str,
+        description: &str,
+        parameters: &serde_json::Value,
+    ) {
+        let request = ToolApprovalRequest {
+            request_id,
+            tool_name,
+            description,
+        };
+        for line in render_approval_card(&request, parameters) {
+            eprintln!("{line}");
+        }
+    }
+
+    fn print_auth_required(
+        &self,
+        extension_name: &str,
+        instructions: Option<&str>,
+        setup_url: Option<&str>,
+    ) {
+        eprintln!();
+        eprintln!("\x1b[33m  Authentication required for {extension_name}\x1b[0m");
+        if let Some(instr) = instructions {
+            eprintln!("  {instr}");
+        }
+        if let Some(url) = setup_url {
+            eprintln!("  \x1b[4m{url}\x1b[0m");
+        }
+        eprintln!();
+    }
+
+    fn print_auth_completed(&self, extension_name: &str, success: bool, message: &str) {
+        if success {
+            eprintln!("\x1b[32m  {extension_name}: {message}\x1b[0m");
+        } else {
+            eprintln!("\x1b[31m  {extension_name}: {message}\x1b[0m");
+        }
+    }
+
+    fn print_image_generated(&self, path: Option<&str>) {
+        if let Some(p) = path {
+            eprintln!("\x1b[36m  [image] {p}\x1b[0m");
+        } else {
+            eprintln!("\x1b[36m  [image generated]\x1b[0m");
+        }
+    }
+}
+
 /// Get the history file path (~/.ironclaw/history).
 fn history_path() -> std::path::PathBuf {
     ironclaw_base_dir().join("history")
@@ -295,103 +394,47 @@ impl NativeChannel for ReplChannel {
         status: StatusUpdate,
         _metadata: &serde_json::Value,
     ) -> Result<(), ChannelError> {
-        let debug = self.is_debug();
-
         match status {
-            StatusUpdate::Thinking(msg) => {
-                let display = truncate_for_preview(&msg, CLI_STATUS_MAX);
-                eprintln!("  \x1b[90m\u{25CB} {display}\x1b[0m");
-            }
-            StatusUpdate::ToolStarted { name } => {
-                eprintln!("  \x1b[33m\u{25CB} {name}\x1b[0m");
-            }
+            StatusUpdate::Thinking(msg) => self.print_thinking(&msg),
+            StatusUpdate::ToolStarted { name } => self.print_tool_started(&name),
             StatusUpdate::ToolCompleted { name, success, .. } => {
-                if success {
-                    eprintln!("  \x1b[32m\u{25CF} {name}\x1b[0m");
-                } else {
-                    eprintln!("  \x1b[31m\u{2717} {name} (failed)\x1b[0m");
-                }
+                self.print_tool_completed(&name, success);
             }
-            StatusUpdate::ToolResult { name: _, preview } => {
-                let display = truncate_for_preview(&preview, CLI_TOOL_RESULT_MAX);
-                eprintln!("    \x1b[90m{display}\x1b[0m");
-            }
-            StatusUpdate::StreamChunk(chunk) => {
-                // Print separator on the false-to-true transition
-                if !self.is_streaming.swap(true, Ordering::Relaxed) {
-                    let width = crossterm::terminal::size()
-                        .map(|(w, _)| w as usize)
-                        .unwrap_or(80);
-                    let sep_width = width.min(80);
-                    eprintln!("\x1b[90m{}\x1b[0m", "\u{2500}".repeat(sep_width));
-                }
-                print!("{chunk}");
-                let _ = io::stdout().flush();
-            }
+            StatusUpdate::ToolResult { name: _, preview } => self.print_tool_result(&preview),
+            StatusUpdate::StreamChunk(chunk) => self.print_stream_chunk(&chunk),
             StatusUpdate::JobStarted {
                 job_id,
                 title,
                 browse_url,
             } => {
-                eprintln!(
-                    "  \x1b[36m[job]\x1b[0m {title} \x1b[90m({job_id})\x1b[0m \x1b[4m{browse_url}\x1b[0m"
-                );
+                self.print_job_started(&job_id, &title, &browse_url);
             }
-            StatusUpdate::Status(msg) => {
-                if debug || msg.contains("approval") || msg.contains("Approval") {
-                    let display = truncate_for_preview(&msg, CLI_STATUS_MAX);
-                    eprintln!("  \x1b[90m{display}\x1b[0m");
-                }
-            }
+            StatusUpdate::Status(msg) => self.print_status(&msg),
             StatusUpdate::ApprovalNeeded {
                 request_id,
                 tool_name,
                 description,
                 parameters,
-            } => {
-                let request = ToolApprovalRequest {
-                    request_id: &request_id,
-                    tool_name: &tool_name,
-                    description: &description,
-                };
-                let lines = render_approval_card(&request, &parameters);
-                for line in lines {
-                    eprintln!("{line}");
-                }
-            }
+            } => self.print_approval_needed(&request_id, &tool_name, &description, &parameters),
             StatusUpdate::AuthRequired {
                 extension_name,
                 instructions,
                 setup_url,
                 ..
-            } => {
-                eprintln!();
-                eprintln!("\x1b[33m  Authentication required for {extension_name}\x1b[0m");
-                if let Some(ref instr) = instructions {
-                    eprintln!("  {instr}");
-                }
-                if let Some(ref url) = setup_url {
-                    eprintln!("  \x1b[4m{url}\x1b[0m");
-                }
-                eprintln!();
-            }
+            } => self.print_auth_required(
+                &extension_name,
+                instructions.as_deref(),
+                setup_url.as_deref(),
+            ),
             StatusUpdate::AuthCompleted {
                 extension_name,
                 success,
                 message,
             } => {
-                if success {
-                    eprintln!("\x1b[32m  {extension_name}: {message}\x1b[0m");
-                } else {
-                    eprintln!("\x1b[31m  {extension_name}: {message}\x1b[0m");
-                }
+                self.print_auth_completed(&extension_name, success, &message);
             }
             StatusUpdate::ImageGenerated { path, .. } => {
-                if let Some(ref p) = path {
-                    eprintln!("\x1b[36m  [image] {p}\x1b[0m");
-                } else {
-                    eprintln!("\x1b[36m  [image generated]\x1b[0m");
-                }
+                self.print_image_generated(path.as_deref());
             }
         }
         Ok(())
