@@ -34,34 +34,39 @@ fn resolve_api_key(
     Ok(key)
 }
 
+/// Provider-definition inputs for base-URL resolution.
+struct BaseUrlSpec<'a> {
+    env_var: Option<&'a str>,
+    backend: &'a str,
+    default: Option<&'a str>,
+    required: bool,
+}
+
 fn resolve_base_url(
     ctx: &EnvContext,
-    base_url_env: Option<&str>,
-    base_url_required: bool,
-    backend: &str,
+    spec: &BaseUrlSpec<'_>,
     settings: &Settings,
-    default_base_url: Option<&str>,
 ) -> Result<String, ConfigError> {
-    let base_url = if let Some(env_var) = base_url_env {
+    let base_url = if let Some(env_var) = spec.env_var {
         optional_env_from(ctx, env_var)?
     } else {
         None
     }
-    .or_else(|| match backend {
+    .or_else(|| match spec.backend {
         "ollama" => settings.ollama_base_url.clone(),
         "openai_compatible" | "openrouter" => settings.openai_compatible_base_url.clone(),
         _ => None,
     })
-    .or_else(|| default_base_url.map(String::from))
+    .or_else(|| spec.default.map(String::from))
     .unwrap_or_default();
 
-    if base_url_required
+    if spec.required
         && base_url.is_empty()
-        && let Some(env_var) = base_url_env
+        && let Some(env_var) = spec.env_var
     {
         return Err(ConfigError::MissingRequired {
             key: env_var.to_string(),
-            hint: format!("Set {env_var} when LLM_BACKEND={backend}"),
+            hint: format!("Set {env_var} when LLM_BACKEND={}", spec.backend),
         });
     }
     Ok(base_url)
@@ -116,6 +121,21 @@ fn resolve_provider_cache_retention(
             }
         })
         .unwrap_or_default())
+}
+
+fn validate_bedrock_cross_region(cross_region: &Option<String>) -> Result<(), ConfigError> {
+    if let Some(cr) = cross_region
+        && !matches!(cr.as_str(), "us" | "eu" | "apac" | "global")
+    {
+        return Err(ConfigError::InvalidValue {
+            key: "BEDROCK_CROSS_REGION".to_string(),
+            message: format!(
+                "'{}' is not valid, expected one of: us, eu, apac, global",
+                cr
+            ),
+        });
+    }
+    Ok(())
 }
 
 impl LlmConfig {
@@ -272,17 +292,7 @@ impl LlmConfig {
             })?;
         let cross_region = optional_env_from(ctx, "BEDROCK_CROSS_REGION")?
             .or_else(|| settings.bedrock_cross_region.clone());
-        if let Some(ref cr) = cross_region
-            && !matches!(cr.as_str(), "us" | "eu" | "apac" | "global")
-        {
-            return Err(ConfigError::InvalidValue {
-                key: "BEDROCK_CROSS_REGION".to_string(),
-                message: format!(
-                    "'{}' is not valid, expected one of: us, eu, apac, global",
-                    cr
-                ),
-            });
-        }
+        validate_bedrock_cross_region(&cross_region)?;
         let profile =
             optional_env_from(ctx, "AWS_PROFILE")?.or_else(|| settings.bedrock_profile.clone());
         Ok(Some(BedrockConfig {
@@ -391,11 +401,13 @@ impl LlmConfig {
         let api_key = resolve_api_key(ctx, api_key_env, api_key_required, backend)?;
         let base_url = resolve_base_url(
             ctx,
-            base_url_env,
-            base_url_required,
-            backend,
+            &BaseUrlSpec {
+                env_var: base_url_env,
+                backend,
+                default: default_base_url,
+                required: base_url_required,
+            },
             settings,
-            default_base_url,
         )?;
         let model = Self::resolve_model(ctx, model_env, settings, default_model)?;
         let extra_headers = resolve_extra_headers(ctx, extra_headers_env)?;
@@ -416,6 +428,24 @@ impl LlmConfig {
     }
 }
 
+/// Parse one `Key:Value` header entry, trimming whitespace from both sides.
+fn parse_header_pair(pair: &str) -> Result<(String, String), ConfigError> {
+    let Some((key, value)) = pair.split_once(':') else {
+        return Err(ConfigError::InvalidValue {
+            key: "LLM_EXTRA_HEADERS".to_string(),
+            message: format!("malformed header entry '{}', expected Key:Value", pair),
+        });
+    };
+    let key = key.trim();
+    if key.is_empty() {
+        return Err(ConfigError::InvalidValue {
+            key: "LLM_EXTRA_HEADERS".to_string(),
+            message: format!("empty header name in entry '{}'", pair),
+        });
+    }
+    Ok((key.to_string(), value.trim().to_string()))
+}
+
 /// Parse `LLM_EXTRA_HEADERS` value into a list of (key, value) pairs.
 ///
 /// Format: `Key1:Value1,Key2:Value2` (colon-separated, not `=`, because
@@ -424,27 +454,13 @@ fn parse_extra_headers(val: &str) -> Result<Vec<(String, String)>, ConfigError> 
     if val.trim().is_empty() {
         return Ok(Vec::new());
     }
-
     let mut headers = Vec::new();
     for pair in val.split(',') {
         let pair = pair.trim();
         if pair.is_empty() {
             continue;
         }
-        let Some((key, value)) = pair.split_once(':') else {
-            return Err(ConfigError::InvalidValue {
-                key: "LLM_EXTRA_HEADERS".to_string(),
-                message: format!("malformed header entry '{}', expected Key:Value", pair),
-            });
-        };
-        let key = key.trim();
-        if key.is_empty() {
-            return Err(ConfigError::InvalidValue {
-                key: "LLM_EXTRA_HEADERS".to_string(),
-                message: format!("empty header name in entry '{}'", pair),
-            });
-        }
-        headers.push((key.to_string(), value.trim().to_string()));
+        headers.push(parse_header_pair(pair)?);
     }
     Ok(headers)
 }
