@@ -535,8 +535,7 @@ impl Scheduler {
         Ok(TaskOutput::new(result_value, start.elapsed()))
     }
 
-    /// Stop a running job.
-    pub async fn stop(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
+    async fn stop_in_memory(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
         let tx = {
             let jobs = self.jobs.read().await;
             match jobs.get(&job_id) {
@@ -544,8 +543,6 @@ impl Scheduler {
                 None => return Err(JobError::NotFound { id: job_id }),
             }
         };
-
-        let reason = reason.to_string();
 
         // Send stop signal
         let _ = tx.send(WorkerMessage::Stop).await;
@@ -557,7 +554,7 @@ impl Scheduler {
         self.context_manager
             .update_context(job_id, |ctx| {
                 let current_state = ctx.state;
-                ctx.transition_to(JobState::Cancelled, Some(reason.clone()))
+                ctx.transition_to(JobState::Cancelled, Some(reason.to_string()))
                     .map_err(|_| current_state)
             })
             .await?
@@ -567,28 +564,39 @@ impl Scheduler {
                 target: JobState::Cancelled.to_string(),
             })?;
 
-        // Persist cancellation before returning so durable state matches
-        // the in-memory terminal transition.
-        let mut should_abort = true;
-        if let Some(ref store) = self.store
-            && let Err(e) = store
-                .update_job_status(job_id, JobState::Cancelled, Some(reason.as_str()))
+        Ok(())
+    }
+
+    async fn persist_cancelled_status(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
+        if let Some(ref store) = self.store {
+            store
+                .update_job_status(job_id, JobState::Cancelled, Some(reason))
                 .await
-        {
-            tracing::warn!("Failed to persist cancellation for job {}: {}", job_id, e);
-            should_abort = false;
+                .map_err(|e| JobError::PersistenceError {
+                    id: job_id,
+                    reason: e.to_string(),
+                })?;
         }
 
-        if should_abort {
-            let mut jobs = self.jobs.write().await;
-            if let Some(scheduled) = jobs.get(&job_id)
-                && !scheduled.handle.is_finished()
-            {
-                scheduled.handle.abort();
-            }
-            jobs.remove(&job_id);
-            tracing::info!("Stopped job {}", job_id);
+        Ok(())
+    }
+
+    async fn finalize_stop(&self, job_id: Uuid) {
+        let mut jobs = self.jobs.write().await;
+        if let Some(scheduled) = jobs.get(&job_id)
+            && !scheduled.handle.is_finished()
+        {
+            scheduled.handle.abort();
         }
+        jobs.remove(&job_id);
+        tracing::info!("Stopped job {}", job_id);
+    }
+
+    /// Stop a running job.
+    pub async fn stop(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
+        self.stop_in_memory(job_id, reason).await?;
+        self.persist_cancelled_status(job_id, reason).await?;
+        self.finalize_stop(job_id).await;
 
         Ok(())
     }
@@ -674,16 +682,27 @@ impl Scheduler {
     pub async fn stop_all(&self) {
         let job_ids: Vec<Uuid> = self.jobs.read().await.keys().cloned().collect();
         let stop_timeout = tokio::time::Duration::from_secs(5);
+        let stop_reason = "Stopped by scheduler";
         let stop_futures = job_ids.into_iter().map(|job_id| async move {
             (
                 job_id,
-                tokio::time::timeout(stop_timeout, self.stop(job_id, "Stopped by scheduler")).await,
+                tokio::time::timeout(stop_timeout, self.stop_in_memory(job_id, stop_reason)).await,
             )
         });
 
         for (job_id, result) in futures::future::join_all(stop_futures).await {
             match result {
-                Ok(Ok(())) => {}
+                Ok(Ok(())) => {
+                    if let Err(error) = self.persist_cancelled_status(job_id, stop_reason).await {
+                        tracing::warn!(
+                            job_id = %job_id,
+                            %error,
+                            "Failed to persist cancellation during shutdown"
+                        );
+                    } else {
+                        self.finalize_stop(job_id).await;
+                    }
+                }
                 Ok(Err(error)) => {
                     tracing::warn!(job_id = %job_id, %error, "Failed to stop job during shutdown");
                 }
@@ -693,6 +712,15 @@ impl Scheduler {
                         timeout_seconds = stop_timeout.as_secs(),
                         "Timed out stopping job during shutdown"
                     );
+                    if let Err(error) = self.persist_cancelled_status(job_id, stop_reason).await {
+                        tracing::warn!(
+                            job_id = %job_id,
+                            %error,
+                            "Failed to persist cancellation after shutdown timeout"
+                        );
+                    } else {
+                        self.finalize_stop(job_id).await;
+                    }
                 }
             }
         }
