@@ -65,6 +65,13 @@ const V10_WASM_CHANNELS_COPY_COLUMNS: &str = r#"id, user_id, name, version, wit_
 ///
 /// Each entry is `(version, name, sql)`. Migrations are idempotent: the
 /// `_migrations` table tracks which versions have been applied.
+///
+/// `INCREMENTAL_MIGRATIONS` intentionally jumps from versions 9 -> 12 for the
+/// libSQL backend. The PostgreSQL `wasm_versioning` (V10) and
+/// `conversation_unique_indexes` (V11) migrations are already baked into
+/// `libsql_schema.sql` rather than applied incrementally, so the gap is
+/// backend-specific and should not be "filled in" when editing
+/// `INCREMENTAL_MIGRATIONS` or adding later versions.
 pub const INCREMENTAL_MIGRATIONS: &[(i64, &str, &str)] = &[
     (
         9,
