@@ -9,6 +9,8 @@ use secrecy::SecretString;
 // failures observed when a test Postgres instance is absent. We intentionally
 // exclude generic timeout wording so TLS, authentication, and other
 // misconfiguration-related delays still fail loudly instead of being skipped.
+use std::error::Error as _;
+use deadpool_postgres::PoolError;
 const UNAVAILABLE_PATTERNS: &[&str] = &[
     "connection refused",
     "failed to lookup address information",
@@ -72,13 +74,41 @@ pub async fn try_test_pg_db() -> Result<Option<PgBackend>, DatabaseError> {
 }
 
 fn is_database_unavailable(error: &DatabaseError) -> bool {
-    let lowered = format!("{error:?} {error}").to_lowercase();
+    match error {
+        DatabaseError::PoolRuntime(pool_error) => is_pool_unavailable(pool_error),
+        DatabaseError::Postgres(postgres_error) => is_postgres_unavailable(postgres_error),
+        _ => false,
+    }
+}
 
-    matches!(
-        error,
-        DatabaseError::Postgres(_)
-            | DatabaseError::Pool(_)
-            | DatabaseError::PoolBuild(_)
-            | DatabaseError::PoolRuntime(_)
-    ) && UNAVAILABLE_PATTERNS.iter().any(|p| lowered.contains(p))
+fn is_pool_unavailable(error: &PoolError) -> bool {
+    match error {
+        PoolError::Timeout(_) | PoolError::Closed => true,
+        PoolError::Backend(postgres_error) => is_postgres_unavailable(postgres_error),
+        PoolError::PostCreateHook(hook_error) => hook_error
+            .source()
+            .and_then(|source| source.downcast_ref::<tokio_postgres::Error>())
+            .is_some_and(is_postgres_unavailable),
+        PoolError::NoRuntimeSpecified => false,
+    }
+}
+
+fn has_unavailable_connection_cause(error: &tokio_postgres::Error) -> bool {
+    let mut current = error.source();
+    while let Some(source) = current {
+        let lowered = source.to_string().to_lowercase();
+        if UNAVAILABLE_PATTERNS
+            .iter()
+            .any(|pattern| lowered.contains(pattern))
+        {
+            return true;
+        }
+        current = source.source();
+    }
+
+    false
+}
+
+fn is_postgres_unavailable(error: &tokio_postgres::Error) -> bool {
+    error.is_closed() || has_unavailable_connection_cause(error)
 }
