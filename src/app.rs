@@ -126,9 +126,12 @@ impl AppBuilder {
         tools.register_image_tools(ImageToolsRegistration::new(api_base, api_key, gen_model));
     }
 
-    // Many parameters required to construct ExtensionManager; this is an extraction
-    // of the original inline block to reduce cyclomatic complexity of init_extensions.
-    #[allow(clippy::too_many_arguments)]
+    /// `mcp_clients` is shared between the manager and the live MCP adapter
+    /// so that both see the same set of active connections.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "FIXME: Group parameters into a config struct (https://github.com/leynos/axinite/issues/XXX)"
+    )]
     async fn build_extension_manager(
         &self,
         tools: &Arc<ToolRegistry>,
@@ -138,7 +141,7 @@ impl AppBuilder {
         ext_secrets: Arc<dyn crate::secrets::SecretsStore + Send + Sync>,
         wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
         catalog_entries: Vec<crate::extensions::RegistryEntry>,
-    ) -> Option<Arc<ExtensionManager>> {
+    ) -> Arc<ExtensionManager> {
         let discovery = Arc::new(crate::extensions::OnlineDiscovery::new());
         let relay_config = crate::config::RelayConfig::from_env();
         let gateway_token = std::env::var("GATEWAY_AUTH_TOKEN").ok();
@@ -188,10 +191,10 @@ impl AppBuilder {
             catalog_entries,
         ));
 
-        live_wasm_channel.set_manager(Arc::clone(&manager)).await;
+        live_wasm_channel.set_manager(Arc::clone(&manager));
         tools.register_extension_tools(Arc::clone(&manager));
         tracing::debug!("Extension manager initialized with in-chat discovery tools");
-        Some(manager)
+        manager
     }
 
     /// Phase 1: Initialize database backend.
@@ -702,8 +705,8 @@ impl AppBuilder {
             tracing::debug!("Using ephemeral in-memory secrets store for extension manager");
             Arc::new(InMemorySecretsStore::new(crypto))
         };
-        let extension_manager = self
-            .build_extension_manager(
+        let extension_manager = Some(
+            self.build_extension_manager(
                 tools,
                 hooks,
                 &mcp_session_manager,
@@ -712,7 +715,8 @@ impl AppBuilder {
                 wasm_tool_runtime.clone(),
                 catalog_entries.clone(),
             )
-            .await;
+            .await,
+        );
 
         // register_builder_tool() already calls register_dev_tools() internally,
         // so only register them here when the builder didn't already do it.

@@ -2,7 +2,7 @@
 //!
 //! Holds the concrete MCP infrastructure references (session manager, process
 //! manager, secrets, tool registry, shared client map) and implements the
-//! [`NativeMcpActivationPort`] by connecting to the named server, listing
+//! [`McpActivationPort`] by connecting to the named server, listing
 //! tools, registering them, and caching the client.
 
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
-use crate::extensions::activation::NativeMcpActivationPort;
+use crate::extensions::activation::{ActivationFuture, McpActivationPort};
 use crate::extensions::{ActivateResult, ExtensionError, ExtensionKind};
 use crate::secrets::SecretsStore;
 use crate::tools::ToolRegistry;
@@ -71,8 +71,17 @@ impl LiveMcpActivation {
     }
 }
 
-impl NativeMcpActivationPort for LiveMcpActivation {
-    async fn activate_mcp<'a>(&'a self, name: &'a str) -> Result<ActivateResult, ExtensionError> {
+impl McpActivationPort for LiveMcpActivation {
+    fn activate_mcp<'a>(&'a self, name: &'a str) -> ActivationFuture<'a> {
+        Box::pin(async move { self.activate_mcp_inner(name).await })
+    }
+}
+
+impl LiveMcpActivation {
+    async fn activate_mcp_inner<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> Result<ActivateResult, ExtensionError> {
         // Check if already activated
         {
             let clients = self.mcp_clients.read().await;
