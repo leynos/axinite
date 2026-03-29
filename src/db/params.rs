@@ -16,6 +16,50 @@ use crate::workspace::SearchConfig;
 /// Boxed future used at dyn-backed database trait boundaries.
 pub type DbFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Strongly typed user identifier for settings-store methods.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UserId(String);
+
+impl UserId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for UserId {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<String> for UserId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+/// Strongly typed settings key for settings-store methods.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SettingKey(String);
+
+impl SettingKey {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for SettingKey {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<String> for SettingKey {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
 /// Parameters for `ensure_conversation`.
 pub struct EnsureConversationParams<'a> {
     pub id: Uuid,

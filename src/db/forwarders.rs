@@ -172,14 +172,14 @@ impl_db_forwarders! {
     dyn = SettingsStore,
     native = NativeSettingsStore,
     methods = {
-        fn get_setting(user_id: &'a str, key: &'a str) -> Result<Option<serde_json::Value>, DatabaseError>;
-        fn get_setting_full(user_id: &'a str, key: &'a str) -> Result<Option<SettingRow>, DatabaseError>;
-        fn set_setting(user_id: &'a str, key: &'a str, value: &'a serde_json::Value) -> Result<(), DatabaseError>;
-        fn delete_setting(user_id: &'a str, key: &'a str) -> Result<bool, DatabaseError>;
-        fn list_settings(user_id: &'a str) -> Result<Vec<SettingRow>, DatabaseError>;
-        fn get_all_settings(user_id: &'a str) -> Result<HashMap<String, serde_json::Value>, DatabaseError>;
-        fn set_all_settings(user_id: &'a str, settings: &'a HashMap<String, serde_json::Value>) -> Result<(), DatabaseError>;
-        fn has_settings(user_id: &'a str) -> Result<bool, DatabaseError>;
+        fn get_setting(user_id: UserId, key: SettingKey) -> Result<Option<serde_json::Value>, DatabaseError>;
+        fn get_setting_full(user_id: UserId, key: SettingKey) -> Result<Option<SettingRow>, DatabaseError>;
+        fn set_setting(user_id: UserId, key: SettingKey, value: &'a serde_json::Value) -> Result<(), DatabaseError>;
+        fn delete_setting(user_id: UserId, key: SettingKey) -> Result<bool, DatabaseError>;
+        fn list_settings(user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError>;
+        fn get_all_settings(user_id: UserId) -> Result<HashMap<String, serde_json::Value>, DatabaseError>;
+        fn set_all_settings(user_id: UserId, settings: &'a HashMap<String, serde_json::Value>) -> Result<(), DatabaseError>;
+        fn has_settings(user_id: UserId) -> Result<bool, DatabaseError>;
     }
 }
 

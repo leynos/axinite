@@ -9,7 +9,7 @@ pub mod settings;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::db::Database;
+use crate::db::{Database, SettingKey, UserId};
 use crate::import::{ImportError, ImportOptions, ImportStats};
 use crate::secrets::SecretsStore;
 use crate::workspace::Workspace;
@@ -61,7 +61,11 @@ impl OpenClawImporter {
         for (key, value) in settings_map {
             if let Err(e) = self
                 .db
-                .set_setting(self.opts.user_id.as_str(), key.as_str(), &value)
+                .set_setting(
+                    UserId::from(self.opts.user_id.as_str()),
+                    SettingKey::from(key.as_str()),
+                    &value,
+                )
                 .await
             {
                 tracing::warn!("Failed to import setting {}: {}", key, e);

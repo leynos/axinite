@@ -491,7 +491,11 @@ impl SessionManager {
             let session_json = serde_json::to_value(&session)
                 .unwrap_or(serde_json::Value::String(token.to_string()));
             if let Err(e) = store
-                .set_setting(user_id.as_str(), "nearai.session_token", &session_json)
+                .set_setting(
+                    crate::db::UserId::from(user_id.as_str()),
+                    crate::db::SettingKey::from("nearai.session_token"),
+                    &session_json,
+                )
                 .await
             {
                 tracing::warn!("Failed to save session to DB: {}", e);
@@ -515,7 +519,10 @@ impl SessionManager {
 
         let user_id = self.user_id.read().await.clone();
         let value = if let Some(value) = store
-            .get_setting(user_id.as_str(), "nearai.session_token")
+            .get_setting(
+                crate::db::UserId::from(user_id.as_str()),
+                crate::db::SettingKey::from("nearai.session_token"),
+            )
             .await
             .map_err(|e| LlmError::SessionRenewalFailed {
                 provider: "nearai".to_string(),
@@ -527,7 +534,10 @@ impl SessionManager {
             // backwards-compat migration). When neither key is present
             // (fresh install), just return the "No session in DB" error.
             let legacy = store
-                .get_setting(user_id.as_str(), "nearai.session")
+                .get_setting(
+                    crate::db::UserId::from(user_id.as_str()),
+                    crate::db::SettingKey::from("nearai.session"),
+                )
                 .await
                 .map_err(|e| LlmError::SessionRenewalFailed {
                     provider: "nearai".to_string(),

@@ -11,6 +11,7 @@ use axum::{
 
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
+use crate::db::{SettingKey, UserId};
 
 pub fn routes() -> Router<Arc<GatewayState>> {
     Router::new()
@@ -30,7 +31,7 @@ pub async fn settings_list_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     let rows = store
-        .list_settings(state.user_id.as_str())
+        .list_settings(UserId::from(state.user_id.as_str()))
         .await
         .map_err(|e| {
             tracing::error!("Failed to list settings: {}", e);
@@ -58,7 +59,10 @@ pub async fn settings_get_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     let row = store
-        .get_setting_full(state.user_id.as_str(), key.as_str())
+        .get_setting_full(
+            UserId::from(state.user_id.as_str()),
+            SettingKey::from(key.as_str()),
+        )
         .await
         .map_err(|e| {
             tracing::error!("Failed to get setting '{}': {}", key, e);
@@ -83,7 +87,11 @@ pub async fn settings_set_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     store
-        .set_setting(state.user_id.as_str(), key.as_str(), &body.value)
+        .set_setting(
+            UserId::from(state.user_id.as_str()),
+            SettingKey::from(key.as_str()),
+            &body.value,
+        )
         .await
         .map_err(|e| {
             tracing::error!("Failed to set setting '{}': {}", key, e);
@@ -102,7 +110,10 @@ pub async fn settings_delete_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     store
-        .delete_setting(state.user_id.as_str(), key.as_str())
+        .delete_setting(
+            UserId::from(state.user_id.as_str()),
+            SettingKey::from(key.as_str()),
+        )
         .await
         .map_err(|e| {
             tracing::error!("Failed to delete setting '{}': {}", key, e);
@@ -120,7 +131,7 @@ pub async fn settings_export_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     let settings = store
-        .get_all_settings(state.user_id.as_str())
+        .get_all_settings(UserId::from(state.user_id.as_str()))
         .await
         .map_err(|e| {
             tracing::error!("Failed to export settings: {}", e);
@@ -139,7 +150,7 @@ pub async fn settings_import_handler(
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     store
-        .set_all_settings(state.user_id.as_str(), &body.settings)
+        .set_all_settings(UserId::from(state.user_id.as_str()), &body.settings)
         .await
         .map_err(|e| {
             tracing::error!("Failed to import settings: {}", e);

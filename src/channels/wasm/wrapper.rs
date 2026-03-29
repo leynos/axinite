@@ -50,6 +50,7 @@ use crate::channels::wasm::schema::ChannelConfig;
 use crate::channels::{
     IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
 };
+use crate::db::{SettingKey, UserId};
 use crate::error::ChannelError;
 use crate::pairing::PairingStore;
 use crate::safety::LeakDetector;
@@ -732,7 +733,10 @@ async fn do_update_broadcast_metadata(
     if changed && let Some(store) = settings_store {
         let key = format!("channel_broadcast_metadata_{}", channel_name);
         let value = serde_json::Value::String(metadata.to_string());
-        if let Err(e) = store.set_setting("default", key.as_str(), &value).await {
+        if let Err(e) = store
+            .set_setting(UserId::from("default"), SettingKey::from(key), &value)
+            .await
+        {
             tracing::warn!(
                 channel = %channel_name,
                 "Failed to persist broadcast metadata: {}",
@@ -855,7 +859,10 @@ impl WasmChannel {
     async fn load_broadcast_metadata(&self) {
         if let Some(ref store) = self.settings_store {
             match store
-                .get_setting("default", self.broadcast_metadata_key().as_str())
+                .get_setting(
+                    UserId::from("default"),
+                    SettingKey::from(self.broadcast_metadata_key()),
+                )
                 .await
             {
                 Ok(Some(serde_json::Value::String(meta))) => {

@@ -159,8 +159,8 @@ async fn complete_slack_relay_oauth(
         let team_id_key = format!("relay:{}:team_id", DEFAULT_RELAY_NAME);
         store
             .set_setting(
-                state.user_id.as_str(),
-                team_id_key.as_str(),
+                crate::db::UserId::from(state.user_id.as_str()),
+                crate::db::SettingKey::from(team_id_key.as_str()),
                 &serde_json::json!(callback.team_id),
             )
             .await

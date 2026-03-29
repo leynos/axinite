@@ -39,7 +39,7 @@ use crate::error::{ChannelError, LlmError};
 #[cfg(test)]
 use crate::db::{
     EnsureConversationParams, EstimationActualsParams, EstimationSnapshotParams,
-    RoutineRunCompletion, RoutineRuntimeUpdate, SandboxJobStatusUpdate,
+    RoutineRunCompletion, RoutineRuntimeUpdate, SandboxJobStatusUpdate, SettingKey, UserId,
 };
 use crate::llm::{
     CompletionRequest, CompletionResponse, FinishReason, LlmProvider, ToolCompletionRequest,
@@ -938,46 +938,66 @@ mod tests {
         let db = &harness.db;
 
         // Initially no setting
-        let val = db.get_setting("user1", "theme").await.expect("get");
+        let val = db
+            .get_setting(UserId::from("user1"), SettingKey::from("theme"))
+            .await
+            .expect("get");
         assert!(val.is_none());
 
         // Set a value
-        db.set_setting("user1", "theme", &serde_json::json!("dark"))
-            .await
-            .expect("set");
+        db.set_setting(
+            UserId::from("user1"),
+            SettingKey::from("theme"),
+            &serde_json::json!("dark"),
+        )
+        .await
+        .expect("set");
 
         // Read it back
         let val = db
-            .get_setting("user1", "theme")
+            .get_setting(UserId::from("user1"), SettingKey::from("theme"))
             .await
             .expect("get")
             .expect("should exist");
         assert_eq!(val, serde_json::json!("dark"));
 
         // Update it
-        db.set_setting("user1", "theme", &serde_json::json!("light"))
-            .await
-            .expect("set update");
+        db.set_setting(
+            UserId::from("user1"),
+            SettingKey::from("theme"),
+            &serde_json::json!("light"),
+        )
+        .await
+        .expect("set update");
         let val = db
-            .get_setting("user1", "theme")
+            .get_setting(UserId::from("user1"), SettingKey::from("theme"))
             .await
             .expect("get")
             .expect("should exist");
         assert_eq!(val, serde_json::json!("light"));
 
         // List settings
-        let all = db.list_settings("user1").await.expect("list");
+        let all = db.list_settings(UserId::from("user1")).await.expect("list");
         assert_eq!(all.len(), 1);
 
         // Delete
-        let deleted = db.delete_setting("user1", "theme").await.expect("delete");
+        let deleted = db
+            .delete_setting(UserId::from("user1"), SettingKey::from("theme"))
+            .await
+            .expect("delete");
         assert!(deleted);
 
-        let val = db.get_setting("user1", "theme").await.expect("get");
+        let val = db
+            .get_setting(UserId::from("user1"), SettingKey::from("theme"))
+            .await
+            .expect("get");
         assert!(val.is_none());
 
         // Delete non-existent
-        let deleted = db.delete_setting("user1", "theme").await.expect("delete");
+        let deleted = db
+            .delete_setting(UserId::from("user1"), SettingKey::from("theme"))
+            .await
+            .expect("delete");
         assert!(!deleted);
     }
 
@@ -995,43 +1015,66 @@ mod tests {
         let initial_value = serde_json::json!("dark");
         let updated_value = serde_json::json!("light");
 
-        db.set_setting(&user_id, &key, &initial_value)
-            .await
-            .expect("set setting from owned strings");
+        db.set_setting(
+            UserId::from(user_id.as_str()),
+            SettingKey::from(key.as_str()),
+            &initial_value,
+        )
+        .await
+        .expect("set setting from owned strings");
 
         let stored = db
-            .get_setting(&user_id, &key)
+            .get_setting(
+                UserId::from(user_id.as_str()),
+                SettingKey::from(key.as_str()),
+            )
             .await
             .expect("get setting from owned strings")
             .expect("setting should exist");
         assert_eq!(stored, initial_value);
 
-        let listed = db.list_settings(&user_id).await.expect("list settings");
+        let listed = db
+            .list_settings(UserId::from(user_id.as_str()))
+            .await
+            .expect("list settings");
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].key, key);
         assert_eq!(listed[0].value, initial_value);
 
-        db.set_setting(&user_id, &key, &updated_value)
-            .await
-            .expect("update setting from owned strings");
+        db.set_setting(
+            UserId::from(user_id.as_str()),
+            SettingKey::from(key.as_str()),
+            &updated_value,
+        )
+        .await
+        .expect("update setting from owned strings");
 
         let stored = db
-            .get_setting(&user_id, &key)
+            .get_setting(
+                UserId::from(user_id.as_str()),
+                SettingKey::from(key.as_str()),
+            )
             .await
             .expect("get updated setting")
             .expect("updated setting should exist");
         assert_eq!(stored, updated_value);
 
         let deleted = db
-            .delete_setting(&user_id, &key)
+            .delete_setting(
+                UserId::from(user_id.as_str()),
+                SettingKey::from(key.as_str()),
+            )
             .await
             .expect("delete setting from owned strings");
         assert!(deleted);
         assert!(
-            db.get_setting(&user_id, &key)
-                .await
-                .expect("get deleted setting")
-                .is_none()
+            db.get_setting(
+                UserId::from(user_id.as_str()),
+                SettingKey::from(key.as_str())
+            )
+            .await
+            .expect("get deleted setting")
+            .is_none()
         );
     }
 
@@ -1060,30 +1103,39 @@ mod tests {
         let db = &harness.db;
 
         // Initially no settings
-        let has = db.has_settings("bulk_user").await.expect("has_settings");
+        let has = db
+            .has_settings(UserId::from("bulk_user"))
+            .await
+            .expect("has_settings");
         assert!(!has);
 
         // Set all settings at once
         let mut settings = std::collections::HashMap::new();
         settings.insert("key1".to_string(), serde_json::json!("value1"));
         settings.insert("key2".to_string(), serde_json::json!(42));
-        db.set_all_settings("bulk_user", &settings)
+        db.set_all_settings(UserId::from("bulk_user"), &settings)
             .await
             .expect("set_all");
 
         // Has settings should now be true
-        let has = db.has_settings("bulk_user").await.expect("has_settings");
+        let has = db
+            .has_settings(UserId::from("bulk_user"))
+            .await
+            .expect("has_settings");
         assert!(has);
 
         // Get all settings
-        let all = db.get_all_settings("bulk_user").await.expect("get_all");
+        let all = db
+            .get_all_settings(UserId::from("bulk_user"))
+            .await
+            .expect("get_all");
         assert_eq!(all.len(), 2);
         assert_eq!(all["key1"], serde_json::json!("value1"));
         assert_eq!(all["key2"], serde_json::json!(42));
 
         // Get full setting row
         let full = db
-            .get_setting_full("bulk_user", "key1")
+            .get_setting_full(UserId::from("bulk_user"), SettingKey::from("key1"))
             .await
             .expect("get_full")
             .expect("should exist");

@@ -11,6 +11,8 @@ use crate::config::DatabaseConfig;
 #[cfg(feature = "postgres")]
 use crate::context::{ActionRecord, JobContext, JobState};
 #[cfg(feature = "postgres")]
+use crate::db::{SettingKey, UserId};
+#[cfg(feature = "postgres")]
 use crate::error::DatabaseError;
 #[cfg(feature = "postgres")]
 use crate::history::migrations::run_postgres_migrations;
@@ -39,14 +41,14 @@ impl Store {
     /// Get a single setting by key.
     pub async fn get_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| r.get("value")))
@@ -55,14 +57,14 @@ impl Store {
     /// Get a single setting with full metadata.
     pub async fn get_setting_full(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| SettingRow {
@@ -75,8 +77,8 @@ impl Store {
     /// Set a single setting (upsert).
     pub async fn set_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
@@ -88,31 +90,35 @@ impl Store {
                 value = EXCLUDED.value,
                 updated_at = NOW()
             "#,
-            &[&user_id, &key, value],
+            &[&user_id.as_str(), &key.as_str(), value],
         )
         .await?;
         Ok(())
     }
 
     /// Delete a single setting (reset to default).
-    pub async fn delete_setting(&self, user_id: &str, key: &str) -> Result<bool, DatabaseError> {
+    pub async fn delete_setting(
+        &self,
+        user_id: UserId,
+        key: SettingKey,
+    ) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let count = conn
             .execute(
                 "DELETE FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(count > 0)
     }
 
     /// List all settings for a user (with metadata).
-    pub async fn list_settings(&self, user_id: &str) -> Result<Vec<SettingRow>, DatabaseError> {
+    pub async fn list_settings(&self, user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 ORDER BY key",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -128,13 +134,13 @@ impl Store {
     /// Get all settings as a flat key-value map.
     pub async fn get_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
     ) -> Result<std::collections::HashMap<String, serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -152,7 +158,7 @@ impl Store {
     /// Each entry is upserted individually within a single transaction.
     pub async fn set_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
         settings: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let mut conn = self.conn().await?;
@@ -167,7 +173,7 @@ impl Store {
                     value = EXCLUDED.value,
                     updated_at = NOW()
                 "#,
-                &[&user_id, &key, value],
+                &[&user_id.as_str(), &key, value],
             )
             .await?;
         }
@@ -177,12 +183,12 @@ impl Store {
     }
 
     /// Check if the settings table has any rows for a user.
-    pub async fn has_settings(&self, user_id: &str) -> Result<bool, DatabaseError> {
+    pub async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_one(
                 "SELECT COUNT(*) as cnt FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         let count: i64 = row.get("cnt");
@@ -266,14 +272,14 @@ impl Store {
     /// Get a single setting by key.
     pub async fn get_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| r.get("value")))
@@ -282,14 +288,14 @@ impl Store {
     /// Get a single setting with full metadata.
     pub async fn get_setting_full(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| SettingRow {
@@ -302,8 +308,8 @@ impl Store {
     /// Set a single setting (upsert).
     pub async fn set_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
@@ -315,31 +321,35 @@ impl Store {
                 value = EXCLUDED.value,
                 updated_at = NOW()
             "#,
-            &[&user_id, &key, value],
+            &[&user_id.as_str(), &key.as_str(), value],
         )
         .await?;
         Ok(())
     }
 
     /// Delete a single setting (reset to default).
-    pub async fn delete_setting(&self, user_id: &str, key: &str) -> Result<bool, DatabaseError> {
+    pub async fn delete_setting(
+        &self,
+        user_id: UserId,
+        key: SettingKey,
+    ) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let count = conn
             .execute(
                 "DELETE FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(count > 0)
     }
 
     /// List all settings for a user (with metadata).
-    pub async fn list_settings(&self, user_id: &str) -> Result<Vec<SettingRow>, DatabaseError> {
+    pub async fn list_settings(&self, user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 ORDER BY key",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -355,13 +365,13 @@ impl Store {
     /// Get all settings as a flat key-value map.
     pub async fn get_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
     ) -> Result<std::collections::HashMap<String, serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -379,7 +389,7 @@ impl Store {
     /// Each entry is upserted individually within a single transaction.
     pub async fn set_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
         settings: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let mut conn = self.conn().await?;
@@ -394,7 +404,7 @@ impl Store {
                     value = EXCLUDED.value,
                     updated_at = NOW()
                 "#,
-                &[&user_id, &key, value],
+                &[&user_id.as_str(), &key, value],
             )
             .await?;
         }
@@ -404,12 +414,12 @@ impl Store {
     }
 
     /// Check if the settings table has any rows for a user.
-    pub async fn has_settings(&self, user_id: &str) -> Result<bool, DatabaseError> {
+    pub async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_one(
                 "SELECT COUNT(*) as cnt FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         let count: i64 = row.get("cnt");
@@ -434,14 +444,14 @@ impl Store {
     /// Get a single setting by key.
     pub async fn get_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| r.get("value")))
@@ -450,14 +460,14 @@ impl Store {
     /// Get a single setting with full metadata.
     pub async fn get_setting_full(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| SettingRow {
@@ -470,8 +480,8 @@ impl Store {
     /// Set a single setting (upsert).
     pub async fn set_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
@@ -483,31 +493,35 @@ impl Store {
                 value = EXCLUDED.value,
                 updated_at = NOW()
             "#,
-            &[&user_id, &key, value],
+            &[&user_id.as_str(), &key.as_str(), value],
         )
         .await?;
         Ok(())
     }
 
     /// Delete a single setting (reset to default).
-    pub async fn delete_setting(&self, user_id: &str, key: &str) -> Result<bool, DatabaseError> {
+    pub async fn delete_setting(
+        &self,
+        user_id: UserId,
+        key: SettingKey,
+    ) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let count = conn
             .execute(
                 "DELETE FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(count > 0)
     }
 
     /// List all settings for a user (with metadata).
-    pub async fn list_settings(&self, user_id: &str) -> Result<Vec<SettingRow>, DatabaseError> {
+    pub async fn list_settings(&self, user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 ORDER BY key",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -523,13 +537,13 @@ impl Store {
     /// Get all settings as a flat key-value map.
     pub async fn get_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
     ) -> Result<std::collections::HashMap<String, serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -547,7 +561,7 @@ impl Store {
     /// Each entry is upserted individually within a single transaction.
     pub async fn set_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
         settings: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let mut conn = self.conn().await?;
@@ -562,7 +576,7 @@ impl Store {
                     value = EXCLUDED.value,
                     updated_at = NOW()
                 "#,
-                &[&user_id, &key, value],
+                &[&user_id.as_str(), &key, value],
             )
             .await?;
         }
@@ -572,12 +586,12 @@ impl Store {
     }
 
     /// Check if the settings table has any rows for a user.
-    pub async fn has_settings(&self, user_id: &str) -> Result<bool, DatabaseError> {
+    pub async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_one(
                 "SELECT COUNT(*) as cnt FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         let count: i64 = row.get("cnt");
@@ -597,14 +611,14 @@ impl Store {
     /// Get a single setting by key.
     pub async fn get_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| r.get("value")))
@@ -613,14 +627,14 @@ impl Store {
     /// Get a single setting with full metadata.
     pub async fn get_setting_full(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| SettingRow {
@@ -633,8 +647,8 @@ impl Store {
     /// Set a single setting (upsert).
     pub async fn set_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
@@ -646,31 +660,35 @@ impl Store {
                 value = EXCLUDED.value,
                 updated_at = NOW()
             "#,
-            &[&user_id, &key, value],
+            &[&user_id.as_str(), &key.as_str(), value],
         )
         .await?;
         Ok(())
     }
 
     /// Delete a single setting (reset to default).
-    pub async fn delete_setting(&self, user_id: &str, key: &str) -> Result<bool, DatabaseError> {
+    pub async fn delete_setting(
+        &self,
+        user_id: UserId,
+        key: SettingKey,
+    ) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let count = conn
             .execute(
                 "DELETE FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(count > 0)
     }
 
     /// List all settings for a user (with metadata).
-    pub async fn list_settings(&self, user_id: &str) -> Result<Vec<SettingRow>, DatabaseError> {
+    pub async fn list_settings(&self, user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 ORDER BY key",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -686,13 +704,13 @@ impl Store {
     /// Get all settings as a flat key-value map.
     pub async fn get_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
     ) -> Result<std::collections::HashMap<String, serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -710,7 +728,7 @@ impl Store {
     /// Each entry is upserted individually within a single transaction.
     pub async fn set_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
         settings: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let mut conn = self.conn().await?;
@@ -725,7 +743,7 @@ impl Store {
                     value = EXCLUDED.value,
                     updated_at = NOW()
                 "#,
-                &[&user_id, &key, value],
+                &[&user_id.as_str(), &key, value],
             )
             .await?;
         }
@@ -735,12 +753,12 @@ impl Store {
     }
 
     /// Check if the settings table has any rows for a user.
-    pub async fn has_settings(&self, user_id: &str) -> Result<bool, DatabaseError> {
+    pub async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_one(
                 "SELECT COUNT(*) as cnt FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         let count: i64 = row.get("cnt");
@@ -846,14 +864,14 @@ impl Store {
     /// Get a single setting by key.
     pub async fn get_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| r.get("value")))
@@ -862,14 +880,14 @@ impl Store {
     /// Get a single setting with full metadata.
     pub async fn get_setting_full(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| SettingRow {
@@ -882,8 +900,8 @@ impl Store {
     /// Set a single setting (upsert).
     pub async fn set_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
@@ -895,31 +913,35 @@ impl Store {
                 value = EXCLUDED.value,
                 updated_at = NOW()
             "#,
-            &[&user_id, &key, value],
+            &[&user_id.as_str(), &key.as_str(), value],
         )
         .await?;
         Ok(())
     }
 
     /// Delete a single setting (reset to default).
-    pub async fn delete_setting(&self, user_id: &str, key: &str) -> Result<bool, DatabaseError> {
+    pub async fn delete_setting(
+        &self,
+        user_id: UserId,
+        key: SettingKey,
+    ) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let count = conn
             .execute(
                 "DELETE FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(count > 0)
     }
 
     /// List all settings for a user (with metadata).
-    pub async fn list_settings(&self, user_id: &str) -> Result<Vec<SettingRow>, DatabaseError> {
+    pub async fn list_settings(&self, user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 ORDER BY key",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -935,13 +957,13 @@ impl Store {
     /// Get all settings as a flat key-value map.
     pub async fn get_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
     ) -> Result<std::collections::HashMap<String, serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -959,7 +981,7 @@ impl Store {
     /// Each entry is upserted individually within a single transaction.
     pub async fn set_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
         settings: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let mut conn = self.conn().await?;
@@ -974,7 +996,7 @@ impl Store {
                     value = EXCLUDED.value,
                     updated_at = NOW()
                 "#,
-                &[&user_id, &key, value],
+                &[&user_id.as_str(), &key, value],
             )
             .await?;
         }
@@ -984,12 +1006,12 @@ impl Store {
     }
 
     /// Check if the settings table has any rows for a user.
-    pub async fn has_settings(&self, user_id: &str) -> Result<bool, DatabaseError> {
+    pub async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_one(
                 "SELECT COUNT(*) as cnt FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         let count: i64 = row.get("cnt");
@@ -1012,14 +1034,14 @@ impl Store {
     /// Get a single setting by key.
     pub async fn get_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| r.get("value")))
@@ -1028,14 +1050,14 @@ impl Store {
     /// Get a single setting with full metadata.
     pub async fn get_setting_full(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| SettingRow {
@@ -1048,8 +1070,8 @@ impl Store {
     /// Set a single setting (upsert).
     pub async fn set_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
@@ -1061,31 +1083,35 @@ impl Store {
                 value = EXCLUDED.value,
                 updated_at = NOW()
             "#,
-            &[&user_id, &key, value],
+            &[&user_id.as_str(), &key.as_str(), value],
         )
         .await?;
         Ok(())
     }
 
     /// Delete a single setting (reset to default).
-    pub async fn delete_setting(&self, user_id: &str, key: &str) -> Result<bool, DatabaseError> {
+    pub async fn delete_setting(
+        &self,
+        user_id: UserId,
+        key: SettingKey,
+    ) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let count = conn
             .execute(
                 "DELETE FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(count > 0)
     }
 
     /// List all settings for a user (with metadata).
-    pub async fn list_settings(&self, user_id: &str) -> Result<Vec<SettingRow>, DatabaseError> {
+    pub async fn list_settings(&self, user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 ORDER BY key",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -1101,13 +1127,13 @@ impl Store {
     /// Get all settings as a flat key-value map.
     pub async fn get_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
     ) -> Result<std::collections::HashMap<String, serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -1125,7 +1151,7 @@ impl Store {
     /// Each entry is upserted individually within a single transaction.
     pub async fn set_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
         settings: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let mut conn = self.conn().await?;
@@ -1140,7 +1166,7 @@ impl Store {
                     value = EXCLUDED.value,
                     updated_at = NOW()
                 "#,
-                &[&user_id, &key, value],
+                &[&user_id.as_str(), &key, value],
             )
             .await?;
         }
@@ -1150,12 +1176,12 @@ impl Store {
     }
 
     /// Check if the settings table has any rows for a user.
-    pub async fn has_settings(&self, user_id: &str) -> Result<bool, DatabaseError> {
+    pub async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_one(
                 "SELECT COUNT(*) as cnt FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         let count: i64 = row.get("cnt");
@@ -1178,14 +1204,14 @@ impl Store {
     /// Get a single setting by key.
     pub async fn get_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| r.get("value")))
@@ -1194,14 +1220,14 @@ impl Store {
     /// Get a single setting with full metadata.
     pub async fn get_setting_full(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
     ) -> Result<Option<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(row.map(|r| SettingRow {
@@ -1214,8 +1240,8 @@ impl Store {
     /// Set a single setting (upsert).
     pub async fn set_setting(
         &self,
-        user_id: &str,
-        key: &str,
+        user_id: UserId,
+        key: SettingKey,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
@@ -1227,31 +1253,35 @@ impl Store {
                 value = EXCLUDED.value,
                 updated_at = NOW()
             "#,
-            &[&user_id, &key, value],
+            &[&user_id.as_str(), &key.as_str(), value],
         )
         .await?;
         Ok(())
     }
 
     /// Delete a single setting (reset to default).
-    pub async fn delete_setting(&self, user_id: &str, key: &str) -> Result<bool, DatabaseError> {
+    pub async fn delete_setting(
+        &self,
+        user_id: UserId,
+        key: SettingKey,
+    ) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let count = conn
             .execute(
                 "DELETE FROM settings WHERE user_id = $1 AND key = $2",
-                &[&user_id, &key],
+                &[&user_id.as_str(), &key.as_str()],
             )
             .await?;
         Ok(count > 0)
     }
 
     /// List all settings for a user (with metadata).
-    pub async fn list_settings(&self, user_id: &str) -> Result<Vec<SettingRow>, DatabaseError> {
+    pub async fn list_settings(&self, user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value, updated_at FROM settings WHERE user_id = $1 ORDER BY key",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -1267,13 +1297,13 @@ impl Store {
     /// Get all settings as a flat key-value map.
     pub async fn get_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
     ) -> Result<std::collections::HashMap<String, serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
                 "SELECT key, value FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         Ok(rows
@@ -1291,7 +1321,7 @@ impl Store {
     /// Each entry is upserted individually within a single transaction.
     pub async fn set_all_settings(
         &self,
-        user_id: &str,
+        user_id: UserId,
         settings: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let mut conn = self.conn().await?;
@@ -1306,7 +1336,7 @@ impl Store {
                     value = EXCLUDED.value,
                     updated_at = NOW()
                 "#,
-                &[&user_id, &key, value],
+                &[&user_id.as_str(), &key, value],
             )
             .await?;
         }
@@ -1316,12 +1346,12 @@ impl Store {
     }
 
     /// Check if the settings table has any rows for a user.
-    pub async fn has_settings(&self, user_id: &str) -> Result<bool, DatabaseError> {
+    pub async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
             .query_one(
                 "SELECT COUNT(*) as cnt FROM settings WHERE user_id = $1",
-                &[&user_id],
+                &[&user_id.as_str()],
             )
             .await?;
         let count: i64 = row.get("cnt");
