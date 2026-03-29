@@ -10,9 +10,7 @@ use ironclaw::{
     app::{AppBuilder, AppBuilderFlags},
     channels::{
         ChannelManager, GatewayChannel, HttpChannel, ReplChannel, SignalChannel, WebhookServer,
-        WebhookServerConfig,
-        wasm::{WasmChannelRouter, WasmChannelRuntime},
-        web::log_layer::LogBroadcaster,
+        WebhookServerConfig, web::log_layer::LogBroadcaster,
     },
     cli::{
         Cli, Command, run_mcp_command, run_pairing_command, run_service_command,
@@ -22,7 +20,6 @@ use ironclaw::{
     hooks::bootstrap_hooks,
     llm::create_session_manager,
     orchestrator::{ReaperConfig, SandboxReaper},
-    pairing::PairingStore,
     tracing_fmt::{init_cli_tracing, init_worker_tracing},
 };
 
@@ -46,11 +43,8 @@ struct ChannelSetup {
     channels: ChannelManager,
     channel_names: Vec<String>,
     loaded_wasm_channel_names: Vec<String>,
-    wasm_channel_runtime_state: Option<(
-        Arc<WasmChannelRuntime>,
-        Arc<PairingStore>,
-        Arc<WasmChannelRouter>,
-    )>,
+    /// WASM channel setup context, if WASM channels are enabled.
+    wasm_channel_setup: Option<Arc<ironclaw::channels::wasm::WasmChannelSetup>>,
     webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     #[cfg(unix)]
     http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
@@ -200,12 +194,7 @@ async fn setup_channels(
     let channels = ChannelManager::new();
     let mut channel_names: Vec<String> = Vec::new();
     let mut loaded_wasm_channel_names: Vec<String> = Vec::new();
-    #[allow(clippy::type_complexity)]
-    let mut wasm_channel_runtime_state: Option<(
-        Arc<WasmChannelRuntime>,
-        Arc<PairingStore>,
-        Arc<WasmChannelRouter>,
-    )> = None;
+    let mut wasm_channel_setup: Option<Arc<ironclaw::channels::wasm::WasmChannelSetup>> = None;
 
     // Create CLI channel
     let repl_channel = if let Some(ref msg) = cli.message {
@@ -241,20 +230,18 @@ async fn setup_channels(
         )
         .await;
 
-        if let Some(result) = wasm_result {
-            loaded_wasm_channel_names = result.channel_names;
-            wasm_channel_runtime_state = Some((
-                result.wasm_channel_runtime,
-                result.pairing_store,
-                result.wasm_channel_router,
-            ));
-            for (name, channel) in result.channels {
+        if let Some(mut result) = wasm_result {
+            loaded_wasm_channel_names = result.channel_names.clone();
+            // Take channels from result before wrapping in Arc
+            let channels_to_add = std::mem::take(&mut result.channels);
+            for (name, channel) in channels_to_add {
                 channel_names.push(name);
                 channels.add(channel).await;
             }
-            if let Some(routes) = result.webhook_routes {
+            if let Some(routes) = result.webhook_routes.take() {
                 webhook_routes.push(routes);
             }
+            wasm_channel_setup = Some(Arc::new(result));
         }
     }
 
@@ -332,7 +319,7 @@ async fn setup_channels(
         channels,
         channel_names,
         loaded_wasm_channel_names,
-        wasm_channel_runtime_state,
+        wasm_channel_setup,
         webhook_server,
         #[cfg(unix)]
         http_channel_state,
@@ -478,18 +465,31 @@ fn spawn_sighup_handler(
             // (similar to inject_llm_keys_from_secrets for LLM providers)
             if let Some(ref secrets_store) = secrets_store {
                 // Inject HTTP webhook secret from encrypted store
-                if let Ok(webhook_secret) = secrets_store
+                match secrets_store
                     .get_decrypted("default", "http_webhook_secret")
                     .await
                 {
-                    // Thread-safe: Uses INJECTED_VARS mutex instead of unsafe std::env::set_var
-                    // Config::from_env() will read from the overlay via optional_env()
-                    ironclaw::config::inject_single_var(
-                        "HTTP_WEBHOOK_SECRET",
-                        webhook_secret.expose(),
-                    );
-                    tracing::debug!("Injected HTTP_WEBHOOK_SECRET from secrets store");
+                    Ok(webhook_secret) => {
+                        // Thread-safe: Uses INJECTED_VARS mutex instead of unsafe std::env::set_var
+                        // Config::from_env() will read from the overlay via optional_env()
+                        ironclaw::config::inject_single_var(
+                            "HTTP_WEBHOOK_SECRET",
+                            webhook_secret.expose(),
+                        );
+                        tracing::debug!("Injected HTTP_WEBHOOK_SECRET from secrets store");
+                    }
+                    Err(e) => {
+                        // Clear any stale secret from the overlay to prevent reuse
+                        ironclaw::config::inject_single_var("HTTP_WEBHOOK_SECRET", "");
+                        tracing::debug!(
+                            "Cleared HTTP_WEBHOOK_SECRET from overlay (failed to decrypt: {})",
+                            e
+                        );
+                    }
                 }
+            } else {
+                // No secrets store available, clear any stale secret
+                ironclaw::config::inject_single_var("HTTP_WEBHOOK_SECRET", "");
             }
 
             // Reload config (now with secrets injected into environment)
@@ -575,22 +575,9 @@ fn spawn_sighup_handler(
     });
 }
 
-/// Main async entry point.
-///
-/// FIXME: This function has high cyclomatic complexity (>12 decision points).
-/// Consider extracting coherent phases (PID+onboarding, config+builder,
-/// runtime wiring, shutdown) into dedicated functions.
-/// See: https://github.com/df12/axinite/issues/TBD
-async fn async_main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-
-    // Handle non-agent commands first (they don't need full setup)
-    if dispatch_subcommand(&cli).await?.is_some() {
-        return Ok(());
-    }
-
-    // ── PID lock (prevent multiple instances) ────────────────────────
-    let _pid_lock = match ironclaw::bootstrap::PidLock::acquire() {
+/// Phase 1: Acquire PID lock and run onboarding if needed.
+async fn phase_pid_and_onboard(cli: &Cli) -> anyhow::Result<Option<ironclaw::bootstrap::PidLock>> {
+    let pid_lock = match ironclaw::bootstrap::PidLock::acquire() {
         Ok(lock) => Some(lock),
         Err(ironclaw::bootstrap::PidLockError::AlreadyRunning { pid }) => {
             anyhow::bail!(
@@ -607,8 +594,6 @@ async fn async_main() -> anyhow::Result<()> {
         }
     };
 
-    // ── Agent startup ──────────────────────────────────────────────────
-
     // Enhanced first-run detection
     #[cfg(any(feature = "postgres", feature = "libsql"))]
     if !cli.no_onboard
@@ -623,10 +608,18 @@ async fn async_main() -> anyhow::Result<()> {
         wizard.run().await?;
     }
 
-    // Load initial config from env + disk + optional TOML (before DB is available).
-    // Credentials may be missing at this point — that's fine. LlmConfig::resolve()
-    // defers gracefully, and AppBuilder::build_all() re-resolves after loading
-    // secrets from the encrypted DB.
+    Ok(pid_lock)
+}
+
+/// Phase 2: Load configuration and initialize tracing.
+async fn phase_load_config_and_tracing(
+    cli: &Cli,
+) -> anyhow::Result<(
+    Config,
+    Arc<ironclaw::llm::SessionManager>,
+    Arc<LogBroadcaster>,
+    Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+)> {
     let toml_path = cli.config.as_deref();
     let config = match Config::from_env_with_toml(toml_path).await {
         Ok(c) => c,
@@ -641,14 +634,8 @@ async fn async_main() -> anyhow::Result<()> {
         Err(e) => return Err(e.into()),
     };
 
-    // Initialize session manager before channel setup
     let session = create_session_manager(config.llm.session.clone()).await;
-
-    // Create log broadcaster before tracing init so the WebLogLayer can capture all events.
     let log_broadcaster = Arc::new(LogBroadcaster::new());
-
-    // Initialize tracing with a reloadable EnvFilter so the gateway can switch
-    // log levels at runtime without restarting.
     let log_level_handle =
         ironclaw::channels::web::log_layer::init_tracing(Arc::clone(&log_broadcaster));
 
@@ -656,67 +643,84 @@ async fn async_main() -> anyhow::Result<()> {
     tracing::debug!("Loaded configuration for agent: {}", config.agent.name);
     tracing::debug!("LLM backend: {}", config.llm.backend);
 
-    // ── Phase 1-5: Build all core components via AppBuilder ────────────
+    Ok((config, session, log_broadcaster, log_level_handle))
+}
 
-    let flags = AppBuilderFlags { no_db: cli.no_db };
+/// Phase 3: Build core components via AppBuilder.
+async fn phase_build_components(
+    cli: &Cli,
+    config: Config,
+    session: Arc<ironclaw::llm::SessionManager>,
+    log_broadcaster: Arc<LogBroadcaster>,
+) -> anyhow::Result<(Config, ironclaw::app::AppComponents)> {
+    let toml_path = cli.config.as_deref();
+    let flags = AppBuilderFlags {
+        no_db: cli.no_db,
+        workspace_import_dir: std::env::var("WORKSPACE_IMPORT_DIR")
+            .ok()
+            .map(std::path::PathBuf::from),
+    };
+
     let (components, side_effects) = AppBuilder::new(
         config,
         flags,
         toml_path.map(std::path::PathBuf::from),
-        session.clone(),
-        Arc::clone(&log_broadcaster),
+        session,
+        log_broadcaster,
     )
     .build_components()
     .await?;
 
-    // Start runtime side effects (stale job cleanup, workspace seeding, embedding backfill)
     side_effects.start().await;
 
-    // ── Tunnel setup ───────────────────────────────────────────────────
+    let config = components.config.clone();
+    Ok((config, components))
+}
 
-    // Clone config for tunnel (which may modify it), then replace components.config
-    let (config, active_tunnel) =
+/// Phase 4: Start tunnel and orchestrator.
+async fn phase_tunnel_and_orchestrator(
+    config: &Config,
+    components: &ironclaw::app::AppComponents,
+) -> anyhow::Result<(
+    Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+    ironclaw::orchestrator::OrchestratorSetup,
+)> {
+    let (_, active_tunnel) =
         ironclaw::tunnel::start_managed_tunnel(components.config.clone()).await;
 
-    // ── Orchestrator / container job manager ────────────────────────────
-
     let orch = ironclaw::orchestrator::setup_orchestrator(
-        &config,
+        config,
         &components.llm,
         &components.tools,
         components.db.as_ref(),
         components.secrets_store.as_ref(),
     )
     .await;
-    let container_job_manager = orch.container_job_manager;
-    let job_event_tx = orch.job_event_tx;
-    let prompt_queue = orch.prompt_queue;
-    let docker_status = orch.docker_status;
 
-    // ── Channel setup ──────────────────────────────────────────────────
+    Ok((active_tunnel, orch))
+}
 
-    let channel_setup = setup_channels(&config, &cli, &components).await?;
-    let channels = channel_setup.channels;
-    let mut channel_names = channel_setup.channel_names;
-    let loaded_wasm_channel_names = channel_setup.loaded_wasm_channel_names;
-    let mut wasm_channel_runtime_state = channel_setup.wasm_channel_runtime_state;
-    let webhook_server = channel_setup.webhook_server;
-    #[cfg(unix)]
-    let http_channel_state = channel_setup.http_channel_state;
+/// Phase 5: Initialize channels and hooks.
+async fn phase_init_channels_and_hooks(
+    config: &Config,
+    cli: &Cli,
+    components: &ironclaw::app::AppComponents,
+    loaded_wasm_channel_names: &[String],
+) -> anyhow::Result<(ChannelSetup, ironclaw::hooks::HookBootstrapSummary)> {
+    let channel_setup = setup_channels(config, cli, components).await?;
 
-    // Register lifecycle hooks.
     let active_tool_names = components.tools.list().await;
-
     let hook_bootstrap = bootstrap_hooks(
         &components.hooks,
         components.workspace.as_ref(),
         &config.wasm.tools_dir,
         &config.channels.wasm_channels_dir,
         &active_tool_names,
-        &loaded_wasm_channel_names,
+        loaded_wasm_channel_names,
         &components.dev_loaded_tool_names,
     )
     .await;
+
     tracing::debug!(
         bundled = hook_bootstrap.bundled_hooks,
         plugin = hook_bootstrap.plugin_hooks,
@@ -726,106 +730,125 @@ async fn async_main() -> anyhow::Result<()> {
         "Lifecycle hooks initialized"
     );
 
-    // Create session manager (shared between agent and web gateway)
+    Ok((channel_setup, hook_bootstrap))
+}
+
+/// Phase 6: Setup gateway channel.
+async fn phase_setup_gateway(
+    config: &Config,
+    components: &ironclaw::app::AppComponents,
+    channel_setup: &ChannelSetup,
+    log_broadcaster: &Arc<LogBroadcaster>,
+    log_level_handle: &Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    orch: &ironclaw::orchestrator::OrchestratorSetup,
+) -> anyhow::Result<GatewaySetup> {
     let session_manager =
         Arc::new(ironclaw::agent::SessionManager::new().with_hooks(components.hooks.clone()));
 
-    // Lazy scheduler slot — filled after Agent::new creates the Scheduler.
-    // Allows CreateJobTool to dispatch local jobs via the Scheduler even though
-    // the Scheduler is created after tools are registered (chicken-and-egg).
     let scheduler_slot: ironclaw::tools::builtin::SchedulerSlot =
         Arc::new(tokio::sync::RwLock::new(None));
 
-    // Register job tools (sandbox deps auto-injected when container_job_manager is available)
     components
         .tools
         .register_job_tools(ironclaw::tools::RegisterJobToolsOptions {
             context_manager: Arc::clone(&components.context_manager),
             scheduler_slot: Some(scheduler_slot.clone()),
-            job_manager: container_job_manager.clone(),
+            job_manager: orch.container_job_manager.clone(),
             store: components.db.clone(),
-            job_event_tx: job_event_tx.clone(),
-            inject_tx: Some(channels.inject_sender()),
+            job_event_tx: orch.job_event_tx.clone(),
+            inject_tx: Some(channel_setup.channels.inject_sender()),
             prompt_queue: if config.sandbox.enabled {
-                Some(Arc::clone(&prompt_queue))
+                Some(Arc::clone(&orch.prompt_queue))
             } else {
                 None
             },
             secrets_store: components.secrets_store.clone(),
         });
 
-    // ── Gateway channel ────────────────────────────────────────────────
-
+    let mut channel_names = channel_setup.channel_names.clone();
     let gateway_setup = setup_gateway_channel(
-        &config,
-        &components,
+        config,
+        components,
         &session_manager,
-        &log_broadcaster,
-        &log_level_handle,
+        log_broadcaster,
+        log_level_handle,
         &scheduler_slot,
-        &container_job_manager,
-        &job_event_tx,
-        &prompt_queue,
-        &channels,
+        &orch.container_job_manager,
+        &orch.job_event_tx,
+        &orch.prompt_queue,
+        &channel_setup.channels,
         &mut channel_names,
     )
     .await?;
-    let gateway_url = gateway_setup.gateway_url;
-    let sse_sender = gateway_setup.sse_sender;
-    let routine_engine_slot = gateway_setup.routine_engine_slot;
 
-    // ── Boot screen ────────────────────────────────────────────────────
+    Ok(gateway_setup)
+}
 
-    let boot_tool_count = components.tools.count();
-    let boot_llm_model = components.llm.model_name().to_string();
-    let boot_cheap_model = components
-        .cheap_llm
-        .as_ref()
-        .map(|c| c.model_name().to_string());
-
-    if config.channels.cli.enabled && cli.message.is_none() {
-        let boot_info = ironclaw::boot_screen::BootInfo {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            agent_name: config.agent.name.clone(),
-            llm_backend: config.llm.backend.to_string(),
-            llm_model: boot_llm_model,
-            cheap_model: boot_cheap_model,
-            db_backend: if cli.no_db {
-                "none".to_string()
-            } else {
-                config.database.backend.to_string()
-            },
-            db_connected: !cli.no_db,
-            tool_count: boot_tool_count,
-            gateway_url,
-            embeddings_enabled: config.embeddings.enabled,
-            embeddings_provider: if config.embeddings.enabled {
-                Some(config.embeddings.provider.clone())
-            } else {
-                None
-            },
-            heartbeat_enabled: config.heartbeat.enabled,
-            heartbeat_interval_secs: config.heartbeat.interval_secs,
-            sandbox_enabled: config.sandbox.enabled,
-            docker_status,
-            claude_code_enabled: config.claude_code.enabled,
-            routines_enabled: config.routines.enabled,
-            skills_enabled: config.skills.enabled,
-            channels: channel_names,
-            tunnel_url: active_tunnel
-                .as_ref()
-                .and_then(|t| t.public_url())
-                .or_else(|| config.tunnel.public_url.clone()),
-            tunnel_provider: active_tunnel.as_ref().map(|t| t.name().to_string()),
-        };
-        ironclaw::boot_screen::print_boot_screen(&boot_info);
+/// Phase 7: Print boot screen if CLI mode is enabled.
+fn phase_print_boot_screen(
+    cli: &Cli,
+    config: &Config,
+    components: &ironclaw::app::AppComponents,
+    gateway_setup: &GatewaySetup,
+    channel_names: &[String],
+    docker_status: &ironclaw::sandbox::DockerStatus,
+    active_tunnel: &Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+) {
+    if !config.channels.cli.enabled || cli.message.is_some() {
+        return;
     }
 
-    // ── Run the agent ──────────────────────────────────────────────────
+    let boot_info = ironclaw::boot_screen::BootInfo {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        agent_name: config.agent.name.clone(),
+        llm_backend: config.llm.backend.to_string(),
+        llm_model: components.llm.model_name().to_string(),
+        cheap_model: components
+            .cheap_llm
+            .as_ref()
+            .map(|c| c.model_name().to_string()),
+        db_backend: if cli.no_db {
+            "none".to_string()
+        } else {
+            config.database.backend.to_string()
+        },
+        db_connected: !cli.no_db,
+        tool_count: components.tools.count(),
+        gateway_url: gateway_setup.gateway_url.clone(),
+        embeddings_enabled: config.embeddings.enabled,
+        embeddings_provider: if config.embeddings.enabled {
+            Some(config.embeddings.provider.clone())
+        } else {
+            None
+        },
+        heartbeat_enabled: config.heartbeat.enabled,
+        heartbeat_interval_secs: config.heartbeat.interval_secs,
+        sandbox_enabled: config.sandbox.enabled,
+        docker_status: *docker_status,
+        claude_code_enabled: config.claude_code.enabled,
+        routines_enabled: config.routines.enabled,
+        skills_enabled: config.skills.enabled,
+        channels: channel_names.to_vec(),
+        tunnel_url: active_tunnel
+            .as_ref()
+            .and_then(|t| t.public_url())
+            .or_else(|| config.tunnel.public_url.clone()),
+        tunnel_provider: active_tunnel.as_ref().map(|t| t.name().to_string()),
+    };
+    ironclaw::boot_screen::print_boot_screen(&boot_info);
+}
 
-    let channels = Arc::new(channels);
+/// Phase 8: Run the agent.
+async fn phase_run_agent(
+    config: &Config,
+    components: ironclaw::app::AppComponents,
+    channel_setup: ChannelSetup,
+    gateway_setup: GatewaySetup,
+    orch: &ironclaw::orchestrator::OrchestratorSetup,
+    loaded_wasm_channel_names: Vec<String>,
+) -> anyhow::Result<tokio::sync::broadcast::Sender<()>> {
+    let channels = Arc::new(channel_setup.channels);
 
-    // Register message tool for sending messages to connected channels
     components
         .tools
         .register_message_tools(Arc::clone(&channels))
@@ -833,7 +856,7 @@ async fn async_main() -> anyhow::Result<()> {
 
     // Wire up channel runtime for hot-activation of WASM channels.
     if let Some(ref ext_mgr) = components.extension_manager
-        && let Some((rt, ps, router)) = wasm_channel_runtime_state.take()
+        && let Some(setup) = channel_setup.wasm_channel_setup
     {
         let active_at_startup: std::collections::HashSet<String> =
             loaded_wasm_channel_names.iter().cloned().collect();
@@ -841,16 +864,14 @@ async fn async_main() -> anyhow::Result<()> {
         ext_mgr
             .set_channel_runtime(
                 Arc::clone(&channels),
-                rt,
-                ps,
-                router,
+                Arc::clone(&setup.wasm_channel_runtime),
+                Arc::clone(&setup.pairing_store),
+                Arc::clone(&setup.wasm_channel_router),
                 config.channels.wasm_channel_owner_ids.clone(),
             )
             .await;
         tracing::debug!("Channel runtime wired into extension manager for hot-activation");
 
-        // Auto-activate WASM channels that were active in a previous session.
-        // Relay channels are handled separately below via restore_relay_channels().
         let persisted = ext_mgr.load_persisted_active_channels().await;
         for name in &persisted {
             if active_at_startup.contains(name) || ext_mgr.is_relay_channel(name).await {
@@ -875,8 +896,6 @@ async fn async_main() -> anyhow::Result<()> {
         }
     }
 
-    // Ensure the relay channel manager is always set (even without WASM runtime),
-    // then restore any persisted relay channels.
     if let Some(ref ext_mgr) = components.extension_manager {
         ext_mgr
             .set_relay_channel_manager(Arc::clone(&channels))
@@ -884,14 +903,12 @@ async fn async_main() -> anyhow::Result<()> {
         ext_mgr.restore_relay_channels().await;
     }
 
-    // Wire SSE sender into extension manager for broadcasting status events.
     if let Some(ref ext_mgr) = components.extension_manager
-        && let Some(ref sender) = sse_sender
+        && let Some(ref sender) = gateway_setup.sse_sender
     {
         ext_mgr.set_sse_sender(sender.clone()).await;
     }
 
-    // Snapshot memory for trace recording before the agent starts
     if let Some(ref recorder) = components.recording_handle
         && let Some(ref ws) = components.workspace
     {
@@ -902,10 +919,8 @@ async fn async_main() -> anyhow::Result<()> {
         .recording_handle
         .as_ref()
         .map(|r| r.http_interceptor());
-    // Clone context_manager for the reaper before it's moved into Agent::new()
     let reaper_context_manager = Arc::clone(&components.context_manager);
 
-    // Capture db reference for SIGHUP handler before it's moved into AgentDeps (Unix only)
     #[cfg(unix)]
     let sighup_settings_store: Option<Arc<dyn ironclaw::db::SettingsStore>> = components
         .db
@@ -925,7 +940,7 @@ async fn async_main() -> anyhow::Result<()> {
         skills_config: config.skills.clone(),
         hooks: components.hooks,
         cost_guard: components.cost_guard,
-        sse_tx: sse_sender,
+        sse_tx: gateway_setup.sse_sender,
         http_interceptor,
         transcription: config
             .transcription
@@ -935,6 +950,9 @@ async fn async_main() -> anyhow::Result<()> {
             ironclaw::document_extraction::DocumentExtractionMiddleware::new(),
         )),
     };
+
+    let session_manager =
+        Arc::new(ironclaw::agent::SessionManager::new().with_hooks(deps.hooks.clone()));
 
     let mut agent = Agent::new(
         config.agent.clone(),
@@ -947,11 +965,11 @@ async fn async_main() -> anyhow::Result<()> {
         Some(session_manager),
     );
 
-    // Fill the scheduler slot now that Agent (and its Scheduler) exist.
+    let scheduler_slot: ironclaw::tools::builtin::SchedulerSlot =
+        Arc::new(tokio::sync::RwLock::new(None));
     *scheduler_slot.write().await = Some(agent.scheduler());
 
-    // Spawn sandbox reaper for orphaned container cleanup
-    if let Some(ref jm) = container_job_manager {
+    if let Some(ref jm) = orch.container_job_manager {
         let reaper_jm = Arc::clone(jm);
         let reaper_config = ReaperConfig {
             scan_interval: Duration::from_secs(config.sandbox.reaper_interval_secs),
@@ -967,54 +985,94 @@ async fn async_main() -> anyhow::Result<()> {
         });
     }
 
-    // Give the agent the routine engine slot so it can expose the engine to the gateway.
-    if let Some(slot) = routine_engine_slot {
+    if let Some(slot) = gateway_setup.routine_engine_slot {
         agent.set_routine_engine_slot(slot);
     }
 
-    // Prepare SIGHUP handler for hot-reloading HTTP webhook config
-    // Broadcast channel for clean shutdown of background tasks
     let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
     #[cfg(unix)]
     {
         let shutdown_rx = shutdown_tx.subscribe();
         spawn_sighup_handler(
-            webhook_server.clone(),
+            channel_setup.webhook_server.clone(),
             sighup_settings_store,
             components.secrets_store.clone(),
-            http_channel_state,
+            channel_setup.http_channel_state,
             shutdown_rx,
         );
     }
 
     agent.run().await?;
 
-    // ── Shutdown ────────────────────────────────────────────────────────
+    Ok(shutdown_tx)
+}
 
-    // Signal background tasks (SIGHUP handler, etc.) to gracefully shut down
+/// Main async entry point.
+async fn async_main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    // Handle non-agent commands first (they don't need full setup)
+    if dispatch_subcommand(&cli).await?.is_some() {
+        return Ok(());
+    }
+
+    // Phase 1: PID lock and onboarding
+    let _pid_lock = phase_pid_and_onboard(&cli).await?;
+
+    // Phase 2: Load config and initialize tracing
+    let (config, session, log_broadcaster, log_level_handle) =
+        phase_load_config_and_tracing(&cli).await?;
+
+    // Phase 3: Build core components
+    let (config, components) =
+        phase_build_components(&cli, config, session, log_broadcaster.clone()).await?;
+
+    // Phase 4: Start tunnel and orchestrator
+    let (active_tunnel, orch) = phase_tunnel_and_orchestrator(&config, &components).await?;
+    let loaded_wasm_channel_names = Vec::new(); // Will be populated in phase 5
+
+    // Phase 5: Initialize channels and hooks
+    let (channel_setup, _hook_bootstrap) =
+        phase_init_channels_and_hooks(&config, &cli, &components, &loaded_wasm_channel_names)
+            .await?;
+    let loaded_wasm_channel_names = channel_setup.loaded_wasm_channel_names.clone();
+
+    // Phase 6: Setup gateway
+    let gateway_setup = phase_setup_gateway(
+        &config,
+        &components,
+        &channel_setup,
+        &log_broadcaster,
+        &log_level_handle,
+        &orch,
+    )
+    .await?;
+
+    // Phase 7: Print boot screen
+    phase_print_boot_screen(
+        &cli,
+        &config,
+        &components,
+        &gateway_setup,
+        &channel_setup.channel_names,
+        &orch.docker_status,
+        &active_tunnel,
+    );
+
+    // Phase 8: Run agent
+    let shutdown_tx = phase_run_agent(
+        &config,
+        components,
+        channel_setup,
+        gateway_setup,
+        &orch,
+        loaded_wasm_channel_names,
+    )
+    .await?;
+
+    // Phase 9: Shutdown
     let _ = shutdown_tx.send(());
-
-    // Shut down all stdio MCP server child processes.
-    components.mcp_process_manager.shutdown_all().await;
-
-    // Flush LLM trace recording if enabled
-    if let Some(ref recorder) = components.recording_handle
-        && let Err(e) = recorder.flush().await
-    {
-        tracing::warn!("Failed to write LLM trace: {}", e);
-    }
-
-    if let Some(ref ws_arc) = webhook_server {
-        ws_arc.lock().await.shutdown().await;
-    }
-
-    if let Some(tunnel) = active_tunnel {
-        tracing::debug!("Stopping {} tunnel...", tunnel.name());
-        if let Err(e) = tunnel.stop().await {
-            tracing::warn!("Failed to stop tunnel cleanly: {}", e);
-        }
-    }
 
     tracing::debug!("Agent shutdown complete");
 

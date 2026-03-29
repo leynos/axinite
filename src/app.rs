@@ -189,6 +189,11 @@ pub struct AppComponents {
 #[derive(Default)]
 pub struct AppBuilderFlags {
     pub no_db: bool,
+    /// Optional workspace import directory path.
+    ///
+    /// When set, workspace files from this directory will be imported during
+    /// startup. If `None`, the import phase is skipped.
+    pub workspace_import_dir: Option<std::path::PathBuf>,
 }
 
 /// Builder that orchestrates the 5 mechanical init phases.
@@ -883,10 +888,8 @@ impl AppBuilder {
             dev_loaded_tool_names,
         ) = self.init_extensions(&tools, &hooks).await?;
 
-        // Capture workspace import directory if set
-        let workspace_import_dir = std::env::var("WORKSPACE_IMPORT_DIR")
-            .ok()
-            .map(std::path::PathBuf::from);
+        // Use workspace import directory from flags (injected by caller)
+        let workspace_import_dir = self.flags.workspace_import_dir.clone();
 
         // Phase 6 – skills
         let (skill_registry, skill_catalog) = self.init_skills(&tools).await;
@@ -965,7 +968,10 @@ mod tests {
             std::env::temp_dir().join("skills"),
             std::env::temp_dir().join("installed-skills"),
         );
-        let flags = AppBuilderFlags { no_db: true };
+        let flags = AppBuilderFlags {
+            no_db: true,
+            workspace_import_dir: None,
+        };
         let session = Arc::new(SessionManager::new(config.llm.session.clone()));
         let log_broadcaster = Arc::new(LogBroadcaster::new());
 
@@ -985,18 +991,57 @@ mod tests {
 
     /// Verify that RuntimeSideEffects::start runs synchronously for
     /// workspace operations (import/seed) before returning.
+    #[cfg(feature = "libsql")]
     #[tokio::test]
     async fn runtime_side_effects_start_awaits_workspace_operations() {
-        // Since we test with no_db and no workspace, this primarily verifies
-        // the method signature and that it completes without panic.
+        use crate::db::Database;
+        use std::io::Write;
+
+        // Create a temp directory with a file to import
+        let import_temp = tempfile::tempdir().expect("tempdir");
+        let import_file = import_temp.path().join("AGENTS.md");
+        {
+            let mut f = std::fs::File::create(&import_file).expect("create file");
+            f.write_all(b"# Test Agent\n\nTest content for import")
+                .expect("write file");
+        }
+
+        // Create a test database and workspace
+        let db_temp = tempfile::tempdir().expect("tempdir");
+        let db_path = db_temp.path().join("test.db");
+        let backend = crate::db::libsql::LibSqlBackend::new_local(&db_path)
+            .await
+            .expect("LibSqlBackend::new_local");
+        backend.run_migrations().await.expect("run_migrations");
+        let db: Arc<dyn Database> = Arc::new(backend);
+        let workspace = Arc::new(Workspace::new_with_db("default", db));
+
+        // Set up RuntimeSideEffects with workspace and import_dir
+        let side_effects = RuntimeSideEffects {
+            db: None,
+            workspace: Some(workspace.clone()),
+            workspace_import_dir: Some(import_temp.path().to_path_buf()),
+            embeddings_available: false,
+        };
+
+        // Call start() - this should import the file before returning
+        side_effects.start().await;
+
+        // Verify the file was imported
+        let doc = workspace.read("AGENTS.md").await.expect("read imported doc");
+        assert_eq!(doc.content, "# Test Agent\n\nTest content for import");
+    }
+
+    /// Non-libsql version of the test just verifies the method signature.
+    #[cfg(not(feature = "libsql"))]
+    #[tokio::test]
+    async fn runtime_side_effects_start_awaits_workspace_operations() {
         let side_effects = RuntimeSideEffects {
             db: None,
             workspace: None,
             workspace_import_dir: None,
             embeddings_available: false,
         };
-
-        // Should complete immediately when no work is queued
         side_effects.start().await;
     }
 }
