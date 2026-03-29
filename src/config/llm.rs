@@ -145,6 +145,21 @@ struct ProviderKeySpec<'a> {
     backend: &'a str,
 }
 
+/// Owned provider definition resolved from the registry or synthesised as a fallback.
+struct ProviderSpec {
+    canonical_id: String,
+    protocol: ProviderProtocol,
+    api_key_env: Option<String>,
+    base_url_env: Option<String>,
+    model_env: String,
+    default_model: String,
+    default_base_url: Option<String>,
+    extra_headers_env: Option<String>,
+    api_key_required: bool,
+    base_url_required: bool,
+    unsupported_params: Vec<String>,
+}
+
 impl LlmConfig {
     /// Create a test-friendly config without reading env vars.
     #[cfg(feature = "libsql")]
@@ -195,6 +210,41 @@ impl LlmConfig {
     ) -> Result<(Option<SecretString>, Option<SecretString>), ConfigError> {
         let api_key = resolve_api_key(ctx, spec.api_key_env, spec.api_key_required, spec.backend)?;
         resolve_anthropic_credentials(ctx, spec.canonical_id, api_key)
+    }
+
+    fn resolve_provider_spec(backend: &str, registry: &ProviderRegistry) -> ProviderSpec {
+        if let Some(def) = registry
+            .find(backend)
+            .or_else(|| registry.find("openai_compatible"))
+        {
+            ProviderSpec {
+                canonical_id: def.id.clone(),
+                protocol: def.protocol,
+                api_key_env: def.api_key_env.clone(),
+                base_url_env: def.base_url_env.clone(),
+                model_env: def.model_env.clone(),
+                default_model: def.default_model.clone(),
+                default_base_url: def.default_base_url.clone(),
+                extra_headers_env: def.extra_headers_env.clone(),
+                api_key_required: def.api_key_required,
+                base_url_required: def.base_url_required,
+                unsupported_params: def.unsupported_params.clone(),
+            }
+        } else {
+            ProviderSpec {
+                canonical_id: backend.to_string(),
+                protocol: ProviderProtocol::OpenAiCompletions,
+                api_key_env: Some("LLM_API_KEY".to_string()),
+                base_url_env: Some("LLM_BASE_URL".to_string()),
+                model_env: "LLM_MODEL".to_string(),
+                default_model: "default".to_string(),
+                default_base_url: None,
+                extra_headers_env: Some("LLM_EXTRA_HEADERS".to_string()),
+                api_key_required: false,
+                base_url_required: true,
+                unsupported_params: Vec::new(),
+            }
+        }
     }
 
     fn resolve_backend_name(
@@ -367,85 +417,41 @@ impl LlmConfig {
         registry: &ProviderRegistry,
         settings: &Settings,
     ) -> Result<RegistryProviderConfig, ConfigError> {
-        let def = registry
-            .find(backend)
-            .or_else(|| registry.find("openai_compatible"));
-
-        let (
-            canonical_id,
-            protocol,
-            api_key_env,
-            base_url_env,
-            model_env,
-            default_model,
-            default_base_url,
-            extra_headers_env,
-            api_key_required,
-            base_url_required,
-            unsupported_params,
-        ) = if let Some(def) = def {
-            (
-                def.id.as_str(),
-                def.protocol,
-                def.api_key_env.as_deref(),
-                def.base_url_env.as_deref(),
-                def.model_env.as_str(),
-                def.default_model.as_str(),
-                def.default_base_url.as_deref(),
-                def.extra_headers_env.as_deref(),
-                def.api_key_required,
-                def.base_url_required,
-                def.unsupported_params.clone(),
-            )
-        } else {
-            (
-                backend,
-                ProviderProtocol::OpenAiCompletions,
-                Some("LLM_API_KEY"),
-                Some("LLM_BASE_URL"),
-                "LLM_MODEL",
-                "default",
-                None,
-                Some("LLM_EXTRA_HEADERS"),
-                false,
-                true,
-                Vec::new(),
-            )
-        };
+        let spec = Self::resolve_provider_spec(backend, registry);
 
         let (api_key, oauth_token) = Self::resolve_provider_credentials(
             ctx,
             &ProviderKeySpec {
-                canonical_id,
-                api_key_env,
-                api_key_required,
+                canonical_id: &spec.canonical_id,
+                api_key_env: spec.api_key_env.as_deref(),
+                api_key_required: spec.api_key_required,
                 backend,
             },
         )?;
         let base_url = resolve_base_url(
             ctx,
             &BaseUrlSpec {
-                env_var: base_url_env,
+                env_var: spec.base_url_env.as_deref(),
                 backend,
-                default: default_base_url,
-                required: base_url_required,
+                default: spec.default_base_url.as_deref(),
+                required: spec.base_url_required,
             },
             settings,
         )?;
-        let model = Self::resolve_model(ctx, model_env, settings, default_model)?;
-        let extra_headers = resolve_extra_headers(ctx, extra_headers_env)?;
-        let cache_retention = resolve_provider_cache_retention(ctx, canonical_id)?;
+        let model = Self::resolve_model(ctx, &spec.model_env, settings, &spec.default_model)?;
+        let extra_headers = resolve_extra_headers(ctx, spec.extra_headers_env.as_deref())?;
+        let cache_retention = resolve_provider_cache_retention(ctx, &spec.canonical_id)?;
 
         Ok(RegistryProviderConfig {
-            protocol,
-            provider_id: canonical_id.to_string(),
+            protocol: spec.protocol,
+            provider_id: spec.canonical_id,
             api_key,
             base_url,
             model,
             extra_headers,
             oauth_token,
             cache_retention,
-            unsupported_params,
+            unsupported_params: spec.unsupported_params,
         })
     }
 }
