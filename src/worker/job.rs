@@ -68,6 +68,7 @@ struct ToolExecResult {
 
 enum WorkerLoopOutcome {
     Completed,
+    ContinueDirectSelection,
     Exited,
 }
 
@@ -295,6 +296,12 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                     }
                 }
             }
+            Ok(Ok(WorkerLoopOutcome::ContinueDirectSelection)) => {
+                tracing::warn!(
+                    job_id = %self.job_id,
+                    "execution_loop returned ContinueDirectSelection to run(); treating as early exit"
+                );
+            }
             Ok(Ok(WorkerLoopOutcome::Exited)) => {}
             Ok(Err(e)) => {
                 tracing::error!("Worker for job {} failed: {}", self.job_id, e);
@@ -380,11 +387,10 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
 
         // If we have a plan, execute it.
         if let Some(ref plan) = plan {
-            if matches!(
-                self.execute_plan(rx, reasoning, reason_ctx, plan).await?,
-                WorkerLoopOutcome::Completed
-            ) {
-                return Ok(WorkerLoopOutcome::Completed);
+            match self.execute_plan(rx, reasoning, reason_ctx, plan).await? {
+                WorkerLoopOutcome::Completed => return Ok(WorkerLoopOutcome::Completed),
+                WorkerLoopOutcome::Exited => return Ok(WorkerLoopOutcome::Exited),
+                WorkerLoopOutcome::ContinueDirectSelection => {}
             }
 
             if let Ok(ctx) = self.context_manager().get_context(self.job_id).await
@@ -863,7 +869,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                                 "message": "Plan interrupted by user message, re-evaluating...",
                             }),
                         );
-                        return Ok(WorkerLoopOutcome::Exited);
+                        return Ok(WorkerLoopOutcome::ContinueDirectSelection);
                     }
                 }
             }
@@ -929,7 +935,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
             );
         }
 
-        Ok(WorkerLoopOutcome::Exited)
+        Ok(WorkerLoopOutcome::ContinueDirectSelection)
     }
 
     async fn execute_tool(

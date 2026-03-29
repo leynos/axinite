@@ -536,13 +536,15 @@ impl Scheduler {
     }
 
     /// Stop a running job.
-    pub async fn stop(&self, job_id: Uuid) -> Result<(), JobError> {
+    pub async fn stop(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
         let scheduled = {
             let mut jobs = self.jobs.write().await;
             jobs.remove(&job_id)
         };
 
         if let Some(scheduled) = scheduled {
+            let reason = reason.to_string();
+
             // Send stop signal
             let _ = scheduled.tx.send(WorkerMessage::Stop).await;
 
@@ -557,24 +559,22 @@ impl Scheduler {
             // Update job state
             self.context_manager
                 .update_context(job_id, |ctx| {
-                    if let Err(e) = ctx.transition_to(
-                        JobState::Cancelled,
-                        Some("Stopped by scheduler".to_string()),
-                    ) {
-                        tracing::warn!(
-                            job_id = %job_id,
-                            error = %e,
-                            "Failed to transition job to Cancelled state"
-                        );
-                    }
+                    let current_state = ctx.state;
+                    ctx.transition_to(JobState::Cancelled, Some(reason.clone()))
+                        .map_err(|_| current_state)
                 })
-                .await?;
+                .await?
+                .map_err(|state| JobError::InvalidTransition {
+                    id: job_id,
+                    state: state.to_string(),
+                    target: JobState::Cancelled.to_string(),
+                })?;
 
             // Persist cancellation before returning so durable state matches
             // the in-memory terminal transition.
             if let Some(ref store) = self.store
                 && let Err(e) = store
-                    .update_job_status(job_id, JobState::Cancelled, Some("Stopped by scheduler"))
+                    .update_job_status(job_id, JobState::Cancelled, Some(reason.as_str()))
                     .await
             {
                 tracing::warn!("Failed to persist cancellation for job {}: {}", job_id, e);
@@ -668,7 +668,7 @@ impl Scheduler {
         let job_ids: Vec<Uuid> = self.jobs.read().await.keys().cloned().collect();
 
         for job_id in job_ids {
-            let _ = self.stop(job_id).await;
+            let _ = self.stop(job_id, "Stopped by scheduler").await;
         }
 
         // Abort all subtasks
@@ -912,7 +912,10 @@ mod tests {
             .await
             .insert(job_id, ScheduledJob { handle, tx });
 
-        sched.stop(job_id).await.expect("failed to stop job");
+        sched
+            .stop(job_id, "Stopped by scheduler")
+            .await
+            .expect("failed to stop job");
 
         let job = store
             .get_job(job_id)
@@ -920,6 +923,64 @@ mod tests {
             .expect("failed to load job")
             .expect("job should exist");
         assert_eq!(job.state, JobState::Cancelled);
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_stop_does_not_overwrite_completed_jobs() {
+        let (sched, store, _dir) = make_test_scheduler_with_store(1000).await;
+        let job_id = sched
+            .context_manager
+            .create_job_for_user("user1", "test", "desc")
+            .await
+            .expect("failed to create job");
+        sched
+            .context_manager
+            .update_context(job_id, |ctx| {
+                ctx.transition_to(JobState::InProgress, None)
+                    .expect("failed to transition to in-progress");
+                ctx.transition_to(JobState::Completed, None)
+            })
+            .await
+            .expect("failed to update context")
+            .expect("failed to transition to completed");
+
+        let ctx = sched
+            .context_manager
+            .get_context(job_id)
+            .await
+            .expect("failed to get context");
+        store.save_job(&ctx).await.expect("failed to save job");
+
+        let (tx, mut rx) = mpsc::channel(1);
+        let handle = tokio::spawn(async move {
+            let _ = rx.recv().await;
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        sched
+            .jobs
+            .write()
+            .await
+            .insert(job_id, ScheduledJob { handle, tx });
+
+        let error = sched
+            .stop(job_id, "Cancelled by user")
+            .await
+            .expect_err("completed job should reject cancellation");
+        assert!(matches!(
+            error,
+            JobError::InvalidTransition {
+                target,
+                ..
+            } if target == JobState::Cancelled.to_string()
+        ));
+
+        let job = store
+            .get_job(job_id)
+            .await
+            .expect("failed to load job")
+            .expect("job should exist");
+        assert_eq!(job.state, JobState::Completed);
     }
 
     #[test]

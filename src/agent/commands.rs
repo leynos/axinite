@@ -12,7 +12,6 @@ use crate::agent::session::Session;
 use crate::agent::submission::SubmissionResult;
 use crate::agent::{Agent, MessageIntent};
 use crate::channels::{IncomingMessage, StatusUpdate};
-use crate::context::JobState;
 use crate::error::Error;
 use crate::llm::{ChatMessage, Reasoning};
 
@@ -205,16 +204,7 @@ impl Agent {
             return Err(crate::error::JobError::NotFound { id: uuid }.into());
         }
 
-        self.scheduler.stop(uuid).await?;
-
-        // Also update DB so the Jobs tab reflects cancellation immediately.
-        if let Some(store) = self.store()
-            && let Err(e) = store
-                .update_job_status(uuid, JobState::Cancelled, Some("Cancelled by user"))
-                .await
-        {
-            tracing::warn!(job_id = %uuid, "Failed to persist cancellation to DB: {}", e);
-        }
+        self.scheduler.stop(uuid, "Cancelled by user").await?;
 
         Ok(format!("Job {} has been cancelled.", job_id))
     }
