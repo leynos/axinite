@@ -38,7 +38,7 @@ mod job_registry;
 pub mod job_types;
 pub mod reaper;
 
-pub use api::OrchestratorApi;
+pub use api::{OrchestratorApi, PendingPrompt};
 pub use auth::{CredentialGrant, TokenStore};
 pub use job_manager::{
     CompletionResult, ContainerHandle, ContainerJobConfig, ContainerJobManager, JobMode,
@@ -47,6 +47,12 @@ pub use reaper::{ReaperConfig, SandboxReaper};
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+
+/// Type alias for the shared prompt queue used in sandbox job follow-up prompts.
+///
+/// This queue buffers follow-up prompts for Claude Code bridges, keyed by job ID.
+/// It is shared between the orchestrator API and the gateway channel.
+pub type PromptQueue = Arc<tokio::sync::Mutex<HashMap<uuid::Uuid, VecDeque<PendingPrompt>>>>;
 
 use tokio::sync::{Mutex, broadcast};
 use uuid::Uuid;
@@ -61,7 +67,7 @@ use crate::tools::ToolRegistry;
 pub struct OrchestratorSetup {
     pub container_job_manager: Option<Arc<ContainerJobManager>>,
     pub job_event_tx: Option<broadcast::Sender<(Uuid, SseEvent)>>,
-    pub prompt_queue: Arc<Mutex<HashMap<Uuid, VecDeque<api::PendingPrompt>>>>,
+    pub prompt_queue: PromptQueue,
     pub docker_status: crate::sandbox::DockerStatus,
 }
 

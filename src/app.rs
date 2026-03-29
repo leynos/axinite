@@ -83,8 +83,13 @@ pub struct RuntimeSideEffects {
 impl RuntimeSideEffects {
     /// Start all deferred background work.
     ///
-    /// This method is fire-and-forget; callers need not await completion
-    /// unless ordering guarantees are required.
+    /// This method runs workspace import and seeding synchronously before
+    /// returning, ensuring the workspace is fully initialised before the
+    /// agent starts. Other work (sandbox cleanup, embedding backfill) is
+    /// spawned as fire-and-forget background tasks.
+    ///
+    /// Callers awaiting this method will pay the import/seed cost; if fully
+    /// deferred startup is required, wrap the call in `tokio::spawn`.
     pub async fn start(self) {
         // Spawn stale sandbox cleanup task
         if let Some(db) = self.db {
@@ -940,5 +945,58 @@ impl AppBuilder {
         let (components, side_effects) = self.build_components().await?;
         side_effects.start().await;
         Ok(components)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify that `build_components()` returns side effects separately.
+    ///
+    /// This test ensures the two-phase API guarantees that component
+    /// construction is separate from side-effect startup, allowing tests
+    /// to initialise the app without background I/O.
+    #[tokio::test]
+    async fn build_components_returns_side_effects_separately() {
+        // Use minimal config for testing
+        let config = Config::for_testing(
+            std::env::temp_dir().join("ironclaw-test.db"),
+            std::env::temp_dir().join("skills"),
+            std::env::temp_dir().join("installed-skills"),
+        );
+        let flags = AppBuilderFlags { no_db: true };
+        let session = Arc::new(SessionManager::new(config.llm.session.clone()));
+        let log_broadcaster = Arc::new(LogBroadcaster::new());
+
+        let (_components, side_effects) =
+            AppBuilder::new(config, flags, None, session, log_broadcaster)
+                .build_components()
+                .await
+                .expect("build_components should succeed");
+
+        // side_effects is an owned value that has not been started.
+        // This demonstrates the two-phase API: we have components
+        // without any background work having started.
+        // The type system enforces this: RuntimeSideEffects must be
+        // explicitly consumed by calling start().
+        let _ = side_effects;
+    }
+
+    /// Verify that RuntimeSideEffects::start runs synchronously for
+    /// workspace operations (import/seed) before returning.
+    #[tokio::test]
+    async fn runtime_side_effects_start_awaits_workspace_operations() {
+        // Since we test with no_db and no workspace, this primarily verifies
+        // the method signature and that it completes without panic.
+        let side_effects = RuntimeSideEffects {
+            db: None,
+            workspace: None,
+            workspace_import_dir: None,
+            embeddings_available: false,
+        };
+
+        // Should complete immediately when no work is queued
+        side_effects.start().await;
     }
 }

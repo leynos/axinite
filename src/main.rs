@@ -46,7 +46,6 @@ struct ChannelSetup {
     channels: ChannelManager,
     channel_names: Vec<String>,
     loaded_wasm_channel_names: Vec<String>,
-    #[allow(clippy::type_complexity)]
     wasm_channel_runtime_state: Option<(
         Arc<WasmChannelRuntime>,
         Arc<PairingStore>,
@@ -341,7 +340,10 @@ async fn setup_channels(
 }
 
 /// Set up the gateway channel.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Gateway channel requires many dependencies; consider a builder pattern when adding more parameters FIXME:https://github.com/df12/axinite/issues/TBD"
+)]
 async fn setup_gateway_channel(
     config: &Config,
     components: &ironclaw::app::AppComponents,
@@ -353,14 +355,7 @@ async fn setup_gateway_channel(
     job_event_tx: &Option<
         tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
     >,
-    prompt_queue: &Arc<
-        tokio::sync::Mutex<
-            std::collections::HashMap<
-                uuid::Uuid,
-                std::collections::VecDeque<ironclaw::orchestrator::api::PendingPrompt>,
-            >,
-        >,
-    >,
+    prompt_queue: &ironclaw::orchestrator::PromptQueue,
     channel_manager: &ChannelManager,
     channel_names: &mut Vec<String>,
 ) -> anyhow::Result<GatewaySetup> {
@@ -580,6 +575,12 @@ fn spawn_sighup_handler(
     });
 }
 
+/// Main async entry point.
+///
+/// FIXME: This function has high cyclomatic complexity (>12 decision points).
+/// Consider extracting coherent phases (PID+onboarding, config+builder,
+/// runtime wiring, shutdown) into dedicated functions.
+/// See: https://github.com/df12/axinite/issues/TBD
 async fn async_main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
