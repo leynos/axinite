@@ -22,7 +22,7 @@ pub mod manager;
 pub mod registry;
 
 pub use activation::{
-    LiveMcpActivation, LiveWasmChannelActivation, LiveWasmToolActivation,
+    LiveMcpActivation, LiveMcpActivationConfig, LiveWasmChannelActivation, LiveWasmToolActivation,
     LiveWasmToolActivationConfig, McpActivationPort, NoOpMcpActivation, NoOpWasmChannelActivation,
     NoOpWasmToolActivation, WasmChannelActivationPort, WasmToolActivationPort,
 };
