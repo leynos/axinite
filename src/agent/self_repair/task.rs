@@ -1,5 +1,6 @@
 //! Background repair task orchestration.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -45,12 +46,17 @@ async fn run_stuck_job_repairs(
     repair: &dyn SelfRepair,
     notification_tx: &mut Option<mpsc::Sender<RepairNotification>>,
     shutdown: &mut std::pin::Pin<&mut oneshot::Receiver<()>>,
+    escalated_jobs: &mut HashSet<uuid::Uuid>,
 ) -> bool {
     let stuck_jobs = tokio::select! {
         biased;
         _ = shutdown.as_mut() => return false,
         stuck_jobs = repair.detect_stuck_jobs() => stuck_jobs,
     };
+    let stuck_job_ids = stuck_jobs
+        .iter()
+        .map(|job| job.job_id)
+        .collect::<HashSet<_>>();
 
     for job in stuck_jobs {
         match tokio::select! {
@@ -86,17 +92,21 @@ async fn run_stuck_job_repairs(
                 );
             }
             Ok(RepairResult::ManualRequired { message }) => {
-                tracing::warn!(job = %job.job_id, status = "manual", "Stuck job repair requires manual intervention: {}", message);
-                send_notification(
-                    notification_tx.as_mut(),
-                    format!("Job {} needs manual intervention: {}", job.job_id, message),
-                );
+                if escalated_jobs.insert(job.job_id) {
+                    tracing::warn!(job = %job.job_id, status = "manual", "Stuck job repair requires manual intervention: {}", message);
+                    send_notification(
+                        notification_tx.as_mut(),
+                        format!("Job {} needs manual intervention: {}", job.job_id, message),
+                    );
+                }
             }
             Err(e) => {
                 tracing::error!(job = %job.job_id, "Stuck job repair error: {}", e);
             }
         }
     }
+
+    escalated_jobs.retain(|job_id| stuck_job_ids.contains(job_id));
 
     true
 }
@@ -130,8 +140,40 @@ async fn run_broken_tool_repairs(
                     format!("Tool '{}' repaired: {}", tool.name, message),
                 );
             }
+            Ok(RepairResult::Failed { message }) => {
+                tracing::error!(
+                    tool = %tool.name,
+                    status = "failed",
+                    "Tool repair failed: {}",
+                    message
+                );
+                send_notification(
+                    notification_tx.as_mut(),
+                    format!("Tool '{}' repair failed: {}", tool.name, message),
+                );
+            }
+            Ok(RepairResult::ManualRequired { message }) => {
+                tracing::warn!(
+                    tool = %tool.name,
+                    status = "manual",
+                    "Tool repair requires manual intervention: {}",
+                    message
+                );
+                send_notification(
+                    notification_tx.as_mut(),
+                    format!(
+                        "Tool '{}' needs manual intervention: {}",
+                        tool.name, message
+                    ),
+                );
+            }
             Ok(result) => {
-                tracing::debug!(tool = %tool.name, status = "completed", "Tool repair completed: {:?}", result);
+                tracing::debug!(
+                    tool = %tool.name,
+                    status = "completed",
+                    "Tool repair completed with unexpected result: {:?}",
+                    result
+                );
             }
             Err(e) => {
                 tracing::error!(tool = %tool.name, "Tool repair error: {}", e);
@@ -152,6 +194,7 @@ impl RepairTask {
             mut notification_tx,
         } = self;
         let mut shutdown = std::pin::pin!(shutdown_rx);
+        let mut escalated_jobs = HashSet::new();
 
         loop {
             tokio::select! {
@@ -160,7 +203,7 @@ impl RepairTask {
                     break;
                 }
                 _ = tokio::time::sleep(check_interval) => {
-                    if !run_stuck_job_repairs(&*repair, &mut notification_tx, &mut shutdown).await {
+                    if !run_stuck_job_repairs(&*repair, &mut notification_tx, &mut shutdown, &mut escalated_jobs).await {
                         tracing::debug!("Repair task received shutdown signal");
                         break;
                     }

@@ -483,17 +483,21 @@ mod tests {
     fn test_stuck_since_returns_latest_stuck_transition() {
         let mut ctx = JobContext::new("Test", "Test job");
         ctx.transition_to(JobState::InProgress, None).unwrap();
+        let first_stuck_at = ctx.created_at + chrono::Duration::seconds(1);
+        let second_stuck_at = first_stuck_at + chrono::Duration::seconds(1);
+
         ctx.mark_stuck("First stall").unwrap();
-        let first_stuck_at = ctx
-            .stuck_since()
-            .expect("first stuck transition should be recorded");
+        ctx.transitions
+            .last_mut()
+            .expect("first stuck transition should exist")
+            .timestamp = first_stuck_at;
         ctx.attempt_recovery().unwrap();
         ctx.mark_stuck("Second stall").unwrap();
+        ctx.transitions
+            .last_mut()
+            .expect("second stuck transition should exist")
+            .timestamp = second_stuck_at;
 
-        let latest_stuck_at = ctx
-            .stuck_since()
-            .expect("latest stuck transition should be recorded");
-
-        assert!(latest_stuck_at >= first_stuck_at);
+        assert_eq!(ctx.stuck_since(), Some(second_stuck_at));
     }
 }
