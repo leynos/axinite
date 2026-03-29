@@ -1,5 +1,6 @@
 //! Hot-reload orchestration manager.
 
+use std::net::ToSocketAddrs as _;
 use std::sync::Arc;
 
 use crate::channels::ChannelSecretUpdater;
@@ -86,15 +87,23 @@ impl HotReloadManager {
             return Ok(std::net::SocketAddr::new(ip, http.port));
         }
 
-        // Fall back to string-based parse for hostname-style values.
-        format!("{}:{}", http.host, http.port).parse().map_err(|e| {
-            tracing::error!("Invalid socket address in reloaded config: {}", e);
-            crate::error::ConfigError::InvalidValue {
-                key: "http.host:http.port".to_string(),
-                message: format!("Failed to parse socket address: {}", e),
-            }
-            .into()
-        })
+        // Fall back to DNS/hostname resolution for non-IP host values.
+        (http.host.as_str(), http.port)
+            .to_socket_addrs()
+            .map_err(|e| {
+                tracing::error!("Invalid socket address in reloaded config: {}", e);
+                ReloadError::from(crate::error::ConfigError::InvalidValue {
+                    key: "http.host:http.port".to_string(),
+                    message: format!("Failed to parse or resolve socket address: {}", e),
+                })
+            })?
+            .next()
+            .ok_or_else(|| {
+                ReloadError::from(crate::error::ConfigError::InvalidValue {
+                    key: "http.host:http.port".to_string(),
+                    message: "No socket addresses resolved".to_string(),
+                })
+            })
     }
 
     async fn maybe_restart_listener(
