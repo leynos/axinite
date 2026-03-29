@@ -7,6 +7,13 @@ use termimad::MadSkin;
 
 use super::input::SLASH_COMMANDS;
 
+/// A pending tool-use request awaiting user approval.
+pub(super) struct ToolApprovalRequest<'a> {
+    pub request_id: &'a str,
+    pub tool_name: &'a str,
+    pub description: &'a str,
+}
+
 /// Build a termimad skin with our color scheme.
 pub(super) fn make_skin() -> MadSkin {
     let mut skin = MadSkin::default();
@@ -190,9 +197,7 @@ fn append_visible_chars(text: &str, limit: usize, visible_count: &mut usize, out
 /// Draws a bordered box with tool name, description, parameters, and approval options.
 /// The returned lines are intended for printing by the caller.
 pub(super) fn render_approval_card(
-    request_id: &str,
-    tool_name: &str,
-    description: &str,
+    request: &ToolApprovalRequest<'_>,
     parameters: &serde_json::Value,
 ) -> Vec<String> {
     let term_width = crossterm::terminal::size()
@@ -202,10 +207,10 @@ pub(super) fn render_approval_card(
     let content_width = box_width.saturating_sub(4); // Account for "│ " prefix and padding
 
     // Short request ID for the bottom border (UTF-8 safe truncation)
-    let short_id: String = request_id.chars().take(8).collect();
+    let short_id: String = request.request_id.chars().take(8).collect();
 
     // Top border: ┌ tool_name requires approval ───
-    let top_label = format!(" {tool_name} requires approval ");
+    let top_label = format!(" {} requires approval ", request.tool_name);
     let truncated_label = truncate_card_content(&top_label, box_width);
     let top_fill = box_width.saturating_sub(truncated_label.chars().count() + 1);
     let top_border = format!(
@@ -222,7 +227,7 @@ pub(super) fn render_approval_card(
     );
 
     // Truncate description to fit within card
-    let truncated_desc = truncate_card_content(description, content_width);
+    let truncated_desc = truncate_card_content(request.description, content_width);
 
     let mut lines = Vec::new();
     lines.push(String::new()); // blank line

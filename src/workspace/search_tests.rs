@@ -20,6 +20,53 @@ fn make_result_with_path(chunk_id: Uuid, doc_id: Uuid, path: &str, rank: u32) ->
     }
 }
 
+fn assert_all_fts_only(results: &[SearchResult]) {
+    assert!(
+        results
+            .iter()
+            .all(|r| r.from_fts() && !r.from_vector() && !r.is_hybrid())
+    );
+}
+
+fn assert_all_vector_only(results: &[SearchResult]) {
+    assert!(
+        results
+            .iter()
+            .all(|r| r.from_vector() && !r.from_fts() && !r.is_hybrid())
+    );
+}
+
+fn assert_scores_descending(results: &[SearchResult]) {
+    for w in results.windows(2) {
+        assert!(w[0].score >= w[1].score);
+    }
+}
+
+fn assert_config(
+    config: &SearchConfig,
+    limit: usize,
+    rrf_k: u32,
+    min_score: f32,
+    use_fts: bool,
+    use_vector: bool,
+) {
+    assert_eq!(config.limit, limit);
+    assert_eq!(config.rrf_k, rrf_k);
+    assert!(
+        (config.min_score - min_score).abs() < f32::EPSILON,
+        "expected min_score {min_score}, got {}",
+        config.min_score
+    );
+    assert_eq!(config.use_fts, use_fts);
+    assert_eq!(config.use_vector, use_vector);
+}
+
+fn assert_hybrid_chunk(result: &SearchResult, fts_rank: u32, vector_rank: u32) {
+    assert!(result.is_hybrid());
+    assert_eq!(result.fts_rank, Some(fts_rank));
+    assert_eq!(result.vector_rank, Some(vector_rank));
+}
+
 #[test]
 fn test_rrf_propagates_document_path() {
     // Regression test: search results must carry the source document's file
@@ -87,11 +134,8 @@ fn test_rrf_single_method() {
     let results = reciprocal_rank_fusion(fts_results, Vec::new(), &config);
 
     assert_eq!(results.len(), 2);
-    // First result should have higher score
     assert!(results[0].score > results[1].score);
-    // All should have FTS rank
-    assert!(results.iter().all(|r| r.fts_rank.is_some()));
-    assert!(results.iter().all(|r| r.vector_rank.is_none()));
+    assert_all_fts_only(&results);
 }
 
 #[test]
@@ -110,15 +154,13 @@ fn test_rrf_hybrid_match_boosted() {
     let results = reciprocal_rank_fusion(fts_results, vector_results, &config);
 
     assert_eq!(results.len(), 3);
+    let top = &results[0];
+    assert_eq!(top.chunk_id, chunk1);
+    assert!(top.score > results[1].score);
+    assert!(top.is_hybrid());
 
-    // chunk1 should be first (hybrid match)
-    assert_eq!(results[0].chunk_id, chunk1);
-    assert!(results[0].is_hybrid());
-    assert!(results[0].score > results[1].score);
-
-    // Other chunks should not be hybrid
-    assert!(!results[1].is_hybrid());
-    assert!(!results[2].is_hybrid());
+    let remaining = &results[1..];
+    assert!(remaining.iter().all(|r| !r.is_hybrid()));
 }
 
 #[test]
@@ -208,11 +250,7 @@ fn test_search_config_builders() {
         .with_rrf_k(30)
         .with_min_score(0.1);
 
-    assert_eq!(config.limit, 20);
-    assert_eq!(config.rrf_k, 30);
-    assert!((config.min_score - 0.1).abs() < 0.001);
-    assert!(config.use_fts);
-    assert!(config.use_vector);
+    assert_config(&config, 20, 30, 0.1, true, true);
 
     let fts_only = SearchConfig::default().fts_only();
     assert!(fts_only.use_fts);
@@ -250,14 +288,8 @@ fn test_rrf_fts_only_no_vector() {
     let results = reciprocal_rank_fusion(fts_results, Vec::new(), &config);
 
     assert_eq!(results.len(), 3);
-    // All results should come from FTS only
-    assert!(results.iter().all(|r| r.from_fts()));
-    assert!(results.iter().all(|r| !r.from_vector()));
-    assert!(results.iter().all(|r| !r.is_hybrid()));
-    // Scores should be in descending order
-    for w in results.windows(2) {
-        assert!(w[0].score >= w[1].score);
-    }
+    assert_all_fts_only(&results);
+    assert_scores_descending(&results);
 }
 
 #[test]
@@ -278,14 +310,8 @@ fn test_rrf_vector_only_no_fts() {
     let results = reciprocal_rank_fusion(Vec::new(), vector_results, &config);
 
     assert_eq!(results.len(), 3);
-    // All results should come from vector only
-    assert!(results.iter().all(|r| r.from_vector()));
-    assert!(results.iter().all(|r| !r.from_fts()));
-    assert!(results.iter().all(|r| !r.is_hybrid()));
-    // Scores should be in descending order
-    for w in results.windows(2) {
-        assert!(w[0].score >= w[1].score);
-    }
+    assert_all_vector_only(&results);
+    assert_scores_descending(&results);
 }
 
 #[test]
@@ -317,9 +343,7 @@ fn test_rrf_duplicate_chunks_merged() {
         .iter()
         .find(|r| r.chunk_id == shared_chunk)
         .expect("expected to find hybrid result for shared_chunk");
-    assert!(shared.is_hybrid());
-    assert_eq!(shared.fts_rank, Some(2));
-    assert_eq!(shared.vector_rank, Some(3));
+    assert_hybrid_chunk(shared, 2, 3);
 
     // The shared chunk's pre-normalization score is 1/(k+2) + 1/(k+3),
     // which is higher than either single-method chunk at rank 1: 1/(k+1).
@@ -376,22 +400,12 @@ fn test_rrf_min_score_one_filters_all() {
 fn test_search_config_fts_only() {
     let config = SearchConfig::default().fts_only();
 
-    assert!(config.use_fts);
-    assert!(!config.use_vector);
-    // Other defaults should be preserved
-    assert_eq!(config.limit, 10);
-    assert_eq!(config.rrf_k, 60);
-    assert!((config.min_score - 0.0).abs() < f32::EPSILON);
+    assert_config(&config, 10, 60, 0.0, true, false);
 }
 
 #[test]
 fn test_search_config_vector_only() {
     let config = SearchConfig::default().vector_only();
 
-    assert!(!config.use_fts);
-    assert!(config.use_vector);
-    // Other defaults should be preserved
-    assert_eq!(config.limit, 10);
-    assert_eq!(config.rrf_k, 60);
-    assert!((config.min_score - 0.0).abs() < f32::EPSILON);
+    assert_config(&config, 10, 60, 0.0, false, true);
 }

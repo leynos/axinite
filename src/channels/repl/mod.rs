@@ -37,7 +37,7 @@ use crate::channels::{
 };
 use crate::error::ChannelError;
 
-use formatting::{make_skin, print_help, render_approval_card};
+use formatting::{ToolApprovalRequest, make_skin, print_help, render_approval_card};
 use input::{EscInterruptHandler, ReplHelper};
 
 /// Max characters for tool result previews in the terminal.
@@ -349,8 +349,12 @@ impl NativeChannel for ReplChannel {
                 description,
                 parameters,
             } => {
-                let lines =
-                    render_approval_card(&request_id, &tool_name, &description, &parameters);
+                let request = ToolApprovalRequest {
+                    request_id: &request_id,
+                    tool_name: &tool_name,
+                    description: &description,
+                };
+                let lines = render_approval_card(&request, &parameters);
                 for line in lines {
                     eprintln!("{line}");
                 }
