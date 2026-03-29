@@ -136,7 +136,7 @@ async fn libsql_run_migrations_upgrades_legacy_wasm_wit_defaults() {
     let mut migration_rows = conn
         .query(
             "SELECT name FROM _migrations WHERE version = ?1",
-            libsql::params![10],
+            libsql::params![12],
         )
         .await
         .expect("query migration marker");
