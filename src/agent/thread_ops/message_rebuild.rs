@@ -7,6 +7,14 @@
 use crate::history::ConversationMessage;
 use crate::llm::{ChatMessage, ToolCall};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToolResultKind<'a> {
+    Error(&'a str),
+    Result(&'a str),
+    ResultPreview(&'a str),
+    Ok,
+}
+
 /// Validates and parses a `tool_calls` JSON array.
 ///
 /// Enforces presence and validity of both `call_id` and `name` on every
@@ -26,18 +34,18 @@ fn parse_tool_call_entries(
     let invalid_indices: Vec<usize> = calls
         .iter()
         .enumerate()
-        .filter(|(_, c)| {
-            // Reject missing, null, or empty/whitespace-only strings
-            let call_id_invalid = c
+        .filter(|(_, call)| {
+            let call_id_invalid = call
                 .get("call_id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.trim().is_empty())
+                .and_then(|value| value.as_str())
+                .map(|value| value.trim().is_empty())
                 .unwrap_or(true);
-            let name_invalid = c
+            let name_invalid = call
                 .get("name")
-                .and_then(|v| v.as_str())
-                .map(|s| s.trim().is_empty())
+                .and_then(|value| value.as_str())
+                .map(|value| value.trim().is_empty())
                 .unwrap_or(true);
+
             call_id_invalid || name_invalid
         })
         .map(|(idx, _)| idx)
@@ -49,13 +57,14 @@ fn parse_tool_call_entries(
 
     Ok(calls
         .iter()
-        .filter_map(|c| {
-            let call_id = c.get("call_id")?.as_str()?.to_string();
-            let name = c.get("name")?.as_str()?.to_string();
-            let arguments = c
+        .filter_map(|call| {
+            let call_id = call.get("call_id")?.as_str()?.to_string();
+            let name = call.get("name")?.as_str()?.to_string();
+            let arguments = call
                 .get("parameters")
                 .cloned()
                 .unwrap_or(serde_json::json!({}));
+
             Some((call_id, name, arguments))
         })
         .collect())
@@ -97,6 +106,22 @@ fn build_tool_calls(parsed_calls: &[(String, String, serde_json::Value)]) -> Vec
         .collect()
 }
 
+fn classify_result_content(entry: &serde_json::Value) -> ToolResultKind<'_> {
+    if let Some(error) = entry.get("error").and_then(|value| value.as_str()) {
+        return ToolResultKind::Error(error);
+    }
+
+    if let Some(result) = entry.get("result").and_then(|value| value.as_str()) {
+        return ToolResultKind::Result(result);
+    }
+
+    if let Some(preview) = entry.get("result_preview").and_then(|value| value.as_str()) {
+        return ToolResultKind::ResultPreview(preview);
+    }
+
+    ToolResultKind::Ok
+}
+
 /// Extracts the result-content string for a single tool call entry.
 ///
 /// Prefers `error` (formatted as `"Error: …"`), then `result`, then
@@ -105,18 +130,16 @@ fn build_tool_calls(parsed_calls: &[(String, String, serde_json::Value)]) -> Vec
 /// Applies `SafetyLayer` sanitization and wrapping to the raw content
 /// before returning it (sanitizer → validator → policy → leak-detector).
 fn tool_result_content(
-    call: &serde_json::Value,
+    entry: &serde_json::Value,
     tool_name: &str,
     safety: &crate::safety::SafetyLayer,
 ) -> String {
-    let raw_content = if let Some(err) = call.get("error").and_then(|v| v.as_str()) {
-        format!("Error: {err}")
-    } else if let Some(res) = call.get("result").and_then(|v| v.as_str()) {
-        res.to_string()
-    } else if let Some(preview) = call.get("result_preview").and_then(|v| v.as_str()) {
-        preview.to_string()
-    } else {
-        "OK".to_string()
+    let raw_content = match classify_result_content(entry) {
+        ToolResultKind::Error(error) => format!("Error: {error}"),
+        ToolResultKind::Result(result) | ToolResultKind::ResultPreview(result) => {
+            result.to_string()
+        }
+        ToolResultKind::Ok => "OK".to_string(),
     };
 
     let sanitized = safety.sanitize_tool_output(tool_name, &raw_content);
