@@ -226,8 +226,9 @@ explicit `BEGIN IMMEDIATE` block.
 
 ### 4.4 Workspace search path
 
-libSQL mirrors the same workspace concepts as PostgreSQL, but the implemented
-search path is narrower.
+libSQL mirrors the same workspace concepts as PostgreSQL, but the vector path
+uses a different implementation strategy after the flexible-dimension
+migration.
 
 Table 3. libSQL workspace search components.
 
@@ -236,28 +237,32 @@ Table 3. libSQL workspace search components.
 | Document store | `memory_documents` table |
 | Chunk store | `memory_chunks` table with `embedding BLOB` |
 | Full-text search | `memory_chunks_fts` FTS5 virtual table plus maintenance triggers |
-| Semantic search | Best-effort `vector_top_k(...)` query when a compatible vector index exists |
+| Semantic search | `vector_top_k(...)` when a compatible index exists, otherwise brute-force cosine similarity in Rust |
 | Fusion strategy | RRF in Rust, same as PostgreSQL |
 
-The current implementation quirk is important:
+The important implementation detail is how libSQL behaves after the V9
+flexible-dimension migration:
 
-- the libSQL schema and V9 migration comments describe a brute-force vector
-  fallback after flexible dimensions remove the fixed-dimension index
-- the live code in `src/db/libsql/workspace.rs` does not implement that
-  brute-force fallback
-- instead it attempts `vector_top_k('idx_memory_chunks_embedding', ...)`
-  and, when that query fails as expected after V9 drops the index, it logs a
-  debug message and returns no vector results
+- the fixed-dimension `libsql_vector_idx` index is dropped because it cannot
+  support arbitrary embedding lengths
+- the live code first attempts `vector_top_k('idx_memory_chunks_embedding', ...)`
+- when that indexed query is unavailable, the repository logs that it is using
+  brute-force vector search and computes cosine similarity in Rust across the
+  stored embedding blobs
+- the result stream still feeds the same Reciprocal Rank Fusion (RRF) path as
+  PostgreSQL
 
 In practical terms, a migrated or freshly bootstrapped libSQL workspace
 currently behaves as:
 
 - FTS5 keyword search always available
-- vector results only when a compatible vector index exists
-- FTS-only search after the normal flexible-dimension migration path
+- semantic retrieval still available after V9 through brute-force cosine
+  similarity
+- hybrid search still combines keyword and semantic results, but libSQL pays a
+  linear scan cost where PostgreSQL can use pgvector operations
 
-That is the most significant behavioural gap between the two backends in the
-current code.
+That means the main backend difference is now performance and implementation
+strategy, not silent loss of semantic recall.
 
 ### 4.5 Satellite stores on libSQL
 
@@ -330,14 +335,15 @@ Table 4. Current backend comparison.
 | Migration engine | `refinery` over numbered SQL files | Consolidated schema plus `_migrations`-tracked incremental Rust-side runner |
 | Secrets and WASM satellite stores | Reuse cloned pool handles | Reuse shared database handle, then open fresh connections |
 | Keyword search | PostgreSQL `tsvector` plus GIN | FTS5 virtual table plus triggers |
-| Vector search | pgvector cosine distance, now without the old HNSW index after V9 | Best-effort only; current migrated path is effectively FTS-only |
+| Vector search | pgvector cosine distance, now without the old HNSW index after V9 | Indexed `vector_top_k(...)` when available, otherwise brute-force cosine similarity in Rust |
 | Best fit | Full default deployment with richer search parity | Embedded, local-first, or low-ops deployment where external PostgreSQL is undesirable |
 
 ### 6.1 When PostgreSQL is the safer choice
 
 Choose PostgreSQL when:
 
-- full hybrid workspace search quality matters
+- full hybrid workspace search quality matters and search latency under larger
+  workspaces matters too
 - the deployment already has PostgreSQL 15+ with pgvector available
 - query behaviour should match the default and most-tested path as closely as
   possible
@@ -350,10 +356,9 @@ Choose libSQL when:
 - the deployment is local-first or edge-style
 - Turso replica mode is desirable, but a full PostgreSQL service is not
 
-The main caveat is the current workspace-search trade-off. libSQL is not
-merely "the same database API with a different wire protocol". In the current
-implementation it is a simpler persistence backend with weaker semantic-search
-behaviour after the flexible-dimension migration path.
+The main caveat is now performance rather than capability. libSQL still offers
+hybrid retrieval, but its post-V9 semantic path can require a brute-force scan
+over all candidate embeddings for that workspace scope.
 
 ## 7. Current implementation caveats
 

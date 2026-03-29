@@ -336,7 +336,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 | Feature | OpenClaw | IronClaw | Notes |
 |---------|----------|----------|-------|
-| Vector memory | ✅ | ✅ | pgvector |
+| Vector memory | ✅ | ✅ | PostgreSQL uses pgvector; libSQL uses indexed vector search when available and brute-force cosine fallback after V9 |
 | Session-based memory | ✅ | ✅ | |
 | Hybrid search (BM25 + vector) | ✅ | ✅ | RRF algorithm |
 | Temporal decay (hybrid search) | ✅ | ❌ | Opt-in time-based scoring factor |

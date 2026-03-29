@@ -84,7 +84,7 @@ Default k=60. Results from both methods are combined, with documents appearing i
 
 **Backend differences:**
 - **PostgreSQL:** `ts_rank_cd` for FTS, pgvector cosine distance for vectors, full RRF
-- **libSQL:** FTS5 for keyword search only (vector search via `libsql_vector_idx` not yet wired)
+- **libSQL:** FTS5 plus vector search; uses `vector_top_k(...)` when a compatible fixed-dimension index exists, otherwise brute-force cosine similarity in Rust
 
 ## Heartbeat System
 

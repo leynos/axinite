@@ -103,7 +103,7 @@ The `Database` supertrait is composed of seven sub-traits. Leaf consumers can de
 
 **Timestamp write format:** Always write timestamps with `fmt_ts(dt)` (RFC 3339, millisecond precision). Read with `get_ts()` / `get_opt_ts()` which handle legacy naive formats too.
 
-**Vector dimension:** PostgreSQL V9 migration changed the column to unbounded `vector` (removing the HNSW index). libSQL still uses `F32_BLOB(1536)` — if you use a different-dimension embedding model, the libSQL schema needs updating too.
+**Vector dimension:** PostgreSQL V9 migration changed the column to unbounded `vector` (removing the HNSW index). libSQL V9 likewise moved `memory_chunks.embedding` to a plain `BLOB`, dropped the fixed-dimension vector index, and now falls back to brute-force cosine similarity in Rust when `vector_top_k(...)` is unavailable.
 
 **Connection per operation:** `LibSqlBackend::connect()` creates a fresh connection for every operation, sets `PRAGMA busy_timeout = 5000`, and closes it when the `Connection` is dropped. This is intentional — the libSQL SDK does not offer a pool. Avoid holding connections open across `await` points.
 
@@ -147,7 +147,7 @@ The `Database` supertrait is composed of seven sub-traits. Leaf consumers can de
 - **Settings reload** — `Config::from_db` skipped (requires `Store`)
 - **No incremental migrations** — schema is idempotent CREATE IF NOT EXISTS; no ALTER TABLE support; column additions require a new versioned approach
 - **No encryption at rest** — only secrets (API tokens) are AES-256-GCM encrypted; all other data is plaintext SQLite
-- **Hybrid search** — both FTS5 and vector search (`libsql_vector_idx`) are implemented; however, the vector index is fixed at `F32_BLOB(1536)` while PostgreSQL switched to unbounded `vector` in V9
+- **Hybrid search cost** — libSQL still provides hybrid search after V9, but semantic retrieval may use a brute-force cosine scan over candidate embeddings when no compatible vector index exists
 - **Write serialization** — WAL mode allows concurrent readers but only one writer at a time; busy timeout is 5 s, which may cause timeouts under high write concurrency
 
 ## Running Locally with libSQL

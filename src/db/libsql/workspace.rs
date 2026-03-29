@@ -26,6 +26,10 @@ struct Candidate {
     similarity: f32,
 }
 
+enum VectorSearchOutcome {
+    Indexed(Vec<RankedResult>),
+    IndexUnavailable,
+}
 fn rank_candidates(mut candidates: Vec<Candidate>, limit: usize) -> Vec<RankedResult> {
     // Sort by similarity descending
     candidates.sort_by(|a, b| {
@@ -226,18 +230,18 @@ async fn fts_ranked_results(
     Ok(results)
 }
 
-/// Execute vector similarity search and return ranked results.
+/// Execute vector similarity search via libSQL's vector index.
 ///
-/// Queries using libsql's vector_top_k function. If the vector index is
-/// missing (expected after V9 migration), logs at debug level and returns
-/// an empty vector, preserving the existing graceful fallback behaviour.
+/// Returns [`VectorSearchOutcome::IndexUnavailable`] when `vector_top_k(...)`
+/// cannot run because the fixed-dimension vector index is missing, which is
+/// the expected state after the V9 flexible-dimension migration.
 async fn vector_ranked_results(
     conn: &libsql::Connection,
     user_id: &str,
     agent_id: Option<&str>,
     embedding: &[f32],
     limit: i64,
-) -> Result<Vec<RankedResult>, WorkspaceError> {
+) -> Result<VectorSearchOutcome, WorkspaceError> {
     let vector_json = format!(
         "[{}]",
         embedding
@@ -249,7 +253,8 @@ async fn vector_ranked_results(
 
     // vector_top_k requires a libsql_vector_idx index. After the V9
     // migration the index is dropped (to support flexible embedding
-    // dimensions), so this query may fail. Fall back to FTS-only.
+    // dimensions), so this query may fail. The caller must then fall
+    // back to brute-force cosine similarity.
     match conn
         .query(
             r#"
@@ -265,13 +270,15 @@ async fn vector_ranked_results(
     {
         Ok(mut rows) => {
             let mut results = Vec::new();
-            while let Some(row) = rows
-                .next()
-                .await
-                .map_err(|e| WorkspaceError::SearchFailed {
-                    reason: format!("Vector row fetch failed: {}", e),
-                })?
-            {
+            while let Some(row) = match rows.next().await {
+                Ok(row) => row,
+                Err(e) => {
+                    tracing::debug!(
+                        "Vector index row fetch failed, brute-force fallback required: {e}"
+                    );
+                    return Ok(VectorSearchOutcome::IndexUnavailable);
+                }
+            } {
                 results.push(RankedResult {
                     chunk_id: get_text(&row, 0).parse().unwrap_or_default(),
                     document_id: get_text(&row, 1).parse().unwrap_or_default(),
@@ -280,14 +287,19 @@ async fn vector_ranked_results(
                     rank: results.len() as u32 + 1,
                 });
             }
-            Ok(results)
+            tracing::debug!(
+                "libSQL vector index search returned {} results (pre-fusion limit: {})",
+                results.len(),
+                limit
+            );
+            Ok(VectorSearchOutcome::Indexed(results))
         }
         Err(e) => {
             tracing::debug!(
                 "Vector index query failed (expected after V9 migration), \
-                 falling back to FTS-only: {e}"
+                 brute-force fallback required: {e}"
             );
-            Ok(Vec::new())
+            Ok(VectorSearchOutcome::IndexUnavailable)
         }
     }
 }
@@ -807,28 +819,19 @@ impl NativeWorkspaceStore for LibSqlBackend {
 
         let vector_results = if config.use_vector {
             if let Some(emb) = embedding {
-                // Try the vector index first; fall back to brute-force
-                // cosine similarity if the index is gone (post-V9 migration).
-                let indexed =
-                    vector_ranked_results(&conn, user_id, agent_id_str.as_deref(), emb, pre_limit)
-                        .await?;
-                if indexed.is_empty() {
-                    tracing::info!(
-                        "Vector index returned no results, using brute-force vector search"
-                    );
-                    self.brute_force_vector_search(user_id, agent_id, emb, pre_limit as usize)
-                        .await
-                        .unwrap_or_else(|e| {
-                            tracing::warn!("Brute-force vector search failed: {e}");
-                            Vec::new()
-                        })
-                } else {
-                    tracing::debug!(
-                        "Vector index search returned {} results (pre-fusion limit: {})",
-                        indexed.len(),
-                        pre_limit
-                    );
-                    indexed
+                match vector_ranked_results(&conn, user_id, agent_id_str.as_deref(), emb, pre_limit)
+                    .await?
+                {
+                    VectorSearchOutcome::Indexed(results) => results,
+                    VectorSearchOutcome::IndexUnavailable => {
+                        tracing::info!("Using brute-force vector search (no vector index)");
+                        self.brute_force_vector_search(user_id, agent_id, emb, pre_limit as usize)
+                            .await
+                            .unwrap_or_else(|e| {
+                                tracing::warn!("Brute-force vector search failed: {e}");
+                                Vec::new()
+                            })
+                    }
                 }
             } else {
                 Vec::new()
@@ -898,5 +901,51 @@ mod tests {
         assert!((result[0] - (-1.5)).abs() < 0.001);
         assert!((result[1] - 0.0).abs() < 0.001);
         assert!((result[2] - 2.75).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn hybrid_search_uses_brute_force_when_vector_index_is_unavailable() {
+        use crate::db::{InsertChunkParams, NativeDatabase, NativeWorkspaceStore};
+        use crate::workspace::SearchConfig;
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let backend = LibSqlBackend::new_local(&tempdir.path().join("workspace.db"))
+            .await
+            .unwrap();
+        backend.run_migrations().await.unwrap();
+
+        let document = backend
+            .get_or_create_document_by_path("default", None, "notes/search.md")
+            .await
+            .unwrap();
+        backend
+            .update_document(document.id, "semantic search fallback test")
+            .await
+            .unwrap();
+        backend
+            .insert_chunk(InsertChunkParams {
+                document_id: document.id,
+                chunk_index: 0,
+                content: "semantic search fallback test",
+                embedding: Some(&[1.0, 0.0, 0.0]),
+            })
+            .await
+            .unwrap();
+
+        let results = backend
+            .hybrid_search(HybridSearchParams {
+                user_id: "default",
+                agent_id: None,
+                query: "semantic",
+                embedding: Some(&[1.0, 0.0, 0.0]),
+                config: &SearchConfig::default().vector_only().with_limit(5),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].document_path, "notes/search.md");
+        assert_eq!(results[0].vector_rank, Some(1));
+        assert!(results[0].fts_rank.is_none());
     }
 }
