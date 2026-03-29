@@ -1479,14 +1479,22 @@ mod tests {
         }
 
         let cm = Arc::new(crate::context::ContextManager::new(5));
-        let job_id = cm.create_job("test", "test job").await.unwrap();
-        let dir = tempdir().unwrap();
+        let job_id = cm
+            .create_job("test", "test job")
+            .await
+            .expect("failed to create job");
+        let dir = tempdir().expect("failed to create tempdir");
         let path = dir.path().join("worker-test.db");
-        let backend = LibSqlBackend::new_local(&path).await.unwrap();
-        backend.run_migrations().await.unwrap();
+        let backend = LibSqlBackend::new_local(&path)
+            .await
+            .expect("failed to open libsql backend");
+        backend
+            .run_migrations()
+            .await
+            .expect("failed to run migrations");
         let store: Arc<dyn Database> = Arc::new(backend);
-        let ctx = cm.get_context(job_id).await.unwrap();
-        store.save_job(&ctx).await.unwrap();
+        let ctx = cm.get_context(job_id).await.expect("failed to get context");
+        store.save_job(&ctx).await.expect("failed to save job");
 
         let deps = WorkerDeps {
             context_manager: cm,
@@ -1686,22 +1694,25 @@ mod tests {
                 ctx.transition_to(JobState::InProgress, None)
             })
             .await
-            .unwrap()
-            .unwrap();
+            .expect("failed to update context")
+            .expect("failed to transition to in-progress");
 
-        worker.mark_completed().await.unwrap();
+        worker
+            .mark_completed()
+            .await
+            .expect("failed to mark job completed");
 
         let job = store
             .get_job(worker.job_id)
             .await
-            .unwrap()
+            .expect("failed to load job")
             .expect("job should exist");
         assert_eq!(job.state, JobState::Completed);
 
         let events = store
             .list_job_events(worker.job_id, None, None)
             .await
-            .unwrap();
+            .expect("failed to list job events");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event_type, "result");
         assert_eq!(events[0].data["status"], "completed");

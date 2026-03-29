@@ -537,9 +537,12 @@ impl Scheduler {
 
     /// Stop a running job.
     pub async fn stop(&self, job_id: Uuid) -> Result<(), JobError> {
-        let mut jobs = self.jobs.write().await;
+        let scheduled = {
+            let mut jobs = self.jobs.write().await;
+            jobs.remove(&job_id)
+        };
 
-        if let Some(scheduled) = jobs.remove(&job_id) {
+        if let Some(scheduled) = scheduled {
             // Send stop signal
             let _ = scheduled.tx.send(WorkerMessage::Stop).await;
 
