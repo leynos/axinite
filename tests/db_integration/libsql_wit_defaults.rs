@@ -133,18 +133,44 @@ async fn libsql_run_migrations_upgrades_legacy_wasm_wit_defaults() {
     let channel_wit_version: String = channel_row.get(0).expect("channel wit_version");
     assert_eq!(channel_wit_version, "0.3.0");
 
-    let mut migration_rows = conn
+    let mut old_version_rows = conn
         .query(
             "SELECT name FROM _migrations WHERE version = ?1",
-            libsql::params![12],
+            libsql::params![10],
         )
         .await
-        .expect("query migration marker");
-    let migration_row = migration_rows
-        .next()
-        .await
-        .expect("migration rows")
-        .expect("migration row");
-    let migration_name: String = migration_row.get(0).expect("migration name");
-    assert_eq!(migration_name, "wasm_wit_default_0_3_0");
+        .expect("query migration marker for version 10");
+    assert!(
+        old_version_rows
+            .next()
+            .await
+            .expect("read migration row for version 10")
+            .is_none(),
+        "unexpected _migrations row for version 10; migration numbering regressed"
+    );
+
+    for (version, expected_name) in [
+        (12_i64, "wasm_wit_default_0_3_0"),
+        (13_i64, "job_token_budget"),
+        (14_i64, "drop_redundant_wasm_tools_name_index"),
+    ] {
+        let mut migration_rows = conn
+            .query(
+                "SELECT name FROM _migrations WHERE version = ?1",
+                libsql::params![version],
+            )
+            .await
+            .expect("query migration marker");
+        let migration_row = migration_rows
+            .next()
+            .await
+            .expect("read migration row for expected version")
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected _migrations row for version {version}; migration sequences diverged"
+                )
+            });
+        let migration_name: String = migration_row.get(0).expect("migration name");
+        assert_eq!(migration_name, expected_name);
+    }
 }
