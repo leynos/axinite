@@ -381,7 +381,6 @@ impl AppBuilder {
     ///
     /// Delegates to `build_provider_chain` which applies all decorators
     /// (retry, smart routing, failover, circuit breaker, response cache).
-    #[allow(clippy::type_complexity)]
     pub async fn init_llm(
         &self,
     ) -> Result<
