@@ -23,8 +23,9 @@ pub mod registry;
 
 pub use activation::{
     LiveMcpActivation, LiveMcpActivationConfig, LiveWasmChannelActivation, LiveWasmToolActivation,
-    LiveWasmToolActivationConfig, McpActivationPort, NoOpMcpActivation, NoOpWasmChannelActivation,
-    NoOpWasmToolActivation, WasmChannelActivationPort, WasmToolActivationPort,
+    LiveWasmToolActivationConfig, McpActivationPort, McpClientMap, NoOpMcpActivation,
+    NoOpWasmChannelActivation, NoOpWasmToolActivation, WasmChannelActivationPort,
+    WasmToolActivationPort,
 };
 pub use discovery::{NoOpDiscovery, OnlineDiscovery};
 pub use manager::{ExtensionManager, ExtensionManagerConfig};

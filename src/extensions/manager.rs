@@ -17,14 +17,13 @@ use crate::channels::wasm::{
 use crate::extensions::registry::ExtensionRegistry;
 use crate::extensions::{
     ActivateResult, AuthResult, ExtensionError, ExtensionKind, ExtensionSource, InstallResult,
-    InstalledExtension, RegistryEntry, ResultSource, SearchResult, ToolAuthState, UpgradeOutcome,
-    UpgradeResult,
+    InstalledExtension, McpClientMap, RegistryEntry, ResultSource, SearchResult, ToolAuthState,
+    UpgradeOutcome, UpgradeResult,
 };
 use crate::hooks::HookRegistry;
 use crate::pairing::PairingStore;
 use crate::secrets::{CreateSecretParams, SecretsStore};
 use crate::tools::ToolRegistry;
-use crate::tools::mcp::McpClient;
 use crate::tools::mcp::auth::{
     PkceChallenge, authorize_mcp_server, build_authorization_url, discover_full_oauth_metadata,
     find_available_port, is_authenticated, register_client,
@@ -78,8 +77,9 @@ pub struct ExtensionManager {
     /// Active MCP clients keyed by server name.
     ///
     /// Wrapped in `Arc` so the live MCP activation adapter can share this
-    /// mutable registry with the manager.
-    mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
+    /// mutable registry with the manager. Each entry is a `OnceCell` to
+    /// serialize concurrent activations for the same server name.
+    mcp_clients: McpClientMap,
 
     // WASM tool infrastructure
     wasm_tools_dir: PathBuf,
@@ -147,8 +147,9 @@ pub struct ExtensionManagerConfig {
     /// Shared map of active MCP clients, keyed by server name (required).
     ///
     /// This is shared with the live MCP activation adapter so both see the same
-    /// set of active connections.
-    pub mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
+    /// set of active connections. Each entry is a `OnceCell` to serialize
+    /// concurrent activations for the same server name.
+    pub mcp_clients: McpClientMap,
     /// Secrets store for credential injection (required).
     pub secrets: Arc<dyn SecretsStore + Send + Sync>,
     /// Tool registry for registering activated tools (required).
@@ -553,8 +554,15 @@ impl ExtensionManager {
                     for server in &servers.servers {
                         let authenticated =
                             is_authenticated(server, &self.secrets, &self.user_id).await;
-                        let clients = self.mcp_clients.read().await;
-                        let active = clients.contains_key(&server.name);
+                        let clients: tokio::sync::RwLockReadGuard<
+                            std::collections::HashMap<
+                                String,
+                                Arc<tokio::sync::OnceCell<Arc<crate::tools::mcp::McpClient>>>,
+                            >,
+                        > = self.mcp_clients.read().await;
+                        let active = clients.get(&server.name).is_some_and(
+                            |cell: &Arc<tokio::sync::OnceCell<_>>| cell.get().is_some(),
+                        );
 
                         // Get tool names if active
                         let tools = if active {
@@ -795,8 +803,14 @@ impl ExtensionManager {
                     self.tool_registry.unregister(tool_name).await;
                 }
 
-                // Remove MCP client
-                self.mcp_clients.write().await.remove(name);
+                // Remove MCP client (entry and any initialised cell)
+                let mut clients: tokio::sync::RwLockWriteGuard<
+                    std::collections::HashMap<
+                        String,
+                        Arc<tokio::sync::OnceCell<Arc<crate::tools::mcp::McpClient>>>,
+                    >,
+                > = self.mcp_clients.write().await;
+                clients.remove(name);
 
                 // Remove from config
                 self.remove_mcp_server(name)
@@ -1173,10 +1187,19 @@ impl ExtensionManager {
                 Ok(info)
             }
             ExtensionKind::McpServer => {
+                let clients: tokio::sync::RwLockReadGuard<
+                    std::collections::HashMap<
+                        String,
+                        Arc<tokio::sync::OnceCell<Arc<crate::tools::mcp::McpClient>>>,
+                    >,
+                > = self.mcp_clients.read().await;
+                let connected = clients
+                    .get(name)
+                    .is_some_and(|cell: &Arc<tokio::sync::OnceCell<_>>| cell.get().is_some());
                 let info = serde_json::json!({
                     "name": name,
                     "kind": "mcp_server",
-                    "connected": self.mcp_clients.read().await.contains_key(name),
+                    "connected": connected,
                 });
                 Ok(info)
             }
@@ -4258,7 +4281,7 @@ mod tests {
 
         let master_key = secrecy::SecretString::from(TEST_CRYPTO_KEY.to_string());
         let crypto = Arc::new(SecretsCrypto::new(master_key).unwrap());
-        let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
+        let mcp_clients = crate::extensions::McpClientMap::default();
 
         ExtensionManager::new(ExtensionManagerConfig {
             discovery: Arc::new(crate::extensions::NoOpDiscovery),

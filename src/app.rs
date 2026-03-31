@@ -146,7 +146,7 @@ impl AppBuilder {
         let relay_config = crate::config::RelayConfig::from_env();
         let gateway_token = std::env::var("GATEWAY_AUTH_TOKEN").ok();
 
-        let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
+        let mcp_clients = crate::extensions::McpClientMap::default();
 
         let mcp_activation: Arc<dyn crate::extensions::McpActivationPort> = Arc::new(
             crate::extensions::LiveMcpActivation::new(crate::extensions::LiveMcpActivationConfig {

@@ -101,7 +101,7 @@ pub(super) fn build_test_ext_mgr(
     secrets: Arc<dyn crate::secrets::SecretsStore + Send + Sync>,
 ) -> Arc<ExtensionManager> {
     let tool_registry = Arc::new(ToolRegistry::new());
-    let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
+    let mcp_clients = ironclaw::extensions::McpClientMap::default();
     Arc::new(ExtensionManager::new(
         crate::extensions::ExtensionManagerConfig {
             discovery: Arc::new(crate::extensions::NoOpDiscovery),
