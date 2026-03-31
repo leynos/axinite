@@ -127,6 +127,26 @@ pub struct ExtensionManager {
     relay_config: Option<crate::config::RelayConfig>,
 }
 
+/// Dependency bundle for [`ExtensionManager::new`].
+pub struct ExtensionManagerConfig {
+    pub discovery: Arc<dyn crate::extensions::DiscoveryPort + Send + Sync>,
+    pub relay_config: Option<crate::config::RelayConfig>,
+    pub gateway_token: Option<String>,
+    pub mcp_activation: Arc<dyn crate::extensions::McpActivationPort>,
+    pub wasm_tool_activation: Arc<dyn crate::extensions::WasmToolActivationPort>,
+    pub wasm_channel_activation: Arc<dyn crate::extensions::WasmChannelActivationPort>,
+    pub mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
+    pub secrets: Arc<dyn SecretsStore + Send + Sync>,
+    pub tool_registry: Arc<ToolRegistry>,
+    pub hooks: Option<Arc<HookRegistry>>,
+    pub wasm_tools_dir: PathBuf,
+    pub wasm_channels_dir: PathBuf,
+    pub tunnel_url: Option<String>,
+    pub user_id: String,
+    pub store: Option<Arc<dyn crate::db::Database>>,
+    pub catalog_entries: Vec<RegistryEntry>,
+}
+
 /// Sanitize a URL for logging by removing query parameters and credentials.
 /// Prevents accidental logging of API keys, OAuth tokens, or other sensitive data in URLs.
 fn sanitize_url_for_logging(url: &str) -> String {
@@ -165,55 +185,37 @@ impl ExtensionManager {
     ///
     /// `mcp_clients` is shared between the manager and the live MCP adapter
     /// so that both see the same set of active connections.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        discovery: Arc<dyn crate::extensions::DiscoveryPort + Send + Sync>,
-        relay_config: Option<crate::config::RelayConfig>,
-        gateway_token: Option<String>,
-        mcp_activation: Arc<dyn crate::extensions::McpActivationPort>,
-        wasm_tool_activation: Arc<dyn crate::extensions::WasmToolActivationPort>,
-        wasm_channel_activation: Arc<dyn crate::extensions::WasmChannelActivationPort>,
-        mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
-        secrets: Arc<dyn SecretsStore + Send + Sync>,
-        tool_registry: Arc<ToolRegistry>,
-        hooks: Option<Arc<HookRegistry>>,
-        wasm_tools_dir: PathBuf,
-        wasm_channels_dir: PathBuf,
-        tunnel_url: Option<String>,
-        user_id: String,
-        store: Option<Arc<dyn crate::db::Database>>,
-        catalog_entries: Vec<RegistryEntry>,
-    ) -> Self {
-        let registry = if catalog_entries.is_empty() {
+    pub fn new(config: ExtensionManagerConfig) -> Self {
+        let registry = if config.catalog_entries.is_empty() {
             ExtensionRegistry::new()
         } else {
-            ExtensionRegistry::new_with_catalog(catalog_entries)
+            ExtensionRegistry::new_with_catalog(config.catalog_entries)
         };
         Self {
             registry,
-            discovery,
-            mcp_activation,
-            wasm_tool_activation,
-            wasm_channel_activation,
-            mcp_clients,
-            wasm_tools_dir,
-            wasm_channels_dir,
+            discovery: config.discovery,
+            mcp_activation: config.mcp_activation,
+            wasm_tool_activation: config.wasm_tool_activation,
+            wasm_channel_activation: config.wasm_channel_activation,
+            mcp_clients: config.mcp_clients,
+            wasm_tools_dir: config.wasm_tools_dir,
+            wasm_channels_dir: config.wasm_channels_dir,
             channel_runtime: RwLock::new(None),
             relay_channel_manager: RwLock::new(None),
-            secrets,
-            tool_registry,
-            hooks,
+            secrets: config.secrets,
+            tool_registry: config.tool_registry,
+            hooks: config.hooks,
             pending_auth: RwLock::new(HashMap::new()),
-            tunnel_url,
-            user_id,
-            store,
+            tunnel_url: config.tunnel_url,
+            user_id: config.user_id,
+            store: config.store,
             active_channel_names: Arc::new(RwLock::new(HashSet::new())),
             installed_relay_extensions: RwLock::new(HashSet::new()),
             activation_errors: Arc::new(RwLock::new(HashMap::new())),
             sse_sender: RwLock::new(None),
             pending_oauth_flows: crate::cli::oauth_defaults::new_pending_oauth_registry(),
-            gateway_token,
-            relay_config,
+            gateway_token: config.gateway_token,
+            relay_config: config.relay_config,
         }
     }
 
@@ -3930,7 +3932,8 @@ mod tests {
 
     use crate::extensions::ExtensionManager;
     use crate::extensions::manager::{
-        FallbackDecision, combine_install_errors, fallback_decision, infer_kind_from_url,
+        ExtensionManagerConfig, FallbackDecision, combine_install_errors, fallback_decision,
+        infer_kind_from_url,
     };
     use crate::extensions::{ExtensionError, ExtensionKind, ExtensionSource, InstallResult};
 
@@ -4235,24 +4238,24 @@ mod tests {
         let crypto = Arc::new(SecretsCrypto::new(master_key).unwrap());
         let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
 
-        ExtensionManager::new(
-            Arc::new(crate::extensions::NoOpDiscovery),
-            None, // relay_config
-            None, // gateway_token
-            Arc::new(crate::extensions::NoOpMcpActivation),
-            Arc::new(crate::extensions::NoOpWasmToolActivation),
-            Arc::new(crate::extensions::NoOpWasmChannelActivation),
+        ExtensionManager::new(ExtensionManagerConfig {
+            discovery: Arc::new(crate::extensions::NoOpDiscovery),
+            relay_config: None,
+            gateway_token: None,
+            mcp_activation: Arc::new(crate::extensions::NoOpMcpActivation),
+            wasm_tool_activation: Arc::new(crate::extensions::NoOpWasmToolActivation),
+            wasm_channel_activation: Arc::new(crate::extensions::NoOpWasmChannelActivation),
             mcp_clients,
-            Arc::new(InMemorySecretsStore::new(crypto)),
-            Arc::new(ToolRegistry::new()),
-            None,
-            tools_dir,
-            channels_dir,
-            None,
-            "test".to_string(),
-            None,
-            Vec::new(),
-        )
+            secrets: Arc::new(InMemorySecretsStore::new(crypto)),
+            tool_registry: Arc::new(ToolRegistry::new()),
+            hooks: None,
+            wasm_tools_dir: tools_dir,
+            wasm_channels_dir: channels_dir,
+            tunnel_url: None,
+            user_id: "test".to_string(),
+            store: None,
+            catalog_entries: Vec::new(),
+        })
     }
 
     // ── resolve_env_credentials tests ────────────────────────────────────

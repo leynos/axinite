@@ -174,22 +174,24 @@ impl AppBuilder {
             Arc::clone(&live_wasm_channel) as _;
 
         let manager = Arc::new(ExtensionManager::new(
-            discovery,
-            relay_config,
-            gateway_token,
-            mcp_activation,
-            wasm_tool_activation,
-            wasm_channel_activation,
-            mcp_clients,
-            ext_secrets,
-            Arc::clone(tools),
-            Some(Arc::clone(hooks)),
-            self.config.wasm.tools_dir.clone(),
-            self.config.channels.wasm_channels_dir.clone(),
-            self.config.tunnel.public_url.clone(),
-            "default".to_string(),
-            self.db.clone(),
-            catalog_entries,
+            crate::extensions::ExtensionManagerConfig {
+                discovery,
+                relay_config,
+                gateway_token,
+                mcp_activation,
+                wasm_tool_activation,
+                wasm_channel_activation,
+                mcp_clients,
+                secrets: ext_secrets,
+                tool_registry: Arc::clone(tools),
+                hooks: Some(Arc::clone(hooks)),
+                wasm_tools_dir: self.config.wasm.tools_dir.clone(),
+                wasm_channels_dir: self.config.channels.wasm_channels_dir.clone(),
+                tunnel_url: self.config.tunnel.public_url.clone(),
+                user_id: "default".to_string(),
+                store: self.db.clone(),
+                catalog_entries,
+            },
         ));
 
         live_wasm_channel.set_manager(Arc::clone(&manager));

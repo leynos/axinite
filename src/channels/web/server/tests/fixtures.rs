@@ -104,22 +104,24 @@ pub(super) fn build_test_ext_mgr(
     let tool_registry = Arc::new(ToolRegistry::new());
     let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
     Arc::new(ExtensionManager::new(
-        Arc::new(crate::extensions::NoOpDiscovery),
-        None, // relay_config
-        None, // gateway_token
-        Arc::new(crate::extensions::NoOpMcpActivation),
-        Arc::new(crate::extensions::NoOpWasmToolActivation),
-        Arc::new(crate::extensions::NoOpWasmChannelActivation),
-        mcp_clients,
-        secrets,
-        tool_registry,
-        None,
-        PathBuf::from("/tmp/wasm_tools"),
-        PathBuf::from("/tmp/wasm_channels"),
-        None,
-        "test".to_string(),
-        None,
-        vec![],
+        crate::extensions::ExtensionManagerConfig {
+            discovery: Arc::new(crate::extensions::NoOpDiscovery),
+            relay_config: None,
+            gateway_token: None,
+            mcp_activation: Arc::new(crate::extensions::NoOpMcpActivation),
+            wasm_tool_activation: Arc::new(crate::extensions::NoOpWasmToolActivation),
+            wasm_channel_activation: Arc::new(crate::extensions::NoOpWasmChannelActivation),
+            mcp_clients,
+            secrets,
+            tool_registry,
+            hooks: None,
+            wasm_tools_dir: PathBuf::from("/tmp/wasm_tools"),
+            wasm_channels_dir: PathBuf::from("/tmp/wasm_channels"),
+            tunnel_url: None,
+            user_id: "test".to_string(),
+            store: None,
+            catalog_entries: vec![],
+        },
     ))
 }
 

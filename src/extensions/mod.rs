@@ -27,7 +27,7 @@ pub use activation::{
     NoOpWasmToolActivation, WasmChannelActivationPort, WasmToolActivationPort,
 };
 pub use discovery::{NoOpDiscovery, OnlineDiscovery};
-pub use manager::ExtensionManager;
+pub use manager::{ExtensionManager, ExtensionManagerConfig};
 pub use registry::ExtensionRegistry;
 
 use std::future::Future;
