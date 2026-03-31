@@ -114,10 +114,12 @@ impl LiveMcpActivation {
         // On error, the cell remains uninitialised so retries can succeed.
         let client = cell
             .get_or_try_init(|| async {
-                let server = self
-                    .get_mcp_server(name)
-                    .await
-                    .map_err(|e| ExtensionError::NotInstalled(e.to_string()))?;
+                let server = self.get_mcp_server(name).await.map_err(|e| match e {
+                    crate::tools::mcp::config::ConfigError::ServerNotFound { .. } => {
+                        ExtensionError::NotInstalled(name.to_string())
+                    }
+                    other => ExtensionError::Config(other.to_string()),
+                })?;
 
                 let client = crate::tools::mcp::create_client_from_config(
                     server.clone(),
