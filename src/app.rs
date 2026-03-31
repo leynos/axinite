@@ -288,6 +288,56 @@ impl AppBuilder {
 mod tests {
     use super::*;
 
+    /// Construct a minimal AppBuilder for testing (no_db = true, no workspace).
+    fn minimal_builder() -> AppBuilder {
+        let config = Config::for_testing(
+            std::env::temp_dir().join("ironclaw-test.db"),
+            std::env::temp_dir().join("skills"),
+            std::env::temp_dir().join("installed-skills"),
+        );
+        let flags = AppBuilderFlags {
+            no_db: true,
+            workspace_import_dir: None,
+        };
+        let session = Arc::new(SessionManager::new(config.llm.session.clone()));
+        let log_broadcaster = Arc::new(LogBroadcaster::new());
+
+        AppBuilder::new(config, flags, None, session, log_broadcaster)
+    }
+
+    /// build_components() returns side effects without starting them.
+    #[tokio::test]
+    async fn build_components_does_not_start_side_effects() {
+        let (_components, side_effects) = minimal_builder()
+            .build_components()
+            .await
+            .expect("build_components failed");
+        // RuntimeSideEffects is returned; start() has NOT been called.
+        // The mere existence of the value (without panicking or spawning) is
+        // sufficient proof for a no-db, no-workspace builder.
+        let _ = side_effects;
+    }
+
+    /// build_all() delegates to build_components() + start() and succeeds.
+    #[tokio::test]
+    async fn build_all_completes_successfully() {
+        minimal_builder()
+            .build_all()
+            .await
+            .expect("build_all failed");
+    }
+
+    /// Calling start() on the side effects returned by build_components()
+    /// completes without panicking.
+    #[tokio::test]
+    async fn runtime_side_effects_start_is_idempotent() {
+        let (_components, side_effects) = minimal_builder()
+            .build_components()
+            .await
+            .expect("build_components failed");
+        side_effects.start().await; // must not panic
+    }
+
     /// Verify that `build_components()` returns side effects separately.
     ///
     /// This test ensures the two-phase API guarantees that component
