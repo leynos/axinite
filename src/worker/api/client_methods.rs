@@ -102,9 +102,12 @@ impl WorkerHttpClient {
         }
 
         let prompt: PromptResponse =
-            resp.json().await.map_err(|e| WorkerError::LlmProxyFailed {
-                reason: format!("failed to parse prompt response: {}", e),
-            })?;
+            resp.json()
+                .await
+                .map_err(|e| WorkerError::OrchestratorRejected {
+                    job_id: self.job_id,
+                    reason: format!("failed to parse prompt response: {}", e),
+                })?;
 
         Ok(Some(prompt))
     }

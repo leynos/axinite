@@ -104,8 +104,29 @@ impl WorkerRuntime {
                 self.report_failure(iterations, &format!("Execution failed: {}", msg))
                     .await
             }
-            WorkerExecutionResult::Outcome(LoopOutcome::Stopped | LoopOutcome::NeedApproval(_)) => {
+            WorkerExecutionResult::Outcome(LoopOutcome::Stopped) => {
                 tracing::info!("Worker for job {} stopped", self.config.job_id);
+                self.post_event(
+                    JobEventType::Result,
+                    serde_json::json!({
+                        "success": false,
+                        "message": "Execution stopped",
+                        "iterations": iterations,
+                    }),
+                );
+                self.client
+                    .report_complete(&CompletionReport {
+                        success: false,
+                        message: Some("Execution stopped".to_string()),
+                        iterations,
+                    })
+                    .await
+            }
+            WorkerExecutionResult::Outcome(LoopOutcome::NeedApproval(_)) => {
+                tracing::warn!(
+                    "Worker for job {} reached unexpected NeedApproval state",
+                    self.config.job_id
+                );
                 self.post_event(
                     JobEventType::Result,
                     serde_json::json!({

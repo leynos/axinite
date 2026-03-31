@@ -314,7 +314,6 @@ Work independently to complete this job. Report when done."#,
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
     async fn register_remote_tools_with_degraded_startup(&self) {
         if let Err(error) = self.register_remote_tools().await {
             tracing::warn!(

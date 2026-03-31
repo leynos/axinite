@@ -106,11 +106,12 @@ async fn spawn_hosted_guidance_catalog_server()
 
 async fn build_runtime_with_remote_tools(
     base_url: &str,
-) -> Result<(WorkerRuntime, Arc<WorkerHttpClient>), Box<dyn std::error::Error>> {
-    let client = Arc::new(
-        WorkerHttpClient::new(base_url.to_string(), Uuid::nil(), "test".to_string())
-            .expect("test client should build"),
-    );
+) -> Result<(WorkerRuntime, Arc<WorkerHttpClient>), anyhow::Error> {
+    let client = Arc::new(WorkerHttpClient::new(
+        base_url.to_string(),
+        Uuid::nil(),
+        "test".to_string(),
+    )?);
     let mut runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),

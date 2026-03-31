@@ -12,6 +12,7 @@ use crate::worker::api::WorkerHttpClient;
 /// a WorkerHttpClient with valid URLs without panicking or unwrap,
 #[rstest]
 #[case("http://localhost:50051")]
+#[case("http://localhost:50051/")]
 #[case("http://example.com")]
 #[case("https://api.example.com")]
 fn worker_http_client_new_succeeds_with_valid_url(#[case] url: &str) {

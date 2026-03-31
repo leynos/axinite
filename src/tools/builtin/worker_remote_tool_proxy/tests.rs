@@ -273,7 +273,7 @@ async fn worker_remote_tool_proxy_routes_execution_through_orchestrator_endpoint
     let (route_path, received_job_id, tool_name) = &requests[0];
     assert_eq!(
         route_path,
-        &format!("/worker/{}/tools/execute", job_id),
+        &REMOTE_TOOL_EXECUTE_ROUTE.replace("{job_id}", &job_id.to_string()),
         "proxy must route execution through the correct orchestrator endpoint"
     );
     assert_eq!(received_job_id, &job_id);
