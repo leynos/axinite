@@ -1179,3 +1179,108 @@ async fn async_main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify ChannelSetup can be constructed with minimal state.
+    #[test]
+    fn channel_setup_struct_creation() {
+        let setup = ChannelSetup {
+            channels: ChannelManager::new(),
+            channel_names: vec!["test".to_string()],
+            loaded_wasm_channel_names: vec![],
+            wasm_channel_setup: None,
+            webhook_server: None,
+            #[cfg(unix)]
+            http_channel_state: None,
+        };
+        assert_eq!(setup.channel_names.len(), 1);
+        assert!(setup.wasm_channel_setup.is_none());
+    }
+
+    /// Verify GatewaySetup can be constructed with minimal state.
+    #[test]
+    fn gateway_setup_struct_creation() {
+        let (tx, _rx) = tokio::sync::broadcast::channel(1);
+        let setup = GatewaySetup {
+            gateway_url: Some("http://localhost:8080".to_string()),
+            sse_sender: Some(tx),
+            routine_engine_slot: None,
+        };
+        assert_eq!(setup.gateway_url, Some("http://localhost:8080".to_string()));
+    }
+
+    /// Verify AgentRunContext can be constructed.
+    #[test]
+    fn agent_run_context_creation() {
+        use ironclaw::orchestrator::OrchestratorSetup;
+
+        let (tx, _rx) = tokio::sync::broadcast::channel(1);
+        let gateway = GatewaySetup {
+            gateway_url: None,
+            sse_sender: Some(tx),
+            routine_engine_slot: None,
+        };
+        let orch = OrchestratorSetup {
+            container_job_manager: None,
+            job_event_tx: None,
+            prompt_queue: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            docker_status: ironclaw::sandbox::DockerStatus::NotInstalled,
+        };
+        let ctx = AgentRunContext {
+            gateway_setup: gateway,
+            orch,
+        };
+        assert!(ctx.gateway_setup.gateway_url.is_none());
+    }
+
+    /// Verify BootScreenContext can be constructed.
+    #[test]
+    fn boot_screen_context_creation() {
+        use ironclaw::sandbox::DockerStatus;
+
+        let (tx, _rx) = tokio::sync::broadcast::channel(1);
+        let gateway = GatewaySetup {
+            gateway_url: Some("http://test".to_string()),
+            sse_sender: Some(tx),
+            routine_engine_slot: None,
+        };
+        let ctx = BootScreenContext {
+            gateway_setup: &gateway,
+            channel_names: &["cli".to_string()],
+            docker_status: DockerStatus::Available,
+            active_tunnel: &None,
+        };
+        assert_eq!(ctx.channel_names.len(), 1);
+        assert_eq!(ctx.docker_status, DockerStatus::Available);
+    }
+
+    /// Verify WasmChannelsInit can be constructed with empty setup.
+    #[test]
+    fn wasm_channels_init_creation() {
+        // Create a minimal setup - we can't easily construct WasmChannelSetup
+        // due to complex dependencies, so we just verify the struct shape
+        let init = WasmChannelsInit {
+            channel_names: vec!["test".to_string()],
+            loaded_channel_names: vec!["test".to_string()],
+            webhook_routes: None,
+            // Note: In practice, setup is created by setup_wasm_channels()
+            setup: Arc::new(ironclaw::channels::wasm::WasmChannelSetup {
+                channels: vec![],
+                channel_names: vec![],
+                webhook_routes: None,
+                wasm_channel_runtime: Arc::new(
+                    ironclaw::channels::wasm::WasmChannelRuntime::new(
+                        ironclaw::channels::wasm::WasmChannelRuntimeConfig::default(),
+                    )
+                    .expect("runtime creation should succeed"),
+                ),
+                pairing_store: Arc::new(ironclaw::pairing::PairingStore::new()),
+                wasm_channel_router: Arc::new(ironclaw::channels::wasm::WasmChannelRouter::new()),
+            }),
+        };
+        assert_eq!(init.channel_names.len(), 1);
+    }
+}
