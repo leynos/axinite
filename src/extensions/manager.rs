@@ -128,22 +128,45 @@ pub struct ExtensionManager {
 }
 
 /// Dependency bundle for [`ExtensionManager::new`].
+///
+/// All fields are required unless marked as optional. Production callers typically
+/// supply live implementations of the activation ports (e.g., [`LiveMcpActivation`]),
+/// while tests inject no-op stubs.
 pub struct ExtensionManagerConfig {
+    /// Discovery port for searching online extensions (required).
     pub discovery: Arc<dyn crate::extensions::DiscoveryPort + Send + Sync>,
+    /// Relay configuration for channel-relay extensions (optional).
     pub relay_config: Option<crate::config::RelayConfig>,
+    /// Gateway authentication token for platform OAuth proxy (optional).
     pub gateway_token: Option<String>,
+    /// Activation port for MCP server extensions (required).
     pub mcp_activation: Arc<dyn crate::extensions::McpActivationPort>,
+    /// Activation port for WASM tool extensions (required).
     pub wasm_tool_activation: Arc<dyn crate::extensions::WasmToolActivationPort>,
+    /// Activation port for WASM channel and channel-relay extensions (required).
     pub wasm_channel_activation: Arc<dyn crate::extensions::WasmChannelActivationPort>,
+    /// Shared map of active MCP clients, keyed by server name (required).
+    ///
+    /// This is shared with the live MCP activation adapter so both see the same
+    /// set of active connections.
     pub mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
+    /// Secrets store for credential injection (required).
     pub secrets: Arc<dyn SecretsStore + Send + Sync>,
+    /// Tool registry for registering activated tools (required).
     pub tool_registry: Arc<ToolRegistry>,
+    /// Hook registry for plugin hooks (optional).
     pub hooks: Option<Arc<HookRegistry>>,
+    /// Directory containing installed WASM tools (required).
     pub wasm_tools_dir: PathBuf,
+    /// Directory containing installed WASM channels (required).
     pub wasm_channels_dir: PathBuf,
+    /// Public tunnel URL for webhook configuration (optional).
     pub tunnel_url: Option<String>,
+    /// User identifier for namespacing secrets and configuration (required).
     pub user_id: String,
+    /// Database store for persistence (optional).
     pub store: Option<Arc<dyn crate::db::Database>>,
+    /// Catalog entries for built-in and discovered extensions (required, may be empty).
     pub catalog_entries: Vec<RegistryEntry>,
 }
 
@@ -2911,6 +2934,11 @@ impl ExtensionManager {
 
         tracing::info!(channel = %channel_name, "Hot-activated WASM channel");
 
+        // Clear any previous activation error and broadcast success
+        self.activation_errors.write().await.remove(&channel_name);
+        self.broadcast_extension_status(&channel_name, "active", None)
+            .await;
+
         Ok(ActivateResult {
             name: channel_name,
             kind: ExtensionKind::WasmChannel,
@@ -3265,7 +3293,8 @@ impl ExtensionManager {
             .insert(name.to_string());
         self.persist_active_channels().await;
 
-        // Broadcast status
+        // Clear any previous activation error and broadcast success
+        self.activation_errors.write().await.remove(name);
         let status_msg = "Slack connected via channel relay".to_string();
         self.broadcast_extension_status(name, "active", Some(&status_msg))
             .await;
