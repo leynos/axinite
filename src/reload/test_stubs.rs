@@ -160,6 +160,12 @@ pub struct SpySecretUpdater {
     calls: Arc<Mutex<Vec<Option<secrecy::SecretString>>>>,
 }
 
+impl Default for SpySecretUpdater {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SpySecretUpdater {
     pub fn new() -> Self {
         Self {

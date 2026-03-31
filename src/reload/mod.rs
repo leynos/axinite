@@ -30,6 +30,8 @@ use crate::channels::{ChannelSecretUpdater, WebhookServer};
 use crate::db::SettingsStore;
 use crate::secrets::SecretsStore;
 
+const DEFAULT_USER_ID: &str = "default";
+
 /// Factory function to create a HotReloadManager with default implementations.
 ///
 /// Constructs the manager by instantiating:
@@ -46,7 +48,7 @@ pub fn create_hot_reload_manager(
 ) -> HotReloadManager {
     // Instantiate config loader based on whether settings store is present
     let config_loader: Arc<dyn ConfigLoader> = match settings_store {
-        Some(store) => Arc::new(DbConfigLoader::new(store, "default".to_string())),
+        Some(store) => Arc::new(DbConfigLoader::new(store, DEFAULT_USER_ID.to_string())),
         None => Arc::new(EnvConfigLoader::new()),
     };
 
@@ -56,7 +58,7 @@ pub fn create_hot_reload_manager(
 
     // Wrap secrets store in secret injector with "default" user_id
     let secret_injector: Option<Arc<dyn SecretInjector>> = secrets_store.map(|ss| {
-        Arc::new(DbSecretInjector::new(ss, "default".to_string())) as Arc<dyn SecretInjector>
+        Arc::new(DbSecretInjector::new(ss, DEFAULT_USER_ID.to_string())) as Arc<dyn SecretInjector>
     });
 
     HotReloadManager::new(

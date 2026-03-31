@@ -64,6 +64,11 @@ pub struct WebhookListenerController {
 }
 
 impl WebhookListenerController {
+    /// Create a new webhook listener controller.
+    ///
+    /// `server` — shared webhook server wrapped in an async mutex; the Arc is
+    /// cloned but the mutex must be held to access the server. Thread-safe
+    /// because all state changes go through the mutex guard.
     pub fn new(server: Arc<Mutex<WebhookServer>>) -> Self {
         Self { server }
     }

@@ -43,6 +43,11 @@ pub struct DbConfigLoader {
 }
 
 impl DbConfigLoader {
+    /// Create a new database-backed config loader.
+    ///
+    /// `settings_store` — shared settings store; the Arc is cloned but the
+    /// underlying store must live for the lifetime of the loader.
+    /// `user_id` — identifier of the user whose configuration will be loaded.
     pub fn new(settings_store: Arc<dyn SettingsStore>, user_id: String) -> Self {
         Self {
             settings_store,
@@ -61,6 +66,10 @@ impl NativeConfigLoader for DbConfigLoader {
 pub struct EnvConfigLoader;
 
 impl EnvConfigLoader {
+    /// Create a new environment-based config loader.
+    ///
+    /// Reads configuration from environment variables on each `load` call.
+    /// Consider calling [`Config::from_env`] directly if hot-reload is not required.
     pub fn new() -> Self {
         Self
     }
