@@ -296,3 +296,137 @@ impl std::fmt::Debug for CredentialResponse {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_and_orchestrator_share_remote_tool_route_constants() {
+        assert_eq!(
+            REMOTE_TOOL_CATALOG_ROUTE, "/worker/{job_id}/tools/catalog",
+            "catalog route constant must match the expected orchestrator route"
+        );
+        assert_eq!(
+            REMOTE_TOOL_EXECUTE_ROUTE, "/worker/{job_id}/tools/execute",
+            "execute route constant must match the expected orchestrator route"
+        );
+
+        let test_job_id = "12345678-1234-1234-1234-123456789012";
+        let catalog_route = REMOTE_TOOL_CATALOG_ROUTE.replace("{job_id}", test_job_id);
+        let execute_route = REMOTE_TOOL_EXECUTE_ROUTE.replace("{job_id}", test_job_id);
+
+        assert_eq!(
+            catalog_route,
+            format!("/worker/{}/tools/catalog", test_job_id),
+            "catalog route must expand job_id parameter correctly"
+        );
+        assert_eq!(
+            execute_route,
+            format!("/worker/{}/tools/execute", test_job_id),
+            "execute route must expand job_id parameter correctly"
+        );
+    }
+
+    #[test]
+    fn catalog_response_round_trips_without_field_loss() {
+        let catalog_response = RemoteToolCatalogResponse {
+            tools: vec![ToolDefinition {
+                name: "test_tool".to_string(),
+                description: "A **complex** test tool with UTF-8: \u{1F680}\u{1F4A1}.".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "title": "TestParams",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                        },
+                        "options": {
+                            "type": "object",
+                            "properties": {
+                                "limit": {"type": "integer", "minimum": 1, "maximum": 50}
+                            },
+                            "required": ["limit"]
+                        }
+                    },
+                    "required": ["query", "options"]
+                }),
+            }],
+            toolset_instructions: vec![
+                "Prefer remote tools for external systems.".to_string(),
+                "Use local tools for filesystem operations.".to_string(),
+            ],
+            catalog_version: 42,
+        };
+
+        let serialized =
+            serde_json::to_string(&catalog_response).expect("serialize RemoteToolCatalogResponse");
+        let deserialized: RemoteToolCatalogResponse =
+            serde_json::from_str(&serialized).expect("deserialize RemoteToolCatalogResponse");
+
+        assert_eq!(deserialized.tools.len(), catalog_response.tools.len());
+        assert_eq!(deserialized.tools[0].name, catalog_response.tools[0].name);
+        assert_eq!(
+            deserialized.tools[0].description,
+            catalog_response.tools[0].description
+        );
+        assert_eq!(
+            deserialized.tools[0].parameters,
+            catalog_response.tools[0].parameters
+        );
+        assert_eq!(
+            deserialized.toolset_instructions,
+            catalog_response.toolset_instructions
+        );
+        assert_eq!(
+            deserialized.catalog_version,
+            catalog_response.catalog_version
+        );
+    }
+
+    #[test]
+    fn execution_request_round_trips_without_field_loss() {
+        let execution_request = RemoteToolExecutionRequest {
+            tool_name: "complex_tool".to_string(),
+            params: serde_json::json!({
+                "query": "test query",
+                "options": {"limit": 25}
+            }),
+        };
+
+        let serialized = serde_json::to_string(&execution_request)
+            .expect("serialize RemoteToolExecutionRequest");
+        let deserialized: RemoteToolExecutionRequest =
+            serde_json::from_str(&serialized).expect("deserialize RemoteToolExecutionRequest");
+
+        assert_eq!(deserialized.tool_name, execution_request.tool_name);
+        assert_eq!(deserialized.params, execution_request.params);
+    }
+
+    #[test]
+    fn execution_response_round_trips_without_field_loss() {
+        let execution_response = RemoteToolExecutionResponse {
+            output: ToolOutput::success(
+                serde_json::json!({"result": "success", "data": [1, 2, 3]}),
+                std::time::Duration::from_millis(42),
+            )
+            .with_cost(rust_decimal::Decimal::new(150, 2))
+            .with_raw("raw execution output"),
+        };
+
+        let serialized = serde_json::to_string(&execution_response)
+            .expect("serialize RemoteToolExecutionResponse");
+        let deserialized: RemoteToolExecutionResponse =
+            serde_json::from_str(&serialized).expect("deserialize RemoteToolExecutionResponse");
+
+        assert_eq!(deserialized.output.result, execution_response.output.result);
+        assert_eq!(deserialized.output.cost, execution_response.output.cost);
+        assert_eq!(deserialized.output.raw, execution_response.output.raw);
+        assert_eq!(
+            deserialized.output.duration,
+            execution_response.output.duration
+        );
+    }
+}
