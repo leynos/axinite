@@ -38,22 +38,28 @@ fn extension_manager_fixture() -> ExtensionManagerFixture {
     ExtensionManagerFixture {
         _dir: dir,
         manager: std::sync::Arc::new(ironclaw::extensions::ExtensionManager::new(
-            std::sync::Arc::new(ironclaw::extensions::NoOpDiscovery),
-            None, // relay_config
-            None, // gateway_token
-            std::sync::Arc::new(ironclaw::extensions::NoOpMcpActivation),
-            std::sync::Arc::new(ironclaw::extensions::NoOpWasmToolActivation),
-            std::sync::Arc::new(ironclaw::extensions::NoOpWasmChannelActivation),
-            mcp_clients,
-            std::sync::Arc::new(InMemorySecretsStore::new(crypto)),
-            std::sync::Arc::new(ToolRegistry::new()),
-            None,
-            tools_dir,
-            channels_dir,
-            None,
-            "test".to_string(),
-            None,
-            Vec::new(),
+            ironclaw::extensions::ExtensionManagerConfig {
+                discovery: std::sync::Arc::new(ironclaw::extensions::NoOpDiscovery),
+                relay_config: None,
+                gateway_token: None,
+                mcp_activation: std::sync::Arc::new(ironclaw::extensions::NoOpMcpActivation),
+                wasm_tool_activation: std::sync::Arc::new(
+                    ironclaw::extensions::NoOpWasmToolActivation,
+                ),
+                wasm_channel_activation: std::sync::Arc::new(
+                    ironclaw::extensions::NoOpWasmChannelActivation,
+                ),
+                mcp_clients,
+                secrets: std::sync::Arc::new(InMemorySecretsStore::new(crypto)),
+                tool_registry: std::sync::Arc::new(ToolRegistry::new()),
+                hooks: None,
+                wasm_tools_dir: tools_dir,
+                wasm_channels_dir: channels_dir,
+                tunnel_url: None,
+                user_id: "test".to_string(),
+                store: None,
+                catalog_entries: Vec::new(),
+            },
         )),
     }
 }

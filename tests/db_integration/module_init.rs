@@ -193,24 +193,24 @@ async fn extension_manager_with_activation_ports_constructs() {
     let channels_dir = tempfile::tempdir().expect("channels_dir");
     let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
 
-    let manager = ExtensionManager::new(
-        Arc::new(ironclaw::extensions::NoOpDiscovery),
-        None, // relay_config
-        None, // gateway_token
-        Arc::new(ironclaw::extensions::NoOpMcpActivation),
-        Arc::new(ironclaw::extensions::NoOpWasmToolActivation),
-        Arc::new(ironclaw::extensions::NoOpWasmChannelActivation),
+    let manager = ExtensionManager::new(ironclaw::extensions::ExtensionManagerConfig {
+        discovery: Arc::new(ironclaw::extensions::NoOpDiscovery),
+        relay_config: None,
+        gateway_token: None,
+        mcp_activation: Arc::new(ironclaw::extensions::NoOpMcpActivation),
+        wasm_tool_activation: Arc::new(ironclaw::extensions::NoOpWasmToolActivation),
+        wasm_channel_activation: Arc::new(ironclaw::extensions::NoOpWasmChannelActivation),
         mcp_clients,
         secrets,
-        tools,
-        None,
-        tools_dir.path().to_path_buf(),
-        channels_dir.path().to_path_buf(),
-        None,
-        "test".to_string(),
-        None,
-        Vec::new(),
-    );
+        tool_registry: tools,
+        hooks: None,
+        wasm_tools_dir: tools_dir.path().to_path_buf(),
+        wasm_channels_dir: channels_dir.path().to_path_buf(),
+        tunnel_url: None,
+        user_id: "test".to_string(),
+        store: None,
+        catalog_entries: Vec::new(),
+    });
 
     // Verify the manager is functional — list returns Ok.
     let result = manager.list(None, false).await;

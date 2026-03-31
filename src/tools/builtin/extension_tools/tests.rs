@@ -183,21 +183,23 @@ fn test_manager_stub() -> Arc<ExtensionManager> {
     let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
 
     Arc::new(ExtensionManager::new(
-        Arc::new(crate::extensions::NoOpDiscovery),
-        None, // relay_config
-        None, // gateway_token
-        Arc::new(crate::extensions::NoOpMcpActivation),
-        Arc::new(crate::extensions::NoOpWasmToolActivation),
-        Arc::new(crate::extensions::NoOpWasmChannelActivation),
-        mcp_clients,
-        Arc::new(InMemorySecretsStore::new(crypto)),
-        Arc::new(ToolRegistry::new()),
-        None,
-        std::env::temp_dir().join("ironclaw-test-tools"),
-        std::env::temp_dir().join("ironclaw-test-channels"),
-        None,
-        "test".to_string(),
-        None,
-        Vec::new(),
+        crate::extensions::ExtensionManagerConfig {
+            discovery: Arc::new(crate::extensions::NoOpDiscovery),
+            relay_config: None,
+            gateway_token: None,
+            mcp_activation: Arc::new(crate::extensions::NoOpMcpActivation),
+            wasm_tool_activation: Arc::new(crate::extensions::NoOpWasmToolActivation),
+            wasm_channel_activation: Arc::new(crate::extensions::NoOpWasmChannelActivation),
+            mcp_clients,
+            secrets: Arc::new(InMemorySecretsStore::new(crypto)),
+            tool_registry: Arc::new(ToolRegistry::new()),
+            hooks: None,
+            wasm_tools_dir: std::env::temp_dir().join("ironclaw-test-tools"),
+            wasm_channels_dir: std::env::temp_dir().join("ironclaw-test-channels"),
+            tunnel_url: None,
+            user_id: "test".to_string(),
+            store: None,
+            catalog_entries: Vec::new(),
+        },
     ))
 }
