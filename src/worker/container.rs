@@ -243,14 +243,13 @@ impl WorkerRuntime {
         let reasoning = Reasoning::new(Arc::clone(&self.llm));
         let mut reason_ctx = self.build_reasoning_context(job).await;
 
-        let delegate = ContainerDelegate {
-            client: Arc::clone(&self.client),
-            safety: Arc::clone(&self.safety),
-            tools: Arc::clone(&self.tools),
-            extra_env: Arc::clone(&self.extra_env),
-            last_output: Mutex::new(String::new()),
+        let delegate = ContainerDelegate::new(
+            Arc::clone(&self.client),
+            Arc::clone(&self.safety),
+            Arc::clone(&self.tools),
+            Arc::clone(&self.extra_env),
             iteration_tracker,
-        };
+        );
 
         let config = AgenticLoopConfig {
             max_iterations: self.config.max_iterations as usize,

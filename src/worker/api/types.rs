@@ -346,3 +346,38 @@ impl std::fmt::Debug for CredentialResponse {
             .finish()
     }
 }
+
+/// Terminal result payload emitted with [`JobEventType::Result`].
+///
+/// Provides a consistent serialised shape for job completion events,
+/// whether successful or failed.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TerminalResult {
+    /// Whether the job completed successfully.
+    pub success: bool,
+    /// Human-readable completion summary or failure message.
+    pub message: String,
+    /// Number of iterations completed before exit, if applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iterations: Option<u32>,
+}
+
+impl TerminalResult {
+    /// Create a new terminal result for a successful job.
+    pub fn success(message: impl Into<String>, iterations: Option<u32>) -> Self {
+        Self {
+            success: true,
+            message: message.into(),
+            iterations,
+        }
+    }
+
+    /// Create a new terminal result for a failed job.
+    pub fn failure(message: impl Into<String>, iterations: Option<u32>) -> Self {
+        Self {
+            success: false,
+            message: message.into(),
+            iterations,
+        }
+    }
+}

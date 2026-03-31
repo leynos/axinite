@@ -9,7 +9,7 @@ use std::sync::Arc;
 use crate::agent::agentic_loop::{LoopOutcome, truncate_for_preview};
 use crate::error::WorkerError;
 use crate::worker::api::{
-    CompletionReport, JobEventPayload, JobEventType, StatusUpdate, WorkerState,
+    CompletionReport, JobEventPayload, JobEventType, StatusUpdate, TerminalResult, WorkerState,
 };
 use crate::worker::container::WorkerRuntime;
 
@@ -85,10 +85,11 @@ impl WorkerRuntime {
                 tracing::info!("Worker completed job {} successfully", self.config.job_id);
                 self.post_event(
                     JobEventType::Result,
-                    serde_json::json!({
-                        "success": true,
-                        "message": truncate_for_preview(&output, 2000),
-                    }),
+                    serde_json::to_value(TerminalResult::success(
+                        truncate_for_preview(&output, 2000),
+                        Some(iterations),
+                    ))
+                    .unwrap_or_default(),
                 );
                 self.client
                     .report_complete(&CompletionReport {
@@ -108,11 +109,11 @@ impl WorkerRuntime {
                 tracing::info!("Worker for job {} stopped", self.config.job_id);
                 self.post_event(
                     JobEventType::Result,
-                    serde_json::json!({
-                        "success": false,
-                        "message": "Execution stopped",
-                        "iterations": iterations,
-                    }),
+                    serde_json::to_value(TerminalResult::failure(
+                        "Execution stopped",
+                        Some(iterations),
+                    ))
+                    .unwrap_or_default(),
                 );
                 self.client
                     .report_complete(&CompletionReport {
@@ -129,11 +130,11 @@ impl WorkerRuntime {
                 );
                 self.post_event(
                     JobEventType::Result,
-                    serde_json::json!({
-                        "success": false,
-                        "message": "Execution stopped",
-                        "iterations": iterations,
-                    }),
+                    serde_json::to_value(TerminalResult::failure(
+                        "Execution stopped",
+                        Some(iterations),
+                    ))
+                    .unwrap_or_default(),
                 );
                 self.client
                     .report_complete(&CompletionReport {
@@ -162,10 +163,8 @@ impl WorkerRuntime {
     ) -> Result<(), WorkerError> {
         self.post_event(
             JobEventType::Result,
-            serde_json::json!({
-                "success": false,
-                "message": message,
-            }),
+            serde_json::to_value(TerminalResult::failure(message, Some(iterations)))
+                .unwrap_or_default(),
         );
         self.client
             .report_complete(&CompletionReport {
