@@ -16,9 +16,9 @@
 //!    and returns them along with a `RuntimeSideEffects` struct containing
 //!    deferred background work.
 //!
-//! 2. **Activation phase** (`RuntimeSideEffects::start()`): Spawns
-//!    fire-and-forget background tasks such as stale job cleanup, workspace
-//!    seeding, and embedding backfill.
+//! 2. **Activation phase** (`RuntimeSideEffects::start()`): Runs workspace
+//!    import and seeding synchronously, then spawns fire-and-forget background
+//!    tasks for stale job cleanup and embedding backfill.
 //!
 //! This separation allows tests to validate composition without paying for
 //! unrelated I/O and background task overhead.
@@ -103,7 +103,7 @@ impl RuntimeSideEffects {
 
         // Workspace import, seeding, and embedding backfill
         if let Some(ws) = self.workspace {
-            // Import workspace files from disk FIRST if WORKSPACE_IMPORT_DIR is set.
+            // Import workspace files from disk FIRST if workspace_import_dir flag is set.
             // This lets Docker images / deployment scripts ship customized
             // workspace templates (e.g., AGENTS.md, TOOLS.md) that override
             // the generic seeds. Only imports files that don't already exist
@@ -1045,5 +1045,64 @@ mod tests {
             embeddings_available: false,
         };
         side_effects.start().await;
+    }
+
+    /// Verify that `build_all()` starts side effects before returning.
+    ///
+    /// This test ensures the convenience wrapper `build_all` properly
+    /// awaits workspace import/seeding before returning components,
+    /// unlike `build_components` which defers side effects.
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn build_all_runs_side_effects_before_returning() {
+        use crate::db::Database;
+        use std::io::Write;
+
+        // Create a temp directory with a file to import
+        let import_temp = tempfile::tempdir().expect("tempdir");
+        let import_file = import_temp.path().join("AGENTS.md");
+        {
+            let mut f = std::fs::File::create(&import_file).expect("create file");
+            f.write_all(b"# Test Agent\n\nTest content for import")
+                .expect("write file");
+        }
+
+        // Create a test database
+        let db_temp = tempfile::tempdir().expect("tempdir");
+        let db_path = db_temp.path().join("test.db");
+        let backend = crate::db::libsql::LibSqlBackend::new_local(&db_path)
+            .await
+            .expect("LibSqlBackend::new_local");
+        backend.run_migrations().await.expect("run_migrations");
+        let db: Arc<dyn Database> = Arc::new(backend);
+
+        // Build components with import directory set
+        let config = Config::for_testing(
+            db_path.clone(),
+            std::env::temp_dir().join("skills"),
+            std::env::temp_dir().join("installed-skills"),
+        );
+        let flags = AppBuilderFlags {
+            no_db: false,
+            workspace_import_dir: Some(import_temp.path().to_path_buf()),
+        };
+        let session = Arc::new(SessionManager::new(config.llm.session.clone()));
+        let log_broadcaster = Arc::new(LogBroadcaster::new());
+
+        // Use build_all() - side effects should run before returning
+        let mut builder = AppBuilder::new(config, flags, None, session, log_broadcaster);
+        builder.with_database(db);
+        let components = builder.build_all().await.expect("build_all should succeed");
+
+        // Verify the workspace exists and the file was imported
+        let workspace = components
+            .workspace
+            .as_ref()
+            .expect("workspace should exist");
+        let doc = workspace
+            .read("AGENTS.md")
+            .await
+            .expect("read imported doc");
+        assert!(doc.content.contains("Test content for import"));
     }
 }
