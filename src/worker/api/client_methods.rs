@@ -66,9 +66,11 @@ impl WorkerHttpClient {
             })?;
 
         if !resp.status().is_success() {
-            return Err(WorkerError::ConnectionFailed {
-                url: self.url(EVENT_PATH),
-                reason: format!("job event POST returned {}", resp.status()),
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(WorkerError::OrchestratorRejected {
+                job_id: self.job_id,
+                reason: format!("job event POST returned {}: {}", status, body),
             });
         }
 
@@ -115,8 +117,11 @@ impl WorkerHttpClient {
     /// Fetch credentials granted to this job from the orchestrator.
     ///
     /// Returns an empty vec if no credentials are granted (204 No Content).
-    /// The caller should set each credential as an environment variable before
-    /// starting the execution loop.
+    /// Fetched credentials should be handed off to
+    /// [`WorkerRuntime::hydrate_credentials`](crate::worker::container::WorkerRuntime::hydrate_credentials),
+    /// which stores them in its `extra_env` and injects them into child processes.
+    /// Callers should use this runtime hydrate/injection pathway rather than
+    /// setting global environment variables directly.
     pub async fn fetch_credentials(&self) -> Result<Vec<CredentialResponse>, WorkerError> {
         let resp = self
             .client

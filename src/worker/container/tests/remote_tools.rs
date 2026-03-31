@@ -240,14 +240,13 @@ async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance()
         "expected one guidance message before refresh"
     );
 
-    let delegate = ContainerDelegate {
+    let delegate = ContainerDelegate::new(
         client,
-        safety: Arc::clone(&runtime.safety),
-        tools: Arc::clone(&runtime.tools),
-        extra_env: Arc::clone(&runtime.extra_env),
-        last_output: Mutex::new(String::new()),
-        iteration_tracker: Arc::new(Mutex::new(0)),
-    };
+        Arc::clone(&runtime.safety),
+        Arc::clone(&runtime.tools),
+        Arc::clone(&runtime.extra_env),
+        Arc::new(Mutex::new(0)),
+    );
 
     let outcome = delegate.before_llm_call(&mut reason_ctx, 1).await;
     assert!(
