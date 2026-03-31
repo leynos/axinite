@@ -57,6 +57,28 @@ struct GatewaySetup {
     routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
 }
 
+/// Bundled inputs for the agent-run phase, produced by the
+/// gateway and orchestrator setup phases.
+struct AgentRunContext {
+    gateway_setup: GatewaySetup,
+    orch: ironclaw::orchestrator::OrchestratorSetup,
+}
+
+/// Bundled context for the gateway-setup phase.
+struct GatewayPhaseContext<'a> {
+    log_broadcaster: &'a Arc<LogBroadcaster>,
+    log_level_handle: &'a Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    orch: &'a ironclaw::orchestrator::OrchestratorSetup,
+}
+
+/// Collects the runtime-environment facts required to render the boot screen.
+struct BootScreenContext<'a> {
+    gateway_setup: &'a GatewaySetup,
+    channel_names: &'a [String],
+    docker_status: ironclaw::sandbox::DockerStatus,
+    active_tunnel: &'a Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+}
+
 /// Handles all user-facing CLI tool subcommands (Tool through Import).
 /// Returns `Ok(Some(()))` when a command was handled, `Ok(None)` to fall through.
 async fn dispatch_cli_tool_commands(cli: &Cli) -> anyhow::Result<Option<()>> {
@@ -185,6 +207,49 @@ async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<Option<()>> {
     dispatch_agent_commands(cli).await
 }
 
+/// Carries the output of WASM-channel initialisation.
+struct WasmChannelsInit {
+    channel_names: Vec<String>,
+    loaded_channel_names: Vec<String>,
+    webhook_routes: Option<axum::Router>,
+    setup: Arc<ironclaw::channels::wasm::WasmChannelSetup>,
+}
+
+/// Initialise WASM channels, add them to `channels`, and return setup state.
+///
+/// Returns `None` when the WASM channel feature is disabled or the channels
+/// directory does not yet exist.
+async fn init_wasm_channels(
+    config: &Config,
+    components: &ironclaw::app::AppComponents,
+    channels: &ChannelManager,
+) -> Option<WasmChannelsInit> {
+    if !config.channels.wasm_channels_enabled || !config.channels.wasm_channels_dir.exists() {
+        return None;
+    }
+    let mut result = ironclaw::channels::wasm::setup_wasm_channels(
+        config,
+        &components.secrets_store,
+        components.extension_manager.as_ref(),
+        components.db.as_ref(),
+    )
+    .await?;
+
+    let loaded_channel_names = result.channel_names.clone();
+    let mut channel_names = Vec::new();
+    for (name, channel) in std::mem::take(&mut result.channels) {
+        channel_names.push(name);
+        channels.add(channel).await;
+    }
+    let webhook_routes = result.webhook_routes.take();
+    Some(WasmChannelsInit {
+        channel_names,
+        loaded_channel_names,
+        webhook_routes,
+        setup: Arc::new(result),
+    })
+}
+
 /// Set up all channels (REPL, WASM, Signal, HTTP, webhook server).
 async fn setup_channels(
     config: &Config,
@@ -221,28 +286,13 @@ async fn setup_channels(
     let mut webhook_routes: Vec<axum::Router> = Vec::new();
 
     // Load WASM channels and register their webhook routes.
-    if config.channels.wasm_channels_enabled && config.channels.wasm_channels_dir.exists() {
-        let wasm_result = ironclaw::channels::wasm::setup_wasm_channels(
-            config,
-            &components.secrets_store,
-            components.extension_manager.as_ref(),
-            components.db.as_ref(),
-        )
-        .await;
-
-        if let Some(mut result) = wasm_result {
-            loaded_wasm_channel_names = result.channel_names.clone();
-            // Take channels from result before wrapping in Arc
-            let channels_to_add = std::mem::take(&mut result.channels);
-            for (name, channel) in channels_to_add {
-                channel_names.push(name);
-                channels.add(channel).await;
-            }
-            if let Some(routes) = result.webhook_routes.take() {
-                webhook_routes.push(routes);
-            }
-            wasm_channel_setup = Some(Arc::new(result));
+    if let Some(wasm_init) = init_wasm_channels(config, components, &channels).await {
+        loaded_wasm_channel_names = wasm_init.loaded_channel_names;
+        channel_names.extend(wasm_init.channel_names);
+        if let Some(routes) = wasm_init.webhook_routes {
+            webhook_routes.push(routes);
         }
+        wasm_channel_setup = Some(wasm_init.setup);
     }
 
     // Add Signal channel if configured and not CLI-only mode.
@@ -738,9 +788,7 @@ async fn phase_setup_gateway(
     config: &Config,
     components: &ironclaw::app::AppComponents,
     channel_setup: &ChannelSetup,
-    log_broadcaster: &Arc<LogBroadcaster>,
-    log_level_handle: &Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
-    orch: &ironclaw::orchestrator::OrchestratorSetup,
+    ctx: &GatewayPhaseContext<'_>,
 ) -> anyhow::Result<GatewaySetup> {
     let session_manager =
         Arc::new(ironclaw::agent::SessionManager::new().with_hooks(components.hooks.clone()));
@@ -753,12 +801,12 @@ async fn phase_setup_gateway(
         .register_job_tools(ironclaw::tools::RegisterJobToolsOptions {
             context_manager: Arc::clone(&components.context_manager),
             scheduler_slot: Some(scheduler_slot.clone()),
-            job_manager: orch.container_job_manager.clone(),
+            job_manager: ctx.orch.container_job_manager.clone(),
             store: components.db.clone(),
-            job_event_tx: orch.job_event_tx.clone(),
+            job_event_tx: ctx.orch.job_event_tx.clone(),
             inject_tx: Some(channel_setup.channels.inject_sender()),
             prompt_queue: if config.sandbox.enabled {
-                Some(Arc::clone(&orch.prompt_queue))
+                Some(Arc::clone(&ctx.orch.prompt_queue))
             } else {
                 None
             },
@@ -770,12 +818,12 @@ async fn phase_setup_gateway(
         config,
         components,
         &session_manager,
-        log_broadcaster,
-        log_level_handle,
+        ctx.log_broadcaster,
+        ctx.log_level_handle,
         &scheduler_slot,
-        &orch.container_job_manager,
-        &orch.job_event_tx,
-        &orch.prompt_queue,
+        &ctx.orch.container_job_manager,
+        &ctx.orch.job_event_tx,
+        &ctx.orch.prompt_queue,
         &channel_setup.channels,
         &mut channel_names,
     )
@@ -789,10 +837,7 @@ fn phase_print_boot_screen(
     cli: &Cli,
     config: &Config,
     components: &ironclaw::app::AppComponents,
-    gateway_setup: &GatewaySetup,
-    channel_names: &[String],
-    docker_status: &ironclaw::sandbox::DockerStatus,
-    active_tunnel: &Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+    ctx: &BootScreenContext<'_>,
 ) {
     if !config.channels.cli.enabled || cli.message.is_some() {
         return;
@@ -814,7 +859,7 @@ fn phase_print_boot_screen(
         },
         db_connected: !cli.no_db,
         tool_count: components.tools.count(),
-        gateway_url: gateway_setup.gateway_url.clone(),
+        gateway_url: ctx.gateway_setup.gateway_url.clone(),
         embeddings_enabled: config.embeddings.enabled,
         embeddings_provider: if config.embeddings.enabled {
             Some(config.embeddings.provider.clone())
@@ -824,18 +869,62 @@ fn phase_print_boot_screen(
         heartbeat_enabled: config.heartbeat.enabled,
         heartbeat_interval_secs: config.heartbeat.interval_secs,
         sandbox_enabled: config.sandbox.enabled,
-        docker_status: *docker_status,
+        docker_status: ctx.docker_status,
         claude_code_enabled: config.claude_code.enabled,
         routines_enabled: config.routines.enabled,
         skills_enabled: config.skills.enabled,
-        channels: channel_names.to_vec(),
-        tunnel_url: active_tunnel
+        channels: ctx.channel_names.to_vec(),
+        tunnel_url: ctx
+            .active_tunnel
             .as_ref()
             .and_then(|t| t.public_url())
             .or_else(|| config.tunnel.public_url.clone()),
-        tunnel_provider: active_tunnel.as_ref().map(|t| t.name().to_string()),
+        tunnel_provider: ctx.active_tunnel.as_ref().map(|t| t.name().to_string()),
     };
     ironclaw::boot_screen::print_boot_screen(&boot_info);
+}
+
+/// Wire the WASM channel runtime into the extension manager and
+/// re-activate any channels that were persisted across restarts.
+async fn wire_wasm_channel_runtime(
+    ext_mgr: &ironclaw::extensions::ExtensionManager,
+    channels: &Arc<ChannelManager>,
+    setup: Arc<ironclaw::channels::wasm::WasmChannelSetup>,
+    loaded_wasm_channel_names: Vec<String>,
+    wasm_channel_owner_ids: std::collections::HashMap<String, i64>,
+) {
+    let active_at_startup: std::collections::HashSet<String> =
+        loaded_wasm_channel_names.iter().cloned().collect();
+    ext_mgr.set_active_channels(loaded_wasm_channel_names).await;
+    ext_mgr
+        .set_channel_runtime(
+            Arc::clone(channels),
+            Arc::clone(&setup.wasm_channel_runtime),
+            Arc::clone(&setup.pairing_store),
+            Arc::clone(&setup.wasm_channel_router),
+            wasm_channel_owner_ids,
+        )
+        .await;
+    tracing::debug!("Channel runtime wired into extension manager for hot-activation");
+
+    let persisted = ext_mgr.load_persisted_active_channels().await;
+    for name in &persisted {
+        if active_at_startup.contains(name) || ext_mgr.is_relay_channel(name).await {
+            continue;
+        }
+        match ext_mgr.activate(name).await {
+            Ok(result) => tracing::debug!(
+                channel = %name,
+                message = %result.message,
+                "Auto-activated persisted WASM channel"
+            ),
+            Err(e) => tracing::warn!(
+                channel = %name,
+                error = %e,
+                "Failed to auto-activate persisted WASM channel"
+            ),
+        }
+    }
 }
 
 /// Phase 8: Run the agent.
@@ -843,10 +932,13 @@ async fn phase_run_agent(
     config: &Config,
     components: ironclaw::app::AppComponents,
     channel_setup: ChannelSetup,
-    gateway_setup: GatewaySetup,
-    orch: &ironclaw::orchestrator::OrchestratorSetup,
-    loaded_wasm_channel_names: Vec<String>,
+    ctx: AgentRunContext,
 ) -> anyhow::Result<tokio::sync::broadcast::Sender<()>> {
+    let loaded_wasm_channel_names = channel_setup.loaded_wasm_channel_names.clone();
+    let AgentRunContext {
+        gateway_setup,
+        orch,
+    } = ctx;
     let channels = Arc::new(channel_setup.channels);
 
     components
@@ -856,44 +948,16 @@ async fn phase_run_agent(
 
     // Wire up channel runtime for hot-activation of WASM channels.
     if let Some(ref ext_mgr) = components.extension_manager
-        && let Some(setup) = channel_setup.wasm_channel_setup
+        && let Some(ref setup) = channel_setup.wasm_channel_setup
     {
-        let active_at_startup: std::collections::HashSet<String> =
-            loaded_wasm_channel_names.iter().cloned().collect();
-        ext_mgr.set_active_channels(loaded_wasm_channel_names).await;
-        ext_mgr
-            .set_channel_runtime(
-                Arc::clone(&channels),
-                Arc::clone(&setup.wasm_channel_runtime),
-                Arc::clone(&setup.pairing_store),
-                Arc::clone(&setup.wasm_channel_router),
-                config.channels.wasm_channel_owner_ids.clone(),
-            )
-            .await;
-        tracing::debug!("Channel runtime wired into extension manager for hot-activation");
-
-        let persisted = ext_mgr.load_persisted_active_channels().await;
-        for name in &persisted {
-            if active_at_startup.contains(name) || ext_mgr.is_relay_channel(name).await {
-                continue;
-            }
-            match ext_mgr.activate(name).await {
-                Ok(result) => {
-                    tracing::debug!(
-                        channel = %name,
-                        message = %result.message,
-                        "Auto-activated persisted WASM channel"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        channel = %name,
-                        error = %e,
-                        "Failed to auto-activate persisted WASM channel"
-                    );
-                }
-            }
-        }
+        wire_wasm_channel_runtime(
+            ext_mgr,
+            &channels,
+            Arc::clone(setup),
+            loaded_wasm_channel_names,
+            config.channels.wasm_channel_owner_ids.clone(),
+        )
+        .await;
     }
 
     if let Some(ref ext_mgr) = components.extension_manager {
@@ -1036,16 +1100,17 @@ async fn async_main() -> anyhow::Result<()> {
     let (channel_setup, _hook_bootstrap) =
         phase_init_channels_and_hooks(&config, &cli, &components, &loaded_wasm_channel_names)
             .await?;
-    let loaded_wasm_channel_names = channel_setup.loaded_wasm_channel_names.clone();
 
     // Phase 6: Setup gateway
     let gateway_setup = phase_setup_gateway(
         &config,
         &components,
         &channel_setup,
-        &log_broadcaster,
-        &log_level_handle,
-        &orch,
+        &GatewayPhaseContext {
+            log_broadcaster: &log_broadcaster,
+            log_level_handle: &log_level_handle,
+            orch: &orch,
+        },
     )
     .await?;
 
@@ -1054,10 +1119,12 @@ async fn async_main() -> anyhow::Result<()> {
         &cli,
         &config,
         &components,
-        &gateway_setup,
-        &channel_setup.channel_names,
-        &orch.docker_status,
-        &active_tunnel,
+        &BootScreenContext {
+            gateway_setup: &gateway_setup,
+            channel_names: &channel_setup.channel_names,
+            docker_status: orch.docker_status,
+            active_tunnel: &active_tunnel,
+        },
     );
 
     // Phase 8: Run agent
@@ -1065,9 +1132,10 @@ async fn async_main() -> anyhow::Result<()> {
         &config,
         components,
         channel_setup,
-        gateway_setup,
-        &orch,
-        loaded_wasm_channel_names,
+        AgentRunContext {
+            gateway_setup,
+            orch,
+        },
     )
     .await?;
 

@@ -1028,7 +1028,10 @@ mod tests {
         side_effects.start().await;
 
         // Verify the file was imported
-        let doc = workspace.read("AGENTS.md").await.expect("read imported doc");
+        let doc = workspace
+            .read("AGENTS.md")
+            .await
+            .expect("read imported doc");
         assert_eq!(doc.content, "# Test Agent\n\nTest content for import");
     }
 
