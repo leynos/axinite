@@ -1,7 +1,7 @@
 //! Live WASM channel and channel-relay activation adapter.
 //!
 //! Currently delegates to the [`ExtensionManager`]'s internal methods via
-//! an `Arc` reference. This is an intermediate step — the channel activation
+//! a `Weak` reference to avoid a retain cycle. The channel activation
 //! logic is deeply coupled to manager state (active-channel tracking,
 //! credential refresh, webhook router registration, auth-status checks) and
 //! will be extracted incrementally in a follow-up.
@@ -10,7 +10,7 @@
 //! [`NoOpWasmChannelActivation`](super::NoOpWasmChannelActivation) without
 //! triggering real channel infrastructure.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, Weak};
 
 use crate::extensions::activation::{ActivationFuture, WasmChannelActivationPort};
 use crate::extensions::{ExtensionError, ExtensionManager};
@@ -22,7 +22,8 @@ use crate::extensions::{ExtensionError, ExtensionManager};
 /// wrapped in `Arc`.
 pub struct LiveWasmChannelActivation {
     /// Populated after `ExtensionManager` is wrapped in `Arc`.
-    manager: OnceLock<Arc<ExtensionManager>>,
+    /// Stored as `Weak` to avoid a retain cycle with the manager.
+    manager: OnceLock<Weak<ExtensionManager>>,
 }
 
 impl LiveWasmChannelActivation {
@@ -35,7 +36,7 @@ impl LiveWasmChannelActivation {
 
     /// Inject the manager reference once it is available.
     pub fn set_manager(&self, manager: Arc<ExtensionManager>) {
-        match self.manager.set(manager) {
+        match self.manager.set(Arc::downgrade(&manager)) {
             Ok(_) => {}
             Err(_) => {
                 tracing::debug!(
@@ -45,8 +46,8 @@ impl LiveWasmChannelActivation {
         }
     }
 
-    fn require_manager(&self) -> Result<&Arc<ExtensionManager>, ExtensionError> {
-        self.manager.get().ok_or_else(|| {
+    fn require_manager(&self) -> Result<Arc<ExtensionManager>, ExtensionError> {
+        self.manager.get().and_then(|w| w.upgrade()).ok_or_else(|| {
             ExtensionError::ActivationFailed(
                 "Channel activation adapter not initialised".to_string(),
             )
@@ -62,16 +63,14 @@ impl Default for LiveWasmChannelActivation {
 
 impl WasmChannelActivationPort for LiveWasmChannelActivation {
     fn activate_wasm_channel<'a>(&'a self, name: &'a str) -> ActivationFuture<'a> {
-        Box::pin(async move {
-            let mgr = self.require_manager()?;
-            mgr.activate_wasm_channel_inner(name).await
-        })
+        let mgr = self.require_manager();
+        let name = name.to_owned();
+        Box::pin(async move { mgr?.activate_wasm_channel_inner(&name).await })
     }
 
     fn activate_channel_relay<'a>(&'a self, name: &'a str) -> ActivationFuture<'a> {
-        Box::pin(async move {
-            let mgr = self.require_manager()?;
-            mgr.activate_channel_relay_inner(name).await
-        })
+        let mgr = self.require_manager();
+        let name = name.to_owned();
+        Box::pin(async move { mgr?.activate_channel_relay_inner(&name).await })
     }
 }
