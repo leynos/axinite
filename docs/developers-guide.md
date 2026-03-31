@@ -310,6 +310,67 @@ For the compile-time reduction effort:
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
 
+## Hot-reload architecture
+
+The `src/reload/` module provides hot-reload capabilities for configuration,
+HTTP listeners, and secrets without restarting the application. This is
+triggered by a SIGHUP signal in production environments.
+
+### Core traits
+
+Three trait boundaries separate reload policy from I/O:
+
+- `ConfigLoader` — Loads configuration from database (`DbConfigLoader`) or
+  environment variables (`EnvConfigLoader`).
+- `ListenerController` — Controls HTTP listener restarts, implemented by
+  `WebhookListenerController` for the webhook server.
+- `SecretInjector` — Injects secrets into an environment variable overlay,
+  implemented by `DbSecretInjector` for database-backed secrets.
+
+Each trait has a native async sibling (`NativeConfigLoader`,
+`NativeListenerController`, `NativeSecretInjector`) that returns
+`impl Future` rather than boxed futures. A blanket implementation
+converts the native traits to the dyn-compatible boxed-future form.
+
+### HotReloadManager orchestrator
+
+`HotReloadManager` composes the three boundaries and coordinates the
+reload sequence:
+
+1. Load new configuration
+2. Inject secrets into the environment overlay
+3. Restart the HTTP listener if the bind address changed
+4. Update channel secrets
+
+The manager is created via `create_hot_reload_manager()` which wires
+together the default implementations based on available stores.
+
+### Extension guidance
+
+To add a new config source:
+
+1. Implement `NativeConfigLoader` for your type.
+2. The blanket impl automatically provides `ConfigLoader`.
+3. Pass your loader to `HotReloadManager::new()`.
+
+To add a new listener controller:
+
+1. Implement `NativeListenerController` for your server wrapper.
+2. Implement `current_addr()` and `restart_with_addr()`.
+
+### Test stubs
+
+The `src/reload/test_stubs.rs` module provides hand-rolled stubs for
+testing:
+
+- `StubConfigLoader` — Returns a pre-configured config or error.
+- `StubListenerController` — Records restart calls, can simulate failures.
+- `StubSecretInjector` — Records whether `inject()` was called.
+- `SpySecretUpdater` — Records all secret update calls.
+
+Use these in unit tests to verify manager behaviour without real I/O.
+Example usage is in `src/reload/manager.rs` tests.
+
 ## Expected follow-up changes
 
 This guide documents the environment as of the current branch. The

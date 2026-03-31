@@ -86,3 +86,48 @@ impl NativeConfigLoader for EnvConfigLoader {
         Config::from_env().await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that EnvConfigLoader::new creates a zero-sized loader.
+    #[test]
+    fn env_config_loader_new_creates_loader() {
+        let loader = EnvConfigLoader::new();
+        // EnvConfigLoader is a ZST - no state, just behaviour
+        assert_eq!(std::mem::size_of_val(&loader), 0);
+    }
+
+    /// Test that EnvConfigLoader implements Default via new().
+    #[test]
+    fn env_config_loader_default_uses_new() {
+        let loader1 = EnvConfigLoader::new();
+        let loader2 = EnvConfigLoader;
+
+        // Both should be functionally equivalent (EnvConfigLoader has no state)
+        assert_eq!(std::mem::size_of_val(&loader1), 0);
+        assert_eq!(std::mem::size_of_val(&loader2), 0);
+    }
+
+    /// Test that DbConfigLoader::new returns a properly typed instance.
+    ///
+    /// Since SettingsStore is a complex trait with many methods, we verify
+    /// the constructor signature is correct without actually implementing
+    /// the trait (which would require implementing ~10 methods).
+    #[test]
+    fn db_config_loader_constructor_signature_is_valid() {
+        // This test documents the expected types for DbConfigLoader::new
+        // In real usage, an Arc<dyn SettingsStore> from the db module is passed
+        fn _type_check_new(
+            store: Arc<dyn crate::db::SettingsStore>,
+            user_id: String,
+        ) -> DbConfigLoader {
+            DbConfigLoader::new(store, user_id)
+        }
+
+        // The type check above ensures the constructor accepts the right types
+        // We don't call it because we don't have a mock SettingsStore
+        let _ = _type_check_new;
+    }
+}

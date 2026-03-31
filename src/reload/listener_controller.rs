@@ -85,3 +85,25 @@ impl NativeListenerController for WebhookListenerController {
         server.restart_with_addr(addr).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that WebhookListenerController::new accepts the correct types.
+    ///
+    /// Verifies the constructor signature matches the expected
+    /// Arc<Mutex<WebhookServer>> parameter type.
+    #[test]
+    fn webhook_listener_controller_constructor_signature_is_valid() {
+        // Type-check the constructor without calling it
+        fn _type_check_new(
+            server: Arc<Mutex<crate::channels::WebhookServer>>,
+        ) -> WebhookListenerController {
+            WebhookListenerController::new(server)
+        }
+
+        // The type check above ensures the constructor accepts the right types
+        let _ = _type_check_new;
+    }
+}

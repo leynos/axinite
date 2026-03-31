@@ -93,3 +93,31 @@ impl DbSecretInjector {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test the HTTP_WEBHOOK_SECRET_KEY constant value.
+    #[test]
+    fn http_webhook_secret_key_has_correct_value() {
+        assert_eq!(HTTP_WEBHOOK_SECRET_KEY, "HTTP_WEBHOOK_SECRET");
+    }
+
+    /// Test that DbSecretInjector::new has the correct signature.
+    ///
+    /// Verifies the constructor accepts Arc<dyn SecretsStore + Send + Sync>
+    /// and a user_id String as expected.
+    #[test]
+    fn db_secret_injector_constructor_signature_is_valid() {
+        fn _type_check_new(
+            store: Arc<dyn crate::secrets::SecretsStore + Send + Sync>,
+            user_id: String,
+        ) -> DbSecretInjector {
+            DbSecretInjector::new(store, user_id)
+        }
+
+        // The type check above ensures the constructor accepts the right types
+        let _ = _type_check_new;
+    }
+}
