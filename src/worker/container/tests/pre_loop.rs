@@ -12,47 +12,20 @@ use crate::worker::api::{WorkerHttpClient, WorkerState};
 use crate::worker::container::{WorkerConfig, WorkerError, WorkerExecutionResult, WorkerRuntime};
 
 /// Regression test: WorkerRuntime::new should return ConfigMismatch error
-/// when config job_id doesn't match client job_id.
-#[test]
-fn worker_runtime_new_returns_error_on_job_id_mismatch() {
-    let job_id = Uuid::new_v4();
-    let different_job_id = Uuid::new_v4();
-
+/// when config fields don't match the client.
+#[rstest]
+#[case("job_id", Uuid::new_v4(), "http://localhost:50051")]
+#[case("orchestrator_url", Uuid::nil(), "http://different-host:50052")]
+fn worker_runtime_new_returns_error_on_config_mismatch(
+    #[case] field_name: &str,
+    #[case] job_id: Uuid,
+    #[case] orchestrator_url: &str,
+) {
+    // Client is created with Uuid::nil() and "http://localhost:50051"
     let client = Arc::new(
         WorkerHttpClient::new(
             "http://localhost:50051".to_string(),
-            job_id,
-            "test".to_string(),
-        )
-        .expect("test client should build"),
-    );
-
-    let result = WorkerRuntime::new(
-        WorkerConfig {
-            job_id: different_job_id,
-            orchestrator_url: "http://localhost:50051".to_string(),
-            ..WorkerConfig::default()
-        },
-        client,
-    );
-
-    match result {
-        Err(WorkerError::ConfigMismatch { field, .. }) => assert_eq!(field, "job_id"),
-        Ok(_) => panic!("expected ConfigMismatch error for job_id, got Ok"),
-        Err(other) => panic!("expected ConfigMismatch error for job_id, got {:?}", other),
-    }
-}
-
-/// Regression test: WorkerRuntime::new should return ConfigMismatch error
-/// when config orchestrator_url doesn't match client orchestrator_url.
-#[test]
-fn worker_runtime_new_returns_error_on_orchestrator_url_mismatch() {
-    let job_id = Uuid::new_v4();
-
-    let client = Arc::new(
-        WorkerHttpClient::new(
-            "http://localhost:50051".to_string(),
-            job_id,
+            Uuid::nil(),
             "test".to_string(),
         )
         .expect("test client should build"),
@@ -61,18 +34,24 @@ fn worker_runtime_new_returns_error_on_orchestrator_url_mismatch() {
     let result = WorkerRuntime::new(
         WorkerConfig {
             job_id,
-            orchestrator_url: "http://different-host:50052".to_string(),
+            orchestrator_url: orchestrator_url.to_string(),
             ..WorkerConfig::default()
         },
         client,
     );
 
     match result {
-        Err(WorkerError::ConfigMismatch { field, .. }) => assert_eq!(field, "orchestrator_url"),
-        Ok(_) => panic!("expected ConfigMismatch error for orchestrator_url, got Ok"),
+        Err(WorkerError::ConfigMismatch { field, .. }) => {
+            assert_eq!(
+                field, field_name,
+                "expected ConfigMismatch for {}",
+                field_name
+            )
+        }
+        Ok(_) => panic!("expected ConfigMismatch error for {}, got Ok", field_name),
         Err(other) => panic!(
-            "expected ConfigMismatch error for orchestrator_url, got {:?}",
-            other
+            "expected ConfigMismatch error for {}, got {:?}",
+            field_name, other
         ),
     }
 }

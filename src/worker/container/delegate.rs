@@ -43,7 +43,7 @@ impl ContainerDelegate {
             .post_event(&JobEventPayload { event_type, data })
             .await
         {
-            tracing::debug!(error = %e, "Failed to post event");
+            tracing::warn!(error = %e, "Failed to post event");
         }
     }
 

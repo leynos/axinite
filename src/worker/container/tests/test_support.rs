@@ -133,20 +133,23 @@ pub async fn spawn_runtime_test_server(
 /// orchestrator URL and job ID.
 ///
 /// Uses a fixed test token (`"test-token"`) and default configuration suitable for unit tests.
-pub fn build_test_runtime(orchestrator_url: String, job_id: Uuid) -> WorkerRuntime {
-    let client = Arc::new(
-        WorkerHttpClient::new(orchestrator_url.clone(), job_id, "test-token".to_string())
-            .expect("test client should build"),
-    );
-    WorkerRuntime::new(
+pub fn build_test_runtime(
+    orchestrator_url: String,
+    job_id: Uuid,
+) -> Result<WorkerRuntime, anyhow::Error> {
+    let client = Arc::new(WorkerHttpClient::new(
+        orchestrator_url.clone(),
+        job_id,
+        "test-token".to_string(),
+    )?);
+    Ok(WorkerRuntime::new(
         WorkerConfig {
             job_id,
             orchestrator_url,
             ..WorkerConfig::default()
         },
         client,
-    )
-    .expect("test runtime should build")
+    )?)
 }
 
 /// Test harness that owns the `WorkerRuntime` under test and coordinates graceful shutdown
@@ -209,10 +212,10 @@ impl Drop for RuntimeTestHarness {
 pub async fn setup_runtime_test(
     state: Arc<RuntimeTestState>,
     job_id: Uuid,
-) -> std::io::Result<RuntimeTestHarness> {
+) -> anyhow::Result<RuntimeTestHarness> {
     let (orchestrator_url, shutdown_tx, handle) =
         spawn_runtime_test_server(Arc::clone(&state)).await?;
-    let runtime = build_test_runtime(orchestrator_url, job_id);
+    let runtime = build_test_runtime(orchestrator_url, job_id)?;
     Ok(RuntimeTestHarness {
         runtime: Some(runtime),
         shutdown_tx: Some(shutdown_tx),

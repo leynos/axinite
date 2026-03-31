@@ -38,6 +38,8 @@ pub use container::WorkerRuntime;
 pub use job::{Worker, WorkerDeps};
 pub use proxy_llm::ProxyLlmProvider;
 
+use anyhow::Context as _;
+
 /// Run the Worker subcommand (inside Docker containers).
 pub async fn run_worker(
     job_id: uuid::Uuid,
@@ -57,13 +59,9 @@ pub async fn run_worker(
         timeout: std::time::Duration::from_secs(600),
     };
 
-    use anyhow::Context as _;
-
     let rt = WorkerRuntime::from_env(config).context("Worker init failed")?;
 
-    rt.run()
-        .await
-        .map_err(|e| anyhow::anyhow!("Worker failed: {}", e))
+    rt.run().await.context("Worker failed")
 }
 
 /// Run the Claude Code bridge subcommand (inside Docker containers).
