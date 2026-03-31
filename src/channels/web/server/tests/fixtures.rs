@@ -1,6 +1,5 @@
 //! Shared fixtures and router factories for web gateway route tests.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{Router, routing::get};
@@ -115,8 +114,8 @@ pub(super) fn build_test_ext_mgr(
             secrets,
             tool_registry,
             hooks: None,
-            wasm_tools_dir: PathBuf::from("/tmp/wasm_tools"),
-            wasm_channels_dir: PathBuf::from("/tmp/wasm_channels"),
+            wasm_tools_dir: std::env::temp_dir().join("ironclaw_test_wasm_tools"),
+            wasm_channels_dir: std::env::temp_dir().join("ironclaw_test_wasm_channels"),
             tunnel_url: None,
             user_id: "test".to_string(),
             store: None,
