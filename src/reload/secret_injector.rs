@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use crate::secrets::{SecretError, SecretsStore};
 
+const HTTP_WEBHOOK_SECRET_KEY: &str = "HTTP_WEBHOOK_SECRET";
+
 /// Boxed future used at the dyn secret-injector boundary.
 pub type SecretInjectorFuture<'a> =
     Pin<Box<dyn Future<Output = Result<(), SecretError>> + Send + 'a>>;
@@ -76,14 +78,14 @@ impl DbSecretInjector {
             Ok(webhook_secret) => {
                 // Thread-safe: Uses INJECTED_VARS mutex instead of unsafe std::env::set_var.
                 // Config::from_env() will read from the overlay via optional_env().
-                crate::config::inject_single_var("HTTP_WEBHOOK_SECRET", webhook_secret.expose());
-                tracing::debug!("Injected HTTP_WEBHOOK_SECRET from secrets store");
+                crate::config::inject_single_var(HTTP_WEBHOOK_SECRET_KEY, webhook_secret.expose());
+                tracing::debug!("Injected {HTTP_WEBHOOK_SECRET_KEY} from secrets store");
                 Ok(())
             }
             Err(SecretError::NotFound(_)) => {
-                crate::config::remove_injected_var("HTTP_WEBHOOK_SECRET");
+                crate::config::remove_injected_var(HTTP_WEBHOOK_SECRET_KEY);
                 tracing::debug!(
-                    "HTTP_WEBHOOK_SECRET not found in secrets store; cleared overlay entry"
+                    "{HTTP_WEBHOOK_SECRET_KEY} not found in secrets store; cleared overlay entry"
                 );
                 Ok(())
             }
