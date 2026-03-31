@@ -137,11 +137,28 @@ before channels and background services start.
 8. The process finally enters `agent.run()`, while background tasks such as the
    sandbox reaper and Unix `SIGHUP` config reloader run alongside it.
 
-### 3.2 AppBuilder phases
+### 3.2 AppBuilder phases and two-phase bootstrap
 
 `AppBuilder` is the mechanical centre of the system. It exists to keep startup
 side effects out of `main.rs`, make the sequence testable, and let tests build
 fully initialized `AppComponents` without emulating every channel.
+
+The builder implements a **two-phase bootstrap pattern** that separates pure
+component assembly from side-effect-heavy activation:
+
+**Phase 1: Assembly (`build_components()`)** — Constructs all components and
+returns them along with a `RuntimeSideEffects` struct containing deferred
+background work. This phase is pure enough for unit tests: no background I/O
+runs, no cleanup tasks spawn, and the returned components are fully wired and
+ready for inspection.
+
+**Phase 2: Activation (`RuntimeSideEffects::start()`)** — Runs workspace
+import and seeding synchronously (blocking until complete), then spawns
+fire-and-forget background tasks for stale job cleanup and embedding backfill.
+Production code calls this immediately after assembly; tests can skip it to
+avoid side effects.
+
+`build_all()` is a convenience wrapper that calls both phases in sequence.
 
 Table 2. AppBuilder phases and the state they add.
 

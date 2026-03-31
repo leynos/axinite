@@ -1,4 +1,34 @@
-//! IronClaw - Main entry point.
+//! IronClaw - Main entry point and runtime orchestration.
+//!
+//! This module is responsible for:
+//! - Parsing CLI arguments and dispatching subcommands
+//! - Coordinating the multi-phase startup sequence (PID lock, config, components, channels, agent)
+//! - Managing runtime services (tunnel, orchestrator, webhook server)
+//! - Handling graceful shutdown and signal-based config reload (SIGHUP)
+//!
+//! ## Startup phases
+//!
+//! The `async_main()` function divides startup into discrete phases, each
+//! producing state consumed by the next:
+//!
+//! 1. **Subcommand dispatch** — Handle CLI tool commands that don't need full startup
+//! 2. **PID lock** — Prevent accidental double-starts
+//! 3. **Config and tracing** — Load configuration, initialize logging
+//! 4. **Component build** — Use `AppBuilder` to construct core components
+//! 5. **Tunnel and orchestrator** — Start optional tunnel, create container job manager
+//! 6. **Channel setup** — Initialize REPL, HTTP, Signal, WASM, and gateway channels
+//! 7. **Gateway setup** — Configure web gateway with SSE, job tools, and hooks
+//! 8. **Boot screen** — Print startup summary if CLI mode enabled
+//! 9. **Agent run** — Create and run the agent, handling shutdown signals
+//!
+//! ## State carrier structs
+//!
+//! - [`ChannelSetup`] — All channel initialization state
+//! - [`GatewaySetup`] — Web gateway configuration and handles
+//! - [`AgentRunContext`] — Bundled inputs for the agent-run phase
+//! - [`GatewayPhaseContext`] — Context for gateway setup
+//! - [`BootScreenContext`] — Runtime facts for boot screen rendering
+//! - [`WasmChannelsInit`] — WASM channel initialization output
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -197,9 +227,12 @@ async fn dispatch_agent_commands(cli: &Cli) -> anyhow::Result<Option<()>> {
 }
 
 /// Dispatch CLI subcommands.
+/// Dispatches CLI subcommands that don't require full agent startup.
 ///
-/// Returns `Ok(Some(()))` for commands that were handled (caller should exit),
-/// or `Ok(None)` for the fall-through run case.
+/// Handles tool commands (run, list, install, etc.), MCP commands, pairing,
+/// service management, and status queries. Returns `Ok(Some(()))` when a
+/// command was handled (caller should exit), or `Ok(None)` for the fall-through
+/// run case that requires full startup.
 async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<Option<()>> {
     if dispatch_cli_tool_commands(cli).await?.is_some() {
         return Ok(Some(()));
