@@ -1,4 +1,14 @@
+//! Fixed released PostgreSQL migration-history fixtures and repair tests.
+//!
+//! These tests pin the released version/name/checksum tuples that
+//! `migration_history_rewrites`, `plan_migration_history_rewrites`,
+//! `stage_migration_history_rewrites`, `finalize_migration_history_rewrites`,
+//! and `repair_postgres_refinery_history` must continue to recognise and
+//! repair. They cover exact rewrite-set planning plus the staged, finalized,
+//! and end-to-end PostgreSQL `refinery_schema_history` repair flow.
+
 use chrono::Utc;
+use std::collections::BTreeSet;
 
 use super::{
     finalize_migration_history_rewrites, migration_history_rewrites,
@@ -37,43 +47,64 @@ const CANONICAL_RELEASED_ROWS: &[(i32, &str, u64)] = &[
     ),
 ];
 
+fn rewrite_tuple_set(
+    rewrites: &[super::MigrationHistoryRewrite],
+) -> BTreeSet<(i32, &'static str, u64, i32, &'static str, u64)> {
+    rewrites
+        .iter()
+        .map(|rewrite| {
+            (
+                rewrite.from.version,
+                rewrite.from.name,
+                rewrite.from.checksum,
+                rewrite.to.version,
+                rewrite.to.name,
+                rewrite.to.checksum,
+            )
+        })
+        .collect()
+}
+
 #[cfg(feature = "postgres")]
 #[test]
 fn migration_history_rewrites_cover_the_known_released_mappings() {
     let rewrites = migration_history_rewrites().expect("released migration identities parse");
+    let expected = BTreeSet::from([
+        (
+            12,
+            "wasm_wit_default_0_3_0",
+            17026967434177311328,
+            12,
+            "wasm_wit_default_0_3_0",
+            6506104151552529421,
+        ),
+        (
+            12,
+            "job_token_budget",
+            13685500183340941819,
+            13,
+            "job_token_budget",
+            8579391521996531151,
+        ),
+        (
+            13,
+            "drop_redundant_wasm_tools_name_index",
+            16100593955252925602,
+            14,
+            "drop_redundant_wasm_tools_name_index",
+            16545681577522743559,
+        ),
+        (
+            14,
+            "wasm_wit_default_0_3_0",
+            9366402964940367356,
+            12,
+            "wasm_wit_default_0_3_0",
+            6506104151552529421,
+        ),
+    ]);
 
-    assert!(rewrites.iter().any(|rewrite| {
-        rewrite.from.version == 12
-            && rewrite.from.name == "wasm_wit_default_0_3_0"
-            && rewrite.from.checksum == 17026967434177311328
-            && rewrite.to.version == 12
-            && rewrite.to.name == "wasm_wit_default_0_3_0"
-            && rewrite.to.checksum == 6506104151552529421
-    }));
-    assert!(rewrites.iter().any(|rewrite| {
-        rewrite.from.version == 12
-            && rewrite.from.name == "job_token_budget"
-            && rewrite.from.checksum == 13685500183340941819
-            && rewrite.to.version == 13
-            && rewrite.to.name == "job_token_budget"
-            && rewrite.to.checksum == 8579391521996531151
-    }));
-    assert!(rewrites.iter().any(|rewrite| {
-        rewrite.from.version == 13
-            && rewrite.from.name == "drop_redundant_wasm_tools_name_index"
-            && rewrite.from.checksum == 16100593955252925602
-            && rewrite.to.version == 14
-            && rewrite.to.name == "drop_redundant_wasm_tools_name_index"
-            && rewrite.to.checksum == 16545681577522743559
-    }));
-    assert!(rewrites.iter().any(|rewrite| {
-        rewrite.from.version == 14
-            && rewrite.from.name == "wasm_wit_default_0_3_0"
-            && rewrite.from.checksum == 9366402964940367356
-            && rewrite.to.version == 12
-            && rewrite.to.name == "wasm_wit_default_0_3_0"
-            && rewrite.to.checksum == 6506104151552529421
-    }));
+    assert_eq!(rewrite_tuple_set(&rewrites), expected);
 }
 
 #[cfg(feature = "postgres")]
@@ -86,31 +117,42 @@ fn plan_migration_history_rewrites_matches_fixed_released_rows() {
 
     let rewrites =
         plan_migration_history_rewrites(&applied).expect("released migration identities parse");
+    let expected = BTreeSet::from([
+        (
+            12,
+            "wasm_wit_default_0_3_0",
+            17026967434177311328,
+            12,
+            "wasm_wit_default_0_3_0",
+            6506104151552529421,
+        ),
+        (
+            12,
+            "job_token_budget",
+            13685500183340941819,
+            13,
+            "job_token_budget",
+            8579391521996531151,
+        ),
+        (
+            13,
+            "drop_redundant_wasm_tools_name_index",
+            16100593955252925602,
+            14,
+            "drop_redundant_wasm_tools_name_index",
+            16545681577522743559,
+        ),
+        (
+            14,
+            "wasm_wit_default_0_3_0",
+            9366402964940367356,
+            12,
+            "wasm_wit_default_0_3_0",
+            6506104151552529421,
+        ),
+    ]);
 
-    assert!(rewrites.iter().any(|rewrite| {
-        rewrite.from.version == 12
-            && rewrite.from.name == "wasm_wit_default_0_3_0"
-            && rewrite.from.checksum == 17026967434177311328
-            && rewrite.to.version == 12
-    }));
-    assert!(rewrites.iter().any(|rewrite| {
-        rewrite.from.version == 12
-            && rewrite.from.name == "job_token_budget"
-            && rewrite.from.checksum == 13685500183340941819
-            && rewrite.to.version == 13
-    }));
-    assert!(rewrites.iter().any(|rewrite| {
-        rewrite.from.version == 13
-            && rewrite.from.name == "drop_redundant_wasm_tools_name_index"
-            && rewrite.from.checksum == 16100593955252925602
-            && rewrite.to.version == 14
-    }));
-    assert!(rewrites.iter().any(|rewrite| {
-        rewrite.from.version == 14
-            && rewrite.from.name == "wasm_wit_default_0_3_0"
-            && rewrite.from.checksum == 9366402964940367356
-            && rewrite.to.version == 12
-    }));
+    assert_eq!(rewrite_tuple_set(&rewrites), expected);
 }
 
 #[cfg(feature = "postgres")]
