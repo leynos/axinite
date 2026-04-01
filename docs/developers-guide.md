@@ -207,6 +207,39 @@ cargo nextest run --workspace --no-default-features --features libsql \
 To compare behaviour against the legacy harness, use `make test-cargo`
 or `make test-matrix-cargo`.
 
+
+## Self-repair internals
+
+The agent loop starts the self-repair subsystem in
+`src/agent/agent_loop.rs` as two cooperating background tasks:
+
+- `RepairTask` runs the periodic detection-and-repair cycle.
+- A notification forwarder receives `RepairNotification` values and converts
+  them into `OutgoingResponse::text("Self-Repair: ...")` broadcasts through
+  `ChannelManager::broadcast_all(...)`.
+
+The implementation lives in `src/agent/self_repair/` and follows the ADR 006
+dual-trait pattern already used elsewhere in the repository:
+
+- `traits.rs` defines the dyn-safe `SelfRepair` boundary plus the native async
+  sibling trait `NativeSelfRepair`.
+- `default.rs` implements `DefaultSelfRepair`, including threshold-based stuck
+  job detection using `ContextManager::find_stuck_contexts()` and
+  `JobContext::stuck_since()`.
+- `task.rs` owns the periodic repair loop, notification best-effort delivery,
+  and cooperative shutdown through a `oneshot` channel.
+- `types.rs` holds the shared value types such as `StuckJob`, `BrokenTool`,
+  `RepairResult`, and `RepairNotification`.
+
+When modifying this path, keep three invariants in mind:
+
+- `RepairTask` shutdown must remain cooperative, including during active repair
+  awaits.
+- Repair notifications must remain best-effort so a slow consumer cannot stall
+  the repair cycle.
+- User-facing behaviour changes in self-repair should update both
+  `docs/jobs-and-routines.md` and `docs/users-guide.md`.
+
 ## Database-backed work
 
 For work on the default feature set or PostgreSQL-backed tests, prepare

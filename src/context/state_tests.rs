@@ -1,3 +1,6 @@
+//! Comprehensive tests for job-state transitions, lifecycle helpers, token
+//! budgeting, and `stuck_since()` timestamp tracking.
+
 use super::*;
 
 #[test]

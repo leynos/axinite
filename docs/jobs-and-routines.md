@@ -205,27 +205,24 @@ Figure 2. Stuck-job detection flow in the default self-repair policy.
 
 ```mermaid
 flowchart TD
-    A["Start stuck job detection"] --> B["ContextManager.find_stuck_jobs() returns job_ids"]
-    B --> C["Iterate over job_id"]
+    A["Start stuck job detection"] --> B["ContextManager.find_stuck_contexts() returns contexts"]
+    B --> C["Iterate over ctx"]
 
-    C --> D["get_stuck_context(job_id)"]
-    D -->|"ctx.state != Stuck or error"| C
-    D -->|"ctx.state == Stuck"| E["ctx.stuck_since() returns Option_DateTime_Utc_"]
+    C --> D["ctx.stuck_since() returns Option_DateTime_Utc_"]
+    D -->|"None (no stuck transition)"| C
+    D -->|"Some(stuck_since)"| E["now = Utc::now()"]
+    E --> F["stuck_duration = duration_since(now, stuck_since)"]
 
-    E -->|"None (no stuck transition)"| C
-    E -->|"Some(stuck_since)"| F["now = Utc::now()"]
-    F --> G["stuck_duration = duration_since(now, stuck_since)"]
-
-    G --> H{"stuck_duration >= stuck_threshold"}
-    H -->|"No"| C
-    H -->|"Yes"| I["Create StuckJob with
+    F --> G{"stuck_duration >= stuck_threshold"}
+    G -->|"No"| C
+    G -->|"Yes"| H["Create StuckJob with
         job_id,
         last_activity = stuck_since,
         stuck_duration,
         last_error = None,
         repair_attempts = ctx.repair_attempts"]
 
-    I --> C
+    H --> C
     C --> J["All job_ids processed"]
     J --> K["Return Vec_StuckJob to RepairTask"]
 ```
