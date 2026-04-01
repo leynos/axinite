@@ -157,6 +157,81 @@ impl AppBuilder {
         Ok((llm, cheap_llm, recording_handle))
     }
 
+    /// Construct the workspace, inject embeddings, and register memory tools.
+    ///
+    /// Returns `None` when no database is configured.
+    fn build_workspace(
+        &self,
+        embeddings: &Option<Arc<dyn EmbeddingProvider>>,
+        tools: &Arc<ToolRegistry>,
+    ) -> Option<Arc<Workspace>> {
+        let db = self.db.as_ref()?;
+        let mut ws = Workspace::new_with_db("default", db.clone());
+        if let Some(emb) = embeddings {
+            ws = ws.with_embeddings(emb.clone());
+        }
+        let ws = Arc::new(ws);
+        tools.register_memory_tools(Arc::clone(&ws));
+        Some(ws)
+    }
+
+    /// Resolve the active LLM provider's base URL and API key.
+    ///
+    /// Returns `None` when no API key is configured for any provider.
+    fn llm_api_credentials(&self) -> Option<(String, String)> {
+        use secrecy::ExposeSecret;
+        if let Some(ref provider) = self.config.llm.provider {
+            let key = provider.api_key.as_ref()?.expose_secret().to_string();
+            Some((provider.base_url.clone(), key))
+        } else {
+            let key = self
+                .config
+                .llm
+                .nearai
+                .api_key
+                .as_ref()?
+                .expose_secret()
+                .to_string();
+            Some((self.config.llm.nearai.base_url.clone(), key))
+        }
+    }
+
+    /// Register image-generation and vision tools when a workspace and
+    /// API credentials are both available.
+    fn register_image_and_vision_tools(
+        &self,
+        tools: &Arc<ToolRegistry>,
+        workspace: &Option<Arc<Workspace>>,
+    ) {
+        if workspace.is_none() {
+            return;
+        }
+        let Some((api_base, api_key)) = self.llm_api_credentials() else {
+            return;
+        };
+        let model_name = self
+            .config
+            .llm
+            .provider
+            .as_ref()
+            .map(|p| p.model.clone())
+            .unwrap_or_else(|| self.config.llm.nearai.model.clone());
+        let models = vec![model_name.clone()];
+        let gen_model = crate::llm::image_models::suggest_image_model(&models)
+            .unwrap_or("flux-1.1-pro")
+            .to_string();
+        self.register_image_tools_default(tools, api_base.clone(), api_key.clone(), gen_model);
+        let vision_model = crate::llm::vision_models::suggest_vision_model(&models)
+            .unwrap_or(&model_name)
+            .to_string();
+        tools.register_vision_tools(VisionToolsRegistration {
+            api_base_url: api_base,
+            api_key,
+            vision_model,
+            base_dir: None,
+        });
+    }
+
     /// Phase 4: Initialize safety, tools, embeddings, and workspace.
     pub(super) async fn init_tools(
         &self,
@@ -195,71 +270,11 @@ impl AppBuilder {
             .embeddings
             .create_provider(&self.config.llm.nearai.base_url, self.session.clone());
 
-        // Register memory tools if database is available
-        let workspace = if let Some(ref db) = self.db {
-            let mut ws = Workspace::new_with_db("default", db.clone());
-            if let Some(ref emb) = embeddings {
-                ws = ws.with_embeddings(emb.clone());
-            }
-            let ws = Arc::new(ws);
-            tools.register_memory_tools(Arc::clone(&ws));
-            Some(ws)
-        } else {
-            None
-        };
+        // Register memory tools and construct workspace
+        let workspace = self.build_workspace(&embeddings, &tools);
 
-        // Register image/vision tools if we have a workspace and LLM API credentials
-        if workspace.is_some() {
-            let (api_base, api_key_opt) = if let Some(ref provider) = self.config.llm.provider {
-                (
-                    provider.base_url.clone(),
-                    provider.api_key.as_ref().map(|s| {
-                        use secrecy::ExposeSecret;
-                        s.expose_secret().to_string()
-                    }),
-                )
-            } else {
-                (
-                    self.config.llm.nearai.base_url.clone(),
-                    self.config.llm.nearai.api_key.as_ref().map(|s| {
-                        use secrecy::ExposeSecret;
-                        s.expose_secret().to_string()
-                    }),
-                )
-            };
-
-            if let Some(api_key) = api_key_opt {
-                // Check for image generation models
-                let model_name = self
-                    .config
-                    .llm
-                    .provider
-                    .as_ref()
-                    .map(|p| p.model.clone())
-                    .unwrap_or_else(|| self.config.llm.nearai.model.clone());
-                let models = vec![model_name.clone()];
-                let gen_model = crate::llm::image_models::suggest_image_model(&models)
-                    .unwrap_or("flux-1.1-pro")
-                    .to_string();
-                self.register_image_tools_default(
-                    &tools,
-                    api_base.clone(),
-                    api_key.clone(),
-                    gen_model,
-                );
-
-                // Check for vision models
-                let vision_model = crate::llm::vision_models::suggest_vision_model(&models)
-                    .unwrap_or(&model_name)
-                    .to_string();
-                tools.register_vision_tools(VisionToolsRegistration {
-                    api_base_url: api_base,
-                    api_key,
-                    vision_model,
-                    base_dir: None,
-                });
-            }
-        }
+        // Register image/vision tools when workspace + credentials are present
+        self.register_image_and_vision_tools(&tools, &workspace);
 
         // Register builder tool if enabled
         if self.config.builder.enabled
