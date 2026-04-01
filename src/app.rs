@@ -431,6 +431,78 @@ mod tests {
         side_effects.start().await;
     }
 
+    /// Verify that `build_components()` leaves side effects dormant until
+    /// explicitly started, proving the two-phase API works end-to-end.
+    ///
+    /// This test creates a workspace import scenario, builds components,
+    /// verifies the import has NOT occurred (dormancy), then starts side
+    /// effects and confirms the import completes.
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn build_components_leaves_side_effects_dormant() {
+        use crate::db::Database;
+        use std::io::Write;
+
+        // Create a temp directory with a file to import
+        let import_temp = tempfile::tempdir().expect("tempdir");
+        let import_file = import_temp.path().join("AGENTS.md");
+        {
+            let mut f = std::fs::File::create(&import_file).expect("create file");
+            f.write_all(b"# Test Agent\n\nTest content for import")
+                .expect("write file");
+        }
+
+        // Create a test database and run migrations
+        let db_temp = tempfile::tempdir().expect("tempdir");
+        let db_path = db_temp.path().join("test.db");
+        let backend = crate::db::libsql::LibSqlBackend::new_local(&db_path)
+            .await
+            .expect("LibSqlBackend::new_local");
+        backend.run_migrations().await.expect("run_migrations");
+        let db: Arc<dyn Database> = Arc::new(backend);
+
+        // Build components with import directory set
+        let config = Config::for_testing(
+            db_path.clone(),
+            std::env::temp_dir().join("skills"),
+            std::env::temp_dir().join("installed-skills"),
+        );
+        let flags = AppBuilderFlags {
+            no_db: false,
+            workspace_import_dir: Some(import_temp.path().to_path_buf()),
+        };
+        let session = Arc::new(SessionManager::new(config.llm.session.clone()));
+        let log_broadcaster = Arc::new(LogBroadcaster::new());
+
+        let mut builder = AppBuilder::new(config, flags, None, session, log_broadcaster);
+        builder.with_database(db);
+        let (components, side_effects) = builder
+            .build_components()
+            .await
+            .expect("build_components should succeed");
+
+        // DORMANCY ASSERTION: The import should NOT have run yet
+        let workspace = components
+            .workspace
+            .as_ref()
+            .expect("workspace should exist");
+        let read_result = workspace.read("AGENTS.md").await;
+        assert!(
+            read_result.is_err(),
+            "AGENTS.md should not exist before side_effects.start()"
+        );
+
+        // Start side effects - this should run the import
+        side_effects.start().await;
+
+        // POST-START ASSERTION: The import should now be complete
+        let doc = workspace
+            .read("AGENTS.md")
+            .await
+            .expect("read after start should succeed");
+        assert!(doc.content.contains("Test content for import"));
+    }
+
     /// Verify that `build_all()` starts side effects before returning.
     ///
     /// This test ensures the convenience wrapper `build_all` properly
