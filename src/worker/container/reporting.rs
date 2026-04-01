@@ -107,42 +107,14 @@ impl WorkerRuntime {
             }
             WorkerExecutionResult::Outcome(LoopOutcome::Stopped) => {
                 tracing::info!("Worker for job {} stopped", self.config.job_id);
-                self.post_event(
-                    JobEventType::Result,
-                    serde_json::to_value(TerminalResult::failure(
-                        "Execution stopped",
-                        Some(iterations),
-                    ))
-                    .unwrap_or_default(),
-                );
-                self.client
-                    .report_complete(&CompletionReport {
-                        success: false,
-                        message: Some("Execution stopped".to_string()),
-                        iterations,
-                    })
-                    .await
+                self.report_stopped_outcome(iterations).await
             }
             WorkerExecutionResult::Outcome(LoopOutcome::NeedApproval(_)) => {
                 tracing::warn!(
                     "Worker for job {} reached unexpected NeedApproval state",
                     self.config.job_id
                 );
-                self.post_event(
-                    JobEventType::Result,
-                    serde_json::to_value(TerminalResult::failure(
-                        "Execution stopped",
-                        Some(iterations),
-                    ))
-                    .unwrap_or_default(),
-                );
-                self.client
-                    .report_complete(&CompletionReport {
-                        success: false,
-                        message: Some("Execution stopped".to_string()),
-                        iterations,
-                    })
-                    .await
+                self.report_stopped_outcome(iterations).await
             }
             WorkerExecutionResult::Failed(error) => {
                 tracing::error!("Worker failed for job {}: {}", self.config.job_id, error);
@@ -153,6 +125,28 @@ impl WorkerRuntime {
                 self.report_failure(iterations, "Execution timed out").await
             }
         }
+    }
+
+    /// Report a stopped outcome to the orchestrator.
+    ///
+    /// This helper is shared by the `Stopped` and `NeedApproval` arms of
+    /// `report_completion`, which use identical reporting behaviour.
+    async fn report_stopped_outcome(&self, iterations: u32) -> Result<(), WorkerError> {
+        self.post_event(
+            JobEventType::Result,
+            serde_json::json!({
+                "success": false,
+                "message": "Execution stopped",
+                "iterations": iterations,
+            }),
+        );
+        self.client
+            .report_complete(&CompletionReport {
+                success: false,
+                message: Some("Execution stopped".to_string()),
+                iterations,
+            })
+            .await
     }
 
     /// Report a failure to the orchestrator.
