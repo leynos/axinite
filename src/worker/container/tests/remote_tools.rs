@@ -268,9 +268,12 @@ async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance()
 #[tokio::test]
 async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools()
 -> Result<(), Box<dyn std::error::Error>> {
-    let (base_url, server) = spawn_test_server(remote_tool_catalog_error)
-        .await
-        .context("spawning test server in hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools")?;
+    let (base_url, server) = spawn_test_server(remote_tool_catalog_error).await.map_err(|e| {
+        format!(
+            "spawning test server in hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools: {}",
+            e
+        )
+    })?;
 
     let client = Arc::new(
         WorkerHttpClient::new(base_url.clone(), Uuid::nil(), "test".to_string())

@@ -112,7 +112,12 @@ pub fn job_scoped_path(job_id: &str, relative: &str) -> String {
 /// Returns a canonical URL of the form `{orchestrator_url}/worker/{job_id}/{path}`.
 pub fn worker_job_url(orchestrator_url: &str, job_id: &str, path: &str) -> String {
     let base = orchestrator_url.trim_end_matches('/');
-    format!("{}/{}/{}", base, job_scoped_path(job_id, "").trim_start_matches('/'), path)
+    format!(
+        "{}/{}/{}",
+        base,
+        job_scoped_path(job_id, "").trim_start_matches('/'),
+        path
+    )
 }
 
 /// Status update sent from worker to orchestrator.
