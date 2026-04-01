@@ -290,237 +290,39 @@ impl AppBuilder {
         ),
         anyhow::Error,
     > {
-        use crate::tools::mcp::config::load_mcp_servers_from_db;
-        use crate::tools::wasm::{WasmToolLoader, load_dev_tools};
+        use crate::tools::wasm::WasmToolRuntime;
 
         let mcp_session_manager = Arc::new(McpSessionManager::new());
         let mcp_process_manager = Arc::new(McpProcessManager::new());
 
-        // Create WASM tool runtime eagerly so extensions installed after startup
-        // (e.g. via the web UI) can still be activated. The tools directory is only
-        // needed when loading modules, not for engine initialisation.
         let wasm_tool_runtime: Option<Arc<WasmToolRuntime>> = if self.config.wasm.enabled {
             WasmToolRuntime::new(self.config.wasm.to_runtime_config())
                 .map(Arc::new)
-                .map_err(|e| tracing::warn!("Failed to initialize WASM runtime: {}", e))
+                .map_err(|e| tracing::warn!("Failed to initialise WASM runtime: {}", e))
                 .ok()
         } else {
             None
         };
 
-        // Load WASM tools and MCP servers concurrently
-        let wasm_tools_future = {
-            let wasm_tool_runtime = wasm_tool_runtime.clone();
-            let secrets_store = self.secrets_store.clone();
-            let tools = Arc::clone(tools);
-            let wasm_config = self.config.wasm.clone();
-            async move {
-                let mut dev_loaded_tool_names: Vec<String> = Vec::new();
+        let (dev_loaded_tool_names, _) = tokio::join!(
+            Self::load_wasm_tools(
+                wasm_tool_runtime.clone(),
+                self.secrets_store.clone(),
+                Arc::clone(tools),
+                self.config.wasm.clone(),
+            ),
+            Self::load_mcp_servers(
+                self.secrets_store.clone(),
+                self.db.clone(),
+                Arc::clone(tools),
+                Arc::clone(&mcp_session_manager),
+                Arc::clone(&mcp_process_manager),
+            ),
+        );
 
-                if let Some(ref runtime) = wasm_tool_runtime {
-                    let mut loader = WasmToolLoader::new(Arc::clone(runtime), Arc::clone(&tools));
-                    if let Some(ref secrets) = secrets_store {
-                        loader = loader.with_secrets_store(Arc::clone(secrets));
-                    }
+        let catalog_entries = Self::load_registry_catalog();
+        let ext_secrets = Self::resolve_ext_secrets(&self.secrets_store);
 
-                    match loader.load_from_dir(&wasm_config.tools_dir).await {
-                        Ok(results) => {
-                            if !results.loaded.is_empty() {
-                                tracing::debug!(
-                                    "Loaded {} WASM tools from {}",
-                                    results.loaded.len(),
-                                    wasm_config.tools_dir.display()
-                                );
-                            }
-                            for (path, err) in &results.errors {
-                                tracing::warn!(
-                                    "Failed to load WASM tool {}: {}",
-                                    path.display(),
-                                    err
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to scan WASM tools directory: {}", e);
-                        }
-                    }
-
-                    match load_dev_tools(&loader, &wasm_config.tools_dir).await {
-                        Ok(results) => {
-                            dev_loaded_tool_names.extend(results.loaded.iter().cloned());
-                            if !dev_loaded_tool_names.is_empty() {
-                                tracing::debug!(
-                                    "Loaded {} dev WASM tools from build artifacts",
-                                    dev_loaded_tool_names.len()
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            tracing::debug!("No dev WASM tools found: {}", e);
-                        }
-                    }
-                }
-
-                dev_loaded_tool_names
-            }
-        };
-
-        let mcp_servers_future = {
-            let secrets_store = self.secrets_store.clone();
-            let db = self.db.clone();
-            let tools = Arc::clone(tools);
-            let mcp_sm = Arc::clone(&mcp_session_manager);
-            let pm = Arc::clone(&mcp_process_manager);
-            async move {
-                let servers_result = if let Some(ref d) = db {
-                    load_mcp_servers_from_db(d.as_ref(), "default").await
-                } else {
-                    crate::tools::mcp::config::load_mcp_servers().await
-                };
-                match servers_result {
-                    Ok(servers) => {
-                        let enabled: Vec<_> = servers.enabled_servers().cloned().collect();
-                        if !enabled.is_empty() {
-                            tracing::debug!(
-                                "Loading {} configured MCP server(s)...",
-                                enabled.len()
-                            );
-                        }
-
-                        let mut join_set = tokio::task::JoinSet::new();
-                        for server in enabled {
-                            let mcp_sm = Arc::clone(&mcp_sm);
-                            let secrets = secrets_store.clone();
-                            let tools = Arc::clone(&tools);
-                            let pm = Arc::clone(&pm);
-
-                            join_set.spawn(async move {
-                                let server_name = server.name.clone();
-
-                                let client = match crate::tools::mcp::create_client_from_config(
-                                    server,
-                                    &mcp_sm,
-                                    &pm,
-                                    secrets,
-                                    "default",
-                                )
-                                .await
-                                {
-                                    Ok(c) => c,
-                                    Err(e) => {
-                                        tracing::warn!(
-                                            "Failed to create MCP client for '{}': {}",
-                                            server_name,
-                                            e
-                                        );
-                                        return;
-                                    }
-                                };
-
-                                match client.list_tools().await {
-                                    Ok(mcp_tools) => {
-                                        let tool_count = mcp_tools.len();
-                                        match client.create_tools().await {
-                                            Ok(tool_impls) => {
-                                                for tool in tool_impls {
-                                                    tools.register(tool).await;
-                                                }
-                                                tracing::debug!(
-                                                    "Loaded {} tools from MCP server '{}'",
-                                                    tool_count,
-                                                    server_name
-                                                );
-                                            }
-                                            Err(e) => {
-                                                tracing::warn!(
-                                                    "Failed to create tools from MCP server '{}': {}",
-                                                    server_name,
-                                                    e
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        let err_str = e.to_string();
-                                        if err_str.contains("401")
-                                            || err_str.contains("authentication")
-                                        {
-                                            tracing::warn!(
-                                                "MCP server '{}' requires authentication. \
-                                                 Run: ironclaw mcp auth {}",
-                                                server_name,
-                                                server_name
-                                            );
-                                        } else {
-                                            tracing::warn!(
-                                                "Failed to connect to MCP server '{}': {}",
-                                                server_name,
-                                                e
-                                            );
-                                        }
-                                    }
-                                }
-                            });
-                        }
-
-                        while let Some(result) = join_set.join_next().await {
-                            if let Err(e) = result {
-                                tracing::warn!("MCP server loading task panicked: {}", e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::debug!("No MCP servers configured ({})", e);
-                    }
-                }
-            }
-        };
-
-        let (dev_loaded_tool_names, _) = tokio::join!(wasm_tools_future, mcp_servers_future);
-
-        // Load registry catalog entries for extension discovery
-        let mut catalog_entries = match crate::registry::RegistryCatalog::load_or_embedded() {
-            Ok(catalog) => {
-                let entries: Vec<_> = catalog
-                    .all()
-                    .iter()
-                    .map(|m| m.to_registry_entry())
-                    .collect();
-                tracing::debug!(
-                    count = entries.len(),
-                    "Loaded registry catalog entries for extension discovery"
-                );
-                entries
-            }
-            Err(e) => {
-                tracing::warn!("Failed to load registry catalog: {}", e);
-                Vec::new()
-            }
-        };
-
-        // Append builtin entries (e.g. channel-relay integrations) so they appear
-        // in the web UI's available extensions list.
-        let builtin = crate::extensions::registry::builtin_entries();
-        for entry in builtin {
-            if !catalog_entries.iter().any(|e| e.name == entry.name) {
-                catalog_entries.push(entry);
-            }
-        }
-
-        // Create extension manager. Use ephemeral in-memory secrets if no
-        // persistent store is configured (listing/install/activate still work).
-        let ext_secrets: Arc<dyn crate::secrets::SecretsStore + Send + Sync> = if let Some(ref s) =
-            self.secrets_store
-        {
-            Arc::clone(s)
-        } else {
-            use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
-            let ephemeral_key =
-                secrecy::SecretString::from(crate::secrets::keychain::generate_master_key_hex());
-            let crypto = Arc::new(SecretsCrypto::new(ephemeral_key).expect("ephemeral crypto"));
-            tracing::debug!("Using ephemeral in-memory secrets store for extension manager");
-            Arc::new(InMemorySecretsStore::new(crypto))
-        };
         let extension_manager = {
             let manager = Arc::new(ExtensionManager::new(
                 Arc::clone(&mcp_session_manager),
@@ -537,12 +339,10 @@ impl AppBuilder {
                 catalog_entries.clone(),
             ));
             tools.register_extension_tools(Arc::clone(&manager));
-            tracing::debug!("Extension manager initialized with in-chat discovery tools");
+            tracing::debug!("Extension manager initialised with in-chat discovery tools");
             Some(manager)
         };
 
-        // register_builder_tool() already calls register_dev_tools() internally,
-        // so only register them here when the builder didn't already do it.
         let builder_registered_dev_tools = self.config.builder.enabled
             && (self.config.agent.allow_local_tools || !self.config.sandbox.enabled);
         if self.config.agent.allow_local_tools && !builder_registered_dev_tools {
@@ -557,6 +357,195 @@ impl AppBuilder {
             catalog_entries,
             dev_loaded_tool_names,
         ))
+    }
+
+    /// Connect to a single MCP server and register its tools.
+    async fn connect_and_register_mcp_server(
+        server: crate::tools::mcp::config::McpServerConfig,
+        mcp_sm: Arc<McpSessionManager>,
+        pm: Arc<McpProcessManager>,
+        secrets: Option<Arc<dyn crate::secrets::SecretsStore + Send + Sync>>,
+        tools: Arc<ToolRegistry>,
+    ) {
+        let name = server.name.clone();
+        let client = match crate::tools::mcp::create_client_from_config(
+            server, &mcp_sm, &pm, secrets, "default",
+        )
+        .await
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("Failed to create MCP client for '{}': {}", name, e);
+                return;
+            }
+        };
+        let mcp_tools = match client.list_tools().await {
+            Ok(t) => t,
+            Err(e) => {
+                let s = e.to_string();
+                if s.contains("401") || s.contains("authentication") {
+                    tracing::warn!(
+                        "MCP server '{}' requires authentication. Run: ironclaw mcp auth {}",
+                        name,
+                        name
+                    );
+                } else {
+                    tracing::warn!("Failed to connect to MCP server '{}': {}", name, e);
+                }
+                return;
+            }
+        };
+        match client.create_tools().await {
+            Ok(impls) => {
+                for t in impls {
+                    tools.register(t).await;
+                }
+                tracing::debug!(
+                    "Loaded {} tools from MCP server '{}'",
+                    mcp_tools.len(),
+                    name
+                );
+            }
+            Err(e) => {
+                tracing::warn!("Failed to create tools from MCP server '{}': {}", name, e);
+            }
+        }
+    }
+
+    /// Start all configured MCP servers and register their tools.
+    async fn load_mcp_servers(
+        secrets_store: Option<Arc<dyn crate::secrets::SecretsStore + Send + Sync>>,
+        db: Option<Arc<dyn crate::db::Database>>,
+        tools: Arc<ToolRegistry>,
+        mcp_sm: Arc<McpSessionManager>,
+        pm: Arc<McpProcessManager>,
+    ) {
+        use crate::tools::mcp::config::load_mcp_servers_from_db;
+        let servers_result = if let Some(ref d) = db {
+            load_mcp_servers_from_db(d.as_ref(), "default").await
+        } else {
+            crate::tools::mcp::config::load_mcp_servers().await
+        };
+        let servers = match servers_result {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::debug!("No MCP servers configured ({})", e);
+                return;
+            }
+        };
+        let enabled: Vec<_> = servers.enabled_servers().cloned().collect();
+        if !enabled.is_empty() {
+            tracing::debug!("Loading {} configured MCP server(s)...", enabled.len());
+        }
+        let mut join_set = tokio::task::JoinSet::new();
+        for server in enabled {
+            let (mcp_sm, pm, secrets, tools) = (
+                Arc::clone(&mcp_sm),
+                Arc::clone(&pm),
+                secrets_store.clone(),
+                Arc::clone(&tools),
+            );
+            join_set.spawn(async move {
+                Self::connect_and_register_mcp_server(server, mcp_sm, pm, secrets, tools).await;
+            });
+        }
+        while let Some(res) = join_set.join_next().await {
+            if let Err(e) = res {
+                tracing::warn!("MCP server loading task panicked: {}", e);
+            }
+        }
+    }
+
+    /// Load the registry catalog and append built-in extension entries.
+    fn load_registry_catalog() -> Vec<crate::extensions::RegistryEntry> {
+        let mut entries = match crate::registry::RegistryCatalog::load_or_embedded() {
+            Ok(catalog) => {
+                let e: Vec<_> = catalog
+                    .all()
+                    .iter()
+                    .map(|m| m.to_registry_entry())
+                    .collect();
+                tracing::debug!(
+                    count = e.len(),
+                    "Loaded registry catalog entries for extension discovery"
+                );
+                e
+            }
+            Err(e) => {
+                tracing::warn!("Failed to load registry catalog: {}", e);
+                Vec::new()
+            }
+        };
+        for entry in crate::extensions::registry::builtin_entries() {
+            if !entries.iter().any(|e| e.name == entry.name) {
+                entries.push(entry);
+            }
+        }
+        entries
+    }
+
+    /// Resolve the secrets store for the extension manager.
+    ///
+    /// Falls back to an ephemeral in-memory store when no persistent store is available.
+    fn resolve_ext_secrets(
+        store: &Option<Arc<dyn crate::secrets::SecretsStore + Send + Sync>>,
+    ) -> Arc<dyn crate::secrets::SecretsStore + Send + Sync> {
+        if let Some(s) = store {
+            return Arc::clone(s);
+        }
+        use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
+        let key = secrecy::SecretString::from(crate::secrets::keychain::generate_master_key_hex());
+        let crypto = Arc::new(SecretsCrypto::new(key).expect("ephemeral crypto"));
+        tracing::debug!("Using ephemeral in-memory secrets store for extension manager");
+        Arc::new(InMemorySecretsStore::new(crypto))
+    }
+
+    /// Load WASM tools and dev tools from the configured directory.
+    ///
+    /// Returns the names of dev WASM tools that were loaded from build artefacts.
+    async fn load_wasm_tools(
+        wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
+        secrets_store: Option<Arc<dyn crate::secrets::SecretsStore + Send + Sync>>,
+        tools: Arc<ToolRegistry>,
+        wasm_config: crate::config::WasmConfig,
+    ) -> Vec<String> {
+        use crate::tools::wasm::{WasmToolLoader, load_dev_tools};
+        let mut dev_loaded: Vec<String> = Vec::new();
+        let Some(ref runtime) = wasm_tool_runtime else {
+            return dev_loaded;
+        };
+        let mut loader = WasmToolLoader::new(Arc::clone(runtime), Arc::clone(&tools));
+        if let Some(ref s) = secrets_store {
+            loader = loader.with_secrets_store(Arc::clone(s));
+        }
+        match loader.load_from_dir(&wasm_config.tools_dir).await {
+            Ok(results) => {
+                if !results.loaded.is_empty() {
+                    tracing::debug!(
+                        "Loaded {} WASM tools from {}",
+                        results.loaded.len(),
+                        wasm_config.tools_dir.display()
+                    );
+                }
+                for (path, err) in &results.errors {
+                    tracing::warn!("Failed to load WASM tool {}: {}", path.display(), err);
+                }
+            }
+            Err(e) => tracing::warn!("Failed to scan WASM tools directory: {}", e),
+        }
+        match load_dev_tools(&loader, &wasm_config.tools_dir).await {
+            Ok(results) => {
+                dev_loaded.extend(results.loaded.iter().cloned());
+                if !dev_loaded.is_empty() {
+                    tracing::debug!(
+                        "Loaded {} dev WASM tools from build artefacts",
+                        dev_loaded.len()
+                    );
+                }
+            }
+            Err(e) => tracing::debug!("No dev WASM tools found: {}", e),
+        }
+        dev_loaded
     }
 
     /// Phase 6: Discover and register skills.
