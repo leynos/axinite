@@ -13,6 +13,8 @@ mod store;
 pub use analytics::{JobStats, ToolStats};
 #[cfg(feature = "postgres")]
 pub use store::Store;
+#[cfg(feature = "postgres")]
+pub(crate) use store::repair_postgres_refinery_history;
 pub use store::{
     AgentJobRecord, AgentJobSummary, ConversationMessage, ConversationSummary, JobEventRecord,
     LlmCallRecord, SandboxJobRecord, SandboxJobSummary, SettingRow,

@@ -723,6 +723,10 @@ impl SetupWizard {
                 .await
                 .map_err(|e| SetupError::Database(format!("Pool error: {}", e)))?;
 
+            crate::history::repair_postgres_refinery_history(&mut client)
+                .await
+                .map_err(|e| SetupError::Database(format!("Migration failed: {}", e)))?;
+
             migrations::runner()
                 .run_async(&mut **client)
                 .await

@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 #[cfg(feature = "postgres")]
 use deadpool_postgres::{Config, Pool};
 use rust_decimal::Decimal;
+#[cfg(feature = "postgres")]
+use tokio_postgres::Client;
 use uuid::Uuid;
 
 #[cfg(feature = "postgres")]
@@ -30,6 +32,52 @@ pub struct LlmCallRecord<'a> {
 #[cfg(feature = "postgres")]
 pub struct Store {
     pool: Pool,
+}
+
+#[cfg(feature = "postgres")]
+const ASSERT_REFINERY_SCHEMA_HISTORY_TABLE_SQL: &str = concat!(
+    "CREATE TABLE IF NOT EXISTS refinery_schema_history(",
+    "version INT4 PRIMARY KEY, ",
+    "name VARCHAR(255), ",
+    "applied_on VARCHAR(255), ",
+    "checksum VARCHAR(255));"
+);
+#[cfg(feature = "postgres")]
+const LEGACY_V12_JOB_TOKEN_BUDGET_SQL: &str = concat!(
+    "-- Add token budget tracking columns to agent_jobs.\n",
+    "--\n",
+    "-- Tracks max_tokens (configured limit per job) and total_tokens_used (running total)\n",
+    "-- to enforce job-level token budgets and prevent budget bypass via user-supplied metadata.\n\n",
+    "ALTER TABLE agent_jobs ADD COLUMN max_tokens BIGINT NOT NULL DEFAULT 0;\n",
+    "ALTER TABLE agent_jobs ADD COLUMN total_tokens_used BIGINT NOT NULL DEFAULT 0;\n"
+);
+#[cfg(feature = "postgres")]
+const LEGACY_V13_DROP_REDUNDANT_WASM_TOOLS_NAME_INDEX_SQL: &str =
+    "DROP INDEX IF EXISTS idx_wasm_tools_name;\n";
+#[cfg(feature = "postgres")]
+const CURRENT_V12_WASM_WIT_DEFAULT_SQL: &str =
+    include_str!("../../migrations/V12__wasm_wit_default_0_3_0.sql");
+#[cfg(feature = "postgres")]
+const CURRENT_V13_JOB_TOKEN_BUDGET_SQL: &str =
+    include_str!("../../migrations/V13__job_token_budget.sql");
+#[cfg(feature = "postgres")]
+const CURRENT_V14_DROP_REDUNDANT_WASM_TOOLS_NAME_INDEX_SQL: &str =
+    include_str!("../../migrations/V14__drop_redundant_wasm_tools_name_index.sql");
+
+#[cfg(feature = "postgres")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MigrationIdentity {
+    version: i32,
+    name: &'static str,
+    checksum: u64,
+}
+
+#[cfg(feature = "postgres")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MigrationHistoryRewrite {
+    from: MigrationIdentity,
+    temporary_version: i32,
+    to: MigrationIdentity,
 }
 
 #[cfg(feature = "postgres")]
@@ -63,6 +111,7 @@ impl Store {
         embed_migrations!("migrations");
 
         let mut client = self.pool.get().await?;
+        repair_postgres_refinery_history(&mut client).await?;
         migrations::runner()
             .run_async(&mut **client)
             .await
@@ -466,6 +515,153 @@ impl Store {
         .await?;
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "postgres")]
+pub(crate) async fn repair_postgres_refinery_history(
+    client: &mut Client,
+) -> Result<(), DatabaseError> {
+    client
+        .batch_execute(ASSERT_REFINERY_SCHEMA_HISTORY_TABLE_SQL)
+        .await?;
+
+    let applied_rows = client
+        .query(
+            "SELECT version, name, checksum FROM refinery_schema_history ORDER BY version ASC",
+            &[],
+        )
+        .await?;
+    let applied_migrations = applied_rows
+        .into_iter()
+        .map(|row| {
+            let version: i32 = row.get(0);
+            let name: String = row.get(1);
+            let checksum: String = row.get(2);
+            (version, name, checksum)
+        })
+        .collect::<Vec<_>>();
+    let applicable_rewrites = plan_migration_history_rewrites(&applied_migrations);
+    if applicable_rewrites.is_empty() {
+        return Ok(());
+    }
+
+    // `main` briefly renumbered already-released PostgreSQL migrations, which
+    // changed refinery's versioned checksums for V12-V14. Existing databases
+    // then fail startup with a divergent-history error before any new
+    // migrations can run. Rewrite only the exact legacy tuples here so the
+    // canonical embedded migration set remains stable again.
+    let transaction = client.transaction().await?;
+
+    for rewrite in &applicable_rewrites {
+        let from_checksum = rewrite.from.checksum.to_string();
+        transaction
+            .execute(
+                "UPDATE refinery_schema_history \
+                 SET version = $1 \
+                 WHERE version = $2 AND name = $3 AND checksum = $4",
+                &[
+                    &rewrite.temporary_version,
+                    &rewrite.from.version,
+                    &rewrite.from.name,
+                    &from_checksum,
+                ],
+            )
+            .await?;
+    }
+
+    for rewrite in &applicable_rewrites {
+        let to_checksum = rewrite.to.checksum.to_string();
+        transaction
+            .execute(
+                "UPDATE refinery_schema_history \
+                 SET version = $1, name = $2, checksum = $3 \
+                 WHERE version = $4",
+                &[
+                    &rewrite.to.version,
+                    &rewrite.to.name,
+                    &to_checksum,
+                    &rewrite.temporary_version,
+                ],
+            )
+            .await?;
+    }
+
+    transaction.commit().await?;
+    Ok(())
+}
+
+#[cfg(feature = "postgres")]
+fn plan_migration_history_rewrites(
+    applied_migrations: &[(i32, String, String)],
+) -> Vec<MigrationHistoryRewrite> {
+    migration_history_rewrites()
+        .into_iter()
+        .filter(|rewrite| {
+            applied_migrations.iter().any(|(version, name, checksum)| {
+                *version == rewrite.from.version
+                    && name == rewrite.from.name
+                    && checksum == &rewrite.from.checksum.to_string()
+            })
+        })
+        .collect()
+}
+
+#[cfg(feature = "postgres")]
+fn migration_history_rewrites() -> Vec<MigrationHistoryRewrite> {
+    vec![
+        migration_history_rewrite(
+            12,
+            "job_token_budget",
+            LEGACY_V12_JOB_TOKEN_BUDGET_SQL,
+            13,
+            "job_token_budget",
+            CURRENT_V13_JOB_TOKEN_BUDGET_SQL,
+        ),
+        migration_history_rewrite(
+            13,
+            "drop_redundant_wasm_tools_name_index",
+            LEGACY_V13_DROP_REDUNDANT_WASM_TOOLS_NAME_INDEX_SQL,
+            14,
+            "drop_redundant_wasm_tools_name_index",
+            CURRENT_V14_DROP_REDUNDANT_WASM_TOOLS_NAME_INDEX_SQL,
+        ),
+        migration_history_rewrite(
+            14,
+            "wasm_wit_default_0_3_0",
+            CURRENT_V12_WASM_WIT_DEFAULT_SQL,
+            12,
+            "wasm_wit_default_0_3_0",
+            CURRENT_V12_WASM_WIT_DEFAULT_SQL,
+        ),
+    ]
+}
+
+#[cfg(feature = "postgres")]
+fn migration_history_rewrite(
+    from_version: i32,
+    from_name: &'static str,
+    from_sql: &'static str,
+    to_version: i32,
+    to_name: &'static str,
+    to_sql: &'static str,
+) -> MigrationHistoryRewrite {
+    MigrationHistoryRewrite {
+        from: migration_identity(from_version, from_name, from_sql),
+        temporary_version: 1_000 + from_version,
+        to: migration_identity(to_version, to_name, to_sql),
+    }
+}
+
+#[cfg(feature = "postgres")]
+fn migration_identity(version: i32, name: &'static str, sql: &'static str) -> MigrationIdentity {
+    let filename = format!("V{version}__{name}.sql");
+    let migration = refinery::Migration::unapplied(&filename, sql)
+        .expect("known embedded migration identity should parse");
+    MigrationIdentity {
+        version,
+        name,
+        checksum: migration.checksum(),
     }
 }
 
@@ -2177,6 +2373,49 @@ mod tests {
             };
             assert_eq!(summary.channel, ch);
         }
+    }
+
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn migration_history_rewrites_cover_the_released_renumbering_window() {
+        let rewrites = migration_history_rewrites();
+        assert_eq!(rewrites.len(), 3);
+
+        assert_eq!(rewrites[0].from.version, 12);
+        assert_eq!(rewrites[0].from.name, "job_token_budget");
+        assert_eq!(rewrites[0].to.version, 13);
+        assert_eq!(rewrites[0].to.name, "job_token_budget");
+
+        assert_eq!(rewrites[1].from.version, 13);
+        assert_eq!(
+            rewrites[1].from.name,
+            "drop_redundant_wasm_tools_name_index"
+        );
+        assert_eq!(rewrites[1].to.version, 14);
+        assert_eq!(rewrites[1].to.name, "drop_redundant_wasm_tools_name_index");
+
+        assert_eq!(rewrites[2].from.version, 14);
+        assert_eq!(rewrites[2].from.name, "wasm_wit_default_0_3_0");
+        assert_eq!(rewrites[2].to.version, 12);
+        assert_eq!(rewrites[2].to.name, "wasm_wit_default_0_3_0");
+    }
+
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn plan_migration_history_rewrites_matches_known_legacy_rows() {
+        let rewrites = migration_history_rewrites();
+        let applied = rewrites
+            .iter()
+            .map(|rewrite| {
+                (
+                    rewrite.from.version,
+                    rewrite.from.name.to_string(),
+                    rewrite.from.checksum.to_string(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(plan_migration_history_rewrites(&applied), rewrites);
     }
 
     /// Regression test: save_job must persist user_id and get_job must return it.
