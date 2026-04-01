@@ -1,3 +1,6 @@
+//! Persistence-focused scheduler tests covering libSQL-backed cancellation
+//! durability, shutdown recovery, and stop-path state handling.
+
 use super::*;
 use crate::db::libsql::LibSqlBackend;
 use anyhow::{Result, anyhow};
@@ -120,7 +123,7 @@ async fn test_stop_does_not_overwrite_completed_jobs() -> Result<()> {
 
 #[cfg(feature = "libsql")]
 #[tokio::test]
-async fn test_stop_all_timeout_does_not_overwrite_completed_job() -> Result<()> {
+async fn test_stop_all_timeout_transitions_context_and_db_to_cancelled() -> Result<()> {
     let (sched, store, _dir) = make_test_scheduler_with_store(1000).await?;
     let job_id = sched
         .context_manager
@@ -128,11 +131,7 @@ async fn test_stop_all_timeout_does_not_overwrite_completed_job() -> Result<()> 
         .await?;
     sched
         .context_manager
-        .update_context(job_id, |ctx| {
-            ctx.transition_to(JobState::InProgress, None)
-                .expect("failed to transition to in-progress");
-            ctx.transition_to(JobState::Completed, None)
-        })
+        .update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
         .await
         .map_err(|error| anyhow!(error))?
         .map_err(|error| anyhow!(error))?;
@@ -156,12 +155,15 @@ async fn test_stop_all_timeout_does_not_overwrite_completed_job() -> Result<()> 
 
     sched.stop_all().await;
 
+    let ctx = sched.context_manager.get_context(job_id).await?;
+    assert_eq!(ctx.state, JobState::Cancelled);
+
     let job = store
         .get_job(job_id)
         .await?
         .ok_or_else(|| anyhow!("job should exist"))?;
-    assert_eq!(job.state, JobState::Completed);
-    assert!(sched.is_running(job_id).await);
+    assert_eq!(job.state, JobState::Cancelled);
+    assert!(!sched.is_running(job_id).await);
     Ok(())
 }
 

@@ -544,16 +544,46 @@ impl Scheduler {
             }
         };
 
-        // Send stop signal
-        let _ = tx.send(WorkerMessage::Stop).await;
+        self.send_stop_signal(job_id, tx).await;
 
         // Give it a moment to clean up
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-        // Update job state
+        self.transition_to_cancelled(job_id, reason).await
+    }
+
+    async fn send_stop_signal(&self, job_id: Uuid, tx: mpsc::Sender<WorkerMessage>) {
+        match tokio::time::timeout(
+            tokio::time::Duration::from_secs(5),
+            tx.send(WorkerMessage::Stop),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                tracing::warn!(
+                    job_id = %job_id,
+                    reason = %error,
+                    "Failed to send stop signal to worker"
+                );
+            }
+            Err(_) => {
+                tracing::warn!(
+                    job_id = %job_id,
+                    timeout_seconds = 5_u64,
+                    "Timed out sending stop signal to worker"
+                );
+            }
+        }
+    }
+
+    async fn transition_to_cancelled(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
         self.context_manager
             .update_context(job_id, |ctx| {
                 let current_state = ctx.state;
+                if current_state == JobState::Cancelled {
+                    return Ok(());
+                }
                 ctx.transition_to(JobState::Cancelled, Some(reason.to_string()))
                     .map_err(|_| current_state)
             })
@@ -716,8 +746,8 @@ impl Scheduler {
                         timeout_seconds = stop_timeout.as_secs(),
                         "Timed out stopping job during shutdown"
                     );
-                    match self.context_manager.get_context(job_id).await {
-                        Ok(ctx) if Self::should_persist_cancelled_after_timeout(ctx.state) => {
+                    match self.transition_to_cancelled(job_id, stop_reason).await {
+                        Ok(()) => {
                             if let Err(error) =
                                 self.persist_cancelled_status(job_id, stop_reason).await
                             {
@@ -730,18 +760,27 @@ impl Scheduler {
                                 self.finalize_stop(job_id).await;
                             }
                         }
-                        Ok(ctx) => {
-                            tracing::warn!(
-                                job_id = %job_id,
-                                state = %ctx.state,
-                                "Skipping cancellation persistence after shutdown timeout because the job state no longer permits cancellation"
-                            );
-                        }
+                        Err(JobError::InvalidTransition { state, .. }) => match state.parse() {
+                            Ok(state) if !Self::should_persist_cancelled_after_timeout(state) => {
+                                tracing::warn!(
+                                    job_id = %job_id,
+                                    state = %state,
+                                    "Skipping cancellation persistence after shutdown timeout because the job state no longer permits cancellation"
+                                );
+                            }
+                            _ => {
+                                tracing::warn!(
+                                    job_id = %job_id,
+                                    state,
+                                    "Failed to classify job state after shutdown timeout"
+                                );
+                            }
+                        },
                         Err(error) => {
                             tracing::warn!(
                                 job_id = %job_id,
                                 %error,
-                                "Failed to reload job state after shutdown timeout"
+                                "Failed to cancel job after shutdown timeout"
                             );
                         }
                     }
