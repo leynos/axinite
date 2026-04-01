@@ -38,6 +38,7 @@ pub enum WorkerMessage {
 pub struct ScheduledJob {
     pub handle: JoinHandle<()>,
     pub tx: mpsc::Sender<WorkerMessage>,
+    pub pending_cancel_persist: bool,
 }
 
 /// Status of a scheduled sub-task.
@@ -284,7 +285,14 @@ impl Scheduler {
             }
 
             // Insert while still holding the write lock
-            jobs.insert(job_id, ScheduledJob { handle, tx });
+            jobs.insert(
+                job_id,
+                ScheduledJob {
+                    handle,
+                    tx,
+                    pending_cancel_persist: false,
+                },
+            );
         }
 
         // Cleanup task for this job to avoid capacity leaks
@@ -614,6 +622,13 @@ impl Scheduler {
         Ok(())
     }
 
+    async fn mark_cancel_persist_pending(&self, job_id: Uuid, pending: bool) {
+        let mut jobs = self.jobs.write().await;
+        if let Some(scheduled) = jobs.get_mut(&job_id) {
+            scheduled.pending_cancel_persist = pending;
+        }
+    }
+
     fn should_persist_cancelled_after_timeout(state: JobState) -> bool {
         state == JobState::Cancelled || state.can_transition_to(JobState::Cancelled)
     }
@@ -639,6 +654,7 @@ impl Scheduler {
         match self.transition_to_cancelled(job_id, reason).await {
             Ok(()) => {
                 if let Err(error) = self.persist_cancelled_status(job_id, reason).await {
+                    self.mark_cancel_persist_pending(job_id, true).await;
                     tracing::warn!(
                         job_id = %job_id,
                         %error,
@@ -681,7 +697,10 @@ impl Scheduler {
     /// Stop a running job.
     pub async fn stop(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
         self.stop_in_memory(job_id, reason).await?;
-        self.persist_cancelled_status(job_id, reason).await?;
+        if let Err(error) = self.persist_cancelled_status(job_id, reason).await {
+            self.mark_cancel_persist_pending(job_id, true).await;
+            return Err(error);
+        }
         self.finalize_stop(job_id).await;
 
         Ok(())
@@ -735,7 +754,7 @@ impl Scheduler {
             let mut finished = Vec::new();
 
             for (id, scheduled) in jobs.iter() {
-                if scheduled.handle.is_finished() {
+                if scheduled.handle.is_finished() && !scheduled.pending_cancel_persist {
                     finished.push(*id);
                 }
             }
@@ -780,6 +799,7 @@ impl Scheduler {
             match result {
                 Ok(Ok(())) => {
                     if let Err(error) = self.persist_cancelled_status(job_id, stop_reason).await {
+                        self.mark_cancel_persist_pending(job_id, true).await;
                         tracing::warn!(
                             job_id = %job_id,
                             %error,
