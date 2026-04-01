@@ -52,6 +52,13 @@ const LEGACY_V12_JOB_TOKEN_BUDGET_SQL: &str = concat!(
     "ALTER TABLE agent_jobs ADD COLUMN total_tokens_used BIGINT NOT NULL DEFAULT 0;\n"
 );
 #[cfg(feature = "postgres")]
+const LEGACY_V12_WASM_WIT_DEFAULT_SQL: &str = concat!(
+    "ALTER TABLE wasm_tools\n",
+    "    ALTER COLUMN wit_version SET DEFAULT '0.3.0';\n\n",
+    "ALTER TABLE wasm_channels\n",
+    "    ALTER COLUMN wit_version SET DEFAULT '0.3.0';\n"
+);
+#[cfg(feature = "postgres")]
 const LEGACY_V13_DROP_REDUNDANT_WASM_TOOLS_NAME_INDEX_SQL: &str =
     "DROP INDEX IF EXISTS idx_wasm_tools_name;\n";
 #[cfg(feature = "postgres")]
@@ -610,6 +617,14 @@ fn plan_migration_history_rewrites(
 #[cfg(feature = "postgres")]
 fn migration_history_rewrites() -> Vec<MigrationHistoryRewrite> {
     vec![
+        migration_history_rewrite(
+            12,
+            "wasm_wit_default_0_3_0",
+            LEGACY_V12_WASM_WIT_DEFAULT_SQL,
+            12,
+            "wasm_wit_default_0_3_0",
+            CURRENT_V12_WASM_WIT_DEFAULT_SQL,
+        ),
         migration_history_rewrite(
             12,
             "job_token_budget",
@@ -2379,25 +2394,30 @@ mod tests {
     #[test]
     fn migration_history_rewrites_cover_the_released_renumbering_window() {
         let rewrites = migration_history_rewrites();
-        assert_eq!(rewrites.len(), 3);
+        assert_eq!(rewrites.len(), 4);
 
         assert_eq!(rewrites[0].from.version, 12);
-        assert_eq!(rewrites[0].from.name, "job_token_budget");
-        assert_eq!(rewrites[0].to.version, 13);
-        assert_eq!(rewrites[0].to.name, "job_token_budget");
+        assert_eq!(rewrites[0].from.name, "wasm_wit_default_0_3_0");
+        assert_eq!(rewrites[0].to.version, 12);
+        assert_eq!(rewrites[0].to.name, "wasm_wit_default_0_3_0");
 
-        assert_eq!(rewrites[1].from.version, 13);
+        assert_eq!(rewrites[1].from.version, 12);
+        assert_eq!(rewrites[1].from.name, "job_token_budget");
+        assert_eq!(rewrites[1].to.version, 13);
+        assert_eq!(rewrites[1].to.name, "job_token_budget");
+
+        assert_eq!(rewrites[2].from.version, 13);
         assert_eq!(
-            rewrites[1].from.name,
+            rewrites[2].from.name,
             "drop_redundant_wasm_tools_name_index"
         );
-        assert_eq!(rewrites[1].to.version, 14);
-        assert_eq!(rewrites[1].to.name, "drop_redundant_wasm_tools_name_index");
+        assert_eq!(rewrites[2].to.version, 14);
+        assert_eq!(rewrites[2].to.name, "drop_redundant_wasm_tools_name_index");
 
-        assert_eq!(rewrites[2].from.version, 14);
-        assert_eq!(rewrites[2].from.name, "wasm_wit_default_0_3_0");
-        assert_eq!(rewrites[2].to.version, 12);
-        assert_eq!(rewrites[2].to.name, "wasm_wit_default_0_3_0");
+        assert_eq!(rewrites[3].from.version, 14);
+        assert_eq!(rewrites[3].from.name, "wasm_wit_default_0_3_0");
+        assert_eq!(rewrites[3].to.version, 12);
+        assert_eq!(rewrites[3].to.name, "wasm_wit_default_0_3_0");
     }
 
     #[cfg(feature = "postgres")]
