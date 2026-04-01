@@ -56,7 +56,7 @@ fn test_config_with_http(http: Option<HttpConfig>) -> crate::config::Config {
 })]
 #[tokio::test]
 async fn successful_reload_invokes_all_dependencies(#[case] test_case: AddrTestCase) {
-    let injector = Arc::new(StubSecretInjector::new(false));
+    let injector = Arc::new(StubSecretInjector::new());
     let injector_clone = Arc::clone(&injector);
 
     // Current address is different from new address to trigger restart
@@ -138,7 +138,7 @@ async fn successful_reload_invokes_all_dependencies(#[case] test_case: AddrTestC
 #[case::ipv6("[::1]:8080")]
 #[tokio::test]
 async fn address_unchanged_skips_listener_restart(#[case] addr_str: &str) {
-    let injector = Arc::new(StubSecretInjector::new(false));
+    let injector = Arc::new(StubSecretInjector::new());
 
     // Current address matches new address - should skip restart
     let addr: SocketAddr = addr_str.parse().expect("valid socket address");
@@ -194,7 +194,7 @@ async fn address_unchanged_skips_listener_restart(#[case] addr_str: &str) {
 
 #[tokio::test]
 async fn config_load_failure_prevents_listener_restart() {
-    let injector = Arc::new(StubSecretInjector::new(false));
+    let injector = Arc::new(StubSecretInjector::new());
     let controller = Arc::new(StubListenerController::new(
         "127.0.0.1:8080".parse().expect("valid test socket address"),
     ));
@@ -237,7 +237,7 @@ async fn config_load_failure_prevents_listener_restart() {
 #[case::ipv6("[::1]:8080")]
 #[tokio::test]
 async fn listener_restart_failure_prevents_secret_update(#[case] addr_str: &str) {
-    let injector = Arc::new(StubSecretInjector::new(false));
+    let injector = Arc::new(StubSecretInjector::new());
 
     let addr: SocketAddr = addr_str.parse().expect("valid socket address");
     let controller = Arc::new(StubListenerController::new_with_restart_failure(addr));
@@ -285,7 +285,7 @@ async fn listener_restart_failure_prevents_secret_update(#[case] addr_str: &str)
 
 #[tokio::test]
 async fn http_config_removed_shuts_down_listener_and_clears_secrets() {
-    let injector = Arc::new(StubSecretInjector::new(false));
+    let injector = Arc::new(StubSecretInjector::new());
 
     // Start with a listener on a known address
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");

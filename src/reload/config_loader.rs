@@ -89,7 +89,82 @@ impl NativeConfigLoader for EnvConfigLoader {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
     use super::*;
+    use crate::db::settings::{NativeSettingsStore, SettingKey, UserId};
+    use crate::error::DatabaseError;
+    use crate::history::SettingRow;
+
+    /// Mock SettingsStore for testing DbConfigLoader behavior.
+    struct MockSettingsStore {
+        settings: HashMap<String, serde_json::Value>,
+    }
+
+    impl MockSettingsStore {
+        fn with_settings(settings: HashMap<String, serde_json::Value>) -> Self {
+            Self { settings }
+        }
+    }
+
+    impl NativeSettingsStore for MockSettingsStore {
+        async fn get_setting(
+            &self,
+            _user_id: UserId,
+            key: SettingKey,
+        ) -> Result<Option<serde_json::Value>, DatabaseError> {
+            Ok(self.settings.get(key.as_str()).cloned())
+        }
+
+        async fn get_setting_full(
+            &self,
+            _user_id: UserId,
+            _key: SettingKey,
+        ) -> Result<Option<SettingRow>, DatabaseError> {
+            Ok(None)
+        }
+
+        async fn set_setting(
+            &self,
+            _user_id: UserId,
+            _key: SettingKey,
+            _value: &serde_json::Value,
+        ) -> Result<(), DatabaseError> {
+            Ok(())
+        }
+
+        async fn delete_setting(
+            &self,
+            _user_id: UserId,
+            _key: SettingKey,
+        ) -> Result<bool, DatabaseError> {
+            Ok(false)
+        }
+
+        async fn list_settings(&self, _user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
+            Ok(vec![])
+        }
+
+        async fn get_all_settings(
+            &self,
+            _user_id: UserId,
+        ) -> Result<HashMap<String, serde_json::Value>, DatabaseError> {
+            Ok(self.settings.clone())
+        }
+
+        async fn set_all_settings(
+            &self,
+            _user_id: UserId,
+            _settings: &HashMap<String, serde_json::Value>,
+        ) -> Result<(), DatabaseError> {
+            Ok(())
+        }
+
+        async fn has_settings(&self, _user_id: UserId) -> Result<bool, DatabaseError> {
+            Ok(!self.settings.is_empty())
+        }
+    }
 
     /// Test that EnvConfigLoader::new creates a zero-sized loader.
     #[test]
@@ -120,83 +195,9 @@ mod tests {
     /// and constructs a valid Config with the retrieved values.
     #[tokio::test]
     async fn db_config_loader_loads_config_from_store() {
-        use std::collections::HashMap;
-        use std::sync::Arc;
-
-        use crate::db::settings::{NativeSettingsStore, SettingKey, UserId};
-        use crate::error::DatabaseError;
-
-        /// Mock SettingsStore for testing DbConfigLoader behavior
-        struct MockSettingsStore {
-            settings: HashMap<String, serde_json::Value>,
-        }
-
-        impl MockSettingsStore {
-            fn with_settings(settings: HashMap<String, serde_json::Value>) -> Self {
-                Self { settings }
-            }
-        }
-
-        impl NativeSettingsStore for MockSettingsStore {
-            async fn get_setting(
-                &self,
-                _user_id: UserId,
-                key: SettingKey,
-            ) -> Result<Option<serde_json::Value>, DatabaseError> {
-                Ok(self.settings.get(key.as_str()).cloned())
-            }
-
-            async fn get_setting_full(
-                &self,
-                _user_id: UserId,
-                _key: SettingKey,
-            ) -> Result<Option<crate::history::SettingRow>, DatabaseError> {
-                Ok(None)
-            }
-
-            async fn set_setting(
-                &self,
-                _user_id: UserId,
-                _key: SettingKey,
-                _value: &serde_json::Value,
-            ) -> Result<(), DatabaseError> {
-                Ok(())
-            }
-
-            async fn delete_setting(
-                &self,
-                _user_id: UserId,
-                _key: SettingKey,
-            ) -> Result<bool, DatabaseError> {
-                Ok(false)
-            }
-
-            async fn list_settings(
-                &self,
-                _user_id: UserId,
-            ) -> Result<Vec<crate::history::SettingRow>, DatabaseError> {
-                Ok(vec![])
-            }
-
-            async fn get_all_settings(
-                &self,
-                _user_id: UserId,
-            ) -> Result<HashMap<String, serde_json::Value>, DatabaseError> {
-                Ok(self.settings.clone())
-            }
-
-            async fn set_all_settings(
-                &self,
-                _user_id: UserId,
-                _settings: &HashMap<String, serde_json::Value>,
-            ) -> Result<(), DatabaseError> {
-                Ok(())
-            }
-
-            async fn has_settings(&self, _user_id: UserId) -> Result<bool, DatabaseError> {
-                Ok(!self.settings.is_empty())
-            }
-        }
+        // Set DATABASE_URL so Config::build can resolve DatabaseConfig.
+        // DbConfigLoader loads the full Config which requires this env var.
+        unsafe { std::env::set_var("DATABASE_URL", "postgres://localhost/test") };
 
         // Create mock store with some test settings
         let mut settings = HashMap::new();
@@ -220,5 +221,8 @@ mod tests {
             config.channels.http.is_some() || config.channels.http.is_none(),
             "Config should have HTTP channel field populated"
         );
+
+        // Clean up env var
+        unsafe { std::env::remove_var("DATABASE_URL") };
     }
 }

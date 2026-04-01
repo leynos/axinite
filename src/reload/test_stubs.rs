@@ -13,7 +13,6 @@ use crate::error::{ChannelError, ConfigError};
 use crate::reload::config_loader::NativeConfigLoader;
 use crate::reload::listener_controller::NativeListenerController;
 use crate::reload::secret_injector::NativeSecretInjector;
-use crate::secrets::SecretError;
 
 /// Stub config loader that returns a pre-configured result.
 pub struct StubConfigLoader {
@@ -41,34 +40,13 @@ impl NativeConfigLoader for StubConfigLoader {
     async fn load(&self) -> Result<Config, ConfigError> {
         match &self.config {
             Some(c) => Ok(c.clone()),
-            None => {
-                Err(reconstruct_config_error(self.error.as_ref().expect(
-                    "StubConfigLoader: either config or error must be set",
-                )))
-            }
+            None => Err(self
+                .error
+                .as_ref()
+                .expect("StubConfigLoader: either config or error must be set")
+                .as_ref()
+                .clone()),
         }
-    }
-}
-
-/// Reconstruct a [`ConfigError`] from an `Arc` reference.
-///
-/// `ConfigError` does not implement `Clone` (the `Io` variant wraps
-/// `std::io::Error`), so we match each variant and rebuild it from its
-/// string fields. The `Io` variant is approximated as a `ParseError` in
-/// test stubs because `std::io::Error` is not cloneable.
-fn reconstruct_config_error(err: &ConfigError) -> ConfigError {
-    match err {
-        ConfigError::MissingEnvVar(s) => ConfigError::MissingEnvVar(s.clone()),
-        ConfigError::MissingRequired { key, hint } => ConfigError::MissingRequired {
-            key: key.clone(),
-            hint: hint.clone(),
-        },
-        ConfigError::InvalidValue { key, message } => ConfigError::InvalidValue {
-            key: key.clone(),
-            message: message.clone(),
-        },
-        ConfigError::ParseError(s) => ConfigError::ParseError(s.clone()),
-        ConfigError::Io(e) => ConfigError::ParseError(format!("IO (reconstructed): {e}")),
     }
 }
 
@@ -128,14 +106,12 @@ impl NativeListenerController for StubListenerController {
 /// Stub secret injector that records whether inject was called.
 pub struct StubSecretInjector {
     called: Arc<Mutex<bool>>,
-    should_fail: bool,
 }
 
 impl StubSecretInjector {
-    pub fn new(should_fail: bool) -> Self {
+    pub fn new() -> Self {
         Self {
             called: Arc::new(Mutex::new(false)),
-            should_fail,
         }
     }
 
@@ -145,17 +121,15 @@ impl StubSecretInjector {
     }
 }
 
-impl NativeSecretInjector for StubSecretInjector {
-    async fn inject(&self) -> Result<(), SecretError> {
-        *self.called.lock().await = true;
+impl Default for StubSecretInjector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-        if self.should_fail {
-            Err(SecretError::Database(
-                "Simulated inject failure".to_string(),
-            ))
-        } else {
-            Ok(())
-        }
+impl NativeSecretInjector for StubSecretInjector {
+    async fn inject(&self) {
+        *self.called.lock().await = true;
     }
 }
 

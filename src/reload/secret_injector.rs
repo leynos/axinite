@@ -10,8 +10,7 @@ const HTTP_WEBHOOK_SECRET_KEY: &str = "HTTP_WEBHOOK_SECRET";
 const SECRETS_STORE_KEY: &str = "http_webhook_secret";
 
 /// Boxed future used at the dyn secret-injector boundary.
-pub type SecretInjectorFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<(), SecretError>> + Send + 'a>>;
+pub type SecretInjectorFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
 /// Trait for injecting secrets into the environment overlay.
 ///
@@ -20,14 +19,14 @@ pub type SecretInjectorFuture<'a> =
 pub trait SecretInjector: Send + Sync {
     /// Inject secrets into the environment overlay.
     ///
-    /// Failures should be logged but not treated as fatal reload errors.
+    /// Errors are logged internally and do not fail the reload.
     fn inject<'a>(&'a self) -> SecretInjectorFuture<'a>;
 }
 
 /// Native async sibling trait for concrete secret-injector implementations.
 pub trait NativeSecretInjector: Send + Sync {
     /// See [`SecretInjector::inject`].
-    fn inject(&self) -> impl Future<Output = Result<(), SecretError>> + Send + '_;
+    fn inject(&self) -> impl Future<Output = ()> + Send + '_;
 }
 
 impl<T> SecretInjector for T
@@ -61,16 +60,17 @@ impl DbSecretInjector {
 }
 
 impl NativeSecretInjector for DbSecretInjector {
-    async fn inject(&self) -> Result<(), SecretError> {
-        self.inject_webhook_secret().await
+    async fn inject(&self) {
+        self.inject_webhook_secret().await;
     }
 }
 
 impl DbSecretInjector {
     /// Inject HTTP webhook secret from encrypted store.
     ///
-    /// If the secret does not exist, logs and returns Ok — absence is not an error.
-    async fn inject_webhook_secret(&self) -> Result<(), SecretError> {
+    /// If the secret does not exist, logs and clears the overlay entry — absence is not an error.
+    /// Other errors are logged but do not fail the reload.
+    async fn inject_webhook_secret(&self) {
         let result = self
             .secrets_store
             .get_decrypted(&self.user_id, SECRETS_STORE_KEY)
@@ -83,15 +83,21 @@ impl DbSecretInjector {
             tracing::debug!(
                 "{HTTP_WEBHOOK_SECRET_KEY} not found in secrets store; cleared overlay entry"
             );
-            return Ok(());
+            return;
         }
 
-        let webhook_secret = result?;
+        let webhook_secret = match result {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("Failed to inject {HTTP_WEBHOOK_SECRET_KEY}: {e}");
+                return;
+            }
+        };
+
         // Thread-safe: Uses INJECTED_VARS mutex instead of unsafe std::env::set_var.
         // Config::from_env() will read from the overlay via optional_env().
         crate::config::inject_single_var(HTTP_WEBHOOK_SECRET_KEY, webhook_secret.expose());
         tracing::debug!("Injected {HTTP_WEBHOOK_SECRET_KEY} from secrets store");
-        Ok(())
     }
 }
 

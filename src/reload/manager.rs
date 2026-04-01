@@ -49,11 +49,9 @@ impl HotReloadManager {
     /// Returns early on any error. Errors are logged but not panicked.
     pub async fn perform_reload(&self) -> Result<(), ReloadError> {
         // Step 1: Inject secrets into the environment overlay
-        if let Some(ref injector) = self.secret_injector
-            && let Err(e) = injector.inject().await
-        {
-            tracing::error!("Secret injection failed during reload: {}", e);
-            // Secret injection failures are non-fatal by design; continue reload.
+        // Errors are logged internally by the injector; we continue regardless.
+        if let Some(ref injector) = self.secret_injector {
+            injector.inject().await;
         }
 
         // Step 2: Load new configuration
