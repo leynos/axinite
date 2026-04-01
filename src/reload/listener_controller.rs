@@ -28,6 +28,12 @@ pub trait ListenerController: Send + Sync {
         &'a self,
         addr: SocketAddr,
     ) -> ListenerControllerFuture<'a, Result<(), ChannelError>>;
+
+    /// Shutdown the listener gracefully.
+    ///
+    /// Signals the listener to stop accepting new connections and
+    /// waits for existing connections to complete.
+    fn shutdown<'a>(&'a self) -> ListenerControllerFuture<'a, ()>;
 }
 
 /// Native async sibling trait for concrete listener-controller implementations.
@@ -40,6 +46,9 @@ pub trait NativeListenerController: Send + Sync {
         &self,
         addr: SocketAddr,
     ) -> impl Future<Output = Result<(), ChannelError>> + Send + '_;
+
+    /// See [`ListenerController::shutdown`].
+    fn shutdown(&self) -> impl Future<Output = ()> + Send + '_;
 }
 
 impl<T> ListenerController for T
@@ -55,6 +64,10 @@ where
         addr: SocketAddr,
     ) -> ListenerControllerFuture<'a, Result<(), ChannelError>> {
         Box::pin(NativeListenerController::restart_with_addr(self, addr))
+    }
+
+    fn shutdown<'a>(&'a self) -> ListenerControllerFuture<'a, ()> {
+        Box::pin(NativeListenerController::shutdown(self))
     }
 }
 
@@ -83,6 +96,11 @@ impl NativeListenerController for WebhookListenerController {
     async fn restart_with_addr(&self, addr: SocketAddr) -> Result<(), ChannelError> {
         let mut server = self.server.lock().await;
         server.restart_with_addr(addr).await
+    }
+
+    async fn shutdown(&self) {
+        let mut server = self.server.lock().await;
+        server.shutdown().await;
     }
 }
 

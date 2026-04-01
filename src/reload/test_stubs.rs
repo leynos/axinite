@@ -119,6 +119,10 @@ impl NativeListenerController for StubListenerController {
             Ok(())
         }
     }
+
+    async fn shutdown(&self) {
+        // Stub implementation - no-op since there's no real listener to shut down
+    }
 }
 
 /// Stub secret injector that records whether inject was called.
