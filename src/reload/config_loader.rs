@@ -101,9 +101,10 @@ mod tests {
 
     /// Test that EnvConfigLoader implements Default via new().
     #[test]
+    #[allow(clippy::default_constructed_unit_structs)]
     fn env_config_loader_default_uses_new() {
         let loader1 = EnvConfigLoader::new();
-        let loader2 = EnvConfigLoader;
+        let loader2 = EnvConfigLoader::default();
 
         // Both should be functionally equivalent (EnvConfigLoader has no state)
         assert_eq!(std::mem::size_of_val(&loader1), 0);

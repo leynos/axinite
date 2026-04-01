@@ -337,8 +337,8 @@ converts the native traits to the dyn-compatible boxed-future form.
 `HotReloadManager` composes the three boundaries and coordinates the
 reload sequence:
 
-1. Load new configuration
-2. Inject secrets into the environment overlay
+1. Inject secrets into the environment overlay
+2. Load new configuration
 3. Restart the HTTP listener if the bind address changed
 4. Update channel secrets
 
@@ -347,15 +347,15 @@ together the default implementations based on available stores.
 
 ### Extension guidance
 
-To add a new config source:
+Adding a new config source:
 
-1. Implement `NativeConfigLoader` for your type.
+1. Implement `NativeConfigLoader` for the type.
 2. The blanket impl automatically provides `ConfigLoader`.
-3. Pass your loader to `HotReloadManager::new()`.
+3. Pass the loader to `HotReloadManager::new()`.
 
-To add a new listener controller:
+Adding a new listener controller:
 
-1. Implement `NativeListenerController` for your server wrapper.
+1. Implement `NativeListenerController` for the server wrapper.
 2. Implement `current_addr()` and `restart_with_addr()`.
 
 ### Test stubs
