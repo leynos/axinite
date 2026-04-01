@@ -132,7 +132,6 @@ fn default_base_dir() -> PathBuf {
 mod tests {
     use super::EnvContext;
     use std::collections::HashMap;
-    use std::ffi::OsString;
     use std::path::PathBuf;
 
     #[test]
@@ -176,6 +175,7 @@ mod tests {
     #[test]
     fn ambient_snapshot_skips_non_utf8_entries() {
         use super::collect_utf8_env_vars;
+        use std::ffi::OsString;
         use std::os::unix::ffi::OsStringExt;
 
         let env_vars = collect_utf8_env_vars([

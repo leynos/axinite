@@ -102,6 +102,12 @@ fn parse_csv_list(val: &str) -> Vec<String> {
         .collect()
 }
 
+/// Returns `true` when HTTP config should be suppressed:
+/// the channel is not explicitly enabled and no env or settings overrides are present.
+fn http_channel_inactive(enabled: bool, host: &Option<String>, port: &Option<u16>) -> bool {
+    !enabled && host.is_none() && port.is_none()
+}
+
 fn resolve_http_config(
     ctx: &EnvContext,
     settings: &Settings,
@@ -118,7 +124,7 @@ fn resolve_http_config(
         .transpose()?
         .or(settings.channels.http_port);
 
-    if !settings.channels.http_enabled && host.is_none() && port.is_none() {
+    if http_channel_inactive(settings.channels.http_enabled, &host, &port) {
         return Ok(None);
     }
     Ok(Some(HttpConfig {
