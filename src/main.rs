@@ -75,6 +75,7 @@ struct ChannelSetup {
     loaded_wasm_channel_names: Vec<String>,
     /// WASM channel setup context, if WASM channels are enabled.
     wasm_channel_setup: Option<Arc<ironclaw::channels::wasm::WasmChannelSetup>>,
+    #[cfg(unix)]
     webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     #[cfg(unix)]
     http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
@@ -87,6 +88,8 @@ struct GatewaySetup {
     routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
     /// Shared scheduler slot for job tool registration and runtime binding.
     scheduler_slot: ironclaw::tools::builtin::SchedulerSlot,
+    /// Shared session manager for gateway and agent.
+    session_manager: Arc<ironclaw::agent::SessionManager>,
 }
 
 /// Bundled inputs for the agent-run phase, produced by the
@@ -405,6 +408,7 @@ async fn setup_channels(
         channel_names,
         loaded_wasm_channel_names,
         wasm_channel_setup,
+        #[cfg(unix)]
         webhook_server,
         #[cfg(unix)]
         http_channel_state,
@@ -505,6 +509,7 @@ async fn setup_gateway_channel(
         sse_sender,
         routine_engine_slot,
         scheduler_slot: scheduler_slot.clone(),
+        session_manager: session_manager.clone(),
     })
 }
 
@@ -733,12 +738,19 @@ async fn phase_load_config_and_tracing(
 }
 
 /// Phase 3: Build core components via AppBuilder.
+///
+/// Returns the components along with the side effects handle, allowing the
+/// caller to decide when to start runtime activation.
 async fn phase_build_components(
     cli: &Cli,
     config: Config,
     session: Arc<ironclaw::llm::SessionManager>,
     log_broadcaster: Arc<LogBroadcaster>,
-) -> anyhow::Result<(Config, ironclaw::app::AppComponents)> {
+) -> anyhow::Result<(
+    Config,
+    ironclaw::app::AppComponents,
+    ironclaw::app::RuntimeSideEffects,
+)> {
     let toml_path = cli.config.as_deref();
     let flags = AppBuilderFlags {
         no_db: cli.no_db,
@@ -757,10 +769,8 @@ async fn phase_build_components(
     .build_components()
     .await?;
 
-    side_effects.start().await;
-
     let config = components.config.clone();
-    Ok((config, components))
+    Ok((config, components, side_effects))
 }
 
 /// Phase 4: Start tunnel and orchestrator.
@@ -1053,9 +1063,7 @@ async fn phase_run_agent(
         )),
     };
 
-    let session_manager =
-        Arc::new(ironclaw::agent::SessionManager::new().with_hooks(deps.hooks.clone()));
-
+    // Reuse the session_manager from gateway setup (shared between gateway and agent)
     let mut agent = Agent::new(
         config.agent.clone(),
         deps,
@@ -1064,7 +1072,7 @@ async fn phase_run_agent(
         Some(config.hygiene.clone()),
         Some(config.routines.clone()),
         Some(components.context_manager),
-        Some(session_manager),
+        Some(gateway_setup.session_manager.clone()),
     );
 
     // Reuse the scheduler_slot from gateway setup (used by register_job_tools)
@@ -1126,8 +1134,11 @@ async fn async_main() -> anyhow::Result<()> {
         phase_load_config_and_tracing(&cli).await?;
 
     // Phase 3: Build core components
-    let (config, components) =
+    let (config, components, side_effects) =
         phase_build_components(&cli, config, session, log_broadcaster.clone()).await?;
+
+    // Phase 3b: Start runtime side effects (explicit activation)
+    side_effects.start().await?;
 
     // Phase 4: Start tunnel and orchestrator
     let (active_tunnel, orch) = phase_tunnel_and_orchestrator(&config, &components).await?;
@@ -1193,6 +1204,7 @@ mod tests {
             channel_names: vec!["test".to_string()],
             loaded_wasm_channel_names: vec![],
             wasm_channel_setup: None,
+            #[cfg(unix)]
             webhook_server: None,
             #[cfg(unix)]
             http_channel_state: None,
@@ -1210,6 +1222,7 @@ mod tests {
             sse_sender: Some(tx),
             routine_engine_slot: None,
             scheduler_slot: Arc::new(tokio::sync::RwLock::new(None)),
+            session_manager: Arc::new(ironclaw::agent::SessionManager::new()),
         };
         assert_eq!(setup.gateway_url, Some("http://localhost:8080".to_string()));
     }
@@ -1225,6 +1238,7 @@ mod tests {
             sse_sender: Some(tx),
             routine_engine_slot: None,
             scheduler_slot: Arc::new(tokio::sync::RwLock::new(None)),
+            session_manager: Arc::new(ironclaw::agent::SessionManager::new()),
         };
         let orch = OrchestratorSetup {
             container_job_manager: None,
@@ -1250,6 +1264,7 @@ mod tests {
             sse_sender: Some(tx),
             routine_engine_slot: None,
             scheduler_slot: Arc::new(tokio::sync::RwLock::new(None)),
+            session_manager: Arc::new(ironclaw::agent::SessionManager::new()),
         };
         let ctx = BootScreenContext {
             gateway_setup: &gateway,

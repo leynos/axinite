@@ -35,7 +35,10 @@ impl RuntimeSideEffects {
     /// Import workspace files from `import_path`, logging the outcome.
     ///
     /// Only imports files that do not already exist — never overwrites user edits.
-    async fn import_workspace_files(ws: &Workspace, import_path: &std::path::Path) {
+    async fn import_workspace_files(
+        ws: &Workspace,
+        import_path: &std::path::Path,
+    ) -> anyhow::Result<()> {
         match ws.import_from_directory(import_path).await {
             Ok(count) if count > 0 => {
                 tracing::debug!(
@@ -46,13 +49,13 @@ impl RuntimeSideEffects {
             }
             Ok(_) => {}
             Err(e) => {
-                tracing::warn!(
-                    "Failed to import workspace files from {}: {}",
-                    import_path.display(),
-                    e
-                );
+                return Err(anyhow::anyhow!(e).context(format!(
+                    "importing workspace files from {}",
+                    import_path.display()
+                )));
             }
         }
+        Ok(())
     }
 
     /// Spawn embedding backfill as a fire-and-forget background task.
@@ -78,16 +81,17 @@ impl RuntimeSideEffects {
         ws: Arc<Workspace>,
         import_dir: Option<std::path::PathBuf>,
         embeddings_available: bool,
-    ) {
+    ) -> anyhow::Result<()> {
         if let Some(import_path) = import_dir {
-            Self::import_workspace_files(&ws, &import_path).await;
+            Self::import_workspace_files(&ws, &import_path).await?;
         }
-        if let Err(e) = ws.seed_if_empty().await {
-            tracing::warn!("Failed to seed workspace: {}", e);
-        }
+        ws.seed_if_empty()
+            .await
+            .map_err(|e| anyhow::anyhow!(e).context("seeding workspace"))?;
         if embeddings_available {
             Self::spawn_embedding_backfill(ws);
         }
+        Ok(())
     }
 
     /// Start all deferred background work.
@@ -99,14 +103,15 @@ impl RuntimeSideEffects {
     ///
     /// Callers awaiting this method will pay the import/seed cost; if fully
     /// deferred startup is required, wrap the call in `tokio::spawn`.
-    pub async fn start(self) {
+    pub async fn start(self) -> anyhow::Result<()> {
         if let Some(db) = self.db {
             Self::spawn_sandbox_cleanup(db);
         }
         if let Some(ws) = self.workspace {
             Self::run_workspace_init(ws, self.workspace_import_dir, self.embeddings_available)
-                .await;
+                .await?;
         }
+        Ok(())
     }
 }
 
@@ -125,7 +130,7 @@ mod tests {
         };
 
         // Should complete without panic even with nothing to do
-        side_effects.start().await;
+        side_effects.start().await.expect("start should succeed");
     }
 
     /// RuntimeSideEffects::start spawns cleanup task when db is provided.
@@ -140,7 +145,7 @@ mod tests {
             embeddings_available: false,
         };
 
-        side_effects.start().await;
+        side_effects.start().await.expect("start should succeed");
         // If we had a mock db, cleanup_stale_sandbox_jobs would be called
     }
 
@@ -199,7 +204,7 @@ mod tests {
                 workspace_import_dir: None,
                 embeddings_available: false,
             };
-            side_effects.start().await;
+            side_effects.start().await.expect("start should succeed");
         }
 
         // Running start multiple times on fresh instances should all succeed

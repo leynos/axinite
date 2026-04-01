@@ -25,7 +25,9 @@ impl AppBuilder {
     /// Phase 1: Initialize database backend.
     ///
     /// Creates the database connection, runs migrations, reloads config
-    /// from DB, attaches DB to session manager, and cleans up stale jobs.
+    /// from DB, and attaches DB to session manager.
+    ///
+    /// Note: stale job cleanup is deferred to [`RuntimeSideEffects::start()`].
     pub(super) async fn init_database(&mut self) -> Result<(), anyhow::Error> {
         if self.db.is_some() {
             tracing::debug!("Database already provided, skipping init_database()");
@@ -334,7 +336,20 @@ impl AppBuilder {
         );
 
         let catalog_entries = Self::load_registry_catalog();
-        let ext_secrets = Self::resolve_ext_secrets(&self.secrets_store);
+        let ext_secrets = match Self::resolve_ext_secrets(&self.secrets_store) {
+            Ok(s) => s,
+            Err(_) => {
+                // Failed to create ephemeral secrets; skip extension manager
+                return Ok((
+                    mcp_session_manager,
+                    mcp_process_manager,
+                    wasm_tool_runtime,
+                    None,
+                    catalog_entries,
+                    dev_loaded_tool_names,
+                ));
+            }
+        };
 
         let extension_manager = {
             let manager = Arc::new(ExtensionManager::new(
@@ -502,15 +517,24 @@ impl AppBuilder {
     /// Falls back to an ephemeral in-memory store when no persistent store is available.
     fn resolve_ext_secrets(
         store: &Option<Arc<dyn crate::secrets::SecretsStore + Send + Sync>>,
-    ) -> Arc<dyn crate::secrets::SecretsStore + Send + Sync> {
+    ) -> anyhow::Result<Arc<dyn crate::secrets::SecretsStore + Send + Sync>> {
         if let Some(s) = store {
-            return Arc::clone(s);
+            return Ok(Arc::clone(s));
         }
         use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
         let key = secrecy::SecretString::from(crate::secrets::keychain::generate_master_key_hex());
-        let crypto = Arc::new(SecretsCrypto::new(key).expect("ephemeral crypto"));
+        let crypto = match SecretsCrypto::new(key) {
+            Ok(c) => Arc::new(c),
+            Err(e) => {
+                tracing::warn!("Failed to create ephemeral secrets crypto: {}", e);
+                return Err(anyhow::anyhow!(
+                    "Failed to create ephemeral secrets crypto: {}",
+                    e
+                ));
+            }
+        };
         tracing::debug!("Using ephemeral in-memory secrets store for extension manager");
-        Arc::new(InMemorySecretsStore::new(crypto))
+        Ok(Arc::new(InMemorySecretsStore::new(crypto)))
     }
 
     /// Load WASM tools and dev tools from the configured directory.

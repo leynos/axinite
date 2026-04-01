@@ -279,7 +279,7 @@ impl AppBuilder {
     /// use `build_components()` directly.
     pub async fn build_all(self) -> Result<AppComponents, anyhow::Error> {
         let (components, side_effects) = self.build_components().await?;
-        side_effects.start().await;
+        side_effects.start().await?;
         Ok(components)
     }
 }
@@ -335,7 +335,7 @@ mod tests {
             .build_components()
             .await
             .expect("build_components failed");
-        side_effects.start().await; // must not panic
+        side_effects.start().await.expect("start should succeed"); // must not panic
     }
 
     /// Verify that `build_components()` returns side effects separately.
@@ -408,7 +408,7 @@ mod tests {
         };
 
         // Call start() - this should import the file before returning
-        side_effects.start().await;
+        side_effects.start().await.expect("start should succeed");
 
         // Verify the file was imported
         let doc = workspace
@@ -428,7 +428,7 @@ mod tests {
             workspace_import_dir: None,
             embeddings_available: false,
         };
-        side_effects.start().await;
+        side_effects.start().await.expect("start should succeed");
     }
 
     /// Verify that `build_components()` leaves side effects dormant until
@@ -493,7 +493,7 @@ mod tests {
         );
 
         // Start side effects - this should run the import
-        side_effects.start().await;
+        side_effects.start().await.expect("start should succeed");
 
         // POST-START ASSERTION: The import should now be complete
         let doc = workspace
