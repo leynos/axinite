@@ -25,7 +25,7 @@ pub use self::repair::RepairError;
 pub use self::routine::RoutineError;
 pub use self::safety::SafetyError;
 pub use self::tool::ToolError;
-pub use self::worker::WorkerError;
+pub use self::worker::{ConfigMismatchField, WorkerError};
 pub use self::workspace::WorkspaceError;
 pub use crate::llm::error::LlmError;
 

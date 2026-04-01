@@ -129,21 +129,7 @@ async fn build_runtime_with_remote_tools(
 async fn hosted_worker_remote_tool_catalog_registers_remote_tools()
 -> Result<(), Box<dyn std::error::Error>> {
     let (base_url, server) = spawn_hosted_guidance_catalog_server().await?;
-
-    let client = Arc::new(
-        WorkerHttpClient::new(base_url.clone(), Uuid::nil(), "test".to_string())
-            .expect("test client should build"),
-    );
-    let runtime = WorkerRuntime::new(
-        WorkerConfig {
-            job_id: Uuid::nil(),
-            orchestrator_url: base_url,
-            ..WorkerConfig::default()
-        },
-        client,
-    )?;
-
-    runtime.register_remote_tools().await?;
+    let (runtime, _client) = build_runtime_with_remote_tools(&base_url).await?;
 
     let definitions: Vec<crate::llm::ToolDefinition> = runtime.tools.tool_definitions().await;
     let mut names: Vec<String> = definitions.into_iter().map(|def| def.name).collect();
@@ -281,11 +267,16 @@ async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance()
 #[tokio::test]
 async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools()
 -> Result<(), Box<dyn std::error::Error>> {
-    let (base_url, server) = spawn_test_server(remote_tool_catalog_error).await?;
+    let (base_url, server) = spawn_test_server(remote_tool_catalog_error).await.map_err(|e| {
+        format!(
+            "spawning test server in hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools: {}",
+            e
+        )
+    })?;
 
     let client = Arc::new(
         WorkerHttpClient::new(base_url.clone(), Uuid::nil(), "test".to_string())
-            .expect("test client should build"),
+            .map_err(|e| format!("building test WorkerHttpClient: {}", e))?,
     );
     let runtime = WorkerRuntime::new(
         WorkerConfig {
@@ -294,7 +285,8 @@ async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools()
             ..WorkerConfig::default()
         },
         client,
-    )?;
+    )
+    .map_err(|e| format!("building WorkerRuntime: {}", e))?;
 
     runtime.register_remote_tools_with_degraded_startup().await;
 

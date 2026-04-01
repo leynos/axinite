@@ -25,7 +25,7 @@ pub use types::{
     REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_PATH, REMOTE_TOOL_EXECUTE_ROUTE,
     RemoteToolCatalogResponse, RemoteToolExecutionRequest, RemoteToolExecutionResponse,
     STATUS_PATH, STATUS_ROUTE, StatusUpdate, TerminalResult, WORKER_HEALTH_PATH,
-    WORKER_HEALTH_ROUTE, WorkerState,
+    WORKER_HEALTH_ROUTE, WorkerState, worker_job_url,
 };
 /// HTTP client that a container worker uses to talk to the orchestrator.
 pub struct WorkerHttpClient {
@@ -86,7 +86,7 @@ impl WorkerHttpClient {
     }
 
     fn url(&self, path: &str) -> String {
-        format!("{}/worker/{}/{}", self.orchestrator_url, self.job_id, path)
+        worker_job_url(&self.orchestrator_url, &self.job_id.to_string(), path)
     }
 
     async fn send_post_json<B: Serialize>(

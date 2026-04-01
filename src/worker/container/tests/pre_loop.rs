@@ -7,17 +7,21 @@ use rstest::rstest;
 use uuid::Uuid;
 
 use super::test_support::{RuntimeTestState, setup_runtime_test};
-use crate::error::{Error, ToolError};
+use crate::error::{ConfigMismatchField, Error, ToolError};
 use crate::worker::api::{WorkerHttpClient, WorkerState};
 use crate::worker::container::{WorkerConfig, WorkerError, WorkerExecutionResult, WorkerRuntime};
 
 /// Regression test: WorkerRuntime::new should return ConfigMismatch error
 /// when config fields don't match the client.
 #[rstest]
-#[case("job_id", Uuid::new_v4(), "http://localhost:50051")]
-#[case("orchestrator_url", Uuid::nil(), "http://different-host:50052")]
+#[case(ConfigMismatchField::JobId, Uuid::new_v4(), "http://localhost:50051")]
+#[case(
+    ConfigMismatchField::OrchestratorUrl,
+    Uuid::nil(),
+    "http://different-host:50052"
+)]
 fn worker_runtime_new_returns_error_on_config_mismatch(
-    #[case] field_name: &str,
+    #[case] expected_field: ConfigMismatchField,
     #[case] job_id: Uuid,
     #[case] orchestrator_url: &str,
 ) {
@@ -43,15 +47,18 @@ fn worker_runtime_new_returns_error_on_config_mismatch(
     match result {
         Err(WorkerError::ConfigMismatch { field, .. }) => {
             assert_eq!(
-                field, field_name,
-                "expected ConfigMismatch for {}",
-                field_name
+                field, expected_field,
+                "expected ConfigMismatch for {:?}",
+                expected_field
             )
         }
-        Ok(_) => panic!("expected ConfigMismatch error for {}, got Ok", field_name),
+        Ok(_) => panic!(
+            "expected ConfigMismatch error for {:?}, got Ok",
+            expected_field
+        ),
         Err(other) => panic!(
-            "expected ConfigMismatch error for {}, got {:?}",
-            field_name, other
+            "expected ConfigMismatch error for {:?}, got {:?}",
+            expected_field, other
         ),
     }
 }
@@ -75,10 +82,22 @@ async fn assert_startup_failure_completions(state: &RuntimeTestState) {
     );
     drop(completions);
 
-    let result_events = state.result_events.lock().await;
-    assert_eq!(result_events.len(), 1, "expected a terminal result event");
-    assert_eq!(result_events[0]["message"], "Worker failed during startup");
-    assert_eq!(result_events[0]["success"], false);
+    // Wait for the result event to be delivered (with timeout)
+    let mut attempts = 0;
+    loop {
+        let result_events = state.result_events.lock().await;
+        if !result_events.is_empty() {
+            assert_eq!(result_events[0]["message"], "Worker failed during startup");
+            assert_eq!(result_events[0]["success"], false);
+            break;
+        }
+        drop(result_events);
+        attempts += 1;
+        if attempts > 50 {
+            panic!("expected a terminal result event within 500ms");
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    }
 }
 
 async fn assert_startup_failure(state: &RuntimeTestState) {
@@ -229,16 +248,29 @@ async fn worker_runtime_sanitizes_failure_messages(
     assert_eq!(completions[0].iterations, 7);
     drop(completions);
 
-    let result_events = state.result_events.lock().await;
-    assert_eq!(result_events.len(), 1);
-    assert_eq!(result_events[0]["message"], expected_message);
-    assert_eq!(result_events[0]["success"], false);
+    // Wait for the result event to be delivered (with timeout)
+    let mut attempts = 0;
+    let result_event = loop {
+        let result_events = state.result_events.lock().await;
+        if !result_events.is_empty() {
+            break result_events[0].clone();
+        }
+        drop(result_events);
+        attempts += 1;
+        if attempts > 50 {
+            panic!("expected a terminal result event within 500ms");
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    };
+
+    assert_eq!(result_event["message"], expected_message);
+    assert_eq!(result_event["success"], false);
     assert!(
-        result_events[0].to_string().contains(expected_message),
+        result_event.to_string().contains(expected_message),
         "expected result payload to contain the sanitised message"
     );
     assert!(
-        !result_events[0].to_string().contains("secret-123"),
+        !result_event.to_string().contains("secret-123"),
         "result payload should not leak the detailed error text"
     );
 

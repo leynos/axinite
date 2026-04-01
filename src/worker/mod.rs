@@ -87,10 +87,7 @@ pub async fn run_claude_bridge(
         allowed_tools: crate::config::ClaudeCodeConfig::from_env().allowed_tools,
     };
 
-    let rt = ClaudeBridgeRuntime::new(config)
-        .map_err(|e| anyhow::anyhow!("Claude bridge init failed: {}", e))?;
+    let rt = ClaudeBridgeRuntime::new(config).context("Claude bridge init failed")?;
 
-    rt.run()
-        .await
-        .map_err(|e| anyhow::anyhow!("Claude bridge failed: {}", e))
+    rt.run().await.context("Claude bridge failed")
 }

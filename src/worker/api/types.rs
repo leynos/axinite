@@ -99,6 +99,13 @@ pub const WORKER_HEALTH_PATH: &str = "health";
 /// Axum route for health check endpoint (no job_id path component).
 pub const WORKER_HEALTH_ROUTE: &str = concatcp!("/", WORKER_HEALTH_PATH);
 
+/// Build a worker job URL path from the orchestrator URL, job ID, and path suffix.
+///
+/// Returns a canonical URL of the form `{orchestrator_url}/worker/{job_id}/{path}`.
+pub fn worker_job_url(orchestrator_url: &str, job_id: &str, path: &str) -> String {
+    format!("{}/worker/{}/{}", orchestrator_url, job_id, path)
+}
+
 /// Status update sent from worker to orchestrator.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatusUpdate {

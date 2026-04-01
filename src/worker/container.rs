@@ -98,7 +98,7 @@ impl WorkerRuntime {
         // Validate that config and client are consistent
         if config.job_id != client.job_id() {
             return Err(WorkerError::ConfigMismatch {
-                field: "job_id".to_string(),
+                field: crate::error::ConfigMismatchField::JobId,
                 reason: format!(
                     "WorkerConfig job_id ({}) must match WorkerHttpClient job_id ({})",
                     config.job_id,
@@ -108,7 +108,7 @@ impl WorkerRuntime {
         }
         if config.orchestrator_url.trim_end_matches('/') != client.orchestrator_url() {
             return Err(WorkerError::ConfigMismatch {
-                field: "orchestrator_url".to_string(),
+                field: crate::error::ConfigMismatchField::OrchestratorUrl,
                 reason: format!(
                     "WorkerConfig orchestrator_url ({}) must match WorkerHttpClient orchestrator_url ({})",
                     config.orchestrator_url.trim_end_matches('/'),

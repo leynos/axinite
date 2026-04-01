@@ -156,9 +156,27 @@ impl WorkerHttpClient {
 
     /// Signal job completion to the orchestrator.
     pub async fn report_complete(&self, report: &CompletionReport) -> Result<(), WorkerError> {
-        let _: serde_json::Value = self
-            .post_json(COMPLETE_PATH, report, "report complete")
-            .await?;
+        let resp = self
+            .client
+            .post(self.url(COMPLETE_PATH))
+            .bearer_auth(&self.token)
+            .json(report)
+            .send()
+            .await
+            .map_err(|e| WorkerError::ConnectionFailed {
+                url: self.url(COMPLETE_PATH),
+                reason: format!("completion report POST failed: {}", e),
+            })?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(WorkerError::OrchestratorRejected {
+                job_id: self.job_id,
+                reason: format!("completion endpoint returned {}: {}", status, body),
+            });
+        }
+
         Ok(())
     }
 }
