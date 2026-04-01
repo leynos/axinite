@@ -64,6 +64,8 @@ pub struct Scheduler {
     subtasks: Arc<RwLock<HashMap<Uuid, ScheduledSubtask>>>,
 }
 
+const STOP_GRACE_PERIOD: Duration = Duration::from_millis(500);
+
 impl Scheduler {
     /// Create a new scheduler.
     pub fn new(
@@ -546,8 +548,9 @@ impl Scheduler {
 
         self.send_stop_signal(job_id, tx).await;
 
-        // Give it a moment to clean up
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        // Give the worker a bounded window to observe the stop signal and
+        // finish in-flight cleanup before we transition its state.
+        tokio::time::sleep(STOP_GRACE_PERIOD).await;
 
         self.transition_to_cancelled(job_id, reason).await
     }
@@ -588,10 +591,10 @@ impl Scheduler {
                     .map_err(|_| current_state)
             })
             .await?
-            .map_err(|state| JobError::InvalidTransition {
+            .map_err(|from_state| JobError::InvalidTransition {
                 id: job_id,
-                state: state.to_string(),
-                target: JobState::Cancelled.to_string(),
+                from_state,
+                target: JobState::Cancelled,
             })?;
 
         Ok(())
@@ -760,22 +763,15 @@ impl Scheduler {
                                 self.finalize_stop(job_id).await;
                             }
                         }
-                        Err(JobError::InvalidTransition { state, .. }) => match state.parse() {
-                            Ok(state) if !Self::should_persist_cancelled_after_timeout(state) => {
-                                tracing::warn!(
-                                    job_id = %job_id,
-                                    state = %state,
-                                    "Skipping cancellation persistence after shutdown timeout because the job state no longer permits cancellation"
-                                );
-                            }
-                            _ => {
-                                tracing::warn!(
-                                    job_id = %job_id,
-                                    state,
-                                    "Failed to classify job state after shutdown timeout"
-                                );
-                            }
-                        },
+                        Err(JobError::InvalidTransition { from_state, .. })
+                            if !Self::should_persist_cancelled_after_timeout(from_state) =>
+                        {
+                            tracing::warn!(
+                                job_id = %job_id,
+                                state = %from_state,
+                                "Skipping cancellation persistence after shutdown timeout because the job state no longer permits cancellation"
+                            );
+                        }
                         Err(error) => {
                             tracing::warn!(
                                 job_id = %job_id,

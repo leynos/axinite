@@ -2,9 +2,12 @@
 //! durability, shutdown recovery, and stop-path state handling.
 
 use super::*;
-use crate::db::libsql::LibSqlBackend;
 use anyhow::{Result, anyhow};
 
+#[cfg(feature = "libsql")]
+use crate::db::libsql::LibSqlBackend;
+
+#[cfg(feature = "libsql")]
 async fn make_test_scheduler_with_store(
     max_tokens_per_job: u64,
 ) -> Result<(Scheduler, Arc<dyn Database>, tempfile::TempDir)> {
@@ -32,6 +35,7 @@ async fn make_test_scheduler_with_store(
     ))
 }
 
+#[cfg(feature = "libsql")]
 async fn register_job_in_scheduler(
     sched: &Scheduler,
     store: &Arc<dyn Database>,
@@ -91,8 +95,7 @@ async fn test_stop_does_not_overwrite_completed_jobs() -> Result<()> {
     sched
         .context_manager
         .update_context(job_id, |ctx| {
-            ctx.transition_to(JobState::InProgress, None)
-                .expect("failed to transition to in-progress");
+            ctx.transition_to(JobState::InProgress, None)?;
             ctx.transition_to(JobState::Completed, None)
         })
         .await
@@ -110,7 +113,7 @@ async fn test_stop_does_not_overwrite_completed_jobs() -> Result<()> {
         JobError::InvalidTransition {
             target,
             ..
-        } if target == JobState::Cancelled.to_string()
+        } if target == JobState::Cancelled
     ));
 
     let job = store
