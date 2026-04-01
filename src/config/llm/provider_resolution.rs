@@ -25,7 +25,11 @@ fn resolve_api_key(
     } else {
         None
     };
-    if let Some(env_var) = missing_api_key_env(api_key_required, &key, api_key_env) {
+    let key_required_but_missing = api_key_required && key.is_none();
+    if key_required_but_missing {
+        let Some(env_var) = api_key_env else {
+            return Ok(key);
+        };
         tracing::debug!(
             "API key not found in {env_var} for backend '{backend}'. \
              Will be injected from secrets store if available."
@@ -40,26 +44,6 @@ struct BaseUrlSpec<'a> {
     backend: &'a str,
     default: Option<&'a str>,
     required: bool,
-}
-
-fn missing_api_key_env<'a>(
-    api_key_required: bool,
-    key: &Option<SecretString>,
-    api_key_env: Option<&'a str>,
-) -> Option<&'a str> {
-    if api_key_required && key.is_none() {
-        api_key_env
-    } else {
-        None
-    }
-}
-
-fn missing_required_base_url_env<'a>(spec: &BaseUrlSpec<'a>, base_url: &str) -> Option<&'a str> {
-    if spec.required && base_url.is_empty() {
-        spec.env_var
-    } else {
-        None
-    }
 }
 
 fn backend_name(ctx: &EnvContext, settings: &Settings) -> Result<String, ConfigError> {
@@ -86,39 +70,22 @@ fn should_warn_unknown_backend(backend: &str, is_nearai: bool, is_bedrock: bool)
     !is_nearai && !is_bedrock && ProviderRegistry::load().find(backend).is_none()
 }
 
-fn resolved_bedrock_region(ctx: &EnvContext, settings: &Settings) -> Result<String, ConfigError> {
-    let explicit_region = optional_env_from(ctx, EnvKey("BEDROCK_REGION"))?
+fn resolve_bedrock_region(ctx: &EnvContext, settings: &Settings) -> Result<String, ConfigError> {
+    let explicit = optional_env_from(ctx, EnvKey("BEDROCK_REGION"))?
         .or_else(|| settings.bedrock_region.clone());
-    if explicit_region.is_none() {
+    if explicit.is_none() {
         tracing::info!("BEDROCK_REGION not set, defaulting to us-east-1");
     }
-    Ok(explicit_region.unwrap_or_else(|| "us-east-1".to_string()))
+    Ok(explicit.unwrap_or_else(|| "us-east-1".to_string()))
 }
 
-fn resolved_bedrock_model(ctx: &EnvContext, settings: &Settings) -> Result<String, ConfigError> {
+fn resolve_bedrock_model(ctx: &EnvContext, settings: &Settings) -> Result<String, ConfigError> {
     optional_env_from(ctx, EnvKey("BEDROCK_MODEL"))?
         .or_else(|| settings.selected_model.clone())
         .ok_or_else(|| ConfigError::MissingRequired {
             key: "BEDROCK_MODEL".to_string(),
             hint: "Set BEDROCK_MODEL when LLM_BACKEND=bedrock".to_string(),
         })
-}
-
-fn resolved_bedrock_cross_region(
-    ctx: &EnvContext,
-    settings: &Settings,
-) -> Result<Option<String>, ConfigError> {
-    let cross_region = optional_env_from(ctx, EnvKey("BEDROCK_CROSS_REGION"))?
-        .or_else(|| settings.bedrock_cross_region.clone());
-    validate_bedrock_cross_region(&cross_region)?;
-    Ok(cross_region)
-}
-
-fn resolved_bedrock_profile(
-    ctx: &EnvContext,
-    settings: &Settings,
-) -> Result<Option<String>, ConfigError> {
-    Ok(optional_env_from(ctx, EnvKey("AWS_PROFILE"))?.or_else(|| settings.bedrock_profile.clone()))
 }
 
 fn resolve_base_url(
@@ -139,11 +106,14 @@ fn resolve_base_url(
     .or_else(|| spec.default.map(String::from))
     .unwrap_or_default();
 
-    if let Some(env_var) = missing_required_base_url_env(spec, &base_url) {
-        return Err(ConfigError::MissingRequired {
-            key: env_var.to_string(),
-            hint: format!("Set {env_var} when LLM_BACKEND={}", spec.backend),
-        });
+    if let Some(env_var) = spec.env_var {
+        let url_required_but_absent = spec.required && base_url.is_empty();
+        if url_required_but_absent {
+            return Err(ConfigError::MissingRequired {
+                key: env_var.to_string(),
+                hint: format!("Set {env_var} when LLM_BACKEND={}", spec.backend),
+            });
+        }
     }
     Ok(base_url)
 }
@@ -394,11 +364,18 @@ impl LlmConfig {
         if !is_bedrock {
             return Ok(None);
         }
+        let region = resolve_bedrock_region(ctx, settings)?;
+        let model = resolve_bedrock_model(ctx, settings)?;
+        let cross_region = optional_env_from(ctx, EnvKey("BEDROCK_CROSS_REGION"))?
+            .or_else(|| settings.bedrock_cross_region.clone());
+        validate_bedrock_cross_region(&cross_region)?;
+        let profile = optional_env_from(ctx, EnvKey("AWS_PROFILE"))?
+            .or_else(|| settings.bedrock_profile.clone());
         Ok(Some(BedrockConfig {
-            region: resolved_bedrock_region(ctx, settings)?,
-            model: resolved_bedrock_model(ctx, settings)?,
-            cross_region: resolved_bedrock_cross_region(ctx, settings)?,
-            profile: resolved_bedrock_profile(ctx, settings)?,
+            region,
+            model,
+            cross_region,
+            profile,
         }))
     }
 

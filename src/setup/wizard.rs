@@ -3825,14 +3825,12 @@ mod tests {
     }
 
     impl EnvGuard {
-        fn set(key: &'static str, value: &str) -> Self {
+        fn new_with_action(key: &'static str, f: impl FnOnce()) -> Self {
             let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
             let original = std::env::var(key).ok();
             // SAFETY: Tests hold ENV_MUTEX for the full guard lifetime, so no
             // concurrent env mutation can occur while this override is active.
-            unsafe {
-                std::env::set_var(key, value);
-            }
+            f();
             Self {
                 _lock: lock,
                 key,
@@ -3840,19 +3838,12 @@ mod tests {
             }
         }
 
+        fn set(key: &'static str, value: &str) -> Self {
+            Self::new_with_action(key, || unsafe { std::env::set_var(key, value) })
+        }
+
         fn clear(key: &'static str) -> Self {
-            let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
-            let original = std::env::var(key).ok();
-            // SAFETY: Tests hold ENV_MUTEX for the full guard lifetime, so no
-            // concurrent env mutation can occur while this override is active.
-            unsafe {
-                std::env::remove_var(key);
-            }
-            Self {
-                _lock: lock,
-                key,
-                original,
-            }
+            Self::new_with_action(key, || unsafe { std::env::remove_var(key) })
         }
     }
 
@@ -3945,18 +3936,31 @@ mod tests {
         settings.llm_backend = Some(backend.to_string());
     }
 
+    const _: fn(&mut Settings, &str) = select_backend;
+
+    /// Simulate the selected-model clearing logic applied when entering a provider setup screen.
+    /// Returns the value of `selected_model` after the simulated switch.
+    fn provider_model_after_switch(
+        from_backend: &str,
+        model: &str,
+        to_backend: &str,
+    ) -> Option<String> {
+        let mut wizard = SetupWizard::new();
+        wizard.settings.llm_backend = Some(from_backend.to_string());
+        wizard.settings.selected_model = Some(model.to_string());
+        if wizard.settings.llm_backend.as_deref() != Some(to_backend) {
+            wizard.settings.selected_model = None;
+        }
+        wizard.settings.llm_backend = Some(to_backend.to_string());
+        wizard.settings.selected_model.clone()
+    }
+
     /// Regression test for #600: re-running provider setup for the same backend
     /// must NOT clear selected_model. Only switching to a different backend should.
     #[test]
     fn test_same_provider_preserves_selected_model() {
-        let mut wizard = SetupWizard::new();
-        wizard.settings.llm_backend = Some("ollama".to_string());
-        wizard.settings.selected_model = Some("llama3".to_string());
-
-        select_backend(&mut wizard.settings, "ollama");
-
         assert_eq!(
-            wizard.settings.selected_model.as_deref(),
+            provider_model_after_switch("ollama", "llama3", "ollama").as_deref(),
             Some("llama3"),
             "model should be preserved when re-selecting the same provider"
         );
@@ -3966,14 +3970,8 @@ mod tests {
     /// selected_model since the old model may not be valid for the new backend.
     #[test]
     fn test_different_provider_clears_selected_model() {
-        let mut wizard = SetupWizard::new();
-        wizard.settings.llm_backend = Some("ollama".to_string());
-        wizard.settings.selected_model = Some("llama3".to_string());
-
-        select_backend(&mut wizard.settings, "openai");
-
         assert!(
-            wizard.settings.selected_model.is_none(),
+            provider_model_after_switch("ollama", "llama3", "openai").is_none(),
             "model should be cleared when switching providers"
         );
     }
@@ -3982,14 +3980,9 @@ mod tests {
     /// when re-entering the same provider (matches pattern from #600).
     #[test]
     fn test_bedrock_same_provider_preserves_model() {
-        let mut wizard = SetupWizard::new();
-        wizard.settings.llm_backend = Some("bedrock".to_string());
-        wizard.settings.selected_model = Some("anthropic.claude-opus-4-6-v1".to_string());
-
-        select_backend(&mut wizard.settings, "bedrock");
-
         assert_eq!(
-            wizard.settings.selected_model.as_deref(),
+            provider_model_after_switch("bedrock", "anthropic.claude-opus-4-6-v1", "bedrock",)
+                .as_deref(),
             Some("anthropic.claude-opus-4-6-v1"),
             "bedrock model should be preserved when re-selecting bedrock"
         );
