@@ -67,6 +67,33 @@ impl AppBuilder {
         Ok(())
     }
 
+    /// Re-resolve the LLM configuration after a credential-injection event,
+    /// logging a warning on failure.
+    ///
+    /// `context` names the injection event for the warning message.
+    async fn re_resolve_llm_config(&mut self, context: &str) {
+        let store: Option<&(dyn crate::db::SettingsStore + Sync)> =
+            self.db.as_ref().map(|db| db.as_ref() as _);
+        let toml_path = self.toml_path.as_deref();
+        if let Err(e) = self
+            .config
+            .re_resolve_llm(store, "default", toml_path)
+            .await
+        {
+            tracing::warn!("Failed to re-resolve LLM config after {context}: {e}");
+        }
+    }
+
+    /// Inject LLM API keys from the encrypted secrets store and re-resolve the
+    /// LLM configuration.
+    async fn apply_secrets_to_llm_config(
+        &mut self,
+        secrets: &(dyn crate::secrets::SecretsStore + Sync),
+    ) {
+        crate::config::inject_llm_keys_from_secrets(secrets, "default").await;
+        self.re_resolve_llm_config("secret injection").await;
+    }
+
     /// Phase 2: Create secrets store.
     ///
     /// Requires a master key and a backend-specific DB handle. After creating
@@ -76,28 +103,12 @@ impl AppBuilder {
         let master_key = match self.config.secrets.master_key() {
             Some(k) => k,
             None => {
-                // No secrets DB available, but we can still load tokens from
-                // OS credential stores (e.g., Anthropic OAuth via Claude Code's
-                // macOS Keychain / Linux ~/.claude/.credentials.json).
+                // No secrets DB available; load tokens from OS credential stores
+                // (e.g. Anthropic OAuth via Claude Code's macOS Keychain /
+                // Linux ~/.claude/.credentials.json).
                 crate::config::inject_os_credentials();
-
-                // Consume unused handles
                 self.handles.take();
-
-                // Re-resolve only the LLM config with OS credentials.
-                let store: Option<&(dyn crate::db::SettingsStore + Sync)> =
-                    self.db.as_ref().map(|db| db.as_ref() as _);
-                let toml_path = self.toml_path.as_deref();
-                if let Err(e) = self
-                    .config
-                    .re_resolve_llm(store, "default", toml_path)
-                    .await
-                {
-                    tracing::warn!(
-                        "Failed to re-resolve LLM config after OS credential injection: {e}"
-                    );
-                }
-
+                self.re_resolve_llm_config("OS credential injection").await;
                 return Ok(());
             }
         };
@@ -105,7 +116,7 @@ impl AppBuilder {
         let crypto = match crate::secrets::SecretsCrypto::new(master_key.clone()) {
             Ok(c) => Arc::new(c),
             Err(e) => {
-                tracing::warn!("Failed to initialize secrets crypto: {}", e);
+                tracing::warn!("Failed to initialise secrets crypto: {}", e);
                 self.handles.take();
                 return Ok(());
             }
@@ -118,20 +129,7 @@ impl AppBuilder {
         let store = crate::secrets::create_secrets_store(crypto, handles);
 
         if let Some(ref secrets) = store {
-            // Inject LLM API keys from encrypted storage
-            crate::config::inject_llm_keys_from_secrets(secrets.as_ref(), "default").await;
-
-            // Re-resolve only the LLM config with newly available keys.
-            let store: Option<&(dyn crate::db::SettingsStore + Sync)> =
-                self.db.as_ref().map(|db| db.as_ref() as _);
-            let toml_path = self.toml_path.as_deref();
-            if let Err(e) = self
-                .config
-                .re_resolve_llm(store, "default", toml_path)
-                .await
-            {
-                tracing::warn!("Failed to re-resolve LLM config after secret injection: {e}");
-            }
+            self.apply_secrets_to_llm_config(secrets.as_ref()).await;
         }
 
         self.secrets_store = store;
