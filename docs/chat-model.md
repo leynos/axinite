@@ -127,9 +127,18 @@ Table 5. Browser-facing chat DTOs.
 | Type | Purpose | Evidence |
 | ------ | --------- | ---------- |
 | `SendMessageRequest` | REST request body for `/api/chat/send` | `src/channels/web/types.rs` |
+| `ThreadListResponse` | Browser sidebar model for the pinned assistant thread, regular conversations, and the active-thread selection | `src/channels/web/types.rs`, `src/channels/web/handlers/chat_threads.rs` |
 | `HistoryResponse`, `TurnInfo`, `ToolCallInfo` | Browser history and thread view model | `src/channels/web/types.rs`, `src/channels/web/util.rs` |
 | `PendingApprovalInfo` | Re-renders approval state after a thread switch | `src/channels/web/types.rs`, `src/channels/web/handlers/chat_history.rs` |
 | `SseEvent` | Unified live event stream for responses, tool activity, approvals, auth, jobs, and generated images | `src/channels/web/types.rs`, `src/channels/web/mod.rs` |
+
+The browser sidebar is intentionally not a flat list of identical items.
+`ThreadListResponse` separates a dedicated `assistant_thread` field from the
+ordinary `threads` list. The frontend renders that assistant conversation into
+its own pinned `Assistant` row and renders every other stored conversation
+under the `Conversations` header. That means `Assistant` is the canonical
+gateway chat thread, not just the first item in the same list as user-created
+threads.
 
 ## 4. End-to-end data flow
 
@@ -247,6 +256,23 @@ the exact same UUID, and registers that mapping with `SessionManager`.
 That hydration step matters because otherwise a browser reload or thread switch
 would create a fresh in-memory thread and split one logical conversation across
 two internal identifiers.
+
+The browser thread list adds another important distinction. The gateway keeps a
+dedicated assistant conversation for the `gateway` channel by calling
+`get_or_create_assistant_conversation()` when it builds
+`/api/chat/threads`. That conversation is removed from the ordinary
+conversation summaries and returned separately as `assistant_thread`, while the
+remaining persisted conversations are returned as `threads`.
+
+The frontend preserves that split. `loadThreads()` binds
+`assistant_thread.id` to a dedicated `assistantThreadId`, hard-codes its
+sidebar label to `Assistant`, and defaults to it on first load when no thread
+is selected. Ordinary conversations are rendered from `threads`,
+switched through `switchThread(thread.id)`, and titled from their stored title,
+channel, type, or UUID prefix. Creating a new thread through
+`POST /api/chat/thread/new` creates a regular `thread_type = "thread"`
+conversation and selects it, but it does not replace the pinned assistant
+conversation.
 
 ### 4.5 Safety validation and turn start
 
