@@ -10,9 +10,9 @@ GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 all: check-fmt lint test
 
 install:
-	$(CARGO) install --path .
 	./scripts/build-wasm-extensions.sh
 	./scripts/sync-local-wasm-overrides.sh
+	$(CARGO) install --path .
 
 build-github-tool-wasm:
 	$(CARGO) build --manifest-path $(GITHUB_TOOL_MANIFEST) --release --target $(GITHUB_TOOL_WASM_TARGET)
