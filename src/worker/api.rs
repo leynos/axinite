@@ -86,7 +86,12 @@ impl WorkerHttpClient {
     }
 
     fn url(&self, path: &str) -> String {
-        worker_job_url(&self.orchestrator_url, &self.job_id.to_string(), path)
+        let base = self.orchestrator_url.trim_end_matches('/');
+        format!(
+            "{}/{}",
+            base,
+            crate::worker::api::job_scoped_path(&self.job_id.to_string(), path).trim_start_matches('/')
+        )
     }
 
     async fn send_post_json<B: Serialize>(
@@ -277,7 +282,9 @@ async fn map_remote_tool_status(resp: reqwest::Response) -> WorkerError {
 
     match status {
         reqwest::StatusCode::BAD_REQUEST => WorkerError::BadRequest { reason },
-        reqwest::StatusCode::FORBIDDEN => WorkerError::Unauthorized { reason },
+        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+            WorkerError::Unauthorized { reason }
+        }
         reqwest::StatusCode::TOO_MANY_REQUESTS => WorkerError::RateLimited {
             reason,
             retry_after,

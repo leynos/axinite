@@ -99,11 +99,20 @@ pub const WORKER_HEALTH_PATH: &str = "health";
 /// Axum route for health check endpoint (no job_id path component).
 pub const WORKER_HEALTH_ROUTE: &str = concatcp!("/", WORKER_HEALTH_PATH);
 
+/// Build a concrete job-scoped path from a job ID and relative suffix.
+///
+/// Uses the canonical `WORKER_PREFIX` pattern so route registration and
+/// client URL construction share the same source of truth.
+pub fn job_scoped_path(job_id: &str, relative: &str) -> String {
+    WORKER_PREFIX.replace("{job_id}", job_id) + relative
+}
+
 /// Build a worker job URL path from the orchestrator URL, job ID, and path suffix.
 ///
 /// Returns a canonical URL of the form `{orchestrator_url}/worker/{job_id}/{path}`.
 pub fn worker_job_url(orchestrator_url: &str, job_id: &str, path: &str) -> String {
-    format!("{}/worker/{}/{}", orchestrator_url, job_id, path)
+    let base = orchestrator_url.trim_end_matches('/');
+    format!("{}/{}/{}", base, job_scoped_path(job_id, "").trim_start_matches('/'), path)
 }
 
 /// Status update sent from worker to orchestrator.

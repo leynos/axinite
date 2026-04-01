@@ -69,6 +69,22 @@ enum PreLoopFailureCase {
     HydrateCredentials,
 }
 
+async fn poll_result_event(state: &RuntimeTestState) -> serde_json::Value {
+    let mut attempts = 0;
+    loop {
+        let result_events = state.result_events.lock().await;
+        if !result_events.is_empty() {
+            return result_events[0].clone();
+        }
+        drop(result_events);
+        attempts += 1;
+        if attempts > 50 {
+            panic!("expected a terminal result event within 500ms");
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    }
+}
+
 async fn assert_startup_failure_completions(state: &RuntimeTestState) {
     let completions = state.completions.lock().await;
     assert_eq!(
@@ -82,22 +98,9 @@ async fn assert_startup_failure_completions(state: &RuntimeTestState) {
     );
     drop(completions);
 
-    // Wait for the result event to be delivered (with timeout)
-    let mut attempts = 0;
-    loop {
-        let result_events = state.result_events.lock().await;
-        if !result_events.is_empty() {
-            assert_eq!(result_events[0]["message"], "Worker failed during startup");
-            assert_eq!(result_events[0]["success"], false);
-            break;
-        }
-        drop(result_events);
-        attempts += 1;
-        if attempts > 50 {
-            panic!("expected a terminal result event within 500ms");
-        }
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-    }
+    let result_event = poll_result_event(state).await;
+    assert_eq!(result_event["message"], "Worker failed during startup");
+    assert_eq!(result_event["success"], false);
 }
 
 async fn assert_startup_failure(state: &RuntimeTestState) {
@@ -248,20 +251,7 @@ async fn worker_runtime_sanitizes_failure_messages(
     assert_eq!(completions[0].iterations, 7);
     drop(completions);
 
-    // Wait for the result event to be delivered (with timeout)
-    let mut attempts = 0;
-    let result_event = loop {
-        let result_events = state.result_events.lock().await;
-        if !result_events.is_empty() {
-            break result_events[0].clone();
-        }
-        drop(result_events);
-        attempts += 1;
-        if attempts > 50 {
-            panic!("expected a terminal result event within 500ms");
-        }
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-    };
+    let result_event = poll_result_event(&state).await;
 
     assert_eq!(result_event["message"], expected_message);
     assert_eq!(result_event["success"], false);

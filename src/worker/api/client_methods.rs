@@ -97,9 +97,11 @@ impl WorkerHttpClient {
         }
 
         if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
             return Err(WorkerError::OrchestratorRejected {
                 job_id: self.job_id,
-                reason: format!("prompt endpoint returned {}", resp.status()),
+                reason: format!("prompt endpoint returned {}: {}", status, body),
             });
         }
 
