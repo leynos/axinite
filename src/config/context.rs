@@ -16,10 +16,17 @@ use crate::config::INJECTED_VARS;
 const IRONCLAW_BASE_DIR_ENV: &str = "IRONCLAW_BASE_DIR";
 
 /// Snapshot of environment-backed configuration inputs.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct EnvContext {
     env_vars: HashMap<String, String>,
     secrets: HashMap<String, String>,
+    base_dir: PathBuf,
+}
+
+impl Default for EnvContext {
+    fn default() -> Self {
+        Self::for_testing(HashMap::new(), HashMap::new())
+    }
 }
 
 impl EnvContext {
@@ -30,7 +37,12 @@ impl EnvContext {
             Ok(map) => map.clone(),
             Err(poisoned) => poisoned.into_inner().clone(),
         };
-        Self { env_vars, secrets }
+        let base_dir = resolve_base_dir_snapshot(&env_vars);
+        Self {
+            env_vars,
+            secrets,
+            base_dir,
+        }
     }
 
     /// Construct an isolated context for tests or pure callers.
@@ -38,7 +50,12 @@ impl EnvContext {
         env_vars: HashMap<String, String>,
         secrets: HashMap<String, String>,
     ) -> Self {
-        Self { env_vars, secrets }
+        let base_dir = resolve_base_dir_snapshot(&env_vars);
+        Self {
+            env_vars,
+            secrets,
+            base_dir,
+        }
     }
 
     /// Get a value from the snapshot, preferring env vars over injected secrets.
@@ -64,12 +81,17 @@ impl EnvContext {
 
     /// Whether either map contains the key.
     pub fn contains_key(&self, key: &str) -> bool {
-        self.env_vars.contains_key(key) || self.secrets.contains_key(key)
+        self.get(key).is_some()
     }
 
     /// Add or replace an env var in the snapshot.
     pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.env_vars.insert(key.into(), value.into());
+        let key = key.into();
+        let value = value.into();
+        self.env_vars.insert(key.clone(), value);
+        if key == IRONCLAW_BASE_DIR_ENV {
+            self.base_dir = resolve_base_dir_snapshot(&self.env_vars);
+        }
         self
     }
 
@@ -91,17 +113,7 @@ impl EnvContext {
 
     /// Resolve the effective IronClaw base directory from the snapshot.
     pub fn ironclaw_base_dir(&self) -> PathBuf {
-        self.env_vars
-            .get(IRONCLAW_BASE_DIR_ENV)
-            .map(PathBuf::from)
-            .map(|path| {
-                if path.as_os_str().is_empty() {
-                    default_base_dir()
-                } else {
-                    path
-                }
-            })
-            .unwrap_or_else(default_base_dir)
+        self.base_dir.clone()
     }
 }
 
@@ -126,6 +138,14 @@ fn default_base_dir() -> PathBuf {
             .unwrap_or_else(|_| PathBuf::from("/tmp"))
             .join(".ironclaw")
     }
+}
+
+fn resolve_base_dir_snapshot(env_vars: &HashMap<String, String>) -> PathBuf {
+    env_vars
+        .get(IRONCLAW_BASE_DIR_ENV)
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(default_base_dir)
 }
 
 #[cfg(test)]

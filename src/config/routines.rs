@@ -1,3 +1,8 @@
+//! Background routine scheduler configuration.
+//!
+//! This module resolves the env-driven toggles and limits that control routine
+//! execution, and retains a small ambient wrapper for older callers.
+
 use crate::config::EnvContext;
 use crate::config::helpers::{EnvKey, parse_bool_env_from, parse_optional_env_from};
 use crate::error::ConfigError;

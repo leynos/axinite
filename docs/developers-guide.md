@@ -182,7 +182,7 @@ them to do the capture work:
 
 For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
-tests independent from host machine secrets, keychains, and shell state.
+tests independent of host machine secrets, keychains, and shell state.
 
 ## Fast local validation loop
 

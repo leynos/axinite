@@ -1,3 +1,8 @@
+//! Audio-transcription configuration.
+//!
+//! This module resolves transcription settings from explicit snapshots while
+//! preserving an ambient wrapper for older startup paths.
+
 use secrecy::SecretString;
 
 use crate::config::EnvContext;

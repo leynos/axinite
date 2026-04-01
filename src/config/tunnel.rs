@@ -1,3 +1,8 @@
+//! Public tunnel configuration for webhook-capable channels.
+//!
+//! This module resolves tunnel settings from env and persisted settings, with
+//! explicit precedence rules and an ambient compatibility wrapper.
+
 use crate::config::EnvContext;
 use crate::config::helpers::{EnvKey, optional_env_from, parse_bool_env_from};
 use crate::error::ConfigError;

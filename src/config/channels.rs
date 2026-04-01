@@ -112,21 +112,22 @@ fn resolve_http_config(
     ctx: &EnvContext,
     settings: &Settings,
 ) -> Result<Option<HttpConfig>, ConfigError> {
-    let host = optional_env_from(ctx, EnvKey("HTTP_HOST"))?
-        .or_else(|| settings.channels.http_host.clone());
-    let port = optional_env_from(ctx, EnvKey("HTTP_PORT"))?
+    let env_host = optional_env_from(ctx, EnvKey("HTTP_HOST"))?;
+    let env_port = optional_env_from(ctx, EnvKey("HTTP_PORT"))?
         .map(|s| {
             s.parse::<u16>().map_err(|e| ConfigError::InvalidValue {
                 key: "HTTP_PORT".to_string(),
                 message: format!("{e}"),
             })
         })
-        .transpose()?
-        .or(settings.channels.http_port);
+        .transpose()?;
 
-    if http_channel_inactive(settings.channels.http_enabled, &host, &port) {
+    if http_channel_inactive(settings.channels.http_enabled, &env_host, &env_port) {
         return Ok(None);
     }
+
+    let host = env_host.or_else(|| settings.channels.http_host.clone());
+    let port = env_port.or(settings.channels.http_port);
     Ok(Some(HttpConfig {
         host: host.unwrap_or_else(|| "0.0.0.0".to_string()),
         port: port.unwrap_or(8080),
@@ -302,6 +303,26 @@ mod tests {
         let http = cfg.http.expect("HTTP config should be present");
         assert_eq!(http.host, "127.0.0.1");
         assert_eq!(http.port, 9090);
+    }
+
+    #[test]
+    fn resolve_from_keeps_http_disabled_when_only_settings_host_and_port_exist() {
+        let settings = Settings {
+            channels: crate::settings::ChannelSettings {
+                http_enabled: false,
+                http_host: Some("127.0.0.1".to_string()),
+                http_port: Some(9090),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let cfg = ChannelsConfig::resolve_from(&EnvContext::default(), &settings)
+            .expect("disabled HTTP without env overrides should resolve");
+        assert!(
+            cfg.http.is_none(),
+            "persisted host/port must not enable HTTP"
+        );
     }
 
     #[test]

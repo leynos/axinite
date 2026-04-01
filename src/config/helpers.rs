@@ -79,7 +79,11 @@ fn parse_bool_core(key: EnvKey, raw: Option<String>, default: bool) -> Result<bo
 /// parallel.  Every `unsafe { set_var / remove_var }` call in tests
 /// MUST hold this single lock.
 // Shared env-mutation guard retained for integration tests and helper modules.
+#[cfg(any(test, feature = "test-helpers"))]
 pub(crate) static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(any(test, feature = "test-helpers"))]
+const _: &std::sync::Mutex<()> = &ENV_MUTEX;
 
 pub(crate) fn optional_env_from(
     ctx: &EnvContext,

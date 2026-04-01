@@ -3741,7 +3741,7 @@ mod tests {
 
     #[test]
     fn test_resolve_anthropic_auth_reads_api_key_from_overlay_helper() {
-        let _guard = EnvGuard::set("ANTHROPIC_API_KEY", "sk-ant-api-test");
+        let _guard = OverlayGuard::set("ANTHROPIC_API_KEY", "sk-ant-api-test");
         let auth = resolve_anthropic_auth(None);
         assert!(matches!(auth, Some(AnthropicAuth::ApiKey(_))));
     }
@@ -3819,25 +3819,36 @@ mod tests {
 
     /// RAII guard that sets/clears an env var for the duration of a test.
     struct EnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
         key: &'static str,
         original: Option<String>,
     }
 
     impl EnvGuard {
         fn set(key: &'static str, value: &str) -> Self {
+            let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
             let original = std::env::var(key).ok();
             unsafe {
                 std::env::set_var(key, value);
             }
-            Self { key, original }
+            Self {
+                _lock: lock,
+                key,
+                original,
+            }
         }
 
         fn clear(key: &'static str) -> Self {
+            let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
             let original = std::env::var(key).ok();
             unsafe {
                 std::env::remove_var(key);
             }
-            Self { key, original }
+            Self {
+                _lock: lock,
+                key,
+                original,
+            }
         }
     }
 
@@ -3850,6 +3861,72 @@ mod tests {
                     std::env::remove_var(self.key);
                 }
             }
+        }
+    }
+
+    /// RAII guard that updates multiple env vars under a single test mutex.
+    struct EnvBatchGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        originals: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvBatchGuard {
+        fn new(updates: &[(&'static str, Option<&str>)]) -> Self {
+            let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
+            let originals = updates
+                .iter()
+                .map(|(key, _)| (*key, std::env::var(key).ok()))
+                .collect::<Vec<_>>();
+
+            for (key, value) in updates {
+                unsafe {
+                    if let Some(value) = value {
+                        std::env::set_var(key, value);
+                    } else {
+                        std::env::remove_var(key);
+                    }
+                }
+            }
+
+            Self {
+                _lock: lock,
+                originals,
+            }
+        }
+    }
+
+    impl Drop for EnvBatchGuard {
+        fn drop(&mut self) {
+            for (key, original) in &self.originals {
+                unsafe {
+                    if let Some(value) = original {
+                        std::env::set_var(key, value);
+                    } else {
+                        std::env::remove_var(key);
+                    }
+                }
+            }
+        }
+    }
+
+    /// RAII guard for injected config overlay entries used by auth-resolution tests.
+    struct OverlayGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        key: &'static str,
+    }
+
+    impl OverlayGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
+            crate::config::remove_single_var(key);
+            crate::config::inject_single_var(key, value);
+            Self { _lock: lock, key }
+        }
+    }
+
+    impl Drop for OverlayGuard {
+        fn drop(&mut self) {
+            crate::config::remove_single_var(self.key);
         }
     }
 
@@ -4027,9 +4104,10 @@ mod tests {
     fn test_build_nearai_model_fetch_config_picks_up_api_key_env() {
         use secrecy::ExposeSecret;
 
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let _guard = EnvGuard::set("NEARAI_API_KEY", "test-cloud-api-key-12345");
-        let _guard2 = EnvGuard::clear("NEARAI_BASE_URL");
+        let _guard = EnvBatchGuard::new(&[
+            ("NEARAI_API_KEY", Some("test-cloud-api-key-12345")),
+            ("NEARAI_BASE_URL", None),
+        ]);
 
         let config = build_nearai_model_fetch_config();
         assert!(
@@ -4051,9 +4129,7 @@ mod tests {
     /// the config should have `api_key: None` (session token path).
     #[test]
     fn test_build_nearai_model_fetch_config_none_when_no_api_key() {
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let _guard = EnvGuard::clear("NEARAI_API_KEY");
-        let _guard2 = EnvGuard::clear("NEARAI_BASE_URL");
+        let _guard = EnvBatchGuard::new(&[("NEARAI_API_KEY", None), ("NEARAI_BASE_URL", None)]);
 
         let config = build_nearai_model_fetch_config();
         assert!(
@@ -4070,7 +4146,6 @@ mod tests {
     /// Regression test for #799: empty NEARAI_API_KEY should be treated as absent.
     #[test]
     fn test_build_nearai_model_fetch_config_none_when_empty_api_key() {
-        let _lock = ENV_MUTEX.lock().unwrap();
         let _guard = EnvGuard::set("NEARAI_API_KEY", "");
 
         let config = build_nearai_model_fetch_config();
