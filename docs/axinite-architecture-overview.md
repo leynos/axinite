@@ -148,9 +148,12 @@ component assembly from side-effect-heavy activation:
 
 **Phase 1: Assembly (`build_components()`)** — Constructs all components and
 returns them along with a `RuntimeSideEffects` struct containing deferred
-background work. This phase is pure enough for unit tests: no background I/O
-runs, no cleanup tasks spawn, and the returned components are fully wired and
-ready for inspection.
+background work. This phase defers runtime background tasks (cleanup, backfill)
+but still performs necessary awaited bootstrap I/O: database connection and
+migrations, secrets store initialisation, LLM provider chain setup, extension
+discovery, MCP server and WASM tool loading. The returned components are fully
+wired and ready for inspection; only fire-and-forget background work is deferred
+to Phase 2.
 
 **Phase 2: Activation (`RuntimeSideEffects::start()`)** — Runs workspace
 import and seeding synchronously (blocking until complete), then spawns

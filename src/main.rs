@@ -85,6 +85,8 @@ struct GatewaySetup {
     gateway_url: Option<String>,
     sse_sender: Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
     routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
+    /// Shared scheduler slot for job tool registration and runtime binding.
+    scheduler_slot: ironclaw::tools::builtin::SchedulerSlot,
 }
 
 /// Bundled inputs for the agent-run phase, produced by the
@@ -502,6 +504,7 @@ async fn setup_gateway_channel(
         gateway_url,
         sse_sender,
         routine_engine_slot,
+        scheduler_slot: scheduler_slot.clone(),
     })
 }
 
@@ -788,7 +791,6 @@ async fn phase_init_channels_and_hooks(
     config: &Config,
     cli: &Cli,
     components: &ironclaw::app::AppComponents,
-    loaded_wasm_channel_names: &[String],
 ) -> anyhow::Result<(ChannelSetup, ironclaw::hooks::HookBootstrapSummary)> {
     let channel_setup = setup_channels(config, cli, components).await?;
 
@@ -799,7 +801,7 @@ async fn phase_init_channels_and_hooks(
         &config.wasm.tools_dir,
         &config.channels.wasm_channels_dir,
         &active_tool_names,
-        loaded_wasm_channel_names,
+        &channel_setup.loaded_wasm_channel_names,
         &components.dev_loaded_tool_names,
     )
     .await;
@@ -820,9 +822,9 @@ async fn phase_init_channels_and_hooks(
 async fn phase_setup_gateway(
     config: &Config,
     components: &ironclaw::app::AppComponents,
-    channel_setup: &ChannelSetup,
+    mut channel_setup: ChannelSetup,
     ctx: &GatewayPhaseContext<'_>,
-) -> anyhow::Result<GatewaySetup> {
+) -> anyhow::Result<(GatewaySetup, ChannelSetup)> {
     let session_manager =
         Arc::new(ironclaw::agent::SessionManager::new().with_hooks(components.hooks.clone()));
 
@@ -862,7 +864,10 @@ async fn phase_setup_gateway(
     )
     .await?;
 
-    Ok(gateway_setup)
+    // Update channel_setup.channel_names with the modified list (includes "gateway")
+    channel_setup.channel_names = channel_names;
+
+    Ok((gateway_setup, channel_setup))
 }
 
 /// Phase 7: Print boot screen if CLI mode is enabled.
@@ -1062,9 +1067,8 @@ async fn phase_run_agent(
         Some(session_manager),
     );
 
-    let scheduler_slot: ironclaw::tools::builtin::SchedulerSlot =
-        Arc::new(tokio::sync::RwLock::new(None));
-    *scheduler_slot.write().await = Some(agent.scheduler());
+    // Reuse the scheduler_slot from gateway setup (used by register_job_tools)
+    *gateway_setup.scheduler_slot.write().await = Some(agent.scheduler());
 
     if let Some(ref jm) = orch.container_job_manager {
         let reaper_jm = Arc::clone(jm);
@@ -1127,18 +1131,15 @@ async fn async_main() -> anyhow::Result<()> {
 
     // Phase 4: Start tunnel and orchestrator
     let (active_tunnel, orch) = phase_tunnel_and_orchestrator(&config, &components).await?;
-    let loaded_wasm_channel_names = Vec::new(); // Will be populated in phase 5
-
     // Phase 5: Initialize channels and hooks
     let (channel_setup, _hook_bootstrap) =
-        phase_init_channels_and_hooks(&config, &cli, &components, &loaded_wasm_channel_names)
-            .await?;
+        phase_init_channels_and_hooks(&config, &cli, &components).await?;
 
     // Phase 6: Setup gateway
-    let gateway_setup = phase_setup_gateway(
+    let (gateway_setup, channel_setup) = phase_setup_gateway(
         &config,
         &components,
-        &channel_setup,
+        channel_setup,
         &GatewayPhaseContext {
             log_broadcaster: &log_broadcaster,
             log_level_handle: &log_level_handle,
@@ -1208,6 +1209,7 @@ mod tests {
             gateway_url: Some("http://localhost:8080".to_string()),
             sse_sender: Some(tx),
             routine_engine_slot: None,
+            scheduler_slot: Arc::new(tokio::sync::RwLock::new(None)),
         };
         assert_eq!(setup.gateway_url, Some("http://localhost:8080".to_string()));
     }
@@ -1222,6 +1224,7 @@ mod tests {
             gateway_url: None,
             sse_sender: Some(tx),
             routine_engine_slot: None,
+            scheduler_slot: Arc::new(tokio::sync::RwLock::new(None)),
         };
         let orch = OrchestratorSetup {
             container_job_manager: None,
@@ -1246,6 +1249,7 @@ mod tests {
             gateway_url: Some("http://test".to_string()),
             sse_sender: Some(tx),
             routine_engine_slot: None,
+            scheduler_slot: Arc::new(tokio::sync::RwLock::new(None)),
         };
         let ctx = BootScreenContext {
             gateway_setup: &gateway,
