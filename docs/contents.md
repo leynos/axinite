@@ -171,6 +171,9 @@
   - [RFC 0017: Hierarchical recall for memoryd](rfcs/0017-hierarchical-recall-for-memoryd.md)
     proposes the theme-aware, budget-aware read path that expands to episodes
     and messages only when the extra evidence is worth the token cost.
+  - [RFC 0018: Adopt the SolidJS browser front end](rfcs/0018-solidjs-front-end-adoption.md)
+    proposes the staged migration from the Rust-embedded browser shell to the
+    new SolidJS application proven out in `axinite-mockup`.
 
 ## ADRs
 
