@@ -5,9 +5,14 @@ WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wa
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 
-.PHONY: all build-github-tool-wasm check-fmt typecheck lint test test-cargo test-matrix test-matrix-cargo clean
+.PHONY: all install build-github-tool-wasm check-fmt typecheck lint test test-cargo test-matrix test-matrix-cargo clean
 
 all: check-fmt lint test
+
+install:
+	$(CARGO) install --path .
+	./scripts/build-wasm-extensions.sh
+	./scripts/sync-local-wasm-overrides.sh
 
 build-github-tool-wasm:
 	$(CARGO) build --manifest-path $(GITHUB_TOOL_MANIFEST) --release --target $(GITHUB_TOOL_WASM_TARGET)
