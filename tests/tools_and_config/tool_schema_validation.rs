@@ -32,8 +32,7 @@ fn extension_manager_fixture() -> ExtensionManagerFixture {
     let master_key = secrecy::SecretString::from("0123456789abcdef0123456789abcdef".to_string());
     let crypto = std::sync::Arc::new(SecretsCrypto::new(master_key).expect("crypto"));
 
-    let mcp_clients =
-        std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
+    let mcp_clients = ironclaw::extensions::McpClientsMap::default();
 
     ExtensionManagerFixture {
         _dir: dir,

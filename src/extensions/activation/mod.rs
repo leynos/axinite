@@ -28,8 +28,8 @@ mod noop;
 mod wasm_channel;
 mod wasm_tool;
 
-pub use live_mcp::{LiveMcpActivation, LiveMcpActivationConfig};
-pub use live_wasm_channel::LiveWasmChannelActivation;
+pub use live_mcp::{LiveMcpActivation, LiveMcpActivationConfig, McpClientCell, McpClientsMap};
+pub use live_wasm_channel::{LiveWasmChannelActivation, LiveWasmChannelActivationConfig};
 pub use live_wasm_tool::{LiveWasmToolActivation, LiveWasmToolActivationConfig};
 pub use mcp::*;
 pub use noop::*;

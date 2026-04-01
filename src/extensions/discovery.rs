@@ -7,12 +7,24 @@
 //!
 //! All sources run concurrently with per-source timeouts.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::extensions::DiscoveryPort;
-use crate::extensions::{AuthHint, DiscoveryFuture, ExtensionKind, ExtensionSource, RegistryEntry};
+use crate::extensions::{AuthHint, ExtensionKind, ExtensionSource, RegistryEntry};
+
+/// Boxed future alias for dyn-safe discovery methods.
+pub type DiscoveryFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Object-safe port for discovering extensions.
+///
+/// Used behind `Arc<dyn DiscoveryPort>` in [`super::manager::ExtensionManager`].
+pub trait DiscoveryPort: Send + Sync {
+    /// Search for extensions matching the query string.
+    fn discover<'a>(&'a self, query: &'a str) -> DiscoveryFuture<'a, Vec<RegistryEntry>>;
+}
 
 /// Handles online discovery of MCP servers.
 pub struct OnlineDiscovery {

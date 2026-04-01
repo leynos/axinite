@@ -14,6 +14,7 @@ use crate::config::Config;
 use crate::context::ContextManager;
 use crate::db::Database;
 use crate::extensions::ExtensionManager;
+use crate::extensions::{LiveMcpActivation, LiveMcpActivationConfig, McpClientsMap};
 use crate::hooks::HookRegistry;
 use crate::llm::{LlmProvider, RecordingLlm, SessionManager};
 use crate::safety::SafetyLayer;
@@ -126,8 +127,6 @@ impl AppBuilder {
         tools.register_image_tools(ImageToolsRegistration::new(api_base, api_key, gen_model));
     }
 
-    /// `mcp_clients` is shared between the manager and the live MCP adapter
-    /// so that both see the same set of active connections.
     #[expect(
         clippy::too_many_arguments,
         reason = "FIXME: Group parameters into a config struct (https://github.com/leynos/axinite/issues/85)"
@@ -141,15 +140,14 @@ impl AppBuilder {
         ext_secrets: Arc<dyn crate::secrets::SecretsStore + Send + Sync>,
         wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
         catalog_entries: Vec<crate::extensions::RegistryEntry>,
+        mcp_clients: McpClientsMap,
     ) -> Arc<ExtensionManager> {
         let discovery = Arc::new(crate::extensions::OnlineDiscovery::new());
         let relay_config = crate::config::RelayConfig::from_env();
         let gateway_token = std::env::var("GATEWAY_AUTH_TOKEN").ok();
 
-        let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
-
-        let mcp_activation: Arc<dyn crate::extensions::McpActivationPort> = Arc::new(
-            crate::extensions::LiveMcpActivation::new(crate::extensions::LiveMcpActivationConfig {
+        let mcp_activation: Arc<dyn crate::extensions::McpActivationPort> =
+            Arc::new(LiveMcpActivation::new(LiveMcpActivationConfig {
                 mcp_session_manager: Arc::clone(mcp_session_manager),
                 mcp_process_manager: Arc::clone(mcp_process_manager),
                 mcp_clients: Arc::clone(&mcp_clients),
@@ -157,8 +155,7 @@ impl AppBuilder {
                 tool_registry: Arc::clone(tools),
                 user_id: "default".to_string(),
                 store: self.db.clone(),
-            }),
-        );
+            }));
         let wasm_tool_activation: Arc<dyn crate::extensions::WasmToolActivationPort> =
             Arc::new(crate::extensions::LiveWasmToolActivation::new(
                 crate::extensions::LiveWasmToolActivationConfig {
@@ -169,7 +166,33 @@ impl AppBuilder {
                     hooks: Some(Arc::clone(hooks)),
                 },
             ));
-        let live_wasm_channel = Arc::new(crate::extensions::LiveWasmChannelActivation::new());
+
+        // Create WASM channel activation with config (no back-reference needed)
+        let active_channel_names =
+            Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new()));
+        let activation_errors =
+            Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
+        let sse_sender = Arc::new(tokio::sync::RwLock::new(None));
+        let installed_relay_extensions =
+            Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new()));
+
+        let live_wasm_channel = Arc::new(crate::extensions::LiveWasmChannelActivation::new(
+            crate::extensions::LiveWasmChannelActivationConfig {
+                active_channel_names: Arc::clone(&active_channel_names),
+                activation_errors: Arc::clone(&activation_errors),
+                sse_sender: Arc::clone(&sse_sender),
+                wasm_channels_dir: self.config.channels.wasm_channels_dir.clone(),
+                secrets: Arc::clone(&ext_secrets),
+                channel_runtime: Arc::new(tokio::sync::RwLock::new(None)),
+                relay_channel_manager: Arc::new(tokio::sync::RwLock::new(None)),
+                tunnel_url: self.config.tunnel.public_url.clone(),
+                user_id: "default".to_string(),
+                store: self.db.clone(),
+                relay_config: relay_config.clone(),
+                gateway_token: gateway_token.clone(),
+                installed_relay_extensions: Arc::clone(&installed_relay_extensions),
+            },
+        ));
         let wasm_channel_activation: Arc<dyn crate::extensions::WasmChannelActivationPort> =
             Arc::clone(&live_wasm_channel) as _;
 
@@ -194,7 +217,6 @@ impl AppBuilder {
             },
         ));
 
-        live_wasm_channel.set_manager(Arc::clone(&manager));
         tools.register_extension_tools(Arc::clone(&manager));
         tracing::debug!("Extension manager initialized with in-chat discovery tools");
         manager
@@ -482,6 +504,7 @@ impl AppBuilder {
 
         let mcp_session_manager = Arc::new(McpSessionManager::new());
         let mcp_process_manager = Arc::new(McpProcessManager::new());
+        let mcp_clients = McpClientsMap::default();
 
         // Create WASM tool runtime eagerly so extensions installed after startup
         // (e.g. via the web UI) can still be activated. The tools directory is only
@@ -558,6 +581,7 @@ impl AppBuilder {
             let tools = Arc::clone(tools);
             let mcp_sm = Arc::clone(&mcp_session_manager);
             let pm = Arc::clone(&mcp_process_manager);
+            let mcp_clients = Arc::clone(&mcp_clients);
             async move {
                 let servers_result = if let Some(ref d) = db {
                     load_mcp_servers_from_db(d.as_ref(), "default").await
@@ -580,6 +604,7 @@ impl AppBuilder {
                             let secrets = secrets_store.clone();
                             let tools = Arc::clone(&tools);
                             let pm = Arc::clone(&pm);
+                            let mcp_clients = Arc::clone(&mcp_clients);
 
                             join_set.spawn(async move {
                                 let server_name = server.name.clone();
@@ -603,6 +628,12 @@ impl AppBuilder {
                                         return;
                                     }
                                 };
+
+                                // Insert the client into the shared map
+                                let client = Arc::new(client);
+                                let cell = Arc::new(tokio::sync::OnceCell::new());
+                                let _ = cell.set(Arc::clone(&client));
+                                mcp_clients.write().await.insert(server_name.clone(), cell);
 
                                 match client.list_tools().await {
                                     Ok(mcp_tools) => {
@@ -717,6 +748,7 @@ impl AppBuilder {
                 ext_secrets,
                 wasm_tool_runtime.clone(),
                 catalog_entries.clone(),
+                Arc::clone(&mcp_clients),
             )
             .await,
         );

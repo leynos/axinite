@@ -180,7 +180,7 @@ fn test_manager_stub() -> Arc<ExtensionManager> {
 
     let master_key = secrecy::SecretString::from(TEST_CRYPTO_KEY.to_string());
     let crypto = Arc::new(SecretsCrypto::new(master_key).expect("create secrets crypto"));
-    let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
+    let mcp_clients = crate::extensions::McpClientsMap::default();
 
     Arc::new(ExtensionManager::new(
         crate::extensions::ExtensionManagerConfig {
