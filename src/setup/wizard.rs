@@ -3819,7 +3819,7 @@ mod tests {
 
     /// RAII guard that sets/clears an env var for the duration of a test.
     struct EnvGuard {
-        _lock: std::sync::MutexGuard<'static, ()>,
+        _lock: crate::config::helpers::EnvMutexGuard<'static>,
         key: &'static str,
         original: Option<String>,
     }
@@ -3828,6 +3828,8 @@ mod tests {
         fn set(key: &'static str, value: &str) -> Self {
             let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
             let original = std::env::var(key).ok();
+            // SAFETY: Tests hold ENV_MUTEX for the full guard lifetime, so no
+            // concurrent env mutation can occur while this override is active.
             unsafe {
                 std::env::set_var(key, value);
             }
@@ -3841,6 +3843,8 @@ mod tests {
         fn clear(key: &'static str) -> Self {
             let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
             let original = std::env::var(key).ok();
+            // SAFETY: Tests hold ENV_MUTEX for the full guard lifetime, so no
+            // concurrent env mutation can occur while this override is active.
             unsafe {
                 std::env::remove_var(key);
             }
@@ -3866,7 +3870,7 @@ mod tests {
 
     /// RAII guard that updates multiple env vars under a single test mutex.
     struct EnvBatchGuard {
-        _lock: std::sync::MutexGuard<'static, ()>,
+        _lock: crate::config::helpers::EnvMutexGuard<'static>,
         originals: Vec<(&'static str, Option<String>)>,
     }
 
@@ -3879,6 +3883,8 @@ mod tests {
                 .collect::<Vec<_>>();
 
             for (key, value) in updates {
+                // SAFETY: Tests hold ENV_MUTEX for the full batch-guard
+                // lifetime, so these mutations remain serialized.
                 unsafe {
                     if let Some(value) = value {
                         std::env::set_var(key, value);
@@ -3898,6 +3904,8 @@ mod tests {
     impl Drop for EnvBatchGuard {
         fn drop(&mut self) {
             for (key, original) in &self.originals {
+                // SAFETY: Tests still hold ENV_MUTEX during restoration, so
+                // the env is restored without concurrent mutation.
                 unsafe {
                     if let Some(value) = original {
                         std::env::set_var(key, value);
@@ -3911,7 +3919,7 @@ mod tests {
 
     /// RAII guard for injected config overlay entries used by auth-resolution tests.
     struct OverlayGuard {
-        _lock: std::sync::MutexGuard<'static, ()>,
+        _lock: crate::config::helpers::EnvMutexGuard<'static>,
         key: &'static str,
     }
 
@@ -3930,6 +3938,13 @@ mod tests {
         }
     }
 
+    fn select_backend(settings: &mut Settings, backend: &str) {
+        if settings.llm_backend.as_deref() != Some(backend) {
+            settings.selected_model = None;
+        }
+        settings.llm_backend = Some(backend.to_string());
+    }
+
     /// Regression test for #600: re-running provider setup for the same backend
     /// must NOT clear selected_model. Only switching to a different backend should.
     #[test]
@@ -3938,12 +3953,7 @@ mod tests {
         wizard.settings.llm_backend = Some("ollama".to_string());
         wizard.settings.selected_model = Some("llama3".to_string());
 
-        // Simulate re-entering the same provider -- model should survive
-        // (This is the check that each setup_* function now performs)
-        if wizard.settings.llm_backend.as_deref() != Some("ollama") {
-            wizard.settings.selected_model = None;
-        }
-        wizard.settings.llm_backend = Some("ollama".to_string());
+        select_backend(&mut wizard.settings, "ollama");
 
         assert_eq!(
             wizard.settings.selected_model.as_deref(),
@@ -3960,11 +3970,7 @@ mod tests {
         wizard.settings.llm_backend = Some("ollama".to_string());
         wizard.settings.selected_model = Some("llama3".to_string());
 
-        // Simulate switching to a different provider -- model should be cleared
-        if wizard.settings.llm_backend.as_deref() != Some("openai") {
-            wizard.settings.selected_model = None;
-        }
-        wizard.settings.llm_backend = Some("openai".to_string());
+        select_backend(&mut wizard.settings, "openai");
 
         assert!(
             wizard.settings.selected_model.is_none(),
@@ -3980,11 +3986,7 @@ mod tests {
         wizard.settings.llm_backend = Some("bedrock".to_string());
         wizard.settings.selected_model = Some("anthropic.claude-opus-4-6-v1".to_string());
 
-        // Simulate the conditional clearing logic from setup_bedrock()
-        if wizard.settings.llm_backend.as_deref() != Some("bedrock") {
-            wizard.settings.selected_model = None;
-        }
-        wizard.settings.llm_backend = Some("bedrock".to_string());
+        select_backend(&mut wizard.settings, "bedrock");
 
         assert_eq!(
             wizard.settings.selected_model.as_deref(),

@@ -1,25 +1,22 @@
 //! Shared test utilities for env-mutation guards and config snapshots.
 
 use std::collections::HashMap;
-use std::sync::MutexGuard;
 
-use crate::config::helpers::ENV_MUTEX;
+use crate::config::helpers::{ENV_MUTEX, EnvMutexGuard};
 use crate::config::{Config, EnvContext};
 use crate::settings::Settings;
 
 /// Guard that snapshots a set of env vars, serializes mutations under
 /// [`ENV_MUTEX`], and restores the original values on drop.
 pub struct EnvVarsGuard {
-    _lock: MutexGuard<'static, ()>,
+    _lock: EnvMutexGuard<'static>,
     originals: HashMap<String, Option<String>>,
 }
 
 impl EnvVarsGuard {
     /// Lock env access for the duration of the guard and snapshot the keys.
     pub fn new(keys: &[&'static str]) -> Self {
-        let lock = ENV_MUTEX
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
         let originals = keys
             .iter()
             .map(|key| ((*key).to_string(), std::env::var(key).ok()))

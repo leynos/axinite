@@ -111,14 +111,11 @@ fn apply_toml_overlay_at(
             }
         }
         Err(e) => {
-            if !optional_when_missing {
-                return Err(ConfigError::ParseError(format!(
-                    "Failed to load config file {}: {}",
-                    path.display(),
-                    e
-                )));
-            }
-            tracing::warn!("Failed to load default config file: {}", e);
+            return Err(ConfigError::ParseError(format!(
+                "Failed to load config file {}: {}",
+                path.display(),
+                e
+            )));
         }
     }
     Ok(())

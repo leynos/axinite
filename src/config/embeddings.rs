@@ -175,6 +175,10 @@ impl EmbeddingsConfig {
     }
 }
 
+const _: () = {
+    let _ = EmbeddingsConfig::resolve;
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

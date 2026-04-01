@@ -12,6 +12,8 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use crate::config::INJECTED_VARS;
+#[cfg(any(test, feature = "test-helpers"))]
+use crate::config::helpers::ENV_MUTEX;
 
 const IRONCLAW_BASE_DIR_ENV: &str = "IRONCLAW_BASE_DIR";
 
@@ -32,11 +34,7 @@ impl Default for EnvContext {
 impl EnvContext {
     /// Capture the current process environment and injected secret overlay.
     pub fn capture_ambient() -> Self {
-        let env_vars = collect_utf8_env_vars(std::env::vars_os());
-        let secrets = match INJECTED_VARS.lock() {
-            Ok(map) => map.clone(),
-            Err(poisoned) => poisoned.into_inner().clone(),
-        };
+        let (env_vars, secrets) = capture_ambient_inputs();
         let base_dir = resolve_base_dir_snapshot(&env_vars);
         Self {
             env_vars,
@@ -115,6 +113,27 @@ impl EnvContext {
     pub fn ironclaw_base_dir(&self) -> PathBuf {
         self.base_dir.clone()
     }
+}
+
+#[cfg(any(test, feature = "test-helpers"))]
+fn capture_ambient_inputs() -> (HashMap<String, String>, HashMap<String, String>) {
+    let _env_lock = ENV_MUTEX.lock().expect("env mutex poisoned");
+    let env_vars = collect_utf8_env_vars(std::env::vars_os());
+    let secrets = match INJECTED_VARS.lock() {
+        Ok(map) => map.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    };
+    (env_vars, secrets)
+}
+
+#[cfg(not(any(test, feature = "test-helpers")))]
+fn capture_ambient_inputs() -> (HashMap<String, String>, HashMap<String, String>) {
+    let env_vars = collect_utf8_env_vars(std::env::vars_os());
+    let secrets = match INJECTED_VARS.lock() {
+        Ok(map) => map.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    };
+    (env_vars, secrets)
 }
 
 fn collect_utf8_env_vars(

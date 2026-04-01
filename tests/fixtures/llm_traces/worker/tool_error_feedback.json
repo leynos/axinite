@@ -37,7 +37,7 @@
     {
       "response": {
         "type": "text",
-        "content": "The first write failed because the directory didn't exist. I retried with a valid path and the file was written successfully.",
+        "content": "The first write failed because the path contained an embedded NUL byte. I retried with a valid path and the file was written successfully.",
         "input_tokens": 300,
         "output_tokens": 30
       }
