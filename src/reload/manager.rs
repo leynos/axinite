@@ -181,20 +181,20 @@ mod tests {
     #[case::ipv4(AddrTestCase {
         host: "127.0.0.1",
         port: 8081,
-        expected_addr: "127.0.0.1:8081".parse().unwrap(),
+        expected_addr: "127.0.0.1:8081".parse().expect("failed to parse address 127.0.0.1:8081"),
         description: "IPv4 address",
     })]
     #[case::ipv6(AddrTestCase {
         host: "::1",
         port: 8081,
-        expected_addr: "[::1]:8081".parse().unwrap(),
+        expected_addr: "[::1]:8081".parse().expect("failed to parse address [::1]:8081"),
         description: "IPv6 address",
     })]
     #[case::hostname_localhost(AddrTestCase {
         host: "localhost",
         port: 8081,
         // localhost typically resolves to 127.0.0.1 or ::1; we verify the port matches
-        expected_addr: "127.0.0.1:8081".parse().unwrap(),
+        expected_addr: "127.0.0.1:8081".parse().expect("failed to parse address 127.0.0.1:8081"),
         description: "localhost hostname",
     })]
     #[tokio::test]

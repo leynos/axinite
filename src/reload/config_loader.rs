@@ -101,7 +101,10 @@ mod tests {
 
     /// Test that EnvConfigLoader implements Default via new().
     #[test]
-    #[allow(clippy::default_constructed_unit_structs)]
+    #[expect(
+        clippy::default_constructed_unit_structs,
+        reason = "EnvConfigLoader is unit-like and this test verifies new() and default() are equivalent"
+    )]
     fn env_config_loader_default_uses_new() {
         let loader1 = EnvConfigLoader::new();
         let loader2 = EnvConfigLoader::default();
