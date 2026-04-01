@@ -23,6 +23,73 @@ pub struct RuntimeSideEffects {
 }
 
 impl RuntimeSideEffects {
+    /// Spawn stale sandbox job cleanup as a fire-and-forget background task.
+    fn spawn_sandbox_cleanup(db: Arc<dyn Database>) {
+        tokio::spawn(async move {
+            if let Err(e) = db.cleanup_stale_sandbox_jobs().await {
+                tracing::warn!("Failed to cleanup stale sandbox jobs: {}", e);
+            }
+        });
+    }
+
+    /// Import workspace files from `import_path`, logging the outcome.
+    ///
+    /// Only imports files that do not already exist — never overwrites user edits.
+    async fn import_workspace_files(ws: &Workspace, import_path: &std::path::Path) {
+        match ws.import_from_directory(import_path).await {
+            Ok(count) if count > 0 => {
+                tracing::debug!(
+                    "Imported {} workspace file(s) from {}",
+                    count,
+                    import_path.display()
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to import workspace files from {}: {}",
+                    import_path.display(),
+                    e
+                );
+            }
+        }
+    }
+
+    /// Spawn embedding backfill as a fire-and-forget background task.
+    fn spawn_embedding_backfill(ws: Arc<Workspace>) {
+        tokio::spawn(async move {
+            match ws.backfill_embeddings().await {
+                Ok(count) if count > 0 => {
+                    tracing::debug!("Backfilled embeddings for {} chunks", count);
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!("Failed to backfill embeddings: {}", e);
+                }
+            }
+        });
+    }
+
+    /// Import, seed, and (optionally) trigger embedding backfill for the workspace.
+    ///
+    /// Import and seeding run synchronously; backfill is spawned as a
+    /// fire-and-forget task.
+    async fn run_workspace_init(
+        ws: Arc<Workspace>,
+        import_dir: Option<std::path::PathBuf>,
+        embeddings_available: bool,
+    ) {
+        if let Some(import_path) = import_dir {
+            Self::import_workspace_files(&ws, &import_path).await;
+        }
+        if let Err(e) = ws.seed_if_empty().await {
+            tracing::warn!("Failed to seed workspace: {}", e);
+        }
+        if embeddings_available {
+            Self::spawn_embedding_backfill(ws);
+        }
+    }
+
     /// Start all deferred background work.
     ///
     /// This method runs workspace import and seeding synchronously before
@@ -33,67 +100,12 @@ impl RuntimeSideEffects {
     /// Callers awaiting this method will pay the import/seed cost; if fully
     /// deferred startup is required, wrap the call in `tokio::spawn`.
     pub async fn start(self) {
-        // Spawn stale sandbox cleanup task
         if let Some(db) = self.db {
-            let db_cleanup = Arc::clone(&db);
-            tokio::spawn(async move {
-                if let Err(e) = db_cleanup.cleanup_stale_sandbox_jobs().await {
-                    tracing::warn!("Failed to cleanup stale sandbox jobs: {}", e);
-                }
-            });
+            Self::spawn_sandbox_cleanup(db);
         }
-
-        // Workspace import, seeding, and embedding backfill
         if let Some(ws) = self.workspace {
-            // Import workspace files from disk FIRST if workspace_import_dir flag is set.
-            // This lets Docker images / deployment scripts ship customized
-            // workspace templates (e.g., AGENTS.md, TOOLS.md) that override
-            // the generic seeds. Only imports files that don't already exist
-            // in the database — never overwrites user edits.
-            //
-            // Runs before seed_if_empty() so that custom templates take priority
-            // over generic seeds. seed_if_empty() then fills any remaining gaps.
-            if let Some(import_path) = self.workspace_import_dir {
-                match ws.import_from_directory(&import_path).await {
-                    Ok(count) if count > 0 => {
-                        tracing::debug!(
-                            "Imported {} workspace file(s) from {}",
-                            count,
-                            import_path.display()
-                        );
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to import workspace files from {}: {}",
-                            import_path.display(),
-                            e
-                        );
-                    }
-                }
-            }
-
-            match ws.seed_if_empty().await {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!("Failed to seed workspace: {}", e);
-                }
-            }
-
-            if self.embeddings_available {
-                let ws_bg = Arc::clone(&ws);
-                tokio::spawn(async move {
-                    match ws_bg.backfill_embeddings().await {
-                        Ok(count) if count > 0 => {
-                            tracing::debug!("Backfilled embeddings for {} chunks", count);
-                        }
-                        Ok(_) => {}
-                        Err(e) => {
-                            tracing::warn!("Failed to backfill embeddings: {}", e);
-                        }
-                    }
-                });
-            }
+            Self::run_workspace_init(ws, self.workspace_import_dir, self.embeddings_available)
+                .await;
         }
     }
 }
