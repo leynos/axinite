@@ -21,24 +21,52 @@ fn test_terminal_states() {
 
 #[test]
 fn test_job_state_from_str_parses_known_values() {
-    assert_eq!("pending".parse::<JobState>().unwrap(), JobState::Pending);
     assert_eq!(
-        "in_progress".parse::<JobState>().unwrap(),
+        "pending"
+            .parse::<JobState>()
+            .expect("parse JobState for 'pending'"),
+        JobState::Pending
+    );
+    assert_eq!(
+        "in_progress"
+            .parse::<JobState>()
+            .expect("parse JobState for 'in_progress'"),
         JobState::InProgress
     );
     assert_eq!(
-        "completed".parse::<JobState>().unwrap(),
+        "completed"
+            .parse::<JobState>()
+            .expect("parse JobState for 'completed'"),
         JobState::Completed
     );
     assert_eq!(
-        "submitted".parse::<JobState>().unwrap(),
+        "submitted"
+            .parse::<JobState>()
+            .expect("parse JobState for 'submitted'"),
         JobState::Submitted
     );
-    assert_eq!("accepted".parse::<JobState>().unwrap(), JobState::Accepted);
-    assert_eq!("failed".parse::<JobState>().unwrap(), JobState::Failed);
-    assert_eq!("stuck".parse::<JobState>().unwrap(), JobState::Stuck);
     assert_eq!(
-        "cancelled".parse::<JobState>().unwrap(),
+        "accepted"
+            .parse::<JobState>()
+            .expect("parse JobState for 'accepted'"),
+        JobState::Accepted
+    );
+    assert_eq!(
+        "failed"
+            .parse::<JobState>()
+            .expect("parse JobState for 'failed'"),
+        JobState::Failed
+    );
+    assert_eq!(
+        "stuck"
+            .parse::<JobState>()
+            .expect("parse JobState for 'stuck'"),
+        JobState::Stuck
+    );
+    assert_eq!(
+        "cancelled"
+            .parse::<JobState>()
+            .expect("parse JobState for 'cancelled'"),
         JobState::Cancelled
     );
 }
@@ -73,8 +101,8 @@ fn test_transition_history_capped() {
     }
     // 1 initial + 250*2 = 501 transitions, should be capped at 200
     assert!(
-        ctx.transitions.len() <= 200,
-        "transitions should be capped at 200, got {}",
+        ctx.transitions.len() == 200,
+        "transitions should be capped at exactly 200, got {}",
         ctx.transitions.len()
     );
 }
