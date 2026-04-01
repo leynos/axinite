@@ -581,6 +581,10 @@ impl Scheduler {
         Ok(())
     }
 
+    fn should_persist_cancelled_after_timeout(state: JobState) -> bool {
+        state == JobState::Cancelled || state.can_transition_to(JobState::Cancelled)
+    }
+
     async fn finalize_stop(&self, job_id: Uuid) {
         let mut jobs = self.jobs.write().await;
         if let Some(scheduled) = jobs.get(&job_id)
@@ -712,14 +716,34 @@ impl Scheduler {
                         timeout_seconds = stop_timeout.as_secs(),
                         "Timed out stopping job during shutdown"
                     );
-                    if let Err(error) = self.persist_cancelled_status(job_id, stop_reason).await {
-                        tracing::warn!(
-                            job_id = %job_id,
-                            %error,
-                            "Failed to persist cancellation after shutdown timeout"
-                        );
-                    } else {
-                        self.finalize_stop(job_id).await;
+                    match self.context_manager.get_context(job_id).await {
+                        Ok(ctx) if Self::should_persist_cancelled_after_timeout(ctx.state) => {
+                            if let Err(error) =
+                                self.persist_cancelled_status(job_id, stop_reason).await
+                            {
+                                tracing::warn!(
+                                    job_id = %job_id,
+                                    %error,
+                                    "Failed to persist cancellation after shutdown timeout"
+                                );
+                            } else {
+                                self.finalize_stop(job_id).await;
+                            }
+                        }
+                        Ok(ctx) => {
+                            tracing::warn!(
+                                job_id = %job_id,
+                                state = %ctx.state,
+                                "Skipping cancellation persistence after shutdown timeout because the job state no longer permits cancellation"
+                            );
+                        }
+                        Err(error) => {
+                            tracing::warn!(
+                                job_id = %job_id,
+                                %error,
+                                "Failed to reload job state after shutdown timeout"
+                            );
+                        }
                     }
                 }
             }

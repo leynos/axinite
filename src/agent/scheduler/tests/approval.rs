@@ -1,6 +1,11 @@
+//! Approval-gating scheduler tests covering the safety/approval contract
+//! around `Scheduler::execute_tool_task`.
+
 use super::*;
 use crate::error::{Error, ToolError as AppToolError};
 use crate::tools::{ApprovalRequirement, NativeTool, ToolError, ToolOutput};
+use anyhow::{Result, anyhow};
+use rstest::rstest;
 
 struct TestApprovalTool {
     name: &'static str,
@@ -63,7 +68,7 @@ impl NativeTool for TestApprovalTool {
     }
 }
 
-async fn setup_tools_and_job() -> ToolGatingFixture {
+async fn setup_tools_and_job() -> Result<ToolGatingFixture> {
     let registry = ToolRegistry::new();
     registry
         .register(Arc::new(TestApprovalTool {
@@ -83,26 +88,23 @@ async fn setup_tools_and_job() -> ToolGatingFixture {
         .await;
 
     let cm = Arc::new(ContextManager::new(5));
-    let job_id = cm
-        .create_job("test", "approval test")
-        .await
-        .expect("failed to create test job in setup_tools_and_job");
+    let job_id = cm.create_job("test", "approval test").await?;
     cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
         .await
-        .expect("failed to update test job context in setup_tools_and_job")
-        .expect("failed to transition test job to JobState::InProgress in setup_tools_and_job");
+        .map_err(|error| anyhow!(error))?
+        .map_err(|error| anyhow!(error))?;
 
     let safety = Arc::new(SafetyLayer::new(&SafetyConfig {
         max_output_length: 100_000,
         injection_check_enabled: false,
     }));
 
-    ToolGatingFixture {
+    Ok(ToolGatingFixture {
         tools: Arc::new(registry),
         cm,
         safety,
         job_id,
-    }
+    })
 }
 
 fn assert_auth_required(
@@ -126,8 +128,8 @@ fn assert_executed(
 }
 
 #[tokio::test]
-async fn test_execute_tool_task_blocks_without_context() {
-    let f = setup_tools_and_job().await;
+async fn test_execute_tool_task_blocks_without_context() -> Result<()> {
+    let f = setup_tools_and_job().await?;
     assert_auth_required(
         f.run(None, "soft_gate").await,
         "soft_gate",
@@ -138,37 +140,42 @@ async fn test_execute_tool_task_blocks_without_context() {
         "hard_gate",
         "hard_gate should be blocked without context",
     );
+    Ok(())
 }
 
+#[rstest]
+#[case(
+    ApprovalContext::autonomous(),
+    assert_auth_required,
+    "hard_gate",
+    "soft_gate should pass with autonomous context",
+    "hard_gate should still be blocked without explicit permission"
+)]
+#[case(
+    ApprovalContext::autonomous_with_tools(["hard_gate".to_string()]),
+    assert_executed,
+    "hard_ok",
+    "soft_gate should pass",
+    "hard_gate should pass with explicit permission"
+)]
 #[tokio::test]
-async fn test_execute_tool_task_autonomous_unblocks_soft() {
-    let f = setup_tools_and_job().await;
-    let ctx = ApprovalContext::autonomous();
+async fn test_execute_tool_task_with_approval_context(
+    #[case] ctx: ApprovalContext,
+    #[case] hard_gate_assert: fn(Result<TaskOutput, Error>, &'static str, &'static str),
+    #[case] hard_gate_expected: &'static str,
+    #[case] soft_gate_msg: &'static str,
+    #[case] hard_gate_msg: &'static str,
+) -> Result<()> {
+    let f = setup_tools_and_job().await?;
     assert_executed(
         f.run(Some(ctx.clone()), "soft_gate").await,
         "soft_ok",
-        "soft_gate should pass with autonomous context",
+        soft_gate_msg,
     );
-    assert_auth_required(
+    hard_gate_assert(
         f.run(Some(ctx), "hard_gate").await,
-        "hard_gate",
-        "hard_gate should still be blocked without explicit permission",
+        hard_gate_expected,
+        hard_gate_msg,
     );
-}
-
-#[tokio::test]
-async fn test_execute_tool_task_autonomous_with_permissions() {
-    let f = setup_tools_and_job().await;
-    let ctx = ApprovalContext::autonomous_with_tools(["hard_gate".to_string()]);
-
-    assert_executed(
-        f.run(Some(ctx.clone()), "soft_gate").await,
-        "soft_ok",
-        "soft_gate should pass",
-    );
-    assert_executed(
-        f.run(Some(ctx), "hard_gate").await,
-        "hard_ok",
-        "hard_gate should pass with explicit permission",
-    );
+    Ok(())
 }
