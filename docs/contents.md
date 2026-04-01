@@ -35,6 +35,10 @@
 - [Front-end architecture](front-end-architecture.md) explains how the web
   gateway serves the browser UI, generates the interface, and connects browser
   actions to the runtime subsystems.
+- [SolidJS PWA gap analysis](solidjs-pwa-gap-analysis.md) compares the
+  `axinite-mockup` PWA against the shipped Rust-hosted browser gateway and
+  lists the contract, data-shape, and user-visible parity gaps to close before
+  adoption.
 - [Chat model](chat-model.md) traces the chat pipeline from ingress through
   context assembly, tool execution, approvals, and outbound sinks.
 - [Database integrations](database-integrations.md) explains the PostgreSQL,
