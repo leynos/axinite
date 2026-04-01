@@ -44,45 +44,75 @@ fn spawn_notification_task(repair: Arc<dyn SelfRepair>) -> NotificationHarness {
     }
 }
 
-struct StuckSuccessSelfRepair;
+struct MockSelfRepair {
+    stuck_jobs: Vec<StuckJob>,
+    broken_tools: Vec<BrokenTool>,
+    stuck_repair_result: RepairResult,
+    broken_repair_result: RepairResult,
+}
 
-impl NativeSelfRepair for StuckSuccessSelfRepair {
+impl MockSelfRepair {
+    fn with_stuck_job(job: StuckJob, result: RepairResult) -> Self {
+        Self {
+            stuck_jobs: vec![job],
+            broken_tools: vec![],
+            stuck_repair_result: result,
+            broken_repair_result: RepairResult::Success {
+                message: "noop".to_string(),
+            },
+        }
+    }
+
+    fn with_broken_tool(tool: BrokenTool, result: RepairResult) -> Self {
+        Self {
+            stuck_jobs: vec![],
+            broken_tools: vec![tool],
+            stuck_repair_result: RepairResult::Success {
+                message: "noop".to_string(),
+            },
+            broken_repair_result: result,
+        }
+    }
+}
+
+impl NativeSelfRepair for MockSelfRepair {
     async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
-        vec![StuckJob {
-            job_id: Uuid::new_v4(),
-            last_activity: Utc::now(),
-            stuck_duration: Duration::from_secs(120),
-            last_error: None,
-            repair_attempts: 0,
-        }]
+        self.stuck_jobs.clone()
     }
 
     async fn repair_stuck_job<'a>(
         &'a self,
         _job: &'a StuckJob,
     ) -> Result<RepairResult, RepairError> {
-        Ok(RepairResult::Success {
-            message: "job recovered".to_string(),
-        })
+        Ok(self.stuck_repair_result.clone())
     }
 
     async fn detect_broken_tools(&self) -> Vec<BrokenTool> {
-        vec![]
+        self.broken_tools.clone()
     }
 
     async fn repair_broken_tool<'a>(
         &'a self,
         _tool: &'a BrokenTool,
     ) -> Result<RepairResult, RepairError> {
-        Ok(RepairResult::Success {
-            message: "noop".to_string(),
-        })
+        Ok(self.broken_repair_result.clone())
     }
 }
 
 #[tokio::test]
 async fn repair_task_sends_notification_for_stuck_job_success() {
-    let repair: Arc<dyn SelfRepair> = Arc::new(StuckSuccessSelfRepair);
+    let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_stuck_job(
+        StuckJob {
+            job_id: Uuid::new_v4(),
+            last_activity: Utc::now(),
+            stuck_duration: Duration::from_secs(120),
+            last_error: None,
+            repair_attempts: 0,
+        },
+        RepairResult::Success {
+            message: "job recovered".to_string(),
+        },
+    ));
     let mut harness = spawn_notification_task(repair);
 
     let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
@@ -95,24 +125,10 @@ async fn repair_task_sends_notification_for_stuck_job_success() {
     harness.shutdown().await;
 }
 
-struct BrokenToolSuccessSelfRepair;
-
-impl NativeSelfRepair for BrokenToolSuccessSelfRepair {
-    async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
-        vec![]
-    }
-
-    async fn repair_stuck_job<'a>(
-        &'a self,
-        _job: &'a StuckJob,
-    ) -> Result<RepairResult, RepairError> {
-        Ok(RepairResult::Success {
-            message: "noop".to_string(),
-        })
-    }
-
-    async fn detect_broken_tools(&self) -> Vec<BrokenTool> {
-        vec![BrokenTool {
+#[tokio::test]
+async fn repair_task_sends_notification_for_broken_tool_success() {
+    let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_broken_tool(
+        BrokenTool {
             name: "compiler".to_string(),
             failure_count: 5,
             last_error: Some("build failed".to_string()),
@@ -120,22 +136,11 @@ impl NativeSelfRepair for BrokenToolSuccessSelfRepair {
             last_failure: Utc::now(),
             last_build_result: None,
             repair_attempts: 0,
-        }]
-    }
-
-    async fn repair_broken_tool<'a>(
-        &'a self,
-        _tool: &'a BrokenTool,
-    ) -> Result<RepairResult, RepairError> {
-        Ok(RepairResult::Success {
+        },
+        RepairResult::Success {
             message: "tool rebuilt".to_string(),
-        })
-    }
-}
-
-#[tokio::test]
-async fn repair_task_sends_notification_for_broken_tool_success() {
-    let repair: Arc<dyn SelfRepair> = Arc::new(BrokenToolSuccessSelfRepair);
+        },
+    ));
     let mut harness = spawn_notification_task(repair);
 
     let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
@@ -151,45 +156,20 @@ async fn repair_task_sends_notification_for_broken_tool_success() {
     harness.shutdown().await;
 }
 
-struct StuckManualSelfRepair;
-
-impl NativeSelfRepair for StuckManualSelfRepair {
-    async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
-        vec![StuckJob {
+#[tokio::test]
+async fn repair_task_deduplicates_manual_required_notifications_for_stuck_jobs() {
+    let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_stuck_job(
+        StuckJob {
             job_id: Uuid::nil(),
             last_activity: Utc::now(),
             stuck_duration: Duration::from_secs(120),
             last_error: None,
             repair_attempts: 3,
-        }]
-    }
-
-    async fn repair_stuck_job<'a>(
-        &'a self,
-        _job: &'a StuckJob,
-    ) -> Result<RepairResult, RepairError> {
-        Ok(RepairResult::ManualRequired {
+        },
+        RepairResult::ManualRequired {
             message: "manual job recovery".to_string(),
-        })
-    }
-
-    async fn detect_broken_tools(&self) -> Vec<BrokenTool> {
-        vec![]
-    }
-
-    async fn repair_broken_tool<'a>(
-        &'a self,
-        _tool: &'a BrokenTool,
-    ) -> Result<RepairResult, RepairError> {
-        Ok(RepairResult::Success {
-            message: "noop".to_string(),
-        })
-    }
-}
-
-#[tokio::test]
-async fn repair_task_deduplicates_manual_required_notifications_for_stuck_jobs() {
-    let repair: Arc<dyn SelfRepair> = Arc::new(StuckManualSelfRepair);
+        },
+    ));
     let mut harness = spawn_notification_task(repair);
 
     let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
@@ -216,24 +196,10 @@ async fn repair_task_deduplicates_manual_required_notifications_for_stuck_jobs()
     harness.shutdown().await;
 }
 
-struct BrokenToolManualSelfRepair;
-
-impl NativeSelfRepair for BrokenToolManualSelfRepair {
-    async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
-        vec![]
-    }
-
-    async fn repair_stuck_job<'a>(
-        &'a self,
-        _job: &'a StuckJob,
-    ) -> Result<RepairResult, RepairError> {
-        Ok(RepairResult::Success {
-            message: "noop".to_string(),
-        })
-    }
-
-    async fn detect_broken_tools(&self) -> Vec<BrokenTool> {
-        vec![BrokenTool {
+#[tokio::test]
+async fn repair_task_deduplicates_manual_required_notifications_for_broken_tools() {
+    let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_broken_tool(
+        BrokenTool {
             name: "compiler".to_string(),
             failure_count: 5,
             last_error: Some("build failed".to_string()),
@@ -241,22 +207,11 @@ impl NativeSelfRepair for BrokenToolManualSelfRepair {
             last_failure: Utc::now(),
             last_build_result: None,
             repair_attempts: 3,
-        }]
-    }
-
-    async fn repair_broken_tool<'a>(
-        &'a self,
-        _tool: &'a BrokenTool,
-    ) -> Result<RepairResult, RepairError> {
-        Ok(RepairResult::ManualRequired {
+        },
+        RepairResult::ManualRequired {
             message: "manual tool repair".to_string(),
-        })
-    }
-}
-
-#[tokio::test]
-async fn repair_task_deduplicates_manual_required_notifications_for_broken_tools() {
-    let repair: Arc<dyn SelfRepair> = Arc::new(BrokenToolManualSelfRepair);
+        },
+    ));
     let mut harness = spawn_notification_task(repair);
 
     let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())

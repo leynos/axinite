@@ -29,7 +29,7 @@ pub struct BrokenTool {
 }
 
 /// Result of a repair attempt.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RepairResult {
     /// Repair was successful.
     Success { message: String },
