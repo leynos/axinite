@@ -127,9 +127,17 @@ Table 5. Browser-facing chat DTOs.
 | Type | Purpose | Evidence |
 | ------ | --------- | ---------- |
 | `SendMessageRequest` | REST request body for `/api/chat/send` | `src/channels/web/types.rs` |
+| `ThreadListResponse` | Browser sidebar model for the pinned assistant thread, regular conversations, and the active thread selection | `src/channels/web/types.rs`, `src/channels/web/handlers/chat_threads.rs` |
 | `HistoryResponse`, `TurnInfo`, `ToolCallInfo` | Browser history and thread view model | `src/channels/web/types.rs`, `src/channels/web/util.rs` |
 | `PendingApprovalInfo` | Re-renders approval state after a thread switch | `src/channels/web/types.rs`, `src/channels/web/handlers/chat_history.rs` |
 | `SseEvent` | Unified live event stream for responses, tool activity, approvals, auth, jobs, and generated images | `src/channels/web/types.rs`, `src/channels/web/mod.rs` |
+
+The browser sidebar is intentionally not a flat list of identical items.
+`ThreadListResponse` carries the dedicated assistant conversation in
+`assistant_thread` and all other stored conversations in `threads`. The
+frontend turns that split into a pinned `Assistant` row plus a separate
+`Conversations` list, so the assistant conversation remains a distinct gateway
+chat surface rather than just another user-created thread.
 
 ## 4. End-to-end data flow
 
@@ -247,6 +255,66 @@ the exact same UUID, and registers that mapping with `SessionManager`.
 That hydration step matters because otherwise a browser reload or thread switch
 would create a fresh in-memory thread and split one logical conversation across
 two internal identifiers.
+
+The browser thread list adds one browser-specific rule that is worth calling
+out once and directly. When the gateway builds `/api/chat/threads`, it calls
+`get_or_create_assistant_conversation()` for the literal `gateway` channel
+value used in the code. The returned conversation is emitted as
+`assistant_thread`, while the remaining summaries are emitted as `threads`.
+
+The frontend preserves that contract in one place. `loadThreads()` stores
+`assistant_thread.id` as `assistantThreadId`, renders it as the pinned
+`Assistant` row, and defaults to it when no active thread is selected.
+Ordinary conversations come from `threads`, switch through
+`switchThread(thread.id)`, and keep their stored title, channel, type, or UUID
+prefix. Creating a new conversation through `POST /api/chat/thread/new`
+creates a regular conversation with the literal `thread_type = "thread"` value
+used in the implementation, then selects it without replacing the pinned
+assistant conversation.
+
+Figure 2. Accessible sequence diagram showing how the gateway returns the
+assistant conversation separately from ordinary thread summaries, how the
+browser renders that assistant thread as a pinned `Assistant` row, and how
+creating or switching regular conversations leaves the pinned assistant thread
+in place.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Browser
+    participant Gateway
+    participant ConversationStore
+
+    User->>Browser: Load chat UI
+    Browser->>Gateway: GET /api/chat/threads
+    Gateway->>ConversationStore: get_or_create_assistant_conversation(gateway_channel)
+    ConversationStore-->>Gateway: assistant_conversation
+    Gateway->>ConversationStore: list_conversation_summaries(excluding assistant)
+    ConversationStore-->>Gateway: conversation_summaries
+    Gateway-->>Browser: ThreadListResponse
+    Note over Gateway,Browser: assistant_thread = assistant_conversation
+    Note over Gateway,Browser: threads = conversation_summaries
+
+    Browser->>Browser: loadThreads(ThreadListResponse)
+    Browser->>Browser: assistantThreadId = assistant_thread.id
+    Browser->>Browser: Render pinned Assistant row using assistantThreadId
+    Browser->>Browser: Render Conversations list from threads
+    alt No active thread selected
+        Browser->>Browser: Select assistantThreadId as active thread
+    end
+
+    User->>Browser: Click conversation in Conversations list
+    Browser->>Browser: switchThread(thread.id)
+    Browser->>Gateway: GET /api/chat/history?thread_id=thread.id
+
+    User->>Browser: Create new conversation
+    Browser->>Gateway: POST /api/chat/thread/new
+    Gateway->>ConversationStore: create_conversation(thread_type = thread)
+    ConversationStore-->>Gateway: new_conversation
+    Gateway-->>Browser: new_conversation
+    Browser->>Browser: Select new_conversation.id as active
+    Note over Browser: Pinned Assistant row remains bound to assistantThreadId
+```
 
 ### 4.5 Safety validation and turn start
 
