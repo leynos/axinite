@@ -11,9 +11,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::channels::ChannelManager;
-use crate::channels::wasm::{
-    RegisteredEndpoint, SharedWasmChannel, WasmChannelLoader, WasmChannelRouter, WasmChannelRuntime,
-};
+use crate::channels::wasm::{WasmChannelRouter, WasmChannelRuntime};
+use crate::extensions::activation::McpClientsMap;
 use crate::extensions::registry::ExtensionRegistry;
 use crate::extensions::{
     ActivateResult, AuthResult, ExtensionError, ExtensionKind, ExtensionSource, InstallResult,
@@ -24,7 +23,6 @@ use crate::hooks::HookRegistry;
 use crate::pairing::PairingStore;
 use crate::secrets::{CreateSecretParams, SecretsStore};
 use crate::tools::ToolRegistry;
-use crate::tools::mcp::McpClient;
 use crate::tools::mcp::auth::{
     PkceChallenge, authorize_mcp_server, build_authorization_url, discover_full_oauth_metadata,
     find_available_port, is_authenticated, register_client,
@@ -47,10 +45,15 @@ struct PendingAuth {
 /// Set after construction via [`ExtensionManager::set_channel_runtime`] once the
 /// channel manager, WASM runtime, pairing store, and webhook router are available.
 struct ChannelRuntimeState {
+    #[allow(dead_code)]
     channel_manager: Arc<ChannelManager>,
+    #[allow(dead_code)]
     wasm_channel_runtime: Arc<WasmChannelRuntime>,
+    #[allow(dead_code)]
     pairing_store: Arc<PairingStore>,
+    #[allow(dead_code)]
     wasm_channel_router: Arc<WasmChannelRouter>,
+    #[allow(dead_code)]
     wasm_channel_owner_ids: std::collections::HashMap<String, i64>,
 }
 
@@ -79,7 +82,7 @@ pub struct ExtensionManager {
     ///
     /// Wrapped in `Arc` so the live MCP activation adapter can share this
     /// mutable registry with the manager.
-    mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
+    mcp_clients: McpClientsMap,
 
     // WASM tool infrastructure
     wasm_tools_dir: PathBuf,
@@ -148,7 +151,7 @@ pub struct ExtensionManagerConfig {
     ///
     /// This is shared with the live MCP activation adapter so both see the same
     /// set of active connections.
-    pub mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
+    pub mcp_clients: McpClientsMap,
     /// Secrets store for credential injection (required).
     pub secrets: Arc<dyn SecretsStore + Send + Sync>,
     /// Tool registry for registering activated tools (required).
@@ -195,18 +198,44 @@ fn sanitize_url_for_logging(url: &str) -> String {
 }
 
 impl ExtensionManager {
-    /// Construct a new extension manager.
+    /// Construct a new extension manager from a bundled configuration.
+    ///
+    /// # Configuration
+    ///
+    /// The constructor accepts a single [`ExtensionManagerConfig`] bundle. All
+    /// activation ports are supplied as config fields rather than individual
+    /// parameters.
+    ///
+    /// ## Required fields
+    ///
+    /// - `discovery` — Port for searching online extensions.
+    /// - `mcp_activation` — Port for MCP server activation.
+    /// - `wasm_tool_activation` — Port for WASM tool activation.
+    /// - `wasm_channel_activation` — Port for WASM channel and channel-relay activation.
+    /// - `mcp_clients` — Shared map of active MCP clients; must be shared with the
+    ///   live MCP activation adapter so both see the same set of active connections.
+    /// - `secrets` — Secrets store for credential injection.
+    /// - `tool_registry` — Tool registry for registering activated tools.
+    /// - `wasm_tools_dir` — Directory containing installed WASM tools.
+    /// - `wasm_channels_dir` — Directory containing installed WASM channels.
+    /// - `user_id` — User identifier for namespacing secrets and configuration.
+    /// - `catalog_entries` — Catalog entries for built-in and discovered extensions
+    ///   (may be empty).
+    ///
+    /// ## Optional fields
+    ///
+    /// - `relay_config` — Relay configuration for channel-relay extensions.
+    /// - `gateway_token` — Gateway authentication token for platform OAuth proxy.
+    /// - `hooks` — Hook registry for plugin hooks.
+    /// - `tunnel_url` — Public tunnel URL for webhook configuration.
+    /// - `store` — Database store for persistence.
     ///
     /// # Activation ports
     ///
-    /// The three activation port parameters (`mcp_activation`,
-    /// `wasm_tool_activation`, `wasm_channel_activation`) decouple activation
-    /// I/O from policy logic.  Production callers supply
-    /// [`LiveMcpActivation`], [`LiveWasmToolActivation`], and
-    /// [`LiveWasmChannelActivation`]; tests inject no-op stubs.
-    ///
-    /// `mcp_clients` is shared between the manager and the live MCP adapter
-    /// so that both see the same set of active connections.
+    /// The three activation port fields (`mcp_activation`, `wasm_tool_activation`,
+    /// `wasm_channel_activation`) decouple activation I/O from policy logic.
+    /// Production callers supply [`LiveMcpActivation`], [`LiveWasmToolActivation`],
+    /// and [`LiveWasmChannelActivation`]; tests inject no-op stubs.
     pub fn new(config: ExtensionManagerConfig) -> Self {
         let registry = if config.catalog_entries.is_empty() {
             ExtensionRegistry::new()
@@ -250,6 +279,88 @@ impl ExtensionManager {
         })
     }
 
+    /// Generate a relay instance ID.
+    fn relay_instance_id(&self, config: &crate::config::RelayConfig) -> String {
+        config.instance_id.clone().unwrap_or_else(|| {
+            uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, self.user_id.as_bytes()).to_string()
+        })
+    }
+
+    /// Persist the list of active channels to the settings store.
+    async fn persist_active_channels(&self) {
+        let Some(ref store) = self.store else {
+            return;
+        };
+        let names: Vec<String> = self
+            .active_channel_names
+            .read()
+            .await
+            .iter()
+            .cloned()
+            .collect();
+        let value = serde_json::json!(names);
+        if let Err(e) = store
+            .set_setting(
+                self.user_id.as_str().into(),
+                "activated_channels".into(),
+                &value,
+            )
+            .await
+        {
+            tracing::warn!(error = %e, "Failed to persist activated_channels setting");
+        }
+    }
+
+    /// Broadcast an extension status change to the web UI via SSE.
+    async fn broadcast_extension_status(&self, name: &str, status: &str, message: Option<&str>) {
+        if let Some(ref sender) = *self.sse_sender.read().await {
+            let _ = sender.send(crate::channels::web::types::SseEvent::ExtensionStatus {
+                extension_name: name.to_string(),
+                status: status.to_string(),
+                message: message.map(|m| m.to_string()),
+            });
+        }
+    }
+
+    /// Determine the auth readiness of a WASM channel.
+    async fn check_channel_auth_status(&self, name: &str) -> ToolAuthState {
+        use crate::channels::wasm::ChannelCapabilitiesFile;
+
+        let cap_path = self
+            .wasm_channels_dir
+            .join(format!("{}.capabilities.json", name));
+        let Ok(cap_bytes) = tokio::fs::read(&cap_path).await else {
+            return ToolAuthState::NoAuth;
+        };
+        let Ok(cap_file) = ChannelCapabilitiesFile::from_bytes(&cap_bytes) else {
+            return ToolAuthState::NoAuth;
+        };
+
+        let required: Vec<_> = cap_file
+            .setup
+            .required_secrets
+            .iter()
+            .filter(|s| !s.optional)
+            .collect();
+        if required.is_empty() {
+            return ToolAuthState::NoAuth;
+        }
+
+        let all_provided = futures::future::join_all(
+            required
+                .iter()
+                .map(|s| self.secrets.exists(&self.user_id, &s.name)),
+        )
+        .await
+        .into_iter()
+        .all(|r| r.unwrap_or(false));
+
+        if all_provided {
+            ToolAuthState::Ready
+        } else {
+            ToolAuthState::NeedsSetup
+        }
+    }
     /// Configure the channel runtime infrastructure for hot-activating WASM channels.
     ///
     /// Call after construction (and after wrapping in `Arc`) once the channel
@@ -335,31 +446,6 @@ impl ExtensionManager {
 
     /// Persist the set of active channel names to the settings store.
     ///
-    /// Saved under key `activated_channels` so channels auto-activate on restart.
-    async fn persist_active_channels(&self) {
-        let Some(ref store) = self.store else {
-            return;
-        };
-        let names: Vec<String> = self
-            .active_channel_names
-            .read()
-            .await
-            .iter()
-            .cloned()
-            .collect();
-        let value = serde_json::json!(names);
-        if let Err(e) = store
-            .set_setting(
-                self.user_id.as_str().into(),
-                "activated_channels".into(),
-                &value,
-            )
-            .await
-        {
-            tracing::warn!(error = %e, "Failed to persist activated_channels setting");
-        }
-    }
-
     /// Load previously activated channel names from the settings store.
     ///
     /// Returns channel names that were activated in a prior session so they can
@@ -401,17 +487,6 @@ impl ExtensionManager {
     /// by CSRF `state` parameter and complete the token exchange.
     pub fn pending_oauth_flows(&self) -> &crate::cli::oauth_defaults::PendingOAuthRegistry {
         &self.pending_oauth_flows
-    }
-
-    /// Broadcast an extension status change to the web UI via SSE.
-    async fn broadcast_extension_status(&self, name: &str, status: &str, message: Option<&str>) {
-        if let Some(ref sender) = *self.sse_sender.read().await {
-            let _ = sender.send(crate::channels::web::types::SseEvent::ExtensionStatus {
-                extension_name: name.to_string(),
-                status: status.to_string(),
-                message: message.map(|m| m.to_string()),
-            });
-        }
     }
 
     /// Search for extensions. If `discover` is true, also searches online.
@@ -2006,45 +2081,6 @@ impl ExtensionManager {
         ))
     }
 
-    /// Determine the auth readiness of a WASM channel.
-    async fn check_channel_auth_status(&self, name: &str) -> ToolAuthState {
-        let cap_path = self
-            .wasm_channels_dir
-            .join(format!("{}.capabilities.json", name));
-        let Ok(cap_bytes) = tokio::fs::read(&cap_path).await else {
-            return ToolAuthState::NoAuth;
-        };
-        let Ok(cap_file) = crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&cap_bytes)
-        else {
-            return ToolAuthState::NoAuth;
-        };
-
-        let required: Vec<_> = cap_file
-            .setup
-            .required_secrets
-            .iter()
-            .filter(|s| !s.optional)
-            .collect();
-        if required.is_empty() {
-            return ToolAuthState::NoAuth;
-        }
-
-        let all_provided = futures::future::join_all(
-            required
-                .iter()
-                .map(|s| self.secrets.exists(&self.user_id, &s.name)),
-        )
-        .await
-        .into_iter()
-        .all(|r| r.unwrap_or(false));
-
-        if all_provided {
-            ToolAuthState::Ready
-        } else {
-            ToolAuthState::NeedsSetup
-        }
-    }
-
     /// Load and parse a WASM tool's capabilities file.
     ///
     /// Returns `None` if the file doesn't exist or can't be parsed.
@@ -2704,432 +2740,7 @@ impl ExtensionManager {
         ))
     }
 
-    /// Activate a WASM channel at runtime without restarting.
-    ///
-    /// Loads the channel from its WASM file, injects credentials and config,
-    /// registers it with the webhook router, and hot-adds it to the channel manager
-    /// so its stream feeds into the agent loop.
-    ///
-    /// Called by the [`LiveWasmChannelActivation`] adapter; not intended for
-    /// direct use outside the activation port.
-    pub(crate) async fn activate_wasm_channel_inner(
-        &self,
-        name: &str,
-    ) -> Result<ActivateResult, ExtensionError> {
-        // If already active, re-inject credentials and refresh webhook secret.
-        // Handles the case where a channel was loaded at startup before the
-        // user saved secrets via the web UI.
-        {
-            let active = self.active_channel_names.read().await;
-            if active.contains(name) {
-                return self.refresh_active_channel(name).await;
-            }
-        }
-
-        // Verify runtime infrastructure is available and clone Arcs so we don't
-        // hold the RwLock guard across awaits.
-        let (
-            channel_runtime,
-            channel_manager,
-            pairing_store,
-            wasm_channel_router,
-            wasm_channel_owner_ids,
-        ) = {
-            let rt_guard = self.channel_runtime.read().await;
-            let rt = rt_guard.as_ref().ok_or_else(|| {
-                ExtensionError::ActivationFailed("WASM channel runtime not configured".to_string())
-            })?;
-            (
-                Arc::clone(&rt.wasm_channel_runtime),
-                Arc::clone(&rt.channel_manager),
-                Arc::clone(&rt.pairing_store),
-                Arc::clone(&rt.wasm_channel_router),
-                rt.wasm_channel_owner_ids.clone(),
-            )
-        };
-
-        // Check auth status first
-        let auth_state = self.check_channel_auth_status(name).await;
-        if auth_state != ToolAuthState::Ready && auth_state != ToolAuthState::NoAuth {
-            return Err(ExtensionError::ActivationFailed(format!(
-                "Channel '{}' requires configuration. Use the setup form to provide credentials.",
-                name
-            )));
-        }
-
-        // Load the channel from files
-        let wasm_path = self.wasm_channels_dir.join(format!("{}.wasm", name));
-        let cap_path = self
-            .wasm_channels_dir
-            .join(format!("{}.capabilities.json", name));
-        let cap_path_option = if cap_path.exists() {
-            Some(cap_path.as_path())
-        } else {
-            None
-        };
-
-        let settings_store: Option<Arc<dyn crate::db::SettingsStore>> =
-            self.store.as_ref().map(|db| Arc::clone(db) as _);
-        let loader = WasmChannelLoader::new(
-            Arc::clone(&channel_runtime),
-            Arc::clone(&pairing_store),
-            settings_store,
-        )
-        .with_secrets_store(Arc::clone(&self.secrets));
-        let loaded = loader
-            .load_from_files(name, &wasm_path, cap_path_option)
-            .await
-            .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
-
-        let channel_name = loaded.name().to_string();
-        let webhook_secret_name = loaded.webhook_secret_name();
-        let secret_header = loaded.webhook_secret_header().map(|s| s.to_string());
-        let sig_key_secret_name = loaded.signature_key_secret_name();
-        let hmac_secret_name = loaded.hmac_secret_name();
-
-        // Get webhook secret from secrets store
-        let webhook_secret = self
-            .secrets
-            .get_decrypted(&self.user_id, &webhook_secret_name)
-            .await
-            .ok()
-            .map(|s| s.expose().to_string());
-
-        let channel_arc = Arc::new(loaded.channel);
-
-        // Inject runtime config (tunnel_url, webhook_secret, owner_id)
-        {
-            let mut config_updates = std::collections::HashMap::new();
-
-            if let Some(ref tunnel_url) = self.tunnel_url {
-                config_updates.insert(
-                    "tunnel_url".to_string(),
-                    serde_json::Value::String(tunnel_url.clone()),
-                );
-            }
-
-            if let Some(ref secret) = webhook_secret {
-                config_updates.insert(
-                    "webhook_secret".to_string(),
-                    serde_json::Value::String(secret.clone()),
-                );
-            }
-
-            if let Some(&owner_id) = wasm_channel_owner_ids.get(channel_name.as_str()) {
-                config_updates.insert("owner_id".to_string(), serde_json::json!(owner_id));
-            }
-
-            if !config_updates.is_empty() {
-                channel_arc.update_config(config_updates).await;
-                tracing::info!(
-                    channel = %channel_name,
-                    has_tunnel = self.tunnel_url.is_some(),
-                    has_webhook_secret = webhook_secret.is_some(),
-                    "Injected runtime config into hot-activated channel"
-                );
-            }
-        }
-
-        // Register with webhook router
-        {
-            let webhook_path = format!("/webhook/{}", channel_name);
-            let endpoints = vec![RegisteredEndpoint {
-                channel_name: channel_name.clone(),
-                path: webhook_path,
-                methods: vec!["POST".to_string()],
-                require_secret: webhook_secret.is_some(),
-            }];
-
-            wasm_channel_router
-                .register(
-                    Arc::clone(&channel_arc),
-                    endpoints,
-                    webhook_secret,
-                    secret_header,
-                )
-                .await;
-            tracing::info!(channel = %channel_name, "Registered hot-activated channel with webhook router");
-
-            // Register Ed25519 signature key if declared in capabilities
-            if let Some(ref sig_key_name) = sig_key_secret_name
-                && let Ok(key_secret) = self
-                    .secrets
-                    .get_decrypted(&self.user_id, sig_key_name)
-                    .await
-            {
-                match wasm_channel_router
-                    .register_signature_key(&channel_name, key_secret.expose())
-                    .await
-                {
-                    Ok(()) => {
-                        tracing::info!(channel = %channel_name, "Registered signature key for hot-activated channel")
-                    }
-                    Err(e) => {
-                        tracing::error!(channel = %channel_name, error = %e, "Failed to register signature key")
-                    }
-                }
-            }
-
-            // Register HMAC signing secret if declared in capabilities
-            if let Some(hmac_name) = &hmac_secret_name {
-                match self.secrets.get_decrypted(&self.user_id, hmac_name).await {
-                    Ok(secret) => {
-                        wasm_channel_router
-                            .register_hmac_secret(&channel_name, secret.expose())
-                            .await;
-                        tracing::info!(channel = %channel_name, "Registered HMAC signing secret for hot-activated channel");
-                    }
-                    Err(e) => {
-                        tracing::warn!(channel = %channel_name, error = %e, "HMAC secret not found");
-                    }
-                }
-            }
-        }
-
-        // Inject credentials
-        match inject_channel_credentials_from_secrets(
-            &channel_arc,
-            Some(self.secrets.as_ref()),
-            &channel_name,
-            &self.user_id,
-        )
-        .await
-        {
-            Ok(count) => {
-                if count > 0 {
-                    tracing::info!(
-                        channel = %channel_name,
-                        credentials_injected = count,
-                        "Credentials injected into hot-activated channel"
-                    );
-                }
-            }
-            Err(e) => {
-                tracing::error!(
-                    channel = %channel_name,
-                    error = %e,
-                    "Failed to inject credentials into hot-activated channel"
-                );
-            }
-        }
-
-        // Hot-add the channel to the running agent
-        channel_manager
-            .hot_add(Box::new(SharedWasmChannel::new(channel_arc)))
-            .await
-            .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
-
-        // Mark as active
-        self.active_channel_names
-            .write()
-            .await
-            .insert(channel_name.clone());
-
-        // Persist activation state so the channel auto-activates on restart
-        self.persist_active_channels().await;
-
-        tracing::info!(channel = %channel_name, "Hot-activated WASM channel");
-
-        // Clear any previous activation error and broadcast success
-        self.activation_errors.write().await.remove(&channel_name);
-        self.broadcast_extension_status(&channel_name, "active", None)
-            .await;
-
-        Ok(ActivateResult {
-            name: channel_name,
-            kind: ExtensionKind::WasmChannel,
-            tools_loaded: Vec::new(),
-            message: format!("Channel '{}' activated and running", name),
-        })
-    }
-
-    /// Refresh credentials and webhook secret on an already-active channel.
-    ///
-    /// Called when the user saves new secrets via the setup form for a channel
-    /// that was loaded at startup (possibly without credentials).
-    async fn refresh_active_channel(&self, name: &str) -> Result<ActivateResult, ExtensionError> {
-        let router = {
-            let rt_guard = self.channel_runtime.read().await;
-            match rt_guard.as_ref() {
-                Some(rt) => Arc::clone(&rt.wasm_channel_router),
-                None => {
-                    return Ok(ActivateResult {
-                        name: name.to_string(),
-                        kind: ExtensionKind::WasmChannel,
-                        tools_loaded: Vec::new(),
-                        message: format!("Channel '{}' is already active", name),
-                    });
-                }
-            }
-        };
-
-        let webhook_path = format!("/webhook/{}", name);
-        let existing_channel = match router.get_channel_for_path(&webhook_path).await {
-            Some(ch) => ch,
-            None => {
-                return Ok(ActivateResult {
-                    name: name.to_string(),
-                    kind: ExtensionKind::WasmChannel,
-                    tools_loaded: Vec::new(),
-                    message: format!("Channel '{}' is already active", name),
-                });
-            }
-        };
-
-        // Re-inject credentials from secrets store into the running channel
-        let cred_count = match inject_channel_credentials_from_secrets(
-            &existing_channel,
-            Some(self.secrets.as_ref()),
-            name,
-            &self.user_id,
-        )
-        .await
-        {
-            Ok(count) => count,
-            Err(e) => {
-                tracing::warn!(
-                    channel = %name,
-                    error = %e,
-                    "Failed to refresh credentials on already-active channel"
-                );
-                0
-            }
-        };
-
-        // Load capabilities file once to extract all secret names
-        let cap_path = self
-            .wasm_channels_dir
-            .join(format!("{}.capabilities.json", name));
-        let capabilities_file = match tokio::fs::read(&cap_path).await {
-            Ok(bytes) => crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&bytes).ok(),
-            Err(_) => None,
-        };
-
-        // Extract all secret names from the capabilities file
-        let webhook_secret_name = capabilities_file
-            .as_ref()
-            .map(|f| f.webhook_secret_name())
-            .unwrap_or_else(|| format!("{}_webhook_secret", name));
-
-        let sig_key_secret_name = capabilities_file
-            .as_ref()
-            .and_then(|f| f.signature_key_secret_name().map(|s| s.to_string()));
-
-        let hmac_secret_name = capabilities_file
-            .as_ref()
-            .and_then(|f| f.hmac_secret_name().map(|s| s.to_string()));
-
-        // Refresh webhook secret
-        if let Ok(secret) = self
-            .secrets
-            .get_decrypted(&self.user_id, &webhook_secret_name)
-            .await
-        {
-            router
-                .update_secret(name, secret.expose().to_string())
-                .await;
-
-            // Also inject the webhook_secret into the channel's runtime config
-            let mut config_updates = std::collections::HashMap::new();
-            config_updates.insert(
-                "webhook_secret".to_string(),
-                serde_json::Value::String(secret.expose().to_string()),
-            );
-            existing_channel.update_config(config_updates).await;
-        }
-
-        // Refresh signature key
-        if let Some(ref sig_key_name) = sig_key_secret_name
-            && let Ok(key_secret) = self
-                .secrets
-                .get_decrypted(&self.user_id, sig_key_name)
-                .await
-        {
-            match router
-                .register_signature_key(name, key_secret.expose())
-                .await
-            {
-                Ok(()) => {
-                    tracing::info!(channel = %name, "Refreshed signature verification key")
-                }
-                Err(e) => {
-                    tracing::error!(channel = %name, error = %e, "Failed to refresh signature key")
-                }
-            }
-        }
-
-        // Refresh HMAC signing secret
-        if let Some(ref hmac_secret_name_ref) = hmac_secret_name {
-            match self
-                .secrets
-                .get_decrypted(&self.user_id, hmac_secret_name_ref)
-                .await
-            {
-                Ok(secret) => {
-                    router.register_hmac_secret(name, secret.expose()).await;
-                    tracing::info!(channel = %name, "Refreshed HMAC signing secret");
-                }
-                Err(e) => {
-                    tracing::warn!(channel = %name, error = %e, "HMAC secret not found");
-                }
-            }
-        }
-
-        // Refresh tunnel_url in case it wasn't set at startup
-        if let Some(ref tunnel_url) = self.tunnel_url {
-            let mut config_updates = std::collections::HashMap::new();
-            config_updates.insert(
-                "tunnel_url".to_string(),
-                serde_json::Value::String(tunnel_url.clone()),
-            );
-            existing_channel.update_config(config_updates).await;
-        }
-
-        // Re-call on_start() to trigger webhook registration with the
-        // now-available credentials (e.g., setWebhook for Telegram).
-        if cred_count > 0 {
-            match existing_channel.call_on_start().await {
-                Ok(_config) => {
-                    tracing::info!(
-                        channel = %name,
-                        "Re-ran on_start after credential refresh (webhook re-registered)"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        channel = %name,
-                        error = %e,
-                        "on_start failed after credential refresh"
-                    );
-                }
-            }
-        }
-
-        tracing::info!(
-            channel = %name,
-            credentials_refreshed = cred_count,
-            "Refreshed credentials and config on already-active channel"
-        );
-
-        Ok(ActivateResult {
-            name: name.to_string(),
-            kind: ExtensionKind::WasmChannel,
-            tools_loaded: Vec::new(),
-            message: format!(
-                "Channel '{}' is already active; refreshed {} credential(s)",
-                name, cred_count
-            ),
-        })
-    }
-
     // ── Channel-relay extension methods ──────────────────────────────────
-
-    /// Derive a stable instance ID from the relay config and user_id.
-    fn relay_instance_id(&self, config: &crate::config::RelayConfig) -> String {
-        config.instance_id.clone().unwrap_or_else(|| {
-            uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, self.user_id.as_bytes()).to_string()
-        })
-    }
 
     /// Authenticate a channel-relay extension.
     ///
@@ -3208,96 +2819,6 @@ impl ExtensionManager {
             )),
             Err(e) => Err(ExtensionError::AuthFailed(e.to_string())),
         }
-    }
-
-    /// Activate a channel-relay extension.
-    ///
-    /// Called by the [`LiveWasmChannelActivation`] adapter; not intended for
-    /// direct use outside the activation port.
-    pub(crate) async fn activate_channel_relay_inner(
-        &self,
-        name: &str,
-    ) -> Result<ActivateResult, ExtensionError> {
-        let token_key = format!("relay:{}:stream_token", name);
-        let team_id_key = format!("relay:{}:team_id", name);
-
-        // Check if we have a stream token
-        let stream_token = match self.secrets.get_decrypted(&self.user_id, &token_key).await {
-            Ok(secret) => secret.expose().to_string(),
-            Err(_) => {
-                return Err(ExtensionError::AuthRequired);
-            }
-        };
-
-        // Get team_id from settings
-        let team_id = if let Some(ref store) = self.store {
-            store
-                .get_setting(self.user_id.as_str().into(), team_id_key.as_str().into())
-                .await
-                .ok()
-                .flatten()
-                .and_then(|v| v.as_str().map(|s| s.to_string()))
-                .unwrap_or_default()
-        } else {
-            String::new()
-        };
-
-        // Use relay config captured at startup
-        let relay_config = self.relay_config()?;
-
-        let instance_id = self.relay_instance_id(relay_config);
-
-        let client = crate::channels::relay::RelayClient::new(
-            relay_config.url.clone(),
-            relay_config.api_key.clone(),
-            relay_config.request_timeout_secs,
-        )
-        .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
-
-        let channel = crate::channels::relay::RelayChannel::new_with_provider(
-            client,
-            crate::channels::relay::channel::RelayProvider::Slack,
-            stream_token,
-            team_id,
-            instance_id,
-            self.user_id.clone(),
-        )
-        .with_timeouts(
-            relay_config.stream_timeout_secs,
-            relay_config.backoff_initial_ms,
-            relay_config.backoff_max_ms,
-        );
-
-        // Hot-add to channel manager
-        let cm_guard = self.relay_channel_manager.read().await;
-        let channel_mgr = cm_guard.as_ref().ok_or_else(|| {
-            ExtensionError::ActivationFailed("Channel manager not initialized".to_string())
-        })?;
-
-        channel_mgr
-            .hot_add(Box::new(channel))
-            .await
-            .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
-
-        // Mark as active
-        self.active_channel_names
-            .write()
-            .await
-            .insert(name.to_string());
-        self.persist_active_channels().await;
-
-        // Clear any previous activation error and broadcast success
-        self.activation_errors.write().await.remove(name);
-        let status_msg = "Slack connected via channel relay".to_string();
-        self.broadcast_extension_status(name, "active", Some(&status_msg))
-            .await;
-
-        Ok(ActivateResult {
-            name: name.to_string(),
-            kind: ExtensionKind::ChannelRelay,
-            tools_loaded: Vec::new(),
-            message: status_msg,
-        })
     }
 
     /// Activate a channel-relay extension from stored credentials (for startup reconnect).
@@ -3765,136 +3286,6 @@ impl ExtensionManager {
     }
 }
 
-/// Inject credentials for a channel based on naming convention.
-///
-/// Looks for secrets matching the pattern `{channel_name}_*` and injects them
-/// as credential placeholders (e.g., `telegram_bot_token` -> `{TELEGRAM_BOT_TOKEN}`).
-///
-/// Falls back to environment variables starting with the uppercase channel name
-/// prefix (e.g., `TELEGRAM_` for channel `telegram`) for missing credentials.
-///
-/// Returns the number of credentials injected.
-async fn inject_channel_credentials_from_secrets(
-    channel: &Arc<crate::channels::wasm::WasmChannel>,
-    secrets: Option<&dyn SecretsStore>,
-    channel_name: &str,
-    user_id: &str,
-) -> Result<usize, String> {
-    let mut count = 0;
-    let mut injected_placeholders = std::collections::HashSet::new();
-
-    // 1. Try injecting from persistent secrets store if available
-    if let Some(secrets) = secrets {
-        let all_secrets = secrets
-            .list(user_id)
-            .await
-            .map_err(|e| format!("Failed to list secrets: {}", e))?;
-
-        let prefix = format!("{}_", channel_name.to_ascii_lowercase());
-
-        for secret_meta in all_secrets {
-            if !secret_meta.name.to_ascii_lowercase().starts_with(&prefix) {
-                continue;
-            }
-
-            let decrypted = match secrets.get_decrypted(user_id, &secret_meta.name).await {
-                Ok(d) => d,
-                Err(e) => {
-                    tracing::warn!(
-                        secret = %secret_meta.name,
-                        error = %e,
-                        "Failed to decrypt secret for channel credential injection"
-                    );
-                    continue;
-                }
-            };
-
-            let placeholder = secret_meta.name.to_uppercase();
-            channel
-                .set_credential(&placeholder, decrypted.expose().to_string())
-                .await;
-            injected_placeholders.insert(placeholder);
-            count += 1;
-        }
-    }
-
-    // 2. Fallback to environment variables for missing credentials
-    count += inject_env_credentials(channel, channel_name, &injected_placeholders).await;
-
-    Ok(count)
-}
-
-/// Inject missing credentials from environment variables.
-///
-/// Only environment variables starting with the uppercase channel name prefix
-/// (e.g., `TELEGRAM_` for channel `telegram`) are considered for security.
-async fn inject_env_credentials(
-    channel: &Arc<crate::channels::wasm::WasmChannel>,
-    channel_name: &str,
-    already_injected: &std::collections::HashSet<String>,
-) -> usize {
-    if channel_name.trim().is_empty() {
-        return 0;
-    }
-
-    let caps = channel.capabilities();
-    let Some(ref http_cap) = caps.tool_capabilities.http else {
-        return 0;
-    };
-
-    let placeholders: Vec<String> = http_cap
-        .credentials
-        .values()
-        .map(|m| m.secret_name.to_uppercase())
-        .collect();
-
-    let resolved = resolve_env_credentials(&placeholders, channel_name, already_injected);
-    let count = resolved.len();
-    for (placeholder, value) in resolved {
-        channel.set_credential(&placeholder, value).await;
-    }
-    count
-}
-
-/// Pure helper: from a list of credential placeholder names, return those that
-/// pass the channel-prefix security check and have a non-empty env var value.
-///
-/// Placeholders already covered by the secrets store (`already_injected`) are
-/// skipped. Only names starting with `{CHANNEL_NAME}_` are allowed to prevent
-/// a WASM channel from reading unrelated host credentials (e.g. `AWS_SECRET_ACCESS_KEY`).
-pub(crate) fn resolve_env_credentials(
-    placeholders: &[String],
-    channel_name: &str,
-    already_injected: &std::collections::HashSet<String>,
-) -> Vec<(String, String)> {
-    if channel_name.trim().is_empty() {
-        return Vec::new();
-    }
-
-    let prefix = format!("{}_", channel_name.to_ascii_uppercase());
-    let mut out = Vec::new();
-
-    for placeholder in placeholders {
-        if already_injected.contains(placeholder) {
-            continue;
-        }
-        if !placeholder.starts_with(&prefix) {
-            tracing::warn!(
-                channel = %channel_name,
-                placeholder = %placeholder,
-                "Ignoring non-prefixed credential placeholder in environment fallback"
-            );
-            continue;
-        }
-        if let Ok(value) = std::env::var(placeholder)
-            && !value.is_empty()
-        {
-            out.push((placeholder.clone(), value));
-        }
-    }
-    out
-}
-
 /// Infer the extension kind from a URL.
 fn infer_kind_from_url(url: &str) -> ExtensionKind {
     if url.ends_with(".wasm") || url.ends_with(".tar.gz") {
@@ -4258,7 +3649,7 @@ mod tests {
 
         let master_key = secrecy::SecretString::from(TEST_CRYPTO_KEY.to_string());
         let crypto = Arc::new(SecretsCrypto::new(master_key).unwrap());
-        let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
+        let mcp_clients = crate::extensions::McpClientsMap::default();
 
         ExtensionManager::new(ExtensionManagerConfig {
             discovery: Arc::new(crate::extensions::NoOpDiscovery),
@@ -4281,95 +3672,6 @@ mod tests {
     }
 
     // ── resolve_env_credentials tests ────────────────────────────────────
-
-    #[test]
-    fn test_security_prefix_check() {
-        // Placeholders that don't start with the channel prefix must be rejected.
-        // All env var names are prefixed with ICTEST1_ to avoid CI collisions.
-        let placeholders = vec![
-            "ICTEST1_BOT_TOKEN".to_string(), // valid: matches channel prefix
-            "ICTEST2_TOKEN".to_string(),     // invalid: wrong channel prefix
-            "ICTEST1_UNRELATED_OTHER".to_string(), // valid prefix, but env var not set — not injected
-        ];
-        let already_injected = std::collections::HashSet::new();
-
-        unsafe { std::env::set_var("ICTEST1_BOT_TOKEN", "good-secret") };
-        unsafe { std::env::set_var("ICTEST2_TOKEN", "bad-secret") };
-        // ICTEST1_UNRELATED_OTHER intentionally not set — tests both prefix rejection and absence
-
-        let resolved = super::resolve_env_credentials(&placeholders, "ictest1", &already_injected);
-
-        // Only ICTEST1_BOT_TOKEN passes the prefix check for channel "ictest1"
-        assert_eq!(resolved.len(), 1);
-        assert_eq!(resolved[0].0, "ICTEST1_BOT_TOKEN");
-        assert_eq!(resolved[0].1, "good-secret");
-
-        unsafe { std::env::remove_var("ICTEST1_BOT_TOKEN") };
-        unsafe { std::env::remove_var("ICTEST2_TOKEN") };
-    }
-
-    #[test]
-    fn test_already_injected_skipped() {
-        // Use unique env var names (ictest3_*) to avoid interference with other tests.
-        let placeholders = vec!["ICTEST3_TOKEN".to_string()];
-        let mut already_injected = std::collections::HashSet::new();
-        already_injected.insert("ICTEST3_TOKEN".to_string());
-
-        unsafe { std::env::set_var("ICTEST3_TOKEN", "secret") };
-
-        let resolved = super::resolve_env_credentials(&placeholders, "ictest3", &already_injected);
-
-        // Already covered by secrets store — env var must be skipped
-        assert!(resolved.is_empty());
-
-        unsafe { std::env::remove_var("ICTEST3_TOKEN") };
-    }
-
-    #[test]
-    fn test_missing_env_var_not_injected() {
-        // Use unique env var names (ictest4_*) to avoid interference with other tests.
-        let placeholders = vec!["ICTEST4_TOKEN".to_string()];
-        let already_injected = std::collections::HashSet::new();
-
-        unsafe { std::env::remove_var("ICTEST4_TOKEN") };
-
-        let resolved = super::resolve_env_credentials(&placeholders, "ictest4", &already_injected);
-
-        assert!(resolved.is_empty());
-    }
-
-    #[test]
-    fn test_empty_env_var_not_injected() {
-        // An env var that exists but is empty must not be injected.
-        // Use unique env var names (ictest5_*) to avoid interference with other tests.
-        let placeholders = vec!["ICTEST5_TOKEN".to_string()];
-        let already_injected = std::collections::HashSet::new();
-
-        unsafe { std::env::set_var("ICTEST5_TOKEN", "") };
-
-        let resolved = super::resolve_env_credentials(&placeholders, "ictest5", &already_injected);
-
-        assert!(resolved.is_empty());
-
-        unsafe { std::env::remove_var("ICTEST5_TOKEN") };
-    }
-
-    #[test]
-    fn test_empty_channel_name_returns_nothing() {
-        // An empty channel name must never match any env var (prefix would be "_").
-        let placeholders = vec!["_TOKEN".to_string(), "ICTEST6_TOKEN".to_string()];
-        let already_injected = std::collections::HashSet::new();
-
-        unsafe { std::env::set_var("_TOKEN", "bad") };
-        unsafe { std::env::set_var("ICTEST6_TOKEN", "bad") };
-
-        let resolved = super::resolve_env_credentials(&placeholders, "", &already_injected);
-
-        assert!(resolved.is_empty(), "empty channel name must match nothing");
-
-        unsafe { std::env::remove_var("_TOKEN") };
-        unsafe { std::env::remove_var("ICTEST6_TOKEN") };
-    }
 
     #[tokio::test]
     async fn test_determine_installed_kind_does_not_auto_install_relay() {

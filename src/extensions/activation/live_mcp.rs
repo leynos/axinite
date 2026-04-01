@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
+use tokio::sync::{OnceCell, RwLock};
 
 use crate::extensions::activation::{ActivationFuture, McpActivationPort};
 use crate::extensions::{ActivateResult, ExtensionError, ExtensionKind};
@@ -18,13 +18,20 @@ use crate::tools::mcp::McpClient;
 use crate::tools::mcp::config::McpServerConfig;
 use crate::tools::mcp::session::McpSessionManager;
 
+/// Type alias for the MCP client cache entry using OnceCell to serialize
+/// concurrent activations without holding a write lock across I/O.
+pub type McpClientCell = OnceCell<Arc<McpClient>>;
+
+/// Type alias for the shared MCP clients map.
+pub type McpClientsMap = Arc<RwLock<HashMap<String, Arc<McpClientCell>>>>;
+
 /// Configuration for [`LiveMcpActivation`].
 pub struct LiveMcpActivationConfig {
     pub mcp_session_manager: Arc<McpSessionManager>,
     pub mcp_process_manager: Arc<crate::tools::mcp::process::McpProcessManager>,
     /// Shared with [`ExtensionManager`] so both see the same set of active
     /// MCP clients.
-    pub mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
+    pub mcp_clients: McpClientsMap,
     pub secrets: Arc<dyn SecretsStore + Send + Sync>,
     pub tool_registry: Arc<ToolRegistry>,
     pub user_id: String,
@@ -37,7 +44,7 @@ pub struct LiveMcpActivation {
     mcp_process_manager: Arc<crate::tools::mcp::process::McpProcessManager>,
     /// Shared with [`ExtensionManager`] so both see the same set of active
     /// MCP clients.
-    mcp_clients: Arc<RwLock<HashMap<String, Arc<McpClient>>>>,
+    mcp_clients: McpClientsMap,
     secrets: Arc<dyn SecretsStore + Send + Sync>,
     tool_registry: Arc<ToolRegistry>,
     user_id: String,
@@ -87,31 +94,54 @@ impl LiveMcpActivation {
         &'a self,
         name: &'a str,
     ) -> Result<ActivateResult, ExtensionError> {
-        // Check if already activated
-        {
-            let clients = self.mcp_clients.read().await;
-            if clients.contains_key(name) {
-                let tools: Vec<String> = self
-                    .tool_registry
-                    .list()
-                    .await
-                    .into_iter()
-                    .filter(|t| t.starts_with(&format!("{}_", name)))
-                    .collect();
+        // Step 1: Acquire write lock briefly to get or insert the OnceCell for this server.
+        // Release the lock immediately before any await.
+        let cell = {
+            let mut clients = self.mcp_clients.write().await;
+            clients
+                .entry(name.to_string())
+                .or_insert_with(|| Arc::new(OnceCell::new()))
+                .clone()
+        };
 
-                return Ok(ActivateResult {
-                    name: name.to_string(),
-                    kind: ExtensionKind::McpServer,
-                    tools_loaded: tools,
-                    message: format!("MCP server '{}' already active", name),
-                });
-            }
-        }
-
-        let server = self
-            .get_mcp_server(name)
+        // Step 2: Use OnceCell to perform the expensive async work exactly once.
+        // On error, the cell remains uninitialized so a later retry can succeed.
+        let _client = cell
+            .get_or_try_init(|| async { self.do_activate_mcp(name).await.map(Arc::new) })
             .await
-            .map_err(|e| ExtensionError::NotInstalled(e.to_string()))?;
+            .map_err(|e: ExtensionError| e)?;
+
+        // Step 3: Build the result with tool names from the registry.
+        let tools: Vec<String> = self
+            .tool_registry
+            .list()
+            .await
+            .into_iter()
+            .filter(|t| t.starts_with(&format!("{}_", name)))
+            .collect();
+
+        Ok(ActivateResult {
+            name: name.to_string(),
+            kind: ExtensionKind::McpServer,
+            tools_loaded: tools.clone(),
+            message: if tools.is_empty() {
+                format!("MCP server '{}' activated with no tools", name)
+            } else {
+                format!("MCP server '{}' activated with {} tools", name, tools.len())
+            },
+        })
+    }
+
+    /// Performs the actual MCP activation work (config load, client creation,
+    /// tool listing/registration). This is called by OnceCell to ensure it
+    /// executes exactly once per server name.
+    async fn do_activate_mcp(&self, name: &str) -> Result<McpClient, ExtensionError> {
+        let server = self.get_mcp_server(name).await.map_err(|e| match e {
+            crate::tools::mcp::config::ConfigError::ServerNotFound { .. } => {
+                ExtensionError::NotInstalled(name.to_string())
+            }
+            other => ExtensionError::Config(other.to_string()),
+        })?;
 
         let client = crate::tools::mcp::create_client_from_config(
             server.clone(),
@@ -133,31 +163,16 @@ impl LiveMcpActivation {
             .await
             .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
 
-        let tool_names: Vec<String> = mcp_tools
-            .iter()
-            .map(|t| format!("{}_{}", name, t.name))
-            .collect();
-
         for tool in tool_impls {
             self.tool_registry.register(tool).await;
         }
 
-        self.mcp_clients
-            .write()
-            .await
-            .insert(name.to_string(), Arc::new(client));
-
         tracing::info!(
             "Activated MCP server '{}' with {} tools",
             name,
-            tool_names.len()
+            mcp_tools.len()
         );
 
-        Ok(ActivateResult {
-            name: name.to_string(),
-            kind: ExtensionKind::McpServer,
-            tools_loaded: tool_names,
-            message: format!("Connected to '{}' and loaded tools", name),
-        })
+        Ok(client)
     }
 }

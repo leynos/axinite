@@ -22,30 +22,17 @@ pub mod manager;
 pub mod registry;
 
 pub use activation::{
-    LiveMcpActivation, LiveMcpActivationConfig, LiveWasmChannelActivation, LiveWasmToolActivation,
-    LiveWasmToolActivationConfig, McpActivationPort, NoOpMcpActivation, NoOpWasmChannelActivation,
+    LiveMcpActivation, LiveMcpActivationConfig, LiveWasmChannelActivation,
+    LiveWasmChannelActivationConfig, LiveWasmToolActivation, LiveWasmToolActivationConfig,
+    McpActivationPort, McpClientsMap, NoOpMcpActivation, NoOpWasmChannelActivation,
     NoOpWasmToolActivation, WasmChannelActivationPort, WasmToolActivationPort,
 };
-pub use discovery::{NoOpDiscovery, OnlineDiscovery};
+pub use discovery::{DiscoveryFuture, DiscoveryPort, NoOpDiscovery, OnlineDiscovery};
 pub use manager::{ExtensionManager, ExtensionManagerConfig};
 pub use registry::ExtensionRegistry;
 
-use std::future::Future;
-use std::pin::Pin;
-
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
-
-/// Boxed future alias for dyn-safe discovery methods.
-pub type DiscoveryFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-/// Object-safe port for discovering extensions.
-///
-/// Used behind `Arc<dyn DiscoveryPort>` in [`ExtensionManager`].
-pub trait DiscoveryPort: Send + Sync {
-    /// Search for extensions matching the query string.
-    fn discover<'a>(&'a self, query: &'a str) -> DiscoveryFuture<'a, Vec<RegistryEntry>>;
-}
 
 /// The kind of extension, determining how it's installed, authenticated, and activated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

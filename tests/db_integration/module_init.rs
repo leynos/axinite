@@ -191,7 +191,7 @@ async fn extension_manager_with_activation_ports_constructs() {
     let tools = Arc::new(ToolRegistry::new());
     let tools_dir = tempfile::tempdir().expect("tools_dir");
     let channels_dir = tempfile::tempdir().expect("channels_dir");
-    let mcp_clients = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
+    let mcp_clients = ironclaw::extensions::McpClientsMap::default();
 
     let manager = ExtensionManager::new(ironclaw::extensions::ExtensionManagerConfig {
         discovery: Arc::new(ironclaw::extensions::NoOpDiscovery),
