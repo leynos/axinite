@@ -618,6 +618,55 @@ impl Scheduler {
         state == JobState::Cancelled || state.can_transition_to(JobState::Cancelled)
     }
 
+    /// Handle the case where a graceful in-memory stop timed out during
+    /// `stop_all`.
+    ///
+    /// Attempts to force the job to `Cancelled` via
+    /// `transition_to_cancelled`, then persists and finalises if the
+    /// transition succeeds. Logs an appropriate warning for each failure
+    /// mode.
+    async fn handle_stop_timeout(
+        &self,
+        job_id: Uuid,
+        reason: &str,
+        stop_timeout: tokio::time::Duration,
+    ) {
+        tracing::warn!(
+            job_id = %job_id,
+            timeout_seconds = stop_timeout.as_secs(),
+            "Timed out stopping job during shutdown"
+        );
+        match self.transition_to_cancelled(job_id, reason).await {
+            Ok(()) => {
+                if let Err(error) = self.persist_cancelled_status(job_id, reason).await {
+                    tracing::warn!(
+                        job_id = %job_id,
+                        %error,
+                        "Failed to persist cancellation after shutdown timeout"
+                    );
+                } else {
+                    self.finalize_stop(job_id).await;
+                }
+            }
+            Err(JobError::InvalidTransition { from_state, .. })
+                if !Self::should_persist_cancelled_after_timeout(from_state) =>
+            {
+                tracing::warn!(
+                    job_id = %job_id,
+                    state = %from_state,
+                    "Skipping cancellation persistence after shutdown timeout because the job state no longer permits cancellation"
+                );
+            }
+            Err(error) => {
+                tracing::warn!(
+                    job_id = %job_id,
+                    %error,
+                    "Failed to cancel job after shutdown timeout"
+                );
+            }
+        }
+    }
+
     async fn finalize_stop(&self, job_id: Uuid) {
         let mut jobs = self.jobs.write().await;
         if let Some(scheduled) = jobs.get(&job_id)
@@ -744,42 +793,8 @@ impl Scheduler {
                     tracing::warn!(job_id = %job_id, %error, "Failed to stop job during shutdown");
                 }
                 Err(_) => {
-                    tracing::warn!(
-                        job_id = %job_id,
-                        timeout_seconds = stop_timeout.as_secs(),
-                        "Timed out stopping job during shutdown"
-                    );
-                    match self.transition_to_cancelled(job_id, stop_reason).await {
-                        Ok(()) => {
-                            if let Err(error) =
-                                self.persist_cancelled_status(job_id, stop_reason).await
-                            {
-                                tracing::warn!(
-                                    job_id = %job_id,
-                                    %error,
-                                    "Failed to persist cancellation after shutdown timeout"
-                                );
-                            } else {
-                                self.finalize_stop(job_id).await;
-                            }
-                        }
-                        Err(JobError::InvalidTransition { from_state, .. })
-                            if !Self::should_persist_cancelled_after_timeout(from_state) =>
-                        {
-                            tracing::warn!(
-                                job_id = %job_id,
-                                state = %from_state,
-                                "Skipping cancellation persistence after shutdown timeout because the job state no longer permits cancellation"
-                            );
-                        }
-                        Err(error) => {
-                            tracing::warn!(
-                                job_id = %job_id,
-                                %error,
-                                "Failed to cancel job after shutdown timeout"
-                            );
-                        }
-                    }
+                    self.handle_stop_timeout(job_id, stop_reason, stop_timeout)
+                        .await;
                 }
             }
         }
