@@ -275,6 +275,65 @@ For the compile-time reduction effort:
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
 
+## AppBuilder two-phase bootstrap
+
+IronClaw uses a two-phase bootstrap pattern in `AppBuilder` (located in
+`src/app.rs`, `src/app/phases.rs`, and `src/app/side_effects.rs`). This
+pattern separates pure component assembly from side-effect-heavy
+activation, making startup testable and composable.
+
+### Phase 1: Assembly (`build_components()`)
+
+`AppBuilder::build_components()` constructs all application components
+and returns them along with a `RuntimeSideEffects` struct containing
+deferred background work. This phase performs awaited bootstrap I/O
+(database connection, migrations, secrets store initialisation, LLM
+provider chain setup, extension discovery, MCP/WASM tool loading) but
+defers fire-and-forget background tasks (cleanup, backfill) to Phase 2.
+
+Use `build_components()` when you need control over side-effect timing,
+such as in tests or when coordinating startup with other systems:
+
+```rust
+let (components, side_effects) = AppBuilder::new(config, flags, None, session, log_broadcaster)
+    .build_components()
+    .await?;
+// Components are ready for inspection; background work not yet started
+```
+
+### Phase 2: Activation (`RuntimeSideEffects::start()`)
+
+`RuntimeSideEffects::start()` runs workspace import and seeding
+synchronously (blocking until complete), then spawns fire-and-forget
+background tasks for stale job cleanup and embedding backfill. Call this
+after assembly when you want side effects to begin:
+
+```rust
+side_effects.start().await;
+```
+
+### Convenience wrapper (`build_all()`)
+
+For production code where immediate startup is desired, use
+`build_all()` which calls both phases in sequence:
+
+```rust
+let components = AppBuilder::new(config, flags, None, session, log_broadcaster)
+    .build_all()
+    .await?;
+```
+
+### Testing implications
+
+Tests should prefer `build_components()` over `build_all()` to avoid
+unrelated background I/O. The returned `RuntimeSideEffects` can be
+intentionally dropped without calling `start()`, keeping tests
+isolated and deterministic.
+
+When testing workspace import/seed behaviour, create temporary
+directories and pass them via `AppBuilderFlags::workspace_import_dir`,
+then verify state before and after calling `side_effects.start().await`.
+
 ## Expected follow-up changes
 
 This guide documents the environment as of the current branch. The
