@@ -7,10 +7,14 @@
 //! repair. They cover exact rewrite-set planning plus the staged, finalized,
 //! and end-to-end PostgreSQL `refinery_schema_history` repair flow.
 
+#[cfg(feature = "postgres")]
 use chrono::Utc;
+#[cfg(feature = "postgres")]
 use std::collections::BTreeSet;
+#[cfg(feature = "postgres")]
 use tokio_postgres::{Client, GenericClient, Row};
 
+#[cfg(feature = "postgres")]
 use super::{
     finalize_migration_history_rewrites, migration_history_rewrites,
     plan_migration_history_rewrites, repair_postgres_refinery_history,
@@ -242,48 +246,66 @@ fn staged_release_window_rows() -> Vec<(i32, String, String)> {
 }
 
 #[cfg(feature = "postgres")]
-fn expected_rewrite_set() -> BTreeSet<(i32, &'static str, u64, i32, &'static str, u64)> {
-    BTreeSet::from([
-        (
-            12,
-            "wasm_wit_default_0_3_0",
-            17026967434177311328,
-            12,
-            "wasm_wit_default_0_3_0",
-            6506104151552529421,
-        ),
-        (
-            12,
-            "job_token_budget",
-            13685500183340941819,
-            13,
-            "job_token_budget",
-            8579391521996531151,
-        ),
-        (
-            13,
-            "drop_redundant_wasm_tools_name_index",
-            16100593955252925602,
-            14,
-            "drop_redundant_wasm_tools_name_index",
-            16545681577522743559,
-        ),
-        (
-            14,
-            "wasm_wit_default_0_3_0",
-            9366402964940367356,
-            12,
-            "wasm_wit_default_0_3_0",
-            6506104151552529421,
-        ),
-    ])
-}
+const EXPECTED_REWRITE_TUPLES: &[(i32, &str, u64, i32, &str, u64)] = &[
+    (
+        12,
+        "wasm_wit_default_0_3_0",
+        17026967434177311328,
+        12,
+        "wasm_wit_default_0_3_0",
+        6506104151552529421,
+    ),
+    (
+        12,
+        "job_token_budget",
+        13685500183340941819,
+        13,
+        "job_token_budget",
+        8579391521996531151,
+    ),
+    (
+        13,
+        "drop_redundant_wasm_tools_name_index",
+        16100593955252925602,
+        14,
+        "drop_redundant_wasm_tools_name_index",
+        16545681577522743559,
+    ),
+    (
+        14,
+        "wasm_wit_default_0_3_0",
+        9366402964940367356,
+        12,
+        "wasm_wit_default_0_3_0",
+        6506104151552529421,
+    ),
+];
 
 #[cfg(feature = "postgres")]
 #[test]
 fn migration_history_rewrites_cover_the_known_released_mappings() {
     let rewrites = migration_history_rewrites().expect("released migration identities parse");
-    assert_eq!(rewrite_tuple_set(&rewrites), expected_rewrite_set());
+
+    assert_eq!(rewrites.len(), EXPECTED_REWRITE_TUPLES.len());
+    for &(fv, fn_, fc, tv, tn, tc) in EXPECTED_REWRITE_TUPLES {
+        assert!(
+            rewrites.iter().any(|r| {
+                r.from.version == fv
+                    && r.from.name == fn_
+                    && r.from.checksum == fc
+                    && r.to.version == tv
+                    && r.to.name == tn
+                    && r.to.checksum == tc
+            }),
+            "missing rewrite from {}:{}:{} to {}:{}:{}",
+            fv,
+            fn_,
+            fc,
+            tv,
+            tn,
+            tc,
+        );
+    }
 }
 
 #[cfg(feature = "postgres")]
@@ -296,7 +318,12 @@ fn plan_migration_history_rewrites_matches_fixed_released_rows() {
 
     let rewrites =
         plan_migration_history_rewrites(&applied).expect("released migration identities parse");
-    assert_eq!(rewrite_tuple_set(&rewrites), expected_rewrite_set());
+    let expected = EXPECTED_REWRITE_TUPLES
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(rewrite_tuple_set(&rewrites), expected);
 }
 
 #[cfg(feature = "postgres")]
