@@ -43,6 +43,9 @@
   provider interfaces, adapters, and the places embeddings are used.
 - [Jobs and routines](jobs-and-routines.md) covers the scheduler, background
   jobs, routines engine, touchpoints, and extension seams.
+- [Worker-orchestrator contract](worker-orchestrator-contract.md) documents the
+  sandbox worker HTTP boundary, the shared route constants, and the reporting
+  split between authoritative status and best-effort events.
 - [Agent skills support](agent-skills-support.md) explains how skills are
   discovered, installed, selected, and injected into model context.
 - [Smart routing spec](smart-routing-spec.md) captures the current design for

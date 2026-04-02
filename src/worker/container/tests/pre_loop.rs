@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use super::test_support::{RuntimeTestState, setup_runtime_test};
 use crate::error::{ConfigMismatchField, Error, ToolError};
+use crate::testing::test_utils::EnvVarsGuard;
 use crate::worker::api::{WorkerHttpClient, WorkerState};
 use crate::worker::container::{WorkerConfig, WorkerError, WorkerExecutionResult, WorkerRuntime};
 
@@ -265,4 +266,45 @@ async fn worker_runtime_sanitizes_failure_messages(
     );
 
     Ok(())
+}
+
+#[test]
+fn worker_runtime_from_env_reads_worker_token() {
+    let mut env = EnvVarsGuard::new(&["IRONCLAW_WORKER_TOKEN"]);
+    env.set("IRONCLAW_WORKER_TOKEN", "token-from-env");
+
+    let runtime = WorkerRuntime::from_env(WorkerConfig {
+        job_id: Uuid::new_v4(),
+        orchestrator_url: "http://localhost:50051/".to_string(),
+        ..WorkerConfig::default()
+    })
+    .expect("from_env should succeed when the worker token is present");
+
+    assert_eq!(
+        runtime.client.orchestrator_url(),
+        "http://localhost:50051",
+        "from_env should preserve the client URL normalization rules"
+    );
+    assert_eq!(
+        runtime.config.max_iterations,
+        WorkerConfig::default().max_iterations
+    );
+    assert_eq!(runtime.config.timeout, WorkerConfig::default().timeout);
+}
+
+#[test]
+fn worker_runtime_from_env_returns_missing_token_without_worker_env() {
+    let mut env = EnvVarsGuard::new(&["IRONCLAW_WORKER_TOKEN"]);
+    env.remove("IRONCLAW_WORKER_TOKEN");
+
+    let result = WorkerRuntime::from_env(WorkerConfig {
+        job_id: Uuid::new_v4(),
+        orchestrator_url: "http://localhost:50051".to_string(),
+        ..WorkerConfig::default()
+    });
+
+    assert!(
+        matches!(result, Err(WorkerError::MissingToken)),
+        "expected MissingToken when IRONCLAW_WORKER_TOKEN is absent"
+    );
 }

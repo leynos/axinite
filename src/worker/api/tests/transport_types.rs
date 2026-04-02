@@ -3,13 +3,50 @@
 use rstest::rstest;
 
 use crate::worker::api::{
+    COMPLETE_ROUTE, CREDENTIALS_ROUTE, EVENT_ROUTE, JOB_ROUTE, PROMPT_ROUTE,
     REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_ROUTE, RemoteToolCatalogResponse,
-    RemoteToolExecutionRequest, RemoteToolExecutionResponse,
+    RemoteToolExecutionRequest, RemoteToolExecutionResponse, STATUS_ROUTE, TerminalResult,
 };
 
 use super::fixtures::{
     sample_catalog_response, sample_execution_request, sample_execution_response,
 };
+
+const fn const_str_eq(left: &str, right: &str) -> bool {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    if left.len() != right.len() {
+        return false;
+    }
+
+    let mut index = 0;
+    while index < left.len() {
+        if left[index] != right[index] {
+            return false;
+        }
+        index += 1;
+    }
+
+    true
+}
+
+const _: () = assert!(const_str_eq(JOB_ROUTE, "/worker/{job_id}/job"));
+const _: () = assert!(const_str_eq(
+    CREDENTIALS_ROUTE,
+    "/worker/{job_id}/credentials"
+));
+const _: () = assert!(const_str_eq(STATUS_ROUTE, "/worker/{job_id}/status"));
+const _: () = assert!(const_str_eq(COMPLETE_ROUTE, "/worker/{job_id}/complete"));
+const _: () = assert!(const_str_eq(EVENT_ROUTE, "/worker/{job_id}/event"));
+const _: () = assert!(const_str_eq(PROMPT_ROUTE, "/worker/{job_id}/prompt"));
+const _: () = assert!(const_str_eq(
+    REMOTE_TOOL_CATALOG_ROUTE,
+    "/worker/{job_id}/tools/catalog"
+));
+const _: () = assert!(const_str_eq(
+    REMOTE_TOOL_EXECUTE_ROUTE,
+    "/worker/{job_id}/tools/execute"
+));
 
 #[test]
 fn worker_and_orchestrator_share_remote_tool_route_constants() {
@@ -103,5 +140,31 @@ fn remote_tool_execution_response_round_trip_without_field_loss(
     assert_eq!(
         deserialized, sample_execution_response,
         "execution response must round-trip without field loss"
+    );
+}
+
+#[test]
+fn terminal_result_round_trip_preserves_all_fields() {
+    let result = TerminalResult::success("completed", Some(11));
+
+    let serialized = serde_json::to_string(&result).expect("serialize TerminalResult");
+    let deserialized: TerminalResult =
+        serde_json::from_str(&serialized).expect("deserialize TerminalResult");
+
+    assert_eq!(deserialized.success, result.success);
+    assert_eq!(deserialized.message, result.message);
+    assert_eq!(deserialized.iterations, result.iterations);
+}
+
+#[test]
+fn terminal_result_omits_iterations_when_absent() {
+    let serialized = serde_json::to_value(TerminalResult::failure("failed", None))
+        .expect("serialize TerminalResult");
+
+    assert_eq!(serialized["success"], false);
+    assert_eq!(serialized["message"], "failed");
+    assert!(
+        serialized.get("iterations").is_none(),
+        "iterations should be omitted when absent"
     );
 }

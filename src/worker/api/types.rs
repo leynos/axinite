@@ -127,6 +127,11 @@ pub struct StatusUpdate {
 }
 
 impl StatusUpdate {
+    /// Build a canonical worker status payload for the orchestrator API.
+    ///
+    /// Using this constructor keeps call sites aligned with the shared
+    /// transport type and makes iteration counts explicit at the reporting
+    /// boundary.
     pub fn new(state: WorkerState, message: Option<String>, iteration: u32) -> Self {
         Self {
             state,
@@ -383,6 +388,9 @@ pub struct TerminalResult {
 
 impl TerminalResult {
     /// Create a new terminal result for a successful job.
+    ///
+    /// This is the result payload carried in `JobEventType::Result`, which
+    /// complements but does not replace the authoritative completion report.
     pub fn success(message: impl Into<String>, iterations: Option<u32>) -> Self {
         Self {
             success: true,
@@ -392,6 +400,9 @@ impl TerminalResult {
     }
 
     /// Create a new terminal result for a failed job.
+    ///
+    /// Failure payloads intentionally carry a sanitized, user-facing summary
+    /// rather than arbitrary internal error detail.
     pub fn failure(message: impl Into<String>, iterations: Option<u32>) -> Self {
         Self {
             success: false,

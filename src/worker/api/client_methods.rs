@@ -46,11 +46,20 @@ impl WorkerHttpClient {
     }
 
     /// Report status to the orchestrator.
+    ///
+    /// Status updates are the authoritative progress signal for the hosted
+    /// worker lifecycle. Callers should use this when rejection should abort
+    /// execution, such as startup and terminal reporting.
     pub async fn report_status(&self, update: &StatusUpdate) -> Result<(), WorkerError> {
         self.post_and_require_success(STATUS_PATH, update).await
     }
 
     /// Report a non-terminal status update without failing the worker on rejection.
+    ///
+    /// This is intended for opportunistic progress updates during long-running
+    /// loops. It preserves observability when the orchestrator accepts the
+    /// update, but it intentionally does not let transient reporting failures
+    /// derail the worker's primary execution flow.
     pub async fn report_status_lossy(&self, update: &StatusUpdate) {
         if let Err(error) = self.report_status(update).await {
             tracing::warn!(
@@ -67,14 +76,18 @@ impl WorkerHttpClient {
     ///
     /// Returns `Ok(())` on success, `WorkerError::ConnectionFailed` if the
     /// request fails at the transport layer, or `WorkerError::OrchestratorRejected`
-    /// if the endpoint returns a non-2xx status.
+    /// if the endpoint returns a non-2xx status. These events feed the
+    /// orchestrator's user-visible job timeline and are separate from the
+    /// authoritative status and completion reports.
     pub async fn post_event(&self, payload: &JobEventPayload) -> Result<(), WorkerError> {
         self.post_and_require_success(EVENT_PATH, payload).await
     }
 
     /// Poll the orchestrator for a follow-up prompt.
     ///
-    /// Returns `None` if no prompt is available (204 No Content).
+    /// Returns `None` if no prompt is available (204 No Content). The worker
+    /// loop uses this to merge orchestrator-provided operator nudges into the
+    /// local reasoning context without treating "no prompt" as an error.
     pub async fn poll_prompt(&self) -> Result<Option<PromptResponse>, WorkerError> {
         let url = self.url(PROMPT_PATH);
         let resp = self
@@ -119,7 +132,9 @@ impl WorkerHttpClient {
     /// [`WorkerRuntime::hydrate_credentials`](crate::worker::container::WorkerRuntime::hydrate_credentials),
     /// which stores them in its `extra_env` and injects them into child processes.
     /// Callers should use this runtime hydrate/injection pathway rather than
-    /// setting global environment variables directly.
+    /// setting global environment variables directly. This keeps credential
+    /// scope local to the worker execution context rather than mutating global
+    /// process state.
     pub async fn fetch_credentials(&self) -> Result<Vec<CredentialResponse>, WorkerError> {
         let url = self.url(CREDENTIALS_PATH);
         let resp = self
@@ -156,6 +171,10 @@ impl WorkerHttpClient {
     }
 
     /// Signal job completion to the orchestrator.
+    ///
+    /// Completion reports are the authoritative terminal record for worker
+    /// execution. Event posting is intentionally separate and best-effort so a
+    /// slow event sink cannot block this terminal acknowledgement.
     pub async fn report_complete(&self, report: &CompletionReport) -> Result<(), WorkerError> {
         self.post_and_require_success(COMPLETE_PATH, report).await
     }

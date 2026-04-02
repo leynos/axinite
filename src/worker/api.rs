@@ -28,6 +28,11 @@ pub use types::{
     WORKER_HEALTH_ROUTE, WorkerState, job_scoped_path, worker_job_url,
 };
 /// HTTP client that a container worker uses to talk to the orchestrator.
+///
+/// This client is the worker-side transport boundary for authoritative job
+/// state. It owns the per-job base URL, attaches the worker bearer token on
+/// every request, and keeps the worker implementation aligned with the
+/// orchestrator's shared route constants and JSON payloads.
 pub struct WorkerHttpClient {
     client: reqwest::Client,
     orchestrator_url: String,
@@ -59,6 +64,10 @@ impl WorkerHttpClient {
     }
 
     /// Create with an explicit token (for testing).
+    ///
+    /// This constructor exists so tests and injected runtimes can avoid
+    /// ambient environment reads while still exercising the same request path
+    /// and route construction as production workers.
     pub fn new(orchestrator_url: String, job_id: Uuid, token: String) -> Result<Self, WorkerError> {
         let client = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
@@ -76,11 +85,17 @@ impl WorkerHttpClient {
     }
 
     /// Get the base orchestrator URL.
+    ///
+    /// Returns the normalized base URL after trailing-slash trimming, which is
+    /// the canonical prefix used for all job-scoped worker endpoints.
     pub fn orchestrator_url(&self) -> &str {
         &self.orchestrator_url
     }
 
     /// Get the job ID.
+    ///
+    /// The worker and orchestrator treat this as part of the transport
+    /// identity. Every request path is derived from this value.
     pub fn job_id(&self) -> Uuid {
         self.job_id
     }

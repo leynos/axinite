@@ -7,6 +7,7 @@ use super::*;
 mod hosted_fidelity;
 mod pre_loop;
 mod remote_tools;
+mod shutdown;
 pub mod test_support;
 
 #[rstest]

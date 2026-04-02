@@ -32,9 +32,13 @@ use reporting::WorkerExecutionResult;
 
 /// Configuration for the worker runtime.
 pub struct WorkerConfig {
+    /// Job identifier used to scope all worker-orchestrator requests.
     pub job_id: Uuid,
+    /// Base orchestrator URL that owns the per-job worker endpoints.
     pub orchestrator_url: String,
+    /// Maximum number of LLM/tool iterations before the worker aborts.
     pub max_iterations: u32,
+    /// Hard wall-clock timeout for the full worker execution.
     pub timeout: Duration,
 }
 
