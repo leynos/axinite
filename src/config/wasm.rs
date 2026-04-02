@@ -2,7 +2,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::bootstrap::ironclaw_base_dir;
-use crate::config::helpers::{optional_env, parse_bool_env, parse_optional_env};
+use crate::config::EnvContext;
+use crate::config::helpers::{
+    EnvKey, optional_env_from, parse_bool_env_from, parse_optional_env_from,
+};
 use crate::error::ConfigError;
 
 /// WASM sandbox configuration.
@@ -44,20 +47,34 @@ fn default_tools_dir() -> PathBuf {
 }
 
 impl WasmConfig {
+    // Backwards-compatible ambient entrypoint retained for existing callers.
     pub(crate) fn resolve() -> Result<Self, ConfigError> {
+        Self::resolve_from(&EnvContext::capture_ambient())
+    }
+
+    pub(crate) fn resolve_from(ctx: &EnvContext) -> Result<Self, ConfigError> {
         Ok(Self {
-            enabled: parse_bool_env("WASM_ENABLED", true)?,
-            tools_dir: optional_env("WASM_TOOLS_DIR")?
+            enabled: parse_bool_env_from(ctx, EnvKey("WASM_ENABLED"), true)?,
+            tools_dir: optional_env_from(ctx, EnvKey("WASM_TOOLS_DIR"))?
                 .map(PathBuf::from)
-                .unwrap_or_else(default_tools_dir),
-            default_memory_limit: parse_optional_env(
-                "WASM_DEFAULT_MEMORY_LIMIT",
+                .unwrap_or_else(|| ctx.ironclaw_base_dir().join("tools")),
+            default_memory_limit: parse_optional_env_from(
+                ctx,
+                EnvKey("WASM_DEFAULT_MEMORY_LIMIT"),
                 10 * 1024 * 1024,
             )?,
-            default_timeout_secs: parse_optional_env("WASM_DEFAULT_TIMEOUT_SECS", 60)?,
-            default_fuel_limit: parse_optional_env("WASM_DEFAULT_FUEL_LIMIT", 10_000_000)?,
-            cache_compiled: parse_bool_env("WASM_CACHE_COMPILED", true)?,
-            cache_dir: optional_env("WASM_CACHE_DIR")?.map(PathBuf::from),
+            default_timeout_secs: parse_optional_env_from(
+                ctx,
+                EnvKey("WASM_DEFAULT_TIMEOUT_SECS"),
+                60,
+            )?,
+            default_fuel_limit: parse_optional_env_from(
+                ctx,
+                EnvKey("WASM_DEFAULT_FUEL_LIMIT"),
+                10_000_000,
+            )?,
+            cache_compiled: parse_bool_env_from(ctx, EnvKey("WASM_CACHE_COMPILED"), true)?,
+            cache_dir: optional_env_from(ctx, EnvKey("WASM_CACHE_DIR"))?.map(PathBuf::from),
         })
     }
 
@@ -81,3 +98,7 @@ impl WasmConfig {
         }
     }
 }
+
+const _: () = {
+    let _ = WasmConfig::resolve;
+};

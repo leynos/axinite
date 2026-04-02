@@ -281,9 +281,9 @@ mod tests {
             .await?;
         assert_eq!(response.status(), 200, "Server should be listening");
 
-        // Bind a temporary listener to create a conflict
-        let conflict_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-        let conflict_addr = conflict_listener.local_addr()?;
+        // Occupy a second port so the restart bind fails deterministically.
+        let occupied_listener = StdTcpListener::bind("127.0.0.1:0")?;
+        let conflict_addr = occupied_listener.local_addr()?;
 
         let result = server.restart_with_addr(conflict_addr).await;
         assert!(
@@ -291,7 +291,7 @@ mod tests {
             "Restart with already-bound address should fail"
         );
 
-        drop(conflict_listener);
+        drop(occupied_listener);
 
         let response = client
             .get(format!("http://{}/health", addr1))

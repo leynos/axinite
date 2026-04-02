@@ -7,6 +7,7 @@
 use std::path::PathBuf;
 
 use crate::bootstrap::ironclaw_base_dir;
+use crate::config::EnvContext;
 use crate::settings::Settings;
 
 async fn run_core_checks(
@@ -238,7 +239,11 @@ async fn check_nearai_session() -> CheckResult {
 // ── LLM configuration ──────────────────────────────────────
 
 fn check_llm_config(settings: &Settings) -> CheckResult {
-    match crate::llm::LlmConfig::resolve(settings) {
+    check_llm_config_with_context(&EnvContext::capture_ambient(), settings)
+}
+
+fn check_llm_config_with_context(ctx: &EnvContext, settings: &Settings) -> CheckResult {
+    match crate::llm::LlmConfig::resolve_from(ctx, settings) {
         Ok(config) => {
             // Show the model for the active backend, not always nearai.model.
             let model = if let Some(ref bedrock) = config.bedrock {
@@ -399,7 +404,11 @@ fn check_workspace_dir() -> CheckResult {
 // ── Embeddings ──────────────────────────────────────────────
 
 fn check_embeddings(settings: &Settings) -> CheckResult {
-    match crate::config::EmbeddingsConfig::resolve(settings) {
+    check_embeddings_with_context(&EnvContext::capture_ambient(), settings)
+}
+
+fn check_embeddings_with_context(ctx: &EnvContext, settings: &Settings) -> CheckResult {
+    match crate::config::EmbeddingsConfig::resolve_from(ctx, settings) {
         Ok(config) => {
             if !config.enabled {
                 return CheckResult::Skip("disabled (set EMBEDDING_ENABLED=true)".into());
@@ -442,7 +451,11 @@ fn check_embeddings(settings: &Settings) -> CheckResult {
 // ── Routines config ─────────────────────────────────────────
 
 fn check_routines_config() -> CheckResult {
-    match crate::config::RoutineConfig::resolve() {
+    check_routines_config_with_context(&EnvContext::capture_ambient())
+}
+
+fn check_routines_config_with_context(ctx: &EnvContext) -> CheckResult {
+    match crate::config::RoutineConfig::resolve_from(ctx) {
         Ok(config) => {
             if config.enabled {
                 CheckResult::Pass(format!(
@@ -782,13 +795,9 @@ mod tests {
 
     #[test]
     fn check_llm_config_shows_nearai_model_for_nearai_backend() {
-        let _guard = crate::config::helpers::ENV_MUTEX.lock().expect("env mutex");
-        // SAFETY: Under ENV_MUTEX, no concurrent env access.
-        unsafe {
-            std::env::remove_var("LLM_BACKEND");
-        }
         let settings = Settings::default();
-        match check_llm_config(&settings) {
+        let ctx = EnvContext::for_testing(Default::default(), Default::default());
+        match check_llm_config_with_context(&ctx, &settings) {
             CheckResult::Pass(msg) => {
                 assert!(
                     msg.contains("backend=nearai"),
@@ -809,13 +818,9 @@ mod tests {
 
     #[test]
     fn check_embeddings_disabled_by_default_returns_skip() {
-        let _guard = crate::config::helpers::ENV_MUTEX.lock().expect("env mutex");
-        // SAFETY: Under ENV_MUTEX.
-        unsafe {
-            std::env::remove_var("EMBEDDING_ENABLED");
-        }
         let settings = Settings::default();
-        match check_embeddings(&settings) {
+        let ctx = EnvContext::for_testing(Default::default(), Default::default());
+        match check_embeddings_with_context(&ctx, &settings) {
             CheckResult::Skip(msg) => {
                 assert!(
                     msg.contains("disabled"),
@@ -831,12 +836,8 @@ mod tests {
 
     #[test]
     fn check_routines_enabled_by_default() {
-        let _guard = crate::config::helpers::ENV_MUTEX.lock().expect("env mutex");
-        // SAFETY: Under ENV_MUTEX.
-        unsafe {
-            std::env::remove_var("ROUTINES_ENABLED");
-        }
-        match check_routines_config() {
+        let ctx = EnvContext::for_testing(Default::default(), Default::default());
+        match check_routines_config_with_context(&ctx) {
             CheckResult::Pass(msg) => {
                 assert!(
                     msg.contains("enabled"),

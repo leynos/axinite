@@ -126,8 +126,12 @@ before channels and background services start.
 4. If onboarding is still required and onboarding has not been suppressed, the
    setup wizard runs before the rest of the runtime is built.
 5. `Config::from_env_with_toml()` builds the initial configuration from
-   environment variables, optional TOML, and defaults. The database is not yet
-   required at this point.
+   environment variables, optional TOML, and defaults. Internally the config
+   layer now captures those inputs into an explicit `EnvContext` snapshot
+   before resolving sub-configs, so the runtime can preserve current operator
+   behaviour while tests and internal callers use `Config::from_context(...)`
+   for deterministic resolution. The database is not yet required at this
+   point.
 6. `AppBuilder::build_all()` executes the mechanical initialization phases in a
    fixed order: database, secrets, language model providers, tools and
    workspace, then extensions.

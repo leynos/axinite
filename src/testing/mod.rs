@@ -19,7 +19,6 @@
 //! ```
 
 pub mod credentials;
-#[cfg(test)]
 pub mod test_utils;
 
 use std::sync::Arc;

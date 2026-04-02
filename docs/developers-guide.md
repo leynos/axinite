@@ -150,6 +150,40 @@ The current `Makefile` also includes:
 - `make clean` to remove Cargo build outputs for the root crate and the
   GitHub tool crate.
 
+## Configuration snapshots with EnvContext
+
+The configuration system now supports an explicit snapshot model through
+`crate::config::EnvContext`. Use it whenever a caller already knows the
+exact environment inputs that should participate in config resolution.
+
+The intended call pattern is:
+
+1. Capture ambient inputs once at the application boundary with
+   `EnvContext::capture_ambient()`.
+2. Optionally inject secret overlays into that snapshot with
+   `inject_llm_keys_into_context(...)` and
+   `inject_os_credentials_into_context(...)`.
+3. Build config through `Config::from_context(...)` or
+   `Config::from_context_with_toml(...)`.
+
+This keeps config resolution deterministic because the policy layer reads
+from an explicit snapshot instead of touching ambient process state while
+it resolves individual sub-configs.
+
+Use the older ambient entrypoints only when the caller genuinely wants
+them to do the capture work:
+
+- `Config::from_env*` captures process env and bootstrap overlays for
+  early startup paths.
+- `Config::from_db*` combines DB-backed settings with an ambient env
+  snapshot.
+- `Config::from_context*` should be preferred in tests, pure setup code,
+  and any flow that already owns a stable input snapshot.
+
+For tests, prefer the helpers in `src/testing/test_utils.rs` or
+`Config::for_testing(...)` instead of mutating `std::env`. That keeps
+tests independent of host machine secrets, keychains, and shell state.
+
 ## Fast local validation loop
 
 For quick host-side iteration on Linux or WSL with the current branch
@@ -201,6 +235,7 @@ export DATABASE_URL=postgres://localhost/ironclaw
 
 Adjust the connection string if the local PostgreSQL instance requires a
 different host, user, or password.
+
 ## End-to-end (E2E) prerequisites
 
 For browser-based tests:

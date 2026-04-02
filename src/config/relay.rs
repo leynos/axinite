@@ -2,6 +2,8 @@
 
 use secrecy::SecretString;
 
+use crate::config::EnvContext;
+
 /// Configuration for connecting to a channel-relay service.
 #[derive(Clone)]
 pub struct RelayConfig {
@@ -44,7 +46,8 @@ impl RelayConfig {
     /// Returns `None` if either `CHANNEL_RELAY_URL` or `CHANNEL_RELAY_API_KEY`
     /// is not set, making the relay integration opt-in.
     pub fn from_env() -> Option<Self> {
-        Self::from_env_reader(|key| std::env::var(key).ok())
+        let ctx = EnvContext::capture_ambient();
+        Self::from_context(&ctx)
     }
 
     /// Build a config for tests without touching the process environment.
@@ -59,6 +62,10 @@ impl RelayConfig {
             backoff_initial_ms: 1000,
             backoff_max_ms: 60000,
         }
+    }
+
+    pub(crate) fn from_context(ctx: &EnvContext) -> Option<Self> {
+        Self::from_env_reader(|key| ctx.get_owned(key))
     }
 
     /// Internal constructor that reads values through a closure, enabling safe testing.

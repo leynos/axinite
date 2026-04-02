@@ -1,4 +1,10 @@
-use crate::config::helpers::optional_env;
+//! Public tunnel configuration for webhook-capable channels.
+//!
+//! This module resolves tunnel settings from env and persisted settings, with
+//! explicit precedence rules and an ambient compatibility wrapper.
+
+use crate::config::EnvContext;
+use crate::config::helpers::{EnvKey, optional_env_from, parse_bool_env_from};
 use crate::error::ConfigError;
 use crate::settings::Settings;
 
@@ -24,8 +30,13 @@ pub struct TunnelConfig {
 }
 
 impl TunnelConfig {
+    // Backwards-compatible ambient entrypoint retained for existing callers.
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
-        let public_url = optional_env("TUNNEL_URL")?
+        Self::resolve_from(&EnvContext::capture_ambient(), settings)
+    }
+
+    pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
+        let public_url = optional_env_from(ctx, EnvKey("TUNNEL_URL"))?
             .or_else(|| settings.tunnel.public_url.clone().filter(|s| !s.is_empty()));
 
         if let Some(ref url) = public_url
@@ -39,7 +50,7 @@ impl TunnelConfig {
 
         // Resolve managed tunnel provider config.
         // Priority: env var > settings > default (none).
-        let provider_name = optional_env("TUNNEL_PROVIDER")?
+        let provider_name = optional_env_from(ctx, EnvKey("TUNNEL_PROVIDER"))?
             .or_else(|| settings.tunnel.provider.clone())
             .unwrap_or_default();
 
@@ -48,20 +59,22 @@ impl TunnelConfig {
         } else {
             Some(crate::tunnel::TunnelProviderConfig {
                 provider: provider_name.clone(),
-                cloudflare: optional_env("TUNNEL_CF_TOKEN")?
+                cloudflare: optional_env_from(ctx, EnvKey("TUNNEL_CF_TOKEN"))?
                     .or_else(|| settings.tunnel.cf_token.clone())
                     .map(|token| crate::tunnel::CloudflareTunnelConfig { token }),
                 tailscale: Some(crate::tunnel::TailscaleTunnelConfig {
-                    funnel: optional_env("TUNNEL_TS_FUNNEL")?
-                        .map(|s| s == "true" || s == "1")
-                        .unwrap_or(settings.tunnel.ts_funnel),
-                    hostname: optional_env("TUNNEL_TS_HOSTNAME")?
+                    funnel: parse_bool_env_from(
+                        ctx,
+                        EnvKey("TUNNEL_TS_FUNNEL"),
+                        settings.tunnel.ts_funnel,
+                    )?,
+                    hostname: optional_env_from(ctx, EnvKey("TUNNEL_TS_HOSTNAME"))?
                         .or_else(|| settings.tunnel.ts_hostname.clone()),
                 }),
                 ngrok: {
-                    let ngrok_domain = optional_env("TUNNEL_NGROK_DOMAIN")?
+                    let ngrok_domain = optional_env_from(ctx, EnvKey("TUNNEL_NGROK_DOMAIN"))?
                         .or_else(|| settings.tunnel.ngrok_domain.clone());
-                    optional_env("TUNNEL_NGROK_TOKEN")?
+                    optional_env_from(ctx, EnvKey("TUNNEL_NGROK_TOKEN"))?
                         .or_else(|| settings.tunnel.ngrok_token.clone())
                         .map(|auth_token| crate::tunnel::NgrokTunnelConfig {
                             auth_token,
@@ -69,11 +82,11 @@ impl TunnelConfig {
                         })
                 },
                 custom: {
-                    let health_url = optional_env("TUNNEL_CUSTOM_HEALTH_URL")?
+                    let health_url = optional_env_from(ctx, EnvKey("TUNNEL_CUSTOM_HEALTH_URL"))?
                         .or_else(|| settings.tunnel.custom_health_url.clone());
-                    let url_pattern = optional_env("TUNNEL_CUSTOM_URL_PATTERN")?
+                    let url_pattern = optional_env_from(ctx, EnvKey("TUNNEL_CUSTOM_URL_PATTERN"))?
                         .or_else(|| settings.tunnel.custom_url_pattern.clone());
-                    optional_env("TUNNEL_CUSTOM_COMMAND")?
+                    optional_env_from(ctx, EnvKey("TUNNEL_CUSTOM_COMMAND"))?
                         .or_else(|| settings.tunnel.custom_command.clone())
                         .map(|start_command| crate::tunnel::CustomTunnelConfig {
                             start_command,
@@ -104,6 +117,10 @@ impl TunnelConfig {
         })
     }
 }
+
+const _: () = {
+    let _ = TunnelConfig::resolve;
+};
 
 #[cfg(test)]
 mod tests {

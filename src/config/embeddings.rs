@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::config::helpers::{optional_env, parse_bool_env, parse_optional_env};
+use crate::config::EnvContext;
+use crate::config::helpers::{
+    EnvKey, optional_env_from, parse_bool_env_from, parse_optional_env_from,
+};
 use crate::error::ConfigError;
 use crate::llm::SessionManager;
 use crate::settings::Settings;
@@ -56,23 +59,46 @@ fn default_dimension_for_model(model: &str) -> usize {
 }
 
 impl EmbeddingsConfig {
+    // Backwards-compatible ambient entrypoint retained for existing callers.
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
-        let openai_api_key = optional_env("OPENAI_API_KEY")?.map(SecretString::from);
+        Self::resolve_from(&EnvContext::capture_ambient(), settings)
+    }
 
-        let provider = optional_env("EMBEDDING_PROVIDER")?
-            .unwrap_or_else(|| settings.embeddings.provider.clone());
+    pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
+        let openai_api_key =
+            optional_env_from(ctx, EnvKey("OPENAI_API_KEY"))?.map(SecretString::from);
 
-        let model =
-            optional_env("EMBEDDING_MODEL")?.unwrap_or_else(|| settings.embeddings.model.clone());
+        let provider = optional_env_from(ctx, EnvKey("EMBEDDING_PROVIDER"))?
+            .unwrap_or_else(|| settings.embeddings.provider.clone())
+            .to_lowercase();
+        if !matches!(provider.as_str(), "openai" | "nearai" | "ollama") {
+            return Err(ConfigError::InvalidValue {
+                key: "EMBEDDING_PROVIDER".to_string(),
+                message: format!(
+                    "unsupported embeddings provider '{}', expected one of: openai, nearai, ollama",
+                    provider
+                ),
+            });
+        }
 
-        let ollama_base_url = optional_env("OLLAMA_BASE_URL")?
+        let model = optional_env_from(ctx, EnvKey("EMBEDDING_MODEL"))?
+            .unwrap_or_else(|| settings.embeddings.model.clone());
+
+        let ollama_base_url = optional_env_from(ctx, EnvKey("OLLAMA_BASE_URL"))?
             .or_else(|| settings.ollama_base_url.clone())
             .unwrap_or_else(|| "http://localhost:11434".to_string());
 
-        let dimension =
-            parse_optional_env("EMBEDDING_DIMENSION", default_dimension_for_model(&model))?;
+        let dimension = parse_optional_env_from(
+            ctx,
+            EnvKey("EMBEDDING_DIMENSION"),
+            default_dimension_for_model(&model),
+        )?;
 
-        let enabled = parse_bool_env("EMBEDDING_ENABLED", settings.embeddings.enabled)?;
+        let enabled = parse_bool_env_from(
+            ctx,
+            EnvKey("EMBEDDING_ENABLED"),
+            settings.embeddings.enabled,
+        )?;
 
         Ok(Self {
             enabled,
@@ -148,6 +174,10 @@ impl EmbeddingsConfig {
         }
     }
 }
+
+const _: () = {
+    let _ = EmbeddingsConfig::resolve;
+};
 
 #[cfg(test)]
 mod tests {
@@ -246,5 +276,12 @@ mod tests {
         unsafe {
             std::env::remove_var("EMBEDDING_ENABLED");
         }
+    }
+
+    #[test]
+    fn embeddings_reject_unknown_provider() {
+        let ctx = EnvContext::default().with_env("EMBEDDING_PROVIDER", "ollma");
+        let result = EmbeddingsConfig::resolve_from(&ctx, &Settings::default());
+        assert!(result.is_err(), "unknown provider should fail fast");
     }
 }

@@ -98,6 +98,32 @@ pub struct SetupWizard {
     llm_api_key: Option<SecretString>,
 }
 
+struct ApiKeyProviderSpec<'a> {
+    backend: &'a str,
+    env_var: &'a str,
+    secret_name: &'a str,
+    prompt_label: &'a str,
+    hint_url: &'a str,
+    override_display_name: Option<&'a str>,
+}
+
+struct OpenAICompatSpec<'a> {
+    backend_id: &'a str,
+    secret_name: &'a str,
+    display_name: &'a str,
+}
+
+struct LibsqlConnParams<'a> {
+    path: &'a std::path::Path,
+    turso_url: Option<&'a str>,
+    turso_token: Option<&'a str>,
+}
+
+struct OpenAICompatModelsRequest<'a> {
+    base_url: &'a str,
+    cached_key: Option<&'a str>,
+}
+
 impl SetupWizard {
     /// Create a new setup wizard.
     pub fn new() -> Self {
@@ -340,8 +366,12 @@ impl SetupWizard {
         let turso_url = std::env::var("LIBSQL_URL").ok();
         let turso_token = std::env::var("LIBSQL_AUTH_TOKEN").ok();
 
-        self.test_database_connection_libsql(&path, turso_url.as_deref(), turso_token.as_deref())
-            .await?;
+        self.test_database_connection_libsql(LibsqlConnParams {
+            path: std::path::Path::new(&path),
+            turso_url: turso_url.as_deref(),
+            turso_token: turso_token.as_deref(),
+        })
+        .await?;
 
         self.settings.database_backend = Some("libsql".to_string());
         self.settings.libsql_path = Some(path.clone());
@@ -514,11 +544,11 @@ impl SetupWizard {
                 let turso_token = std::env::var("LIBSQL_AUTH_TOKEN").ok();
 
                 match self
-                    .test_database_connection_libsql(
-                        path,
-                        turso_url.as_deref(),
-                        turso_token.as_deref(),
-                    )
+                    .test_database_connection_libsql(LibsqlConnParams {
+                        path: std::path::Path::new(path),
+                        turso_url: turso_url.as_deref(),
+                        turso_token: turso_token.as_deref(),
+                    })
                     .await
                 {
                     Ok(()) => {
@@ -580,7 +610,11 @@ impl SetupWizard {
 
         print_info("Testing connection...");
         match self
-            .test_database_connection_libsql(&db_path, turso_url.as_deref(), turso_token.as_deref())
+            .test_database_connection_libsql(LibsqlConnParams {
+                path: std::path::Path::new(&db_path),
+                turso_url: turso_url.as_deref(),
+                turso_token: turso_token.as_deref(),
+            })
             .await
         {
             Ok(()) => {
@@ -679,14 +713,16 @@ impl SetupWizard {
     #[cfg(feature = "libsql")]
     async fn test_database_connection_libsql(
         &mut self,
-        path: &str,
-        turso_url: Option<&str>,
-        turso_token: Option<&str>,
+        params: LibsqlConnParams<'_>,
     ) -> Result<(), SetupError> {
         use crate::db::libsql::LibSqlBackend;
-        use std::path::Path;
 
-        let db_path = Path::new(path);
+        let LibsqlConnParams {
+            path,
+            turso_url,
+            turso_token,
+        } = params;
+        let db_path = path;
 
         let backend = if let (Some(url), Some(token)) = (turso_url, turso_token) {
             LibSqlBackend::new_remote_replica(db_path, url, token)
@@ -920,11 +956,11 @@ impl SetupWizard {
             let turso_url = std::env::var("LIBSQL_URL").ok();
             let turso_token = std::env::var("LIBSQL_AUTH_TOKEN").ok();
 
-            self.test_database_connection_libsql(
-                &db_path,
-                turso_url.as_deref(),
-                turso_token.as_deref(),
-            )
+            self.test_database_connection_libsql(LibsqlConnParams {
+                path: std::path::Path::new(&db_path),
+                turso_url: turso_url.as_deref(),
+                turso_token: turso_token.as_deref(),
+            })
             .await?;
 
             self.run_migrations_libsql().await?;
@@ -1142,14 +1178,15 @@ impl SetupWizard {
                     self.settings.openai_compatible_base_url = Some(base_url.clone());
                 }
 
-                self.setup_api_key_provider(
-                    &def.id,
+                let prompt_label = format!("{display_name} API key");
+                self.setup_api_key_provider(ApiKeyProviderSpec {
+                    backend: &def.id,
                     env_var,
                     secret_name,
-                    &format!("{display_name} API key"),
-                    url,
-                    Some(display_name),
-                )
+                    prompt_label: &prompt_label,
+                    hint_url: url,
+                    override_display_name: Some(display_name),
+                })
                 .await?;
             }
             crate::llm::registry::SetupHint::Ollama { .. } => {
@@ -1160,8 +1197,12 @@ impl SetupWizard {
                 display_name,
                 ..
             } => {
-                self.setup_openai_compatible_generic(&def.id, secret_name, display_name)
-                    .await?;
+                self.setup_openai_compatible_generic(OpenAICompatSpec {
+                    backend_id: &def.id,
+                    secret_name,
+                    display_name,
+                })
+                .await?;
             }
         }
 
@@ -1238,14 +1279,14 @@ impl SetupWizard {
 
         if choice == 0 {
             // Standard API key flow
-            self.setup_api_key_provider(
-                "anthropic",
-                "ANTHROPIC_API_KEY",
-                "llm_anthropic_api_key",
-                "Anthropic API key",
-                "https://console.anthropic.com/settings/keys",
-                None,
-            )
+            self.setup_api_key_provider(ApiKeyProviderSpec {
+                backend: "anthropic",
+                env_var: "ANTHROPIC_API_KEY",
+                secret_name: "llm_anthropic_api_key",
+                prompt_label: "Anthropic API key",
+                hint_url: "https://console.anthropic.com/settings/keys",
+                override_display_name: None,
+            })
             .await
         } else {
             // OAuth token flow
@@ -1292,14 +1333,14 @@ impl SetupWizard {
         if token_str.is_empty() {
             print_info("Switching to API key flow...");
             return self
-                .setup_api_key_provider(
-                    "anthropic",
-                    "ANTHROPIC_API_KEY",
-                    "llm_anthropic_api_key",
-                    "Anthropic API key",
-                    "https://console.anthropic.com/settings/keys",
-                    None,
-                )
+                .setup_api_key_provider(ApiKeyProviderSpec {
+                    backend: "anthropic",
+                    env_var: "ANTHROPIC_API_KEY",
+                    secret_name: "llm_anthropic_api_key",
+                    prompt_label: "Anthropic API key",
+                    hint_url: "https://console.anthropic.com/settings/keys",
+                    override_display_name: None,
+                })
                 .await;
         }
         self.save_anthropic_oauth_token(token_str).await
@@ -1340,13 +1381,17 @@ impl SetupWizard {
     /// Shared setup flow for API-key-based providers.
     async fn setup_api_key_provider(
         &mut self,
-        backend: &str,
-        env_var: &str,
-        secret_name: &str,
-        prompt_label: &str,
-        hint_url: &str,
-        override_display_name: Option<&str>,
+        spec: ApiKeyProviderSpec<'_>,
     ) -> Result<(), SetupError> {
+        let ApiKeyProviderSpec {
+            backend,
+            env_var,
+            secret_name,
+            prompt_label,
+            hint_url,
+            override_display_name,
+        } = spec;
+
         let display_name = override_display_name.unwrap_or(match backend {
             "anthropic" => "Anthropic",
             "openai" => "OpenAI",
@@ -1540,10 +1585,14 @@ impl SetupWizard {
     /// Generic OpenAI-compatible setup: base URL + optional API key.
     async fn setup_openai_compatible_generic(
         &mut self,
-        backend_id: &str,
-        secret_name: &str,
-        display_name: &str,
+        spec: OpenAICompatSpec<'_>,
     ) -> Result<(), SetupError> {
+        let OpenAICompatSpec {
+            backend_id,
+            secret_name,
+            display_name,
+        } = spec;
+
         // Clear model only when switching providers (old model may be invalid)
         if self.settings.llm_backend.as_deref() != Some(backend_id) {
             self.settings.selected_model = None;
@@ -1675,7 +1724,11 @@ impl SetupWizard {
                     _ => {
                         // Generic OpenAI-compatible model listing
                         let base_url = def.default_base_url.as_deref().unwrap_or("");
-                        fetch_openai_compatible_models(base_url, cached_key.as_deref()).await
+                        fetch_openai_compatible_models(OpenAICompatModelsRequest {
+                            base_url,
+                            cached_key: cached_key.as_deref(),
+                        })
+                        .await
                     }
                 };
 
@@ -2439,15 +2492,19 @@ impl SetupWizard {
         // Uses `optional_env()` which reads both real env vars and the
         // injected overlay (secrets DB, wizard-set values).
         let has_credentials = || {
-            let has_api_key = crate::config::helpers::optional_env("ANTHROPIC_API_KEY")
+            let has_api_key = crate::config::helpers::optional_env(crate::config::helpers::EnvKey(
+                "ANTHROPIC_API_KEY",
+            ))
+            .ok()
+            .flatten()
+            .is_some_and(|v| !v.is_empty() && v != OAUTH_PLACEHOLDER);
+            let has_oauth = crate::config::ClaudeCodeConfig::extract_oauth_token().is_some()
+                || crate::config::helpers::optional_env(crate::config::helpers::EnvKey(
+                    "ANTHROPIC_OAUTH_TOKEN",
+                ))
                 .ok()
                 .flatten()
-                .is_some_and(|v| !v.is_empty() && v != OAUTH_PLACEHOLDER);
-            let has_oauth = crate::config::ClaudeCodeConfig::extract_oauth_token().is_some()
-                || crate::config::helpers::optional_env("ANTHROPIC_OAUTH_TOKEN")
-                    .ok()
-                    .flatten()
-                    .is_some_and(|v| !v.is_empty());
+                .is_some_and(|v| !v.is_empty());
             has_api_key || has_oauth
         };
 
@@ -2941,8 +2998,81 @@ fn mask_password_in_url(url: &str) -> String {
 /// Fetch models from the Anthropic API.
 ///
 /// Returns `(model_id, display_label)` pairs. Falls back to static defaults on error.
-async fn fetch_anthropic_models(cached_key: Option<&str>) -> Vec<(String, String)> {
-    let static_defaults = vec![
+enum AnthropicAuth {
+    ApiKey(String),
+    OAuth(String),
+}
+
+fn resolve_anthropic_auth(cached_credential: Option<&str>) -> Option<AnthropicAuth> {
+    if let Some(credential) = cached_credential.filter(|credential| {
+        !credential.is_empty() && *credential != crate::config::OAUTH_PLACEHOLDER
+    }) {
+        return if credential.starts_with("sk-ant-oat") {
+            Some(AnthropicAuth::OAuth(credential.to_string()))
+        } else {
+            Some(AnthropicAuth::ApiKey(credential.to_string()))
+        };
+    }
+
+    let api_key =
+        crate::config::helpers::optional_env(crate::config::helpers::EnvKey("ANTHROPIC_API_KEY"))
+            .ok()
+            .flatten()
+            .filter(|key| !key.is_empty() && key != crate::config::OAUTH_PLACEHOLDER);
+    if let Some(api_key) = api_key {
+        return Some(AnthropicAuth::ApiKey(api_key));
+    }
+
+    crate::config::helpers::optional_env(crate::config::helpers::EnvKey("ANTHROPIC_OAUTH_TOKEN"))
+        .ok()
+        .flatten()
+        .filter(|token| !token.is_empty())
+        .map(AnthropicAuth::OAuth)
+}
+
+fn anthropic_request(client: &reqwest::Client, auth: &AnthropicAuth) -> reqwest::RequestBuilder {
+    let request = client
+        .get("https://api.anthropic.com/v1/models")
+        .header("anthropic-version", "2023-06-01")
+        .timeout(std::time::Duration::from_secs(5));
+
+    match auth {
+        AnthropicAuth::ApiKey(key) => request.header("x-api-key", key),
+        AnthropicAuth::OAuth(token) => request
+            .bearer_auth(token)
+            .header("anthropic-beta", "oauth-2025-04-20"),
+    }
+}
+
+async fn parse_anthropic_models_response(
+    resp: reqwest::Response,
+) -> Result<Vec<(String, String)>, reqwest::Error> {
+    #[derive(serde::Deserialize)]
+    struct ModelEntry {
+        id: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ModelsResponse {
+        data: Vec<ModelEntry>,
+    }
+
+    let body = resp.json::<ModelsResponse>().await?;
+    let mut models: Vec<(String, String)> = body
+        .data
+        .into_iter()
+        .filter(|model| !model.id.contains("embedding") && !model.id.contains("audio"))
+        .map(|model| {
+            let label = model.id.clone();
+            (model.id, label)
+        })
+        .collect();
+    models.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(models)
+}
+
+fn anthropic_static_defaults() -> Vec<(String, String)> {
+    vec![
         (
             "claude-opus-4-6".into(),
             "Claude Opus 4.6 (latest flagship)".into(),
@@ -2951,75 +3081,23 @@ async fn fetch_anthropic_models(cached_key: Option<&str>) -> Vec<(String, String
         ("claude-opus-4-5".into(), "Claude Opus 4.5".into()),
         ("claude-sonnet-4-5".into(), "Claude Sonnet 4.5".into()),
         ("claude-haiku-4-5".into(), "Claude Haiku 4.5 (fast)".into()),
-    ];
+    ]
+}
 
-    let api_key = cached_key
-        .map(String::from)
-        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
-        .filter(|k| !k.is_empty() && k != crate::config::OAUTH_PLACEHOLDER);
-
-    // Fall back to OAuth token if no API key
-    let oauth_token = if api_key.is_none() {
-        crate::config::helpers::optional_env("ANTHROPIC_OAUTH_TOKEN")
-            .ok()
-            .flatten()
-            .filter(|t| !t.is_empty())
-    } else {
-        None
+async fn fetch_anthropic_models(cached_key: Option<&str>) -> Vec<(String, String)> {
+    let defaults = anthropic_static_defaults();
+    let Some(auth) = resolve_anthropic_auth(cached_key) else {
+        return defaults;
     };
-
-    let (key_or_token, is_oauth) = match (api_key, oauth_token) {
-        (Some(k), _) => (k, false),
-        (None, Some(t)) => (t, true),
-        (None, None) => return static_defaults,
-    };
-
     let client = reqwest::Client::new();
-    let mut request = client
-        .get("https://api.anthropic.com/v1/models")
-        .header("anthropic-version", "2023-06-01")
-        .timeout(std::time::Duration::from_secs(5));
-
-    if is_oauth {
-        request = request
-            .bearer_auth(&key_or_token)
-            .header("anthropic-beta", "oauth-2025-04-20");
-    } else {
-        request = request.header("x-api-key", &key_or_token);
-    }
-
-    let resp = match request.send().await {
+    let req = anthropic_request(&client, &auth);
+    let resp = match req.send().await {
         Ok(r) if r.status().is_success() => r,
-        _ => return static_defaults,
+        _ => return defaults,
     };
-
-    #[derive(serde::Deserialize)]
-    struct ModelEntry {
-        id: String,
-    }
-    #[derive(serde::Deserialize)]
-    struct ModelsResponse {
-        data: Vec<ModelEntry>,
-    }
-
-    match resp.json::<ModelsResponse>().await {
-        Ok(body) => {
-            let mut models: Vec<(String, String)> = body
-                .data
-                .into_iter()
-                .filter(|m| !m.id.contains("embedding") && !m.id.contains("audio"))
-                .map(|m| {
-                    let label = m.id.clone();
-                    (m.id, label)
-                })
-                .collect();
-            if models.is_empty() {
-                return static_defaults;
-            }
-            models.sort_by(|a, b| a.0.cmp(&b.0));
-            models
-        }
-        Err(_) => static_defaults,
+    match parse_anthropic_models_response(resp).await {
+        Ok(list) if !list.is_empty() => list,
+        _ => defaults,
     }
 }
 
@@ -3222,9 +3300,13 @@ async fn fetch_ollama_models(base_url: &str) -> Vec<(String, String)> {
 ///
 /// Used for registry providers like Groq, NVIDIA NIM, etc.
 async fn fetch_openai_compatible_models(
-    base_url: &str,
-    cached_key: Option<&str>,
+    req: OpenAICompatModelsRequest<'_>,
 ) -> Vec<(String, String)> {
+    let OpenAICompatModelsRequest {
+        base_url,
+        cached_key,
+    } = req;
+
     if base_url.is_empty() {
         return vec![];
     }
@@ -3708,6 +3790,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_resolve_anthropic_auth_treats_cached_oauth_as_oauth() {
+        let auth = resolve_anthropic_auth(Some("sk-ant-oat01-test-token"));
+        assert!(matches!(auth, Some(AnthropicAuth::OAuth(_))));
+    }
+
+    #[test]
+    fn test_resolve_anthropic_auth_reads_api_key_from_overlay_helper() {
+        let _guard = OverlayGuard::set("ANTHROPIC_API_KEY", "sk-ant-api-test");
+        let auth = resolve_anthropic_auth(None);
+        assert!(matches!(auth, Some(AnthropicAuth::ApiKey(_))));
+    }
+
     #[tokio::test]
     async fn test_fetch_openai_models_static_fallback() {
         let _guard = EnvGuard::clear("OPENAI_API_KEY");
@@ -3781,25 +3876,31 @@ mod tests {
 
     /// RAII guard that sets/clears an env var for the duration of a test.
     struct EnvGuard {
+        _lock: crate::config::helpers::EnvMutexGuard<'static>,
         key: &'static str,
         original: Option<String>,
     }
 
     impl EnvGuard {
-        fn set(key: &'static str, value: &str) -> Self {
+        fn new_with_action(key: &'static str, f: impl FnOnce()) -> Self {
+            let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
             let original = std::env::var(key).ok();
-            unsafe {
-                std::env::set_var(key, value);
+            // SAFETY: Tests hold ENV_MUTEX for the full guard lifetime, so no
+            // concurrent env mutation can occur while this override is active.
+            f();
+            Self {
+                _lock: lock,
+                key,
+                original,
             }
-            Self { key, original }
+        }
+
+        fn set(key: &'static str, value: &str) -> Self {
+            Self::new_with_action(key, || unsafe { std::env::set_var(key, value) })
         }
 
         fn clear(key: &'static str) -> Self {
-            let original = std::env::var(key).ok();
-            unsafe {
-                std::env::remove_var(key);
-            }
-            Self { key, original }
+            Self::new_with_action(key, || unsafe { std::env::remove_var(key) })
         }
     }
 
@@ -3815,23 +3916,120 @@ mod tests {
         }
     }
 
+    /// RAII guard that updates multiple env vars under a single test mutex.
+    struct EnvBatchGuard {
+        _lock: crate::config::helpers::EnvMutexGuard<'static>,
+        originals: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvBatchGuard {
+        fn new(updates: &[(&'static str, Option<&str>)]) -> Self {
+            let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
+            let originals = updates
+                .iter()
+                .map(|(key, _)| (*key, std::env::var(key).ok()))
+                .collect::<Vec<_>>();
+
+            for (key, value) in updates {
+                // SAFETY: Tests hold ENV_MUTEX for the full batch-guard
+                // lifetime, so these mutations remain serialized.
+                unsafe {
+                    if let Some(value) = value {
+                        std::env::set_var(key, value);
+                    } else {
+                        std::env::remove_var(key);
+                    }
+                }
+            }
+
+            Self {
+                _lock: lock,
+                originals,
+            }
+        }
+    }
+
+    impl Drop for EnvBatchGuard {
+        fn drop(&mut self) {
+            for (key, original) in &self.originals {
+                // SAFETY: Tests still hold ENV_MUTEX during restoration, so
+                // the env is restored without concurrent mutation.
+                unsafe {
+                    if let Some(value) = original {
+                        std::env::set_var(key, value);
+                    } else {
+                        std::env::remove_var(key);
+                    }
+                }
+            }
+        }
+    }
+
+    /// RAII guard for injected config overlay entries used by auth-resolution tests.
+    struct OverlayGuard {
+        _lock: crate::config::helpers::EnvMutexGuard<'static>,
+        key: &'static str,
+    }
+
+    impl OverlayGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
+            crate::config::remove_single_var(key);
+            crate::config::inject_single_var(key, value);
+            Self { _lock: lock, key }
+        }
+    }
+
+    impl Drop for OverlayGuard {
+        fn drop(&mut self) {
+            crate::config::remove_single_var(self.key);
+        }
+    }
+
+    fn select_backend(settings: &mut Settings, backend: &str) {
+        if settings.llm_backend.as_deref() != Some(backend) {
+            settings.selected_model = None;
+        }
+        settings.llm_backend = Some(backend.to_string());
+    }
+
+    const _: fn(&mut Settings, &str) = select_backend;
+
+    /// Simulate the selected-model clearing logic applied when entering a provider setup screen.
+    /// Returns the value of `selected_model` after the simulated switch.
+    struct ProviderSwitch<'a> {
+        from_backend: &'a str,
+        model: &'a str,
+        to_backend: &'a str,
+    }
+
+    fn provider_model_after_switch(req: ProviderSwitch<'_>) -> Option<String> {
+        let ProviderSwitch {
+            from_backend,
+            model,
+            to_backend,
+        } = req;
+        let mut wizard = SetupWizard::new();
+        wizard.settings.llm_backend = Some(from_backend.to_string());
+        wizard.settings.selected_model = Some(model.to_string());
+        if wizard.settings.llm_backend.as_deref() != Some(to_backend) {
+            wizard.settings.selected_model = None;
+        }
+        wizard.settings.llm_backend = Some(to_backend.to_string());
+        wizard.settings.selected_model.clone()
+    }
+
     /// Regression test for #600: re-running provider setup for the same backend
     /// must NOT clear selected_model. Only switching to a different backend should.
     #[test]
     fn test_same_provider_preserves_selected_model() {
-        let mut wizard = SetupWizard::new();
-        wizard.settings.llm_backend = Some("ollama".to_string());
-        wizard.settings.selected_model = Some("llama3".to_string());
-
-        // Simulate re-entering the same provider -- model should survive
-        // (This is the check that each setup_* function now performs)
-        if wizard.settings.llm_backend.as_deref() != Some("ollama") {
-            wizard.settings.selected_model = None;
-        }
-        wizard.settings.llm_backend = Some("ollama".to_string());
-
         assert_eq!(
-            wizard.settings.selected_model.as_deref(),
+            provider_model_after_switch(ProviderSwitch {
+                from_backend: "ollama",
+                model: "llama3",
+                to_backend: "ollama",
+            })
+            .as_deref(),
             Some("llama3"),
             "model should be preserved when re-selecting the same provider"
         );
@@ -3841,18 +4039,13 @@ mod tests {
     /// selected_model since the old model may not be valid for the new backend.
     #[test]
     fn test_different_provider_clears_selected_model() {
-        let mut wizard = SetupWizard::new();
-        wizard.settings.llm_backend = Some("ollama".to_string());
-        wizard.settings.selected_model = Some("llama3".to_string());
-
-        // Simulate switching to a different provider -- model should be cleared
-        if wizard.settings.llm_backend.as_deref() != Some("openai") {
-            wizard.settings.selected_model = None;
-        }
-        wizard.settings.llm_backend = Some("openai".to_string());
-
         assert!(
-            wizard.settings.selected_model.is_none(),
+            provider_model_after_switch(ProviderSwitch {
+                from_backend: "ollama",
+                model: "llama3",
+                to_backend: "openai",
+            })
+            .is_none(),
             "model should be cleared when switching providers"
         );
     }
@@ -3861,18 +4054,13 @@ mod tests {
     /// when re-entering the same provider (matches pattern from #600).
     #[test]
     fn test_bedrock_same_provider_preserves_model() {
-        let mut wizard = SetupWizard::new();
-        wizard.settings.llm_backend = Some("bedrock".to_string());
-        wizard.settings.selected_model = Some("anthropic.claude-opus-4-6-v1".to_string());
-
-        // Simulate the conditional clearing logic from setup_bedrock()
-        if wizard.settings.llm_backend.as_deref() != Some("bedrock") {
-            wizard.settings.selected_model = None;
-        }
-        wizard.settings.llm_backend = Some("bedrock".to_string());
-
         assert_eq!(
-            wizard.settings.selected_model.as_deref(),
+            provider_model_after_switch(ProviderSwitch {
+                from_backend: "bedrock",
+                model: "anthropic.claude-opus-4-6-v1",
+                to_backend: "bedrock",
+            })
+            .as_deref(),
             Some("anthropic.claude-opus-4-6-v1"),
             "bedrock model should be preserved when re-selecting bedrock"
         );
@@ -3989,9 +4177,10 @@ mod tests {
     fn test_build_nearai_model_fetch_config_picks_up_api_key_env() {
         use secrecy::ExposeSecret;
 
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let _guard = EnvGuard::set("NEARAI_API_KEY", "test-cloud-api-key-12345");
-        let _guard2 = EnvGuard::clear("NEARAI_BASE_URL");
+        let _guard = EnvBatchGuard::new(&[
+            ("NEARAI_API_KEY", Some("test-cloud-api-key-12345")),
+            ("NEARAI_BASE_URL", None),
+        ]);
 
         let config = build_nearai_model_fetch_config();
         assert!(
@@ -4013,9 +4202,7 @@ mod tests {
     /// the config should have `api_key: None` (session token path).
     #[test]
     fn test_build_nearai_model_fetch_config_none_when_no_api_key() {
-        let _lock = ENV_MUTEX.lock().unwrap();
-        let _guard = EnvGuard::clear("NEARAI_API_KEY");
-        let _guard2 = EnvGuard::clear("NEARAI_BASE_URL");
+        let _guard = EnvBatchGuard::new(&[("NEARAI_API_KEY", None), ("NEARAI_BASE_URL", None)]);
 
         let config = build_nearai_model_fetch_config();
         assert!(
@@ -4032,7 +4219,6 @@ mod tests {
     /// Regression test for #799: empty NEARAI_API_KEY should be treated as absent.
     #[test]
     fn test_build_nearai_model_fetch_config_none_when_empty_api_key() {
-        let _lock = ENV_MUTEX.lock().unwrap();
         let _guard = EnvGuard::set("NEARAI_API_KEY", "");
 
         let config = build_nearai_model_fetch_config();

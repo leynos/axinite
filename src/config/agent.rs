@@ -1,8 +1,27 @@
 use std::time::Duration;
 
-use crate::config::helpers::{parse_bool_env, parse_option_env, parse_optional_env};
+use crate::config::EnvContext;
+use crate::config::helpers::{
+    EnvKey, parse_bool_env_from, parse_option_env_from, parse_optional_env_from,
+};
 use crate::error::ConfigError;
 use crate::settings::Settings;
+use crate::timezone::parse_timezone;
+
+fn resolve_default_timezone(ctx: &EnvContext, settings: &Settings) -> Result<String, ConfigError> {
+    let tz: String = parse_optional_env_from(
+        ctx,
+        EnvKey("DEFAULT_TIMEZONE"),
+        settings.agent.default_timezone.clone(),
+    )?;
+    if parse_timezone(&tz).is_none() {
+        return Err(ConfigError::InvalidValue {
+            key: "DEFAULT_TIMEZONE".into(),
+            message: format!("invalid IANA timezone: '{tz}'"),
+        });
+    }
+    Ok(tz)
+}
 
 /// Agent behavior configuration.
 #[derive(Debug, Clone)]
@@ -56,65 +75,75 @@ impl AgentConfig {
         }
     }
 
+    // Backwards-compatible ambient entrypoint retained for existing callers.
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
+        Self::resolve_from(&EnvContext::capture_ambient(), settings)
+    }
+
+    pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
         Ok(Self {
-            name: parse_optional_env("AGENT_NAME", settings.agent.name.clone())?,
-            max_parallel_jobs: parse_optional_env(
-                "AGENT_MAX_PARALLEL_JOBS",
+            name: parse_optional_env_from(ctx, EnvKey("AGENT_NAME"), settings.agent.name.clone())?,
+            max_parallel_jobs: parse_optional_env_from(
+                ctx,
+                EnvKey("AGENT_MAX_PARALLEL_JOBS"),
                 settings.agent.max_parallel_jobs as usize,
             )?,
-            job_timeout: Duration::from_secs(parse_optional_env(
-                "AGENT_JOB_TIMEOUT_SECS",
+            job_timeout: Duration::from_secs(parse_optional_env_from(
+                ctx,
+                EnvKey("AGENT_JOB_TIMEOUT_SECS"),
                 settings.agent.job_timeout_secs,
             )?),
-            stuck_threshold: Duration::from_secs(parse_optional_env(
-                "AGENT_STUCK_THRESHOLD_SECS",
+            stuck_threshold: Duration::from_secs(parse_optional_env_from(
+                ctx,
+                EnvKey("AGENT_STUCK_THRESHOLD_SECS"),
                 settings.agent.stuck_threshold_secs,
             )?),
-            repair_check_interval: Duration::from_secs(parse_optional_env(
-                "SELF_REPAIR_CHECK_INTERVAL_SECS",
+            repair_check_interval: Duration::from_secs(parse_optional_env_from(
+                ctx,
+                EnvKey("SELF_REPAIR_CHECK_INTERVAL_SECS"),
                 settings.agent.repair_check_interval_secs,
             )?),
-            max_repair_attempts: parse_optional_env(
-                "SELF_REPAIR_MAX_ATTEMPTS",
+            max_repair_attempts: parse_optional_env_from(
+                ctx,
+                EnvKey("SELF_REPAIR_MAX_ATTEMPTS"),
                 settings.agent.max_repair_attempts,
             )?,
-            use_planning: parse_bool_env("AGENT_USE_PLANNING", settings.agent.use_planning)?,
-            session_idle_timeout: Duration::from_secs(parse_optional_env(
-                "SESSION_IDLE_TIMEOUT_SECS",
+            use_planning: parse_bool_env_from(
+                ctx,
+                EnvKey("AGENT_USE_PLANNING"),
+                settings.agent.use_planning,
+            )?,
+            session_idle_timeout: Duration::from_secs(parse_optional_env_from(
+                ctx,
+                EnvKey("SESSION_IDLE_TIMEOUT_SECS"),
                 settings.agent.session_idle_timeout_secs,
             )?),
-            allow_local_tools: parse_bool_env("ALLOW_LOCAL_TOOLS", false)?,
-            max_cost_per_day_cents: parse_option_env("MAX_COST_PER_DAY_CENTS")?,
-            max_actions_per_hour: parse_option_env("MAX_ACTIONS_PER_HOUR")?,
-            max_tool_iterations: parse_optional_env(
-                "AGENT_MAX_TOOL_ITERATIONS",
+            allow_local_tools: parse_bool_env_from(ctx, EnvKey("ALLOW_LOCAL_TOOLS"), false)?,
+            max_cost_per_day_cents: parse_option_env_from(ctx, EnvKey("MAX_COST_PER_DAY_CENTS"))?,
+            max_actions_per_hour: parse_option_env_from(ctx, EnvKey("MAX_ACTIONS_PER_HOUR"))?,
+            max_tool_iterations: parse_optional_env_from(
+                ctx,
+                EnvKey("AGENT_MAX_TOOL_ITERATIONS"),
                 settings.agent.max_tool_iterations,
             )?,
-            auto_approve_tools: parse_bool_env(
-                "AGENT_AUTO_APPROVE_TOOLS",
+            auto_approve_tools: parse_bool_env_from(
+                ctx,
+                EnvKey("AGENT_AUTO_APPROVE_TOOLS"),
                 settings.agent.auto_approve_tools,
             )?,
-            default_timezone: {
-                let tz: String = parse_optional_env(
-                    "DEFAULT_TIMEZONE",
-                    settings.agent.default_timezone.clone(),
-                )?;
-                if crate::timezone::parse_timezone(&tz).is_none() {
-                    return Err(ConfigError::InvalidValue {
-                        key: "DEFAULT_TIMEZONE".into(),
-                        message: format!("invalid IANA timezone: '{tz}'"),
-                    });
-                }
-                tz
-            },
-            max_tokens_per_job: parse_optional_env(
-                "AGENT_MAX_TOKENS_PER_JOB",
+            default_timezone: resolve_default_timezone(ctx, settings)?,
+            max_tokens_per_job: parse_optional_env_from(
+                ctx,
+                EnvKey("AGENT_MAX_TOKENS_PER_JOB"),
                 settings.agent.max_tokens_per_job,
             )?,
         })
     }
 }
+
+const _: () = {
+    let _ = AgentConfig::resolve;
+};
 
 #[cfg(test)]
 mod tests {
