@@ -159,7 +159,7 @@ impl Worker {
         let job_id = self.job_id;
         if let Some(store) = self.store() {
             store
-                .save_job_event(job_id, event_type, &data)
+                .save_job_event(job_id, crate::db::SandboxEventType::from(event_type), &data)
                 .await
                 .map_err(|e| crate::error::JobError::PersistenceError {
                     id: job_id,
