@@ -9,6 +9,7 @@
 
 use chrono::Utc;
 use std::collections::BTreeSet;
+use tokio_postgres::{Client, Row};
 
 use super::{
     finalize_migration_history_rewrites, migration_history_rewrites,
@@ -63,6 +64,84 @@ fn rewrite_tuple_set(
             )
         })
         .collect()
+}
+
+fn rows_to_tuples(rows: Vec<Row>) -> Vec<(i32, String, String)> {
+    rows.into_iter()
+        .map(|row| {
+            let version: i32 = row.get(0);
+            let name: String = row.get(1);
+            let checksum: String = row.get(2);
+            (version, name, checksum)
+        })
+        .collect()
+}
+
+#[cfg(feature = "postgres")]
+async fn create_temp_refinery_history_table(client: &Client) {
+    client
+        .batch_execute(
+            "CREATE TEMP TABLE refinery_schema_history (\
+             version INT4 PRIMARY KEY, \
+             name VARCHAR(255), \
+             applied_on VARCHAR(255), \
+             checksum VARCHAR(255)) ON COMMIT DROP;",
+        )
+        .await
+        .expect("Failed to create temp history table");
+}
+
+#[cfg(feature = "postgres")]
+async fn seed_renumbered_release_window(client: &Client) {
+    for (version, name, checksum) in RENUMBERED_RELEASE_WINDOW_ROWS {
+        client
+            .execute(
+                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
+                 VALUES ($1, $2, $3, $4)",
+                &[
+                    version,
+                    name,
+                    &Utc::now().to_rfc3339(),
+                    &checksum.to_string(),
+                ],
+            )
+            .await
+            .expect("Failed to seed legacy row");
+    }
+}
+
+fn renumbered_release_window_applied_rows() -> Vec<(i32, String, String)> {
+    RENUMBERED_RELEASE_WINDOW_ROWS
+        .iter()
+        .map(|(version, name, checksum)| (*version, (*name).to_string(), checksum.to_string()))
+        .collect()
+}
+
+fn canonical_release_window_rows() -> Vec<(i32, String, String)> {
+    CANONICAL_RELEASED_ROWS
+        .iter()
+        .map(|(version, name, checksum)| (*version, (*name).to_string(), checksum.to_string()))
+        .collect()
+}
+
+fn staged_release_window_rows() -> Vec<(i32, String, String)> {
+    vec![
+        (
+            1012,
+            "job_token_budget".to_string(),
+            "13685500183340941819".to_string(),
+        ),
+        (
+            1013,
+            "drop_redundant_wasm_tools_name_index".to_string(),
+            "16100593955252925602".to_string(),
+        ),
+        (
+            1014,
+            "wasm_wit_default_0_3_0".to_string(),
+            "9366402964940367356".to_string(),
+        ),
+    ]
 }
 
 #[cfg(feature = "postgres")]
@@ -158,53 +237,23 @@ fn plan_migration_history_rewrites_matches_fixed_released_rows() {
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[ignore]
-async fn repair_postgres_refinery_history_rewrites_released_rows_in_two_phases() {
+async fn postgres_two_phase_staged_finalize_rewrites_released_rows() {
     use crate::config::Config;
     use crate::history::Store;
 
     let _ = dotenvy::dotenv();
-    let config = match Config::from_env().await {
-        Ok(config) => config,
-        Err(_) => return,
-    };
+    let config = Config::from_env()
+        .await
+        .unwrap_or_else(|e| panic!("Config::from_env failed: {e:?}"));
     let store = Store::new(&config.database)
         .await
         .expect("Failed to connect to database");
     let mut client = store.conn().await.expect("Failed to get connection");
+    create_temp_refinery_history_table(&client).await;
+    seed_renumbered_release_window(&client).await;
 
-    client
-        .batch_execute(
-            "CREATE TEMP TABLE refinery_schema_history (\
-             version INT4 PRIMARY KEY, \
-             name VARCHAR(255), \
-             applied_on VARCHAR(255), \
-             checksum VARCHAR(255)) ON COMMIT DROP;",
-        )
-        .await
-        .expect("Failed to create temp history table");
-
-    for (version, name, checksum) in RENUMBERED_RELEASE_WINDOW_ROWS {
-        client
-            .execute(
-                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
-                 VALUES ($1, $2, $3, $4)",
-                &[
-                    version,
-                    name,
-                    &Utc::now().to_rfc3339(),
-                    &checksum.to_string(),
-                ],
-            )
-            .await
-            .expect("Failed to seed legacy row");
-    }
-
-    let applied = RENUMBERED_RELEASE_WINDOW_ROWS
-        .iter()
-        .map(|(version, name, checksum)| (*version, (*name).to_string(), checksum.to_string()))
-        .collect::<Vec<_>>();
-    let rewrites =
-        plan_migration_history_rewrites(&applied).expect("released migration identities parse");
+    let rewrites = plan_migration_history_rewrites(&renumbered_release_window_applied_rows())
+        .expect("released migration identities parse");
 
     let transaction = (**client).transaction().await.expect("Failed to start tx");
     stage_migration_history_rewrites(&transaction, &rewrites)
@@ -218,35 +267,7 @@ async fn repair_postgres_refinery_history_rewrites_released_rows_in_two_phases()
         )
         .await
         .expect("Failed to read staged rows");
-    let staged_rows = staged
-        .into_iter()
-        .map(|row| {
-            let version: i32 = row.get(0);
-            let name: String = row.get(1);
-            let checksum: String = row.get(2);
-            (version, name, checksum)
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        staged_rows,
-        vec![
-            (
-                1012,
-                "job_token_budget".to_string(),
-                "13685500183340941819".to_string(),
-            ),
-            (
-                1013,
-                "drop_redundant_wasm_tools_name_index".to_string(),
-                "16100593955252925602".to_string(),
-            ),
-            (
-                1014,
-                "wasm_wit_default_0_3_0".to_string(),
-                "9366402964940367356".to_string(),
-            ),
-        ]
-    );
+    assert_eq!(rows_to_tuples(staged), staged_release_window_rows());
 
     finalize_migration_history_rewrites(&transaction, &rewrites)
         .await
@@ -258,46 +279,30 @@ async fn repair_postgres_refinery_history_rewrites_released_rows_in_two_phases()
         )
         .await
         .expect("Failed to read final rows");
-    let final_rows = final_rows
-        .into_iter()
-        .map(|row| {
-            let version: i32 = row.get(0);
-            let name: String = row.get(1);
-            let checksum: String = row.get(2);
-            (version, name, checksum)
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        final_rows,
-        CANONICAL_RELEASED_ROWS
-            .iter()
-            .map(|(version, name, checksum)| (*version, (*name).to_string(), checksum.to_string()))
-            .collect::<Vec<_>>()
-    );
+    assert_eq!(rows_to_tuples(final_rows), canonical_release_window_rows());
     transaction
         .rollback()
         .await
         .expect("Failed to rollback staged tx");
+}
 
-    client
-        .execute("TRUNCATE refinery_schema_history", &[])
+#[cfg(feature = "postgres")]
+#[tokio::test]
+#[ignore]
+async fn postgres_repair_postgres_refinery_history_e2e() {
+    use crate::config::Config;
+    use crate::history::Store;
+
+    let _ = dotenvy::dotenv();
+    let config = Config::from_env()
         .await
-        .expect("Failed to reset temp history table");
-    for (version, name, checksum) in RENUMBERED_RELEASE_WINDOW_ROWS {
-        client
-            .execute(
-                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
-                 VALUES ($1, $2, $3, $4)",
-                &[
-                    version,
-                    name,
-                    &Utc::now().to_rfc3339(),
-                    &checksum.to_string(),
-                ],
-            )
-            .await
-            .expect("Failed to reseed legacy row");
-    }
+        .unwrap_or_else(|e| panic!("Config::from_env failed: {e:?}"));
+    let store = Store::new(&config.database)
+        .await
+        .expect("Failed to connect to database");
+    let mut client = store.conn().await.expect("Failed to get connection");
+    create_temp_refinery_history_table(&client).await;
+    seed_renumbered_release_window(&client).await;
 
     repair_postgres_refinery_history(&mut client)
         .await
@@ -310,20 +315,8 @@ async fn repair_postgres_refinery_history_rewrites_released_rows_in_two_phases()
         )
         .await
         .expect("Failed to read repaired rows");
-    let repaired_rows = repaired_rows
-        .into_iter()
-        .map(|row| {
-            let version: i32 = row.get(0);
-            let name: String = row.get(1);
-            let checksum: String = row.get(2);
-            (version, name, checksum)
-        })
-        .collect::<Vec<_>>();
     assert_eq!(
-        repaired_rows,
-        CANONICAL_RELEASED_ROWS
-            .iter()
-            .map(|(version, name, checksum)| (*version, (*name).to_string(), checksum.to_string()))
-            .collect::<Vec<_>>()
+        rows_to_tuples(repaired_rows),
+        canonical_release_window_rows()
     );
 }
