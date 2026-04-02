@@ -134,68 +134,84 @@ fn plan_migration_history_rewrites(
 fn migration_history_rewrites() -> Result<Vec<MigrationHistoryRewrite>, DatabaseError> {
     Ok(vec![
         migration_history_rewrite(
-            12,
-            "wasm_wit_default_0_3_0",
-            LEGACY_V12_WASM_WIT_DEFAULT_SQL,
-            12,
-            "wasm_wit_default_0_3_0",
-            CURRENT_V12_WASM_WIT_DEFAULT_SQL,
+            MigrationSpec {
+                version: 12,
+                name: "wasm_wit_default_0_3_0",
+                sql: LEGACY_V12_WASM_WIT_DEFAULT_SQL,
+            },
+            MigrationSpec {
+                version: 12,
+                name: "wasm_wit_default_0_3_0",
+                sql: CURRENT_V12_WASM_WIT_DEFAULT_SQL,
+            },
         )?,
         migration_history_rewrite(
-            12,
-            "job_token_budget",
-            LEGACY_V12_JOB_TOKEN_BUDGET_SQL,
-            13,
-            "job_token_budget",
-            CURRENT_V13_JOB_TOKEN_BUDGET_SQL,
+            MigrationSpec {
+                version: 12,
+                name: "job_token_budget",
+                sql: LEGACY_V12_JOB_TOKEN_BUDGET_SQL,
+            },
+            MigrationSpec {
+                version: 13,
+                name: "job_token_budget",
+                sql: CURRENT_V13_JOB_TOKEN_BUDGET_SQL,
+            },
         )?,
         migration_history_rewrite(
-            13,
-            "drop_redundant_wasm_tools_name_index",
-            LEGACY_V13_DROP_REDUNDANT_WASM_TOOLS_NAME_INDEX_SQL,
-            14,
-            "drop_redundant_wasm_tools_name_index",
-            CURRENT_V14_DROP_REDUNDANT_WASM_TOOLS_NAME_INDEX_SQL,
+            MigrationSpec {
+                version: 13,
+                name: "drop_redundant_wasm_tools_name_index",
+                sql: LEGACY_V13_DROP_REDUNDANT_WASM_TOOLS_NAME_INDEX_SQL,
+            },
+            MigrationSpec {
+                version: 14,
+                name: "drop_redundant_wasm_tools_name_index",
+                sql: CURRENT_V14_DROP_REDUNDANT_WASM_TOOLS_NAME_INDEX_SQL,
+            },
         )?,
         migration_history_rewrite(
-            14,
-            "wasm_wit_default_0_3_0",
-            CURRENT_V12_WASM_WIT_DEFAULT_SQL,
-            12,
-            "wasm_wit_default_0_3_0",
-            CURRENT_V12_WASM_WIT_DEFAULT_SQL,
+            MigrationSpec {
+                version: 14,
+                name: "wasm_wit_default_0_3_0",
+                sql: CURRENT_V12_WASM_WIT_DEFAULT_SQL,
+            },
+            MigrationSpec {
+                version: 12,
+                name: "wasm_wit_default_0_3_0",
+                sql: CURRENT_V12_WASM_WIT_DEFAULT_SQL,
+            },
         )?,
     ])
 }
 
 #[cfg(feature = "postgres")]
+struct MigrationSpec {
+    version: i32,
+    name: &'static str,
+    sql: &'static str,
+}
+
+#[cfg(feature = "postgres")]
 fn migration_history_rewrite(
-    from_version: i32,
-    from_name: &'static str,
-    from_sql: &'static str,
-    to_version: i32,
-    to_name: &'static str,
-    to_sql: &'static str,
+    from: MigrationSpec,
+    to: MigrationSpec,
 ) -> Result<MigrationHistoryRewrite, DatabaseError> {
+    let temporary_version = 1_000 + from.version;
     Ok(MigrationHistoryRewrite {
-        from: migration_identity(from_version, from_name, from_sql)?,
-        temporary_version: 1_000 + from_version,
-        to: migration_identity(to_version, to_name, to_sql)?,
+        from: migration_identity(from)?,
+        temporary_version,
+        to: migration_identity(to)?,
     })
 }
 
 #[cfg(feature = "postgres")]
-fn migration_identity(
-    version: i32,
-    name: &'static str,
-    sql: &'static str,
-) -> Result<MigrationIdentity, DatabaseError> {
-    let filename = format!("V{version}__{name}.sql");
-    let migration = refinery::Migration::unapplied(&filename, sql)
+fn migration_identity(spec: MigrationSpec) -> Result<MigrationIdentity, DatabaseError> {
+    let filename = format!("V{}__{}.sql", spec.version, spec.name);
+    let migration = refinery::Migration::unapplied(&filename, spec.sql)
         .map_err(|e| DatabaseError::Migration(format!("Failed to parse {filename}: {e}")))?;
     Ok(MigrationIdentity {
-        version,
-        name,
+        version: spec.version,
+        name: spec.name,
         checksum: migration.checksum(),
     })
 }
