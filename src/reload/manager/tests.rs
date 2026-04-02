@@ -131,6 +131,12 @@ async fn successful_reload_invokes_all_dependencies(#[case] test_case: AddrTestC
         "ChannelSecretUpdater should be called once for {}",
         test_case.description
     );
+    assert_eq!(
+        spy_clone.last_secret().await,
+        Some(Some("new_secret".to_string())),
+        "ChannelSecretUpdater should receive the reloaded webhook secret for {}",
+        test_case.description
+    );
 }
 
 #[rstest]
@@ -189,6 +195,11 @@ async fn address_unchanged_skips_listener_restart(#[case] addr_str: &str) {
         spy_clone.call_count().await,
         1,
         "ChannelSecretUpdater should be called even when address is unchanged"
+    );
+    assert_eq!(
+        spy_clone.last_secret().await,
+        Some(Some("secret".to_string())),
+        "ChannelSecretUpdater should receive the current webhook secret"
     );
 }
 
@@ -318,11 +329,21 @@ async fn http_config_removed_shuts_down_listener_and_clears_secrets() {
         0,
         "Listener should not be restarted when HTTP config is removed"
     );
+    assert_eq!(
+        controller_clone.shutdown_count(),
+        1,
+        "Listener should be shut down when HTTP config is removed"
+    );
 
     // Verify channel secret updater was called with None to clear secrets
     assert_eq!(
         spy_clone.call_count().await,
         1,
         "ChannelSecretUpdater should be called to clear secrets when HTTP config is removed"
+    );
+    assert_eq!(
+        spy_clone.last_secret().await,
+        Some(None),
+        "ChannelSecretUpdater should clear the webhook secret when HTTP config is removed"
     );
 }

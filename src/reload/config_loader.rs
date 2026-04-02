@@ -96,6 +96,7 @@ mod tests {
     use crate::db::settings::{NativeSettingsStore, SettingKey, UserId};
     use crate::error::DatabaseError;
     use crate::history::SettingRow;
+    use crate::testing::test_utils::EnvVarsGuard;
 
     /// Mock SettingsStore for testing DbConfigLoader behavior.
     struct MockSettingsStore {
@@ -195,15 +196,15 @@ mod tests {
     /// and constructs a valid Config with the retrieved values.
     #[tokio::test]
     async fn db_config_loader_loads_config_from_store() {
-        // Set DATABASE_URL so Config::build can resolve DatabaseConfig.
-        // DbConfigLoader loads the full Config which requires this env var.
-        unsafe { std::env::set_var("DATABASE_URL", "postgres://localhost/test") };
+        let mut env_guard = EnvVarsGuard::new(&["DATABASE_URL", "AGENT_NAME"]);
+        env_guard.set("DATABASE_URL", "postgres://localhost/test");
+        env_guard.remove("AGENT_NAME");
 
         // Create mock store with some test settings
         let mut settings = HashMap::new();
         settings.insert(
-            "llm.model".to_string(),
-            serde_json::json!("claude-sonnet-4"),
+            "agent.name".to_string(),
+            serde_json::json!("db-loader-agent"),
         );
         settings.insert("channels.http.port".to_string(), serde_json::json!(8080));
 
@@ -215,14 +216,9 @@ mod tests {
             .await
             .expect("load should succeed");
 
-        // Verify the config was constructed (basic sanity check)
-        // The actual values depend on how Config::from_db processes settings
-        assert!(
-            config.channels.http.is_some() || config.channels.http.is_none(),
-            "Config should have HTTP channel field populated"
+        assert_eq!(
+            config.agent.name, "db-loader-agent",
+            "DbConfigLoader should preserve the seeded agent.name setting"
         );
-
-        // Clean up env var
-        unsafe { std::env::remove_var("DATABASE_URL") };
     }
 }

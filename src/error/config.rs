@@ -20,3 +20,9 @@ pub enum ConfigError {
     #[error("IO error: {0}")]
     Io(#[from] Arc<std::io::Error>),
 }
+
+impl From<std::io::Error> for ConfigError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Io(Arc::new(err))
+    }
+}

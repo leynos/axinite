@@ -1,5 +1,6 @@
 //! Hot-reload orchestration manager.
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::channels::ChannelSecretUpdater;
@@ -15,6 +16,7 @@ pub struct HotReloadManager {
     listener_controller: Option<Arc<dyn ListenerController>>,
     secret_injector: Option<Arc<dyn SecretInjector>>,
     secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
+    reload_lock: tokio::sync::Mutex<()>,
 }
 
 impl HotReloadManager {
@@ -35,6 +37,7 @@ impl HotReloadManager {
             listener_controller,
             secret_injector,
             secret_updaters,
+            reload_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -48,6 +51,8 @@ impl HotReloadManager {
     ///
     /// Returns early on any error. Errors are logged but not panicked.
     pub async fn perform_reload(&self) -> Result<(), ReloadError> {
+        let _reload_guard = self.reload_lock.lock().await;
+
         // Step 1: Inject secrets into the environment overlay
         // Errors are logged internally by the injector; we continue regardless.
         if let Some(ref injector) = self.secret_injector {
@@ -73,8 +78,8 @@ impl HotReloadManager {
             return Ok(());
         };
 
-        let new_addr = Self::parse_http_addr(&new_http).await?;
-        self.maybe_restart_listener(new_addr).await?;
+        let resolved_addrs = Self::resolve_http_addrs(&new_http).await?;
+        self.maybe_restart_listener(&resolved_addrs).await?;
 
         // Step 4: Update channel secrets
         self.update_channel_secrets(&new_http).await;
@@ -82,16 +87,16 @@ impl HotReloadManager {
         Ok(())
     }
 
-    async fn parse_http_addr(
+    async fn resolve_http_addrs(
         http: &crate::config::HttpConfig,
-    ) -> Result<std::net::SocketAddr, ReloadError> {
+    ) -> Result<Vec<SocketAddr>, ReloadError> {
         // Prefer structured construction when host is a valid IP (handles IPv6 correctly).
         if let Ok(ip) = http.host.parse::<std::net::IpAddr>() {
-            return Ok(std::net::SocketAddr::new(ip, http.port));
+            return Ok(vec![SocketAddr::new(ip, http.port)]);
         }
 
         // Fall back to async DNS/hostname resolution for non-IP host values.
-        tokio::net::lookup_host((http.host.as_str(), http.port))
+        let resolved_addrs: Vec<_> = tokio::net::lookup_host((http.host.as_str(), http.port))
             .await
             .map_err(|e| {
                 tracing::error!("Invalid socket address in reloaded config: {}", e);
@@ -100,25 +105,29 @@ impl HotReloadManager {
                     message: format!("Failed to parse or resolve socket address: {}", e),
                 })
             })?
-            .next()
-            .ok_or_else(|| {
-                ReloadError::from(crate::error::ConfigError::InvalidValue {
-                    key: "http.host:http.port".to_string(),
-                    message: "No socket addresses resolved".to_string(),
-                })
-            })
+            .collect();
+
+        if resolved_addrs.is_empty() {
+            return Err(ReloadError::from(crate::error::ConfigError::InvalidValue {
+                key: "http.host:http.port".to_string(),
+                message: "No socket addresses resolved".to_string(),
+            }));
+        }
+
+        Ok(resolved_addrs)
     }
 
     async fn maybe_restart_listener(
         &self,
-        new_addr: std::net::SocketAddr,
+        resolved_addrs: &[SocketAddr],
     ) -> Result<(), ReloadError> {
         let Some(ref controller) = self.listener_controller else {
             return Ok(());
         };
 
+        let new_addr = resolved_addrs[0];
         let old_addr = controller.current_addr().await;
-        if old_addr == new_addr {
+        if resolved_addrs.contains(&old_addr) {
             tracing::debug!("HTTP listener address unchanged, skipping restart");
             return Ok(());
         }
@@ -134,11 +143,7 @@ impl HotReloadManager {
     }
 
     async fn update_channel_secrets(&self, http: &crate::config::HttpConfig) {
-        use secrecy::{ExposeSecret, SecretString};
-        let new_secret = http
-            .webhook_secret
-            .as_ref()
-            .map(|s| SecretString::from(s.expose_secret().to_string()));
+        let new_secret = http.webhook_secret.clone();
 
         for updater in &self.secret_updaters {
             updater.update_secret(new_secret.clone()).await;

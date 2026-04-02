@@ -4,7 +4,9 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+use secrecy::ExposeSecret;
 use tokio::sync::Mutex;
 
 use crate::channels::ChannelSecretUpdater;
@@ -54,6 +56,7 @@ impl NativeConfigLoader for StubConfigLoader {
 pub struct StubListenerController {
     current_addr: SocketAddr,
     restart_calls: Arc<Mutex<Vec<SocketAddr>>>,
+    shutdown_calls: Arc<AtomicUsize>,
     restart_should_fail: bool,
 }
 
@@ -62,6 +65,7 @@ impl StubListenerController {
         Self {
             current_addr: addr,
             restart_calls: Arc::new(Mutex::new(Vec::new())),
+            shutdown_calls: Arc::new(AtomicUsize::new(0)),
             restart_should_fail: false,
         }
     }
@@ -70,6 +74,7 @@ impl StubListenerController {
         Self {
             current_addr: addr,
             restart_calls: Arc::new(Mutex::new(Vec::new())),
+            shutdown_calls: Arc::new(AtomicUsize::new(0)),
             restart_should_fail: true,
         }
     }
@@ -77,6 +82,11 @@ impl StubListenerController {
     /// Returns a copy of all restart calls made to this controller.
     pub async fn restart_calls(&self) -> Vec<SocketAddr> {
         self.restart_calls.lock().await.clone()
+    }
+
+    /// Returns the number of shutdown calls made to this controller.
+    pub fn shutdown_count(&self) -> usize {
+        self.shutdown_calls.load(Ordering::SeqCst)
     }
 }
 
@@ -99,7 +109,7 @@ impl NativeListenerController for StubListenerController {
     }
 
     async fn shutdown(&self) {
-        // Stub implementation - no-op since there's no real listener to shut down
+        self.shutdown_calls.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -159,6 +169,25 @@ impl SpySecretUpdater {
     /// Returns true if `update_secret` was never called.
     pub async fn was_not_called(&self) -> bool {
         self.calls.lock().await.is_empty()
+    }
+
+    /// Returns the recorded secrets as plain strings for assertion purposes.
+    pub async fn recorded_secrets(&self) -> Vec<Option<String>> {
+        self.calls
+            .lock()
+            .await
+            .iter()
+            .map(|secret| {
+                secret
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_string())
+            })
+            .collect()
+    }
+
+    /// Returns the last secret payload recorded by the spy.
+    pub async fn last_secret(&self) -> Option<Option<String>> {
+        self.recorded_secrets().await.into_iter().last()
     }
 }
 

@@ -106,22 +106,88 @@ impl NativeListenerController for WebhookListenerController {
 
 #[cfg(test)]
 mod tests {
+    use axum::{Json, Router, routing::get};
+    use serde_json::json;
+    use std::net::TcpListener as StdTcpListener;
+
     use super::*;
+    use crate::channels::WebhookServerConfig;
 
-    /// Test that WebhookListenerController::new accepts the correct types.
-    ///
-    /// Verifies the constructor signature matches the expected
-    /// Arc<Mutex<WebhookServer>> parameter type.
-    #[test]
-    fn webhook_listener_controller_constructor_signature_is_valid() {
-        // Type-check the constructor without calling it
-        fn _type_check_new(
-            server: Arc<Mutex<crate::channels::WebhookServer>>,
-        ) -> WebhookListenerController {
-            WebhookListenerController::new(server)
-        }
+    fn bind_listener() -> (tokio::net::TcpListener, SocketAddr) {
+        let std_listener =
+            StdTcpListener::bind("127.0.0.1:0").expect("should bind an ephemeral port");
+        std_listener
+            .set_nonblocking(true)
+            .expect("listener should support non-blocking mode");
+        let addr = std_listener
+            .local_addr()
+            .expect("listener should report its local address");
+        let listener =
+            tokio::net::TcpListener::from_std(std_listener).expect("tokio listener should build");
+        (listener, addr)
+    }
 
-        // The type check above ensures the constructor accepts the right types
-        let _ = _type_check_new;
+    fn reserve_addr() -> SocketAddr {
+        let listener =
+            StdTcpListener::bind("127.0.0.1:0").expect("should reserve an ephemeral port");
+        listener
+            .local_addr()
+            .expect("reserved listener should report its address")
+    }
+
+    #[tokio::test]
+    async fn webhook_listener_controller_drives_webhook_server_lifecycle() {
+        let (listener1, addr1) = bind_listener();
+        let addr2 = reserve_addr();
+
+        let mut server = WebhookServer::new(WebhookServerConfig { addr: addr1 });
+        server.add_routes(
+            Router::new().route("/health", get(|| async { Json(json!({ "status": "ok" })) })),
+        );
+        server
+            .start_with_listener(listener1)
+            .await
+            .expect("server should start on the first listener");
+
+        let server = Arc::new(Mutex::new(server));
+        let controller = WebhookListenerController::new(Arc::clone(&server));
+
+        assert_eq!(
+            NativeListenerController::current_addr(&controller).await,
+            addr1,
+            "current_addr() should report the bound listener address"
+        );
+
+        NativeListenerController::restart_with_addr(&controller, addr2)
+            .await
+            .expect("restart_with_addr() should rebind the server");
+        assert_eq!(
+            NativeListenerController::current_addr(&controller).await,
+            addr2,
+            "restart_with_addr() should update the listener address"
+        );
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!("http://{addr2}/health"))
+            .send()
+            .await
+            .expect("restarted listener should serve requests");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+        NativeListenerController::shutdown(&controller).await;
+
+        let shutdown_result = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            client.get(format!("http://{addr2}/health")).send(),
+        )
+        .await;
+        assert!(
+            shutdown_result.is_err()
+                || shutdown_result
+                    .as_ref()
+                    .is_ok_and(|request_result| request_result.is_err()),
+            "shutdown() should stop the listener from serving requests"
+        );
     }
 }

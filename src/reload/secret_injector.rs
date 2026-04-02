@@ -103,7 +103,12 @@ impl DbSecretInjector {
 
 #[cfg(test)]
 mod tests {
+    use secrecy::SecretString;
+
     use super::*;
+    use crate::config::helpers::optional_env;
+    use crate::secrets::{CreateSecretParams, InMemorySecretsStore, SecretsCrypto, SecretsStore};
+    use crate::testing::credentials::TEST_CRYPTO_KEY;
 
     /// Test the HTTP_WEBHOOK_SECRET_KEY constant value.
     #[test]
@@ -111,20 +116,43 @@ mod tests {
         assert_eq!(HTTP_WEBHOOK_SECRET_KEY, "HTTP_WEBHOOK_SECRET");
     }
 
-    /// Test that DbSecretInjector::new has the correct signature.
-    ///
-    /// Verifies the constructor accepts Arc<dyn SecretsStore + Send + Sync>
-    /// and a user_id String as expected.
-    #[test]
-    fn db_secret_injector_constructor_signature_is_valid() {
-        fn _type_check_new(
-            store: Arc<dyn crate::secrets::SecretsStore + Send + Sync>,
-            user_id: String,
-        ) -> DbSecretInjector {
-            DbSecretInjector::new(store, user_id)
-        }
+    #[tokio::test]
+    async fn db_secret_injector_injects_and_clears_webhook_secret() {
+        crate::config::remove_injected_var(HTTP_WEBHOOK_SECRET_KEY);
 
-        // The type check above ensures the constructor accepts the right types
-        let _ = _type_check_new;
+        let crypto = Arc::new(
+            SecretsCrypto::new(SecretString::from(TEST_CRYPTO_KEY.to_string()))
+                .expect("test crypto should initialize"),
+        );
+        let store: Arc<dyn SecretsStore + Send + Sync> =
+            Arc::new(InMemorySecretsStore::new(crypto));
+        store
+            .create(
+                "test_user",
+                CreateSecretParams::new(SECRETS_STORE_KEY, "super-secret-value"),
+            )
+            .await
+            .expect("secret should be created");
+
+        let injector = DbSecretInjector::new(Arc::clone(&store), "test_user".to_string());
+
+        NativeSecretInjector::inject(&injector).await;
+        assert_eq!(
+            optional_env(HTTP_WEBHOOK_SECRET_KEY).expect("overlay lookup should succeed"),
+            Some("super-secret-value".to_string()),
+            "inject() should populate the overlay from the secrets store"
+        );
+
+        store
+            .delete("test_user", SECRETS_STORE_KEY)
+            .await
+            .expect("secret should be deleted");
+        NativeSecretInjector::inject(&injector).await;
+
+        assert_eq!(
+            optional_env(HTTP_WEBHOOK_SECRET_KEY).expect("overlay lookup should succeed"),
+            None,
+            "inject() should clear the overlay when the secret is removed"
+        );
     }
 }
