@@ -113,9 +113,7 @@ pub fn job_scoped_path(job_id: &str, relative: &str) -> String {
 pub fn worker_job_url(orchestrator_url: &str, job_id: &str, path: &str) -> String {
     let base = orchestrator_url.trim_end_matches('/');
     let scoped_path = job_scoped_path(job_id, "");
-    let scoped = scoped_path
-        .trim_start_matches('/')
-        .trim_end_matches('/');
+    let scoped = scoped_path.trim_start_matches('/').trim_end_matches('/');
     let path = path.trim_start_matches('/');
     format!("{}/{}/{}", base, scoped, path)
 }
