@@ -148,7 +148,7 @@ fn staged_release_window_rows() -> Vec<(i32, String, String)> {
 #[test]
 fn migration_history_rewrites_cover_the_known_released_mappings() {
     let rewrites = migration_history_rewrites().expect("released migration identities parse");
-    let expected = BTreeSet::from([
+    let expected: &[(i32, &str, u64, i32, &str, u64)] = &[
         (
             12,
             "wasm_wit_default_0_3_0",
@@ -181,9 +181,28 @@ fn migration_history_rewrites_cover_the_known_released_mappings() {
             "wasm_wit_default_0_3_0",
             6506104151552529421,
         ),
-    ]);
+    ];
 
-    assert_eq!(rewrite_tuple_set(&rewrites), expected);
+    assert_eq!(rewrites.len(), expected.len());
+    for &(fv, fn_, fc, tv, tn, tc) in expected {
+        assert!(
+            rewrites.iter().any(|r| {
+                r.from.version == fv
+                    && r.from.name == fn_
+                    && r.from.checksum == fc
+                    && r.to.version == tv
+                    && r.to.name == tn
+                    && r.to.checksum == tc
+            }),
+            "missing rewrite from {}:{}:{} to {}:{}:{}",
+            fv,
+            fn_,
+            fc,
+            tv,
+            tn,
+            tc,
+        );
+    }
 }
 
 #[cfg(feature = "postgres")]
