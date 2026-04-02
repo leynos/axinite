@@ -174,6 +174,23 @@ fn test_stuck_since_returns_latest_stuck_transition() {
     assert_eq!(ctx.stuck_since(), Some(second_stuck_at));
 }
 
+fn apply_random_step(ctx: &mut JobContext, rng: &mut StdRng, case_idx: usize, step: usize) {
+    match rng.gen_range(0..4) {
+        0 if matches!(ctx.state, JobState::Pending) => {
+            ctx.transition_to(JobState::InProgress, None)
+                .expect("failed to transition to InProgress");
+        }
+        1 if matches!(ctx.state, JobState::InProgress) => {
+            ctx.mark_stuck(format!("stall-{case_idx}-{step}"))
+                .expect("failed to mark context as stuck");
+        }
+        2 if matches!(ctx.state, JobState::Stuck) => {
+            ctx.attempt_recovery().expect("failed to attempt recovery");
+        }
+        _ => {}
+    }
+}
+
 #[test]
 fn test_stuck_since_matches_latest_stuck_transition_across_bounded_sequences() {
     let mut rng = StdRng::seed_from_u64(0x5EED_5EED);
@@ -183,34 +200,21 @@ fn test_stuck_since_matches_latest_stuck_transition_across_bounded_sequences() {
             let mut ctx = JobContext::new("Test", "Randomized stuck_since test");
 
             for step in 0..sequence_len {
-                match rng.gen_range(0..4) {
-                    0 if matches!(ctx.state, JobState::Pending) => {
-                        ctx.transition_to(JobState::InProgress, None)
-                            .expect("failed to transition to InProgress");
-                    }
-                    1 if matches!(ctx.state, JobState::InProgress) => {
-                        ctx.mark_stuck(format!("stall-{case_idx}-{step}"))
-                            .expect("failed to mark context as stuck");
-                    }
-                    2 if matches!(ctx.state, JobState::Stuck) => {
-                        ctx.attempt_recovery().expect("failed to attempt recovery");
-                    }
-                    3 => {}
-                    _ => {}
-                }
+                apply_random_step(&mut ctx, &mut rng, case_idx, step);
             }
 
             let expected = ctx
                 .transitions
                 .iter()
                 .rev()
-                .find(|transition| transition.to == JobState::Stuck)
-                .map(|transition| transition.timestamp);
+                .find(|t| t.to == JobState::Stuck)
+                .map(|t| t.timestamp);
 
             assert_eq!(
                 ctx.stuck_since(),
                 expected,
-                "stuck_since invariant failed for sequence_len={sequence_len}, case_idx={case_idx}"
+                "stuck_since invariant failed for \
+                 sequence_len={sequence_len}, case_idx={case_idx}"
             );
         }
     }

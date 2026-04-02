@@ -29,6 +29,15 @@ use crate::tools::redact_params;
 use message_rebuild::rebuild_chat_messages_from_db;
 use persistence::gateway_conversation_params;
 
+/// Replace characters that are unsafe in file-system paths with an underscore.
+fn sanitise_filename_char(c: char) -> char {
+    if matches!(c, '/' | '\\' | '\0') {
+        '_'
+    } else {
+        c
+    }
+}
+
 /// Store extracted document text in workspace memory for future search/recall.
 pub(super) async fn store_extracted_documents(
     workspace: &Arc<crate::workspace::Workspace>,
@@ -51,16 +60,7 @@ pub(super) async fn store_extracted_documents(
 
         // Sanitize filename: strip path separators to prevent directory traversal
         let raw_name = attachment.filename.as_deref().unwrap_or("unnamed_document");
-        let filename: String = raw_name
-            .chars()
-            .map(|c| {
-                if c == '/' || c == '\\' || c == '\0' {
-                    '_'
-                } else {
-                    c
-                }
-            })
-            .collect();
+        let filename: String = raw_name.chars().map(sanitise_filename_char).collect();
         let filename = filename.trim_start_matches('.');
         let filename = if filename.is_empty() {
             "unnamed_document"
