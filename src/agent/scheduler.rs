@@ -218,6 +218,30 @@ impl Scheduler {
         self.schedule_with_context(job_id, None).await
     }
 
+    /// Spawn a background task that removes `job_id` from `jobs` once its
+    /// worker handle finishes, preventing unbounded map growth.
+    fn spawn_cleanup_task(&self, job_id: Uuid) {
+        let jobs = Arc::clone(&self.jobs);
+        tokio::spawn(async move {
+            loop {
+                let finished = {
+                    let jobs_read = jobs.read().await;
+                    match jobs_read.get(&job_id) {
+                        Some(scheduled) => scheduled.handle.is_finished(),
+                        None => true,
+                    }
+                };
+
+                if finished {
+                    jobs.write().await.remove(&job_id);
+                    break;
+                }
+
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        });
+    }
+
     /// Schedule a job with an optional approval context.
     async fn schedule_with_context(
         &self,
@@ -295,26 +319,7 @@ impl Scheduler {
             );
         }
 
-        // Cleanup task for this job to avoid capacity leaks
-        let jobs = Arc::clone(&self.jobs);
-        tokio::spawn(async move {
-            loop {
-                let finished = {
-                    let jobs_read = jobs.read().await;
-                    match jobs_read.get(&job_id) {
-                        Some(scheduled) => scheduled.handle.is_finished(),
-                        None => true,
-                    }
-                };
-
-                if finished {
-                    jobs.write().await.remove(&job_id);
-                    break;
-                }
-
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        });
+        self.spawn_cleanup_task(job_id);
 
         tracing::info!("Scheduled job {} for execution", job_id);
         Ok(())
