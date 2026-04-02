@@ -98,6 +98,32 @@ pub struct SetupWizard {
     llm_api_key: Option<SecretString>,
 }
 
+struct ApiKeyProviderSpec<'a> {
+    backend: &'a str,
+    env_var: &'a str,
+    secret_name: &'a str,
+    prompt_label: &'a str,
+    hint_url: &'a str,
+    override_display_name: Option<&'a str>,
+}
+
+struct OpenAICompatSpec<'a> {
+    backend_id: &'a str,
+    secret_name: &'a str,
+    display_name: &'a str,
+}
+
+struct LibsqlConnParams<'a> {
+    path: &'a std::path::Path,
+    turso_url: Option<&'a str>,
+    turso_token: Option<&'a str>,
+}
+
+struct OpenAICompatModelsRequest<'a> {
+    base_url: &'a str,
+    cached_key: Option<&'a str>,
+}
+
 impl SetupWizard {
     /// Create a new setup wizard.
     pub fn new() -> Self {
@@ -340,8 +366,12 @@ impl SetupWizard {
         let turso_url = std::env::var("LIBSQL_URL").ok();
         let turso_token = std::env::var("LIBSQL_AUTH_TOKEN").ok();
 
-        self.test_database_connection_libsql(&path, turso_url.as_deref(), turso_token.as_deref())
-            .await?;
+        self.test_database_connection_libsql(LibsqlConnParams {
+            path: std::path::Path::new(&path),
+            turso_url: turso_url.as_deref(),
+            turso_token: turso_token.as_deref(),
+        })
+        .await?;
 
         self.settings.database_backend = Some("libsql".to_string());
         self.settings.libsql_path = Some(path.clone());
@@ -514,11 +544,11 @@ impl SetupWizard {
                 let turso_token = std::env::var("LIBSQL_AUTH_TOKEN").ok();
 
                 match self
-                    .test_database_connection_libsql(
-                        path,
-                        turso_url.as_deref(),
-                        turso_token.as_deref(),
-                    )
+                    .test_database_connection_libsql(LibsqlConnParams {
+                        path: std::path::Path::new(path),
+                        turso_url: turso_url.as_deref(),
+                        turso_token: turso_token.as_deref(),
+                    })
                     .await
                 {
                     Ok(()) => {
@@ -580,7 +610,11 @@ impl SetupWizard {
 
         print_info("Testing connection...");
         match self
-            .test_database_connection_libsql(&db_path, turso_url.as_deref(), turso_token.as_deref())
+            .test_database_connection_libsql(LibsqlConnParams {
+                path: std::path::Path::new(&db_path),
+                turso_url: turso_url.as_deref(),
+                turso_token: turso_token.as_deref(),
+            })
             .await
         {
             Ok(()) => {
@@ -679,14 +713,16 @@ impl SetupWizard {
     #[cfg(feature = "libsql")]
     async fn test_database_connection_libsql(
         &mut self,
-        path: &str,
-        turso_url: Option<&str>,
-        turso_token: Option<&str>,
+        params: LibsqlConnParams<'_>,
     ) -> Result<(), SetupError> {
         use crate::db::libsql::LibSqlBackend;
-        use std::path::Path;
 
-        let db_path = Path::new(path);
+        let LibsqlConnParams {
+            path,
+            turso_url,
+            turso_token,
+        } = params;
+        let db_path = path;
 
         let backend = if let (Some(url), Some(token)) = (turso_url, turso_token) {
             LibSqlBackend::new_remote_replica(db_path, url, token)
@@ -920,11 +956,11 @@ impl SetupWizard {
             let turso_url = std::env::var("LIBSQL_URL").ok();
             let turso_token = std::env::var("LIBSQL_AUTH_TOKEN").ok();
 
-            self.test_database_connection_libsql(
-                &db_path,
-                turso_url.as_deref(),
-                turso_token.as_deref(),
-            )
+            self.test_database_connection_libsql(LibsqlConnParams {
+                path: std::path::Path::new(&db_path),
+                turso_url: turso_url.as_deref(),
+                turso_token: turso_token.as_deref(),
+            })
             .await?;
 
             self.run_migrations_libsql().await?;
@@ -1142,14 +1178,15 @@ impl SetupWizard {
                     self.settings.openai_compatible_base_url = Some(base_url.clone());
                 }
 
-                self.setup_api_key_provider(
-                    &def.id,
+                let prompt_label = format!("{display_name} API key");
+                self.setup_api_key_provider(ApiKeyProviderSpec {
+                    backend: &def.id,
                     env_var,
                     secret_name,
-                    &format!("{display_name} API key"),
-                    url,
-                    Some(display_name),
-                )
+                    prompt_label: &prompt_label,
+                    hint_url: url,
+                    override_display_name: Some(display_name),
+                })
                 .await?;
             }
             crate::llm::registry::SetupHint::Ollama { .. } => {
@@ -1160,8 +1197,12 @@ impl SetupWizard {
                 display_name,
                 ..
             } => {
-                self.setup_openai_compatible_generic(&def.id, secret_name, display_name)
-                    .await?;
+                self.setup_openai_compatible_generic(OpenAICompatSpec {
+                    backend_id: &def.id,
+                    secret_name,
+                    display_name,
+                })
+                .await?;
             }
         }
 
@@ -1238,14 +1279,14 @@ impl SetupWizard {
 
         if choice == 0 {
             // Standard API key flow
-            self.setup_api_key_provider(
-                "anthropic",
-                "ANTHROPIC_API_KEY",
-                "llm_anthropic_api_key",
-                "Anthropic API key",
-                "https://console.anthropic.com/settings/keys",
-                None,
-            )
+            self.setup_api_key_provider(ApiKeyProviderSpec {
+                backend: "anthropic",
+                env_var: "ANTHROPIC_API_KEY",
+                secret_name: "llm_anthropic_api_key",
+                prompt_label: "Anthropic API key",
+                hint_url: "https://console.anthropic.com/settings/keys",
+                override_display_name: None,
+            })
             .await
         } else {
             // OAuth token flow
@@ -1292,14 +1333,14 @@ impl SetupWizard {
         if token_str.is_empty() {
             print_info("Switching to API key flow...");
             return self
-                .setup_api_key_provider(
-                    "anthropic",
-                    "ANTHROPIC_API_KEY",
-                    "llm_anthropic_api_key",
-                    "Anthropic API key",
-                    "https://console.anthropic.com/settings/keys",
-                    None,
-                )
+                .setup_api_key_provider(ApiKeyProviderSpec {
+                    backend: "anthropic",
+                    env_var: "ANTHROPIC_API_KEY",
+                    secret_name: "llm_anthropic_api_key",
+                    prompt_label: "Anthropic API key",
+                    hint_url: "https://console.anthropic.com/settings/keys",
+                    override_display_name: None,
+                })
                 .await;
         }
         self.save_anthropic_oauth_token(token_str).await
@@ -1340,13 +1381,17 @@ impl SetupWizard {
     /// Shared setup flow for API-key-based providers.
     async fn setup_api_key_provider(
         &mut self,
-        backend: &str,
-        env_var: &str,
-        secret_name: &str,
-        prompt_label: &str,
-        hint_url: &str,
-        override_display_name: Option<&str>,
+        spec: ApiKeyProviderSpec<'_>,
     ) -> Result<(), SetupError> {
+        let ApiKeyProviderSpec {
+            backend,
+            env_var,
+            secret_name,
+            prompt_label,
+            hint_url,
+            override_display_name,
+        } = spec;
+
         let display_name = override_display_name.unwrap_or(match backend {
             "anthropic" => "Anthropic",
             "openai" => "OpenAI",
@@ -1540,10 +1585,14 @@ impl SetupWizard {
     /// Generic OpenAI-compatible setup: base URL + optional API key.
     async fn setup_openai_compatible_generic(
         &mut self,
-        backend_id: &str,
-        secret_name: &str,
-        display_name: &str,
+        spec: OpenAICompatSpec<'_>,
     ) -> Result<(), SetupError> {
+        let OpenAICompatSpec {
+            backend_id,
+            secret_name,
+            display_name,
+        } = spec;
+
         // Clear model only when switching providers (old model may be invalid)
         if self.settings.llm_backend.as_deref() != Some(backend_id) {
             self.settings.selected_model = None;
@@ -1675,7 +1724,11 @@ impl SetupWizard {
                     _ => {
                         // Generic OpenAI-compatible model listing
                         let base_url = def.default_base_url.as_deref().unwrap_or("");
-                        fetch_openai_compatible_models(base_url, cached_key.as_deref()).await
+                        fetch_openai_compatible_models(OpenAICompatModelsRequest {
+                            base_url,
+                            cached_key: cached_key.as_deref(),
+                        })
+                        .await
                     }
                 };
 
@@ -3247,9 +3300,13 @@ async fn fetch_ollama_models(base_url: &str) -> Vec<(String, String)> {
 ///
 /// Used for registry providers like Groq, NVIDIA NIM, etc.
 async fn fetch_openai_compatible_models(
-    base_url: &str,
-    cached_key: Option<&str>,
+    req: OpenAICompatModelsRequest<'_>,
 ) -> Vec<(String, String)> {
+    let OpenAICompatModelsRequest {
+        base_url,
+        cached_key,
+    } = req;
+
     if base_url.is_empty() {
         return vec![];
     }
@@ -3940,11 +3997,18 @@ mod tests {
 
     /// Simulate the selected-model clearing logic applied when entering a provider setup screen.
     /// Returns the value of `selected_model` after the simulated switch.
-    fn provider_model_after_switch(
-        from_backend: &str,
-        model: &str,
-        to_backend: &str,
-    ) -> Option<String> {
+    struct ProviderSwitch<'a> {
+        from_backend: &'a str,
+        model: &'a str,
+        to_backend: &'a str,
+    }
+
+    fn provider_model_after_switch(req: ProviderSwitch<'_>) -> Option<String> {
+        let ProviderSwitch {
+            from_backend,
+            model,
+            to_backend,
+        } = req;
         let mut wizard = SetupWizard::new();
         wizard.settings.llm_backend = Some(from_backend.to_string());
         wizard.settings.selected_model = Some(model.to_string());
@@ -3960,7 +4024,12 @@ mod tests {
     #[test]
     fn test_same_provider_preserves_selected_model() {
         assert_eq!(
-            provider_model_after_switch("ollama", "llama3", "ollama").as_deref(),
+            provider_model_after_switch(ProviderSwitch {
+                from_backend: "ollama",
+                model: "llama3",
+                to_backend: "ollama",
+            })
+            .as_deref(),
             Some("llama3"),
             "model should be preserved when re-selecting the same provider"
         );
@@ -3971,7 +4040,12 @@ mod tests {
     #[test]
     fn test_different_provider_clears_selected_model() {
         assert!(
-            provider_model_after_switch("ollama", "llama3", "openai").is_none(),
+            provider_model_after_switch(ProviderSwitch {
+                from_backend: "ollama",
+                model: "llama3",
+                to_backend: "openai",
+            })
+            .is_none(),
             "model should be cleared when switching providers"
         );
     }
@@ -3981,8 +4055,12 @@ mod tests {
     #[test]
     fn test_bedrock_same_provider_preserves_model() {
         assert_eq!(
-            provider_model_after_switch("bedrock", "anthropic.claude-opus-4-6-v1", "bedrock",)
-                .as_deref(),
+            provider_model_after_switch(ProviderSwitch {
+                from_backend: "bedrock",
+                model: "anthropic.claude-opus-4-6-v1",
+                to_backend: "bedrock",
+            })
+            .as_deref(),
             Some("anthropic.claude-opus-4-6-v1"),
             "bedrock model should be preserved when re-selecting bedrock"
         );
