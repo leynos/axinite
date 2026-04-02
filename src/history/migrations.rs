@@ -217,6 +217,37 @@ fn migration_identity(spec: MigrationSpec) -> Result<MigrationIdentity, Database
 }
 
 #[cfg(feature = "postgres")]
+async fn rewrite_history_row<C>(
+    client: &C,
+    where_version: i32,
+    where_name: &str,
+    where_checksum: &str,
+    set_version: i32,
+    set_name: &str,
+    set_checksum: &str,
+) -> Result<(), DatabaseError>
+where
+    C: GenericClient,
+{
+    client
+        .execute(
+            "UPDATE refinery_schema_history \
+             SET version = $1, name = $2, checksum = $3 \
+             WHERE version = $4 AND name = $5 AND checksum = $6",
+            &[
+                &set_version,
+                &set_name,
+                &set_checksum,
+                &where_version,
+                &where_name,
+                &where_checksum,
+            ],
+        )
+        .await?;
+    Ok(())
+}
+
+#[cfg(feature = "postgres")]
 async fn stage_migration_history_rewrites<C>(
     client: &C,
     rewrites: &[MigrationHistoryRewrite],
@@ -226,19 +257,16 @@ where
 {
     for rewrite in rewrites {
         let from_checksum = rewrite.from.checksum.to_string();
-        client
-            .execute(
-                "UPDATE refinery_schema_history \
-                 SET version = $1 \
-                 WHERE version = $2 AND name = $3 AND checksum = $4",
-                &[
-                    &rewrite.temporary_version,
-                    &rewrite.from.version,
-                    &rewrite.from.name,
-                    &from_checksum,
-                ],
-            )
-            .await?;
+        rewrite_history_row(
+            client,
+            rewrite.from.version,
+            rewrite.from.name,
+            &from_checksum,
+            rewrite.temporary_version,
+            rewrite.from.name,
+            &from_checksum,
+        )
+        .await?;
     }
 
     Ok(())
@@ -255,21 +283,16 @@ where
     for rewrite in rewrites {
         let from_checksum = rewrite.from.checksum.to_string();
         let to_checksum = rewrite.to.checksum.to_string();
-        client
-            .execute(
-                "UPDATE refinery_schema_history \
-                 SET version = $1, name = $2, checksum = $3 \
-                 WHERE version = $4 AND name = $5 AND checksum = $6",
-                &[
-                    &rewrite.to.version,
-                    &rewrite.to.name,
-                    &to_checksum,
-                    &rewrite.temporary_version,
-                    &rewrite.from.name,
-                    &from_checksum,
-                ],
-            )
-            .await?;
+        rewrite_history_row(
+            client,
+            rewrite.temporary_version,
+            rewrite.from.name,
+            &from_checksum,
+            rewrite.to.version,
+            rewrite.to.name,
+            &to_checksum,
+        )
+        .await?;
     }
 
     Ok(())
