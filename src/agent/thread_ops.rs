@@ -18,7 +18,7 @@ use crate::agent::dispatcher::{
     AgenticLoopResult, check_auth_required, execute_chat_tool_standalone, parse_auth_result,
 };
 use crate::agent::session::{PendingApproval, Session, ThreadState};
-use crate::agent::submission::SubmissionResult;
+use crate::agent::submission::{Submission, SubmissionParser, SubmissionResult};
 use crate::channels::web::util::truncate_preview;
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::context::JobContext;
@@ -34,12 +34,18 @@ pub(super) async fn store_extracted_documents(
     workspace: &Arc<crate::workspace::Workspace>,
     message: &IncomingMessage,
 ) {
-    for attachment in &message.attachments {
+    for (index, attachment) in message.attachments.iter().enumerate() {
         if attachment.kind != crate::channels::AttachmentKind::Document {
             continue;
         }
         let text = match &attachment.extracted_text {
-            Some(t) if !t.starts_with('[') => t, // skip error messages like "[Failed to..."
+            Some(t)
+                if !t.starts_with("[Failed")
+                    && !t.starts_with("[Error")
+                    && !t.starts_with("[Unsupported") =>
+            {
+                t
+            }
             _ => continue,
         };
 
@@ -62,7 +68,7 @@ pub(super) async fn store_extracted_documents(
             filename
         };
         let date = chrono::Utc::now().format("%Y-%m-%d");
-        let path = format!("documents/{date}/{filename}");
+        let path = format!("documents/{date}/{index}-{}-{filename}", attachment.id);
 
         let header = format!(
             "# {filename}\n\n\
@@ -95,6 +101,234 @@ pub(super) async fn store_extracted_documents(
 }
 
 impl Agent {
+    pub(super) async fn handle_message(
+        &self,
+        message: &IncomingMessage,
+    ) -> Result<Option<String>, Error> {
+        // Log at info level only for tracking without exposing PII (user_id can be a phone number)
+        tracing::info!(message_id = %message.id, "Processing message");
+
+        // Log sensitive details at debug level for troubleshooting
+        tracing::debug!(
+            message_id = %message.id,
+            user_id = %message.user_id,
+            channel = %message.channel,
+            thread_id = ?message.thread_id,
+            "Message details"
+        );
+
+        // Set message tool context for this turn (current channel and target)
+        // For Signal, use signal_target from metadata (group:ID or phone number),
+        // otherwise fall back to user_id
+        let target = message
+            .metadata
+            .get("signal_target")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| message.user_id.clone());
+        self.tools()
+            .set_message_tool_context(Some(message.channel.clone()), Some(target))
+            .await;
+
+        // Parse submission type first
+        let mut submission = SubmissionParser::parse(&message.content);
+        tracing::trace!(
+            "[agent_loop] Parsed submission: {:?}",
+            std::any::type_name_of_val(&submission)
+        );
+
+        // Hook: BeforeInbound — allow hooks to modify or reject user input
+        if let Submission::UserInput { ref content } = submission {
+            let event = crate::hooks::HookEvent::Inbound {
+                user_id: message.user_id.clone(),
+                channel: message.channel.clone(),
+                content: content.clone(),
+                thread_id: message.thread_id.clone(),
+            };
+            match self.hooks().run(&event).await {
+                Err(crate::hooks::HookError::Rejected { reason }) => {
+                    return Ok(Some(format!("[Message rejected: {}]", reason)));
+                }
+                Err(err) => {
+                    return Ok(Some(format!("[Message blocked by hook policy: {}]", err)));
+                }
+                Ok(crate::hooks::HookOutcome::Continue {
+                    modified: Some(new_content),
+                }) => {
+                    submission = Submission::UserInput {
+                        content: new_content,
+                    };
+                }
+                _ => {} // Continue, fail-open errors already logged in registry
+            }
+        }
+
+        // Hydrate thread from DB if it's a historical thread not in memory
+        if let Some(ref external_thread_id) = message.thread_id {
+            tracing::trace!(
+                message_id = %message.id,
+                thread_id = %external_thread_id,
+                "Hydrating thread from DB"
+            );
+            self.maybe_hydrate_thread(message, external_thread_id).await;
+        }
+
+        // Resolve session and thread
+        tracing::debug!(
+            message_id = %message.id,
+            "Resolving session and thread"
+        );
+        let (session, thread_id) = self
+            .session_manager
+            .resolve_thread(
+                &message.user_id,
+                &message.channel,
+                message.thread_id.as_deref(),
+            )
+            .await;
+        tracing::debug!(
+            message_id = %message.id,
+            thread_id = %thread_id,
+            "Resolved session and thread"
+        );
+
+        // Auth mode interception: if the thread is awaiting a token, route
+        // the message directly to the credential store. Nothing touches
+        // logs, turns, history, or compaction.
+        let pending_auth = {
+            let sess = session.lock().await;
+            sess.threads
+                .get(&thread_id)
+                .and_then(|t| t.pending_auth.clone())
+        };
+
+        if let Some(pending) = pending_auth {
+            match &submission {
+                Submission::UserInput { content } => {
+                    return self
+                        .process_auth_token(message, &pending, content, session, thread_id)
+                        .await;
+                }
+                _ => {
+                    // Any control submission (interrupt, undo, etc.) cancels auth mode
+                    let mut sess = session.lock().await;
+                    if let Some(thread) = sess.threads.get_mut(&thread_id) {
+                        thread.pending_auth = None;
+                    }
+                    // Fall through to normal handling
+                }
+            }
+        }
+
+        tracing::trace!(
+            "Received message from {} on {} ({} chars)",
+            message.user_id,
+            message.channel,
+            message.content.len()
+        );
+
+        // Process based on submission type
+        let result = match submission {
+            Submission::UserInput { content } => {
+                self.process_user_input(message, session, thread_id, &content)
+                    .await
+            }
+            Submission::SystemCommand { command, args } => {
+                tracing::debug!(
+                    "[agent_loop] SystemCommand: command={}, channel={}",
+                    command,
+                    message.channel
+                );
+                // Authorization checks (including restart channel check) are enforced in handle_system_command
+                self.handle_system_command(&command, &args, &message.channel)
+                    .await
+            }
+            Submission::Undo => self.process_undo(session, thread_id).await,
+            Submission::Redo => self.process_redo(session, thread_id).await,
+            Submission::Interrupt => self.process_interrupt(session, thread_id).await,
+            Submission::Compact => self.process_compact(session, thread_id).await,
+            Submission::Clear => self.process_clear(session, thread_id).await,
+            Submission::NewThread => self.process_new_thread(message).await,
+            Submission::Heartbeat => self.process_heartbeat().await,
+            Submission::Summarize => self.process_summarize(session, thread_id).await,
+            Submission::Suggest => self.process_suggest(session, thread_id).await,
+            Submission::JobStatus { job_id } => {
+                self.process_job_status(&message.user_id, job_id.as_deref())
+                    .await
+            }
+            Submission::JobCancel { job_id } => {
+                self.process_job_cancel(&message.user_id, &job_id).await
+            }
+            Submission::Quit => return Ok(None),
+            Submission::SwitchThread { thread_id: target } => {
+                self.process_switch_thread(message, target).await
+            }
+            Submission::Resume { checkpoint_id } => {
+                self.process_resume(session, thread_id, checkpoint_id).await
+            }
+            Submission::ExecApproval {
+                request_id,
+                approved,
+                always,
+            } => {
+                self.process_approval(
+                    message,
+                    session,
+                    thread_id,
+                    Some(request_id),
+                    approved,
+                    always,
+                )
+                .await
+            }
+            Submission::ApprovalResponse { approved, always } => {
+                self.process_approval(message, session, thread_id, None, approved, always)
+                    .await
+            }
+        };
+
+        // Convert SubmissionResult to response string
+        match result? {
+            SubmissionResult::Response { content } => {
+                // Suppress silent replies (e.g. from group chat "nothing to say" responses)
+                if crate::llm::is_silent_reply(&content) {
+                    tracing::debug!("Suppressing silent reply token");
+                    Ok(None)
+                } else {
+                    Ok(Some(content))
+                }
+            }
+            SubmissionResult::Ok { message } => Ok(message),
+            SubmissionResult::Error { message } => Ok(Some(format!("Error: {}", message))),
+            SubmissionResult::Interrupted => Ok(Some("Interrupted.".into())),
+            SubmissionResult::NeedApproval {
+                request_id,
+                tool_name,
+                description,
+                parameters,
+            } => {
+                // Each channel renders the approval prompt via send_status.
+                // Web gateway shows an inline card, REPL prints a formatted prompt, etc.
+                let _ = self
+                    .channels
+                    .send_status(
+                        &message.channel,
+                        StatusUpdate::ApprovalNeeded {
+                            request_id: request_id.to_string(),
+                            tool_name,
+                            description,
+                            parameters,
+                        },
+                        &message.metadata,
+                    )
+                    .await;
+
+                // Empty string signals the caller to skip respond() (no duplicate text)
+                Ok(Some(String::new()))
+            }
+        }
+    }
+
     /// Hydrate a historical thread from DB into memory if not already present.
     ///
     /// Called before `resolve_thread` so that the session manager finds the

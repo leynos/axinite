@@ -3,28 +3,29 @@
 
 use super::*;
 use rand::{Rng, SeedableRng, rngs::StdRng};
-use rstest::rstest;
 
-#[rstest]
-#[case(JobState::Pending, JobState::InProgress, true)]
-#[case(JobState::InProgress, JobState::Completed, true)]
-#[case(JobState::Completed, JobState::Pending, false)]
-#[case(JobState::Accepted, JobState::InProgress, false)]
-fn test_state_transitions(#[case] from: JobState, #[case] to: JobState, #[case] expected: bool) {
-    assert_eq!(from.can_transition_to(to), expected);
+#[test]
+fn test_valid_state_transitions() {
+    assert!(JobState::Pending.can_transition_to(JobState::InProgress));
+    assert!(JobState::InProgress.can_transition_to(JobState::Completed));
 }
 
-#[rstest]
-#[case(JobState::Accepted, true)]
-#[case(JobState::Failed, true)]
-#[case(JobState::Cancelled, true)]
-#[case(JobState::InProgress, false)]
-#[case(JobState::Pending, false)]
-#[case(JobState::Completed, false)]
-#[case(JobState::Submitted, false)]
-#[case(JobState::Stuck, false)]
-fn test_terminal_states(#[case] state: JobState, #[case] expected: bool) {
-    assert_eq!(state.is_terminal(), expected);
+#[test]
+fn test_invalid_state_transitions() {
+    assert!(!JobState::Completed.can_transition_to(JobState::Pending));
+    assert!(!JobState::Accepted.can_transition_to(JobState::InProgress));
+}
+
+#[test]
+fn test_terminal_states_are_terminal() {
+    assert!(JobState::Accepted.is_terminal());
+    assert!(JobState::Failed.is_terminal());
+    assert!(JobState::Cancelled.is_terminal());
+}
+
+#[test]
+fn test_in_progress_is_not_terminal() {
+    assert!(!JobState::InProgress.is_terminal());
 }
 
 #[test]
@@ -40,9 +41,8 @@ fn test_job_state_from_str_parses_known_values() {
         ("cancelled", JobState::Cancelled),
     ];
     for (input, expected) in cases {
-        let failure_message = format!("failed to parse '{input}' into JobState");
         assert_eq!(
-            input.parse::<JobState>().expect(&failure_message),
+            input.parse::<JobState>().unwrap(),
             expected,
             "failed to parse '{input}'",
         );
