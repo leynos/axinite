@@ -2,11 +2,13 @@
 
 ## 1. Summary
 
-This document compares the current Rust-hosted browser gateway in `../axinite`
-with the SolidJS progressive web application (PWA) prototype in
-`../axinite-mockup`. The goal is not to critique styling or implementation
-taste. The goal is to identify every place where the PWA currently breaks
-contract with the existing web front end in one of three ways:
+This document compares the current Rust-hosted browser gateway in the
+[Axinite repository](https://github.com/leynos/axinite) with the SolidJS
+progressive web application (PWA) prototype in the
+[axinite-mockup repository](https://github.com/leynos/axinite-mockup). The
+goal is not to critique styling or implementation taste. The goal is to
+identify every place where the PWA currently breaks contract with the existing
+web front end in one of three ways:
 
 - it expects a data shape the real gateway does not provide,
 - it drops or changes information the current UI presents to the user, or
@@ -21,19 +23,23 @@ developer can work through directly.
 This analysis is based on code inspection of:
 
 - the current gateway UI and browser-facing API in
-  `src/channels/web/static/app.js`,
-  `src/channels/web/types.rs`,
-  `src/channels/web/handlers/*.rs`,
-  `src/channels/web/log_layer.rs`, and `docs/front-end-architecture.md`
+  [Axinite `src/channels/web/static/app.js`](https://github.com/leynos/axinite/blob/main/src/channels/web/static/app.js),
+  [Axinite `src/channels/web/types.rs`](https://github.com/leynos/axinite/blob/main/src/channels/web/types.rs),
+  [Axinite `src/channels/web/handlers/`](https://github.com/leynos/axinite/tree/main/src/channels/web/handlers),
+  [Axinite `src/channels/web/log_layer.rs`](https://github.com/leynos/axinite/blob/main/src/channels/web/log_layer.rs),
+  and
+  [Axinite `docs/front-end-architecture.md`](https://github.com/leynos/axinite/blob/main/docs/front-end-architecture.md)
 - the SolidJS PWA in
-  `../axinite-mockup/axinite/src/components/*.tsx`,
-  `../axinite-mockup/axinite/src/lib/api/*.ts`,
-  `../axinite-mockup/axinite/src/lib/api/contracts.ts`,
-  `../axinite-mockup/axinite/src/lib/feature-flags/*.ts*`, and
-  `../axinite-mockup/axinite/src/app/router.tsx`
+  [axinite-mockup `axinite/src/components/`](https://github.com/leynos/axinite-mockup/tree/main/axinite/src/components),
+  [axinite-mockup `axinite/src/lib/api/`](https://github.com/leynos/axinite-mockup/tree/main/axinite/src/lib/api),
+  [axinite-mockup `axinite/src/lib/api/contracts.ts`](https://github.com/leynos/axinite-mockup/blob/main/axinite/src/lib/api/contracts.ts),
+  [axinite-mockup `axinite/src/lib/feature-flags/`](https://github.com/leynos/axinite-mockup/tree/main/axinite/src/lib/feature-flags),
+  and
+  [axinite-mockup `axinite/src/app/router.tsx`](https://github.com/leynos/axinite-mockup/blob/main/axinite/src/app/router.tsx)
 - the Bun mock backend in
-  `../axinite-mockup/mock-backend/src/server.ts` and
-  `../axinite-mockup/mock-backend/src/state.ts`
+  [axinite-mockup `mock-backend/src/server.ts`](https://github.com/leynos/axinite-mockup/blob/main/mock-backend/src/server.ts)
+  and
+  [axinite-mockup `mock-backend/src/state.ts`](https://github.com/leynos/axinite-mockup/blob/main/mock-backend/src/state.ts)
 
 This is therefore a comparison of the shipped browser contract against the
 current PWA implementation, not against the PWA architecture aspirations.
