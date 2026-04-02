@@ -331,7 +331,8 @@ new front end is not, by itself, sufficient reason to widen the state stack.
 ### Technical requirements
 
 - Browser contracts must be explicit and testable.
-- The browser build must be reproducible in repository gates and CI.
+- The browser build must be reproducible in repository gates and Continuous
+  Integration (CI).
 - The browser workspace must integrate with Axinite's Make-based verification
   workflow.
 - Production serving must not require operators to stand up a second public
