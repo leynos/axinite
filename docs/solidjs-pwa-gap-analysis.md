@@ -63,8 +63,8 @@ The rest of this document expands those gaps into actionable work items.
 
 - **Current gateway contract**
   - All protected routes require `Authorization: Bearer <token>`.
-  - SSE and WebSocket endpoints support query-string tokens because browser
-    APIs cannot set custom headers.
+  - Server-Sent Events (SSE) and WebSocket endpoints support query-string
+    tokens because browser APIs cannot set custom headers.
   - The current browser boot flow explicitly authenticates, stores the token,
     and appends it to `/api/chat/events` and `/api/logs/events`.
 - **PWA state**
