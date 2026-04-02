@@ -7,7 +7,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 use super::traits::SelfRepair;
-use super::types::{RepairNotification, RepairResult};
+use super::types::{RepairNotification, RepairNotificationRoute, RepairResult};
 
 /// Background repair task that periodically checks for and repairs issues.
 pub struct RepairTask {
@@ -15,6 +15,7 @@ pub struct RepairTask {
     check_interval: Duration,
     shutdown_rx: oneshot::Receiver<()>,
     notification_tx: Option<mpsc::Sender<RepairNotification>>,
+    notification_route: RepairNotificationRoute,
 }
 
 impl RepairTask {
@@ -29,6 +30,9 @@ impl RepairTask {
             check_interval,
             shutdown_rx,
             notification_tx: None,
+            notification_route: RepairNotificationRoute::BroadcastAll {
+                user_id: "default".to_string(),
+            },
         }
     }
 
@@ -36,8 +40,10 @@ impl RepairTask {
     pub fn with_notification_tx(
         mut self,
         notification_tx: mpsc::Sender<RepairNotification>,
+        notification_route: RepairNotificationRoute,
     ) -> Self {
         self.notification_tx = Some(notification_tx);
+        self.notification_route = notification_route;
         self
     }
 }
@@ -45,6 +51,7 @@ impl RepairTask {
 async fn run_stuck_job_repairs(
     repair: &dyn SelfRepair,
     notification_tx: &mut Option<mpsc::Sender<RepairNotification>>,
+    notification_route: &RepairNotificationRoute,
     shutdown: &mut std::pin::Pin<&mut oneshot::Receiver<()>>,
     escalated_jobs: &mut HashSet<uuid::Uuid>,
 ) -> bool {
@@ -68,6 +75,7 @@ async fn run_stuck_job_repairs(
                 tracing::info!(job = %job.job_id, status = "success", "Stuck job repair completed: {}", message);
                 send_notification(
                     notification_tx.as_mut(),
+                    notification_route,
                     format!(
                         "Job {} was stuck for {}s, recovery succeeded: {}",
                         job.job_id,
@@ -83,6 +91,7 @@ async fn run_stuck_job_repairs(
                 tracing::error!(job = %job.job_id, status = "failed", "Stuck job repair failed: {}", message);
                 send_notification(
                     notification_tx.as_mut(),
+                    notification_route,
                     format!(
                         "Job {} was stuck for {}s, recovery failed permanently: {}",
                         job.job_id,
@@ -96,6 +105,7 @@ async fn run_stuck_job_repairs(
                     tracing::warn!(job = %job.job_id, status = "manual", "Stuck job repair requires manual intervention: {}", message);
                     send_notification(
                         notification_tx.as_mut(),
+                        notification_route,
                         format!("Job {} needs manual intervention: {}", job.job_id, message),
                     );
                 }
@@ -114,6 +124,7 @@ async fn run_stuck_job_repairs(
 async fn run_broken_tool_repairs(
     repair: &dyn SelfRepair,
     notification_tx: &mut Option<mpsc::Sender<RepairNotification>>,
+    notification_route: &RepairNotificationRoute,
     shutdown: &mut std::pin::Pin<&mut oneshot::Receiver<()>>,
     escalated_tools: &mut HashSet<String>,
 ) -> bool {
@@ -142,6 +153,7 @@ async fn run_broken_tool_repairs(
                 );
                 send_notification(
                     notification_tx.as_mut(),
+                    notification_route,
                     format!("Tool '{}' repaired: {}", tool.name, message),
                 );
             }
@@ -154,6 +166,7 @@ async fn run_broken_tool_repairs(
                 );
                 send_notification(
                     notification_tx.as_mut(),
+                    notification_route,
                     format!("Tool '{}' repair failed: {}", tool.name, message),
                 );
             }
@@ -167,6 +180,7 @@ async fn run_broken_tool_repairs(
                     );
                     send_notification(
                         notification_tx.as_mut(),
+                        notification_route,
                         format!(
                             "Tool '{}' needs manual intervention: {}",
                             tool.name, message
@@ -201,6 +215,7 @@ impl RepairTask {
             check_interval,
             shutdown_rx,
             mut notification_tx,
+            notification_route,
         } = self;
         let mut shutdown = std::pin::pin!(shutdown_rx);
         let mut escalated_jobs = HashSet::new();
@@ -213,13 +228,20 @@ impl RepairTask {
                     break;
                 }
                 _ = tokio::time::sleep(check_interval) => {
-                    if !run_stuck_job_repairs(&*repair, &mut notification_tx, &mut shutdown, &mut escalated_jobs).await {
+                    if !run_stuck_job_repairs(
+                        &*repair,
+                        &mut notification_tx,
+                        &notification_route,
+                        &mut shutdown,
+                        &mut escalated_jobs,
+                    ).await {
                         tracing::debug!("Repair task received shutdown signal");
                         break;
                     }
                     if !run_broken_tool_repairs(
                         &*repair,
                         &mut notification_tx,
+                        &notification_route,
                         &mut shutdown,
                         &mut escalated_tools,
                     ).await {
@@ -234,10 +256,14 @@ impl RepairTask {
 
 fn send_notification(
     notification_tx: Option<&mut mpsc::Sender<RepairNotification>>,
+    notification_route: &RepairNotificationRoute,
     message: String,
 ) {
     if let Some(tx) = notification_tx {
-        match tx.try_send(RepairNotification { message }) {
+        match tx.try_send(RepairNotification {
+            message,
+            route: notification_route.clone(),
+        }) {
             Ok(()) => {}
             Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                 tracing::debug!("Dropping repair notification because channel is full");

@@ -44,8 +44,18 @@ pub enum RepairResult {
 /// Boxed future used at the dyn self-repair boundary.
 pub type SelfRepairFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Destination metadata for a repair notification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RepairNotificationRoute {
+    /// Broadcast the notification to every registered channel for one user.
+    BroadcastAll { user_id: String },
+    /// Broadcast the notification to one proactive channel for one user.
+    Broadcast { channel: String, user_id: String },
+}
+
 /// Notification emitted by the background repair loop.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepairNotification {
     pub message: String,
+    pub route: RepairNotificationRoute,
 }

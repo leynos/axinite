@@ -1,6 +1,8 @@
 //! Comprehensive tests for job-state transitions, lifecycle helpers, token
 //! budgeting, and `stuck_since()` timestamp tracking.
 
+use rstest::rstest;
+
 use super::*;
 
 #[test]
@@ -11,63 +13,42 @@ fn test_state_transitions() {
     assert!(!JobState::Accepted.can_transition_to(JobState::InProgress));
 }
 
-#[test]
-fn test_terminal_states() {
-    assert!(JobState::Accepted.is_terminal());
-    assert!(JobState::Failed.is_terminal());
-    assert!(JobState::Cancelled.is_terminal());
-    assert!(!JobState::InProgress.is_terminal());
+#[rstest]
+#[case(JobState::Accepted, true)]
+#[case(JobState::Failed, true)]
+#[case(JobState::Cancelled, true)]
+#[case(JobState::InProgress, false)]
+fn test_terminal_states(#[case] state: JobState, #[case] expected_terminal: bool) {
+    assert_eq!(state.is_terminal(), expected_terminal);
 }
 
-#[test]
-fn test_job_state_from_str_parses_known_values() {
+#[rstest]
+#[case("pending", JobState::Pending)]
+#[case("in_progress", JobState::InProgress)]
+#[case("completed", JobState::Completed)]
+#[case("submitted", JobState::Submitted)]
+#[case("accepted", JobState::Accepted)]
+#[case("failed", JobState::Failed)]
+#[case("stuck", JobState::Stuck)]
+#[case("cancelled", JobState::Cancelled)]
+fn test_job_state_from_str_parses_known_values(
+    #[case] input_str: &str,
+    #[case] expected_state: JobState,
+) {
+    let failure_message = match input_str {
+        "pending" => "failed to parse 'pending' into JobState",
+        "in_progress" => "failed to parse 'in_progress' into JobState",
+        "completed" => "failed to parse 'completed' into JobState",
+        "submitted" => "failed to parse 'submitted' into JobState",
+        "accepted" => "failed to parse 'accepted' into JobState",
+        "failed" => "failed to parse 'failed' into JobState",
+        "stuck" => "failed to parse 'stuck' into JobState",
+        "cancelled" => "failed to parse 'cancelled' into JobState",
+        _ => "failed to parse JobState",
+    };
     assert_eq!(
-        "pending"
-            .parse::<JobState>()
-            .expect("parse JobState for 'pending'"),
-        JobState::Pending
-    );
-    assert_eq!(
-        "in_progress"
-            .parse::<JobState>()
-            .expect("parse JobState for 'in_progress'"),
-        JobState::InProgress
-    );
-    assert_eq!(
-        "completed"
-            .parse::<JobState>()
-            .expect("parse JobState for 'completed'"),
-        JobState::Completed
-    );
-    assert_eq!(
-        "submitted"
-            .parse::<JobState>()
-            .expect("parse JobState for 'submitted'"),
-        JobState::Submitted
-    );
-    assert_eq!(
-        "accepted"
-            .parse::<JobState>()
-            .expect("parse JobState for 'accepted'"),
-        JobState::Accepted
-    );
-    assert_eq!(
-        "failed"
-            .parse::<JobState>()
-            .expect("parse JobState for 'failed'"),
-        JobState::Failed
-    );
-    assert_eq!(
-        "stuck"
-            .parse::<JobState>()
-            .expect("parse JobState for 'stuck'"),
-        JobState::Stuck
-    );
-    assert_eq!(
-        "cancelled"
-            .parse::<JobState>()
-            .expect("parse JobState for 'cancelled'"),
-        JobState::Cancelled
+        input_str.parse::<JobState>().expect(failure_message),
+        expected_state
     );
 }
 

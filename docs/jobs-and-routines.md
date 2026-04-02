@@ -208,7 +208,7 @@ flowchart TD
     A["Start stuck job detection"] --> B["ContextManager.find_stuck_contexts() returns contexts"]
     B --> C["Iterate over ctx"]
 
-    C --> D["ctx.stuck_since() returns Option_DateTime_Utc_"]
+    C --> D["ctx.stuck_since() returns Option<DateTime<Utc>>"]
     D -->|"None (no stuck transition)"| C
     D -->|"Some(stuck_since)"| E["now = Utc::now()"]
     E --> F["stuck_duration = duration_since(now, stuck_since)"]
@@ -216,15 +216,15 @@ flowchart TD
     F --> G{"stuck_duration >= stuck_threshold"}
     G -->|"No"| C
     G -->|"Yes"| H["Create StuckJob with
-        job_id,
+        ctx.job_id,
         last_activity = stuck_since,
         stuck_duration,
         last_error = None,
         repair_attempts = ctx.repair_attempts"]
 
     H --> C
-    C --> J["All job_ids processed"]
-    J --> K["Return Vec_StuckJob to RepairTask"]
+    C --> J["All ctx processed"]
+    J --> K["Return Vec<StuckJob> to RepairTask"]
 ```
 
 ### 3.6 User-facing touchpoints

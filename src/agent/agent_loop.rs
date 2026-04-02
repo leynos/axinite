@@ -11,11 +11,14 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 
 use crate::agent::context_monitor::ContextMonitor;
 use crate::agent::heartbeat::spawn_heartbeat;
 use crate::agent::routine_engine::{RoutineEngine, spawn_cron_ticker};
-use crate::agent::self_repair::{DefaultSelfRepair, RepairNotification, RepairTask};
+use crate::agent::self_repair::{
+    DefaultSelfRepair, RepairNotification, RepairNotificationRoute, RepairTask,
+};
 use crate::agent::session_manager::SessionManager;
 use crate::agent::submission::{Submission, SubmissionParser, SubmissionResult};
 use crate::agent::{HeartbeatConfig as AgentHeartbeatConfig, Router, Scheduler};
@@ -100,6 +103,12 @@ pub struct Agent {
     /// Optional slot to expose the routine engine to the gateway for manual triggering.
     pub(super) routine_engine_slot:
         Option<Arc<tokio::sync::RwLock<Option<Arc<crate::agent::routine_engine::RoutineEngine>>>>>,
+}
+
+struct SelfRepairRuntime {
+    shutdown_tx: oneshot::Sender<()>,
+    repair_handle: JoinHandle<()>,
+    notify_handle: JoinHandle<()>,
 }
 
 impl Agent {
@@ -212,6 +221,118 @@ impl Agent {
         self.deps.skill_catalog.as_ref()
     }
 
+    async fn apply_before_outbound_hooks(
+        hooks: &Arc<HookRegistry>,
+        user_id: &str,
+        channel: &str,
+        thread_id: Option<&str>,
+        response: OutgoingResponse,
+    ) -> Option<OutgoingResponse> {
+        let event = crate::hooks::HookEvent::Outbound {
+            user_id: user_id.to_string(),
+            channel: channel.to_string(),
+            content: response.content.clone(),
+            thread_id: thread_id.map(str::to_string),
+        };
+        match hooks.run(&event).await {
+            Err(err) => {
+                tracing::warn!("BeforeOutbound hook blocked response: {}", err);
+                None
+            }
+            Ok(crate::hooks::HookOutcome::Continue {
+                modified: Some(new_content),
+            }) => Some(OutgoingResponse {
+                content: new_content,
+                ..response
+            }),
+            Ok(crate::hooks::HookOutcome::Continue { modified: None }) => Some(response),
+            Ok(crate::hooks::HookOutcome::Reject { reason }) => {
+                tracing::warn!("BeforeOutbound hook blocked response: {}", reason);
+                None
+            }
+        }
+    }
+
+    async fn forward_repair_notification(
+        channels: &Arc<ChannelManager>,
+        hooks: &Arc<HookRegistry>,
+        notification: RepairNotification,
+    ) {
+        let response = OutgoingResponse::text(format!("Self-Repair: {}", notification.message));
+        let (user_id, hook_channel) = match &notification.route {
+            RepairNotificationRoute::BroadcastAll { user_id } => (user_id.as_str(), "default"),
+            RepairNotificationRoute::Broadcast { channel, user_id } => {
+                (user_id.as_str(), channel.as_str())
+            }
+        };
+        let Some(response) =
+            Self::apply_before_outbound_hooks(hooks, user_id, hook_channel, None, response).await
+        else {
+            return;
+        };
+
+        match notification.route {
+            RepairNotificationRoute::BroadcastAll { user_id } => {
+                let results = channels.broadcast_all(&user_id, response).await;
+                for (channel, result) in results {
+                    if let Err(error) = result {
+                        tracing::warn!(
+                            "Failed to broadcast self-repair notification to {}: {}",
+                            channel,
+                            error
+                        );
+                    }
+                }
+            }
+            RepairNotificationRoute::Broadcast { channel, user_id } => {
+                if let Err(error) = channels.broadcast(&channel, &user_id, response).await {
+                    tracing::warn!(
+                        "Failed to broadcast self-repair notification to {}: {}",
+                        channel,
+                        error
+                    );
+                }
+            }
+        }
+    }
+
+    fn spawn_self_repair(&self) -> SelfRepairRuntime {
+        let mut repair = DefaultSelfRepair::new(
+            self.context_manager.clone(),
+            self.config.stuck_threshold,
+            self.config.max_repair_attempts,
+        );
+        if let Some(store) = self.store() {
+            repair = repair.with_store(Arc::clone(store));
+        }
+        let repair = Arc::new(repair);
+        let repair_interval = self.config.repair_check_interval;
+        let repair_channels = self.channels.clone();
+        let repair_hooks = Arc::clone(self.hooks());
+        let (repair_shutdown_tx, repair_shutdown_rx) = oneshot::channel();
+        let (repair_notify_tx, mut repair_notify_rx) = mpsc::channel::<RepairNotification>(16);
+        let repair_task = RepairTask::new(repair, repair_interval, repair_shutdown_rx)
+            .with_notification_tx(
+                repair_notify_tx,
+                RepairNotificationRoute::BroadcastAll {
+                    user_id: "default".to_string(),
+                },
+            );
+        let repair_handle = tokio::spawn(repair_task.run());
+        let notify_handle = tokio::spawn(async move {
+            while let Some(notification) = repair_notify_rx.recv().await {
+                Self::forward_repair_notification(&repair_channels, &repair_hooks, notification)
+                    .await;
+            }
+        });
+
+        SelfRepairRuntime {
+            shutdown_tx: repair_shutdown_tx,
+            repair_handle,
+            notify_handle,
+        }
+    }
+
     /// Select active skills for a message using deterministic prefiltering.
     pub(super) fn select_active_skills(
         &self,
@@ -258,29 +379,7 @@ impl Agent {
         let mut message_stream = self.channels.start_all().await?;
 
         // Start self-repair task with notification forwarding
-        let mut repair = DefaultSelfRepair::new(
-            self.context_manager.clone(),
-            self.config.stuck_threshold,
-            self.config.max_repair_attempts,
-        );
-        if let Some(store) = self.store() {
-            repair = repair.with_store(Arc::clone(store));
-        }
-        let repair = Arc::new(repair);
-        let repair_interval = self.config.repair_check_interval;
-        let repair_channels = self.channels.clone();
-        let (repair_shutdown_tx, repair_shutdown_rx) = oneshot::channel();
-        let (repair_notify_tx, mut repair_notify_rx) = mpsc::channel::<RepairNotification>(16);
-        let repair_task = RepairTask::new(repair, repair_interval, repair_shutdown_rx)
-            .with_notification_tx(repair_notify_tx);
-        let repair_handle = tokio::spawn(repair_task.run());
-        let repair_notify_handle = tokio::spawn(async move {
-            while let Some(notification) = repair_notify_rx.recv().await {
-                let response =
-                    OutgoingResponse::text(format!("Self-Repair: {}", notification.message));
-                let _ = repair_channels.broadcast_all("default", response).await;
-            }
-        });
+        let self_repair = self.spawn_self_repair();
 
         // Spawn session pruning task
         let session_mgr = self.session_manager.clone();
@@ -518,45 +617,21 @@ impl Agent {
 
             match self.handle_message(&message).await {
                 Ok(Some(response)) if !response.is_empty() => {
-                    // Hook: BeforeOutbound — allow hooks to modify or suppress outbound
-                    let event = crate::hooks::HookEvent::Outbound {
-                        user_id: message.user_id.clone(),
-                        channel: message.channel.clone(),
-                        content: response.clone(),
-                        thread_id: message.thread_id.clone(),
-                    };
-                    match self.hooks().run(&event).await {
-                        Err(err) => {
-                            tracing::warn!("BeforeOutbound hook blocked response: {}", err);
-                        }
-                        Ok(crate::hooks::HookOutcome::Continue {
-                            modified: Some(new_content),
-                        }) => {
-                            if let Err(e) = self
-                                .channels
-                                .respond(&message, OutgoingResponse::text(new_content))
-                                .await
-                            {
-                                tracing::error!(
-                                    channel = %message.channel,
-                                    error = %e,
-                                    "Failed to send response to channel"
-                                );
-                            }
-                        }
-                        _ => {
-                            if let Err(e) = self
-                                .channels
-                                .respond(&message, OutgoingResponse::text(response))
-                                .await
-                            {
-                                tracing::error!(
-                                    channel = %message.channel,
-                                    error = %e,
-                                    "Failed to send response to channel"
-                                );
-                            }
-                        }
+                    if let Some(response) = Self::apply_before_outbound_hooks(
+                        self.hooks(),
+                        &message.user_id,
+                        &message.channel,
+                        message.thread_id.as_deref(),
+                        OutgoingResponse::text(response),
+                    )
+                    .await
+                        && let Err(e) = self.channels.respond(&message, response).await
+                    {
+                        tracing::error!(
+                            channel = %message.channel,
+                            error = %e,
+                            "Failed to send response to channel"
+                        );
                     }
                 }
                 Ok(Some(empty)) => {
@@ -600,11 +675,11 @@ impl Agent {
 
         // Cleanup
         tracing::debug!("Agent shutting down...");
-        let _ = repair_shutdown_tx.send(());
-        if let Err(error) = repair_handle.await {
+        let _ = self_repair.shutdown_tx.send(());
+        if let Err(error) = self_repair.repair_handle.await {
             tracing::debug!("Repair task join finished with error: {}", error);
         }
-        if let Err(error) = repair_notify_handle.await {
+        if let Err(error) = self_repair.notify_handle.await {
             tracing::debug!("Repair notification task exited with error: {}", error);
         }
         pruning_handle.abort();

@@ -8,7 +8,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
-use super::super::{RepairNotification, RepairTask};
+use super::super::{RepairNotification, RepairNotificationRoute, RepairTask};
 use crate::agent::self_repair::{BrokenTool, NativeSelfRepair, RepairResult, SelfRepair, StuckJob};
 use crate::error::RepairError;
 
@@ -34,7 +34,12 @@ fn spawn_notification_task(repair: Arc<dyn SelfRepair>) -> NotificationHarness {
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let (notification_tx, notification_rx) = mpsc::channel(8);
     let task = RepairTask::new(repair, Duration::from_millis(10), shutdown_rx)
-        .with_notification_tx(notification_tx);
+        .with_notification_tx(
+            notification_tx,
+            RepairNotificationRoute::BroadcastAll {
+                user_id: "default".to_string(),
+            },
+        );
     let handle = tokio::spawn(task.run());
 
     NotificationHarness {

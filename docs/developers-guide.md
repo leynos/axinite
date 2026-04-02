@@ -215,10 +215,12 @@ The agent loop starts the self-repair subsystem in
 
 - `RepairTask` runs the periodic detection-and-repair cycle.
 - A notification forwarder receives `RepairNotification` values and converts
-  them into `OutgoingResponse::text("Self-Repair: ...")` broadcasts through
-  `ChannelManager::broadcast_all(...)`.
+  them into `OutgoingResponse::text("Self-Repair: ...")`, runs the normal
+  `BeforeOutbound` hook path, and then broadcasts them with the routed channel
+  metadata carried on each notification.
 
-The implementation lives in `src/agent/self_repair/` and follows the ADR 006
+The implementation lives in `src/agent/self_repair/` and follows the
+[architecture decision record (ADR) 006](./adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
 dual-trait pattern already used elsewhere in the repository:
 
 - `traits.rs` defines the dyn-safe `SelfRepair` boundary plus the native async

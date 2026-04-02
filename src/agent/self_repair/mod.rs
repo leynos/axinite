@@ -10,7 +10,7 @@ mod types;
 pub use default::DefaultSelfRepair;
 pub use task::RepairTask;
 pub use traits::{NativeSelfRepair, SelfRepair, SelfRepairFuture};
-pub use types::{BrokenTool, RepairNotification, RepairResult, StuckJob};
+pub use types::{BrokenTool, RepairNotification, RepairNotificationRoute, RepairResult, StuckJob};
 
 struct NativeSelfRepairMarker<T: NativeSelfRepair>(PhantomData<T>);
 
