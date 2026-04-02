@@ -23,7 +23,7 @@ This RFC proposes the staged adoption plan for that new front end inside the
 main Axinite repository. The recommendation is not to turn the browser into a
 separately deployed product, nor to make the Bun mock backend part of
 production. Instead, Axinite should keep the Rust gateway as the authoritative
-runtime and same-origin entry point, but replace the hand-written browser shell
+runtime and same-origin entry point, but replace the handwritten browser shell
 with a built SolidJS application that is integrated into the main repository,
 served by the gateway, and rolled out behind feature flags.
 
@@ -37,7 +37,7 @@ removed.
 
 ### The current browser UI is expensive to evolve
 
-The current front end is a hand-written browser shell generated from one
+The current front end is a handwritten browser shell generated from one
 JavaScript file and a small set of embedded assets. That has kept dependencies
 low, but it now imposes three concrete costs:
 
@@ -158,7 +158,7 @@ Axinite should preserve the current product boundary:
   than a separate service.
 
 What changes is the implementation of the browser UI. Instead of serving
-hand-authored `index.html`, `style.css`, and `app.js` as the primary UI, the
+manually authored `index.html`, `style.css`, and `app.js` as the primary UI, the
 gateway should serve a built SolidJS SPA.
 
 This preserves Axinite's local-first deployment model while moving browser code
@@ -382,7 +382,7 @@ During the migration window:
 
 ## Alternatives considered
 
-### Keep the current hand-written browser shell
+### Keep the current handwritten browser shell
 
 This keeps dependencies low, but it does not solve the maintainability,
 testing, and architectural-drift problem. The existence of `axinite-mockup`
