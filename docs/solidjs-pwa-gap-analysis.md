@@ -138,7 +138,7 @@ The rest of this document expands those gaps into actionable work items.
 - **PWA state**
   - Route order is only Chat, Memory, Jobs, Routines, Extensions, and Skills.
   - Logs are downgraded from a top-level workspace tab to a dialog.
-  - There is no settings UI.
+  - There is no settings interface.
   - There is no pairing UI.
   - There is no TEE attestation surface.
   - There is no restart affordance.
