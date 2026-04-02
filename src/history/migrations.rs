@@ -45,6 +45,9 @@ const CURRENT_V13_JOB_TOKEN_BUDGET_SQL: &str =
 const CURRENT_V14_DROP_REDUNDANT_WASM_TOOLS_NAME_INDEX_SQL: &str =
     include_str!("../../migrations/V14__drop_redundant_wasm_tools_name_index.sql");
 
+/// Immutable identifier for a PostgreSQL migration-history row.
+/// It stores the released migration version, name, and refinery checksum used
+/// when matching exact legacy tuples for repair.
 #[cfg(feature = "postgres")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct MigrationIdentity {
@@ -53,6 +56,9 @@ pub(crate) struct MigrationIdentity {
     pub(crate) checksum: u64,
 }
 
+/// Three-phase rewrite plan for an applied PostgreSQL migration.
+/// `from` is the legacy tuple to match, `temporary_version` is the staging slot
+/// used during the transaction, and `to` is the canonical tuple to restore.
 #[cfg(feature = "postgres")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct MigrationHistoryRewrite {
@@ -61,6 +67,11 @@ pub(crate) struct MigrationHistoryRewrite {
     pub(crate) to: MigrationIdentity,
 }
 
+/// Primary `#[cfg(feature = "postgres")]` entry point for PostgreSQL
+/// migrations, returning `Result<(), DatabaseError>`.
+/// It first calls `repair_postgres_refinery_history(client)` to repair known
+/// legacy history rows, then runs the embedded refinery migrations with
+/// `migrations::runner().run_async(client)`.
 #[cfg(feature = "postgres")]
 pub(crate) async fn run_postgres_migrations(client: &mut Client) -> Result<(), DatabaseError> {
     use refinery::embed_migrations;
@@ -74,6 +85,15 @@ pub(crate) async fn run_postgres_migrations(client: &mut Client) -> Result<(), D
     Ok(())
 }
 
+/// Repairs PostgreSQL `refinery_schema_history` rows for the
+/// `#[cfg(feature = "postgres")]` build and returns `Result<(), DatabaseError>`.
+/// It ensures the history table exists, loads applied `(version, name,
+/// checksum)` rows, computes applicable rewrites with
+/// `plan_migration_history_rewrites`, and when needed applies them in a
+/// two-phase transaction via `stage_migration_history_rewrites` and
+/// `finalize_migration_history_rewrites` before committing.
+/// Only exact legacy tuples are rewritten, which resolves divergent-history
+/// errors without changing the canonical embedded migrations.
 #[cfg(feature = "postgres")]
 pub(crate) async fn repair_postgres_refinery_history(
     client: &mut Client,
