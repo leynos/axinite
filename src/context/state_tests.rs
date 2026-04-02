@@ -14,6 +14,10 @@ fn test_state_transitions() {
 }
 
 #[rstest]
+#[case(JobState::Pending, false)]
+#[case(JobState::Completed, false)]
+#[case(JobState::Submitted, false)]
+#[case(JobState::Stuck, false)]
 #[case(JobState::Accepted, true)]
 #[case(JobState::Failed, true)]
 #[case(JobState::Cancelled, true)]
@@ -35,19 +39,11 @@ fn test_job_state_from_str_parses_known_values(
     #[case] input_str: &str,
     #[case] expected_state: JobState,
 ) {
-    let failure_message = match input_str {
-        "pending" => "failed to parse 'pending' into JobState",
-        "in_progress" => "failed to parse 'in_progress' into JobState",
-        "completed" => "failed to parse 'completed' into JobState",
-        "submitted" => "failed to parse 'submitted' into JobState",
-        "accepted" => "failed to parse 'accepted' into JobState",
-        "failed" => "failed to parse 'failed' into JobState",
-        "stuck" => "failed to parse 'stuck' into JobState",
-        "cancelled" => "failed to parse 'cancelled' into JobState",
-        _ => "failed to parse JobState",
-    };
+    let failure_message = format!("failed to parse '{}' into JobState", input_str);
     assert_eq!(
-        input_str.parse::<JobState>().expect(failure_message),
+        input_str
+            .parse::<JobState>()
+            .expect(failure_message.as_str()),
         expected_state
     );
 }
@@ -62,12 +58,13 @@ fn test_job_context_transitions() {
     let mut ctx = JobContext::new("Test", "Test job");
     assert_eq!(ctx.state, JobState::Pending);
 
-    ctx.transition_to(JobState::InProgress, None).unwrap();
+    ctx.transition_to(JobState::InProgress, None)
+        .expect("failed to transition to InProgress");
     assert_eq!(ctx.state, JobState::InProgress);
     assert!(ctx.started_at.is_some());
 
     ctx.transition_to(JobState::Completed, Some("Done".to_string()))
-        .unwrap();
+        .expect("failed to transition to Completed");
     assert_eq!(ctx.state, JobState::Completed);
 }
 
@@ -75,16 +72,18 @@ fn test_job_context_transitions() {
 fn test_transition_history_capped() {
     let mut ctx = JobContext::new("Test", "Transition cap test");
     // Cycle through Pending -> InProgress -> Stuck -> InProgress -> Stuck ...
-    ctx.transition_to(JobState::InProgress, None).unwrap();
+    ctx.transition_to(JobState::InProgress, None)
+        .expect("failed to transition to InProgress");
     for i in 0..250 {
-        ctx.mark_stuck(format!("stuck {}", i)).unwrap();
-        ctx.attempt_recovery().unwrap();
+        ctx.mark_stuck(format!("stuck {}", i))
+            .expect("failed to mark context as stuck");
+        ctx.attempt_recovery().expect("failed to attempt recovery");
     }
     // 1 initial + 250*2 = 501 transitions, should be capped at 200
-    assert!(
-        ctx.transitions.len() == 200,
-        "transitions should be capped at exactly 200, got {}",
-        ctx.transitions.len()
+    assert_eq!(
+        ctx.transitions.len(),
+        200,
+        "transitions should be capped at exactly 200"
     );
 }
 

@@ -236,8 +236,8 @@ impl Agent {
         };
         match hooks.run(&event).await {
             Err(err) => {
-                tracing::warn!("BeforeOutbound hook blocked response: {}", err);
-                None
+                tracing::warn!("BeforeOutbound hook failed open: {}", err);
+                Some(response)
             }
             Ok(crate::hooks::HookOutcome::Continue {
                 modified: Some(new_content),
@@ -258,24 +258,26 @@ impl Agent {
         hooks: &Arc<HookRegistry>,
         notification: RepairNotification,
     ) {
-        let response = OutgoingResponse::text(format!("Self-Repair: {}", notification.message));
-        let (user_id, hook_channel) = match &notification.route {
-            RepairNotificationRoute::BroadcastAll { user_id } => (user_id.as_str(), "default"),
-            RepairNotificationRoute::Broadcast { channel, user_id } => {
-                (user_id.as_str(), channel.as_str())
-            }
-        };
-        let Some(response) =
-            Self::apply_before_outbound_hooks(hooks, user_id, hook_channel, None, response).await
-        else {
-            return;
-        };
-
         match notification.route {
             RepairNotificationRoute::BroadcastAll { user_id } => {
-                let results = channels.broadcast_all(&user_id, response).await;
-                for (channel, result) in results {
-                    if let Err(error) = result {
+                let response =
+                    OutgoingResponse::text(format!("Self-Repair: {}", notification.message));
+                for channel in channels.channel_names().await {
+                    let Some(filtered_response) = Self::apply_before_outbound_hooks(
+                        hooks,
+                        &user_id,
+                        &channel,
+                        None,
+                        response.clone(),
+                    )
+                    .await
+                    else {
+                        continue;
+                    };
+                    if let Err(error) = channels
+                        .broadcast(&channel, &user_id, filtered_response)
+                        .await
+                    {
                         tracing::warn!(
                             "Failed to broadcast self-repair notification to {}: {}",
                             channel,
@@ -285,6 +287,14 @@ impl Agent {
                 }
             }
             RepairNotificationRoute::Broadcast { channel, user_id } => {
+                let response =
+                    OutgoingResponse::text(format!("Self-Repair: {}", notification.message));
+                let Some(response) =
+                    Self::apply_before_outbound_hooks(hooks, &user_id, &channel, None, response)
+                        .await
+                else {
+                    return;
+                };
                 if let Err(error) = channels.broadcast(&channel, &user_id, response).await {
                     tracing::warn!(
                         "Failed to broadcast self-repair notification to {}: {}",

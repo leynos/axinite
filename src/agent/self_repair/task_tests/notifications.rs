@@ -61,12 +61,10 @@ async fn assert_manual_required_deduplication(
         .expect("notification channel should remain open");
     assert_eq!(notification.message, expected_message);
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
     assert!(
-        matches!(
-            harness.notification_rx.try_recv(),
-            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
-        ),
+        tokio::time::timeout(Duration::from_millis(50), harness.notification_rx.recv())
+            .await
+            .is_err(),
         "{dedup_failure_msg}"
     );
 

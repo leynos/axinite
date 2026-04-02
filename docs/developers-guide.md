@@ -240,7 +240,8 @@ When modifying this path, keep three invariants in mind:
 - Repair notifications must remain best-effort so a slow consumer cannot stall
   the repair cycle.
 - User-facing behaviour changes in self-repair should update both
-  `docs/jobs-and-routines.md` and `docs/users-guide.md`.
+  [Jobs and Routines](./jobs-and-routines.md) and the
+  [User's Guide](./users-guide.md).
 
 ## Database-backed work
 

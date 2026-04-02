@@ -96,11 +96,17 @@ mod tests {
         };
 
         assert!(matches!(
-            repair.repair_stuck_job(&stuck_job).await.unwrap(),
+            repair
+                .repair_stuck_job(&stuck_job)
+                .await
+                .expect("failed to get result from repair_stuck_job"),
             RepairResult::ManualRequired { .. }
         ));
         assert!(matches!(
-            repair.repair_broken_tool(&broken_tool).await.unwrap(),
+            repair
+                .repair_broken_tool(&broken_tool)
+                .await
+                .expect("failed to get result from repair_broken_tool"),
             RepairResult::ManualRequired { .. }
         ));
     }
