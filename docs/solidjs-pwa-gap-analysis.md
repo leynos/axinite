@@ -47,11 +47,11 @@ Table 1. Highest-priority blockers.
 
 | ID | Severity | Area | Gap |
 | --- | --- | --- | --- |
-| G1 | Critical | Auth and transport | The PWA does not implement gateway bearer-token authentication or query-token handling for SSE. |
+| G1 | Critical | Auth and transport | The PWA does not implement gateway bearer-token authentication or query-token handling for Server-Sent Events (SSE). |
 | G2 | Critical | Feature flags | The PWA assumes `GET /api/features`, but the real gateway does not implement that endpoint yet. |
 | G3 | Critical | Logs payload shape | The PWA expects `LogEntry.source`, while the real gateway emits `LogEntry.target`. |
 | G4 | Critical | Job prompt request shape | The PWA sends `{ prompt }`, but the real gateway expects `{ content, done? }`. |
-| G5 | High | Surface area | The PWA route set omits shipped browser surfaces such as the Logs tab, settings flows, pairing flows, TEE attestation, restart affordances, and project browser links. |
+| G5 | High | Surface area | The PWA route set omits shipped browser surfaces such as the Logs tab, settings flows, pairing flows, Trusted Execution Environment (TEE) attestation, restart affordances, and project browser links. |
 | G6 | High | Chat events and media | The PWA consumes only a subset of the real chat SSE stream and does not surface generated images, auth cards, or job-start cards. |
 | G7 | High | Detail fidelity | Jobs, routines, extensions, and skills screens flatten or drop information that the current UI already exposes. |
 
@@ -511,7 +511,7 @@ The rest of this document expands those gaps into actionable work items.
 - **Required action**
   - Use the real install request shape in the client and the mock backend.
 
-### 11.2. MCP add-server flow is under-specified
+### 11.2. Model Context Protocol (MCP) add-server flow is under-specified
 
 - **Current shipped UI**
   - The current UI has explicit MCP server install fields and sends `name`,
@@ -528,8 +528,8 @@ The rest of this document expands those gaps into actionable work items.
 ### 11.3. Channel-specific activation and pairing details are missing
 
 - **Current shipped UI**
-  - WASM channels have a stepper, pairing state, activation error display,
-    and pairing-request listing.
+  - WebAssembly (WASM) channels have a stepper, pairing state,
+    activation error display, and pairing-request listing.
 - **PWA state**
   - The installed-extension card is generic.
   - There is no pairing surface at all.
@@ -649,7 +649,7 @@ are true:
 
 - every browser API used by the PWA exists in the real gateway
 - every browser payload type is derived from or checked against the real Rust
-  DTOs
+  Data Transfer Objects (DTOs)
 - the PWA no longer drops user-visible information that the current UI presents
   unless that reduction is explicitly accepted as a product change
 - the mock backend stops papering over known mismatches
