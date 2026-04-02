@@ -1,5 +1,7 @@
 //! Additional WorkerHttpClient methods for status reporting, events, and credentials.
 
+use serde::Serialize;
+
 use crate::error::WorkerError;
 use crate::worker::api::{
     COMPLETE_PATH, CREDENTIALS_PATH, CompletionReport, CredentialResponse, EVENT_PATH,
@@ -9,17 +11,25 @@ use crate::worker::api::{
 use super::WorkerHttpClient;
 
 impl WorkerHttpClient {
-    /// Report status to the orchestrator.
-    pub async fn report_status(&self, update: &StatusUpdate) -> Result<(), WorkerError> {
+    /// Send a POST request with a JSON payload and require a 2xx response.
+    ///
+    /// Maps transport failures to `WorkerError::ConnectionFailed` and
+    /// non-success HTTP responses to `WorkerError::OrchestratorRejected`.
+    async fn post_and_require_success<T: Serialize>(
+        &self,
+        path: &str,
+        payload: &T,
+    ) -> Result<(), WorkerError> {
+        let url = self.url(path);
         let resp = self
             .client
-            .post(self.url(STATUS_PATH))
+            .post(&url)
             .bearer_auth(&self.token)
-            .json(update)
+            .json(payload)
             .send()
             .await
             .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.orchestrator_url.clone(),
+                url: url.clone(),
                 reason: e.to_string(),
             })?;
 
@@ -28,11 +38,16 @@ impl WorkerHttpClient {
             let body = resp.text().await.unwrap_or_default();
             return Err(WorkerError::OrchestratorRejected {
                 job_id: self.job_id,
-                reason: format!("status endpoint returned {}: {}", status, body),
+                reason: format!("{} endpoint returned {}: {}", path, status, body),
             });
         }
 
         Ok(())
+    }
+
+    /// Report status to the orchestrator.
+    pub async fn report_status(&self, update: &StatusUpdate) -> Result<(), WorkerError> {
+        self.post_and_require_success(STATUS_PATH, update).await
     }
 
     /// Report a non-terminal status update without failing the worker on rejection.
@@ -53,28 +68,7 @@ impl WorkerHttpClient {
     /// Returns `Ok(())` on success, or `WorkerError::ConnectionFailed` if the
     /// request fails or returns a non-success status.
     pub async fn post_event(&self, payload: &JobEventPayload) -> Result<(), WorkerError> {
-        let resp = self
-            .client
-            .post(self.url(EVENT_PATH))
-            .bearer_auth(&self.token)
-            .json(payload)
-            .send()
-            .await
-            .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.url(EVENT_PATH),
-                reason: format!("job event POST failed: {}", e),
-            })?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(WorkerError::OrchestratorRejected {
-                job_id: self.job_id,
-                reason: format!("job event POST returned {}: {}", status, body),
-            });
-        }
-
-        Ok(())
+        self.post_and_require_success(EVENT_PATH, payload).await
     }
 
     /// Poll the orchestrator for a follow-up prompt.
@@ -160,27 +154,6 @@ impl WorkerHttpClient {
 
     /// Signal job completion to the orchestrator.
     pub async fn report_complete(&self, report: &CompletionReport) -> Result<(), WorkerError> {
-        let resp = self
-            .client
-            .post(self.url(COMPLETE_PATH))
-            .bearer_auth(&self.token)
-            .json(report)
-            .send()
-            .await
-            .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.url(COMPLETE_PATH),
-                reason: format!("completion report POST failed: {}", e),
-            })?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(WorkerError::OrchestratorRejected {
-                job_id: self.job_id,
-                reason: format!("completion endpoint returned {}: {}", status, body),
-            });
-        }
-
-        Ok(())
+        self.post_and_require_success(COMPLETE_PATH, report).await
     }
 }
