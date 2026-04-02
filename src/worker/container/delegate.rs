@@ -40,6 +40,8 @@ pub(super) struct ContainerDelegate {
     pub(super) iteration_tracker: Arc<Mutex<u32>>,
     /// Sender for fire-and-forget event posting to the background worker.
     pub(super) event_sender: mpsc::Sender<JobEventPayload>,
+    /// Handle for the background event-posting task.
+    event_handle: tokio::task::JoinHandle<()>,
 }
 
 impl ContainerDelegate {
@@ -56,7 +58,7 @@ impl ContainerDelegate {
 
         // Spawn background task to handle event POSTs asynchronously
         let bg_client = Arc::clone(&client);
-        tokio::spawn(async move {
+        let event_handle = tokio::spawn(async move {
             while let Some(payload) = event_receiver.recv().await {
                 if let Err(e) = bg_client.post_event(&payload).await {
                     tracing::warn!(error = %e, "Failed to post event");
@@ -72,6 +74,18 @@ impl ContainerDelegate {
             last_output: Mutex::new(String::new()),
             iteration_tracker,
             event_sender,
+            event_handle,
+        }
+    }
+
+    /// Shut down the delegate, draining any buffered events.
+    ///
+    /// Closes the event channel and awaits the background worker so
+    /// in-flight events are flushed before the delegate is dropped.
+    pub(super) async fn shutdown(self) {
+        drop(self.event_sender);
+        if let Err(e) = self.event_handle.await {
+            tracing::warn!(error = %e, "Event worker task panicked");
         }
     }
 

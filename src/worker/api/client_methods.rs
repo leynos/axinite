@@ -142,9 +142,11 @@ impl WorkerHttpClient {
         }
 
         if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
             return Err(WorkerError::SecretResolveFailed {
                 secret_name: "(all)".to_string(),
-                reason: format!("credentials endpoint returned {}", resp.status()),
+                reason: format!("credentials endpoint returned {}: {}", status, body),
             });
         }
 

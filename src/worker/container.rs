@@ -257,13 +257,16 @@ impl WorkerRuntime {
             max_tool_intent_nudges: 2,
         };
 
-        crate::agent::agentic_loop::run_agentic_loop(
+        let outcome = crate::agent::agentic_loop::run_agentic_loop(
             &delegate,
             &reasoning,
             &mut reason_ctx,
             &config,
         )
-        .await
+        .await;
+
+        delegate.shutdown().await;
+        outcome
     }
 
     async fn build_reasoning_context(

@@ -134,11 +134,11 @@ impl WorkerRuntime {
     async fn report_stopped_outcome(&self, iterations: u32) -> Result<(), WorkerError> {
         self.post_event(
             JobEventType::Result,
-            serde_json::json!({
-                "success": false,
-                "message": "Execution stopped",
-                "iterations": iterations,
-            }),
+            serde_json::to_value(TerminalResult::failure(
+                "Execution stopped",
+                Some(iterations),
+            ))
+            .unwrap_or_default(),
         );
         self.client
             .report_complete(&CompletionReport {

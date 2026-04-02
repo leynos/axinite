@@ -9,7 +9,7 @@ use crate::worker::api::WorkerHttpClient;
 /// Regression test: WorkerHttpClient::new succeeds with valid URLs.
 ///
 /// This test verifies that the fallible constructor properly constructs
-/// a WorkerHttpClient with valid URLs without panicking or using `unwrap`,
+/// a WorkerHttpClient with valid URLs without panicking or using `unwrap`.
 #[rstest]
 #[case("http://localhost:50051")]
 #[case("http://localhost:50051/")]
