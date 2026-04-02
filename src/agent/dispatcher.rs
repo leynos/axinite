@@ -21,6 +21,65 @@ use crate::agent::agentic_loop::{
 use crate::llm::{ChatMessage, Reasoning, ReasoningContext};
 use crate::tools::redact_params;
 
+/// Collapse a tool output string into a single-line preview for display.
+pub(crate) fn truncate_for_preview(output: &str, max_chars: usize) -> String {
+    let collapsed: String = output
+        .chars()
+        .take(max_chars + 50)
+        .map(|c| if c == '\n' { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    // char_indices gives us byte offsets at char boundaries, so the slice is always valid UTF-8.
+    if collapsed.chars().count() > max_chars {
+        let byte_offset = collapsed
+            .char_indices()
+            .nth(max_chars)
+            .map(|(i, _)| i)
+            .unwrap_or(collapsed.len());
+        format!("{}...", &collapsed[..byte_offset])
+    } else {
+        collapsed
+    }
+}
+
+/// Select active skills for a message using deterministic prefiltering.
+pub(super) fn select_active_skills(
+    registry: &Arc<std::sync::RwLock<crate::skills::SkillRegistry>>,
+    skills_cfg: &crate::config::SkillsConfig,
+    message_content: &str,
+) -> Vec<crate::skills::LoadedSkill> {
+    let guard = match registry.read() {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::error!("Skill registry lock poisoned: {}", e);
+            return vec![];
+        }
+    };
+    let available = guard.skills();
+    let selected = crate::skills::prefilter_skills(
+        message_content,
+        available,
+        skills_cfg.max_active_skills,
+        skills_cfg.max_context_tokens,
+    );
+
+    if !selected.is_empty() {
+        tracing::debug!(
+            "Selected {} skill(s) for message: {}",
+            selected.len(),
+            selected
+                .iter()
+                .map(|s| s.name())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
+    selected.into_iter().cloned().collect()
+}
+
 /// Result of the agentic loop execution.
 pub(super) enum AgenticLoopResult {
     /// Completed with a response.
@@ -78,7 +137,11 @@ impl Agent {
         };
 
         // Select and prepare active skills (if skills system is enabled)
-        let active_skills = self.select_active_skills(&message.content);
+        let active_skills = if let Some(registry) = self.skill_registry() {
+            select_active_skills(registry, &self.deps.skills_config, &message.content)
+        } else {
+            vec![]
+        };
 
         // Build skill context block
         let skill_context = if !active_skills.is_empty() {

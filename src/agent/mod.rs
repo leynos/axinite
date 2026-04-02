@@ -33,10 +33,10 @@ mod thread_ops;
 pub mod undo;
 
 pub use crate::worker::{Worker, WorkerDeps};
-pub(crate) use agent_loop::truncate_for_preview;
 pub use agent_loop::{Agent, AgentDeps};
 pub use compaction::{CompactionResult, ContextCompactor};
 pub use context_monitor::{CompactionStrategy, ContextBreakdown, ContextMonitor};
+pub(crate) use dispatcher::truncate_for_preview;
 pub use heartbeat::{HeartbeatConfig, HeartbeatResult, HeartbeatRunner, spawn_heartbeat};
 pub use router::{MessageIntent, Router};
 pub use routine::{Routine, RoutineAction, RoutineRun, Trigger};

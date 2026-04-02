@@ -2,33 +2,29 @@
 //! budgeting, and `stuck_since()` timestamp tracking.
 
 use super::*;
+use rand::{Rng, SeedableRng, rngs::StdRng};
+use rstest::rstest;
 
-#[test]
-fn test_valid_state_transitions() {
-    assert!(JobState::Pending.can_transition_to(JobState::InProgress));
-    assert!(JobState::InProgress.can_transition_to(JobState::Completed));
+#[rstest]
+#[case(JobState::Pending, JobState::InProgress, true)]
+#[case(JobState::InProgress, JobState::Completed, true)]
+#[case(JobState::Completed, JobState::Pending, false)]
+#[case(JobState::Accepted, JobState::InProgress, false)]
+fn test_state_transitions(#[case] from: JobState, #[case] to: JobState, #[case] expected: bool) {
+    assert_eq!(from.can_transition_to(to), expected);
 }
 
-#[test]
-fn test_invalid_state_transitions() {
-    assert!(!JobState::Completed.can_transition_to(JobState::Pending));
-    assert!(!JobState::Accepted.can_transition_to(JobState::InProgress));
-}
-
-#[test]
-fn test_terminal_states_are_terminal() {
-    assert!(JobState::Accepted.is_terminal());
-    assert!(JobState::Failed.is_terminal());
-    assert!(JobState::Cancelled.is_terminal());
-}
-
-#[test]
-fn test_non_terminal_states_are_not_terminal() {
-    assert!(!JobState::Pending.is_terminal());
-    assert!(!JobState::InProgress.is_terminal());
-    assert!(!JobState::Completed.is_terminal());
-    assert!(!JobState::Submitted.is_terminal());
-    assert!(!JobState::Stuck.is_terminal());
+#[rstest]
+#[case(JobState::Accepted, true)]
+#[case(JobState::Failed, true)]
+#[case(JobState::Cancelled, true)]
+#[case(JobState::InProgress, false)]
+#[case(JobState::Pending, false)]
+#[case(JobState::Completed, false)]
+#[case(JobState::Submitted, false)]
+#[case(JobState::Stuck, false)]
+fn test_terminal_states(#[case] state: JobState, #[case] expected: bool) {
+    assert_eq!(state.is_terminal(), expected);
 }
 
 #[test]
@@ -176,4 +172,46 @@ fn test_stuck_since_returns_latest_stuck_transition() {
         .timestamp = second_stuck_at;
 
     assert_eq!(ctx.stuck_since(), Some(second_stuck_at));
+}
+
+#[test]
+fn test_stuck_since_matches_latest_stuck_transition_across_bounded_sequences() {
+    let mut rng = StdRng::seed_from_u64(0x5EED_5EED);
+
+    for sequence_len in 0..=32 {
+        for case_idx in 0..32 {
+            let mut ctx = JobContext::new("Test", "Randomized stuck_since test");
+
+            for step in 0..sequence_len {
+                match rng.gen_range(0..4) {
+                    0 if matches!(ctx.state, JobState::Pending) => {
+                        ctx.transition_to(JobState::InProgress, None)
+                            .expect("failed to transition to InProgress");
+                    }
+                    1 if matches!(ctx.state, JobState::InProgress) => {
+                        ctx.mark_stuck(format!("stall-{case_idx}-{step}"))
+                            .expect("failed to mark context as stuck");
+                    }
+                    2 if matches!(ctx.state, JobState::Stuck) => {
+                        ctx.attempt_recovery().expect("failed to attempt recovery");
+                    }
+                    3 => {}
+                    _ => {}
+                }
+            }
+
+            let expected = ctx
+                .transitions
+                .iter()
+                .rev()
+                .find(|transition| transition.to == JobState::Stuck)
+                .map(|transition| transition.timestamp);
+
+            assert_eq!(
+                ctx.stuck_since(),
+                expected,
+                "stuck_since invariant failed for sequence_len={sequence_len}, case_idx={case_idx}"
+            );
+        }
+    }
 }

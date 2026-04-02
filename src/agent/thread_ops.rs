@@ -29,6 +29,71 @@ use crate::tools::redact_params;
 use message_rebuild::rebuild_chat_messages_from_db;
 use persistence::gateway_conversation_params;
 
+/// Store extracted document text in workspace memory for future search/recall.
+pub(super) async fn store_extracted_documents(
+    workspace: &Arc<crate::workspace::Workspace>,
+    message: &IncomingMessage,
+) {
+    for attachment in &message.attachments {
+        if attachment.kind != crate::channels::AttachmentKind::Document {
+            continue;
+        }
+        let text = match &attachment.extracted_text {
+            Some(t) if !t.starts_with('[') => t, // skip error messages like "[Failed to..."
+            _ => continue,
+        };
+
+        // Sanitize filename: strip path separators to prevent directory traversal
+        let raw_name = attachment.filename.as_deref().unwrap_or("unnamed_document");
+        let filename: String = raw_name
+            .chars()
+            .map(|c| {
+                if c == '/' || c == '\\' || c == '\0' {
+                    '_'
+                } else {
+                    c
+                }
+            })
+            .collect();
+        let filename = filename.trim_start_matches('.');
+        let filename = if filename.is_empty() {
+            "unnamed_document"
+        } else {
+            filename
+        };
+        let date = chrono::Utc::now().format("%Y-%m-%d");
+        let path = format!("documents/{date}/{filename}");
+
+        let header = format!(
+            "# {filename}\n\n\
+             > Uploaded by **{}** via **{}** on {date}\n\
+             > MIME: {} | Size: {} bytes\n\n---\n\n",
+            message.user_id,
+            message.channel,
+            attachment.mime_type,
+            attachment.size_bytes.unwrap_or(0),
+        );
+        let content = format!("{header}{text}");
+
+        match workspace.write(&path, &content).await {
+            Ok(_) => {
+                tracing::info!(
+                    path = %path,
+                    text_len = text.len(),
+                    "Stored extracted document in workspace memory"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    path = %path,
+                    error = %e,
+                    "Failed to store extracted document in workspace"
+                );
+            }
+        }
+    }
+}
+
 impl Agent {
     /// Hydrate a historical thread from DB into memory if not already present.
     ///

@@ -35,28 +35,8 @@ use crate::skills::SkillRegistry;
 use crate::tools::ToolRegistry;
 use crate::workspace::Workspace;
 
-/// Collapse a tool output string into a single-line preview for display.
-pub(crate) fn truncate_for_preview(output: &str, max_chars: usize) -> String {
-    let collapsed: String = output
-        .chars()
-        .take(max_chars + 50)
-        .map(|c| if c == '\n' { ' ' } else { c })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    // char_indices gives us byte offsets at char boundaries, so the slice is always valid UTF-8.
-    if collapsed.chars().count() > max_chars {
-        let byte_offset = collapsed
-            .char_indices()
-            .nth(max_chars)
-            .map(|(i, _)| i)
-            .unwrap_or(collapsed.len());
-        format!("{}...", &collapsed[..byte_offset])
-    } else {
-        collapsed
-    }
-}
+#[cfg(test)]
+pub(crate) use super::dispatcher::truncate_for_preview;
 
 /// Core dependencies for the agent.
 ///
@@ -118,6 +98,87 @@ struct RoutineHandles {
 
 /// Reserved user ID for system-generated repair notifications.
 const SYSTEM_USER_ID: &str = "default";
+
+pub(super) async fn apply_before_outbound_hooks(
+    hooks: &Arc<HookRegistry>,
+    user_id: &str,
+    channel: &str,
+    thread_id: Option<&str>,
+    response: OutgoingResponse,
+) -> Option<OutgoingResponse> {
+    let event = crate::hooks::HookEvent::Outbound {
+        user_id: user_id.to_string(),
+        channel: channel.to_string(),
+        content: response.content.clone(),
+        thread_id: thread_id.map(str::to_string),
+    };
+    match hooks.run(&event).await {
+        Err(crate::hooks::HookError::Rejected { reason }) => {
+            tracing::warn!("BeforeOutbound hook blocked response: {}", reason);
+            None
+        }
+        Err(err) => {
+            tracing::warn!("BeforeOutbound hook failed open: {}", err);
+            Some(response)
+        }
+        Ok(crate::hooks::HookOutcome::Continue {
+            modified: Some(new_content),
+        }) => Some(OutgoingResponse {
+            content: new_content,
+            ..response
+        }),
+        Ok(crate::hooks::HookOutcome::Continue { modified: None }) => Some(response),
+        Ok(crate::hooks::HookOutcome::Reject { reason }) => {
+            tracing::warn!("BeforeOutbound hook blocked response: {}", reason);
+            None
+        }
+    }
+}
+
+pub(super) async fn forward_repair_notification(
+    channels: &Arc<ChannelManager>,
+    hooks: &Arc<HookRegistry>,
+    notification: RepairNotification,
+) {
+    match notification.route {
+        RepairNotificationRoute::BroadcastAll { user_id } => {
+            let response = OutgoingResponse::text(format!("Self-Repair: {}", notification.message));
+            for channel in channels.channel_names().await {
+                let Some(filtered_response) =
+                    apply_before_outbound_hooks(hooks, &user_id, &channel, None, response.clone())
+                        .await
+                else {
+                    continue;
+                };
+                if let Err(error) = channels
+                    .broadcast(&channel, &user_id, filtered_response)
+                    .await
+                {
+                    tracing::warn!(
+                        "Failed to broadcast self-repair notification to {}: {}",
+                        channel,
+                        error
+                    );
+                }
+            }
+        }
+        RepairNotificationRoute::Broadcast { channel, user_id } => {
+            let response = OutgoingResponse::text(format!("Self-Repair: {}", notification.message));
+            let Some(response) =
+                apply_before_outbound_hooks(hooks, &user_id, &channel, None, response).await
+            else {
+                return;
+            };
+            if let Err(error) = channels.broadcast(&channel, &user_id, response).await {
+                tracing::warn!(
+                    "Failed to broadcast self-repair notification to {}: {}",
+                    channel,
+                    error
+                );
+            }
+        }
+    }
+}
 
 impl Agent {
     /// Create a new agent.
@@ -229,95 +290,6 @@ impl Agent {
         self.deps.skill_catalog.as_ref()
     }
 
-    async fn apply_before_outbound_hooks(
-        hooks: &Arc<HookRegistry>,
-        user_id: &str,
-        channel: &str,
-        thread_id: Option<&str>,
-        response: OutgoingResponse,
-    ) -> Option<OutgoingResponse> {
-        let event = crate::hooks::HookEvent::Outbound {
-            user_id: user_id.to_string(),
-            channel: channel.to_string(),
-            content: response.content.clone(),
-            thread_id: thread_id.map(str::to_string),
-        };
-        match hooks.run(&event).await {
-            Err(crate::hooks::HookError::Rejected { reason }) => {
-                tracing::warn!("BeforeOutbound hook blocked response: {}", reason);
-                None
-            }
-            Err(err) => {
-                tracing::warn!("BeforeOutbound hook failed open: {}", err);
-                Some(response)
-            }
-            Ok(crate::hooks::HookOutcome::Continue {
-                modified: Some(new_content),
-            }) => Some(OutgoingResponse {
-                content: new_content,
-                ..response
-            }),
-            Ok(crate::hooks::HookOutcome::Continue { modified: None }) => Some(response),
-            Ok(crate::hooks::HookOutcome::Reject { reason }) => {
-                tracing::warn!("BeforeOutbound hook blocked response: {}", reason);
-                None
-            }
-        }
-    }
-
-    async fn forward_repair_notification(
-        channels: &Arc<ChannelManager>,
-        hooks: &Arc<HookRegistry>,
-        notification: RepairNotification,
-    ) {
-        match notification.route {
-            RepairNotificationRoute::BroadcastAll { user_id } => {
-                let response =
-                    OutgoingResponse::text(format!("Self-Repair: {}", notification.message));
-                for channel in channels.channel_names().await {
-                    let Some(filtered_response) = Self::apply_before_outbound_hooks(
-                        hooks,
-                        &user_id,
-                        &channel,
-                        None,
-                        response.clone(),
-                    )
-                    .await
-                    else {
-                        continue;
-                    };
-                    if let Err(error) = channels
-                        .broadcast(&channel, &user_id, filtered_response)
-                        .await
-                    {
-                        tracing::warn!(
-                            "Failed to broadcast self-repair notification to {}: {}",
-                            channel,
-                            error
-                        );
-                    }
-                }
-            }
-            RepairNotificationRoute::Broadcast { channel, user_id } => {
-                let response =
-                    OutgoingResponse::text(format!("Self-Repair: {}", notification.message));
-                let Some(response) =
-                    Self::apply_before_outbound_hooks(hooks, &user_id, &channel, None, response)
-                        .await
-                else {
-                    return;
-                };
-                if let Err(error) = channels.broadcast(&channel, &user_id, response).await {
-                    tracing::warn!(
-                        "Failed to broadcast self-repair notification to {}: {}",
-                        channel,
-                        error
-                    );
-                }
-            }
-        }
-    }
-
     fn spawn_self_repair(&self) -> SelfRepairRuntime {
         let mut repair = DefaultSelfRepair::new(
             self.context_manager.clone(),
@@ -344,8 +316,7 @@ impl Agent {
         let repair_handle = tokio::spawn(repair_task.run());
         let notify_handle = tokio::spawn(async move {
             while let Some(notification) = repair_notify_rx.recv().await {
-                Self::forward_repair_notification(&repair_channels, &repair_hooks, notification)
-                    .await;
+                forward_repair_notification(&repair_channels, &repair_hooks, notification).await;
             }
         });
 
@@ -523,10 +494,9 @@ impl Agent {
         let cron_handle = spawn_cron_ticker(Arc::clone(&engine), cron_interval);
 
         // Store engine reference for event trigger checking
-        // Safety: we're in run() which takes self, no other reference exists
         let engine_ref = Arc::clone(&engine);
-        // SAFETY: self is consumed by run(), we can smuggle the engine in
-        // via a local to use in the message loop below.
+        // `run()` consumes self, so cloning the engine into a local keeps it
+        // available for the message loop without changing ownership semantics.
 
         // Expose engine to gateway for manual triggering
         if let Some(ref slot) = self.routine_engine_slot {
@@ -543,46 +513,6 @@ impl Agent {
             cron_handle,
             engine: engine_ref,
         })
-    }
-
-    /// Select active skills for a message using deterministic prefiltering.
-    pub(super) fn select_active_skills(
-        &self,
-        message_content: &str,
-    ) -> Vec<crate::skills::LoadedSkill> {
-        if let Some(registry) = self.skill_registry() {
-            let guard = match registry.read() {
-                Ok(g) => g,
-                Err(e) => {
-                    tracing::error!("Skill registry lock poisoned: {}", e);
-                    return vec![];
-                }
-            };
-            let available = guard.skills();
-            let skills_cfg = &self.deps.skills_config;
-            let selected = crate::skills::prefilter_skills(
-                message_content,
-                available,
-                skills_cfg.max_active_skills,
-                skills_cfg.max_context_tokens,
-            );
-
-            if !selected.is_empty() {
-                tracing::debug!(
-                    "Selected {} skill(s) for message: {}",
-                    selected.len(),
-                    selected
-                        .iter()
-                        .map(|s| s.name())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-            }
-
-            selected.into_iter().cloned().collect()
-        } else {
-            vec![]
-        }
     }
 
     /// Run the agent main loop.
@@ -638,11 +568,13 @@ impl Agent {
             }
 
             // Store successfully extracted document text in workspace for indexing
-            self.store_extracted_documents(&message).await;
+            if let Some(workspace) = self.workspace() {
+                super::thread_ops::store_extracted_documents(workspace, &message).await;
+            }
 
             match self.handle_message(&message).await {
                 Ok(Some(response)) if !response.is_empty() => {
-                    if let Some(response) = Self::apply_before_outbound_hooks(
+                    if let Some(response) = apply_before_outbound_hooks(
                         self.hooks(),
                         &message.user_id,
                         &message.channel,
@@ -718,73 +650,6 @@ impl Agent {
         self.channels.shutdown_all().await?;
 
         Ok(())
-    }
-
-    /// Store extracted document text in workspace memory for future search/recall.
-    async fn store_extracted_documents(&self, message: &IncomingMessage) {
-        let workspace = match self.workspace() {
-            Some(ws) => ws,
-            None => return,
-        };
-
-        for attachment in &message.attachments {
-            if attachment.kind != crate::channels::AttachmentKind::Document {
-                continue;
-            }
-            let text = match &attachment.extracted_text {
-                Some(t) if !t.starts_with('[') => t, // skip error messages like "[Failed to..."
-                _ => continue,
-            };
-
-            // Sanitize filename: strip path separators to prevent directory traversal
-            let raw_name = attachment.filename.as_deref().unwrap_or("unnamed_document");
-            let filename: String = raw_name
-                .chars()
-                .map(|c| {
-                    if c == '/' || c == '\\' || c == '\0' {
-                        '_'
-                    } else {
-                        c
-                    }
-                })
-                .collect();
-            let filename = filename.trim_start_matches('.');
-            let filename = if filename.is_empty() {
-                "unnamed_document"
-            } else {
-                filename
-            };
-            let date = chrono::Utc::now().format("%Y-%m-%d");
-            let path = format!("documents/{date}/{filename}");
-
-            let header = format!(
-                "# {filename}\n\n\
-                 > Uploaded by **{}** via **{}** on {date}\n\
-                 > MIME: {} | Size: {} bytes\n\n---\n\n",
-                message.user_id,
-                message.channel,
-                attachment.mime_type,
-                attachment.size_bytes.unwrap_or(0),
-            );
-            let content = format!("{header}{text}");
-
-            match workspace.write(&path, &content).await {
-                Ok(_) => {
-                    tracing::info!(
-                        path = %path,
-                        text_len = text.len(),
-                        "Stored extracted document in workspace memory"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        path = %path,
-                        error = %e,
-                        "Failed to store extracted document in workspace"
-                    );
-                }
-            }
-        }
     }
 
     async fn handle_message(&self, message: &IncomingMessage) -> Result<Option<String>, Error> {
