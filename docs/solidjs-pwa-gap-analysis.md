@@ -621,26 +621,26 @@ with the real gateway.
 
 The front-end developer should address the gaps in this order.
 
-1. Fix the hard transport and payload blockers:
-   - auth flow
-   - `/api/features` dependency
-   - log entry shape
-   - job prompt shape
-2. Align the PWA route surface with the shipped browser product:
-   - logs
-   - TEE
-   - restart
-   - pairing
-   - settings and project-browser decisions
-3. Restore chat parity:
-   - thread metadata
-   - pagination
-   - auth-required UI
-   - job-start and image-generated handling
-4. Restore jobs and routines detail fidelity.
-5. Tighten extensions and skills so the UI stops advertising placeholder
+- Fix the hard transport and payload blockers:
+  - auth flow
+  - `/api/features` dependency
+  - log entry shape
+  - job prompt shape
+- Align the PWA route surface with the shipped browser product:
+  - logs
+  - TEE
+  - restart
+  - pairing
+  - settings and project-browser decisions
+- Restore chat parity:
+  - thread metadata
+  - pagination
+  - auth-required UI
+  - job-start and image-generated handling
+- Restore jobs and routines detail fidelity.
+- Tighten extensions and skills so the UI stops advertising placeholder
    actions.
-6. Only then treat the Bun mock backend as a confidence harness again.
+- Only then treat the Bun mock backend as a confidence harness again.
 
 ## 15. Closure criteria
 
