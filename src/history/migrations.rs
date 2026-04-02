@@ -110,13 +110,15 @@ pub(crate) async fn repair_postgres_refinery_history(
         .await?;
     let applied_migrations = applied_rows
         .into_iter()
-        .map(|row| {
-            let version: i32 = row.get(0);
-            let name: String = row.get(1);
-            let checksum: String = row.get(2);
-            (version, name, checksum)
-        })
-        .collect::<Vec<_>>();
+        .map(
+            |row| -> Result<(i32, Option<String>, Option<String>), tokio_postgres::Error> {
+                let version: i32 = row.get(0);
+                let name: Option<String> = row.try_get(1)?;
+                let checksum: Option<String> = row.try_get(2)?;
+                Ok((version, name, checksum))
+            },
+        )
+        .collect::<Result<Vec<_>, _>>()?;
     let applicable_rewrites = plan_migration_history_rewrites(&applied_migrations)?;
     if applicable_rewrites.is_empty() {
         return Ok(());
@@ -136,15 +138,15 @@ pub(crate) async fn repair_postgres_refinery_history(
 
 #[cfg(feature = "postgres")]
 fn plan_migration_history_rewrites(
-    applied_migrations: &[(i32, String, String)],
+    applied_migrations: &[(i32, Option<String>, Option<String>)],
 ) -> Result<Vec<MigrationHistoryRewrite>, DatabaseError> {
     Ok(migration_history_rewrites()?
         .into_iter()
         .filter(|rewrite| {
             applied_migrations.iter().any(|(version, name, checksum)| {
                 *version == rewrite.from.version
-                    && name == rewrite.from.name
-                    && checksum == &rewrite.from.checksum.to_string()
+                    && name.as_deref() == Some(rewrite.from.name)
+                    && checksum.as_deref() == Some(&rewrite.from.checksum.to_string())
             })
         })
         .collect())
@@ -152,8 +154,8 @@ fn plan_migration_history_rewrites(
 
 #[cfg(feature = "postgres")]
 fn migration_history_rewrites() -> Result<Vec<MigrationHistoryRewrite>, DatabaseError> {
-    Ok(vec![
-        migration_history_rewrite(
+    [
+        (
             MigrationSpec {
                 version: 12,
                 name: "wasm_wit_default_0_3_0",
@@ -164,8 +166,8 @@ fn migration_history_rewrites() -> Result<Vec<MigrationHistoryRewrite>, Database
                 name: "wasm_wit_default_0_3_0",
                 sql: CURRENT_V12_WASM_WIT_DEFAULT_SQL,
             },
-        )?,
-        migration_history_rewrite(
+        ),
+        (
             MigrationSpec {
                 version: 12,
                 name: "job_token_budget",
@@ -176,8 +178,8 @@ fn migration_history_rewrites() -> Result<Vec<MigrationHistoryRewrite>, Database
                 name: "job_token_budget",
                 sql: CURRENT_V13_JOB_TOKEN_BUDGET_SQL,
             },
-        )?,
-        migration_history_rewrite(
+        ),
+        (
             MigrationSpec {
                 version: 13,
                 name: "drop_redundant_wasm_tools_name_index",
@@ -188,8 +190,8 @@ fn migration_history_rewrites() -> Result<Vec<MigrationHistoryRewrite>, Database
                 name: "drop_redundant_wasm_tools_name_index",
                 sql: CURRENT_V14_DROP_REDUNDANT_WASM_TOOLS_NAME_INDEX_SQL,
             },
-        )?,
-        migration_history_rewrite(
+        ),
+        (
             MigrationSpec {
                 version: 14,
                 name: "wasm_wit_default_0_3_0",
@@ -200,8 +202,12 @@ fn migration_history_rewrites() -> Result<Vec<MigrationHistoryRewrite>, Database
                 name: "wasm_wit_default_0_3_0",
                 sql: CURRENT_V12_WASM_WIT_DEFAULT_SQL,
             },
-        )?,
-    ])
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (from, to))| migration_history_rewrite(from, to, staging_version(index)))
+    .collect()
 }
 
 #[cfg(feature = "postgres")]
@@ -215,13 +221,20 @@ struct MigrationSpec {
 fn migration_history_rewrite(
     from: MigrationSpec,
     to: MigrationSpec,
+    temporary_version: i32,
 ) -> Result<MigrationHistoryRewrite, DatabaseError> {
-    let temporary_version = 1_000 + from.version;
     Ok(MigrationHistoryRewrite {
         from: migration_identity(from)?,
         temporary_version,
         to: migration_identity(to)?,
     })
+}
+
+#[cfg(feature = "postgres")]
+fn staging_version(index: usize) -> i32 {
+    // Reserve an internal staging range in the negative i32 space so rewrites
+    // cannot collide with released positive migration versions.
+    i32::MIN + i32::try_from(index).expect("rewrite index fits in i32")
 }
 
 #[cfg(feature = "postgres")]
