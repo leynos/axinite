@@ -1,7 +1,7 @@
 //! Routine persistence helpers.
 
 #[cfg(feature = "postgres")]
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 #[cfg(feature = "postgres")]
 use uuid::Uuid;
 
@@ -11,6 +11,8 @@ use super::Store;
 use crate::agent::routine::{
     NotifyConfig, Routine, RoutineAction, RoutineGuardrails, RoutineRun, RunStatus, Trigger,
 };
+#[cfg(feature = "postgres")]
+use crate::db::RoutineRuntimeUpdate;
 #[cfg(feature = "postgres")]
 use crate::error::DatabaseError;
 
@@ -201,13 +203,16 @@ impl Store {
     /// Update runtime state after a routine fires.
     pub async fn update_routine_runtime(
         &self,
-        id: Uuid,
-        last_run_at: DateTime<Utc>,
-        next_fire_at: Option<DateTime<Utc>>,
-        run_count: u64,
-        consecutive_failures: u32,
-        state: &serde_json::Value,
+        params: RoutineRuntimeUpdate<'_>,
     ) -> Result<(), DatabaseError> {
+        let RoutineRuntimeUpdate {
+            id,
+            last_run_at,
+            next_fire_at,
+            run_count,
+            consecutive_failures,
+            state,
+        } = params;
         let conn = self.conn().await?;
         conn.execute(
             r#"

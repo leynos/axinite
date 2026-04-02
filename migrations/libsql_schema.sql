@@ -34,6 +34,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_conv_heartbeat
 ON conversations (user_id)
 WHERE json_extract(metadata, '$.thread_type') = 'heartbeat';
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_conv_assistant
+ON conversations (user_id, channel)
+WHERE json_extract(metadata, '$.thread_type') = 'assistant';
+
 CREATE TABLE IF NOT EXISTS conversation_messages (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,

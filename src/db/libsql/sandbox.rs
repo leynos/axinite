@@ -315,7 +315,7 @@ impl NativeSandboxStore for LibSqlBackend {
     ) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         conn.execute(
-            "UPDATE agent_jobs SET job_mode = ?2 WHERE id = ?1",
+            "UPDATE agent_jobs SET job_mode = ?2 WHERE id = ?1 AND source = 'sandbox'",
             params![id.to_string(), mode.as_str()],
         )
         .await
@@ -327,7 +327,7 @@ impl NativeSandboxStore for LibSqlBackend {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
-                "SELECT job_mode FROM agent_jobs WHERE id = ?1",
+                "SELECT job_mode FROM agent_jobs WHERE id = ?1 AND source = 'sandbox'",
                 params![id.to_string()],
             )
             .await
@@ -338,9 +338,13 @@ impl NativeSandboxStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
-            Some(row) => SandboxMode::try_from(get_text(&row, 0).as_str())
-                .map(Some)
-                .map_err(DatabaseError::Serialization),
+            Some(row) => row
+                .get::<Option<String>>(0)
+                .map_err(|e| DatabaseError::Query(e.to_string()))?
+                .map(|mode| {
+                    SandboxMode::try_from(mode.as_str()).map_err(DatabaseError::Serialization)
+                })
+                .transpose(),
             None => Ok(None),
         }
     }

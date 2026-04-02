@@ -9,6 +9,22 @@ use crate::db::{EnsureConversationParams, NativeConversationStore};
 use crate::error::DatabaseError;
 use crate::history::{ConversationMessage, ConversationSummary};
 
+fn preview_title(metadata: &serde_json::Value, sql_title: Option<String>) -> Option<String> {
+    sql_title
+        .or_else(|| {
+            metadata
+                .get("title")
+                .and_then(|value| value.as_str())
+                .map(String::from)
+        })
+        .or_else(|| {
+            metadata
+                .get("routine_name")
+                .and_then(|value| value.as_str())
+                .map(String::from)
+        })
+}
+
 impl NativeConversationStore for LibSqlBackend {
     async fn create_conversation(
         &self,
@@ -129,12 +145,7 @@ impl NativeConversationStore for LibSqlBackend {
                 .and_then(|v| v.as_str())
                 .map(String::from);
             let sql_title = get_opt_text(&row, 6);
-            let title = sql_title.or_else(|| {
-                metadata
-                    .get("routine_name")
-                    .and_then(|v| v.as_str())
-                    .map(String::from)
-            });
+            let title = preview_title(&metadata, sql_title);
             results.push(ConversationSummary {
                 id: row
                     .get::<String>(0)
@@ -196,12 +207,7 @@ impl NativeConversationStore for LibSqlBackend {
                 .and_then(|v| v.as_str())
                 .map(String::from);
             let sql_title = get_opt_text(&row, 6);
-            let title = sql_title.or_else(|| {
-                metadata
-                    .get("routine_name")
-                    .and_then(|v| v.as_str())
-                    .map(String::from)
-            });
+            let title = preview_title(&metadata, sql_title);
             results.push(ConversationSummary {
                 id: row
                     .get::<String>(0)
@@ -356,7 +362,16 @@ impl NativeConversationStore for LibSqlBackend {
         channel: &str,
     ) -> Result<Uuid, DatabaseError> {
         let conn = self.connect().await?;
-        // Try to find existing
+        let id = Uuid::new_v4();
+        let now = fmt_ts(&Utc::now());
+        let metadata = serde_json::json!({"thread_type": "assistant", "title": "Assistant"});
+        conn.execute(
+            "INSERT OR IGNORE INTO conversations (id, channel, user_id, metadata, started_at, last_activity) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+            params![id.to_string(), channel, user_id, metadata.to_string(), now],
+        )
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
         let mut rows = conn
             .query(
                 r#"
@@ -370,28 +385,20 @@ impl NativeConversationStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
-        if let Some(row) = rows
+        let Some(row) = rows
             .next()
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
-        {
-            let id_str: String = row.get(0).unwrap_or_default();
-            return id_str
-                .parse()
-                .map_err(|_| DatabaseError::Serialization("Invalid UUID".to_string()));
-        }
+        else {
+            return Err(DatabaseError::Query(
+                "assistant conversation missing after insert-or-ignore".to_string(),
+            ));
+        };
 
-        // Create new
-        let id = Uuid::new_v4();
-        let now = fmt_ts(&Utc::now());
-        let metadata = serde_json::json!({"thread_type": "assistant", "title": "Assistant"});
-        conn.execute(
-            "INSERT INTO conversations (id, channel, user_id, metadata, started_at, last_activity) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-            params![id.to_string(), channel, user_id, metadata.to_string(), now],
-        )
-        .await
-        .map_err(|e| DatabaseError::Query(e.to_string()))?;
-        Ok(id)
+        let id_str: String = row.get(0).unwrap_or_default();
+        id_str
+            .parse()
+            .map_err(|_| DatabaseError::Serialization("Invalid UUID".to_string()))
     }
 
     async fn create_conversation_with_metadata(

@@ -25,7 +25,8 @@ impl NativeToolFailureStore for LibSqlBackend {
                 ON CONFLICT (tool_name) DO UPDATE SET
                     error_message = ?3,
                     error_count = tool_failures.error_count + 1,
-                    last_failure = ?4
+                    last_failure = ?4,
+                    repaired_at = NULL
                 "#,
             params![Uuid::new_v4().to_string(), tool_name, error_message, now],
         )

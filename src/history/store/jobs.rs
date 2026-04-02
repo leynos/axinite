@@ -123,7 +123,7 @@ impl Store {
                        budget_amount, budget_token, bid_amount, estimated_cost, estimated_time_secs,
                        actual_cost, repair_attempts, max_tokens, total_tokens_used,
                        created_at, started_at, completed_at
-                FROM agent_jobs WHERE id = $1
+                FROM agent_jobs WHERE id = $1 AND source = 'direct'
                 "#,
                 &[&id],
             )
@@ -132,7 +132,7 @@ impl Store {
         match row {
             Some(row) => {
                 let status_str: String = row.get("status");
-                let state = parse_job_state(&status_str);
+                let state = parse_job_state(&status_str)?;
                 let estimated_time_secs: Option<i32> = row.get("estimated_time_secs");
 
                 Ok(Some(JobContext {
@@ -184,7 +184,7 @@ impl Store {
         let status_str = status.to_string();
 
         conn.execute(
-            "UPDATE agent_jobs SET status = $2, failure_reason = $3 WHERE id = $1",
+            "UPDATE agent_jobs SET status = $2, failure_reason = $3 WHERE id = $1 AND source = 'direct'",
             &[&id, &status_str, &failure_reason],
         )
         .await?;
@@ -197,7 +197,7 @@ impl Store {
         let conn = self.conn().await?;
 
         conn.execute(
-            "UPDATE agent_jobs SET status = 'stuck', stuck_since = NOW() WHERE id = $1",
+            "UPDATE agent_jobs SET status = 'stuck', stuck_since = NOW() WHERE id = $1 AND source = 'direct'",
             &[&id],
         )
         .await?;
@@ -210,7 +210,10 @@ impl Store {
         let conn = self.conn().await?;
 
         let rows = conn
-            .query("SELECT id FROM agent_jobs WHERE status = 'stuck'", &[])
+            .query(
+                "SELECT id FROM agent_jobs WHERE status = 'stuck' AND source = 'direct'",
+                &[],
+            )
             .await?;
 
         Ok(rows.iter().map(|r| r.get("id")).collect())
@@ -254,7 +257,7 @@ impl Store {
         let conn = self.conn().await?;
         let row = conn
             .query_opt(
-                "SELECT failure_reason FROM agent_jobs WHERE id = $1",
+                "SELECT failure_reason FROM agent_jobs WHERE id = $1 AND source = 'direct'",
                 &[&id],
             )
             .await?;

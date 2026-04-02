@@ -20,7 +20,18 @@ impl Store {
     ) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
 
-        let duration_ms = action.duration.as_millis() as i32;
+        let duration_ms = i32::try_from(action.duration.as_millis()).map_err(|_| {
+            DatabaseError::Serialization(format!(
+                "job action duration exceeds i32 milliseconds: {}",
+                action.duration.as_millis()
+            ))
+        })?;
+        let sequence_num = i32::try_from(action.sequence).map_err(|_| {
+            DatabaseError::Serialization(format!(
+                "job action sequence exceeds i32: {}",
+                action.sequence
+            ))
+        })?;
         let warnings_json = serde_json::to_value(&action.sanitization_warnings)
             .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
@@ -34,7 +45,7 @@ impl Store {
             &[
                 &action.id,
                 &job_id,
-                &(action.sequence as i32),
+                &sequence_num,
                 &action.tool_name,
                 &action.input,
                 &action.output_raw,
@@ -71,7 +82,14 @@ impl Store {
         for row in rows {
             let duration_ms: i32 = row.get("duration_ms");
             let warnings_json: serde_json::Value = row.get("sanitization_warnings");
-            let warnings: Vec<String> = serde_json::from_value(warnings_json).unwrap_or_default();
+            let warnings = match warnings_json {
+                serde_json::Value::Null => Vec::new(),
+                value => serde_json::from_value(value).map_err(|e| {
+                    DatabaseError::Serialization(format!(
+                        "invalid sanitization_warnings payload for job action: {e}"
+                    ))
+                })?,
+            };
 
             actions.push(ActionRecord {
                 id: row.get("id"),

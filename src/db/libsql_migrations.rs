@@ -161,6 +161,11 @@ ALTER TABLE agent_jobs ADD COLUMN total_tokens_used INTEGER NOT NULL DEFAULT 0;
         "drop_redundant_wasm_tools_name_index",
         include_str!("../../migrations/V14__drop_redundant_wasm_tools_name_index.sql"),
     ),
+    (
+        15,
+        "assistant_conversation_unique_index",
+        include_str!("../../migrations/V15__assistant_conversation_unique_index.sql"),
+    ),
 ];
 
 /// Run incremental migrations that haven't been applied yet.

@@ -83,6 +83,7 @@ impl Store {
 }
 
 #[cfg(feature = "postgres")]
-fn parse_job_state(s: &str) -> JobState {
-    s.parse().unwrap_or(JobState::Pending)
+fn parse_job_state(s: &str) -> Result<JobState, DatabaseError> {
+    s.parse()
+        .map_err(|()| DatabaseError::Serialization(format!("invalid persisted job state '{s}'")))
 }

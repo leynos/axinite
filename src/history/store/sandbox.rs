@@ -422,7 +422,7 @@ impl Store {
     ) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
         conn.execute(
-            "UPDATE agent_jobs SET job_mode = $2 WHERE id = $1",
+            "UPDATE agent_jobs SET job_mode = $2 WHERE id = $1 AND source = 'sandbox'",
             &[&id, &mode.as_str()],
         )
         .await?;
@@ -436,7 +436,10 @@ impl Store {
     ) -> Result<Option<SandboxMode>, DatabaseError> {
         let conn = self.conn().await?;
         let row = conn
-            .query_opt("SELECT job_mode FROM agent_jobs WHERE id = $1", &[&id])
+            .query_opt(
+                "SELECT job_mode FROM agent_jobs WHERE id = $1 AND source = 'sandbox'",
+                &[&id],
+            )
             .await?;
         row.and_then(|r| r.get::<_, Option<String>>("job_mode"))
             .map(|mode| SandboxMode::try_from(mode.as_str()).map_err(DatabaseError::Serialization))

@@ -49,24 +49,7 @@ impl NativeRoutineStore for PgBackend {
         &self,
         params: RoutineRuntimeUpdate<'_>,
     ) -> Result<(), DatabaseError> {
-        let RoutineRuntimeUpdate {
-            id,
-            last_run_at,
-            next_fire_at,
-            run_count,
-            consecutive_failures,
-            state,
-        } = params;
-        self.store
-            .update_routine_runtime(
-                id,
-                last_run_at,
-                next_fire_at,
-                run_count,
-                consecutive_failures,
-                state,
-            )
-            .await
+        self.store.update_routine_runtime(params).await
     }
 
     async fn delete_routine(&self, id: Uuid) -> Result<bool, DatabaseError> {

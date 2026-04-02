@@ -82,7 +82,7 @@ impl NativeJobStore for LibSqlBackend {
                        budget_amount, budget_token, bid_amount, estimated_cost, estimated_time_secs,
                        actual_cost, repair_attempts, max_tokens, total_tokens_used,
                        created_at, started_at, completed_at
-                FROM agent_jobs WHERE id = ?1
+                FROM agent_jobs WHERE id = ?1 AND source = 'direct'
                 "#,
                 params![id.to_string()],
             )
@@ -144,7 +144,7 @@ impl NativeJobStore for LibSqlBackend {
     ) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         conn.execute(
-            "UPDATE agent_jobs SET status = ?2, failure_reason = ?3 WHERE id = ?1",
+            "UPDATE agent_jobs SET status = ?2, failure_reason = ?3 WHERE id = ?1 AND source = 'direct'",
             params![id.to_string(), status.to_string(), opt_text(failure_reason)],
         )
         .await
@@ -156,7 +156,7 @@ impl NativeJobStore for LibSqlBackend {
         let conn = self.connect().await?;
         let now = fmt_ts(&Utc::now());
         conn.execute(
-            "UPDATE agent_jobs SET status = 'stuck', stuck_since = ?2 WHERE id = ?1",
+            "UPDATE agent_jobs SET status = 'stuck', stuck_since = ?2 WHERE id = ?1 AND source = 'direct'",
             params![id.to_string(), now],
         )
         .await
@@ -167,7 +167,10 @@ impl NativeJobStore for LibSqlBackend {
     async fn get_stuck_jobs(&self) -> Result<Vec<Uuid>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
-            .query("SELECT id FROM agent_jobs WHERE status = 'stuck'", ())
+            .query(
+                "SELECT id FROM agent_jobs WHERE status = 'stuck' AND source = 'direct'",
+                (),
+            )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
@@ -233,7 +236,7 @@ impl NativeJobStore for LibSqlBackend {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
-                "SELECT failure_reason FROM agent_jobs WHERE id = ?1",
+                "SELECT failure_reason FROM agent_jobs WHERE id = ?1 AND source = 'direct'",
                 [id.to_string()],
             )
             .await

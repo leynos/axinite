@@ -54,11 +54,17 @@ impl Store {
     ) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
 
-        conn.execute(
+        let rows = conn.execute(
             "UPDATE estimation_snapshots SET actual_cost = $2, actual_time_secs = $3, actual_value = $4 WHERE id = $1",
             &[&id, &actual_cost, &actual_time_secs, &actual_value],
         )
         .await?;
+
+        if rows == 0 {
+            return Err(DatabaseError::Query(format!(
+                "estimation snapshot not found: {id}"
+            )));
+        }
 
         Ok(())
     }

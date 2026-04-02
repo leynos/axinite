@@ -27,6 +27,18 @@ impl Store {
     pub async fn record_llm_call(&self, record: &LlmCallRecord<'_>) -> Result<Uuid, DatabaseError> {
         let conn = self.conn().await?;
         let id = Uuid::new_v4();
+        let input_tokens = i32::try_from(record.input_tokens).map_err(|_| {
+            DatabaseError::Serialization(format!(
+                "llm input_tokens exceeds i32: {}",
+                record.input_tokens
+            ))
+        })?;
+        let output_tokens = i32::try_from(record.output_tokens).map_err(|_| {
+            DatabaseError::Serialization(format!(
+                "llm output_tokens exceeds i32: {}",
+                record.output_tokens
+            ))
+        })?;
 
         conn.execute(
             r#"
@@ -39,8 +51,8 @@ impl Store {
                 &record.conversation_id,
                 &record.provider,
                 &record.model,
-                &(record.input_tokens as i32),
-                &(record.output_tokens as i32),
+                &input_tokens,
+                &output_tokens,
                 &record.cost,
                 &record.purpose,
             ],

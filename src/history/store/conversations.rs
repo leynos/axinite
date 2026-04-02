@@ -1,6 +1,8 @@
 //! Conversation persistence types and helpers.
 
 use chrono::{DateTime, Utc};
+#[cfg(feature = "postgres")]
+use deadpool_postgres::GenericClient;
 use uuid::Uuid;
 
 #[cfg(feature = "postgres")]
@@ -35,6 +37,37 @@ pub struct ConversationMessage {
 }
 
 #[cfg(feature = "postgres")]
+fn preview_title(metadata: &serde_json::Value, sql_title: Option<String>) -> Option<String> {
+    sql_title
+        .or_else(|| {
+            metadata
+                .get("title")
+                .and_then(|value| value.as_str())
+                .map(String::from)
+        })
+        .or_else(|| {
+            metadata
+                .get("routine_name")
+                .and_then(|value| value.as_str())
+                .map(String::from)
+        })
+}
+
+#[cfg(feature = "postgres")]
+async fn touch_conversation_with_client(
+    client: &impl GenericClient,
+    id: Uuid,
+) -> Result<(), DatabaseError> {
+    client
+        .execute(
+            "UPDATE conversations SET last_activity = NOW() WHERE id = $1",
+            &[&id],
+        )
+        .await?;
+    Ok(())
+}
+
+#[cfg(feature = "postgres")]
 impl Store {
     /// Create a new conversation.
     pub async fn create_conversation(
@@ -58,12 +91,7 @@ impl Store {
     /// Update conversation last activity.
     pub async fn touch_conversation(&self, id: Uuid) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
-        conn.execute(
-            "UPDATE conversations SET last_activity = NOW() WHERE id = $1",
-            &[&id],
-        )
-        .await?;
-        Ok(())
+        touch_conversation_with_client(&conn, id).await
     }
 
     /// Add a message to a conversation.
@@ -73,16 +101,18 @@ impl Store {
         role: &str,
         content: &str,
     ) -> Result<Uuid, DatabaseError> {
-        let conn = self.conn().await?;
+        let mut conn = self.conn().await?;
         let id = Uuid::new_v4();
+        let tx = conn.transaction().await?;
 
-        conn.execute(
+        tx.execute(
             "INSERT INTO conversation_messages (id, conversation_id, role, content) VALUES ($1, $2, $3, $4)",
             &[&id, &conversation_id, &role, &content],
         )
         .await?;
 
-        self.touch_conversation(conversation_id).await?;
+        touch_conversation_with_client(&tx, conversation_id).await?;
+        tx.commit().await?;
 
         Ok(id)
     }
@@ -153,12 +183,7 @@ impl Store {
                     .and_then(|v| v.as_str())
                     .map(String::from);
                 let sql_title: Option<String> = r.get("title");
-                let title = sql_title.or_else(|| {
-                    metadata
-                        .get("routine_name")
-                        .and_then(|v| v.as_str())
-                        .map(String::from)
-                });
+                let title = preview_title(&metadata, sql_title);
                 ConversationSummary {
                     id: r.get("id"),
                     title,
@@ -213,12 +238,7 @@ impl Store {
                     .and_then(|v| v.as_str())
                     .map(String::from);
                 let sql_title: Option<String> = r.get("title");
-                let title = sql_title.or_else(|| {
-                    metadata
-                        .get("routine_name")
-                        .and_then(|v| v.as_str())
-                        .map(String::from)
-                });
+                let title = preview_title(&metadata, sql_title);
                 ConversationSummary {
                     id: r.get("id"),
                     title,
@@ -316,9 +336,22 @@ impl Store {
         channel: &str,
     ) -> Result<Uuid, DatabaseError> {
         let conn = self.conn().await?;
+        let id = Uuid::new_v4();
+        let metadata = serde_json::json!({"thread_type": "assistant", "title": "Assistant"});
+        conn.execute(
+            r#"
+            INSERT INTO conversations (id, channel, user_id, metadata)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (user_id, channel)
+                WHERE metadata->>'thread_type' = 'assistant'
+                DO NOTHING
+            "#,
+            &[&id, &channel, &user_id, &metadata],
+        )
+        .await?;
 
         let row = conn
-            .query_opt(
+            .query_one(
                 r#"
                 SELECT id FROM conversations
                 WHERE user_id = $1 AND channel = $2 AND metadata->>'thread_type' = 'assistant'
@@ -328,22 +361,7 @@ impl Store {
             )
             .await?;
 
-        if let Some(row) = row {
-            return Ok(row.get("id"));
-        }
-
-        let id = Uuid::new_v4();
-        let metadata = serde_json::json!({"thread_type": "assistant", "title": "Assistant"});
-        conn.execute(
-            r#"
-            INSERT INTO conversations (id, channel, user_id, metadata)
-            VALUES ($1, $2, $3, $4)
-            "#,
-            &[&id, &channel, &user_id, &metadata],
-        )
-        .await?;
-
-        Ok(id)
+        Ok(row.get("id"))
     }
 
     /// Create a conversation with specific metadata.
@@ -445,7 +463,7 @@ impl Store {
         let conn = self.conn().await?;
         let patch = serde_json::json!({ key: value });
         conn.execute(
-            "UPDATE conversations SET metadata = metadata || $2 WHERE id = $1",
+            "UPDATE conversations SET metadata = COALESCE(metadata, '{}'::jsonb) || $2 WHERE id = $1",
             &[&id, &patch],
         )
         .await?;
@@ -529,5 +547,21 @@ mod tests {
             };
             assert_eq!(summary.channel, ch);
         }
+    }
+
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn preview_title_prefers_metadata_title_before_routine_name() {
+        use serde_json::json;
+
+        let metadata = json!({
+            "title": "Assistant",
+            "routine_name": "daily-standup",
+        });
+
+        assert_eq!(
+            preview_title(&metadata, None),
+            Some("Assistant".to_string())
+        );
     }
 }
