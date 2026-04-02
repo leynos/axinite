@@ -23,8 +23,12 @@ fn test_terminal_states_are_terminal() {
 }
 
 #[test]
-fn test_in_progress_is_not_terminal() {
+fn test_non_terminal_states_are_not_terminal() {
+    assert!(!JobState::Pending.is_terminal());
     assert!(!JobState::InProgress.is_terminal());
+    assert!(!JobState::Completed.is_terminal());
+    assert!(!JobState::Submitted.is_terminal());
+    assert!(!JobState::Stuck.is_terminal());
 }
 
 #[test]
@@ -40,8 +44,9 @@ fn test_job_state_from_str_parses_known_values() {
         ("cancelled", JobState::Cancelled),
     ];
     for (input, expected) in cases {
+        let failure_message = format!("failed to parse '{input}' into JobState");
         assert_eq!(
-            input.parse::<JobState>().unwrap(),
+            input.parse::<JobState>().expect(&failure_message),
             expected,
             "failed to parse '{input}'",
         );

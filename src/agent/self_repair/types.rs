@@ -11,7 +11,7 @@ use uuid::Uuid;
 pub struct StuckJob {
     pub job_id: Uuid,
     /// Timestamp when the job entered the `Stuck` state.
-    pub last_activity: DateTime<Utc>,
+    pub stuck_since: DateTime<Utc>,
     pub stuck_duration: Duration,
     pub last_error: Option<String>,
     pub repair_attempts: u32,

@@ -80,7 +80,7 @@ mod tests {
 
         let stuck_job = StuckJob {
             job_id: Uuid::new_v4(),
-            last_activity: Utc::now(),
+            stuck_since: Utc::now(),
             stuck_duration: Duration::from_secs(120),
             last_error: Some("stalled".to_string()),
             repair_attempts: 1,

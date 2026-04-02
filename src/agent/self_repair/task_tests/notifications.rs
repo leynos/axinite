@@ -131,7 +131,7 @@ async fn repair_task_sends_notification_for_stuck_job_success() {
     let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_stuck_job(
         StuckJob {
             job_id: Uuid::new_v4(),
-            last_activity: Utc::now(),
+            stuck_since: Utc::now(),
             stuck_duration: Duration::from_secs(120),
             last_error: None,
             repair_attempts: 0,
@@ -188,7 +188,7 @@ async fn repair_task_deduplicates_manual_required_notifications_for_stuck_jobs()
     let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_stuck_job(
         StuckJob {
             job_id: Uuid::nil(),
-            last_activity: Utc::now(),
+            stuck_since: Utc::now(),
             stuck_duration: Duration::from_secs(120),
             last_error: None,
             repair_attempts: 3,

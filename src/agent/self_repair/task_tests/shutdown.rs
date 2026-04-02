@@ -71,7 +71,7 @@ impl NativeSelfRepair for BlockingSelfRepair {
     async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
         vec![StuckJob {
             job_id: uuid::Uuid::new_v4(),
-            last_activity: chrono::Utc::now(),
+            stuck_since: chrono::Utc::now(),
             stuck_duration: Duration::from_secs(120),
             last_error: None,
             repair_attempts: 0,

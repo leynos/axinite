@@ -80,7 +80,7 @@ impl NativeSelfRepair for DefaultSelfRepair {
 
             stuck_jobs.push(StuckJob {
                 job_id: ctx.job_id,
-                last_activity: stuck_since,
+                stuck_since,
                 stuck_duration,
                 last_error: None,
                 repair_attempts: ctx.repair_attempts,
@@ -371,7 +371,7 @@ mod tests {
         let stuck_jobs = NativeSelfRepair::detect_stuck_jobs(&repair).await;
         assert_eq!(stuck_jobs.len(), 1);
         assert_eq!(
-            stuck_jobs[0].last_activity,
+            stuck_jobs[0].stuck_since,
             cm.get_context(job_id).await.unwrap().stuck_since().unwrap()
         );
         assert!(stuck_jobs[0].stuck_duration >= Duration::from_secs(60));
@@ -396,7 +396,7 @@ mod tests {
 
         let stuck_job = StuckJob {
             job_id,
-            last_activity: Utc::now(),
+            stuck_since: Utc::now(),
             stuck_duration: Duration::from_secs(120),
             last_error: None,
             repair_attempts: 0,
@@ -425,7 +425,7 @@ mod tests {
 
         let stuck_job = StuckJob {
             job_id,
-            last_activity: Utc::now(),
+            stuck_since: Utc::now(),
             stuck_duration: Duration::from_secs(300),
             last_error: Some("persistent failure".to_string()),
             repair_attempts: 2, // == max

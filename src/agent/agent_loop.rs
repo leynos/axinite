@@ -116,6 +116,9 @@ struct RoutineHandles {
     engine: Arc<RoutineEngine>,
 }
 
+/// Reserved user ID for system-generated repair notifications.
+const SYSTEM_USER_ID: &str = "default";
+
 impl Agent {
     /// Create a new agent.
     ///
@@ -240,6 +243,10 @@ impl Agent {
             thread_id: thread_id.map(str::to_string),
         };
         match hooks.run(&event).await {
+            Err(crate::hooks::HookError::Rejected { reason }) => {
+                tracing::warn!("BeforeOutbound hook blocked response: {}", reason);
+                None
+            }
             Err(err) => {
                 tracing::warn!("BeforeOutbound hook failed open: {}", err);
                 Some(response)
@@ -330,7 +337,8 @@ impl Agent {
             .with_notification_tx(
                 repair_notify_tx,
                 RepairNotificationRoute::BroadcastAll {
-                    user_id: "default".to_string(),
+                    // System-level repair notices target the reserved system user.
+                    user_id: SYSTEM_USER_ID.to_string(),
                 },
             );
         let repair_handle = tokio::spawn(repair_task.run());
