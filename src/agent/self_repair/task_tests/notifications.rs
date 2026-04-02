@@ -44,6 +44,30 @@ fn spawn_notification_task(repair: Arc<dyn SelfRepair>) -> NotificationHarness {
     }
 }
 
+async fn assert_manual_required_deduplication(
+    mut harness: NotificationHarness,
+    expected_message: &str,
+    await_failure_msg: &str,
+    dedup_failure_msg: &str,
+) {
+    let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
+        .await
+        .expect(await_failure_msg)
+        .expect("notification channel should remain open");
+    assert_eq!(notification.message, expected_message);
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(
+        matches!(
+            harness.notification_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ),
+        "{dedup_failure_msg}"
+    );
+
+    harness.shutdown().await;
+}
+
 struct MockSelfRepair {
     stuck_jobs: Vec<StuckJob>,
     broken_tools: Vec<BrokenTool>,
@@ -170,30 +194,17 @@ async fn repair_task_deduplicates_manual_required_notifications_for_stuck_jobs()
             message: "manual job recovery".to_string(),
         },
     ));
-    let mut harness = spawn_notification_task(repair);
-
-    let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
-        .await
-        .expect("stuck-job manual notification should arrive")
-        .expect("notification channel should remain open");
-    assert_eq!(
-        notification.message,
-        format!(
+    let harness = spawn_notification_task(repair);
+    assert_manual_required_deduplication(
+        harness,
+        &format!(
             "Job {} needs manual intervention: manual job recovery",
             Uuid::nil()
-        )
-    );
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    assert!(
-        matches!(
-            harness.notification_rx.try_recv(),
-            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
         ),
-        "manual stuck-job notification should be deduplicated"
-    );
-
-    harness.shutdown().await;
+        "stuck-job manual notification should arrive",
+        "manual stuck-job notification should be deduplicated",
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -212,25 +223,12 @@ async fn repair_task_deduplicates_manual_required_notifications_for_broken_tools
             message: "manual tool repair".to_string(),
         },
     ));
-    let mut harness = spawn_notification_task(repair);
-
-    let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
-        .await
-        .expect("broken-tool manual notification should arrive")
-        .expect("notification channel should remain open");
-    assert_eq!(
-        notification.message,
-        "Tool 'compiler' needs manual intervention: manual tool repair"
-    );
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    assert!(
-        matches!(
-            harness.notification_rx.try_recv(),
-            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
-        ),
-        "manual broken-tool notification should be deduplicated"
-    );
-
-    harness.shutdown().await;
+    let harness = spawn_notification_task(repair);
+    assert_manual_required_deduplication(
+        harness,
+        "Tool 'compiler' needs manual intervention: manual tool repair",
+        "broken-tool manual notification should arrive",
+        "manual broken-tool notification should be deduplicated",
+    )
+    .await;
 }
