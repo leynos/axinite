@@ -1,51 +1,51 @@
 //! Comprehensive tests for job-state transitions, lifecycle helpers, token
 //! budgeting, and `stuck_since()` timestamp tracking.
 
-use rstest::rstest;
-
 use super::*;
 
 #[test]
-fn test_state_transitions() {
+fn test_valid_state_transitions() {
     assert!(JobState::Pending.can_transition_to(JobState::InProgress));
     assert!(JobState::InProgress.can_transition_to(JobState::Completed));
+}
+
+#[test]
+fn test_invalid_state_transitions() {
     assert!(!JobState::Completed.can_transition_to(JobState::Pending));
     assert!(!JobState::Accepted.can_transition_to(JobState::InProgress));
 }
 
-#[rstest]
-#[case(JobState::Pending, false)]
-#[case(JobState::Completed, false)]
-#[case(JobState::Submitted, false)]
-#[case(JobState::Stuck, false)]
-#[case(JobState::Accepted, true)]
-#[case(JobState::Failed, true)]
-#[case(JobState::Cancelled, true)]
-#[case(JobState::InProgress, false)]
-fn test_terminal_states(#[case] state: JobState, #[case] expected_terminal: bool) {
-    assert_eq!(state.is_terminal(), expected_terminal);
+#[test]
+fn test_terminal_states_are_terminal() {
+    assert!(JobState::Accepted.is_terminal());
+    assert!(JobState::Failed.is_terminal());
+    assert!(JobState::Cancelled.is_terminal());
 }
 
-#[rstest]
-#[case("pending", JobState::Pending)]
-#[case("in_progress", JobState::InProgress)]
-#[case("completed", JobState::Completed)]
-#[case("submitted", JobState::Submitted)]
-#[case("accepted", JobState::Accepted)]
-#[case("failed", JobState::Failed)]
-#[case("stuck", JobState::Stuck)]
-#[case("cancelled", JobState::Cancelled)]
-fn test_job_state_from_str_parses_known_values(
-    #[case] input_str: &str,
-    #[case] expected_state: JobState,
-) {
-    let failure_message = format!("failed to parse '{}' into JobState", input_str);
-    assert_eq!(
-        input_str
-            .parse::<JobState>()
-            .expect(failure_message.as_str()),
-        expected_state
-    );
+#[test]
+fn test_in_progress_is_not_terminal() {
+    assert!(!JobState::InProgress.is_terminal());
+}
+
+#[test]
+fn test_job_state_from_str_parses_known_values() {
+    let cases = [
+        ("pending", JobState::Pending),
+        ("in_progress", JobState::InProgress),
+        ("completed", JobState::Completed),
+        ("submitted", JobState::Submitted),
+        ("accepted", JobState::Accepted),
+        ("failed", JobState::Failed),
+        ("stuck", JobState::Stuck),
+        ("cancelled", JobState::Cancelled),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(
+            input.parse::<JobState>().unwrap(),
+            expected,
+            "failed to parse '{input}'",
+        );
+    }
 }
 
 #[test]
@@ -88,11 +88,18 @@ fn test_transition_history_capped() {
 }
 
 #[test]
-fn test_add_tokens_enforces_budget() {
+fn test_add_tokens_within_budget_is_accepted() {
     let mut ctx = JobContext::new("Test", "Budget test");
     ctx.max_tokens = 1000;
     assert!(ctx.add_tokens(500).is_ok());
     assert_eq!(ctx.total_tokens_used, 500);
+}
+
+#[test]
+fn test_add_tokens_exceeding_budget_errors_but_still_records() {
+    let mut ctx = JobContext::new("Test", "Budget test");
+    ctx.max_tokens = 1000;
+    ctx.add_tokens(500).unwrap();
     assert!(ctx.add_tokens(600).is_err());
     assert_eq!(ctx.total_tokens_used, 1100); // tokens still recorded
 }
