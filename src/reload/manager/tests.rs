@@ -24,12 +24,14 @@ struct AddrTestCase {
 }
 
 /// Helper to create a minimal test config with the given HTTP config.
-fn test_config_with_http(http: Option<HttpConfig>) -> crate::config::Config {
+async fn test_config_with_http(http: Option<HttpConfig>) -> crate::config::Config {
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let temp_db = temp_dir.path().join("test_reload.db");
     let skills_dir = temp_dir.path().join("skills");
     let installed_skills_dir = temp_dir.path().join("installed_skills");
-    let mut config = crate::config::Config::for_testing(temp_db, skills_dir, installed_skills_dir);
+    let mut config = crate::config::Config::for_testing(temp_db, skills_dir, installed_skills_dir)
+        .await
+        .expect("test config should build");
     config.channels.http = http;
     config
 }
@@ -71,9 +73,9 @@ async fn successful_reload_invokes_all_dependencies(#[case] test_case: AddrTestC
         webhook_secret: Some(SecretString::from("new_secret".to_string())),
     };
 
-    let loader = Arc::new(StubConfigLoader::new_success(test_config_with_http(Some(
-        http_config,
-    ))));
+    let loader = Arc::new(StubConfigLoader::new_success(
+        test_config_with_http(Some(http_config)).await,
+    ));
 
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
@@ -164,9 +166,9 @@ async fn address_unchanged_skips_listener_restart(#[case] addr_str: &str) {
         webhook_secret: Some(SecretString::from("secret".to_string())),
     };
 
-    let loader = Arc::new(StubConfigLoader::new_success(test_config_with_http(Some(
-        http_config,
-    ))));
+    let loader = Arc::new(StubConfigLoader::new_success(
+        test_config_with_http(Some(http_config)).await,
+    ));
 
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
@@ -266,9 +268,9 @@ async fn listener_restart_failure_prevents_secret_update(#[case] addr_str: &str)
         webhook_secret: Some(SecretString::from("new_secret".to_string())),
     };
 
-    let loader = Arc::new(StubConfigLoader::new_success(test_config_with_http(Some(
-        http_config,
-    ))));
+    let loader = Arc::new(StubConfigLoader::new_success(
+        test_config_with_http(Some(http_config)).await,
+    ));
 
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
@@ -304,7 +306,7 @@ async fn http_config_removed_shuts_down_listener_and_clears_secrets() {
     let controller_clone = Arc::clone(&controller);
 
     // Config with no HTTP channel
-    let loader = Arc::new(StubConfigLoader::new_success(test_config_with_http(None)));
+    let loader = Arc::new(StubConfigLoader::new_success(test_config_with_http(None).await));
 
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);

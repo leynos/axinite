@@ -79,7 +79,7 @@ impl DbSecretInjector {
         let is_missing = matches!(result, Err(SecretError::NotFound(_)));
 
         if is_missing {
-            crate::config::remove_injected_var(HTTP_WEBHOOK_SECRET_KEY);
+            crate::config::remove_single_var(HTTP_WEBHOOK_SECRET_KEY);
             tracing::debug!(
                 "{HTTP_WEBHOOK_SECRET_KEY} not found in secrets store; cleared overlay entry"
             );
@@ -106,7 +106,7 @@ mod tests {
     use secrecy::SecretString;
 
     use super::*;
-    use crate::config::helpers::optional_env;
+    use crate::config::helpers::{EnvKey, optional_env};
     use crate::secrets::{CreateSecretParams, InMemorySecretsStore, SecretsCrypto, SecretsStore};
     use crate::testing::credentials::TEST_CRYPTO_KEY;
 
@@ -118,7 +118,7 @@ mod tests {
 
     #[tokio::test]
     async fn db_secret_injector_injects_and_clears_webhook_secret() {
-        crate::config::remove_injected_var(HTTP_WEBHOOK_SECRET_KEY);
+        crate::config::remove_single_var(HTTP_WEBHOOK_SECRET_KEY);
 
         let crypto = Arc::new(
             SecretsCrypto::new(SecretString::from(TEST_CRYPTO_KEY.to_string()))
@@ -138,7 +138,8 @@ mod tests {
 
         NativeSecretInjector::inject(&injector).await;
         assert_eq!(
-            optional_env(HTTP_WEBHOOK_SECRET_KEY).expect("overlay lookup should succeed"),
+            optional_env(EnvKey(HTTP_WEBHOOK_SECRET_KEY))
+                .expect("overlay lookup should succeed"),
             Some("super-secret-value".to_string()),
             "inject() should populate the overlay from the secrets store"
         );
@@ -150,7 +151,8 @@ mod tests {
         NativeSecretInjector::inject(&injector).await;
 
         assert_eq!(
-            optional_env(HTTP_WEBHOOK_SECRET_KEY).expect("overlay lookup should succeed"),
+            optional_env(EnvKey(HTTP_WEBHOOK_SECRET_KEY))
+                .expect("overlay lookup should succeed"),
             None,
             "inject() should clear the overlay when the secret is removed"
         );

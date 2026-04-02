@@ -113,20 +113,6 @@ mod tests {
     use super::*;
     use crate::channels::WebhookServerConfig;
 
-    fn bind_listener() -> (tokio::net::TcpListener, SocketAddr) {
-        let std_listener =
-            StdTcpListener::bind("127.0.0.1:0").expect("should bind an ephemeral port");
-        std_listener
-            .set_nonblocking(true)
-            .expect("listener should support non-blocking mode");
-        let addr = std_listener
-            .local_addr()
-            .expect("listener should report its local address");
-        let listener =
-            tokio::net::TcpListener::from_std(std_listener).expect("tokio listener should build");
-        (listener, addr)
-    }
-
     fn reserve_addr() -> SocketAddr {
         let listener =
             StdTcpListener::bind("127.0.0.1:0").expect("should reserve an ephemeral port");
@@ -137,17 +123,14 @@ mod tests {
 
     #[tokio::test]
     async fn webhook_listener_controller_drives_webhook_server_lifecycle() {
-        let (listener1, addr1) = bind_listener();
+        let addr1 = reserve_addr();
         let addr2 = reserve_addr();
 
         let mut server = WebhookServer::new(WebhookServerConfig { addr: addr1 });
         server.add_routes(
             Router::new().route("/health", get(|| async { Json(json!({ "status": "ok" })) })),
         );
-        server
-            .start_with_listener(listener1)
-            .await
-            .expect("server should start on the first listener");
+        server.start().await.expect("server should start");
 
         let server = Arc::new(Mutex::new(server));
         let controller = WebhookListenerController::new(Arc::clone(&server));
