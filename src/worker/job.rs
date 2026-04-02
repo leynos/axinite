@@ -66,6 +66,12 @@ struct ToolExecResult {
     result: Result<String, Error>,
 }
 
+enum WorkerLoopOutcome {
+    Completed,
+    ContinueDirectSelection,
+    Exited,
+}
+
 impl Worker {
     /// Create a new worker for a specific job.
     pub fn new(job_id: Uuid, deps: WorkerDeps) -> Self {
@@ -102,23 +108,27 @@ impl Worker {
         self.deps.use_planning
     }
 
-    /// Fire-and-forget persistence of job status.
-    fn persist_status(&self, status: JobState, reason: Option<String>) {
+    /// Persist a terminal job status before returning to the caller.
+    async fn persist_status(&self, status: JobState, reason: Option<String>) -> Result<(), Error> {
         if let Some(store) = self.store() {
-            let store = store.clone();
             let job_id = self.job_id;
-            tokio::spawn(async move {
-                if let Err(e) = store
-                    .update_job_status(job_id, status, reason.as_deref())
-                    .await
-                {
-                    tracing::warn!("Failed to persist status for job {}: {}", job_id, e);
-                }
-            });
+            store
+                .update_job_status(job_id, status, reason.as_deref())
+                .await
+                .map_err(|e| crate::error::JobError::PersistenceError {
+                    id: job_id,
+                    reason: e.to_string(),
+                })?;
         }
+        Ok(())
     }
 
-    /// Fire-and-forget persistence of a job event and SSE broadcast.
+    /// Fire-and-forget persistence and SSE broadcast for non-terminal job
+    /// events only.
+    ///
+    /// `log_event` spawns the database write and does not await persistence.
+    /// Terminal events must use `log_terminal_result_event`, which awaits
+    /// persistence before broadcasting.
     fn log_event(&self, event_type: &str, data: serde_json::Value) {
         let job_id = self.job_id;
 
@@ -134,9 +144,34 @@ impl Worker {
             });
         }
 
+        self.broadcast_event(event_type, &data);
+    }
+
+    /// Persist a terminal result event before returning to the caller.
+    async fn log_terminal_result_event(
+        &self,
+        event_type: &str,
+        data: serde_json::Value,
+    ) -> Result<(), Error> {
+        let job_id = self.job_id;
+        if let Some(store) = self.store() {
+            store
+                .save_job_event(job_id, event_type, &data)
+                .await
+                .map_err(|e| crate::error::JobError::PersistenceError {
+                    id: job_id,
+                    reason: e.to_string(),
+                })?;
+        }
+
+        self.broadcast_event(event_type, &data);
+        Ok(())
+    }
+
+    fn broadcast_event(&self, event_type: &str, data: &serde_json::Value) {
         // Broadcast SSE for live web UI updates
         if let Some(ref tx) = self.deps.sse_tx {
-            let job_id_str = job_id.to_string();
+            let job_id_str = self.job_id.to_string();
             let event = match event_type {
                 "message" => Some(SseEvent::JobMessage {
                     job_id: job_id_str,
@@ -249,7 +284,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         .await;
 
         match result {
-            Ok(Ok(())) => {
+            Ok(Ok(WorkerLoopOutcome::Completed)) => {
                 tracing::info!("Worker for job {} completed successfully", self.job_id);
                 // Only mark completed if still in an active, non-stuck state.
                 let current_state = self
@@ -277,9 +312,17 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                     }
                 }
             }
+            Ok(Ok(WorkerLoopOutcome::Exited)) => {}
+            Ok(Ok(WorkerLoopOutcome::ContinueDirectSelection)) => {
+                unreachable!("execution_loop should not return ContinueDirectSelection");
+            }
             Ok(Err(e)) => {
                 tracing::error!("Worker for job {} failed: {}", self.job_id, e);
-                self.mark_failed(&e.to_string()).await?;
+                let reason = match e {
+                    Error::Job(crate::error::JobError::Failed { reason, .. }) => reason,
+                    other => other.to_string(),
+                };
+                self.mark_failed(&reason).await?;
             }
             Err(_) => {
                 tracing::warn!("Worker for job {} timed out", self.job_id);
@@ -290,12 +333,104 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         Ok(())
     }
 
+    /// Generate an execution plan when planning is enabled.
+    ///
+    /// Returns `None` when planning is disabled or when the planner fails (in
+    /// which case a warning is logged and direct tool selection is used
+    /// instead).
+    async fn generate_plan(
+        &self,
+        reasoning: &Reasoning,
+        reason_ctx: &mut ReasoningContext,
+    ) -> Option<ActionPlan> {
+        if !self.use_planning() {
+            return None;
+        }
+        match reasoning.plan(reason_ctx).await {
+            Ok(p) => {
+                tracing::info!(
+                    "Created plan for job {}: {} actions, {:.0}% confidence",
+                    self.job_id,
+                    p.actions.len(),
+                    p.confidence * 100.0
+                );
+                reason_ctx.messages.push(ChatMessage::assistant(format!(
+                    "I've created a plan to accomplish this goal: {}\n\nSteps:\n{}",
+                    p.goal,
+                    p.actions
+                        .iter()
+                        .enumerate()
+                        .map(|(i, a)| format!("{}. {} - {}", i + 1, a.tool_name, a.reasoning))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )));
+                self.log_event(
+                    "message",
+                    serde_json::json!({
+                        "role": "assistant",
+                        "content": format!(
+                            "Plan: {}\n\n{}",
+                            p.goal,
+                            p.actions
+                                .iter()
+                                .enumerate()
+                                .map(|(i, a)| format!("{}. {} - {}", i + 1, a.tool_name, a.reasoning))
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        ),
+                    }),
+                );
+                Some(p)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Planning failed for job {}, falling back to direct selection: {}",
+                    self.job_id,
+                    e
+                );
+                None
+            }
+        }
+    }
+
+    /// Run the planning phase and, if a plan is produced, execute it.
+    ///
+    /// Returns `Ok(Some(outcome))` when the caller should terminate with
+    /// `outcome`, or `Ok(None)` when the loop should continue with direct tool
+    /// selection.
+    async fn maybe_plan_and_execute(
+        &self,
+        rx: &mut mpsc::Receiver<WorkerMessage>,
+        reasoning: &Reasoning,
+        reason_ctx: &mut ReasoningContext,
+    ) -> Result<Option<WorkerLoopOutcome>, Error> {
+        let Some(plan) = self.generate_plan(reasoning, reason_ctx).await else {
+            return Ok(None);
+        };
+
+        match self.execute_plan(rx, reasoning, reason_ctx, &plan).await? {
+            WorkerLoopOutcome::Completed => return Ok(Some(WorkerLoopOutcome::Completed)),
+            WorkerLoopOutcome::Exited => return Ok(Some(WorkerLoopOutcome::Exited)),
+            WorkerLoopOutcome::ContinueDirectSelection => {}
+        }
+
+        if let Ok(ctx) = self.context_manager().get_context(self.job_id).await
+            && (ctx.state.is_terminal()
+                || ctx.state == JobState::Stuck
+                || ctx.state == JobState::Completed)
+        {
+            return Ok(Some(WorkerLoopOutcome::Exited));
+        }
+
+        Ok(None)
+    }
+
     async fn execution_loop(
         &self,
         rx: &mut mpsc::Receiver<WorkerMessage>,
         reasoning: &Reasoning,
         reason_ctx: &mut ReasoningContext,
-    ) -> Result<(), Error> {
+    ) -> Result<WorkerLoopOutcome, Error> {
         const MAX_WORKER_ITERATIONS: usize = 500;
         let max_iterations = self
             .context_manager()
@@ -309,63 +444,11 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         // Initial tool definitions for planning (will be refreshed in loop)
         reason_ctx.available_tools = self.tools().tool_definitions().await;
 
-        // Generate plan if planning is enabled
-        let plan = if self.use_planning() {
-            match reasoning.plan(reason_ctx).await {
-                Ok(p) => {
-                    tracing::info!(
-                        "Created plan for job {}: {} actions, {:.0}% confidence",
-                        self.job_id,
-                        p.actions.len(),
-                        p.confidence * 100.0
-                    );
-
-                    // Add plan to context as assistant message
-                    reason_ctx.messages.push(ChatMessage::assistant(format!(
-                        "I've created a plan to accomplish this goal: {}\n\nSteps:\n{}",
-                        p.goal,
-                        p.actions
-                            .iter()
-                            .enumerate()
-                            .map(|(i, a)| format!("{}. {} - {}", i + 1, a.tool_name, a.reasoning))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    )));
-
-                    self.log_event("message", serde_json::json!({
-                        "role": "assistant",
-                        "content": format!("Plan: {}\n\n{}", p.goal,
-                            p.actions.iter().enumerate()
-                                .map(|(i, a)| format!("{}. {} - {}", i + 1, a.tool_name, a.reasoning))
-                                .collect::<Vec<_>>().join("\n"))
-                    }));
-
-                    Some(p)
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Planning failed for job {}, falling back to direct selection: {}",
-                        self.job_id,
-                        e
-                    );
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        // If we have a plan, execute it.
-        if let Some(ref plan) = plan {
-            self.execute_plan(rx, reasoning, reason_ctx, plan).await?;
-
-            if let Ok(ctx) = self.context_manager().get_context(self.job_id).await
-                && (ctx.state.is_terminal()
-                    || ctx.state == JobState::Stuck
-                    || ctx.state == JobState::Completed)
-            {
-                return Ok(());
-            }
+        if let Some(outcome) = self
+            .maybe_plan_and_execute(rx, reasoning, reason_ctx)
+            .await?
+        {
+            return Ok(outcome);
         }
 
         // Build the delegate and run the shared agentic loop
@@ -384,20 +467,14 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         let outcome = run_agentic_loop(&delegate, reasoning, reason_ctx, &config).await?;
 
         match outcome {
-            LoopOutcome::Response(_) => {
-                // Completion was already handled in handle_text_response via mark_completed
+            LoopOutcome::Response(_) => Ok(WorkerLoopOutcome::Completed),
+            LoopOutcome::MaxIterations => Err(crate::error::JobError::Failed {
+                id: self.job_id,
+                reason: "Maximum iterations exceeded: job hit the iteration cap".to_string(),
             }
-            LoopOutcome::MaxIterations => {
-                self.mark_failed("Maximum iterations exceeded: job hit the iteration cap")
-                    .await?;
-            }
-            LoopOutcome::Stopped => {
-                // Stop signal handled — nothing more to do
-            }
-            LoopOutcome::NeedApproval(_) => {}
+            .into()),
+            LoopOutcome::Stopped | LoopOutcome::NeedApproval(_) => Ok(WorkerLoopOutcome::Exited),
         }
-
-        Ok(())
     }
 
     /// Execute multiple tools in parallel using a JoinSet.
@@ -806,7 +883,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         reasoning: &Reasoning,
         reason_ctx: &mut ReasoningContext,
         plan: &ActionPlan,
-    ) -> Result<(), Error> {
+    ) -> Result<WorkerLoopOutcome, Error> {
         for (i, action) in plan.actions.iter().enumerate() {
             // Check for stop signal and injected user messages
             while let Ok(msg) = rx.try_recv() {
@@ -816,7 +893,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                             "Worker for job {} received stop signal during plan execution",
                             self.job_id
                         );
-                        return Ok(());
+                        return Ok(WorkerLoopOutcome::Exited);
                     }
                     WorkerMessage::Ping => {
                         tracing::trace!("Worker for job {} received ping", self.job_id);
@@ -841,7 +918,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                                 "message": "Plan interrupted by user message, re-evaluating...",
                             }),
                         );
-                        return Ok(());
+                        return Ok(WorkerLoopOutcome::ContinueDirectSelection);
                     }
                 }
             }
@@ -893,7 +970,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         reason_ctx.messages.push(ChatMessage::assistant(&response));
 
         if crate::util::llm_signals_completion(&response) {
-            self.mark_completed().await?;
+            return Ok(WorkerLoopOutcome::Completed);
         } else {
             tracing::info!(
                 "Job {} plan completed but work remains, falling back to direct selection",
@@ -907,7 +984,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
             );
         }
 
-        Ok(())
+        Ok(WorkerLoopOutcome::ContinueDirectSelection)
     }
 
     async fn execute_tool(
@@ -932,18 +1009,20 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: s,
             })?;
 
-        self.log_event(
+        self.log_terminal_result_event(
             "result",
             serde_json::json!({
                 "status": "completed",
                 "success": true,
                 "message": "Job completed successfully",
             }),
-        );
+        )
+        .await?;
         self.persist_status(
             JobState::Completed,
             Some("Job completed successfully".to_string()),
-        );
+        )
+        .await?;
         Ok(())
     }
 
@@ -958,15 +1037,17 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: s,
             })?;
 
-        self.log_event(
+        self.log_terminal_result_event(
             "result",
             serde_json::json!({
                 "status": "failed",
                 "success": false,
                 "message": format!("Execution failed: {}", reason),
             }),
-        );
-        self.persist_status(JobState::Failed, Some(reason.to_string()));
+        )
+        .await?;
+        self.persist_status(JobState::Failed, Some(reason.to_string()))
+            .await?;
         Ok(())
     }
 
@@ -979,15 +1060,17 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: s,
             })?;
 
-        self.log_event(
+        self.log_terminal_result_event(
             "result",
             serde_json::json!({
                 "status": "stuck",
                 "success": false,
                 "message": format!("Job stuck: {}", reason),
             }),
-        );
-        self.persist_status(JobState::Stuck, Some(reason.to_string()));
+        )
+        .await?;
+        self.persist_status(JobState::Stuck, Some(reason.to_string()))
+            .await?;
         Ok(())
     }
 }
@@ -1026,12 +1109,9 @@ impl<'a> JobDelegate<'a> {
         );
 
         if count >= Self::MAX_CONSECUTIVE_RATE_LIMITS {
-            self.worker
-                .mark_failed("Persistent rate limiting: exceeded retry limit")
-                .await?;
-            return Err(crate::error::LlmError::RateLimited {
-                provider: "rate-limit-exhausted".to_string(),
-                retry_after: None,
+            return Err(crate::error::JobError::Failed {
+                id: self.worker.job_id,
+                reason: "Persistent rate limiting: exceeded retry limit".to_string(),
             }
             .into());
         }
@@ -1191,7 +1271,11 @@ impl<'a> NativeLoopDelegate for JobDelegate<'a> {
                         .update_context(self.worker.job_id, |ctx| ctx.add_tokens(total_tokens))
                         .await?
                 {
-                    self.worker.mark_failed(&msg).await?;
+                    return Err(crate::error::JobError::Failed {
+                        id: self.worker.job_id,
+                        reason: msg,
+                    }
+                    .into());
                 }
 
                 Ok(output)
@@ -1217,13 +1301,6 @@ impl<'a> NativeLoopDelegate for JobDelegate<'a> {
 
         // Check for explicit completion
         if crate::util::llm_signals_completion(text) {
-            if let Err(e) = self.worker.mark_completed().await {
-                tracing::warn!(
-                    "Failed to mark job {} as completed: {}",
-                    self.worker.job_id,
-                    e
-                );
-            }
             return TextAction::Return(LoopOutcome::Response(text.to_string()));
         }
 
@@ -1345,11 +1422,10 @@ impl From<TaskOutput> for Result<String, Error> {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use crate::llm::ToolSelection;
-
     use super::*;
     use crate::config::SafetyConfig;
     use crate::context::JobContext;
+    use crate::llm::ToolSelection;
     use crate::llm::{
         CompletionRequest, CompletionResponse, ToolCompletionRequest, ToolCompletionResponse,
     };
@@ -1446,6 +1522,56 @@ mod tests {
         };
 
         Worker::new(job_id, deps)
+    }
+
+    #[cfg(feature = "libsql")]
+    async fn make_worker_with_store(
+        tools: Vec<Arc<dyn Tool>>,
+    ) -> (Worker, Arc<dyn Database>, tempfile::TempDir) {
+        use crate::db::libsql::LibSqlBackend;
+        use tempfile::tempdir;
+
+        let registry = ToolRegistry::new();
+        for t in tools {
+            registry.register(t).await;
+        }
+
+        let cm = Arc::new(crate::context::ContextManager::new(5));
+        let job_id = cm
+            .create_job("test", "test job")
+            .await
+            .expect("failed to create job");
+        let dir = tempdir().expect("failed to create tempdir");
+        let path = dir.path().join("worker-test.db");
+        let backend = LibSqlBackend::new_local(&path)
+            .await
+            .expect("failed to open libsql backend");
+        backend
+            .run_migrations()
+            .await
+            .expect("failed to run migrations");
+        let store: Arc<dyn Database> = Arc::new(backend);
+        let ctx = cm.get_context(job_id).await.expect("failed to get context");
+        store.save_job(&ctx).await.expect("failed to save job");
+
+        let deps = WorkerDeps {
+            context_manager: cm,
+            llm: Arc::new(StubLlm),
+            safety: Arc::new(SafetyLayer::new(&SafetyConfig {
+                max_output_length: 100_000,
+                injection_check_enabled: false,
+            })),
+            tools: Arc::new(registry),
+            store: Some(store.clone()),
+            hooks: Arc::new(crate::hooks::HookRegistry::new()),
+            timeout: Duration::from_secs(30),
+            use_planning: false,
+            sse_tx: None,
+            approval_context: None,
+            http_interceptor: None,
+        };
+
+        (Worker::new(job_id, deps), store, dir)
     }
 
     #[test]
@@ -1613,6 +1739,41 @@ mod tests {
             result.is_err(),
             "Completed → Completed transition should be rejected by state machine"
         );
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_mark_completed_persists_result_before_returning() {
+        let (worker, store, _dir) = make_worker_with_store(vec![]).await;
+
+        worker
+            .context_manager()
+            .update_context(worker.job_id, |ctx| {
+                ctx.transition_to(JobState::InProgress, None)
+            })
+            .await
+            .expect("failed to update context")
+            .expect("failed to transition to in-progress");
+
+        worker
+            .mark_completed()
+            .await
+            .expect("failed to mark job completed");
+
+        let job = store
+            .get_job(worker.job_id)
+            .await
+            .expect("failed to load job")
+            .expect("job should exist");
+        assert_eq!(job.state, JobState::Completed);
+
+        let events = store
+            .list_job_events(worker.job_id, None, None)
+            .await
+            .expect("failed to list job events");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "result");
+        assert_eq!(events[0].data["status"], "completed");
     }
 
     /// Build a Worker with the given approval context.

@@ -10,11 +10,11 @@ pub enum JobError {
     #[error("Job {id} not found")]
     NotFound { id: Uuid },
 
-    #[error("Job {id} already in state {state}, cannot transition to {target}")]
+    #[error("Job {id} already in state {from_state}, cannot transition to {target}")]
     InvalidTransition {
         id: Uuid,
-        state: String,
-        target: String,
+        from_state: crate::context::JobState,
+        target: crate::context::JobState,
     },
 
     #[error("Job {id} failed: {reason}")]
@@ -28,4 +28,7 @@ pub enum JobError {
 
     #[error("Job {id} context error: {reason}")]
     ContextError { id: Uuid, reason: String },
+
+    #[error("Job {id} persistence error: {reason}")]
+    PersistenceError { id: Uuid, reason: String },
 }

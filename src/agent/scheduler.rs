@@ -38,6 +38,7 @@ pub enum WorkerMessage {
 pub struct ScheduledJob {
     pub handle: JoinHandle<()>,
     pub tx: mpsc::Sender<WorkerMessage>,
+    pub pending_cancel_persist: bool,
 }
 
 /// Status of a scheduled sub-task.
@@ -63,6 +64,8 @@ pub struct Scheduler {
     /// Running sub-tasks (tool executions, background tasks).
     subtasks: Arc<RwLock<HashMap<Uuid, ScheduledSubtask>>>,
 }
+
+const STOP_GRACE_PERIOD: Duration = Duration::from_millis(500);
 
 impl Scheduler {
     /// Create a new scheduler.
@@ -215,6 +218,32 @@ impl Scheduler {
         self.schedule_with_context(job_id, None).await
     }
 
+    /// Spawn a background task that removes `job_id` from `jobs` once its
+    /// worker handle finishes, preventing unbounded map growth.
+    fn spawn_cleanup_task(&self, job_id: Uuid) {
+        let jobs = Arc::clone(&self.jobs);
+        tokio::spawn(async move {
+            loop {
+                let should_remove = {
+                    let jobs_read = jobs.read().await;
+                    match jobs_read.get(&job_id) {
+                        Some(scheduled) => {
+                            scheduled.handle.is_finished() && !scheduled.pending_cancel_persist
+                        }
+                        None => true,
+                    }
+                };
+
+                if should_remove {
+                    jobs.write().await.remove(&job_id);
+                    break;
+                }
+
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        });
+    }
+
     /// Schedule a job with an optional approval context.
     async fn schedule_with_context(
         &self,
@@ -282,29 +311,17 @@ impl Scheduler {
             }
 
             // Insert while still holding the write lock
-            jobs.insert(job_id, ScheduledJob { handle, tx });
+            jobs.insert(
+                job_id,
+                ScheduledJob {
+                    handle,
+                    tx,
+                    pending_cancel_persist: false,
+                },
+            );
         }
 
-        // Cleanup task for this job to avoid capacity leaks
-        let jobs = Arc::clone(&self.jobs);
-        tokio::spawn(async move {
-            loop {
-                let finished = {
-                    let jobs_read = jobs.read().await;
-                    match jobs_read.get(&job_id) {
-                        Some(scheduled) => scheduled.handle.is_finished(),
-                        None => true,
-                    }
-                };
-
-                if finished {
-                    jobs.write().await.remove(&job_id);
-                    break;
-                }
-
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        });
+        self.spawn_cleanup_task(job_id);
 
         tracing::info!("Scheduled job {} for execution", job_id);
         Ok(())
@@ -535,57 +552,165 @@ impl Scheduler {
         Ok(TaskOutput::new(result_value, start.elapsed()))
     }
 
-    /// Stop a running job.
-    pub async fn stop(&self, job_id: Uuid) -> Result<(), JobError> {
+    async fn stop_in_memory(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
+        let tx = {
+            let jobs = self.jobs.read().await;
+            match jobs.get(&job_id) {
+                Some(scheduled) => scheduled.tx.clone(),
+                None => return Err(JobError::NotFound { id: job_id }),
+            }
+        };
+
+        self.send_stop_signal(job_id, tx).await;
+
+        // Give the worker a bounded window to observe the stop signal and
+        // finish in-flight cleanup before we transition its state.
+        tokio::time::sleep(STOP_GRACE_PERIOD).await;
+
+        self.transition_to_cancelled(job_id, reason).await?;
+        self.pin_cancel_persist_and_abort(job_id).await;
+        Ok(())
+    }
+
+    async fn send_stop_signal(&self, job_id: Uuid, tx: mpsc::Sender<WorkerMessage>) {
+        match tokio::time::timeout(
+            tokio::time::Duration::from_secs(5),
+            tx.send(WorkerMessage::Stop),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                tracing::warn!(
+                    job_id = %job_id,
+                    reason = %error,
+                    "Failed to send stop signal to worker"
+                );
+            }
+            Err(_) => {
+                tracing::warn!(
+                    job_id = %job_id,
+                    timeout_seconds = 5_u64,
+                    "Timed out sending stop signal to worker"
+                );
+            }
+        }
+    }
+
+    async fn transition_to_cancelled(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
+        self.context_manager
+            .update_context(job_id, |ctx| {
+                let current_state = ctx.state;
+                if current_state == JobState::Cancelled {
+                    return Ok(());
+                }
+                ctx.transition_to(JobState::Cancelled, Some(reason.to_string()))
+                    .map_err(|_| current_state)
+            })
+            .await?
+            .map_err(|from_state| JobError::InvalidTransition {
+                id: job_id,
+                from_state,
+                target: JobState::Cancelled,
+            })?;
+
+        Ok(())
+    }
+
+    async fn persist_cancelled_status(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
+        if let Some(ref store) = self.store {
+            store
+                .update_job_status(job_id, JobState::Cancelled, Some(reason))
+                .await
+                .map_err(|e| JobError::PersistenceError {
+                    id: job_id,
+                    reason: e.to_string(),
+                })?;
+        }
+
+        Ok(())
+    }
+
+    async fn pin_cancel_persist_and_abort(&self, job_id: Uuid) {
         let mut jobs = self.jobs.write().await;
-
-        if let Some(scheduled) = jobs.remove(&job_id) {
-            // Send stop signal
-            let _ = scheduled.tx.send(WorkerMessage::Stop).await;
-
-            // Give it a moment to clean up
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-            // Abort if still running
+        if let Some(scheduled) = jobs.get_mut(&job_id) {
+            scheduled.pending_cancel_persist = true;
             if !scheduled.handle.is_finished() {
                 scheduled.handle.abort();
             }
-
-            // Update job state
-            self.context_manager
-                .update_context(job_id, |ctx| {
-                    if let Err(e) = ctx.transition_to(
-                        JobState::Cancelled,
-                        Some("Stopped by scheduler".to_string()),
-                    ) {
-                        tracing::warn!(
-                            job_id = %job_id,
-                            error = %e,
-                            "Failed to transition job to Cancelled state"
-                        );
-                    }
-                })
-                .await?;
-
-            // Persist cancellation (fire-and-forget)
-            if let Some(ref store) = self.store {
-                let store = store.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = store
-                        .update_job_status(
-                            job_id,
-                            JobState::Cancelled,
-                            Some("Stopped by scheduler"),
-                        )
-                        .await
-                    {
-                        tracing::warn!("Failed to persist cancellation for job {}: {}", job_id, e);
-                    }
-                });
-            }
-
-            tracing::info!("Stopped job {}", job_id);
         }
+    }
+
+    fn should_persist_cancelled_after_timeout(state: JobState) -> bool {
+        state == JobState::Cancelled || state.can_transition_to(JobState::Cancelled)
+    }
+
+    /// Handle the case where a graceful in-memory stop timed out during
+    /// `stop_all`.
+    ///
+    /// Attempts to force the job to `Cancelled` via
+    /// `transition_to_cancelled`, then persists and finalises if the
+    /// transition succeeds. Logs an appropriate warning for each failure
+    /// mode.
+    async fn handle_stop_timeout(
+        &self,
+        job_id: Uuid,
+        reason: &str,
+        stop_timeout: tokio::time::Duration,
+    ) {
+        tracing::warn!(
+            job_id = %job_id,
+            timeout_seconds = stop_timeout.as_secs(),
+            "Timed out stopping job during shutdown"
+        );
+        match self.transition_to_cancelled(job_id, reason).await {
+            Ok(()) => {
+                self.pin_cancel_persist_and_abort(job_id).await;
+                if let Err(error) = self.persist_cancelled_status(job_id, reason).await {
+                    tracing::warn!(
+                        job_id = %job_id,
+                        %error,
+                        "Failed to persist cancellation after shutdown timeout"
+                    );
+                } else {
+                    self.finalize_stop(job_id).await;
+                }
+            }
+            Err(JobError::InvalidTransition { from_state, .. })
+                if !Self::should_persist_cancelled_after_timeout(from_state) =>
+            {
+                tracing::warn!(
+                    job_id = %job_id,
+                    state = %from_state,
+                    "Skipping cancellation persistence after shutdown timeout because the job state no longer permits cancellation"
+                );
+            }
+            Err(error) => {
+                tracing::warn!(
+                    job_id = %job_id,
+                    %error,
+                    "Failed to cancel job after shutdown timeout"
+                );
+            }
+        }
+    }
+
+    async fn finalize_stop(&self, job_id: Uuid) {
+        let mut jobs = self.jobs.write().await;
+        if let Some(scheduled) = jobs.get(&job_id)
+            && !scheduled.handle.is_finished()
+        {
+            scheduled.handle.abort();
+        }
+        jobs.remove(&job_id);
+        tracing::info!("Stopped job {}", job_id);
+    }
+
+    /// Stop a running job.
+    pub async fn stop(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
+        self.stop_in_memory(job_id, reason).await?;
+        self.persist_cancelled_status(job_id, reason).await?;
+        self.finalize_stop(job_id).await;
 
         Ok(())
     }
@@ -638,7 +763,7 @@ impl Scheduler {
             let mut finished = Vec::new();
 
             for (id, scheduled) in jobs.iter() {
-                if scheduled.handle.is_finished() {
+                if scheduled.handle.is_finished() && !scheduled.pending_cancel_persist {
                     finished.push(*id);
                 }
             }
@@ -670,9 +795,36 @@ impl Scheduler {
     /// Stop all jobs.
     pub async fn stop_all(&self) {
         let job_ids: Vec<Uuid> = self.jobs.read().await.keys().cloned().collect();
+        let stop_timeout = tokio::time::Duration::from_secs(5);
+        let stop_reason = "Stopped by scheduler";
+        let stop_futures = job_ids.into_iter().map(|job_id| async move {
+            (
+                job_id,
+                tokio::time::timeout(stop_timeout, self.stop_in_memory(job_id, stop_reason)).await,
+            )
+        });
 
-        for job_id in job_ids {
-            let _ = self.stop(job_id).await;
+        for (job_id, result) in futures::future::join_all(stop_futures).await {
+            match result {
+                Ok(Ok(())) => {
+                    if let Err(error) = self.persist_cancelled_status(job_id, stop_reason).await {
+                        tracing::warn!(
+                            job_id = %job_id,
+                            %error,
+                            "Failed to persist cancellation during shutdown"
+                        );
+                    } else {
+                        self.finalize_stop(job_id).await;
+                    }
+                }
+                Ok(Err(error)) => {
+                    tracing::warn!(job_id = %job_id, %error, "Failed to stop job during shutdown");
+                }
+                Err(_) => {
+                    self.handle_stop_timeout(job_id, stop_reason, stop_timeout)
+                        .await;
+                }
+            }
         }
 
         // Abort all subtasks
@@ -694,347 +846,5 @@ impl Scheduler {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::SafetyConfig;
-    use crate::llm::{
-        CompletionRequest, CompletionResponse, LlmError, LlmProvider, ToolCompletionRequest,
-        ToolCompletionResponse,
-    };
-    use crate::safety::SafetyLayer;
-    use crate::tools::{ApprovalRequirement, NativeTool, ToolError, ToolOutput};
-    use rust_decimal_macros::dec;
-
-    /// Minimal LLM provider stub for scheduler tests that don't exercise LLM calls.
-    struct StubLlm;
-
-    impl crate::llm::NativeLlmProvider for StubLlm {
-        fn model_name(&self) -> &str {
-            "stub"
-        }
-        fn cost_per_token(&self) -> (rust_decimal::Decimal, rust_decimal::Decimal) {
-            (dec!(0), dec!(0))
-        }
-        async fn complete(&self, _req: CompletionRequest) -> Result<CompletionResponse, LlmError> {
-            Err(LlmError::RequestFailed {
-                provider: "stub".into(),
-                reason: "not implemented".into(),
-            })
-        }
-        async fn complete_with_tools(
-            &self,
-            _req: ToolCompletionRequest,
-        ) -> Result<ToolCompletionResponse, LlmError> {
-            Err(LlmError::RequestFailed {
-                provider: "stub".into(),
-                reason: "not implemented".into(),
-            })
-        }
-    }
-
-    /// Create a Scheduler for token-budget tests. The LLM stub will fail if a
-    /// worker actually tries to call it, but `dispatch_job` sets the token
-    /// budget *before* spawning the worker so we can inspect the context
-    /// immediately after dispatch.
-    fn make_test_scheduler(max_tokens_per_job: u64) -> Scheduler {
-        let config = AgentConfig {
-            name: "test".to_string(),
-            max_parallel_jobs: 5,
-            job_timeout: std::time::Duration::from_secs(30),
-            stuck_threshold: std::time::Duration::from_secs(300),
-            repair_check_interval: std::time::Duration::from_secs(3600),
-            max_repair_attempts: 0,
-            use_planning: false,
-            session_idle_timeout: std::time::Duration::from_secs(3600),
-            allow_local_tools: true,
-            max_cost_per_day_cents: None,
-            max_actions_per_hour: None,
-            max_tool_iterations: 10,
-            auto_approve_tools: true,
-            default_timezone: "UTC".to_string(),
-            max_tokens_per_job,
-        };
-        let cm = Arc::new(ContextManager::new(5));
-        let llm: Arc<dyn LlmProvider> = Arc::new(StubLlm);
-        let safety = Arc::new(SafetyLayer::new(&SafetyConfig {
-            max_output_length: 100_000,
-            injection_check_enabled: false,
-        }));
-        let tools = Arc::new(ToolRegistry::new());
-        let hooks = Arc::new(HookRegistry::default());
-
-        Scheduler::new(config, cm, llm, safety, tools, None, hooks)
-    }
-
-    #[tokio::test]
-    async fn test_dispatch_job_caps_user_max_tokens() {
-        let sched = make_test_scheduler(1000);
-        let meta = serde_json::json!({ "max_tokens": 5000 });
-        let job_id = sched
-            .dispatch_job("user1", "test", "desc", Some(meta))
-            .await
-            .unwrap();
-
-        let ctx = sched.context_manager.get_context(job_id).await.unwrap();
-        assert_eq!(ctx.max_tokens, 1000, "should cap at configured limit");
-    }
-
-    #[tokio::test]
-    async fn test_dispatch_job_unlimited_config_preserves_user_tokens() {
-        let sched = make_test_scheduler(0); // 0 = unlimited
-        let meta = serde_json::json!({ "max_tokens": 5000 });
-        let job_id = sched
-            .dispatch_job("user1", "test", "desc", Some(meta))
-            .await
-            .unwrap();
-
-        let ctx = sched.context_manager.get_context(job_id).await.unwrap();
-        assert_eq!(
-            ctx.max_tokens, 5000,
-            "unlimited config should preserve user value"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_dispatch_job_no_user_tokens_uses_config() {
-        let sched = make_test_scheduler(2000);
-        let job_id = sched
-            .dispatch_job("user1", "test", "desc", None)
-            .await
-            .unwrap();
-
-        let ctx = sched.context_manager.get_context(job_id).await.unwrap();
-        assert_eq!(
-            ctx.max_tokens, 2000,
-            "should use config default when no user value"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_dispatch_job_atomic_metadata_and_tokens() {
-        let sched = make_test_scheduler(10_000);
-        let meta = serde_json::json!({
-            "max_tokens": 3000,
-            "custom_key": "custom_value"
-        });
-        let job_id = sched
-            .dispatch_job("user1", "test", "desc", Some(meta))
-            .await
-            .unwrap();
-
-        let ctx = sched.context_manager.get_context(job_id).await.unwrap();
-        assert_eq!(ctx.max_tokens, 3000, "should use user value within limit");
-        assert_eq!(
-            ctx.metadata.get("custom_key").and_then(|v| v.as_str()),
-            Some("custom_value"),
-            "metadata should be set atomically with token budget"
-        );
-    }
-
-    #[test]
-    fn test_scheduler_creation() {
-        // Would need to mock dependencies for proper testing
-    }
-
-    #[tokio::test]
-    async fn test_spawn_batch_empty() {
-        // This test would need mock dependencies.
-        // For now just verify the empty case doesn't panic.
-    }
-
-    /// A tool that returns `UnlessAutoApproved`.
-    struct SoftApprovalTool;
-
-    impl NativeTool for SoftApprovalTool {
-        fn name(&self) -> &str {
-            "soft_gate"
-        }
-        fn description(&self) -> &str {
-            "needs soft approval"
-        }
-        fn parameters_schema(&self) -> serde_json::Value {
-            serde_json::json!({"type": "object", "properties": {}})
-        }
-        async fn execute(
-            &self,
-            _params: serde_json::Value,
-            _ctx: &JobContext,
-        ) -> Result<ToolOutput, ToolError> {
-            Ok(ToolOutput::text(
-                "soft_ok",
-                std::time::Instant::now().elapsed(),
-            ))
-        }
-        fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-            ApprovalRequirement::UnlessAutoApproved
-        }
-        fn requires_sanitization(&self) -> bool {
-            false
-        }
-    }
-
-    /// A tool that returns `Always`.
-    struct HardApprovalTool;
-
-    impl NativeTool for HardApprovalTool {
-        fn name(&self) -> &str {
-            "hard_gate"
-        }
-        fn description(&self) -> &str {
-            "needs hard approval"
-        }
-        fn parameters_schema(&self) -> serde_json::Value {
-            serde_json::json!({"type": "object", "properties": {}})
-        }
-        async fn execute(
-            &self,
-            _params: serde_json::Value,
-            _ctx: &JobContext,
-        ) -> Result<ToolOutput, ToolError> {
-            Ok(ToolOutput::text(
-                "hard_ok",
-                std::time::Instant::now().elapsed(),
-            ))
-        }
-        fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
-            ApprovalRequirement::Always
-        }
-        fn requires_sanitization(&self) -> bool {
-            false
-        }
-    }
-
-    async fn setup_tools_and_job() -> (
-        Arc<ToolRegistry>,
-        Arc<ContextManager>,
-        Arc<SafetyLayer>,
-        Uuid,
-    ) {
-        let registry = ToolRegistry::new();
-        registry.register(Arc::new(SoftApprovalTool)).await;
-        registry.register(Arc::new(HardApprovalTool)).await;
-
-        let cm = Arc::new(ContextManager::new(5));
-        let job_id = cm.create_job("test", "approval test").await.unwrap();
-        cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
-            .await
-            .unwrap()
-            .unwrap();
-
-        let safety = Arc::new(SafetyLayer::new(&SafetyConfig {
-            max_output_length: 100_000,
-            injection_check_enabled: false,
-        }));
-
-        (Arc::new(registry), cm, safety, job_id)
-    }
-
-    #[tokio::test]
-    async fn test_execute_tool_task_blocks_without_context() {
-        let (tools, cm, safety, job_id) = setup_tools_and_job().await;
-
-        // Without approval context, UnlessAutoApproved is blocked
-        let result = Scheduler::execute_tool_task(
-            tools.clone(),
-            cm.clone(),
-            safety.clone(),
-            None,
-            job_id,
-            "soft_gate",
-            serde_json::json!({}),
-        )
-        .await;
-        assert!(
-            result.is_err(),
-            "soft_gate should be blocked without context"
-        );
-
-        // Always is also blocked
-        let result = Scheduler::execute_tool_task(
-            tools,
-            cm,
-            safety,
-            None,
-            job_id,
-            "hard_gate",
-            serde_json::json!({}),
-        )
-        .await;
-        assert!(
-            result.is_err(),
-            "hard_gate should be blocked without context"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_execute_tool_task_autonomous_unblocks_soft() {
-        let (tools, cm, safety, job_id) = setup_tools_and_job().await;
-
-        // Autonomous context auto-approves UnlessAutoApproved
-        let result = Scheduler::execute_tool_task(
-            tools.clone(),
-            cm.clone(),
-            safety.clone(),
-            Some(ApprovalContext::autonomous()),
-            job_id,
-            "soft_gate",
-            serde_json::json!({}),
-        )
-        .await;
-        assert!(
-            result.is_ok(),
-            "soft_gate should pass with autonomous context"
-        );
-
-        // But still blocks Always
-        let result = Scheduler::execute_tool_task(
-            tools,
-            cm,
-            safety,
-            Some(ApprovalContext::autonomous()),
-            job_id,
-            "hard_gate",
-            serde_json::json!({}),
-        )
-        .await;
-        assert!(
-            result.is_err(),
-            "hard_gate should still be blocked without explicit permission"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_execute_tool_task_autonomous_with_permissions() {
-        let (tools, cm, safety, job_id) = setup_tools_and_job().await;
-
-        // Autonomous context with explicit permission for hard_gate
-        let ctx = ApprovalContext::autonomous_with_tools(["hard_gate".to_string()]);
-
-        let result = Scheduler::execute_tool_task(
-            tools.clone(),
-            cm.clone(),
-            safety.clone(),
-            Some(ctx.clone()),
-            job_id,
-            "soft_gate",
-            serde_json::json!({}),
-        )
-        .await;
-        assert!(result.is_ok(), "soft_gate should pass");
-
-        let result = Scheduler::execute_tool_task(
-            tools,
-            cm,
-            safety,
-            Some(ctx),
-            job_id,
-            "hard_gate",
-            serde_json::json!({}),
-        )
-        .await;
-        assert!(
-            result.is_ok(),
-            "hard_gate should pass with explicit permission"
-        );
-    }
-}
+#[path = "scheduler/tests.rs"]
+mod tests;

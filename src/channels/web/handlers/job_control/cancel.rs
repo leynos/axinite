@@ -38,7 +38,7 @@ pub(super) async fn cancel_sandbox_job(
 
 pub(super) async fn cancel_agent_job(
     state: &GatewayState,
-    store: &Arc<dyn Database>,
+    _store: &Arc<dyn Database>,
     job_id: Uuid,
 ) -> Result<(), (StatusCode, String)> {
     let scheduler_slot = state.scheduler.as_ref().ok_or((
@@ -53,15 +53,8 @@ pub(super) async fn cancel_agent_job(
         ))?
     };
     scheduler
-        .stop(job_id)
+        .stop(job_id, "Cancelled by user")
         .await
         .map_err(|e| internal_error("Failed to stop agent job", e))?;
-    store
-        .update_job_status(
-            job_id,
-            crate::context::JobState::Cancelled,
-            Some("Cancelled by user"),
-        )
-        .await
-        .map_err(|e| internal_error("Failed to update agent job status", e))
+    Ok(())
 }
