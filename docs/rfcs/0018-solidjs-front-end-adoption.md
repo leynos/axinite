@@ -6,9 +6,9 @@
 - **Status:** Proposed
 - **Created:** 2026-04-01
 - **Depends on:** RFC 0009
-- **Related:** `docs/front-end-architecture.md`,
-  `/data/leynos/Projects/axinite-mockup/docs/axinite-v2a-frontend-architecture.md`,
-  and `/data/leynos/Projects/axinite-mockup/docs/v2a-front-end-stack.md`
+- **Related:** <https://github.com/leynos/axinite/blob/plan-front-end-adoption/docs/front-end-architecture.md>,
+  <https://github.com/leynos/axinite-mockup/blob/fix-chat-model/docs/axinite-v2a-frontend-architecture.md>,
+  and <https://github.com/leynos/axinite-mockup/blob/fix-chat-model/docs/v2a-front-end-stack.md>
 
 ## Summary
 
