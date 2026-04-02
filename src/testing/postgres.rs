@@ -76,6 +76,9 @@ fn is_database_unavailable(error: &DatabaseError) -> bool {
 
     matches!(
         error,
-        DatabaseError::Postgres(_) | DatabaseError::PoolBuild(_) | DatabaseError::PoolRuntime(_)
+        DatabaseError::Postgres(_)
+            | DatabaseError::Pool(_)
+            | DatabaseError::PoolBuild(_)
+            | DatabaseError::PoolRuntime(_)
     ) && UNAVAILABLE_PATTERNS.iter().any(|p| lowered.contains(p))
 }

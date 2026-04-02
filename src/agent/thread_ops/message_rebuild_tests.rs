@@ -60,6 +60,7 @@ fn assert_malformed_tool_calls_boundary(
     let result = rebuild_chat_messages_from_db(&messages, safety);
 
     assert_eq!(result.len(), expected_roles.len());
+    assert_eq!(expected_contents.len(), result.len());
     for (message, expected_role) in result.iter().zip(expected_roles) {
         assert_eq!(&message.role, expected_role);
     }
@@ -177,24 +178,6 @@ fn test_rebuild_chat_messages_legacy_tool_calls_skipped(test_safety_layer: Safet
 }
 
 #[rstest]
-fn test_rebuild_chat_messages_leading_malformed_tool_calls_skipped(test_safety_layer: SafetyLayer) {
-    let tool_json = serde_json::json!([
-        {"name": "echo", "result_preview": "hello"}
-    ]);
-    let messages = vec![
-        make_db_msg("tool_calls", &tool_json.to_string()),
-        make_db_msg("assistant", "Done"),
-    ];
-
-    assert_malformed_tool_calls_boundary(
-        &test_safety_layer,
-        messages,
-        &[crate::llm::Role::Assistant],
-        &["Done"],
-    );
-}
-
-#[rstest]
 fn test_rebuild_chat_messages_empty(test_safety_layer: SafetyLayer) {
     let safety = test_safety_layer;
     let result = rebuild_chat_messages_from_db(&[], &safety);
@@ -215,22 +198,43 @@ fn test_rebuild_chat_messages_malformed_tool_calls_json(test_safety_layer: Safet
 }
 
 #[rstest]
-fn test_rebuild_chat_messages_trailing_malformed_tool_calls_skipped(
+#[case::leading(
+    {
+        let tool_json = serde_json::json!([
+            {"name": "echo", "result_preview": "hello"}
+        ]);
+        vec![
+            make_db_msg("tool_calls", &tool_json.to_string()),
+            make_db_msg("assistant", "Done"),
+        ]
+    },
+    vec![crate::llm::Role::Assistant],
+    vec!["Done"]
+)]
+#[case::trailing(
+    {
+        let tool_json = serde_json::json!([
+            {"name": "echo", "result_preview": "hello"}
+        ]);
+        vec![
+            make_db_msg("user", "Hi"),
+            make_db_msg("tool_calls", &tool_json.to_string()),
+        ]
+    },
+    vec![crate::llm::Role::User],
+    vec!["Hi"]
+)]
+fn test_rebuild_chat_messages_malformed_tool_calls_boundary(
     test_safety_layer: SafetyLayer,
+    #[case] messages: Vec<ConversationMessage>,
+    #[case] expected_roles: Vec<crate::llm::Role>,
+    #[case] expected_contents: Vec<&str>,
 ) {
-    let tool_json = serde_json::json!([
-        {"name": "echo", "result_preview": "hello"}
-    ]);
-    let messages = vec![
-        make_db_msg("user", "Hi"),
-        make_db_msg("tool_calls", &tool_json.to_string()),
-    ];
-
     assert_malformed_tool_calls_boundary(
         &test_safety_layer,
         messages,
-        &[crate::llm::Role::User],
-        &["Hi"],
+        &expected_roles,
+        &expected_contents,
     );
 }
 

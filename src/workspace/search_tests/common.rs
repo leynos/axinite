@@ -1,13 +1,9 @@
+//! Shared fixtures and assertion helpers for the workspace search test suite.
+
 use super::*;
 
 pub(super) fn make_result(chunk_id: Uuid, doc_id: Uuid, rank: u32) -> RankedResult {
-    RankedResult {
-        chunk_id,
-        document_id: doc_id,
-        document_path: format!("docs/{}.md", doc_id),
-        content: format!("content for chunk {}", chunk_id),
-        rank,
-    }
+    make_result_with_path(chunk_id, doc_id, &format!("docs/{}.md", doc_id), rank)
 }
 
 pub(super) fn make_result_with_path(
@@ -26,24 +22,40 @@ pub(super) fn make_result_with_path(
 }
 
 pub(super) fn assert_all_fts_only(results: &[SearchResult]) {
+    let failure = results
+        .iter()
+        .enumerate()
+        .find(|(_, result)| !result.from_fts() || result.from_vector() || result.is_hybrid());
     assert!(
-        results
-            .iter()
-            .all(|r| r.from_fts() && !r.from_vector() && !r.is_hybrid())
+        failure.is_none(),
+        "expected all FTS-only results, found violation: {:?}; full results: {results:#?}",
+        failure
     );
 }
 
 pub(super) fn assert_all_vector_only(results: &[SearchResult]) {
+    let failure = results
+        .iter()
+        .enumerate()
+        .find(|(_, result)| !result.from_vector() || result.from_fts() || result.is_hybrid());
     assert!(
-        results
-            .iter()
-            .all(|r| r.from_vector() && !r.from_fts() && !r.is_hybrid())
+        failure.is_none(),
+        "expected all vector-only results, found violation: {:?}; full results: {results:#?}",
+        failure
     );
 }
 
 pub(super) fn assert_scores_descending(results: &[SearchResult]) {
-    for w in results.windows(2) {
-        assert!(w[0].score >= w[1].score);
+    for (index, window) in results.windows(2).enumerate() {
+        assert!(
+            window[0].score >= window[1].score,
+            "scores not descending at pair {index}/{next}: {} < {}; left={:#?}; right={:#?}",
+            window[0].score,
+            window[1].score,
+            window[0],
+            window[1],
+            next = index + 1
+        );
     }
 }
 
@@ -100,7 +112,8 @@ pub(super) fn build_single_method_rrf_results(use_fts: bool) -> Vec<SearchResult
 
 /// Asserts that a single-method [`SearchConfig`] (FTS-only or vector-only)
 /// has the expected default field values.
-pub(super) fn assert_single_method_config(use_fts: bool, use_vector: bool) {
+pub(super) fn assert_single_method_config(use_fts: bool) {
+    let use_vector = !use_fts;
     let config = if use_fts {
         SearchConfig::default().fts_only()
     } else {

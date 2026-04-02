@@ -1,3 +1,6 @@
+//! Edge-case coverage for `SearchConfig` builders and boundary behaviour in
+//! `reciprocal_rank_fusion`.
+
 use super::*;
 
 #[test]
@@ -135,10 +138,10 @@ fn test_rrf_min_score_one_keeps_only_top_result() {
 
 #[test]
 fn test_search_config_fts_only() {
-    assert_single_method_config(true, false);
+    assert_single_method_config(true);
 }
 
 #[test]
 fn test_search_config_vector_only() {
-    assert_single_method_config(false, true);
+    assert_single_method_config(false);
 }

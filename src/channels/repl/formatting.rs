@@ -2,6 +2,7 @@
 
 use lazy_regex::{Regex, regex};
 use termimad::MadSkin;
+use unicode_width::UnicodeWidthChar;
 
 use super::input::SLASH_COMMANDS;
 
@@ -118,7 +119,11 @@ fn ansi_sgr_regex() -> &'static Regex {
 }
 
 fn visible_char_count(text: &str) -> usize {
-    ansi_sgr_regex().replace_all(text, "").chars().count()
+    ansi_sgr_regex()
+        .replace_all(text, "")
+        .chars()
+        .map(|ch| UnicodeWidthChar::width(ch).unwrap_or(0))
+        .sum()
 }
 
 fn append_visible_chars(
@@ -128,11 +133,12 @@ fn append_visible_chars(
     output: &mut String,
 ) -> bool {
     for ch in text.chars() {
-        if *visible_count >= limit {
+        let char_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if char_width > 0 && *visible_count + char_width > limit {
             return false;
         }
         output.push(ch);
-        *visible_count += 1;
+        *visible_count += char_width;
     }
     true
 }
@@ -189,11 +195,12 @@ fn truncate_card_content(text: &str, max_width: usize) -> String {
     if max_width == 0 {
         return String::new();
     }
-    let visible_limit = max_width.saturating_sub(1);
-    let (mut truncated, has_active_style, was_truncated) = truncate_ansi_aware(text, visible_limit);
-    if !was_truncated {
+    if visible_char_count(text) <= max_width {
         return text.to_string();
     }
+    let visible_limit = max_width.saturating_sub(1);
+    let (mut truncated, has_active_style, was_truncated) = truncate_ansi_aware(text, visible_limit);
+    debug_assert!(was_truncated || visible_limit == 0);
     truncated.push('…');
     if has_active_style && !truncated.ends_with("\x1b[0m") {
         truncated.push_str("\x1b[0m");
@@ -220,8 +227,8 @@ pub(super) fn render_approval_card(
 
     // Top border: ┌ tool_name requires approval ───
     let top_label = format!(" {} requires approval ", request.tool_name);
-    let truncated_label = truncate_card_content(&top_label, box_width);
-    let top_fill = box_width.saturating_sub(truncated_label.chars().count() + 1);
+    let truncated_label = truncate_card_content(&top_label, box_width.saturating_sub(1));
+    let top_fill = box_width.saturating_sub(visible_char_count(&truncated_label) + 1);
     let top_border = format!(
         "\u{250C}\x1b[33m{truncated_label}\x1b[0m{}",
         "\u{2500}".repeat(top_fill)
@@ -229,7 +236,7 @@ pub(super) fn render_approval_card(
 
     // Bottom border: └─ short_id ─────
     let bot_label = format!(" {short_id} ");
-    let bot_fill = box_width.saturating_sub(bot_label.chars().count() + 2);
+    let bot_fill = box_width.saturating_sub(visible_char_count(&bot_label) + 2);
     let bot_border = format!(
         "\u{2514}\u{2500}\x1b[90m{bot_label}\x1b[0m{}",
         "\u{2500}".repeat(bot_fill)
@@ -301,5 +308,59 @@ mod tests {
         assert_eq!(strip_ansi(&truncated), "status: \"abcd…");
         assert!(truncated.ends_with("\x1b[0m"));
         assert_eq!(visible_char_count(&truncated), 14);
+    }
+
+    #[test]
+    fn truncate_card_content_honours_width_one() {
+        let plain = truncate_card_content("abc", 1);
+        let ansi = truncate_card_content("\x1b[32mabc\x1b[0m", 1);
+
+        assert_eq!(plain, "…");
+        assert_eq!(strip_ansi(&ansi), "…");
+        assert_eq!(visible_char_count(&plain), 1);
+        assert_eq!(visible_char_count(&ansi), 1);
+    }
+
+    #[test]
+    fn visible_char_count_uses_terminal_display_width() {
+        assert_eq!(visible_char_count("工具"), 4);
+        assert_eq!(visible_char_count("🙂"), 2);
+        assert_eq!(visible_char_count("e\u{301}"), 1);
+    }
+
+    #[test]
+    fn truncate_card_content_handles_wide_and_combining_text() {
+        let cjk = truncate_card_content("工具工具", 5);
+        let emoji = truncate_card_content("🙂🙂🙂", 5);
+        let combining = truncate_card_content("e\u{301}e\u{301}e\u{301}", 2);
+
+        assert_eq!(visible_char_count(&cjk), 5);
+        assert_eq!(strip_ansi(&cjk), "工具…");
+        assert_eq!(visible_char_count(&emoji), 5);
+        assert_eq!(strip_ansi(&emoji), "🙂🙂…");
+        assert_eq!(visible_char_count(&combining), 2);
+        assert_eq!(strip_ansi(&combining), "e\u{301}…");
+    }
+
+    #[test]
+    fn render_approval_card_keeps_wide_content_within_box_width() {
+        let request = ToolApprovalRequest {
+            request_id: "req_12345678",
+            tool_name: "工具🙂",
+            description: "工具🙂工具🙂工具🙂工具🙂工具🙂工具🙂",
+        };
+        let lines = render_approval_card(
+            &request,
+            &serde_json::json!({
+                "message": "工具🙂工具🙂工具🙂工具🙂工具🙂"
+            }),
+        );
+
+        for line in lines {
+            assert!(
+                visible_char_count(&line) <= 62,
+                "approval card line exceeded expected width: {line:?}"
+            );
+        }
     }
 }

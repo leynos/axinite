@@ -296,8 +296,13 @@ impl NativeChannel for ReplChannel {
         match status {
             StatusUpdate::Thinking(msg) => print_thinking(&msg),
             StatusUpdate::ToolStarted { name } => print_tool_started(&name),
-            StatusUpdate::ToolCompleted { name, success, .. } => {
-                print_tool_completed(&name, success);
+            StatusUpdate::ToolCompleted {
+                name,
+                success,
+                error,
+                parameters,
+            } => {
+                print_tool_completed(&name, success, error.as_deref(), parameters.as_deref());
             }
             StatusUpdate::ToolResult { name: _, preview } => print_tool_result(&preview),
             StatusUpdate::StreamChunk(chunk) => print_stream_chunk(&self.is_streaming, &chunk),
@@ -325,12 +330,13 @@ impl NativeChannel for ReplChannel {
             StatusUpdate::AuthRequired {
                 extension_name,
                 instructions,
+                auth_url,
                 setup_url,
-                ..
             } => print_auth_required(
                 &extension_name,
                 instructions.as_deref(),
                 setup_url.as_deref(),
+                auth_url.as_deref(),
             ),
             StatusUpdate::AuthCompleted {
                 extension_name,
