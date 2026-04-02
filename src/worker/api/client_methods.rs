@@ -65,8 +65,9 @@ impl WorkerHttpClient {
 
     /// Post a job event to the orchestrator.
     ///
-    /// Returns `Ok(())` on success, or `WorkerError::ConnectionFailed` if the
-    /// request fails or returns a non-success status.
+    /// Returns `Ok(())` on success, `WorkerError::ConnectionFailed` if the
+    /// request fails at the transport layer, or `WorkerError::OrchestratorRejected`
+    /// if the endpoint returns a non-2xx status.
     pub async fn post_event(&self, payload: &JobEventPayload) -> Result<(), WorkerError> {
         self.post_and_require_success(EVENT_PATH, payload).await
     }
@@ -75,14 +76,15 @@ impl WorkerHttpClient {
     ///
     /// Returns `None` if no prompt is available (204 No Content).
     pub async fn poll_prompt(&self) -> Result<Option<PromptResponse>, WorkerError> {
+        let url = self.url(PROMPT_PATH);
         let resp = self
             .client
-            .get(self.url(PROMPT_PATH))
+            .get(&url)
             .bearer_auth(&self.token)
             .send()
             .await
             .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.orchestrator_url.clone(),
+                url: url.clone(),
                 reason: e.to_string(),
             })?;
 
@@ -119,14 +121,15 @@ impl WorkerHttpClient {
     /// Callers should use this runtime hydrate/injection pathway rather than
     /// setting global environment variables directly.
     pub async fn fetch_credentials(&self) -> Result<Vec<CredentialResponse>, WorkerError> {
+        let url = self.url(CREDENTIALS_PATH);
         let resp = self
             .client
-            .get(self.url(CREDENTIALS_PATH))
+            .get(&url)
             .bearer_auth(&self.token)
             .send()
             .await
             .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.orchestrator_url.clone(),
+                url: url.clone(),
                 reason: e.to_string(),
             })?;
 
