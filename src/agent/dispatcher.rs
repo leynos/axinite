@@ -50,6 +50,9 @@ pub(super) fn select_active_skills(
     skills_cfg: &crate::config::SkillsConfig,
     message_content: &str,
 ) -> Vec<crate::skills::LoadedSkill> {
+    if !skills_cfg.enabled {
+        return vec![];
+    }
     let guard = match registry.read() {
         Ok(g) => g,
         Err(e) => {
@@ -1109,7 +1112,7 @@ mod tests {
     use crate::safety::SafetyLayer;
     use crate::tools::ToolRegistry;
 
-    use super::check_auth_required;
+    use super::{check_auth_required, truncate_for_preview};
 
     /// Minimal LLM provider for unit tests that always returns a static response.
     struct StaticLlmProvider;
@@ -2291,5 +2294,62 @@ mod tests {
             !data_url.is_empty(),
             "Present 'data' field should produce non-empty string"
         );
+    }
+
+    #[test]
+    fn test_truncate_short_input() {
+        assert_eq!(truncate_for_preview("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_empty_input() {
+        assert_eq!(truncate_for_preview("", 10), "");
+    }
+
+    #[test]
+    fn test_truncate_exact_length() {
+        assert_eq!(truncate_for_preview("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_over_limit() {
+        let result = truncate_for_preview("hello world, this is long", 10);
+        assert!(result.ends_with("..."));
+        assert_eq!(result, "hello worl...");
+    }
+
+    #[test]
+    fn test_truncate_collapses_newlines() {
+        let result = truncate_for_preview("line1\nline2\nline3", 100);
+        assert!(!result.contains('\n'));
+        assert_eq!(result, "line1 line2 line3");
+    }
+
+    #[test]
+    fn test_truncate_collapses_whitespace() {
+        let result = truncate_for_preview("hello   world", 100);
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_truncate_multibyte_utf8() {
+        let input = "😀😁😂🤣😃😄😅😆😉😊";
+        let result = truncate_for_preview(input, 5);
+        assert!(result.ends_with("..."));
+        assert_eq!(result, "😀😁😂🤣😃...");
+    }
+
+    #[test]
+    fn test_truncate_cjk_characters() {
+        let input = "你好世界测试数据很长的字符串";
+        let result = truncate_for_preview(input, 4);
+        assert_eq!(result, "你好世界...");
+    }
+
+    #[test]
+    fn test_truncate_mixed_multibyte_and_ascii() {
+        let input = "hello 世界 foo";
+        let result = truncate_for_preview(input, 8);
+        assert_eq!(result, "hello 世界...");
     }
 }

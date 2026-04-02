@@ -34,9 +34,6 @@ use crate::skills::SkillRegistry;
 use crate::tools::ToolRegistry;
 use crate::workspace::Workspace;
 
-#[cfg(test)]
-pub(crate) use super::dispatcher::truncate_for_preview;
-
 /// Core dependencies for the agent.
 ///
 /// Bundles the shared components to reduce argument count.
@@ -92,6 +89,7 @@ struct SelfRepairRuntime {
 
 struct RoutineHandles {
     cron_handle: JoinHandle<()>,
+    notify_forwarder: JoinHandle<()>,
     engine: Arc<RoutineEngine>,
 }
 
@@ -314,6 +312,7 @@ impl Agent {
         let notify_channel = hb_config.notify_channel.clone();
         let notify_user = hb_config.notify_user.clone();
         let channels = self.channels.clone();
+        let hooks = Arc::clone(self.hooks());
         tokio::spawn(async move {
             while let Some(response) = notify_rx.recv().await {
                 let user = notify_user.as_deref().unwrap_or(SYSTEM_USER_ID);
@@ -321,19 +320,37 @@ impl Agent {
                 // Try the configured channel first, fall back to
                 // broadcasting on all channels.
                 let targeted_ok = if let Some(ref channel) = notify_channel {
-                    channels
-                        .broadcast(channel, user, response.clone())
-                        .await
-                        .is_ok()
+                    if let Some(filtered_response) =
+                        apply_before_outbound_hooks(&hooks, user, channel, None, response.clone())
+                            .await
+                    {
+                        channels
+                            .broadcast(channel, user, filtered_response)
+                            .await
+                            .is_ok()
+                    } else {
+                        true
+                    }
                 } else {
                     false
                 };
 
                 if !targeted_ok {
-                    let results = channels.broadcast_all(user, response).await;
-                    for (ch, result) in results {
-                        if let Err(e) = result {
-                            tracing::warn!("Failed to broadcast heartbeat to {}: {}", ch, e);
+                    for channel in channels.channel_names().await {
+                        let Some(filtered_response) = apply_before_outbound_hooks(
+                            &hooks,
+                            user,
+                            &channel,
+                            None,
+                            response.clone(),
+                        )
+                        .await
+                        else {
+                            continue;
+                        };
+                        if let Err(e) = channels.broadcast(&channel, user, filtered_response).await
+                        {
+                            tracing::warn!("Failed to broadcast heartbeat to {}: {}", channel, e);
                         }
                     }
                 }
@@ -392,13 +409,14 @@ impl Agent {
 
         // Spawn notification forwarder (mirrors heartbeat pattern)
         let channels = self.channels.clone();
-        tokio::spawn(async move {
+        let hooks = Arc::clone(self.hooks());
+        let notify_forwarder = tokio::spawn(async move {
             while let Some(response) = notify_rx.recv().await {
                 let user = response
                     .metadata
                     .get("notify_user")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("default")
+                    .unwrap_or(SYSTEM_USER_ID)
                     .to_string();
                 let notify_channel = response
                     .metadata
@@ -409,21 +427,39 @@ impl Agent {
                 // Try the configured channel first, fall back to
                 // broadcasting on all channels.
                 let targeted_ok = if let Some(ref channel) = notify_channel {
-                    channels
-                        .broadcast(channel, &user, response.clone())
-                        .await
-                        .is_ok()
+                    if let Some(filtered_response) =
+                        apply_before_outbound_hooks(&hooks, &user, channel, None, response.clone())
+                            .await
+                    {
+                        channels
+                            .broadcast(channel, &user, filtered_response)
+                            .await
+                            .is_ok()
+                    } else {
+                        true
+                    }
                 } else {
                     false
                 };
 
                 if !targeted_ok {
-                    let results = channels.broadcast_all(&user, response).await;
-                    for (ch, result) in results {
-                        if let Err(e) = result {
+                    for channel in channels.channel_names().await {
+                        let Some(filtered_response) = apply_before_outbound_hooks(
+                            &hooks,
+                            &user,
+                            &channel,
+                            None,
+                            response.clone(),
+                        )
+                        .await
+                        else {
+                            continue;
+                        };
+                        if let Err(e) = channels.broadcast(&channel, &user, filtered_response).await
+                        {
                             tracing::warn!(
                                 "Failed to broadcast routine notification to {}: {}",
-                                ch,
+                                channel,
                                 e
                             );
                         }
@@ -454,6 +490,7 @@ impl Agent {
 
         Some(RoutineHandles {
             cron_handle,
+            notify_forwarder,
             engine: engine_ref,
         })
     }
@@ -587,7 +624,11 @@ impl Agent {
             handle.abort();
         }
         if let Some(r) = routine {
+            r.notify_forwarder.abort();
             r.cron_handle.abort();
+        }
+        if let Some(ref slot) = self.routine_engine_slot {
+            *slot.write().await = None;
         }
         self.scheduler.stop_all().await;
         self.channels.shutdown_all().await?;
@@ -603,7 +644,7 @@ mod tests {
 
     use tokio::sync::mpsc;
 
-    use super::{Agent, AgentDeps, truncate_for_preview};
+    use super::{Agent, AgentDeps};
     use crate::channels::{
         ChannelManager, IncomingMessage, MessageStream, NativeChannel, OutgoingResponse,
     };
@@ -807,67 +848,5 @@ mod tests {
             .expect("agent should shut down without deadlocking")
             .expect("agent task should join cleanly")
             .expect("agent run should exit successfully");
-    }
-
-    #[test]
-    fn test_truncate_short_input() {
-        assert_eq!(truncate_for_preview("hello", 10), "hello");
-    }
-
-    #[test]
-    fn test_truncate_empty_input() {
-        assert_eq!(truncate_for_preview("", 10), "");
-    }
-
-    #[test]
-    fn test_truncate_exact_length() {
-        assert_eq!(truncate_for_preview("hello", 5), "hello");
-    }
-
-    #[test]
-    fn test_truncate_over_limit() {
-        let result = truncate_for_preview("hello world, this is long", 10);
-        assert!(result.ends_with("..."));
-        // "hello worl" = 10 chars + "..."
-        assert_eq!(result, "hello worl...");
-    }
-
-    #[test]
-    fn test_truncate_collapses_newlines() {
-        let result = truncate_for_preview("line1\nline2\nline3", 100);
-        assert!(!result.contains('\n'));
-        assert_eq!(result, "line1 line2 line3");
-    }
-
-    #[test]
-    fn test_truncate_collapses_whitespace() {
-        let result = truncate_for_preview("hello   world", 100);
-        assert_eq!(result, "hello world");
-    }
-
-    #[test]
-    fn test_truncate_multibyte_utf8() {
-        // Each emoji is 4 bytes. Truncating at char boundary must not panic.
-        let input = "😀😁😂🤣😃😄😅😆😉😊";
-        let result = truncate_for_preview(input, 5);
-        assert!(result.ends_with("..."));
-        // First 5 chars = 5 emoji
-        assert_eq!(result, "😀😁😂🤣😃...");
-    }
-
-    #[test]
-    fn test_truncate_cjk_characters() {
-        // CJK chars are 3 bytes each in UTF-8.
-        let input = "你好世界测试数据很长的字符串";
-        let result = truncate_for_preview(input, 4);
-        assert_eq!(result, "你好世界...");
-    }
-
-    #[test]
-    fn test_truncate_mixed_multibyte_and_ascii() {
-        let input = "hello 世界 foo";
-        let result = truncate_for_preview(input, 8);
-        // 'h','e','l','l','o',' ','世','界' = 8 chars
-        assert_eq!(result, "hello 世界...");
     }
 }

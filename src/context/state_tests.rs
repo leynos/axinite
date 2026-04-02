@@ -17,15 +17,21 @@ fn test_invalid_state_transitions() {
 }
 
 #[test]
-fn test_terminal_states_are_terminal() {
-    assert!(JobState::Accepted.is_terminal());
-    assert!(JobState::Failed.is_terminal());
-    assert!(JobState::Cancelled.is_terminal());
-}
+fn test_terminal_states() {
+    let cases = [
+        (JobState::Accepted, true),
+        (JobState::Failed, true),
+        (JobState::Cancelled, true),
+        (JobState::InProgress, false),
+        (JobState::Pending, false),
+        (JobState::Completed, false),
+        (JobState::Submitted, false),
+        (JobState::Stuck, false),
+    ];
 
-#[test]
-fn test_in_progress_is_not_terminal() {
-    assert!(!JobState::InProgress.is_terminal());
+    for (state, expected) in cases {
+        assert_eq!(state.is_terminal(), expected);
+    }
 }
 
 #[test]
@@ -42,7 +48,9 @@ fn test_job_state_from_str_parses_known_values() {
     ];
     for (input, expected) in cases {
         assert_eq!(
-            input.parse::<JobState>().unwrap(),
+            input
+                .parse::<JobState>()
+                .expect("failed to parse JobState from test input"),
             expected,
             "failed to parse '{input}'",
         );
@@ -100,7 +108,8 @@ fn test_add_tokens_within_budget_is_accepted() {
 fn test_add_tokens_exceeding_budget_errors_but_still_records() {
     let mut ctx = JobContext::new("Test", "Budget test");
     ctx.max_tokens = 1000;
-    ctx.add_tokens(500).unwrap();
+    ctx.add_tokens(500)
+        .expect("failed to add tokens to ctx during token-budget test");
     assert!(ctx.add_tokens(600).is_err());
     assert_eq!(ctx.total_tokens_used, 1100); // tokens still recorded
 }

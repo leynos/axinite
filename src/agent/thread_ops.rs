@@ -20,7 +20,7 @@ use crate::agent::dispatcher::{
 use crate::agent::session::{PendingApproval, Session, ThreadState};
 use crate::agent::submission::{Submission, SubmissionParser, SubmissionResult};
 use crate::channels::web::util::truncate_preview;
-use crate::channels::{IncomingMessage, StatusUpdate};
+use crate::channels::{IncomingAttachment, IncomingMessage, StatusUpdate};
 use crate::context::JobContext;
 use crate::error::Error;
 use crate::llm::ChatMessage;
@@ -38,6 +38,43 @@ fn sanitise_filename_char(c: char) -> char {
     }
 }
 
+fn get_valid_document_text(attachment: &IncomingAttachment) -> Option<&str> {
+    match &attachment.extracted_text {
+        Some(t)
+            if !t.starts_with("[Failed")
+                && !t.starts_with("[Error")
+                && !t.starts_with("[Unsupported") =>
+        {
+            Some(t)
+        }
+        _ => None,
+    }
+}
+
+async fn write_document_to_workspace(
+    workspace: &Arc<crate::workspace::Workspace>,
+    path: &str,
+    content: &str,
+    text_len: usize,
+) {
+    match workspace.write(path, content).await {
+        Ok(_) => {
+            tracing::info!(
+                path = %path,
+                text_len,
+                "Stored extracted document in workspace memory"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                path = %path,
+                error = %e,
+                "Failed to store extracted document in workspace"
+            );
+        }
+    }
+}
+
 /// Store extracted document text in workspace memory for future search/recall.
 pub(super) async fn store_extracted_documents(
     workspace: &Arc<crate::workspace::Workspace>,
@@ -47,15 +84,8 @@ pub(super) async fn store_extracted_documents(
         if attachment.kind != crate::channels::AttachmentKind::Document {
             continue;
         }
-        let text = match &attachment.extracted_text {
-            Some(t)
-                if !t.starts_with("[Failed")
-                    && !t.starts_with("[Error")
-                    && !t.starts_with("[Unsupported") =>
-            {
-                t
-            }
-            _ => continue,
+        let Some(text) = get_valid_document_text(attachment) else {
+            continue;
         };
 
         // Sanitize filename: strip path separators to prevent directory traversal
@@ -81,87 +111,102 @@ pub(super) async fn store_extracted_documents(
         );
         let content = format!("{header}{text}");
 
-        match workspace.write(&path, &content).await {
-            Ok(_) => {
-                tracing::info!(
-                    path = %path,
-                    text_len = text.len(),
-                    "Stored extracted document in workspace memory"
-                );
-            }
-            Err(e) => {
-                tracing::warn!(
-                    path = %path,
-                    error = %e,
-                    "Failed to store extracted document in workspace"
-                );
-            }
-        }
+        write_document_to_workspace(workspace, &path, &content, text.len()).await;
     }
 }
 
 impl Agent {
+    /// Apply the BeforeInbound hook to the parsed submission.
+    ///
+    /// Returns `Ok(submission)` (possibly with modified content) to proceed,
+    /// or `Err(message)` when the hook rejects the input.
+    async fn apply_inbound_hook(
+        &self,
+        message: &IncomingMessage,
+        submission: Submission,
+    ) -> Result<Submission, String> {
+        let content = match &submission {
+            Submission::UserInput { content } => content.clone(),
+            _ => return Ok(submission),
+        };
+        let event = crate::hooks::HookEvent::Inbound {
+            user_id: message.user_id.clone(),
+            channel: message.channel.clone(),
+            content,
+            thread_id: message.thread_id.clone(),
+        };
+        match self.hooks().run(&event).await {
+            Err(crate::hooks::HookError::Rejected { reason }) => {
+                Err(format!("[Message rejected: {}]", reason))
+            }
+            Err(err) => {
+                tracing::warn!("BeforeInbound hook failed open: {}", err);
+                Ok(submission)
+            }
+            Ok(crate::hooks::HookOutcome::Continue {
+                modified: Some(new_content),
+            }) => Ok(Submission::UserInput {
+                content: new_content,
+            }),
+            _ => Ok(submission), // Continue, fail-open errors already logged in registry
+        }
+    }
+
+    /// Convert a `SubmissionResult` into the `Option<String>` reply format.
+    ///
+    /// For `NeedApproval`, sends the approval status to the channel and returns
+    /// an empty string to signal the caller to skip an additional `respond()` call.
+    async fn map_submission_result(
+        &self,
+        incoming_msg: &IncomingMessage,
+        result: Result<SubmissionResult, Error>,
+    ) -> Result<Option<String>, Error> {
+        match result? {
+            SubmissionResult::Response { content } => {
+                if crate::llm::is_silent_reply(&content) {
+                    tracing::debug!("Suppressing silent reply token");
+                    Ok(None)
+                } else {
+                    Ok(Some(content))
+                }
+            }
+            SubmissionResult::Ok { message } => Ok(message),
+            SubmissionResult::Error { message } => Ok(Some(format!("Error: {}", message))),
+            SubmissionResult::Interrupted => Ok(Some("Interrupted.".into())),
+            SubmissionResult::NeedApproval {
+                request_id,
+                tool_name,
+                description,
+                parameters,
+            } => {
+                // Each channel renders the approval prompt via send_status.
+                // Web gateway shows an inline card, REPL prints a formatted prompt, etc.
+                let _ = self
+                    .channels
+                    .send_status(
+                        &incoming_msg.channel,
+                        StatusUpdate::ApprovalNeeded {
+                            request_id: request_id.to_string(),
+                            tool_name,
+                            description,
+                            parameters,
+                        },
+                        &incoming_msg.metadata,
+                    )
+                    .await;
+
+                // Empty string signals the caller to skip respond() (no duplicate text)
+                Ok(Some(String::new()))
+            }
+        }
+    }
+
     pub(super) async fn handle_message(
         &self,
         message: &IncomingMessage,
     ) -> Result<Option<String>, Error> {
-        // Log at info level only for tracking without exposing PII (user_id can be a phone number)
-        tracing::info!(message_id = %message.id, "Processing message");
-
-        // Log sensitive details at debug level for troubleshooting
-        tracing::debug!(
-            message_id = %message.id,
-            user_id = %message.user_id,
-            channel = %message.channel,
-            thread_id = ?message.thread_id,
-            "Message details"
-        );
-
-        // Set message tool context for this turn (current channel and target)
-        // For Signal, use signal_target from metadata (group:ID or phone number),
-        // otherwise fall back to user_id
-        let target = message
-            .metadata
-            .get("signal_target")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| message.user_id.clone());
-        self.tools()
-            .set_message_tool_context(Some(message.channel.clone()), Some(target))
-            .await;
-
         // Parse submission type first
-        let mut submission = SubmissionParser::parse(&message.content);
-        tracing::trace!(
-            "[agent_loop] Parsed submission: {:?}",
-            std::any::type_name_of_val(&submission)
-        );
-
-        // Hook: BeforeInbound — allow hooks to modify or reject user input
-        if let Submission::UserInput { ref content } = submission {
-            let event = crate::hooks::HookEvent::Inbound {
-                user_id: message.user_id.clone(),
-                channel: message.channel.clone(),
-                content: content.clone(),
-                thread_id: message.thread_id.clone(),
-            };
-            match self.hooks().run(&event).await {
-                Err(crate::hooks::HookError::Rejected { reason }) => {
-                    return Ok(Some(format!("[Message rejected: {}]", reason)));
-                }
-                Err(err) => {
-                    return Ok(Some(format!("[Message blocked by hook policy: {}]", err)));
-                }
-                Ok(crate::hooks::HookOutcome::Continue {
-                    modified: Some(new_content),
-                }) => {
-                    submission = Submission::UserInput {
-                        content: new_content,
-                    };
-                }
-                _ => {} // Continue, fail-open errors already logged in registry
-            }
-        }
+        let submission = SubmissionParser::parse(&message.content);
 
         // Hydrate thread from DB if it's a historical thread not in memory
         if let Some(ref external_thread_id) = message.thread_id {
@@ -219,6 +264,41 @@ impl Agent {
                 }
             }
         }
+
+        // Log at info level only for tracking without exposing PII (user_id can be a phone number)
+        tracing::info!(message_id = %message.id, "Processing message");
+
+        // Log sensitive details at debug level for troubleshooting
+        tracing::debug!(
+            message_id = %message.id,
+            user_id = %message.user_id,
+            channel = %message.channel,
+            thread_id = ?message.thread_id,
+            "Message details"
+        );
+
+        // Set message tool context for this turn (current channel and target)
+        // For Signal, use signal_target from metadata (group:ID or phone number),
+        // otherwise fall back to user_id
+        let target = message
+            .metadata
+            .get("signal_target")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| message.user_id.clone());
+        self.tools()
+            .set_message_tool_context(Some(message.channel.clone()), Some(target))
+            .await;
+
+        let submission = match self.apply_inbound_hook(message, submission).await {
+            Ok(s) => s,
+            Err(msg) => return Ok(Some(msg)),
+        };
+
+        tracing::trace!(
+            "[agent_loop] Parsed submission: {:?}",
+            std::any::type_name_of_val(&submission)
+        );
 
         tracing::trace!(
             "Received message from {} on {} ({} chars)",
@@ -287,46 +367,7 @@ impl Agent {
             }
         };
 
-        // Convert SubmissionResult to response string
-        match result? {
-            SubmissionResult::Response { content } => {
-                // Suppress silent replies (e.g. from group chat "nothing to say" responses)
-                if crate::llm::is_silent_reply(&content) {
-                    tracing::debug!("Suppressing silent reply token");
-                    Ok(None)
-                } else {
-                    Ok(Some(content))
-                }
-            }
-            SubmissionResult::Ok { message } => Ok(message),
-            SubmissionResult::Error { message } => Ok(Some(format!("Error: {}", message))),
-            SubmissionResult::Interrupted => Ok(Some("Interrupted.".into())),
-            SubmissionResult::NeedApproval {
-                request_id,
-                tool_name,
-                description,
-                parameters,
-            } => {
-                // Each channel renders the approval prompt via send_status.
-                // Web gateway shows an inline card, REPL prints a formatted prompt, etc.
-                let _ = self
-                    .channels
-                    .send_status(
-                        &message.channel,
-                        StatusUpdate::ApprovalNeeded {
-                            request_id: request_id.to_string(),
-                            tool_name,
-                            description,
-                            parameters,
-                        },
-                        &message.metadata,
-                    )
-                    .await;
-
-                // Empty string signals the caller to skip respond() (no duplicate text)
-                Ok(Some(String::new()))
-            }
-        }
+        self.map_submission_result(message, result).await
     }
 
     /// Hydrate a historical thread from DB into memory if not already present.
