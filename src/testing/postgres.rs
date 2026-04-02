@@ -5,10 +5,12 @@ use crate::db::postgres::PgBackend;
 use crate::error::DatabaseError;
 use secrecy::SecretString;
 
+// These substrings are limited to concrete local transport and name-resolution
+// failures observed when a test Postgres instance is absent. We intentionally
+// exclude generic timeout wording so TLS, authentication, and other
+// misconfiguration-related delays still fail loudly instead of being skipped.
 const UNAVAILABLE_PATTERNS: &[&str] = &[
     "connection refused",
-    "timed out",
-    "timeout",
     "failed to lookup address information",
     "name or service not known",
     "temporary failure in name resolution",
@@ -23,6 +25,18 @@ const UNAVAILABLE_PATTERNS: &[&str] = &[
 /// variable, or falls back to a default local Postgres instance.
 /// Returns the `PgBackend` instance for testing, propagating any
 /// connection or pool errors to the caller.
+///
+/// # Examples
+///
+/// ```no_run
+/// use crate::testing::postgres::test_pg_db;
+///
+/// async fn example() -> Result<(), Box<dyn std::error::Error>> {
+///     let db = test_pg_db().await?;
+///     let _ = db;
+///     Ok(())
+/// }
+/// ```
 pub async fn test_pg_db() -> Result<PgBackend, DatabaseError> {
     let url = std::env::var("TEST_DATABASE_URL")
         .unwrap_or_else(|_| "postgresql://localhost/ironclaw_test".to_string());
@@ -60,5 +74,8 @@ pub async fn try_test_pg_db() -> Result<Option<PgBackend>, DatabaseError> {
 fn is_database_unavailable(error: &DatabaseError) -> bool {
     let lowered = format!("{error:?} {error}").to_lowercase();
 
-    UNAVAILABLE_PATTERNS.iter().any(|p| lowered.contains(p))
+    matches!(
+        error,
+        DatabaseError::Postgres(_) | DatabaseError::PoolBuild(_) | DatabaseError::PoolRuntime(_)
+    ) && UNAVAILABLE_PATTERNS.iter().any(|p| lowered.contains(p))
 }

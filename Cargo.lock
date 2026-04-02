@@ -3428,6 +3428,7 @@ dependencies = [
  "iana-time-zone",
  "insta",
  "json5",
+ "lazy-regex",
  "libc",
  "libsql",
  "lru",

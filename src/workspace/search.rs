@@ -17,7 +17,8 @@ use uuid::Uuid;
 pub struct SearchConfig {
     /// Maximum number of results to return.
     pub limit: usize,
-    /// RRF constant (typically 60). Higher values favour top results more.
+    /// RRF constant (typically 60). Higher values make rank differences less
+    /// pronounced.
     pub rrf_k: u32,
     /// Whether to include FTS results.
     pub use_fts: bool,

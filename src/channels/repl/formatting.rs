@@ -1,8 +1,6 @@
 //! Terminal formatting helpers: termimad skin, help text, and JSON param display.
 
-use std::sync::OnceLock;
-
-use regex::Regex;
+use lazy_regex::{Regex, regex};
 use termimad::MadSkin;
 
 use super::input::SLASH_COMMANDS;
@@ -116,45 +114,54 @@ pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> St
 }
 
 fn ansi_sgr_regex() -> &'static Regex {
-    static ANSI_SGR_REGEX: OnceLock<Regex> = OnceLock::new();
-    ANSI_SGR_REGEX
-        .get_or_init(|| Regex::new(r"\x1b\[[0-9;]*m").expect("ANSI SGR regex should compile"))
+    regex!(r"\x1b\[[0-9;]*m")
 }
 
 fn visible_char_count(text: &str) -> usize {
     ansi_sgr_regex().replace_all(text, "").chars().count()
 }
 
-fn append_visible_chars(text: &str, limit: usize, visible_count: &mut usize, output: &mut String) {
+fn append_visible_chars(
+    text: &str,
+    limit: usize,
+    visible_count: &mut usize,
+    output: &mut String,
+) -> bool {
     for ch in text.chars() {
         if *visible_count >= limit {
-            break;
+            return false;
         }
         output.push(ch);
         *visible_count += 1;
     }
+    true
 }
 
 /// Scan `text` for ANSI SGR sequences, copying at most `visible_limit` visible
 /// characters into a new `String`. Returns the accumulated string and a flag
-/// indicating whether an active (non-reset) style sequence was the last one emitted.
-fn truncate_ansi_aware(text: &str, visible_limit: usize) -> (String, bool) {
+/// indicating whether an active (non-reset) style sequence was the last one
+/// emitted, plus whether additional visible text remained past the limit.
+fn truncate_ansi_aware(text: &str, visible_limit: usize) -> (String, bool, bool) {
     let mut truncated = String::new();
     let mut visible_count = 0;
     let mut cursor = 0;
     let mut has_active_style = false;
+    let mut was_truncated = false;
 
     for ansi_match in ansi_sgr_regex().find_iter(text) {
         if visible_count >= visible_limit {
+            was_truncated = visible_char_count(&text[cursor..]) > 0;
             break;
         }
-        append_visible_chars(
+        let copied_full_segment = append_visible_chars(
             &text[cursor..ansi_match.start()],
             visible_limit,
             &mut visible_count,
             &mut truncated,
         );
         if visible_count >= visible_limit {
+            was_truncated =
+                !copied_full_segment || visible_char_count(&text[ansi_match.start()..]) > 0;
             break;
         }
         let ansi_sequence = ansi_match.as_str();
@@ -164,7 +171,7 @@ fn truncate_ansi_aware(text: &str, visible_limit: usize) -> (String, bool) {
     }
 
     if visible_count < visible_limit {
-        append_visible_chars(
+        was_truncated = !append_visible_chars(
             &text[cursor..],
             visible_limit,
             &mut visible_count,
@@ -172,7 +179,7 @@ fn truncate_ansi_aware(text: &str, visible_limit: usize) -> (String, bool) {
         );
     }
 
-    (truncated, has_active_style)
+    (truncated, has_active_style, was_truncated)
 }
 
 /// Truncate content to fit within card width, respecting UTF-8 boundaries.
@@ -182,11 +189,11 @@ fn truncate_card_content(text: &str, max_width: usize) -> String {
     if max_width == 0 {
         return String::new();
     }
-    if visible_char_count(text) <= max_width {
+    let visible_limit = max_width.saturating_sub(1);
+    let (mut truncated, has_active_style, was_truncated) = truncate_ansi_aware(text, visible_limit);
+    if !was_truncated {
         return text.to_string();
     }
-    let visible_limit = max_width.saturating_sub(1);
-    let (mut truncated, has_active_style) = truncate_ansi_aware(text, visible_limit);
     truncated.push('…');
     if has_active_style && !truncated.ends_with("\x1b[0m") {
         truncated.push_str("\x1b[0m");

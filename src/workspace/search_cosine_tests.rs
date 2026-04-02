@@ -1,3 +1,6 @@
+//! Edge-case and regression tests for `cosine_similarity` and related search
+//! cosine helpers.
+
 use super::*;
 
 #[test]
@@ -71,7 +74,7 @@ fn test_cosine_similarity_different_lengths_does_not_panic() {
 /// contained infinity values, producing `inf / inf`. The fix added a NaN
 /// guard that maps the result to 0.0.
 #[test]
-fn test_cosine_similarity_never_returns_nan() {
+fn test_cosine_similarity_special_values_do_not_return_nan() {
     let cases: Vec<(&[f32], &[f32])> = vec![
         (&[f32::INFINITY, 0.0], &[f32::INFINITY, 0.0]),
         (&[f32::NEG_INFINITY, 1.0], &[f32::NEG_INFINITY, 1.0]),

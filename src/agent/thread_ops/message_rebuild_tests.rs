@@ -1,3 +1,6 @@
+//! Unit tests for thread message rebuilding logic in `thread_ops`, covering
+//! `ConversationMessage`, `SafetyConfig`, and `SafetyLayer` interactions.
+
 use super::*;
 use crate::config::SafetyConfig;
 use crate::history::ConversationMessage;
@@ -46,6 +49,23 @@ fn assert_malformed_tool_calls_skipped(safety: &SafetyLayer, tool_json: serde_js
     assert_only_user_and_assistant(&result);
     assert_eq!(result[0].content, user_message.content);
     assert_eq!(result[1].content, assistant_message.content);
+}
+
+fn assert_malformed_tool_calls_boundary(
+    safety: &SafetyLayer,
+    messages: Vec<ConversationMessage>,
+    expected_roles: &[crate::llm::Role],
+    expected_contents: &[&str],
+) {
+    let result = rebuild_chat_messages_from_db(&messages, safety);
+
+    assert_eq!(result.len(), expected_roles.len());
+    for (message, expected_role) in result.iter().zip(expected_roles) {
+        assert_eq!(&message.role, expected_role);
+    }
+    for (message, expected_content) in result.iter().zip(expected_contents) {
+        assert_eq!(message.content, *expected_content);
+    }
 }
 
 /// Asserts that `msg` is a [`crate::llm::Role::Tool`] message with the given
@@ -157,6 +177,24 @@ fn test_rebuild_chat_messages_legacy_tool_calls_skipped(test_safety_layer: Safet
 }
 
 #[rstest]
+fn test_rebuild_chat_messages_leading_malformed_tool_calls_skipped(test_safety_layer: SafetyLayer) {
+    let tool_json = serde_json::json!([
+        {"name": "echo", "result_preview": "hello"}
+    ]);
+    let messages = vec![
+        make_db_msg("tool_calls", &tool_json.to_string()),
+        make_db_msg("assistant", "Done"),
+    ];
+
+    assert_malformed_tool_calls_boundary(
+        &test_safety_layer,
+        messages,
+        &[crate::llm::Role::Assistant],
+        &["Done"],
+    );
+}
+
+#[rstest]
 fn test_rebuild_chat_messages_empty(test_safety_layer: SafetyLayer) {
     let safety = test_safety_layer;
     let result = rebuild_chat_messages_from_db(&[], &safety);
@@ -174,6 +212,26 @@ fn test_rebuild_chat_messages_malformed_tool_calls_json(test_safety_layer: Safet
     let result = rebuild_chat_messages_from_db(&messages, &safety);
     // Malformed JSON is skipped with a warning (logs message_id and parse error)
     assert_eq!(result.len(), 2);
+}
+
+#[rstest]
+fn test_rebuild_chat_messages_trailing_malformed_tool_calls_skipped(
+    test_safety_layer: SafetyLayer,
+) {
+    let tool_json = serde_json::json!([
+        {"name": "echo", "result_preview": "hello"}
+    ]);
+    let messages = vec![
+        make_db_msg("user", "Hi"),
+        make_db_msg("tool_calls", &tool_json.to_string()),
+    ];
+
+    assert_malformed_tool_calls_boundary(
+        &test_safety_layer,
+        messages,
+        &[crate::llm::Role::User],
+        &["Hi"],
+    );
 }
 
 /// Regression tests for malformed tool_calls entries that must be skipped.
