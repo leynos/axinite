@@ -224,15 +224,17 @@ impl Scheduler {
         let jobs = Arc::clone(&self.jobs);
         tokio::spawn(async move {
             loop {
-                let finished = {
+                let should_remove = {
                     let jobs_read = jobs.read().await;
                     match jobs_read.get(&job_id) {
-                        Some(scheduled) => scheduled.handle.is_finished(),
+                        Some(scheduled) => {
+                            scheduled.handle.is_finished() && !scheduled.pending_cancel_persist
+                        }
                         None => true,
                     }
                 };
 
-                if finished {
+                if should_remove {
                     jobs.write().await.remove(&job_id);
                     break;
                 }
@@ -565,7 +567,9 @@ impl Scheduler {
         // finish in-flight cleanup before we transition its state.
         tokio::time::sleep(STOP_GRACE_PERIOD).await;
 
-        self.transition_to_cancelled(job_id, reason).await
+        self.transition_to_cancelled(job_id, reason).await?;
+        self.pin_cancel_persist_and_abort(job_id).await;
+        Ok(())
     }
 
     async fn send_stop_signal(&self, job_id: Uuid, tx: mpsc::Sender<WorkerMessage>) {
@@ -627,10 +631,13 @@ impl Scheduler {
         Ok(())
     }
 
-    async fn mark_cancel_persist_pending(&self, job_id: Uuid, pending: bool) {
+    async fn pin_cancel_persist_and_abort(&self, job_id: Uuid) {
         let mut jobs = self.jobs.write().await;
         if let Some(scheduled) = jobs.get_mut(&job_id) {
-            scheduled.pending_cancel_persist = pending;
+            scheduled.pending_cancel_persist = true;
+            if !scheduled.handle.is_finished() {
+                scheduled.handle.abort();
+            }
         }
     }
 
@@ -658,8 +665,8 @@ impl Scheduler {
         );
         match self.transition_to_cancelled(job_id, reason).await {
             Ok(()) => {
+                self.pin_cancel_persist_and_abort(job_id).await;
                 if let Err(error) = self.persist_cancelled_status(job_id, reason).await {
-                    self.mark_cancel_persist_pending(job_id, true).await;
                     tracing::warn!(
                         job_id = %job_id,
                         %error,
@@ -702,10 +709,7 @@ impl Scheduler {
     /// Stop a running job.
     pub async fn stop(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
         self.stop_in_memory(job_id, reason).await?;
-        if let Err(error) = self.persist_cancelled_status(job_id, reason).await {
-            self.mark_cancel_persist_pending(job_id, true).await;
-            return Err(error);
-        }
+        self.persist_cancelled_status(job_id, reason).await?;
         self.finalize_stop(job_id).await;
 
         Ok(())
@@ -804,7 +808,6 @@ impl Scheduler {
             match result {
                 Ok(Ok(())) => {
                     if let Err(error) = self.persist_cancelled_status(job_id, stop_reason).await {
-                        self.mark_cancel_persist_pending(job_id, true).await;
                         tracing::warn!(
                             job_id = %job_id,
                             %error,

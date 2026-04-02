@@ -263,6 +263,16 @@ async fn test_stop_retry_persists_cancelled_after_initial_store_failure() -> Res
         .await
         .expect_err("first cancellation persistence should fail");
     assert!(matches!(error, JobError::PersistenceError { id, .. } if id == job_id));
+    tokio::task::yield_now().await;
+
+    {
+        let jobs = sched.jobs.read().await;
+        let scheduled = jobs
+            .get(&job_id)
+            .ok_or_else(|| anyhow!("job should remain registered for retry"))?;
+        assert!(scheduled.pending_cancel_persist);
+        assert!(scheduled.handle.is_finished());
+    }
 
     sched.cleanup_finished().await;
     assert!(sched.is_running(job_id).await);
@@ -280,6 +290,41 @@ async fn test_stop_retry_persists_cancelled_after_initial_store_failure() -> Res
         store.get_agent_job_failure_reason(job_id).await?,
         Some("Stopped by scheduler".to_string())
     );
+    assert!(!sched.is_running(job_id).await);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_spawn_cleanup_task_keeps_pending_cancel_persist_jobs() -> Result<()> {
+    let sched = make_test_scheduler(1000);
+    let job_id = Uuid::new_v4();
+    let (tx, _rx) = mpsc::channel(1);
+    let handle = tokio::spawn(async {});
+
+    tokio::task::yield_now().await;
+
+    sched.jobs.write().await.insert(
+        job_id,
+        ScheduledJob {
+            handle,
+            tx,
+            pending_cancel_persist: true,
+        },
+    );
+
+    sched.spawn_cleanup_task(job_id);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(sched.is_running(job_id).await);
+
+    {
+        let mut jobs = sched.jobs.write().await;
+        let scheduled = jobs
+            .get_mut(&job_id)
+            .ok_or_else(|| anyhow!("job should still be registered"))?;
+        scheduled.pending_cancel_persist = false;
+    }
+
+    tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(!sched.is_running(job_id).await);
     Ok(())
 }
