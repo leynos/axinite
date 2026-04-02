@@ -9,7 +9,7 @@
 
 use chrono::Utc;
 use std::collections::BTreeSet;
-use tokio_postgres::{Client, Row};
+use tokio_postgres::{Client, GenericClient, Row};
 
 use super::{
     finalize_migration_history_rewrites, migration_history_rewrites,
@@ -66,7 +66,7 @@ fn rewrite_tuple_set(
         .collect()
 }
 
-fn rows_to_tuples(rows: Vec<Row>) -> Vec<(i32, String, String)> {
+fn map_history_rows(rows: Vec<Row>) -> Vec<(i32, String, String)> {
     rows.into_iter()
         .map(|row| {
             let version: i32 = row.get(0);
@@ -92,8 +92,8 @@ async fn create_temp_refinery_history_table(client: &Client) {
 }
 
 #[cfg(feature = "postgres")]
-async fn seed_renumbered_release_window(client: &Client) {
-    for (version, name, checksum) in RENUMBERED_RELEASE_WINDOW_ROWS {
+async fn seed_history_rows<C: GenericClient>(client: &C, rows: &[(i32, &str, u64)]) {
+    for (version, name, checksum) in rows {
         client
             .execute(
                 "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
@@ -106,7 +106,7 @@ async fn seed_renumbered_release_window(client: &Client) {
                 ],
             )
             .await
-            .expect("Failed to seed legacy row");
+            .expect("Failed to seed history row");
     }
 }
 
@@ -117,7 +117,7 @@ fn renumbered_release_window_applied_rows() -> Vec<(i32, String, String)> {
         .collect()
 }
 
-fn canonical_release_window_rows() -> Vec<(i32, String, String)> {
+fn canonical_rows_as_vec() -> Vec<(i32, String, String)> {
     CANONICAL_RELEASED_ROWS
         .iter()
         .map(|(version, name, checksum)| (*version, (*name).to_string(), checksum.to_string()))
@@ -237,7 +237,7 @@ fn plan_migration_history_rewrites_matches_fixed_released_rows() {
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[ignore]
-async fn postgres_two_phase_staged_finalize_rewrites_released_rows() {
+async fn stage_and_finalize_migration_history_rewrites_two_phases() {
     use crate::config::Config;
     use crate::history::Store;
 
@@ -250,7 +250,7 @@ async fn postgres_two_phase_staged_finalize_rewrites_released_rows() {
         .expect("Failed to connect to database");
     let mut client = store.conn().await.expect("Failed to get connection");
     create_temp_refinery_history_table(&client).await;
-    seed_renumbered_release_window(&client).await;
+    seed_history_rows(&**client, RENUMBERED_RELEASE_WINDOW_ROWS).await;
 
     let rewrites = plan_migration_history_rewrites(&renumbered_release_window_applied_rows())
         .expect("released migration identities parse");
@@ -267,7 +267,7 @@ async fn postgres_two_phase_staged_finalize_rewrites_released_rows() {
         )
         .await
         .expect("Failed to read staged rows");
-    assert_eq!(rows_to_tuples(staged), staged_release_window_rows());
+    assert_eq!(map_history_rows(staged), staged_release_window_rows());
 
     finalize_migration_history_rewrites(&transaction, &rewrites)
         .await
@@ -279,7 +279,7 @@ async fn postgres_two_phase_staged_finalize_rewrites_released_rows() {
         )
         .await
         .expect("Failed to read final rows");
-    assert_eq!(rows_to_tuples(final_rows), canonical_release_window_rows());
+    assert_eq!(map_history_rows(final_rows), canonical_rows_as_vec());
     transaction
         .rollback()
         .await
@@ -289,7 +289,7 @@ async fn postgres_two_phase_staged_finalize_rewrites_released_rows() {
 #[cfg(feature = "postgres")]
 #[tokio::test]
 #[ignore]
-async fn postgres_repair_postgres_refinery_history_e2e() {
+async fn repair_postgres_refinery_history_end_to_end() {
     use crate::config::Config;
     use crate::history::Store;
 
@@ -302,7 +302,7 @@ async fn postgres_repair_postgres_refinery_history_e2e() {
         .expect("Failed to connect to database");
     let mut client = store.conn().await.expect("Failed to get connection");
     create_temp_refinery_history_table(&client).await;
-    seed_renumbered_release_window(&client).await;
+    seed_history_rows(&**client, RENUMBERED_RELEASE_WINDOW_ROWS).await;
 
     repair_postgres_refinery_history(&mut client)
         .await
@@ -315,8 +315,5 @@ async fn postgres_repair_postgres_refinery_history_e2e() {
         )
         .await
         .expect("Failed to read repaired rows");
-    assert_eq!(
-        rows_to_tuples(repaired_rows),
-        canonical_release_window_rows()
-    );
+    assert_eq!(map_history_rows(repaired_rows), canonical_rows_as_vec());
 }
