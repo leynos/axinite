@@ -31,10 +31,10 @@ mod wasm_tool;
 pub use live_mcp::{LiveMcpActivation, LiveMcpActivationConfig, McpClientCell, McpClientsMap};
 pub use live_wasm_channel::{LiveWasmChannelActivation, LiveWasmChannelActivationConfig};
 pub use live_wasm_tool::{LiveWasmToolActivation, LiveWasmToolActivationConfig};
-pub use mcp::*;
-pub use noop::*;
-pub use wasm_channel::*;
-pub use wasm_tool::*;
+pub use mcp::McpActivationPort;
+pub use noop::{NoOpMcpActivation, NoOpWasmChannelActivation, NoOpWasmToolActivation};
+pub use wasm_channel::WasmChannelActivationPort;
+pub use wasm_tool::WasmToolActivationPort;
 
 pub(crate) use live_wasm_channel::ChannelRuntimeState;
 

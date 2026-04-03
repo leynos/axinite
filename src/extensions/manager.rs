@@ -44,8 +44,8 @@ struct PendingAuth {
 
 /// Shared mutable state between [`ExtensionManager`] and
 /// [`LiveWasmChannelActivation`](crate::extensions::LiveWasmChannelActivation).
-#[derive(Clone)]
-pub(crate) struct LiveWasmChannelSharedState {
+#[derive(Clone, Default)]
+pub struct LiveWasmChannelSharedState {
     pub(crate) channel_runtime: Arc<RwLock<Option<ChannelRuntimeState>>>,
     pub(crate) relay_channel_manager: Arc<RwLock<Option<Arc<ChannelManager>>>>,
     pub(crate) active_channel_names: Arc<RwLock<HashSet<String>>>,
@@ -53,19 +53,6 @@ pub(crate) struct LiveWasmChannelSharedState {
     pub(crate) activation_errors: Arc<RwLock<HashMap<String, String>>>,
     pub(crate) sse_sender:
         Arc<RwLock<Option<tokio::sync::broadcast::Sender<crate::channels::web::types::SseEvent>>>>,
-}
-
-impl Default for LiveWasmChannelSharedState {
-    fn default() -> Self {
-        Self {
-            channel_runtime: Arc::new(RwLock::new(None)),
-            relay_channel_manager: Arc::new(RwLock::new(None)),
-            active_channel_names: Arc::new(RwLock::new(HashSet::new())),
-            installed_relay_extensions: Arc::new(RwLock::new(HashSet::new())),
-            activation_errors: Arc::new(RwLock::new(HashMap::new())),
-            sse_sender: Arc::new(RwLock::new(None)),
-        }
-    }
 }
 
 /// Result of saving setup secrets and attempting activation.
@@ -146,6 +133,8 @@ pub struct ExtensionManager {
 /// supply live implementations of the activation ports (e.g., [`LiveMcpActivation`]),
 /// while tests inject no-op stubs.
 pub struct ExtensionManagerConfig {
+    /// Shared mutable state for live WASM channel activation and manager state.
+    pub shared_state: LiveWasmChannelSharedState,
     /// Discovery port for searching online extensions (required).
     pub discovery: Arc<dyn crate::extensions::DiscoveryPort + Send + Sync>,
     /// Relay configuration for channel-relay extensions (optional).
@@ -223,6 +212,8 @@ impl ExtensionManager {
     /// - `mcp_activation` — Port for MCP server activation.
     /// - `wasm_tool_activation` — Port for WASM tool activation.
     /// - `wasm_channel_activation` — Port for WASM channel and channel-relay activation.
+    /// - `shared_state` — Shared live WASM channel state used by both the
+    ///   manager and the live activation adapter.
     /// - `mcp_clients` — Shared map of active MCP clients; must be shared with the
     ///   live MCP activation adapter so both see the same set of active connections.
     /// - `secrets` — Secrets store for credential injection.
@@ -248,7 +239,8 @@ impl ExtensionManager {
     /// Production callers supply [`LiveMcpActivation`], [`LiveWasmToolActivation`],
     /// and [`LiveWasmChannelActivation`]; tests inject no-op stubs.
     pub fn new(config: ExtensionManagerConfig) -> Self {
-        Self::new_with_shared_state(config, LiveWasmChannelSharedState::default())
+        let shared_state = config.shared_state.clone();
+        Self::new_with_shared_state(config, shared_state)
     }
 
     pub(crate) fn new_with_shared_state(
@@ -2769,7 +2761,7 @@ impl ExtensionManager {
     async fn auth_channel_relay(
         &self,
         name: &str,
-        _token: Option<&str>,
+        token: Option<&str>,
     ) -> Result<AuthResult, ExtensionError> {
         // Check if already authenticated (stream token exists)
         let token_key = format!("relay:{}:stream_token", name);
@@ -2782,13 +2774,26 @@ impl ExtensionManager {
             return Ok(AuthResult::authenticated(name, ExtensionKind::ChannelRelay));
         }
 
+        if let Some(token) = token {
+            let _ = self.secrets.delete(&self.user_id, &token_key).await;
+            self.secrets
+                .create(
+                    &self.user_id,
+                    CreateSecretParams::new(&token_key, token).with_provider(name.to_string()),
+                )
+                .await
+                .map_err(|e| {
+                    ExtensionError::AuthFailed(format!("Failed to store relay token: {e}"))
+                })?;
+            return Ok(AuthResult::authenticated(name, ExtensionKind::ChannelRelay));
+        }
+
         // Use relay config captured at startup
         let relay_config = self.relay_config()?;
 
         let instance_id = self.relay_instance_id(relay_config);
-        let user_id_uuid = std::env::var("IRONCLAW_USER_ID").unwrap_or_else(|_| {
-            uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, self.user_id.as_bytes()).to_string()
-        });
+        let user_id_uuid =
+            uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, self.user_id.as_bytes()).to_string();
 
         let client = crate::channels::relay::RelayClient::new(
             relay_config.url.clone(),
@@ -3671,6 +3676,7 @@ mod tests {
         let mcp_clients = crate::extensions::McpClientsMap::default();
 
         ExtensionManager::new(ExtensionManagerConfig {
+            shared_state: crate::extensions::LiveWasmChannelSharedState::default(),
             discovery: Arc::new(crate::extensions::NoOpDiscovery),
             relay_config: None,
             gateway_token: None,

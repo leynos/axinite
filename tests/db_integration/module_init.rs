@@ -194,6 +194,7 @@ async fn extension_manager_with_activation_ports_constructs() {
     let mcp_clients = ironclaw::extensions::McpClientsMap::default();
 
     let manager = ExtensionManager::new(ironclaw::extensions::ExtensionManagerConfig {
+        shared_state: ironclaw::extensions::LiveWasmChannelSharedState::default(),
         discovery: Arc::new(ironclaw::extensions::NoOpDiscovery),
         relay_config: None,
         gateway_token: None,

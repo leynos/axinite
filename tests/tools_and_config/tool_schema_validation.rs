@@ -38,6 +38,7 @@ fn extension_manager_fixture() -> ExtensionManagerFixture {
         _dir: dir,
         manager: std::sync::Arc::new(ironclaw::extensions::ExtensionManager::new(
             ironclaw::extensions::ExtensionManagerConfig {
+                shared_state: ironclaw::extensions::LiveWasmChannelSharedState::default(),
                 discovery: std::sync::Arc::new(ironclaw::extensions::NoOpDiscovery),
                 relay_config: None,
                 gateway_token: None,

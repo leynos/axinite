@@ -184,6 +184,7 @@ fn test_manager_stub() -> Arc<ExtensionManager> {
 
     Arc::new(ExtensionManager::new(
         crate::extensions::ExtensionManagerConfig {
+            shared_state: crate::extensions::LiveWasmChannelSharedState::default(),
             discovery: Arc::new(crate::extensions::NoOpDiscovery),
             relay_config: None,
             gateway_token: None,

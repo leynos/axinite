@@ -29,7 +29,6 @@ pub(crate) enum ToolAuthState {
 pub(super) async fn inject_channel_credentials_from_secrets(
     channel: &Arc<crate::channels::wasm::WasmChannel>,
     secrets: Option<&dyn SecretsStore>,
-    _channel_name: &str,
     user_id: &str,
 ) -> Result<usize, String> {
     let mut count = 0;
@@ -51,13 +50,18 @@ pub(super) async fn inject_channel_credentials_from_secrets(
 
             let decrypted = match secrets.get_decrypted(user_id, &secret_meta.name).await {
                 Ok(d) => d,
-                Err(e) => {
+                Err(crate::secrets::SecretError::NotFound(_)) => {
                     tracing::warn!(
                         secret = %secret_meta.name,
-                        error = %e,
-                        "Failed to decrypt secret for channel credential injection"
+                        "Secret disappeared during channel credential injection"
                     );
                     continue;
+                }
+                Err(e) => {
+                    return Err(format!(
+                        "Failed to decrypt secret '{}' for channel credential injection: {}",
+                        secret_meta.name, e
+                    ));
                 }
             };
 

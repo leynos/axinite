@@ -56,7 +56,6 @@ impl super::LiveWasmChannelActivation {
         match inject_channel_credentials_from_secrets(
             channel,
             Some(self.secrets.as_ref()),
-            channel_name,
             &self.user_id,
         )
         .await
@@ -242,11 +241,12 @@ impl super::LiveWasmChannelActivation {
             &wasm_channel_router,
             Arc::clone(&channel_arc),
             RegisterWebhookEndpointsParams {
-                channel_name: channel_name.clone(),
-                webhook_secret,
-                secret_header,
-                sig_key_secret_name,
-                hmac_secret_name,
+                channel_name: super::channel_refresh::ChannelName(channel_name.clone()),
+                webhook_secret: webhook_secret.map(super::channel_refresh::WebhookSecretName),
+                secret_header: secret_header.map(super::channel_refresh::SecretHeader),
+                sig_key_secret_name: sig_key_secret_name
+                    .map(super::channel_refresh::SigKeySecretName),
+                hmac_secret_name: hmac_secret_name.map(super::channel_refresh::HmacSecretName),
             },
         )
         .await;

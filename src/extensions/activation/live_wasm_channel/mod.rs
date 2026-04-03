@@ -93,13 +93,10 @@ pub struct LiveWasmChannelActivation {
     relay_config: Option<crate::config::RelayConfig>,
     #[expect(
         dead_code,
-        reason = "FIXME: placeholder for gateway auth token plumbing, see ISSUE-XXXX"
+        reason = "FIXME: placeholder for gateway auth token plumbing"
     )]
     gateway_token: Option<String>,
-    #[expect(
-        dead_code,
-        reason = "FIXME: placeholder for relay extension tracking, see ISSUE-XXXX"
-    )]
+    #[expect(dead_code, reason = "FIXME: placeholder for relay extension tracking")]
     installed_relay_extensions: Arc<RwLock<HashSet<String>>>,
 }
 
