@@ -58,66 +58,32 @@ pub struct BuildExtensionsParams<'a> {
     pub gateway_token: Option<String>,
 }
 
+/// Inputs needed to load and register MCP servers.
+pub struct LoadMcpServersParams<'a> {
+    pub db: Option<Arc<dyn Database>>,
+    pub secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+    pub tools: &'a Arc<ToolRegistry>,
+    pub mcp_session_manager: &'a Arc<McpSessionManager>,
+    pub mcp_process_manager: &'a Arc<McpProcessManager>,
+    pub mcp_clients: McpClientsMap,
+}
+
 fn build_mcp_activation(
-    db: Option<Arc<dyn Database>>,
-    mcp_session_manager: &Arc<McpSessionManager>,
-    mcp_process_manager: &Arc<McpProcessManager>,
-    mcp_clients: &McpClientsMap,
-    secrets: &Arc<dyn SecretsStore + Send + Sync>,
-    tools: &Arc<ToolRegistry>,
+    config: LiveMcpActivationConfig,
 ) -> Arc<dyn crate::extensions::McpActivationPort> {
-    Arc::new(LiveMcpActivation::new(LiveMcpActivationConfig {
-        mcp_session_manager: Arc::clone(mcp_session_manager),
-        mcp_process_manager: Arc::clone(mcp_process_manager),
-        mcp_clients: Arc::clone(mcp_clients),
-        secrets: Arc::clone(secrets),
-        tool_registry: Arc::clone(tools),
-        user_id: "default".to_string(),
-        store: db,
-    }))
+    Arc::new(LiveMcpActivation::new(config))
 }
 
 fn build_wasm_tool_activation(
-    config: &Config,
-    wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
-    secrets: &Arc<dyn SecretsStore + Send + Sync>,
-    tools: &Arc<ToolRegistry>,
-    hooks: &Arc<HookRegistry>,
+    config: LiveWasmToolActivationConfig,
 ) -> Arc<dyn crate::extensions::WasmToolActivationPort> {
-    Arc::new(LiveWasmToolActivation::new(LiveWasmToolActivationConfig {
-        wasm_tool_runtime,
-        wasm_tools_dir: config.wasm.tools_dir.clone(),
-        tool_registry: Arc::clone(tools),
-        secrets: Arc::clone(secrets),
-        hooks: Some(Arc::clone(hooks)),
-    }))
+    Arc::new(LiveWasmToolActivation::new(config))
 }
 
 fn build_wasm_channel_activation(
-    config: &Config,
-    db: Option<Arc<dyn Database>>,
-    shared_state: &LiveWasmChannelSharedState,
-    secrets: &Arc<dyn SecretsStore + Send + Sync>,
-    relay_config: Option<crate::config::RelayConfig>,
-    gateway_token: Option<String>,
+    config: LiveWasmChannelActivationConfig,
 ) -> Arc<dyn crate::extensions::WasmChannelActivationPort> {
-    Arc::new(LiveWasmChannelActivation::new(
-        LiveWasmChannelActivationConfig {
-            active_channel_names: Arc::clone(&shared_state.active_channel_names),
-            activation_errors: Arc::clone(&shared_state.activation_errors),
-            sse_sender: Arc::clone(&shared_state.sse_sender),
-            wasm_channels_dir: config.channels.wasm_channels_dir.clone(),
-            secrets: Arc::clone(secrets),
-            channel_runtime: Arc::clone(&shared_state.channel_runtime),
-            relay_channel_manager: Arc::clone(&shared_state.relay_channel_manager),
-            tunnel_url: config.tunnel.public_url.clone(),
-            user_id: "default".to_string(),
-            store: db,
-            relay_config,
-            gateway_token,
-            installed_relay_extensions: Arc::clone(&shared_state.installed_relay_extensions),
-        },
-    ))
+    Arc::new(LiveWasmChannelActivation::new(config))
 }
 
 pub async fn build_extension_manager(
@@ -140,24 +106,37 @@ pub async fn build_extension_manager(
     let discovery = Arc::new(OnlineDiscovery::new());
     let shared_state = LiveWasmChannelSharedState::default();
 
-    let mcp_activation = build_mcp_activation(
-        db.clone(),
-        mcp_session_manager,
-        mcp_process_manager,
-        &mcp_clients,
-        &ext_secrets,
-        tools,
-    );
-    let wasm_tool_activation =
-        build_wasm_tool_activation(config, wasm_tool_runtime, &ext_secrets, tools, hooks);
-    let wasm_channel_activation = build_wasm_channel_activation(
-        config,
-        db.clone(),
-        &shared_state,
-        &ext_secrets,
-        relay_config.clone(),
-        gateway_token.clone(),
-    );
+    let mcp_activation = build_mcp_activation(LiveMcpActivationConfig {
+        mcp_session_manager: Arc::clone(mcp_session_manager),
+        mcp_process_manager: Arc::clone(mcp_process_manager),
+        mcp_clients: Arc::clone(&mcp_clients),
+        secrets: Arc::clone(&ext_secrets),
+        tool_registry: Arc::clone(tools),
+        user_id: "default".to_string(),
+        store: db.clone(),
+    });
+    let wasm_tool_activation = build_wasm_tool_activation(LiveWasmToolActivationConfig {
+        wasm_tool_runtime,
+        wasm_tools_dir: config.wasm.tools_dir.clone(),
+        tool_registry: Arc::clone(tools),
+        secrets: Arc::clone(&ext_secrets),
+        hooks: Some(Arc::clone(hooks)),
+    });
+    let wasm_channel_activation = build_wasm_channel_activation(LiveWasmChannelActivationConfig {
+        active_channel_names: Arc::clone(&shared_state.active_channel_names),
+        activation_errors: Arc::clone(&shared_state.activation_errors),
+        sse_sender: Arc::clone(&shared_state.sse_sender),
+        wasm_channels_dir: config.channels.wasm_channels_dir.clone(),
+        secrets: Arc::clone(&ext_secrets),
+        channel_runtime: Arc::clone(&shared_state.channel_runtime),
+        relay_channel_manager: Arc::clone(&shared_state.relay_channel_manager),
+        tunnel_url: config.tunnel.public_url.clone(),
+        user_id: "default".to_string(),
+        store: db.clone(),
+        relay_config: relay_config.clone(),
+        gateway_token: gateway_token.clone(),
+        installed_relay_extensions: Arc::clone(&shared_state.installed_relay_extensions),
+    });
 
     let manager = Arc::new(ExtensionManager::new(ExtensionManagerConfig {
         shared_state,
@@ -184,146 +163,208 @@ pub async fn build_extension_manager(
     manager
 }
 
+async fn scan_tools_dir(
+    loader: &crate::tools::wasm::WasmToolLoader,
+    tools_dir: &std::path::Path,
+) {
+    match loader.load_from_dir(tools_dir).await {
+        Ok(results) => {
+            if !results.loaded.is_empty() {
+                tracing::debug!(
+                    loaded = results.loaded.len(),
+                    dir = %tools_dir.display(),
+                    "Loaded WASM tools from directory"
+                );
+            }
+            for (path, err) in results.errors {
+                tracing::warn!(tool = %path.display(), error = %err, "Failed to load WASM tool");
+            }
+        }
+        Err(e) => {
+            tracing::warn!(dir = %tools_dir.display(), error = %e, "Failed to scan WASM tools directory");
+        }
+    }
+}
+
+async fn load_dev_wasm_tools(
+    loader: &crate::tools::wasm::WasmToolLoader,
+    tools_dir: &std::path::Path,
+) -> Vec<String> {
+    match crate::tools::wasm::load_dev_tools(loader, tools_dir).await {
+        Ok(results) => {
+            if !results.loaded.is_empty() {
+                tracing::debug!(
+                    loaded = results.loaded.len(),
+                    "Loaded dev WASM tools from build artefacts"
+                );
+            }
+            results.loaded
+        }
+        Err(e) => {
+            tracing::debug!(error = %e, "No dev WASM tools found");
+            Vec::new()
+        }
+    }
+}
+
 async fn load_wasm_tools(
     config: &Config,
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     tools: &Arc<ToolRegistry>,
     wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
 ) -> Vec<String> {
-    use crate::tools::wasm::{WasmToolLoader, load_dev_tools};
-
-    let mut dev_loaded_tool_names: Vec<String> = Vec::new();
-    let Some(ref runtime) = wasm_tool_runtime else {
-        return dev_loaded_tool_names;
+    let Some(runtime) = wasm_tool_runtime else {
+        return Vec::new();
     };
 
-    let mut loader = WasmToolLoader::new(Arc::clone(runtime), Arc::clone(tools));
-    if let Some(ref secrets) = secrets_store {
-        loader = loader.with_secrets_store(Arc::clone(secrets));
+    let mut loader = crate::tools::wasm::WasmToolLoader::new(
+        std::sync::Arc::clone(&runtime),
+        std::sync::Arc::clone(tools),
+    );
+    if let Some(ref s) = secrets_store {
+        loader = loader.with_secrets_store(std::sync::Arc::clone(s));
     }
 
-    match loader.load_from_dir(&config.wasm.tools_dir).await {
-        Ok(results) => {
-            if !results.loaded.is_empty() {
-                tracing::debug!(
-                    "Loaded {} WASM tools from {}",
-                    results.loaded.len(),
-                    config.wasm.tools_dir.display()
-                );
-            }
-            for (path, err) in &results.errors {
-                tracing::warn!("Failed to load WASM tool {}: {}", path.display(), err);
-            }
-        }
-        Err(e) => tracing::warn!("Failed to scan WASM tools directory: {}", e),
-    }
-
-    match load_dev_tools(&loader, &config.wasm.tools_dir).await {
-        Ok(results) => {
-            dev_loaded_tool_names.extend(results.loaded.iter().cloned());
-            if !dev_loaded_tool_names.is_empty() {
-                tracing::debug!(
-                    "Loaded {} dev WASM tools from build artifacts",
-                    dev_loaded_tool_names.len()
-                );
-            }
-        }
-        Err(e) => tracing::debug!("No dev WASM tools found: {}", e),
-    }
-
-    dev_loaded_tool_names
+    scan_tools_dir(&loader, &config.wasm.tools_dir).await;
+    load_dev_wasm_tools(&loader, &config.wasm.tools_dir).await
 }
 
-async fn load_and_register_mcp_servers(
+struct McpLoadCtx {
+    user_id: String,
+    tools: Arc<ToolRegistry>,
+    session: Arc<McpSessionManager>,
+    process: Arc<McpProcessManager>,
+    secrets: Option<Arc<dyn SecretsStore + Send + Sync>>,
+    clients: McpClientsMap,
     db: Option<Arc<dyn Database>>,
-    secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
-    tools: &Arc<ToolRegistry>,
-    mcp_session_manager: &Arc<McpSessionManager>,
-    mcp_process_manager: &Arc<McpProcessManager>,
-    mcp_clients: McpClientsMap,
-) {
+}
+
+async fn fetch_enabled_servers(
+    db: Option<&Arc<dyn Database>>,
+) -> Vec<crate::tools::mcp::config::McpServerConfig> {
     use crate::tools::mcp::config::load_mcp_servers_from_db;
 
-    let servers_result = if let Some(ref db) = db {
+    let servers_result = if let Some(db) = db {
         load_mcp_servers_from_db(db.as_ref(), "default").await
     } else {
         crate::tools::mcp::config::load_mcp_servers().await
     };
 
-    let servers = match servers_result {
-        Ok(s) => s,
+    match servers_result {
+        Ok(s) => s.enabled_servers().cloned().collect(),
         Err(e) => {
             tracing::debug!("No MCP servers configured ({})", e);
+            Vec::new()
+        }
+    }
+}
+
+fn is_auth_error(err_str: &str) -> bool {
+    err_str.contains("401") || err_str.contains("authentication")
+}
+
+async fn register_tools_from_client(
+    client: &Arc<crate::tools::mcp::McpClient>,
+    tools: &Arc<ToolRegistry>,
+    server_name: &str,
+) {
+    match client.list_tools().await {
+        Ok(mcp_tools) => {
+            let tool_count = mcp_tools.len();
+            match client.create_tools().await {
+                Ok(tool_impls) => {
+                    for tool in tool_impls {
+                        tools.register(tool).await;
+                    }
+                    tracing::debug!(
+                        "Loaded {} tools from MCP server '{}'",
+                        tool_count,
+                        server_name
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to create tools from MCP server '{}': {}",
+                        server_name,
+                        e
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            if is_auth_error(&err_str) {
+                tracing::warn!(
+                    "MCP server '{}' requires authentication. \
+                     Run: ironclaw mcp auth {}",
+                    server_name,
+                    server_name
+                );
+            } else {
+                tracing::warn!("Failed to connect to MCP server '{}': {}", server_name, e);
+            }
+        }
+    }
+}
+
+async fn spawn_server_task(
+    ctx: Arc<McpLoadCtx>,
+    server: crate::tools::mcp::config::McpServerConfig,
+) {
+    let server_name = server.name.clone();
+    let client = match crate::tools::mcp::create_client_from_config(
+        server,
+        &ctx.session,
+        &ctx.process,
+        ctx.secrets.clone(),
+        &ctx.user_id,
+    )
+    .await
+    {
+        Ok(c) => Arc::new(c),
+        Err(e) => {
+            tracing::warn!("Failed to create MCP client for '{}': {}", server_name, e);
             return;
         }
     };
 
-    let enabled: Vec<_> = servers.enabled_servers().cloned().collect();
-    if !enabled.is_empty() {
-        tracing::debug!("Loading {} configured MCP server(s)...", enabled.len());
+    let cell = Arc::new(tokio::sync::OnceCell::new());
+    let _ = cell.set(Arc::clone(&client));
+    ctx.clients.write().await.insert(server_name.clone(), cell);
+
+    register_tools_from_client(&client, &ctx.tools, &server_name).await;
+}
+
+async fn load_and_register_mcp_servers(params: LoadMcpServersParams<'_>) {
+    let LoadMcpServersParams {
+        db,
+        secrets_store,
+        tools,
+        mcp_session_manager,
+        mcp_process_manager,
+        mcp_clients,
+    } = params;
+
+    let ctx = Arc::new(McpLoadCtx {
+        user_id: "default".to_string(),
+        tools: Arc::clone(tools),
+        session: Arc::clone(mcp_session_manager),
+        process: Arc::clone(mcp_process_manager),
+        secrets: secrets_store,
+        clients: Arc::clone(&mcp_clients),
+        db,
+    });
+
+    let enabled = fetch_enabled_servers(ctx.db.as_ref()).await;
+    if enabled.is_empty() {
+        return;
     }
+    tracing::debug!("Loading {} configured MCP server(s)...", enabled.len());
 
     let mut join_set = tokio::task::JoinSet::new();
     for server in enabled {
-        let mcp_sm = Arc::clone(mcp_session_manager);
-        let pm = Arc::clone(mcp_process_manager);
-        let secrets = secrets_store.clone();
-        let tools = Arc::clone(tools);
-        let mcp_clients = Arc::clone(&mcp_clients);
-
-        join_set.spawn(async move {
-            let server_name = server.name.clone();
-            let client = match crate::tools::mcp::create_client_from_config(
-                server, &mcp_sm, &pm, secrets, "default",
-            )
-            .await
-            {
-                Ok(c) => Arc::new(c),
-                Err(e) => {
-                    tracing::warn!("Failed to create MCP client for '{}': {}", server_name, e);
-                    return;
-                }
-            };
-
-            match client.list_tools().await {
-                Ok(mcp_tools) => {
-                    let tool_count = mcp_tools.len();
-                    match client.create_tools().await {
-                        Ok(tool_impls) => {
-                            for tool in tool_impls {
-                                tools.register(tool).await;
-                            }
-                            let cell = Arc::new(tokio::sync::OnceCell::new());
-                            let _ = cell.set(Arc::clone(&client));
-                            mcp_clients.write().await.insert(server_name.clone(), cell);
-                            tracing::debug!(
-                                "Loaded {} tools from MCP server '{}'",
-                                tool_count,
-                                server_name
-                            );
-                        }
-                        Err(e) => tracing::warn!(
-                            "Failed to create tools from MCP server '{}': {}",
-                            server_name,
-                            e
-                        ),
-                    }
-                }
-                Err(e) => {
-                    let err_str = e.to_string();
-                    if err_str.contains("401") || err_str.contains("authentication") {
-                        tracing::warn!(
-                            "MCP server '{}' requires authentication. \
-                             Run: ironclaw mcp auth {}",
-                            server_name,
-                            server_name
-                        );
-                    } else {
-                        tracing::warn!("Failed to connect to MCP server '{}': {}", server_name, e);
-                    }
-                }
-            }
-        });
+        let ctx = Arc::clone(&ctx);
+        join_set.spawn(async move { spawn_server_task(ctx, server).await });
     }
 
     while let Some(result) = join_set.join_next().await {
@@ -379,6 +420,37 @@ fn build_ext_secrets(
     Ok(Arc::new(InMemorySecretsStore::new(crypto)))
 }
 
+fn init_managers_and_clients() -> (
+    Arc<McpSessionManager>,
+    Arc<McpProcessManager>,
+    McpClientsMap,
+) {
+    (
+        Arc::new(McpSessionManager::new()),
+        Arc::new(McpProcessManager::new()),
+        McpClientsMap::default(),
+    )
+}
+
+fn init_wasm_runtime(config: &Config) -> Option<Arc<WasmToolRuntime>> {
+    if config.wasm.enabled {
+        WasmToolRuntime::new(config.wasm.to_runtime_config())
+            .map(Arc::new)
+            .map_err(|e| tracing::warn!("Failed to initialize WASM runtime: {}", e))
+            .ok()
+    } else {
+        None
+    }
+}
+
+fn maybe_register_dev_tools(config: &Config, tools: &Arc<ToolRegistry>) {
+    let builder_registered_dev_tools =
+        config.builder.enabled && (config.agent.allow_local_tools || !config.sandbox.enabled);
+    if config.agent.allow_local_tools && !builder_registered_dev_tools {
+        tools.register_dev_tools();
+    }
+}
+
 pub async fn build_extensions(
     params: BuildExtensionsParams<'_>,
 ) -> Result<ExtensionInitResult, anyhow::Error> {
@@ -391,20 +463,11 @@ pub async fn build_extensions(
         relay_config,
         gateway_token,
     } = params;
-    let mcp_session_manager = Arc::new(McpSessionManager::new());
-    let mcp_process_manager = Arc::new(McpProcessManager::new());
-    let mcp_clients = McpClientsMap::default();
+    let (mcp_session_manager, mcp_process_manager, mcp_clients) = init_managers_and_clients();
 
     // Create WASM tool runtime eagerly so extensions installed after startup
     // (e.g. via the web UI) can still be activated.
-    let wasm_tool_runtime: Option<Arc<WasmToolRuntime>> = if config.wasm.enabled {
-        WasmToolRuntime::new(config.wasm.to_runtime_config())
-            .map(Arc::new)
-            .map_err(|e| tracing::warn!("Failed to initialize WASM runtime: {}", e))
-            .ok()
-    } else {
-        None
-    };
+    let wasm_tool_runtime = init_wasm_runtime(config);
 
     let (dev_loaded_tool_names, _) = tokio::join!(
         load_wasm_tools(
@@ -413,14 +476,14 @@ pub async fn build_extensions(
             tools,
             wasm_tool_runtime.clone(),
         ),
-        load_and_register_mcp_servers(
-            db.clone(),
-            secrets_store.clone(),
+        load_and_register_mcp_servers(LoadMcpServersParams {
+            db: db.clone(),
+            secrets_store: secrets_store.clone(),
             tools,
-            &mcp_session_manager,
-            &mcp_process_manager,
-            Arc::clone(&mcp_clients),
-        ),
+            mcp_session_manager: &mcp_session_manager,
+            mcp_process_manager: &mcp_process_manager,
+            mcp_clients: Arc::clone(&mcp_clients),
+        }),
     );
 
     let catalog_entries = load_catalog_entries();
@@ -446,11 +509,7 @@ pub async fn build_extensions(
 
     // register_builder_tool() already calls register_dev_tools() internally,
     // so only register them here when the builder didn't already do it.
-    let builder_registered_dev_tools =
-        config.builder.enabled && (config.agent.allow_local_tools || !config.sandbox.enabled);
-    if config.agent.allow_local_tools && !builder_registered_dev_tools {
-        tools.register_dev_tools();
-    }
+    maybe_register_dev_tools(config, tools);
 
     Ok((
         mcp_session_manager,
