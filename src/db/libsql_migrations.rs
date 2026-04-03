@@ -261,11 +261,11 @@ pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::err
     Ok(())
 }
 
-async fn apply_agent_jobs_context_fields_migration(
+async fn collect_existing_columns(
     conn: &libsql::Connection,
     version: i64,
     name: &str,
-) -> Result<(), crate::error::DatabaseError> {
+) -> Result<std::collections::BTreeSet<String>, crate::error::DatabaseError> {
     use crate::error::DatabaseError;
 
     let mut rows = conn
@@ -291,6 +291,12 @@ async fn apply_agent_jobs_context_fields_migration(
         columns.insert(column_name);
     }
 
+    Ok(columns)
+}
+
+fn missing_context_field_statements(
+    columns: &std::collections::BTreeSet<String>,
+) -> Vec<&'static str> {
     let mut statements = Vec::new();
     if !columns.contains("transitions") {
         statements
@@ -303,6 +309,19 @@ async fn apply_agent_jobs_context_fields_migration(
         statements
             .push("ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';");
     }
+
+    statements
+}
+
+async fn apply_agent_jobs_context_fields_migration(
+    conn: &libsql::Connection,
+    version: i64,
+    name: &str,
+) -> Result<(), crate::error::DatabaseError> {
+    use crate::error::DatabaseError;
+
+    let columns = collect_existing_columns(conn, version, name).await?;
+    let statements = missing_context_field_statements(&columns);
 
     let tx = conn.transaction().await.map_err(|e| {
         DatabaseError::Migration(format!(
