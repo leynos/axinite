@@ -223,10 +223,10 @@ mod tests {
         assert_eq!(std::mem::size_of_val(&loader2), 0);
     }
 
-    /// Test that DbConfigLoader correctly loads configuration from SettingsStore.
+    /// Test that `DbConfigLoader` correctly loads configuration from `SettingsStore`.
     ///
-    /// Uses a mock SettingsStore to verify the loader fetches settings via get_setting
-    /// and constructs a valid Config with the retrieved values.
+    /// Uses a mock `SettingsStore` to verify the loader fetches all settings via
+    /// `get_all_settings` and constructs a valid `Config` from the retrieved values.
     #[tokio::test]
     async fn db_config_loader_loads_config_from_store() {
         let mut env_guard = EnvVarsGuard::new(&["DATABASE_URL", "AGENT_NAME"]);

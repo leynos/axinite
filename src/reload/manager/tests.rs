@@ -3,6 +3,7 @@
 use std::net::SocketAddr;
 
 use secrecy::SecretString;
+use tempfile::TempDir;
 
 use super::*;
 use crate::config::HttpConfig;
@@ -24,7 +25,7 @@ struct AddrTestCase {
 }
 
 /// Helper to create a minimal test config with the given HTTP config.
-async fn test_config_with_http(http: Option<HttpConfig>) -> crate::config::Config {
+async fn test_config_with_http(http: Option<HttpConfig>) -> (TempDir, crate::config::Config) {
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let temp_db = temp_dir.path().join("test_reload.db");
     let skills_dir = temp_dir.path().join("skills");
@@ -33,7 +34,7 @@ async fn test_config_with_http(http: Option<HttpConfig>) -> crate::config::Confi
         .await
         .expect("test config should build");
     config.channels.http = http;
-    config
+    (temp_dir, config)
 }
 
 #[rstest]
@@ -73,9 +74,8 @@ async fn successful_reload_invokes_all_dependencies(#[case] test_case: AddrTestC
         webhook_secret: Some(SecretString::from("new_secret".to_string())),
     };
 
-    let loader = Arc::new(StubConfigLoader::new_success(
-        test_config_with_http(Some(http_config)).await,
-    ));
+    let (_temp_dir, config) = test_config_with_http(Some(http_config)).await;
+    let loader = Arc::new(StubConfigLoader::new_success(config));
 
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
@@ -166,9 +166,8 @@ async fn address_unchanged_skips_listener_restart(#[case] addr_str: &str) {
         webhook_secret: Some(SecretString::from("secret".to_string())),
     };
 
-    let loader = Arc::new(StubConfigLoader::new_success(
-        test_config_with_http(Some(http_config)).await,
-    ));
+    let (_temp_dir, config) = test_config_with_http(Some(http_config)).await;
+    let loader = Arc::new(StubConfigLoader::new_success(config));
 
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
@@ -268,9 +267,8 @@ async fn listener_restart_failure_prevents_secret_update(#[case] addr_str: &str)
         webhook_secret: Some(SecretString::from("new_secret".to_string())),
     };
 
-    let loader = Arc::new(StubConfigLoader::new_success(
-        test_config_with_http(Some(http_config)).await,
-    ));
+    let (_temp_dir, config) = test_config_with_http(Some(http_config)).await;
+    let loader = Arc::new(StubConfigLoader::new_success(config));
 
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
@@ -306,9 +304,8 @@ async fn http_config_removed_shuts_down_listener_and_clears_secrets() {
     let controller_clone = Arc::clone(&controller);
 
     // Config with no HTTP channel
-    let loader = Arc::new(StubConfigLoader::new_success(
-        test_config_with_http(None).await,
-    ));
+    let (_temp_dir, config) = test_config_with_http(None).await;
+    let loader = Arc::new(StubConfigLoader::new_success(config));
 
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
@@ -360,9 +357,8 @@ async fn readding_same_listener_address_restarts_after_shutdown() {
     let controller_clone = Arc::clone(&controller);
     let spy = Arc::new(SpySecretUpdater::new());
 
-    let remove_loader = Arc::new(StubConfigLoader::new_success(
-        test_config_with_http(None).await,
-    ));
+    let (_remove_temp_dir, remove_config) = test_config_with_http(None).await;
+    let remove_loader = Arc::new(StubConfigLoader::new_success(remove_config));
     let remove_manager = HotReloadManager::new(
         remove_loader as Arc<dyn ConfigLoader>,
         Some(Arc::clone(&controller) as Arc<dyn ListenerController>),
@@ -386,9 +382,8 @@ async fn readding_same_listener_address_restarts_after_shutdown() {
         user_id: "test_user".to_string(),
         webhook_secret: Some(SecretString::from("restored-secret".to_string())),
     };
-    let readd_loader = Arc::new(StubConfigLoader::new_success(
-        test_config_with_http(Some(readd_http)).await,
-    ));
+    let (_readd_temp_dir, readd_config) = test_config_with_http(Some(readd_http)).await;
+    let readd_loader = Arc::new(StubConfigLoader::new_success(readd_config));
     let readd_manager = HotReloadManager::new(
         readd_loader as Arc<dyn ConfigLoader>,
         Some(controller as Arc<dyn ListenerController>),
@@ -406,5 +401,56 @@ async fn readding_same_listener_address_restarts_after_shutdown() {
         restarts,
         vec![current_addr],
         "the stopped listener should restart even when the address matches the previous one"
+    );
+}
+
+#[tokio::test]
+async fn secret_injector_failure_does_not_block_config_reload() {
+    let injector = Arc::new(StubSecretInjector::new_failure());
+    let injector_clone = Arc::clone(&injector);
+    let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
+    let controller = Arc::new(StubListenerController::new(current_addr));
+    let controller_clone = Arc::clone(&controller);
+    let spy = Arc::new(SpySecretUpdater::new());
+    let spy_clone = Arc::clone(&spy);
+
+    let http_config = HttpConfig {
+        host: "127.0.0.1".to_string(),
+        port: 8081,
+        user_id: "test_user".to_string(),
+        webhook_secret: Some(SecretString::from("rotated-secret".to_string())),
+    };
+    let (_temp_dir, config) = test_config_with_http(Some(http_config)).await;
+    let loader = Arc::new(StubConfigLoader::new_success(config));
+
+    let manager = HotReloadManager::new(
+        loader as Arc<dyn ConfigLoader>,
+        Some(controller as Arc<dyn ListenerController>),
+        Some(injector as Arc<dyn SecretInjector>),
+        vec![spy as Arc<dyn crate::channels::ChannelSecretUpdater>],
+    );
+
+    let result = manager.perform_reload().await;
+    assert!(
+        result.is_ok(),
+        "HotReloadManager::perform_reload should keep applying config when the injector fails"
+    );
+    assert!(
+        injector_clone.was_called().await,
+        "StubSecretInjector should still be invoked during reload"
+    );
+    assert_eq!(
+        controller_clone.restart_calls().await,
+        vec![
+            "127.0.0.1:8081"
+                .parse()
+                .expect("valid socket address for restarted listener")
+        ],
+        "the listener should still restart onto the new address"
+    );
+    assert_eq!(
+        spy_clone.last_secret().await,
+        Some(Some("rotated-secret".to_string())),
+        "channel secret updates should still propagate the new webhook secret"
     );
 }

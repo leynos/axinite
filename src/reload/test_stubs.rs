@@ -127,12 +127,21 @@ impl NativeListenerController for StubListenerController {
 /// Stub secret injector that records whether inject was called.
 pub struct StubSecretInjector {
     called: Arc<Mutex<bool>>,
+    should_fail: bool,
 }
 
 impl StubSecretInjector {
     pub fn new() -> Self {
         Self {
             called: Arc::new(Mutex::new(false)),
+            should_fail: false,
+        }
+    }
+
+    pub fn new_failure() -> Self {
+        Self {
+            called: Arc::new(Mutex::new(false)),
+            should_fail: true,
         }
     }
 
@@ -151,6 +160,9 @@ impl Default for StubSecretInjector {
 impl NativeSecretInjector for StubSecretInjector {
     async fn inject(&self) {
         *self.called.lock().await = true;
+        if self.should_fail {
+            tracing::error!("Simulated secret injector failure");
+        }
     }
 }
 
