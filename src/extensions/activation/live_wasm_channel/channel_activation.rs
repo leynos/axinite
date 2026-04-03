@@ -133,6 +133,21 @@ impl super::LiveWasmChannelActivation {
             .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))
     }
 
+    async fn resolve_webhook_secret(
+        &self,
+        channel_name: &str,
+        secret_name: &str,
+    ) -> Result<Option<String>, ExtensionError> {
+        match self.secrets.get_decrypted(&self.user_id, secret_name).await {
+            Ok(secret) => Ok(Some(secret.expose().to_string())),
+            Err(crate::secrets::SecretError::NotFound(_)) => Ok(None),
+            Err(e) => Err(ExtensionError::ActivationFailed(format!(
+                "Failed to load webhook secret for '{}': {}",
+                channel_name, e
+            ))),
+        }
+    }
+
     async fn complete_channel_activation(
         &self,
         channel_arc: Arc<crate::channels::wasm::WasmChannel>,
@@ -179,11 +194,8 @@ impl super::LiveWasmChannelActivation {
         // existing channel. Once `name` is published into
         // `active_channel_names`, later callers switch to
         // `refresh_active_channel`.
-        {
-            let active = self.active_channel_names.read().await;
-            if active.contains(name) {
-                return self.refresh_active_channel(name).await;
-            }
+        if self.active_channel_names.read().await.contains(name) {
+            return self.refresh_active_channel(name).await;
         }
 
         let (
@@ -205,28 +217,14 @@ impl super::LiveWasmChannelActivation {
         let loaded = self
             .load_wasm_channel_from_disk(name, &channel_runtime, &pairing_store)
             .await?;
-
         let channel_name = loaded.name().to_string();
         let webhook_secret_name = loaded.webhook_secret_name();
         let secret_header = loaded.webhook_secret_header().map(|s| s.to_string());
         let sig_key_secret_name = loaded.signature_key_secret_name();
         let hmac_secret_name = loaded.hmac_secret_name();
-
-        let webhook_secret = match self
-            .secrets
-            .get_decrypted(&self.user_id, &webhook_secret_name)
-            .await
-        {
-            Ok(secret) => Some(secret.expose().to_string()),
-            Err(crate::secrets::SecretError::NotFound(_)) => None,
-            Err(e) => {
-                return Err(ExtensionError::ActivationFailed(format!(
-                    "Failed to load webhook secret for '{}': {}",
-                    channel_name, e
-                )));
-            }
-        };
-
+        let webhook_secret = self
+            .resolve_webhook_secret(&channel_name, &webhook_secret_name)
+            .await?;
         let channel_arc = Arc::new(loaded.channel);
 
         self.inject_runtime_config(
@@ -236,7 +234,6 @@ impl super::LiveWasmChannelActivation {
             webhook_secret.as_deref(),
         )
         .await;
-
         self.register_webhook_router_endpoints(
             &wasm_channel_router,
             Arc::clone(&channel_arc),
@@ -250,10 +247,8 @@ impl super::LiveWasmChannelActivation {
             },
         )
         .await;
-
         self.inject_and_log_credentials(&channel_arc, &channel_name)
             .await;
-
         self.complete_channel_activation(channel_arc, &channel_name, &channel_manager)
             .await
     }
