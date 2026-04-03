@@ -1,6 +1,9 @@
 //! Transport type serialisation fidelity tests.
 
 use rstest::rstest;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use std::fmt::Debug;
 
 use crate::worker::api::{
     COMPLETE_ROUTE, CREDENTIALS_ROUTE, EVENT_ROUTE, JOB_ROUTE, PROMPT_ROUTE,
@@ -11,6 +14,19 @@ use crate::worker::api::{
 use super::fixtures::{
     sample_catalog_response, sample_execution_request, sample_execution_response,
 };
+
+/// Serialise `value` to JSON and immediately deserialise it back, asserting that the round-trip produces an equal value without field loss.
+fn assert_round_trips<T>(value: T)
+where
+    T: Serialize + DeserializeOwned + Debug + PartialEq,
+{
+    let serialized = serde_json::to_string(&value).expect("serialise");
+    let deserialized: T = serde_json::from_str(&serialized).expect("deserialise");
+    assert_eq!(
+        deserialized, value,
+        "value must round-trip without field loss"
+    );
+}
 
 const fn const_str_eq(left: &str, right: &str) -> bool {
     let left = left.as_bytes();
@@ -102,45 +118,21 @@ fn worker_and_orchestrator_share_remote_tool_route_constants() {
 fn remote_tool_catalog_response_round_trip_without_field_loss(
     sample_catalog_response: RemoteToolCatalogResponse,
 ) {
-    let serialized = serde_json::to_string(&sample_catalog_response)
-        .expect("serialize RemoteToolCatalogResponse");
-    let deserialized: RemoteToolCatalogResponse =
-        serde_json::from_str(&serialized).expect("deserialize RemoteToolCatalogResponse");
-
-    assert_eq!(
-        deserialized, sample_catalog_response,
-        "catalog response must round-trip without field loss"
-    );
+    assert_round_trips(sample_catalog_response);
 }
 
 #[rstest]
 fn remote_tool_execution_request_round_trip_without_field_loss(
     sample_execution_request: RemoteToolExecutionRequest,
 ) {
-    let serialized = serde_json::to_string(&sample_execution_request)
-        .expect("serialize RemoteToolExecutionRequest");
-    let deserialized: RemoteToolExecutionRequest =
-        serde_json::from_str(&serialized).expect("deserialize RemoteToolExecutionRequest");
-
-    assert_eq!(
-        deserialized, sample_execution_request,
-        "execution request must round-trip without field loss"
-    );
+    assert_round_trips(sample_execution_request);
 }
 
 #[rstest]
 fn remote_tool_execution_response_round_trip_without_field_loss(
     sample_execution_response: RemoteToolExecutionResponse,
 ) {
-    let serialized = serde_json::to_string(&sample_execution_response)
-        .expect("serialize RemoteToolExecutionResponse");
-    let deserialized: RemoteToolExecutionResponse =
-        serde_json::from_str(&serialized).expect("deserialize RemoteToolExecutionResponse");
-
-    assert_eq!(
-        deserialized, sample_execution_response,
-        "execution response must round-trip without field loss"
-    );
+    assert_round_trips(sample_execution_response);
 }
 
 #[test]

@@ -47,6 +47,24 @@ async fn spawn_test_server(
     Ok((format!("http://{addr}"), handle))
 }
 
+/// Spin up a test server using the provided router and return a connected client.
+///
+/// The caller supplies a closure that receives the shared `ClientMethodTestState`
+/// and returns a fully configured `Router`. This avoids repeating state
+/// construction and client initialisation in every test body.
+async fn setup_for_test(
+    make_router: impl FnOnce(Arc<ClientMethodTestState>) -> Router,
+) -> anyhow::Result<(
+    Arc<ClientMethodTestState>,
+    WorkerHttpClient,
+    tokio::task::JoinHandle<()>,
+)> {
+    let state = Arc::new(ClientMethodTestState::default());
+    let (base_url, handle) = spawn_test_server(make_router(Arc::clone(&state))).await?;
+    let client = WorkerHttpClient::new(base_url, Uuid::nil(), TEST_BEARER_TOKEN.to_string())?;
+    Ok((state, client, handle))
+}
+
 #[tokio::test]
 async fn worker_http_client_report_status_posts_status_payload() -> anyhow::Result<()> {
     async fn handler(
@@ -60,14 +78,12 @@ async fn worker_http_client_report_status_posts_status_payload() -> anyhow::Resu
         StatusCode::OK
     }
 
-    let state = Arc::new(ClientMethodTestState::default());
-    let (base_url, handle) = spawn_test_server(
+    let (state, client, handle) = setup_for_test(|state| {
         Router::new()
             .route(STATUS_ROUTE, post(handler))
-            .with_state(Arc::clone(&state)),
-    )
+            .with_state(state)
+    })
     .await?;
-    let client = WorkerHttpClient::new(base_url, Uuid::nil(), TEST_BEARER_TOKEN.to_string())?;
 
     let update = StatusUpdate::new(WorkerState::InProgress, Some("working".to_string()), 3);
     client.report_status(&update).await?;
@@ -101,14 +117,12 @@ async fn worker_http_client_report_status_lossy_swallows_rejections() -> anyhow:
         (StatusCode::INTERNAL_SERVER_ERROR, "nope")
     }
 
-    let state = Arc::new(ClientMethodTestState::default());
-    let (base_url, handle) = spawn_test_server(
+    let (state, client, handle) = setup_for_test(|state| {
         Router::new()
             .route(STATUS_ROUTE, post(handler))
-            .with_state(Arc::clone(&state)),
-    )
+            .with_state(state)
+    })
     .await?;
-    let client = WorkerHttpClient::new(base_url, Uuid::nil(), TEST_BEARER_TOKEN.to_string())?;
 
     let update = StatusUpdate::new(WorkerState::Running, Some("still going".to_string()), 5);
     client.report_status_lossy(&update).await;
@@ -137,14 +151,12 @@ async fn worker_http_client_post_event_posts_event_payload() -> anyhow::Result<(
         StatusCode::OK
     }
 
-    let state = Arc::new(ClientMethodTestState::default());
-    let (base_url, handle) = spawn_test_server(
+    let (state, client, handle) = setup_for_test(|state| {
         Router::new()
             .route(EVENT_ROUTE, post(handler))
-            .with_state(Arc::clone(&state)),
-    )
+            .with_state(state)
+    })
     .await?;
-    let client = WorkerHttpClient::new(base_url, Uuid::nil(), TEST_BEARER_TOKEN.to_string())?;
     let payload = JobEventPayload {
         event_type: crate::worker::api::JobEventType::Message,
         data: serde_json::json!({"role": "assistant", "content": "hello"}),
@@ -178,14 +190,12 @@ async fn worker_http_client_poll_prompt_returns_prompt_response() -> anyhow::Res
         )
     }
 
-    let state = Arc::new(ClientMethodTestState::default());
-    let (base_url, handle) = spawn_test_server(
+    let (_, client, handle) = setup_for_test(|state| {
         Router::new()
             .route(PROMPT_ROUTE, get(handler))
-            .with_state(Arc::clone(&state)),
-    )
+            .with_state(state)
+    })
     .await?;
-    let client = WorkerHttpClient::new(base_url, Uuid::nil(), TEST_BEARER_TOKEN.to_string())?;
 
     let prompt = client
         .poll_prompt()
@@ -211,14 +221,12 @@ async fn worker_http_client_poll_prompt_returns_none_for_no_content() -> anyhow:
         StatusCode::NO_CONTENT
     }
 
-    let state = Arc::new(ClientMethodTestState::default());
-    let (base_url, handle) = spawn_test_server(
+    let (_, client, handle) = setup_for_test(|state| {
         Router::new()
             .route(PROMPT_ROUTE, get(handler))
-            .with_state(Arc::clone(&state)),
-    )
+            .with_state(state)
+    })
     .await?;
-    let client = WorkerHttpClient::new(base_url, Uuid::nil(), TEST_BEARER_TOKEN.to_string())?;
 
     assert!(client.poll_prompt().await?.is_none());
 
@@ -241,14 +249,12 @@ async fn worker_http_client_fetch_credentials_returns_payload() -> anyhow::Resul
         }])
     }
 
-    let state = Arc::new(ClientMethodTestState::default());
-    let (base_url, handle) = spawn_test_server(
+    let (_, client, handle) = setup_for_test(|state| {
         Router::new()
             .route(CREDENTIALS_ROUTE, get(handler))
-            .with_state(Arc::clone(&state)),
-    )
+            .with_state(state)
+    })
     .await?;
-    let client = WorkerHttpClient::new(base_url, Uuid::nil(), TEST_BEARER_TOKEN.to_string())?;
 
     let credentials = client.fetch_credentials().await?;
 
@@ -272,14 +278,12 @@ async fn worker_http_client_fetch_credentials_returns_empty_for_no_content() -> 
         StatusCode::NO_CONTENT
     }
 
-    let state = Arc::new(ClientMethodTestState::default());
-    let (base_url, handle) = spawn_test_server(
+    let (_, client, handle) = setup_for_test(|state| {
         Router::new()
             .route(CREDENTIALS_ROUTE, get(handler))
-            .with_state(Arc::clone(&state)),
-    )
+            .with_state(state)
+    })
     .await?;
-    let client = WorkerHttpClient::new(base_url, Uuid::nil(), TEST_BEARER_TOKEN.to_string())?;
 
     assert!(client.fetch_credentials().await?.is_empty());
 
@@ -301,14 +305,12 @@ async fn worker_http_client_report_complete_posts_completion_report() -> anyhow:
         StatusCode::OK
     }
 
-    let state = Arc::new(ClientMethodTestState::default());
-    let (base_url, handle) = spawn_test_server(
+    let (state, client, handle) = setup_for_test(|state| {
         Router::new()
             .route(COMPLETE_ROUTE, post(handler))
-            .with_state(Arc::clone(&state)),
-    )
+            .with_state(state)
+    })
     .await?;
-    let client = WorkerHttpClient::new(base_url, Uuid::nil(), TEST_BEARER_TOKEN.to_string())?;
     let report = CompletionReport {
         success: true,
         message: Some("done".to_string()),
