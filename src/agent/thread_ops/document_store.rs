@@ -6,7 +6,10 @@ use crate::channels::{IncomingAttachment, IncomingMessage};
 
 /// Replace characters that are unsafe in file-system paths with an underscore.
 fn sanitise_filename_char(c: char) -> char {
-    if matches!(c, '/' | '\\' | '\0') {
+    if matches!(
+        c,
+        '/' | '\\' | '\0' | '\u{2215}' | '\u{2216}' | '\u{29F5}' | '\u{FF0F}' | '\u{FF3C}'
+    ) {
         '_'
     } else {
         c
@@ -27,6 +30,7 @@ fn get_valid_document_text(attachment: &IncomingAttachment) -> Option<&str> {
 
 fn sanitise_filename(raw_name: &str) -> String {
     let filename: String = raw_name.chars().map(sanitise_filename_char).collect();
+    let filename = filename.replace("..", "__");
     let filename = filename.trim_start_matches('.');
     if filename.is_empty() {
         "unnamed_document".to_string()
@@ -96,5 +100,35 @@ pub(super) async fn store_extracted_documents(
         let content = format!("{header}{text}");
 
         write_document_to_workspace(workspace, &path, &content, text.len()).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitise_filename;
+
+    #[test]
+    fn sanitise_filename_removes_parent_traversal_segments() {
+        let filename = sanitise_filename("foo/../secret");
+        assert!(!filename.contains(".."));
+    }
+
+    #[test]
+    fn sanitise_filename_replaces_confusable_slashes() {
+        assert_eq!(sanitise_filename("foo/\u{2215}bar"), "foo__bar");
+    }
+
+    #[test]
+    fn sanitise_filename_hardens_leading_traversal() {
+        let filename = sanitise_filename("../etc/passwd");
+        assert!(!filename.contains(".."));
+        assert!(!filename.contains('/'));
+        assert!(!filename.contains('\\'));
+        assert!(!filename.is_empty());
+    }
+
+    #[test]
+    fn sanitise_filename_preserves_normal_filenames() {
+        assert_eq!(sanitise_filename("report.txt"), "report.txt");
     }
 }
