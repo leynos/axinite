@@ -183,6 +183,7 @@ fn test_stuck_since_returns_latest_stuck_transition() {
     assert_eq!(ctx.stuck_since(), Some(second_stuck_at));
 }
 
+/// Simulate random `JobContext`/`JobState` transitions with `StdRng`; the `_` branch is an intentional no-op for test coverage.
 fn apply_random_step(ctx: &mut JobContext, rng: &mut StdRng, case_idx: usize, step: usize) {
     match rng.gen_range(0..4) {
         0 if matches!(ctx.state, JobState::Pending) => {
