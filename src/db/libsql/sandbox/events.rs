@@ -8,19 +8,13 @@ use crate::db::libsql::{LibSqlBackend, get_i64, get_json, get_text, get_ts};
 use crate::error::DatabaseError;
 use crate::history::JobEventRecord;
 
-enum JobEventsQueryKind {
-    BeforeWithLimit,
-    BeforeOnly,
-    LimitOnly,
-    All,
-}
-
 fn build_list_job_events_query(
+    job_id: &str,
     before_id: Option<i64>,
     limit: Option<i64>,
-) -> (&'static str, JobEventsQueryKind) {
+) -> (&'static str, libsql::params::Params) {
     match (before_id, limit) {
-        (Some(_), Some(_)) => (
+        (Some(before_id), Some(limit)) => (
             r#"
             SELECT id, job_id, event_type, data, created_at
             FROM (
@@ -31,16 +25,16 @@ fn build_list_job_events_query(
             )
             ORDER BY id ASC
             "#,
-            JobEventsQueryKind::BeforeWithLimit,
+            libsql::params::Params::Positional(vec![job_id.into(), before_id.into(), limit.into()]),
         ),
-        (Some(_), None) => (
+        (Some(before_id), None) => (
             r#"
             SELECT id, job_id, event_type, data, created_at
             FROM job_events WHERE job_id = ?1 AND id < ?2 ORDER BY id ASC
             "#,
-            JobEventsQueryKind::BeforeOnly,
+            libsql::params::Params::Positional(vec![job_id.into(), before_id.into()]),
         ),
-        (None, Some(_)) => (
+        (None, Some(limit)) => (
             r#"
             SELECT id, job_id, event_type, data, created_at
             FROM (
@@ -51,14 +45,14 @@ fn build_list_job_events_query(
             )
             ORDER BY id ASC
             "#,
-            JobEventsQueryKind::LimitOnly,
+            libsql::params::Params::Positional(vec![job_id.into(), limit.into()]),
         ),
         (None, None) => (
             r#"
             SELECT id, job_id, event_type, data, created_at
             FROM job_events WHERE job_id = ?1 ORDER BY id ASC
             "#,
-            JobEventsQueryKind::All,
+            libsql::params::Params::Positional(vec![job_id.into()]),
         ),
     }
 }
@@ -87,30 +81,11 @@ pub(super) async fn list_job_events(
 ) -> Result<Vec<JobEventRecord>, DatabaseError> {
     let conn = backend.connect().await?;
     let job_id = job_id.to_string();
-    let (query, kind) = build_list_job_events_query(before_id, limit);
-    let mut rows = match (kind, before_id, limit) {
-        (JobEventsQueryKind::BeforeWithLimit, Some(before_id), Some(limit)) => conn
-            .query(query, params![job_id.as_str(), before_id, limit])
-            .await
-            .map_err(|e| DatabaseError::Query(e.to_string()))?,
-        (JobEventsQueryKind::BeforeOnly, Some(before_id), None) => conn
-            .query(query, params![job_id.as_str(), before_id])
-            .await
-            .map_err(|e| DatabaseError::Query(e.to_string()))?,
-        (JobEventsQueryKind::LimitOnly, None, Some(limit)) => conn
-            .query(query, params![job_id.as_str(), limit])
-            .await
-            .map_err(|e| DatabaseError::Query(e.to_string()))?,
-        (JobEventsQueryKind::All, None, None) => conn
-            .query(query, params![job_id.as_str()])
-            .await
-            .map_err(|e| DatabaseError::Query(e.to_string()))?,
-        _ => {
-            return Err(DatabaseError::Query(
-                "invalid job event pagination parameters".to_string(),
-            ));
-        }
-    };
+    let (query, query_params) = build_list_job_events_query(&job_id, before_id, limit);
+    let mut rows = conn
+        .query(query, query_params)
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
     let mut events = Vec::new();
     while let Some(row) = rows

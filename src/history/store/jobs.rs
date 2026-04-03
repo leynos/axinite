@@ -330,9 +330,13 @@ mod tests {
             timestamp: Utc::now(),
             reason: Some("test".to_string()),
         });
-        store.save_job(&ctx).await.unwrap();
+        store.save_job(&ctx).await.expect("save_job should succeed");
 
-        let loaded = store.get_job(ctx.job_id).await.unwrap().unwrap();
+        let loaded = store
+            .get_job(ctx.job_id)
+            .await
+            .expect("get_job should succeed")
+            .expect("job should exist");
         assert_eq!(loaded.user_id, "test-user-42");
         assert_eq!(loaded.user_timezone, "Europe/London");
         assert_eq!(loaded.metadata, ctx.metadata);
