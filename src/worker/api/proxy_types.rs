@@ -45,7 +45,7 @@ impl From<FinishReason> for crate::llm::FinishReason {
     }
 }
 
-/// Completion result from the orchestrator (proxied from the real LLM).
+/// Request payload for a completion proxied through the orchestrator.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProxyCompletionRequest {
     /// Conversation history forwarded to the orchestrator-backed provider.
