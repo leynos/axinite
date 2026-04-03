@@ -1,9 +1,11 @@
 //! Hot-reload orchestration for configuration, listeners, and secrets.
 //!
-//! Separates reload policy from I/O by defining three trait boundaries:
+//! Separates reload policy from I/O by defining four trait boundaries:
 //! - [`ConfigLoader`] — load configuration from DB or environment
 //! - [`ListenerController`] — restart HTTP listeners
 //! - [`SecretInjector`] — inject secrets into the environment overlay
+//! - [`crate::channels::ChannelSecretUpdater`] — hot-swap rotated or cleared
+//!   channel secrets
 //!
 //! The [`HotReloadManager`] orchestrates these boundaries without knowing
 //! implementation details, making reload logic testable via hand-rolled stubs.
@@ -27,10 +29,14 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::channels::{ChannelSecretUpdater, WebhookServer};
-use crate::db::SettingsStore;
+use crate::db::{SettingsStore, UserId};
 use crate::secrets::SecretsStore;
 
 const DEFAULT_USER_ID: &str = "default";
+
+fn default_user_id() -> UserId {
+    UserId::from(DEFAULT_USER_ID)
+}
 
 /// Factory function to create a HotReloadManager with default implementations.
 ///
@@ -46,9 +52,11 @@ pub fn create_hot_reload_manager(
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
 ) -> HotReloadManager {
+    let default_user_id = default_user_id();
+
     // Instantiate config loader based on whether settings store is present
     let config_loader: Arc<dyn ConfigLoader> = match settings_store {
-        Some(store) => Arc::new(DbConfigLoader::new(store, DEFAULT_USER_ID.to_string())),
+        Some(store) => Arc::new(DbConfigLoader::new(store, default_user_id.clone())),
         None => Arc::new(EnvConfigLoader::new()),
     };
 
@@ -58,7 +66,7 @@ pub fn create_hot_reload_manager(
 
     // Wrap secrets store in secret injector with "default" user_id
     let secret_injector: Option<Arc<dyn SecretInjector>> = secrets_store.map(|ss| {
-        Arc::new(DbSecretInjector::new(ss, DEFAULT_USER_ID.to_string())) as Arc<dyn SecretInjector>
+        Arc::new(DbSecretInjector::new(ss, default_user_id.clone())) as Arc<dyn SecretInjector>
     });
 
     HotReloadManager::new(

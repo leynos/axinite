@@ -4,6 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::db::UserId;
 use crate::secrets::{SecretError, SecretsStore};
 
 const HTTP_WEBHOOK_SECRET_KEY: &str = "HTTP_WEBHOOK_SECRET";
@@ -41,7 +42,7 @@ where
 /// Secret injector that reads from a database-backed secrets store.
 pub struct DbSecretInjector {
     secrets_store: Arc<dyn SecretsStore + Send + Sync>,
-    user_id: String,
+    user_id: UserId,
 }
 
 impl DbSecretInjector {
@@ -51,7 +52,7 @@ impl DbSecretInjector {
     ///
     /// `secrets_store` — database-backed store for encrypted secrets.
     /// `user_id` — identifier of the user whose secrets should be loaded.
-    pub fn new(secrets_store: Arc<dyn SecretsStore + Send + Sync>, user_id: String) -> Self {
+    pub fn new(secrets_store: Arc<dyn SecretsStore + Send + Sync>, user_id: UserId) -> Self {
         Self {
             secrets_store,
             user_id,
@@ -71,23 +72,19 @@ impl DbSecretInjector {
     /// If the secret does not exist, logs and clears the overlay entry — absence is not an error.
     /// Other errors are logged but do not fail the reload.
     async fn inject_webhook_secret(&self) {
-        let result = self
+        let webhook_secret = match self
             .secrets_store
-            .get_decrypted(&self.user_id, SECRETS_STORE_KEY)
-            .await;
-
-        let is_missing = matches!(result, Err(SecretError::NotFound(_)));
-
-        if is_missing {
-            crate::config::remove_single_var(HTTP_WEBHOOK_SECRET_KEY);
-            tracing::debug!(
-                "{HTTP_WEBHOOK_SECRET_KEY} not found in secrets store; cleared overlay entry"
-            );
-            return;
-        }
-
-        let webhook_secret = match result {
+            .get_decrypted(self.user_id.as_str(), SECRETS_STORE_KEY)
+            .await
+        {
             Ok(s) => s,
+            Err(SecretError::NotFound(_)) => {
+                crate::config::remove_single_var(HTTP_WEBHOOK_SECRET_KEY);
+                tracing::debug!(
+                    "{HTTP_WEBHOOK_SECRET_KEY} not found in secrets store; cleared overlay entry"
+                );
+                return;
+            }
             Err(e) => {
                 tracing::error!("Failed to inject {HTTP_WEBHOOK_SECRET_KEY}: {e}");
                 return;
@@ -106,9 +103,17 @@ mod tests {
     use secrecy::SecretString;
 
     use super::*;
-    use crate::config::helpers::{EnvKey, optional_env};
+    use crate::config::helpers::{ENV_MUTEX, EnvKey, optional_env};
     use crate::secrets::{CreateSecretParams, InMemorySecretsStore, SecretsCrypto, SecretsStore};
     use crate::testing::credentials::TEST_CRYPTO_KEY;
+
+    struct OverlayResetGuard(&'static str);
+
+    impl Drop for OverlayResetGuard {
+        fn drop(&mut self) {
+            crate::config::remove_single_var(self.0);
+        }
+    }
 
     /// Test the HTTP_WEBHOOK_SECRET_KEY constant value.
     #[test]
@@ -118,6 +123,8 @@ mod tests {
 
     #[tokio::test]
     async fn db_secret_injector_injects_and_clears_webhook_secret() {
+        let _env_guard = ENV_MUTEX.lock().expect("env mutex poisoned");
+        let _overlay_guard = OverlayResetGuard(HTTP_WEBHOOK_SECRET_KEY);
         crate::config::remove_single_var(HTTP_WEBHOOK_SECRET_KEY);
 
         let crypto = Arc::new(
@@ -134,7 +141,7 @@ mod tests {
             .await
             .expect("secret should be created");
 
-        let injector = DbSecretInjector::new(Arc::clone(&store), "test_user".to_string());
+        let injector = DbSecretInjector::new(Arc::clone(&store), UserId::from("test_user"));
 
         NativeSecretInjector::inject(&injector).await;
         assert_eq!(

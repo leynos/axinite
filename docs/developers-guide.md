@@ -318,7 +318,7 @@ triggered by a SIGHUP signal in production environments.
 
 ### Core traits
 
-Three trait boundaries separate reload policy from I/O:
+Four trait boundaries separate reload policy from I/O:
 
 - `ConfigLoader` — Loads configuration from database (`DbConfigLoader`) or
   environment variables (`EnvConfigLoader`).
@@ -326,15 +326,20 @@ Three trait boundaries separate reload policy from I/O:
   `WebhookListenerController` for the webhook server.
 - `SecretInjector` — Injects secrets into an environment variable overlay,
   implemented by `DbSecretInjector` for database-backed secrets.
+- `ChannelSecretUpdater` — Propagates rotated or cleared channel secrets
+  without restarting the channel. `HotReloadManager` uses this boundary in
+  step 4 of the reload flow to fan out webhook-secret changes to live
+  channels.
 
 Each trait has a native async sibling (`NativeConfigLoader`,
-`NativeListenerController`, `NativeSecretInjector`) that returns
-`impl Future` rather than boxed futures. A blanket implementation
-converts the native traits to the dyn-compatible boxed-future form.
+`NativeListenerController`, `NativeSecretInjector`,
+`NativeChannelSecretUpdater`) that returns `impl Future` rather than boxed
+futures. A blanket implementation converts the native traits to the
+dyn-compatible boxed-future form.
 
 ### HotReloadManager orchestrator
 
-`HotReloadManager` composes the three boundaries and coordinates the
+`HotReloadManager` composes the four boundaries and coordinates the
 reload sequence:
 
 1. Inject secrets into the environment overlay
@@ -356,7 +361,7 @@ Adding a new config source:
 Adding a new listener controller:
 
 1. Implement `NativeListenerController` for the server wrapper.
-2. Implement `current_addr()` and `restart_with_addr()`.
+2. Implement `current_addr()`, `is_running()`, and `restart_with_addr()`.
 
 ### Test stubs
 
@@ -369,7 +374,7 @@ testing:
 - `SpySecretUpdater` — Records all secret update calls.
 
 Use these in unit tests to verify manager behaviour without real I/O.
-Example usage is in `src/reload/manager.rs` tests.
+Example usage is in `src/reload/manager/tests.rs`.
 
 ## Expected follow-up changes
 

@@ -8,8 +8,8 @@ use crate::reload::{ConfigLoader, ListenerController, ReloadError, SecretInjecto
 
 /// Orchestrates hot-reload operations across config, listeners, and secrets.
 ///
-/// Composes three injected boundaries (config loading, listener control,
-/// secret injection) with channel secret updates. Each boundary is testable
+/// Composes config loading, listener control, secret injection, and
+/// channel secret updates. Each boundary is testable
 /// via hand-rolled stubs.
 pub struct HotReloadManager {
     config_loader: Arc<dyn ConfigLoader>,
@@ -126,8 +126,9 @@ impl HotReloadManager {
         };
 
         let new_addr = resolved_addrs[0];
+        let is_running = controller.is_running().await;
         let old_addr = controller.current_addr().await;
-        if resolved_addrs.contains(&old_addr) {
+        if is_running && resolved_addrs.contains(&old_addr) {
             tracing::debug!("HTTP listener address unchanged, skipping restart");
             return Ok(());
         }

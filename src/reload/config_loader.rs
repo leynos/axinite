@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::config::Config;
-use crate::db::SettingsStore;
+use crate::db::{SettingsStore, UserId};
 use crate::error::ConfigError;
 
 /// Boxed future used at the dyn config-loader boundary.
@@ -39,7 +39,7 @@ where
 /// Config loader that reads from the database.
 pub struct DbConfigLoader {
     settings_store: Arc<dyn SettingsStore>,
-    user_id: String,
+    user_id: UserId,
 }
 
 impl DbConfigLoader {
@@ -48,7 +48,7 @@ impl DbConfigLoader {
     /// `settings_store` — shared settings store; the Arc is cloned but the
     /// underlying store must live for the lifetime of the loader.
     /// `user_id` — identifier of the user whose configuration will be loaded.
-    pub fn new(settings_store: Arc<dyn SettingsStore>, user_id: String) -> Self {
+    pub fn new(settings_store: Arc<dyn SettingsStore>, user_id: UserId) -> Self {
         Self {
             settings_store,
             user_id,
@@ -58,7 +58,7 @@ impl DbConfigLoader {
 
 impl NativeConfigLoader for DbConfigLoader {
     async fn load(&self) -> Result<Config, ConfigError> {
-        Config::from_db(self.settings_store.as_ref(), &self.user_id).await
+        Config::from_db(self.settings_store.as_ref(), self.user_id.as_str()).await
     }
 }
 
@@ -249,7 +249,7 @@ mod tests {
             .returning(move |_| Ok(settings.clone()));
 
         let store = Arc::new(MockSettingsStore::new(inner));
-        let loader = DbConfigLoader::new(store, "test_user".to_string());
+        let loader = DbConfigLoader::new(store, UserId::from("test_user"));
 
         // Call load() and verify it returns a valid Config
         let config = NativeConfigLoader::load(&loader)

@@ -21,6 +21,9 @@ pub trait ListenerController: Send + Sync {
     /// Get the current bind address.
     fn current_addr<'a>(&'a self) -> ListenerControllerFuture<'a, SocketAddr>;
 
+    /// Returns whether the listener is currently running.
+    fn is_running<'a>(&'a self) -> ListenerControllerFuture<'a, bool>;
+
     /// Restart the listener on a new address.
     ///
     /// If the restart fails, the listener should remain on the old address.
@@ -41,6 +44,9 @@ pub trait NativeListenerController: Send + Sync {
     /// See [`ListenerController::current_addr`].
     fn current_addr(&self) -> impl Future<Output = SocketAddr> + Send + '_;
 
+    /// See [`ListenerController::is_running`].
+    fn is_running(&self) -> impl Future<Output = bool> + Send + '_;
+
     /// See [`ListenerController::restart_with_addr`].
     fn restart_with_addr(
         &self,
@@ -57,6 +63,10 @@ where
 {
     fn current_addr<'a>(&'a self) -> ListenerControllerFuture<'a, SocketAddr> {
         Box::pin(NativeListenerController::current_addr(self))
+    }
+
+    fn is_running<'a>(&'a self) -> ListenerControllerFuture<'a, bool> {
+        Box::pin(NativeListenerController::is_running(self))
     }
 
     fn restart_with_addr<'a>(
@@ -91,6 +101,11 @@ impl NativeListenerController for WebhookListenerController {
     async fn current_addr(&self) -> SocketAddr {
         let server = self.server.lock().await;
         server.current_addr()
+    }
+
+    async fn is_running(&self) -> bool {
+        let server = self.server.lock().await;
+        server.is_running()
     }
 
     async fn restart_with_addr(&self, addr: SocketAddr) -> Result<(), ChannelError> {
@@ -140,6 +155,10 @@ mod tests {
             addr1,
             "current_addr() should report the bound listener address"
         );
+        assert!(
+            NativeListenerController::is_running(&controller).await,
+            "is_running() should report the listener as live after start()"
+        );
 
         NativeListenerController::restart_with_addr(&controller, addr2)
             .await
@@ -159,6 +178,10 @@ mod tests {
         assert_eq!(response.status(), reqwest::StatusCode::OK);
 
         NativeListenerController::shutdown(&controller).await;
+        assert!(
+            !NativeListenerController::is_running(&controller).await,
+            "is_running() should report false after shutdown()"
+        );
 
         let shutdown_result = tokio::time::timeout(
             std::time::Duration::from_millis(200),

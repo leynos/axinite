@@ -351,3 +351,60 @@ async fn http_config_removed_shuts_down_listener_and_clears_secrets() {
         "ChannelSecretUpdater should clear the webhook secret when HTTP config is removed"
     );
 }
+
+#[tokio::test]
+async fn readding_same_listener_address_restarts_after_shutdown() {
+    let injector = Arc::new(StubSecretInjector::new());
+    let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
+    let controller = Arc::new(StubListenerController::new(current_addr));
+    let controller_clone = Arc::clone(&controller);
+    let spy = Arc::new(SpySecretUpdater::new());
+
+    let remove_loader = Arc::new(StubConfigLoader::new_success(
+        test_config_with_http(None).await,
+    ));
+    let remove_manager = HotReloadManager::new(
+        remove_loader as Arc<dyn ConfigLoader>,
+        Some(Arc::clone(&controller) as Arc<dyn ListenerController>),
+        Some(Arc::clone(&injector) as Arc<dyn SecretInjector>),
+        vec![Arc::clone(&spy) as Arc<dyn crate::channels::ChannelSecretUpdater>],
+    );
+
+    remove_manager
+        .perform_reload()
+        .await
+        .expect("removing HTTP config should shut the listener down");
+    assert_eq!(
+        controller_clone.shutdown_count(),
+        1,
+        "the listener should have been shut down before re-adding the config"
+    );
+
+    let readd_http = HttpConfig {
+        host: "127.0.0.1".to_string(),
+        port: 8080,
+        user_id: "test_user".to_string(),
+        webhook_secret: Some(SecretString::from("restored-secret".to_string())),
+    };
+    let readd_loader = Arc::new(StubConfigLoader::new_success(
+        test_config_with_http(Some(readd_http)).await,
+    ));
+    let readd_manager = HotReloadManager::new(
+        readd_loader as Arc<dyn ConfigLoader>,
+        Some(controller as Arc<dyn ListenerController>),
+        Some(injector as Arc<dyn SecretInjector>),
+        vec![spy as Arc<dyn crate::channels::ChannelSecretUpdater>],
+    );
+
+    readd_manager
+        .perform_reload()
+        .await
+        .expect("re-adding the same address should restart the stopped listener");
+
+    let restarts = controller_clone.restart_calls().await;
+    assert_eq!(
+        restarts,
+        vec![current_addr],
+        "the stopped listener should restart even when the address matches the previous one"
+    );
+}

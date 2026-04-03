@@ -4,6 +4,7 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use secrecy::ExposeSecret;
@@ -54,27 +55,30 @@ impl NativeConfigLoader for StubConfigLoader {
 
 /// Stub listener controller that records restart calls.
 pub struct StubListenerController {
-    current_addr: SocketAddr,
+    current_addr: Arc<Mutex<SocketAddr>>,
     restart_calls: Arc<Mutex<Vec<SocketAddr>>>,
     shutdown_calls: Arc<AtomicUsize>,
+    is_running: Arc<AtomicBool>,
     restart_should_fail: bool,
 }
 
 impl StubListenerController {
     pub fn new(addr: SocketAddr) -> Self {
         Self {
-            current_addr: addr,
+            current_addr: Arc::new(Mutex::new(addr)),
             restart_calls: Arc::new(Mutex::new(Vec::new())),
             shutdown_calls: Arc::new(AtomicUsize::new(0)),
+            is_running: Arc::new(AtomicBool::new(true)),
             restart_should_fail: false,
         }
     }
 
     pub fn new_with_restart_failure(addr: SocketAddr) -> Self {
         Self {
-            current_addr: addr,
+            current_addr: Arc::new(Mutex::new(addr)),
             restart_calls: Arc::new(Mutex::new(Vec::new())),
             shutdown_calls: Arc::new(AtomicUsize::new(0)),
+            is_running: Arc::new(AtomicBool::new(true)),
             restart_should_fail: true,
         }
     }
@@ -92,7 +96,11 @@ impl StubListenerController {
 
 impl NativeListenerController for StubListenerController {
     async fn current_addr(&self) -> SocketAddr {
-        self.current_addr
+        *self.current_addr.lock().await
+    }
+
+    async fn is_running(&self) -> bool {
+        self.is_running.load(Ordering::SeqCst)
     }
 
     async fn restart_with_addr(&self, addr: SocketAddr) -> Result<(), ChannelError> {
@@ -104,12 +112,15 @@ impl NativeListenerController for StubListenerController {
                 reason: "Simulated restart failure".to_string(),
             })
         } else {
+            *self.current_addr.lock().await = addr;
+            self.is_running.store(true, Ordering::SeqCst);
             Ok(())
         }
     }
 
     async fn shutdown(&self) {
         self.shutdown_calls.fetch_add(1, Ordering::SeqCst);
+        self.is_running.store(false, Ordering::SeqCst);
     }
 }
 

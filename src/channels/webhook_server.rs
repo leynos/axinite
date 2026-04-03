@@ -137,6 +137,11 @@ impl WebhookServer {
         self.config.addr
     }
 
+    /// Returns whether the server currently has a running listener task.
+    pub fn is_running(&self) -> bool {
+        self.handle.is_some()
+    }
+
     /// Signal graceful shutdown and wait for the server task to finish.
     pub async fn shutdown(&mut self) {
         if let Some(tx) = self.shutdown_tx.take() {
