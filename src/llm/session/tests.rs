@@ -138,6 +138,52 @@ async fn test_has_token_false_then_true() {
 }
 
 #[tokio::test]
+async fn test_has_api_key_false_then_true() {
+    let dir = tempdir().unwrap();
+    let config = SessionConfig {
+        auth_base_url: "https://example.com".to_string(),
+        session_path: dir.path().join("session.json"),
+    };
+    let manager = SessionManager::new(config);
+
+    assert!(!manager.has_api_key().await);
+    manager.set_api_key(SecretString::from("sk_test")).await;
+    assert!(manager.has_api_key().await);
+}
+
+#[tokio::test]
+async fn test_get_api_key_returns_stored_secret() {
+    let dir = tempdir().unwrap();
+    let config = SessionConfig {
+        auth_base_url: "https://example.com".to_string(),
+        session_path: dir.path().join("session.json"),
+    };
+    let manager = SessionManager::new(config);
+
+    manager.set_api_key(SecretString::from("sk_test")).await;
+
+    let api_key = manager.get_api_key().await.expect("API key should exist");
+    assert_eq!(api_key.expose_secret(), "sk_test");
+}
+
+#[tokio::test]
+async fn test_ensure_authenticated_short_circuits_with_api_key() {
+    let dir = tempdir().unwrap();
+    let config = SessionConfig {
+        auth_base_url: "https://example.com".to_string(),
+        session_path: dir.path().join("session.json"),
+    };
+    let manager = SessionManager::new(config);
+
+    manager.set_api_key(SecretString::from("sk_test")).await;
+
+    manager
+        .ensure_authenticated()
+        .await
+        .expect("API key auth should not require session login");
+}
+
+#[tokio::test]
 async fn test_save_session_then_load_in_new_manager() {
     let dir = tempdir().unwrap();
     let session_path = dir.path().join("session.json");

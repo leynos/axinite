@@ -200,10 +200,12 @@ impl Store {
 
         let mut summary = SandboxJobSummary::default();
         for row in &rows {
-            summary.add_count(
-                row.get::<_, &str>("status"),
-                row.get::<_, i64>("cnt") as usize,
-            );
+            let count = usize::try_from(row.get::<_, i64>("cnt")).map_err(|error| {
+                DatabaseError::Serialization(format!(
+                    "sandbox job summary count exceeds usize range: {error}"
+                ))
+            })?;
+            summary.add_count(row.get::<_, &str>("status"), count);
         }
         Ok(summary)
     }
@@ -287,10 +289,12 @@ impl Store {
 
         let mut summary = SandboxJobSummary::default();
         for row in &rows {
-            summary.add_count(
-                row.get::<_, &str>("status"),
-                row.get::<_, i64>("cnt") as usize,
-            );
+            let count = usize::try_from(row.get::<_, i64>("cnt")).map_err(|error| {
+                DatabaseError::Serialization(format!(
+                    "sandbox job summary count exceeds usize range: {error}"
+                ))
+            })?;
+            summary.add_count(row.get::<_, &str>("status"), count);
         }
         Ok(summary)
     }

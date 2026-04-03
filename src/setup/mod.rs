@@ -20,6 +20,7 @@
 //! ```
 
 mod channels;
+mod nearai;
 #[cfg(any(feature = "postgres", feature = "libsql"))]
 mod persistence;
 mod prompts;

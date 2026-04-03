@@ -147,11 +147,6 @@ impl NearAiChatProvider {
         }
     }
 
-    /// Returns true if using API key auth, false if session token auth.
-    fn uses_api_key(&self) -> bool {
-        self.config.api_key.is_some()
-    }
-
     async fn uses_api_key_auth(&self) -> bool {
         self.config.api_key.is_some() || self.session.has_api_key().await
     }
@@ -227,8 +222,8 @@ impl NearAiChatProvider {
         &self,
         body: &T,
     ) -> Result<R, LlmError> {
-        let url = Self::api_url_for_base(&self.api_base_url().await, "chat/completions");
         let token = self.resolve_bearer_token().await?;
+        let url = Self::api_url_for_base(&self.api_base_url().await, "chat/completions");
 
         tracing::debug!("Sending request to NEAR AI Chat: {}", url);
 
@@ -295,7 +290,7 @@ impl NearAiChatProvider {
 
             if status_code == 401 {
                 // For session token auth, distinguish session expired from plain auth failure
-                if !self.uses_api_key() {
+                if !self.uses_api_key_auth().await {
                     let lower = response_text.to_lowercase();
                     let is_session_expired = lower.contains("session")
                         && (lower.contains("expired") || lower.contains("invalid"));
@@ -349,8 +344,8 @@ impl NearAiChatProvider {
     }
 
     async fn list_models_inner(&self) -> Result<Vec<ModelInfo>, LlmError> {
-        let url = Self::api_url_for_base(&self.api_base_url().await, "models");
         let token = self.resolve_bearer_token().await?;
+        let url = Self::api_url_for_base(&self.api_base_url().await, "models");
 
         tracing::debug!("Fetching models from: {}", url);
 
@@ -372,7 +367,7 @@ impl NearAiChatProvider {
         })?;
 
         if !status.is_success() {
-            if status.as_u16() == 401 && !self.uses_api_key() {
+            if status.as_u16() == 401 && !self.uses_api_key_auth().await {
                 return Err(LlmError::SessionExpired {
                     provider: "nearai_chat".to_string(),
                 });

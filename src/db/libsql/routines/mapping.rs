@@ -1,10 +1,32 @@
+//! Row-decoding helpers for libSQL routine persistence.
+//!
+//! `ROUTINE_COLUMNS` and `ROUTINE_RUN_COLUMNS` define the strict positional
+//! column order expected by the mapping functions below. Any schema or SELECT
+//! list changes must update these constants and the corresponding parsing logic
+//! together so row decoding remains correct.
+
 use crate::agent::routine::{
     NotifyConfig, Routine, RoutineAction, RoutineGuardrails, RoutineRun, RunStatus, Trigger,
 };
 use crate::db::libsql::helpers::{get_i64, get_json, get_opt_text, get_opt_ts, get_text, get_ts};
 use crate::error::DatabaseError;
 
-use super::super::helpers::{parse_opt_uuid, parse_uuid_or_nil};
+fn parse_uuid_field(raw: &str, field: &str) -> Result<uuid::Uuid, DatabaseError> {
+    raw.parse()
+        .map_err(|error| DatabaseError::Serialization(format!("invalid {field} '{raw}': {error}")))
+}
+
+fn parse_optional_uuid_field(
+    raw: Option<String>,
+    field: &str,
+) -> Result<Option<uuid::Uuid>, DatabaseError> {
+    raw.map(|value| {
+        value.parse().map_err(|error| {
+            DatabaseError::Serialization(format!("invalid {field} '{value}': {error}"))
+        })
+    })
+    .transpose()
+}
 
 pub(crate) const ROUTINE_COLUMNS: &str = "\
     id, name, description, user_id, enabled, \
@@ -34,7 +56,7 @@ pub(crate) fn row_to_routine_libsql(row: &libsql::Row) -> Result<Routine, Databa
     let id_raw = get_text(row, 0);
 
     Ok(Routine {
-        id: parse_uuid_or_nil(&id_raw, 0, "routines.id"),
+        id: parse_uuid_field(&id_raw, "routines.id")?,
         name: get_text(row, 1),
         description: get_text(row, 2),
         user_id: get_text(row, 3),
@@ -72,8 +94,8 @@ pub(crate) fn row_to_routine_run_libsql(row: &libsql::Row) -> Result<RoutineRun,
     let routine_id_raw = get_text(row, 1);
 
     Ok(RoutineRun {
-        id: parse_uuid_or_nil(&id_raw, 0, "routine_runs.id"),
-        routine_id: parse_uuid_or_nil(&routine_id_raw, 1, "routine_runs.routine_id"),
+        id: parse_uuid_field(&id_raw, "routine_runs.id")?,
+        routine_id: parse_uuid_field(&routine_id_raw, "routine_runs.routine_id")?,
         trigger_type: get_text(row, 2),
         trigger_detail: get_opt_text(row, 3),
         started_at: get_ts(row, 4),
@@ -81,7 +103,7 @@ pub(crate) fn row_to_routine_run_libsql(row: &libsql::Row) -> Result<RoutineRun,
         status,
         result_summary: get_opt_text(row, 7),
         tokens_used: row.get::<i64>(8).ok().map(|v| v as i32),
-        job_id: parse_opt_uuid(get_opt_text(row, 9), 9, "routine_runs.job_id"),
+        job_id: parse_optional_uuid_field(get_opt_text(row, 9), "routine_runs.job_id")?,
         created_at: get_ts(row, 10),
     })
 }

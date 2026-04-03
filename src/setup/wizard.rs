@@ -586,7 +586,7 @@ impl SetupWizard {
         let use_turso =
             confirm("Enable Turso cloud sync (remote replica)?", false).map_err(SetupError::Io)?;
 
-        let (turso_url, turso_token) = if use_turso {
+        let (turso_url, turso_token): (Option<String>, Option<String>) = if use_turso {
             print_info("Enter your Turso database URL and auth token.");
             print_info("Format: libsql://your-db.turso.io");
             println!();
@@ -1823,37 +1823,8 @@ impl SetupWizard {
         Ok(())
     }
 
-    /// Fetch available models from the NEAR AI API.
-    ///
-    /// Uses [`build_nearai_model_fetch_config`] to construct the provider config,
-    /// carrying through any in-memory NEAR AI Cloud API key captured during
-    /// onboarding.
     async fn fetch_nearai_models(&self) -> Vec<String> {
-        let session = match self.session_manager {
-            Some(ref s) => Arc::clone(s),
-            None => return vec![],
-        };
-
-        use crate::llm::create_llm_provider;
-
-        let config = build_nearai_model_fetch_config(session.get_api_key().await);
-
-        match create_llm_provider(&config, session).await {
-            Ok(provider) => match provider.list_models().await {
-                Ok(models) => models,
-                Err(e) => {
-                    print_info(&format!("Could not fetch models: {}. Using defaults.", e));
-                    vec![]
-                }
-            },
-            Err(e) => {
-                print_info(&format!(
-                    "Could not initialize provider: {}. Using defaults.",
-                    e
-                ));
-                vec![]
-            }
-        }
+        super::nearai::fetch_nearai_models(self.session_manager.as_ref()).await
     }
 
     /// Step 5: Embeddings configuration.
@@ -3402,59 +3373,9 @@ async fn discover_wasm_channels(dir: &std::path::Path) -> Vec<(String, ChannelCa
     channels.sort_by(|a, b| a.0.cmp(&b.0));
     channels
 }
-
 /// Mask an API key for display: show first 6 + last 4 chars.
 ///
 /// Uses char-based indexing to avoid panicking on multi-byte UTF-8.
-/// Build the `LlmConfig` used by `fetch_nearai_models` to list available models.
-///
-/// Uses the current in-memory NEAR AI Cloud API key, when present, so users
-/// who authenticated via option 4 do not get re-prompted during model
-/// selection.
-fn build_nearai_model_fetch_config(
-    api_key: Option<secrecy::SecretString>,
-) -> crate::config::LlmConfig {
-    let api_key = api_key.filter(|key| !key.expose_secret().trim().is_empty());
-
-    // Match the same base_url logic as LlmConfig::resolve(): use cloud-api
-    // when an API key is present, private.near.ai for session-token auth.
-    let default_base = if api_key.is_some() {
-        "https://cloud-api.near.ai"
-    } else {
-        "https://private.near.ai"
-    };
-    let base_url = std::env::var("NEARAI_BASE_URL").unwrap_or_else(|_| default_base.to_string());
-    let auth_base_url =
-        std::env::var("NEARAI_AUTH_URL").unwrap_or_else(|_| "https://private.near.ai".to_string());
-
-    crate::config::LlmConfig {
-        backend: "nearai".to_string(),
-        session: crate::llm::session::SessionConfig {
-            auth_base_url,
-            session_path: crate::config::llm::default_session_path(),
-        },
-        nearai: crate::config::NearAiConfig {
-            model: "dummy".to_string(),
-            cheap_model: None,
-            base_url,
-            api_key,
-            fallback_model: None,
-            max_retries: 3,
-            circuit_breaker_threshold: None,
-            circuit_breaker_recovery_secs: 30,
-            response_cache_enabled: false,
-            response_cache_ttl_secs: 3600,
-            response_cache_max_entries: 1000,
-            failover_cooldown_secs: 300,
-            failover_cooldown_threshold: 3,
-            smart_routing_cascade: true,
-        },
-        provider: None,
-        bedrock: None,
-        request_timeout_secs: 120,
-    }
-}
-
 fn mask_api_key(key: &str) -> String {
     let chars: Vec<char> = key.chars().collect();
     if chars.len() < 12 {
@@ -3664,6 +3585,7 @@ mod tests {
 
     use super::*;
     use crate::config::helpers::ENV_MUTEX;
+    use crate::setup::nearai;
 
     #[test]
     fn test_wizard_creation() {
@@ -4167,7 +4089,7 @@ mod tests {
             ("NEARAI_BASE_URL", None),
         ]);
 
-        let config = build_nearai_model_fetch_config(Some(secrecy::SecretString::from(
+        let config = nearai::build_nearai_model_fetch_config(Some(secrecy::SecretString::from(
             "test-cloud-api-key-12345",
         )));
         assert!(
@@ -4191,7 +4113,7 @@ mod tests {
     fn test_build_nearai_model_fetch_config_none_when_no_api_key() {
         let _guard = EnvGuard::clear("NEARAI_BASE_URL");
 
-        let config = build_nearai_model_fetch_config(None);
+        let config = nearai::build_nearai_model_fetch_config(None);
         assert!(
             config.nearai.api_key.is_none(),
             "config should have no api_key when none is supplied"
@@ -4206,7 +4128,7 @@ mod tests {
     /// Regression test for #799: empty API keys should be treated as absent.
     #[test]
     fn test_build_nearai_model_fetch_config_none_when_empty_api_key() {
-        let config = build_nearai_model_fetch_config(Some(secrecy::SecretString::from("")));
+        let config = nearai::build_nearai_model_fetch_config(Some(secrecy::SecretString::from("")));
         assert!(
             config.nearai.api_key.is_none(),
             "config should have no api_key when the supplied key is empty"

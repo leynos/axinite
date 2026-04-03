@@ -1,3 +1,10 @@
+//! LibSQL job-history persistence helpers.
+//!
+//! This module reads and writes `ActionRecord` rows, LLM call records, and
+//! estimation snapshot/actuals for `LibSqlBackend`, using the shared libSQL
+//! helpers (`fmt_ts`, `get_i64`, `get_json`, `get_opt_decimal`, `get_opt_text`,
+//! `get_text`, `get_ts`) to decode stored values.
+
 use libsql::params;
 use uuid::Uuid;
 
@@ -9,6 +16,40 @@ use crate::context::ActionRecord;
 use crate::db::{EstimationActualsParams, EstimationSnapshotParams};
 use crate::error::DatabaseError;
 use crate::history::LlmCallRecord;
+
+fn parse_action_id(raw: &str) -> Result<Uuid, DatabaseError> {
+    raw.parse().map_err(|error| {
+        DatabaseError::Serialization(format!("invalid job_actions.id '{raw}': {error}"))
+    })
+}
+
+fn parse_non_negative_u32(value: i64, field: &str) -> Result<u32, DatabaseError> {
+    if value < 0 {
+        return Err(DatabaseError::Serialization(format!(
+            "{field} must be non-negative: {value}"
+        )));
+    }
+
+    u32::try_from(value).map_err(|error| {
+        DatabaseError::Serialization(format!("{field} exceeds u32 range: {value} ({error})"))
+    })
+}
+
+fn parse_duration_millis(value: i64) -> Result<std::time::Duration, DatabaseError> {
+    if value < 0 {
+        return Err(DatabaseError::Serialization(format!(
+            "job action duration_ms must be non-negative: {value}"
+        )));
+    }
+
+    Ok(std::time::Duration::from_millis(
+        u64::try_from(value).map_err(|error| {
+            DatabaseError::Serialization(format!(
+                "job action duration_ms exceeds u64 range: {value} ({error})"
+            ))
+        })?,
+    ))
+}
 
 pub(super) async fn save_action(
     backend: &LibSqlBackend,
@@ -71,17 +112,35 @@ pub(super) async fn get_job_actions(
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?
     {
-        let warnings: Vec<String> = serde_json::from_str(&get_text(&row, 6)).unwrap_or_default();
+        let id_raw = get_text(&row, 0);
+        let sequence = parse_non_negative_u32(get_i64(&row, 1), "job action sequence_num")?;
+        let warnings_raw = get_text(&row, 6);
+        let warnings: Vec<String> = serde_json::from_str(&warnings_raw).map_err(|error| {
+            DatabaseError::Serialization(format!(
+                "invalid job_actions.sanitization_warnings '{warnings_raw}': {error}"
+            ))
+        })?;
+        let output_sanitized = get_opt_text(&row, 5)
+            .map(|value| {
+                serde_json::from_str(&value).map_err(|error| {
+                    DatabaseError::Serialization(format!(
+                        "invalid job_actions.output_sanitized '{value}': {error}"
+                    ))
+                })
+            })
+            .transpose()?;
+        let duration = parse_duration_millis(get_i64(&row, 8))?;
+
         actions.push(ActionRecord {
-            id: get_text(&row, 0).parse().unwrap_or_default(),
-            sequence: get_i64(&row, 1) as u32,
+            id: parse_action_id(&id_raw)?,
+            sequence,
             tool_name: get_text(&row, 2),
             input: get_json(&row, 3),
             output_raw: get_opt_text(&row, 4),
-            output_sanitized: get_opt_text(&row, 5).and_then(|s| serde_json::from_str(&s).ok()),
+            output_sanitized,
             sanitization_warnings: warnings,
             cost: get_opt_decimal(&row, 7),
-            duration: std::time::Duration::from_millis(get_i64(&row, 8) as u64),
+            duration,
             success: get_i64(&row, 9) != 0,
             error: get_opt_text(&row, 10),
             executed_at: get_ts(&row, 11),

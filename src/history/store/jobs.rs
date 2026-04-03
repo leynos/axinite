@@ -58,7 +58,35 @@ impl Store {
         let conn = self.conn().await?;
 
         let status = ctx.state.to_string();
-        let estimated_time_secs = ctx.estimated_duration.map(|d| d.as_secs() as i32);
+        let estimated_time_secs = ctx
+            .estimated_duration
+            .map(|duration| {
+                i32::try_from(duration.as_secs()).map_err(|error| {
+                    DatabaseError::Serialization(format!(
+                        "estimated_duration exceeds i32 range: {} ({error})",
+                        duration.as_secs()
+                    ))
+                })
+            })
+            .transpose()?;
+        let repair_attempts = i32::try_from(ctx.repair_attempts).map_err(|error| {
+            DatabaseError::Serialization(format!(
+                "repair_attempts exceeds i32 range: {} ({error})",
+                ctx.repair_attempts
+            ))
+        })?;
+        let max_tokens = i64::try_from(ctx.max_tokens).map_err(|error| {
+            DatabaseError::Serialization(format!(
+                "max_tokens exceeds i64 range: {} ({error})",
+                ctx.max_tokens
+            ))
+        })?;
+        let total_tokens_used = i64::try_from(ctx.total_tokens_used).map_err(|error| {
+            DatabaseError::Serialization(format!(
+                "total_tokens_used exceeds i64 range: {} ({error})",
+                ctx.total_tokens_used
+            ))
+        })?;
         let transitions = serde_json::to_value(&ctx.transitions)
             .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
@@ -104,12 +132,12 @@ impl Store {
                 &ctx.estimated_cost,
                 &estimated_time_secs,
                 &ctx.actual_cost,
-                &(ctx.repair_attempts as i32),
+                &repair_attempts,
                 &transitions,
                 &ctx.metadata,
                 &ctx.user_timezone,
-                &(ctx.max_tokens as i64),
-                &(ctx.total_tokens_used as i64),
+                &max_tokens,
+                &total_tokens_used,
                 &ctx.created_at,
                 &ctx.started_at,
                 &ctx.completed_at,

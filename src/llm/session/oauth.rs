@@ -1,3 +1,9 @@
+//! Interactive NEAR AI authentication helpers.
+//!
+//! This module coordinates browser-based OAuth via `oauth_helpers` and the
+//! callback listener on `OAUTH_CALLBACK_PORT`, plus the API-key login path used
+//! by `SessionManager` renewal flows.
+
 use secrecy::{ExposeSecret, SecretString};
 
 use super::{LlmError, SessionManager};
@@ -120,7 +126,12 @@ async fn complete_browser_oauth(
 pub(super) async fn initiate_login_flow(manager: &SessionManager) -> Result<(), LlmError> {
     let cb_url = oauth_helpers::callback_url();
     let host = oauth_helpers::callback_host();
-    let choice = read_auth_choice()?;
+    let choice = tokio::task::spawn_blocking(read_auth_choice)
+        .await
+        .map_err(|error| LlmError::SessionRenewalFailed {
+            provider: "nearai".to_string(),
+            reason: format!("Authentication prompt task failed: {error}"),
+        })??;
 
     match choice.trim() {
         "4" => return manager.api_key_login().await,
@@ -167,8 +178,13 @@ pub(super) async fn api_key_flow(_manager: &SessionManager) -> Result<(), LlmErr
     println!("  3. Create or copy an existing API key");
     println!();
 
-    let key_secret =
-        crate::setup::secret_input("API key").map_err(|e| LlmError::SessionRenewalFailed {
+    let key_secret = tokio::task::spawn_blocking(|| crate::setup::secret_input("API key"))
+        .await
+        .map_err(|error| LlmError::SessionRenewalFailed {
+            provider: "nearai".to_string(),
+            reason: format!("API key prompt task failed: {error}"),
+        })?
+        .map_err(|e| LlmError::SessionRenewalFailed {
             provider: "nearai".to_string(),
             reason: format!("Failed to read input: {}", e),
         })?;

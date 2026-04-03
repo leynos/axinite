@@ -1,3 +1,8 @@
+//! PostgreSQL-backed routine persistence tests.
+//!
+//! These tests exercise `Store` CRUD, run-history, and due-cron claim
+//! behaviour against the `try_test_pg_db` integration database.
+
 use chrono::Utc;
 use rstest::{fixture, rstest};
 use uuid::Uuid;

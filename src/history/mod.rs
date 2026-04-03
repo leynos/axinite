@@ -7,12 +7,15 @@
 
 #[cfg(feature = "postgres")]
 mod analytics;
+
+mod preview_title;
 #[cfg(feature = "postgres")]
 pub(crate) mod migrations;
 mod store;
 
 #[cfg(feature = "postgres")]
 pub use analytics::{JobStats, ToolStats};
+pub(crate) use preview_title::preview_title_from_metadata;
 #[cfg(feature = "postgres")]
 pub(crate) use migrations::run_postgres_migrations;
 #[cfg(feature = "postgres")]

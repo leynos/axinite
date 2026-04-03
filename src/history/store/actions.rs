@@ -94,10 +94,10 @@ impl Store {
                 )));
             }
 
-            let warnings_json: serde_json::Value = row.get("sanitization_warnings");
+            let warnings_json: Option<serde_json::Value> = row.get("sanitization_warnings");
             let warnings = match warnings_json {
-                serde_json::Value::Null => Vec::new(),
-                value => serde_json::from_value(value).map_err(|e| {
+                None | Some(serde_json::Value::Null) => Vec::new(),
+                Some(value) => serde_json::from_value(value).map_err(|e| {
                     DatabaseError::Serialization(format!(
                         "invalid sanitization_warnings payload for job action: {e}"
                     ))

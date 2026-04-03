@@ -85,6 +85,10 @@ async fn save_action_round_trips_via_get_job_actions(
     assert_eq!(actions[0].duration, action.duration);
     assert_eq!(actions[0].success, action.success);
     assert_eq!(actions[0].error, action.error);
+    assert_eq!(
+        actions[0].executed_at.timestamp_millis(),
+        action.executed_at.timestamp_millis()
+    );
 
     cleanup_job(&store, job_id).await;
 }

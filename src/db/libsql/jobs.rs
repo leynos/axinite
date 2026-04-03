@@ -137,13 +137,26 @@ impl NativeJobStore for LibSqlBackend {
                     serde_json::from_value(get_json(&row, JOB_TRANSITIONS_COL))
                         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
                 let metadata = get_json(&row, JOB_METADATA_COL);
+                let job_id_raw = get_text(&row, JOB_ID_COL);
+                let job_id = job_id_raw.parse().map_err(|e| {
+                    DatabaseError::Serialization(format!(
+                        "Invalid agent_jobs.id '{job_id_raw}': {e}"
+                    ))
+                })?;
+                let conversation_id = match get_opt_text(&row, JOB_CONVERSATION_ID_COL) {
+                    Some(raw) => Some(raw.parse().map_err(|e| {
+                        DatabaseError::Serialization(format!(
+                            "Invalid agent_jobs.conversation_id '{raw}': {e}"
+                        ))
+                    })?),
+                    None => None,
+                };
 
                 Ok(Some(JobContext {
-                    job_id: get_text(&row, JOB_ID_COL).parse().unwrap_or_default(),
+                    job_id,
                     state,
                     user_id: get_text(&row, JOB_USER_ID_COL),
-                    conversation_id: get_opt_text(&row, JOB_CONVERSATION_ID_COL)
-                        .and_then(|s| s.parse().ok()),
+                    conversation_id,
                     title: get_text(&row, JOB_TITLE_COL),
                     description: get_text(&row, JOB_DESCRIPTION_COL),
                     category: get_opt_text(&row, JOB_CATEGORY_COL),

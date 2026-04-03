@@ -780,6 +780,11 @@ impl Workspace {
 
         // Insert new chunks
         for (index, content) in chunks.into_iter().enumerate() {
+            let chunk_index =
+                u32::try_from(index).map_err(|error| WorkspaceError::ChunkingFailed {
+                    reason: format!("chunk index exceeds u32 range: {error}"),
+                })?;
+
             // Generate embedding if provider available
             let embedding = if let Some(ref provider) = self.embeddings {
                 match provider.embed(&content).await {
@@ -794,7 +799,7 @@ impl Workspace {
             };
 
             self.storage
-                .insert_chunk(document_id, index as u32, &content, embedding.as_deref())
+                .insert_chunk(document_id, chunk_index, &content, embedding.as_deref())
                 .await?;
         }
 

@@ -5,24 +5,13 @@ use tokio_postgres::Row;
 
 use super::{ConversationSummary, Store};
 use crate::error::DatabaseError;
+use crate::history::preview_title_from_metadata;
 
 pub(super) fn resolve_preview_title(
     metadata: &serde_json::Value,
     sql_title: Option<String>,
 ) -> Option<String> {
-    sql_title
-        .or_else(|| {
-            metadata
-                .get("title")
-                .and_then(|value| value.as_str())
-                .map(String::from)
-        })
-        .or_else(|| {
-            metadata
-                .get("routine_name")
-                .and_then(|value| value.as_str())
-                .map(String::from)
-        })
+    preview_title_from_metadata(metadata, sql_title)
 }
 
 #[cfg(feature = "postgres")]
@@ -75,7 +64,7 @@ impl Store {
                     ) AS title
                 FROM conversations c
                 WHERE c.user_id = $1 AND c.channel = $2
-                ORDER BY c.last_activity DESC
+                ORDER BY c.last_activity DESC, c.id DESC
                 LIMIT $3
                 "#,
                 &[&user_id, &channel, &limit],
@@ -112,7 +101,7 @@ impl Store {
                     ) AS title
                 FROM conversations c
                 WHERE c.user_id = $1
-                ORDER BY c.last_activity DESC
+                ORDER BY c.last_activity DESC, c.id DESC
                 LIMIT $2
                 "#,
                 &[&user_id, &limit],
@@ -120,50 +109,5 @@ impl Store {
             .await?;
 
         Ok(rows.iter().map(row_to_conversation_summary).collect())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::resolve_preview_title;
-
-    #[test]
-    fn preview_title_prefers_metadata_title_before_routine_name() {
-        let metadata = json!({
-            "title": "Assistant",
-            "routine_name": "daily-standup",
-        });
-
-        assert_eq!(
-            resolve_preview_title(&metadata, None),
-            Some("Assistant".to_string())
-        );
-    }
-
-    #[test]
-    fn preview_title_prefers_sql_title_over_metadata() {
-        let metadata = json!({
-            "title": "Assistant",
-            "routine_name": "daily-standup",
-        });
-
-        assert_eq!(
-            resolve_preview_title(&metadata, Some("First user message".to_string())),
-            Some("First user message".to_string())
-        );
-    }
-
-    #[test]
-    fn preview_title_falls_back_to_routine_name() {
-        let metadata = json!({
-            "routine_name": "daily-standup",
-        });
-
-        assert_eq!(
-            resolve_preview_title(&metadata, None),
-            Some("daily-standup".to_string())
-        );
     }
 }

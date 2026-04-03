@@ -1,3 +1,10 @@
+//! LibSQL conversation-message write and read helpers.
+//!
+//! This module owns atomic message inserts plus cursor-based and full-history
+//! reads. Message ordering is monotonic by `(created_at, id)` with `rowid` only
+//! as a final SQLite tiebreaker where needed, so cursor pagination and full
+//! reads stay consistent.
+
 use super::*;
 
 async fn touch_conversation_with_connection(
@@ -120,7 +127,7 @@ pub(super) async fn list_conversation_messages(
                 SELECT id, role, content, created_at
                 FROM conversation_messages
                 WHERE conversation_id = ?1
-                ORDER BY created_at ASC, rowid ASC
+                ORDER BY created_at ASC, id ASC, rowid ASC
                 "#,
             params![conversation_id.to_string()],
         )

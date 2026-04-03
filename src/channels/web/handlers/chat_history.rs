@@ -33,6 +33,21 @@ pub struct HistoryQuery {
 const DEFAULT_HISTORY_LIMIT: usize = 50;
 const MAX_HISTORY_LIMIT: usize = 200;
 
+fn parse_before_cursor(value: &str) -> Result<(chrono::DateTime<chrono::Utc>, Uuid), ()> {
+    if let Some((timestamp, message_id)) = value.split_once('|') {
+        let parsed_timestamp = chrono::DateTime::parse_from_rfc3339(timestamp)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .map_err(|_| ())?;
+        let parsed_id = Uuid::parse_str(message_id).map_err(|_| ())?;
+        Ok((parsed_timestamp, parsed_id))
+    } else {
+        let parsed_timestamp = chrono::DateTime::parse_from_rfc3339(value)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .map_err(|_| ())?;
+        Ok((parsed_timestamp, Uuid::nil()))
+    }
+}
+
 async fn load_stored_history(
     store: &Arc<dyn Database>,
     thread_id: Uuid,
@@ -74,28 +89,14 @@ pub async fn chat_history_handler(
     let before_cursor = query
         .before
         .as_deref()
-        .map(|value| {
-            let (timestamp, message_id) = value.split_once('|').ok_or((
+        .map(parse_before_cursor)
+        .transpose()
+        .map_err(|_| {
+            (
                 StatusCode::BAD_REQUEST,
                 "Invalid 'before' cursor".to_string(),
-            ))?;
-            let parsed_timestamp = chrono::DateTime::parse_from_rfc3339(timestamp)
-                .map(|dt| dt.with_timezone(&chrono::Utc))
-                .map_err(|_| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        "Invalid 'before' cursor".to_string(),
-                    )
-                })?;
-            let parsed_id = Uuid::parse_str(message_id).map_err(|_| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    "Invalid 'before' cursor".to_string(),
-                )
-            })?;
-            Ok((parsed_timestamp, parsed_id))
-        })
-        .transpose()?;
+            )
+        })?;
 
     let requested_thread_id = if let Some(ref tid) = query.thread_id {
         Uuid::parse_str(tid)

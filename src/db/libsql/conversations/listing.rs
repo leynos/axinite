@@ -1,3 +1,8 @@
+//! LibSQL conversation-listing queries.
+//!
+//! These queries must return a stable top-N ordering, so the outer conversation
+//! lists sort by `last_activity` and then `id` to break timestamp ties.
+
 use super::*;
 
 pub(super) async fn list_conversations_with_preview(

@@ -11,13 +11,21 @@ use crate::error::DatabaseError;
 /// Record for an LLM call to be persisted.
 #[derive(Debug, Clone)]
 pub struct LlmCallRecord<'a> {
+    /// Optional job UUID linked to this LLM call.
     pub job_id: Option<Uuid>,
+    /// Optional conversation UUID linked to this LLM call.
     pub conversation_id: Option<Uuid>,
+    /// Identifier for the LLM provider that served the call.
     pub provider: &'a str,
+    /// Provider-specific model identifier used for the call.
     pub model: &'a str,
+    /// Number of input tokens consumed by the request.
     pub input_tokens: u32,
+    /// Number of output tokens returned by the provider.
     pub output_tokens: u32,
+    /// Monetary cost recorded for the call.
     pub cost: Decimal,
+    /// Optional short description of why the call was made.
     pub purpose: Option<&'a str>,
 }
 

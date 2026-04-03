@@ -15,23 +15,8 @@ use uuid::Uuid;
 use super::{LibSqlBackend, fmt_ts, get_i64, get_json, get_opt_text, get_text, get_ts, opt_text};
 use crate::db::{EnsureConversationParams, NativeConversationStore};
 use crate::error::DatabaseError;
+use crate::history::preview_title_from_metadata;
 use crate::history::{ConversationMessage, ConversationSummary};
-
-fn preview_title(metadata: &serde_json::Value, sql_title: Option<String>) -> Option<String> {
-    sql_title
-        .or_else(|| {
-            metadata
-                .get("title")
-                .and_then(|value| value.as_str())
-                .map(String::from)
-        })
-        .or_else(|| {
-            metadata
-                .get("routine_name")
-                .and_then(|value| value.as_str())
-                .map(String::from)
-        })
-}
 
 fn parse_uuid(id: String) -> Result<Uuid, DatabaseError> {
     id.parse()
@@ -45,7 +30,7 @@ fn row_to_conversation_summary(row: &libsql::Row) -> Result<ConversationSummary,
         .and_then(|value| value.as_str())
         .map(String::from);
     let sql_title = get_opt_text(row, 6);
-    let title = preview_title(&metadata, sql_title);
+    let title = preview_title_from_metadata(&metadata, sql_title);
 
     Ok(ConversationSummary {
         id: parse_uuid(get_text(row, 0))?,
