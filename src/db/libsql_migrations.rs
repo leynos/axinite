@@ -61,6 +61,18 @@ const V12_WASM_CHANNELS_COLUMNS: &str = r#"    id TEXT PRIMARY KEY,
 const V12_WASM_CHANNELS_COPY_COLUMNS: &str = r#"id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
     capabilities_json, status, created_at, updated_at"#;
 
+struct MigrationContext<'a> {
+    version: i64,
+    name: &'a str,
+}
+
+struct TableRebuildParams<'a> {
+    table_name: &'a str,
+    columns: &'a str,
+    copy_columns: &'a str,
+    post_rebuild_sql: Option<&'a str>,
+}
+
 /// Incremental migrations applied after the base schema.
 ///
 /// Each entry is `(version, name, sql)`. Migrations are idempotent: the
@@ -213,13 +225,15 @@ pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::err
         // outer transaction wrapper.
         if version == 12 {
             let sql = v12_wasm_wit_default_migration_sql();
-            apply_non_transactional_migration(conn, version, name, &sql).await?;
+            apply_non_transactional_migration(conn, MigrationContext { version, name }, &sql)
+                .await?;
             tracing::info!(version, name, "libSQL: migration applied successfully");
             continue;
         }
 
         if version == 16 {
-            apply_agent_jobs_context_fields_migration(conn, version, name).await?;
+            apply_agent_jobs_context_fields_migration(conn, MigrationContext { version, name })
+                .await?;
             tracing::info!(version, name, "libSQL: migration applied successfully");
             continue;
         }
@@ -263,9 +277,9 @@ pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::err
 
 async fn collect_existing_columns(
     conn: &libsql::Connection,
-    version: i64,
-    name: &str,
+    ctx: MigrationContext<'_>,
 ) -> Result<std::collections::BTreeSet<String>, crate::error::DatabaseError> {
+    let MigrationContext { version, name } = ctx;
     use crate::error::DatabaseError;
 
     let mut rows = conn
@@ -315,12 +329,12 @@ fn missing_context_field_statements(
 
 async fn apply_agent_jobs_context_fields_migration(
     conn: &libsql::Connection,
-    version: i64,
-    name: &str,
+    ctx: MigrationContext<'_>,
 ) -> Result<(), crate::error::DatabaseError> {
+    let MigrationContext { version, name } = ctx;
     use crate::error::DatabaseError;
 
-    let columns = collect_existing_columns(conn, version, name).await?;
+    let columns = collect_existing_columns(conn, MigrationContext { version, name }).await?;
     let statements = missing_context_field_statements(&columns);
 
     let tx = conn.transaction().await.map_err(|e| {
@@ -361,10 +375,10 @@ async fn apply_agent_jobs_context_fields_migration(
 
 async fn apply_non_transactional_migration(
     conn: &libsql::Connection,
-    version: i64,
-    name: &str,
+    ctx: MigrationContext<'_>,
     sql: &str,
 ) -> Result<(), crate::error::DatabaseError> {
+    let MigrationContext { version, name } = ctx;
     use crate::error::DatabaseError;
 
     if let Err(e) = conn.execute_batch(sql).await {
@@ -398,13 +412,13 @@ async fn apply_non_transactional_migration(
     Ok(())
 }
 
-fn append_table_rebuild_sql(
-    sql: &mut String,
-    table_name: &str,
-    columns: &str,
-    copy_columns: &str,
-    post_rebuild_sql: Option<&str>,
-) {
+fn append_table_rebuild_sql(sql: &mut String, params: TableRebuildParams<'_>) {
+    let TableRebuildParams {
+        table_name,
+        columns,
+        copy_columns,
+        post_rebuild_sql,
+    } = params;
     let old_table_name = format!("{table_name}_old");
     sql.push_str(&format!(
         "ALTER TABLE {table_name} RENAME TO {old_table_name};\n\n"
@@ -434,17 +448,21 @@ fn v12_wasm_wit_default_migration_sql() -> String {
 
     append_table_rebuild_sql(
         &mut sql,
-        "wasm_tools",
-        V12_WASM_TOOLS_COLUMNS,
-        V12_WASM_TOOLS_COPY_COLUMNS,
-        Some(V12_WASM_TOOLS_POST_REBUILD_SQL),
+        TableRebuildParams {
+            table_name: "wasm_tools",
+            columns: V12_WASM_TOOLS_COLUMNS,
+            copy_columns: V12_WASM_TOOLS_COPY_COLUMNS,
+            post_rebuild_sql: Some(V12_WASM_TOOLS_POST_REBUILD_SQL),
+        },
     );
     append_table_rebuild_sql(
         &mut sql,
-        "wasm_channels",
-        V12_WASM_CHANNELS_COLUMNS,
-        V12_WASM_CHANNELS_COPY_COLUMNS,
-        None,
+        TableRebuildParams {
+            table_name: "wasm_channels",
+            columns: V12_WASM_CHANNELS_COLUMNS,
+            copy_columns: V12_WASM_CHANNELS_COPY_COLUMNS,
+            post_rebuild_sql: None,
+        },
     );
 
     sql.push_str("COMMIT;\nPRAGMA foreign_keys=ON;\nPRAGMA legacy_alter_table=OFF;\n");
