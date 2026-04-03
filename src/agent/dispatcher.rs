@@ -21,6 +21,8 @@ use crate::agent::agentic_loop::{
 use crate::llm::{ChatMessage, Reasoning, ReasoningContext};
 use crate::tools::redact_params;
 
+const PREVIEW_MAX_CHARS: usize = 1024;
+
 /// Collapse a tool output string into a single-line preview for display.
 pub(crate) fn truncate_for_preview(output: &str, max_chars: usize) -> String {
     // Normalise first: replace all newlines with spaces, then collapse runs.
@@ -828,7 +830,7 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
                                 &self.message.channel,
                                 StatusUpdate::ToolResult {
                                     name: tc.name.clone(),
-                                    preview: output.clone(),
+                                    preview: truncate_for_preview(output, PREVIEW_MAX_CHARS),
                                 },
                                 &self.message.metadata,
                             )
@@ -1090,7 +1092,8 @@ fn strip_internal_tool_call_text(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::path::PathBuf;
+    use std::sync::{Arc, RwLock};
     use std::time::Duration;
 
     use rust_decimal::Decimal;
@@ -1108,9 +1111,10 @@ mod tests {
         ToolCompletionRequest, ToolCompletionResponse,
     };
     use crate::safety::SafetyLayer;
+    use crate::skills::SkillRegistry;
     use crate::tools::ToolRegistry;
 
-    use super::{check_auth_required, truncate_for_preview};
+    use super::{check_auth_required, select_active_skills, truncate_for_preview};
 
     /// Minimal LLM provider for unit tests that always returns a static response.
     struct StaticLlmProvider;
@@ -2364,5 +2368,37 @@ mod tests {
         let input = format!("A{}B{}C", "\n".repeat(100), "\n".repeat(100));
         let result = truncate_for_preview(&input, 3);
         assert_eq!(result, "A B...");
+    }
+
+    #[test]
+    fn test_select_active_skills_returns_empty_when_disabled() {
+        let registry = Arc::new(RwLock::new(SkillRegistry::new(PathBuf::from("."))));
+        let skills_cfg = SkillsConfig {
+            enabled: false,
+            ..SkillsConfig::default()
+        };
+
+        assert!(select_active_skills(&registry, &skills_cfg, "hello").is_empty());
+    }
+
+    #[test]
+    fn test_select_active_skills_returns_empty_when_registry_lock_is_poisoned() {
+        let registry = Arc::new(RwLock::new(SkillRegistry::new(PathBuf::from("."))));
+        let poison_registry = Arc::clone(&registry);
+
+        let _ = std::thread::spawn(move || {
+            let _guard = poison_registry
+                .write()
+                .expect("poison test should acquire write lock");
+            panic!("poison registry lock");
+        })
+        .join();
+
+        let skills_cfg = SkillsConfig {
+            enabled: true,
+            ..SkillsConfig::default()
+        };
+
+        assert!(select_active_skills(&registry, &skills_cfg, "hello").is_empty());
     }
 }

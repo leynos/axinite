@@ -503,21 +503,20 @@ impl Agent {
                 .run_agentic_loop(message, session.clone(), thread_id, context_messages)
                 .await;
 
-            // Handle the result
-            let mut sess = session.lock().await;
-            let thread = sess
-                .threads
-                .get_mut(&thread_id)
-                .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
-
             match result {
                 Ok(AgenticLoopResult::Response(response)) => {
-                    thread.complete_turn(&response);
-                    let (turn_number, tool_calls) = thread
-                        .turns
-                        .last()
-                        .map(|t| (t.turn_number, t.tool_calls.clone()))
-                        .unwrap_or_default();
+                    let (turn_number, tool_calls) = {
+                        let mut sess = session.lock().await;
+                        let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
+                            Error::from(crate::error::JobError::NotFound { id: thread_id })
+                        })?;
+                        thread.complete_turn(&response);
+                        thread
+                            .turns
+                            .last()
+                            .map(|t| (t.turn_number, t.tool_calls.clone()))
+                            .unwrap_or_default()
+                    };
                     // User message already persisted at turn start; save tool calls then assistant response
                     self.persist_tool_calls(thread_id, &message.user_id, turn_number, &tool_calls)
                         .await;
@@ -540,7 +539,13 @@ impl Agent {
                     let tool_name = new_pending.tool_name.clone();
                     let description = new_pending.description.clone();
                     let parameters = new_pending.display_parameters.clone();
-                    thread.await_approval(new_pending);
+                    {
+                        let mut sess = session.lock().await;
+                        let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
+                            Error::from(crate::error::JobError::NotFound { id: thread_id })
+                        })?;
+                        thread.await_approval(new_pending);
+                    }
                     let _ = self
                         .channels
                         .send_status(
@@ -557,6 +562,10 @@ impl Agent {
                     })
                 }
                 Err(e) => {
+                    let mut sess = session.lock().await;
+                    let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
+                        Error::from(crate::error::JobError::NotFound { id: thread_id })
+                    })?;
                     thread.fail_turn(e.to_string());
                     // User message already persisted at turn start
                     Ok(SubmissionResult::error(e.to_string()))
@@ -574,11 +583,11 @@ impl Agent {
                 if let Some(thread) = sess.threads.get_mut(&thread_id) {
                     thread.clear_pending_approval();
                     thread.complete_turn(&rejection);
-                    // User message already persisted at turn start; save rejection response
-                    self.persist_assistant_response(thread_id, &message.user_id, &rejection)
-                        .await;
                 }
             }
+            // User message already persisted at turn start; save rejection response
+            self.persist_assistant_response(thread_id, &message.user_id, &rejection)
+                .await;
 
             let _ = self
                 .channels
@@ -613,11 +622,11 @@ impl Agent {
             if let Some(thread) = sess.threads.get_mut(&thread_id) {
                 thread.enter_auth_mode(ext_name.clone());
                 thread.complete_turn(&instructions);
-                // User message already persisted at turn start; save auth instructions
-                self.persist_assistant_response(thread_id, &message.user_id, &instructions)
-                    .await;
             }
         }
+        // User message already persisted at turn start; save auth instructions
+        self.persist_assistant_response(thread_id, &message.user_id, &instructions)
+            .await;
         let _ = self
             .channels
             .send_status(
@@ -647,14 +656,6 @@ impl Agent {
     ) -> Result<Option<String>, Error> {
         let token = token.trim();
 
-        // Clear auth mode regardless of outcome
-        {
-            let mut sess = session.lock().await;
-            if let Some(thread) = sess.threads.get_mut(&thread_id) {
-                thread.pending_auth = None;
-            }
-        }
-
         let ext_mgr = match self.deps.extension_manager.as_ref() {
             Some(mgr) => mgr,
             None => return Ok(Some("Extension manager not available.".to_string())),
@@ -662,6 +663,12 @@ impl Agent {
 
         match ext_mgr.auth(&pending.extension_name, Some(token)).await {
             Ok(result) if result.is_authenticated() => {
+                {
+                    let mut sess = session.lock().await;
+                    if let Some(thread) = sess.threads.get_mut(&thread_id) {
+                        thread.pending_auth = None;
+                    }
+                }
                 tracing::info!(
                     "Extension '{}' authenticated via auth mode",
                     pending.extension_name

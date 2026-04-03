@@ -3,6 +3,7 @@
 
 use super::*;
 use rand::{Rng, SeedableRng, rngs::StdRng};
+use rstest::rstest;
 
 #[test]
 fn test_valid_state_transitions() {
@@ -16,45 +17,33 @@ fn test_invalid_state_transitions() {
     assert!(!JobState::Accepted.can_transition_to(JobState::InProgress));
 }
 
-#[test]
-fn test_terminal_states() {
-    let cases = [
-        (JobState::Accepted, true),
-        (JobState::Failed, true),
-        (JobState::Cancelled, true),
-        (JobState::InProgress, false),
-        (JobState::Pending, false),
-        (JobState::Completed, false),
-        (JobState::Submitted, false),
-        (JobState::Stuck, false),
-    ];
-
-    for (state, expected) in cases {
-        assert_eq!(state.is_terminal(), expected);
-    }
+#[rstest]
+#[case(JobState::Accepted, true)]
+#[case(JobState::Failed, true)]
+#[case(JobState::Cancelled, true)]
+#[case(JobState::InProgress, false)]
+#[case(JobState::Pending, false)]
+#[case(JobState::Completed, false)]
+#[case(JobState::Submitted, false)]
+#[case(JobState::Stuck, false)]
+fn test_terminal_states(#[case] state: JobState, #[case] expected: bool) {
+    assert_eq!(state.is_terminal(), expected);
 }
 
-#[test]
-fn test_job_state_from_str_parses_known_values() {
-    let cases = [
-        ("pending", JobState::Pending),
-        ("in_progress", JobState::InProgress),
-        ("completed", JobState::Completed),
-        ("submitted", JobState::Submitted),
-        ("accepted", JobState::Accepted),
-        ("failed", JobState::Failed),
-        ("stuck", JobState::Stuck),
-        ("cancelled", JobState::Cancelled),
-    ];
-    for (input, expected) in cases {
-        assert_eq!(
-            input
-                .parse::<JobState>()
-                .expect("failed to parse JobState from test input"),
-            expected,
-            "failed to parse '{input}'",
-        );
-    }
+#[rstest]
+#[case("pending", JobState::Pending)]
+#[case("in_progress", JobState::InProgress)]
+#[case("completed", JobState::Completed)]
+#[case("submitted", JobState::Submitted)]
+#[case("accepted", JobState::Accepted)]
+#[case("failed", JobState::Failed)]
+#[case("stuck", JobState::Stuck)]
+#[case("cancelled", JobState::Cancelled)]
+fn test_job_state_from_str_parses_known_values(#[case] input: &str, #[case] expected: JobState) {
+    let parsed = input
+        .parse::<JobState>()
+        .expect("failed to parse JobState from test input");
+    assert_eq!(parsed, expected, "failed to parse '{input}'");
 }
 
 #[test]
@@ -183,7 +172,7 @@ fn test_stuck_since_returns_latest_stuck_transition() {
     assert_eq!(ctx.stuck_since(), Some(second_stuck_at));
 }
 
-/// Simulate random `JobContext`/`JobState` transitions with `StdRng`; the `_` branch is an intentional no-op for test coverage.
+/// Simulate random `JobContext` and `JobState` transitions with `StdRng`; the `_` branch intentionally ignores random choices that are invalid for the current `JobState`.
 fn apply_random_step(ctx: &mut JobContext, rng: &mut StdRng, case_idx: usize, step: usize) {
     match rng.gen_range(0..4) {
         0 if matches!(ctx.state, JobState::Pending) => {

@@ -42,8 +42,14 @@ fn sanitise_filename(raw_name: &str) -> String {
 fn build_document_path(index: usize, attachment: &IncomingAttachment, date: &str) -> String {
     let raw_name = attachment.filename.as_deref().unwrap_or("unnamed_document");
     let filename = sanitise_filename(raw_name);
+    let raw_id = if attachment.id.is_empty() {
+        "unnamed_id"
+    } else {
+        attachment.id.as_str()
+    };
+    let sanitized_id = sanitise_filename(raw_id);
 
-    format!("documents/{date}/{index}-{}-{filename}", attachment.id)
+    format!("documents/{date}/{index}-{sanitized_id}-{filename}")
 }
 
 async fn write_document_to_workspace(
@@ -75,6 +81,8 @@ pub(super) async fn store_extracted_documents(
     workspace: &Arc<crate::workspace::Workspace>,
     message: &IncomingMessage,
 ) {
+    let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+
     for (index, attachment) in message.attachments.iter().enumerate() {
         if attachment.kind != crate::channels::AttachmentKind::Document {
             continue;
@@ -83,10 +91,9 @@ pub(super) async fn store_extracted_documents(
             continue;
         };
 
-        let date = chrono::Utc::now().format("%Y-%m-%d");
         let filename =
             sanitise_filename(attachment.filename.as_deref().unwrap_or("unnamed_document"));
-        let path = build_document_path(index, attachment, &date.to_string());
+        let path = build_document_path(index, attachment, &date);
 
         let header = format!(
             "# {filename}\n\n\
@@ -105,7 +112,53 @@ pub(super) async fn store_extracted_documents(
 
 #[cfg(test)]
 mod tests {
-    use super::sanitise_filename;
+    use super::{
+        build_document_path, get_valid_document_text, is_usable_extracted_text, sanitise_filename,
+    };
+    use crate::channels::{AttachmentKind, IncomingAttachment};
+
+    fn make_attachment(
+        id: &str,
+        filename: Option<&str>,
+        extracted_text: Option<&str>,
+    ) -> IncomingAttachment {
+        IncomingAttachment {
+            id: id.to_string(),
+            kind: AttachmentKind::Document,
+            mime_type: "application/pdf".to_string(),
+            filename: filename.map(ToString::to_string),
+            size_bytes: Some(42),
+            source_url: None,
+            storage_key: None,
+            extracted_text: extracted_text.map(ToString::to_string),
+            data: Vec::new(),
+            duration_secs: None,
+        }
+    }
+
+    #[test]
+    fn usable_extracted_text_rejects_error_sentinels() {
+        assert!(!is_usable_extracted_text("[Failed to extract]"));
+        assert!(!is_usable_extracted_text("[Error parsing]"));
+        assert!(!is_usable_extracted_text("[Unsupported format]"));
+    }
+
+    #[test]
+    fn usable_extracted_text_accepts_normal_text() {
+        assert!(is_usable_extracted_text("hello world"));
+    }
+
+    #[test]
+    fn get_valid_document_text_filters_sentinel_outputs() {
+        let attachment = make_attachment("id", Some("doc.pdf"), Some("[Failed to extract]"));
+        assert_eq!(get_valid_document_text(&attachment), None);
+    }
+
+    #[test]
+    fn get_valid_document_text_returns_usable_text() {
+        let attachment = make_attachment("id", Some("doc.pdf"), Some("actual text"));
+        assert_eq!(get_valid_document_text(&attachment), Some("actual text"));
+    }
 
     #[test]
     fn sanitise_filename_removes_parent_traversal_segments() {
@@ -130,5 +183,23 @@ mod tests {
     #[test]
     fn sanitise_filename_preserves_normal_filenames() {
         assert_eq!(sanitise_filename("report.txt"), "report.txt");
+    }
+
+    #[test]
+    fn sanitise_filename_defaults_when_empty() {
+        assert_eq!(sanitise_filename(""), "unnamed_document");
+    }
+
+    #[test]
+    fn build_document_path_uses_sanitized_id_and_filename() {
+        let attachment = make_attachment("abc/../123", Some("../report.pdf"), Some("text"));
+        let path = build_document_path(7, &attachment, "2026-04-03");
+        assert!(path.starts_with("documents/2026-04-03/7-"));
+        assert!(!path.contains(".."));
+        let suffix = path
+            .strip_prefix("documents/2026-04-03/")
+            .expect("path should include date prefix");
+        assert!(!suffix.contains('/'));
+        assert!(!suffix.contains('\\'));
     }
 }

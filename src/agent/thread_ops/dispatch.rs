@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::agent::Agent;
 use crate::agent::session::Session;
-use crate::agent::submission::{Submission, SubmissionResult};
+use crate::agent::submission::{Submission, SubmissionParser, SubmissionResult};
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::error::Error;
 
@@ -21,14 +21,10 @@ impl Agent {
         message: &IncomingMessage,
         submission: Submission,
     ) -> Result<Submission, String> {
-        let content = match &submission {
-            Submission::UserInput { content } => content.clone(),
-            _ => return Ok(submission),
-        };
         let event = crate::hooks::HookEvent::Inbound {
             user_id: message.user_id.clone(),
             channel: message.channel.clone(),
-            content,
+            content: message.content.clone(),
             thread_id: message.thread_id.clone(),
         };
         match self.hooks().run(&event).await {
@@ -41,9 +37,7 @@ impl Agent {
             }
             Ok(crate::hooks::HookOutcome::Continue {
                 modified: Some(new_content),
-            }) => Ok(Submission::UserInput {
-                content: new_content,
-            }),
+            }) => Ok(SubmissionParser::parse(&new_content)),
             Ok(crate::hooks::HookOutcome::Continue { modified: None }) => Ok(submission),
             Ok(crate::hooks::HookOutcome::Reject { reason }) => {
                 Err(format!("[Message rejected: {}]", reason))
@@ -80,22 +74,29 @@ impl Agent {
             } => {
                 // Each channel renders the approval prompt via send_status.
                 // Web gateway shows an inline card, REPL prints a formatted prompt, etc.
-                let _ = self
+                let status_result = self
                     .channels
                     .send_status(
                         &incoming_msg.channel,
                         StatusUpdate::ApprovalNeeded {
                             request_id: request_id.to_string(),
-                            tool_name,
-                            description,
+                            tool_name: tool_name.clone(),
+                            description: description.clone(),
                             parameters,
                         },
                         &incoming_msg.metadata,
                     )
                     .await;
 
-                // Empty string signals the caller to skip respond() (no duplicate text)
-                Ok(Some(String::new()))
+                if let Err(err) = status_result {
+                    tracing::warn!("Failed to send approval status update: {err}");
+                    Ok(Some(format!(
+                        "Approval required for `{tool_name}`: {description}"
+                    )))
+                } else {
+                    // Empty string signals the caller to skip respond() (no duplicate text)
+                    Ok(Some(String::new()))
+                }
             }
         }
     }
