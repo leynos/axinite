@@ -13,6 +13,7 @@ use tokio::sync::RwLock;
 use crate::channels::ChannelManager;
 use crate::channels::wasm::{WasmChannelRouter, WasmChannelRuntime};
 use crate::db::{SettingKey, UserId};
+use crate::extensions::activation::ChannelRuntimeState;
 use crate::extensions::activation::McpClientsMap;
 use crate::extensions::registry::ExtensionRegistry;
 use crate::extensions::{
@@ -41,21 +42,30 @@ struct PendingAuth {
     task_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
-/// Runtime infrastructure needed for hot-activating WASM channels.
-///
-/// Set after construction via [`ExtensionManager::set_channel_runtime`] once the
-/// channel manager, WASM runtime, pairing store, and webhook router are available.
-struct ChannelRuntimeState {
-    #[allow(dead_code)]
-    channel_manager: Arc<ChannelManager>,
-    #[allow(dead_code)]
-    wasm_channel_runtime: Arc<WasmChannelRuntime>,
-    #[allow(dead_code)]
-    pairing_store: Arc<PairingStore>,
-    #[allow(dead_code)]
-    wasm_channel_router: Arc<WasmChannelRouter>,
-    #[allow(dead_code)]
-    wasm_channel_owner_ids: std::collections::HashMap<String, i64>,
+/// Shared mutable state between [`ExtensionManager`] and
+/// [`LiveWasmChannelActivation`](crate::extensions::LiveWasmChannelActivation).
+#[derive(Clone)]
+pub(crate) struct LiveWasmChannelSharedState {
+    pub(crate) channel_runtime: Arc<RwLock<Option<ChannelRuntimeState>>>,
+    pub(crate) relay_channel_manager: Arc<RwLock<Option<Arc<ChannelManager>>>>,
+    pub(crate) active_channel_names: Arc<RwLock<HashSet<String>>>,
+    pub(crate) installed_relay_extensions: Arc<RwLock<HashSet<String>>>,
+    pub(crate) activation_errors: Arc<RwLock<HashMap<String, String>>>,
+    pub(crate) sse_sender:
+        Arc<RwLock<Option<tokio::sync::broadcast::Sender<crate::channels::web::types::SseEvent>>>>,
+}
+
+impl Default for LiveWasmChannelSharedState {
+    fn default() -> Self {
+        Self {
+            channel_runtime: Arc::new(RwLock::new(None)),
+            relay_channel_manager: Arc::new(RwLock::new(None)),
+            active_channel_names: Arc::new(RwLock::new(HashSet::new())),
+            installed_relay_extensions: Arc::new(RwLock::new(HashSet::new())),
+            activation_errors: Arc::new(RwLock::new(HashMap::new())),
+            sse_sender: Arc::new(RwLock::new(None)),
+        }
+    }
 }
 
 /// Result of saving setup secrets and attempting activation.
@@ -90,9 +100,9 @@ pub struct ExtensionManager {
     wasm_channels_dir: PathBuf,
 
     // WASM channel hot-activation infrastructure (set post-construction)
-    channel_runtime: RwLock<Option<ChannelRuntimeState>>,
+    channel_runtime: Arc<RwLock<Option<ChannelRuntimeState>>>,
     /// Channel manager for hot-adding relay channels (set independently of WASM runtime).
-    relay_channel_manager: RwLock<Option<Arc<ChannelManager>>>,
+    relay_channel_manager: Arc<RwLock<Option<Arc<ChannelManager>>>>,
 
     // Shared
     secrets: Arc<dyn SecretsStore + Send + Sync>,
@@ -110,12 +120,12 @@ pub struct ExtensionManager {
     /// this set with the manager.
     active_channel_names: Arc<RwLock<HashSet<String>>>,
     /// Installed channel-relay extensions (no on-disk artifact, tracked in memory).
-    installed_relay_extensions: RwLock<HashSet<String>>,
+    installed_relay_extensions: Arc<RwLock<HashSet<String>>>,
     /// Last activation error for each WASM channel (ephemeral, cleared on success).
     activation_errors: Arc<RwLock<HashMap<String, String>>>,
     /// SSE broadcast sender (set post-construction via `set_sse_sender()`).
     sse_sender:
-        RwLock<Option<tokio::sync::broadcast::Sender<crate::channels::web::types::SseEvent>>>,
+        Arc<RwLock<Option<tokio::sync::broadcast::Sender<crate::channels::web::types::SseEvent>>>>,
     /// Shared registry of pending OAuth flows for gateway-routed callbacks.
     ///
     /// Keyed by CSRF `state` parameter. Populated in `start_wasm_oauth()`
@@ -238,6 +248,13 @@ impl ExtensionManager {
     /// Production callers supply [`LiveMcpActivation`], [`LiveWasmToolActivation`],
     /// and [`LiveWasmChannelActivation`]; tests inject no-op stubs.
     pub fn new(config: ExtensionManagerConfig) -> Self {
+        Self::new_with_shared_state(config, LiveWasmChannelSharedState::default())
+    }
+
+    pub(crate) fn new_with_shared_state(
+        config: ExtensionManagerConfig,
+        shared_state: LiveWasmChannelSharedState,
+    ) -> Self {
         let registry = if config.catalog_entries.is_empty() {
             ExtensionRegistry::new()
         } else {
@@ -252,8 +269,8 @@ impl ExtensionManager {
             mcp_clients: config.mcp_clients,
             wasm_tools_dir: config.wasm_tools_dir,
             wasm_channels_dir: config.wasm_channels_dir,
-            channel_runtime: RwLock::new(None),
-            relay_channel_manager: RwLock::new(None),
+            channel_runtime: shared_state.channel_runtime,
+            relay_channel_manager: shared_state.relay_channel_manager,
             secrets: config.secrets,
             tool_registry: config.tool_registry,
             hooks: config.hooks,
@@ -261,10 +278,10 @@ impl ExtensionManager {
             tunnel_url: config.tunnel_url,
             user_id: config.user_id,
             store: config.store,
-            active_channel_names: Arc::new(RwLock::new(HashSet::new())),
-            installed_relay_extensions: RwLock::new(HashSet::new()),
-            activation_errors: Arc::new(RwLock::new(HashMap::new())),
-            sse_sender: RwLock::new(None),
+            active_channel_names: shared_state.active_channel_names,
+            installed_relay_extensions: shared_state.installed_relay_extensions,
+            activation_errors: shared_state.activation_errors,
+            sse_sender: shared_state.sse_sender,
             pending_oauth_flows: crate::cli::oauth_defaults::new_pending_oauth_registry(),
             gateway_token: config.gateway_token,
             relay_config: config.relay_config,

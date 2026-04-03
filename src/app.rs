@@ -9,6 +9,8 @@
 
 use std::sync::Arc;
 
+use anyhow::Context;
+
 use crate::channels::web::log_layer::LogBroadcaster;
 use crate::config::Config;
 use crate::context::ContextManager;
@@ -166,31 +168,26 @@ impl AppBuilder {
 
     fn build_wasm_channel_activation(
         &self,
+        shared_state: &crate::extensions::manager::LiveWasmChannelSharedState,
         secrets: &Arc<dyn crate::secrets::SecretsStore + Send + Sync>,
         relay_config: Option<crate::config::RelayConfig>,
         gateway_token: Option<String>,
     ) -> Arc<dyn crate::extensions::WasmChannelActivationPort> {
         Arc::new(crate::extensions::LiveWasmChannelActivation::new(
             crate::extensions::LiveWasmChannelActivationConfig {
-                active_channel_names: Arc::new(tokio::sync::RwLock::new(
-                    std::collections::HashSet::new(),
-                )),
-                activation_errors: Arc::new(tokio::sync::RwLock::new(
-                    std::collections::HashMap::new(),
-                )),
-                sse_sender: Arc::new(tokio::sync::RwLock::new(None)),
+                active_channel_names: Arc::clone(&shared_state.active_channel_names),
+                activation_errors: Arc::clone(&shared_state.activation_errors),
+                sse_sender: Arc::clone(&shared_state.sse_sender),
                 wasm_channels_dir: self.config.channels.wasm_channels_dir.clone(),
                 secrets: Arc::clone(secrets),
-                channel_runtime: Arc::new(tokio::sync::RwLock::new(None)),
-                relay_channel_manager: Arc::new(tokio::sync::RwLock::new(None)),
+                channel_runtime: Arc::clone(&shared_state.channel_runtime),
+                relay_channel_manager: Arc::clone(&shared_state.relay_channel_manager),
                 tunnel_url: self.config.tunnel.public_url.clone(),
                 user_id: "default".to_string(),
                 store: self.db.clone(),
                 relay_config,
                 gateway_token,
-                installed_relay_extensions: Arc::new(tokio::sync::RwLock::new(
-                    std::collections::HashSet::new(),
-                )),
+                installed_relay_extensions: Arc::clone(&shared_state.installed_relay_extensions),
             },
         ))
     }
@@ -213,6 +210,7 @@ impl AppBuilder {
         let discovery = Arc::new(crate::extensions::OnlineDiscovery::new());
         let relay_config = crate::config::RelayConfig::from_env();
         let gateway_token = std::env::var("GATEWAY_AUTH_TOKEN").ok();
+        let shared_state = crate::extensions::manager::LiveWasmChannelSharedState::default();
 
         let mcp_activation = self.build_mcp_activation(
             mcp_session_manager,
@@ -224,12 +222,13 @@ impl AppBuilder {
         let wasm_tool_activation =
             self.build_wasm_tool_activation(wasm_tool_runtime, &ext_secrets, tools, hooks);
         let wasm_channel_activation = self.build_wasm_channel_activation(
+            &shared_state,
             &ext_secrets,
             relay_config.clone(),
             gateway_token.clone(),
         );
 
-        let manager = Arc::new(ExtensionManager::new(
+        let manager = Arc::new(ExtensionManager::new_with_shared_state(
             crate::extensions::ExtensionManagerConfig {
                 discovery,
                 relay_config,
@@ -248,6 +247,7 @@ impl AppBuilder {
                 store: self.db.clone(),
                 catalog_entries,
             },
+            shared_state,
         ));
 
         tools.register_extension_tools(Arc::clone(&manager));
@@ -432,16 +432,21 @@ impl AppBuilder {
         entries
     }
 
-    fn build_ext_secrets(&self) -> Arc<dyn crate::secrets::SecretsStore + Send + Sync> {
+    fn build_ext_secrets(
+        &self,
+    ) -> Result<Arc<dyn crate::secrets::SecretsStore + Send + Sync>, anyhow::Error> {
         if let Some(ref s) = self.secrets_store {
-            return Arc::clone(s);
+            return Ok(Arc::clone(s));
         }
         use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
         let ephemeral_key =
             secrecy::SecretString::from(crate::secrets::keychain::generate_master_key_hex());
-        let crypto = Arc::new(SecretsCrypto::new(ephemeral_key).expect("ephemeral crypto"));
+        let crypto = Arc::new(
+            SecretsCrypto::new(ephemeral_key)
+                .context("failed to create ephemeral crypto for extension manager")?,
+        );
         tracing::debug!("Using ephemeral in-memory secrets store for extension manager");
-        Arc::new(InMemorySecretsStore::new(crypto))
+        Ok(Arc::new(InMemorySecretsStore::new(crypto)))
     }
 
     /// Phase 1: Initialize database backend.
@@ -746,7 +751,7 @@ impl AppBuilder {
         );
 
         let catalog_entries = self.load_catalog_entries();
-        let ext_secrets = self.build_ext_secrets();
+        let ext_secrets = self.build_ext_secrets()?;
 
         let extension_manager = Some(
             self.build_extension_manager(

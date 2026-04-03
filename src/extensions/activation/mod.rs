@@ -36,6 +36,8 @@ pub use noop::*;
 pub use wasm_channel::*;
 pub use wasm_tool::*;
 
+pub(crate) use live_wasm_channel::ChannelRuntimeState;
+
 /// Boxed future alias for dyn-safe activation methods.
 pub type ActivationFuture<'a> =
     Pin<Box<dyn Future<Output = Result<ActivateResult, ExtensionError>> + Send + 'a>>;

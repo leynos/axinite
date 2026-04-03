@@ -29,11 +29,12 @@ pub(crate) enum ToolAuthState {
 pub(super) async fn inject_channel_credentials_from_secrets(
     channel: &Arc<crate::channels::wasm::WasmChannel>,
     secrets: Option<&dyn SecretsStore>,
-    channel_name: &str,
+    _channel_name: &str,
     user_id: &str,
 ) -> Result<usize, String> {
     let mut count = 0;
     let mut injected_placeholders = HashSet::new();
+    let allowed_keys = allowed_credential_keys(channel);
 
     // 1. Try injecting from persistent secrets store if available
     if let Some(secrets) = secrets {
@@ -42,10 +43,9 @@ pub(super) async fn inject_channel_credentials_from_secrets(
             .await
             .map_err(|e| format!("Failed to list secrets: {}", e))?;
 
-        let prefix = format!("{}_", channel_name.to_ascii_lowercase());
-
         for secret_meta in all_secrets {
-            if !secret_meta.name.to_ascii_lowercase().starts_with(&prefix) {
+            let placeholder = secret_meta.name.to_uppercase();
+            if !allowed_keys.contains(&placeholder) {
                 continue;
             }
 
@@ -61,7 +61,6 @@ pub(super) async fn inject_channel_credentials_from_secrets(
                 }
             };
 
-            let placeholder = secret_meta.name.to_uppercase();
             channel
                 .set_credential(&placeholder, decrypted.expose().to_string())
                 .await;
@@ -71,7 +70,7 @@ pub(super) async fn inject_channel_credentials_from_secrets(
     }
 
     // 2. Fallback to environment variables for missing credentials
-    count += inject_env_credentials(channel, channel_name, &injected_placeholders).await;
+    count += inject_env_credentials(channel, &allowed_keys, &injected_placeholders).await;
 
     Ok(count)
 }
@@ -82,25 +81,14 @@ pub(super) async fn inject_channel_credentials_from_secrets(
 /// (e.g., `TELEGRAM_` for channel `telegram`) are considered for security.
 async fn inject_env_credentials(
     channel: &Arc<crate::channels::wasm::WasmChannel>,
-    channel_name: &str,
+    allowed_keys: &HashSet<String>,
     already_injected: &HashSet<String>,
 ) -> usize {
-    if channel_name.trim().is_empty() {
+    if allowed_keys.is_empty() {
         return 0;
     }
 
-    let caps = channel.capabilities();
-    let Some(ref http_cap) = caps.tool_capabilities.http else {
-        return 0;
-    };
-
-    let placeholders: Vec<String> = http_cap
-        .credentials
-        .values()
-        .map(|m| m.secret_name.to_uppercase())
-        .collect();
-
-    let resolved = resolve_env_credentials(&placeholders, channel_name, already_injected);
+    let resolved = resolve_env_credentials(allowed_keys, already_injected);
     let count = resolved.len();
     for (placeholder, value) in resolved {
         channel.set_credential(&placeholder, value).await;
@@ -109,51 +97,37 @@ async fn inject_env_credentials(
 }
 
 /// Pure helper: from a list of credential placeholder names, return those that
-/// pass the channel-prefix security check and have a non-empty env var value.
+/// are explicitly allowed by the channel capabilities and have a non-empty env var value.
 ///
 /// Placeholders already covered by the secrets store (`already_injected`) are
-/// skipped. Only names starting with `{CHANNEL_NAME}_` are allowed to prevent
-/// a WASM channel from reading unrelated host credentials (e.g.
-/// `AWS_SECRET_ACCESS_KEY`).
+/// skipped. Only credential names declared in the channel capabilities are allowed
+/// to prevent a WASM channel from reading unrelated host credentials (e.g.
+/// `AWS_SECRET_ACCESS_KEY`) via a crafted channel name.
 pub(super) fn resolve_env_credentials(
-    placeholders: &[String],
-    channel_name: &str,
+    allowed_keys: &HashSet<String>,
     already_injected: &HashSet<String>,
 ) -> Vec<(String, String)> {
-    resolve_env_credentials_with_reader(
-        placeholders,
-        channel_name,
-        already_injected,
-        |placeholder| std::env::var(placeholder).ok(),
-    )
+    resolve_env_credentials_with_reader(allowed_keys, already_injected, |placeholder| {
+        std::env::var(placeholder).ok()
+    })
 }
 
 fn resolve_env_credentials_with_reader<F>(
-    placeholders: &[String],
-    channel_name: &str,
+    allowed_keys: &HashSet<String>,
     already_injected: &HashSet<String>,
     env_reader: F,
 ) -> Vec<(String, String)>
 where
     F: Fn(&str) -> Option<String>,
 {
-    if channel_name.trim().is_empty() {
+    if allowed_keys.is_empty() {
         return Vec::new();
     }
 
-    let prefix = format!("{}_", channel_name.to_ascii_uppercase());
     let mut out = Vec::new();
 
-    for placeholder in placeholders {
+    for placeholder in allowed_keys {
         if already_injected.contains(placeholder) {
-            continue;
-        }
-        if !placeholder.starts_with(&prefix) {
-            tracing::warn!(
-                channel = %channel_name,
-                placeholder = %placeholder,
-                "Ignoring non-prefixed credential placeholder in environment fallback"
-            );
             continue;
         }
         if let Some(value) = env_reader(placeholder)
@@ -165,6 +139,16 @@ where
     out
 }
 
+fn allowed_credential_keys(channel: &Arc<crate::channels::wasm::WasmChannel>) -> HashSet<String> {
+    let caps = channel.capabilities();
+    caps.tool_capabilities
+        .http
+        .iter()
+        .flat_map(|http_cap| http_cap.credentials.values())
+        .map(|mapping| mapping.secret_name.to_uppercase())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,28 +156,18 @@ mod tests {
 
     #[test]
     fn test_security_prefix_check() {
-        // Placeholders that don't start with the channel prefix must be rejected.
-        // All env var names are prefixed with ICTEST1_ to avoid CI collisions.
-        let placeholders = vec![
-            "ICTEST1_BOT_TOKEN".to_string(), // valid: matches channel prefix
-            "ICTEST2_TOKEN".to_string(),     // invalid: wrong channel prefix
-            "ICTEST1_UNRELATED_OTHER".to_string(), // valid prefix, but env var not set — not injected
-        ];
+        let allowed_keys = HashSet::from(["ICTEST1_BOT_TOKEN".to_string()]);
         let already_injected = std::collections::HashSet::new();
         let env = HashMap::from([
             ("ICTEST1_BOT_TOKEN".to_string(), "good-secret".to_string()),
             ("ICTEST2_TOKEN".to_string(), "bad-secret".to_string()),
         ]);
-        // ICTEST1_UNRELATED_OTHER intentionally not set — tests both prefix rejection and absence
 
-        let resolved = resolve_env_credentials_with_reader(
-            &placeholders,
-            "ictest1",
-            &already_injected,
-            |key| env.get(key).cloned(),
-        );
+        let resolved =
+            resolve_env_credentials_with_reader(&allowed_keys, &already_injected, |key| {
+                env.get(key).cloned()
+            });
 
-        // Only ICTEST1_BOT_TOKEN passes the prefix check for channel "ictest1"
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].0, "ICTEST1_BOT_TOKEN");
         assert_eq!(resolved[0].1, "good-secret");
@@ -201,62 +175,50 @@ mod tests {
 
     #[test]
     fn test_already_injected_skipped() {
-        // Use unique env var names (ictest3_*) to avoid interference with other tests.
-        let placeholders = vec!["ICTEST3_TOKEN".to_string()];
+        let allowed_keys = HashSet::from(["ICTEST3_TOKEN".to_string()]);
         let mut already_injected = std::collections::HashSet::new();
         already_injected.insert("ICTEST3_TOKEN".to_string());
         let env = HashMap::from([("ICTEST3_TOKEN".to_string(), "secret".to_string())]);
 
-        let resolved = resolve_env_credentials_with_reader(
-            &placeholders,
-            "ictest3",
-            &already_injected,
-            |key| env.get(key).cloned(),
-        );
+        let resolved =
+            resolve_env_credentials_with_reader(&allowed_keys, &already_injected, |key| {
+                env.get(key).cloned()
+            });
 
-        // Already covered by secrets store — env var must be skipped
         assert!(resolved.is_empty());
     }
 
     #[test]
     fn test_missing_env_var_not_injected() {
-        // Use unique env var names (ictest4_*) to avoid interference with other tests.
-        let placeholders = vec!["ICTEST4_TOKEN".to_string()];
+        let allowed_keys = HashSet::from(["ICTEST4_TOKEN".to_string()]);
         let already_injected = std::collections::HashSet::new();
         let env: HashMap<String, String> = HashMap::new();
 
-        let resolved = resolve_env_credentials_with_reader(
-            &placeholders,
-            "ictest4",
-            &already_injected,
-            |key| env.get(key).cloned(),
-        );
+        let resolved =
+            resolve_env_credentials_with_reader(&allowed_keys, &already_injected, |key| {
+                env.get(key).cloned()
+            });
 
         assert!(resolved.is_empty());
     }
 
     #[test]
     fn test_empty_env_var_not_injected() {
-        // An env var that exists but is empty must not be injected.
-        // Use unique env var names (ictest5_*) to avoid interference with other tests.
-        let placeholders = vec!["ICTEST5_TOKEN".to_string()];
+        let allowed_keys = HashSet::from(["ICTEST5_TOKEN".to_string()]);
         let already_injected = std::collections::HashSet::new();
         let env = HashMap::from([("ICTEST5_TOKEN".to_string(), String::new())]);
 
-        let resolved = resolve_env_credentials_with_reader(
-            &placeholders,
-            "ictest5",
-            &already_injected,
-            |key| env.get(key).cloned(),
-        );
+        let resolved =
+            resolve_env_credentials_with_reader(&allowed_keys, &already_injected, |key| {
+                env.get(key).cloned()
+            });
 
         assert!(resolved.is_empty());
     }
 
     #[test]
-    fn test_empty_channel_name_returns_nothing() {
-        // An empty channel name must never match any env var (prefix would be "_").
-        let placeholders = vec!["_TOKEN".to_string(), "ICTEST6_TOKEN".to_string()];
+    fn test_empty_allowed_keys_returns_nothing() {
+        let allowed_keys = std::collections::HashSet::new();
         let already_injected = std::collections::HashSet::new();
         let env = HashMap::from([
             ("_TOKEN".to_string(), "bad".to_string()),
@@ -264,10 +226,10 @@ mod tests {
         ]);
 
         let resolved =
-            resolve_env_credentials_with_reader(&placeholders, "", &already_injected, |key| {
+            resolve_env_credentials_with_reader(&allowed_keys, &already_injected, |key| {
                 env.get(key).cloned()
             });
 
-        assert!(resolved.is_empty(), "empty channel name must match nothing");
+        assert!(resolved.is_empty(), "empty allow-list must match nothing");
     }
 }

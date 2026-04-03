@@ -195,7 +195,7 @@ impl super::LiveWasmChannelActivation {
             wasm_channel_owner_ids,
         ) = self.resolve_runtime_state().await?;
 
-        let auth_state = self.check_channel_auth_status(name).await;
+        let auth_state = self.check_channel_auth_status(name).await?;
         if auth_state != ToolAuthState::Ready && auth_state != ToolAuthState::NoAuth {
             return Err(ExtensionError::ActivationFailed(format!(
                 "Channel '{}' requires configuration. Use the setup form to provide credentials.",
@@ -213,12 +213,20 @@ impl super::LiveWasmChannelActivation {
         let sig_key_secret_name = loaded.signature_key_secret_name();
         let hmac_secret_name = loaded.hmac_secret_name();
 
-        let webhook_secret = self
+        let webhook_secret = match self
             .secrets
             .get_decrypted(&self.user_id, &webhook_secret_name)
             .await
-            .ok()
-            .map(|s| s.expose().to_string());
+        {
+            Ok(secret) => Some(secret.expose().to_string()),
+            Err(crate::secrets::SecretError::NotFound(_)) => None,
+            Err(e) => {
+                return Err(ExtensionError::ActivationFailed(format!(
+                    "Failed to load webhook secret for '{}': {}",
+                    channel_name, e
+                )));
+            }
+        };
 
         let channel_arc = Arc::new(loaded.channel);
 

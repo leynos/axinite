@@ -124,6 +124,7 @@ impl LiveWasmChannelActivation {
     }
 }
 
+#[cfg(test)]
 impl Default for LiveWasmChannelActivation {
     fn default() -> Self {
         // Create default empty configuration for testing

@@ -7,6 +7,42 @@ use crate::extensions::{ActivateResult, ExtensionError, ExtensionKind};
 
 use super::credentials::inject_channel_credentials_from_secrets;
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub(super) struct ChannelName(pub String);
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub(super) struct WebhookSecretName(pub String);
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub(super) struct SigKeySecretName(pub String);
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub(super) struct HmacSecretName(pub String);
+
+impl AsRef<str> for ChannelName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for WebhookSecretName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for SigKeySecretName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for HmacSecretName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 pub(super) struct RegisterWebhookEndpointsParams {
     pub(super) channel_name: String,
     pub(super) webhook_secret: Option<String>,
@@ -19,27 +55,27 @@ impl super::LiveWasmChannelActivation {
     async fn register_sig_key_with_router(
         &self,
         router: &Arc<crate::channels::wasm::WasmChannelRouter>,
-        channel_name: &str,
-        sig_key_name: &str,
+        channel: &ChannelName,
+        sig_key: &SigKeySecretName,
     ) {
         let key_secret = match self
             .secrets
-            .get_decrypted(&self.user_id, sig_key_name)
+            .get_decrypted(&self.user_id, sig_key.as_ref())
             .await
         {
             Ok(s) => s,
             Err(_) => return,
         };
         match router
-            .register_signature_key(channel_name, key_secret.expose())
+            .register_signature_key(channel.as_ref(), key_secret.expose())
             .await
         {
             Ok(()) => tracing::info!(
-                channel = %channel_name,
+                channel = %channel.as_ref(),
                 "Registered signature key for hot-activated channel"
             ),
             Err(e) => tracing::error!(
-                channel = %channel_name,
+                channel = %channel.as_ref(),
                 error = %e,
                 "Failed to register signature key"
             ),
@@ -49,21 +85,25 @@ impl super::LiveWasmChannelActivation {
     async fn register_hmac_with_router(
         &self,
         router: &Arc<crate::channels::wasm::WasmChannelRouter>,
-        channel_name: &str,
-        hmac_name: &str,
+        channel: &ChannelName,
+        hmac: &HmacSecretName,
     ) {
-        match self.secrets.get_decrypted(&self.user_id, hmac_name).await {
+        match self
+            .secrets
+            .get_decrypted(&self.user_id, hmac.as_ref())
+            .await
+        {
             Ok(secret) => {
                 router
-                    .register_hmac_secret(channel_name, secret.expose())
+                    .register_hmac_secret(channel.as_ref(), secret.expose())
                     .await;
                 tracing::info!(
-                    channel = %channel_name,
+                    channel = %channel.as_ref(),
                     "Registered HMAC signing secret for hot-activated channel"
                 );
             }
             Err(e) => {
-                tracing::warn!(channel = %channel_name, error = %e, "HMAC secret not found");
+                tracing::warn!(channel = %channel.as_ref(), error = %e, "HMAC secret not found");
             }
         }
     }
@@ -74,6 +114,7 @@ impl super::LiveWasmChannelActivation {
         channel: Arc<crate::channels::wasm::WasmChannel>,
         params: RegisterWebhookEndpointsParams,
     ) {
+        let chan = ChannelName(params.channel_name.clone());
         let webhook_path = format!("/webhook/{}", params.channel_name);
         let endpoints = vec![RegisteredEndpoint {
             channel_name: params.channel_name.clone(),
@@ -95,25 +136,25 @@ impl super::LiveWasmChannelActivation {
         );
 
         if let Some(sig_key_name) = params.sig_key_secret_name {
-            self.register_sig_key_with_router(router, &params.channel_name, &sig_key_name)
-                .await;
+            let sig = SigKeySecretName(sig_key_name);
+            self.register_sig_key_with_router(router, &chan, &sig).await;
         }
 
         if let Some(hmac_name) = params.hmac_secret_name {
-            self.register_hmac_with_router(router, &params.channel_name, &hmac_name)
-                .await;
+            let h = HmacSecretName(hmac_name);
+            self.register_hmac_with_router(router, &chan, &h).await;
         }
     }
 
     pub(super) async fn reinject_credentials(
         &self,
         channel: &Arc<crate::channels::wasm::WasmChannel>,
-        name: &str,
+        name: &ChannelName,
     ) -> usize {
         match inject_channel_credentials_from_secrets(
             channel,
             Some(self.secrets.as_ref()),
-            name,
+            name.as_ref(),
             &self.user_id,
         )
         .await
@@ -121,7 +162,7 @@ impl super::LiveWasmChannelActivation {
             Ok(count) => count,
             Err(e) => {
                 tracing::warn!(
-                    channel = %name,
+                    channel = %name.as_ref(),
                     error = %e,
                     "Failed to refresh credentials on already-active channel"
                 );
@@ -132,45 +173,56 @@ impl super::LiveWasmChannelActivation {
 
     pub(super) async fn load_capabilities_secret_names(
         &self,
-        name: &str,
-    ) -> (String, Option<String>, Option<String>) {
+        name: &ChannelName,
+    ) -> (
+        WebhookSecretName,
+        Option<SigKeySecretName>,
+        Option<HmacSecretName>,
+    ) {
         let cap_path = self
             .wasm_channels_dir
-            .join(format!("{}.capabilities.json", name));
+            .join(format!("{}.capabilities.json", name.as_ref()));
         let capabilities_file = match tokio::fs::read(&cap_path).await {
             Ok(bytes) => crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&bytes).ok(),
             Err(_) => None,
         };
-        let webhook_secret_name = capabilities_file
-            .as_ref()
-            .map(|f| f.webhook_secret_name())
-            .unwrap_or_else(|| format!("{}_webhook_secret", name));
+        let webhook_secret_name = WebhookSecretName(
+            capabilities_file
+                .as_ref()
+                .map(|f| f.webhook_secret_name())
+                .unwrap_or_else(|| format!("{}_webhook_secret", name.as_ref())),
+        );
         let sig_key_secret_name = capabilities_file
             .as_ref()
             .and_then(|f| f.signature_key_secret_name())
-            .map(str::to_string);
+            .map(str::to_string)
+            .map(SigKeySecretName);
         let hmac_secret_name = capabilities_file
             .as_ref()
             .and_then(|f| f.hmac_secret_name())
-            .map(str::to_string);
+            .map(str::to_string)
+            .map(HmacSecretName);
         (webhook_secret_name, sig_key_secret_name, hmac_secret_name)
     }
 
     pub(super) async fn refresh_webhook_secret(
         &self,
         router: &Arc<crate::channels::wasm::WasmChannelRouter>,
-        name: &str,
-        webhook_secret_name: &str,
+        name: &ChannelName,
+        webhook_secret_name: &WebhookSecretName,
     ) {
         if let Ok(secret) = self
             .secrets
-            .get_decrypted(&self.user_id, webhook_secret_name)
+            .get_decrypted(&self.user_id, webhook_secret_name.as_ref())
             .await
         {
             router
-                .update_secret(name, secret.expose().to_string())
+                .update_secret(name.as_ref(), secret.expose().to_string())
                 .await;
-            tracing::info!(channel = %name, "Refreshed webhook secret for active channel");
+            tracing::info!(
+                channel = %name.as_ref(),
+                "Refreshed webhook secret for active channel"
+            );
         }
     }
 
@@ -210,20 +262,21 @@ impl super::LiveWasmChannelActivation {
             }
         };
 
-        let cred_count = self.reinject_credentials(&existing_channel, name).await;
+        let chan = ChannelName(name.to_string());
+        let cred_count = self.reinject_credentials(&existing_channel, &chan).await;
 
         let (webhook_secret_name, sig_key_secret_name, hmac_secret_name) =
-            self.load_capabilities_secret_names(name).await;
+            self.load_capabilities_secret_names(&chan).await;
 
-        self.refresh_webhook_secret(&router, name, &webhook_secret_name)
+        self.refresh_webhook_secret(&router, &chan, &webhook_secret_name)
             .await;
 
-        if let Some(sig_key_name) = sig_key_secret_name {
-            self.refresh_sig_key(&router, name, &sig_key_name).await;
+        if let Some(ref sig) = sig_key_secret_name {
+            self.refresh_sig_key(&router, name, sig.as_ref()).await;
         }
 
-        if let Some(hmac_name) = hmac_secret_name {
-            self.refresh_hmac_secret(&router, name, &hmac_name).await;
+        if let Some(ref hmac) = hmac_secret_name {
+            self.refresh_hmac_secret(&router, name, hmac.as_ref()).await;
         }
 
         self.activation_errors.write().await.remove(name);
