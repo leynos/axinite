@@ -139,13 +139,7 @@ fn remote_tool_execution_response_round_trip_without_field_loss(
 fn terminal_result_round_trip_preserves_all_fields() {
     let result = TerminalResult::success("completed", Some(11));
 
-    let serialized = serde_json::to_string(&result).expect("serialize TerminalResult");
-    let deserialized: TerminalResult =
-        serde_json::from_str(&serialized).expect("deserialize TerminalResult");
-
-    assert_eq!(deserialized.success, result.success);
-    assert_eq!(deserialized.message, result.message);
-    assert_eq!(deserialized.iterations, result.iterations);
+    assert_round_trips(result);
 }
 
 #[test]

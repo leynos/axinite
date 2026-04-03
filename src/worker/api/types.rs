@@ -375,7 +375,7 @@ impl std::fmt::Debug for CredentialResponse {
 ///
 /// Provides a consistent serialised shape for job completion events,
 /// whether successful or failed.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TerminalResult {
     /// Whether the job completed successfully.
     pub success: bool,

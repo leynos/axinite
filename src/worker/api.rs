@@ -121,14 +121,15 @@ impl WorkerHttpClient {
         path: &str,
         context: &str,
     ) -> Result<T, WorkerError> {
+        let url = self.url(path);
         let resp = self
             .client
-            .get(self.url(path))
+            .get(&url)
             .bearer_auth(&self.token)
             .send()
             .await
             .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.orchestrator_url.clone(),
+                url,
                 reason: e.to_string(),
             })?;
 

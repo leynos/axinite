@@ -117,12 +117,12 @@ The distinction matters:
   audit timeline, but it must not be allowed to block or invalidate terminal
   completion reporting.
 
-`ContainerDelegate` therefore uses a background task and bounded queue for
+`ContainerDelegate` therefore, uses a background task and bounded queue for
 event posting. `shutdown()` closes the queue and waits for the event worker so
 buffered events flush before the delegate disappears.
 
 `WorkerRuntime::post_event(...)` also uses a bounded timeout around terminal
-event publication so the final `report_complete(...)` call remains the
+event publication, so the final `report_complete(...)` call remains the
 authoritative acknowledgement path.
 
 ## 6. Credential handling
