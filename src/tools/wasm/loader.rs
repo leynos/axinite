@@ -698,10 +698,16 @@ pub struct DiscoveredTool {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
+    use std::sync::Arc;
 
     use tempfile::TempDir;
 
-    use crate::testing::credentials::{TEST_OAUTH_CLIENT_ID, TEST_OAUTH_CLIENT_SECRET};
+    use crate::llm::ToolDefinition;
+    use crate::testing::{
+        credentials::{TEST_OAUTH_CLIENT_ID, TEST_OAUTH_CLIENT_SECRET},
+        github_tool_source_dir, github_wasm_artifact, metadata_test_runtime,
+    };
+    use crate::tools::registry::ToolRegistry;
     use crate::tools::wasm::loader::{WasmLoadError, check_wit_version_compat, discover_tools};
 
     #[test]
@@ -948,9 +954,6 @@ mod tests {
     // Security regression tests
     // ---------------------------------------------------------------
 
-    use std::sync::Arc;
-
-    use crate::tools::registry::ToolRegistry;
     use crate::tools::wasm::{WasmRuntimeConfig, WasmToolRuntime};
 
     /// Helper: create a WasmToolLoader backed by a real runtime + registry.
@@ -961,6 +964,32 @@ mod tests {
         );
         let registry = Arc::new(ToolRegistry::new());
         super::WasmToolLoader::new(runtime, registry)
+    }
+
+    fn make_metadata_loader() -> (super::WasmToolLoader, Arc<ToolRegistry>) {
+        let runtime = metadata_test_runtime().expect("create metadata test runtime");
+        let registry = Arc::new(ToolRegistry::new());
+        (
+            super::WasmToolLoader::new(runtime, Arc::clone(&registry)),
+            registry,
+        )
+    }
+
+    fn assert_real_github_schema(definition: ToolDefinition) {
+        assert_eq!(definition.parameters["type"], serde_json::json!("object"));
+        assert_eq!(
+            definition.parameters["properties"]["action"]["enum"][0],
+            serde_json::json!("get_repo")
+        );
+        assert!(
+            definition.parameters["required"]
+                .as_array()
+                .expect("required array")
+                .iter()
+                .any(|value| value == "action"),
+            "expected required action field in schema: {}",
+            definition.parameters
+        );
     }
 
     #[tokio::test]
@@ -1115,5 +1144,52 @@ mod tests {
         let results = results.expect("missing dir should return Ok, not Err");
         assert!(results.loaded.is_empty());
         assert!(results.errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn load_from_files_publishes_guest_schema_in_tool_definitions() {
+        let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
+        let capabilities_path = github_tool_source_dir().join("github-tool.capabilities.json");
+        let (loader, registry) = make_metadata_loader();
+
+        loader
+            .load_from_files("github", &wasm_path, Some(&capabilities_path))
+            .await
+            .expect("load github wasm tool from file");
+
+        assert_real_github_schema(
+            registry
+                .tool_definitions()
+                .await
+                .into_iter()
+                .find(|definition| definition.name == "github")
+                .expect("github definition should be registered"),
+        );
+    }
+
+    #[tokio::test]
+    async fn load_dev_tools_publishes_guest_schema_in_tool_definitions() {
+        github_wasm_artifact().expect("build or find github WASM artifact");
+        let install_dir = TempDir::new().expect("create install dir");
+        let (loader, registry) = make_metadata_loader();
+
+        let results = super::load_dev_tools(&loader, install_dir.path())
+            .await
+            .expect("load dev tools");
+
+        assert!(
+            results.loaded.iter().any(|name| name == "github-tool"),
+            "expected github-tool to load from dev artifacts: {:?}",
+            results.loaded
+        );
+
+        assert_real_github_schema(
+            registry
+                .tool_definitions()
+                .await
+                .into_iter()
+                .find(|definition| definition.name == "github-tool")
+                .expect("github-tool definition should be registered"),
+        );
     }
 }

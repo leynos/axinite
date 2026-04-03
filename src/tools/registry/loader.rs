@@ -241,11 +241,20 @@ impl ToolRegistry {
                     }
                 }
                 Err(error) => {
-                    tracing::debug!(
-                        name = reg.name,
-                        %error,
-                        "Failed to recover exported WASM metadata; using placeholders or overrides"
-                    );
+                    if reg.schema.is_none() {
+                        tracing::warn!(
+                            name = reg.name,
+                            %error,
+                            "Failed to recover exported WASM metadata; tool will be advertised \
+                             with placeholder schema until a valid override is provided"
+                        );
+                    } else {
+                        tracing::debug!(
+                            name = reg.name,
+                            %error,
+                            "Failed to recover exported WASM description; using placeholder or override"
+                        );
+                    }
                 }
             }
         }
@@ -332,15 +341,17 @@ impl ToolRegistry {
 
         let capabilities = stored_caps.map(|c| c.to_capabilities()).unwrap_or_default();
 
-        // Register the tool
+        let description = normalized_description(&tool_with_binary.tool.description);
+        let schema = normalized_schema(tool_with_binary.tool.parameters_schema.clone());
+
         self.register_wasm(WasmToolRegistration {
             name: &tool_with_binary.tool.name,
             wasm_bytes: &tool_with_binary.wasm_binary,
             runtime,
             capabilities,
             limits: None,
-            description: Some(&tool_with_binary.tool.description),
-            schema: Some(tool_with_binary.tool.parameters_schema.clone()),
+            description,
+            schema,
             secrets_store: self.secrets_store.clone(),
             oauth_refresh: None,
         })
@@ -401,5 +412,25 @@ impl std::fmt::Debug for ToolRegistry {
         f.debug_struct("ToolRegistry")
             .field("count", &self.count())
             .finish()
+    }
+}
+
+fn normalized_description(description: &str) -> Option<&str> {
+    let trimmed = description.trim();
+    (!trimmed.is_empty()).then_some(trimmed)
+}
+
+fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
+    match schema {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
+                None
+            } else {
+                Some(serde_json::Value::String(trimmed.to_string()))
+            }
+        }
+        value => Some(value),
     }
 }

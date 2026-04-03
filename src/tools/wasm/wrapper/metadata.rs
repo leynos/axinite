@@ -26,6 +26,12 @@ pub(super) fn placeholder_schema() -> serde_json::Value {
     })
 }
 
+/// Whether the given schema is the registration-time placeholder.
+#[cfg(test)]
+pub(crate) fn is_placeholder_schema(schema: &serde_json::Value) -> bool {
+    *schema == placeholder_schema()
+}
+
 /// Maximum characters for the description portion of a tool hint.
 const HINT_DESC_MAX: usize = 500;
 /// Maximum characters for the schema portion of a tool hint.
@@ -237,6 +243,24 @@ mod tests {
     use crate::tools::wasm::capabilities::Capabilities;
 
     use super::super::WasmToolWrapper;
+
+    #[test]
+    fn placeholder_schema_detection_identifies_placeholder() {
+        assert!(super::is_placeholder_schema(&super::placeholder_schema()));
+    }
+
+    #[test]
+    fn placeholder_schema_detection_rejects_real_schema() {
+        let real_schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "action": { "type": "string" }
+            },
+            "required": ["action"]
+        });
+
+        assert!(!super::is_placeholder_schema(&real_schema));
+    }
 
     #[fixture]
     async fn github_wrapper() -> WasmToolWrapper {

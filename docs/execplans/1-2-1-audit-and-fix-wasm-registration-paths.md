@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work
 proceeds.
 
-Status: DRAFT
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -660,8 +660,10 @@ pub(crate) fn is_placeholder_schema(schema: &serde_json::Value) -> bool;
 
 ### Existing interfaces consumed (no changes)
 
-- `WasmToolWrapper::exported_metadata(&self) -> Result<(String, Value), WasmError>`
-- `ToolRegistry::register_wasm(&self, reg: WasmToolRegistration<'_>) -> Result<(), WasmError>`
+- `WasmToolWrapper::exported_metadata(&self) ->
+  Result<(String, Value), WasmError>`
+- `ToolRegistry::register_wasm(&self, reg: WasmToolRegistration<'_>) ->
+  Result<(), WasmError>`
 - `ToolRegistry::tool_definitions(&self) -> Vec<ToolDefinition>`
 - `metadata::placeholder_schema() -> serde_json::Value`
 - `metadata::placeholder_description() -> String`
@@ -681,22 +683,68 @@ pub(crate) fn is_placeholder_schema(schema: &serde_json::Value) -> bool;
 
 ## Progress
 
-- [ ] Audit registration paths and document findings (milestone 1).
-- [ ] Add `is_placeholder_schema()` helper and escalate the log (milestone 2).
-- [ ] Update the retry-hint comment contract (milestone 3).
-- [ ] Add unit tests for schema publication invariants (milestone 4).
-- [ ] Evaluate and add behavioural tests (milestone 5).
-- [ ] Synchronise documentation (milestone 6).
-- [ ] Run full validation gates and publish (milestone 7).
+- [x] Audit registration paths and document findings (milestone 1).
+- [x] Add `is_placeholder_schema()` helper and escalate the log (milestone 2).
+- [x] Update the retry-hint comment contract (milestone 3).
+- [x] Add unit tests for schema publication invariants (milestone 4).
+- [x] Evaluate and add behavioural tests (milestone 5).
+- [x] Synchronise documentation (milestone 6).
+- [x] Run full validation gates and publish (milestone 7).
 
 ## Surprises & Discoveries
 
-(None yet.)
+- The compiled `ToolRegistry::register_wasm()` and
+  `register_wasm_from_storage()` paths live in `src/tools/registry/loader.rs`,
+  while `src/tools/registry/wasm.rs` contains a duplicate helper
+  implementation that is not wired into `src/tools/registry.rs`.
+- The live storage-backed path was still passing empty descriptions and
+  `null` schemas through as explicit overrides, which suppressed guest
+  metadata recovery until `normalized_description()` and
+  `normalized_schema()` were added to the live registration path.
+- No existing `rstest-bdd` harness was available for this seam, and adding a
+  first behavioural harness would have expanded scope beyond this audit.
 
 ## Decision Log
 
-(No decisions yet.)
+- Decision: keep the new placeholder-schema helper test-only.
+  Why: the helper exists to lock down the placeholder shape in regression
+  tests, and compiling it only for tests avoids dead-code suppressions under
+  the repository's strict clippy policy.
+- Decision: do not add a new BDD harness for roadmap item `1.2.1`.
+  Why: the path is already covered by in-process Rust registration tests for
+  file-loaded, storage-backed, and dev-build flows, and the first `rstest-bdd`
+  harness would not have improved confidence enough to justify the added
+  surface area.
+- Decision: review `docs/users-guide.md` without changing it.
+  Why: the user guide currently documents hosted MCP catalogue behaviour, and
+  this roadmap item only changes in-process WASM registration plus internal
+  contract wording.
 
 ## Outcomes & Retrospective
 
-(Work has not yet begun.)
+- Implemented the live registration-path fix in
+  `src/tools/registry/loader.rs`, including:
+  - warning-level observability when a WASM tool remains on a placeholder
+    schema after metadata recovery fails
+  - storage-backed normalisation so empty descriptions and `null` schemas fall
+    back to guest-exported metadata instead of suppressing it
+- Updated the retry-hint contract comment in `src/tools/wasm/wrapper.rs` to
+  describe the schema-bearing hint as supplemental recovery guidance.
+- Added regression coverage for:
+  - placeholder-schema detection in
+    `src/tools/wasm/wrapper/metadata.rs`
+  - file-loaded and dev-build schema publication in
+    `src/tools/wasm/loader.rs`
+  - storage-backed schema publication in
+    `src/tools/registry/wasm_registration_tests.rs`
+- Synchronized the documentation in:
+  - `docs/roadmap.md`
+  - `docs/rfcs/0002-expose-wasm-tool-definitions.md`
+  - `docs/contents.md`
+- Validation evidence:
+  - `set -o pipefail && CARGO_BUILD_JOBS=1 make all 2>&1 | tee /tmp/axinite-1-2-1-make-all.log`
+  - `set -o pipefail && CARGO_BUILD_JOBS=1 cargo test
+    storage_publishes_guest_schema --lib -- --nocapture 2>&1 | tee
+    /tmp/axinite-1-2-1-storage-schema.log`
+  - previously targeted regression runs for placeholder detection, file-loaded
+    publication, and dev-build publication completed successfully

@@ -107,7 +107,7 @@ done without losing guest-defined semantics.
 Dependencies: depends on 1.1 for the shared remote-catalog shape and informs 2.3
 by tightening the contract around active WASM tools.
 
-- [ ] 1.2.1. Audit and fix WASM registration paths so every active tool
+- [x] 1.2.1. Audit and fix WASM registration paths so every active tool
       publishes `ToolDefinition.parameters`.
   - See
     [RFC 0002 §Current State](./rfcs/0002-expose-wasm-tool-definitions.md#current-state)

@@ -5,6 +5,11 @@
 - **RFC number:** 0002
 - **Status:** Proposed
 - **Created:** 2026-03-11
+- **Implementation status:** Roadmap item `1.2.1` is complete. Active WASM
+  registration paths now recover guest-exported metadata before publication,
+  warn when registration falls back to a placeholder schema, and are covered by
+  regression tests for file-loaded, storage-backed, and dev-build paths.
+  Roadmap items `1.2.2`, `1.2.3`, and `1.2.4` remain open.
 
 ## Summary
 
@@ -108,6 +113,9 @@ The registration path is much healthier than it used to be:
 - explicit registration overrides can still win when needed
 - `ToolRegistry::tool_definitions()` emits `description` and `parameters` from
   the active tool implementation
+- file-loaded, storage-backed, and dev-build registration paths now have
+  regression tests that fail if the GitHub WASM fixture regresses back to a
+  placeholder schema
 
 This means IronClaw does not need a new schema format for WASM tools. It
 already has the right outward-facing structure.
@@ -121,6 +129,10 @@ The remaining problem is contractual, not structural:
   with their schema before first use
 - hosted mode does not yet have a unified remote-tool catalogue for
   orchestrator-owned dynamic tools, including WASM tools
+
+Roadmap item `1.2.1` closes the first two gaps for in-process WASM tools. The
+remaining hosted-mode catalogue work is still tracked separately under
+`1.2.2`.
 
 ## Goals
 

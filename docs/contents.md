@@ -129,6 +129,9 @@
   - [Add hosted-mode tests for schema fidelity and execution routing](execplans/1-1-4-tests-for-schema-fidelity-and-execution-routing.md)
     plans roadmap item `1.1.4` for the test matrix that locks down MCP tool
     contract fidelity and execution routing guarantees.
+  - [Audit and fix WASM registration paths for proactive schema publication](execplans/1-2-1-audit-and-fix-wasm-registration-paths.md)
+    plans roadmap item `1.2.1` for proactive WebAssembly (WASM) schema
+    publication across active registration paths.
 
 ## RFCs
 
