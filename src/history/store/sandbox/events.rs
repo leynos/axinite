@@ -35,9 +35,19 @@ impl Store {
         limit: Option<i64>,
     ) -> Result<Vec<JobEventRecord>, DatabaseError> {
         let conn = self.conn().await?;
-        let rows = match (before_id, limit) {
-            (Some(before_id), Some(n)) => {
-                conn.query(
+        let rows = Self::fetch_job_event_rows(&conn, job_id, before_id, limit).await?;
+        Ok(rows.iter().map(Self::job_event_record_from_row).collect())
+    }
+
+    async fn fetch_job_event_rows(
+        conn: &deadpool_postgres::Object,
+        job_id: Uuid,
+        before_id: Option<i64>,
+        limit: Option<i64>,
+    ) -> Result<Vec<tokio_postgres::Row>, DatabaseError> {
+        match (before_id, limit) {
+            (Some(before_id), Some(n)) => Ok(conn
+                .query(
                     r#"
                     SELECT id, job_id, event_type, data, created_at
                     FROM (
@@ -51,10 +61,9 @@ impl Store {
                     "#,
                     &[&job_id, &before_id, &n],
                 )
-                .await?
-            }
-            (Some(before_id), None) => {
-                conn.query(
+                .await?),
+            (Some(before_id), None) => Ok(conn
+                .query(
                     r#"
                     SELECT id, job_id, event_type, data, created_at
                     FROM job_events
@@ -63,10 +72,9 @@ impl Store {
                     "#,
                     &[&job_id, &before_id],
                 )
-                .await?
-            }
-            (None, Some(n)) => {
-                conn.query(
+                .await?),
+            (None, Some(n)) => Ok(conn
+                .query(
                     r#"
                     SELECT id, job_id, event_type, data, created_at
                     FROM (
@@ -80,10 +88,9 @@ impl Store {
                     "#,
                     &[&job_id, &n],
                 )
-                .await?
-            }
-            (None, None) => {
-                conn.query(
+                .await?),
+            (None, None) => Ok(conn
+                .query(
                     r#"
                     SELECT id, job_id, event_type, data, created_at
                     FROM job_events
@@ -92,18 +99,17 @@ impl Store {
                     "#,
                     &[&job_id],
                 )
-                .await?
-            }
-        };
-        Ok(rows
-            .iter()
-            .map(|r| JobEventRecord {
-                id: r.get("id"),
-                job_id: r.get("job_id"),
-                event_type: r.get("event_type"),
-                data: r.get("data"),
-                created_at: r.get("created_at"),
-            })
-            .collect())
+                .await?),
+        }
+    }
+
+    fn job_event_record_from_row(r: &tokio_postgres::Row) -> JobEventRecord {
+        JobEventRecord {
+            id: r.get("id"),
+            job_id: r.get("job_id"),
+            event_type: r.get("event_type"),
+            data: r.get("data"),
+            created_at: r.get("created_at"),
+        }
     }
 }

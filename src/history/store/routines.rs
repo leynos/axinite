@@ -22,17 +22,57 @@ use crate::error::DatabaseError;
 use self::mapping::{row_to_routine, row_to_routine_run};
 
 #[cfg(feature = "postgres")]
+struct RoutineDbFields {
+    trigger_type: &'static str,
+    trigger_config: serde_json::Value,
+    action_type: &'static str,
+    action_config: serde_json::Value,
+    cooldown_secs: i32,
+    max_concurrent: i32,
+    dedup_window_secs: Option<i32>,
+}
+
+#[cfg(feature = "postgres")]
+impl RoutineDbFields {
+    fn from_routine(r: &Routine) -> Self {
+        Self {
+            trigger_type: r.trigger.type_tag(),
+            trigger_config: r.trigger.to_config_json(),
+            action_type: r.action.type_tag(),
+            action_config: r.action.to_config_json(),
+            cooldown_secs: r.guardrails.cooldown.as_secs() as i32,
+            max_concurrent: r.guardrails.max_concurrent as i32,
+            dedup_window_secs: r.guardrails.dedup_window.map(|d| d.as_secs() as i32),
+        }
+    }
+}
+
+#[cfg(feature = "postgres")]
 impl Store {
+    async fn query_routines(
+        &self,
+        sql: &str,
+        params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+    ) -> Result<Vec<Routine>, DatabaseError> {
+        let conn = self.conn().await?;
+        let rows = conn.query(sql, params).await?;
+        rows.iter().map(row_to_routine).collect()
+    }
+
+    async fn query_routine_opt(
+        &self,
+        sql: &str,
+        params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+    ) -> Result<Option<Routine>, DatabaseError> {
+        let conn = self.conn().await?;
+        let row = conn.query_opt(sql, params).await?;
+        row.map(|r| row_to_routine(&r)).transpose()
+    }
+
     /// Create a new routine.
     pub async fn create_routine(&self, routine: &Routine) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
-        let trigger_type = routine.trigger.type_tag();
-        let trigger_config = routine.trigger.to_config_json();
-        let action_type = routine.action.type_tag();
-        let action_config = routine.action.to_config_json();
-        let cooldown_secs = routine.guardrails.cooldown.as_secs() as i32;
-        let max_concurrent = routine.guardrails.max_concurrent as i32;
-        let dedup_window_secs = routine.guardrails.dedup_window.map(|d| d.as_secs() as i32);
+        let f = RoutineDbFields::from_routine(routine);
 
         conn.execute(
             r#"
@@ -56,13 +96,13 @@ impl Store {
                 &routine.description,
                 &routine.user_id,
                 &routine.enabled,
-                &trigger_type,
-                &trigger_config,
-                &action_type,
-                &action_config,
-                &cooldown_secs,
-                &max_concurrent,
-                &dedup_window_secs,
+                &f.trigger_type,
+                &f.trigger_config,
+                &f.action_type,
+                &f.action_config,
+                &f.cooldown_secs,
+                &f.max_concurrent,
+                &f.dedup_window_secs,
                 &routine.notify.channel,
                 &routine.notify.user,
                 &routine.notify.on_success,
@@ -81,11 +121,8 @@ impl Store {
 
     /// Get a routine by ID.
     pub async fn get_routine(&self, id: Uuid) -> Result<Option<Routine>, DatabaseError> {
-        let conn = self.conn().await?;
-        let row = conn
-            .query_opt("SELECT * FROM routines WHERE id = $1", &[&id])
-            .await?;
-        row.map(|r| row_to_routine(&r)).transpose()
+        self.query_routine_opt("SELECT * FROM routines WHERE id = $1", &[&id])
+            .await
     }
 
     /// Get a routine by user_id and name.
@@ -94,47 +131,35 @@ impl Store {
         user_id: &str,
         name: &str,
     ) -> Result<Option<Routine>, DatabaseError> {
-        let conn = self.conn().await?;
-        let row = conn
-            .query_opt(
-                "SELECT * FROM routines WHERE user_id = $1 AND name = $2",
-                &[&user_id, &name],
-            )
-            .await?;
-        row.map(|r| row_to_routine(&r)).transpose()
+        self.query_routine_opt(
+            "SELECT * FROM routines WHERE user_id = $1 AND name = $2",
+            &[&user_id, &name],
+        )
+        .await
     }
 
     /// List routines for a user.
     pub async fn list_routines(&self, user_id: &str) -> Result<Vec<Routine>, DatabaseError> {
-        let conn = self.conn().await?;
-        let rows = conn
-            .query(
-                "SELECT * FROM routines WHERE user_id = $1 ORDER BY name",
-                &[&user_id],
-            )
-            .await?;
-        rows.iter().map(row_to_routine).collect()
+        self.query_routines(
+            "SELECT * FROM routines WHERE user_id = $1 ORDER BY name",
+            &[&user_id],
+        )
+        .await
     }
 
     /// List all routines across all users.
     pub async fn list_all_routines(&self) -> Result<Vec<Routine>, DatabaseError> {
-        let conn = self.conn().await?;
-        let rows = conn
-            .query("SELECT * FROM routines ORDER BY name", &[])
-            .await?;
-        rows.iter().map(row_to_routine).collect()
+        self.query_routines("SELECT * FROM routines ORDER BY name", &[])
+            .await
     }
 
     /// List all enabled routines with event triggers (for event matching).
     pub async fn list_event_routines(&self) -> Result<Vec<Routine>, DatabaseError> {
-        let conn = self.conn().await?;
-        let rows = conn
-            .query(
-                "SELECT * FROM routines WHERE enabled AND trigger_type IN ('event', 'system_event')",
-                &[],
-            )
-            .await?;
-        rows.iter().map(row_to_routine).collect()
+        self.query_routines(
+            "SELECT * FROM routines WHERE enabled AND trigger_type IN ('event', 'system_event')",
+            &[],
+        )
+        .await
     }
 
     /// List all enabled cron routines whose next_fire_at <= now.
@@ -172,13 +197,7 @@ impl Store {
     /// Update a routine (full replacement of mutable fields).
     pub async fn update_routine(&self, routine: &Routine) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
-        let trigger_type = routine.trigger.type_tag();
-        let trigger_config = routine.trigger.to_config_json();
-        let action_type = routine.action.type_tag();
-        let action_config = routine.action.to_config_json();
-        let cooldown_secs = routine.guardrails.cooldown.as_secs() as i32;
-        let max_concurrent = routine.guardrails.max_concurrent as i32;
-        let dedup_window_secs = routine.guardrails.dedup_window.map(|d| d.as_secs() as i32);
+        let f = RoutineDbFields::from_routine(routine);
 
         conn.execute(
             r#"
@@ -198,13 +217,13 @@ impl Store {
                 &routine.name,
                 &routine.description,
                 &routine.enabled,
-                &trigger_type,
-                &trigger_config,
-                &action_type,
-                &action_config,
-                &cooldown_secs,
-                &max_concurrent,
-                &dedup_window_secs,
+                &f.trigger_type,
+                &f.trigger_config,
+                &f.action_type,
+                &f.action_config,
+                &f.cooldown_secs,
+                &f.max_concurrent,
+                &f.dedup_window_secs,
                 &routine.notify.channel,
                 &routine.notify.user,
                 &routine.notify.on_success,
@@ -290,14 +309,14 @@ impl Store {
     /// Complete a routine run.
     pub async fn complete_routine_run(
         &self,
-        completion: RoutineRunCompletion<'_>,
+        params: RoutineRunCompletion<'_>,
     ) -> Result<(), DatabaseError> {
         let RoutineRunCompletion {
             id,
             status,
             result_summary,
             tokens_used,
-        } = completion;
+        } = params;
         let conn = self.conn().await?;
         let status_str = status.to_string();
         let now = Utc::now();

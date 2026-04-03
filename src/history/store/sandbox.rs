@@ -43,6 +43,20 @@ pub struct SandboxJobSummary {
     pub interrupted: usize,
 }
 
+impl SandboxJobSummary {
+    pub fn add_count(&mut self, status: &str, count: usize) {
+        self.total += count;
+        match status {
+            "creating" => self.creating += count,
+            "running" => self.running += count,
+            "completed" => self.completed += count,
+            "failed" => self.failed += count,
+            "interrupted" => self.interrupted += count,
+            _ => {}
+        }
+    }
+}
+
 /// A persisted job streaming event (from worker or Claude Code bridge).
 #[derive(Debug, Clone)]
 pub struct JobEventRecord {
@@ -51,6 +65,25 @@ pub struct JobEventRecord {
     pub event_type: String,
     pub data: serde_json::Value,
     pub created_at: DateTime<Utc>,
+}
+
+#[cfg(feature = "postgres")]
+fn row_to_sandbox_job(r: &tokio_postgres::Row) -> SandboxJobRecord {
+    SandboxJobRecord {
+        id: r.get("id"),
+        task: r.get("title"),
+        status: r.get("status"),
+        user_id: r.get("user_id"),
+        project_dir: r
+            .get::<_, Option<String>>("project_dir")
+            .unwrap_or_default(),
+        success: r.get("success"),
+        failure_reason: r.get("failure_reason"),
+        created_at: r.get("created_at"),
+        started_at: r.get("started_at"),
+        completed_at: r.get("completed_at"),
+        credential_grants_json: r.get::<_, String>("description"),
+    }
 }
 
 #[cfg(feature = "postgres")]
@@ -106,21 +139,7 @@ impl Store {
             )
             .await?;
 
-        Ok(row.map(|r| SandboxJobRecord {
-            id: r.get("id"),
-            task: r.get("title"),
-            status: r.get("status"),
-            user_id: r.get("user_id"),
-            project_dir: r
-                .get::<_, Option<String>>("project_dir")
-                .unwrap_or_default(),
-            success: r.get("success"),
-            failure_reason: r.get("failure_reason"),
-            created_at: r.get("created_at"),
-            started_at: r.get("started_at"),
-            completed_at: r.get("completed_at"),
-            credential_grants_json: r.get::<_, String>("description"),
-        }))
+        Ok(row.as_ref().map(row_to_sandbox_job))
     }
 
     /// List all sandbox jobs, most recent first.
@@ -138,24 +157,7 @@ impl Store {
             )
             .await?;
 
-        Ok(rows
-            .iter()
-            .map(|r| SandboxJobRecord {
-                id: r.get("id"),
-                task: r.get("title"),
-                status: r.get("status"),
-                user_id: r.get("user_id"),
-                project_dir: r
-                    .get::<_, Option<String>>("project_dir")
-                    .unwrap_or_default(),
-                success: r.get("success"),
-                failure_reason: r.get("failure_reason"),
-                created_at: r.get("created_at"),
-                started_at: r.get("started_at"),
-                completed_at: r.get("completed_at"),
-                credential_grants_json: r.get::<_, String>("description"),
-            })
-            .collect())
+        Ok(rows.iter().map(row_to_sandbox_job).collect())
     }
 
     /// List sandbox jobs for a specific user, most recent first.
@@ -176,24 +178,7 @@ impl Store {
             )
             .await?;
 
-        Ok(rows
-            .iter()
-            .map(|r| SandboxJobRecord {
-                id: r.get("id"),
-                task: r.get("title"),
-                status: r.get("status"),
-                user_id: r.get("user_id"),
-                project_dir: r
-                    .get::<_, Option<String>>("project_dir")
-                    .unwrap_or_default(),
-                success: r.get("success"),
-                failure_reason: r.get("failure_reason"),
-                created_at: r.get("created_at"),
-                started_at: r.get("started_at"),
-                completed_at: r.get("completed_at"),
-                credential_grants_json: r.get::<_, String>("description"),
-            })
-            .collect())
+        Ok(rows.iter().map(row_to_sandbox_job).collect())
     }
 
     /// Get a summary of sandbox job counts by status for a specific user.
@@ -211,18 +196,10 @@ impl Store {
 
         let mut summary = SandboxJobSummary::default();
         for row in &rows {
-            let status: String = row.get("status");
-            let count: i64 = row.get("cnt");
-            let c = count as usize;
-            summary.total += c;
-            match status.as_str() {
-                "creating" => summary.creating += c,
-                "running" => summary.running += c,
-                "completed" => summary.completed += c,
-                "failed" => summary.failed += c,
-                "interrupted" => summary.interrupted += c,
-                _ => {}
-            }
+            summary.add_count(
+                row.get::<_, &str>("status"),
+                row.get::<_, i64>("cnt") as usize,
+            );
         }
         Ok(summary)
     }
@@ -246,7 +223,7 @@ impl Store {
     /// Update sandbox job status and optional timestamps/result.
     pub async fn update_sandbox_job_status(
         &self,
-        update: SandboxJobStatusUpdate<'_>,
+        params: SandboxJobStatusUpdate<'_>,
     ) -> Result<(), DatabaseError> {
         let SandboxJobStatusUpdate {
             id,
@@ -255,7 +232,7 @@ impl Store {
             message,
             started_at,
             completed_at,
-        } = update;
+        } = params;
         let conn = self.conn().await?;
         conn.execute(
             r#"
@@ -306,18 +283,10 @@ impl Store {
 
         let mut summary = SandboxJobSummary::default();
         for row in &rows {
-            let status: String = row.get("status");
-            let count: i64 = row.get("cnt");
-            let c = count as usize;
-            summary.total += c;
-            match status.as_str() {
-                "creating" => summary.creating += c,
-                "running" => summary.running += c,
-                "completed" => summary.completed += c,
-                "failed" => summary.failed += c,
-                "interrupted" => summary.interrupted += c,
-                _ => {}
-            }
+            summary.add_count(
+                row.get::<_, &str>("status"),
+                row.get::<_, i64>("cnt") as usize,
+            );
         }
         Ok(summary)
     }
