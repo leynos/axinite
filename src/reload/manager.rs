@@ -1,5 +1,6 @@
 //! Hot-reload orchestration manager.
 
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -49,10 +50,13 @@ impl HotReloadManager {
     /// Executes the following steps in order:
     /// 1. Inject secrets (if configured)
     /// 2. Load new configuration
-    /// 3. Restart listener if address changed (if configured)
+    /// 3. Restart listener if the configured address changed, or if the
+    ///    listener stopped while the configured address stayed the same
     /// 4. Update channel secrets
     ///
-    /// Returns early on any error. Errors are logged but not panicked.
+    /// If the HTTP channel is removed, the current listener is shut down and
+    /// channel secrets are cleared. Errors are logged and returned early; the
+    /// reload path never panics.
     pub async fn perform_reload(&self) -> Result<(), ReloadError> {
         let _reload_guard = self.reload_lock.lock().await;
 

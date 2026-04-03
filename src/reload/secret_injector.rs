@@ -101,10 +101,14 @@ impl DbSecretInjector {
 #[cfg(test)]
 mod tests {
     use secrecy::SecretString;
+    use uuid::Uuid;
 
     use super::*;
     use crate::config::helpers::{EnvKey, optional_env};
-    use crate::secrets::{CreateSecretParams, InMemorySecretsStore, SecretsCrypto, SecretsStore};
+    use crate::secrets::{
+        CreateSecretParams, InMemorySecretsStore, NativeSecretsStore, Secret, SecretRef,
+        SecretsCrypto, SecretsStore,
+    };
     use crate::testing::credentials::TEST_CRYPTO_KEY;
     use crate::testing::test_utils::EnvVarsGuard;
 
@@ -113,6 +117,55 @@ mod tests {
     impl Drop for OverlayResetGuard {
         fn drop(&mut self) {
             crate::config::remove_single_var(self.0);
+        }
+    }
+
+    struct ErrorSecretsStore;
+
+    impl NativeSecretsStore for ErrorSecretsStore {
+        async fn create(
+            &self,
+            _user_id: &str,
+            _params: CreateSecretParams,
+        ) -> Result<Secret, SecretError> {
+            panic!("create() should not be called in this test")
+        }
+
+        async fn get(&self, _user_id: &str, _name: &str) -> Result<Secret, SecretError> {
+            panic!("get() should not be called in this test")
+        }
+
+        async fn get_decrypted(
+            &self,
+            _user_id: &str,
+            _name: &str,
+        ) -> Result<crate::secrets::DecryptedSecret, SecretError> {
+            Err(SecretError::Database("simulated store failure".to_string()))
+        }
+
+        async fn exists(&self, _user_id: &str, _name: &str) -> Result<bool, SecretError> {
+            panic!("exists() should not be called in this test")
+        }
+
+        async fn list(&self, _user_id: &str) -> Result<Vec<SecretRef>, SecretError> {
+            panic!("list() should not be called in this test")
+        }
+
+        async fn delete(&self, _user_id: &str, _name: &str) -> Result<bool, SecretError> {
+            panic!("delete() should not be called in this test")
+        }
+
+        async fn record_usage(&self, _secret_id: Uuid) -> Result<(), SecretError> {
+            panic!("record_usage() should not be called in this test")
+        }
+
+        async fn is_accessible(
+            &self,
+            _user_id: &str,
+            _secret_name: &str,
+            _allowed_secrets: &[String],
+        ) -> Result<bool, SecretError> {
+            panic!("is_accessible() should not be called in this test")
         }
     }
 
@@ -163,6 +216,26 @@ mod tests {
             optional_env(EnvKey(HTTP_WEBHOOK_SECRET_KEY)).expect("overlay lookup should succeed"),
             None,
             "inject() should clear the overlay when the secret is removed"
+        );
+    }
+
+    #[tokio::test]
+    async fn db_secret_injector_preserves_overlay_on_store_error() {
+        let mut env_guard = EnvVarsGuard::new(&[HTTP_WEBHOOK_SECRET_KEY]);
+        env_guard.remove(HTTP_WEBHOOK_SECRET_KEY);
+        let _overlay_guard = OverlayResetGuard(HTTP_WEBHOOK_SECRET_KEY);
+        crate::config::remove_single_var(HTTP_WEBHOOK_SECRET_KEY);
+        crate::config::inject_single_var(HTTP_WEBHOOK_SECRET_KEY, "existing-overlay");
+
+        let store: Arc<dyn SecretsStore + Send + Sync> = Arc::new(ErrorSecretsStore);
+        let injector = DbSecretInjector::new(store, UserId::from("test_user"));
+
+        NativeSecretInjector::inject(&injector).await;
+
+        assert_eq!(
+            optional_env(EnvKey(HTTP_WEBHOOK_SECRET_KEY)).expect("overlay lookup should succeed"),
+            Some("existing-overlay".to_string()),
+            "inject() should preserve the existing overlay when the store returns a non-NotFound error"
         );
     }
 }
