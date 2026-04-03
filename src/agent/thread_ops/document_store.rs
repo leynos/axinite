@@ -88,7 +88,7 @@ pub(super) async fn store_extracted_documents(
             "# {filename}\n\n\
              > Uploaded by **{}** via **{}** on {date}\n\
              > MIME: {} | Size: {} bytes\n\n---\n\n",
-            message.user_id,
+            "uploader",
             message.channel,
             attachment.mime_type,
             attachment.size_bytes.unwrap_or(0),

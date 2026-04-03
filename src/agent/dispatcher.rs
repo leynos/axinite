@@ -23,14 +23,12 @@ use crate::tools::redact_params;
 
 /// Collapse a tool output string into a single-line preview for display.
 pub(crate) fn truncate_for_preview(output: &str, max_chars: usize) -> String {
-    let collapsed: String = output
+    // Normalise first: replace all newlines with spaces, then collapse runs.
+    let replaced: String = output
         .chars()
-        .take(max_chars + 50)
         .map(|c| if c == '\n' { ' ' } else { c })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+        .collect();
+    let collapsed = replaced.split_whitespace().collect::<Vec<_>>().join(" ");
     // char_indices gives us byte offsets at char boundaries, so the slice is always valid UTF-8.
     if collapsed.chars().count() > max_chars {
         let byte_offset = collapsed
@@ -2351,5 +2349,20 @@ mod tests {
         let input = "hello 世界 foo";
         let result = truncate_for_preview(input, 8);
         assert_eq!(result, "hello 世界...");
+    }
+
+    #[test]
+    fn test_truncate_large_whitespace_run_does_not_hide_content() {
+        // "A" followed by 100 newlines then "B": after normalisation this is "A B" (3 chars).
+        let input = format!("A{}\nB", "\n".repeat(100));
+        assert_eq!(truncate_for_preview(&input, 3), "A B");
+    }
+
+    #[test]
+    fn test_truncate_large_whitespace_run_truncates_correctly() {
+        // 100 newlines between words: normalise to "A B C", cap at 3 → "A B..."
+        let input = format!("A{}B{}C", "\n".repeat(100), "\n".repeat(100));
+        let result = truncate_for_preview(&input, 3);
+        assert_eq!(result, "A B...");
     }
 }

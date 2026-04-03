@@ -32,8 +32,7 @@ impl Agent {
             thread_id: message.thread_id.clone(),
         };
         match self.hooks().run(&event).await {
-            Err(crate::hooks::HookError::Rejected { reason })
-            | Ok(crate::hooks::HookOutcome::Reject { reason }) => {
+            Err(crate::hooks::HookError::Rejected { reason }) => {
                 Err(format!("[Message rejected: {}]", reason))
             }
             Err(err) => {
@@ -45,7 +44,10 @@ impl Agent {
             }) => Ok(Submission::UserInput {
                 content: new_content,
             }),
-            _ => Ok(submission), // Continue, fail-open errors already logged in registry
+            Ok(crate::hooks::HookOutcome::Continue { modified: None }) => Ok(submission),
+            Ok(crate::hooks::HookOutcome::Reject { reason }) => {
+                Err(format!("[Message rejected: {}]", reason))
+            }
         }
     }
 
