@@ -306,7 +306,9 @@ async fn http_config_removed_shuts_down_listener_and_clears_secrets() {
     let controller_clone = Arc::clone(&controller);
 
     // Config with no HTTP channel
-    let loader = Arc::new(StubConfigLoader::new_success(test_config_with_http(None).await));
+    let loader = Arc::new(StubConfigLoader::new_success(
+        test_config_with_http(None).await,
+    ));
 
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);

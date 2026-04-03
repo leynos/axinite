@@ -138,8 +138,7 @@ mod tests {
 
         NativeSecretInjector::inject(&injector).await;
         assert_eq!(
-            optional_env(EnvKey(HTTP_WEBHOOK_SECRET_KEY))
-                .expect("overlay lookup should succeed"),
+            optional_env(EnvKey(HTTP_WEBHOOK_SECRET_KEY)).expect("overlay lookup should succeed"),
             Some("super-secret-value".to_string()),
             "inject() should populate the overlay from the secrets store"
         );
@@ -151,8 +150,7 @@ mod tests {
         NativeSecretInjector::inject(&injector).await;
 
         assert_eq!(
-            optional_env(EnvKey(HTTP_WEBHOOK_SECRET_KEY))
-                .expect("overlay lookup should succeed"),
+            optional_env(EnvKey(HTTP_WEBHOOK_SECRET_KEY)).expect("overlay lookup should succeed"),
             None,
             "inject() should clear the overlay when the secret is removed"
         );

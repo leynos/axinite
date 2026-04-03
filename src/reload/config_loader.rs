@@ -92,78 +92,111 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
+    use mockall::automock;
+
     use super::*;
     use crate::db::settings::{NativeSettingsStore, SettingKey, UserId};
     use crate::error::DatabaseError;
     use crate::history::SettingRow;
     use crate::testing::test_utils::EnvVarsGuard;
 
-    /// Mock SettingsStore for testing DbConfigLoader behavior.
+    #[automock]
+    trait NativeSettingsStoreMock {
+        fn get_setting(
+            &self,
+            user_id: UserId,
+            key: SettingKey,
+        ) -> Result<Option<serde_json::Value>, DatabaseError>;
+        fn get_setting_full(
+            &self,
+            user_id: UserId,
+            key: SettingKey,
+        ) -> Result<Option<SettingRow>, DatabaseError>;
+        fn set_setting(
+            &self,
+            user_id: UserId,
+            key: SettingKey,
+            value: serde_json::Value,
+        ) -> Result<(), DatabaseError>;
+        fn delete_setting(&self, user_id: UserId, key: SettingKey) -> Result<bool, DatabaseError>;
+        fn list_settings(&self, user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError>;
+        fn get_all_settings(
+            &self,
+            user_id: UserId,
+        ) -> Result<HashMap<String, serde_json::Value>, DatabaseError>;
+        fn set_all_settings(
+            &self,
+            user_id: UserId,
+            settings: HashMap<String, serde_json::Value>,
+        ) -> Result<(), DatabaseError>;
+        fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError>;
+    }
+
     struct MockSettingsStore {
-        settings: HashMap<String, serde_json::Value>,
+        inner: MockNativeSettingsStoreMock,
     }
 
     impl MockSettingsStore {
-        fn with_settings(settings: HashMap<String, serde_json::Value>) -> Self {
-            Self { settings }
+        fn new(inner: MockNativeSettingsStoreMock) -> Self {
+            Self { inner }
         }
     }
 
     impl NativeSettingsStore for MockSettingsStore {
         async fn get_setting(
             &self,
-            _user_id: UserId,
+            user_id: UserId,
             key: SettingKey,
         ) -> Result<Option<serde_json::Value>, DatabaseError> {
-            Ok(self.settings.get(key.as_str()).cloned())
+            self.inner.get_setting(user_id, key)
         }
 
         async fn get_setting_full(
             &self,
-            _user_id: UserId,
-            _key: SettingKey,
+            user_id: UserId,
+            key: SettingKey,
         ) -> Result<Option<SettingRow>, DatabaseError> {
-            Ok(None)
+            self.inner.get_setting_full(user_id, key)
         }
 
         async fn set_setting(
             &self,
-            _user_id: UserId,
-            _key: SettingKey,
-            _value: &serde_json::Value,
+            user_id: UserId,
+            key: SettingKey,
+            value: &serde_json::Value,
         ) -> Result<(), DatabaseError> {
-            Ok(())
+            self.inner.set_setting(user_id, key, value.clone())
         }
 
         async fn delete_setting(
             &self,
-            _user_id: UserId,
-            _key: SettingKey,
+            user_id: UserId,
+            key: SettingKey,
         ) -> Result<bool, DatabaseError> {
-            Ok(false)
+            self.inner.delete_setting(user_id, key)
         }
 
-        async fn list_settings(&self, _user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
-            Ok(vec![])
+        async fn list_settings(&self, user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError> {
+            self.inner.list_settings(user_id)
         }
 
         async fn get_all_settings(
             &self,
-            _user_id: UserId,
+            user_id: UserId,
         ) -> Result<HashMap<String, serde_json::Value>, DatabaseError> {
-            Ok(self.settings.clone())
+            self.inner.get_all_settings(user_id)
         }
 
         async fn set_all_settings(
             &self,
-            _user_id: UserId,
-            _settings: &HashMap<String, serde_json::Value>,
+            user_id: UserId,
+            settings: &HashMap<String, serde_json::Value>,
         ) -> Result<(), DatabaseError> {
-            Ok(())
+            self.inner.set_all_settings(user_id, settings.clone())
         }
 
-        async fn has_settings(&self, _user_id: UserId) -> Result<bool, DatabaseError> {
-            Ok(!self.settings.is_empty())
+        async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError> {
+            self.inner.has_settings(user_id)
         }
     }
 
@@ -208,7 +241,14 @@ mod tests {
         );
         settings.insert("channels.http.port".to_string(), serde_json::json!(8080));
 
-        let store = Arc::new(MockSettingsStore::with_settings(settings));
+        let mut inner = MockNativeSettingsStoreMock::new();
+        inner
+            .expect_get_all_settings()
+            .times(1)
+            .withf(|user_id| user_id.as_str() == "test_user")
+            .returning(move |_| Ok(settings.clone()));
+
+        let store = Arc::new(MockSettingsStore::new(inner));
         let loader = DbConfigLoader::new(store, "test_user".to_string());
 
         // Call load() and verify it returns a valid Config
