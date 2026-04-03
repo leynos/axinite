@@ -108,6 +108,186 @@ impl LiveWasmChannelActivation {
         }
     }
 
+    async fn refresh_sig_key(
+        &self,
+        router: &crate::channels::wasm::WasmChannelRouter,
+        name: &str,
+        sig_key_name: &str,
+    ) {
+        match self
+            .secrets
+            .get_decrypted(&self.user_id, sig_key_name)
+            .await
+        {
+            Ok(key_secret) => {
+                if let Err(e) = router
+                    .register_signature_key(name, key_secret.expose())
+                    .await
+                {
+                    tracing::error!(
+                        channel = %name,
+                        error = %e,
+                        "Failed to refresh signature key"
+                    );
+                } else {
+                    tracing::info!(channel = %name, "Refreshed signature key for active channel");
+                }
+            }
+            Err(_) => {
+                tracing::debug!(
+                    channel = %name,
+                    "Signature key secret not found, skipping refresh"
+                );
+            }
+        }
+    }
+
+    async fn refresh_hmac_secret(
+        &self,
+        router: &crate::channels::wasm::WasmChannelRouter,
+        name: &str,
+        hmac_name: &str,
+    ) {
+        match self.secrets.get_decrypted(&self.user_id, hmac_name).await {
+            Ok(hmac_secret) => {
+                router
+                    .register_hmac_secret(name, hmac_secret.expose())
+                    .await;
+                tracing::info!(channel = %name, "Refreshed HMAC secret for active channel");
+            }
+            Err(e) => {
+                tracing::warn!(channel = %name, error = %e, "HMAC secret not found");
+            }
+        }
+    }
+
+    async fn inject_runtime_config(
+        &self,
+        channel: &Arc<crate::channels::wasm::WasmChannel>,
+        channel_name: &str,
+        owner_ids: &HashMap<String, i64>,
+        webhook_secret: Option<&str>,
+    ) {
+        let mut config_updates = HashMap::new();
+
+        if let Some(ref tunnel_url) = self.tunnel_url {
+            config_updates.insert(
+                "tunnel_url".to_string(),
+                serde_json::Value::String(tunnel_url.clone()),
+            );
+        }
+        if let Some(secret) = webhook_secret {
+            config_updates.insert(
+                "webhook_secret".to_string(),
+                serde_json::Value::String(secret.to_string()),
+            );
+        }
+        if let Some(&owner_id) = owner_ids.get(channel_name) {
+            config_updates.insert("owner_id".to_string(), serde_json::json!(owner_id));
+        }
+
+        if !config_updates.is_empty() {
+            channel.update_config(config_updates).await;
+            tracing::info!(
+                channel = %channel_name,
+                has_tunnel = self.tunnel_url.is_some(),
+                has_webhook_secret = webhook_secret.is_some(),
+                "Injected runtime config into hot-activated channel"
+            );
+        }
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Required extraction keeps router registration inputs explicit"
+    )]
+    async fn register_webhook_router_endpoints(
+        &self,
+        router: &Arc<crate::channels::wasm::WasmChannelRouter>,
+        channel: Arc<crate::channels::wasm::WasmChannel>,
+        channel_name: &str,
+        webhook_secret: Option<String>,
+        secret_header: Option<String>,
+        sig_key_secret_name: Option<&str>,
+        hmac_secret_name: Option<&str>,
+    ) {
+        let webhook_path = format!("/webhook/{}", channel_name);
+        let endpoints = vec![RegisteredEndpoint {
+            channel_name: channel_name.to_string(),
+            path: webhook_path,
+            methods: vec!["POST".to_string()],
+            require_secret: webhook_secret.is_some(),
+        }];
+        router
+            .register(channel, endpoints, webhook_secret, secret_header)
+            .await;
+        tracing::info!(channel = %channel_name, "Registered hot-activated channel with webhook router");
+
+        if let Some(sig_key_name) = sig_key_secret_name
+            && let Ok(key_secret) = self
+                .secrets
+                .get_decrypted(&self.user_id, sig_key_name)
+                .await
+        {
+            match router
+                .register_signature_key(channel_name, key_secret.expose())
+                .await
+            {
+                Ok(()) => {
+                    tracing::info!(channel = %channel_name, "Registered signature key for hot-activated channel")
+                }
+                Err(e) => {
+                    tracing::error!(channel = %channel_name, error = %e, "Failed to register signature key")
+                }
+            }
+        }
+
+        if let Some(hmac_name) = hmac_secret_name {
+            match self.secrets.get_decrypted(&self.user_id, hmac_name).await {
+                Ok(secret) => {
+                    router
+                        .register_hmac_secret(channel_name, secret.expose())
+                        .await;
+                    tracing::info!(channel = %channel_name, "Registered HMAC signing secret for hot-activated channel");
+                }
+                Err(e) => {
+                    tracing::warn!(channel = %channel_name, error = %e, "HMAC secret not found");
+                }
+            }
+        }
+    }
+
+    async fn inject_and_log_credentials(
+        &self,
+        channel: &Arc<crate::channels::wasm::WasmChannel>,
+        channel_name: &str,
+    ) {
+        match inject_channel_credentials_from_secrets(
+            channel,
+            Some(self.secrets.as_ref()),
+            channel_name,
+            &self.user_id,
+        )
+        .await
+        {
+            Ok(count) if count > 0 => {
+                tracing::info!(
+                    channel = %channel_name,
+                    credentials_injected = count,
+                    "Credentials injected into hot-activated channel"
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::error!(
+                    channel = %channel_name,
+                    error = %e,
+                    "Failed to inject credentials into hot-activated channel"
+                );
+            }
+        }
+    }
+
     /// Activate a WASM channel at runtime without restarting.
     ///
     /// Loads the channel from its WASM file, injects credentials and config,
@@ -117,9 +297,6 @@ impl LiveWasmChannelActivation {
         &self,
         name: &str,
     ) -> Result<ActivateResult, ExtensionError> {
-        // If already active, re-inject credentials and refresh webhook secret.
-        // Handles the case where a channel was loaded at startup before the
-        // user saved secrets via the web UI.
         {
             let active = self.active_channel_names.read().await;
             if active.contains(name) {
@@ -127,8 +304,6 @@ impl LiveWasmChannelActivation {
             }
         }
 
-        // Verify runtime infrastructure is available and clone Arcs so we don't
-        // hold the RwLock guard across awaits.
         let (
             channel_runtime,
             channel_manager,
@@ -149,7 +324,6 @@ impl LiveWasmChannelActivation {
             )
         };
 
-        // Check auth status first
         let auth_state = self.check_channel_auth_status(name).await;
         if auth_state != ToolAuthState::Ready && auth_state != ToolAuthState::NoAuth {
             return Err(ExtensionError::ActivationFailed(format!(
@@ -158,7 +332,6 @@ impl LiveWasmChannelActivation {
             )));
         }
 
-        // Load the channel from files
         let wasm_path = self.wasm_channels_dir.join(format!("{}.wasm", name));
         let cap_path = self
             .wasm_channels_dir
@@ -198,140 +371,41 @@ impl LiveWasmChannelActivation {
 
         let channel_arc = Arc::new(loaded.channel);
 
-        // Inject runtime config (tunnel_url, webhook_secret, owner_id)
-        {
-            let mut config_updates = HashMap::new();
-
-            if let Some(ref tunnel_url) = self.tunnel_url {
-                config_updates.insert(
-                    "tunnel_url".to_string(),
-                    serde_json::Value::String(tunnel_url.clone()),
-                );
-            }
-
-            if let Some(ref secret) = webhook_secret {
-                config_updates.insert(
-                    "webhook_secret".to_string(),
-                    serde_json::Value::String(secret.clone()),
-                );
-            }
-
-            if let Some(&owner_id) = wasm_channel_owner_ids.get(channel_name.as_str()) {
-                config_updates.insert("owner_id".to_string(), serde_json::json!(owner_id));
-            }
-
-            if !config_updates.is_empty() {
-                channel_arc.update_config(config_updates).await;
-                tracing::info!(
-                    channel = %channel_name,
-                    has_tunnel = self.tunnel_url.is_some(),
-                    has_webhook_secret = webhook_secret.is_some(),
-                    "Injected runtime config into hot-activated channel"
-                );
-            }
-        }
-
-        // Register with webhook router
-        {
-            let webhook_path = format!("/webhook/{}", channel_name);
-            let endpoints = vec![RegisteredEndpoint {
-                channel_name: channel_name.clone(),
-                path: webhook_path,
-                methods: vec!["POST".to_string()],
-                require_secret: webhook_secret.is_some(),
-            }];
-
-            wasm_channel_router
-                .register(
-                    Arc::clone(&channel_arc),
-                    endpoints,
-                    webhook_secret,
-                    secret_header,
-                )
-                .await;
-            tracing::info!(channel = %channel_name, "Registered hot-activated channel with webhook router");
-
-            // Register Ed25519 signature key if declared in capabilities
-            if let Some(ref sig_key_name) = sig_key_secret_name
-                && let Ok(key_secret) = self
-                    .secrets
-                    .get_decrypted(&self.user_id, sig_key_name)
-                    .await
-            {
-                match wasm_channel_router
-                    .register_signature_key(&channel_name, key_secret.expose())
-                    .await
-                {
-                    Ok(()) => {
-                        tracing::info!(channel = %channel_name, "Registered signature key for hot-activated channel")
-                    }
-                    Err(e) => {
-                        tracing::error!(channel = %channel_name, error = %e, "Failed to register signature key")
-                    }
-                }
-            }
-
-            // Register HMAC signing secret if declared in capabilities
-            if let Some(hmac_name) = &hmac_secret_name {
-                match self.secrets.get_decrypted(&self.user_id, hmac_name).await {
-                    Ok(secret) => {
-                        wasm_channel_router
-                            .register_hmac_secret(&channel_name, secret.expose())
-                            .await;
-                        tracing::info!(channel = %channel_name, "Registered HMAC signing secret for hot-activated channel");
-                    }
-                    Err(e) => {
-                        tracing::warn!(channel = %channel_name, error = %e, "HMAC secret not found");
-                    }
-                }
-            }
-        }
-
-        // Inject credentials
-        match inject_channel_credentials_from_secrets(
+        self.inject_runtime_config(
             &channel_arc,
-            Some(self.secrets.as_ref()),
             &channel_name,
-            &self.user_id,
+            &wasm_channel_owner_ids,
+            webhook_secret.as_deref(),
         )
-        .await
-        {
-            Ok(count) => {
-                if count > 0 {
-                    tracing::info!(
-                        channel = %channel_name,
-                        credentials_injected = count,
-                        "Credentials injected into hot-activated channel"
-                    );
-                }
-            }
-            Err(e) => {
-                tracing::error!(
-                    channel = %channel_name,
-                    error = %e,
-                    "Failed to inject credentials into hot-activated channel"
-                );
-            }
-        }
+        .await;
 
-        // Hot-add the channel to the running agent
+        self.register_webhook_router_endpoints(
+            &wasm_channel_router,
+            Arc::clone(&channel_arc),
+            &channel_name,
+            webhook_secret,
+            secret_header,
+            sig_key_secret_name.as_deref(),
+            hmac_secret_name.as_deref(),
+        )
+        .await;
+
+        self.inject_and_log_credentials(&channel_arc, &channel_name)
+            .await;
+
         channel_manager
             .hot_add(Box::new(SharedWasmChannel::new(channel_arc)))
             .await
             .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
 
-        // Mark as active
         self.active_channel_names
             .write()
             .await
             .insert(channel_name.clone());
-
-        // Persist activation state so the channel auto-activates on restart
         self.persist_active_channels().await;
 
         tracing::info!(channel = %channel_name, "Hot-activated WASM channel");
 
-        // Clear any previous activation error and broadcast success
         self.activation_errors.write().await.remove(&channel_name);
         self.broadcast_extension_status(&channel_name, "active", None)
             .await;
@@ -433,44 +507,12 @@ impl LiveWasmChannelActivation {
 
         // Refresh signature key if present
         if let Some(sig_key_name) = sig_key_secret_name {
-            match self
-                .secrets
-                .get_decrypted(&self.user_id, sig_key_name)
-                .await
-            {
-                Ok(key_secret) => {
-                    if let Err(e) = router
-                        .register_signature_key(name, key_secret.expose())
-                        .await
-                    {
-                        tracing::error!(
-                            channel = %name,
-                            error = %e,
-                            "Failed to refresh signature key"
-                        );
-                    } else {
-                        tracing::info!(channel = %name, "Refreshed signature key for active channel");
-                    }
-                }
-                Err(_) => {
-                    tracing::debug!(channel = %name, "Signature key secret not found, skipping refresh");
-                }
-            }
+            self.refresh_sig_key(&router, name, sig_key_name).await;
         }
 
         // Refresh HMAC secret if present
         if let Some(hmac_name) = hmac_secret_name {
-            match self.secrets.get_decrypted(&self.user_id, hmac_name).await {
-                Ok(hmac_secret) => {
-                    router
-                        .register_hmac_secret(name, hmac_secret.expose())
-                        .await;
-                    tracing::info!(channel = %name, "Refreshed HMAC secret for active channel");
-                }
-                Err(e) => {
-                    tracing::warn!(channel = %name, error = %e, "HMAC secret not found");
-                }
-            }
+            self.refresh_hmac_secret(&router, name, hmac_name).await;
         }
 
         self.activation_errors.write().await.remove(name);
