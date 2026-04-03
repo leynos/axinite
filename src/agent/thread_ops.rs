@@ -17,7 +17,7 @@ use crate::agent::compaction::ContextCompactor;
 use crate::agent::dispatcher::{
     AgenticLoopResult, check_auth_required, execute_chat_tool_standalone, parse_auth_result,
 };
-use crate::agent::session::{PendingApproval, PendingAuth, Session, ThreadState};
+use crate::agent::session::{PendingApproval, Session, ThreadState};
 use crate::agent::submission::{Submission, SubmissionParser, SubmissionResult};
 use crate::channels::web::util::truncate_preview;
 use crate::channels::{IncomingAttachment, IncomingMessage, StatusUpdate};
@@ -38,13 +38,14 @@ fn sanitise_filename_char(c: char) -> char {
     }
 }
 
-fn is_extraction_error(text: &str) -> bool {
-    text.starts_with("[Failed") || text.starts_with("[Error") || text.starts_with("[Unsupported")
+/// Returns `true` when extracted text is usable — i.e. not an error sentinel.
+fn is_usable_extracted_text(t: &str) -> bool {
+    !t.starts_with("[Failed") && !t.starts_with("[Error") && !t.starts_with("[Unsupported")
 }
 
 fn get_valid_document_text(attachment: &IncomingAttachment) -> Option<&str> {
     match &attachment.extracted_text {
-        Some(t) if !is_extraction_error(t) => Some(t),
+        Some(t) if is_usable_extracted_text(t) => Some(t),
         _ => None,
     }
 }
@@ -124,10 +125,20 @@ pub(super) async fn store_extracted_documents(
 }
 
 impl Agent {
-    async fn resolve_session_and_thread(
+    async fn hydrate_and_resolve_session_thread(
         &self,
         message: &IncomingMessage,
-    ) -> (Arc<Mutex<Session>>, Uuid, Option<PendingAuth>) {
+    ) -> (Arc<Mutex<Session>>, Uuid) {
+        // Hydrate thread from DB if it's a historical thread not in memory
+        if let Some(ref external_thread_id) = message.thread_id {
+            tracing::trace!(
+                message_id = %message.id,
+                thread_id = %external_thread_id,
+                "Hydrating thread from DB"
+            );
+            self.maybe_hydrate_thread(message, external_thread_id).await;
+        }
+
         tracing::debug!(
             message_id = %message.id,
             "Resolving session and thread"
@@ -146,6 +157,16 @@ impl Agent {
             "Resolved session and thread"
         );
 
+        (session, thread_id)
+    }
+
+    async fn check_auth_mode_intercept(
+        &self,
+        message: &IncomingMessage,
+        submission: &Submission,
+        session: Arc<Mutex<Session>>,
+        thread_id: Uuid,
+    ) -> Option<Result<Option<String>, Error>> {
         let pending_auth = {
             let sess = session.lock().await;
             sess.threads
@@ -153,7 +174,41 @@ impl Agent {
                 .and_then(|t| t.pending_auth.clone())
         };
 
-        (session, thread_id, pending_auth)
+        if let Some(pending) = pending_auth {
+            match submission {
+                Submission::UserInput { content } => {
+                    return Some(
+                        self.process_auth_token(message, &pending, content, session, thread_id)
+                            .await,
+                    );
+                }
+                _ => {
+                    // Any control submission (interrupt, undo, etc.) cancels auth mode
+                    let mut sess = session.lock().await;
+                    if let Some(thread) = sess.threads.get_mut(&thread_id) {
+                        thread.pending_auth = None;
+                    }
+                    // Fall through to normal handling
+                }
+            }
+        }
+
+        None
+    }
+
+    async fn set_tool_context_for_message(&self, message: &IncomingMessage) {
+        // Set message tool context for this turn (current channel and target)
+        // For Signal, use signal_target from metadata (group:ID or phone number),
+        // otherwise fall back to user_id
+        let target = message
+            .metadata
+            .get("signal_target")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| message.user_id.clone());
+        self.tools()
+            .set_message_tool_context(Some(message.channel.clone()), Some(target))
+            .await;
     }
 
     /// Apply the BeforeInbound hook to the parsed submission.
@@ -196,7 +251,7 @@ impl Agent {
     ///
     /// For `NeedApproval`, sends the approval status to the channel and returns
     /// an empty string to signal the caller to skip an additional `respond()` call.
-    async fn convert_result_to_response(
+    async fn map_submission_result(
         &self,
         incoming_msg: &IncomingMessage,
         result: SubmissionResult,
@@ -243,8 +298,8 @@ impl Agent {
 
     async fn dispatch_submission(
         &self,
-        submission: Submission,
         message: &IncomingMessage,
+        submission: Submission,
         session: Arc<Mutex<Session>>,
         thread_id: Uuid,
     ) -> Result<SubmissionResult, Error> {
@@ -314,34 +369,13 @@ impl Agent {
         // Parse submission type first
         let submission = SubmissionParser::parse(&message.content);
 
-        // Hydrate thread from DB if it's a historical thread not in memory
-        if let Some(ref external_thread_id) = message.thread_id {
-            tracing::trace!(
-                message_id = %message.id,
-                thread_id = %external_thread_id,
-                "Hydrating thread from DB"
-            );
-            self.maybe_hydrate_thread(message, external_thread_id).await;
-        }
+        let (session, thread_id) = self.hydrate_and_resolve_session_thread(message).await;
 
-        let (session, thread_id, pending_auth) = self.resolve_session_and_thread(message).await;
-
-        if let Some(pending) = pending_auth {
-            match &submission {
-                Submission::UserInput { content } => {
-                    return self
-                        .process_auth_token(message, &pending, content, session, thread_id)
-                        .await;
-                }
-                _ => {
-                    // Any control submission (interrupt, undo, etc.) cancels auth mode
-                    let mut sess = session.lock().await;
-                    if let Some(thread) = sess.threads.get_mut(&thread_id) {
-                        thread.pending_auth = None;
-                    }
-                    // Fall through to normal handling
-                }
-            }
+        if let Some(result) = self
+            .check_auth_mode_intercept(message, &submission, session.clone(), thread_id)
+            .await
+        {
+            return result;
         }
 
         // Log at info level only for tracking without exposing PII (user_id can be a phone number)
@@ -355,18 +389,7 @@ impl Agent {
             "Message details"
         );
 
-        // Set message tool context for this turn (current channel and target)
-        // For Signal, use signal_target from metadata (group:ID or phone number),
-        // otherwise fall back to user_id
-        let target = message
-            .metadata
-            .get("signal_target")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| message.user_id.clone());
-        self.tools()
-            .set_message_tool_context(Some(message.channel.clone()), Some(target))
-            .await;
+        self.set_tool_context_for_message(message).await;
 
         let submission = match self.apply_inbound_hook(message, submission).await {
             Ok(s) => s,
@@ -385,13 +408,14 @@ impl Agent {
             message.content.len()
         );
 
-        let result = self
-            .dispatch_submission(submission, message, session, thread_id)
-            .await?;
-        match result {
-            SubmissionResult::Ok { message: None } => Ok(None),
-            other => self.convert_result_to_response(message, other).await,
+        if matches!(submission, Submission::Quit) {
+            return Ok(None);
         }
+
+        let result = self
+            .dispatch_submission(message, submission, session, thread_id)
+            .await?;
+        self.map_submission_result(message, result).await
     }
 
     /// Hydrate a historical thread from DB into memory if not already present.
