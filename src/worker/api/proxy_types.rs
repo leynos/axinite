@@ -1,3 +1,9 @@
+//! Proxy transport types used by the worker-orchestrator boundary.
+//!
+//! This module defines the serializable request and response payloads used for
+//! proxied completions, including shapes built around [`ChatMessage`],
+//! [`ToolCall`], and [`ToolDefinition`].
+
 use serde::{Deserialize, Serialize};
 
 use crate::llm::{ChatMessage, ToolCall, ToolDefinition};

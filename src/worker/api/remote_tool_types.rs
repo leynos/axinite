@@ -1,3 +1,9 @@
+//! Remote-tool transport types shared between worker and orchestrator.
+//!
+//! This module defines the serializable payloads used for hosted remote tool
+//! definitions and execution outputs, where [`ToolDefinition`] describes
+//! visible tools and [`ToolOutput`] carries execution results.
+
 use serde::{Deserialize, Serialize};
 
 use crate::llm::ToolDefinition;
