@@ -38,7 +38,7 @@ fn parse_uuid(id: String) -> Result<Uuid, DatabaseError> {
         .map_err(|_| DatabaseError::Serialization("Invalid UUID".to_string()))
 }
 
-fn row_to_conversation_summary(row: &libsql::Row) -> ConversationSummary {
+fn row_to_conversation_summary(row: &libsql::Row) -> Result<ConversationSummary, DatabaseError> {
     let metadata = get_json(row, 3);
     let thread_type = metadata
         .get("thread_type")
@@ -47,19 +47,15 @@ fn row_to_conversation_summary(row: &libsql::Row) -> ConversationSummary {
     let sql_title = get_opt_text(row, 6);
     let title = preview_title(&metadata, sql_title);
 
-    ConversationSummary {
-        id: row
-            .get::<String>(0)
-            .unwrap_or_default()
-            .parse()
-            .unwrap_or_default(),
+    Ok(ConversationSummary {
+        id: parse_uuid(get_text(row, 0))?,
         started_at: get_ts(row, 1),
         last_activity: get_ts(row, 2),
         message_count: get_i64(row, 5),
         title,
         thread_type,
         channel: get_text(row, 4),
-    }
+    })
 }
 
 impl NativeConversationStore for LibSqlBackend {
@@ -96,7 +92,7 @@ impl NativeConversationStore for LibSqlBackend {
         &self,
         user_id: &str,
         channel: &str,
-        limit: i64,
+        limit: usize,
     ) -> Result<Vec<ConversationSummary>, DatabaseError> {
         listing::list_conversations_with_preview(self, user_id, channel, limit).await
     }
@@ -104,7 +100,7 @@ impl NativeConversationStore for LibSqlBackend {
     async fn list_conversations_all_channels(
         &self,
         user_id: &str,
-        limit: i64,
+        limit: usize,
     ) -> Result<Vec<ConversationSummary>, DatabaseError> {
         listing::list_conversations_all_channels(self, user_id, limit).await
     }
@@ -147,7 +143,7 @@ impl NativeConversationStore for LibSqlBackend {
         &self,
         conversation_id: Uuid,
         before: Option<(DateTime<Utc>, Uuid)>,
-        limit: i64,
+        limit: usize,
     ) -> Result<(Vec<ConversationMessage>, bool), DatabaseError> {
         messages::list_conversation_messages_paginated(self, conversation_id, before, limit).await
     }

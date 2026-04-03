@@ -1,3 +1,6 @@
+//! LibSQL conversation CRUD helpers for creating and updating conversation
+//! rows, plus lightweight utilities shared by the conversation store modules.
+
 use super::*;
 
 pub(super) async fn create_conversation(

@@ -40,7 +40,7 @@ async fn load_stored_history(
     limit: usize,
 ) -> Result<HistoryResponse, (StatusCode, String)> {
     let (messages, has_more) = store
-        .list_conversation_messages_paginated(thread_id, before_cursor, limit as i64)
+        .list_conversation_messages_paginated(thread_id, before_cursor, limit)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let oldest_timestamp = messages

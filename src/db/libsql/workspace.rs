@@ -667,6 +667,7 @@ impl NativeWorkspaceStore for LibSqlBackend {
                 reason: e.to_string(),
             })?;
         let id = Uuid::new_v4();
+        let chunk_index = i64::from(chunk_index);
         let embedding_blob = embedding.map(|e| {
             let bytes: Vec<u8> = e.iter().flat_map(|f| f.to_le_bytes()).collect();
             bytes
@@ -680,7 +681,7 @@ impl NativeWorkspaceStore for LibSqlBackend {
             params![
                 id.to_string(),
                 document_id.to_string(),
-                chunk_index as i64,
+                chunk_index,
                 content,
                 embedding_blob.map(libsql::Value::Blob),
             ],
@@ -754,10 +755,14 @@ impl NativeWorkspaceStore for LibSqlBackend {
                 reason: format!("Query failed: {}", e),
             })?
         {
+            let chunk_index =
+                u32::try_from(get_i64(&row, 2)).map_err(|_| WorkspaceError::SearchFailed {
+                    reason: "memory_chunks.chunk_index must be non-negative".to_string(),
+                })?;
             chunks.push(MemoryChunk {
                 id: get_text(&row, 0).parse().unwrap_or_default(),
                 document_id: get_text(&row, 1).parse().unwrap_or_default(),
-                chunk_index: get_i64(&row, 2) as i32,
+                chunk_index,
                 content: get_text(&row, 3),
                 embedding: None,
                 created_at: get_ts(&row, 4),

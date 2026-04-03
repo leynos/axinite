@@ -52,9 +52,11 @@ impl Store {
         &self,
         user_id: &str,
         channel: &str,
-        limit: i64,
+        limit: usize,
     ) -> Result<Vec<ConversationSummary>, DatabaseError> {
         let conn = self.conn().await?;
+        let limit = i64::try_from(limit)
+            .map_err(|_| DatabaseError::Query("conversation preview limit overflow".to_string()))?;
         let rows = conn
             .query(
                 r#"
@@ -65,10 +67,10 @@ impl Store {
                     c.metadata,
                     c.channel,
                     (SELECT COUNT(*) FROM conversation_messages m WHERE m.conversation_id = c.id AND m.role = 'user') AS message_count,
-                    (SELECT LEFT(m2.content, 100)
+                     (SELECT LEFT(m2.content, 100)
                      FROM conversation_messages m2
                      WHERE m2.conversation_id = c.id AND m2.role = 'user'
-                     ORDER BY m2.created_at ASC
+                     ORDER BY m2.created_at ASC, m2.id ASC
                      LIMIT 1
                     ) AS title
                 FROM conversations c
@@ -87,9 +89,11 @@ impl Store {
     pub async fn list_conversations_all_channels(
         &self,
         user_id: &str,
-        limit: i64,
+        limit: usize,
     ) -> Result<Vec<ConversationSummary>, DatabaseError> {
         let conn = self.conn().await?;
+        let limit = i64::try_from(limit)
+            .map_err(|_| DatabaseError::Query("conversation preview limit overflow".to_string()))?;
         let rows = conn
             .query(
                 r#"
@@ -100,10 +104,10 @@ impl Store {
                     c.metadata,
                     c.channel,
                     (SELECT COUNT(*) FROM conversation_messages m WHERE m.conversation_id = c.id AND m.role = 'user') AS message_count,
-                    (SELECT LEFT(m2.content, 100)
+                     (SELECT LEFT(m2.content, 100)
                      FROM conversation_messages m2
                      WHERE m2.conversation_id = c.id AND m2.role = 'user'
-                     ORDER BY m2.created_at ASC
+                     ORDER BY m2.created_at ASC, m2.id ASC
                      LIMIT 1
                     ) AS title
                 FROM conversations c

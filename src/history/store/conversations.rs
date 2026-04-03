@@ -176,8 +176,14 @@ impl Store {
         before: Option<(DateTime<Utc>, Uuid)>,
         limit: i64,
     ) -> Result<(Vec<ConversationMessage>, bool), DatabaseError> {
+        if limit <= 0 {
+            return Ok((Vec::new(), false));
+        }
+
         let conn = self.conn().await?;
-        let fetch_limit = limit + 1;
+        let fetch_limit = limit.checked_add(1).ok_or_else(|| {
+            DatabaseError::Query("conversation message pagination limit overflow".to_string())
+        })?;
 
         let rows = if let Some((before_ts, before_id)) = before {
             conn.query(
@@ -236,7 +242,7 @@ impl Store {
                 SELECT id, role, content, created_at
                 FROM conversation_messages
                 WHERE conversation_id = $1
-                ORDER BY created_at ASC
+                ORDER BY created_at ASC, id ASC
                 "#,
                 &[&conversation_id],
             )

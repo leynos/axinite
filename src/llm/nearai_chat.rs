@@ -131,8 +131,13 @@ impl NearAiChatProvider {
         Ok(provider)
     }
 
+    #[cfg(test)]
     fn api_url(&self, path: &str) -> String {
-        let base = self.config.base_url.trim_end_matches('/');
+        Self::api_url_for_base(&self.config.base_url, path)
+    }
+
+    fn api_url_for_base(base: &str, path: &str) -> String {
+        let base = base.trim_end_matches('/');
         let path = path.trim_start_matches('/');
 
         if base.ends_with("/v1") {
@@ -147,15 +152,24 @@ impl NearAiChatProvider {
         self.config.api_key.is_some()
     }
 
+    async fn uses_api_key_auth(&self) -> bool {
+        self.config.api_key.is_some() || self.session.has_api_key().await
+    }
+
+    async fn api_base_url(&self) -> String {
+        if self.uses_api_key_auth().await && self.config.base_url == "https://private.near.ai" {
+            "https://cloud-api.near.ai".to_string()
+        } else {
+            self.config.base_url.clone()
+        }
+    }
+
     /// Resolve the Bearer token for the current auth mode.
     ///
     /// Priority order:
     /// 1. `config.api_key` (set at construction from env/config)
     /// 2. Session token (OAuth flow)
-    /// 3. `NEARAI_API_KEY` env var (set by interactive `api_key_login()`)
-    ///
-    /// The env var fallback (#3) only triggers after `ensure_authenticated()`
-    /// runs, because `api_key_login()` sets the env var but not a session token.
+    /// 3. Session-managed API key captured during interactive login.
     async fn resolve_bearer_token(&self) -> Result<String, LlmError> {
         // 1. Config-level API key takes priority
         if let Some(ref api_key) = self.config.api_key {
@@ -177,11 +191,8 @@ impl NearAiChatProvider {
             return Ok(token.expose_secret().to_string());
         }
 
-        // 4. api_key_login() sets NEARAI_API_KEY env var but not a session token
-        if let Ok(key) = std::env::var("NEARAI_API_KEY")
-            && !key.is_empty()
-        {
-            return Ok(key);
+        if let Some(key) = self.session.get_api_key().await {
+            return Ok(key.expose_secret().to_string());
         }
 
         Err(LlmError::AuthFailed {
@@ -202,7 +213,7 @@ impl NearAiChatProvider {
     ) -> Result<R, LlmError> {
         match self.send_request_inner(body).await {
             Ok(result) => Ok(result),
-            Err(LlmError::SessionExpired { .. }) if !self.uses_api_key() => {
+            Err(LlmError::SessionExpired { .. }) if !self.uses_api_key_auth().await => {
                 // Session expired, attempt renewal and retry once
                 self.session.handle_auth_failure().await?;
                 self.send_request_inner(body).await
@@ -216,7 +227,7 @@ impl NearAiChatProvider {
         &self,
         body: &T,
     ) -> Result<R, LlmError> {
-        let url = self.api_url("chat/completions");
+        let url = Self::api_url_for_base(&self.api_base_url().await, "chat/completions");
         let token = self.resolve_bearer_token().await?;
 
         tracing::debug!("Sending request to NEAR AI Chat: {}", url);
@@ -329,7 +340,7 @@ impl NearAiChatProvider {
     pub async fn list_models_full(&self) -> Result<Vec<ModelInfo>, LlmError> {
         match self.list_models_inner().await {
             Ok(models) => Ok(models),
-            Err(LlmError::SessionExpired { .. }) if !self.uses_api_key() => {
+            Err(LlmError::SessionExpired { .. }) if !self.uses_api_key_auth().await => {
                 self.session.handle_auth_failure().await?;
                 self.list_models_inner().await
             }
@@ -338,7 +349,7 @@ impl NearAiChatProvider {
     }
 
     async fn list_models_inner(&self) -> Result<Vec<ModelInfo>, LlmError> {
-        let url = self.api_url("models");
+        let url = Self::api_url_for_base(&self.api_base_url().await, "models");
         let token = self.resolve_bearer_token().await?;
 
         tracing::debug!("Fetching models from: {}", url);
@@ -1553,7 +1564,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_bearer_token_session_beats_env_var() {
-        // Session token takes priority over NEARAI_API_KEY env var.
+        // Session token takes priority over a session-managed API key.
         // This prevents unexpected auth mode switches mid-run.
         let mut cfg = test_nearai_config("http://localhost:8318");
         cfg.api_key = None;
@@ -1561,12 +1572,11 @@ mod tests {
         session
             .set_token(secrecy::SecretString::from("oauth-token".to_string()))
             .await;
-
-        // Set env var that should NOT be used when session token exists
-        #[allow(unused_unsafe)]
-        unsafe {
-            std::env::set_var("NEARAI_API_KEY", "env-api-key-should-not-win");
-        }
+        session
+            .set_api_key(secrecy::SecretString::from(
+                "session-api-key-should-not-win".to_string(),
+            ))
+            .await;
 
         let provider = NearAiChatProvider::new(cfg, session).expect("provider");
         let token = provider
@@ -1575,28 +1585,22 @@ mod tests {
             .expect("should resolve");
         assert_eq!(
             token, "oauth-token",
-            "session token must take priority over env var"
+            "session token must take priority over session API key"
         );
-
-        #[allow(unused_unsafe)]
-        unsafe {
-            std::env::remove_var("NEARAI_API_KEY");
-        }
     }
 
     #[tokio::test]
     async fn test_resolve_bearer_token_config_beats_session_and_env() {
-        // Config API key should win even when session token AND env var are set.
+        // Config API key should win even when session token and session API key
+        // are both present.
         let cfg = test_nearai_config("http://localhost:8318");
         let session = test_session();
         session
             .set_token(secrecy::SecretString::from("session-tok".to_string()))
             .await;
-
-        #[allow(unused_unsafe)]
-        unsafe {
-            std::env::set_var("NEARAI_API_KEY", "env-key");
-        }
+        session
+            .set_api_key(secrecy::SecretString::from("session-api-key".to_string()))
+            .await;
 
         let provider = NearAiChatProvider::new(cfg, session).expect("provider");
         let token = provider
@@ -1605,13 +1609,8 @@ mod tests {
             .expect("should resolve");
         assert_eq!(
             token, "test-key",
-            "config api_key must win over session token and env var"
+            "config api_key must win over session token and session API key"
         );
-
-        #[allow(unused_unsafe)]
-        unsafe {
-            std::env::remove_var("NEARAI_API_KEY");
-        }
     }
 
     // -- ModelInfo serde alias tests ------------------------------------------

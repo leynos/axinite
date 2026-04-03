@@ -334,14 +334,13 @@ async fn apply_agent_jobs_context_fields_migration(
     let MigrationContext { version, name } = ctx;
     use crate::error::DatabaseError;
 
-    let columns = collect_existing_columns(conn, MigrationContext { version, name }).await?;
-    let statements = missing_context_field_statements(&columns);
-
     let tx = conn.transaction().await.map_err(|e| {
         DatabaseError::Migration(format!(
             "libSQL migration V{version}: failed to start transaction: {e}"
         ))
     })?;
+    let columns = collect_existing_columns(&tx, MigrationContext { version, name }).await?;
+    let statements = missing_context_field_statements(&columns);
 
     if !statements.is_empty() {
         tx.execute_batch(&statements.join("\n"))

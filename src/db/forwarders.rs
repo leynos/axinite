@@ -71,13 +71,13 @@ impl_db_forwarders! {
         fn touch_conversation(id: Uuid) -> Result<(), DatabaseError>;
         fn add_conversation_message(conversation_id: Uuid, role: &'a str, content: &'a str) -> Result<Uuid, DatabaseError>;
         fn ensure_conversation(params: EnsureConversationParams<'a>) -> Result<(), DatabaseError>;
-        fn list_conversations_with_preview(user_id: &'a str, channel: &'a str, limit: i64) -> Result<Vec<ConversationSummary>, DatabaseError>;
-        fn list_conversations_all_channels(user_id: &'a str, limit: i64) -> Result<Vec<ConversationSummary>, DatabaseError>;
+        fn list_conversations_with_preview(user_id: &'a str, channel: &'a str, limit: usize) -> Result<Vec<ConversationSummary>, DatabaseError>;
+        fn list_conversations_all_channels(user_id: &'a str, limit: usize) -> Result<Vec<ConversationSummary>, DatabaseError>;
         fn get_or_create_routine_conversation(routine_id: Uuid, routine_name: &'a str, user_id: &'a str) -> Result<Uuid, DatabaseError>;
         fn get_or_create_heartbeat_conversation(user_id: &'a str) -> Result<Uuid, DatabaseError>;
         fn get_or_create_assistant_conversation(user_id: &'a str, channel: &'a str) -> Result<Uuid, DatabaseError>;
         fn create_conversation_with_metadata(channel: &'a str, user_id: &'a str, metadata: &'a serde_json::Value) -> Result<Uuid, DatabaseError>;
-        fn list_conversation_messages_paginated(conversation_id: Uuid, before: Option<(DateTime<Utc>, Uuid)>, limit: i64) -> Result<(Vec<ConversationMessage>, bool), DatabaseError>;
+        fn list_conversation_messages_paginated(conversation_id: Uuid, before: Option<(DateTime<Utc>, Uuid)>, limit: usize) -> Result<(Vec<ConversationMessage>, bool), DatabaseError>;
         fn update_conversation_metadata_field(id: Uuid, key: &'a str, value: &'a serde_json::Value) -> Result<(), DatabaseError>;
         fn get_conversation_metadata(id: Uuid) -> Result<Option<serde_json::Value>, DatabaseError>;
         fn list_conversation_messages(conversation_id: Uuid) -> Result<Vec<ConversationMessage>, DatabaseError>;

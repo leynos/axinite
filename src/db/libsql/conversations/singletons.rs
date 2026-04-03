@@ -1,3 +1,8 @@
+//! LibSQL singleton-conversation helpers for routine, heartbeat, and assistant
+//! threads. Routine and heartbeat helpers open an immediate transaction so the
+//! lookup and optional insert happen atomically on one connection, while the
+//! assistant helper relies on insert-or-ignore plus a follow-up read.
+
 use super::*;
 
 pub(super) async fn get_or_create_routine_conversation(
@@ -18,7 +23,9 @@ pub(super) async fn get_or_create_routine_conversation(
                 .query(
                     r#"
                     SELECT id FROM conversations
-                    WHERE user_id = ?1 AND json_extract(metadata, '$.routine_id') = ?2
+                    WHERE user_id = ?1
+                      AND json_extract(metadata, '$.thread_type') = 'routine'
+                      AND json_extract(metadata, '$.routine_id') = ?2
                     LIMIT 1
                     "#,
                     params![user_id, rid],
@@ -31,7 +38,7 @@ pub(super) async fn get_or_create_routine_conversation(
                 .await
                 .map_err(|e| DatabaseError::Query(e.to_string()))?
             {
-                return parse_uuid(row.get(0).unwrap_or_default());
+                return parse_uuid(get_text(&row, 0));
             }
 
             let id = Uuid::new_v4();
@@ -92,7 +99,7 @@ pub(super) async fn get_or_create_heartbeat_conversation(
                 .await
                 .map_err(|e| DatabaseError::Query(e.to_string()))?
             {
-                return parse_uuid(row.get(0).unwrap_or_default());
+                return parse_uuid(get_text(&row, 0));
             }
 
             let id = Uuid::new_v4();
@@ -160,5 +167,5 @@ pub(super) async fn get_or_create_assistant_conversation(
         ));
     };
 
-    parse_uuid(row.get(0).unwrap_or_default())
+    parse_uuid(get_text(&row, 0))
 }

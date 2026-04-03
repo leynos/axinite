@@ -98,6 +98,10 @@ impl Store {
                 success, failure_reason, created_at, started_at, completed_at
             ) VALUES ($1, $2, $3, $4, 'sandbox', $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (id) DO UPDATE SET
+                title = EXCLUDED.title,
+                description = EXCLUDED.description,
+                user_id = EXCLUDED.user_id,
+                project_dir = EXCLUDED.project_dir,
                 status = EXCLUDED.status,
                 success = EXCLUDED.success,
                 failure_reason = EXCLUDED.failure_reason,

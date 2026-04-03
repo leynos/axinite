@@ -132,7 +132,7 @@ pub struct MemoryChunk {
     /// Parent document ID.
     pub document_id: Uuid,
     /// Position in the document (0-based).
-    pub chunk_index: i32,
+    pub chunk_index: u32,
     /// Chunk text content.
     pub content: String,
     /// Embedding vector (if generated).
@@ -143,7 +143,7 @@ pub struct MemoryChunk {
 
 impl MemoryChunk {
     /// Create a new chunk (not persisted yet).
-    pub fn new(document_id: Uuid, chunk_index: i32, content: impl Into<String>) -> Self {
+    pub fn new(document_id: Uuid, chunk_index: u32, content: impl Into<String>) -> Self {
         Self {
             id: Uuid::new_v4(),
             document_id,

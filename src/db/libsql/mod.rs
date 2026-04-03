@@ -28,23 +28,7 @@ pub(crate) use helpers::{
     fmt_opt_ts, fmt_ts, get_decimal, get_i64, get_json, get_opt_bool, get_opt_decimal,
     get_opt_text, get_opt_ts, get_text, get_ts, opt_text, opt_text_owned, parse_job_state,
 };
-pub(crate) use row_conversion::{
-    row_to_memory_document, row_to_routine_libsql, row_to_routine_run_libsql,
-};
-
-/// Explicit column list for routines table (matches positional access in `row_to_routine_libsql`).
-pub(crate) const ROUTINE_COLUMNS: &str = "\
-    id, name, description, user_id, enabled, \
-    trigger_type, trigger_config, action_type, action_config, \
-    cooldown_secs, max_concurrent, dedup_window_secs, \
-    notify_channel, notify_user, notify_on_success, notify_on_failure, notify_on_attention, \
-    state, last_run_at, next_fire_at, run_count, consecutive_failures, \
-    created_at, updated_at";
-
-/// Explicit column list for routine_runs table (matches positional access in `row_to_routine_run_libsql`).
-pub(crate) const ROUTINE_RUN_COLUMNS: &str = "\
-    id, routine_id, trigger_type, trigger_detail, started_at, \
-    status, completed_at, result_summary, tokens_used, job_id, created_at";
+pub(crate) use row_conversion::row_to_memory_document;
 
 /// libSQL/Turso database backend.
 ///

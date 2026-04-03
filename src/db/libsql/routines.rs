@@ -1,13 +1,13 @@
 //! Routine-related RoutineStore implementation for LibSqlBackend.
 
+#[path = "routines/mapping.rs"]
+mod mapping;
+
 use chrono::Utc;
 use libsql::params;
 use uuid::Uuid;
 
-use super::{
-    LibSqlBackend, ROUTINE_COLUMNS, ROUTINE_RUN_COLUMNS, fmt_opt_ts, fmt_ts, get_i64, opt_text,
-    opt_text_owned, row_to_routine_libsql, row_to_routine_run_libsql,
-};
+use super::{LibSqlBackend, fmt_opt_ts, fmt_ts, get_i64, opt_text, opt_text_owned};
 use crate::agent::routine::{Routine, RoutineRun};
 use crate::db::{NativeRoutineStore, RoutineRunCompletion, RoutineRuntimeUpdate};
 use crate::error::DatabaseError;
@@ -72,7 +72,10 @@ impl NativeRoutineStore for LibSqlBackend {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
-                &format!("SELECT {} FROM routines WHERE id = ?1", ROUTINE_COLUMNS),
+                &format!(
+                    "SELECT {} FROM routines WHERE id = ?1",
+                    mapping::ROUTINE_COLUMNS
+                ),
                 params![id.to_string()],
             )
             .await
@@ -83,7 +86,7 @@ impl NativeRoutineStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
-            Some(row) => Ok(Some(row_to_routine_libsql(&row)?)),
+            Some(row) => Ok(Some(mapping::row_to_routine_libsql(&row)?)),
             None => Ok(None),
         }
     }
@@ -98,7 +101,7 @@ impl NativeRoutineStore for LibSqlBackend {
             .query(
                 &format!(
                     "SELECT {} FROM routines WHERE user_id = ?1 AND name = ?2",
-                    ROUTINE_COLUMNS
+                    mapping::ROUTINE_COLUMNS
                 ),
                 params![user_id, name],
             )
@@ -110,7 +113,7 @@ impl NativeRoutineStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
-            Some(row) => Ok(Some(row_to_routine_libsql(&row)?)),
+            Some(row) => Ok(Some(mapping::row_to_routine_libsql(&row)?)),
             None => Ok(None),
         }
     }
@@ -121,7 +124,7 @@ impl NativeRoutineStore for LibSqlBackend {
             .query(
                 &format!(
                     "SELECT {} FROM routines WHERE user_id = ?1 ORDER BY name",
-                    ROUTINE_COLUMNS
+                    mapping::ROUTINE_COLUMNS
                 ),
                 params![user_id],
             )
@@ -134,7 +137,7 @@ impl NativeRoutineStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
-            routines.push(row_to_routine_libsql(&row)?);
+            routines.push(mapping::row_to_routine_libsql(&row)?);
         }
         Ok(routines)
     }
@@ -143,30 +146,9 @@ impl NativeRoutineStore for LibSqlBackend {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
-                &format!("SELECT {} FROM routines ORDER BY name", ROUTINE_COLUMNS),
-                (),
-            )
-            .await
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
-
-        let mut routines = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .await
-            .map_err(|e| DatabaseError::Query(e.to_string()))?
-        {
-            routines.push(row_to_routine_libsql(&row)?);
-        }
-        Ok(routines)
-    }
-
-    async fn list_event_routines(&self) -> Result<Vec<Routine>, DatabaseError> {
-        let conn = self.connect().await?;
-        let mut rows = conn
-            .query(
                 &format!(
-                    "SELECT {} FROM routines WHERE enabled = 1 AND trigger_type IN ('event', 'system_event')",
-                    ROUTINE_COLUMNS
+                    "SELECT {} FROM routines ORDER BY name",
+                    mapping::ROUTINE_COLUMNS
                 ),
                 (),
             )
@@ -179,7 +161,31 @@ impl NativeRoutineStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
-            routines.push(row_to_routine_libsql(&row)?);
+            routines.push(mapping::row_to_routine_libsql(&row)?);
+        }
+        Ok(routines)
+    }
+
+    async fn list_event_routines(&self) -> Result<Vec<Routine>, DatabaseError> {
+        let conn = self.connect().await?;
+        let mut rows = conn
+            .query(
+                &format!(
+                    "SELECT {} FROM routines WHERE enabled = 1 AND trigger_type IN ('event', 'system_event')",
+                    mapping::ROUTINE_COLUMNS
+                ),
+                (),
+            )
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let mut routines = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?
+        {
+            routines.push(mapping::row_to_routine_libsql(&row)?);
         }
         Ok(routines)
     }
@@ -194,7 +200,7 @@ impl NativeRoutineStore for LibSqlBackend {
             .query(
                 &format!(
                     "SELECT {} FROM routines WHERE enabled = 1 AND trigger_type = 'cron' AND next_fire_at IS NOT NULL AND next_fire_at <= ?1",
-                    ROUTINE_COLUMNS
+                    mapping::ROUTINE_COLUMNS
                 ),
                 params![now],
             )
@@ -208,7 +214,7 @@ impl NativeRoutineStore for LibSqlBackend {
                 .await
                 .map_err(|e| DatabaseError::Query(e.to_string()))?
             {
-                let routine = row_to_routine_libsql(&row)?;
+                let routine = mapping::row_to_routine_libsql(&row)?;
                 conn.execute(
                     "UPDATE routines SET next_fire_at = NULL, updated_at = ?2 WHERE id = ?1",
                     params![routine.id.to_string(), fmt_ts(&Utc::now())],
@@ -401,7 +407,7 @@ impl NativeRoutineStore for LibSqlBackend {
             .query(
                 &format!(
                     "SELECT {} FROM routine_runs WHERE routine_id = ?1 ORDER BY started_at DESC LIMIT ?2",
-                    ROUTINE_RUN_COLUMNS
+                    mapping::ROUTINE_RUN_COLUMNS
                 ),
                 params![routine_id.to_string(), limit],
             )
@@ -414,7 +420,7 @@ impl NativeRoutineStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
-            runs.push(row_to_routine_run_libsql(&row)?);
+            runs.push(mapping::row_to_routine_run_libsql(&row)?);
         }
         Ok(runs)
     }

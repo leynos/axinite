@@ -93,9 +93,12 @@ pub(super) async fn list_job_events(
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?
     {
+        let job_id = get_text(&row, 1).parse().map_err(|e| {
+            DatabaseError::Serialization(format!("invalid job_events.job_id UUID: {e}"))
+        })?;
         events.push(JobEventRecord {
             id: get_i64(&row, 0),
-            job_id: get_text(&row, 1).parse().unwrap_or_default(),
+            job_id,
             event_type: get_text(&row, 2),
             data: get_json(&row, 3),
             created_at: get_ts(&row, 4),

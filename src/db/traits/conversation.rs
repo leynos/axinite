@@ -77,7 +77,7 @@ pub trait ConversationStore: Send + Sync {
         &'a self,
         user_id: &'a str,
         channel: &'a str,
-        limit: i64,
+        limit: usize,
     ) -> DbFuture<'a, Result<Vec<ConversationSummary>, DatabaseError>>;
     /// List recent conversations for one user across all channels.
     ///
@@ -86,7 +86,7 @@ pub trait ConversationStore: Send + Sync {
     fn list_conversations_all_channels<'a>(
         &'a self,
         user_id: &'a str,
-        limit: i64,
+        limit: usize,
     ) -> DbFuture<'a, Result<Vec<ConversationSummary>, DatabaseError>>;
     /// Get or create the routine conversation owned by `routine_id`.
     ///
@@ -132,7 +132,7 @@ pub trait ConversationStore: Send + Sync {
         &'a self,
         conversation_id: Uuid,
         before: Option<(DateTime<Utc>, Uuid)>,
-        limit: i64,
+        limit: usize,
     ) -> DbFuture<'a, Result<(Vec<ConversationMessage>, bool), DatabaseError>>;
     /// Merge one metadata field into the stored conversation metadata object.
     ///
@@ -199,13 +199,13 @@ pub trait NativeConversationStore: Send + Sync {
         &'a self,
         user_id: &'a str,
         channel: &'a str,
-        limit: i64,
+        limit: usize,
     ) -> impl Future<Output = Result<Vec<ConversationSummary>, DatabaseError>> + Send + 'a;
     /// List recent conversations for one user across all channels.
     fn list_conversations_all_channels<'a>(
         &'a self,
         user_id: &'a str,
-        limit: i64,
+        limit: usize,
     ) -> impl Future<Output = Result<Vec<ConversationSummary>, DatabaseError>> + Send + 'a;
     /// Get or create the routine conversation owned by `routine_id`.
     fn get_or_create_routine_conversation<'a>(
@@ -237,7 +237,7 @@ pub trait NativeConversationStore: Send + Sync {
         &'a self,
         conversation_id: Uuid,
         before: Option<(DateTime<Utc>, Uuid)>,
-        limit: i64,
+        limit: usize,
     ) -> impl Future<Output = Result<(Vec<ConversationMessage>, bool), DatabaseError>> + Send + 'a;
     /// Merge one metadata field into the stored conversation metadata object.
     fn update_conversation_metadata_field<'a>(

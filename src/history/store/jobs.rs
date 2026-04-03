@@ -352,16 +352,19 @@ mod tests {
     fn agent_job_summary_accumulates_status_buckets() {
         let mut summary = AgentJobSummary::default();
         summary.add_count("pending", 1);
+        summary.add_count("submitted", 6);
+        summary.add_count("accepted", 7);
         summary.add_count("in_progress", 2);
         summary.add_count("completed", 3);
         summary.add_count("failed", 4);
         summary.add_count("stuck", 5);
+        summary.add_count("cancelled", 8);
 
-        assert_eq!(summary.total, 15);
+        assert_eq!(summary.total, 36);
         assert_eq!(summary.pending, 1);
         assert_eq!(summary.in_progress, 2);
-        assert_eq!(summary.completed, 3);
-        assert_eq!(summary.failed, 4);
+        assert_eq!(summary.completed, 16);
+        assert_eq!(summary.failed, 12);
         assert_eq!(summary.stuck, 5);
     }
 }

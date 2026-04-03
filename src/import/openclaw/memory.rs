@@ -23,7 +23,9 @@ pub async fn import_chunk(
     let chunk_id = db
         .insert_chunk(InsertChunkParams {
             document_id: doc.id,
-            chunk_index: chunk.chunk_index,
+            chunk_index: u32::try_from(chunk.chunk_index).map_err(|_| {
+                ImportError::Database("chunk_index must be non-negative".to_string())
+            })?,
             content: &chunk.content,
             embedding: None, // Don't set embedding yet if dimensions might not match
         })

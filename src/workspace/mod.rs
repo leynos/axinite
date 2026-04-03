@@ -180,7 +180,7 @@ impl WorkspaceStorage {
     async fn insert_chunk(
         &self,
         document_id: Uuid,
-        chunk_index: i32,
+        chunk_index: u32,
         content: &str,
         embedding: Option<&[f32]>,
     ) -> Result<Uuid, WorkspaceError> {
@@ -794,7 +794,7 @@ impl Workspace {
             };
 
             self.storage
-                .insert_chunk(document_id, index as i32, &content, embedding.as_deref())
+                .insert_chunk(document_id, index as u32, &content, embedding.as_deref())
                 .await?;
         }
 

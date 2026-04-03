@@ -40,9 +40,12 @@ impl RoutineDbFields {
             trigger_config: r.trigger.to_config_json(),
             action_type: r.action.type_tag(),
             action_config: r.action.to_config_json(),
-            cooldown_secs: r.guardrails.cooldown.as_secs() as i32,
-            max_concurrent: r.guardrails.max_concurrent as i32,
-            dedup_window_secs: r.guardrails.dedup_window.map(|d| d.as_secs() as i32),
+            cooldown_secs: i32::try_from(r.guardrails.cooldown.as_secs()).unwrap_or(i32::MAX),
+            max_concurrent: i32::try_from(r.guardrails.max_concurrent).unwrap_or(i32::MAX),
+            dedup_window_secs: r
+                .guardrails
+                .dedup_window
+                .map(|d| i32::try_from(d.as_secs()).unwrap_or(i32::MAX)),
         }
     }
 }
@@ -381,3 +384,7 @@ impl Store {
         Ok(())
     }
 }
+
+#[cfg(all(test, feature = "postgres"))]
+#[path = "routines/tests.rs"]
+mod tests;

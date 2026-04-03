@@ -1,7 +1,12 @@
 use super::*;
 use crate::db::Database;
 
-async fn create_backend(db_name: &str) -> LibSqlBackend {
+struct BackendFixture {
+    _dir: tempfile::TempDir,
+    backend: LibSqlBackend,
+}
+
+async fn create_backend(db_name: &str) -> BackendFixture {
     let dir = tempfile::tempdir().expect("create tempdir for libsql conversation test");
     let db_path = dir.path().join(db_name);
     let backend = LibSqlBackend::new_local(&db_path)
@@ -11,13 +16,13 @@ async fn create_backend(db_name: &str) -> LibSqlBackend {
         .run_migrations()
         .await
         .expect("run libsql migrations");
-    std::mem::forget(dir);
-    backend
+    BackendFixture { _dir: dir, backend }
 }
 
 #[tokio::test]
 async fn test_get_or_create_routine_conversation_is_idempotent() {
-    let backend = create_backend("test_routine_conv.db").await;
+    let fixture = create_backend("test_routine_conv.db").await;
+    let backend = &fixture.backend;
     let routine_id = Uuid::new_v4();
     let user_id = "test_user";
 
@@ -49,7 +54,8 @@ async fn test_get_or_create_routine_conversation_is_idempotent() {
 
 #[tokio::test]
 async fn test_routine_conversation_persists_across_messages() {
-    let backend = create_backend("test_routine_persist.db").await;
+    let fixture = create_backend("test_routine_persist.db").await;
+    let backend = &fixture.backend;
     let routine_id = Uuid::new_v4();
     let user_id = "test_user";
 
@@ -88,7 +94,8 @@ async fn test_routine_conversation_persists_across_messages() {
 
 #[tokio::test]
 async fn test_get_or_create_heartbeat_conversation_is_idempotent() {
-    let backend = create_backend("test_heartbeat_conv.db").await;
+    let fixture = create_backend("test_heartbeat_conv.db").await;
+    let backend = &fixture.backend;
     let user_id = "test_user";
 
     let id1 = backend

@@ -157,7 +157,7 @@ impl SetupWizard {
 
     /// Set the session manager (for reusing existing auth).
     pub fn with_session(mut self, session: Arc<SessionManager>) -> Self {
-        self.session_manager = Some(session);
+        self.session_manager = Some(Arc::clone(&session));
         self
     }
 
@@ -1247,7 +1247,7 @@ impl SetupWizard {
             .await
             .map_err(|e| SetupError::Auth(e.to_string()))?;
 
-        self.session_manager = Some(session);
+        self.session_manager = Some(Arc::clone(&session));
 
         // Persist session token to the database so the runtime can load it
         // via `attach_store()` → `load_session_from_db()` without the
@@ -1255,17 +1255,14 @@ impl SetupWizard {
         // doesn't have a DB store attached during onboarding.
         self.persist_session_to_db().await;
 
-        // If the user chose the API key path, NEARAI_API_KEY is now set
-        // in the environment. Persist it to the encrypted secrets store
-        // so inject_llm_keys_from_secrets() can load it on future runs.
-        if let Ok(api_key) = std::env::var("NEARAI_API_KEY")
-            && !api_key.is_empty()
+        // If the user chose the API key path, persist it to the encrypted
+        // secrets store so inject_llm_keys_from_secrets() can load it on
+        // future runs.
+        if let Some(api_key) = session.get_api_key().await
             && let Ok(ctx) = self.init_secrets_context().await
+            && let Err(e) = ctx.save_secret("llm_nearai_api_key", &api_key).await
         {
-            let key = SecretString::from(api_key);
-            if let Err(e) = ctx.save_secret("llm_nearai_api_key", &key).await {
-                tracing::warn!("Failed to persist NEARAI_API_KEY to secrets: {}", e);
-            }
+            tracing::warn!("Failed to persist NEARAI_API_KEY to secrets: {}", e);
         }
 
         print_success("NEAR AI configured");
@@ -1829,7 +1826,8 @@ impl SetupWizard {
     /// Fetch available models from the NEAR AI API.
     ///
     /// Uses [`build_nearai_model_fetch_config`] to construct the provider config,
-    /// which reads `NEARAI_API_KEY` from the environment when present.
+    /// carrying through any in-memory NEAR AI Cloud API key captured during
+    /// onboarding.
     async fn fetch_nearai_models(&self) -> Vec<String> {
         let session = match self.session_manager {
             Some(ref s) => Arc::clone(s),
@@ -1838,7 +1836,7 @@ impl SetupWizard {
 
         use crate::llm::create_llm_provider;
 
-        let config = build_nearai_model_fetch_config();
+        let config = build_nearai_model_fetch_config(session.get_api_key().await);
 
         match create_llm_provider(&config, session).await {
             Ok(provider) => match provider.list_models().await {
@@ -2673,13 +2671,6 @@ impl SetupWizard {
             env_vars.push((base_url_env.clone(), base_url.clone()));
         }
 
-        // Preserve NEARAI_API_KEY if present (set by API key auth flow)
-        if let Ok(api_key) = std::env::var("NEARAI_API_KEY")
-            && !api_key.is_empty()
-        {
-            env_vars.push(("NEARAI_API_KEY".to_string(), api_key));
-        }
-
         // Secrets master key (env var mode): write to .env so it's available
         // on next startup before the DB is connected.
         if let Some(ref key_hex) = self.settings.secrets_master_key_hex {
@@ -3417,16 +3408,13 @@ async fn discover_wasm_channels(dir: &std::path::Path) -> Vec<(String, ChannelCa
 /// Uses char-based indexing to avoid panicking on multi-byte UTF-8.
 /// Build the `LlmConfig` used by `fetch_nearai_models` to list available models.
 ///
-/// Reads `NEARAI_API_KEY` from the environment so that users who authenticated
-/// via Cloud API key (option 4) don't get re-prompted during model selection.
-fn build_nearai_model_fetch_config() -> crate::config::LlmConfig {
-    // If the user authenticated via API key (option 4), the key is stored
-    // as an env var. Pass it through so `resolve_bearer_token()` doesn't
-    // re-trigger the interactive auth prompt.
-    let api_key = std::env::var("NEARAI_API_KEY")
-        .ok()
-        .filter(|k| !k.is_empty())
-        .map(secrecy::SecretString::from);
+/// Uses the current in-memory NEAR AI Cloud API key, when present, so users
+/// who authenticated via option 4 do not get re-prompted during model
+/// selection.
+fn build_nearai_model_fetch_config(
+    api_key: Option<secrecy::SecretString>,
+) -> crate::config::LlmConfig {
+    let api_key = api_key.filter(|key| !key.expose_secret().trim().is_empty());
 
     // Match the same base_url logic as LlmConfig::resolve(): use cloud-api
     // when an API key is present, private.near.ai for session-token auth.
@@ -3896,10 +3884,6 @@ mod tests {
             }
         }
 
-        fn set(key: &'static str, value: &str) -> Self {
-            Self::new_with_action(key, || unsafe { std::env::set_var(key, value) })
-        }
-
         fn clear(key: &'static str) -> Self {
             Self::new_with_action(key, || unsafe { std::env::remove_var(key) })
         }
@@ -4183,10 +4167,12 @@ mod tests {
             ("NEARAI_BASE_URL", None),
         ]);
 
-        let config = build_nearai_model_fetch_config();
+        let config = build_nearai_model_fetch_config(Some(secrecy::SecretString::from(
+            "test-cloud-api-key-12345",
+        )));
         assert!(
             config.nearai.api_key.is_some(),
-            "config should include NEARAI_API_KEY from env"
+            "config should include the supplied API key"
         );
         assert_eq!(
             config.nearai.api_key.as_ref().unwrap().expose_secret(),
@@ -4203,12 +4189,12 @@ mod tests {
     /// the config should have `api_key: None` (session token path).
     #[test]
     fn test_build_nearai_model_fetch_config_none_when_no_api_key() {
-        let _guard = EnvBatchGuard::new(&[("NEARAI_API_KEY", None), ("NEARAI_BASE_URL", None)]);
+        let _guard = EnvGuard::clear("NEARAI_BASE_URL");
 
-        let config = build_nearai_model_fetch_config();
+        let config = build_nearai_model_fetch_config(None);
         assert!(
             config.nearai.api_key.is_none(),
-            "config should have no api_key when env var is absent"
+            "config should have no api_key when none is supplied"
         );
         // Without API key, base_url must point to private.near.ai (session token)
         assert_eq!(
@@ -4217,15 +4203,13 @@ mod tests {
         );
     }
 
-    /// Regression test for #799: empty NEARAI_API_KEY should be treated as absent.
+    /// Regression test for #799: empty API keys should be treated as absent.
     #[test]
     fn test_build_nearai_model_fetch_config_none_when_empty_api_key() {
-        let _guard = EnvGuard::set("NEARAI_API_KEY", "");
-
-        let config = build_nearai_model_fetch_config();
+        let config = build_nearai_model_fetch_config(Some(secrecy::SecretString::from("")));
         assert!(
             config.nearai.api_key.is_none(),
-            "config should have no api_key when env var is empty"
+            "config should have no api_key when the supplied key is empty"
         );
     }
 }

@@ -302,12 +302,16 @@ impl Repository {
     pub async fn insert_chunk(
         &self,
         document_id: Uuid,
-        chunk_index: i32,
+        chunk_index: u32,
         content: &str,
         embedding: Option<&[f32]>,
     ) -> Result<Uuid, WorkspaceError> {
         let conn = self.conn().await?;
         let id = Uuid::new_v4();
+        let chunk_index =
+            i32::try_from(chunk_index).map_err(|_| WorkspaceError::ChunkingFailed {
+                reason: "chunk_index exceeds i32 range".to_string(),
+            })?;
 
         let embedding_vec = embedding.map(|e| Vector::from(e.to_vec()));
 
@@ -373,17 +377,24 @@ impl Repository {
                 reason: format!("Query failed: {}", e),
             })?;
 
-        Ok(rows
-            .iter()
-            .map(|row| MemoryChunk {
+        let mut chunks = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let chunk_index = u32::try_from(row.get::<_, i32>("chunk_index")).map_err(|_| {
+                WorkspaceError::SearchFailed {
+                    reason: "memory_chunks.chunk_index must be non-negative".to_string(),
+                }
+            })?;
+            chunks.push(MemoryChunk {
                 id: row.get("id"),
                 document_id: row.get("document_id"),
-                chunk_index: row.get("chunk_index"),
+                chunk_index,
                 content: row.get("content"),
                 embedding: None,
                 created_at: row.get("created_at"),
-            })
-            .collect())
+            });
+        }
+
+        Ok(chunks)
     }
 
     // ==================== Search Operations ====================

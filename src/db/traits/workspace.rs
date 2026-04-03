@@ -17,7 +17,7 @@ pub struct InsertChunkParams<'a> {
     /// Durable UUID of the parent document that will own this chunk.
     pub document_id: Uuid,
     /// Zero-based ordinal of this chunk within the document.
-    pub chunk_index: i32,
+    pub chunk_index: u32,
     /// UTF-8 chunk body to persist for search and retrieval.
     pub content: &'a str,
     /// Optional embedding vector for the chunk; when present it should match

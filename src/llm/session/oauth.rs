@@ -21,7 +21,12 @@ fn read_auth_choice() -> Result<String, LlmError> {
     print!("Enter choice [1-4]: ");
 
     use std::io::Write;
-    std::io::stdout().flush().ok();
+    std::io::stdout()
+        .flush()
+        .map_err(|error| LlmError::SessionRenewalFailed {
+            provider: "nearai".to_string(),
+            reason: format!("Failed to flush prompt: {error}"),
+        })?;
 
     let mut choice = String::new();
     std::io::stdin()
@@ -168,7 +173,7 @@ pub(super) async fn api_key_flow(_manager: &SessionManager) -> Result<(), LlmErr
             reason: format!("Failed to read input: {}", e),
         })?;
 
-    let key = key_secret.expose_secret().to_string();
+    let key = key_secret.expose_secret().trim().to_string();
     if key.is_empty() {
         return Err(LlmError::SessionRenewalFailed {
             provider: "nearai".to_string(),
@@ -176,10 +181,7 @@ pub(super) async fn api_key_flow(_manager: &SessionManager) -> Result<(), LlmErr
         });
     }
 
-    // SAFETY: called during single-threaded interactive login flow.
-    unsafe {
-        std::env::set_var("NEARAI_API_KEY", &key);
-    }
+    _manager.set_api_key(SecretString::from(key.clone())).await;
 
     if let Err(error) = crate::bootstrap::upsert_bootstrap_var("NEARAI_API_KEY", &key) {
         tracing::warn!("Failed to save API key to bootstrap .env: {}", error);

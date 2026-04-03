@@ -4,7 +4,7 @@ pub(super) async fn list_conversations_with_preview(
     backend: &LibSqlBackend,
     user_id: &str,
     channel: &str,
-    limit: i64,
+    limit: usize,
 ) -> Result<Vec<ConversationSummary>, DatabaseError> {
     let conn = backend.connect().await?;
     let mut rows = conn
@@ -25,10 +25,10 @@ pub(super) async fn list_conversations_with_preview(
                     ) AS title
                 FROM conversations c
                 WHERE c.user_id = ?1 AND c.channel = ?2
-                ORDER BY datetime(c.last_activity) DESC
+                ORDER BY datetime(c.last_activity) DESC, c.id DESC
                 LIMIT ?3
                 "#,
-                params![user_id, channel, limit],
+                params![user_id, channel, limit as i64],
             )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -39,7 +39,7 @@ pub(super) async fn list_conversations_with_preview(
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?
     {
-        results.push(row_to_conversation_summary(&row));
+        results.push(row_to_conversation_summary(&row)?);
     }
     Ok(results)
 }
@@ -47,7 +47,7 @@ pub(super) async fn list_conversations_with_preview(
 pub(super) async fn list_conversations_all_channels(
     backend: &LibSqlBackend,
     user_id: &str,
-    limit: i64,
+    limit: usize,
 ) -> Result<Vec<ConversationSummary>, DatabaseError> {
     let conn = backend.connect().await?;
     let mut rows = conn
@@ -68,10 +68,10 @@ pub(super) async fn list_conversations_all_channels(
                     ) AS title
                 FROM conversations c
                 WHERE c.user_id = ?1
-                ORDER BY datetime(c.last_activity) DESC
+                ORDER BY datetime(c.last_activity) DESC, c.id DESC
                 LIMIT ?2
                 "#,
-                params![user_id, limit],
+                params![user_id, limit as i64],
             )
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -82,7 +82,7 @@ pub(super) async fn list_conversations_all_channels(
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?
     {
-        results.push(row_to_conversation_summary(&row));
+        results.push(row_to_conversation_summary(&row)?);
     }
     Ok(results)
 }
