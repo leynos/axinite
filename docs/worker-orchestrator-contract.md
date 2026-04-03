@@ -118,7 +118,7 @@ The distinction matters:
   completion reporting.
 
 `ContainerDelegate` therefore, uses a background task and bounded queue for
-event posting. `shutdown()` closes the queue and waits for the event worker so
+event posting. `shutdown()` closes the queue and waits for the event worker, so
 buffered events flush before the delegate disappears.
 
 `WorkerRuntime::post_event(...)` also uses a bounded timeout around terminal

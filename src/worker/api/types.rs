@@ -5,11 +5,21 @@
 //! status updates, and credential delivery, including shared types such as
 //! [`ChatMessage`], [`ToolCall`], [`ToolDefinition`], and [`ToolOutput`].
 
+#[path = "proxy_types.rs"]
+mod proxy_types;
+#[path = "remote_tool_types.rs"]
+mod remote_tool_types;
+
 use const_format::concatcp;
 use serde::{Deserialize, Serialize};
 
-use crate::llm::{ChatMessage, ToolCall, ToolDefinition};
-use crate::tools::ToolOutput;
+pub use proxy_types::{
+    FinishReason, ProxyCompletionRequest, ProxyCompletionResponse, ProxyToolCompletionRequest,
+    ProxyToolCompletionResponse,
+};
+pub use remote_tool_types::{
+    RemoteToolCatalogResponse, RemoteToolExecutionRequest, RemoteToolExecutionResponse,
+};
 
 /// Worker lifecycle state sent to the orchestrator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -149,151 +159,6 @@ pub struct JobDescription {
     pub project_dir: Option<String>,
 }
 
-/// Provider finish reason transported between orchestrator and worker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FinishReason {
-    Stop,
-    Length,
-    #[serde(alias = "tool_calls")]
-    ToolUse,
-    ContentFilter,
-    #[serde(other)]
-    Unknown,
-}
-
-impl From<crate::llm::FinishReason> for FinishReason {
-    fn from(value: crate::llm::FinishReason) -> Self {
-        match value {
-            crate::llm::FinishReason::Stop => Self::Stop,
-            crate::llm::FinishReason::Length => Self::Length,
-            crate::llm::FinishReason::ToolUse => Self::ToolUse,
-            crate::llm::FinishReason::ContentFilter => Self::ContentFilter,
-            crate::llm::FinishReason::Unknown => Self::Unknown,
-        }
-    }
-}
-
-impl From<FinishReason> for crate::llm::FinishReason {
-    fn from(value: FinishReason) -> Self {
-        match value {
-            FinishReason::Stop => Self::Stop,
-            FinishReason::Length => Self::Length,
-            FinishReason::ToolUse => Self::ToolUse,
-            FinishReason::ContentFilter => Self::ContentFilter,
-            FinishReason::Unknown => Self::Unknown,
-        }
-    }
-}
-
-/// Completion result from the orchestrator (proxied from the real LLM).
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProxyCompletionRequest {
-    /// Conversation history forwarded to the orchestrator-backed provider.
-    pub messages: Vec<ChatMessage>,
-    /// Optional model override requested by the worker.
-    pub model: Option<String>,
-    /// Optional token ceiling for the completion.
-    pub max_tokens: Option<u32>,
-    /// Optional sampling temperature for the completion.
-    pub temperature: Option<f32>,
-    /// Optional stop-sequence list forwarded unchanged to the provider.
-    pub stop_sequences: Option<Vec<String>>,
-}
-
-/// Completion result returned by the orchestrator-backed provider.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProxyCompletionResponse {
-    /// Assistant text produced by the proxied completion call.
-    pub content: String,
-    /// Provider-reported prompt token usage.
-    pub input_tokens: u32,
-    /// Provider-reported completion token usage.
-    pub output_tokens: u32,
-    /// Provider finish reason normalised into a transport enum.
-    pub finish_reason: FinishReason,
-    /// Tokens served from cache when the provider exposes that metric.
-    #[serde(default)]
-    pub cache_read_input_tokens: u32,
-    /// Tokens written into cache when the provider exposes that metric.
-    #[serde(default)]
-    pub cache_creation_input_tokens: u32,
-}
-
-/// Tool-capable completion request forwarded to the orchestrator.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProxyToolCompletionRequest {
-    /// Conversation history forwarded to the orchestrator-backed provider.
-    pub messages: Vec<ChatMessage>,
-    /// Tool definitions currently visible to the worker.
-    pub tools: Vec<ToolDefinition>,
-    /// Optional model override requested by the worker.
-    pub model: Option<String>,
-    /// Optional token ceiling for the completion.
-    pub max_tokens: Option<u32>,
-    /// Optional sampling temperature for the completion.
-    pub temperature: Option<f32>,
-    /// Optional provider-specific tool-choice override.
-    pub tool_choice: Option<String>,
-}
-
-/// Tool-capable completion result returned by the orchestrator.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProxyToolCompletionResponse {
-    /// Optional assistant text returned alongside tool calls.
-    pub content: Option<String>,
-    /// Tool calls selected by the orchestrator-backed provider.
-    pub tool_calls: Vec<ToolCall>,
-    /// Provider-reported prompt token usage.
-    pub input_tokens: u32,
-    /// Provider-reported completion token usage.
-    pub output_tokens: u32,
-    /// Provider finish reason normalised into a transport enum.
-    pub finish_reason: FinishReason,
-    /// Tokens served from cache when the provider exposes that metric.
-    #[serde(default)]
-    pub cache_read_input_tokens: u32,
-    /// Tokens written into cache when the provider exposes that metric.
-    #[serde(default)]
-    pub cache_creation_input_tokens: u32,
-}
-
-/// Request sent from a worker to the orchestrator for hosted remote-tool execution.
-///
-/// `tool_name` is the orchestrator tool identifier. `params` must match that
-/// tool's JSON Schema because the orchestrator validates and executes the call.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct RemoteToolExecutionRequest {
-    /// Stable hosted remote-tool identifier known to both worker and orchestrator.
-    pub tool_name: String,
-    /// JSON parameters passed through to the tool implementation.
-    pub params: serde_json::Value,
-}
-
-/// Response returned after the orchestrator executes a hosted remote tool.
-///
-/// `output` is the tool's `ToolOutput`, including its result payload and
-/// reported side-effect metadata such as duration and optional cost.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct RemoteToolExecutionResponse {
-    /// Tool execution output returned by the orchestrator.
-    pub output: ToolOutput,
-}
-
-/// Catalogue payload returned to workers for hosted-visible remote tools.
-///
-/// `tools` is the current model-facing tool list. `toolset_instructions` is
-/// optional human-readable guidance and defaults to an empty list.
-/// `catalog_version` is a deterministic content version derived from the
-/// serialized catalogue payload.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct RemoteToolCatalogResponse {
-    pub tools: Vec<ToolDefinition>,
-    #[serde(default)]
-    pub toolset_instructions: Vec<String>,
-    pub catalog_version: u64,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompletionReport {
     /// Whether the worker completed the job successfully.
@@ -373,7 +238,7 @@ impl std::fmt::Debug for CredentialResponse {
 
 /// Terminal result payload emitted with [`JobEventType::Result`].
 ///
-/// Provides a consistent serialised shape for job completion events,
+/// Provides a consistent serialized shape for job completion events,
 /// whether successful or failed.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TerminalResult {
