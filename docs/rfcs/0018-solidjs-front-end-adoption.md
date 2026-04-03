@@ -23,7 +23,7 @@ This RFC proposes the staged adoption plan for that new front end inside the
 main Axinite repository. The recommendation is not to turn the browser into a
 separately deployed product, nor to make the Bun mock backend part of
 production. Instead, Axinite should keep the Rust gateway as the authoritative
-runtime and same-origin entry point, but replace the handwritten browser shell
+runtime and same-origin entrypoint, but replace the handwritten browser shell
 with a built SolidJS application that is integrated into the main repository,
 served by the gateway, and rolled out behind feature flags.
 
@@ -126,7 +126,7 @@ forcing every deployment to switch immediately.
 - Goals:
   - Adopt the SolidJS front end into the main Axinite repository.
   - Preserve the Rust gateway as the authoritative production runtime and
-    same-origin browser entry point.
+    same-origin browser entrypoint.
   - Reuse the mockup's component, routing, API-module, localization, styling,
     and test architecture where it fits Axinite's real product surface.
   - Define a phased migration from the current embedded static UI to the new
@@ -142,8 +142,9 @@ forcing every deployment to switch immediately.
     change.
   - Replace Rust gateway ownership of authentication, authorization, and
     runtime mediation.
-  - Commit Axinite immediately to the fuller v2a state stack such as Zustand,
-    Dexie, or XState for all browser state.
+  - Commit Axinite immediately to the fuller `v2a` web front-end stack adopted
+    by df12 Productions, including state tools such as Zustand, Dexie, or
+    XState for all browser state.
 
 ## Proposed design
 
@@ -262,10 +263,10 @@ Adoption should happen in six stages.
   `FeatureFlagRegistry`.
 - Resolve that flag in the gateway at request time and use it to choose which
   browser entrypoint to serve. This RFC chooses gateway-side routing, not
-  client-side bootstrapping, for entry-point selection.
+  client-side bootstrapping, for entrypoint selection.
 - Keep the legacy UI available as a rollback path while the SPA is exercised
   against the real runtime.
-- Use the flag to gate entry-point selection, not merely to hide a button.
+- Use the flag to gate entrypoint selection, not merely to hide a button.
 - Keep `GET /api/features` for post-auth feature consumption inside the
   selected UI, but do not require the browser to fetch `/api/features` before
   it knows which entrypoint to bootstrap.
@@ -429,9 +430,9 @@ away most of the benefits of the new architecture. A compiled SPA should remain
 authored as a browser workspace with its own build, tests, and local preview
 story rather than being flattened back into hand-maintained static files.
 
-### Adopt the fuller v2a state stack immediately
+### Adopt the fuller `v2a` state stack immediately
 
-The broader v2a stack is useful context, but forcing Zustand, Dexie, and
+The broader `v2a` stack is useful context, but forcing Zustand, Dexie, and
 XState into the initial adoption would widen scope without clear immediate
 value. The browser should first land on the mockup's lighter Query-plus-signals
 shape and earn more machinery later if product behaviour demands it.
@@ -448,7 +449,7 @@ shape and earn more machinery later if product behaviour demands it.
 - Does the existing gateway WebSocket path still serve a browser need that the
   adopted SPA should keep, or can browser interactivity standardize on JSON plus
   SSE for the first cutover?
-- Where should feature-flag-driven entry-point selection live: inside the Rust
+- Where should feature-flag-driven entrypoint selection live: inside the Rust
   gateway handlers, inside the browser bootstrap, or in both places as a
   defence-in-depth measure?
 
