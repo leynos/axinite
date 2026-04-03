@@ -4,10 +4,10 @@
 //! OAuth flow. Tokens are stored in `~/.ironclaw/session.json` and refreshed
 //! automatically when expired.
 
+mod oauth;
+
 use std::path::PathBuf;
 use std::sync::Arc;
-
-use crate::llm::oauth_helpers::OAUTH_CALLBACK_PORT;
 
 use chrono::{DateTime, Utc};
 use reqwest::Client;
@@ -232,142 +232,7 @@ impl SessionManager {
     /// 2. Set NEARAI_API_KEY env var and save to bootstrap .env
     /// 3. No session token saved (different auth model)
     async fn initiate_login(&self) -> Result<(), LlmError> {
-        use crate::llm::oauth_helpers;
-
-        let cb_url = oauth_helpers::callback_url();
-        let host = oauth_helpers::callback_host();
-
-        // Show auth provider menu BEFORE binding the listener
-        println!();
-        println!("╔════════════════════════════════════════════════════════════════╗");
-        println!("║                    NEAR AI Authentication                      ║");
-        println!("╠════════════════════════════════════════════════════════════════╣");
-        println!("║  Choose an authentication method:                              ║");
-        println!("║                                                                ║");
-        println!("║    [1] GitHub            (requires localhost browser access)   ║");
-        println!("║    [2] Google            (requires localhost browser access)   ║");
-        println!("║    [3] NEAR Wallet (coming soon)                               ║");
-        println!("║    [4] NEAR AI Cloud API key                                   ║");
-        println!("║                                                                ║");
-        println!("╚════════════════════════════════════════════════════════════════╝");
-        println!();
-        print!("Enter choice [1-4]: ");
-
-        // Flush stdout to ensure prompt is displayed
-        use std::io::Write;
-        std::io::stdout().flush().ok();
-
-        // Read user choice
-        let mut choice = String::new();
-        std::io::stdin()
-            .read_line(&mut choice)
-            .map_err(|e| LlmError::SessionRenewalFailed {
-                provider: "nearai".to_string(),
-                reason: format!("Failed to read input: {}", e),
-            })?;
-
-        match choice.trim() {
-            "4" => return self.api_key_login().await,
-            "3" => {
-                println!();
-                println!("NEAR Wallet authentication is not yet implemented.");
-                println!("Please use GitHub or Google for now.");
-                return Err(LlmError::SessionRenewalFailed {
-                    provider: "nearai".to_string(),
-                    reason: "NEAR Wallet auth not yet implemented".to_string(),
-                });
-            }
-            "1" | "" | "2" => {} // handled below after listener bind
-            other => {
-                return Err(LlmError::SessionRenewalFailed {
-                    provider: "nearai".to_string(),
-                    reason: format!("Invalid choice: {}", other),
-                });
-            }
-        }
-
-        // Warn about plain-HTTP token transmission only for OAuth paths (1, 2)
-        // where the callback URL actually carries the session token.
-        if !oauth_helpers::is_loopback_host(&host) {
-            println!();
-            println!("Warning: OAuth callback is using plain HTTP to a remote host ({host}).");
-            println!("         The session token will be transmitted unencrypted.");
-            println!("         Consider SSH port forwarding instead:");
-            println!(
-                "           ssh -L {OAUTH_CALLBACK_PORT}:127.0.0.1:{OAUTH_CALLBACK_PORT} user@{host}"
-            );
-        }
-
-        // OAuth paths: bind the callback listener now
-        let listener = oauth_helpers::bind_callback_listener().await.map_err(|e| {
-            LlmError::SessionRenewalFailed {
-                provider: "nearai".to_string(),
-                reason: e.to_string(),
-            }
-        })?;
-
-        let (auth_provider, auth_url) = match choice.trim() {
-            "2" => {
-                let url = format!(
-                    "{}/v1/auth/google?frontend_callback={}",
-                    self.config.auth_base_url,
-                    urlencoding::encode(&cb_url)
-                );
-                ("google", url)
-            }
-            _ => {
-                // "1" or "" (default)
-                let url = format!(
-                    "{}/v1/auth/github?frontend_callback={}",
-                    self.config.auth_base_url,
-                    urlencoding::encode(&cb_url)
-                );
-                ("github", url)
-            }
-        };
-
-        println!();
-        println!("Opening {} authentication...", auth_provider);
-        println!();
-        println!("  {}", auth_url);
-        println!();
-
-        // Try to open browser automatically
-        if let Err(e) = open::that(&auth_url) {
-            tracing::debug!("Could not open browser automatically: {}", e);
-            println!("(Could not open browser automatically, please copy the URL above)");
-        } else {
-            println!("(Opening browser...)");
-        }
-        println!();
-        println!("Waiting for authentication...");
-
-        // The NEAR AI API redirects to: {frontend_callback}/auth/callback?token=X&...
-        let session_token =
-            oauth_helpers::wait_for_callback(listener, "/auth/callback", "token", "NEAR AI", None)
-                .await
-                .map_err(|e| LlmError::SessionRenewalFailed {
-                    provider: "nearai".to_string(),
-                    reason: e.to_string(),
-                })?;
-
-        let auth_provider = Some(auth_provider.to_string());
-
-        // Save the token
-        self.save_session(&session_token, auth_provider.as_deref())
-            .await?;
-
-        // Update in-memory token
-        {
-            let mut guard = self.token.write().await;
-            *guard = Some(SecretString::from(session_token));
-        }
-
-        println!();
-        println!("✓ Authentication successful!");
-        println!();
-
-        Ok(())
+        oauth::initiate_login_flow(self).await
     }
 
     /// NEAR AI Cloud API key entry flow.
@@ -379,51 +244,7 @@ impl SessionManager {
     /// No session token is saved and no `/v1/users/me` validation is
     /// performed (different auth model).
     async fn api_key_login(&self) -> Result<(), LlmError> {
-        println!();
-        println!("NEAR AI Cloud API key");
-        println!("─────────────────────");
-        println!();
-        println!("  1. Open https://cloud.near.ai in your browser");
-        println!("  2. Sign in and navigate to API Keys");
-        println!("  3. Create or copy an existing API key");
-        println!();
-
-        let key_secret =
-            crate::setup::secret_input("API key").map_err(|e| LlmError::SessionRenewalFailed {
-                provider: "nearai".to_string(),
-                reason: format!("Failed to read input: {}", e),
-            })?;
-
-        use secrecy::ExposeSecret;
-        let key = key_secret.expose_secret().to_string();
-        if key.is_empty() {
-            return Err(LlmError::SessionRenewalFailed {
-                provider: "nearai".to_string(),
-                reason: "API key cannot be empty".to_string(),
-            });
-        }
-
-        // Set env var so Config picks it up immediately
-        // (LlmConfig::resolve() auto-selects ChatCompletions mode when
-        // NEARAI_API_KEY is present).
-        //
-        // SAFETY: called during single-threaded interactive login flow.
-        unsafe {
-            std::env::set_var("NEARAI_API_KEY", &key);
-        }
-
-        // Persist to ~/.ironclaw/.env so the key survives restarts
-        // (bootstrap layer — available before DB is connected).
-        // Uses upsert to avoid clobbering existing bootstrap vars.
-        if let Err(e) = crate::bootstrap::upsert_bootstrap_var("NEARAI_API_KEY", &key) {
-            tracing::warn!("Failed to save API key to bootstrap .env: {}", e);
-        }
-
-        println!();
-        crate::setup::print_success("NEAR AI Cloud API key saved.");
-        println!();
-
-        Ok(())
+        oauth::api_key_flow(self).await
     }
 
     /// Save session data to disk and (if available) to the database.

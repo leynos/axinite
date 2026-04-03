@@ -8,7 +8,7 @@ use uuid::Uuid;
 #[cfg(feature = "postgres")]
 use super::{Store, parse_job_state};
 #[cfg(feature = "postgres")]
-use crate::context::{JobContext, JobState};
+use crate::context::{JobContext, JobState, StateTransition};
 #[cfg(feature = "postgres")]
 use crate::error::DatabaseError;
 
@@ -59,6 +59,8 @@ impl Store {
 
         let status = ctx.state.to_string();
         let estimated_time_secs = ctx.estimated_duration.map(|d| d.as_secs() as i32);
+        let transitions = serde_json::to_value(&ctx.transitions)
+            .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
         conn.execute(
             r#"
@@ -66,9 +68,9 @@ impl Store {
                 id, conversation_id, title, description, category, status, source,
                 user_id,
                 budget_amount, budget_token, bid_amount, estimated_cost, estimated_time_secs,
-                actual_cost, repair_attempts, max_tokens, total_tokens_used,
-                created_at, started_at, completed_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+                actual_cost, repair_attempts, transitions, metadata, user_timezone,
+                max_tokens, total_tokens_used, created_at, started_at, completed_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
             ON CONFLICT (id) DO UPDATE SET
                 title = EXCLUDED.title,
                 description = EXCLUDED.description,
@@ -79,6 +81,9 @@ impl Store {
                 estimated_time_secs = EXCLUDED.estimated_time_secs,
                 actual_cost = EXCLUDED.actual_cost,
                 repair_attempts = EXCLUDED.repair_attempts,
+                transitions = EXCLUDED.transitions,
+                metadata = EXCLUDED.metadata,
+                user_timezone = EXCLUDED.user_timezone,
                 max_tokens = EXCLUDED.max_tokens,
                 total_tokens_used = EXCLUDED.total_tokens_used,
                 started_at = EXCLUDED.started_at,
@@ -100,6 +105,9 @@ impl Store {
                 &estimated_time_secs,
                 &ctx.actual_cost,
                 &(ctx.repair_attempts as i32),
+                &transitions,
+                &ctx.metadata,
+                &ctx.user_timezone,
                 &(ctx.max_tokens as i64),
                 &(ctx.total_tokens_used as i64),
                 &ctx.created_at,
@@ -121,8 +129,8 @@ impl Store {
                 r#"
                 SELECT id, conversation_id, title, description, category, status, user_id,
                        budget_amount, budget_token, bid_amount, estimated_cost, estimated_time_secs,
-                       actual_cost, repair_attempts, max_tokens, total_tokens_used,
-                       created_at, started_at, completed_at
+                       actual_cost, repair_attempts, transitions, metadata, user_timezone,
+                       max_tokens, total_tokens_used, created_at, started_at, completed_at
                 FROM agent_jobs WHERE id = $1 AND source = 'direct'
                 "#,
                 &[&id],
@@ -134,6 +142,10 @@ impl Store {
                 let status_str: String = row.get("status");
                 let state = parse_job_state(&status_str)?;
                 let estimated_time_secs: Option<i32> = row.get("estimated_time_secs");
+                let transitions_json: serde_json::Value = row.get("transitions");
+                let transitions: Vec<StateTransition> = serde_json::from_value(transitions_json)
+                    .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+                let metadata: serde_json::Value = row.get("metadata");
 
                 Ok(Some(JobContext {
                     job_id: row.get("id"),
@@ -153,11 +165,11 @@ impl Store {
                         .get::<_, Option<Decimal>>("actual_cost")
                         .unwrap_or_default(),
                     repair_attempts: row.get::<_, i32>("repair_attempts") as u32,
+                    transitions,
+                    metadata,
                     created_at: row.get("created_at"),
                     started_at: row.get("started_at"),
                     completed_at: row.get("completed_at"),
-                    transitions: Vec::new(),
-                    metadata: serde_json::Value::Null,
                     max_tokens: row.get::<_, Option<i64>>("max_tokens").unwrap_or(0) as u64,
                     total_tokens_used: row.get::<_, Option<i64>>("total_tokens_used").unwrap_or(0)
                         as u64,
@@ -166,7 +178,9 @@ impl Store {
                     tool_output_stash: std::sync::Arc::new(tokio::sync::RwLock::new(
                         std::collections::HashMap::new(),
                     )),
-                    user_timezone: "UTC".to_string(),
+                    user_timezone: row
+                        .get::<_, Option<String>>("user_timezone")
+                        .unwrap_or_else(|| "UTC".to_string()),
                 }))
             }
             None => Ok(None),
@@ -288,7 +302,7 @@ impl Store {
 mod tests {
     use super::*;
 
-    /// Regression test: save_job must persist user_id and get_job must return it.
+    /// Regression test: save_job must persist user-owned and context fields.
     /// Requires a running PostgreSQL instance (integration tier).
     #[cfg(feature = "postgres")]
     #[tokio::test]
@@ -308,10 +322,21 @@ mod tests {
             .expect("Failed to run migrations");
 
         let ctx = JobContext::with_user("test-user-42", "PG user_id test", "regression test");
+        let mut ctx = ctx.with_timezone("Europe/London");
+        ctx.metadata = serde_json::json!({ "mode": "regression" });
+        ctx.transitions.push(StateTransition {
+            from: JobState::Pending,
+            to: JobState::InProgress,
+            timestamp: Utc::now(),
+            reason: Some("test".to_string()),
+        });
         store.save_job(&ctx).await.unwrap();
 
         let loaded = store.get_job(ctx.job_id).await.unwrap().unwrap();
         assert_eq!(loaded.user_id, "test-user-42");
+        assert_eq!(loaded.user_timezone, "Europe/London");
+        assert_eq!(loaded.metadata, ctx.metadata);
+        assert_eq!(loaded.transitions.len(), 1);
 
         let conn = store.conn().await.unwrap();
         conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&ctx.job_id])

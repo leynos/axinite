@@ -36,14 +36,16 @@ const MAX_HISTORY_LIMIT: usize = 200;
 async fn load_stored_history(
     store: &Arc<dyn Database>,
     thread_id: Uuid,
-    before_cursor: Option<chrono::DateTime<chrono::Utc>>,
+    before_cursor: Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
     limit: usize,
 ) -> Result<HistoryResponse, (StatusCode, String)> {
     let (messages, has_more) = store
         .list_conversation_messages_paginated(thread_id, before_cursor, limit as i64)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let oldest_timestamp = messages.first().map(|m| m.created_at.to_rfc3339());
+    let oldest_timestamp = messages
+        .first()
+        .map(|message| format!("{}|{}", message.created_at.to_rfc3339(), message.id));
     let turns = build_turns_from_db_messages(&messages);
 
     Ok(HistoryResponse {
@@ -73,14 +75,25 @@ pub async fn chat_history_handler(
         .before
         .as_deref()
         .map(|value| {
-            chrono::DateTime::parse_from_rfc3339(value)
+            let (timestamp, message_id) = value.split_once('|').ok_or((
+                StatusCode::BAD_REQUEST,
+                "Invalid 'before' cursor".to_string(),
+            ))?;
+            let parsed_timestamp = chrono::DateTime::parse_from_rfc3339(timestamp)
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .map_err(|_| {
                     (
                         StatusCode::BAD_REQUEST,
-                        "Invalid 'before' timestamp".to_string(),
+                        "Invalid 'before' cursor".to_string(),
                     )
-                })
+                })?;
+            let parsed_id = Uuid::parse_str(message_id).map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "Invalid 'before' cursor".to_string(),
+                )
+            })?;
+            Ok((parsed_timestamp, parsed_id))
         })
         .transpose()?;
 

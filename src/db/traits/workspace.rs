@@ -14,18 +14,29 @@ use crate::workspace::{MemoryChunk, MemoryDocument, SearchConfig, SearchResult, 
 
 /// Parameters for `insert_chunk`.
 pub struct InsertChunkParams<'a> {
+    /// Durable UUID of the parent document that will own this chunk.
     pub document_id: Uuid,
+    /// Zero-based ordinal of this chunk within the document.
     pub chunk_index: i32,
+    /// UTF-8 chunk body to persist for search and retrieval.
     pub content: &'a str,
+    /// Optional embedding vector for the chunk; when present it should match
+    /// the backend's expected floating-point dimensionality.
     pub embedding: Option<&'a [f32]>,
 }
 
 /// Parameters for `hybrid_search`.
 pub struct HybridSearchParams<'a> {
+    /// Owning user identifier used to scope the search query.
     pub user_id: &'a str,
+    /// Optional agent UUID for agent-scoped workspace searches.
     pub agent_id: Option<Uuid>,
+    /// UTF-8 search query text used for lexical ranking and diagnostics.
     pub query: &'a str,
+    /// Optional query embedding; when present it should use the same vector
+    /// shape as stored chunk embeddings.
     pub embedding: Option<&'a [f32]>,
+    /// Search controls such as limits, weighting, and FTS/vector tuning.
     pub config: &'a SearchConfig,
 }
 

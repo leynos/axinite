@@ -12,9 +12,9 @@ mod mapping;
 #[cfg(feature = "postgres")]
 use super::Store;
 #[cfg(feature = "postgres")]
-use crate::agent::routine::{Routine, RoutineRun, RunStatus};
+use crate::agent::routine::{Routine, RoutineRun};
 #[cfg(feature = "postgres")]
-use crate::db::RoutineRuntimeUpdate;
+use crate::db::{RoutineRunCompletion, RoutineRuntimeUpdate};
 #[cfg(feature = "postgres")]
 use crate::error::DatabaseError;
 
@@ -139,9 +139,10 @@ impl Store {
 
     /// List all enabled cron routines whose next_fire_at <= now.
     pub async fn list_due_cron_routines(&self) -> Result<Vec<Routine>, DatabaseError> {
-        let conn = self.conn().await?;
+        let mut conn = self.conn().await?;
         let now = Utc::now();
-        let rows = conn
+        let tx = conn.transaction().await?;
+        let rows = tx
             .query(
                 r#"
                 SELECT * FROM routines
@@ -149,11 +150,23 @@ impl Store {
                   AND trigger_type = 'cron'
                   AND next_fire_at IS NOT NULL
                   AND next_fire_at <= $1
+                FOR UPDATE SKIP LOCKED
                 "#,
                 &[&now],
             )
             .await?;
-        rows.iter().map(row_to_routine).collect()
+        let mut routines = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let routine = row_to_routine(row)?;
+            tx.execute(
+                "UPDATE routines SET next_fire_at = NULL, updated_at = now() WHERE id = $1",
+                &[&routine.id],
+            )
+            .await?;
+            routines.push(routine);
+        }
+        tx.commit().await?;
+        Ok(routines)
     }
 
     /// Update a routine (full replacement of mutable fields).
@@ -277,11 +290,14 @@ impl Store {
     /// Complete a routine run.
     pub async fn complete_routine_run(
         &self,
-        id: Uuid,
-        status: RunStatus,
-        result_summary: Option<&str>,
-        tokens_used: Option<i32>,
+        completion: RoutineRunCompletion<'_>,
     ) -> Result<(), DatabaseError> {
+        let RoutineRunCompletion {
+            id,
+            status,
+            result_summary,
+            tokens_used,
+        } = completion;
         let conn = self.conn().await?;
         let status_str = status.to_string();
         let now = Utc::now();

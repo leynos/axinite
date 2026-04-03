@@ -7,7 +7,7 @@ use super::{
     LibSqlBackend, fmt_opt_ts, fmt_ts, get_decimal, get_i64, get_json, get_opt_decimal,
     get_opt_text, get_opt_ts, get_text, get_ts, opt_text, opt_text_owned, parse_job_state,
 };
-use crate::context::{ActionRecord, JobContext, JobState};
+use crate::context::{ActionRecord, JobContext, JobState, StateTransition};
 use crate::db::{EstimationActualsParams, EstimationSnapshotParams, NativeJobStore};
 use crate::error::DatabaseError;
 use crate::history::{AgentJobRecord, AgentJobSummary, LlmCallRecord};
@@ -19,6 +19,8 @@ impl NativeJobStore for LibSqlBackend {
         let conn = self.connect().await?;
         let status = ctx.state.to_string();
         let estimated_time_secs = ctx.estimated_duration.map(|d| d.as_secs() as i64);
+        let transitions = serde_json::to_string(&ctx.transitions)
+            .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
         conn
             .execute(
@@ -27,9 +29,9 @@ impl NativeJobStore for LibSqlBackend {
                     id, conversation_id, title, description, category, status, source,
                     user_id,
                     budget_amount, budget_token, bid_amount, estimated_cost, estimated_time_secs,
-                    actual_cost, repair_attempts, max_tokens, total_tokens_used,
-                    created_at, started_at, completed_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+                    actual_cost, repair_attempts, transitions, metadata, user_timezone,
+                    max_tokens, total_tokens_used, created_at, started_at, completed_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
                 ON CONFLICT (id) DO UPDATE SET
                     title = excluded.title,
                     description = excluded.description,
@@ -40,6 +42,9 @@ impl NativeJobStore for LibSqlBackend {
                     estimated_time_secs = excluded.estimated_time_secs,
                     actual_cost = excluded.actual_cost,
                     repair_attempts = excluded.repair_attempts,
+                    transitions = excluded.transitions,
+                    metadata = excluded.metadata,
+                    user_timezone = excluded.user_timezone,
                     max_tokens = excluded.max_tokens,
                     total_tokens_used = excluded.total_tokens_used,
                     started_at = excluded.started_at,
@@ -61,6 +66,9 @@ impl NativeJobStore for LibSqlBackend {
                     estimated_time_secs,
                     ctx.actual_cost.to_string(),
                     ctx.repair_attempts as i64,
+                    transitions,
+                    ctx.metadata.to_string(),
+                    ctx.user_timezone.as_str(),
                     ctx.max_tokens as i64,
                     ctx.total_tokens_used as i64,
                     fmt_ts(&ctx.created_at),
@@ -80,8 +88,8 @@ impl NativeJobStore for LibSqlBackend {
                 r#"
                 SELECT id, conversation_id, title, description, category, status, user_id,
                        budget_amount, budget_token, bid_amount, estimated_cost, estimated_time_secs,
-                       actual_cost, repair_attempts, max_tokens, total_tokens_used,
-                       created_at, started_at, completed_at
+                       actual_cost, repair_attempts, transitions, metadata, user_timezone,
+                       max_tokens, total_tokens_used, created_at, started_at, completed_at
                 FROM agent_jobs WHERE id = ?1 AND source = 'direct'
                 "#,
                 params![id.to_string()],
@@ -98,6 +106,9 @@ impl NativeJobStore for LibSqlBackend {
                 let status_str = get_text(&row, 5);
                 let state = parse_job_state(&status_str);
                 let estimated_time_secs: Option<i64> = row.get::<i64>(11).ok();
+                let transitions: Vec<StateTransition> = serde_json::from_value(get_json(&row, 14))
+                    .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+                let metadata = get_json(&row, 15);
 
                 Ok(Some(JobContext {
                     job_id: get_text(&row, 0).parse().unwrap_or_default(),
@@ -114,22 +125,20 @@ impl NativeJobStore for LibSqlBackend {
                     estimated_duration: estimated_time_secs
                         .map(|s| std::time::Duration::from_secs(s as u64)),
                     actual_cost: get_decimal(&row, 12),
-                    max_tokens: get_i64(&row, 14) as u64,
-                    total_tokens_used: get_i64(&row, 15) as u64,
                     repair_attempts: get_i64(&row, 13) as u32,
-                    created_at: get_ts(&row, 16),
-                    started_at: get_opt_ts(&row, 17),
-                    completed_at: get_opt_ts(&row, 18),
-                    transitions: Vec::new(),
-                    metadata: serde_json::Value::Null,
+                    transitions,
+                    metadata,
+                    max_tokens: get_i64(&row, 17) as u64,
+                    total_tokens_used: get_i64(&row, 18) as u64,
+                    created_at: get_ts(&row, 19),
+                    started_at: get_opt_ts(&row, 20),
+                    completed_at: get_opt_ts(&row, 21),
                     extra_env: std::sync::Arc::new(std::collections::HashMap::new()),
                     http_interceptor: None,
                     tool_output_stash: std::sync::Arc::new(tokio::sync::RwLock::new(
                         std::collections::HashMap::new(),
                     )),
-                    // TODO(#661): persist user_timezone in agent_jobs table so
-                    // background/routine jobs retain the session's timezone context.
-                    user_timezone: "UTC".to_string(),
+                    user_timezone: get_text(&row, 16),
                 }))
             }
             None => Ok(None),

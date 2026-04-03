@@ -15,6 +15,7 @@ use crate::history::SettingRow;
 pub struct UserId(String);
 
 impl UserId {
+    /// Return a borrowed `&str` view of the inner user identifier.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -43,6 +44,7 @@ impl fmt::Display for UserId {
 pub struct SettingKey(String);
 
 impl SettingKey {
+    /// Return a borrowed `&str` view of the inner setting key.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -68,79 +70,95 @@ impl fmt::Display for SettingKey {
 
 /// Object-safe persistence surface for per-user key-value settings.
 pub trait SettingsStore: Send + Sync {
+    /// Load one JSON setting value for `user_id` and `key`.
     fn get_setting<'a>(
         &'a self,
         user_id: UserId,
         key: SettingKey,
     ) -> DbFuture<'a, Result<Option<serde_json::Value>, DatabaseError>>;
+    /// Load one full persisted setting row for `user_id` and `key`.
     fn get_setting_full<'a>(
         &'a self,
         user_id: UserId,
         key: SettingKey,
     ) -> DbFuture<'a, Result<Option<SettingRow>, DatabaseError>>;
+    /// Insert or replace the JSON value stored at `(user_id, key)`.
     fn set_setting<'a>(
         &'a self,
         user_id: UserId,
         key: SettingKey,
         value: &'a serde_json::Value,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
+    /// Delete the setting row at `(user_id, key)`.
     fn delete_setting<'a>(
         &'a self,
         user_id: UserId,
         key: SettingKey,
     ) -> DbFuture<'a, Result<bool, DatabaseError>>;
+    /// List every persisted setting row for `user_id`.
     fn list_settings<'a>(
         &'a self,
         user_id: UserId,
     ) -> DbFuture<'a, Result<Vec<SettingRow>, DatabaseError>>;
+    /// Load all settings for `user_id` as a key-to-value map.
     fn get_all_settings<'a>(
         &'a self,
         user_id: UserId,
     ) -> DbFuture<'a, Result<HashMap<String, serde_json::Value>, DatabaseError>>;
+    /// Replace the full settings set for `user_id` with `settings`.
     fn set_all_settings<'a>(
         &'a self,
         user_id: UserId,
         settings: &'a HashMap<String, serde_json::Value>,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
+    /// Report whether any settings exist for `user_id`.
     fn has_settings<'a>(&'a self, user_id: UserId) -> DbFuture<'a, Result<bool, DatabaseError>>;
 }
 
 /// Native async sibling trait for concrete settings-store implementations.
 pub trait NativeSettingsStore: Send + Sync {
+    /// Load one JSON setting value for `user_id` and `key`.
     fn get_setting<'a>(
         &'a self,
         user_id: UserId,
         key: SettingKey,
     ) -> impl Future<Output = Result<Option<serde_json::Value>, DatabaseError>> + Send + 'a;
+    /// Load one full persisted setting row for `user_id` and `key`.
     fn get_setting_full<'a>(
         &'a self,
         user_id: UserId,
         key: SettingKey,
     ) -> impl Future<Output = Result<Option<SettingRow>, DatabaseError>> + Send + 'a;
+    /// Insert or replace the JSON value stored at `(user_id, key)`.
     fn set_setting<'a>(
         &'a self,
         user_id: UserId,
         key: SettingKey,
         value: &'a serde_json::Value,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
+    /// Delete the setting row at `(user_id, key)`.
     fn delete_setting<'a>(
         &'a self,
         user_id: UserId,
         key: SettingKey,
     ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
+    /// List every persisted setting row for `user_id`.
     fn list_settings<'a>(
         &'a self,
         user_id: UserId,
     ) -> impl Future<Output = Result<Vec<SettingRow>, DatabaseError>> + Send + 'a;
+    /// Load all settings for `user_id` as a key-to-value map.
     fn get_all_settings<'a>(
         &'a self,
         user_id: UserId,
     ) -> impl Future<Output = Result<HashMap<String, serde_json::Value>, DatabaseError>> + Send + 'a;
+    /// Replace the full settings set for `user_id` with `settings`.
     fn set_all_settings<'a>(
         &'a self,
         user_id: UserId,
         settings: &'a HashMap<String, serde_json::Value>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
+    /// Report whether any settings exist for `user_id`.
     fn has_settings<'a>(
         &'a self,
         user_id: UserId,

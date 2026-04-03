@@ -166,6 +166,15 @@ ALTER TABLE agent_jobs ADD COLUMN total_tokens_used INTEGER NOT NULL DEFAULT 0;
         "assistant_conversation_unique_index",
         include_str!("../../migrations/V15__assistant_conversation_unique_index.sql"),
     ),
+    (
+        16,
+        "agent_jobs_context_fields",
+        r#"
+ALTER TABLE agent_jobs ADD COLUMN transitions TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE agent_jobs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';
+"#,
+    ),
 ];
 
 /// Run incremental migrations that haven't been applied yet.
@@ -209,6 +218,12 @@ pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::err
             continue;
         }
 
+        if version == 16 {
+            apply_agent_jobs_context_fields_migration(conn, version, name).await?;
+            tracing::info!(version, name, "libSQL: migration applied successfully");
+            continue;
+        }
+
         // Wrap migration + recording in a transaction for atomicity.
         // If the process crashes mid-migration, the transaction rolls back
         // and the migration will be retried on next startup.
@@ -242,6 +257,85 @@ pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::err
 
         tracing::info!(version, name, "libSQL: migration applied successfully");
     }
+
+    Ok(())
+}
+
+async fn apply_agent_jobs_context_fields_migration(
+    conn: &libsql::Connection,
+    version: i64,
+    name: &str,
+) -> Result<(), crate::error::DatabaseError> {
+    use crate::error::DatabaseError;
+
+    let mut rows = conn
+        .query("PRAGMA table_info(agent_jobs)", ())
+        .await
+        .map_err(|e| {
+            DatabaseError::Migration(format!(
+                "libSQL migration V{version} ({name}): failed to inspect agent_jobs schema: {e}"
+            ))
+        })?;
+    let mut columns = std::collections::BTreeSet::new();
+
+    while let Some(row) = rows.next().await.map_err(|e| {
+        DatabaseError::Migration(format!(
+            "libSQL migration V{version} ({name}): failed to read agent_jobs schema: {e}"
+        ))
+    })? {
+        let column_name = row.get::<String>(1).map_err(|e| {
+            DatabaseError::Migration(format!(
+                "libSQL migration V{version} ({name}): failed to decode agent_jobs column name: {e}"
+            ))
+        })?;
+        columns.insert(column_name);
+    }
+
+    let mut statements = Vec::new();
+    if !columns.contains("transitions") {
+        statements
+            .push("ALTER TABLE agent_jobs ADD COLUMN transitions TEXT NOT NULL DEFAULT '[]';");
+    }
+    if !columns.contains("metadata") {
+        statements.push("ALTER TABLE agent_jobs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';");
+    }
+    if !columns.contains("user_timezone") {
+        statements
+            .push("ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';");
+    }
+
+    let tx = conn.transaction().await.map_err(|e| {
+        DatabaseError::Migration(format!(
+            "libSQL migration V{version}: failed to start transaction: {e}"
+        ))
+    })?;
+
+    if !statements.is_empty() {
+        tx.execute_batch(&statements.join("\n"))
+            .await
+            .map_err(|e| {
+                DatabaseError::Migration(format!(
+                    "libSQL migration V{version} ({name}) failed: {e}"
+                ))
+            })?;
+    }
+
+    tx.execute(
+        "INSERT INTO _migrations (version, name) VALUES (?1, ?2)",
+        libsql::params![version, name],
+    )
+    .await
+    .map_err(|e| {
+        DatabaseError::Migration(format!(
+            "Failed to record migration V{version} ({name}): {e}"
+        ))
+    })?;
+
+    tx.commit().await.map_err(|e| {
+        DatabaseError::Migration(format!(
+            "libSQL migration V{version} ({name}): commit failed: {e}"
+        ))
+    })?;
 
     Ok(())
 }

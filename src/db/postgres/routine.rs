@@ -64,15 +64,7 @@ impl NativeRoutineStore for PgBackend {
         &self,
         params: RoutineRunCompletion<'_>,
     ) -> Result<(), DatabaseError> {
-        let RoutineRunCompletion {
-            id,
-            status,
-            result_summary,
-            tokens_used,
-        } = params;
-        self.store
-            .complete_routine_run(id, status, result_summary, tokens_used)
-            .await
+        self.store.complete_routine_run(params).await
     }
 
     async fn list_routine_runs(

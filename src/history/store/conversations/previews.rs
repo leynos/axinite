@@ -1,5 +1,8 @@
 //! Conversation preview list queries and title resolution.
 
+#[cfg(feature = "postgres")]
+use tokio_postgres::Row;
+
 use super::{ConversationSummary, Store};
 use crate::error::DatabaseError;
 
@@ -20,6 +23,26 @@ pub(super) fn resolve_preview_title(
                 .and_then(|value| value.as_str())
                 .map(String::from)
         })
+}
+
+#[cfg(feature = "postgres")]
+fn row_to_conversation_summary(row: &Row) -> ConversationSummary {
+    let metadata: serde_json::Value = row.get("metadata");
+    let thread_type = metadata
+        .get("thread_type")
+        .and_then(|value| value.as_str())
+        .map(String::from);
+    let title = resolve_preview_title(&metadata, row.get("title"));
+
+    ConversationSummary {
+        id: row.get("id"),
+        title,
+        message_count: row.get("message_count"),
+        started_at: row.get("started_at"),
+        last_activity: row.get("last_activity"),
+        thread_type,
+        channel: row.get("channel"),
+    }
 }
 
 #[cfg(feature = "postgres")]
@@ -57,26 +80,7 @@ impl Store {
             )
             .await?;
 
-        Ok(rows
-            .iter()
-            .map(|r| {
-                let metadata: serde_json::Value = r.get("metadata");
-                let thread_type = metadata
-                    .get("thread_type")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let title = resolve_preview_title(&metadata, r.get("title"));
-                ConversationSummary {
-                    id: r.get("id"),
-                    title,
-                    message_count: r.get("message_count"),
-                    started_at: r.get("started_at"),
-                    last_activity: r.get("last_activity"),
-                    thread_type,
-                    channel: r.get("channel"),
-                }
-            })
-            .collect())
+        Ok(rows.iter().map(row_to_conversation_summary).collect())
     }
 
     /// List conversations across all channels with a title derived from the first user message.
@@ -111,26 +115,7 @@ impl Store {
             )
             .await?;
 
-        Ok(rows
-            .iter()
-            .map(|r| {
-                let metadata: serde_json::Value = r.get("metadata");
-                let thread_type = metadata
-                    .get("thread_type")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let title = resolve_preview_title(&metadata, r.get("title"));
-                ConversationSummary {
-                    id: r.get("id"),
-                    title,
-                    message_count: r.get("message_count"),
-                    started_at: r.get("started_at"),
-                    last_activity: r.get("last_activity"),
-                    thread_type,
-                    channel: r.get("channel"),
-                }
-            })
-            .collect())
+        Ok(rows.iter().map(row_to_conversation_summary).collect())
     }
 }
 
@@ -163,6 +148,18 @@ mod tests {
         assert_eq!(
             resolve_preview_title(&metadata, Some("First user message".to_string())),
             Some("First user message".to_string())
+        );
+    }
+
+    #[test]
+    fn preview_title_falls_back_to_routine_name() {
+        let metadata = json!({
+            "routine_name": "daily-standup",
+        });
+
+        assert_eq!(
+            resolve_preview_title(&metadata, None),
+            Some("daily-standup".to_string())
         );
     }
 }

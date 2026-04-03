@@ -187,6 +187,9 @@ impl NativeRoutineStore for LibSqlBackend {
     async fn list_due_cron_routines(&self) -> Result<Vec<Routine>, DatabaseError> {
         let conn = self.connect().await?;
         let now = fmt_ts(&Utc::now());
+        conn.execute("BEGIN IMMEDIATE", params![])
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
         let mut rows = conn
             .query(
                 &format!(
@@ -198,15 +201,38 @@ impl NativeRoutineStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
 
-        let mut routines = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .await
-            .map_err(|e| DatabaseError::Query(e.to_string()))?
-        {
-            routines.push(row_to_routine_libsql(&row)?);
+        let result: Result<Vec<Routine>, DatabaseError> = async {
+            let mut routines = Vec::new();
+            while let Some(row) = rows
+                .next()
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?
+            {
+                let routine = row_to_routine_libsql(&row)?;
+                conn.execute(
+                    "UPDATE routines SET next_fire_at = NULL, updated_at = ?2 WHERE id = ?1",
+                    params![routine.id.to_string(), fmt_ts(&Utc::now())],
+                )
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?;
+                routines.push(routine);
+            }
+            Ok(routines)
         }
-        Ok(routines)
+        .await;
+
+        match &result {
+            Ok(_) => {
+                conn.execute("COMMIT", params![])
+                    .await
+                    .map_err(|e| DatabaseError::Query(e.to_string()))?;
+            }
+            Err(_) => {
+                let _ = conn.execute("ROLLBACK", params![]).await;
+            }
+        }
+
+        result
     }
 
     async fn update_routine(&self, routine: &Routine) -> Result<(), DatabaseError> {

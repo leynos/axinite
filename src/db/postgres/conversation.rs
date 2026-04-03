@@ -22,7 +22,7 @@ impl NativeConversationStore for PgBackend {
         async fn get_or_create_heartbeat_conversation(&self, user_id: &str) -> Result<Uuid, DatabaseError>;
         async fn get_or_create_assistant_conversation(&self, user_id: &str, channel: &str) -> Result<Uuid, DatabaseError>;
         async fn create_conversation_with_metadata(&self, channel: &str, user_id: &str, metadata: &serde_json::Value) -> Result<Uuid, DatabaseError>;
-        async fn list_conversation_messages_paginated(&self, conversation_id: Uuid, before: Option<DateTime<Utc>>, limit: i64) -> Result<(Vec<ConversationMessage>, bool), DatabaseError>;
+        async fn list_conversation_messages_paginated(&self, conversation_id: Uuid, before: Option<(DateTime<Utc>, Uuid)>, limit: i64) -> Result<(Vec<ConversationMessage>, bool), DatabaseError>;
         async fn update_conversation_metadata_field(&self, id: Uuid, key: &str, value: &serde_json::Value) -> Result<(), DatabaseError>;
         async fn get_conversation_metadata(&self, id: Uuid) -> Result<Option<serde_json::Value>, DatabaseError>;
         async fn list_conversation_messages(&self, conversation_id: Uuid) -> Result<Vec<ConversationMessage>, DatabaseError>;

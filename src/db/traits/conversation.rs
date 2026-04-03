@@ -14,9 +14,14 @@ use crate::history::{ConversationMessage, ConversationSummary};
 
 /// Parameters for `ensure_conversation`.
 pub struct EnsureConversationParams<'a> {
+    /// Stable conversation UUID to create or re-confirm.
     pub id: Uuid,
+    /// Channel identifier that owns the conversation, such as `"web"` or `"routine"`.
     pub channel: &'a str,
+    /// Owning user identifier string for access control and scoping.
     pub user_id: &'a str,
+    /// Optional thread identifier for threaded channels; `None` for channels
+    /// that do not expose a separate thread key.
     pub thread_id: Option<&'a str>,
 }
 
@@ -126,7 +131,7 @@ pub trait ConversationStore: Send + Sync {
     fn list_conversation_messages_paginated<'a>(
         &'a self,
         conversation_id: Uuid,
-        before: Option<DateTime<Utc>>,
+        before: Option<(DateTime<Utc>, Uuid)>,
         limit: i64,
     ) -> DbFuture<'a, Result<(Vec<ConversationMessage>, bool), DatabaseError>>;
     /// Merge one metadata field into the stored conversation metadata object.
@@ -231,7 +236,7 @@ pub trait NativeConversationStore: Send + Sync {
     fn list_conversation_messages_paginated<'a>(
         &'a self,
         conversation_id: Uuid,
-        before: Option<DateTime<Utc>>,
+        before: Option<(DateTime<Utc>, Uuid)>,
         limit: i64,
     ) -> impl Future<Output = Result<(Vec<ConversationMessage>, bool), DatabaseError>> + Send + 'a;
     /// Merge one metadata field into the stored conversation metadata object.

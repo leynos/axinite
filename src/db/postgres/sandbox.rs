@@ -22,24 +22,7 @@ impl NativeSandboxStore for PgBackend {
         &self,
         params: SandboxJobStatusUpdate<'_>,
     ) -> Result<(), DatabaseError> {
-        let SandboxJobStatusUpdate {
-            id,
-            status,
-            success,
-            message,
-            started_at,
-            completed_at,
-        } = params;
-        self.store
-            .update_sandbox_job_status(SandboxJobStatusUpdate {
-                id,
-                status,
-                success,
-                message,
-                started_at,
-                completed_at,
-            })
-            .await
+        self.store.update_sandbox_job_status(params).await
     }
 
     crate::delegate_async! {

@@ -3,9 +3,9 @@
 #[cfg(feature = "postgres")]
 use super::Store;
 #[cfg(feature = "postgres")]
-use crate::error::DatabaseError;
+use crate::db::{EstimationActualsParams, EstimationSnapshotParams};
 #[cfg(feature = "postgres")]
-use rust_decimal::Decimal;
+use crate::error::DatabaseError;
 #[cfg(feature = "postgres")]
 use uuid::Uuid;
 
@@ -14,13 +14,16 @@ impl Store {
     /// Save an estimation snapshot for learning.
     pub async fn save_estimation_snapshot(
         &self,
-        job_id: Uuid,
-        category: &str,
-        tool_names: &[String],
-        estimated_cost: Decimal,
-        estimated_time_secs: i32,
-        estimated_value: Decimal,
+        params: EstimationSnapshotParams<'_>,
     ) -> Result<Uuid, DatabaseError> {
+        let EstimationSnapshotParams {
+            job_id,
+            category,
+            tool_names,
+            estimated_cost,
+            estimated_time_secs,
+            estimated_value,
+        } = params;
         let conn = self.conn().await?;
         let id = Uuid::new_v4();
 
@@ -47,11 +50,14 @@ impl Store {
     /// Update estimation snapshot with actual values.
     pub async fn update_estimation_actuals(
         &self,
-        id: Uuid,
-        actual_cost: Decimal,
-        actual_time_secs: i32,
-        actual_value: Option<Decimal>,
+        params: EstimationActualsParams,
     ) -> Result<(), DatabaseError> {
+        let EstimationActualsParams {
+            id,
+            actual_cost,
+            actual_time_secs,
+            actual_value,
+        } = params;
         let conn = self.conn().await?;
 
         let rows = conn.execute(

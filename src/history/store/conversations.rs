@@ -173,22 +173,23 @@ impl Store {
     pub async fn list_conversation_messages_paginated(
         &self,
         conversation_id: Uuid,
-        before: Option<DateTime<Utc>>,
+        before: Option<(DateTime<Utc>, Uuid)>,
         limit: i64,
     ) -> Result<(Vec<ConversationMessage>, bool), DatabaseError> {
         let conn = self.conn().await?;
         let fetch_limit = limit + 1;
 
-        let rows = if let Some(before_ts) = before {
+        let rows = if let Some((before_ts, before_id)) = before {
             conn.query(
                 r#"
                 SELECT id, role, content, created_at
                 FROM conversation_messages
-                WHERE conversation_id = $1 AND created_at < $2
-                ORDER BY created_at DESC
-                LIMIT $3
+                WHERE conversation_id = $1
+                  AND (created_at < $2 OR (created_at = $2 AND id < $3))
+                ORDER BY created_at DESC, id DESC
+                LIMIT $4
                 "#,
-                &[&conversation_id, &before_ts, &fetch_limit],
+                &[&conversation_id, &before_ts, &before_id, &fetch_limit],
             )
             .await?
         } else {
@@ -197,7 +198,7 @@ impl Store {
                 SELECT id, role, content, created_at
                 FROM conversation_messages
                 WHERE conversation_id = $1
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT $2
                 "#,
                 &[&conversation_id, &fetch_limit],
