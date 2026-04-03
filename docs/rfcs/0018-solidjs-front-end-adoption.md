@@ -258,12 +258,38 @@ Adoption should happen in six stages.
 
 #### Stage 3: Run both UIs behind feature flags
 
-- Implement RFC 0009 so the gateway can advertise which browser implementation
-  is active.
-- Add a deployment-level flag for the SolidJS front end.
+- Implement RFC 0009 with a deployment-scoped `solidjs_ui_enabled` flag held in
+  `FeatureFlagRegistry`.
+- Resolve that flag in the gateway at request time and use it to choose which
+  browser entrypoint to serve. This RFC chooses gateway-side routing, not
+  client-side bootstrapping, for entry-point selection.
 - Keep the legacy UI available as a rollback path while the SPA is exercised
   against the real runtime.
 - Use the flag to gate entry-point selection, not merely to hide a button.
+- Keep `GET /api/features` for post-auth feature consumption inside the
+  selected UI, but do not require the browser to fetch `/api/features` before
+  it knows which entrypoint to bootstrap.
+
+Example workflow:
+
+1. An operator writes `feature_flag:solidjs_ui_enabled=true` for deployment
+   `production`.
+2. The settings handler updates `FeatureFlagRegistry` for `production`
+   immediately, as required by RFC 0009.
+3. The next browser request for that deployment reaches the gateway, which
+   reads `solidjs_ui_enabled` from `FeatureFlagRegistry` and serves either the
+   SolidJS entrypoint or the legacy static entrypoint.
+4. After authentication, the selected front end calls `GET /api/features` to
+   load the rest of the deployment-scoped UI flags for in-app behaviour.
+
+Required changes:
+
+- The gateway routing layer must identify the active deployment before serving
+  the browser shell and must branch between the SolidJS and legacy entrypoints
+  using `FeatureFlagRegistry`.
+- RFC 0009 does not need per-entrypoint scope extensions for this stage, but
+  its implementation must explicitly allow gateway-side consumers to read the
+  deployment-scoped registry before the browser loads.
 
 #### Stage 4: Migrate route surfaces incrementally
 
