@@ -250,14 +250,36 @@ fn migration_identity(spec: MigrationSpec) -> Result<MigrationIdentity, Database
 }
 
 #[cfg(feature = "postgres")]
+struct RowKey {
+    version: i32,
+    name: &'static str,
+    checksum: String,
+}
+
+#[cfg(feature = "postgres")]
+impl RowKey {
+    fn from_identity(id: &MigrationIdentity) -> Self {
+        Self {
+            version: id.version,
+            name: id.name,
+            checksum: id.checksum.to_string(),
+        }
+    }
+
+    fn with_version(id: &MigrationIdentity, version: i32) -> Self {
+        Self {
+            version,
+            name: id.name,
+            checksum: id.checksum.to_string(),
+        }
+    }
+}
+
+#[cfg(feature = "postgres")]
 async fn rewrite_history_row<C>(
     client: &C,
-    where_version: i32,
-    where_name: &str,
-    where_checksum: &str,
-    set_version: i32,
-    set_name: &str,
-    set_checksum: &str,
+    where_key: &RowKey,
+    set_key: &RowKey,
 ) -> Result<(), DatabaseError>
 where
     C: GenericClient,
@@ -268,15 +290,32 @@ where
              SET version = $1, name = $2, checksum = $3 \
              WHERE version = $4 AND name = $5 AND checksum = $6",
             &[
-                &set_version,
-                &set_name,
-                &set_checksum,
-                &where_version,
-                &where_name,
-                &where_checksum,
+                &set_key.version,
+                &set_key.name,
+                &set_key.checksum,
+                &where_key.version,
+                &where_key.name,
+                &where_key.checksum,
             ],
         )
         .await?;
+    Ok(())
+}
+
+#[cfg(feature = "postgres")]
+async fn apply_history_rewrites<C, F>(
+    client: &C,
+    rewrites: &[MigrationHistoryRewrite],
+    keys: F,
+) -> Result<(), DatabaseError>
+where
+    C: GenericClient,
+    F: Fn(&MigrationHistoryRewrite) -> (RowKey, RowKey),
+{
+    for rewrite in rewrites {
+        let (where_key, set_key) = keys(rewrite);
+        rewrite_history_row(client, &where_key, &set_key).await?;
+    }
     Ok(())
 }
 
@@ -288,21 +327,13 @@ async fn stage_migration_history_rewrites<C>(
 where
     C: GenericClient,
 {
-    for rewrite in rewrites {
-        let from_checksum = rewrite.from.checksum.to_string();
-        rewrite_history_row(
-            client,
-            rewrite.from.version,
-            rewrite.from.name,
-            &from_checksum,
-            rewrite.temporary_version,
-            rewrite.from.name,
-            &from_checksum,
+    apply_history_rewrites(client, rewrites, |r| {
+        (
+            RowKey::from_identity(&r.from),
+            RowKey::with_version(&r.from, r.temporary_version),
         )
-        .await?;
-    }
-
-    Ok(())
+    })
+    .await
 }
 
 #[cfg(feature = "postgres")]
@@ -313,22 +344,13 @@ async fn finalize_migration_history_rewrites<C>(
 where
     C: GenericClient,
 {
-    for rewrite in rewrites {
-        let from_checksum = rewrite.from.checksum.to_string();
-        let to_checksum = rewrite.to.checksum.to_string();
-        rewrite_history_row(
-            client,
-            rewrite.temporary_version,
-            rewrite.from.name,
-            &from_checksum,
-            rewrite.to.version,
-            rewrite.to.name,
-            &to_checksum,
+    apply_history_rewrites(client, rewrites, |r| {
+        (
+            RowKey::with_version(&r.from, r.temporary_version),
+            RowKey::from_identity(&r.to),
         )
-        .await?;
-    }
-
-    Ok(())
+    })
+    .await
 }
 
 #[cfg(test)]

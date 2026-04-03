@@ -179,12 +179,16 @@ pub(super) fn canonical_release_window_rows() -> Vec<(i32, String, String)> {
 }
 
 #[cfg(feature = "postgres")]
-pub(super) fn canonical_full_release_rows() -> Vec<(i32, String, String)> {
+pub(super) fn canonical_release_window_rows_alias() -> Vec<(i32, String, String)> {
     canonical_release_window_rows()
 }
 
 #[cfg(feature = "postgres")]
 pub(super) fn staged_release_window_rows() -> Vec<(i32, String, String)> {
+    // These staging versions intentionally mirror `migration_history_rewrites()`
+    // rewrite indices 1, 2, and 3. The production code uses `i32::MIN` as the
+    // staging base and offsets it by the rewrite index, so this fixture starts
+    // at `i32::MIN + 1` rather than `i32::MIN + 0`.
     vec![
         (
             i32::MIN + 1,

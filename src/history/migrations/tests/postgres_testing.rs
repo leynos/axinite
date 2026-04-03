@@ -11,6 +11,18 @@ use tokio_postgres::{Client, GenericClient, Row};
 use super::fixtures::{CANONICAL_RELEASED_ROWS, LEGACY_RELEASED_ROWS};
 
 #[cfg(feature = "postgres")]
+fn fixture_row<'a>(
+    rows: &'a [(i32, &'a str, u64)],
+    version: i32,
+    name: &str,
+) -> (i32, &'a str, u64) {
+    rows.iter()
+        .find(|(row_version, row_name, _)| *row_version == version && *row_name == name)
+        .copied()
+        .unwrap_or_else(|| panic!("missing fixture row for version={version} name={name}"))
+}
+
+#[cfg(feature = "postgres")]
 pub(super) fn rewrite_tuple_set(
     rewrites: &[super::super::MigrationHistoryRewrite],
 ) -> BTreeSet<(i32, &'static str, u64, i32, &'static str, u64)> {
@@ -82,9 +94,13 @@ pub(super) async fn seed_legacy_released_rows<C: GenericClient>(client: &C) {
     seed_history_rows(
         client,
         &[
-            LEGACY_RELEASED_ROWS[0],
-            CANONICAL_RELEASED_ROWS[1],
-            CANONICAL_RELEASED_ROWS[2],
+            fixture_row(LEGACY_RELEASED_ROWS, 12, "wasm_wit_default_0_3_0"),
+            fixture_row(CANONICAL_RELEASED_ROWS, 13, "job_token_budget"),
+            fixture_row(
+                CANONICAL_RELEASED_ROWS,
+                14,
+                "drop_redundant_wasm_tools_name_index",
+            ),
         ],
     )
     .await;
