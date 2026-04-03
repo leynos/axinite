@@ -8,7 +8,9 @@
 //! [`NoOpWasmChannelActivation`](super::NoOpWasmChannelActivation) without
 //! triggering real channel infrastructure.
 
+mod auth_check;
 mod channel_activation;
+mod channel_refresh;
 mod credentials;
 mod relay_activation;
 mod state;
@@ -89,9 +91,15 @@ pub struct LiveWasmChannelActivation {
     user_id: String,
     store: Option<Arc<dyn crate::db::Database>>,
     relay_config: Option<crate::config::RelayConfig>,
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "FIXME: placeholder for gateway auth token plumbing, see ISSUE-XXXX"
+    )]
     gateway_token: Option<String>,
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "FIXME: placeholder for relay extension tracking, see ISSUE-XXXX"
+    )]
     installed_relay_extensions: Arc<RwLock<HashSet<String>>>,
 }
 

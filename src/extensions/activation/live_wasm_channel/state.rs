@@ -90,7 +90,7 @@ impl super::LiveWasmChannelActivation {
                 tracing::info!(channel = %name, "Refreshed HMAC secret for active channel");
             }
             Err(e) => {
-                tracing::warn!(channel = %name, error = %e, "HMAC secret not found");
+                tracing::debug!(channel = %name, error = %e, "HMAC secret not found");
             }
         }
     }

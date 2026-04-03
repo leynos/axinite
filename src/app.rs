@@ -251,7 +251,7 @@ impl AppBuilder {
         ));
 
         tools.register_extension_tools(Arc::clone(&manager));
-        tracing::debug!("Extension manager initialised with in-chat discovery tools");
+        tracing::debug!("Extension manager initialized with in-chat discovery tools");
         manager
     }
 
@@ -353,10 +353,6 @@ impl AppBuilder {
                     }
                 };
 
-                let cell = Arc::new(tokio::sync::OnceCell::new());
-                let _ = cell.set(Arc::clone(&client));
-                mcp_clients.write().await.insert(server_name.clone(), cell);
-
                 match client.list_tools().await {
                     Ok(mcp_tools) => {
                         let tool_count = mcp_tools.len();
@@ -365,6 +361,9 @@ impl AppBuilder {
                                 for tool in tool_impls {
                                     tools.register(tool).await;
                                 }
+                                let cell = Arc::new(tokio::sync::OnceCell::new());
+                                let _ = cell.set(Arc::clone(&client));
+                                mcp_clients.write().await.insert(server_name.clone(), cell);
                                 tracing::debug!(
                                     "Loaded {} tools from MCP server '{}'",
                                     tool_count,
@@ -573,7 +572,6 @@ impl AppBuilder {
     ///
     /// Delegates to `build_provider_chain` which applies all decorators
     /// (retry, smart routing, failover, circuit breaker, response cache).
-    #[allow(clippy::type_complexity)]
     pub async fn init_llm(
         &self,
     ) -> Result<
@@ -731,7 +729,7 @@ impl AppBuilder {
         let wasm_tool_runtime: Option<Arc<WasmToolRuntime>> = if self.config.wasm.enabled {
             WasmToolRuntime::new(self.config.wasm.to_runtime_config())
                 .map(Arc::new)
-                .map_err(|e| tracing::warn!("Failed to initialise WASM runtime: {}", e))
+                .map_err(|e| tracing::warn!("Failed to initialize WASM runtime: {}", e))
                 .ok()
         } else {
             None

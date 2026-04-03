@@ -120,6 +120,23 @@ pub(super) fn resolve_env_credentials(
     channel_name: &str,
     already_injected: &HashSet<String>,
 ) -> Vec<(String, String)> {
+    resolve_env_credentials_with_reader(
+        placeholders,
+        channel_name,
+        already_injected,
+        |placeholder| std::env::var(placeholder).ok(),
+    )
+}
+
+fn resolve_env_credentials_with_reader<F>(
+    placeholders: &[String],
+    channel_name: &str,
+    already_injected: &HashSet<String>,
+    env_reader: F,
+) -> Vec<(String, String)>
+where
+    F: Fn(&str) -> Option<String>,
+{
     if channel_name.trim().is_empty() {
         return Vec::new();
     }
@@ -139,7 +156,7 @@ pub(super) fn resolve_env_credentials(
             );
             continue;
         }
-        if let Ok(value) = std::env::var(placeholder)
+        if let Some(value) = env_reader(placeholder)
             && !value.is_empty()
         {
             out.push((placeholder.clone(), value));
@@ -151,6 +168,7 @@ pub(super) fn resolve_env_credentials(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_security_prefix_check() {
@@ -162,20 +180,23 @@ mod tests {
             "ICTEST1_UNRELATED_OTHER".to_string(), // valid prefix, but env var not set — not injected
         ];
         let already_injected = std::collections::HashSet::new();
-
-        unsafe { std::env::set_var("ICTEST1_BOT_TOKEN", "good-secret") };
-        unsafe { std::env::set_var("ICTEST2_TOKEN", "bad-secret") };
+        let env = HashMap::from([
+            ("ICTEST1_BOT_TOKEN".to_string(), "good-secret".to_string()),
+            ("ICTEST2_TOKEN".to_string(), "bad-secret".to_string()),
+        ]);
         // ICTEST1_UNRELATED_OTHER intentionally not set — tests both prefix rejection and absence
 
-        let resolved = resolve_env_credentials(&placeholders, "ictest1", &already_injected);
+        let resolved = resolve_env_credentials_with_reader(
+            &placeholders,
+            "ictest1",
+            &already_injected,
+            |key| env.get(key).cloned(),
+        );
 
         // Only ICTEST1_BOT_TOKEN passes the prefix check for channel "ictest1"
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].0, "ICTEST1_BOT_TOKEN");
         assert_eq!(resolved[0].1, "good-secret");
-
-        unsafe { std::env::remove_var("ICTEST1_BOT_TOKEN") };
-        unsafe { std::env::remove_var("ICTEST2_TOKEN") };
     }
 
     #[test]
@@ -184,15 +205,17 @@ mod tests {
         let placeholders = vec!["ICTEST3_TOKEN".to_string()];
         let mut already_injected = std::collections::HashSet::new();
         already_injected.insert("ICTEST3_TOKEN".to_string());
+        let env = HashMap::from([("ICTEST3_TOKEN".to_string(), "secret".to_string())]);
 
-        unsafe { std::env::set_var("ICTEST3_TOKEN", "secret") };
-
-        let resolved = resolve_env_credentials(&placeholders, "ictest3", &already_injected);
+        let resolved = resolve_env_credentials_with_reader(
+            &placeholders,
+            "ictest3",
+            &already_injected,
+            |key| env.get(key).cloned(),
+        );
 
         // Already covered by secrets store — env var must be skipped
         assert!(resolved.is_empty());
-
-        unsafe { std::env::remove_var("ICTEST3_TOKEN") };
     }
 
     #[test]
@@ -200,10 +223,14 @@ mod tests {
         // Use unique env var names (ictest4_*) to avoid interference with other tests.
         let placeholders = vec!["ICTEST4_TOKEN".to_string()];
         let already_injected = std::collections::HashSet::new();
+        let env: HashMap<String, String> = HashMap::new();
 
-        unsafe { std::env::remove_var("ICTEST4_TOKEN") };
-
-        let resolved = resolve_env_credentials(&placeholders, "ictest4", &already_injected);
+        let resolved = resolve_env_credentials_with_reader(
+            &placeholders,
+            "ictest4",
+            &already_injected,
+            |key| env.get(key).cloned(),
+        );
 
         assert!(resolved.is_empty());
     }
@@ -214,14 +241,16 @@ mod tests {
         // Use unique env var names (ictest5_*) to avoid interference with other tests.
         let placeholders = vec!["ICTEST5_TOKEN".to_string()];
         let already_injected = std::collections::HashSet::new();
+        let env = HashMap::from([("ICTEST5_TOKEN".to_string(), String::new())]);
 
-        unsafe { std::env::set_var("ICTEST5_TOKEN", "") };
-
-        let resolved = resolve_env_credentials(&placeholders, "ictest5", &already_injected);
+        let resolved = resolve_env_credentials_with_reader(
+            &placeholders,
+            "ictest5",
+            &already_injected,
+            |key| env.get(key).cloned(),
+        );
 
         assert!(resolved.is_empty());
-
-        unsafe { std::env::remove_var("ICTEST5_TOKEN") };
     }
 
     #[test]
@@ -229,15 +258,16 @@ mod tests {
         // An empty channel name must never match any env var (prefix would be "_").
         let placeholders = vec!["_TOKEN".to_string(), "ICTEST6_TOKEN".to_string()];
         let already_injected = std::collections::HashSet::new();
+        let env = HashMap::from([
+            ("_TOKEN".to_string(), "bad".to_string()),
+            ("ICTEST6_TOKEN".to_string(), "bad".to_string()),
+        ]);
 
-        unsafe { std::env::set_var("_TOKEN", "bad") };
-        unsafe { std::env::set_var("ICTEST6_TOKEN", "bad") };
-
-        let resolved = resolve_env_credentials(&placeholders, "", &already_injected);
+        let resolved =
+            resolve_env_credentials_with_reader(&placeholders, "", &already_injected, |key| {
+                env.get(key).cloned()
+            });
 
         assert!(resolved.is_empty(), "empty channel name must match nothing");
-
-        unsafe { std::env::remove_var("_TOKEN") };
-        unsafe { std::env::remove_var("ICTEST6_TOKEN") };
     }
 }
