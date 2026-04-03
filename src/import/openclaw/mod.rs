@@ -58,14 +58,11 @@ impl OpenClawImporter {
         settings_map: std::collections::HashMap<String, serde_json::Value>,
     ) -> usize {
         let mut count = 0;
+        let user_id = UserId::from(self.opts.user_id.as_str());
         for (key, value) in settings_map {
             if let Err(e) = self
                 .db
-                .set_setting(
-                    UserId::from(self.opts.user_id.as_str()),
-                    SettingKey::from(key.as_str()),
-                    &value,
-                )
+                .set_setting(user_id.clone(), SettingKey::from(key.as_str()), &value)
                 .await
             {
                 tracing::warn!("Failed to import setting {}: {}", key, e);

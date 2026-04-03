@@ -49,6 +49,8 @@ pub use crate::testing_wasm::{
     github_tool_source_dir, github_wasm_artifact, metadata_test_runtime,
 };
 use crate::tools::ToolRegistry;
+#[cfg(test)]
+use rstest::rstest;
 
 /// Create a libSQL-backed test database in a temporary directory.
 ///
@@ -1002,80 +1004,73 @@ mod tests {
     }
 
     #[cfg(feature = "libsql")]
-    #[tokio::test]
-    async fn test_settings_crud_with_owned_user_and_key_strings() {
-        let harness = TestHarnessBuilder::new().build().await;
-        let db = &harness.db;
-
-        // Regression coverage for the settings API compatibility fix: callers
-        // often hold owned strings and borrow them across awaited dyn-store
-        // calls, rather than passing string literals directly.
-        let user_id = "owned-user".to_string();
-        let key = "theme".to_string();
+    async fn run_settings_crud_flow(db: &Arc<dyn Database>, user_id: UserId, key: SettingKey) {
+        let key_name = key.as_str().to_string();
         let initial_value = serde_json::json!("dark");
         let updated_value = serde_json::json!("light");
 
-        db.set_setting(
-            UserId::from(user_id.as_str()),
-            SettingKey::from(key.as_str()),
-            &initial_value,
-        )
-        .await
-        .expect("set setting from owned strings");
+        db.set_setting(user_id.clone(), key.clone(), &initial_value)
+            .await
+            .expect("set setting");
 
         let stored = db
-            .get_setting(
-                UserId::from(user_id.as_str()),
-                SettingKey::from(key.as_str()),
-            )
+            .get_setting(user_id.clone(), key.clone())
             .await
-            .expect("get setting from owned strings")
+            .expect("get setting")
             .expect("setting should exist");
         assert_eq!(stored, initial_value);
 
         let listed = db
-            .list_settings(UserId::from(user_id.as_str()))
+            .list_settings(user_id.clone())
             .await
             .expect("list settings");
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].key, key);
+        assert_eq!(listed[0].key, key_name);
         assert_eq!(listed[0].value, initial_value);
 
-        db.set_setting(
-            UserId::from(user_id.as_str()),
-            SettingKey::from(key.as_str()),
-            &updated_value,
-        )
-        .await
-        .expect("update setting from owned strings");
+        db.set_setting(user_id.clone(), key.clone(), &updated_value)
+            .await
+            .expect("update setting");
 
         let stored = db
-            .get_setting(
-                UserId::from(user_id.as_str()),
-                SettingKey::from(key.as_str()),
-            )
+            .get_setting(user_id.clone(), key.clone())
             .await
             .expect("get updated setting")
             .expect("updated setting should exist");
         assert_eq!(stored, updated_value);
 
         let deleted = db
-            .delete_setting(
-                UserId::from(user_id.as_str()),
-                SettingKey::from(key.as_str()),
-            )
+            .delete_setting(user_id.clone(), key.clone())
             .await
-            .expect("delete setting from owned strings");
+            .expect("delete setting");
         assert!(deleted);
         assert!(
-            db.get_setting(
-                UserId::from(user_id.as_str()),
-                SettingKey::from(key.as_str())
-            )
-            .await
-            .expect("get deleted setting")
-            .is_none()
+            db.get_setting(user_id, key)
+                .await
+                .expect("get deleted setting")
+                .is_none()
         );
+    }
+
+    #[cfg(feature = "libsql")]
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn test_settings_crud_variants(#[case] use_owned_strings: bool) {
+        let harness = TestHarnessBuilder::new().build().await;
+        let db = &harness.db;
+
+        let (user_id, key) = if use_owned_strings {
+            (
+                UserId::from("owned-user".to_string()),
+                SettingKey::from("theme".to_string()),
+            )
+        } else {
+            (UserId::from("literal-user"), SettingKey::from("theme"))
+        };
+
+        run_settings_crud_flow(db, user_id, key).await;
     }
 
     #[tokio::test]

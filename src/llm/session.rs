@@ -408,7 +408,6 @@ impl SessionManager {
         // NEARAI_API_KEY is present).
         //
         // SAFETY: called during single-threaded interactive login flow.
-        #[allow(unused_unsafe)]
         unsafe {
             std::env::set_var("NEARAI_API_KEY", &key);
         }

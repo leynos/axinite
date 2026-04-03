@@ -1,9 +1,19 @@
-//! Conversation persistence types and helpers.
+//! Conversation persistence types and core CRUD helpers.
 
 use chrono::{DateTime, Utc};
 #[cfg(feature = "postgres")]
 use deadpool_postgres::GenericClient;
 use uuid::Uuid;
+
+#[cfg(feature = "postgres")]
+#[path = "conversations/metadata.rs"]
+mod metadata;
+#[cfg(feature = "postgres")]
+#[path = "conversations/previews.rs"]
+mod previews;
+#[cfg(feature = "postgres")]
+#[path = "conversations/singletons.rs"]
+mod singletons;
 
 #[cfg(feature = "postgres")]
 use super::Store;
@@ -37,24 +47,7 @@ pub struct ConversationMessage {
 }
 
 #[cfg(feature = "postgres")]
-fn preview_title(metadata: &serde_json::Value, sql_title: Option<String>) -> Option<String> {
-    sql_title
-        .or_else(|| {
-            metadata
-                .get("title")
-                .and_then(|value| value.as_str())
-                .map(String::from)
-        })
-        .or_else(|| {
-            metadata
-                .get("routine_name")
-                .and_then(|value| value.as_str())
-                .map(String::from)
-        })
-}
-
-#[cfg(feature = "postgres")]
-async fn touch_conversation_with_client(
+pub(super) async fn touch_conversation_with_client(
     client: &impl GenericClient,
     id: Uuid,
 ) -> Result<(), DatabaseError> {
@@ -139,229 +132,6 @@ impl Store {
         )
         .await?;
         Ok(())
-    }
-
-    /// List conversations with a title derived from the first user message.
-    pub async fn list_conversations_with_preview(
-        &self,
-        user_id: &str,
-        channel: &str,
-        limit: i64,
-    ) -> Result<Vec<ConversationSummary>, DatabaseError> {
-        let conn = self.conn().await?;
-        let rows = conn
-            .query(
-                r#"
-                SELECT
-                    c.id,
-                    c.started_at,
-                    c.last_activity,
-                    c.metadata,
-                    c.channel,
-                    (SELECT COUNT(*) FROM conversation_messages m WHERE m.conversation_id = c.id AND m.role = 'user') AS message_count,
-                    (SELECT LEFT(m2.content, 100)
-                     FROM conversation_messages m2
-                     WHERE m2.conversation_id = c.id AND m2.role = 'user'
-                     ORDER BY m2.created_at ASC
-                     LIMIT 1
-                    ) AS title
-                FROM conversations c
-                WHERE c.user_id = $1 AND c.channel = $2
-                ORDER BY c.last_activity DESC
-                LIMIT $3
-                "#,
-                &[&user_id, &channel, &limit],
-            )
-            .await?;
-
-        Ok(rows
-            .iter()
-            .map(|r| {
-                let metadata: serde_json::Value = r.get("metadata");
-                let thread_type = metadata
-                    .get("thread_type")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let sql_title: Option<String> = r.get("title");
-                let title = preview_title(&metadata, sql_title);
-                ConversationSummary {
-                    id: r.get("id"),
-                    title,
-                    message_count: r.get("message_count"),
-                    started_at: r.get("started_at"),
-                    last_activity: r.get("last_activity"),
-                    thread_type,
-                    channel: r.get("channel"),
-                }
-            })
-            .collect())
-    }
-
-    /// List conversations across all channels with a title derived from the first user message.
-    pub async fn list_conversations_all_channels(
-        &self,
-        user_id: &str,
-        limit: i64,
-    ) -> Result<Vec<ConversationSummary>, DatabaseError> {
-        let conn = self.conn().await?;
-        let rows = conn
-            .query(
-                r#"
-                SELECT
-                    c.id,
-                    c.started_at,
-                    c.last_activity,
-                    c.metadata,
-                    c.channel,
-                    (SELECT COUNT(*) FROM conversation_messages m WHERE m.conversation_id = c.id AND m.role = 'user') AS message_count,
-                    (SELECT LEFT(m2.content, 100)
-                     FROM conversation_messages m2
-                     WHERE m2.conversation_id = c.id AND m2.role = 'user'
-                     ORDER BY m2.created_at ASC
-                     LIMIT 1
-                    ) AS title
-                FROM conversations c
-                WHERE c.user_id = $1
-                ORDER BY c.last_activity DESC
-                LIMIT $2
-                "#,
-                &[&user_id, &limit],
-            )
-            .await?;
-
-        Ok(rows
-            .iter()
-            .map(|r| {
-                let metadata: serde_json::Value = r.get("metadata");
-                let thread_type = metadata
-                    .get("thread_type")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let sql_title: Option<String> = r.get("title");
-                let title = preview_title(&metadata, sql_title);
-                ConversationSummary {
-                    id: r.get("id"),
-                    title,
-                    message_count: r.get("message_count"),
-                    started_at: r.get("started_at"),
-                    last_activity: r.get("last_activity"),
-                    thread_type,
-                    channel: r.get("channel"),
-                }
-            })
-            .collect())
-    }
-
-    /// Get or create a persistent conversation for a routine.
-    pub async fn get_or_create_routine_conversation(
-        &self,
-        routine_id: Uuid,
-        routine_name: &str,
-        user_id: &str,
-    ) -> Result<Uuid, DatabaseError> {
-        let conn = self.conn().await?;
-        let rid = routine_id.to_string();
-        let new_id = Uuid::new_v4();
-        let metadata = serde_json::json!({
-            "thread_type": "routine",
-            "routine_id": routine_id.to_string(),
-            "routine_name": routine_name,
-        });
-        conn.execute(
-            r#"
-            INSERT INTO conversations (id, channel, user_id, metadata)
-            VALUES ($1, 'routine', $2, $3)
-            ON CONFLICT (user_id, (metadata->>'routine_id'))
-                WHERE metadata->>'routine_id' IS NOT NULL
-                DO NOTHING
-            "#,
-            &[&new_id, &user_id, &metadata],
-        )
-        .await?;
-
-        let row = conn
-            .query_one(
-                r#"
-                SELECT id FROM conversations
-                WHERE user_id = $1 AND metadata->>'routine_id' = $2
-                LIMIT 1
-                "#,
-                &[&user_id, &rid],
-            )
-            .await?;
-
-        Ok(row.get("id"))
-    }
-
-    /// Get or create the singleton heartbeat conversation for a user.
-    pub async fn get_or_create_heartbeat_conversation(
-        &self,
-        user_id: &str,
-    ) -> Result<Uuid, DatabaseError> {
-        let conn = self.conn().await?;
-        let new_id = Uuid::new_v4();
-        let metadata = serde_json::json!({
-            "thread_type": "heartbeat",
-        });
-        conn.execute(
-            r#"
-            INSERT INTO conversations (id, channel, user_id, metadata)
-            VALUES ($1, 'heartbeat', $2, $3)
-            ON CONFLICT (user_id)
-                WHERE metadata->>'thread_type' = 'heartbeat'
-                DO NOTHING
-            "#,
-            &[&new_id, &user_id, &metadata],
-        )
-        .await?;
-
-        let row = conn
-            .query_one(
-                r#"
-                SELECT id FROM conversations
-                WHERE user_id = $1 AND metadata->>'thread_type' = 'heartbeat'
-                LIMIT 1
-                "#,
-                &[&user_id],
-            )
-            .await?;
-
-        Ok(row.get("id"))
-    }
-
-    /// Get or create the singleton "assistant" conversation for a user+channel.
-    pub async fn get_or_create_assistant_conversation(
-        &self,
-        user_id: &str,
-        channel: &str,
-    ) -> Result<Uuid, DatabaseError> {
-        let conn = self.conn().await?;
-        let id = Uuid::new_v4();
-        let metadata = serde_json::json!({"thread_type": "assistant", "title": "Assistant"});
-        conn.execute(
-            r#"
-            INSERT INTO conversations (id, channel, user_id, metadata)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (user_id, channel)
-                WHERE metadata->>'thread_type' = 'assistant'
-                DO NOTHING
-            "#,
-            &[&id, &channel, &user_id, &metadata],
-        )
-        .await?;
-
-        let row = conn
-            .query_one(
-                r#"
-                SELECT id FROM conversations
-                WHERE user_id = $1 AND channel = $2 AND metadata->>'thread_type' = 'assistant'
-                LIMIT 1
-                "#,
-                &[&user_id, &channel],
-            )
-            .await?;
-
-        Ok(row.get("id"))
     }
 
     /// Create a conversation with specific metadata.
@@ -453,35 +223,6 @@ impl Store {
         Ok((messages, has_more))
     }
 
-    /// Merge a single key into a conversation's metadata JSONB.
-    pub async fn update_conversation_metadata_field(
-        &self,
-        id: Uuid,
-        key: &str,
-        value: &serde_json::Value,
-    ) -> Result<(), DatabaseError> {
-        let conn = self.conn().await?;
-        let patch = serde_json::json!({ key: value });
-        conn.execute(
-            "UPDATE conversations SET metadata = COALESCE(metadata, '{}'::jsonb) || $2 WHERE id = $1",
-            &[&id, &patch],
-        )
-        .await?;
-        Ok(())
-    }
-
-    /// Read the metadata JSONB for a conversation.
-    pub async fn get_conversation_metadata(
-        &self,
-        id: Uuid,
-    ) -> Result<Option<serde_json::Value>, DatabaseError> {
-        let conn = self.conn().await?;
-        let row = conn
-            .query_opt("SELECT metadata FROM conversations WHERE id = $1", &[&id])
-            .await?;
-        Ok(row.map(|r| r.get::<_, serde_json::Value>(0)))
-    }
-
     /// Load all messages for a conversation, ordered chronologically.
     pub async fn list_conversation_messages(
         &self,
@@ -547,21 +288,5 @@ mod tests {
             };
             assert_eq!(summary.channel, ch);
         }
-    }
-
-    #[cfg(feature = "postgres")]
-    #[test]
-    fn preview_title_prefers_metadata_title_before_routine_name() {
-        use serde_json::json;
-
-        let metadata = json!({
-            "title": "Assistant",
-            "routine_name": "daily-standup",
-        });
-
-        assert_eq!(
-            preview_title(&metadata, None),
-            Some("Assistant".to_string())
-        );
     }
 }

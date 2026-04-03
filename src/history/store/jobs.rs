@@ -286,8 +286,6 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use uuid::Uuid;
-
     use super::*;
 
     /// Regression test: save_job must persist user_id and get_job must return it.
@@ -336,6 +334,5 @@ mod tests {
         assert_eq!(summary.completed, 3);
         assert_eq!(summary.failed, 4);
         assert_eq!(summary.stuck, 5);
-        assert_ne!(Uuid::nil(), Uuid::new_v4());
     }
 }

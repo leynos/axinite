@@ -3,12 +3,68 @@
 //! Defines the dyn-safe [`SettingsStore`] and its native-async sibling
 //! [`NativeSettingsStore`] for per-user key-value settings storage.
 
-use std::collections::HashMap;
-use std::future::Future;
+use core::fmt;
+use std::{collections::HashMap, future::Future};
 
-use crate::db::params::{DbFuture, SettingKey, UserId};
+use crate::db::params::DbFuture;
 use crate::error::DatabaseError;
 use crate::history::SettingRow;
+
+/// Strongly typed user identifier for settings-store methods.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UserId(String);
+
+impl UserId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for UserId {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<String> for UserId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl fmt::Display for UserId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Strongly typed settings key for settings-store methods.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SettingKey(String);
+
+impl SettingKey {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for SettingKey {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<String> for SettingKey {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl fmt::Display for SettingKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// Object-safe persistence surface for per-user key-value settings.
 pub trait SettingsStore: Send + Sync {

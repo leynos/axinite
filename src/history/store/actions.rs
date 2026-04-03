@@ -81,6 +81,19 @@ impl Store {
         let mut actions = Vec::new();
         for row in rows {
             let duration_ms: i32 = row.get("duration_ms");
+            if duration_ms < 0 {
+                return Err(DatabaseError::Serialization(format!(
+                    "job action duration_ms must be non-negative: {duration_ms}"
+                )));
+            }
+
+            let sequence_num: i32 = row.get("sequence_num");
+            if sequence_num < 0 {
+                return Err(DatabaseError::Serialization(format!(
+                    "job action sequence_num must be non-negative: {sequence_num}"
+                )));
+            }
+
             let warnings_json: serde_json::Value = row.get("sanitization_warnings");
             let warnings = match warnings_json {
                 serde_json::Value::Null => Vec::new(),
@@ -93,7 +106,7 @@ impl Store {
 
             actions.push(ActionRecord {
                 id: row.get("id"),
-                sequence: row.get::<_, i32>("sequence_num") as u32,
+                sequence: sequence_num as u32,
                 tool_name: row.get("tool_name"),
                 input: row.get("input"),
                 output_raw: row.get("output_raw"),

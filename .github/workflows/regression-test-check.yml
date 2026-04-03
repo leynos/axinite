@@ -21,10 +21,6 @@ jobs:
           set -euo pipefail
 
           BASE_REF="origin/${{ github.event.pull_request.base.ref }}"
-          DIFF_U0_FILE=$(mktemp)
-          DIFF_W_FILE=$(mktemp)
-          trap 'rm -f "$DIFF_U0_FILE" "$DIFF_W_FILE"' EXIT
-
           # --- 1. Is this a fix PR? Check title first, then commit messages ---
           IS_FIX=false
 
@@ -84,6 +80,9 @@ jobs:
 
           # Common test-attribute pattern: matches #[test], #[tokio::test(...)], #[rstest], etc.
           TEST_ATTR_PATTERN='#\[(test|tokio::test|rstest)(\([^]]*\))?\]'
+          DIFF_U0_FILE=$(mktemp)
+          DIFF_W_FILE=$(mktemp)
+          trap 'rm -f "$DIFF_U0_FILE" "$DIFF_W_FILE"' EXIT
           git diff "${BASE_REF}...HEAD" -U0 -- '*.rs' > "$DIFF_U0_FILE"
           git diff "${BASE_REF}...HEAD" -W -- '*.rs' > "$DIFF_W_FILE"
 

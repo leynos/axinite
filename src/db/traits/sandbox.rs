@@ -3,13 +3,87 @@
 //! Defines the dyn-safe [`SandboxStore`] and its native-async sibling
 //! [`NativeSandboxStore`] for sandbox job lifecycle and event storage.
 
-use core::future::Future;
+use core::{fmt, future::Future};
 
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::db::params::{DbFuture, SandboxEventType, SandboxJobStatusUpdate, SandboxMode, UserId};
+use crate::db::params::DbFuture;
+use crate::db::traits::settings::UserId;
 use crate::error::DatabaseError;
 use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
+
+/// Supported execution modes for sandbox jobs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SandboxMode {
+    Worker,
+    ClaudeCode,
+}
+
+impl SandboxMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Worker => "worker",
+            Self::ClaudeCode => "claude_code",
+        }
+    }
+}
+
+impl fmt::Display for SandboxMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl TryFrom<&str> for SandboxMode {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "worker" => Ok(Self::Worker),
+            "claude_code" => Ok(Self::ClaudeCode),
+            other => Err(format!("unexpected sandbox mode '{other}'")),
+        }
+    }
+}
+
+/// Strongly typed sandbox job event discriminator.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SandboxEventType(String);
+
+impl SandboxEventType {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for SandboxEventType {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<String> for SandboxEventType {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl fmt::Display for SandboxEventType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Parameters for `update_sandbox_job_status`.
+pub struct SandboxJobStatusUpdate<'a> {
+    pub id: Uuid,
+    pub status: &'a str,
+    pub success: Option<bool>,
+    pub message: Option<&'a str>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
 
 /// Object-safe persistence surface for sandbox job lifecycle and events.
 ///

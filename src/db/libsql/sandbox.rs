@@ -4,9 +4,12 @@ use chrono::Utc;
 use libsql::params;
 use uuid::Uuid;
 
+#[path = "sandbox/events.rs"]
+mod events;
+
 use super::{
-    LibSqlBackend, fmt_opt_ts, fmt_ts, get_i64, get_json, get_opt_bool, get_opt_text, get_opt_ts,
-    get_text, get_ts, opt_text,
+    LibSqlBackend, fmt_opt_ts, fmt_ts, get_i64, get_opt_bool, get_opt_text, get_opt_ts, get_text,
+    get_ts, opt_text,
 };
 use crate::db::{
     NativeSandboxStore, SandboxEventType, SandboxJobStatusUpdate, SandboxMode, UserId,
@@ -355,14 +358,7 @@ impl NativeSandboxStore for LibSqlBackend {
         event_type: SandboxEventType,
         data: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
-        let conn = self.connect().await?;
-        conn.execute(
-            "INSERT INTO job_events (job_id, event_type, data) VALUES (?1, ?2, ?3)",
-            params![job_id.to_string(), event_type.as_str(), data.to_string()],
-        )
-        .await
-        .map_err(|e| DatabaseError::Query(e.to_string()))?;
-        Ok(())
+        events::save_job_event(self, job_id, event_type, data).await
     }
 
     async fn list_job_events(
@@ -371,76 +367,6 @@ impl NativeSandboxStore for LibSqlBackend {
         before_id: Option<i64>,
         limit: Option<i64>,
     ) -> Result<Vec<JobEventRecord>, DatabaseError> {
-        let conn = self.connect().await?;
-        let mut rows = match (before_id, limit) {
-            (Some(before_id), Some(n)) => conn
-                .query(
-                    r#"
-                    SELECT id, job_id, event_type, data, created_at
-                    FROM (
-                        SELECT id, job_id, event_type, data, created_at
-                        FROM job_events WHERE job_id = ?1 AND id < ?2
-                        ORDER BY id DESC
-                        LIMIT ?3
-                    )
-                    ORDER BY id ASC
-                    "#,
-                    params![job_id.to_string(), before_id, n],
-                )
-                .await
-                .map_err(|e| DatabaseError::Query(e.to_string()))?,
-            (Some(before_id), None) => conn
-                .query(
-                    r#"
-                    SELECT id, job_id, event_type, data, created_at
-                    FROM job_events WHERE job_id = ?1 AND id < ?2 ORDER BY id ASC
-                    "#,
-                    params![job_id.to_string(), before_id],
-                )
-                .await
-                .map_err(|e| DatabaseError::Query(e.to_string()))?,
-            (None, Some(n)) => conn
-                .query(
-                    r#"
-                    SELECT id, job_id, event_type, data, created_at
-                    FROM (
-                        SELECT id, job_id, event_type, data, created_at
-                        FROM job_events WHERE job_id = ?1
-                        ORDER BY id DESC
-                        LIMIT ?2
-                    )
-                    ORDER BY id ASC
-                    "#,
-                    params![job_id.to_string(), n],
-                )
-                .await
-                .map_err(|e| DatabaseError::Query(e.to_string()))?,
-            (None, None) => conn
-                .query(
-                    r#"
-                    SELECT id, job_id, event_type, data, created_at
-                    FROM job_events WHERE job_id = ?1 ORDER BY id ASC
-                    "#,
-                    params![job_id.to_string()],
-                )
-                .await
-                .map_err(|e| DatabaseError::Query(e.to_string()))?,
-        };
-
-        let mut events = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .await
-            .map_err(|e| DatabaseError::Query(e.to_string()))?
-        {
-            events.push(JobEventRecord {
-                id: get_i64(&row, 0),
-                job_id: get_text(&row, 1).parse().unwrap_or_default(),
-                event_type: get_text(&row, 2),
-                data: get_json(&row, 3),
-                created_at: get_ts(&row, 4),
-            });
-        }
-        Ok(events)
+        events::list_job_events(self, job_id, before_id, limit).await
     }
 }

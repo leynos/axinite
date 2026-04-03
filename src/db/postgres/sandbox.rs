@@ -31,7 +31,14 @@ impl NativeSandboxStore for PgBackend {
             completed_at,
         } = params;
         self.store
-            .update_sandbox_job_status(id, status, success, message, started_at, completed_at)
+            .update_sandbox_job_status(SandboxJobStatusUpdate {
+                id,
+                status,
+                success,
+                message,
+                started_at,
+                completed_at,
+            })
             .await
     }
 
@@ -287,6 +294,79 @@ mod tests {
                 .expect("sandbox_job_summary_for_user should succeed");
 
             assert_eq!(summary.total, 2);
+        }
+
+        #[rstest]
+        #[case(SandboxMode::Worker)]
+        #[case(SandboxMode::ClaudeCode)]
+        #[tokio::test]
+        async fn test_sandbox_job_mode_roundtrip(
+            #[future] db: Option<PgBackend>,
+            pending_job: SandboxJobRecord,
+            #[case] mode: SandboxMode,
+        ) {
+            let Some(db) = db.await else { return };
+            let job_id = pending_job.id;
+
+            db.save_sandbox_job(&pending_job)
+                .await
+                .expect("failed to save sandbox job");
+
+            db.update_sandbox_job_mode(job_id, mode)
+                .await
+                .expect("update_sandbox_job_mode should succeed");
+
+            let stored_mode = db
+                .get_sandbox_job_mode(job_id)
+                .await
+                .expect("get_sandbox_job_mode should succeed");
+            assert_eq!(stored_mode, Some(mode));
+
+            let conn = db.store.conn().await.expect("failed to get connection");
+            conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&job_id])
+                .await
+                .expect("failed to clean up sandbox job");
+        }
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_save_job_event_roundtrip(
+            #[future] db: Option<PgBackend>,
+            pending_job: SandboxJobRecord,
+        ) {
+            let Some(db) = db.await else { return };
+            let job_id = pending_job.id;
+            let event_type = SandboxEventType::from("stdout");
+            let data = serde_json::json!({
+                "message": "hello from postgres sandbox adapter",
+            });
+
+            db.save_sandbox_job(&pending_job)
+                .await
+                .expect("failed to save sandbox job");
+
+            db.save_job_event(job_id, event_type.clone(), &data)
+                .await
+                .expect("save_job_event should succeed");
+
+            let events = db
+                .list_job_events(job_id, None, None)
+                .await
+                .expect("list_job_events should succeed");
+            let stored_event = events
+                .into_iter()
+                .find(|event| event.job_id == job_id && event.event_type == event_type.as_str())
+                .expect("expected persisted sandbox event");
+
+            assert_eq!(stored_event.data, data);
+
+            let conn = db.store.conn().await.expect("failed to get connection");
+            conn.execute("DELETE FROM job_events WHERE job_id = $1", &[&job_id])
+                .await
+                .expect("failed to clean up job events");
+            conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&job_id])
+                .await
+                .expect("failed to clean up sandbox job");
         }
 
         #[rstest]
