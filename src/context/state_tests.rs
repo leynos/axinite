@@ -222,8 +222,12 @@ fn test_stuck_since_matches_latest_stuck_transition_across_bounded_sequences() {
             assert_eq!(
                 ctx.stuck_since(),
                 expected,
-                "stuck_since invariant failed for \
-                 sequence_len={sequence_len}, case_idx={case_idx}"
+                concat!(
+                    "stuck_since invariant failed for ",
+                    "sequence_len={}, case_idx={}"
+                ),
+                sequence_len,
+                case_idx
             );
         }
     }

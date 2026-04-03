@@ -17,7 +17,7 @@ use crate::agent::compaction::ContextCompactor;
 use crate::agent::dispatcher::{
     AgenticLoopResult, check_auth_required, execute_chat_tool_standalone, parse_auth_result,
 };
-use crate::agent::session::{PendingApproval, Session, ThreadState};
+use crate::agent::session::{PendingApproval, PendingAuth, Session, ThreadState};
 use crate::agent::submission::{Submission, SubmissionParser, SubmissionResult};
 use crate::channels::web::util::truncate_preview;
 use crate::channels::{IncomingAttachment, IncomingMessage, StatusUpdate};
@@ -38,17 +38,32 @@ fn sanitise_filename_char(c: char) -> char {
     }
 }
 
+fn is_extraction_error(text: &str) -> bool {
+    text.starts_with("[Failed") || text.starts_with("[Error") || text.starts_with("[Unsupported")
+}
+
 fn get_valid_document_text(attachment: &IncomingAttachment) -> Option<&str> {
     match &attachment.extracted_text {
-        Some(t)
-            if !t.starts_with("[Failed")
-                && !t.starts_with("[Error")
-                && !t.starts_with("[Unsupported") =>
-        {
-            Some(t)
-        }
+        Some(t) if !is_extraction_error(t) => Some(t),
         _ => None,
     }
+}
+
+fn sanitise_filename(raw_name: &str) -> String {
+    let filename: String = raw_name.chars().map(sanitise_filename_char).collect();
+    let filename = filename.trim_start_matches('.');
+    if filename.is_empty() {
+        "unnamed_document".to_string()
+    } else {
+        filename.to_string()
+    }
+}
+
+fn build_document_path(index: usize, attachment: &IncomingAttachment, date: &str) -> String {
+    let raw_name = attachment.filename.as_deref().unwrap_or("unnamed_document");
+    let filename = sanitise_filename(raw_name);
+
+    format!("documents/{date}/{index}-{}-{filename}", attachment.id)
 }
 
 async fn write_document_to_workspace(
@@ -88,17 +103,10 @@ pub(super) async fn store_extracted_documents(
             continue;
         };
 
-        // Sanitize filename: strip path separators to prevent directory traversal
-        let raw_name = attachment.filename.as_deref().unwrap_or("unnamed_document");
-        let filename: String = raw_name.chars().map(sanitise_filename_char).collect();
-        let filename = filename.trim_start_matches('.');
-        let filename = if filename.is_empty() {
-            "unnamed_document"
-        } else {
-            filename
-        };
         let date = chrono::Utc::now().format("%Y-%m-%d");
-        let path = format!("documents/{date}/{index}-{}-{filename}", attachment.id);
+        let filename =
+            sanitise_filename(attachment.filename.as_deref().unwrap_or("unnamed_document"));
+        let path = build_document_path(index, attachment, &date.to_string());
 
         let header = format!(
             "# {filename}\n\n\
@@ -116,6 +124,38 @@ pub(super) async fn store_extracted_documents(
 }
 
 impl Agent {
+    async fn resolve_session_and_thread(
+        &self,
+        message: &IncomingMessage,
+    ) -> (Arc<Mutex<Session>>, Uuid, Option<PendingAuth>) {
+        tracing::debug!(
+            message_id = %message.id,
+            "Resolving session and thread"
+        );
+        let (session, thread_id) = self
+            .session_manager
+            .resolve_thread(
+                &message.user_id,
+                &message.channel,
+                message.thread_id.as_deref(),
+            )
+            .await;
+        tracing::debug!(
+            message_id = %message.id,
+            thread_id = %thread_id,
+            "Resolved session and thread"
+        );
+
+        let pending_auth = {
+            let sess = session.lock().await;
+            sess.threads
+                .get(&thread_id)
+                .and_then(|t| t.pending_auth.clone())
+        };
+
+        (session, thread_id, pending_auth)
+    }
+
     /// Apply the BeforeInbound hook to the parsed submission.
     ///
     /// Returns `Ok(submission)` (possibly with modified content) to proceed,
@@ -156,12 +196,12 @@ impl Agent {
     ///
     /// For `NeedApproval`, sends the approval status to the channel and returns
     /// an empty string to signal the caller to skip an additional `respond()` call.
-    async fn map_submission_result(
+    async fn convert_result_to_response(
         &self,
         incoming_msg: &IncomingMessage,
-        result: Result<SubmissionResult, Error>,
+        result: SubmissionResult,
     ) -> Result<Option<String>, Error> {
-        match result? {
+        match result {
             SubmissionResult::Response { content } => {
                 if crate::llm::is_silent_reply(&content) {
                     tracing::debug!("Suppressing silent reply token");
@@ -201,6 +241,72 @@ impl Agent {
         }
     }
 
+    async fn dispatch_submission(
+        &self,
+        submission: Submission,
+        message: &IncomingMessage,
+        session: Arc<Mutex<Session>>,
+        thread_id: Uuid,
+    ) -> Result<SubmissionResult, Error> {
+        match submission {
+            Submission::UserInput { content } => {
+                self.process_user_input(message, session, thread_id, &content)
+                    .await
+            }
+            Submission::SystemCommand { command, args } => {
+                tracing::debug!(
+                    "[agent_loop] SystemCommand: command={}, channel={}",
+                    command,
+                    message.channel
+                );
+                self.handle_system_command(&command, &args, &message.channel)
+                    .await
+            }
+            Submission::Undo => self.process_undo(session, thread_id).await,
+            Submission::Redo => self.process_redo(session, thread_id).await,
+            Submission::Interrupt => self.process_interrupt(session, thread_id).await,
+            Submission::Compact => self.process_compact(session, thread_id).await,
+            Submission::Clear => self.process_clear(session, thread_id).await,
+            Submission::NewThread => self.process_new_thread(message).await,
+            Submission::Heartbeat => self.process_heartbeat().await,
+            Submission::Summarize => self.process_summarize(session, thread_id).await,
+            Submission::Suggest => self.process_suggest(session, thread_id).await,
+            Submission::JobStatus { job_id } => {
+                self.process_job_status(&message.user_id, job_id.as_deref())
+                    .await
+            }
+            Submission::JobCancel { job_id } => {
+                self.process_job_cancel(&message.user_id, &job_id).await
+            }
+            Submission::Quit => Ok(SubmissionResult::Ok { message: None }),
+            Submission::SwitchThread { thread_id: target } => {
+                self.process_switch_thread(message, target).await
+            }
+            Submission::Resume { checkpoint_id } => {
+                self.process_resume(session, thread_id, checkpoint_id).await
+            }
+            Submission::ExecApproval {
+                request_id,
+                approved,
+                always,
+            } => {
+                self.process_approval(
+                    message,
+                    session,
+                    thread_id,
+                    Some(request_id),
+                    approved,
+                    always,
+                )
+                .await
+            }
+            Submission::ApprovalResponse { approved, always } => {
+                self.process_approval(message, session, thread_id, None, approved, always)
+                    .await
+            }
+        }
+    }
+
     pub(super) async fn handle_message(
         &self,
         message: &IncomingMessage,
@@ -218,34 +324,7 @@ impl Agent {
             self.maybe_hydrate_thread(message, external_thread_id).await;
         }
 
-        // Resolve session and thread
-        tracing::debug!(
-            message_id = %message.id,
-            "Resolving session and thread"
-        );
-        let (session, thread_id) = self
-            .session_manager
-            .resolve_thread(
-                &message.user_id,
-                &message.channel,
-                message.thread_id.as_deref(),
-            )
-            .await;
-        tracing::debug!(
-            message_id = %message.id,
-            thread_id = %thread_id,
-            "Resolved session and thread"
-        );
-
-        // Auth mode interception: if the thread is awaiting a token, route
-        // the message directly to the credential store. Nothing touches
-        // logs, turns, history, or compaction.
-        let pending_auth = {
-            let sess = session.lock().await;
-            sess.threads
-                .get(&thread_id)
-                .and_then(|t| t.pending_auth.clone())
-        };
+        let (session, thread_id, pending_auth) = self.resolve_session_and_thread(message).await;
 
         if let Some(pending) = pending_auth {
             match &submission {
@@ -271,7 +350,6 @@ impl Agent {
         // Log sensitive details at debug level for troubleshooting
         tracing::debug!(
             message_id = %message.id,
-            user_id = %message.user_id,
             channel = %message.channel,
             thread_id = ?message.thread_id,
             "Message details"
@@ -307,67 +385,13 @@ impl Agent {
             message.content.len()
         );
 
-        // Process based on submission type
-        let result = match submission {
-            Submission::UserInput { content } => {
-                self.process_user_input(message, session, thread_id, &content)
-                    .await
-            }
-            Submission::SystemCommand { command, args } => {
-                tracing::debug!(
-                    "[agent_loop] SystemCommand: command={}, channel={}",
-                    command,
-                    message.channel
-                );
-                // Authorization checks (including restart channel check) are enforced in handle_system_command
-                self.handle_system_command(&command, &args, &message.channel)
-                    .await
-            }
-            Submission::Undo => self.process_undo(session, thread_id).await,
-            Submission::Redo => self.process_redo(session, thread_id).await,
-            Submission::Interrupt => self.process_interrupt(session, thread_id).await,
-            Submission::Compact => self.process_compact(session, thread_id).await,
-            Submission::Clear => self.process_clear(session, thread_id).await,
-            Submission::NewThread => self.process_new_thread(message).await,
-            Submission::Heartbeat => self.process_heartbeat().await,
-            Submission::Summarize => self.process_summarize(session, thread_id).await,
-            Submission::Suggest => self.process_suggest(session, thread_id).await,
-            Submission::JobStatus { job_id } => {
-                self.process_job_status(&message.user_id, job_id.as_deref())
-                    .await
-            }
-            Submission::JobCancel { job_id } => {
-                self.process_job_cancel(&message.user_id, &job_id).await
-            }
-            Submission::Quit => return Ok(None),
-            Submission::SwitchThread { thread_id: target } => {
-                self.process_switch_thread(message, target).await
-            }
-            Submission::Resume { checkpoint_id } => {
-                self.process_resume(session, thread_id, checkpoint_id).await
-            }
-            Submission::ExecApproval {
-                request_id,
-                approved,
-                always,
-            } => {
-                self.process_approval(
-                    message,
-                    session,
-                    thread_id,
-                    Some(request_id),
-                    approved,
-                    always,
-                )
-                .await
-            }
-            Submission::ApprovalResponse { approved, always } => {
-                self.process_approval(message, session, thread_id, None, approved, always)
-                    .await
-            }
-        };
-
-        self.map_submission_result(message, result).await
+        let result = self
+            .dispatch_submission(submission, message, session, thread_id)
+            .await?;
+        match result {
+            SubmissionResult::Ok { message: None } => Ok(None),
+            other => self.convert_result_to_response(message, other).await,
+        }
     }
 
     /// Hydrate a historical thread from DB into memory if not already present.
@@ -707,7 +731,8 @@ impl Agent {
                             format!("[Response filtered: {}]", reason)
                         }
                         Err(err) => {
-                            format!("[Response blocked by hook policy: {}]", err)
+                            tracing::warn!("TransformResponse hook failed open: {}", err);
+                            response
                         }
                         Ok(crate::hooks::HookOutcome::Continue {
                             modified: Some(new_response),
