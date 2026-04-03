@@ -48,19 +48,7 @@ impl WorkerHttpClient {
     pub fn from_env(orchestrator_url: String, job_id: Uuid) -> Result<Self, WorkerError> {
         let token =
             std::env::var("IRONCLAW_WORKER_TOKEN").map_err(|_| WorkerError::MissingToken)?;
-
-        Ok(Self {
-            client: reqwest::Client::builder()
-                .timeout(REQUEST_TIMEOUT)
-                .build()
-                .map_err(|e| WorkerError::ConnectionFailed {
-                    url: orchestrator_url.clone(),
-                    reason: format!("failed to build HTTP client: {}", e),
-                })?,
-            orchestrator_url: orchestrator_url.trim_end_matches('/').to_string(),
-            job_id,
-            token,
-        })
+        Self::new(orchestrator_url, job_id, token)
     }
 
     /// Create with an explicit token (for testing).

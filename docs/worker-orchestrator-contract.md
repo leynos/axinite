@@ -61,6 +61,8 @@ All worker endpoints are declared once in `src/worker/api/types.rs` as paired
 
 The current contract includes:
 
+Worker-orchestrator HTTP endpoints and their purposes.
+
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /worker/{job_id}/job` | Fetch the sandboxed job description |
@@ -69,8 +71,8 @@ The current contract includes:
 | `POST /worker/{job_id}/complete` | Persist authoritative terminal outcome |
 | `POST /worker/{job_id}/event` | Append user-visible timeline events |
 | `GET /worker/{job_id}/prompt` | Poll orchestrator-injected follow-up prompts |
-| `POST /worker/{job_id}/llm/complete` | Proxy plain LLM completion |
-| `POST /worker/{job_id}/llm/complete_with_tools` | Proxy tool-capable LLM completion |
+| `POST /worker/{job_id}/llm/complete` | Proxy plain language model (LLM) completion |
+| `POST /worker/{job_id}/llm/complete_with_tools` | Proxy tool-capable language model (LLM) completion |
 | `GET /worker/{job_id}/tools/catalog` | Fetch hosted-visible remote tool definitions |
 | `POST /worker/{job_id}/tools/execute` | Execute a hosted remote tool through the orchestrator |
 
@@ -84,8 +86,8 @@ so accidental path drift fails the build before runtime tests execute.
 - `WorkerRuntime::new(config, client)` is the primary constructor. It is used
   by tests and by any caller that already owns a prepared `WorkerHttpClient`.
 - `WorkerRuntime::from_env(config)` is the production convenience wrapper. It
-  reads `IRONCLAW_WORKER_TOKEN`, builds the HTTP client, and then delegates to
-  `new`.
+  reads `IRONCLAW_WORKER_TOKEN` and then delegates to `new`, which builds the
+  HTTP client with the shared timeout and error mapping.
 
 This split exists so tests can validate runtime behaviour without relying on
 ambient environment state. It also gives construction-time validation one

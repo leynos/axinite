@@ -128,13 +128,13 @@ impl WorkerHttpClient {
     /// Fetch credentials granted to this job from the orchestrator.
     ///
     /// Returns an empty vec if no credentials are granted (204 No Content).
-    /// Fetched credentials should be handed off to
-    /// [`WorkerRuntime::hydrate_credentials`](crate::worker::container::WorkerRuntime::hydrate_credentials),
-    /// which stores them in its `extra_env` and injects them into child processes.
-    /// Callers should use this runtime hydrate/injection pathway rather than
-    /// setting global environment variables directly. This keeps credential
-    /// scope local to the worker execution context rather than mutating global
-    /// process state.
+    /// Fetched credentials should be handed off to the
+    /// [`WorkerRuntime`](crate::worker::container::WorkerRuntime) credential
+    /// hydration path, which stores them in `extra_env` and injects them into
+    /// child processes. Callers should use that runtime hydrate/injection
+    /// pathway rather than setting global environment variables directly. This
+    /// keeps credential scope local to the worker execution context rather than
+    /// mutating global process state.
     pub async fn fetch_credentials(&self) -> Result<Vec<CredentialResponse>, WorkerError> {
         let url = self.url(CREDENTIALS_PATH);
         let resp = self

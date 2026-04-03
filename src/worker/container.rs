@@ -204,15 +204,13 @@ impl WorkerRuntime {
         }
 
         let iteration_tracker = Arc::new(Mutex::new(0u32));
-        let execution = match tokio::time::timeout(
-            self.config.timeout,
-            self.run_job_loop(&job, Arc::clone(&iteration_tracker)),
-        )
-        .await
+        let execution = match self
+            .run_job_loop(&job, Arc::clone(&iteration_tracker))
+            .await
         {
-            Ok(Ok(outcome)) => WorkerExecutionResult::Outcome(outcome),
-            Ok(Err(error)) => WorkerExecutionResult::Failed(error),
-            Err(_) => WorkerExecutionResult::TimedOut,
+            Ok(Some(outcome)) => WorkerExecutionResult::Outcome(outcome),
+            Ok(None) => WorkerExecutionResult::TimedOut,
+            Err(error) => WorkerExecutionResult::Failed(error),
         };
 
         let iterations = *iteration_tracker.lock().await;
@@ -243,7 +241,7 @@ impl WorkerRuntime {
         &self,
         job: &crate::worker::api::JobDescription,
         iteration_tracker: Arc<Mutex<u32>>,
-    ) -> Result<LoopOutcome, crate::error::Error> {
+    ) -> Result<Option<LoopOutcome>, crate::error::Error> {
         let reasoning = Reasoning::new(Arc::clone(&self.llm));
         let mut reason_ctx = self.build_reasoning_context(job).await;
 
@@ -261,16 +259,22 @@ impl WorkerRuntime {
             max_tool_intent_nudges: 2,
         };
 
-        let outcome = crate::agent::agentic_loop::run_agentic_loop(
-            &delegate,
-            &reasoning,
-            &mut reason_ctx,
-            &config,
+        let outcome = tokio::time::timeout(
+            self.config.timeout,
+            crate::agent::agentic_loop::run_agentic_loop(
+                &delegate,
+                &reasoning,
+                &mut reason_ctx,
+                &config,
+            ),
         )
         .await;
 
         delegate.shutdown().await;
-        outcome
+        match outcome {
+            Ok(result) => result.map(Some),
+            Err(_) => Ok(None),
+        }
     }
 
     async fn build_reasoning_context(
