@@ -2,6 +2,7 @@
 //! `reciprocal_rank_fusion`.
 
 use super::*;
+use rstest::rstest;
 
 #[test]
 fn test_search_config_builders() {
@@ -38,19 +39,17 @@ fn test_rrf_both_empty() {
     assert!(results.is_empty());
 }
 
-#[test]
-fn test_rrf_fts_only_no_vector() {
-    let results = build_single_method_rrf_results(true);
+#[rstest]
+#[case::fts(true)]
+#[case::vector(false)]
+fn test_rrf_single_method_results(#[case] use_fts: bool) {
+    let results = build_single_method_rrf_results(use_fts);
     assert_eq!(results.len(), 3);
-    assert_all_fts_only(&results);
-    assert_scores_descending(&results);
-}
-
-#[test]
-fn test_rrf_vector_only_no_fts() {
-    let results = build_single_method_rrf_results(false);
-    assert_eq!(results.len(), 3);
-    assert_all_vector_only(&results);
+    if use_fts {
+        assert_all_fts_only(&results);
+    } else {
+        assert_all_vector_only(&results);
+    }
     assert_scores_descending(&results);
 }
 
@@ -136,12 +135,9 @@ fn test_rrf_min_score_one_keeps_only_top_result() {
     assert!((results[0].score - 1.0).abs() < 0.001);
 }
 
-#[test]
-fn test_search_config_fts_only() {
-    assert_single_method_config(true);
-}
-
-#[test]
-fn test_search_config_vector_only() {
-    assert_single_method_config(false);
+#[rstest]
+#[case::fts(true)]
+#[case::vector(false)]
+fn test_search_config_single_method(#[case] use_fts: bool) {
+    assert_single_method_config(use_fts);
 }

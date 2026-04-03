@@ -195,6 +195,10 @@ fn test_rebuild_chat_messages_malformed_tool_calls_json(test_safety_layer: Safet
     let result = rebuild_chat_messages_from_db(&messages, &safety);
     // Malformed JSON is skipped with a warning (logs message_id and parse error)
     assert_eq!(result.len(), 2);
+    assert_eq!(result[0].role, crate::llm::Role::User);
+    assert_eq!(result[0].content, "Hi");
+    assert_eq!(result[1].role, crate::llm::Role::Assistant);
+    assert_eq!(result[1].content, "Done");
 }
 
 #[rstest]
@@ -278,7 +282,7 @@ fn test_rebuild_chat_messages_multi_turn_with_tools(test_safety_layer: SafetyLay
         {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found it"}
     ]);
     let tool_json_2 = serde_json::json!([
-        {"name": "write", "call_id": "call_0", "parameters": {"path": "a.txt"}, "result": "ok"}
+        {"name": "write", "call_id": "call_1", "parameters": {"path": "a.txt"}, "result": "ok"}
     ]);
     let messages = vec![
         make_db_msg("user", "Find X"),
@@ -293,30 +297,60 @@ fn test_rebuild_chat_messages_multi_turn_with_tools(test_safety_layer: SafetyLay
     assert_eq!(result.len(), 8);
 
     assert_eq!(result[0].content, "Find X");
-    assert_assistant_with_tool_calls(&result[1]);
-    assert_eq!(result[2].role, crate::llm::Role::Tool);
+    let first_turn_tool_calls = assert_assistant_with_tool_calls(&result[1]);
+    assert_eq!(first_turn_tool_calls.len(), 1);
+    assert_eq!(first_turn_tool_calls[0].id, "call_0");
+    assert_eq!(first_turn_tool_calls[0].name, "search");
+    assert_tool_result_message(&result[2], "call_0", "search", &["found it"]);
     assert_eq!(result[3].content, "Found X");
 
     assert_eq!(result[4].content, "Write it");
-    assert_assistant_with_tool_calls(&result[5]);
-    assert_eq!(result[6].role, crate::llm::Role::Tool);
+    let second_turn_tool_calls = assert_assistant_with_tool_calls(&result[5]);
+    assert_eq!(second_turn_tool_calls.len(), 1);
+    assert_eq!(second_turn_tool_calls[0].id, "call_1");
+    assert_eq!(second_turn_tool_calls[0].name, "write");
+    assert_tool_result_message(&result[6], "call_1", "write", &["ok"]);
     assert_eq!(result[7].content, "Written");
 }
 
 #[rstest]
-fn test_tool_result_content_uses_result_preview_fallback(test_safety_layer: SafetyLayer) {
-    // Entry has result_preview but no result or error — should use
-    // result_preview as the content source.
-    let tool_json = serde_json::json!([
+#[case::result_preview(
+    serde_json::json!([
         {
             "name": "search",
             "call_id": "call_preview",
             "parameters": {"q": "test"},
             "result_preview": "Preview of search results…"
         }
-    ]);
+    ]),
+    "Search",
+    "call_preview",
+    "search",
+    "Preview of search results"
+)]
+#[case::defaults_to_ok(
+    serde_json::json!([
+        {
+            "name": "noop",
+            "call_id": "call_ok",
+            "parameters": {}
+        }
+    ]),
+    "Run noop",
+    "call_ok",
+    "noop",
+    "OK"
+)]
+fn test_tool_result_content_fallbacks(
+    test_safety_layer: SafetyLayer,
+    #[case] tool_json: serde_json::Value,
+    #[case] user_content: &str,
+    #[case] expected_call_id: &str,
+    #[case] expected_tool_name: &str,
+    #[case] expected_fragment: &str,
+) {
     let messages = vec![
-        make_db_msg("user", "Search"),
+        make_db_msg("user", user_content),
         make_db_msg("tool_calls", &tool_json.to_string()),
         make_db_msg("assistant", "Done"),
     ];
@@ -324,33 +358,13 @@ fn test_tool_result_content_uses_result_preview_fallback(test_safety_layer: Safe
 
     assert_eq!(result.len(), 4);
     let tcs = assert_assistant_with_tool_calls(&result[1]);
-    assert_eq!(tcs[0].name, "search");
+    assert_eq!(tcs.len(), 1);
+    assert_eq!(tcs[0].id, expected_call_id);
+    assert_eq!(tcs[0].name, expected_tool_name);
     assert_tool_result_message(
         &result[2],
-        "call_preview",
-        "search",
-        &["Preview of search results"],
+        expected_call_id,
+        expected_tool_name,
+        &[expected_fragment],
     );
-}
-
-#[rstest]
-fn test_tool_result_content_defaults_to_ok(test_safety_layer: SafetyLayer) {
-    // Entry has neither error, result, nor result_preview — should default to
-    // "OK".
-    let tool_json = serde_json::json!([
-        {
-            "name": "noop",
-            "call_id": "call_ok",
-            "parameters": {}
-        }
-    ]);
-    let messages = vec![
-        make_db_msg("user", "Run noop"),
-        make_db_msg("tool_calls", &tool_json.to_string()),
-        make_db_msg("assistant", "Done"),
-    ];
-    let result = rebuild_chat_messages_from_db(&messages, &test_safety_layer);
-
-    assert_eq!(result.len(), 4);
-    assert_tool_result_message(&result[2], "call_ok", "noop", &["OK"]);
 }

@@ -21,9 +21,11 @@ dyn-safe trait with boxed futures for the object-safe boundary, and a
 ergonomic implementation. The direct `async-trait` dependency was removed from
 `Cargo.toml` on 2026-03-24 (Milestone 5).
 
-This document tracks the phased migration: Phase 1 (audit/checklist),
-Phase 2 (concrete-only traits), Phase 3 (Architectural Decision Record
-(ADR) 006 pilot), and Phase 4 (cleanup).
+This document tracks the phased migration:
+Phase 1 (audit/checklist),
+Phase 2 (concrete-only traits),
+Phase 3 (Architectural Decision Record (ADR) 006 pilot),
+Phase 4 (cleanup).
 
 ## Approval gates
 

@@ -14,6 +14,36 @@ pub(super) const CLI_TOOL_RESULT_MAX: usize = 200;
 /// Max characters for thinking/status messages in the terminal.
 pub(super) const CLI_STATUS_MAX: usize = 200;
 
+/// Describes a completed tool invocation for terminal rendering.
+pub(super) struct ToolCompletedInfo<'a> {
+    pub name: &'a str,
+    pub success: bool,
+    pub error: Option<&'a str>,
+    pub parameters: Option<&'a str>,
+}
+
+/// Describes a newly started background job for terminal rendering.
+pub(super) struct JobStartedInfo<'a> {
+    pub job_id: &'a str,
+    pub title: &'a str,
+    pub browse_url: &'a str,
+}
+
+/// Describes an authentication-required event for terminal rendering.
+pub(super) struct AuthRequiredInfo<'a> {
+    pub extension_name: &'a str,
+    pub instructions: Option<&'a str>,
+    pub setup_url: Option<&'a str>,
+    pub auth_url: Option<&'a str>,
+}
+
+/// Describes a completed authentication attempt for terminal rendering.
+pub(super) struct AuthCompletedInfo<'a> {
+    pub extension_name: &'a str,
+    pub success: bool,
+    pub message: &'a str,
+}
+
 fn render_thinking(msg: &str) -> String {
     let display = truncate_for_preview(msg, CLI_STATUS_MAX);
     format!("  \x1b[90m\u{25CB} {display}\x1b[0m")
@@ -31,22 +61,17 @@ pub(super) fn print_tool_started(name: &str) {
     eprintln!("{}", render_tool_started(name));
 }
 
-fn render_tool_completed_lines(
-    name: &str,
-    success: bool,
-    error: Option<&str>,
-    parameters: Option<&str>,
-) -> Vec<String> {
+fn render_tool_completed_lines(info: &ToolCompletedInfo<'_>) -> Vec<String> {
     let mut lines = Vec::new();
-    if success {
-        lines.push(format!("  \x1b[32m\u{25CF} {name}\x1b[0m"));
+    if info.success {
+        lines.push(format!("  \x1b[32m\u{25CF} {}\x1b[0m", info.name));
     } else {
-        lines.push(format!("  \x1b[31m\u{2717} {name} (failed)\x1b[0m"));
-        if let Some(error) = error {
+        lines.push(format!("  \x1b[31m\u{2717} {} (failed)\x1b[0m", info.name));
+        if let Some(error) = info.error {
             let display = truncate_for_preview(error, CLI_TOOL_RESULT_MAX);
             lines.push(format!("    \x1b[90merror: {display}\x1b[0m"));
         }
-        if let Some(parameters) = parameters {
+        if let Some(parameters) = info.parameters {
             let display = truncate_for_preview(parameters, CLI_TOOL_RESULT_MAX);
             lines.push(format!("    \x1b[90mparams: {display}\x1b[0m"));
         }
@@ -54,13 +79,8 @@ fn render_tool_completed_lines(
     lines
 }
 
-pub(super) fn print_tool_completed(
-    name: &str,
-    success: bool,
-    error: Option<&str>,
-    parameters: Option<&str>,
-) {
-    for line in render_tool_completed_lines(name, success, error, parameters) {
+pub(super) fn print_tool_completed(info: &ToolCompletedInfo<'_>) {
+    for line in render_tool_completed_lines(info) {
         eprintln!("{line}");
     }
 }
@@ -89,12 +109,15 @@ pub(super) fn print_stream_chunk(is_streaming: &AtomicBool, chunk: &str) {
     let _ = io::stdout().flush();
 }
 
-fn render_job_started(job_id: &str, title: &str, browse_url: &str) -> String {
-    format!("  \x1b[36m[job]\x1b[0m {title} \x1b[90m({job_id})\x1b[0m \x1b[4m{browse_url}\x1b[0m")
+fn render_job_started(info: &JobStartedInfo<'_>) -> String {
+    format!(
+        "  \x1b[36m[job]\x1b[0m {} \x1b[90m({})\x1b[0m \x1b[4m{}\x1b[0m",
+        info.title, info.job_id, info.browse_url
+    )
 }
 
-pub(super) fn print_job_started(job_id: &str, title: &str, browse_url: &str) {
-    eprintln!("{}", render_job_started(job_id, title, browse_url));
+pub(super) fn print_job_started(info: &JobStartedInfo<'_>) {
+    eprintln!("{}", render_job_started(info));
 }
 
 fn render_status(is_debug: bool, msg: &str) -> Option<String> {
@@ -129,24 +152,22 @@ pub(super) fn print_approval_needed(
     }
 }
 
-fn render_auth_required_lines(
-    extension_name: &str,
-    instructions: Option<&str>,
-    setup_url: Option<&str>,
-    auth_url: Option<&str>,
-) -> Vec<String> {
+fn render_auth_required_lines(info: &AuthRequiredInfo<'_>) -> Vec<String> {
     let mut lines = vec![
         String::new(),
-        format!("\x1b[33m  Authentication required for {extension_name}\x1b[0m"),
+        format!(
+            "\x1b[33m  Authentication required for {}\x1b[0m",
+            info.extension_name
+        ),
     ];
-    if let Some(instr) = instructions {
+    if let Some(instr) = info.instructions {
         lines.push(format!("  {instr}"));
     }
-    if let Some(url) = auth_url {
+    if let Some(url) = info.auth_url {
         lines.push(format!("  \x1b[4m{url}\x1b[0m"));
     }
-    if let Some(url) = setup_url
-        && Some(url) != auth_url
+    if let Some(url) = info.setup_url
+        && Some(url) != info.auth_url
     {
         lines.push(format!("  \x1b[4m{url}\x1b[0m"));
     }
@@ -154,30 +175,22 @@ fn render_auth_required_lines(
     lines
 }
 
-pub(super) fn print_auth_required(
-    extension_name: &str,
-    instructions: Option<&str>,
-    setup_url: Option<&str>,
-    auth_url: Option<&str>,
-) {
-    for line in render_auth_required_lines(extension_name, instructions, setup_url, auth_url) {
+pub(super) fn print_auth_required(info: &AuthRequiredInfo<'_>) {
+    for line in render_auth_required_lines(info) {
         eprintln!("{line}");
     }
 }
 
-fn render_auth_completed(extension_name: &str, success: bool, message: &str) -> String {
-    if success {
-        format!("\x1b[32m  {extension_name}: {message}\x1b[0m")
+fn render_auth_completed(info: &AuthCompletedInfo<'_>) -> String {
+    if info.success {
+        format!("\x1b[32m  {}: {}\x1b[0m", info.extension_name, info.message)
     } else {
-        format!("\x1b[31m  {extension_name}: {message}\x1b[0m")
+        format!("\x1b[31m  {}: {}\x1b[0m", info.extension_name, info.message)
     }
 }
 
-pub(super) fn print_auth_completed(extension_name: &str, success: bool, message: &str) {
-    eprintln!(
-        "{}",
-        render_auth_completed(extension_name, success, message)
-    );
+pub(super) fn print_auth_completed(info: &AuthCompletedInfo<'_>) {
+    eprintln!("{}", render_auth_completed(info));
 }
 
 fn render_image_generated(path: Option<&str>) -> String {
@@ -220,16 +233,26 @@ mod tests {
         let stderr = [
             render_thinking("Thinking about the next step"),
             render_tool_started("write_file"),
-            render_tool_completed_lines("write_file", true, None, None).join("\n"),
-            render_tool_completed_lines(
-                "write_file",
-                false,
-                Some("permission denied"),
-                Some("{\"path\":\"[REDACTED]\",\"mode\":\"0644\"}"),
-            )
+            render_tool_completed_lines(&ToolCompletedInfo {
+                name: "write_file",
+                success: true,
+                error: None,
+                parameters: None,
+            })
+            .join("\n"),
+            render_tool_completed_lines(&ToolCompletedInfo {
+                name: "write_file",
+                success: false,
+                error: Some("permission denied"),
+                parameters: Some("{\"path\":\"[REDACTED]\",\"mode\":\"0644\"}"),
+            })
             .join("\n"),
             render_tool_result("Wrote file successfully"),
-            render_job_started("job_123", "Inspect docs", "https://example.test/job/123"),
+            render_job_started(&JobStartedInfo {
+                job_id: "job_123",
+                title: "Inspect docs",
+                browse_url: "https://example.test/job/123",
+            }),
             render_status(true, "status for debug").expect("debug status should render"),
             render_status(false, "Approval required for write_file")
                 .expect("approval status should render"),
@@ -238,15 +261,23 @@ mod tests {
                 &serde_json::json!({"path": "/tmp/example.txt", "mode": "0644"}),
             )
             .join("\n"),
-            render_auth_required_lines(
-                "github",
-                Some("Visit the OAuth URL to continue."),
-                Some("https://example.test/setup"),
-                Some("https://example.test/auth"),
-            )
+            render_auth_required_lines(&AuthRequiredInfo {
+                extension_name: "github",
+                instructions: Some("Visit the OAuth URL to continue."),
+                setup_url: Some("https://example.test/setup"),
+                auth_url: Some("https://example.test/auth"),
+            })
             .join("\n"),
-            render_auth_completed("github", true, "Authenticated"),
-            render_auth_completed("github", false, "Authentication failed"),
+            render_auth_completed(&AuthCompletedInfo {
+                extension_name: "github",
+                success: true,
+                message: "Authenticated",
+            }),
+            render_auth_completed(&AuthCompletedInfo {
+                extension_name: "github",
+                success: false,
+                message: "Authentication failed",
+            }),
             render_image_generated(Some("/tmp/output.png")),
             render_image_generated(None),
         ]

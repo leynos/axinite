@@ -21,27 +21,38 @@ pub(super) fn make_result_with_path(
     }
 }
 
-pub(super) fn assert_all_fts_only(results: &[SearchResult]) {
+/// Core implementation for single-method result assertions.
+/// `is_valid` returns `true` for a result that satisfies the expected modality;
+/// `label` is used verbatim in the assertion failure message.
+fn assert_all_single_method(
+    results: &[SearchResult],
+    is_valid: impl Fn(&SearchResult) -> bool,
+    label: &str,
+) {
     let failure = results
         .iter()
         .enumerate()
-        .find(|(_, result)| !result.from_fts() || result.from_vector() || result.is_hybrid());
+        .find(|(_, result)| !is_valid(result));
     assert!(
         failure.is_none(),
-        "expected all FTS-only results, found violation: {:?}; full results: {results:#?}",
+        "expected all {label} results, found violation: {:?}; full results: {results:#?}",
         failure
     );
 }
 
+pub(super) fn assert_all_fts_only(results: &[SearchResult]) {
+    assert_all_single_method(
+        results,
+        |r| r.from_fts() && !r.from_vector() && !r.is_hybrid(),
+        "FTS-only",
+    );
+}
+
 pub(super) fn assert_all_vector_only(results: &[SearchResult]) {
-    let failure = results
-        .iter()
-        .enumerate()
-        .find(|(_, result)| !result.from_vector() || result.from_fts() || result.is_hybrid());
-    assert!(
-        failure.is_none(),
-        "expected all vector-only results, found violation: {:?}; full results: {results:#?}",
-        failure
+    assert_all_single_method(
+        results,
+        |r| r.from_vector() && !r.from_fts() && !r.is_hybrid(),
+        "vector-only",
     );
 }
 

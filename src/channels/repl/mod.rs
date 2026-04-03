@@ -39,9 +39,10 @@ use crate::error::ChannelError;
 use formatting::{ToolApprovalRequest, make_skin, print_help};
 use input::{EscInterruptHandler, ReplHelper};
 use status_output::{
-    print_approval_needed, print_auth_completed, print_auth_required, print_image_generated,
-    print_job_started, print_status, print_stream_chunk, print_thinking, print_tool_completed,
-    print_tool_result, print_tool_started,
+    AuthCompletedInfo, AuthRequiredInfo, JobStartedInfo, ToolCompletedInfo, print_approval_needed,
+    print_auth_completed, print_auth_required, print_image_generated, print_job_started,
+    print_status, print_stream_chunk, print_thinking, print_tool_completed, print_tool_result,
+    print_tool_started,
 };
 
 /// REPL channel with line editing and markdown rendering.
@@ -302,7 +303,12 @@ impl NativeChannel for ReplChannel {
                 error,
                 parameters,
             } => {
-                print_tool_completed(&name, success, error.as_deref(), parameters.as_deref());
+                print_tool_completed(&ToolCompletedInfo {
+                    name: &name,
+                    success,
+                    error: error.as_deref(),
+                    parameters: parameters.as_deref(),
+                });
             }
             StatusUpdate::ToolResult { name: _, preview } => print_tool_result(&preview),
             StatusUpdate::StreamChunk(chunk) => print_stream_chunk(&self.is_streaming, &chunk),
@@ -311,7 +317,11 @@ impl NativeChannel for ReplChannel {
                 title,
                 browse_url,
             } => {
-                print_job_started(&job_id, &title, &browse_url);
+                print_job_started(&JobStartedInfo {
+                    job_id: &job_id,
+                    title: &title,
+                    browse_url: &browse_url,
+                });
             }
             StatusUpdate::Status(msg) => print_status(self.is_debug(), &msg),
             StatusUpdate::ApprovalNeeded {
@@ -332,18 +342,22 @@ impl NativeChannel for ReplChannel {
                 instructions,
                 auth_url,
                 setup_url,
-            } => print_auth_required(
-                &extension_name,
-                instructions.as_deref(),
-                setup_url.as_deref(),
-                auth_url.as_deref(),
-            ),
+            } => print_auth_required(&AuthRequiredInfo {
+                extension_name: &extension_name,
+                instructions: instructions.as_deref(),
+                setup_url: setup_url.as_deref(),
+                auth_url: auth_url.as_deref(),
+            }),
             StatusUpdate::AuthCompleted {
                 extension_name,
                 success,
                 message,
             } => {
-                print_auth_completed(&extension_name, success, &message);
+                print_auth_completed(&AuthCompletedInfo {
+                    extension_name: &extension_name,
+                    success,
+                    message: &message,
+                });
             }
             StatusUpdate::ImageGenerated { path, .. } => {
                 print_image_generated(path.as_deref());

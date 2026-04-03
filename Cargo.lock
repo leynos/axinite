@@ -3457,6 +3457,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-test",
+ "unicode-segmentation",
  "unicode-width 0.2.2",
  "url",
  "urlencoding",

@@ -2,7 +2,8 @@
 
 use lazy_regex::{Regex, regex};
 use termimad::MadSkin;
-use unicode_width::UnicodeWidthChar;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use super::input::SLASH_COMMANDS;
 
@@ -119,11 +120,7 @@ fn ansi_sgr_regex() -> &'static Regex {
 }
 
 fn visible_char_count(text: &str) -> usize {
-    ansi_sgr_regex()
-        .replace_all(text, "")
-        .chars()
-        .map(|ch| UnicodeWidthChar::width(ch).unwrap_or(0))
-        .sum()
+    UnicodeWidthStr::width(ansi_sgr_regex().replace_all(text, "").as_ref())
 }
 
 fn append_visible_chars(
@@ -132,13 +129,13 @@ fn append_visible_chars(
     visible_count: &mut usize,
     output: &mut String,
 ) -> bool {
-    for ch in text.chars() {
-        let char_width = UnicodeWidthChar::width(ch).unwrap_or(0);
-        if char_width > 0 && *visible_count + char_width > limit {
+    for grapheme in UnicodeSegmentation::graphemes(text, true) {
+        let grapheme_width = UnicodeWidthStr::width(grapheme);
+        if grapheme_width > 0 && *visible_count + grapheme_width > limit {
             return false;
         }
-        output.push(ch);
-        *visible_count += char_width;
+        output.push_str(grapheme);
+        *visible_count += grapheme_width;
     }
     true
 }
@@ -326,6 +323,7 @@ mod tests {
         assert_eq!(visible_char_count("工具"), 4);
         assert_eq!(visible_char_count("🙂"), 2);
         assert_eq!(visible_char_count("e\u{301}"), 1);
+        assert_eq!(visible_char_count("👩‍🔬"), 2);
     }
 
     #[test]
@@ -362,5 +360,15 @@ mod tests {
                 "approval card line exceeded expected width: {line:?}"
             );
         }
+    }
+
+    #[test]
+    fn truncate_card_content_keeps_zwj_emoji_clusters_intact() {
+        let text = "👩‍🔬👩‍🔬";
+        let truncated = truncate_card_content(text, 3);
+
+        assert_eq!(visible_char_count(text), 4);
+        assert_eq!(visible_char_count(&truncated), 3);
+        assert_eq!(strip_ansi(&truncated), "👩‍🔬…");
     }
 }
