@@ -2,9 +2,12 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::channels::ChannelSecretUpdater;
 use crate::reload::{ConfigLoader, ListenerController, ReloadError, SecretInjector};
+
+const DNS_LOOKUP_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Orchestrates hot-reload operations across config, listeners, and secrets.
 ///
@@ -90,22 +93,56 @@ impl HotReloadManager {
     async fn resolve_http_addrs(
         http: &crate::config::HttpConfig,
     ) -> Result<Vec<SocketAddr>, ReloadError> {
+        Self::resolve_http_addrs_with_lookup(http, |host, port| {
+            tokio::net::lookup_host((host, port))
+        })
+        .await
+    }
+
+    async fn resolve_http_addrs_with_lookup<L, Fut, I>(
+        http: &crate::config::HttpConfig,
+        lookup_host: L,
+    ) -> Result<Vec<SocketAddr>, ReloadError>
+    where
+        L: Fn(String, u16) -> Fut,
+        Fut: Future<Output = std::io::Result<I>>,
+        I: IntoIterator<Item = SocketAddr>,
+    {
         // Prefer structured construction when host is a valid IP (handles IPv6 correctly).
         if let Ok(ip) = http.host.parse::<std::net::IpAddr>() {
             return Ok(vec![SocketAddr::new(ip, http.port)]);
         }
 
         // Fall back to async DNS/hostname resolution for non-IP host values.
-        let resolved_addrs: Vec<_> = tokio::net::lookup_host((http.host.as_str(), http.port))
-            .await
-            .map_err(|e| {
-                tracing::error!("Invalid socket address in reloaded config: {}", e);
-                ReloadError::from(crate::error::ConfigError::InvalidValue {
-                    key: "http.host:http.port".to_string(),
-                    message: format!("Failed to parse or resolve socket address: {}", e),
-                })
-            })?
-            .collect();
+        let resolved_addrs: Vec<_> = tokio::time::timeout(
+            DNS_LOOKUP_TIMEOUT,
+            lookup_host(http.host.clone(), http.port),
+        )
+        .await
+        .map_err(|_| {
+            tracing::error!(
+                "Timed out resolving socket address for {}:{} after {:?}",
+                http.host,
+                http.port,
+                DNS_LOOKUP_TIMEOUT
+            );
+            ReloadError::from(crate::error::ConfigError::InvalidValue {
+                key: "http.host:http.port".to_string(),
+                message: format!(
+                    "Timed out resolving socket address after {:?}",
+                    DNS_LOOKUP_TIMEOUT
+                ),
+            })
+        })?
+        .map_err(|e| {
+            tracing::error!("Invalid socket address in reloaded config: {}", e);
+            ReloadError::from(crate::error::ConfigError::InvalidValue {
+                key: "http.host:http.port".to_string(),
+                message: format!("Failed to parse or resolve socket address: {}", e),
+            })
+        })?
+        .into_iter()
+        .collect();
 
         if resolved_addrs.is_empty() {
             return Err(ReloadError::from(crate::error::ConfigError::InvalidValue {

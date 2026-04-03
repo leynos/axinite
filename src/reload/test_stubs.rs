@@ -19,37 +19,34 @@ use crate::reload::secret_injector::NativeSecretInjector;
 
 /// Stub config loader that returns a pre-configured result.
 pub struct StubConfigLoader {
-    config: Option<Config>,
-    error: Option<Arc<ConfigError>>,
+    result: Result<Config, Arc<ConfigError>>,
 }
 
 impl StubConfigLoader {
+    /// Construct a stub loader that always returns `config`.
+    ///
+    /// `config` is cloned for each `load()` call so tests can reuse the same
+    /// stub across reload attempts. Returns a `StubConfigLoader` configured for
+    /// successful loads.
     pub fn new_success(config: Config) -> Self {
-        Self {
-            config: Some(config),
-            error: None,
-        }
+        Self { result: Ok(config) }
     }
 
+    /// Construct a stub loader that always returns `error`.
+    ///
+    /// `error` is wrapped once and cloned on each `load()` call so tests can
+    /// exercise failure paths without panics. Returns a `StubConfigLoader`
+    /// configured for failing loads.
     pub fn new_error(error: ConfigError) -> Self {
         Self {
-            config: None,
-            error: Some(Arc::new(error)),
+            result: Err(Arc::new(error)),
         }
     }
 }
 
 impl NativeConfigLoader for StubConfigLoader {
     async fn load(&self) -> Result<Config, ConfigError> {
-        match &self.config {
-            Some(c) => Ok(c.clone()),
-            None => Err(self
-                .error
-                .as_ref()
-                .expect("StubConfigLoader: either config or error must be set")
-                .as_ref()
-                .clone()),
-        }
+        self.result.clone().map_err(|error| error.as_ref().clone())
     }
 }
 
@@ -63,6 +60,10 @@ pub struct StubListenerController {
 }
 
 impl StubListenerController {
+    /// Construct a stub listener controller with a running listener at `addr`.
+    ///
+    /// `addr` seeds the current listener address returned by `current_addr()`.
+    /// Returns a controller that records restarts and allows shutdown checks.
     pub fn new(addr: SocketAddr) -> Self {
         Self {
             current_addr: Arc::new(Mutex::new(addr)),
@@ -73,6 +74,10 @@ impl StubListenerController {
         }
     }
 
+    /// Construct a stub listener controller whose restarts always fail.
+    ///
+    /// `addr` seeds the initial listener address. Returns a controller that
+    /// records restart attempts but responds with a simulated startup error.
     pub fn new_with_restart_failure(addr: SocketAddr) -> Self {
         Self {
             current_addr: Arc::new(Mutex::new(addr)),
@@ -131,6 +136,9 @@ pub struct StubSecretInjector {
 }
 
 impl StubSecretInjector {
+    /// Construct a stub injector that records calls and otherwise succeeds.
+    ///
+    /// Returns a `StubSecretInjector` suitable for success-path reload tests.
     pub fn new() -> Self {
         Self {
             called: Arc::new(Mutex::new(false)),
@@ -138,6 +146,10 @@ impl StubSecretInjector {
         }
     }
 
+    /// Construct a stub injector that records calls and simulates failure.
+    ///
+    /// Returns a `StubSecretInjector` that logs a failure when invoked so tests
+    /// can verify hot reload continues despite injector errors.
     pub fn new_failure() -> Self {
         Self {
             called: Arc::new(Mutex::new(false)),
@@ -178,6 +190,9 @@ impl Default for SpySecretUpdater {
 }
 
 impl SpySecretUpdater {
+    /// Construct a spy updater that records every secret payload it receives.
+    ///
+    /// Returns a `SpySecretUpdater` with an empty call log for reload tests.
     pub fn new() -> Self {
         Self {
             calls: Arc::new(Mutex::new(Vec::new())),

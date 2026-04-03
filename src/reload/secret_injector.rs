@@ -103,9 +103,10 @@ mod tests {
     use secrecy::SecretString;
 
     use super::*;
-    use crate::config::helpers::{ENV_MUTEX, EnvKey, optional_env};
+    use crate::config::helpers::{EnvKey, optional_env};
     use crate::secrets::{CreateSecretParams, InMemorySecretsStore, SecretsCrypto, SecretsStore};
     use crate::testing::credentials::TEST_CRYPTO_KEY;
+    use crate::testing::test_utils::EnvVarsGuard;
 
     struct OverlayResetGuard(&'static str);
 
@@ -123,7 +124,8 @@ mod tests {
 
     #[tokio::test]
     async fn db_secret_injector_injects_and_clears_webhook_secret() {
-        let _env_guard = ENV_MUTEX.lock().expect("env mutex poisoned");
+        let mut env_guard = EnvVarsGuard::new(&[HTTP_WEBHOOK_SECRET_KEY]);
+        env_guard.remove(HTTP_WEBHOOK_SECRET_KEY);
         let _overlay_guard = OverlayResetGuard(HTTP_WEBHOOK_SECRET_KEY);
         crate::config::remove_single_var(HTTP_WEBHOOK_SECRET_KEY);
 
@@ -154,6 +156,7 @@ mod tests {
             .delete("test_user", SECRETS_STORE_KEY)
             .await
             .expect("secret should be deleted");
+        env_guard.remove(HTTP_WEBHOOK_SECRET_KEY);
         NativeSecretInjector::inject(&injector).await;
 
         assert_eq!(

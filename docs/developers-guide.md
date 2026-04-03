@@ -344,7 +344,9 @@ reload sequence:
 
 1. Inject secrets into the environment overlay
 2. Load new configuration
-3. Restart the HTTP listener if the bind address changed
+3. Restart the HTTP listener if the bind address changed, or call
+   `shutdown()` when `channels.http` is removed so the live listener is
+   torn down cleanly
 4. Update channel secrets
 
 The manager is created via `create_hot_reload_manager()` which wires
@@ -361,7 +363,11 @@ Adding a new config source:
 Adding a new listener controller:
 
 1. Implement `NativeListenerController` for the server wrapper.
-2. Implement `current_addr()`, `is_running()`, and `restart_with_addr()`.
+2. Implement `current_addr()`, `is_running()`, `restart_with_addr()`, and
+   `shutdown()`.
+3. Expect `shutdown()` to be called when hot reload removes the HTTP
+   channel configuration, even if the listener address itself did not
+   change beforehand.
 
 ### Test stubs
 

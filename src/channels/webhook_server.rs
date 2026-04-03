@@ -139,7 +139,10 @@ impl WebhookServer {
 
     /// Returns whether the server currently has a running listener task.
     pub fn is_running(&self) -> bool {
-        self.handle.is_some()
+        self.handle
+            .as_ref()
+            .map(|handle| !handle.is_finished())
+            .unwrap_or(false)
     }
 
     /// Signal graceful shutdown and wait for the server task to finish.
