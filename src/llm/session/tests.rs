@@ -34,7 +34,7 @@ async fn new_mgr_async() -> (TempDir, SessionManager) {
 
 #[tokio::test]
 async fn test_session_save_load() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("failed to create temp dir");
     let session_path = dir.path().join("session.json");
 
     let config = SessionConfig {
@@ -49,29 +49,38 @@ async fn test_session_save_load() {
     manager
         .save_session(TEST_SESSION_TOKEN, Some("near"))
         .await
-        .unwrap();
+        .expect("failed to save session");
     manager
         .set_token(SecretString::from(TEST_SESSION_TOKEN))
         .await;
 
     assert!(manager.has_token().await);
-    let token = manager.get_token().await.unwrap();
+    let token = manager
+        .get_token()
+        .await
+        .expect("failed to get session token");
     assert_eq!(token.expose_secret(), TEST_SESSION_TOKEN);
 
     let manager2 = SessionManager::new_async(config).await;
     assert!(manager2.has_token().await);
-    let token2 = manager2.get_token().await.unwrap();
+    let token2 = manager2
+        .get_token()
+        .await
+        .expect("failed to get reloaded session token");
     assert_eq!(token2.expose_secret(), TEST_SESSION_TOKEN);
 
+    let content = tokio::fs::read_to_string(&session_path)
+        .await
+        .expect("failed to read saved session file");
     let data: SessionData =
-        serde_json::from_str(&std::fs::read_to_string(&session_path).unwrap()).unwrap();
+        serde_json::from_str(&content).expect("failed to parse saved session data");
     assert_eq!(data.session_token, TEST_SESSION_TOKEN);
     assert_eq!(data.auth_provider, Some("near".to_string()));
 }
 
 #[tokio::test]
 async fn test_get_token_without_auth_fails() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("failed to create temp dir");
     let config = SessionConfig {
         auth_base_url: "https://example.com".to_string(),
         session_path: dir.path().join("nonexistent.json"),
@@ -92,8 +101,9 @@ fn test_session_data_serde_roundtrip_auth_provider(#[case] auth_provider: Option
         created_at: Utc::now(),
         auth_provider: auth_provider.clone(),
     };
-    let json = serde_json::to_string(&original).unwrap();
-    let deserialized: SessionData = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&original).expect("failed to serialize session data");
+    let deserialized: SessionData =
+        serde_json::from_str(&json).expect("failed to deserialize session data");
 
     assert_eq!(deserialized.session_token, original.session_token);
     assert_eq!(deserialized.auth_provider, auth_provider);
@@ -103,7 +113,8 @@ fn test_session_data_serde_roundtrip_auth_provider(#[case] auth_provider: Option
 #[test]
 fn test_session_data_missing_auth_provider_defaults_to_none() {
     let json = r#"{"session_token":"tok_legacy","created_at":"2025-01-01T00:00:00Z"}"#;
-    let data: SessionData = serde_json::from_str(json).unwrap();
+    let data: SessionData =
+        serde_json::from_str(json).expect("failed to parse legacy session data");
     assert_eq!(data.session_token, "tok_legacy");
     assert_eq!(data.auth_provider, None);
 }
@@ -117,11 +128,8 @@ fn test_session_config_default() {
 
 #[tokio::test]
 async fn test_new_with_nonexistent_session_file() {
-    let dir = tempdir().unwrap();
-    let config = SessionConfig {
-        auth_base_url: "https://example.com".to_string(),
-        session_path: dir.path().join("does_not_exist.json"),
-    };
+    let dir = tempdir().expect("failed to create temp dir");
+    let config = mk_config(dir.path().join("does_not_exist.json"));
     let manager = SessionManager::new(config);
     assert!(!manager.has_token().await);
 }
@@ -170,12 +178,7 @@ async fn test_has_secret_false_then_true(#[case] kind: SecretKind, #[case] secre
 
 #[tokio::test]
 async fn test_ensure_authenticated_short_circuits_with_api_key() {
-    let dir = tempdir().unwrap();
-    let config = SessionConfig {
-        auth_base_url: "https://example.com".to_string(),
-        session_path: dir.path().join("session.json"),
-    };
-    let manager = SessionManager::new(config);
+    let (_dir, manager) = new_mgr();
 
     manager.set_api_key(SecretString::from("sk_test")).await;
 
@@ -187,43 +190,49 @@ async fn test_ensure_authenticated_short_circuits_with_api_key() {
 
 #[tokio::test]
 async fn test_save_session_then_load_in_new_manager() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("failed to create temp dir");
     let session_path = dir.path().join("session.json");
-    let config = SessionConfig {
-        auth_base_url: "https://example.com".to_string(),
-        session_path: session_path.clone(),
-    };
+    let config = mk_config(session_path.clone());
 
     let manager = SessionManager::new_async(config.clone()).await;
     manager
         .save_session("persist_me", Some("google"))
         .await
-        .unwrap();
+        .expect("failed to save session");
 
     let manager2 = SessionManager::new_async(config).await;
     assert!(manager2.has_token().await);
-    let token = manager2.get_token().await.unwrap();
+    let token = manager2
+        .get_token()
+        .await
+        .expect("failed to get persisted session token");
     assert_eq!(token.expose_secret(), "persist_me");
 
+    let content = tokio::fs::read_to_string(&session_path)
+        .await
+        .expect("failed to read persisted session file");
     let raw: SessionData =
-        serde_json::from_str(&std::fs::read_to_string(&session_path).unwrap()).unwrap();
+        serde_json::from_str(&content).expect("failed to parse persisted session data");
     assert_eq!(raw.auth_provider, Some("google".to_string()));
 }
 
 #[tokio::test]
 async fn test_save_session_with_no_auth_provider() {
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("failed to create temp dir");
     let session_path = dir.path().join("session.json");
-    let config = SessionConfig {
-        auth_base_url: "https://example.com".to_string(),
-        session_path: session_path.clone(),
-    };
+    let config = mk_config(session_path.clone());
 
     let manager = SessionManager::new_async(config).await;
-    manager.save_session("anon_tok", None).await.unwrap();
+    manager
+        .save_session("anon_tok", None)
+        .await
+        .expect("failed to save anonymous session");
 
+    let content = tokio::fs::read_to_string(&session_path)
+        .await
+        .expect("failed to read anonymous session file");
     let raw: SessionData =
-        serde_json::from_str(&std::fs::read_to_string(&session_path).unwrap()).unwrap();
+        serde_json::from_str(&content).expect("failed to parse anonymous session data");
     assert_eq!(raw.session_token, "anon_tok");
     assert_eq!(raw.auth_provider, None);
 }
@@ -233,20 +242,17 @@ async fn test_save_session_with_no_auth_provider() {
 async fn test_session_file_permissions() {
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = tempdir().unwrap();
+    let dir = tempdir().expect("failed to create temp dir");
     let session_path = dir.path().join("session.json");
-    let config = SessionConfig {
-        auth_base_url: "https://example.com".to_string(),
-        session_path: session_path.clone(),
-    };
+    let config = mk_config(session_path.clone());
 
     let manager = SessionManager::new_async(config).await;
     manager
         .save_session("secret_tok", Some("github"))
         .await
-        .unwrap();
+        .expect("failed to save session with permissions");
 
-    let metadata = std::fs::metadata(&session_path).unwrap();
+    let metadata = std::fs::metadata(&session_path).expect("failed to stat session file");
     let mode = metadata.permissions().mode() & 0o777;
     assert_eq!(mode, 0o600, "Session file should have 0600 permissions");
 }
