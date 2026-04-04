@@ -178,7 +178,7 @@ async fn test_has_secret_false_then_true(#[case] kind: SecretKind, #[case] secre
 
 #[tokio::test]
 async fn test_ensure_authenticated_short_circuits_with_api_key() {
-    let (_dir, manager) = new_mgr();
+    let (_dir, manager) = new_mgr_async().await;
 
     manager.set_api_key(SecretString::from("sk_test")).await;
 
