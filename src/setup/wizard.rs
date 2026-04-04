@@ -478,6 +478,7 @@ impl SetupWizard {
                     print_error(&format!("Connection failed: {}", e));
                     print_info("Let's configure a new database URL.");
                 } else {
+                    self.run_migrations_postgres().await?;
                     print_success("Database connection successful");
                     self.settings.database_url = Some(url.clone());
                     return Ok(());
@@ -746,9 +747,6 @@ impl SetupWizard {
     #[cfg(feature = "postgres")]
     async fn run_migrations_postgres(&self) -> Result<(), SetupError> {
         if let Some(ref pool) = self.db_pool {
-            use refinery::embed_migrations;
-            embed_migrations!("migrations");
-
             if !self.config.quick {
                 print_info("Running migrations...");
             }
@@ -759,8 +757,7 @@ impl SetupWizard {
                 .await
                 .map_err(|e| SetupError::Database(format!("Pool error: {}", e)))?;
 
-            migrations::runner()
-                .run_async(&mut **client)
+            crate::history::run_postgres_migrations(&mut client)
                 .await
                 .map_err(|e| SetupError::Database(format!("Migration failed: {}", e)))?;
 
@@ -922,6 +919,8 @@ impl SetupWizard {
         {
             if let Ok(url) = std::env::var("DATABASE_URL") {
                 print_info("Using existing PostgreSQL configuration");
+                self.test_database_connection_postgres(&url).await?;
+                self.run_migrations_postgres().await?;
                 self.settings.database_backend = Some("postgres".to_string());
                 self.settings.database_url = Some(url);
                 return Ok(());
@@ -933,6 +932,8 @@ impl SetupWizard {
         #[cfg(feature = "postgres")]
         if let Ok(url) = std::env::var("DATABASE_URL") {
             print_info("Using existing PostgreSQL configuration");
+            self.test_database_connection_postgres(&url).await?;
+            self.run_migrations_postgres().await?;
             self.settings.database_backend = Some("postgres".to_string());
             self.settings.database_url = Some(url);
             return Ok(());

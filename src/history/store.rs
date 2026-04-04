@@ -12,6 +12,8 @@ use crate::config::DatabaseConfig;
 use crate::context::{ActionRecord, JobContext, JobState};
 #[cfg(feature = "postgres")]
 use crate::error::DatabaseError;
+#[cfg(feature = "postgres")]
+use crate::history::migrations::run_postgres_migrations;
 
 /// Record for an LLM call to be persisted.
 #[derive(Debug, Clone)]
@@ -59,14 +61,8 @@ impl Store {
 
     /// Run database migrations (embedded via refinery).
     pub async fn run_migrations(&self) -> Result<(), DatabaseError> {
-        use refinery::embed_migrations;
-        embed_migrations!("migrations");
-
         let mut client = self.pool.get().await?;
-        migrations::runner()
-            .run_async(&mut **client)
-            .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        run_postgres_migrations(&mut client).await?;
         Ok(())
     }
 
