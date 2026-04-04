@@ -12,6 +12,34 @@ use crate::context::{JobContext, JobState, StateTransition};
 #[cfg(feature = "postgres")]
 use crate::error::DatabaseError;
 
+#[cfg(feature = "postgres")]
+const UPSERT_AGENT_JOB_SQL: &str = r#"
+            INSERT INTO agent_jobs (
+                id, conversation_id, title, description, category, status, source,
+                user_id,
+                budget_amount, budget_token, bid_amount, estimated_cost, estimated_time_secs,
+                actual_cost, repair_attempts, transitions, metadata, user_timezone,
+                max_tokens, total_tokens_used, created_at, started_at, completed_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+            ON CONFLICT (id) DO UPDATE SET
+                title = EXCLUDED.title,
+                description = EXCLUDED.description,
+                category = EXCLUDED.category,
+                status = EXCLUDED.status,
+                user_id = EXCLUDED.user_id,
+                estimated_cost = EXCLUDED.estimated_cost,
+                estimated_time_secs = EXCLUDED.estimated_time_secs,
+                actual_cost = EXCLUDED.actual_cost,
+                repair_attempts = EXCLUDED.repair_attempts,
+                transitions = EXCLUDED.transitions,
+                metadata = EXCLUDED.metadata,
+                user_timezone = EXCLUDED.user_timezone,
+                max_tokens = EXCLUDED.max_tokens,
+                total_tokens_used = EXCLUDED.total_tokens_used,
+                started_at = EXCLUDED.started_at,
+                completed_at = EXCLUDED.completed_at
+            "#;
+
 /// Lightweight record for agent (non-sandbox) jobs, used by the web Jobs tab.
 #[derive(Debug, Clone)]
 pub struct AgentJobRecord {
@@ -52,6 +80,57 @@ impl AgentJobSummary {
 }
 
 #[cfg(feature = "postgres")]
+struct JobUpsertFields {
+    status_str: String,
+    transitions_json: serde_json::Value,
+    metadata_json: serde_json::Value,
+    estimated_time_secs_i32: Option<i32>,
+    max_tokens_i64: i64,
+    total_tokens_used_i64: i64,
+}
+
+#[cfg(feature = "postgres")]
+impl JobUpsertFields {
+    fn from_context(ctx: &JobContext) -> Result<Self, DatabaseError> {
+        let status_str = ctx.state.to_string();
+        let estimated_time_secs_i32 = ctx
+            .estimated_duration
+            .map(|duration| {
+                i32::try_from(duration.as_secs()).map_err(|error| {
+                    DatabaseError::Serialization(format!(
+                        "estimated_duration exceeds i32 range: {} ({error})",
+                        duration.as_secs()
+                    ))
+                })
+            })
+            .transpose()?;
+        let max_tokens_i64 = i64::try_from(ctx.max_tokens).map_err(|error| {
+            DatabaseError::Serialization(format!(
+                "max_tokens exceeds i64 range: {} ({error})",
+                ctx.max_tokens
+            ))
+        })?;
+        let total_tokens_used_i64 = i64::try_from(ctx.total_tokens_used).map_err(|error| {
+            DatabaseError::Serialization(format!(
+                "total_tokens_used exceeds i64 range: {} ({error})",
+                ctx.total_tokens_used
+            ))
+        })?;
+        let transitions_json = serde_json::to_value(&ctx.transitions)
+            .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+
+        Ok(Self {
+            status_str,
+            transitions_json,
+            metadata_json: ctx.metadata.clone(),
+            estimated_time_secs_i32,
+            max_tokens_i64,
+            total_tokens_used_i64,
+        })
+    }
+}
+
+#[cfg(feature = "postgres")]
 impl Store {
     fn parse_non_negative_u64_field(value: Option<i64>, field: &str) -> Result<u64, DatabaseError> {
         match value {
@@ -82,88 +161,37 @@ impl Store {
     /// Save a job context to the database.
     pub async fn save_job(&self, ctx: &JobContext) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
-
-        let status = ctx.state.to_string();
-        let estimated_time_secs = ctx
-            .estimated_duration
-            .map(|duration| {
-                i32::try_from(duration.as_secs()).map_err(|error| {
-                    DatabaseError::Serialization(format!(
-                        "estimated_duration exceeds i32 range: {} ({error})",
-                        duration.as_secs()
-                    ))
-                })
-            })
-            .transpose()?;
+        let f = JobUpsertFields::from_context(ctx)?;
         let repair_attempts = i32::try_from(ctx.repair_attempts).map_err(|error| {
             DatabaseError::Serialization(format!(
                 "repair_attempts exceeds i32 range: {} ({error})",
                 ctx.repair_attempts
             ))
         })?;
-        let max_tokens = i64::try_from(ctx.max_tokens).map_err(|error| {
-            DatabaseError::Serialization(format!(
-                "max_tokens exceeds i64 range: {} ({error})",
-                ctx.max_tokens
-            ))
-        })?;
-        let total_tokens_used = i64::try_from(ctx.total_tokens_used).map_err(|error| {
-            DatabaseError::Serialization(format!(
-                "total_tokens_used exceeds i64 range: {} ({error})",
-                ctx.total_tokens_used
-            ))
-        })?;
-        let transitions = serde_json::to_value(&ctx.transitions)
-            .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
         conn.execute(
-            r#"
-            INSERT INTO agent_jobs (
-                id, conversation_id, title, description, category, status, source,
-                user_id,
-                budget_amount, budget_token, bid_amount, estimated_cost, estimated_time_secs,
-                actual_cost, repair_attempts, transitions, metadata, user_timezone,
-                max_tokens, total_tokens_used, created_at, started_at, completed_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-            ON CONFLICT (id) DO UPDATE SET
-                title = EXCLUDED.title,
-                description = EXCLUDED.description,
-                category = EXCLUDED.category,
-                status = EXCLUDED.status,
-                user_id = EXCLUDED.user_id,
-                estimated_cost = EXCLUDED.estimated_cost,
-                estimated_time_secs = EXCLUDED.estimated_time_secs,
-                actual_cost = EXCLUDED.actual_cost,
-                repair_attempts = EXCLUDED.repair_attempts,
-                transitions = EXCLUDED.transitions,
-                metadata = EXCLUDED.metadata,
-                user_timezone = EXCLUDED.user_timezone,
-                max_tokens = EXCLUDED.max_tokens,
-                total_tokens_used = EXCLUDED.total_tokens_used,
-                started_at = EXCLUDED.started_at,
-                completed_at = EXCLUDED.completed_at
-            "#,
+            UPSERT_AGENT_JOB_SQL,
             &[
                 &ctx.job_id,
                 &ctx.conversation_id,
                 &ctx.title,
                 &ctx.description,
                 &ctx.category,
-                &status,
+                &f.status_str,
                 &"direct",
                 &ctx.user_id,
                 &ctx.budget,
                 &ctx.budget_token,
                 &ctx.bid_amount,
                 &ctx.estimated_cost,
-                &estimated_time_secs,
+                &f.estimated_time_secs_i32,
                 &ctx.actual_cost,
                 &repair_attempts,
-                &transitions,
-                &ctx.metadata,
+                &f.transitions_json,
+                &f.metadata_json,
                 &ctx.user_timezone,
-                &max_tokens,
-                &total_tokens_used,
+                &f.max_tokens_i64,
+                &f.total_tokens_used_i64,
                 &ctx.created_at,
                 &ctx.started_at,
                 &ctx.completed_at,
