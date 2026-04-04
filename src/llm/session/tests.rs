@@ -1,7 +1,5 @@
 use super::*;
-use crate::testing::credentials::{
-    TEST_SESSION_NEARAI_ABC, TEST_SESSION_NEARAI_XYZ, TEST_SESSION_TOKEN,
-};
+use crate::testing::credentials::{TEST_SESSION_NEARAI_ABC, TEST_SESSION_TOKEN};
 use secrecy::ExposeSecret;
 use tempfile::tempdir;
 
@@ -57,30 +55,20 @@ async fn test_get_token_without_auth_fails() {
 }
 
 #[test]
-fn test_session_data_serde_roundtrip_with_auth_provider() {
-    let original = SessionData {
-        session_token: TEST_SESSION_NEARAI_ABC.to_string(),
-        created_at: Utc::now(),
-        auth_provider: Some("github".to_string()),
-    };
-    let json = serde_json::to_string(&original).unwrap();
-    let deserialized: SessionData = serde_json::from_str(&json).unwrap();
-    assert_eq!(deserialized.session_token, original.session_token);
-    assert_eq!(deserialized.auth_provider, Some("github".to_string()));
-    assert_eq!(deserialized.created_at, original.created_at);
-}
+fn test_session_data_serde_roundtrip_auth_provider_variants() {
+    for auth_provider in [Some("github".to_string()), None] {
+        let original = SessionData {
+            session_token: TEST_SESSION_NEARAI_ABC.to_string(),
+            created_at: Utc::now(),
+            auth_provider: auth_provider.clone(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: SessionData = serde_json::from_str(&json).unwrap();
 
-#[test]
-fn test_session_data_serde_roundtrip_without_auth_provider() {
-    let original = SessionData {
-        session_token: TEST_SESSION_NEARAI_XYZ.to_string(),
-        created_at: Utc::now(),
-        auth_provider: None,
-    };
-    let json = serde_json::to_string(&original).unwrap();
-    let deserialized: SessionData = serde_json::from_str(&json).unwrap();
-    assert_eq!(deserialized.session_token, original.session_token);
-    assert_eq!(deserialized.auth_provider, None);
+        assert_eq!(deserialized.session_token, original.session_token);
+        assert_eq!(deserialized.auth_provider, auth_provider);
+        assert_eq!(deserialized.created_at, original.created_at);
+    }
 }
 
 #[test]
