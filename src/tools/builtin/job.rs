@@ -354,7 +354,7 @@ impl CreateJobTool {
             id: job_id,
             task: task.to_string(),
             status: "creating".to_string(),
-            user_id: ctx.user_id.clone(),
+            user_id: crate::db::UserId::from(ctx.user_id.clone()),
             project_dir: project_dir_str.clone(),
             success: None,
             failure_reason: None,

@@ -48,7 +48,7 @@ impl TryFrom<&str> for SandboxMode {
 }
 
 /// Strongly typed sandbox job event discriminator.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SandboxEventType(String);
 
 impl SandboxEventType {
@@ -72,6 +72,18 @@ impl From<String> for SandboxEventType {
 impl fmt::Display for SandboxEventType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl PartialEq<&str> for SandboxEventType {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<String> for SandboxEventType {
+    fn eq(&self, other: &String) -> bool {
+        self.0 == *other
     }
 }
 

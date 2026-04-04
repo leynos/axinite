@@ -57,6 +57,12 @@ fn build_list_job_events_query(
     }
 }
 
+/// Persist one sandbox job event row into `job_events`.
+///
+/// `backend` supplies the libSQL connection, `job_id` identifies the owning
+/// sandbox job, `event_type` names the event discriminator, and `data` holds
+/// the structured JSON payload. Returns a [`DatabaseError`] when connection
+/// acquisition or the insert fails.
 pub(super) async fn save_job_event(
     backend: &LibSqlBackend,
     job_id: Uuid,
@@ -73,6 +79,15 @@ pub(super) async fn save_job_event(
     Ok(())
 }
 
+/// Load sandbox job events using an optional exclusive cursor and limit.
+///
+/// `before_id` filters to rows with `id < before_id`, while `limit` caps the
+/// returned event count and must be positive when provided. Results are returned
+/// oldest-to-newest by `id` even when the query pages newest-first internally.
+///
+/// Returns [`DatabaseError::Query`] for connection or SQL failures, and
+/// [`DatabaseError::Serialization`] if a stored `job_id` cannot be parsed as a
+/// [`Uuid`] or the JSON payload is malformed.
 pub(super) async fn list_job_events(
     backend: &LibSqlBackend,
     job_id: Uuid,
@@ -111,7 +126,7 @@ pub(super) async fn list_job_events(
         events.push(JobEventRecord {
             id: get_i64(&row, 0),
             job_id,
-            event_type: get_text(&row, 2),
+            event_type: SandboxEventType::from(get_text(&row, 2)),
             data,
             created_at: get_ts(&row, 4),
         });
@@ -122,13 +137,14 @@ pub(super) async fn list_job_events(
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
+    use tempfile::TempDir;
     use tempfile::tempdir;
     use uuid::Uuid;
 
     use super::*;
     use crate::db::NativeDatabase;
 
-    async fn backend() -> LibSqlBackend {
+    async fn backend() -> (TempDir, LibSqlBackend) {
         let dir = tempdir().expect("tempdir should be created");
         let db_path = dir.path().join("sandbox-events.db");
         let backend = LibSqlBackend::new_local(&db_path)
@@ -138,8 +154,7 @@ mod tests {
             .run_migrations()
             .await
             .expect("migrations should succeed");
-        std::mem::forget(dir);
-        backend
+        (dir, backend)
     }
 
     async fn seed_sandbox_job(backend: &LibSqlBackend, job_id: Uuid) {
@@ -217,7 +232,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_job_events_returns_ordered_limited_results() {
-        let backend = backend().await;
+        let (_dir, backend) = backend().await;
         let job_id = Uuid::new_v4();
         seed_sandbox_job(&backend, job_id).await;
 
@@ -273,7 +288,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_job_events_rejects_non_positive_limit() {
-        let backend = backend().await;
+        let (_dir, backend) = backend().await;
         let result = list_job_events(&backend, Uuid::new_v4(), None, Some(0)).await;
 
         assert!(matches!(
@@ -285,7 +300,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_job_events_returns_serialization_error_for_invalid_json_payload() {
-        let backend = backend().await;
+        let (_dir, backend) = backend().await;
         let conn = backend.connect().await.expect("connection should succeed");
         let job_id = Uuid::new_v4();
         seed_sandbox_job(&backend, job_id).await;

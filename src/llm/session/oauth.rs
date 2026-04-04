@@ -199,10 +199,6 @@ pub(super) async fn api_key_flow(_manager: &SessionManager) -> Result<(), LlmErr
 
     _manager.set_api_key(SecretString::from(key.clone())).await;
 
-    if let Err(error) = crate::bootstrap::upsert_bootstrap_var("NEARAI_API_KEY", &key) {
-        tracing::warn!("Failed to save API key to bootstrap .env: {}", error);
-    }
-
     println!();
     crate::setup::print_success("NEAR AI Cloud API key saved.");
     println!();

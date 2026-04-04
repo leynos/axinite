@@ -1258,11 +1258,14 @@ impl SetupWizard {
         // If the user chose the API key path, persist it to the encrypted
         // secrets store so inject_llm_keys_from_secrets() can load it on
         // future runs.
-        if let Some(api_key) = session.get_api_key().await
-            && let Ok(ctx) = self.init_secrets_context().await
-            && let Err(e) = ctx.save_secret("llm_nearai_api_key", &api_key).await
-        {
-            tracing::warn!("Failed to persist NEARAI_API_KEY to secrets: {}", e);
+        if let Ok(ctx) = self.init_secrets_context().await {
+            if let Some(api_key) = session.get_api_key().await {
+                if let Err(e) = ctx.save_secret("llm_nearai_api_key", &api_key).await {
+                    tracing::warn!("Failed to persist NEARAI_API_KEY to secrets: {}", e);
+                }
+            } else if let Err(e) = ctx.delete_secret("llm_nearai_api_key").await {
+                tracing::warn!("Failed to clear stale NEARAI_API_KEY secret: {}", e);
+            }
         }
 
         print_success("NEAR AI configured");

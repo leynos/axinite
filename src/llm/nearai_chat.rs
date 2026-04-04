@@ -47,6 +47,11 @@ pub struct NearAiChatProvider {
     pricing: Arc<std::sync::RwLock<HashMap<String, (Decimal, Decimal)>>>,
 }
 
+enum ResolvedBearerCredential {
+    ApiKey(String),
+    SessionToken(String),
+}
+
 impl NearAiChatProvider {
     /// Create a new NEAR AI Chat Completions provider.
     ///
@@ -147,8 +152,30 @@ impl NearAiChatProvider {
         }
     }
 
+    async fn current_bearer_credential(&self) -> Option<ResolvedBearerCredential> {
+        if let Some(ref api_key) = self.config.api_key {
+            return Some(ResolvedBearerCredential::ApiKey(
+                api_key.expose_secret().to_string(),
+            ));
+        }
+
+        if self.session.has_token().await {
+            return self.session.get_token().await.ok().map(|token| {
+                ResolvedBearerCredential::SessionToken(token.expose_secret().to_string())
+            });
+        }
+
+        self.session
+            .get_api_key()
+            .await
+            .map(|key| ResolvedBearerCredential::ApiKey(key.expose_secret().to_string()))
+    }
+
     async fn uses_api_key_auth(&self) -> bool {
-        self.config.api_key.is_some() || self.session.has_api_key().await
+        matches!(
+            self.current_bearer_credential().await,
+            Some(ResolvedBearerCredential::ApiKey(_))
+        )
     }
 
     async fn api_base_url(&self) -> String {
@@ -166,28 +193,21 @@ impl NearAiChatProvider {
     /// 2. Session token (OAuth flow)
     /// 3. Session-managed API key captured during interactive login.
     async fn resolve_bearer_token(&self) -> Result<String, LlmError> {
-        // 1. Config-level API key takes priority
-        if let Some(ref api_key) = self.config.api_key {
-            return Ok(api_key.expose_secret().to_string());
-        }
-
-        // 2. Existing session token (OAuth was already completed)
-        if self.session.has_token().await {
-            let token = self.session.get_token().await?;
-            return Ok(token.expose_secret().to_string());
+        if let Some(credential) = self.current_bearer_credential().await {
+            return Ok(match credential {
+                ResolvedBearerCredential::ApiKey(value)
+                | ResolvedBearerCredential::SessionToken(value) => value,
+            });
         }
 
         // No token yet, trigger interactive login
         self.session.ensure_authenticated().await?;
 
-        // 3. After login, check if a session token was stored (OAuth path)
-        if self.session.has_token().await {
-            let token = self.session.get_token().await?;
-            return Ok(token.expose_secret().to_string());
-        }
-
-        if let Some(key) = self.session.get_api_key().await {
-            return Ok(key.expose_secret().to_string());
+        if let Some(credential) = self.current_bearer_credential().await {
+            return Ok(match credential {
+                ResolvedBearerCredential::ApiKey(value)
+                | ResolvedBearerCredential::SessionToken(value) => value,
+            });
         }
 
         Err(LlmError::AuthFailed {

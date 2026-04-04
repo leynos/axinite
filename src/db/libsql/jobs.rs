@@ -40,11 +40,78 @@ const JOB_CREATED_AT_COL: i32 = 19;
 const JOB_STARTED_AT_COL: i32 = 20;
 const JOB_COMPLETED_AT_COL: i32 = 21;
 
+fn checked_duration_seconds(duration: std::time::Duration) -> Result<i64, DatabaseError> {
+    i64::try_from(duration.as_secs()).map_err(|error| {
+        DatabaseError::Serialization(format!(
+            "estimated_duration exceeds i64 range: {} ({error})",
+            duration.as_secs()
+        ))
+    })
+}
+
+fn checked_u32_to_i64(value: u32, _field: &str) -> Result<i64, DatabaseError> {
+    Ok(i64::from(value))
+}
+
+fn checked_u64_to_i64(value: u64, field: &str) -> Result<i64, DatabaseError> {
+    i64::try_from(value).map_err(|error| {
+        DatabaseError::Serialization(format!("{field} exceeds i64 range: {value} ({error})"))
+    })
+}
+
+fn parse_non_negative_u64(value: i64, field: &str) -> Result<u64, DatabaseError> {
+    if value < 0 {
+        return Err(DatabaseError::Serialization(format!(
+            "{field} must be non-negative: {value}"
+        )));
+    }
+
+    u64::try_from(value).map_err(|error| {
+        DatabaseError::Serialization(format!("{field} exceeds u64 range: {value} ({error})"))
+    })
+}
+
+fn parse_optional_non_negative_u64(value: Option<i64>, field: &str) -> Result<u64, DatabaseError> {
+    value
+        .map(|value| parse_non_negative_u64(value, field))
+        .transpose()
+        .map(|value| value.unwrap_or(0))
+}
+
+fn parse_optional_duration(
+    value: Option<i64>,
+) -> Result<Option<std::time::Duration>, DatabaseError> {
+    value
+        .map(|seconds| {
+            let seconds = parse_non_negative_u64(seconds, "agent_jobs.estimated_time_secs")?;
+            Ok(std::time::Duration::from_secs(seconds))
+        })
+        .transpose()
+}
+
+fn parse_non_negative_u32(value: i64, field: &str) -> Result<u32, DatabaseError> {
+    if value < 0 {
+        return Err(DatabaseError::Serialization(format!(
+            "{field} must be non-negative: {value}"
+        )));
+    }
+
+    u32::try_from(value).map_err(|error| {
+        DatabaseError::Serialization(format!("{field} exceeds u32 range: {value} ({error})"))
+    })
+}
+
 impl NativeJobStore for LibSqlBackend {
     async fn save_job(&self, ctx: &JobContext) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         let status = ctx.state.to_string();
-        let estimated_time_secs = ctx.estimated_duration.map(|d| d.as_secs() as i64);
+        let estimated_time_secs = ctx
+            .estimated_duration
+            .map(checked_duration_seconds)
+            .transpose()?;
+        let repair_attempts = checked_u32_to_i64(ctx.repair_attempts, "repair_attempts")?;
+        let max_tokens = checked_u64_to_i64(ctx.max_tokens, "max_tokens")?;
+        let total_tokens_used = checked_u64_to_i64(ctx.total_tokens_used, "total_tokens_used")?;
         let transitions = serde_json::to_string(&ctx.transitions)
             .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
@@ -91,12 +158,12 @@ impl NativeJobStore for LibSqlBackend {
                     opt_text_owned(ctx.estimated_cost.map(|d| d.to_string())),
                     estimated_time_secs,
                     ctx.actual_cost.to_string(),
-                    ctx.repair_attempts as i64,
+                    repair_attempts,
                     transitions,
                     ctx.metadata.to_string(),
                     ctx.user_timezone.as_str(),
-                    ctx.max_tokens as i64,
-                    ctx.total_tokens_used as i64,
+                    max_tokens,
+                    total_tokens_used,
                     fmt_ts(&ctx.created_at),
                     fmt_opt_ts(&ctx.started_at),
                     fmt_opt_ts(&ctx.completed_at),
@@ -164,14 +231,22 @@ impl NativeJobStore for LibSqlBackend {
                     budget_token: get_opt_text(&row, JOB_BUDGET_TOKEN_COL),
                     bid_amount: get_opt_decimal(&row, JOB_BID_AMOUNT_COL),
                     estimated_cost: get_opt_decimal(&row, JOB_ESTIMATED_COST_COL),
-                    estimated_duration: estimated_time_secs
-                        .map(|s| std::time::Duration::from_secs(s as u64)),
+                    estimated_duration: parse_optional_duration(estimated_time_secs)?,
                     actual_cost: get_decimal(&row, JOB_ACTUAL_COST_COL),
-                    repair_attempts: get_i64(&row, JOB_REPAIR_ATTEMPTS_COL) as u32,
+                    repair_attempts: parse_non_negative_u32(
+                        get_i64(&row, JOB_REPAIR_ATTEMPTS_COL),
+                        "agent_jobs.repair_attempts",
+                    )?,
                     transitions,
                     metadata,
-                    max_tokens: get_i64(&row, JOB_MAX_TOKENS_COL) as u64,
-                    total_tokens_used: get_i64(&row, JOB_TOTAL_TOKENS_USED_COL) as u64,
+                    max_tokens: parse_optional_non_negative_u64(
+                        row.get::<i64>(JOB_MAX_TOKENS_COL).ok(),
+                        "agent_jobs.max_tokens",
+                    )?,
+                    total_tokens_used: parse_optional_non_negative_u64(
+                        row.get::<i64>(JOB_TOTAL_TOKENS_USED_COL).ok(),
+                        "agent_jobs.total_tokens_used",
+                    )?,
                     created_at: get_ts(&row, JOB_CREATED_AT_COL),
                     started_at: get_opt_ts(&row, JOB_STARTED_AT_COL),
                     completed_at: get_opt_ts(&row, JOB_COMPLETED_AT_COL),

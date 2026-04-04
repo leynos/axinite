@@ -1,3 +1,8 @@
+//! V12 WASM migration SQL builder.
+//!
+//! This module is the crate-internal boundary for rebuilding the WASM tables so
+//! legacy libSQL databases pick up the current default WIT version.
+
 const V12_WASM_TOOLS_COLUMNS: &str = r#"    id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -74,6 +79,11 @@ fn append_table_rebuild_sql(sql: &mut String, params: TableRebuildParams<'_>) {
     sql.push_str("\n\n");
 }
 
+/// Build the crate-internal SQL payload for the V12 WASM default migration.
+///
+/// The parent libSQL migrations module re-exports this function and uses the
+/// returned SQL to rebuild the affected tables inside a `BEGIN IMMEDIATE`
+/// transaction.
 pub(crate) fn v12_wasm_wit_default_migration_sql() -> String {
     let mut sql = String::from(
         "PRAGMA legacy_alter_table=ON;\nPRAGMA foreign_keys=OFF;\nBEGIN IMMEDIATE;\n\n",

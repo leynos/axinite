@@ -8,6 +8,8 @@
 
 #[path = "libsql_migrations/v12_wasm.rs"]
 mod v12_wasm;
+#[path = "libsql_migrations/v16_context.rs"]
+mod v16_context;
 
 /// Consolidated schema for libSQL.
 ///
@@ -24,7 +26,7 @@ mod v12_wasm;
 /// - PL/pgSQL functions -> SQLite triggers
 pub const SCHEMA: &str = include_str!("../../migrations/libsql_schema.sql");
 
-struct MigrationContext<'a> {
+pub(super) struct MigrationContext<'a> {
     version: i64,
     name: &'a str,
 }
@@ -134,18 +136,11 @@ ALTER TABLE agent_jobs ADD COLUMN total_tokens_used INTEGER NOT NULL DEFAULT 0;
         "assistant_conversation_unique_index",
         include_str!("../../migrations/V15__assistant_conversation_unique_index.sql"),
     ),
-    (
-        16,
-        "agent_jobs_context_fields",
-        r#"
-ALTER TABLE agent_jobs ADD COLUMN transitions TEXT NOT NULL DEFAULT '[]';
-ALTER TABLE agent_jobs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';
-ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';
-"#,
-    ),
+    (16, v16_context::V16_NAME, v16_context::V16_SQL_MARKER),
 ];
 
 pub(crate) use v12_wasm::v12_wasm_wit_default_migration_sql;
+use v16_context::apply_agent_jobs_context_fields_migration;
 
 /// Run incremental migrations that haven't been applied yet.
 ///
@@ -233,103 +228,6 @@ pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::err
     Ok(())
 }
 
-async fn collect_existing_columns(
-    conn: &libsql::Connection,
-    ctx: MigrationContext<'_>,
-) -> Result<std::collections::BTreeSet<String>, crate::error::DatabaseError> {
-    let MigrationContext { version, name } = ctx;
-    use crate::error::DatabaseError;
-
-    let mut rows = conn
-        .query("PRAGMA table_info(agent_jobs)", ())
-        .await
-        .map_err(|e| {
-            DatabaseError::Migration(format!(
-                "libSQL migration V{version} ({name}): failed to inspect agent_jobs schema: {e}"
-            ))
-        })?;
-    let mut columns = std::collections::BTreeSet::new();
-
-    while let Some(row) = rows.next().await.map_err(|e| {
-        DatabaseError::Migration(format!(
-            "libSQL migration V{version} ({name}): failed to read agent_jobs schema: {e}"
-        ))
-    })? {
-        let column_name = row.get::<String>(1).map_err(|e| {
-            DatabaseError::Migration(format!(
-                "libSQL migration V{version} ({name}): failed to decode agent_jobs column name: {e}"
-            ))
-        })?;
-        columns.insert(column_name);
-    }
-
-    Ok(columns)
-}
-
-fn missing_context_field_statements(
-    columns: &std::collections::BTreeSet<String>,
-) -> Vec<&'static str> {
-    let mut statements = Vec::new();
-    if !columns.contains("transitions") {
-        statements
-            .push("ALTER TABLE agent_jobs ADD COLUMN transitions TEXT NOT NULL DEFAULT '[]';");
-    }
-    if !columns.contains("metadata") {
-        statements.push("ALTER TABLE agent_jobs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';");
-    }
-    if !columns.contains("user_timezone") {
-        statements
-            .push("ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';");
-    }
-
-    statements
-}
-
-async fn apply_agent_jobs_context_fields_migration(
-    conn: &libsql::Connection,
-    ctx: MigrationContext<'_>,
-) -> Result<(), crate::error::DatabaseError> {
-    let MigrationContext { version, name } = ctx;
-    use crate::error::DatabaseError;
-
-    let tx = conn.transaction().await.map_err(|e| {
-        DatabaseError::Migration(format!(
-            "libSQL migration V{version}: failed to start transaction: {e}"
-        ))
-    })?;
-    let columns = collect_existing_columns(&tx, MigrationContext { version, name }).await?;
-    let statements = missing_context_field_statements(&columns);
-
-    if !statements.is_empty() {
-        tx.execute_batch(&statements.join("\n"))
-            .await
-            .map_err(|e| {
-                DatabaseError::Migration(format!(
-                    "libSQL migration V{version} ({name}) failed: {e}"
-                ))
-            })?;
-    }
-
-    tx.execute(
-        "INSERT INTO _migrations (version, name) VALUES (?1, ?2)",
-        libsql::params![version, name],
-    )
-    .await
-    .map_err(|e| {
-        DatabaseError::Migration(format!(
-            "Failed to record migration V{version} ({name}): {e}"
-        ))
-    })?;
-
-    tx.commit().await.map_err(|e| {
-        DatabaseError::Migration(format!(
-            "libSQL migration V{version} ({name}): commit failed: {e}"
-        ))
-    })?;
-
-    Ok(())
-}
-
 async fn apply_non_transactional_migration(
     conn: &libsql::Connection,
     ctx: MigrationContext<'_>,
@@ -367,36 +265,4 @@ async fn apply_non_transactional_migration(
     })?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{INCREMENTAL_MIGRATIONS, v12_wasm_wit_default_migration_sql};
-
-    #[test]
-    fn incremental_migrations_upgrade_existing_wasm_wit_defaults_to_0_3_0() {
-        let (_, _, sql_marker) = INCREMENTAL_MIGRATIONS
-            .iter()
-            .find(|(version, _, _)| *version == 12)
-            .expect("expected a V12 libSQL migration for stale wasm wit_version defaults");
-        assert_eq!(
-            *sql_marker, "-- generated by v12_wasm_wit_default_migration_sql()",
-            "expected V12 migration entry to use the shared SQL builder"
-        );
-
-        let sql = v12_wasm_wit_default_migration_sql();
-
-        assert!(
-            sql.contains("0.3.0"),
-            "expected V12 libSQL migration to set wasm wit_version defaults to 0.3.0"
-        );
-        assert!(
-            !sql.contains("wit_version TEXT NOT NULL DEFAULT '0.1.0'"),
-            "expected V12 libSQL migration to remove stale 0.1.0 wit_version defaults"
-        );
-        assert!(
-            !sql.contains("INSERT INTO _migrations"),
-            "non-transactional migration SQL should not manage _migrations rows itself"
-        );
-    }
 }

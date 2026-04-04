@@ -86,7 +86,7 @@ pub async fn jobs_events_handler(
         .into_iter()
         .map(|event| JobEventResponse {
             id: event.id,
-            event_type: event.event_type,
+            event_type: event.event_type.to_string(),
             data: event.data,
             created_at: event.created_at.to_rfc3339(),
         })
@@ -113,21 +113,21 @@ mod tests {
             JobEventRecord {
                 id: 10,
                 job_id,
-                event_type: "oldest".to_string(),
+                event_type: crate::db::SandboxEventType::from("oldest"),
                 data: serde_json::json!({}),
                 created_at: Utc::now(),
             },
             JobEventRecord {
                 id: 11,
                 job_id,
-                event_type: "middle".to_string(),
+                event_type: crate::db::SandboxEventType::from("middle"),
                 data: serde_json::json!({}),
                 created_at: Utc::now(),
             },
             JobEventRecord {
                 id: 12,
                 job_id,
-                event_type: "newest".to_string(),
+                event_type: crate::db::SandboxEventType::from("newest"),
                 data: serde_json::json!({}),
                 created_at: Utc::now(),
             },

@@ -9,8 +9,9 @@ mod events;
 
 #[cfg(feature = "postgres")]
 use super::Store;
+use crate::db::{SandboxEventType, UserId};
 #[cfg(feature = "postgres")]
-use crate::db::{SandboxJobStatusUpdate, SandboxMode, UserId};
+use crate::db::{SandboxJobStatusUpdate, SandboxMode};
 #[cfg(feature = "postgres")]
 use crate::error::DatabaseError;
 
@@ -21,7 +22,7 @@ pub struct SandboxJobRecord {
     pub id: Uuid,
     pub task: String,
     pub status: String,
-    pub user_id: String,
+    pub user_id: UserId,
     pub project_dir: String,
     pub success: Option<bool>,
     pub failure_reason: Option<String>,
@@ -62,7 +63,7 @@ impl SandboxJobSummary {
 pub struct JobEventRecord {
     pub id: i64,
     pub job_id: Uuid,
-    pub event_type: String,
+    pub event_type: SandboxEventType,
     pub data: serde_json::Value,
     pub created_at: DateTime<Utc>,
 }
@@ -73,7 +74,7 @@ fn row_to_sandbox_job(r: &tokio_postgres::Row) -> SandboxJobRecord {
         id: r.get("id"),
         task: r.get("title"),
         status: r.get("status"),
-        user_id: r.get("user_id"),
+        user_id: UserId::from(r.get::<_, String>("user_id")),
         project_dir: r
             .get::<_, Option<String>>("project_dir")
             .unwrap_or_default(),
@@ -88,11 +89,12 @@ fn row_to_sandbox_job(r: &tokio_postgres::Row) -> SandboxJobRecord {
 
 #[cfg(feature = "postgres")]
 impl Store {
-    /// Insert a new sandbox job into `agent_jobs`.
+    /// Insert or update a sandbox job in `agent_jobs`.
     pub async fn save_sandbox_job(&self, job: &SandboxJobRecord) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
-        conn.execute(
-            r#"
+        let rows_affected = conn
+            .execute(
+                r#"
             INSERT INTO agent_jobs (
                 id, title, description, status, source, user_id, project_dir,
                 success, failure_reason, created_at, started_at, completed_at
@@ -107,22 +109,29 @@ impl Store {
                 failure_reason = EXCLUDED.failure_reason,
                 started_at = EXCLUDED.started_at,
                 completed_at = EXCLUDED.completed_at
+            WHERE agent_jobs.source = 'sandbox'
             "#,
-            &[
-                &job.id,
-                &job.task,
-                &job.credential_grants_json,
-                &job.status,
-                &job.user_id,
-                &job.project_dir,
-                &job.success,
-                &job.failure_reason,
-                &job.created_at,
-                &job.started_at,
-                &job.completed_at,
-            ],
-        )
-        .await?;
+                &[
+                    &job.id,
+                    &job.task,
+                    &job.credential_grants_json,
+                    &job.status,
+                    &job.user_id.as_str(),
+                    &job.project_dir,
+                    &job.success,
+                    &job.failure_reason,
+                    &job.created_at,
+                    &job.started_at,
+                    &job.completed_at,
+                ],
+            )
+            .await?;
+        if rows_affected == 0 {
+            return Err(DatabaseError::Query(format!(
+                "sandbox job {} conflicts with a non-sandbox agent_jobs row",
+                job.id
+            )));
+        }
         Ok(())
     }
 

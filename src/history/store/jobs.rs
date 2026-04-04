@@ -53,6 +53,32 @@ impl AgentJobSummary {
 
 #[cfg(feature = "postgres")]
 impl Store {
+    fn parse_non_negative_u64_field(value: Option<i64>, field: &str) -> Result<u64, DatabaseError> {
+        match value {
+            Some(value) if value < 0 => Err(DatabaseError::Serialization(format!(
+                "{field} must be non-negative: {value}"
+            ))),
+            Some(value) => u64::try_from(value).map_err(|error| {
+                DatabaseError::Serialization(format!(
+                    "{field} exceeds u64 range: {value} ({error})"
+                ))
+            }),
+            None => Ok(0),
+        }
+    }
+
+    fn parse_non_negative_u32_field(value: i32, field: &str) -> Result<u32, DatabaseError> {
+        if value < 0 {
+            return Err(DatabaseError::Serialization(format!(
+                "{field} must be non-negative: {value}"
+            )));
+        }
+
+        u32::try_from(value).map_err(|error| {
+            DatabaseError::Serialization(format!("{field} exceeds u32 range: {value} ({error})"))
+        })
+    }
+
     /// Save a job context to the database.
     pub async fn save_job(&self, ctx: &JobContext) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
@@ -188,19 +214,34 @@ impl Store {
                     bid_amount: row.get("bid_amount"),
                     estimated_cost: row.get("estimated_cost"),
                     estimated_duration: estimated_time_secs
-                        .map(|s| std::time::Duration::from_secs(s as u64)),
+                        .map(|seconds| -> Result<std::time::Duration, DatabaseError> {
+                            let seconds = Self::parse_non_negative_u64_field(
+                                Some(i64::from(seconds)),
+                                "agent_jobs.estimated_time_secs",
+                            )?;
+                            Ok(std::time::Duration::from_secs(seconds))
+                        })
+                        .transpose()?,
                     actual_cost: row
                         .get::<_, Option<Decimal>>("actual_cost")
                         .unwrap_or_default(),
-                    repair_attempts: row.get::<_, i32>("repair_attempts") as u32,
+                    repair_attempts: Self::parse_non_negative_u32_field(
+                        row.get::<_, i32>("repair_attempts"),
+                        "agent_jobs.repair_attempts",
+                    )?,
                     transitions,
                     metadata,
                     created_at: row.get("created_at"),
                     started_at: row.get("started_at"),
                     completed_at: row.get("completed_at"),
-                    max_tokens: row.get::<_, Option<i64>>("max_tokens").unwrap_or(0) as u64,
-                    total_tokens_used: row.get::<_, Option<i64>>("total_tokens_used").unwrap_or(0)
-                        as u64,
+                    max_tokens: Self::parse_non_negative_u64_field(
+                        row.get::<_, Option<i64>>("max_tokens"),
+                        "agent_jobs.max_tokens",
+                    )?,
+                    total_tokens_used: Self::parse_non_negative_u64_field(
+                        row.get::<_, Option<i64>>("total_tokens_used"),
+                        "agent_jobs.total_tokens_used",
+                    )?,
                     extra_env: std::sync::Arc::new(std::collections::HashMap::new()),
                     http_interceptor: None,
                     tool_output_stash: std::sync::Arc::new(tokio::sync::RwLock::new(
@@ -329,25 +370,23 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "postgres")]
+    use crate::testing::try_test_pg_db;
+    #[cfg(feature = "postgres")]
+    use rstest::rstest;
 
     /// Regression test: save_job must persist user-owned and context fields.
     /// Requires a running PostgreSQL instance (integration tier).
     #[cfg(feature = "postgres")]
+    #[rstest]
     #[tokio::test]
-    #[ignore]
     async fn test_save_job_persists_user_id() {
-        use crate::config::Config;
         use crate::context::JobContext;
 
-        let _ = dotenvy::dotenv();
-        let config = Config::from_env().await.expect("Failed to load config");
-        let store = Store::new(&config.database)
-            .await
-            .expect("Failed to connect to database");
-        store
-            .run_migrations()
-            .await
-            .expect("Failed to run migrations");
+        let Some(backend) = try_test_pg_db().await else {
+            return;
+        };
+        let store = Store::from_pool(backend.pool());
 
         let ctx = JobContext::with_user("test-user-42", "PG user_id test", "regression test");
         let mut ctx = ctx.with_timezone("Europe/London");
@@ -370,10 +409,10 @@ mod tests {
         assert_eq!(loaded.metadata, ctx.metadata);
         assert_eq!(loaded.transitions.len(), 1);
 
-        let conn = store.conn().await.unwrap();
+        let conn = backend.pool().get().await.expect("pool get should succeed");
         conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&ctx.job_id])
             .await
-            .unwrap();
+            .expect("delete agent_jobs should succeed");
     }
 
     #[test]

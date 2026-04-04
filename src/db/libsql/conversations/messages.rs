@@ -7,6 +7,15 @@
 
 use super::*;
 
+fn row_to_conversation_message(row: &libsql::Row) -> Result<ConversationMessage, DatabaseError> {
+    Ok(ConversationMessage {
+        id: parse_uuid(get_text(row, 0))?,
+        role: get_text(row, 1),
+        content: get_text(row, 2),
+        created_at: get_ts(row, 3),
+    })
+}
+
 async fn touch_conversation_with_connection(
     conn: &libsql::Connection,
     id: Uuid,
@@ -101,13 +110,7 @@ pub(super) async fn list_conversation_messages_paginated(
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?
     {
-        let id = parse_uuid(get_text(&row, 0))?;
-        all.push(ConversationMessage {
-            id,
-            role: get_text(&row, 1),
-            content: get_text(&row, 2),
-            created_at: get_ts(&row, 3),
-        });
+        all.push(row_to_conversation_message(&row)?);
     }
 
     let has_more = all.len() > limit;
@@ -140,13 +143,7 @@ pub(super) async fn list_conversation_messages(
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?
     {
-        let id = parse_uuid(get_text(&row, 0))?;
-        messages.push(ConversationMessage {
-            id,
-            role: get_text(&row, 1),
-            content: get_text(&row, 2),
-            created_at: get_ts(&row, 3),
-        });
+        messages.push(row_to_conversation_message(&row)?);
     }
     Ok(messages)
 }

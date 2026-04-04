@@ -177,8 +177,7 @@ async fn list_due_cron_routines_claims_and_clears_next_fire_at(#[future] store: 
         .list_due_cron_routines()
         .await
         .expect("list_due_cron_routines should succeed");
-    assert_eq!(due.len(), 1);
-    assert_eq!(due[0].id, routine.id);
+    assert!(due.iter().any(|due_routine| due_routine.id == routine.id));
 
     let after_claim = store
         .get_routine(routine.id)

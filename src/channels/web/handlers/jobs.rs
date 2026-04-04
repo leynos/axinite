@@ -48,7 +48,7 @@ pub async fn jobs_list_handler(
                     id: j.id,
                     title: j.task.clone(),
                     state: ui_state.to_string(),
-                    user_id: j.user_id.clone(),
+                    user_id: j.user_id.to_string(),
                     created_at: j.created_at.to_rfc3339(),
                     started_at: j.started_at.map(|dt| dt.to_rfc3339()),
                 });
@@ -192,7 +192,7 @@ pub async fn jobs_detail_handler(
             title: job.task.clone(),
             description: String::new(),
             state: ui_state.to_string(),
-            user_id: job.user_id.clone(),
+            user_id: job.user_id.to_string(),
             created_at: job.created_at.to_rfc3339(),
             started_at: job.started_at.map(|dt| dt.to_rfc3339()),
             completed_at: job.completed_at.map(|dt| dt.to_rfc3339()),

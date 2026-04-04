@@ -28,6 +28,36 @@ fn parse_optional_uuid_field(
     .transpose()
 }
 
+fn parse_non_negative_u64_field(value: i64, field: &str) -> Result<u64, DatabaseError> {
+    if value < 0 {
+        return Err(DatabaseError::Serialization(format!(
+            "{field} must be non-negative: {value}"
+        )));
+    }
+
+    u64::try_from(value).map_err(|error| {
+        DatabaseError::Serialization(format!("{field} exceeds u64 range: {value} ({error})"))
+    })
+}
+
+fn parse_non_negative_u32_field(value: i64, field: &str) -> Result<u32, DatabaseError> {
+    if value < 0 {
+        return Err(DatabaseError::Serialization(format!(
+            "{field} must be non-negative: {value}"
+        )));
+    }
+
+    u32::try_from(value).map_err(|error| {
+        DatabaseError::Serialization(format!("{field} exceeds u32 range: {value} ({error})"))
+    })
+}
+
+fn parse_optional_i32_field(value: i64, field: &str) -> Result<i32, DatabaseError> {
+    i32::try_from(value).map_err(|error| {
+        DatabaseError::Serialization(format!("{field} exceeds i32 range: {value} ({error})"))
+    })
+}
+
 pub(crate) const ROUTINE_COLUMNS: &str = "\
     id, name, description, user_id, enabled, \
     trigger_type, trigger_config, action_type, action_config, \
@@ -54,6 +84,14 @@ pub(crate) fn row_to_routine_libsql(row: &libsql::Row) -> Result<Routine, Databa
     let action = RoutineAction::from_db(&action_type, action_config)
         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
     let id_raw = get_text(row, 0);
+    let cooldown = parse_non_negative_u64_field(cooldown_secs, "routines.cooldown_secs")?;
+    let max_concurrent = parse_non_negative_u32_field(max_concurrent, "routines.max_concurrent")?;
+    let dedup_window = dedup_window_secs
+        .map(|seconds| parse_non_negative_u64_field(seconds, "routines.dedup_window_secs"))
+        .transpose()?;
+    let run_count = parse_non_negative_u64_field(get_i64(row, 20), "routines.run_count")?;
+    let consecutive_failures =
+        parse_non_negative_u32_field(get_i64(row, 21), "routines.consecutive_failures")?;
 
     Ok(Routine {
         id: parse_uuid_field(&id_raw, "routines.id")?,
@@ -64,9 +102,9 @@ pub(crate) fn row_to_routine_libsql(row: &libsql::Row) -> Result<Routine, Databa
         trigger,
         action,
         guardrails: RoutineGuardrails {
-            cooldown: std::time::Duration::from_secs(cooldown_secs as u64),
-            max_concurrent: max_concurrent as u32,
-            dedup_window: dedup_window_secs.map(|s| std::time::Duration::from_secs(s as u64)),
+            cooldown: std::time::Duration::from_secs(cooldown),
+            max_concurrent,
+            dedup_window: dedup_window.map(std::time::Duration::from_secs),
         },
         notify: NotifyConfig {
             channel: get_opt_text(row, 12),
@@ -78,8 +116,8 @@ pub(crate) fn row_to_routine_libsql(row: &libsql::Row) -> Result<Routine, Databa
         state: get_json(row, 17),
         last_run_at: get_opt_ts(row, 18),
         next_fire_at: get_opt_ts(row, 19),
-        run_count: get_i64(row, 20) as u64,
-        consecutive_failures: get_i64(row, 21) as u32,
+        run_count,
+        consecutive_failures,
         created_at: get_ts(row, 22),
         updated_at: get_ts(row, 23),
     })
@@ -102,7 +140,11 @@ pub(crate) fn row_to_routine_run_libsql(row: &libsql::Row) -> Result<RoutineRun,
         completed_at: get_opt_ts(row, 6),
         status,
         result_summary: get_opt_text(row, 7),
-        tokens_used: row.get::<i64>(8).ok().map(|v| v as i32),
+        tokens_used: row
+            .get::<i64>(8)
+            .ok()
+            .map(|value| parse_optional_i32_field(value, "routine_runs.tokens_used"))
+            .transpose()?,
         job_id: parse_optional_uuid_field(get_opt_text(row, 9), "routine_runs.job_id")?,
         created_at: get_ts(row, 10),
     })

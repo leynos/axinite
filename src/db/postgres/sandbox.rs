@@ -68,7 +68,7 @@ mod tests {
                 id: Uuid::new_v4(),
                 task: "test_task".to_string(),
                 status: "pending".to_string(),
-                user_id: "test_user".to_string(),
+                user_id: UserId::from("test_user"),
                 project_dir: "/tmp/test".to_string(),
                 success: None,
                 failure_reason: None,
@@ -141,13 +141,13 @@ mod tests {
 
             // Create jobs for two different users
             let mut user1_job = pending_job.clone();
-            user1_job.user_id = user1_id.clone();
+            user1_job.user_id = UserId::from(user1_id.clone());
             user1_job.task = "task1".to_string();
             user1_job.project_dir = "/tmp/user1".to_string();
 
             let mut user2_job = pending_job.clone();
             user2_job.id = Uuid::new_v4();
-            user2_job.user_id = user2_id.clone();
+            user2_job.user_id = UserId::from(user2_id.clone());
             user2_job.task = "task2".to_string();
             user2_job.project_dir = "/tmp/user2".to_string();
 
@@ -201,13 +201,13 @@ mod tests {
 
             // Create multiple jobs with different statuses for one user
             let mut pending = pending_job.clone();
-            pending.user_id = user_id.clone();
+            pending.user_id = UserId::from(user_id.clone());
             pending.task = "pending_task".to_string();
             pending.project_dir = "/tmp/pending".to_string();
 
             let mut completed_job = pending_job.clone();
             completed_job.id = Uuid::new_v4();
-            completed_job.user_id = user_id.clone();
+            completed_job.user_id = UserId::from(user_id.clone());
             completed_job.task = "completed_task".to_string();
             completed_job.status = "completed".to_string();
             completed_job.project_dir = "/tmp/completed".to_string();
@@ -218,7 +218,7 @@ mod tests {
 
             let mut other_user_job = pending_job.clone();
             other_user_job.id = Uuid::new_v4();
-            other_user_job.user_id = other_user_id;
+            other_user_job.user_id = UserId::from(other_user_id);
             other_user_job.task = "other_task".to_string();
             other_user_job.status = "pending".to_string();
             other_user_job.project_dir = "/tmp/other".to_string();
@@ -328,7 +328,7 @@ mod tests {
             let other_id = format!("other-{}", Uuid::new_v4());
 
             let mut job = pending_job.clone();
-            job.user_id = owner_id.clone();
+            job.user_id = UserId::from(owner_id.clone());
             job.task = "ownership_test".to_string();
             job.project_dir = "/tmp/owner".to_string();
             let job_id = job.id;

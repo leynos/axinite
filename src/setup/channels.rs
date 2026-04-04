@@ -101,6 +101,14 @@ impl SecretsContext {
             .map_err(|e| ChannelSetupError::Secrets(format!("Failed to read secret: {}", e)))?;
         Ok(SecretString::from(decrypted.expose().to_string()))
     }
+
+    /// Delete a secret from the database.
+    pub async fn delete_secret(&self, name: &str) -> Result<bool, ChannelSetupError> {
+        self.store
+            .delete(&self.user_id, name)
+            .await
+            .map_err(|e| ChannelSetupError::Secrets(format!("Failed to delete secret: {}", e)))
+    }
 }
 
 /// Set up a tunnel for exposing the agent to the internet.

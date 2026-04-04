@@ -242,7 +242,7 @@ impl SessionManager {
     ///
     /// For NEAR AI Cloud API key:
     /// 1. Prompt user for API key from cloud.near.ai
-    /// 2. Set NEARAI_API_KEY env var and save to bootstrap .env
+    /// 2. Store the key in the in-memory session manager for the current run
     /// 3. No session token saved (different auth model)
     async fn initiate_login(&self) -> Result<(), LlmError> {
         oauth::initiate_login_flow(self).await
@@ -251,9 +251,8 @@ impl SessionManager {
     /// NEAR AI Cloud API key entry flow.
     ///
     /// Prompts the user to enter a NEAR AI Cloud API key from
-    /// cloud.near.ai. The key is set as `NEARAI_API_KEY` env var so
-    /// `LlmConfig::resolve()` auto-selects ChatCompletions mode, and
-    /// saved to `~/.ironclaw/.env` for persistence across restarts.
+    /// cloud.near.ai. The key is stored in the session manager for the
+    /// current run; onboarding persists it to encrypted secrets storage.
     /// No session token is saved and no `/v1/users/me` validation is
     /// performed (different auth model).
     async fn api_key_login(&self) -> Result<(), LlmError> {

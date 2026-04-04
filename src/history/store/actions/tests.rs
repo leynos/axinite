@@ -188,6 +188,57 @@ async fn get_job_actions_rejects_negative_duration(#[future] seeded_store: Optio
 
 #[rstest]
 #[tokio::test]
+async fn get_job_actions_rejects_negative_sequence_num(
+    #[future] seeded_store: Option<(Store, Uuid)>,
+) {
+    let Some((store, job_id)) = seeded_store.await else {
+        return;
+    };
+    let conn = store.conn().await.expect("conn should succeed");
+    let action_id = Uuid::new_v4();
+    let executed_at = Utc::now();
+    let warnings = serde_json::json!(["warning"]);
+    let input = serde_json::json!({ "cmd": "echo hi" });
+
+    conn.execute(
+        r#"
+        INSERT INTO job_actions (
+            id, job_id, sequence_num, tool_name, input, output_raw, output_sanitized,
+            sanitization_warnings, cost, duration_ms, success, error_message, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        "#,
+        &[
+            &action_id,
+            &job_id,
+            &-1i32,
+            &"shell",
+            &input,
+            &Some("hi".to_string()),
+            &Some(serde_json::json!({ "stdout": "hi" })),
+            &warnings,
+            &Some(Decimal::new(50, 2)),
+            &0i32,
+            &true,
+            &Option::<String>::None,
+            &executed_at,
+        ],
+    )
+    .await
+    .expect("insert job action should succeed");
+
+    let result = store.get_job_actions(job_id).await;
+
+    assert!(matches!(
+        result,
+        Err(DatabaseError::Serialization(message))
+            if message.contains("sequence_num must be non-negative")
+    ));
+
+    cleanup_job(&store, job_id).await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn get_job_actions_treats_null_warnings_as_empty_vec(
     #[future] seeded_store: Option<(Store, Uuid)>,
 ) {

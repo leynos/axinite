@@ -1,3 +1,7 @@
+//! Session-manager persistence and authentication-path tests.
+//!
+//! These tests cover disk-backed session storage plus API-key auth shortcuts.
+
 use super::*;
 use crate::testing::credentials::{TEST_SESSION_NEARAI_ABC, TEST_SESSION_TOKEN};
 use secrecy::ExposeSecret;

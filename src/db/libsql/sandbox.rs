@@ -20,35 +20,47 @@ use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
 impl NativeSandboxStore for LibSqlBackend {
     async fn save_sandbox_job(&self, job: &SandboxJobRecord) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
-        conn.execute(
-            r#"
+        let rows_affected = conn
+            .execute(
+                r#"
                 INSERT INTO agent_jobs (
                     id, title, description, status, source, user_id, project_dir,
                     success, failure_reason, created_at, started_at, completed_at
                 ) VALUES (?1, ?2, ?3, ?4, 'sandbox', ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                 ON CONFLICT (id) DO UPDATE SET
+                    title = excluded.title,
+                    description = excluded.description,
+                    user_id = excluded.user_id,
+                    project_dir = excluded.project_dir,
                     status = excluded.status,
                     success = excluded.success,
                     failure_reason = excluded.failure_reason,
                     started_at = excluded.started_at,
                     completed_at = excluded.completed_at
+                WHERE agent_jobs.source = 'sandbox'
                 "#,
-            params![
-                job.id.to_string(),
-                job.task.as_str(),
-                job.credential_grants_json.as_str(),
-                job.status.as_str(),
-                job.user_id.as_str(),
-                job.project_dir.as_str(),
-                job.success.map(|b| b as i64),
-                opt_text(job.failure_reason.as_deref()),
-                fmt_ts(&job.created_at),
-                fmt_opt_ts(&job.started_at),
-                fmt_opt_ts(&job.completed_at),
-            ],
-        )
-        .await
-        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+                params![
+                    job.id.to_string(),
+                    job.task.as_str(),
+                    job.credential_grants_json.as_str(),
+                    job.status.as_str(),
+                    job.user_id.as_str(),
+                    job.project_dir.as_str(),
+                    job.success.map(|b| b as i64),
+                    opt_text(job.failure_reason.as_deref()),
+                    fmt_ts(&job.created_at),
+                    fmt_opt_ts(&job.started_at),
+                    fmt_opt_ts(&job.completed_at),
+                ],
+            )
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        if rows_affected == 0 {
+            return Err(DatabaseError::Query(format!(
+                "sandbox job {} conflicts with a non-sandbox agent_jobs row",
+                job.id
+            )));
+        }
         Ok(())
     }
 
@@ -72,11 +84,16 @@ impl NativeSandboxStore for LibSqlBackend {
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
             Some(row) => Ok(Some(SandboxJobRecord {
-                id: get_text(&row, 0).parse().unwrap_or_default(),
+                id: get_text(&row, 0).parse().map_err(|error| {
+                    DatabaseError::Serialization(format!(
+                        "invalid agent_jobs.id UUID '{}': {error}",
+                        get_text(&row, 0)
+                    ))
+                })?,
                 task: get_text(&row, 1),
                 credential_grants_json: get_text(&row, 2),
                 status: get_text(&row, 3),
-                user_id: get_text(&row, 4),
+                user_id: UserId::from(get_text(&row, 4)),
                 project_dir: get_text(&row, 5),
                 success: get_opt_bool(&row, 6),
                 failure_reason: get_opt_text(&row, 7),
@@ -109,12 +126,17 @@ impl NativeSandboxStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
+            let id_raw = get_text(&row, 0);
             jobs.push(SandboxJobRecord {
-                id: get_text(&row, 0).parse().unwrap_or_default(),
+                id: id_raw.parse().map_err(|error| {
+                    DatabaseError::Serialization(format!(
+                        "invalid agent_jobs.id UUID '{id_raw}': {error}"
+                    ))
+                })?,
                 task: get_text(&row, 1),
                 credential_grants_json: get_text(&row, 2),
                 status: get_text(&row, 3),
-                user_id: get_text(&row, 4),
+                user_id: UserId::from(get_text(&row, 4)),
                 project_dir: get_text(&row, 5),
                 success: get_opt_bool(&row, 6),
                 failure_reason: get_opt_text(&row, 7),
@@ -202,16 +224,12 @@ impl NativeSandboxStore for LibSqlBackend {
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
             let status = get_text(&row, 0);
-            let count = get_i64(&row, 1) as usize;
-            summary.total += count;
-            match status.as_str() {
-                "creating" => summary.creating += count,
-                "running" => summary.running += count,
-                "completed" => summary.completed += count,
-                "failed" => summary.failed += count,
-                "interrupted" => summary.interrupted += count,
-                _ => {}
-            }
+            let count = usize::try_from(get_i64(&row, 1)).map_err(|error| {
+                DatabaseError::Serialization(format!(
+                    "sandbox job summary count exceeds usize range: {error}"
+                ))
+            })?;
+            summary.add_count(&status, count);
         }
         Ok(summary)
     }
@@ -240,12 +258,17 @@ impl NativeSandboxStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
+            let id_raw = get_text(&row, 0);
             jobs.push(SandboxJobRecord {
-                id: get_text(&row, 0).parse().unwrap_or_default(),
+                id: id_raw.parse().map_err(|error| {
+                    DatabaseError::Serialization(format!(
+                        "invalid agent_jobs.id UUID '{id_raw}': {error}"
+                    ))
+                })?,
                 task: get_text(&row, 1),
                 credential_grants_json: get_text(&row, 2),
                 status: get_text(&row, 3),
-                user_id: get_text(&row, 4),
+                user_id: UserId::from(get_text(&row, 4)),
                 project_dir: get_text(&row, 5),
                 success: get_opt_bool(&row, 6),
                 failure_reason: get_opt_text(&row, 7),
@@ -277,16 +300,12 @@ impl NativeSandboxStore for LibSqlBackend {
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
             let status = get_text(&row, 0);
-            let count = get_i64(&row, 1) as usize;
-            summary.total += count;
-            match status.as_str() {
-                "creating" => summary.creating += count,
-                "running" => summary.running += count,
-                "completed" => summary.completed += count,
-                "failed" => summary.failed += count,
-                "interrupted" => summary.interrupted += count,
-                _ => {}
-            }
+            let count = usize::try_from(get_i64(&row, 1)).map_err(|error| {
+                DatabaseError::Serialization(format!(
+                    "sandbox job summary count exceeds usize range: {error}"
+                ))
+            })?;
+            summary.add_count(&status, count);
         }
         Ok(summary)
     }

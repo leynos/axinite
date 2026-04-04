@@ -57,7 +57,12 @@ pub(super) async fn save_action(
     action: &ActionRecord,
 ) -> Result<(), DatabaseError> {
     let conn = backend.connect().await?;
-    let duration_ms = action.duration.as_millis() as i64;
+    let duration_ms = i64::try_from(action.duration.as_millis()).map_err(|error| {
+        DatabaseError::Serialization(format!(
+            "job action duration_ms exceeds i64 range: {} ({error})",
+            action.duration.as_millis()
+        ))
+    })?;
     let warnings_json = serde_json::to_string(&action.sanitization_warnings)
         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 

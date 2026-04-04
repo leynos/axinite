@@ -107,7 +107,7 @@ impl Store {
         JobEventRecord {
             id: r.get("id"),
             job_id: r.get("job_id"),
-            event_type: r.get("event_type"),
+            event_type: SandboxEventType::from(r.get::<_, String>("event_type")),
             data: r.get("data"),
             created_at: r.get("created_at"),
         }

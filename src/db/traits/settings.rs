@@ -11,7 +11,7 @@ use crate::error::DatabaseError;
 use crate::history::SettingRow;
 
 /// Strongly typed user identifier for settings-store methods.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct UserId(String);
 
 impl UserId {
@@ -36,6 +36,18 @@ impl From<String> for UserId {
 impl fmt::Display for UserId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl PartialEq<&str> for UserId {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<String> for UserId {
+    fn eq(&self, other: &String) -> bool {
+        self.0 == *other
     }
 }
 
