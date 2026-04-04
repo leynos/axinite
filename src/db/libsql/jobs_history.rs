@@ -8,11 +8,11 @@
 use libsql::params;
 use uuid::Uuid;
 
-use super::{
-    LibSqlBackend, fmt_ts, get_i64, get_json, get_opt_decimal, get_opt_text, get_text, get_ts,
-    opt_text, opt_text_owned,
-};
+use super::{LibSqlBackend, fmt_ts, opt_text, opt_text_owned};
 use crate::context::ActionRecord;
+use crate::db::libsql::helpers::{
+    get_i64, get_json, get_opt_decimal, get_opt_text, get_text, get_ts,
+};
 use crate::db::{EstimationActualsParams, EstimationSnapshotParams};
 use crate::error::DatabaseError;
 use crate::history::LlmCallRecord;

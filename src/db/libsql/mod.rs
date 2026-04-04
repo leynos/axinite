@@ -25,8 +25,8 @@ use libsql::{Connection, Database as LibSqlDatabase};
 
 use crate::db::libsql_migrations;
 pub(crate) use helpers::{
-    fmt_opt_ts, fmt_ts, get_decimal, get_i64, get_json, get_opt_bool, get_opt_decimal,
-    get_opt_text, get_opt_ts, get_text, get_ts, opt_text, opt_text_owned, parse_job_state,
+    fmt_opt_ts, fmt_ts, get_i64, get_json, get_opt_bool, get_opt_text, get_opt_ts, get_text,
+    get_ts, opt_text, opt_text_owned, parse_job_state,
 };
 pub(crate) use row_conversion::row_to_memory_document;
 
