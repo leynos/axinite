@@ -4,8 +4,33 @@
 
 use super::*;
 use crate::testing::credentials::{TEST_SESSION_NEARAI_ABC, TEST_SESSION_TOKEN};
+use rstest::rstest;
 use secrecy::ExposeSecret;
-use tempfile::tempdir;
+use tempfile::{TempDir, tempdir};
+
+enum SecretKind {
+    Token,
+    ApiKey,
+}
+
+fn mk_config(session_path: std::path::PathBuf) -> SessionConfig {
+    SessionConfig {
+        auth_base_url: "https://example.com".to_string(),
+        session_path,
+    }
+}
+
+fn new_mgr() -> (TempDir, SessionManager) {
+    let dir = tempdir().expect("tempdir should be created");
+    let manager = SessionManager::new(mk_config(dir.path().join("session.json")));
+    (dir, manager)
+}
+
+async fn new_mgr_async() -> (TempDir, SessionManager) {
+    let dir = tempdir().expect("tempdir should be created");
+    let manager = SessionManager::new_async(mk_config(dir.path().join("session.json"))).await;
+    (dir, manager)
+}
 
 #[tokio::test]
 async fn test_session_save_load() {
@@ -58,21 +83,21 @@ async fn test_get_token_without_auth_fails() {
     assert!(matches!(result, Err(LlmError::AuthFailed { .. })));
 }
 
-#[test]
-fn test_session_data_serde_roundtrip_auth_provider_variants() {
-    for auth_provider in [Some("github".to_string()), None] {
-        let original = SessionData {
-            session_token: TEST_SESSION_NEARAI_ABC.to_string(),
-            created_at: Utc::now(),
-            auth_provider: auth_provider.clone(),
-        };
-        let json = serde_json::to_string(&original).unwrap();
-        let deserialized: SessionData = serde_json::from_str(&json).unwrap();
+#[rstest]
+#[case(Some("github".to_string()))]
+#[case(None)]
+fn test_session_data_serde_roundtrip_auth_provider(#[case] auth_provider: Option<String>) {
+    let original = SessionData {
+        session_token: TEST_SESSION_NEARAI_ABC.to_string(),
+        created_at: Utc::now(),
+        auth_provider: auth_provider.clone(),
+    };
+    let json = serde_json::to_string(&original).unwrap();
+    let deserialized: SessionData = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.session_token, original.session_token);
-        assert_eq!(deserialized.auth_provider, auth_provider);
-        assert_eq!(deserialized.created_at, original.created_at);
-    }
+    assert_eq!(deserialized.session_token, original.session_token);
+    assert_eq!(deserialized.auth_provider, auth_provider);
+    assert_eq!(deserialized.created_at, original.created_at);
 }
 
 #[test]
@@ -101,61 +126,46 @@ async fn test_new_with_nonexistent_session_file() {
     assert!(!manager.has_token().await);
 }
 
+#[rstest]
+#[case(SecretKind::Token, "my_secret_token")]
+#[case(SecretKind::ApiKey, "sk_test")]
 #[tokio::test]
-async fn test_set_token_get_token_roundtrip() {
-    let dir = tempdir().unwrap();
-    let config = SessionConfig {
-        auth_base_url: "https://example.com".to_string(),
-        session_path: dir.path().join("session.json"),
-    };
-    let manager = SessionManager::new(config);
-    manager
-        .set_token(SecretString::from("my_secret_token"))
-        .await;
-    let token = manager.get_token().await.unwrap();
-    assert_eq!(token.expose_secret(), "my_secret_token");
+async fn test_secret_roundtrip(#[case] kind: SecretKind, #[case] secret: &str) {
+    let (_dir, manager) = new_mgr_async().await;
+
+    match kind {
+        SecretKind::Token => {
+            manager.set_token(SecretString::from(secret)).await;
+            let token = manager.get_token().await.expect("token should exist");
+            assert_eq!(token.expose_secret(), secret);
+        }
+        SecretKind::ApiKey => {
+            manager.set_api_key(SecretString::from(secret)).await;
+            let api_key = manager.get_api_key().await.expect("API key should exist");
+            assert_eq!(api_key.expose_secret(), secret);
+        }
+    }
 }
 
+#[rstest]
+#[case(SecretKind::Token, "tok_something")]
+#[case(SecretKind::ApiKey, "sk_test")]
 #[tokio::test]
-async fn test_has_token_false_then_true() {
-    let dir = tempdir().unwrap();
-    let config = SessionConfig {
-        auth_base_url: "https://example.com".to_string(),
-        session_path: dir.path().join("session.json"),
-    };
-    let manager = SessionManager::new(config);
-    assert!(!manager.has_token().await);
-    manager.set_token(SecretString::from("tok_something")).await;
-    assert!(manager.has_token().await);
-}
+async fn test_has_secret_false_then_true(#[case] kind: SecretKind, #[case] secret: &str) {
+    let (_dir, manager) = new_mgr();
 
-#[tokio::test]
-async fn test_has_api_key_false_then_true() {
-    let dir = tempdir().unwrap();
-    let config = SessionConfig {
-        auth_base_url: "https://example.com".to_string(),
-        session_path: dir.path().join("session.json"),
-    };
-    let manager = SessionManager::new(config);
-
-    assert!(!manager.has_api_key().await);
-    manager.set_api_key(SecretString::from("sk_test")).await;
-    assert!(manager.has_api_key().await);
-}
-
-#[tokio::test]
-async fn test_get_api_key_returns_stored_secret() {
-    let dir = tempdir().unwrap();
-    let config = SessionConfig {
-        auth_base_url: "https://example.com".to_string(),
-        session_path: dir.path().join("session.json"),
-    };
-    let manager = SessionManager::new(config);
-
-    manager.set_api_key(SecretString::from("sk_test")).await;
-
-    let api_key = manager.get_api_key().await.expect("API key should exist");
-    assert_eq!(api_key.expose_secret(), "sk_test");
+    match kind {
+        SecretKind::Token => {
+            assert!(!manager.has_token().await);
+            manager.set_token(SecretString::from(secret)).await;
+            assert!(manager.has_token().await);
+        }
+        SecretKind::ApiKey => {
+            assert!(!manager.has_api_key().await);
+            manager.set_api_key(SecretString::from(secret)).await;
+            assert!(manager.has_api_key().await);
+        }
+    }
 }
 
 #[tokio::test]
