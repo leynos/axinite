@@ -3,9 +3,16 @@
 //! These tests cover disk-backed session storage plus API-key auth shortcuts.
 
 use super::*;
+
+#[cfg(feature = "libsql")]
+use crate::db::NativeDatabase;
+#[cfg(feature = "libsql")]
+use crate::db::SettingsStore;
 use crate::testing::credentials::{TEST_SESSION_NEARAI_ABC, TEST_SESSION_TOKEN};
 use rstest::rstest;
 use secrecy::ExposeSecret;
+#[cfg(feature = "libsql")]
+use std::sync::Arc;
 use tempfile::{TempDir, tempdir};
 
 enum SecretKind {
@@ -186,6 +193,74 @@ async fn test_ensure_authenticated_short_circuits_with_api_key() {
         .ensure_authenticated()
         .await
         .expect("API key auth should not require session login");
+}
+
+#[cfg(feature = "libsql")]
+#[tokio::test]
+async fn test_save_session_persists_to_db_under_typed_setting_key() {
+    let (dir, manager) = new_mgr_async().await;
+    let db_path = dir.path().join("session.db");
+    let backend = Arc::new(
+        crate::db::libsql::LibSqlBackend::new_local(&db_path)
+            .await
+            .expect("libsql backend should be created"),
+    );
+    NativeDatabase::run_migrations(backend.as_ref())
+        .await
+        .expect("libsql migrations should succeed");
+    manager.attach_store(backend.clone(), "session-user").await;
+
+    manager
+        .save_session("db-persisted-token", Some("github"))
+        .await
+        .expect("session should save to disk and DB");
+
+    let saved = backend
+        .get_setting(
+            crate::db::UserId::from("session-user"),
+            crate::db::SettingKey::from("nearai.session_token"),
+        )
+        .await
+        .expect("typed DB session lookup should succeed")
+        .expect("typed DB session should exist");
+    assert_eq!(saved["session_token"], "db-persisted-token");
+    assert_eq!(saved["auth_provider"], "github");
+}
+
+#[cfg(feature = "libsql")]
+#[tokio::test]
+async fn test_attach_store_loads_legacy_session_key_from_db() {
+    let (dir, manager) = new_mgr_async().await;
+    let db_path = dir.path().join("session.db");
+    let backend = Arc::new(
+        crate::db::libsql::LibSqlBackend::new_local(&db_path)
+            .await
+            .expect("libsql backend should be created"),
+    );
+    NativeDatabase::run_migrations(backend.as_ref())
+        .await
+        .expect("libsql migrations should succeed");
+    backend
+        .set_setting(
+            crate::db::UserId::from("legacy-user"),
+            crate::db::SettingKey::from("nearai.session"),
+            &serde_json::json!({
+                "session_token": "legacy-db-token",
+                "created_at": "2025-01-01T00:00:00Z",
+                "auth_provider": "google"
+            }),
+        )
+        .await
+        .expect("legacy DB session should seed");
+
+    manager.attach_store(backend, "legacy-user").await;
+
+    assert!(manager.has_token().await);
+    let token = manager
+        .get_token()
+        .await
+        .expect("legacy DB token should load through fallback");
+    assert_eq!(token.expose_secret(), "legacy-db-token");
 }
 
 #[tokio::test]

@@ -11,6 +11,29 @@ use crate::agent::routine::{
 use crate::db::libsql::helpers::{get_i64, get_json, get_opt_text, get_opt_ts, get_text, get_ts};
 use crate::error::DatabaseError;
 
+#[derive(Clone, Copy)]
+enum RoutineNumericField {
+    CooldownSecs,
+    MaxConcurrent,
+    DedupWindowSecs,
+    RunCount,
+    ConsecutiveFailures,
+    TokensUsed,
+}
+
+impl RoutineNumericField {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::CooldownSecs => "routines.cooldown_secs",
+            Self::MaxConcurrent => "routines.max_concurrent",
+            Self::DedupWindowSecs => "routines.dedup_window_secs",
+            Self::RunCount => "routines.run_count",
+            Self::ConsecutiveFailures => "routines.consecutive_failures",
+            Self::TokensUsed => "routine_runs.tokens_used",
+        }
+    }
+}
+
 fn parse_uuid_field(raw: &str, field: &str) -> Result<uuid::Uuid, DatabaseError> {
     raw.parse()
         .map_err(|error| DatabaseError::Serialization(format!("invalid {field} '{raw}': {error}")))
@@ -28,34 +51,28 @@ fn parse_optional_uuid_field(
     .transpose()
 }
 
-fn parse_non_negative_u64_field(value: i64, field: &str) -> Result<u64, DatabaseError> {
+fn parse_non_negative_field<T>(value: i64, field: RoutineNumericField) -> Result<T, DatabaseError>
+where
+    T: TryFrom<i64>,
+    <T as TryFrom<i64>>::Error: std::fmt::Display,
+{
     if value < 0 {
         return Err(DatabaseError::Serialization(format!(
-            "{field} must be non-negative: {value}"
+            "{} must be non-negative: {value}",
+            field.as_str()
         )));
     }
 
-    u64::try_from(value).map_err(|error| {
-        DatabaseError::Serialization(format!("{field} exceeds u64 range: {value} ({error})"))
+    T::try_from(value).map_err(|error| {
+        DatabaseError::Serialization(format!(
+            "{} exceeds range: {value} ({error})",
+            field.as_str()
+        ))
     })
 }
 
-fn parse_non_negative_u32_field(value: i64, field: &str) -> Result<u32, DatabaseError> {
-    if value < 0 {
-        return Err(DatabaseError::Serialization(format!(
-            "{field} must be non-negative: {value}"
-        )));
-    }
-
-    u32::try_from(value).map_err(|error| {
-        DatabaseError::Serialization(format!("{field} exceeds u32 range: {value} ({error})"))
-    })
-}
-
-fn parse_optional_i32_field(value: i64, field: &str) -> Result<i32, DatabaseError> {
-    i32::try_from(value).map_err(|error| {
-        DatabaseError::Serialization(format!("{field} exceeds i32 range: {value} ({error})"))
-    })
+fn parse_i32_field(value: i64, field: RoutineNumericField) -> Result<i32, DatabaseError> {
+    parse_non_negative_field(value, field)
 }
 
 pub(crate) const ROUTINE_COLUMNS: &str = "\
@@ -84,14 +101,15 @@ pub(crate) fn row_to_routine_libsql(row: &libsql::Row) -> Result<Routine, Databa
     let action = RoutineAction::from_db(&action_type, action_config)
         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
     let id_raw = get_text(row, 0);
-    let cooldown = parse_non_negative_u64_field(cooldown_secs, "routines.cooldown_secs")?;
-    let max_concurrent = parse_non_negative_u32_field(max_concurrent, "routines.max_concurrent")?;
+    let cooldown = parse_non_negative_field(cooldown_secs, RoutineNumericField::CooldownSecs)?;
+    let max_concurrent =
+        parse_non_negative_field(max_concurrent, RoutineNumericField::MaxConcurrent)?;
     let dedup_window = dedup_window_secs
-        .map(|seconds| parse_non_negative_u64_field(seconds, "routines.dedup_window_secs"))
+        .map(|seconds| parse_non_negative_field(seconds, RoutineNumericField::DedupWindowSecs))
         .transpose()?;
-    let run_count = parse_non_negative_u64_field(get_i64(row, 20), "routines.run_count")?;
+    let run_count = parse_non_negative_field(get_i64(row, 20), RoutineNumericField::RunCount)?;
     let consecutive_failures =
-        parse_non_negative_u32_field(get_i64(row, 21), "routines.consecutive_failures")?;
+        parse_non_negative_field(get_i64(row, 21), RoutineNumericField::ConsecutiveFailures)?;
 
     Ok(Routine {
         id: parse_uuid_field(&id_raw, "routines.id")?,
@@ -143,7 +161,7 @@ pub(crate) fn row_to_routine_run_libsql(row: &libsql::Row) -> Result<RoutineRun,
         tokens_used: row
             .get::<i64>(8)
             .ok()
-            .map(|value| parse_optional_i32_field(value, "routine_runs.tokens_used"))
+            .map(|value| parse_i32_field(value, RoutineNumericField::TokensUsed))
             .transpose()?,
         job_id: parse_optional_uuid_field(get_opt_text(row, 9), "routine_runs.job_id")?,
         created_at: get_ts(row, 10),

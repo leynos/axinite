@@ -195,6 +195,7 @@ impl NativeRoutineStore for LibSqlBackend {
     async fn list_due_cron_routines(&self) -> Result<Vec<Routine>, DatabaseError> {
         let conn = self.connect().await?;
         let now = fmt_ts(&Utc::now());
+        let lease_until = fmt_ts(&(Utc::now() + chrono::Duration::minutes(1)));
         conn.execute("BEGIN IMMEDIATE", params![])
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -238,8 +239,8 @@ impl NativeRoutineStore for LibSqlBackend {
                     })?;
                 let routine = mapping::row_to_routine_libsql(&row)?;
                 conn.execute(
-                    "UPDATE routines SET next_fire_at = NULL, updated_at = ?2 WHERE id = ?1",
-                    params![routine.id.to_string(), fmt_ts(&Utc::now())],
+                    "UPDATE routines SET next_fire_at = ?2, updated_at = ?3 WHERE id = ?1",
+                    params![routine.id.to_string(), lease_until.clone(), fmt_ts(&Utc::now())],
                 )
                 .await
                 .map_err(|e| DatabaseError::Query(e.to_string()))?;

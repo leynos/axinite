@@ -24,7 +24,7 @@ cargo check --all-features                            # both
 
 | File | Role |
 |------|------|
-| `mod.rs` | Thin index: re-exports from `params`, `traits`, and `forwarders`; factory functions (`connect_from_config`, `connect_with_handles`, `create_secrets_store`) |
+| `mod.rs` | Thin index: re-exports from `params` and `traits`, plus factory functions (`connect_from_config`, `connect_with_handles`, `create_secrets_store`) |
 | `params.rs` | `DbFuture<'a, T>` alias and all parameter-object structs |
 | `traits/mod.rs` | Re-exports all trait names from per-store submodules |
 | `traits/conversation.rs` | `ConversationStore` + `NativeConversationStore` |

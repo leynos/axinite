@@ -169,6 +169,7 @@ impl Store {
     pub async fn list_due_cron_routines(&self) -> Result<Vec<Routine>, DatabaseError> {
         let mut conn = self.conn().await?;
         let now = Utc::now();
+        let lease_until = now + chrono::Duration::minutes(1);
         let tx = conn.transaction().await?;
         let rows = tx
             .query(
@@ -187,8 +188,8 @@ impl Store {
         for row in &rows {
             let routine = row_to_routine(row)?;
             tx.execute(
-                "UPDATE routines SET next_fire_at = NULL, updated_at = now() WHERE id = $1",
-                &[&routine.id],
+                "UPDATE routines SET next_fire_at = $2, updated_at = now() WHERE id = $1",
+                &[&routine.id, &lease_until],
             )
             .await?;
             routines.push(routine);

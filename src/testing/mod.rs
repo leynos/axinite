@@ -19,6 +19,8 @@
 //! ```
 
 pub mod credentials;
+#[cfg(test)]
+mod settings_tests;
 pub mod test_utils;
 
 use std::sync::Arc;
@@ -49,9 +51,6 @@ pub use crate::testing_wasm::{
     github_tool_source_dir, github_wasm_artifact, metadata_test_runtime,
 };
 use crate::tools::ToolRegistry;
-#[cfg(test)]
-use rstest::rstest;
-
 /// Create a libSQL-backed test database in a temporary directory.
 ///
 /// Returns the database and a `TempDir` guard — the database file is
@@ -931,148 +930,6 @@ mod tests {
         assert!(channel.health_check().await.is_err());
     }
 
-    // === Database CRUD coverage for untested trait methods ===
-
-    #[cfg(feature = "libsql")]
-    #[tokio::test]
-    async fn test_settings_crud() {
-        let harness = TestHarnessBuilder::new().build().await;
-        let db = &harness.db;
-
-        // Initially no setting
-        let val = db
-            .get_setting(UserId::from("user1"), SettingKey::from("theme"))
-            .await
-            .expect("get");
-        assert!(val.is_none());
-
-        // Set a value
-        db.set_setting(
-            UserId::from("user1"),
-            SettingKey::from("theme"),
-            &serde_json::json!("dark"),
-        )
-        .await
-        .expect("set");
-
-        // Read it back
-        let val = db
-            .get_setting(UserId::from("user1"), SettingKey::from("theme"))
-            .await
-            .expect("get")
-            .expect("should exist");
-        assert_eq!(val, serde_json::json!("dark"));
-
-        // Update it
-        db.set_setting(
-            UserId::from("user1"),
-            SettingKey::from("theme"),
-            &serde_json::json!("light"),
-        )
-        .await
-        .expect("set update");
-        let val = db
-            .get_setting(UserId::from("user1"), SettingKey::from("theme"))
-            .await
-            .expect("get")
-            .expect("should exist");
-        assert_eq!(val, serde_json::json!("light"));
-
-        // List settings
-        let all = db.list_settings(UserId::from("user1")).await.expect("list");
-        assert_eq!(all.len(), 1);
-
-        // Delete
-        let deleted = db
-            .delete_setting(UserId::from("user1"), SettingKey::from("theme"))
-            .await
-            .expect("delete");
-        assert!(deleted);
-
-        let val = db
-            .get_setting(UserId::from("user1"), SettingKey::from("theme"))
-            .await
-            .expect("get");
-        assert!(val.is_none());
-
-        // Delete non-existent
-        let deleted = db
-            .delete_setting(UserId::from("user1"), SettingKey::from("theme"))
-            .await
-            .expect("delete");
-        assert!(!deleted);
-    }
-
-    #[cfg(feature = "libsql")]
-    async fn run_settings_crud_flow(db: &Arc<dyn Database>, user_id: UserId, key: SettingKey) {
-        let key_name = key.as_str().to_string();
-        let initial_value = serde_json::json!("dark");
-        let updated_value = serde_json::json!("light");
-
-        db.set_setting(user_id.clone(), key.clone(), &initial_value)
-            .await
-            .expect("set setting");
-
-        let stored = db
-            .get_setting(user_id.clone(), key.clone())
-            .await
-            .expect("get setting")
-            .expect("setting should exist");
-        assert_eq!(stored, initial_value);
-
-        let listed = db
-            .list_settings(user_id.clone())
-            .await
-            .expect("list settings");
-        assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].key, key_name);
-        assert_eq!(listed[0].value, initial_value);
-
-        db.set_setting(user_id.clone(), key.clone(), &updated_value)
-            .await
-            .expect("update setting");
-
-        let stored = db
-            .get_setting(user_id.clone(), key.clone())
-            .await
-            .expect("get updated setting")
-            .expect("updated setting should exist");
-        assert_eq!(stored, updated_value);
-
-        let deleted = db
-            .delete_setting(user_id.clone(), key.clone())
-            .await
-            .expect("delete setting");
-        assert!(deleted);
-        assert!(
-            db.get_setting(user_id, key)
-                .await
-                .expect("get deleted setting")
-                .is_none()
-        );
-    }
-
-    #[cfg(feature = "libsql")]
-    #[rstest]
-    #[case(false)]
-    #[case(true)]
-    #[tokio::test]
-    async fn test_settings_crud_variants(#[case] use_owned_strings: bool) {
-        let harness = TestHarnessBuilder::new().build().await;
-        let db = &harness.db;
-
-        let (user_id, key) = if use_owned_strings {
-            (
-                UserId::from("owned-user".to_string()),
-                SettingKey::from("theme".to_string()),
-            )
-        } else {
-            (UserId::from("literal-user"), SettingKey::from("theme"))
-        };
-
-        run_settings_crud_flow(db, user_id, key).await;
-    }
-
     #[tokio::test]
     async fn test_harness_with_channel() {
         let harness = TestHarnessBuilder::new().with_stub_channel().build().await;
@@ -1089,52 +946,6 @@ mod tests {
         // Verify channel is registered in the manager
         let names = channel_manager.channel_names().await;
         assert!(names.contains(&"stub".to_string()));
-    }
-
-    #[cfg(feature = "libsql")]
-    #[tokio::test]
-    async fn test_settings_bulk_operations() {
-        let harness = TestHarnessBuilder::new().build().await;
-        let db = &harness.db;
-
-        // Initially no settings
-        let has = db
-            .has_settings(UserId::from("bulk_user"))
-            .await
-            .expect("has_settings");
-        assert!(!has);
-
-        // Set all settings at once
-        let mut settings = std::collections::HashMap::new();
-        settings.insert("key1".to_string(), serde_json::json!("value1"));
-        settings.insert("key2".to_string(), serde_json::json!(42));
-        db.set_all_settings(UserId::from("bulk_user"), &settings)
-            .await
-            .expect("set_all");
-
-        // Has settings should now be true
-        let has = db
-            .has_settings(UserId::from("bulk_user"))
-            .await
-            .expect("has_settings");
-        assert!(has);
-
-        // Get all settings
-        let all = db
-            .get_all_settings(UserId::from("bulk_user"))
-            .await
-            .expect("get_all");
-        assert_eq!(all.len(), 2);
-        assert_eq!(all["key1"], serde_json::json!("value1"));
-        assert_eq!(all["key2"], serde_json::json!(42));
-
-        // Get full setting row
-        let full = db
-            .get_setting_full(UserId::from("bulk_user"), SettingKey::from("key1"))
-            .await
-            .expect("get_full")
-            .expect("should exist");
-        assert_eq!(full.key, "key1");
     }
 
     #[cfg(feature = "libsql")]

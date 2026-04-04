@@ -1,6 +1,6 @@
 //! PostgreSQL-backed routine persistence tests.
 //!
-//! These tests exercise `Store` CRUD, run-history, and due-cron claim
+//! These tests exercise `Store` CRUD, run-history, and due-cron lease
 //! behaviour against the `try_test_pg_db` integration database.
 
 use chrono::Utc;
@@ -163,7 +163,7 @@ async fn routine_crud_and_run_history_round_trip(#[future] store: Option<Store>)
 
 #[rstest]
 #[tokio::test]
-async fn list_due_cron_routines_claims_and_clears_next_fire_at(#[future] store: Option<Store>) {
+async fn list_due_cron_routines_claims_and_defers_next_fire_at(#[future] store: Option<Store>) {
     let Some(store) = store.await else { return };
     let mut routine = sample_routine();
     routine.next_fire_at = Some(Utc::now() - chrono::Duration::minutes(1));
@@ -184,7 +184,10 @@ async fn list_due_cron_routines_claims_and_clears_next_fire_at(#[future] store: 
         .await
         .expect("get_routine should succeed")
         .expect("routine should exist");
-    assert!(after_claim.next_fire_at.is_none());
+    let leased_until = after_claim
+        .next_fire_at
+        .expect("claimed routine should retain a recoverable lease time");
+    assert!(leased_until > Utc::now());
 
     cleanup(&store, routine.id).await;
 }

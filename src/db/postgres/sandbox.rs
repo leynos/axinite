@@ -11,7 +11,7 @@ use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
 use super::PgBackend;
 
 impl NativeSandboxStore for PgBackend {
-    crate::delegate_async! {
+    crate::db::delegate_async! {
         to store;
         async fn save_sandbox_job(&self, job: &SandboxJobRecord) -> Result<(), DatabaseError>;
         async fn get_sandbox_job(&self, id: Uuid) -> Result<Option<SandboxJobRecord>, DatabaseError>;
@@ -25,7 +25,7 @@ impl NativeSandboxStore for PgBackend {
         self.store.update_sandbox_job_status(params).await
     }
 
-    crate::delegate_async! {
+    crate::db::delegate_async! {
         to store;
         async fn cleanup_stale_sandbox_jobs(&self) -> Result<u64, DatabaseError>;
         async fn sandbox_job_summary(&self) -> Result<SandboxJobSummary, DatabaseError>;

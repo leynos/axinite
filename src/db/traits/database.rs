@@ -47,5 +47,6 @@ pub trait NativeDatabase:
     + Send
     + Sync
 {
+    /// Run schema migrations for this concrete backend implementation.
     fn run_migrations<'a>(&'a self) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
 }

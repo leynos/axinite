@@ -1,3 +1,5 @@
+//! LibSQL conversation-metadata helpers.
+
 use super::*;
 
 pub(super) async fn update_conversation_metadata_field(

@@ -114,6 +114,8 @@ pub(crate) fn v12_wasm_wit_default_migration_sql() -> String {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::tempdir;
+
     use super::v12_wasm_wit_default_migration_sql;
     use crate::db::libsql_migrations::SCHEMA;
 
@@ -147,5 +149,76 @@ mod tests {
             !sql.contains("INSERT INTO _migrations"),
             "non-transactional migration SQL should not manage _migrations rows itself"
         );
+    }
+
+    #[tokio::test]
+    async fn generated_sql_rebuilds_legacy_wasm_tables_with_current_defaults() {
+        let dir = tempdir().expect("tempdir should be created");
+        let db_path = dir.path().join("v12-wasm.db");
+        let db = libsql::Builder::new_local(&db_path)
+            .build()
+            .await
+            .expect("libsql db should build");
+        let conn = db.connect().expect("connection should succeed");
+
+        conn.execute_batch(
+            r#"
+            CREATE TABLE wasm_tools (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                version TEXT NOT NULL DEFAULT '1.0.0',
+                wit_version TEXT NOT NULL DEFAULT '0.1.0',
+                description TEXT NOT NULL,
+                wasm_binary BLOB NOT NULL,
+                binary_hash BLOB NOT NULL,
+                parameters_schema TEXT NOT NULL,
+                source_url TEXT,
+                trust_level TEXT NOT NULL DEFAULT 'user',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                UNIQUE (user_id, name, version)
+            );
+            CREATE TABLE wasm_channels (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                version TEXT NOT NULL DEFAULT '0.1.0',
+                wit_version TEXT NOT NULL DEFAULT '0.1.0',
+                description TEXT NOT NULL DEFAULT '',
+                wasm_binary BLOB NOT NULL,
+                binary_hash BLOB NOT NULL,
+                capabilities_json TEXT NOT NULL DEFAULT '{}',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                UNIQUE (user_id, name)
+            );
+            "#,
+        )
+        .await
+        .expect("legacy wasm schema should be created");
+
+        conn.execute_batch(&v12_wasm_wit_default_migration_sql())
+            .await
+            .expect("generated V12 SQL should apply cleanly");
+
+        let mut rows = conn
+            .query(
+                "SELECT sql FROM sqlite_master WHERE name = 'wasm_tools'",
+                (),
+            )
+            .await
+            .expect("wasm_tools schema query should succeed");
+        let schema = rows
+            .next()
+            .await
+            .expect("wasm_tools schema row should read")
+            .expect("wasm_tools schema row should exist");
+        let schema_sql = schema
+            .get::<String>(0)
+            .expect("wasm_tools schema SQL should decode");
+        assert!(schema_sql.contains("DEFAULT '0.3.0'"));
     }
 }

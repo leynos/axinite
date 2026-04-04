@@ -20,7 +20,7 @@ use crate::history::{ConversationMessage, ConversationSummary};
 
 fn parse_uuid(id: String) -> Result<Uuid, DatabaseError> {
     id.parse()
-        .map_err(|_| DatabaseError::Serialization("Invalid UUID".to_string()))
+        .map_err(|error| DatabaseError::Serialization(format!("Invalid UUID '{id}': {error}")))
 }
 
 fn row_to_conversation_summary(row: &libsql::Row) -> Result<ConversationSummary, DatabaseError> {

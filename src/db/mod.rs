@@ -43,7 +43,7 @@ use std::sync::Arc;
 use crate::error::DatabaseError;
 
 /// Unified macro for delegating async trait methods to an inner field.
-#[macro_export]
+#[cfg(feature = "postgres")]
 macro_rules! delegate_async {
     (
         to $field:ident;
@@ -58,6 +58,9 @@ macro_rules! delegate_async {
         )*
     };
 }
+
+#[cfg(feature = "postgres")]
+pub(crate) use delegate_async;
 
 /// Create a database backend from configuration, run migrations, and return it.
 ///

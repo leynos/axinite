@@ -110,3 +110,80 @@ impl Store {
         Ok(row.get("id"))
     }
 }
+
+#[cfg(all(test, feature = "postgres"))]
+mod tests {
+    use rstest::{fixture, rstest};
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::testing::try_test_pg_db;
+
+    #[fixture]
+    async fn store() -> Option<Store> {
+        let backend = try_test_pg_db().await?;
+        Some(Store::from_pool(backend.pool()))
+    }
+
+    async fn cleanup_user(store: &Store, user_id: &str) {
+        let conn = store.conn().await.expect("connection should be available");
+        conn.execute("DELETE FROM conversations WHERE user_id = $1", &[&user_id])
+            .await
+            .expect("conversations should be deleted");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn routine_singleton_is_idempotent(#[future] store: Option<Store>) {
+        let Some(store) = store.await else { return };
+        let user_id = format!("routine-singleton-{}", Uuid::new_v4());
+        let routine_id = Uuid::new_v4();
+
+        let first = store
+            .get_or_create_routine_conversation(routine_id, "daily-standup", &user_id)
+            .await
+            .expect("first routine singleton lookup should succeed");
+        let second = store
+            .get_or_create_routine_conversation(routine_id, "daily-standup", &user_id)
+            .await
+            .expect("second routine singleton lookup should succeed");
+
+        assert_eq!(first, second);
+
+        let metadata = store
+            .get_conversation_metadata(first)
+            .await
+            .expect("metadata query should succeed")
+            .expect("metadata should exist");
+        assert_eq!(metadata["thread_type"], "routine");
+        assert_eq!(metadata["routine_id"], routine_id.to_string());
+        assert_eq!(metadata["routine_name"], "daily-standup");
+
+        cleanup_user(&store, &user_id).await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn assistant_singleton_is_idempotent_per_channel(#[future] store: Option<Store>) {
+        let Some(store) = store.await else { return };
+        let user_id = format!("assistant-singleton-{}", Uuid::new_v4());
+
+        let first = store
+            .get_or_create_assistant_conversation(&user_id, "gateway")
+            .await
+            .expect("first assistant singleton lookup should succeed");
+        let second = store
+            .get_or_create_assistant_conversation(&user_id, "gateway")
+            .await
+            .expect("second assistant singleton lookup should succeed");
+        let other_channel = store
+            .get_or_create_assistant_conversation(&user_id, "telegram")
+            .await
+            .expect("assistant singleton for another channel should succeed");
+
+        assert_eq!(first, second);
+        assert_ne!(first, other_channel);
+
+        cleanup_user(&store, &user_id).await;
+    }
+}

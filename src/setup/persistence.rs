@@ -28,7 +28,11 @@ impl DefaultSettingsPersistence {
 
     /// Save all settings for the default user to the database.
     pub async fn save_default_settings(&self, settings: &Settings) -> Result<(), DatabaseError> {
-        let db_map = settings.to_db_map();
+        let db_map = settings
+            .to_db_map()
+            .into_iter()
+            .map(|(key, value)| (SettingKey::from(key), value))
+            .collect();
         self.backend
             .set_all_settings(UserId::from(DEFAULT_USER_ID), &db_map)
             .await
@@ -52,5 +56,10 @@ impl DefaultSettingsPersistence {
         self.backend
             .get_all_settings(UserId::from(DEFAULT_USER_ID))
             .await
+            .map(|map| {
+                map.into_iter()
+                    .map(|(key, value)| (key.as_str().to_string(), value))
+                    .collect()
+            })
     }
 }

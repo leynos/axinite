@@ -53,6 +53,10 @@ enum ResolvedBearerCredential {
 }
 
 impl NearAiChatProvider {
+    fn uses_private_near_base_url(base_url: &str) -> bool {
+        base_url.trim_end_matches('/') == "https://private.near.ai"
+    }
+
     /// Create a new NEAR AI Chat Completions provider.
     ///
     /// Auth mode is determined by `config.api_key`:
@@ -179,11 +183,21 @@ impl NearAiChatProvider {
     }
 
     async fn api_base_url(&self) -> String {
-        if self.uses_api_key_auth().await && self.config.base_url == "https://private.near.ai" {
+        if self.uses_api_key_auth().await && Self::uses_private_near_base_url(&self.config.base_url)
+        {
             "https://cloud-api.near.ai".to_string()
         } else {
             self.config.base_url.clone()
         }
+    }
+
+    async fn resolve_current_bearer_token(&self) -> Option<String> {
+        self.current_bearer_credential()
+            .await
+            .map(|credential| match credential {
+                ResolvedBearerCredential::ApiKey(value)
+                | ResolvedBearerCredential::SessionToken(value) => value,
+            })
     }
 
     /// Resolve the Bearer token for the current auth mode.
@@ -193,21 +207,15 @@ impl NearAiChatProvider {
     /// 2. Session token (OAuth flow)
     /// 3. Session-managed API key captured during interactive login.
     async fn resolve_bearer_token(&self) -> Result<String, LlmError> {
-        if let Some(credential) = self.current_bearer_credential().await {
-            return Ok(match credential {
-                ResolvedBearerCredential::ApiKey(value)
-                | ResolvedBearerCredential::SessionToken(value) => value,
-            });
+        if let Some(token) = self.resolve_current_bearer_token().await {
+            return Ok(token);
         }
 
         // No token yet, trigger interactive login
         self.session.ensure_authenticated().await?;
 
-        if let Some(credential) = self.current_bearer_credential().await {
-            return Ok(match credential {
-                ResolvedBearerCredential::ApiKey(value)
-                | ResolvedBearerCredential::SessionToken(value) => value,
-            });
+        if let Some(token) = self.resolve_current_bearer_token().await {
+            return Ok(token);
         }
 
         Err(LlmError::AuthFailed {

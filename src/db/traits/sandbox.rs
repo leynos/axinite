@@ -21,6 +21,7 @@ pub enum SandboxMode {
 }
 
 impl SandboxMode {
+    /// Return the stable storage/API string for this sandbox execution mode.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Worker => "worker",
@@ -52,6 +53,7 @@ impl TryFrom<&str> for SandboxMode {
 pub struct SandboxEventType(String);
 
 impl SandboxEventType {
+    /// Return a borrowed view of the stored event-type string.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -89,11 +91,17 @@ impl PartialEq<String> for SandboxEventType {
 
 /// Parameters for `update_sandbox_job_status`.
 pub struct SandboxJobStatusUpdate<'a> {
+    /// Sandbox job UUID to update.
     pub id: Uuid,
+    /// New persisted status string.
     pub status: &'a str,
+    /// Optional success flag to persist alongside the status.
     pub success: Option<bool>,
+    /// Optional failure or result message to persist.
     pub message: Option<&'a str>,
+    /// Optional start timestamp for the sandbox job.
     pub started_at: Option<DateTime<Utc>>,
+    /// Optional completion timestamp for the sandbox job.
     pub completed_at: Option<DateTime<Utc>>,
 }
 

@@ -15,19 +15,29 @@ use crate::history::{AgentJobRecord, AgentJobSummary, LlmCallRecord};
 
 /// Parameters for `save_estimation_snapshot`.
 pub struct EstimationSnapshotParams<'a> {
+    /// Job UUID that produced the estimation snapshot.
     pub job_id: Uuid,
+    /// Job category used for the snapshot (for example "agent" or "routine").
     pub category: &'a str,
+    /// Ordered tool names included in the estimation input.
     pub tool_names: &'a [String],
+    /// Estimated monetary cost for the planned work.
     pub estimated_cost: Decimal,
+    /// Estimated runtime in seconds.
     pub estimated_time_secs: i32,
+    /// Estimated business value for the work.
     pub estimated_value: Decimal,
 }
 
 /// Parameters for `update_estimation_actuals`.
 pub struct EstimationActualsParams {
+    /// Snapshot UUID to update with actual values.
     pub id: Uuid,
+    /// Actual observed monetary cost.
     pub actual_cost: Decimal,
+    /// Actual observed runtime in seconds.
     pub actual_time_secs: i32,
+    /// Actual observed business value, when available.
     pub actual_value: Option<Decimal>,
 }
 

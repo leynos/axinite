@@ -36,3 +36,66 @@ impl Store {
         Ok(row.and_then(|r| r.get::<_, Option<serde_json::Value>>(0)))
     }
 }
+
+#[cfg(all(test, feature = "postgres"))]
+mod tests {
+    use rstest::{fixture, rstest};
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::testing::try_test_pg_db;
+
+    #[fixture]
+    async fn store() -> Option<Store> {
+        let backend = try_test_pg_db().await?;
+        Some(Store::from_pool(backend.pool()))
+    }
+
+    async fn seed_conversation(store: &Store) -> Uuid {
+        store
+            .create_conversation("gateway", "metadata-user", None)
+            .await
+            .expect("conversation should be created")
+    }
+
+    async fn cleanup(store: &Store, id: Uuid) {
+        let conn = store.conn().await.expect("connection should be available");
+        conn.execute("DELETE FROM conversations WHERE id = $1", &[&id])
+            .await
+            .expect("conversation should be deleted");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn conversation_metadata_round_trips(#[future] store: Option<Store>) {
+        let Some(store) = store.await else { return };
+        let conversation_id = seed_conversation(&store).await;
+
+        store
+            .update_conversation_metadata_field(
+                conversation_id,
+                "thread_type",
+                &serde_json::json!("assistant"),
+            )
+            .await
+            .expect("first metadata update should succeed");
+        store
+            .update_conversation_metadata_field(
+                conversation_id,
+                "routine_name",
+                &serde_json::json!("daily-standup"),
+            )
+            .await
+            .expect("second metadata update should succeed");
+
+        let metadata = store
+            .get_conversation_metadata(conversation_id)
+            .await
+            .expect("metadata query should succeed")
+            .expect("metadata should exist");
+        assert_eq!(metadata["thread_type"], "assistant");
+        assert_eq!(metadata["routine_name"], "daily-standup");
+
+        cleanup(&store, conversation_id).await;
+    }
+}

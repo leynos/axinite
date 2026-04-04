@@ -1,3 +1,5 @@
+//! LibSQL conversation integration tests.
+
 use super::*;
 use crate::db::Database;
 
@@ -29,20 +31,20 @@ async fn test_get_or_create_routine_conversation_is_idempotent() {
     let id1 = backend
         .get_or_create_routine_conversation(routine_id, "my-routine", user_id)
         .await
-        .unwrap();
+        .expect("routine conversation should be created");
     let id2 = backend
         .get_or_create_routine_conversation(routine_id, "my-routine", user_id)
         .await
-        .unwrap();
+        .expect("routine conversation should be reused");
     let id3 = backend
         .get_or_create_routine_conversation(routine_id, "my-routine", user_id)
         .await
-        .unwrap();
+        .expect("routine conversation should stay idempotent");
     let other_routine_id = Uuid::new_v4();
     let id4 = backend
         .get_or_create_routine_conversation(other_routine_id, "other-routine", user_id)
         .await
-        .unwrap();
+        .expect("different routine conversation should be created");
 
     assert_eq!(id1, id2, "Expected same conversation ID on repeated calls");
     assert_eq!(id1, id3);
@@ -62,27 +64,27 @@ async fn test_routine_conversation_persists_across_messages() {
     let id1 = backend
         .get_or_create_routine_conversation(routine_id, "my-routine", user_id)
         .await
-        .unwrap();
+        .expect("routine conversation should be created");
     backend
         .add_conversation_message(id1, "assistant", "[cron] Completed: all good")
         .await
-        .unwrap();
+        .expect("message should be added");
 
     let id2 = backend
         .get_or_create_routine_conversation(routine_id, "my-routine", user_id)
         .await
-        .unwrap();
+        .expect("routine conversation should be reused after message");
     assert_eq!(id1, id2, "Second invocation should reuse same conversation");
 
     backend
         .add_conversation_message(id2, "assistant", "[cron] Completed: still good")
         .await
-        .unwrap();
+        .expect("second message should be added");
 
     let convs = backend
         .list_conversations_all_channels(user_id, 50)
         .await
-        .unwrap();
+        .expect("conversation list should load");
     let routine_convs: Vec<_> = convs.iter().filter(|c| c.channel == "routine").collect();
     assert_eq!(
         routine_convs.len(),
@@ -101,11 +103,11 @@ async fn test_get_or_create_heartbeat_conversation_is_idempotent() {
     let id1 = backend
         .get_or_create_heartbeat_conversation(user_id)
         .await
-        .unwrap();
+        .expect("heartbeat conversation should be created");
     let id2 = backend
         .get_or_create_heartbeat_conversation(user_id)
         .await
-        .unwrap();
+        .expect("heartbeat conversation should be reused");
 
     assert_eq!(
         id1, id2,

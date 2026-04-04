@@ -56,7 +56,7 @@ impl NativeSettingsStore for LibSqlBackend {
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
             Some(row) => Ok(Some(SettingRow {
-                key: get_text(&row, 0),
+                key: SettingKey::from(get_text(&row, 0)),
                 value: get_json(&row, 1),
                 updated_at: get_ts(&row, 2),
             })),
@@ -120,7 +120,7 @@ impl NativeSettingsStore for LibSqlBackend {
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
             settings.push(SettingRow {
-                key: get_text(&row, 0),
+                key: SettingKey::from(get_text(&row, 0)),
                 value: get_json(&row, 1),
                 updated_at: get_ts(&row, 2),
             });
@@ -131,7 +131,7 @@ impl NativeSettingsStore for LibSqlBackend {
     async fn get_all_settings(
         &self,
         user_id: UserId,
-    ) -> Result<HashMap<String, serde_json::Value>, DatabaseError> {
+    ) -> Result<HashMap<SettingKey, serde_json::Value>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
@@ -147,7 +147,7 @@ impl NativeSettingsStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
-            map.insert(get_text(&row, 0), get_json(&row, 1));
+            map.insert(SettingKey::from(get_text(&row, 0)), get_json(&row, 1));
         }
         Ok(map)
     }
@@ -155,13 +155,37 @@ impl NativeSettingsStore for LibSqlBackend {
     async fn set_all_settings(
         &self,
         user_id: UserId,
-        settings: &HashMap<String, serde_json::Value>,
+        settings: &HashMap<SettingKey, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         let now = fmt_ts(&Utc::now());
         conn.execute("BEGIN", ())
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let delete_result = if settings.is_empty() {
+            conn.execute(
+                "DELETE FROM settings WHERE user_id = ?1",
+                params![user_id.as_str()],
+            )
+            .await
+        } else {
+            let placeholders = (0..settings.len())
+                .map(|index| format!("?{}", index + 2))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql =
+                format!("DELETE FROM settings WHERE user_id = ?1 AND key NOT IN ({placeholders})");
+            let mut values = Vec::with_capacity(settings.len() + 1);
+            values.push(user_id.as_str().into());
+            values.extend(settings.keys().map(|key| key.as_str().into()));
+            conn.execute(&sql, libsql::params::Params::Positional(values))
+                .await
+        };
+        if let Err(e) = delete_result {
+            let _ = conn.execute("ROLLBACK", ()).await;
+            return Err(DatabaseError::Query(e.to_string()));
+        }
 
         for (key, value) in settings {
             if let Err(e) = conn

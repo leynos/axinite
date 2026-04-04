@@ -27,13 +27,24 @@ impl Store {
         Ok(())
     }
 
-    /// Load job events for a job, ordered by id.
+    /// Load job events for a job, ordered by ascending id.
+    ///
+    /// `before_id` is an exclusive cursor (`id < before_id`) and `limit`, when
+    /// present, must be greater than zero.
     pub async fn list_job_events(
         &self,
         job_id: Uuid,
         before_id: Option<i64>,
         limit: Option<i64>,
     ) -> Result<Vec<JobEventRecord>, DatabaseError> {
+        if let Some(limit) = limit
+            && limit <= 0
+        {
+            return Err(DatabaseError::Query(
+                "list_job_events limit must be greater than 0".to_string(),
+            ));
+        }
+
         let conn = self.conn().await?;
         let rows = Self::fetch_job_event_rows(&conn, job_id, before_id, limit).await?;
         Ok(rows.iter().map(Self::job_event_record_from_row).collect())

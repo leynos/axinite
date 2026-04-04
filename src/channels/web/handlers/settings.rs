@@ -41,7 +41,7 @@ pub async fn settings_list_handler(
     let settings = rows
         .into_iter()
         .map(|r| SettingResponse {
-            key: r.key,
+            key: r.key.as_str().to_string(),
             value: r.value,
             updated_at: r.updated_at.to_rfc3339(),
         })
@@ -71,7 +71,7 @@ pub async fn settings_get_handler(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     Ok(Json(SettingResponse {
-        key: row.key,
+        key: row.key.as_str().to_string(),
         value: row.value,
         updated_at: row.updated_at.to_rfc3339(),
     }))
@@ -133,6 +133,12 @@ pub async fn settings_export_handler(
     let settings = store
         .get_all_settings(UserId::from(state.user_id.as_str()))
         .await
+        .map(|settings| {
+            settings
+                .into_iter()
+                .map(|(key, value)| (key.as_str().to_string(), value))
+                .collect()
+        })
         .map_err(|e| {
             tracing::error!("Failed to export settings: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -149,8 +155,13 @@ pub async fn settings_import_handler(
         .store
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    let settings = body
+        .settings
+        .iter()
+        .map(|(key, value)| (SettingKey::from(key.as_str()), value.clone()))
+        .collect::<std::collections::HashMap<_, _>>();
     store
-        .set_all_settings(UserId::from(state.user_id.as_str()), &body.settings)
+        .set_all_settings(UserId::from(state.user_id.as_str()), &settings)
         .await
         .map_err(|e| {
             tracing::error!("Failed to import settings: {}", e);

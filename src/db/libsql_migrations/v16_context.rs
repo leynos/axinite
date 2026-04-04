@@ -138,44 +138,7 @@ mod tests {
         entries.iter().map(|entry| (*entry).to_string()).collect()
     }
 
-    #[rstest]
-    #[case(&[] as &[&str], vec![
-        "ALTER TABLE agent_jobs ADD COLUMN transitions TEXT NOT NULL DEFAULT '[]';",
-        "ALTER TABLE agent_jobs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';",
-        "ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';",
-    ])]
-    #[case(&["transitions"], vec![
-        "ALTER TABLE agent_jobs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';",
-        "ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';",
-    ])]
-    #[case(&["metadata"], vec![
-        "ALTER TABLE agent_jobs ADD COLUMN transitions TEXT NOT NULL DEFAULT '[]';",
-        "ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';",
-    ])]
-    #[case(&["user_timezone"], vec![
-        "ALTER TABLE agent_jobs ADD COLUMN transitions TEXT NOT NULL DEFAULT '[]';",
-        "ALTER TABLE agent_jobs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';",
-    ])]
-    #[case(&["transitions", "metadata"], vec![
-        "ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';",
-    ])]
-    #[case(&["transitions", "user_timezone"], vec![
-        "ALTER TABLE agent_jobs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';",
-    ])]
-    #[case(&["metadata", "user_timezone"], vec![
-        "ALTER TABLE agent_jobs ADD COLUMN transitions TEXT NOT NULL DEFAULT '[]';",
-    ])]
-    #[case(&["transitions", "metadata", "user_timezone"], Vec::new())]
-    fn missing_context_field_statements_handles_all_column_subsets(
-        #[case] present_columns: &[&str],
-        #[case] expected: Vec<&'static str>,
-    ) {
-        let columns = existing_columns(present_columns);
-        assert_eq!(missing_context_field_statements(&columns), expected);
-    }
-
-    #[tokio::test]
-    async fn run_incremental_applies_v16_once_to_partially_migrated_agent_jobs() {
+    async fn build_partial_v16_db() -> (tempfile::TempDir, libsql::Database, libsql::Connection) {
         let dir = tempdir().expect("tempdir should be created");
         let db_path = dir.path().join("v16-context.db");
         let db = libsql::Builder::new_local(&db_path)
@@ -215,15 +178,12 @@ mod tests {
             .expect("prior migration should seed");
         }
 
-        run_incremental(&conn)
-            .await
-            .expect("V16 migration should apply");
-        run_incremental(&conn)
-            .await
-            .expect("V16 migration rerun should be idempotent");
+        (dir, db, conn)
+    }
 
+    async fn assert_v16_applied_once(conn: &libsql::Connection) {
         let columns = collect_existing_columns(
-            &conn,
+            conn,
             MigrationContext {
                 version: 16,
                 name: V16_NAME,
@@ -249,5 +209,54 @@ mod tests {
             .expect("migration row should exist");
         let count = row.get::<i64>(0).expect("count should decode");
         assert_eq!(count, 1);
+    }
+
+    #[rstest]
+    #[case(&[] as &[&str], vec![
+        "ALTER TABLE agent_jobs ADD COLUMN transitions TEXT NOT NULL DEFAULT '[]';",
+        "ALTER TABLE agent_jobs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';",
+        "ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';",
+    ])]
+    #[case(&["transitions"], vec![
+        "ALTER TABLE agent_jobs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';",
+        "ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';",
+    ])]
+    #[case(&["metadata"], vec![
+        "ALTER TABLE agent_jobs ADD COLUMN transitions TEXT NOT NULL DEFAULT '[]';",
+        "ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';",
+    ])]
+    #[case(&["user_timezone"], vec![
+        "ALTER TABLE agent_jobs ADD COLUMN transitions TEXT NOT NULL DEFAULT '[]';",
+        "ALTER TABLE agent_jobs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';",
+    ])]
+    #[case(&["transitions", "metadata"], vec![
+        "ALTER TABLE agent_jobs ADD COLUMN user_timezone TEXT NOT NULL DEFAULT 'UTC';",
+    ])]
+    #[case(&["transitions", "user_timezone"], vec![
+        "ALTER TABLE agent_jobs ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';",
+    ])]
+    #[case(&["metadata", "user_timezone"], vec![
+        "ALTER TABLE agent_jobs ADD COLUMN transitions TEXT NOT NULL DEFAULT '[]';",
+    ])]
+    #[case(&["transitions", "metadata", "user_timezone"], Vec::new())]
+    fn missing_context_field_statements_handles_all_column_subsets(
+        #[case] present_columns: &[&str],
+        #[case] expected: Vec<&'static str>,
+    ) {
+        let columns = existing_columns(present_columns);
+        assert_eq!(missing_context_field_statements(&columns), expected);
+    }
+
+    #[tokio::test]
+    async fn run_incremental_applies_v16_once_to_partially_migrated_agent_jobs() {
+        let (_dir, _db, conn) = build_partial_v16_db().await;
+
+        run_incremental(&conn)
+            .await
+            .expect("V16 migration should apply");
+        run_incremental(&conn)
+            .await
+            .expect("V16 migration rerun should be idempotent");
+        assert_v16_applied_once(&conn).await;
     }
 }

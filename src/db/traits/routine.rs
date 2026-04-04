@@ -14,19 +14,29 @@ use crate::error::DatabaseError;
 
 /// Parameters for `update_routine_runtime`.
 pub struct RoutineRuntimeUpdate<'a> {
+    /// Routine UUID whose runtime counters are being updated.
     pub id: Uuid,
+    /// Timestamp when the latest run started or completed.
     pub last_run_at: DateTime<Utc>,
+    /// Next scheduled fire time after the runtime update, if any.
     pub next_fire_at: Option<DateTime<Utc>>,
+    /// Total number of completed attempts persisted for the routine.
     pub run_count: u64,
+    /// Number of consecutive failed runs after this update.
     pub consecutive_failures: u32,
+    /// Serialized routine state snapshot to persist.
     pub state: &'a serde_json::Value,
 }
 
 /// Parameters for `complete_routine_run`.
 pub struct RoutineRunCompletion<'a> {
+    /// Routine-run UUID to mark as finished.
     pub id: Uuid,
+    /// Terminal status for the run.
     pub status: RunStatus,
+    /// Optional human-readable summary of the run result.
     pub result_summary: Option<&'a str>,
+    /// Optional token count consumed by the run.
     pub tokens_used: Option<i32>,
 }
 
@@ -67,6 +77,9 @@ pub trait RoutineStore: Send + Sync {
     /// List enabled routines that can react to events.
     fn list_event_routines<'a>(&'a self) -> DbFuture<'a, Result<Vec<Routine>, DatabaseError>>;
     /// List enabled cron routines whose `next_fire_at` is due.
+    ///
+    /// Implementations may claim the returned rows to prevent duplicate
+    /// execution by concurrent schedulers.
     fn list_due_cron_routines<'a>(&'a self) -> DbFuture<'a, Result<Vec<Routine>, DatabaseError>>;
     /// Replace the mutable fields of an existing routine.
     fn update_routine<'a>(
@@ -143,6 +156,9 @@ pub trait NativeRoutineStore: Send + Sync {
         &'a self,
     ) -> impl Future<Output = Result<Vec<Routine>, DatabaseError>> + Send + 'a;
     /// List enabled cron routines whose `next_fire_at` is due.
+    ///
+    /// Implementations may claim the returned rows to prevent duplicate
+    /// execution by concurrent schedulers.
     fn list_due_cron_routines<'a>(
         &'a self,
     ) -> impl Future<Output = Result<Vec<Routine>, DatabaseError>> + Send + 'a;

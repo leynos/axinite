@@ -62,4 +62,39 @@ mod tests {
         assert_eq!(chunk.chunk_index, 0);
         assert!(chunk.embedding.is_some());
     }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn import_chunk_rejects_negative_chunk_index() {
+        use std::sync::Arc;
+
+        use crate::db::libsql::LibSqlBackend;
+        use crate::db::{Database, NativeDatabase};
+
+        let backend = LibSqlBackend::new_memory()
+            .await
+            .expect("libsql backend should be created");
+        NativeDatabase::run_migrations(&backend)
+            .await
+            .expect("libsql migrations should succeed");
+        let db: Arc<dyn Database> = Arc::new(backend);
+        let chunk = OpenClawMemoryChunk {
+            path: "test/path.md".to_string(),
+            content: "Test content".to_string(),
+            embedding: None,
+            chunk_index: -1,
+        };
+        let opts = ImportOptions {
+            openclaw_path: std::path::PathBuf::new(),
+            dry_run: false,
+            re_embed: false,
+            user_id: "test-user".to_string(),
+        };
+
+        let result = import_chunk(&db, &chunk, &opts).await;
+        assert!(matches!(
+            result,
+            Err(ImportError::Database(message)) if message == "chunk_index must be non-negative"
+        ));
+    }
 }

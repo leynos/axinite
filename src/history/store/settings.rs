@@ -4,15 +4,16 @@ use chrono::{DateTime, Utc};
 
 #[cfg(feature = "postgres")]
 use super::Store;
+use crate::db::SettingKey;
 #[cfg(feature = "postgres")]
-use crate::db::{SettingKey, UserId};
+use crate::db::UserId;
 #[cfg(feature = "postgres")]
 use crate::error::DatabaseError;
 
 /// A single setting row from the database.
 #[derive(Debug, Clone)]
 pub struct SettingRow {
-    pub key: String,
+    pub key: SettingKey,
     pub value: serde_json::Value,
     pub updated_at: DateTime<Utc>,
 }
@@ -49,7 +50,7 @@ impl Store {
             )
             .await?;
         Ok(row.map(|r| SettingRow {
-            key: r.get("key"),
+            key: SettingKey::from(r.get::<_, String>("key")),
             value: r.get("value"),
             updated_at: r.get("updated_at"),
         }))
@@ -105,7 +106,7 @@ impl Store {
         Ok(rows
             .iter()
             .map(|r| SettingRow {
-                key: r.get("key"),
+                key: SettingKey::from(r.get::<_, String>("key")),
                 value: r.get("value"),
                 updated_at: r.get("updated_at"),
             })
@@ -116,7 +117,7 @@ impl Store {
     pub async fn get_all_settings(
         &self,
         user_id: UserId,
-    ) -> Result<std::collections::HashMap<String, serde_json::Value>, DatabaseError> {
+    ) -> Result<std::collections::HashMap<SettingKey, serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
@@ -129,7 +130,7 @@ impl Store {
             .map(|r| {
                 let key: String = r.get("key");
                 let value: serde_json::Value = r.get("value");
-                (key, value)
+                (SettingKey::from(key), value)
             })
             .collect())
     }
@@ -138,10 +139,28 @@ impl Store {
     pub async fn set_all_settings(
         &self,
         user_id: UserId,
-        settings: &std::collections::HashMap<String, serde_json::Value>,
+        settings: &std::collections::HashMap<SettingKey, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let mut conn = self.conn().await?;
         let tx = conn.transaction().await?;
+
+        if settings.is_empty() {
+            tx.execute(
+                "DELETE FROM settings WHERE user_id = $1",
+                &[&user_id.as_str()],
+            )
+            .await?;
+        } else {
+            let keys: Vec<String> = settings
+                .keys()
+                .map(|key| key.as_str().to_string())
+                .collect();
+            tx.execute(
+                "DELETE FROM settings WHERE user_id = $1 AND NOT (key = ANY($2))",
+                &[&user_id.as_str(), &keys],
+            )
+            .await?;
+        }
 
         for (key, value) in settings {
             tx.execute(
@@ -152,7 +171,7 @@ impl Store {
                     value = EXCLUDED.value,
                     updated_at = NOW()
                 "#,
-                &[&user_id.as_str(), &key, value],
+                &[&user_id.as_str(), &key.as_str(), value],
             )
             .await?;
         }

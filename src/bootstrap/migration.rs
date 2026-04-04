@@ -255,7 +255,11 @@ async fn apply_migration_to_db(
 
     let settings =
         serde_json::from_value::<crate::settings::Settings>(legacy.clone()).unwrap_or_default();
-    let db_map = settings.to_db_map();
+    let db_map = settings
+        .to_db_map()
+        .into_iter()
+        .map(|(key, value)| (SettingKey::from(key), value))
+        .collect::<std::collections::HashMap<_, _>>();
     if !db_map.is_empty() {
         store
             .set_all_settings(UserId::from(user_id), &db_map)
