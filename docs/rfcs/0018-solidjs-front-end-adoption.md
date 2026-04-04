@@ -1,4 +1,4 @@
-# RFC 0018: Adopt the SolidJS browser front end
+# RFC 0018: Adopt the SolidJS browser front-end
 
 ## Preamble
 
@@ -19,7 +19,7 @@ SolidJS single-page application (SPA) with typed API modules, semantic CSS,
 TanStack Router, TanStack Query, localization, and a Bun mock backend that
 mirrors the browser contract through JSON and Server-Sent Events (SSE).
 
-This RFC proposes the staged adoption plan for that new front end inside the
+This RFC proposes the staged adoption plan for that new front-end inside the
 main Axinite repository. The recommendation is not to turn the browser into a
 separately deployed product, nor to make the Bun mock backend part of
 production. Instead, Axinite should keep the Rust gateway as the authoritative
@@ -37,7 +37,7 @@ removed.
 
 ### The current browser UI is expensive to evolve
 
-The current front end is a handwritten browser shell generated from one
+The current front-end is a handwritten browser shell generated from one
 JavaScript file and a small set of embedded assets. That has kept dependencies
 low, but it now imposes three concrete costs:
 
@@ -51,7 +51,7 @@ low, but it now imposes three concrete costs:
 
 ### The mockup has demonstrated a better implementation shape, but not yet an adoption path
 
-The new SolidJS front end already establishes several improvements:
+The new SolidJS front-end already establishes several improvements:
 
 - explicit route modules instead of one large rendering script,
 - typed API contracts and client helpers instead of route-local fixture data,
@@ -79,7 +79,7 @@ several risks at once:
 - the team could end up maintaining a parallel Bun preview backend and a real
   Rust gateway contract without a disciplined compatibility boundary.
 
-Axinite therefore needs an adoption sequence, not only a preferred frontend
+Axinite therefore needs an adoption sequence, not only a preferred front-end
 technology.
 
 ## Current state
@@ -117,14 +117,14 @@ runtime semantics.
 ### Existing rollout mechanism
 
 RFC 0009 already proposes a deployment-scoped feature-flag mechanism for the
-web front end. That work is directly relevant here. Axinite needs a path where
+web front-end. That work is directly relevant here. Axinite needs a path where
 the SolidJS application can be imported, tested, and exposed gradually without
 forcing every deployment to switch immediately.
 
 ## Goals and non-goals
 
 - Goals:
-  - Adopt the SolidJS front end into the main Axinite repository.
+  - Adopt the SolidJS front-end into the main Axinite repository.
   - Preserve the Rust gateway as the authoritative production runtime and
     same-origin browser entrypoint.
   - Reuse the mockup's component, routing, API-module, localization, styling,
@@ -142,9 +142,9 @@ forcing every deployment to switch immediately.
     change.
   - Replace Rust gateway ownership of authentication, authorization, and
     runtime mediation.
-  - Commit Axinite immediately to the fuller `v2a` web front-end stack adopted
-    by df12 Productions, including state tools such as Zustand, Dexie, or
-    XState for all browser state.
+  - Commit Axinite immediately to the fuller version 2a (`v2a`) web front-end
+    stack adopted by df12 Productions, including state tools such as Zustand,
+    Dexie, or XState for all browser state.
 
 ## Proposed design
 
@@ -280,7 +280,7 @@ Example workflow:
 3. The next browser request for that deployment reaches the gateway, which
    reads `solidjs_ui_enabled` from `FeatureFlagRegistry` and serves either the
    SolidJS entrypoint or the legacy static entrypoint.
-4. After authentication, the selected front end calls `GET /api/features` to
+4. After authentication, the selected front-end calls `GET /api/features` to
    load the rest of the deployment-scoped UI flags for in-app behaviour.
 
 Required changes:
@@ -304,7 +304,7 @@ Required changes:
 
 #### Stage 5: Cut over and remove the legacy static assets
 
-- Switch the SolidJS front end to the default browser implementation.
+- Switch the SolidJS front-end to the default browser implementation.
 - Remove the legacy `src/channels/web/static/` application assets once rollback
   is no longer required.
 - Update the architecture and maintainer docs so the documented front-end
@@ -332,7 +332,7 @@ Its responsibilities should not expand to include:
 
 ### 7. Keep state-management escalation disciplined
 
-The imported front end should keep the mockup's current restraint:
+The imported front-end should keep the mockup's current restraint:
 
 - TanStack Query for fetched and synchronized server state,
 - Solid signals and memos for local interaction state, and
@@ -341,7 +341,7 @@ The imported front end should keep the mockup's current restraint:
 Additional state machinery such as `@tanstack/solid-form`, Zustand,
 `solid-state`, or XState should be introduced only when concrete browser
 behaviour becomes too implicit or too repetitive without them. Adoption of the
-new front end is not, by itself, sufficient reason to widen the state stack.
+new front-end is not, by itself, sufficient reason to widen the state stack.
 
 ## Requirements
 
@@ -449,13 +449,16 @@ shape and earn more machinery later if product behaviour demands it.
 - Does the existing gateway WebSocket path still serve a browser need that the
   adopted SPA should keep, or can browser interactivity standardize on JSON plus
   SSE for the first cutover?
-- Where should feature-flag-driven entrypoint selection live: inside the Rust
-  gateway handlers, inside the browser bootstrap, or in both places as a
-  defence-in-depth measure?
+
+Informational note:
+Stage 3 already fixes feature-flag-driven entrypoint selection as a
+gateway-side routing decision in the Rust gateway. Any future client-side check
+would be defence-in-depth hardening only and must not reopen the primary
+routing decision.
 
 ## Recommendation
 
-Axinite should adopt the SolidJS front end from `axinite-mockup`, but do so as
+Axinite should adopt the SolidJS front-end from `axinite-mockup`, but do so as
 an in-repo browser workspace served by the existing Rust gateway and rolled out
 behind RFC 0009 feature flags. The migration should be contract-first,
 same-origin, and route-by-route. The Bun mock backend should remain a preview
