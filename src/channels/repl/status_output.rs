@@ -2,9 +2,11 @@
 //! authentication prompts built around `ToolApprovalRequest` and `render_approval_card`.
 
 use std::io::{self, Write};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::agent::truncate_for_preview;
+use crate::channels::StatusUpdate;
 
 use super::formatting::{ToolApprovalRequest, render_approval_card};
 
@@ -299,6 +301,83 @@ pub(super) fn print_image_generated(path: Option<&str>) {
     eprintln!("{}", render_image_generated(path));
 }
 
+/// Route a [`StatusUpdate`] to the appropriate `print_*` helper.
+pub(super) fn dispatch_status_update(
+    status: StatusUpdate,
+    is_streaming: &Arc<AtomicBool>,
+    is_debug: bool,
+) {
+    match status {
+        StatusUpdate::Thinking(msg) => print_thinking(&msg),
+        StatusUpdate::ToolStarted { name } => print_tool_started(&name),
+        StatusUpdate::ToolCompleted {
+            name,
+            success,
+            error,
+            parameters,
+        } => {
+            print_tool_completed(&ToolCompletedInfo {
+                name: &name,
+                success,
+                error: error.as_deref(),
+                parameters: parameters.as_deref(),
+            });
+        }
+        StatusUpdate::ToolResult { name: _, preview } => print_tool_result(&preview),
+        StatusUpdate::StreamChunk(chunk) => print_stream_chunk(is_streaming, &chunk),
+        StatusUpdate::JobStarted {
+            job_id,
+            title,
+            browse_url,
+        } => {
+            print_job_started(&JobStartedInfo {
+                job_id: &job_id,
+                title: &title,
+                browse_url: &browse_url,
+            });
+        }
+        StatusUpdate::Status(msg) => print_status(is_debug, &msg),
+        StatusUpdate::ApprovalNeeded {
+            request_id,
+            tool_name,
+            description,
+            parameters,
+        } => {
+            let request = ToolApprovalRequest {
+                request_id: &request_id,
+                tool_name: &tool_name,
+                description: &description,
+            };
+            print_approval_needed(&request, &parameters);
+        }
+        StatusUpdate::AuthRequired {
+            extension_name,
+            instructions,
+            auth_url,
+            setup_url,
+        } => {
+            print_auth_required(&AuthRequiredInfo {
+                extension_name: &extension_name,
+                instructions: instructions.as_deref(),
+                setup_url: setup_url.as_deref(),
+                auth_url: auth_url.as_deref(),
+            });
+        }
+        StatusUpdate::AuthCompleted {
+            extension_name,
+            success,
+            message,
+        } => {
+            print_auth_completed(&AuthCompletedInfo {
+                extension_name: &extension_name,
+                success,
+                message: &message,
+            });
+        }
+        StatusUpdate::ImageGenerated { path, .. } => print_image_generated(path.as_deref()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,14 +396,8 @@ mod tests {
         "###);
     }
 
-    #[test]
-    fn status_output_stderr_snapshot() {
-        let approval_request = ToolApprovalRequest {
-            request_id: "req_123456789",
-            tool_name: "write_file",
-            description: "Write a file after approval",
-        };
-        let stderr = [
+    fn tool_output_section() -> String {
+        [
             render_thinking("Thinking about the next step"),
             render_tool_started("write_file"),
             render_tool_completed_lines(&ToolCompletedInfo {
@@ -342,6 +415,12 @@ mod tests {
             })
             .join("\n"),
             render_tool_result("Wrote file successfully"),
+        ]
+        .join("\n")
+    }
+
+    fn job_status_section() -> String {
+        [
             render_job_started(&JobStartedInfo {
                 job_id: "job_123",
                 title: "Inspect docs",
@@ -350,11 +429,25 @@ mod tests {
             render_status(true, "status for debug").expect("debug status should render"),
             render_status(false, "Approval required for write_file")
                 .expect("approval status should render"),
-            render_approval_needed_lines(
-                &approval_request,
-                &serde_json::json!({"path": "/tmp/example.txt", "mode": "0644"}),
-            )
-            .join("\n"),
+        ]
+        .join("\n")
+    }
+
+    fn approval_section() -> String {
+        let request = ToolApprovalRequest {
+            request_id: "req_123456789",
+            tool_name: "write_file",
+            description: "Write a file after approval",
+        };
+        render_approval_needed_lines(
+            &request,
+            &serde_json::json!({"path": "/tmp/example.txt", "mode": "0644"}),
+        )
+        .join("\n")
+    }
+
+    fn auth_image_section() -> String {
+        [
             render_auth_required_lines(&AuthRequiredInfo {
                 extension_name: "github",
                 instructions: Some("Visit the OAuth URL to continue."),
@@ -374,6 +467,17 @@ mod tests {
             }),
             render_image_generated(Some("/tmp/output.png")),
             render_image_generated(None),
+        ]
+        .join("\n")
+    }
+
+    #[test]
+    fn status_output_stderr_snapshot() {
+        let stderr = [
+            tool_output_section(),
+            job_status_section(),
+            approval_section(),
+            auth_image_section(),
         ]
         .join("\n");
 

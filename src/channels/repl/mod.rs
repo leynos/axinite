@@ -38,14 +38,9 @@ use crate::channels::{
 };
 use crate::error::ChannelError;
 
-use formatting::{ToolApprovalRequest, make_skin, print_help};
+use formatting::{make_skin, print_help};
 use input::{EscInterruptHandler, ReplHelper};
-use status_output::{
-    AuthCompletedInfo, AuthRequiredInfo, JobStartedInfo, ToolCompletedInfo, print_approval_needed,
-    print_auth_completed, print_auth_required, print_image_generated, print_job_started,
-    print_status, print_stream_chunk, print_thinking, print_tool_completed, print_tool_result,
-    print_tool_started,
-};
+use status_output::dispatch_status_update;
 
 /// REPL channel with line editing and markdown rendering.
 pub struct ReplChannel {
@@ -296,75 +291,7 @@ impl NativeChannel for ReplChannel {
         status: StatusUpdate,
         _metadata: &serde_json::Value,
     ) -> Result<(), ChannelError> {
-        match status {
-            StatusUpdate::Thinking(msg) => print_thinking(&msg),
-            StatusUpdate::ToolStarted { name } => print_tool_started(&name),
-            StatusUpdate::ToolCompleted {
-                name,
-                success,
-                error,
-                parameters,
-            } => {
-                print_tool_completed(&ToolCompletedInfo {
-                    name: &name,
-                    success,
-                    error: error.as_deref(),
-                    parameters: parameters.as_deref(),
-                });
-            }
-            StatusUpdate::ToolResult { name: _, preview } => print_tool_result(&preview),
-            StatusUpdate::StreamChunk(chunk) => print_stream_chunk(&self.is_streaming, &chunk),
-            StatusUpdate::JobStarted {
-                job_id,
-                title,
-                browse_url,
-            } => {
-                print_job_started(&JobStartedInfo {
-                    job_id: &job_id,
-                    title: &title,
-                    browse_url: &browse_url,
-                });
-            }
-            StatusUpdate::Status(msg) => print_status(self.is_debug(), &msg),
-            StatusUpdate::ApprovalNeeded {
-                request_id,
-                tool_name,
-                description,
-                parameters,
-            } => {
-                let request = ToolApprovalRequest {
-                    request_id: &request_id,
-                    tool_name: &tool_name,
-                    description: &description,
-                };
-                print_approval_needed(&request, &parameters);
-            }
-            StatusUpdate::AuthRequired {
-                extension_name,
-                instructions,
-                auth_url,
-                setup_url,
-            } => print_auth_required(&AuthRequiredInfo {
-                extension_name: &extension_name,
-                instructions: instructions.as_deref(),
-                setup_url: setup_url.as_deref(),
-                auth_url: auth_url.as_deref(),
-            }),
-            StatusUpdate::AuthCompleted {
-                extension_name,
-                success,
-                message,
-            } => {
-                print_auth_completed(&AuthCompletedInfo {
-                    extension_name: &extension_name,
-                    success,
-                    message: &message,
-                });
-            }
-            StatusUpdate::ImageGenerated { path, .. } => {
-                print_image_generated(path.as_deref());
-            }
-        }
+        dispatch_status_update(status, &self.is_streaming, self.is_debug());
         Ok(())
     }
 
