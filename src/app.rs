@@ -413,6 +413,33 @@ impl AppBuilder {
         Ok((safety, tools, embeddings, workspace))
     }
 
+    /// Phase 6: Initialise the skills system.
+    pub async fn init_skills(
+        &self,
+        tools: &Arc<ToolRegistry>,
+    ) -> Result<
+        (
+            Option<Arc<std::sync::RwLock<SkillRegistry>>>,
+            Option<Arc<SkillCatalog>>,
+        ),
+        anyhow::Error,
+    > {
+        if !self.config.skills.enabled {
+            return Ok((None, None));
+        }
+
+        let mut registry = SkillRegistry::new(self.config.skills.local_dir.clone())
+            .with_installed_dir(self.config.skills.installed_dir.clone());
+        let loaded = registry.discover_all().await;
+        if !loaded.is_empty() {
+            tracing::debug!("Loaded {} skill(s): {}", loaded.len(), loaded.join(", "));
+        }
+        let registry = Arc::new(std::sync::RwLock::new(registry));
+        let catalog = crate::skills::catalog::shared_catalog();
+        tools.register_skill_tools(Arc::clone(&registry), Arc::clone(&catalog));
+        Ok((Some(registry), Some(catalog)))
+    }
+
     /// Phase 5: Load WASM tools, MCP servers, and create extension manager.
     pub async fn init_extensions(
         &self,
@@ -441,6 +468,18 @@ impl AppBuilder {
         .await
     }
 
+    /// Validates that LLM credentials are configured for non-nearai backends.
+    fn validate_llm_config(&self) -> Result<(), anyhow::Error> {
+        if self.config.llm.backend != "nearai" && self.config.llm.provider.is_none() {
+            let backend = &self.config.llm.backend;
+            anyhow::bail!(
+                "LLM_BACKEND={backend} is configured but no credentials were found. \
+                 Set the appropriate API key environment variable or run the setup wizard."
+            );
+        }
+        Ok(())
+    }
+
     /// Run all init phases in order and return the assembled components
     /// along with deferred runtime side effects.
     ///
@@ -453,17 +492,7 @@ impl AppBuilder {
     ) -> Result<(AppComponents, RuntimeSideEffects), anyhow::Error> {
         self.init_database().await?;
         self.init_secrets().await?;
-
-        // Post-init validation: if a non-nearai backend was selected but
-        // credentials were never resolved (deferred resolution found no keys),
-        // fail early with a clear error instead of a confusing runtime failure.
-        if self.config.llm.backend != "nearai" && self.config.llm.provider.is_none() {
-            let backend = &self.config.llm.backend;
-            anyhow::bail!(
-                "LLM_BACKEND={backend} is configured but no credentials were found. \
-                 Set the appropriate API key environment variable or run the setup wizard."
-            );
-        }
+        self.validate_llm_config()?;
 
         let (llm, cheap_llm, recording_handle) = if let Some(llm) = self.llm_override.take() {
             (llm, None, None)
@@ -490,20 +519,7 @@ impl AppBuilder {
             .map(std::path::PathBuf::from);
 
         // Skills system
-        let (skill_registry, skill_catalog) = if self.config.skills.enabled {
-            let mut registry = SkillRegistry::new(self.config.skills.local_dir.clone())
-                .with_installed_dir(self.config.skills.installed_dir.clone());
-            let loaded = registry.discover_all().await;
-            if !loaded.is_empty() {
-                tracing::debug!("Loaded {} skill(s): {}", loaded.len(), loaded.join(", "));
-            }
-            let registry = Arc::new(std::sync::RwLock::new(registry));
-            let catalog = crate::skills::catalog::shared_catalog();
-            tools.register_skill_tools(Arc::clone(&registry), Arc::clone(&catalog));
-            (Some(registry), Some(catalog))
-        } else {
-            (None, None)
-        };
+        let (skill_registry, skill_catalog) = self.init_skills(&tools).await?;
 
         let context_manager = Arc::new(ContextManager::new(self.config.agent.max_parallel_jobs));
         let cost_guard = Arc::new(crate::agent::cost_guard::CostGuard::new(

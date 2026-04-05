@@ -41,56 +41,58 @@ fn main() -> anyhow::Result<()> {
         .block_on(async_main())
 }
 
-async fn async_main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-
-    // Handle non-agent commands first (they don't need full setup)
+async fn dispatch_subcommand(cli: &Cli) -> Option<anyhow::Result<()>> {
     match &cli.command {
         Some(Command::Tool(tool_cmd)) => {
             init_cli_tracing();
-            return run_tool_command(tool_cmd.clone()).await;
+            Some(run_tool_command(tool_cmd.clone()).await)
         }
         Some(Command::Config(config_cmd)) => {
             init_cli_tracing();
-            return ironclaw::cli::run_config_command(config_cmd.clone()).await;
+            Some(ironclaw::cli::run_config_command(config_cmd.clone()).await)
         }
         Some(Command::Registry(registry_cmd)) => {
             init_cli_tracing();
-            return ironclaw::cli::run_registry_command(registry_cmd.clone()).await;
+            Some(ironclaw::cli::run_registry_command(registry_cmd.clone()).await)
         }
         Some(Command::Mcp(mcp_cmd)) => {
             init_cli_tracing();
-            return run_mcp_command(*mcp_cmd.clone()).await;
+            Some(run_mcp_command(*mcp_cmd.clone()).await)
         }
         Some(Command::Memory(mem_cmd)) => {
             init_cli_tracing();
-            return ironclaw::cli::run_memory_command(mem_cmd).await;
+            Some(ironclaw::cli::run_memory_command(mem_cmd).await)
         }
         Some(Command::Pairing(pairing_cmd)) => {
             init_cli_tracing();
-            return run_pairing_command(pairing_cmd.clone()).map_err(|e| anyhow::anyhow!("{}", e));
+            Some(run_pairing_command(pairing_cmd.clone()).map_err(|e| anyhow::anyhow!("{}", e)))
         }
         Some(Command::Service(service_cmd)) => {
             init_cli_tracing();
-            return run_service_command(service_cmd);
+            Some(run_service_command(service_cmd))
         }
         Some(Command::Doctor) => {
             init_cli_tracing();
-            return ironclaw::cli::run_doctor_command().await;
+            Some(ironclaw::cli::run_doctor_command().await)
         }
         Some(Command::Status) => {
             init_cli_tracing();
-            return run_status_command().await;
+            Some(run_status_command().await)
         }
         Some(Command::Completion(completion)) => {
             init_cli_tracing();
-            return completion.run();
+            Some(completion.run())
         }
         #[cfg(feature = "import")]
         Some(Command::Import(import_cmd)) => {
             init_cli_tracing();
-            let config = ironclaw::config::Config::from_env().await?;
-            return ironclaw::cli::run_import_command(import_cmd, &config).await;
+            Some(
+                async {
+                    let config = ironclaw::config::Config::from_env().await?;
+                    ironclaw::cli::run_import_command(import_cmd, &config).await
+                }
+                .await,
+            )
         }
         Some(Command::Worker {
             job_id,
@@ -98,7 +100,7 @@ async fn async_main() -> anyhow::Result<()> {
             max_iterations,
         }) => {
             init_worker_tracing();
-            return ironclaw::worker::run_worker(*job_id, orchestrator_url, *max_iterations).await;
+            Some(ironclaw::worker::run_worker(*job_id, orchestrator_url, *max_iterations).await)
         }
         Some(Command::ClaudeBridge {
             job_id,
@@ -107,41 +109,50 @@ async fn async_main() -> anyhow::Result<()> {
             model,
         }) => {
             init_worker_tracing();
-            return ironclaw::worker::run_claude_bridge(
-                *job_id,
-                orchestrator_url,
-                *max_turns,
-                model,
+            Some(
+                ironclaw::worker::run_claude_bridge(*job_id, orchestrator_url, *max_turns, model)
+                    .await,
             )
-            .await;
         }
         Some(Command::Onboard {
             skip_auth,
             channels_only,
             provider_only,
             quick,
-        }) => {
-            #[cfg(any(feature = "postgres", feature = "libsql"))]
-            {
-                let config = SetupConfig {
-                    skip_auth: *skip_auth,
-                    channels_only: *channels_only,
-                    provider_only: *provider_only,
-                    quick: *quick,
-                };
-                let mut wizard = SetupWizard::with_config(config);
-                wizard.run().await?;
+        }) => Some(
+            async {
+                #[cfg(any(feature = "postgres", feature = "libsql"))]
+                {
+                    let config = SetupConfig {
+                        skip_auth: *skip_auth,
+                        channels_only: *channels_only,
+                        provider_only: *provider_only,
+                        quick: *quick,
+                    };
+                    let mut wizard = SetupWizard::with_config(config);
+                    wizard.run().await?;
+                }
+                #[cfg(not(any(feature = "postgres", feature = "libsql")))]
+                {
+                    let _ = (skip_auth, channels_only, provider_only, quick);
+                    eprintln!("Onboarding wizard requires the 'postgres' or 'libsql' feature.");
+                }
+                Ok(())
             }
-            #[cfg(not(any(feature = "postgres", feature = "libsql")))]
-            {
-                let _ = (skip_auth, channels_only, provider_only, quick);
-                eprintln!("Onboarding wizard requires the 'postgres' or 'libsql' feature.");
-            }
-            return Ok(());
-        }
+            .await,
+        ),
         None | Some(Command::Run) => {
             // Continue to run agent
+            None
         }
+    }
+}
+async fn async_main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    // Handle non-agent commands first (they don't need full setup)
+    if let Some(result) = dispatch_subcommand(&cli).await {
+        return result;
     }
 
     // ── PID lock (prevent multiple instances) ────────────────────────
