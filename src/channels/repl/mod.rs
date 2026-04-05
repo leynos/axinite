@@ -17,6 +17,7 @@
 //! - `yes`/`no`/`always` - Respond to tool approval prompts
 //! - `Esc` - Interrupt current operation
 
+mod common;
 mod formatting;
 mod input;
 mod status_output;

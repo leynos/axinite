@@ -216,6 +216,9 @@ fn test_rebuild_chat_messages_non_array_tool_calls_json(
     let result = rebuild_chat_messages_from_db(&messages, &safety);
     // Non-array JSON for tool_calls is skipped (expecting an array)
     assert_only_user_and_assistant(&result);
+    // Also verify message content wasn't modified
+    assert_eq!(result[0].content, "Hi");
+    assert_eq!(result[1].content, "Done");
 }
 
 #[rstest]
@@ -313,20 +316,35 @@ fn test_rebuild_chat_messages_multi_turn_with_tools(test_safety_layer: SafetyLay
 
     assert_eq!(result.len(), 8);
 
+    // Verify role ordering for all messages
+    assert_eq!(result[0].role, crate::llm::Role::User);
     assert_eq!(result[0].content, "Find X");
+
+    assert_eq!(result[1].role, crate::llm::Role::Assistant);
     let first_turn_tool_calls = assert_assistant_with_tool_calls(&result[1]);
     assert_eq!(first_turn_tool_calls.len(), 1);
     assert_eq!(first_turn_tool_calls[0].id, "call_0");
     assert_eq!(first_turn_tool_calls[0].name, "search");
+
+    assert_eq!(result[2].role, crate::llm::Role::Tool);
     assert_tool_result_message(&result[2], "call_0", "search", &["found it"]);
+
+    assert_eq!(result[3].role, crate::llm::Role::Assistant);
     assert_eq!(result[3].content, "Found X");
 
+    assert_eq!(result[4].role, crate::llm::Role::User);
     assert_eq!(result[4].content, "Write it");
+
+    assert_eq!(result[5].role, crate::llm::Role::Assistant);
     let second_turn_tool_calls = assert_assistant_with_tool_calls(&result[5]);
     assert_eq!(second_turn_tool_calls.len(), 1);
     assert_eq!(second_turn_tool_calls[0].id, "call_1");
     assert_eq!(second_turn_tool_calls[0].name, "write");
+
+    assert_eq!(result[6].role, crate::llm::Role::Tool);
     assert_tool_result_message(&result[6], "call_1", "write", &["ok"]);
+
+    assert_eq!(result[7].role, crate::llm::Role::Assistant);
     assert_eq!(result[7].content, "Written");
 }
 

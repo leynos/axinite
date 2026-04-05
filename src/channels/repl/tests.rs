@@ -1,3 +1,5 @@
+//! Tests for the REPL channel behavior and message handling.
+
 use futures::StreamExt;
 
 use super::*;

@@ -1,54 +1,34 @@
 //! Edge-case and regression tests for `cosine_similarity` and related search
 //! cosine helpers.
 
+use rstest::rstest;
+
 use super::*;
 
-#[test]
-fn test_cosine_similarity_identical() {
-    let a = [1.0, 2.0, 3.0];
-    let b = [1.0, 2.0, 3.0];
-    let sim = cosine_similarity(&a, &b);
-    assert!((sim - 1.0).abs() < 0.001);
-}
-
-#[test]
-fn test_cosine_similarity_opposite() {
-    let a = [1.0, 2.0, 3.0];
-    let b = [-1.0, -2.0, -3.0];
-    let sim = cosine_similarity(&a, &b);
-    assert!((sim - (-1.0)).abs() < 0.001);
-}
-
-#[test]
-fn test_cosine_similarity_orthogonal() {
-    let a = [1.0, 0.0];
-    let b = [0.0, 1.0];
-    let sim = cosine_similarity(&a, &b);
-    assert!((sim - 0.0).abs() < 0.001);
-}
-
-#[test]
-fn test_cosine_similarity_different_lengths() {
-    let a = [1.0, 2.0, 3.0];
-    let b = [1.0, 2.0];
-    let sim = cosine_similarity(&a, &b);
-    assert_eq!(sim, 0.0);
-}
-
-#[test]
-fn test_cosine_similarity_zero_vector() {
-    let a = [0.0, 0.0, 0.0];
-    let b = [1.0, 2.0, 3.0];
-    let sim = cosine_similarity(&a, &b);
-    assert_eq!(sim, 0.0);
-}
-
-#[test]
-fn test_cosine_similarity_both_zero() {
-    let a = [0.0, 0.0];
-    let b = [0.0, 0.0];
-    let sim = cosine_similarity(&a, &b);
-    assert_eq!(sim, 0.0);
+#[rstest]
+#[case::identical([1.0, 2.0, 3.0], [1.0, 2.0, 3.0], 1.0, true)]
+#[case::opposite([1.0, 2.0, 3.0], [-1.0, -2.0, -3.0], -1.0, true)]
+#[case::orthogonal([1.0, 0.0], [0.0, 1.0], 0.0, true)]
+#[case::different_lengths([1.0, 2.0, 3.0], [1.0, 2.0], 0.0, false)]
+#[case::zero_vector([0.0, 0.0, 0.0], [1.0, 2.0, 3.0], 0.0, false)]
+#[case::both_zero([0.0, 0.0], [0.0, 0.0], 0.0, false)]
+fn test_cosine_similarity_cases(
+    #[case] a: impl AsRef<[f32]>,
+    #[case] b: impl AsRef<[f32]>,
+    #[case] expected: f32,
+    #[case] use_approx: bool,
+) {
+    let sim = cosine_similarity(a.as_ref(), b.as_ref());
+    if use_approx {
+        assert!(
+            (sim - expected).abs() < 0.001,
+            "Expected ~{}, got {}",
+            expected,
+            sim
+        );
+    } else {
+        assert_eq!(sim, expected, "Expected exact {}, got {}", expected, sim);
+    }
 }
 
 /// Regression: `cosine_similarity` previously contained a `debug_assert_eq!`
@@ -72,25 +52,26 @@ fn test_cosine_similarity_different_lengths_does_not_panic() {
 
 /// Regression: `cosine_similarity` could return `NaN` when both vectors
 /// contained infinity values, producing `inf / inf`. The fix added a NaN
-/// guard that maps the result to 0.0.
+/// guard that maps the result to 0.0. This test uses a Cartesian sweep
+/// over problematic special scalars to ensure comprehensive coverage.
 #[test]
 fn test_cosine_similarity_special_values_do_not_return_nan() {
-    let cases: Vec<(&[f32], &[f32])> = vec![
-        (&[f32::INFINITY, 0.0], &[f32::INFINITY, 0.0]),
-        (&[f32::NEG_INFINITY, 1.0], &[f32::NEG_INFINITY, 1.0]),
-        (&[f32::INFINITY, f32::NEG_INFINITY], &[1.0, 1.0]),
-        (&[f32::NAN, 1.0], &[1.0, 1.0]),
-    ];
+    // Only test truly problematic special values that should produce NaN or undefined results
+    let special_scalars = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY];
 
-    for (a, b) in cases {
-        let sim = cosine_similarity(a, b);
-        assert_eq!(
-            sim, 0.0,
-            "cosine_similarity should return 0.0 fallback for special values, got {sim} for a={a:?}, b={b:?}"
-        );
-        assert!(
-            !sim.is_nan(),
-            "cosine_similarity returned NaN for a={a:?}, b={b:?}"
-        );
+    for &a_val in &special_scalars {
+        for &b_val in &special_scalars {
+            let a = [a_val, 1.0];
+            let b = [b_val, 1.0];
+            let sim = cosine_similarity(&a, &b);
+            assert_eq!(
+                sim, 0.0,
+                "cosine_similarity should return 0.0 fallback for special values, got {sim} for a={a:?}, b={b:?}"
+            );
+            assert!(
+                !sim.is_nan(),
+                "cosine_similarity returned NaN for a={a:?}, b={b:?}"
+            );
+        }
     }
 }
