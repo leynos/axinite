@@ -273,7 +273,11 @@ fn handle_approval_needed(
     description: &str,
     parameters: &serde_json::Value,
 ) {
-    let request = ToolApprovalRequest { request_id, tool_name, description };
+    let request = ToolApprovalRequest {
+        request_id,
+        tool_name,
+        description,
+    };
     print_approval_needed(&request, parameters);
 }
 
@@ -285,7 +289,12 @@ fn handle_auth_required(
     setup_url: Option<&str>,
     auth_url: Option<&str>,
 ) {
-    print_auth_required(&AuthRequiredInfo { extension_name, instructions, setup_url, auth_url });
+    print_auth_required(&AuthRequiredInfo {
+        extension_name,
+        instructions,
+        setup_url,
+        auth_url,
+    });
 }
 
 /// Route a [`StatusUpdate`] to the appropriate `print_*` helper.
@@ -324,10 +333,20 @@ pub(super) fn dispatch_status_update(
             });
         }
         StatusUpdate::Status(msg) => print_status(is_debug, &msg),
-        StatusUpdate::ApprovalNeeded { request_id, tool_name, description, parameters } => {
+        StatusUpdate::ApprovalNeeded {
+            request_id,
+            tool_name,
+            description,
+            parameters,
+        } => {
             handle_approval_needed(&request_id, &tool_name, &description, &parameters);
         }
-        StatusUpdate::AuthRequired { extension_name, instructions, auth_url, setup_url } => {
+        StatusUpdate::AuthRequired {
+            extension_name,
+            instructions,
+            auth_url,
+            setup_url,
+        } => {
             handle_auth_required(
                 &extension_name,
                 instructions.as_deref(),

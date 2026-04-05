@@ -91,7 +91,9 @@ pub(super) fn format_json_params(params: &serde_json::Value) -> String {
                         truncate_grapheme_aware(&sanitized, 120)
                     }
                 };
-                lines.push(format!("{CARD_PARAM_INDENT}\x1b[36m{sanitized_key}\x1b[0m: {val_str}"));
+                lines.push(format!(
+                    "{CARD_PARAM_INDENT}\x1b[36m{sanitized_key}\x1b[0m: {val_str}"
+                ));
             }
             lines.join("\n")
         }

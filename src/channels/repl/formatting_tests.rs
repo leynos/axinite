@@ -26,11 +26,9 @@ fn truncate_card_content_handles_ansi_sequences_without_corruption() {
 
 #[test]
 fn truncate_card_content_preserves_format_json_params_output() {
-    let rendered = format_json_params(
-        &serde_json::json!({
-            "status": "abcdefghijklmnopqrstuvwxyz"
-        }),
-    );
+    let rendered = format_json_params(&serde_json::json!({
+        "status": "abcdefghijklmnopqrstuvwxyz"
+    }));
 
     let truncated = truncate_card_content(&rendered, 20);
 

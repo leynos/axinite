@@ -45,8 +45,11 @@ fn assert_user_assistant_with_content(
     assistant_content: &str,
 ) {
     assert_only_user_and_assistant(result);
-    assert_eq!(result[0].content, user_content,      "unexpected user content");
-    assert_eq!(result[1].content, assistant_content, "unexpected assistant content");
+    assert_eq!(result[0].content, user_content, "unexpected user content");
+    assert_eq!(
+        result[1].content, assistant_content,
+        "unexpected assistant content"
+    );
 }
 
 /// Assert that a `tool_calls` row whose JSON content is `tool_json` is skipped
