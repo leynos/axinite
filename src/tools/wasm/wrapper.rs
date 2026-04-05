@@ -28,7 +28,7 @@ use crate::tools::wasm::host::{HostState, LogLevel};
 use crate::tools::wasm::limits::{ResourceLimits, WasmResourceLimiter};
 use crate::tools::wasm::runtime::{EPOCH_TICK_INTERVAL, PreparedModule, WasmToolRuntime};
 
-mod metadata;
+pub(crate) mod metadata;
 
 // Generate component model bindings from the WIT file.
 //

@@ -27,7 +27,6 @@ pub(super) fn placeholder_schema() -> serde_json::Value {
 }
 
 /// Whether the given schema is the registration-time placeholder.
-#[cfg(test)]
 pub(crate) fn is_placeholder_schema(schema: &serde_json::Value) -> bool {
     *schema == placeholder_schema()
 }

@@ -245,6 +245,8 @@ fn normalized_description(description: &str) -> Option<&str> {
 }
 
 fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
+    use crate::tools::wasm::is_placeholder_schema;
+
     match schema {
         serde_json::Value::Null => None,
         serde_json::Value::String(value) => {
@@ -255,6 +257,12 @@ fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
                 Some(serde_json::Value::String(trimmed.to_string()))
             }
         }
-        value => Some(value),
+        value => {
+            // Treat placeholder schemas as missing so guest export recovery runs.
+            if is_placeholder_schema(&value) {
+                return None;
+            }
+            Some(value)
+        }
     }
 }
