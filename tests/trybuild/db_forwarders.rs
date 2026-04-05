@@ -1,9 +1,9 @@
 //! Compile-contract fixture for database trait forwarders.
 //!
 //! This module validates that the `ironclaw::db` forwarder traits compile
-//! correctly for both PostgreSQL and libSQL backends. It serves as a trybuild
+//! correctly for the generic `dyn Database` trait. It serves as a trybuild
 //! test target to ensure the public DB trait surface remains stable and
-//! backward-compatible across database implementations.
+//! backward-compatible.
 
 use ironclaw::db::{
     ConversationStore, Database, SettingKey, SettingsStore, UserId,
@@ -30,16 +30,6 @@ where
         &value,
     );
     let _ = Database::run_migrations(db);
-}
-
-#[cfg(feature = "postgres")]
-fn assert_postgres_backend(db: &ironclaw::db::postgres::PgBackend) {
-    assert_dyn_database(db);
-}
-
-#[cfg(feature = "libsql")]
-fn assert_libsql_backend(db: &ironclaw::db::libsql::LibSqlBackend) {
-    assert_dyn_database(db);
 }
 
 fn main() {}

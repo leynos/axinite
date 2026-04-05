@@ -9,8 +9,8 @@ use rstest::rstest;
 
 #[rstest]
 #[case("tests/trybuild/db_forwarders.rs")]
-#[case("tests/trybuild/db_forwarders_postgres.rs")]
-#[case("tests/trybuild/db_forwarders_libsql.rs")]
+#[cfg_attr(feature = "postgres", case("tests/trybuild/db_forwarders_postgres.rs"))]
+#[cfg_attr(feature = "libsql", case("tests/trybuild/db_forwarders_libsql.rs"))]
 #[case("tests/trybuild/settings_compat.rs")]
 fn db_surface_compile_contracts(#[case] fixture: &str) {
     let cases = trybuild::TestCases::new();
