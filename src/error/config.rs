@@ -1,7 +1,9 @@
 //! Configuration-related error types.
 
+use std::sync::Arc;
+
 /// Configuration-related errors.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum ConfigError {
     #[error("Missing required environment variable: {0}")]
     MissingEnvVar(String),
@@ -16,5 +18,11 @@ pub enum ConfigError {
     ParseError(String),
 
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] Arc<std::io::Error>),
+}
+
+impl From<std::io::Error> for ConfigError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Io(Arc::new(err))
+    }
 }

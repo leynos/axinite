@@ -310,6 +310,78 @@ For the compile-time reduction effort:
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
 
+## Hot-reload architecture
+
+The `src/reload/` module provides hot-reload capabilities for configuration,
+HTTP listeners, and secrets without restarting the application. This is
+triggered by the Unix hangup signal (SIGHUP) in production environments.
+
+### Core traits
+
+Four trait boundaries separate reload policy from I/O:
+
+- `ConfigLoader` — Loads configuration from database (`DbConfigLoader`) or
+  environment variables (`EnvConfigLoader`).
+- `ListenerController` — Controls HTTP listener restarts, implemented by
+  `WebhookListenerController` for the webhook server.
+- `SecretInjector` — Injects secrets into an environment variable overlay,
+  implemented by `DbSecretInjector` for database-backed secrets.
+- `ChannelSecretUpdater` — Propagates rotated or cleared channel secrets
+  without restarting the channel. `HotReloadManager` uses this boundary in
+  step 4 of the reload flow to fan out webhook-secret changes to live
+  channels.
+
+Each trait has a native async sibling (`NativeConfigLoader`,
+`NativeListenerController`, `NativeSecretInjector`,
+`NativeChannelSecretUpdater`) that returns `impl Future` rather than boxed
+futures. A blanket implementation converts the native traits to the
+dyn-compatible boxed-future form.
+
+### HotReloadManager orchestrator
+
+`HotReloadManager` composes the four boundaries and coordinates the
+reload sequence:
+
+1. Inject secrets into the environment overlay
+2. Load new configuration
+3. Restart the HTTP listener if the bind address changed, restart a
+   stopped listener when `channels.http` is present, or call `shutdown()`
+   when `channels.http` is removed, so the live listener is torn down cleanly
+4. Update channel secrets
+
+The manager is created via `create_hot_reload_manager()` which wires
+together the default implementations based on available stores.
+
+### Extension guidance
+
+Adding a new config source:
+
+1. Implement `NativeConfigLoader` for the type.
+2. The blanket impl automatically provides `ConfigLoader`.
+3. Pass the loader to `HotReloadManager::new()`.
+
+Adding a new listener controller:
+
+1. Implement `NativeListenerController` for the server wrapper.
+2. Implement `current_addr()`, `is_running()`, `restart_with_addr()`, and
+   `shutdown()`.
+3. Expect `shutdown()` to be called when hot reload removes the HTTP
+   channel configuration, even if the listener address itself did not
+   change beforehand.
+
+### Test stubs
+
+The `src/reload/test_stubs.rs` module provides hand-rolled stubs for
+testing:
+
+- `StubConfigLoader` — Returns a pre-configured config or error.
+- `StubListenerController` — Records restart calls, can simulate failures.
+- `StubSecretInjector` — Records whether `inject()` was called.
+- `SpySecretUpdater` — Records all secret update calls.
+
+Use these in unit tests to verify manager behaviour without real I/O.
+Example usage is in `src/reload/manager/tests.rs`.
+
 ## Expected follow-up changes
 
 This guide documents the environment as of the current branch. The
