@@ -479,13 +479,15 @@ impl Agent {
             .await;
 
         // Re-acquire lock and check if interrupted
-        let mut sess = session.lock().await;
-        let thread = sess
-            .threads
-            .get_mut(&thread_id)
-            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
-
-        if thread.state == ThreadState::Interrupted {
+        let interrupted = {
+            let mut sess = session.lock().await;
+            let thread = sess
+                .threads
+                .get_mut(&thread_id)
+                .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+            thread.state == ThreadState::Interrupted
+        };
+        if interrupted {
             let _ = self
                 .channels
                 .send_status(
@@ -497,11 +499,20 @@ impl Agent {
             return Ok(SubmissionResult::Interrupted);
         }
 
+        // Re-acquire lock for processing result
+        let mut sess = session.lock().await;
+        let thread = sess
+            .threads
+            .get_mut(&thread_id)
+            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+
         // Complete, fail, or request approval
         match result {
             Ok(AgenticLoopResult::Response(response)) => {
+                // Drop the session lock before running the response transform hook
+                drop(sess);
+
                 // Hook: TransformResponse — allow hooks to modify or reject the final response
-                // Run hook without holding the session lock
                 let response = {
                     let event = crate::hooks::HookEvent::ResponseTransform {
                         user_id: message.user_id.clone(),
@@ -526,8 +537,12 @@ impl Agent {
                     }
                 };
 
-                // Snapshot thread data while holding lock, then complete turn
+                // Re-acquire lock to complete turn and snapshot data
                 let (turn_number, tool_calls) = {
+                    let mut sess = session.lock().await;
+                    let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
+                        Error::from(crate::error::JobError::NotFound { id: thread_id })
+                    })?;
                     thread.complete_turn(&response);
                     thread
                         .turns
@@ -535,8 +550,7 @@ impl Agent {
                         .map(|t| (t.turn_number, t.tool_calls.clone()))
                         .unwrap_or_default()
                 };
-                // Drop the session lock before async operations
-                drop(sess);
+                // Lock is dropped here at end of block
 
                 let _ = self
                     .channels
