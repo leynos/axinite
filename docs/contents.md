@@ -35,6 +35,10 @@
 - [Front-end architecture](front-end-architecture.md) explains how the web
   gateway serves the browser UI, generates the interface, and connects browser
   actions to the runtime subsystems.
+- [SolidJS PWA gap analysis](solidjs-pwa-gap-analysis.md) compares the
+  `axinite-mockup` PWA against the shipped Rust-hosted browser gateway and
+  lists the contract, data-shape, and user-visible parity gaps to close before
+  adoption.
 - [Chat model](chat-model.md) traces the chat pipeline from ingress through
   context assembly, tool execution, approvals, and outbound sinks.
 - [Database integrations](database-integrations.md) explains the PostgreSQL,
@@ -171,6 +175,9 @@
   - [RFC 0017: Hierarchical recall for memoryd](rfcs/0017-hierarchical-recall-for-memoryd.md)
     proposes the theme-aware, budget-aware read path that expands to episodes
     and messages only when the extra evidence is worth the token cost.
+  - [RFC 0018: Adopt the SolidJS browser front end](rfcs/0018-solidjs-front-end-adoption.md)
+    proposes the staged migration from the Rust-embedded browser shell to the
+    new SolidJS application proven out in `axinite-mockup`.
 
 ## ADRs
 
