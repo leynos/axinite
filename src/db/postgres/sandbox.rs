@@ -2,11 +2,11 @@
 
 use uuid::Uuid;
 
+#[cfg(test)]
+use crate::db::SandboxJobStatus;
 use crate::db::{
     NativeSandboxStore, SandboxEventType, SandboxJobStatusUpdate, SandboxMode, UserId,
 };
-#[cfg(test)]
-use crate::db::SandboxJobStatus;
 use crate::error::DatabaseError;
 use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
 

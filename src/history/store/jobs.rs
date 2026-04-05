@@ -282,7 +282,10 @@ mod tests {
     async fn test_save_job_persists_user_id() {
         use crate::context::JobContext;
 
-        let Some(backend) = try_test_pg_db().await.expect("unexpected Postgres test setup error") else {
+        let Some(backend) = try_test_pg_db()
+            .await
+            .expect("unexpected Postgres test setup error")
+        else {
             return;
         };
         let store = Store::from_pool(backend.pool());

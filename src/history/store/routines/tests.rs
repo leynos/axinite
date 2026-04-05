@@ -85,7 +85,9 @@ async fn cleanup(store: &Store, routine_id: Uuid) {
 
 #[fixture]
 async fn store() -> Option<Store> {
-    let backend = try_test_pg_db().await.expect("unexpected Postgres test setup error")?;
+    let backend = try_test_pg_db()
+        .await
+        .expect("unexpected Postgres test setup error")?;
     Some(Store::from_pool(backend.pool()))
 }
 
