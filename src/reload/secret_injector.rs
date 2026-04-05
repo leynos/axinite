@@ -100,14 +100,16 @@ impl DbSecretInjector {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use mockall::automock;
     use secrecy::SecretString;
-    use uuid::Uuid;
 
     use super::*;
     use crate::config::helpers::{EnvKey, optional_env};
     use crate::secrets::{
-        CreateSecretParams, InMemorySecretsStore, NativeSecretsStore, Secret, SecretRef,
-        SecretsCrypto, SecretsStore,
+        CreateSecretParams, DecryptedSecret, InMemorySecretsStore, NativeSecretsStore, Secret,
+        SecretError, SecretRef, SecretsCrypto, SecretsStore,
     };
     use crate::testing::credentials::TEST_CRYPTO_KEY;
     use crate::testing::test_utils::EnvVarsGuard;
@@ -120,53 +122,104 @@ mod tests {
         }
     }
 
-    struct ErrorSecretsStore;
+    /// Synchronous mock trait for `NativeSecretsStore`.
+    ///
+    /// This trait mirrors the async `NativeSecretsStore` but with synchronous
+    /// methods returning owned values, allowing it to be mocked with mockall.
+    /// The `MockSecretsStore` wrapper implements `NativeSecretsStore` by
+    /// delegating to this mock.
+    #[automock]
+    trait SyncSecretsStore {
+        fn create(
+            &self,
+            user_id: String,
+            params: CreateSecretParams,
+        ) -> Result<Secret, SecretError>;
+        fn get(&self, user_id: String, name: String) -> Result<Secret, SecretError>;
+        fn get_decrypted(
+            &self,
+            user_id: String,
+            name: String,
+        ) -> Result<DecryptedSecret, SecretError>;
+        fn exists(&self, user_id: String, name: String) -> Result<bool, SecretError>;
+        fn list(&self, user_id: String) -> Result<Vec<SecretRef>, SecretError>;
+        fn delete(&self, user_id: String, name: String) -> Result<bool, SecretError>;
+        fn record_usage(&self, secret_id: uuid::Uuid) -> Result<(), SecretError>;
+        fn is_accessible(
+            &self,
+            user_id: String,
+            secret_name: String,
+            allowed_secrets: Vec<String>,
+        ) -> Result<bool, SecretError>;
+    }
 
-    impl NativeSecretsStore for ErrorSecretsStore {
+    struct MockSecretsStore {
+        inner: MockSyncSecretsStore,
+    }
+
+    impl MockSecretsStore {
+        fn new(inner: MockSyncSecretsStore) -> Self {
+            Self { inner }
+        }
+    }
+
+    impl NativeSecretsStore for MockSecretsStore {
         async fn create(
             &self,
-            _user_id: &str,
-            _params: CreateSecretParams,
+            user_id: &str,
+            params: CreateSecretParams,
         ) -> Result<Secret, SecretError> {
-            panic!("create() should not be called in this test")
+            self.inner.create(user_id.to_string(), params)
         }
 
-        async fn get(&self, _user_id: &str, _name: &str) -> Result<Secret, SecretError> {
-            panic!("get() should not be called in this test")
+        async fn get(&self, user_id: &str, name: &str) -> Result<Secret, SecretError> {
+            self.inner.get(user_id.to_string(), name.to_string())
         }
 
         async fn get_decrypted(
             &self,
-            _user_id: &str,
-            _name: &str,
-        ) -> Result<crate::secrets::DecryptedSecret, SecretError> {
-            Err(SecretError::Database("simulated store failure".to_string()))
+            user_id: &str,
+            name: &str,
+        ) -> Result<DecryptedSecret, SecretError> {
+            self.inner
+                .get_decrypted(user_id.to_string(), name.to_string())
         }
 
-        async fn exists(&self, _user_id: &str, _name: &str) -> Result<bool, SecretError> {
-            panic!("exists() should not be called in this test")
+        async fn exists(&self, user_id: &str, name: &str) -> Result<bool, SecretError> {
+            self.inner.exists(user_id.to_string(), name.to_string())
         }
 
-        async fn list(&self, _user_id: &str) -> Result<Vec<SecretRef>, SecretError> {
-            panic!("list() should not be called in this test")
+        async fn list(&self, user_id: &str) -> Result<Vec<SecretRef>, SecretError> {
+            self.inner.list(user_id.to_string())
         }
 
-        async fn delete(&self, _user_id: &str, _name: &str) -> Result<bool, SecretError> {
-            panic!("delete() should not be called in this test")
+        async fn delete(&self, user_id: &str, name: &str) -> Result<bool, SecretError> {
+            self.inner.delete(user_id.to_string(), name.to_string())
         }
 
-        async fn record_usage(&self, _secret_id: Uuid) -> Result<(), SecretError> {
-            panic!("record_usage() should not be called in this test")
+        async fn record_usage(&self, secret_id: uuid::Uuid) -> Result<(), SecretError> {
+            self.inner.record_usage(secret_id)
         }
 
         async fn is_accessible(
             &self,
-            _user_id: &str,
-            _secret_name: &str,
-            _allowed_secrets: &[String],
+            user_id: &str,
+            secret_name: &str,
+            allowed_secrets: &[String],
         ) -> Result<bool, SecretError> {
-            panic!("is_accessible() should not be called in this test")
+            self.inner.is_accessible(
+                user_id.to_string(),
+                secret_name.to_string(),
+                allowed_secrets.to_vec(),
+            )
         }
+    }
+
+    fn make_error_store() -> Arc<dyn SecretsStore + Send + Sync> {
+        let mut mock = MockSyncSecretsStore::new();
+        mock.expect_get_decrypted()
+            .returning(|_, _| Err(SecretError::Database("simulated store failure".to_string())));
+        Arc::new(MockSecretsStore::new(mock))
     }
 
     /// Test the HTTP_WEBHOOK_SECRET_KEY constant value.
@@ -184,7 +237,7 @@ mod tests {
 
         let crypto = Arc::new(
             SecretsCrypto::new(SecretString::from(TEST_CRYPTO_KEY.to_string()))
-                .expect("test crypto should initialize"),
+                .expect("test crypto should initialise"),
         );
         let store: Arc<dyn SecretsStore + Send + Sync> =
             Arc::new(InMemorySecretsStore::new(crypto));
@@ -227,7 +280,7 @@ mod tests {
         crate::config::remove_single_var(HTTP_WEBHOOK_SECRET_KEY);
         crate::config::inject_single_var(HTTP_WEBHOOK_SECRET_KEY, "existing-overlay");
 
-        let store: Arc<dyn SecretsStore + Send + Sync> = Arc::new(ErrorSecretsStore);
+        let store: Arc<dyn SecretsStore + Send + Sync> = make_error_store();
         let injector = DbSecretInjector::new(store, UserId::from("test_user"));
 
         NativeSecretInjector::inject(&injector).await;
