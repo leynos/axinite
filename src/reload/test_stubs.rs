@@ -210,7 +210,7 @@ impl SpySecretUpdater {
     }
 
     /// Returns the recorded secrets as plain strings for assertion purposes.
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "helper kept for debugging test failures")]
     pub async fn recorded_secrets(&self) -> Vec<Option<String>> {
         self.calls
             .lock()

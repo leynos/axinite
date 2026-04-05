@@ -85,11 +85,8 @@ impl HotReloadManager {
             return Ok(());
         };
 
-        let resolved_addrs = Self::resolve_http_addrs(&new_http, |host, port| {
-            tokio::net::lookup_host((host, port))
-        })
-        .await?;
-        self.maybe_restart_listener(&resolved_addrs).await?;
+        // Step 3: Restart listener if address changed (DNS lookup only if listener exists)
+        self.maybe_restart_listener(&new_http).await?;
 
         // Step 4: Update channel secrets
         self.update_channel_secrets(&new_http).await;
@@ -166,19 +163,29 @@ impl HotReloadManager {
 
     async fn maybe_restart_listener(
         &self,
-        resolved_addrs: &[SocketAddr],
+        http: &crate::config::HttpConfig,
     ) -> Result<(), ReloadError> {
         let Some(ref controller) = self.listener_controller else {
             return Ok(());
         };
 
-        let new_addr = resolved_addrs[0];
+        let resolved_addrs =
+            Self::resolve_http_addrs(http, |host, port| tokio::net::lookup_host((host, port)))
+                .await?;
+
         let is_running = controller.is_running().await;
         let old_addr = controller.current_addr().await;
         if is_running && resolved_addrs.contains(&old_addr) {
             tracing::debug!("HTTP listener address unchanged, skipping restart");
             return Ok(());
         }
+
+        // Prefer reusing old_addr when listener is stopped and old_addr is still valid
+        let new_addr = if !is_running && resolved_addrs.contains(&old_addr) {
+            old_addr
+        } else {
+            resolved_addrs[0]
+        };
 
         tracing::info!("Restarting HTTP listener: {} -> {}", old_addr, new_addr);
         controller.restart_with_addr(new_addr).await.map_err(|e| {

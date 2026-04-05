@@ -314,7 +314,7 @@ For the compile-time reduction effort:
 
 The `src/reload/` module provides hot-reload capabilities for configuration,
 HTTP listeners, and secrets without restarting the application. This is
-triggered by a SIGHUP signal in production environments.
+triggered by the Unix hangup signal (SIGHUP) in production environments.
 
 ### Core traits
 

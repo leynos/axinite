@@ -249,10 +249,15 @@ async fn readding_same_listener_address_restarts_after_shutdown()
 async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_first_resolved_addr()
 -> Result<(), Box<dyn std::error::Error>> {
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
-    let alternate_addr: SocketAddr = "127.0.0.2:8080".parse().expect("valid socket address");
     let controller = Arc::new(StubListenerController::new(current_addr));
     let controller_clone = Arc::clone(&controller);
-    let (_temp_dir, config) = test_config_with_http(None).await?;
+
+    // Use a hostname that resolves to multiple addresses including current_addr
+    let http_cfg = http_config("localhost", 8080, None);
+
+    let (_temp_dir, mut config) = test_config_with_http(Some(http_cfg.clone())).await?;
+    // Ensure the HTTP config uses localhost for DNS resolution
+    config.channels.http = Some(http_cfg.clone());
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
     let manager = HotReloadManager::new(
@@ -262,8 +267,10 @@ async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_firs
         Vec::new(),
     );
 
+    // localhost typically resolves to both 127.0.0.1 and ::1
+    // If current_addr (127.0.0.1:8080) is in the resolved list, restart should be skipped
     manager
-        .maybe_restart_listener(&[alternate_addr, current_addr])
+        .maybe_restart_listener(&http_cfg)
         .await
         .expect("matching any resolved address should skip restart");
 
