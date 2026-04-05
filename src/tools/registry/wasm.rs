@@ -273,3 +273,57 @@ fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
         value => Some(value),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::{normalized_schema, parse_schema_string};
+
+    #[rstest]
+    #[case("", None)]
+    #[case("   ", None)]
+    #[case("null", None)]
+    #[case("NULL", None)]
+    #[case("NuLl", None)]
+    #[case(
+        r#"{"type":"object","properties":{},"additionalProperties":true}"#,
+        None
+    )]
+    #[case(
+        r#"{"type":"string"}"#,
+        Some(json!({"type":"string"}))
+    )]
+    #[case(
+        "not valid json",
+        Some(serde_json::Value::String("not valid json".to_string()))
+    )]
+    fn test_parse_schema_string(#[case] input: &str, #[case] expected: Option<serde_json::Value>) {
+        let result = parse_schema_string(input);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(serde_json::Value::Null, None)]
+    #[case(serde_json::Value::String("".to_string()), None)]
+    #[case(
+        serde_json::Value::String(
+            r#"{"type":"object","properties":{},"additionalProperties":true}"#.to_string()
+        ),
+        None
+    )]
+    #[case(
+        serde_json::Value::String(r#"{"type":"string"}"#.to_string()),
+        Some(json!({"type":"string"}))
+    )]
+    #[case(
+        json!({"type":"object","properties":{},"additionalProperties":true}),
+        None
+    )]
+    #[case(json!({"type":"number"}), Some(json!({"type":"number"})))]
+    fn test_normalized_schema(#[case] input: serde_json::Value, #[case] expected: Option<serde_json::Value>) {
+        let result = normalized_schema(input);
+        assert_eq!(result, expected);
+    }
+}
