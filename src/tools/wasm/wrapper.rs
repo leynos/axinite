@@ -28,7 +28,7 @@ use crate::tools::wasm::host::{HostState, LogLevel};
 use crate::tools::wasm::limits::{ResourceLimits, WasmResourceLimiter};
 use crate::tools::wasm::runtime::{EPOCH_TICK_INTERVAL, PreparedModule, WasmToolRuntime};
 
-mod metadata;
+pub(crate) mod metadata;
 
 // Generate component model bindings from the WIT file.
 //
@@ -695,10 +695,9 @@ impl WasmToolWrapper {
         // Get logs from host state
         let logs = store.data_mut().host_state.take_logs();
 
-        // Check for tool-level error — on failure, call the WASM module's
-        // description() and schema() exports so the LLM can retry with the
-        // correct parameters without us having to include the (large) schema
-        // in every request's tools array.
+        // Check for tool-level error. The LLM should already have seen the
+        // advertised schema at registration time; this export-based hint is
+        // only supplemental recovery guidance for a failed retry path.
         if let Some(err) = response.error {
             let hint = metadata::build_tool_hint(tool_iface, &mut store);
             return Err(WasmError::ToolReturnedError { message: err, hint });

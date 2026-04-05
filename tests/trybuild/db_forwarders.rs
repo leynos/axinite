@@ -25,10 +25,12 @@ where
     let _ = Database::run_migrations(db);
 }
 
+#[cfg(feature = "postgres")]
 fn assert_postgres_backend(db: &ironclaw::db::postgres::PgBackend) {
     assert_dyn_database(db);
 }
 
+#[cfg(feature = "libsql")]
 fn assert_libsql_backend(db: &ironclaw::db::libsql::LibSqlBackend) {
     assert_dyn_database(db);
 }

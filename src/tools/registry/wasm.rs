@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use crate::secrets::SecretsStore;
 use crate::tools::wasm::{
-    Capabilities, OAuthRefreshConfig, PreparedModule, ResourceLimits, WasmError, WasmStorageError,
-    WasmToolRuntime, WasmToolStore, WasmToolWrapper,
+    Capabilities, OAuthRefreshConfig, PreparedModule, ResourceLimits, ToolKey, WasmError,
+    WasmStorageError, WasmToolRuntime, WasmToolStore, WasmToolWrapper,
 };
 
 use super::ToolRegistry;
@@ -184,7 +184,7 @@ impl ToolRegistry {
             name,
         } = args;
         let tool_with_binary = store
-            .get_with_binary(user_id, name)
+            .get_with_binary(ToolKey { user_id, name })
             .await
             .map_err(WasmRegistrationError::Storage)?;
 
@@ -245,6 +245,8 @@ fn normalized_description(description: &str) -> Option<&str> {
 }
 
 fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
+    use crate::tools::wasm::is_placeholder_schema;
+
     match schema {
         serde_json::Value::Null => None,
         serde_json::Value::String(value) => {
@@ -252,9 +254,26 @@ fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
             if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
                 None
             } else {
-                Some(serde_json::Value::String(trimmed.to_string()))
+                // Attempt to parse JSON strings for backends that return text
+                match serde_json::from_str(trimmed) {
+                    Ok(parsed) => {
+                        // Check if the parsed value is a placeholder
+                        if is_placeholder_schema(&parsed) {
+                            None
+                        } else {
+                            Some(parsed)
+                        }
+                    }
+                    Err(_) => Some(serde_json::Value::String(trimmed.to_string())),
+                }
             }
         }
-        value => Some(value),
+        value => {
+            // Treat placeholder schemas as missing so guest export recovery runs.
+            if is_placeholder_schema(&value) {
+                return None;
+            }
+            Some(value)
+        }
     }
 }

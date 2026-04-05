@@ -103,6 +103,7 @@ pub use limits::{
     WasmResourceLimiter,
 };
 pub use runtime::{PreparedModule, WasmRuntimeConfig, WasmToolRuntime, enable_compilation_cache};
+pub(crate) use wrapper::metadata::is_placeholder_schema;
 pub use wrapper::{OAuthRefreshConfig, WasmToolWrapper};
 
 // Capabilities (V2)
@@ -125,8 +126,9 @@ pub use storage::LibSqlWasmToolStore;
 #[cfg(feature = "postgres")]
 pub use storage::PostgresWasmToolStore;
 pub use storage::{
-    StoreToolParams, StoredCapabilities, StoredWasmTool, StoredWasmToolWithBinary, ToolStatus,
-    TrustLevel, WasmStorageError, WasmToolStore, compute_binary_hash, verify_binary_integrity,
+    StoreToolParams, StoredCapabilities, StoredWasmTool, StoredWasmToolWithBinary, ToolKey,
+    ToolStatus, TrustLevel, WasmStorageError, WasmToolStore, compute_binary_hash,
+    verify_binary_integrity,
 };
 
 // Loader

@@ -6,6 +6,8 @@ mod loader;
 mod names;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod wasm_registration_tests;
 
 pub use builtins::{ImageToolsRegistration, RegisterJobToolsOptions, VisionToolsRegistration};
 pub use hosted::HostedToolLookupError;

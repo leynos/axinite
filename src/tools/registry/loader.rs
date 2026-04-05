@@ -8,7 +8,7 @@ use crate::secrets::SecretsStore;
 use crate::tools::rate_limiter::RateLimiter;
 use crate::tools::tool::Tool;
 use crate::tools::wasm::{
-    Capabilities, OAuthRefreshConfig, ResourceLimits, SharedCredentialRegistry, WasmError,
+    Capabilities, OAuthRefreshConfig, ResourceLimits, SharedCredentialRegistry, ToolKey, WasmError,
     WasmStorageError, WasmToolRuntime, WasmToolStore, WasmToolWrapper,
 };
 
@@ -213,13 +213,11 @@ impl ToolRegistry {
     /// }).await?;
     /// ```
     pub async fn register_wasm(&self, reg: WasmToolRegistration<'_>) -> Result<(), WasmError> {
-        // Prepare the module (validates and compiles)
         let prepared = reg
             .runtime
             .prepare(reg.name, reg.wasm_bytes, reg.limits)
             .await?;
 
-        // Extract credential mappings before capabilities are moved into the wrapper
         let credential_mappings: Vec<crate::secrets::CredentialMapping> = reg
             .capabilities
             .http
@@ -227,44 +225,21 @@ impl ToolRegistry {
             .map(|http| http.credentials.values().cloned().collect())
             .unwrap_or_default();
 
-        // Create the wrapper
-        let mut wrapper = WasmToolWrapper::new(Arc::clone(reg.runtime), prepared, reg.capabilities);
+        let name = reg.name;
+        let hints = WasmMetadataHints {
+            name: reg.name,
+            description: reg.description,
+            schema: reg.schema,
+        };
+        let runtime_config = WasmRuntimeConfig {
+            secrets_store: reg.secrets_store,
+            oauth_refresh: reg.oauth_refresh,
+        };
 
-        if reg.description.is_none() || reg.schema.is_none() {
-            match wrapper.exported_metadata() {
-                Ok((description, schema)) => {
-                    if reg.description.is_none() {
-                        wrapper = wrapper.with_description(description);
-                    }
-                    if reg.schema.is_none() {
-                        wrapper = wrapper.with_schema(schema);
-                    }
-                }
-                Err(error) => {
-                    tracing::debug!(
-                        name = reg.name,
-                        %error,
-                        "Failed to recover exported WASM metadata; using placeholders or overrides"
-                    );
-                }
-            }
-        }
+        let wrapper = WasmToolWrapper::new(Arc::clone(reg.runtime), prepared, reg.capabilities);
+        let wrapper = recover_guest_metadata(wrapper, &hints);
+        let wrapper = apply_wasm_overrides(wrapper, hints, runtime_config);
 
-        // Apply overrides if provided
-        if let Some(desc) = reg.description {
-            wrapper = wrapper.with_description(desc);
-        }
-        if let Some(s) = reg.schema {
-            wrapper = wrapper.with_schema(s);
-        }
-        if let Some(store) = reg.secrets_store {
-            wrapper = wrapper.with_secrets_store(store);
-        }
-        if let Some(oauth) = reg.oauth_refresh {
-            wrapper = wrapper.with_oauth_refresh(oauth);
-        }
-
-        // Register the tool
         let registered = self.register(Arc::new(wrapper)).await;
         if !registered {
             return Err(WasmError::ConfigError(
@@ -272,20 +247,19 @@ impl ToolRegistry {
             ));
         }
 
-        // Add credential mappings to the shared registry (for HTTP tool injection)
         if let Some(cr) = &self.credential_registry
             && !credential_mappings.is_empty()
         {
             let count = credential_mappings.len();
             cr.add_mappings(credential_mappings);
             tracing::debug!(
-                name = reg.name,
+                name,
                 credential_count = count,
                 "Added credential mappings from WASM tool"
             );
         }
 
-        tracing::debug!(name = reg.name, "Registered WASM tool");
+        tracing::debug!(name, "Registered WASM tool");
         Ok(())
     }
 
@@ -320,7 +294,7 @@ impl ToolRegistry {
         } = req;
         // Load tool with integrity verification
         let tool_with_binary = store
-            .get_with_binary(user_id, name)
+            .get_with_binary(ToolKey { user_id, name })
             .await
             .map_err(WasmRegistrationError::Storage)?;
 
@@ -332,15 +306,17 @@ impl ToolRegistry {
 
         let capabilities = stored_caps.map(|c| c.to_capabilities()).unwrap_or_default();
 
-        // Register the tool
+        let description = normalized_description(&tool_with_binary.tool.description);
+        let schema = normalized_schema(tool_with_binary.tool.parameters_schema.clone());
+
         self.register_wasm(WasmToolRegistration {
             name: &tool_with_binary.tool.name,
             wasm_bytes: &tool_with_binary.wasm_binary,
             runtime,
             capabilities,
             limits: None,
-            description: Some(&tool_with_binary.tool.description),
-            schema: Some(tool_with_binary.tool.parameters_schema.clone()),
+            description,
+            schema,
             secrets_store: self.secrets_store.clone(),
             oauth_refresh: None,
         })
@@ -401,5 +377,113 @@ impl std::fmt::Debug for ToolRegistry {
         f.debug_struct("ToolRegistry")
             .field("count", &self.count())
             .finish()
+    }
+}
+
+/// Descriptive metadata hints for WASM tool registration.
+struct WasmMetadataHints<'a> {
+    name: &'a str,
+    description: Option<&'a str>,
+    schema: Option<serde_json::Value>,
+}
+
+/// Runtime configuration for WASM tool registration.
+struct WasmRuntimeConfig {
+    secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+    oauth_refresh: Option<OAuthRefreshConfig>,
+}
+
+fn recover_guest_metadata(
+    mut wrapper: WasmToolWrapper,
+    hints: &WasmMetadataHints<'_>,
+) -> WasmToolWrapper {
+    if hints.description.is_some() && hints.schema.is_some() {
+        return wrapper;
+    }
+    match wrapper.exported_metadata() {
+        Ok((description, schema)) => {
+            if hints.description.is_none() {
+                wrapper = wrapper.with_description(description);
+            }
+            if hints.schema.is_none() {
+                wrapper = wrapper.with_schema(schema);
+            }
+        }
+        Err(error) => {
+            if hints.schema.is_none() {
+                tracing::warn!(
+                    name = hints.name,
+                    %error,
+                    "Failed to recover exported WASM metadata; tool will be advertised \
+                     with placeholder schema until a valid override is provided"
+                );
+            } else {
+                tracing::debug!(
+                    name = hints.name,
+                    %error,
+                    "Failed to recover exported WASM description; using placeholder or override"
+                );
+            }
+        }
+    }
+    wrapper
+}
+
+fn apply_wasm_overrides(
+    mut wrapper: WasmToolWrapper,
+    hints: WasmMetadataHints<'_>,
+    runtime_config: WasmRuntimeConfig,
+) -> WasmToolWrapper {
+    if let Some(desc) = hints.description {
+        wrapper = wrapper.with_description(desc);
+    }
+    if let Some(s) = hints.schema {
+        wrapper = wrapper.with_schema(s);
+    }
+    if let Some(store) = runtime_config.secrets_store {
+        wrapper = wrapper.with_secrets_store(store);
+    }
+    if let Some(oauth) = runtime_config.oauth_refresh {
+        wrapper = wrapper.with_oauth_refresh(oauth);
+    }
+    wrapper
+}
+
+fn normalized_description(description: &str) -> Option<&str> {
+    let trimmed = description.trim();
+    (!trimmed.is_empty()).then_some(trimmed)
+}
+
+fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
+    use crate::tools::wasm::is_placeholder_schema;
+
+    match schema {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
+                None
+            } else {
+                // Attempt to parse JSON strings for backends that return text
+                match serde_json::from_str(trimmed) {
+                    Ok(parsed) => {
+                        // Check if the parsed value is a placeholder
+                        if is_placeholder_schema(&parsed) {
+                            None
+                        } else {
+                            Some(parsed)
+                        }
+                    }
+                    Err(_) => Some(serde_json::Value::String(trimmed.to_string())),
+                }
+            }
+        }
+        value => {
+            // Treat placeholder schemas as missing so guest export recovery runs.
+            if is_placeholder_schema(&value) {
+                return None;
+            }
+            Some(value)
+        }
     }
 }

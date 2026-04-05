@@ -218,15 +218,13 @@ pub trait WasmToolStore: Send + Sync {
     /// Get tool metadata (without binary).
     fn get<'a>(
         &'a self,
-        user_id: &'a str,
-        name: &'a str,
+        key: ToolKey<'a>,
     ) -> WasmToolStoreFuture<'a, Result<StoredWasmTool, WasmStorageError>>;
 
     /// Get tool with binary (verifies integrity).
     fn get_with_binary<'a>(
         &'a self,
-        user_id: &'a str,
-        name: &'a str,
+        key: ToolKey<'a>,
     ) -> WasmToolStoreFuture<'a, Result<StoredWasmToolWithBinary, WasmStorageError>>;
 
     /// Get tool capabilities.
@@ -244,16 +242,14 @@ pub trait WasmToolStore: Send + Sync {
     /// Update tool status.
     fn update_status<'a>(
         &'a self,
-        user_id: &'a str,
-        name: &'a str,
+        key: ToolKey<'a>,
         status: ToolStatus,
     ) -> WasmToolStoreFuture<'a, Result<(), WasmStorageError>>;
 
     /// Delete a tool.
     fn delete<'a>(
         &'a self,
-        user_id: &'a str,
-        name: &'a str,
+        key: ToolKey<'a>,
     ) -> WasmToolStoreFuture<'a, Result<bool, WasmStorageError>>;
 }
 
@@ -268,15 +264,13 @@ pub trait NativeWasmToolStore: Send + Sync {
     /// See [`WasmToolStore::get`].
     fn get<'a>(
         &'a self,
-        user_id: &'a str,
-        name: &'a str,
+        key: ToolKey<'a>,
     ) -> impl Future<Output = Result<StoredWasmTool, WasmStorageError>> + Send + 'a;
 
     /// See [`WasmToolStore::get_with_binary`].
     fn get_with_binary<'a>(
         &'a self,
-        user_id: &'a str,
-        name: &'a str,
+        key: ToolKey<'a>,
     ) -> impl Future<Output = Result<StoredWasmToolWithBinary, WasmStorageError>> + Send + 'a;
 
     /// See [`WasmToolStore::get_capabilities`].
@@ -294,16 +288,14 @@ pub trait NativeWasmToolStore: Send + Sync {
     /// See [`WasmToolStore::update_status`].
     fn update_status<'a>(
         &'a self,
-        user_id: &'a str,
-        name: &'a str,
+        key: ToolKey<'a>,
         status: ToolStatus,
     ) -> impl Future<Output = Result<(), WasmStorageError>> + Send + 'a;
 
     /// See [`WasmToolStore::delete`].
     fn delete<'a>(
         &'a self,
-        user_id: &'a str,
-        name: &'a str,
+        key: ToolKey<'a>,
     ) -> impl Future<Output = Result<bool, WasmStorageError>> + Send + 'a;
 }
 
@@ -320,18 +312,16 @@ where
 
     fn get<'a>(
         &'a self,
-        user_id: &'a str,
-        name: &'a str,
+        key: ToolKey<'a>,
     ) -> WasmToolStoreFuture<'a, Result<StoredWasmTool, WasmStorageError>> {
-        Box::pin(NativeWasmToolStore::get(self, user_id, name))
+        Box::pin(NativeWasmToolStore::get(self, key))
     }
 
     fn get_with_binary<'a>(
         &'a self,
-        user_id: &'a str,
-        name: &'a str,
+        key: ToolKey<'a>,
     ) -> WasmToolStoreFuture<'a, Result<StoredWasmToolWithBinary, WasmStorageError>> {
-        Box::pin(NativeWasmToolStore::get_with_binary(self, user_id, name))
+        Box::pin(NativeWasmToolStore::get_with_binary(self, key))
     }
 
     fn get_capabilities<'a>(
@@ -350,22 +340,25 @@ where
 
     fn update_status<'a>(
         &'a self,
-        user_id: &'a str,
-        name: &'a str,
+        key: ToolKey<'a>,
         status: ToolStatus,
     ) -> WasmToolStoreFuture<'a, Result<(), WasmStorageError>> {
-        Box::pin(NativeWasmToolStore::update_status(
-            self, user_id, name, status,
-        ))
+        Box::pin(NativeWasmToolStore::update_status(self, key, status))
     }
 
     fn delete<'a>(
         &'a self,
-        user_id: &'a str,
-        name: &'a str,
+        key: ToolKey<'a>,
     ) -> WasmToolStoreFuture<'a, Result<bool, WasmStorageError>> {
-        Box::pin(NativeWasmToolStore::delete(self, user_id, name))
+        Box::pin(NativeWasmToolStore::delete(self, key))
     }
+}
+
+/// Identifies a stored WASM tool by owner and name.
+#[derive(Debug, Clone, Copy)]
+pub struct ToolKey<'a> {
+    pub user_id: &'a str,
+    pub name: &'a str,
 }
 
 /// Parameters for storing a new tool.
@@ -471,7 +464,7 @@ impl NativeWasmToolStore for PostgresWasmToolStore {
         Ok(tool)
     }
 
-    async fn get(&self, user_id: &str, name: &str) -> Result<StoredWasmTool, WasmStorageError> {
+    async fn get(&self, key: ToolKey<'_>) -> Result<StoredWasmTool, WasmStorageError> {
         let client = self
             .pool
             .get()
@@ -486,7 +479,7 @@ impl NativeWasmToolStore for PostgresWasmToolStore {
                 FROM wasm_tools
                 WHERE user_id = $1 AND name = $2 AND status = 'active'
                 "#,
-                &[&user_id, &name],
+                &[&key.user_id, &key.name],
             )
             .await
             .map_err(|e| WasmStorageError::Database(e.to_string()))?;
@@ -500,14 +493,13 @@ impl NativeWasmToolStore for PostgresWasmToolStore {
                     ToolStatus::Quarantined => Err(WasmStorageError::Quarantined),
                 }
             }
-            None => Err(WasmStorageError::NotFound(name.to_string())),
+            None => Err(WasmStorageError::NotFound(key.name.to_string())),
         }
     }
 
     async fn get_with_binary(
         &self,
-        user_id: &str,
-        name: &str,
+        key: ToolKey<'_>,
     ) -> Result<StoredWasmToolWithBinary, WasmStorageError> {
         let client = self
             .pool
@@ -523,7 +515,7 @@ impl NativeWasmToolStore for PostgresWasmToolStore {
                 FROM wasm_tools
                 WHERE user_id = $1 AND name = $2 AND status = 'active'
                 "#,
-                &[&user_id, &name],
+                &[&key.user_id, &key.name],
             )
             .await
             .map_err(|e| WasmStorageError::Database(e.to_string()))?;
@@ -536,8 +528,8 @@ impl NativeWasmToolStore for PostgresWasmToolStore {
                 // Verify integrity
                 if !verify_binary_integrity(&wasm_binary, &binary_hash) {
                     tracing::error!(
-                        user_id = user_id,
-                        name = name,
+                        user_id = key.user_id,
+                        name = key.name,
                         "WASM binary integrity check failed"
                     );
                     return Err(WasmStorageError::IntegrityCheckFailed);
@@ -555,7 +547,7 @@ impl NativeWasmToolStore for PostgresWasmToolStore {
                     ToolStatus::Quarantined => Err(WasmStorageError::Quarantined),
                 }
             }
-            None => Err(WasmStorageError::NotFound(name.to_string())),
+            None => Err(WasmStorageError::NotFound(key.name.to_string())),
         }
     }
 
@@ -637,8 +629,7 @@ impl NativeWasmToolStore for PostgresWasmToolStore {
 
     async fn update_status(
         &self,
-        user_id: &str,
-        name: &str,
+        key: ToolKey<'_>,
         status: ToolStatus,
     ) -> Result<(), WasmStorageError> {
         let client = self
@@ -650,19 +641,19 @@ impl NativeWasmToolStore for PostgresWasmToolStore {
         let result = client
             .execute(
                 "UPDATE wasm_tools SET status = $1, updated_at = NOW() WHERE user_id = $2 AND name = $3",
-                &[&status.to_string(), &user_id, &name],
+                &[&status.to_string(), &key.user_id, &key.name],
             )
             .await
             .map_err(|e| WasmStorageError::Database(e.to_string()))?;
 
         if result == 0 {
-            return Err(WasmStorageError::NotFound(name.to_string()));
+            return Err(WasmStorageError::NotFound(key.name.to_string()));
         }
 
         Ok(())
     }
 
-    async fn delete(&self, user_id: &str, name: &str) -> Result<bool, WasmStorageError> {
+    async fn delete(&self, key: ToolKey<'_>) -> Result<bool, WasmStorageError> {
         let client = self
             .pool
             .get()
@@ -672,7 +663,7 @@ impl NativeWasmToolStore for PostgresWasmToolStore {
         let result = client
             .execute(
                 "DELETE FROM wasm_tools WHERE user_id = $1 AND name = $2",
-                &[&user_id, &name],
+                &[&key.user_id, &key.name],
             )
             .await
             .map_err(|e| WasmStorageError::Database(e.to_string()))?;
@@ -816,7 +807,7 @@ impl NativeWasmToolStore for LibSqlWasmToolStore {
         Ok(tool)
     }
 
-    async fn get(&self, user_id: &str, name: &str) -> Result<StoredWasmTool, WasmStorageError> {
+    async fn get(&self, key: ToolKey<'_>) -> Result<StoredWasmTool, WasmStorageError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
@@ -826,7 +817,7 @@ impl NativeWasmToolStore for LibSqlWasmToolStore {
                 FROM wasm_tools
                 WHERE user_id = ?1 AND name = ?2 AND status = 'active'
                 "#,
-                libsql::params![user_id, name],
+                libsql::params![key.user_id, key.name],
             )
             .await
             .map_err(|e| WasmStorageError::Database(e.to_string()))?;
@@ -844,14 +835,13 @@ impl NativeWasmToolStore for LibSqlWasmToolStore {
                     ToolStatus::Quarantined => Err(WasmStorageError::Quarantined),
                 }
             }
-            None => Err(WasmStorageError::NotFound(name.to_string())),
+            None => Err(WasmStorageError::NotFound(key.name.to_string())),
         }
     }
 
     async fn get_with_binary(
         &self,
-        user_id: &str,
-        name: &str,
+        key: ToolKey<'_>,
     ) -> Result<StoredWasmToolWithBinary, WasmStorageError> {
         let conn = self.connect().await?;
         let mut rows = conn
@@ -862,7 +852,7 @@ impl NativeWasmToolStore for LibSqlWasmToolStore {
                 FROM wasm_tools
                 WHERE user_id = ?1 AND name = ?2 AND status = 'active'
                 "#,
-                libsql::params![user_id, name],
+                libsql::params![key.user_id, key.name],
             )
             .await
             .map_err(|e| WasmStorageError::Database(e.to_string()))?;
@@ -882,8 +872,8 @@ impl NativeWasmToolStore for LibSqlWasmToolStore {
 
                 if !verify_binary_integrity(&wasm_binary, &binary_hash) {
                     tracing::error!(
-                        user_id = user_id,
-                        name = name,
+                        user_id = key.user_id,
+                        name = key.name,
                         "WASM binary integrity check failed"
                     );
                     return Err(WasmStorageError::IntegrityCheckFailed);
@@ -902,7 +892,7 @@ impl NativeWasmToolStore for LibSqlWasmToolStore {
                     ToolStatus::Quarantined => Err(WasmStorageError::Quarantined),
                 }
             }
-            None => Err(WasmStorageError::NotFound(name.to_string())),
+            None => Err(WasmStorageError::NotFound(key.name.to_string())),
         }
     }
 
@@ -1007,8 +997,7 @@ impl NativeWasmToolStore for LibSqlWasmToolStore {
 
     async fn update_status(
         &self,
-        user_id: &str,
-        name: &str,
+        key: ToolKey<'_>,
         status: ToolStatus,
     ) -> Result<(), WasmStorageError> {
         let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
@@ -1017,24 +1006,24 @@ impl NativeWasmToolStore for LibSqlWasmToolStore {
         let result = conn
             .execute(
                 "UPDATE wasm_tools SET status = ?1, updated_at = ?2 WHERE user_id = ?3 AND name = ?4",
-                libsql::params![status.to_string(), now.as_str(), user_id, name],
+                libsql::params![status.to_string(), now.as_str(), key.user_id, key.name],
             )
             .await
             .map_err(|e| WasmStorageError::Database(e.to_string()))?;
 
         if result == 0 {
-            return Err(WasmStorageError::NotFound(name.to_string()));
+            return Err(WasmStorageError::NotFound(key.name.to_string()));
         }
 
         Ok(())
     }
 
-    async fn delete(&self, user_id: &str, name: &str) -> Result<bool, WasmStorageError> {
+    async fn delete(&self, key: ToolKey<'_>) -> Result<bool, WasmStorageError> {
         let conn = self.connect().await?;
         let result = conn
             .execute(
                 "DELETE FROM wasm_tools WHERE user_id = ?1 AND name = ?2",
-                libsql::params![user_id, name],
+                libsql::params![key.user_id, key.name],
             )
             .await
             .map_err(|e| WasmStorageError::Database(e.to_string()))?;
