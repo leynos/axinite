@@ -213,13 +213,11 @@ impl ToolRegistry {
     /// }).await?;
     /// ```
     pub async fn register_wasm(&self, reg: WasmToolRegistration<'_>) -> Result<(), WasmError> {
-        // Prepare the module (validates and compiles)
         let prepared = reg
             .runtime
             .prepare(reg.name, reg.wasm_bytes, reg.limits)
             .await?;
 
-        // Extract credential mappings before capabilities are moved into the wrapper
         let credential_mappings: Vec<crate::secrets::CredentialMapping> = reg
             .capabilities
             .http
@@ -227,53 +225,45 @@ impl ToolRegistry {
             .map(|http| http.credentials.values().cloned().collect())
             .unwrap_or_default();
 
-        // Create the wrapper
-        let mut wrapper = WasmToolWrapper::new(Arc::clone(reg.runtime), prepared, reg.capabilities);
+        let name = reg.name; // &str is Copy; save before reg is consumed
 
-        if reg.description.is_none() || reg.schema.is_none() {
-            match wrapper.exported_metadata() {
-                Ok((description, schema)) => {
-                    if reg.description.is_none() {
-                        wrapper = wrapper.with_description(description);
-                    }
-                    if reg.schema.is_none() {
-                        wrapper = wrapper.with_schema(schema);
-                    }
-                }
-                Err(error) => {
-                    if reg.schema.is_none() {
-                        tracing::warn!(
-                            name = reg.name,
-                            %error,
-                            "Failed to recover exported WASM metadata; tool will be advertised \
-                             with placeholder schema until a valid override is provided"
-                        );
-                    } else {
-                        tracing::debug!(
-                            name = reg.name,
-                            %error,
-                            "Failed to recover exported WASM description; using placeholder or override"
-                        );
-                    }
-                }
-            }
-        }
+        // Extract all fields before any are moved
+        let WasmToolRegistration {
+            name: tool_name,
+            wasm_bytes: _,
+            runtime,
+            capabilities,
+            limits: _,
+            description,
+            schema,
+            secrets_store,
+            oauth_refresh,
+        } = reg;
 
-        // Apply overrides if provided
-        if let Some(desc) = reg.description {
-            wrapper = wrapper.with_description(desc);
-        }
-        if let Some(s) = reg.schema {
-            wrapper = wrapper.with_schema(s);
-        }
-        if let Some(store) = reg.secrets_store {
-            wrapper = wrapper.with_secrets_store(store);
-        }
-        if let Some(oauth) = reg.oauth_refresh {
-            wrapper = wrapper.with_oauth_refresh(oauth);
-        }
+        let wrapper = WasmToolWrapper::new(Arc::clone(runtime), prepared, capabilities);
+        let wrapper = recover_guest_metadata(wrapper, &WasmToolRegistration {
+            name: tool_name,
+            wasm_bytes: &[],
+            runtime,
+            capabilities: Capabilities::default(),
+            limits: None,
+            description,
+            schema: schema.clone(),
+            secrets_store: None,
+            oauth_refresh: None,
+        });
+        let wrapper = apply_wasm_overrides(wrapper, WasmToolRegistration {
+            name: tool_name,
+            wasm_bytes: &[],
+            runtime,
+            capabilities: Capabilities::default(),
+            limits: None,
+            description,
+            schema,
+            secrets_store,
+            oauth_refresh,
+        });
 
-        // Register the tool
         let registered = self.register(Arc::new(wrapper)).await;
         if !registered {
             return Err(WasmError::ConfigError(
@@ -281,20 +271,19 @@ impl ToolRegistry {
             ));
         }
 
-        // Add credential mappings to the shared registry (for HTTP tool injection)
         if let Some(cr) = &self.credential_registry
             && !credential_mappings.is_empty()
         {
             let count = credential_mappings.len();
             cr.add_mappings(credential_mappings);
             tracing::debug!(
-                name = reg.name,
+                name,
                 credential_count = count,
                 "Added credential mappings from WASM tool"
             );
         }
 
-        tracing::debug!(name = reg.name, "Registered WASM tool");
+        tracing::debug!(name, "Registered WASM tool");
         Ok(())
     }
 
@@ -413,6 +402,61 @@ impl std::fmt::Debug for ToolRegistry {
             .field("count", &self.count())
             .finish()
     }
+}
+
+fn recover_guest_metadata(
+    mut wrapper: WasmToolWrapper,
+    reg: &WasmToolRegistration<'_>,
+) -> WasmToolWrapper {
+    if reg.description.is_some() && reg.schema.is_some() {
+        return wrapper;
+    }
+    match wrapper.exported_metadata() {
+        Ok((description, schema)) => {
+            if reg.description.is_none() {
+                wrapper = wrapper.with_description(description);
+            }
+            if reg.schema.is_none() {
+                wrapper = wrapper.with_schema(schema);
+            }
+        }
+        Err(error) => {
+            if reg.schema.is_none() {
+                tracing::warn!(
+                    name = reg.name,
+                    %error,
+                    "Failed to recover exported WASM metadata; tool will be advertised \
+                     with placeholder schema until a valid override is provided"
+                );
+            } else {
+                tracing::debug!(
+                    name = reg.name,
+                    %error,
+                    "Failed to recover exported WASM description; using placeholder or override"
+                );
+            }
+        }
+    }
+    wrapper
+}
+
+fn apply_wasm_overrides(
+    mut wrapper: WasmToolWrapper,
+    reg: WasmToolRegistration<'_>,
+) -> WasmToolWrapper {
+    if let Some(desc) = reg.description {
+        wrapper = wrapper.with_description(desc);
+    }
+    if let Some(s) = reg.schema {
+        wrapper = wrapper.with_schema(s);
+    }
+    if let Some(store) = reg.secrets_store {
+        wrapper = wrapper.with_secrets_store(store);
+    }
+    if let Some(oauth) = reg.oauth_refresh {
+        wrapper = wrapper.with_oauth_refresh(oauth);
+    }
+    wrapper
 }
 
 fn normalized_description(description: &str) -> Option<&str> {
