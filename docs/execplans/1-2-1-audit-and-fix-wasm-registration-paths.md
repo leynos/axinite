@@ -9,7 +9,7 @@ Status: COMPLETE
 
 ## Purpose / big picture
 
-After this work, every active WebAssembly (WASM) tool in axinite publishes a
+After this work, every active WebAssembly (WASM) tool in Axinite publishes a
 real `ToolDefinition.parameters` schema before the large language model (LLM)
 makes its first call. No active WASM tool may rely on a failure-path retry hint
 as the primary way the model learns the tool's argument contract.
@@ -27,9 +27,9 @@ The change is observable in three ways:
    supplemental fallback guidance.
 
 This plan delivers roadmap item `1.2.1` and addresses
-[RFC 0002 SS Current State](../rfcs/0002-expose-wasm-tool-definitions.md#current-state)
+[RFC 0002 §Current State](../rfcs/0002-expose-wasm-tool-definitions.md#current-state)
 and
-[RFC 0002 SS Migration Plan](../rfcs/0002-expose-wasm-tool-definitions.md#migration-plan)
+[RFC 0002 §Migration Plan](../rfcs/0002-expose-wasm-tool-definitions.md#migration-plan)
 steps 1 and 2.
 
 ## Approval gates
@@ -178,8 +178,8 @@ registered through any of the three paths publishes a non-placeholder schema in
 - [RFC 0002: Expose WASM tool definitions to LLMs](../rfcs/0002-expose-wasm-tool-definitions.md)
 - [Roadmap item 1.2.1](../roadmap.md)
 - `docs/rust-testing-with-rstest-fixtures.md` for `rstest` fixture patterns.
-- `docs/rstest-bdd-users-guide.md` for `rstest-bdd` behavioural test patterns.
-- `docs/reliable-testing-in-rust-via-dependency-injection.md` for DI testing.
+- `docs/rstest-bdd-users-guide.md` for `rstest-bdd` behaviour-driven development (BDD) test patterns.
+- `docs/reliable-testing-in-rust-via-dependency-injection.md` for dependency-injection (DI) testing.
 - `docs/complexity-antipatterns-and-refactoring-strategies.md` for complexity
   management.
 - `AGENTS.md` for repository quality gates and commit conventions.
@@ -632,7 +632,7 @@ Quality criteria (what "done" means):
 - Retry-hint comment: the comment in `src/tools/wasm/wrapper.rs` describes the
   hint as supplemental fallback guidance.
 
-Quality method (how we check):
+Quality method (how checks are performed):
 
 ```bash
 set -o pipefail && CARGO_BUILD_JOBS=1 make all \

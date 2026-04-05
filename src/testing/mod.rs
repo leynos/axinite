@@ -19,6 +19,7 @@
 //! ```
 
 pub mod credentials;
+pub mod github;
 #[cfg(test)]
 mod settings_tests;
 pub mod test_utils;

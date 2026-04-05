@@ -45,20 +45,7 @@ fn github_wasm_bytes() -> Vec<u8> {
 }
 
 fn assert_real_github_schema(definition: ToolDefinition) {
-    assert_eq!(definition.parameters["type"], serde_json::json!("object"));
-    assert_eq!(
-        definition.parameters["properties"]["action"]["enum"][0],
-        serde_json::json!("get_repo")
-    );
-    assert!(
-        definition.parameters["required"]
-            .as_array()
-            .expect("required array")
-            .iter()
-            .any(|value| value == "action"),
-        "expected required action field in schema: {}",
-        definition.parameters
-    );
+    crate::testing::github::assert_real_github_schema(&definition.parameters);
 }
 
 struct StubWasmToolStore {
