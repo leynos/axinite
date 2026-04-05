@@ -16,12 +16,23 @@
 //!    -> tool_activate("telegram")  -> configures credentials, starts channel
 //! ```
 
+pub mod activation;
+pub mod builder;
 pub mod discovery;
 pub mod manager;
 pub mod registry;
 
-pub use discovery::OnlineDiscovery;
-pub use manager::ExtensionManager;
+pub use activation::{
+    LiveMcpActivation, LiveMcpActivationConfig, LiveWasmChannelActivation,
+    LiveWasmChannelActivationConfig, LiveWasmToolActivation, LiveWasmToolActivationConfig,
+    McpActivationPort, McpClientsMap, NoOpMcpActivation, NoOpWasmChannelActivation,
+    NoOpWasmToolActivation, WasmChannelActivationPort, WasmToolActivationPort,
+};
+pub use builder::{
+    BuildExtensionManagerParams, BuildExtensionsParams, build_extension_manager, build_extensions,
+};
+pub use discovery::{DiscoveryFuture, DiscoveryPort, NoOpDiscovery, OnlineDiscovery};
+pub use manager::{ExtensionManager, ExtensionManagerConfig, LiveWasmChannelSharedState};
 pub use registry::ExtensionRegistry;
 
 use serde::ser::SerializeMap;

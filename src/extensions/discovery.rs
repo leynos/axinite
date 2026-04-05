@@ -7,11 +7,24 @@
 //!
 //! All sources run concurrently with per-source timeouts.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 use serde::Deserialize;
 
 use crate::extensions::{AuthHint, ExtensionKind, ExtensionSource, RegistryEntry};
+
+/// Boxed future alias for dyn-safe discovery methods.
+pub type DiscoveryFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Object-safe port for discovering extensions.
+///
+/// Used behind `Arc<dyn DiscoveryPort>` in [`super::manager::ExtensionManager`].
+pub trait DiscoveryPort: Send + Sync {
+    /// Search for extensions matching the query string.
+    fn discover<'a>(&'a self, query: &'a str) -> DiscoveryFuture<'a, Vec<RegistryEntry>>;
+}
 
 /// Handles online discovery of MCP servers.
 pub struct OnlineDiscovery {
@@ -200,6 +213,12 @@ impl Default for OnlineDiscovery {
     }
 }
 
+impl DiscoveryPort for OnlineDiscovery {
+    fn discover<'a>(&'a self, query: &'a str) -> DiscoveryFuture<'a, Vec<RegistryEntry>> {
+        Box::pin(async move { self.discover(query).await })
+    }
+}
+
 /// Validate that a URL is a real MCP server by checking .well-known endpoints.
 ///
 /// Tries:
@@ -283,6 +302,17 @@ struct GitHubRepo {
     homepage: Option<String>,
     #[serde(default)]
     topics: Vec<String>,
+}
+
+/// No-op discovery stub for tests requiring network isolation.
+///
+/// Always returns an empty vector, simulating no discovered extensions.
+pub struct NoOpDiscovery;
+
+impl DiscoveryPort for NoOpDiscovery {
+    fn discover<'a>(&'a self, _query: &'a str) -> DiscoveryFuture<'a, Vec<RegistryEntry>> {
+        Box::pin(async move { Vec::new() })
+    }
 }
 
 #[cfg(test)]

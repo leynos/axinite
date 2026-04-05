@@ -177,37 +177,41 @@ async fn both_secrets_factories_produce_compatible_stores() {
 }
 
 // ---------------------------------------------------------------------------
-// ExtensionManager constructs with McpProcessManager
+// ExtensionManager constructs with activation ports
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn extension_manager_with_process_manager_constructs() {
+async fn extension_manager_with_activation_ports_constructs() {
     use ironclaw::extensions::ExtensionManager;
     use ironclaw::secrets::InMemorySecretsStore;
     use ironclaw::tools::ToolRegistry;
-    use ironclaw::tools::mcp::McpProcessManager;
-    use ironclaw::tools::mcp::McpSessionManager;
 
     let crypto = test_crypto();
     let secrets: Arc<dyn SecretsStore + Send + Sync> = Arc::new(InMemorySecretsStore::new(crypto));
     let tools = Arc::new(ToolRegistry::new());
     let tools_dir = tempfile::tempdir().expect("tools_dir");
     let channels_dir = tempfile::tempdir().expect("channels_dir");
+    let mcp_clients = ironclaw::extensions::McpClientsMap::default();
 
-    let manager = ExtensionManager::new(
-        Arc::new(McpSessionManager::new()),
-        Arc::new(McpProcessManager::new()),
+    let manager = ExtensionManager::new(ironclaw::extensions::ExtensionManagerConfig {
+        shared_state: ironclaw::extensions::LiveWasmChannelSharedState::default(),
+        discovery: Arc::new(ironclaw::extensions::NoOpDiscovery),
+        relay_config: None,
+        gateway_token: None,
+        mcp_activation: Arc::new(ironclaw::extensions::NoOpMcpActivation),
+        wasm_tool_activation: Arc::new(ironclaw::extensions::NoOpWasmToolActivation),
+        wasm_channel_activation: Arc::new(ironclaw::extensions::NoOpWasmChannelActivation),
+        mcp_clients,
         secrets,
-        tools,
-        None,
-        None,
-        tools_dir.path().to_path_buf(),
-        channels_dir.path().to_path_buf(),
-        None,
-        "test".to_string(),
-        None,
-        Vec::new(),
-    );
+        tool_registry: tools,
+        hooks: None,
+        wasm_tools_dir: tools_dir.path().to_path_buf(),
+        wasm_channels_dir: channels_dir.path().to_path_buf(),
+        tunnel_url: None,
+        user_id: "test".to_string(),
+        store: None,
+        catalog_entries: Vec::new(),
+    });
 
     // Verify the manager is functional — list returns Ok.
     let result = manager.list(None, false).await;

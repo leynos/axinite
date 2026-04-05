@@ -177,23 +177,30 @@ fn test_manager_stub() -> Arc<ExtensionManager> {
     use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
     use crate::testing::credentials::TEST_CRYPTO_KEY;
     use crate::tools::ToolRegistry;
-    use crate::tools::mcp::session::McpSessionManager;
 
     let master_key = secrecy::SecretString::from(TEST_CRYPTO_KEY.to_string());
     let crypto = Arc::new(SecretsCrypto::new(master_key).expect("create secrets crypto"));
+    let mcp_clients = crate::extensions::McpClientsMap::default();
 
     Arc::new(ExtensionManager::new(
-        Arc::new(McpSessionManager::new()),
-        Arc::new(crate::tools::mcp::McpProcessManager::new()),
-        Arc::new(InMemorySecretsStore::new(crypto)),
-        Arc::new(ToolRegistry::new()),
-        None,
-        None,
-        std::env::temp_dir().join("ironclaw-test-tools"),
-        std::env::temp_dir().join("ironclaw-test-channels"),
-        None,
-        "test".to_string(),
-        None,
-        Vec::new(),
+        crate::extensions::ExtensionManagerConfig {
+            shared_state: crate::extensions::LiveWasmChannelSharedState::default(),
+            discovery: Arc::new(crate::extensions::NoOpDiscovery),
+            relay_config: None,
+            gateway_token: None,
+            mcp_activation: Arc::new(crate::extensions::NoOpMcpActivation),
+            wasm_tool_activation: Arc::new(crate::extensions::NoOpWasmToolActivation),
+            wasm_channel_activation: Arc::new(crate::extensions::NoOpWasmChannelActivation),
+            mcp_clients,
+            secrets: Arc::new(InMemorySecretsStore::new(crypto)),
+            tool_registry: Arc::new(ToolRegistry::new()),
+            hooks: None,
+            wasm_tools_dir: std::env::temp_dir().join("ironclaw-test-tools"),
+            wasm_channels_dir: std::env::temp_dir().join("ironclaw-test-channels"),
+            tunnel_url: None,
+            user_id: "test".to_string(),
+            store: None,
+            catalog_entries: Vec::new(),
+        },
     ))
 }

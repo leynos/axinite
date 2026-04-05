@@ -1,6 +1,5 @@
 //! Shared fixtures and router factories for web gateway route tests.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{Router, routing::get};
@@ -102,21 +101,27 @@ pub(super) fn build_test_ext_mgr(
     secrets: Arc<dyn crate::secrets::SecretsStore + Send + Sync>,
 ) -> Arc<ExtensionManager> {
     let tool_registry = Arc::new(ToolRegistry::new());
-    let mcp_sm = Arc::new(crate::tools::mcp::session::McpSessionManager::new());
-    let mcp_pm = Arc::new(crate::tools::mcp::process::McpProcessManager::new());
+    let mcp_clients = crate::extensions::McpClientsMap::default();
     Arc::new(ExtensionManager::new(
-        mcp_sm,
-        mcp_pm,
-        secrets,
-        tool_registry,
-        None,
-        None,
-        PathBuf::from("/tmp/wasm_tools"),
-        PathBuf::from("/tmp/wasm_channels"),
-        None,
-        "test".to_string(),
-        None,
-        vec![],
+        crate::extensions::ExtensionManagerConfig {
+            shared_state: crate::extensions::LiveWasmChannelSharedState::default(),
+            discovery: Arc::new(crate::extensions::NoOpDiscovery),
+            relay_config: None,
+            gateway_token: None,
+            mcp_activation: Arc::new(crate::extensions::NoOpMcpActivation),
+            wasm_tool_activation: Arc::new(crate::extensions::NoOpWasmToolActivation),
+            wasm_channel_activation: Arc::new(crate::extensions::NoOpWasmChannelActivation),
+            mcp_clients,
+            secrets,
+            tool_registry,
+            hooks: None,
+            wasm_tools_dir: std::env::temp_dir().join("ironclaw_test_wasm_tools"),
+            wasm_channels_dir: std::env::temp_dir().join("ironclaw_test_wasm_channels"),
+            tunnel_url: None,
+            user_id: "test".to_string(),
+            store: None,
+            catalog_entries: vec![],
+        },
     ))
 }
 

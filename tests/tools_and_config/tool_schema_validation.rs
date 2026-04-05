@@ -22,8 +22,6 @@ struct ExtensionManagerFixture {
 #[fixture]
 fn extension_manager_fixture() -> ExtensionManagerFixture {
     use ironclaw::secrets::{InMemorySecretsStore, SecretsCrypto};
-    use ironclaw::tools::mcp::McpProcessManager;
-    use ironclaw::tools::mcp::session::McpSessionManager;
 
     let dir = tempfile::tempdir().expect("temp dir");
     let tools_dir = dir.path().join("tools");
@@ -34,21 +32,34 @@ fn extension_manager_fixture() -> ExtensionManagerFixture {
     let master_key = secrecy::SecretString::from("0123456789abcdef0123456789abcdef".to_string());
     let crypto = std::sync::Arc::new(SecretsCrypto::new(master_key).expect("crypto"));
 
+    let mcp_clients = ironclaw::extensions::McpClientsMap::default();
+
     ExtensionManagerFixture {
         _dir: dir,
         manager: std::sync::Arc::new(ironclaw::extensions::ExtensionManager::new(
-            std::sync::Arc::new(McpSessionManager::new()),
-            std::sync::Arc::new(McpProcessManager::new()),
-            std::sync::Arc::new(InMemorySecretsStore::new(crypto)),
-            std::sync::Arc::new(ToolRegistry::new()),
-            None,
-            None,
-            tools_dir,
-            channels_dir,
-            None,
-            "test".to_string(),
-            None,
-            Vec::new(),
+            ironclaw::extensions::ExtensionManagerConfig {
+                shared_state: ironclaw::extensions::LiveWasmChannelSharedState::default(),
+                discovery: std::sync::Arc::new(ironclaw::extensions::NoOpDiscovery),
+                relay_config: None,
+                gateway_token: None,
+                mcp_activation: std::sync::Arc::new(ironclaw::extensions::NoOpMcpActivation),
+                wasm_tool_activation: std::sync::Arc::new(
+                    ironclaw::extensions::NoOpWasmToolActivation,
+                ),
+                wasm_channel_activation: std::sync::Arc::new(
+                    ironclaw::extensions::NoOpWasmChannelActivation,
+                ),
+                mcp_clients,
+                secrets: std::sync::Arc::new(InMemorySecretsStore::new(crypto)),
+                tool_registry: std::sync::Arc::new(ToolRegistry::new()),
+                hooks: None,
+                wasm_tools_dir: tools_dir,
+                wasm_channels_dir: channels_dir,
+                tunnel_url: None,
+                user_id: "test".to_string(),
+                store: None,
+                catalog_entries: Vec::new(),
+            },
         )),
     }
 }
