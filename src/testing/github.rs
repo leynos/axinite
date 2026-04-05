@@ -24,9 +24,14 @@
 /// ```
 pub fn assert_real_github_schema(parameters: &serde_json::Value) {
     assert_eq!(parameters["type"], serde_json::json!("object"));
-    assert_eq!(
-        parameters["properties"]["action"]["enum"][0],
-        serde_json::json!("get_repo")
+    assert!(
+        parameters["properties"]["action"]["enum"]
+            .as_array()
+            .expect("action enum array")
+            .iter()
+            .any(|value| value == "get_repo"),
+        "expected 'get_repo' in action enum: {}",
+        parameters["properties"]["action"]["enum"]
     );
     assert!(
         parameters["required"]

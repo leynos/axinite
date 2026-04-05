@@ -37,14 +37,14 @@ steps 1 and 2.
 - Plan approved
   Acceptance criteria: the plan is scoped to auditing and fixing WASM
   registration paths, adding tests, updating the retry-hint comment contract,
-  and synchronising documentation. No changes to the hosted remote-tool
+  and synchronizing documentation. No changes to the hosted remote-tool
   catalogue (that is `1.2.2`), no changes to provider-specific schema shaping,
   and no changes to the WIT interface.
   Sign-off: human reviewer approves this ExecPlan before implementation begins.
 
 - Implementation complete
   Acceptance criteria: all milestones are complete, existing tests are
-  unbroken, and documentation is synchronised.
+  unbroken, and documentation is synchronized.
   Sign-off: implementer marks the plan in progress and then complete after
   final validation.
 
@@ -68,9 +68,9 @@ The following subsections describe the current state of WASM tool registration,
 schema publication, and the retry-hint path. All paths are relative to the
 repository root.
 
-### The three WASM registration paths
+### The four WASM registration paths
 
-Axinite registers WASM tools through three entry points, all of which converge
+Axinite registers WASM tools through four entry points, all of which converge
 on `ToolRegistry::register_wasm()` in `src/tools/registry/wasm.rs`:
 
 1. **File-loaded tools.** `WasmToolLoader::load_from_files()` in
@@ -299,7 +299,7 @@ Audit each path:
 
 2. **Storage-backed path** (`register_wasm_from_storage` -> `register_wasm` ->
    `resolve_metadata_overrides`): the stored description and schema are
-   normalised. If the stored schema is non-null, it becomes an explicit
+   normalized. If the stored schema is non-null, it becomes an explicit
    override and `exported_metadata()` is not called. If the stored schema is
    null, `exported_metadata()` is attempted as in the file-loaded path.
 
@@ -457,7 +457,7 @@ If `rstest-bdd` is feasible in-process without new infrastructure, implement
 these scenarios. Otherwise, the unit tests from milestone 4 already provide the
 same guarantees; document the decision and move on.
 
-### Milestone 6: synchronise design and operator documentation
+### Milestone 6: synchronize design and operator documentation
 
 1. Update `docs/rfcs/0002-expose-wasm-tool-definitions.md` to note that
    `1.2.1` is complete: registration paths have been audited, placeholder
@@ -688,7 +688,7 @@ pub(crate) fn is_placeholder_schema(schema: &serde_json::Value) -> bool;
 - [x] Update the retry-hint comment contract (milestone 3).
 - [x] Add unit tests for schema publication invariants (milestone 4).
 - [x] Evaluate and add behavioural tests (milestone 5).
-- [x] Synchronise documentation (milestone 6).
+- [x] Synchronize documentation (milestone 6).
 - [x] Run full validation gates and publish (milestone 7).
 
 ## Surprises & Discoveries
@@ -726,7 +726,7 @@ pub(crate) fn is_placeholder_schema(schema: &serde_json::Value) -> bool;
   `src/tools/registry/loader.rs`, including:
   - warning-level observability when a WASM tool remains on a placeholder
     schema after metadata recovery fails
-  - storage-backed normalisation so empty descriptions and `null` schemas fall
+  - storage-backed normalization so empty descriptions and `null` schemas fall
     back to guest-exported metadata instead of suppressing it
 - Updated the retry-hint contract comment in `src/tools/wasm/wrapper.rs` to
   describe the schema-bearing hint as supplemental recovery guidance.

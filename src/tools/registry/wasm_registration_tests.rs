@@ -86,14 +86,26 @@ impl NativeWasmToolStore for StubWasmToolStore {
         ))
     }
 
-    async fn get(&self, _key: ToolKey<'_>) -> Result<StoredWasmTool, WasmStorageError> {
+    async fn get(&self, key: ToolKey<'_>) -> Result<StoredWasmTool, WasmStorageError> {
+        if key.user_id != self.tool.user_id || key.name != self.tool.name {
+            return Err(WasmStorageError::NotFound(format!(
+                "tool not found for user_id={}, name={}",
+                key.user_id, key.name
+            )));
+        }
         Ok(self.tool.clone())
     }
 
     async fn get_with_binary(
         &self,
-        _key: ToolKey<'_>,
+        key: ToolKey<'_>,
     ) -> Result<StoredWasmToolWithBinary, WasmStorageError> {
+        if key.user_id != self.tool.user_id || key.name != self.tool.name {
+            return Err(WasmStorageError::NotFound(format!(
+                "tool not found for user_id={}, name={}",
+                key.user_id, key.name
+            )));
+        }
         Ok(StoredWasmToolWithBinary {
             tool: self.tool.clone(),
             wasm_binary: self.wasm_binary.clone(),

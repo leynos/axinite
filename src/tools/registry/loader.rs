@@ -230,13 +230,15 @@ impl ToolRegistry {
             name: reg.name,
             description: reg.description,
             schema: reg.schema,
+        };
+        let runtime_config = WasmRuntimeConfig {
             secrets_store: reg.secrets_store,
             oauth_refresh: reg.oauth_refresh,
         };
 
         let wrapper = WasmToolWrapper::new(Arc::clone(reg.runtime), prepared, reg.capabilities);
         let wrapper = recover_guest_metadata(wrapper, &hints);
-        let wrapper = apply_wasm_overrides(wrapper, hints);
+        let wrapper = apply_wasm_overrides(wrapper, hints, runtime_config);
 
         let registered = self.register(Arc::new(wrapper)).await;
         if !registered {
@@ -378,10 +380,15 @@ impl std::fmt::Debug for ToolRegistry {
     }
 }
 
+/// Descriptive metadata hints for WASM tool registration.
 struct WasmMetadataHints<'a> {
     name: &'a str,
     description: Option<&'a str>,
     schema: Option<serde_json::Value>,
+}
+
+/// Runtime configuration for WASM tool registration.
+struct WasmRuntimeConfig {
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     oauth_refresh: Option<OAuthRefreshConfig>,
 }
@@ -425,6 +432,7 @@ fn recover_guest_metadata(
 fn apply_wasm_overrides(
     mut wrapper: WasmToolWrapper,
     hints: WasmMetadataHints<'_>,
+    runtime_config: WasmRuntimeConfig,
 ) -> WasmToolWrapper {
     if let Some(desc) = hints.description {
         wrapper = wrapper.with_description(desc);
@@ -432,10 +440,10 @@ fn apply_wasm_overrides(
     if let Some(s) = hints.schema {
         wrapper = wrapper.with_schema(s);
     }
-    if let Some(store) = hints.secrets_store {
+    if let Some(store) = runtime_config.secrets_store {
         wrapper = wrapper.with_secrets_store(store);
     }
-    if let Some(oauth) = hints.oauth_refresh {
+    if let Some(oauth) = runtime_config.oauth_refresh {
         wrapper = wrapper.with_oauth_refresh(oauth);
     }
     wrapper
@@ -456,7 +464,18 @@ fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
             if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
                 None
             } else {
-                Some(serde_json::Value::String(trimmed.to_string()))
+                // Attempt to parse JSON strings for backends that return text
+                match serde_json::from_str(trimmed) {
+                    Ok(parsed) => {
+                        // Check if the parsed value is a placeholder
+                        if is_placeholder_schema(&parsed) {
+                            None
+                        } else {
+                            Some(parsed)
+                        }
+                    }
+                    Err(_) => Some(serde_json::Value::String(trimmed.to_string())),
+                }
             }
         }
         value => {

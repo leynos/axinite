@@ -254,7 +254,18 @@ fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
             if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
                 None
             } else {
-                Some(serde_json::Value::String(trimmed.to_string()))
+                // Attempt to parse JSON strings for backends that return text
+                match serde_json::from_str(trimmed) {
+                    Ok(parsed) => {
+                        // Check if the parsed value is a placeholder
+                        if is_placeholder_schema(&parsed) {
+                            None
+                        } else {
+                            Some(parsed)
+                        }
+                    }
+                    Err(_) => Some(serde_json::Value::String(trimmed.to_string())),
+                }
             }
         }
         value => {

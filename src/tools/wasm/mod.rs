@@ -103,8 +103,8 @@ pub use limits::{
     WasmResourceLimiter,
 };
 pub use runtime::{PreparedModule, WasmRuntimeConfig, WasmToolRuntime, enable_compilation_cache};
-pub use wrapper::{OAuthRefreshConfig, WasmToolWrapper};
 pub(crate) use wrapper::metadata::is_placeholder_schema;
+pub use wrapper::{OAuthRefreshConfig, WasmToolWrapper};
 
 // Capabilities (V2)
 pub use capabilities::{
