@@ -86,80 +86,83 @@ fn build_wasm_channel_activation(
     Arc::new(LiveWasmChannelActivation::new(config))
 }
 
-pub async fn build_extension_manager(
-    params: BuildExtensionManagerParams<'_>,
-) -> Arc<ExtensionManager> {
-    let BuildExtensionManagerParams {
-        config,
-        db,
-        tools,
-        hooks,
-        mcp_session_manager,
-        mcp_process_manager,
-        ext_secrets,
-        wasm_tool_runtime,
-        catalog_entries,
-        mcp_clients,
-        relay_config,
-        gateway_token,
-    } = params;
-    let discovery = Arc::new(OnlineDiscovery::new());
-    let shared_state = LiveWasmChannelSharedState::default();
-
-    let mcp_activation = build_mcp_activation(LiveMcpActivationConfig {
-        mcp_session_manager: Arc::clone(mcp_session_manager),
-        mcp_process_manager: Arc::clone(mcp_process_manager),
-        mcp_clients: Arc::clone(&mcp_clients),
-        secrets: Arc::clone(&ext_secrets),
-        tool_registry: Arc::clone(tools),
+fn mk_mcp_activation_config(params: &BuildExtensionManagerParams<'_>) -> LiveMcpActivationConfig {
+    LiveMcpActivationConfig {
+        mcp_session_manager: Arc::clone(params.mcp_session_manager),
+        mcp_process_manager: Arc::clone(params.mcp_process_manager),
+        mcp_clients: Arc::clone(&params.mcp_clients),
+        secrets: Arc::clone(&params.ext_secrets),
+        tool_registry: Arc::clone(params.tools),
         user_id: "default".to_string(),
-        store: db.clone(),
-    });
-    let wasm_tool_activation = build_wasm_tool_activation(LiveWasmToolActivationConfig {
-        wasm_tool_runtime,
-        wasm_tools_dir: config.wasm.tools_dir.clone(),
-        tool_registry: Arc::clone(tools),
-        secrets: Arc::clone(&ext_secrets),
-        hooks: Some(Arc::clone(hooks)),
-    });
-    let wasm_channel_activation = build_wasm_channel_activation(LiveWasmChannelActivationConfig {
+        store: params.db.clone(),
+    }
+}
+
+fn mk_wasm_tool_activation_config(
+    params: &BuildExtensionManagerParams<'_>,
+) -> LiveWasmToolActivationConfig {
+    LiveWasmToolActivationConfig {
+        wasm_tool_runtime: params.wasm_tool_runtime.clone(),
+        wasm_tools_dir: params.config.wasm.tools_dir.clone(),
+        tool_registry: Arc::clone(params.tools),
+        secrets: Arc::clone(&params.ext_secrets),
+        hooks: Some(Arc::clone(params.hooks)),
+    }
+}
+
+fn mk_wasm_channel_activation_config(
+    params: &BuildExtensionManagerParams<'_>,
+    shared_state: &LiveWasmChannelSharedState,
+) -> LiveWasmChannelActivationConfig {
+    LiveWasmChannelActivationConfig {
         active_channel_names: Arc::clone(&shared_state.active_channel_names),
         activation_errors: Arc::clone(&shared_state.activation_errors),
         sse_sender: Arc::clone(&shared_state.sse_sender),
-        wasm_channels_dir: config.channels.wasm_channels_dir.clone(),
-        secrets: Arc::clone(&ext_secrets),
+        wasm_channels_dir: params.config.channels.wasm_channels_dir.clone(),
+        secrets: Arc::clone(&params.ext_secrets),
         channel_runtime: Arc::clone(&shared_state.channel_runtime),
         relay_channel_manager: Arc::clone(&shared_state.relay_channel_manager),
-        tunnel_url: config.tunnel.public_url.clone(),
+        tunnel_url: params.config.tunnel.public_url.clone(),
         user_id: "default".to_string(),
-        store: db.clone(),
-        relay_config: relay_config.clone(),
-        gateway_token: gateway_token.clone(),
+        store: params.db.clone(),
+        relay_config: params.relay_config.clone(),
+        gateway_token: params.gateway_token.clone(),
         installed_relay_extensions: Arc::clone(&shared_state.installed_relay_extensions),
-    });
+    }
+}
+
+pub async fn build_extension_manager(
+    params: BuildExtensionManagerParams<'_>,
+) -> Arc<ExtensionManager> {
+    let shared_state = LiveWasmChannelSharedState::default();
+
+    let mcp_activation = build_mcp_activation(mk_mcp_activation_config(&params));
+    let wasm_tool_activation = build_wasm_tool_activation(mk_wasm_tool_activation_config(&params));
+    let wasm_channel_activation =
+        build_wasm_channel_activation(mk_wasm_channel_activation_config(&params, &shared_state));
 
     let manager = Arc::new(ExtensionManager::new(ExtensionManagerConfig {
         shared_state,
-        discovery,
-        relay_config,
-        gateway_token,
+        discovery: Arc::new(OnlineDiscovery::new()),
+        relay_config: params.relay_config.clone(),
+        gateway_token: params.gateway_token.clone(),
         mcp_activation,
         wasm_tool_activation,
         wasm_channel_activation,
-        mcp_clients,
-        secrets: ext_secrets,
-        tool_registry: Arc::clone(tools),
-        hooks: Some(Arc::clone(hooks)),
-        wasm_tools_dir: config.wasm.tools_dir.clone(),
-        wasm_channels_dir: config.channels.wasm_channels_dir.clone(),
-        tunnel_url: config.tunnel.public_url.clone(),
+        mcp_clients: params.mcp_clients.clone(),
+        secrets: params.ext_secrets.clone(),
+        tool_registry: Arc::clone(params.tools),
+        hooks: Some(Arc::clone(params.hooks)),
+        wasm_tools_dir: params.config.wasm.tools_dir.clone(),
+        wasm_channels_dir: params.config.channels.wasm_channels_dir.clone(),
+        tunnel_url: params.config.tunnel.public_url.clone(),
         user_id: "default".to_string(),
-        store: db,
-        catalog_entries,
+        store: params.db.clone(),
+        catalog_entries: params.catalog_entries.clone(),
     }));
 
-    tools.register_extension_tools(Arc::clone(&manager));
-    tracing::debug!("Extension manager initialized with in-chat discovery tools");
+    params.tools.register_extension_tools(Arc::clone(&manager));
+    tracing::debug!("Extension manager initialised with in-chat discovery tools");
     manager
 }
 
