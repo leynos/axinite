@@ -345,7 +345,7 @@ reload sequence:
 1. Inject secrets into the environment overlay
 2. Load new configuration
 3. Restart the HTTP listener if the bind address changed, or call
-   `shutdown()` when `channels.http` is removed so the live listener is
+   `shutdown()` when `channels.http` is removed, so the live listener is
    torn down cleanly
 4. Update channel secrets
 

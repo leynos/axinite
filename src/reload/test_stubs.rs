@@ -210,6 +210,7 @@ impl SpySecretUpdater {
     }
 
     /// Returns the recorded secrets as plain strings for assertion purposes.
+    #[allow(dead_code)]
     pub async fn recorded_secrets(&self) -> Vec<Option<String>> {
         self.calls
             .lock()
@@ -225,7 +226,12 @@ impl SpySecretUpdater {
 
     /// Returns the last secret payload recorded by the spy.
     pub async fn last_secret(&self) -> Option<Option<String>> {
-        self.recorded_secrets().await.into_iter().last()
+        let calls = self.calls.lock().await;
+        calls.last().map(|secret| {
+            secret
+                .as_ref()
+                .map(|value| value.expose_secret().to_string())
+        })
     }
 }
 

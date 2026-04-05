@@ -139,13 +139,15 @@ mod tests {
     #[tokio::test]
     async fn webhook_listener_controller_drives_webhook_server_lifecycle() {
         let addr1 = reserve_addr();
-        let addr2 = reserve_addr();
 
         let mut server = WebhookServer::new(WebhookServerConfig { addr: addr1 });
         server.add_routes(
             Router::new().route("/health", get(|| async { Json(json!({ "status": "ok" })) })),
         );
         server.start().await.expect("server should start");
+
+        let addr2 = reserve_addr();
+        assert_ne!(addr1, addr2, "reserved addresses should be different");
 
         let server = Arc::new(Mutex::new(server));
         let controller = WebhookListenerController::new(Arc::clone(&server));

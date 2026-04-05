@@ -85,7 +85,10 @@ impl HotReloadManager {
             return Ok(());
         };
 
-        let resolved_addrs = Self::resolve_http_addrs(&new_http).await?;
+        let resolved_addrs = Self::resolve_http_addrs(&new_http, |host, port| {
+            tokio::net::lookup_host((host, port))
+        })
+        .await?;
         self.maybe_restart_listener(&resolved_addrs).await?;
 
         // Step 4: Update channel secrets
@@ -94,13 +97,16 @@ impl HotReloadManager {
         Ok(())
     }
 
-    async fn resolve_http_addrs(
+    async fn resolve_http_addrs<L, Fut, I>(
         http: &crate::config::HttpConfig,
-    ) -> Result<Vec<SocketAddr>, ReloadError> {
-        Self::resolve_http_addrs_with_lookup(http, |host, port| {
-            tokio::net::lookup_host((host, port))
-        })
-        .await
+        lookup_host: L,
+    ) -> Result<Vec<SocketAddr>, ReloadError>
+    where
+        L: Fn(String, u16) -> Fut,
+        Fut: Future<Output = std::io::Result<I>>,
+        I: IntoIterator<Item = SocketAddr>,
+    {
+        Self::resolve_http_addrs_with_lookup(http, lookup_host).await
     }
 
     async fn resolve_http_addrs_with_lookup<L, Fut, I>(
