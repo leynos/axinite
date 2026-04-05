@@ -31,7 +31,17 @@ pub trait Database:
     + Send
     + Sync
 {
-    /// Run schema migrations for this backend.
+    /// Apply all pending schema migrations before the backend is used.
+    ///
+    /// Implementations must be idempotent, so callers may safely invoke this
+    /// more than once during startup without reapplying completed work. The
+    /// method is async and non-blocking from the caller's perspective, and
+    /// returns `Ok(())` once the schema is ready for use.
+    ///
+    /// Returns `Err(DatabaseError)` when migration fails. Such failures are
+    /// fatal for the backend instance, which should not be used afterwards.
+    /// Typical call sites run migrations immediately after constructing the
+    /// backend and before exposing it to the rest of the application.
     fn run_migrations<'a>(&'a self) -> DbFuture<'a, Result<(), DatabaseError>>;
 }
 
@@ -47,6 +57,17 @@ pub trait NativeDatabase:
     + Send
     + Sync
 {
-    /// Run schema migrations for this concrete backend implementation.
+    /// Apply all pending schema migrations before the backend is used.
+    ///
+    /// Implementations must be idempotent, so callers may safely invoke this
+    /// more than once during startup without reapplying completed work. The
+    /// returned future must stay `Send` and borrow `self` for the lifetime
+    /// `'a`, allowing concrete backends to perform async migration work
+    /// without blocking the calling thread.
+    ///
+    /// Returns `Ok(())` once the schema is ready for use, or
+    /// `Err(DatabaseError)` when migration fails. Migration errors are fatal
+    /// for the backend instance, which should not be used afterwards. Typical
+    /// call sites run this once immediately after backend construction.
     fn run_migrations<'a>(&'a self) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
 }

@@ -13,8 +13,11 @@ use crate::error::DatabaseError;
 /// A single setting row from the database.
 #[derive(Debug, Clone)]
 pub struct SettingRow {
+    /// Strongly typed key for the persisted setting row.
     pub key: SettingKey,
+    /// JSON payload stored for the setting key.
     pub value: serde_json::Value,
+    /// Timestamp of the most recent write for this row.
     pub updated_at: DateTime<Utc>,
 }
 

@@ -36,6 +36,9 @@ pub use traits::{
     WorkspaceStore,
 };
 
+mod types;
+pub use types::UserId;
+
 mod forwarders;
 
 use std::sync::Arc;

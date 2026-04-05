@@ -56,7 +56,7 @@ fn checked_duration_seconds(duration: std::time::Duration) -> Result<i64, Databa
     })
 }
 
-fn checked_u32_to_i64(value: u32, _field: &str) -> Result<i64, DatabaseError> {
+fn checked_u32_to_i64(value: u32) -> Result<i64, DatabaseError> {
     Ok(i64::from(value))
 }
 
@@ -77,7 +77,7 @@ impl LibSqlBackend {
             .estimated_duration
             .map(checked_duration_seconds)
             .transpose()?;
-        let repair_attempts = checked_u32_to_i64(ctx.repair_attempts, "repair_attempts")?;
+        let repair_attempts = checked_u32_to_i64(ctx.repair_attempts)?;
         let max_tokens = checked_u64_to_i64(ctx.max_tokens, "max_tokens")?;
         let total_tokens_used = checked_u64_to_i64(ctx.total_tokens_used, "total_tokens_used")?;
         let transitions = serde_json::to_string(&ctx.transitions)

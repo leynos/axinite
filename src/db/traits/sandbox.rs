@@ -8,10 +8,17 @@ use core::{fmt, future::Future};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
+use crate::db::UserId;
 use crate::db::params::DbFuture;
-use crate::db::traits::settings::UserId;
 use crate::error::DatabaseError;
 use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
+
+/// Parse error for [`SandboxMode`] storage/API strings.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[error("unexpected sandbox mode '{value}'")]
+pub struct SandboxModeParseError {
+    value: String,
+}
 
 /// Supported execution modes for sandbox jobs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -37,13 +44,15 @@ impl fmt::Display for SandboxMode {
 }
 
 impl TryFrom<&str> for SandboxMode {
-    type Error = String;
+    type Error = SandboxModeParseError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "worker" => Ok(Self::Worker),
             "claude_code" => Ok(Self::ClaudeCode),
-            other => Err(format!("unexpected sandbox mode '{other}'")),
+            other => Err(SandboxModeParseError {
+                value: other.to_owned(),
+            }),
         }
     }
 }
@@ -93,8 +102,8 @@ impl PartialEq<String> for SandboxEventType {
 pub struct SandboxJobStatusUpdate<'a> {
     /// Sandbox job UUID to update.
     pub id: Uuid,
-    /// New persisted status string.
-    pub status: &'a str,
+    /// New persisted sandbox status.
+    pub status: SandboxJobStatus,
     /// Optional success flag to persist alongside the status.
     pub success: Option<bool>,
     /// Optional failure or result message to persist.
@@ -128,7 +137,7 @@ pub trait SandboxStore: Send + Sync {
         &'a self,
         id: Uuid,
     ) -> DbFuture<'a, Result<Option<SandboxJobRecord>, DatabaseError>>;
-    /// List sandbox jobs in backend-defined recency order.
+    /// List sandbox jobs ordered newest-first by `(created_at DESC, id DESC)`.
     fn list_sandbox_jobs<'a>(
         &'a self,
     ) -> DbFuture<'a, Result<Vec<SandboxJobRecord>, DatabaseError>>;
@@ -141,7 +150,8 @@ pub trait SandboxStore: Send + Sync {
     fn cleanup_stale_sandbox_jobs<'a>(&'a self) -> DbFuture<'a, Result<u64, DatabaseError>>;
     /// Summarize sandbox job counts grouped by status.
     fn sandbox_job_summary<'a>(&'a self) -> DbFuture<'a, Result<SandboxJobSummary, DatabaseError>>;
-    /// List sandbox jobs strictly owned by `user_id`.
+    /// List sandbox jobs for `user_id`, ordered newest-first by
+    /// `(created_at DESC, id DESC)`.
     fn list_sandbox_jobs_for_user<'a>(
         &'a self,
         user_id: UserId,
@@ -259,4 +269,33 @@ pub trait NativeSandboxStore: Send + Sync {
         before_id: Option<i64>,
         limit: Option<i64>,
     ) -> impl Future<Output = Result<Vec<JobEventRecord>, DatabaseError>> + Send + 'a;
+}
+
+/// Strongly typed sandbox job status string stored at the persistence boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct SandboxJobStatus(String);
+
+impl SandboxJobStatus {
+    /// Return a borrowed view of the stored sandbox status.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for SandboxJobStatus {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+impl From<String> for SandboxJobStatus {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl fmt::Display for SandboxJobStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }

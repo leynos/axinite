@@ -69,6 +69,11 @@ mod tests {
         json!({"title": "   ", "routine_name": "daily-standup"}),
         Some("daily-standup".to_string())
     )]
+    #[case(
+        None,
+        json!({"title": "   ", "routine_name": "   "}),
+        None
+    )]
     fn preview_title_fallback_matrix(
         #[case] sql_title: Option<String>,
         #[case] metadata: serde_json::Value,

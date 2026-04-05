@@ -49,7 +49,8 @@ mod tests {
         use crate::testing::try_test_pg_db;
         use crate::{
             db::{
-                NativeSandboxStore, SandboxEventType, SandboxJobStatusUpdate, SandboxMode, UserId,
+                NativeSandboxStore, SandboxEventType, SandboxJobStatus, SandboxJobStatusUpdate,
+                SandboxMode, UserId,
             },
             history::SandboxJobRecord,
         };
@@ -60,6 +61,16 @@ mod tests {
         #[fixture]
         async fn db() -> Option<PgBackend> {
             try_test_pg_db().await
+        }
+
+        async fn cleanup_job(db: &PgBackend, job_id: Uuid) {
+            let conn = db.store.conn().await.expect("failed to get connection");
+            conn.execute("DELETE FROM job_events WHERE job_id = $1", &[&job_id])
+                .await
+                .expect("failed to clean up job events");
+            conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&job_id])
+                .await
+                .expect("failed to clean up sandbox job");
         }
 
         #[fixture]
@@ -97,7 +108,7 @@ mod tests {
             let completed = Utc::now();
             let update = SandboxJobStatusUpdate {
                 id: job_id,
-                status: "completed",
+                status: SandboxJobStatus::from("completed"),
                 success: Some(true),
                 message: Some("All tests passed"),
                 started_at: Some(started),
@@ -268,10 +279,7 @@ mod tests {
                 .expect("get_sandbox_job_mode should succeed");
             assert_eq!(stored_mode, Some(mode));
 
-            let conn = db.store.conn().await.expect("failed to get connection");
-            conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&job_id])
-                .await
-                .expect("failed to clean up sandbox job");
+            cleanup_job(&db, job_id).await;
         }
 
         #[rstest]
@@ -306,13 +314,7 @@ mod tests {
 
             assert_eq!(stored_event.data, data);
 
-            let conn = db.store.conn().await.expect("failed to get connection");
-            conn.execute("DELETE FROM job_events WHERE job_id = $1", &[&job_id])
-                .await
-                .expect("failed to clean up job events");
-            conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&job_id])
-                .await
-                .expect("failed to clean up sandbox job");
+            cleanup_job(&db, job_id).await;
         }
 
         #[rstest]

@@ -75,17 +75,19 @@ fn parse_i32_field(value: i64, field: RoutineNumericField) -> Result<i32, Databa
     parse_non_negative_field(value, field)
 }
 
-pub(crate) const ROUTINE_COLUMNS: &str = "\
-    id, name, description, user_id, enabled, \
-    trigger_type, trigger_config, action_type, action_config, \
-    cooldown_secs, max_concurrent, dedup_window_secs, \
-    notify_channel, notify_user, notify_on_success, notify_on_failure, notify_on_attention, \
-    state, last_run_at, next_fire_at, run_count, consecutive_failures, \
-    created_at, updated_at";
+pub(crate) const ROUTINE_COLUMNS: &str = concat!(
+    "id, name, description, user_id, enabled, ",
+    "trigger_type, trigger_config, action_type, action_config, ",
+    "cooldown_secs, max_concurrent, dedup_window_secs, ",
+    "notify_channel, notify_user, notify_on_success, notify_on_failure, notify_on_attention, ",
+    "state, last_run_at, next_fire_at, run_count, consecutive_failures, ",
+    "created_at, updated_at"
+);
 
-pub(crate) const ROUTINE_RUN_COLUMNS: &str = "\
-    id, routine_id, trigger_type, trigger_detail, started_at, \
-    status, completed_at, result_summary, tokens_used, job_id, created_at";
+pub(crate) const ROUTINE_RUN_COLUMNS: &str = concat!(
+    "id, routine_id, trigger_type, trigger_detail, started_at, ",
+    "status, completed_at, result_summary, tokens_used, job_id, created_at"
+);
 
 pub(crate) fn row_to_routine_libsql(row: &libsql::Row) -> Result<Routine, DatabaseError> {
     let trigger_type = get_text(row, 5);

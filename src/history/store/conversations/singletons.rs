@@ -1,4 +1,9 @@
 //! Singleton and routine conversation helpers.
+//!
+//! "Singleton" conversations are stable per-scope threads, such as one
+//! assistant conversation per `(user_id, channel)` pair or one heartbeat
+//! conversation per user. These helpers are idempotent: repeated calls for the
+//! same scope return the same persisted conversation id.
 
 use uuid::Uuid;
 
@@ -183,6 +188,33 @@ mod tests {
 
         assert_eq!(first, second);
         assert_ne!(first, other_channel);
+
+        cleanup_user(&store, &user_id).await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn heartbeat_singleton_is_idempotent(#[future] store: Option<Store>) {
+        let Some(store) = store.await else { return };
+        let user_id = format!("heartbeat-singleton-{}", Uuid::new_v4());
+
+        let first = store
+            .get_or_create_heartbeat_conversation(&user_id)
+            .await
+            .expect("first heartbeat singleton lookup should succeed");
+        let second = store
+            .get_or_create_heartbeat_conversation(&user_id)
+            .await
+            .expect("second heartbeat singleton lookup should succeed");
+
+        assert_eq!(first, second);
+
+        let metadata = store
+            .get_conversation_metadata(first)
+            .await
+            .expect("metadata query should succeed")
+            .expect("metadata should exist");
+        assert_eq!(metadata["thread_type"], "heartbeat");
 
         cleanup_user(&store, &user_id).await;
     }

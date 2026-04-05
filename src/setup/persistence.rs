@@ -28,8 +28,13 @@ impl DefaultSettingsPersistence {
 
     /// Save all settings for the default user to the database.
     pub async fn save_default_settings(&self, settings: &Settings) -> Result<(), DatabaseError> {
+        let mut merged = self
+            .backend
+            .get_all_settings(UserId::from(DEFAULT_USER_ID))
+            .await?;
+        merged.extend(settings.to_db_map());
         self.backend
-            .set_all_settings(UserId::from(DEFAULT_USER_ID), &settings.to_db_map())
+            .set_all_settings(UserId::from(DEFAULT_USER_ID), &merged)
             .await
     }
 

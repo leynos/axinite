@@ -26,6 +26,7 @@ mod v16_context;
 /// - PL/pgSQL functions -> SQLite triggers
 pub const SCHEMA: &str = include_str!("../../migrations/libsql_schema.sql");
 
+/// Shared metadata for recording one incremental migration application.
 pub(super) struct MigrationContext<'a> {
     version: i64,
     name: &'a str,

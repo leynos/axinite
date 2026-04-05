@@ -54,7 +54,9 @@ enum ResolvedBearerCredential {
 
 impl NearAiChatProvider {
     fn uses_private_near_base_url(base_url: &str) -> bool {
-        base_url.trim_end_matches('/') == "https://private.near.ai"
+        let base_url = base_url.trim_end_matches('/');
+        let base_url = base_url.strip_suffix("/v1").unwrap_or(base_url);
+        base_url == "https://private.near.ai"
     }
 
     /// Create a new NEAR AI Chat Completions provider.

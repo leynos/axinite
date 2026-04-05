@@ -18,7 +18,7 @@ async fn mark_running(
 ) -> Result<(), crate::error::DatabaseError> {
     db.update_sandbox_job_status(SandboxJobStatusUpdate {
         id,
-        status: "running",
+        status: crate::db::SandboxJobStatus::from("running"),
         success: None,
         message: None,
         started_at: Some(now),
@@ -248,7 +248,7 @@ async fn mark_sandbox_restart_failed(
     store
         .update_sandbox_job_status(SandboxJobStatusUpdate {
             id: job_id,
-            status: "failed",
+            status: crate::db::SandboxJobStatus::from("failed"),
             success: Some(false),
             message: Some(&message),
             started_at: None,

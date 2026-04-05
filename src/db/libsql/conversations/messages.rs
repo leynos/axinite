@@ -5,7 +5,13 @@
 //! as a final SQLite tiebreaker where needed, so cursor pagination and full
 //! reads stay consistent.
 
-use super::*;
+use chrono::{DateTime, Utc};
+use libsql::params;
+use uuid::Uuid;
+
+use super::{
+    ConversationMessage, DatabaseError, LibSqlBackend, fmt_ts, get_text, get_ts, parse_uuid,
+};
 
 fn row_to_conversation_message(row: &libsql::Row) -> Result<ConversationMessage, DatabaseError> {
     Ok(ConversationMessage {
@@ -44,9 +50,9 @@ pub(super) async fn add_conversation_message(
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
     tx.execute(
-            "INSERT INTO conversation_messages (id, conversation_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id.to_string(), conversation_id.to_string(), role, content, now],
-        )
+        "INSERT INTO conversation_messages (id, conversation_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id.to_string(), conversation_id.to_string(), role, content, now],
+    )
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
     touch_conversation_with_connection(&tx, conversation_id).await?;

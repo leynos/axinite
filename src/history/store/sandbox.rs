@@ -164,7 +164,7 @@ impl Store {
                 SELECT id, title, description, status, user_id, project_dir,
                        success, failure_reason, created_at, started_at, completed_at
                 FROM agent_jobs WHERE source = 'sandbox'
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 "#,
                 &[],
             )
@@ -185,7 +185,7 @@ impl Store {
                 SELECT id, title, description, status, user_id, project_dir,
                        success, failure_reason, created_at, started_at, completed_at
                 FROM agent_jobs WHERE source = 'sandbox' AND user_id = $1
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 "#,
                 &[&user_id.as_str()],
             )
@@ -259,7 +259,14 @@ impl Store {
                 completed_at = COALESCE($6, completed_at)
             WHERE id = $1 AND source = 'sandbox'
             "#,
-            &[&id, &status, &success, &message, &started_at, &completed_at],
+            &[
+                &id,
+                &status.as_str(),
+                &success,
+                &message,
+                &started_at,
+                &completed_at,
+            ],
         )
         .await?;
         Ok(())
@@ -336,7 +343,10 @@ impl Store {
             )
             .await?;
         row.and_then(|r| r.get::<_, Option<String>>("job_mode"))
-            .map(|mode| SandboxMode::try_from(mode.as_str()).map_err(DatabaseError::Serialization))
+            .map(|mode| {
+                SandboxMode::try_from(mode.as_str())
+                    .map_err(|error| DatabaseError::Serialization(error.to_string()))
+            })
             .transpose()
     }
 }

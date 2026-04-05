@@ -1,3 +1,5 @@
+//! PostgreSQL-backed job-action persistence tests.
+
 use std::time::Duration;
 
 use chrono::Utc;

@@ -168,10 +168,37 @@ async fn test_settings_bulk_operations() {
     assert_eq!(all["key1"], serde_json::json!("value1"));
     assert_eq!(all["key2"], serde_json::json!(42));
 
+    db.set_setting(
+        UserId::from("bulk_user"),
+        SettingKey::from("key3"),
+        &serde_json::json!("stale"),
+    )
+    .await
+    .expect("set stale key");
+
+    db.set_all_settings(UserId::from("bulk_user"), &settings)
+        .await
+        .expect("replace settings should prune omitted rows");
+    let replaced = db
+        .get_all_settings(UserId::from("bulk_user"))
+        .await
+        .expect("get_all after replace");
+    assert_eq!(replaced.len(), 2);
+    assert!(!replaced.contains_key("key3"));
+
     let full = db
         .get_setting_full(UserId::from("bulk_user"), SettingKey::from("key1"))
         .await
         .expect("get_full")
         .expect("should exist");
     assert_eq!(full.key, SettingKey::from("key1"));
+
+    db.set_all_settings(UserId::from("bulk_user"), &std::collections::HashMap::new())
+        .await
+        .expect("empty bulk write should clear settings");
+    let cleared = db
+        .get_all_settings(UserId::from("bulk_user"))
+        .await
+        .expect("get_all after clear");
+    assert!(cleared.is_empty());
 }

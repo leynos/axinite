@@ -6,18 +6,21 @@ use core::{future::Future, pin::Pin};
 /// Boxed future used at dyn-backed database trait boundaries.
 pub type DbFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+pub use crate::db::UserId;
 pub use crate::db::traits::conversation::EnsureConversationParams;
 pub use crate::db::traits::job::{EstimationActualsParams, EstimationSnapshotParams};
 pub use crate::db::traits::routine::{RoutineRunCompletion, RoutineRuntimeUpdate};
-pub use crate::db::traits::sandbox::{SandboxEventType, SandboxJobStatusUpdate, SandboxMode};
-pub use crate::db::traits::settings::{SettingKey, UserId};
+pub use crate::db::traits::sandbox::{
+    SandboxEventType, SandboxJobStatus, SandboxJobStatusUpdate, SandboxMode, SandboxModeParseError,
+};
+pub use crate::db::traits::settings::SettingKey;
 pub use crate::db::traits::workspace::{HybridSearchParams, InsertChunkParams};
 
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{SandboxEventType, SandboxMode, SettingKey, UserId};
+    use super::{SandboxEventType, SandboxJobStatus, SandboxMode, SettingKey, UserId};
 
     #[rstest]
     #[case("", "")]
@@ -65,15 +68,37 @@ mod tests {
     }
 
     #[rstest]
-    #[case("worker", Ok(SandboxMode::Worker))]
-    #[case("claude_code", Ok(SandboxMode::ClaudeCode))]
-    #[case(
-        "invalid",
-        Err("unexpected sandbox mode 'invalid'".to_string())
-    )]
-    fn sandbox_mode_try_from(#[case] input: &str, #[case] expected: Result<SandboxMode, String>) {
+    #[case("worker", Some(SandboxMode::Worker), None)]
+    #[case("claude_code", Some(SandboxMode::ClaudeCode), None)]
+    #[case("invalid", None, Some("unexpected sandbox mode 'invalid'"))]
+    fn sandbox_mode_try_from(
+        #[case] input: &str,
+        #[case] expected_mode: Option<SandboxMode>,
+        #[case] expected_error: Option<&str>,
+    ) {
         let actual = SandboxMode::try_from(input);
+        match (expected_mode, expected_error) {
+            (Some(expected_mode), None) => assert_eq!(actual, Ok(expected_mode)),
+            (None, Some(expected_error)) => assert_eq!(
+                actual
+                    .expect_err("invalid sandbox mode should fail")
+                    .to_string(),
+                expected_error
+            ),
+            _ => panic!("invalid test case"),
+        }
+    }
 
-        assert_eq!(actual, expected);
+    #[rstest]
+    #[case("", "")]
+    #[case("creating", "creating")]
+    fn sandbox_job_status_conversions(#[case] input: &str, #[case] expected: &str) {
+        let from_str = SandboxJobStatus::from(input);
+        let from_string = SandboxJobStatus::from(input.to_string());
+
+        assert_eq!(from_str.as_str(), expected);
+        assert_eq!(from_string.as_str(), expected);
+        assert_eq!(from_str.to_string(), expected);
+        assert_eq!(from_string.to_string(), expected);
     }
 }

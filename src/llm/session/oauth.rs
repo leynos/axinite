@@ -168,7 +168,7 @@ pub(super) async fn initiate_login_flow(manager: &SessionManager) -> Result<(), 
     complete_browser_oauth(manager, listener, auth_provider, &auth_url).await
 }
 
-pub(super) async fn api_key_flow(_manager: &SessionManager) -> Result<(), LlmError> {
+pub(super) async fn api_key_flow(manager: &SessionManager) -> Result<(), LlmError> {
     println!();
     println!("NEAR AI Cloud API key");
     println!("─────────────────────");
@@ -197,7 +197,7 @@ pub(super) async fn api_key_flow(_manager: &SessionManager) -> Result<(), LlmErr
         });
     }
 
-    _manager.set_api_key(SecretString::from(key.clone())).await;
+    manager.set_api_key(SecretString::from(key.clone())).await;
 
     println!();
     crate::setup::print_success("NEAR AI Cloud API key saved.");

@@ -6,50 +6,10 @@
 use core::fmt;
 use std::{collections::HashMap, future::Future};
 
+use crate::db::UserId;
 use crate::db::params::DbFuture;
 use crate::error::DatabaseError;
 use crate::history::SettingRow;
-
-/// Strongly typed user identifier for settings-store methods.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct UserId(String);
-
-impl UserId {
-    /// Return a borrowed `&str` view of the inner user identifier.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<&str> for UserId {
-    fn from(value: &str) -> Self {
-        Self(value.to_owned())
-    }
-}
-
-impl From<String> for UserId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-impl fmt::Display for UserId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl PartialEq<&str> for UserId {
-    fn eq(&self, other: &&str) -> bool {
-        self.0 == *other
-    }
-}
-
-impl PartialEq<String> for UserId {
-    fn eq(&self, other: &String) -> bool {
-        self.0 == *other
-    }
-}
 
 /// Strongly typed settings key for settings-store methods.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -235,12 +235,12 @@ impl CreateJobTool {
         completed_at: Option<chrono::DateTime<Utc>>,
     ) {
         if let Some(store) = self.store.clone() {
-            let status = status.to_string();
+            let status = crate::db::SandboxJobStatus::from(status);
             tokio::spawn(async move {
                 if let Err(e) = store
                     .update_sandbox_job_status(SandboxJobStatusUpdate {
                         id: job_id,
-                        status: &status,
+                        status,
                         success,
                         message: message.as_deref(),
                         started_at,

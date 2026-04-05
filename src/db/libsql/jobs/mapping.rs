@@ -1,3 +1,5 @@
+//! Row-decoding helpers for libSQL direct-agent jobs.
+
 use uuid::Uuid;
 
 use crate::context::{JobContext, StateTransition};

@@ -1278,7 +1278,7 @@ mod tests {
         // Update status to running
         db.update_sandbox_job_status(SandboxJobStatusUpdate {
             id: job_id,
-            status: "running",
+            status: crate::db::SandboxJobStatus::from("running"),
             success: None,
             message: None,
             started_at: Some(chrono::Utc::now()),
@@ -1290,7 +1290,7 @@ mod tests {
         // Update to completed
         db.update_sandbox_job_status(SandboxJobStatusUpdate {
             id: job_id,
-            status: "completed",
+            status: crate::db::SandboxJobStatus::from("completed"),
             success: Some(true),
             message: Some("Done"),
             started_at: None,

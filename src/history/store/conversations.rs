@@ -26,7 +26,10 @@ use crate::error::DatabaseError;
 #[derive(Debug, Clone)]
 pub struct ConversationSummary {
     pub id: Uuid,
-    /// Preview title selected from the first user message or metadata fallback.
+    /// Preview title: typically the first user message, truncated to 100 chars.
+    ///
+    /// Falls back to metadata-backed titles such as `title` or
+    /// `routine_name` when no user message is available.
     pub title: Option<String>,
     pub message_count: i64,
     pub started_at: DateTime<Utc>,

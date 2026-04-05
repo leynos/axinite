@@ -4,7 +4,6 @@ use chrono::Utc;
 use libsql::params;
 use uuid::Uuid;
 
-#[path = "sandbox/events.rs"]
 mod events;
 
 use super::{
@@ -113,7 +112,7 @@ impl NativeSandboxStore for LibSqlBackend {
                 SELECT id, title, description, status, user_id, project_dir,
                        success, failure_reason, created_at, started_at, completed_at
                 FROM agent_jobs WHERE source = 'sandbox'
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 "#,
                 (),
             )
@@ -173,7 +172,7 @@ impl NativeSandboxStore for LibSqlBackend {
                 "#,
             params![
                 id.to_string(),
-                status,
+                status.as_str(),
                 success.map(|b| b as i64),
                 message,
                 fmt_opt_ts(&started_at),
@@ -245,7 +244,7 @@ impl NativeSandboxStore for LibSqlBackend {
                 SELECT id, title, description, status, user_id, project_dir,
                        success, failure_reason, created_at, started_at, completed_at
                 FROM agent_jobs WHERE source = 'sandbox' AND user_id = ?1
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 "#,
                 libsql::params![user_id.as_str()],
             )
@@ -364,7 +363,8 @@ impl NativeSandboxStore for LibSqlBackend {
                 .get::<Option<String>>(0)
                 .map_err(|e| DatabaseError::Query(e.to_string()))?
                 .map(|mode| {
-                    SandboxMode::try_from(mode.as_str()).map_err(DatabaseError::Serialization)
+                    SandboxMode::try_from(mode.as_str())
+                        .map_err(|error| DatabaseError::Serialization(error.to_string()))
                 })
                 .transpose(),
             None => Ok(None),

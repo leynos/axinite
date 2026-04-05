@@ -196,6 +196,7 @@ pub(super) async fn save_estimation_snapshot(
     } = params;
     let conn = backend.connect().await?;
     let id = Uuid::new_v4();
+    let estimated_time_secs = i64::from(estimated_time_secs);
     let tools_json = serde_json::to_string(tool_names)
         .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
 
@@ -210,7 +211,7 @@ pub(super) async fn save_estimation_snapshot(
             category,
             tools_json,
             estimated_cost.to_string(),
-            estimated_time_secs as i64,
+            estimated_time_secs,
             estimated_value.to_string(),
         ],
     )
@@ -230,12 +231,13 @@ pub(super) async fn update_estimation_actuals(
         actual_value,
     } = params;
     let conn = backend.connect().await?;
+    let actual_time_secs = i64::from(actual_time_secs);
     conn.execute(
         "UPDATE estimation_snapshots SET actual_cost = ?2, actual_time_secs = ?3, actual_value = ?4 WHERE id = ?1",
         params![
             id.to_string(),
             actual_cost.to_string(),
-            actual_time_secs as i64,
+            actual_time_secs,
             actual_value.map(|d| d.to_string()),
         ],
     )

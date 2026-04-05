@@ -81,9 +81,10 @@ pub(super) async fn save_job_event(
 
 /// Load sandbox job events using an optional exclusive cursor and limit.
 ///
-/// `before_id` filters to rows with `id < before_id`, while `limit` caps the
-/// returned event count and must be positive when provided. Results are returned
-/// oldest-to-newest by `id` even when the query pages newest-first internally.
+/// `before_id` filters to rows with `id < before_id` and, when provided, must
+/// be greater than zero. `limit` caps the returned event count and must also
+/// be positive when provided. Results are returned oldest-to-newest by `id`
+/// even when the query pages newest-first internally.
 ///
 /// Returns [`DatabaseError::Query`] for connection or SQL failures, and
 /// [`DatabaseError::Serialization`] if a stored `job_id` cannot be parsed as a
@@ -99,6 +100,13 @@ pub(super) async fn list_job_events(
     {
         return Err(DatabaseError::Query(
             "list_job_events limit must be greater than 0".to_string(),
+        ));
+    }
+    if let Some(cursor) = before_id
+        && cursor <= 0
+    {
+        return Err(DatabaseError::Query(
+            "list_job_events before_id must be greater than 0".to_string(),
         ));
     }
 
@@ -295,6 +303,18 @@ mod tests {
             result,
             Err(DatabaseError::Query(message))
                 if message == "list_job_events limit must be greater than 0"
+        ));
+    }
+
+    #[tokio::test]
+    async fn list_job_events_rejects_non_positive_before_id() {
+        let (_dir, backend) = backend().await;
+        let result = list_job_events(&backend, Uuid::new_v4(), Some(0), None).await;
+
+        assert!(matches!(
+            result,
+            Err(DatabaseError::Query(message))
+                if message == "list_job_events before_id must be greater than 0"
         ));
     }
 

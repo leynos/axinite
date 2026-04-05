@@ -74,6 +74,11 @@ pub(super) async fn list_routine_runs(
     routine_id: Uuid,
     limit: i64,
 ) -> Result<Vec<RoutineRun>, DatabaseError> {
+    if limit <= 0 {
+        return Err(DatabaseError::Query(
+            "list_routine_runs limit must be greater than 0".to_string(),
+        ));
+    }
     let conn = backend.connect().await?;
     let mut rows = conn
         .query(
