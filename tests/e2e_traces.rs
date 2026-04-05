@@ -9,12 +9,20 @@ mod advanced_traces;
 mod attachments;
 #[path = "e2e_traces/builtin_tool_coverage.rs"]
 mod builtin_tool_coverage;
+#[path = "e2e_traces/heartbeat.rs"]
+mod heartbeat;
 #[path = "e2e_traces/metrics.rs"]
 mod metrics;
 #[path = "e2e_traces/recorded_trace.rs"]
 mod recorded_trace;
-#[path = "e2e_traces/routine_heartbeat.rs"]
-mod routine_heartbeat;
+#[path = "e2e_traces/routine_cooldown.rs"]
+mod routine_cooldown;
+#[path = "e2e_traces/routine_cron.rs"]
+mod routine_cron;
+#[path = "e2e_traces/routine_event.rs"]
+mod routine_event;
+#[path = "e2e_traces/routine_system_event.rs"]
+mod routine_system_event;
 #[path = "e2e_traces/safety_layer.rs"]
 mod safety_layer;
 #[path = "e2e_traces/spot_checks.rs"]

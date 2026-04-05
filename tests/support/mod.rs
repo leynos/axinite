@@ -8,6 +8,8 @@ pub mod cleanup;
 pub mod fixtures;
 pub mod instrumented_llm;
 pub mod metrics;
+#[cfg(feature = "libsql")]
+pub mod routines;
 pub mod telegram;
 pub mod test_channel;
 pub mod test_rig;
@@ -349,3 +351,29 @@ fn test_rig_symbol_refs() {
 
 const _: fn() = trace_support_symbol_refs;
 const _: fn() = test_rig_symbol_refs;
+
+// =============================================================================
+// Routines module compile-time assertions
+// =============================================================================
+
+#[cfg(feature = "libsql")]
+#[expect(dead_code, reason = "compile-time signature assertions")]
+fn routines_symbol_refs() {
+    // Compile-time type assertions for routines module helpers.
+    // These ensure the public API signatures remain stable.
+    const _: fn(
+        &std::sync::Arc<dyn ironclaw::db::Database>,
+    ) -> std::sync::Arc<ironclaw::workspace::Workspace> = routines::create_workspace;
+    const _: fn(
+        &str,
+        ironclaw::agent::routine::Trigger,
+        &str,
+    ) -> ironclaw::agent::routine::Routine = routines::make_routine;
+    const _: fn(&str) -> ironclaw::channels::IncomingMessage = routines::make_test_incoming_message;
+    const _: fn(
+        trace_llm::LlmTrace,
+        std::sync::Arc<dyn ironclaw::db::Database>,
+        std::sync::Arc<ironclaw::workspace::Workspace>,
+    ) -> std::sync::Arc<ironclaw::agent::routine_engine::RoutineEngine> =
+        routines::make_minimal_engine;
+}
