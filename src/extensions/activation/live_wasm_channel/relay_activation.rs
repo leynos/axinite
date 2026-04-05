@@ -118,13 +118,8 @@ impl super::LiveWasmChannelActivation {
         let instance_id = self.derive_relay_instance_id(cfg);
         let stream_token = self.decrypt_stream_token(&token_key).await?;
         let team_id = self.maybe_fetch_team_id(name).await;
-        let channel = self.build_relay_channel(
-            name,
-            cfg,
-            &instance_id,
-            &stream_token,
-            team_id.as_deref(),
-        )?;
+        let channel =
+            self.build_relay_channel(name, cfg, &instance_id, &stream_token, team_id.as_deref())?;
         self.complete_relay_activation(name, channel).await
     }
 }

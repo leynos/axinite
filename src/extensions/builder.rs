@@ -163,10 +163,7 @@ pub async fn build_extension_manager(
     manager
 }
 
-async fn scan_tools_dir(
-    loader: &crate::tools::wasm::WasmToolLoader,
-    tools_dir: &std::path::Path,
-) {
+async fn scan_tools_dir(loader: &crate::tools::wasm::WasmToolLoader, tools_dir: &std::path::Path) {
     match loader.load_from_dir(tools_dir).await {
         Ok(results) => {
             if !results.loaded.is_empty() {
