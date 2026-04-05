@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Context;
 use axum::extract::{Path, State};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -81,7 +82,7 @@ pub(super) struct TestState;
 /// handle for the background server task.
 pub(super) async fn spawn_test_server<H, T>(
     handler: H,
-) -> Result<(String, tokio::task::JoinHandle<()>), Box<dyn std::error::Error>>
+) -> Result<(String, tokio::task::JoinHandle<()>), anyhow::Error>
 where
     H: axum::handler::Handler<T, TestState> + Clone + Send + 'static,
     T: 'static,
@@ -100,26 +101,26 @@ where
 }
 
 async fn spawn_hosted_guidance_catalog_server()
--> Result<(String, tokio::task::JoinHandle<()>), Box<dyn std::error::Error>> {
+-> Result<(String, tokio::task::JoinHandle<()>), anyhow::Error> {
     spawn_test_server(remote_tool_catalog).await
 }
 
 async fn build_runtime_with_remote_tools(
     base_url: &str,
-) -> Result<(WorkerRuntime, Arc<WorkerHttpClient>), Box<dyn std::error::Error>> {
+) -> Result<(WorkerRuntime, Arc<WorkerHttpClient>), anyhow::Error> {
     let client = Arc::new(WorkerHttpClient::new(
         base_url.to_string(),
         Uuid::nil(),
         "test".to_string(),
-    ));
-    let mut runtime = WorkerRuntime::from_client(
+    )?);
+    let mut runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: base_url.to_string(),
             ..WorkerConfig::default()
         },
         Arc::clone(&client),
-    );
+    )?;
     runtime.toolset_instructions = runtime.register_remote_tools().await?;
     Ok((runtime, client))
 }
@@ -129,39 +130,17 @@ async fn build_runtime_with_remote_tools(
 async fn hosted_worker_remote_tool_catalog_registers_remote_tools()
 -> Result<(), Box<dyn std::error::Error>> {
     let (base_url, server) = spawn_hosted_guidance_catalog_server().await?;
+    let (runtime, _client) = build_runtime_with_remote_tools(&base_url).await?;
 
-    let client = Arc::new(WorkerHttpClient::new(
-        base_url.clone(),
-        Uuid::nil(),
-        "test".to_string(),
-    ));
-    let runtime = WorkerRuntime::from_client(
-        WorkerConfig {
-            job_id: Uuid::nil(),
-            orchestrator_url: base_url,
-            ..WorkerConfig::default()
-        },
-        client,
-    );
-
-    runtime.register_remote_tools().await?;
-
-    let mut names: Vec<String> = runtime
-        .tools
-        .tool_definitions()
-        .await
-        .into_iter()
-        .map(|def| def.name)
-        .collect();
+    let definitions: Vec<crate::llm::ToolDefinition> = runtime.tools.tool_definitions().await;
+    let mut names: Vec<String> = definitions.into_iter().map(|def| def.name).collect();
     names.sort();
 
     assert_eq!(names, expected_merged_tool_names());
 
-    let remote_tool = runtime
-        .tools
-        .get("hosted_worker_remote_tool_fixture")
-        .await
-        .expect("hosted remote tool should be registered");
+    let remote_tool: Option<std::sync::Arc<dyn crate::tools::Tool>> =
+        runtime.tools.get("hosted_worker_remote_tool_fixture").await;
+    let remote_tool = remote_tool.expect("hosted remote tool should be registered");
     let expected = expected_remote_tool_definition();
     assert_eq!(remote_tool.name(), expected.name);
     assert_eq!(remote_tool.description(), expected.description);
@@ -248,14 +227,13 @@ async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance()
         "expected one guidance message before refresh"
     );
 
-    let delegate = ContainerDelegate {
+    let delegate = ContainerDelegate::new(
         client,
-        safety: Arc::clone(&runtime.safety),
-        tools: Arc::clone(&runtime.tools),
-        extra_env: Arc::clone(&runtime.extra_env),
-        last_output: Mutex::new(String::new()),
-        iteration_tracker: Arc::new(Mutex::new(0)),
-    };
+        Arc::clone(&runtime.safety),
+        Arc::clone(&runtime.tools),
+        Arc::clone(&runtime.extra_env),
+        Arc::new(Mutex::new(0)),
+    );
 
     let outcome = delegate.before_llm_call(&mut reason_ctx, 1).await;
     assert!(
@@ -290,21 +268,23 @@ async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance()
 #[tokio::test]
 async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools()
 -> Result<(), Box<dyn std::error::Error>> {
-    let (base_url, server) = spawn_test_server(remote_tool_catalog_error).await?;
+    let (base_url, server) = spawn_test_server(remote_tool_catalog_error)
+        .await
+        .context("spawning test server in hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools")?;
 
-    let client = Arc::new(WorkerHttpClient::new(
-        base_url.clone(),
-        Uuid::nil(),
-        "test".to_string(),
-    ));
-    let runtime = WorkerRuntime::from_client(
+    let client = Arc::new(
+        WorkerHttpClient::new(base_url.clone(), Uuid::nil(), "test".to_string())
+            .context("building test WorkerHttpClient")?,
+    );
+    let runtime = WorkerRuntime::new(
         WorkerConfig {
             job_id: Uuid::nil(),
             orchestrator_url: base_url,
             ..WorkerConfig::default()
         },
         client,
-    );
+    )
+    .context("building WorkerRuntime")?;
 
     runtime.register_remote_tools_with_degraded_startup().await;
 

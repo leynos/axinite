@@ -67,25 +67,26 @@ impl NativeLlmProvider for ProxyLlmProvider {
 mod tests {
     use super::*;
 
+    fn test_client() -> Arc<WorkerHttpClient> {
+        Arc::new(
+            WorkerHttpClient::new(
+                "http://localhost:50051".to_string(),
+                uuid::Uuid::nil(),
+                "test".to_string(),
+            )
+            .expect("test client should build"),
+        )
+    }
+
     #[test]
     fn test_proxy_model_name() {
-        let client = Arc::new(WorkerHttpClient::new(
-            "http://localhost:50051".to_string(),
-            uuid::Uuid::nil(),
-            "test".to_string(),
-        ));
-        let provider = ProxyLlmProvider::new(client, "test-model".to_string());
+        let provider = ProxyLlmProvider::new(test_client(), "test-model".to_string());
         assert_eq!(provider.model_name(), "test-model");
     }
 
     #[test]
     fn test_proxy_cost_is_zero() {
-        let client = Arc::new(WorkerHttpClient::new(
-            "http://localhost:50051".to_string(),
-            uuid::Uuid::nil(),
-            "test".to_string(),
-        ));
-        let provider = ProxyLlmProvider::new(client, "test-model".to_string());
+        let provider = ProxyLlmProvider::new(test_client(), "test-model".to_string());
         let (input, output) = provider.cost_per_token();
         assert_eq!(input, Decimal::ZERO);
         assert_eq!(output, Decimal::ZERO);

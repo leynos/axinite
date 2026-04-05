@@ -21,20 +21,24 @@ use crate::llm::{ChatMessage, LlmProvider, Reasoning, ReasoningContext};
 use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
 use crate::tools::builtin::worker_remote_tool_proxy::register_worker_remote_tool_proxies;
-use crate::worker::api::{
-    CompletionReport, JobEventPayload, JobEventType, StatusUpdate, WorkerHttpClient, WorkerState,
-};
+use crate::worker::api::{WorkerHttpClient, WorkerState};
 use crate::worker::proxy_llm::ProxyLlmProvider;
 
 mod delegate;
+mod reporting;
 
 use delegate::ContainerDelegate;
+use reporting::WorkerExecutionResult;
 
 /// Configuration for the worker runtime.
 pub struct WorkerConfig {
+    /// Job identifier used to scope all worker-orchestrator requests.
     pub job_id: Uuid,
+    /// Base orchestrator URL that owns the per-job worker endpoints.
     pub orchestrator_url: String,
+    /// Maximum number of LLM/tool iterations before the worker aborts.
     pub max_iterations: u32,
+    /// Hard wall-clock timeout for the full worker execution.
     pub timeout: Duration,
 }
 
@@ -68,12 +72,6 @@ pub struct WorkerRuntime {
     extra_env: Arc<HashMap<String, String>>,
 }
 
-enum WorkerExecutionResult {
-    Outcome(LoopOutcome),
-    Failed(crate::error::Error),
-    TimedOut,
-}
-
 /// Heading used to tag hosted remote-tool guidance messages in reasoning context.
 pub(crate) const HOSTED_GUIDANCE_HEADING: &str = "Hosted remote-tool guidance";
 
@@ -88,26 +86,41 @@ async fn available_tool_definitions(tools: &ToolRegistry) -> Vec<crate::llm::Too
 }
 
 impl WorkerRuntime {
-    /// Create a new worker runtime.
+    /// Create a new worker runtime with an explicit client.
     ///
-    /// Reads `IRONCLAW_WORKER_TOKEN` from the environment for auth.
-    pub fn new(config: WorkerConfig) -> Result<Self, WorkerError> {
-        let client = Arc::new(WorkerHttpClient::from_env(
-            config.orchestrator_url.clone(),
-            config.job_id,
-        )?);
-
-        Ok(Self::from_client(config, client))
-    }
-
-    /// Construct a worker runtime from a pre-validated [`WorkerHttpClient`].
+    /// This is the primary constructor for `WorkerRuntime`. It takes a
+    /// pre-constructed client, making dependency injection straightforward
+    /// and allowing tests to provide mock clients without environment setup.
     ///
-    /// Unlike [`Self::new`], this path performs no fallible initialization:
-    /// `new` returns `Result<Self, WorkerError>` because it builds the client
-    /// with [`WorkerHttpClient::from_env`] using the supplied [`WorkerConfig`],
-    /// while `from_client` takes an `Arc<WorkerHttpClient>` that has already
-    /// completed that validation and therefore returns `Self` directly.
-    fn from_client(config: WorkerConfig, client: Arc<WorkerHttpClient>) -> Self {
+    /// # Errors
+    ///
+    /// Returns `WorkerError::ConfigMismatch` if the provided `client` job_id or
+    /// orchestrator_url doesn't match the values in `config`. This validates
+    /// configuration consistency at construction time to prevent subtle runtime
+    /// errors.
+    pub fn new(config: WorkerConfig, client: Arc<WorkerHttpClient>) -> Result<Self, WorkerError> {
+        // Validate that config and client are consistent
+        if config.job_id != client.job_id() {
+            return Err(WorkerError::ConfigMismatch {
+                field: crate::error::ConfigMismatchField::JobId,
+                reason: format!(
+                    "WorkerConfig job_id ({}) must match WorkerHttpClient job_id ({})",
+                    config.job_id,
+                    client.job_id()
+                ),
+            });
+        }
+        if config.orchestrator_url.trim_end_matches('/') != client.orchestrator_url() {
+            return Err(WorkerError::ConfigMismatch {
+                field: crate::error::ConfigMismatchField::OrchestratorUrl,
+                reason: format!(
+                    "WorkerConfig orchestrator_url ({}) must match WorkerHttpClient orchestrator_url ({})",
+                    config.orchestrator_url.trim_end_matches('/'),
+                    client.orchestrator_url()
+                ),
+            });
+        }
+
         let llm: Arc<dyn LlmProvider> = Arc::new(ProxyLlmProvider::new(
             Arc::clone(&client),
             "proxied".to_string(),
@@ -120,7 +133,7 @@ impl WorkerRuntime {
 
         let tools = Self::build_tools();
 
-        Self {
+        Ok(Self {
             config,
             client,
             llm,
@@ -128,7 +141,21 @@ impl WorkerRuntime {
             tools,
             toolset_instructions: Vec::new(),
             extra_env: Arc::new(HashMap::new()),
-        }
+        })
+    }
+
+    /// Create a new worker runtime from environment variables.
+    ///
+    /// Reads `IRONCLAW_WORKER_TOKEN` from the environment for auth.
+    /// This is a convenience constructor for production use; tests should
+    /// prefer [`Self::new`] with an explicit client.
+    pub fn from_env(config: WorkerConfig) -> Result<Self, WorkerError> {
+        let client = Arc::new(WorkerHttpClient::from_env(
+            config.orchestrator_url.clone(),
+            config.job_id,
+        )?);
+
+        Self::new(config, client)
     }
 
     fn build_tools() -> Arc<ToolRegistry> {
@@ -177,15 +204,13 @@ impl WorkerRuntime {
         }
 
         let iteration_tracker = Arc::new(Mutex::new(0u32));
-        let execution = match tokio::time::timeout(
-            self.config.timeout,
-            self.run_job_loop(&job, Arc::clone(&iteration_tracker)),
-        )
-        .await
+        let execution = match self
+            .run_job_loop(&job, Arc::clone(&iteration_tracker))
+            .await
         {
-            Ok(Ok(outcome)) => WorkerExecutionResult::Outcome(outcome),
-            Ok(Err(error)) => WorkerExecutionResult::Failed(error),
-            Err(_) => WorkerExecutionResult::TimedOut,
+            Ok(Some(outcome)) => WorkerExecutionResult::Outcome(outcome),
+            Ok(None) => WorkerExecutionResult::TimedOut,
+            Err(error) => WorkerExecutionResult::Failed(error),
         };
 
         let iterations = *iteration_tracker.lock().await;
@@ -212,69 +237,21 @@ impl WorkerRuntime {
         Ok(())
     }
 
-    async fn fail_pre_loop<T>(&self, stage: &str, error: WorkerError) -> Result<T, WorkerError> {
-        tracing::error!(
-            job_id = %self.config.job_id,
-            stage,
-            error = %error,
-            "Worker failed before the execution loop started"
-        );
-
-        if let Err(report_error) = self
-            .report_worker_status(
-                WorkerState::Failed,
-                Some("pre-loop failure".to_string()),
-                100,
-            )
-            .await
-        {
-            tracing::warn!(
-                job_id = %self.config.job_id,
-                stage,
-                error = %report_error,
-                "Failed to emit terminal pre-loop worker status"
-            );
-        }
-
-        if let Err(report_error) = self.report_failure(0, "Worker failed during startup").await {
-            tracing::warn!(
-                job_id = %self.config.job_id,
-                stage,
-                error = %report_error,
-                "Failed to emit terminal pre-loop completion"
-            );
-        }
-
-        Err(error)
-    }
-
-    async fn report_worker_status(
-        &self,
-        state: WorkerState,
-        message: Option<String>,
-        iteration: u32,
-    ) -> Result<(), WorkerError> {
-        self.client
-            .report_status(&StatusUpdate::new(state, message, iteration))
-            .await
-    }
-
     async fn run_job_loop(
         &self,
         job: &crate::worker::api::JobDescription,
         iteration_tracker: Arc<Mutex<u32>>,
-    ) -> Result<LoopOutcome, crate::error::Error> {
+    ) -> Result<Option<LoopOutcome>, crate::error::Error> {
         let reasoning = Reasoning::new(Arc::clone(&self.llm));
         let mut reason_ctx = self.build_reasoning_context(job).await;
 
-        let delegate = ContainerDelegate {
-            client: Arc::clone(&self.client),
-            safety: Arc::clone(&self.safety),
-            tools: Arc::clone(&self.tools),
-            extra_env: Arc::clone(&self.extra_env),
-            last_output: Mutex::new(String::new()),
+        let delegate = ContainerDelegate::new(
+            Arc::clone(&self.client),
+            Arc::clone(&self.safety),
+            Arc::clone(&self.tools),
+            Arc::clone(&self.extra_env),
             iteration_tracker,
-        };
+        );
 
         let config = AgenticLoopConfig {
             max_iterations: self.config.max_iterations as usize,
@@ -282,13 +259,22 @@ impl WorkerRuntime {
             max_tool_intent_nudges: 2,
         };
 
-        crate::agent::agentic_loop::run_agentic_loop(
-            &delegate,
-            &reasoning,
-            &mut reason_ctx,
-            &config,
+        let outcome = tokio::time::timeout(
+            self.config.timeout,
+            crate::agent::agentic_loop::run_agentic_loop(
+                &delegate,
+                &reasoning,
+                &mut reason_ctx,
+                &config,
+            ),
         )
-        .await
+        .await;
+
+        delegate.shutdown().await;
+        match outcome {
+            Ok(result) => result.map(Some),
+            Err(_) => Ok(None),
+        }
     }
 
     async fn build_reasoning_context(
@@ -316,91 +302,6 @@ Work independently to complete this job. Report when done."#,
         )));
         reason_ctx.available_tools = available_tool_definitions(&self.tools).await;
         reason_ctx
-    }
-
-    async fn report_completion(
-        &self,
-        execution: WorkerExecutionResult,
-        iterations: u32,
-    ) -> Result<(), WorkerError> {
-        match execution {
-            WorkerExecutionResult::Outcome(LoopOutcome::Response(output)) => {
-                tracing::info!("Worker completed job {} successfully", self.config.job_id);
-                self.post_event(
-                    JobEventType::Result,
-                    serde_json::json!({
-                        "success": true,
-                        "message": truncate_for_preview(&output, 2000),
-                    }),
-                )
-                .await;
-                self.client
-                    .report_complete(&CompletionReport {
-                        success: true,
-                        message: Some(output),
-                        iterations,
-                    })
-                    .await
-            }
-            WorkerExecutionResult::Outcome(LoopOutcome::MaxIterations) => {
-                let msg = format!("max iterations ({}) exceeded", self.config.max_iterations);
-                tracing::warn!("Worker failed for job {}: {}", self.config.job_id, msg);
-                self.report_failure(iterations, &format!("Execution failed: {}", msg))
-                    .await
-            }
-            WorkerExecutionResult::Outcome(LoopOutcome::Stopped | LoopOutcome::NeedApproval(_)) => {
-                tracing::info!("Worker for job {} stopped", self.config.job_id);
-                self.post_event(
-                    JobEventType::Result,
-                    serde_json::json!({
-                        "success": false,
-                        "message": "Execution stopped",
-                        "iterations": iterations,
-                    }),
-                )
-                .await;
-                self.client
-                    .report_complete(&CompletionReport {
-                        success: false,
-                        message: Some("Execution stopped".to_string()),
-                        iterations,
-                    })
-                    .await
-            }
-            WorkerExecutionResult::Failed(error) => {
-                tracing::error!("Worker failed for job {}: {}", self.config.job_id, error);
-                self.report_failure(iterations, "Execution failed").await
-            }
-            WorkerExecutionResult::TimedOut => {
-                tracing::warn!("Worker timed out for job {}", self.config.job_id);
-                self.report_failure(iterations, "Execution timed out").await
-            }
-        }
-    }
-
-    async fn report_failure(&self, iterations: u32, message: &str) -> Result<(), WorkerError> {
-        self.post_event(
-            JobEventType::Result,
-            serde_json::json!({
-                "success": false,
-                "message": message,
-            }),
-        )
-        .await;
-        self.client
-            .report_complete(&CompletionReport {
-                success: false,
-                message: Some(message.to_string()),
-                iterations,
-            })
-            .await
-    }
-
-    /// Post a job event to the orchestrator (fire-and-forget).
-    async fn post_event(&self, event_type: JobEventType, data: serde_json::Value) {
-        self.client
-            .post_event(&JobEventPayload { event_type, data })
-            .await;
     }
 
     async fn register_remote_tools(&self) -> Result<Vec<String>, WorkerError> {

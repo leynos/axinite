@@ -13,7 +13,10 @@ use tokio::sync::Mutex;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
-use crate::worker::api::{CompletionReport, CredentialResponse, JobDescription, StatusUpdate};
+use crate::worker::api::{
+    COMPLETE_ROUTE, CREDENTIALS_ROUTE, CompletionReport, CredentialResponse, EVENT_ROUTE,
+    JOB_ROUTE, JobDescription, PROMPT_ROUTE, STATUS_ROUTE, StatusUpdate,
+};
 use crate::worker::container::{WorkerConfig, WorkerHttpClient, WorkerRuntime};
 
 /// Shared state for recording HTTP interactions from the worker runtime during tests.
@@ -110,12 +113,12 @@ pub async fn spawn_runtime_test_server(
     let addr = listener.local_addr()?;
 
     let app = Router::new()
-        .route("/worker/{job_id}/job", get(job_handler))
-        .route("/worker/{job_id}/credentials", get(credentials_handler))
-        .route("/worker/{job_id}/prompt", get(prompt_handler))
-        .route("/worker/{job_id}/status", post(status_handler))
-        .route("/worker/{job_id}/complete", post(complete_handler))
-        .route("/worker/{job_id}/event", post(event_handler))
+        .route(JOB_ROUTE, get(job_handler))
+        .route(CREDENTIALS_ROUTE, get(credentials_handler))
+        .route(PROMPT_ROUTE, get(prompt_handler))
+        .route(STATUS_ROUTE, post(status_handler))
+        .route(COMPLETE_ROUTE, post(complete_handler))
+        .route(EVENT_ROUTE, post(event_handler))
         .with_state(state);
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -133,20 +136,23 @@ pub async fn spawn_runtime_test_server(
 /// orchestrator URL and job ID.
 ///
 /// Uses a fixed test token (`"test-token"`) and default configuration suitable for unit tests.
-pub fn build_test_runtime(orchestrator_url: String, job_id: Uuid) -> WorkerRuntime {
+pub fn build_test_runtime(
+    orchestrator_url: String,
+    job_id: Uuid,
+) -> Result<WorkerRuntime, anyhow::Error> {
     let client = Arc::new(WorkerHttpClient::new(
         orchestrator_url.clone(),
         job_id,
         "test-token".to_string(),
-    ));
-    WorkerRuntime::from_client(
+    )?);
+    Ok(WorkerRuntime::new(
         WorkerConfig {
             job_id,
             orchestrator_url,
             ..WorkerConfig::default()
         },
         client,
-    )
+    )?)
 }
 
 /// Test harness that owns the `WorkerRuntime` under test and coordinates graceful shutdown
@@ -209,10 +215,10 @@ impl Drop for RuntimeTestHarness {
 pub async fn setup_runtime_test(
     state: Arc<RuntimeTestState>,
     job_id: Uuid,
-) -> std::io::Result<RuntimeTestHarness> {
+) -> anyhow::Result<RuntimeTestHarness> {
     let (orchestrator_url, shutdown_tx, handle) =
         spawn_runtime_test_server(Arc::clone(&state)).await?;
-    let runtime = build_test_runtime(orchestrator_url, job_id);
+    let runtime = build_test_runtime(orchestrator_url, job_id)?;
     Ok(RuntimeTestHarness {
         runtime: Some(runtime),
         shutdown_tx: Some(shutdown_tx),

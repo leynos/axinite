@@ -144,7 +144,9 @@ impl ClaudeBridgeRuntime {
                             event_type: JobEventType::Status,
                             data: serde_json::json!({ "message": line }),
                         };
-                        client_for_stderr.post_event(&payload).await;
+                        if let Err(e) = client_for_stderr.post_event(&payload).await {
+                            tracing::debug!(job_id = %job_id, error = %e, "Failed to post stderr event");
+                        }
                     }
                     Ok(None) => break,
                     Err(error) => {

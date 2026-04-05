@@ -12,19 +12,27 @@ use crate::llm::{
 };
 use crate::tools::ToolOutput;
 
+mod client_methods;
 mod types;
 
-use error_mapping::map_remote_tool_status;
-
 pub use types::{
-    CompletionReport, CredentialResponse, FinishReason as ProxyFinishReason, JobDescription,
-    JobEventPayload, JobEventType, PromptResponse, ProxyCompletionRequest, ProxyCompletionResponse,
+    COMPLETE_PATH, COMPLETE_ROUTE, CREDENTIALS_PATH, CREDENTIALS_ROUTE, CompletionReport,
+    CredentialResponse, EVENT_PATH, EVENT_ROUTE, FinishReason as ProxyFinishReason, JOB_PATH,
+    JOB_ROUTE, JobDescription, JobEventPayload, JobEventType, LLM_COMPLETE_PATH,
+    LLM_COMPLETE_ROUTE, LLM_COMPLETE_WITH_TOOLS_PATH, LLM_COMPLETE_WITH_TOOLS_ROUTE, PROMPT_PATH,
+    PROMPT_ROUTE, PromptResponse, ProxyCompletionRequest, ProxyCompletionResponse,
     ProxyToolCompletionRequest, ProxyToolCompletionResponse, REMOTE_TOOL_CATALOG_PATH,
     REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_PATH, REMOTE_TOOL_EXECUTE_ROUTE,
     RemoteToolCatalogResponse, RemoteToolExecutionRequest, RemoteToolExecutionResponse,
-    StatusUpdate, WorkerState,
+    STATUS_PATH, STATUS_ROUTE, StatusUpdate, TerminalResult, WORKER_HEALTH_PATH,
+    WORKER_HEALTH_ROUTE, WorkerState, job_scoped_path, worker_job_url,
 };
 /// HTTP client that a container worker uses to talk to the orchestrator.
+///
+/// This client is the worker-side transport boundary for authoritative job
+/// state. It owns the per-job base URL, attaches the worker bearer token on
+/// every request, and keeps the worker implementation aligned with the
+/// orchestrator's shared route constants and JSON payloads.
 pub struct WorkerHttpClient {
     client: reqwest::Client,
     orchestrator_url: String,
@@ -40,41 +48,54 @@ impl WorkerHttpClient {
     pub fn from_env(orchestrator_url: String, job_id: Uuid) -> Result<Self, WorkerError> {
         let token =
             std::env::var("IRONCLAW_WORKER_TOKEN").map_err(|_| WorkerError::MissingToken)?;
+        Self::new(orchestrator_url, job_id, token)
+    }
 
+    /// Create with an explicit token (for testing).
+    ///
+    /// This constructor exists so tests and injected runtimes can avoid
+    /// ambient environment reads while still exercising the same request path
+    /// and route construction as production workers.
+    pub fn new(orchestrator_url: String, job_id: Uuid, token: String) -> Result<Self, WorkerError> {
+        let client = reqwest::Client::builder()
+            .timeout(REQUEST_TIMEOUT)
+            .build()
+            .map_err(|e| WorkerError::ConnectionFailed {
+                url: orchestrator_url.clone(),
+                reason: format!("failed to build HTTP client: {}", e),
+            })?;
         Ok(Self {
-            client: reqwest::Client::builder()
-                .timeout(REQUEST_TIMEOUT)
-                .build()
-                .map_err(|e| WorkerError::ConnectionFailed {
-                    url: orchestrator_url.clone(),
-                    reason: format!("failed to build HTTP client: {}", e),
-                })?,
+            client,
             orchestrator_url: orchestrator_url.trim_end_matches('/').to_string(),
             job_id,
             token,
         })
     }
 
-    /// Create with an explicit token (for testing).
-    pub fn new(orchestrator_url: String, job_id: Uuid, token: String) -> Self {
-        Self {
-            client: reqwest::Client::builder()
-                .timeout(REQUEST_TIMEOUT)
-                .build()
-                .unwrap_or_default(),
-            orchestrator_url: orchestrator_url.trim_end_matches('/').to_string(),
-            job_id,
-            token,
-        }
-    }
-
     /// Get the base orchestrator URL.
+    ///
+    /// Returns the normalized base URL after trailing-slash trimming, which is
+    /// the canonical prefix used for all job-scoped worker endpoints.
     pub fn orchestrator_url(&self) -> &str {
         &self.orchestrator_url
     }
 
+    /// Get the job ID.
+    ///
+    /// The worker and orchestrator treat this as part of the transport
+    /// identity. Every request path is derived from this value.
+    pub fn job_id(&self) -> Uuid {
+        self.job_id
+    }
+
     fn url(&self, path: &str) -> String {
-        format!("{}/worker/{}/{}", self.orchestrator_url, self.job_id, path)
+        let base = self.orchestrator_url.trim_end_matches('/');
+        format!(
+            "{}/{}",
+            base,
+            crate::worker::api::job_scoped_path(&self.job_id.to_string(), path)
+                .trim_start_matches('/')
+        )
     }
 
     async fn send_post_json<B: Serialize>(
@@ -100,14 +121,15 @@ impl WorkerHttpClient {
         path: &str,
         context: &str,
     ) -> Result<T, WorkerError> {
+        let url = self.url(path);
         let resp = self
             .client
-            .get(self.url(path))
+            .get(&url)
             .bearer_auth(&self.token)
             .send()
             .await
             .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.orchestrator_url.clone(),
+                url,
                 reason: e.to_string(),
             })?;
 
@@ -147,7 +169,7 @@ impl WorkerHttpClient {
 
     /// Fetch the job description from the orchestrator.
     pub async fn get_job(&self) -> Result<JobDescription, WorkerError> {
-        self.get_json("job", "GET /job").await
+        self.get_json(JOB_PATH, "GET /job").await
     }
 
     /// Proxy an LLM completion request through the orchestrator.
@@ -164,7 +186,7 @@ impl WorkerHttpClient {
         };
 
         let proxy_resp: ProxyCompletionResponse = self
-            .post_json("llm/complete", &proxy_req, "LLM complete")
+            .post_json(LLM_COMPLETE_PATH, &proxy_req, "LLM complete")
             .await?;
 
         Ok(CompletionResponse {
@@ -192,7 +214,11 @@ impl WorkerHttpClient {
         };
 
         let proxy_resp: ProxyToolCompletionResponse = self
-            .post_json("llm/complete_with_tools", &proxy_req, "LLM tool complete")
+            .post_json(
+                LLM_COMPLETE_WITH_TOOLS_PATH,
+                &proxy_req,
+                "LLM tool complete",
+            )
             .await?;
 
         Ok(ToolCompletionResponse {
@@ -242,159 +268,36 @@ impl WorkerHttpClient {
 
         Ok(proxy_resp.output)
     }
+}
 
-    /// Report status to the orchestrator.
-    pub async fn report_status(&self, update: &StatusUpdate) -> Result<(), WorkerError> {
-        let resp = self
-            .client
-            .post(self.url("status"))
-            .bearer_auth(&self.token)
-            .json(update)
-            .send()
-            .await
-            .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.orchestrator_url.clone(),
-                reason: e.to_string(),
-            })?;
+/// Map HTTP response status to appropriate WorkerError for remote tool execution.
+async fn map_remote_tool_status(resp: reqwest::Response) -> WorkerError {
+    let status = resp.status();
+    let retry_after = resp
+        .headers()
+        .get("retry-after")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(std::time::Duration::from_secs);
+    let body = resp.text().await.unwrap_or_default();
+    let reason = format!(
+        "Remote tool execution: orchestrator returned {}: {}",
+        status, body
+    );
 
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(WorkerError::OrchestratorRejected {
-                job_id: self.job_id,
-                reason: format!("status endpoint returned {}: {}", status, body),
-            });
+    match status {
+        reqwest::StatusCode::BAD_REQUEST => WorkerError::BadRequest { reason },
+        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+            WorkerError::Unauthorized { reason }
         }
-
-        Ok(())
-    }
-
-    /// Report a non-terminal status update without failing the worker on rejection.
-    pub async fn report_status_lossy(&self, update: &StatusUpdate) {
-        if let Err(error) = self.report_status(update).await {
-            tracing::warn!(
-                job_id = %self.job_id,
-                state = %update.state,
-                iteration = update.iteration,
-                error = %error,
-                "Worker status report failed"
-            );
-        }
-    }
-
-    /// Post a job event to the orchestrator (fire-and-forget style, logs on failure).
-    pub async fn post_event(&self, payload: &JobEventPayload) {
-        let resp = self
-            .client
-            .post(self.url("event"))
-            .bearer_auth(&self.token)
-            .json(payload)
-            .send()
-            .await;
-
-        match resp {
-            Ok(r) if !r.status().is_success() => {
-                tracing::debug!(
-                    job_id = %self.job_id,
-                    event_type = %payload.event_type,
-                    status = %r.status(),
-                    "Job event POST rejected"
-                );
-            }
-            Err(e) => {
-                tracing::debug!(
-                    job_id = %self.job_id,
-                    event_type = %payload.event_type,
-                    "Job event POST failed: {}", e
-                );
-            }
-            _ => {}
-        }
-    }
-
-    /// Poll the orchestrator for a follow-up prompt.
-    ///
-    /// Returns `None` if no prompt is available (204 No Content).
-    pub async fn poll_prompt(&self) -> Result<Option<PromptResponse>, WorkerError> {
-        let resp = self
-            .client
-            .get(self.url("prompt"))
-            .bearer_auth(&self.token)
-            .send()
-            .await
-            .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.orchestrator_url.clone(),
-                reason: e.to_string(),
-            })?;
-
-        if resp.status() == reqwest::StatusCode::NO_CONTENT {
-            return Ok(None);
-        }
-
-        if !resp.status().is_success() {
-            return Err(WorkerError::OrchestratorRejected {
-                job_id: self.job_id,
-                reason: format!("prompt endpoint returned {}", resp.status()),
-            });
-        }
-
-        let prompt: PromptResponse =
-            resp.json().await.map_err(|e| WorkerError::LlmProxyFailed {
-                reason: format!("failed to parse prompt response: {}", e),
-            })?;
-
-        Ok(Some(prompt))
-    }
-
-    /// Fetch credentials granted to this job from the orchestrator.
-    ///
-    /// Returns an empty vec if no credentials are granted (204 No Content)
-    /// or if the endpoint returns 404. The caller should set each credential
-    /// as an environment variable before starting the execution loop.
-    pub async fn fetch_credentials(&self) -> Result<Vec<CredentialResponse>, WorkerError> {
-        let resp = self
-            .client
-            .get(self.url("credentials"))
-            .bearer_auth(&self.token)
-            .send()
-            .await
-            .map_err(|e| WorkerError::ConnectionFailed {
-                url: self.orchestrator_url.clone(),
-                reason: e.to_string(),
-            })?;
-
-        // 204 or 404 means no credentials granted, not an error
-        if resp.status() == reqwest::StatusCode::NO_CONTENT
-            || resp.status() == reqwest::StatusCode::NOT_FOUND
-        {
-            return Ok(vec![]);
-        }
-
-        if !resp.status().is_success() {
-            return Err(WorkerError::SecretResolveFailed {
-                secret_name: "(all)".to_string(),
-                reason: format!("credentials endpoint returned {}", resp.status()),
-            });
-        }
-
-        resp.json()
-            .await
-            .map_err(|e| WorkerError::SecretResolveFailed {
-                secret_name: "(all)".to_string(),
-                reason: format!("failed to parse credentials response: {}", e),
-            })
-    }
-
-    /// Signal job completion to the orchestrator.
-    pub async fn report_complete(&self, report: &CompletionReport) -> Result<(), WorkerError> {
-        let _: serde_json::Value = self
-            .post_json("complete", report, "report complete")
-            .await?;
-        Ok(())
+        reqwest::StatusCode::TOO_MANY_REQUESTS => WorkerError::RateLimited {
+            reason,
+            retry_after,
+        },
+        reqwest::StatusCode::BAD_GATEWAY => WorkerError::BadGateway { reason },
+        _ => WorkerError::RemoteToolFailed { reason },
     }
 }
 
 #[cfg(test)]
 mod tests;
-
-mod error_mapping;

@@ -65,11 +65,10 @@ async fn proxy_test_server() -> anyhow::Result<ProxyTestServer> {
         let _ = axum::serve(listener, router).await;
     });
     let job_id = Uuid::new_v4();
-    let client = Arc::new(WorkerHttpClient::new(
-        format!("http://{}", addr),
-        job_id,
-        "test-token".to_string(),
-    ));
+    let client = Arc::new(
+        WorkerHttpClient::new(format!("http://{}", addr), job_id, "test-token".to_string())
+            .context("test client should build")?,
+    );
     Ok(ProxyTestServer {
         client,
         job_id,
@@ -183,11 +182,14 @@ async fn worker_remote_tool_proxy_preserves_full_tool_definition_fields() {
         "Complex tool for proxy definition fidelity testing",
     );
 
-    let client = Arc::new(WorkerHttpClient::new(
-        "http://127.0.0.1:0".to_string(),
-        Uuid::new_v4(),
-        "test-token".to_string(),
-    ));
+    let client = Arc::new(
+        WorkerHttpClient::new(
+            "http://127.0.0.1:0".to_string(),
+            Uuid::new_v4(),
+            "test-token".to_string(),
+        )
+        .expect("test client should build"),
+    );
     let proxy = WorkerRemoteToolProxy::new(complex_definition.clone(), client);
 
     let reconstructed = ToolDefinition {
@@ -243,11 +245,10 @@ async fn worker_remote_tool_proxy_routes_execution_through_orchestrator_endpoint
     });
 
     let job_id = Uuid::new_v4();
-    let client = Arc::new(WorkerHttpClient::new(
-        format!("http://{}", addr),
-        job_id,
-        "test-token".to_string(),
-    ));
+    let client = Arc::new(
+        WorkerHttpClient::new(format!("http://{}", addr), job_id, "test-token".to_string())
+            .context("test client should build")?,
+    );
     let proxy = WorkerRemoteToolProxy::new(
         ToolDefinition {
             name: "route_test_tool".to_string(),
@@ -272,7 +273,7 @@ async fn worker_remote_tool_proxy_routes_execution_through_orchestrator_endpoint
     let (route_path, received_job_id, tool_name) = &requests[0];
     assert_eq!(
         route_path,
-        &format!("/worker/{}/tools/execute", job_id),
+        &REMOTE_TOOL_EXECUTE_ROUTE.replace("{job_id}", &job_id.to_string()),
         "proxy must route execution through the correct orchestrator endpoint"
     );
     assert_eq!(received_job_id, &job_id);

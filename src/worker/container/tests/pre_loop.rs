@@ -7,14 +7,83 @@ use rstest::rstest;
 use uuid::Uuid;
 
 use super::test_support::{RuntimeTestState, setup_runtime_test};
-use crate::error::{Error, ToolError};
-use crate::worker::api::WorkerState;
-use crate::worker::container::{WorkerError, WorkerExecutionResult};
+use crate::error::{ConfigMismatchField, Error, ToolError};
+use crate::testing::test_utils::EnvVarsGuard;
+use crate::worker::api::{WorkerHttpClient, WorkerState};
+use crate::worker::container::{WorkerConfig, WorkerError, WorkerExecutionResult, WorkerRuntime};
+
+/// Regression test: WorkerRuntime::new should return ConfigMismatch error
+/// when config fields don't match the client.
+#[rstest]
+#[case(ConfigMismatchField::JobId, Uuid::new_v4(), "http://localhost:50051")]
+#[case(
+    ConfigMismatchField::OrchestratorUrl,
+    Uuid::nil(),
+    "http://different-host:50052"
+)]
+fn worker_runtime_new_returns_error_on_config_mismatch(
+    #[case] expected_field: ConfigMismatchField,
+    #[case] job_id: Uuid,
+    #[case] orchestrator_url: &str,
+) {
+    // Client is created with Uuid::nil() and "http://localhost:50051"
+    let client = Arc::new(
+        WorkerHttpClient::new(
+            "http://localhost:50051".to_string(),
+            Uuid::nil(),
+            "test".to_string(),
+        )
+        .expect("test client should build"),
+    );
+
+    let result = WorkerRuntime::new(
+        WorkerConfig {
+            job_id,
+            orchestrator_url: orchestrator_url.to_string(),
+            ..WorkerConfig::default()
+        },
+        client,
+    );
+
+    match result {
+        Err(WorkerError::ConfigMismatch { field, .. }) => {
+            assert_eq!(
+                field, expected_field,
+                "expected ConfigMismatch for {:?}",
+                expected_field
+            )
+        }
+        Ok(_) => panic!(
+            "expected ConfigMismatch error for {:?}, got Ok",
+            expected_field
+        ),
+        Err(other) => panic!(
+            "expected ConfigMismatch error for {:?}, got {:?}",
+            expected_field, other
+        ),
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 enum PreLoopFailureCase {
     GetJob,
     HydrateCredentials,
+}
+
+async fn poll_result_event(state: &RuntimeTestState) -> serde_json::Value {
+    let mut attempts = 0;
+    loop {
+        let result_events = state.result_events.lock().await;
+        if !result_events.is_empty() {
+            return result_events[0].clone();
+        }
+        drop(result_events);
+        attempts += 1;
+        if attempts > 50 {
+            panic!("expected a terminal result event within 500ms");
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    }
 }
 
 async fn assert_startup_failure_completions(state: &RuntimeTestState) {
@@ -30,10 +99,9 @@ async fn assert_startup_failure_completions(state: &RuntimeTestState) {
     );
     drop(completions);
 
-    let result_events = state.result_events.lock().await;
-    assert_eq!(result_events.len(), 1, "expected a terminal result event");
-    assert_eq!(result_events[0]["message"], "Worker failed during startup");
-    assert_eq!(result_events[0]["success"], false);
+    let result_event = poll_result_event(state).await;
+    assert_eq!(result_event["message"], "Worker failed during startup");
+    assert_eq!(result_event["success"], false);
 }
 
 async fn assert_startup_failure(state: &RuntimeTestState) {
@@ -47,7 +115,7 @@ async fn assert_startup_failure(state: &RuntimeTestState) {
         .first()
         .filter(|status| status.state == WorkerState::Failed)
         .expect("expected a terminal failed status update");
-    assert_eq!(failed_status.iteration, 100);
+    assert_eq!(failed_status.iteration, 0);
     assert_eq!(
         failed_status.message.as_deref(),
         Some("pre-loop failure"),
@@ -139,7 +207,7 @@ async fn worker_runtime_emits_failed_status_for_initial_status_rejections() -> a
     );
     assert_eq!(statuses[0].state, WorkerState::InProgress);
     assert_eq!(statuses[1].state, WorkerState::Failed);
-    assert_eq!(statuses[1].iteration, 100);
+    assert_eq!(statuses[1].iteration, 0);
     assert_eq!(
         statuses[1].message.as_deref(),
         Some("pre-loop failure"),
@@ -184,18 +252,59 @@ async fn worker_runtime_sanitizes_failure_messages(
     assert_eq!(completions[0].iterations, 7);
     drop(completions);
 
-    let result_events = state.result_events.lock().await;
-    assert_eq!(result_events.len(), 1);
-    assert_eq!(result_events[0]["message"], expected_message);
-    assert_eq!(result_events[0]["success"], false);
+    let result_event = poll_result_event(&state).await;
+
+    assert_eq!(result_event["message"], expected_message);
+    assert_eq!(result_event["success"], false);
     assert!(
-        result_events[0].to_string().contains(expected_message),
+        result_event.to_string().contains(expected_message),
         "expected result payload to contain the sanitised message"
     );
     assert!(
-        !result_events[0].to_string().contains("secret-123"),
+        !result_event.to_string().contains("secret-123"),
         "result payload should not leak the detailed error text"
     );
 
     Ok(())
+}
+
+#[test]
+fn worker_runtime_from_env_reads_worker_token() {
+    let mut env = EnvVarsGuard::new(&["IRONCLAW_WORKER_TOKEN"]);
+    env.set("IRONCLAW_WORKER_TOKEN", "token-from-env");
+
+    let runtime = WorkerRuntime::from_env(WorkerConfig {
+        job_id: Uuid::new_v4(),
+        orchestrator_url: "http://localhost:50051/".to_string(),
+        ..WorkerConfig::default()
+    })
+    .expect("from_env should succeed when the worker token is present");
+
+    assert_eq!(
+        runtime.client.orchestrator_url(),
+        "http://localhost:50051",
+        "from_env should preserve the client URL normalization rules"
+    );
+    assert_eq!(
+        runtime.config.max_iterations,
+        WorkerConfig::default().max_iterations
+    );
+    assert_eq!(runtime.config.timeout, WorkerConfig::default().timeout);
+}
+
+#[test]
+fn worker_runtime_from_env_returns_missing_token_without_worker_env() {
+    let mut env = EnvVarsGuard::new(&["IRONCLAW_WORKER_TOKEN"]);
+    env.remove("IRONCLAW_WORKER_TOKEN");
+
+    let result = WorkerRuntime::from_env(WorkerConfig {
+        job_id: Uuid::new_v4(),
+        orchestrator_url: "http://localhost:50051".to_string(),
+        ..WorkerConfig::default()
+    });
+
+    assert!(
+        matches!(result, Err(WorkerError::MissingToken)),
+        "expected MissingToken when IRONCLAW_WORKER_TOKEN is absent"
+    );
 }

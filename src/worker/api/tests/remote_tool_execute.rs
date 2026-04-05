@@ -29,7 +29,8 @@ async fn remote_tool_execute_preserves_non_success_statuses(
         server.base_url.clone(),
         Uuid::new_v4(),
         TEST_BEARER_TOKEN.to_string(),
-    );
+    )
+    .expect("test client should build");
 
     let err = client
         .execute_remote_tool("github_search", &serde_json::json!({"query": 7}))

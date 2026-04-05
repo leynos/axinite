@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, mpsc};
 
 use super::{WorkerHttpClient, available_tool_definitions};
 use crate::agent::agentic_loop::{
@@ -20,6 +20,10 @@ use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
 use crate::tools::execute::{execute_tool_simple, process_tool_result};
 use crate::worker::api::{JobEventPayload, JobEventType, StatusUpdate, WorkerState};
+
+/// Capacity for the event channel; bounds memory growth if the orchestrator
+/// becomes slow or unresponsive.
+const EVENT_CHANNEL_CAPACITY: usize = 256;
 
 /// Container delegate: implements `LoopDelegate` for the Docker container context.
 ///
@@ -34,13 +38,62 @@ pub(super) struct ContainerDelegate {
     pub(super) last_output: Mutex<String>,
     /// Tracks the current iteration so `CompletionReport` can include accurate counts.
     pub(super) iteration_tracker: Arc<Mutex<u32>>,
+    /// Sender for fire-and-forget event posting to the background worker.
+    pub(super) event_sender: mpsc::Sender<JobEventPayload>,
+    /// Handle for the background event-posting task.
+    event_handle: tokio::task::JoinHandle<()>,
 }
 
 impl ContainerDelegate {
-    pub(super) async fn post_event(&self, event_type: JobEventType, data: serde_json::Value) {
-        self.client
-            .post_event(&JobEventPayload { event_type, data })
-            .await;
+    /// Create a new [`ContainerDelegate`] with a background event-sender task.
+    pub(super) fn new(
+        client: Arc<WorkerHttpClient>,
+        safety: Arc<SafetyLayer>,
+        tools: Arc<ToolRegistry>,
+        extra_env: Arc<HashMap<String, String>>,
+        iteration_tracker: Arc<Mutex<u32>>,
+    ) -> Self {
+        let (event_sender, mut event_receiver) =
+            mpsc::channel::<JobEventPayload>(EVENT_CHANNEL_CAPACITY);
+
+        // Spawn background task to handle event POSTs asynchronously
+        let bg_client = Arc::clone(&client);
+        let event_handle = tokio::spawn(async move {
+            while let Some(payload) = event_receiver.recv().await {
+                if let Err(e) = bg_client.post_event(&payload).await {
+                    tracing::warn!(error = %e, "Failed to post event");
+                }
+            }
+        });
+
+        Self {
+            client,
+            safety,
+            tools,
+            extra_env,
+            last_output: Mutex::new(String::new()),
+            iteration_tracker,
+            event_sender,
+            event_handle,
+        }
+    }
+
+    /// Shut down the delegate, draining any buffered events.
+    ///
+    /// Closes the event channel and awaits the background worker so
+    /// in-flight events are flushed before the delegate is dropped.
+    pub(super) async fn shutdown(self) {
+        drop(self.event_sender);
+        if let Err(e) = self.event_handle.await {
+            tracing::warn!(error = %e, "Event worker task panicked");
+        }
+    }
+
+    pub(super) fn post_event(&self, event_type: JobEventType, data: serde_json::Value) {
+        let payload = JobEventPayload { event_type, data };
+        if let Err(e) = self.event_sender.try_send(payload) {
+            tracing::warn!(error = %e, "Failed to enqueue event for posting");
+        }
     }
 
     async fn poll_and_inject_prompt(&self, reason_ctx: &mut ReasoningContext) {
@@ -56,8 +109,7 @@ impl ContainerDelegate {
                         "role": "user",
                         "content": truncate_for_preview(&prompt.content, 2000),
                     }),
-                )
-                .await;
+                );
                 reason_ctx.messages.push(ChatMessage::user(&prompt.content));
             }
             Ok(None) => {}
@@ -120,8 +172,7 @@ impl NativeLoopDelegate for ContainerDelegate {
                 "role": "assistant",
                 "content": truncate_for_preview(text, 2000),
             }),
-        )
-        .await;
+        );
 
         if crate::util::llm_signals_completion(text) {
             let last = self.last_output.lock().await;
@@ -150,8 +201,7 @@ impl NativeLoopDelegate for ContainerDelegate {
                     "role": "assistant",
                     "content": truncate_for_preview(text, 2000),
                 }),
-            )
-            .await;
+            );
         }
 
         reason_ctx
@@ -168,8 +218,7 @@ impl NativeLoopDelegate for ContainerDelegate {
                     "tool_name": tc.name,
                     "input": truncate_for_preview(&tc.arguments.to_string(), 500),
                 }),
-            )
-            .await;
+            );
 
             let job_ctx = JobContext {
                 extra_env: self.extra_env.clone(),
@@ -189,8 +238,7 @@ impl NativeLoopDelegate for ContainerDelegate {
                     "output": truncate_for_preview(&tool_result_content, 2000),
                     "success": result.is_ok(),
                 }),
-            )
-            .await;
+            );
 
             if let Ok(ref output) = result {
                 *self.last_output.lock().await = output.clone();
@@ -210,8 +258,7 @@ impl NativeLoopDelegate for ContainerDelegate {
                 "content": truncate_for_preview(text, 2000),
                 "nudge": true,
             }),
-        )
-        .await;
+        );
     }
 
     async fn after_iteration(&self, _iteration: usize) {

@@ -4,6 +4,24 @@ use std::time::Duration;
 
 use uuid::Uuid;
 
+/// Configuration field that mismatched between worker config and HTTP client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigMismatchField {
+    /// The job_id field mismatched.
+    JobId,
+    /// The orchestrator_url field mismatched.
+    OrchestratorUrl,
+}
+
+impl std::fmt::Display for ConfigMismatchField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::JobId => write!(f, "job_id"),
+            Self::OrchestratorUrl => write!(f, "orchestrator_url"),
+        }
+    }
+}
+
 /// Worker errors (container-side execution).
 #[derive(Debug, thiserror::Error)]
 pub enum WorkerError {
@@ -76,4 +94,14 @@ pub enum WorkerError {
     /// The worker token environment variable was not available at startup.
     #[error("Missing worker token (IRONCLAW_WORKER_TOKEN not set)")]
     MissingToken,
+
+    /// The worker configuration does not match the provided HTTP client.
+    ///
+    /// `field` identifies which configuration field mismatched, and `reason`
+    /// describes the mismatch.
+    #[error("Worker configuration mismatch for {field}: {reason}")]
+    ConfigMismatch {
+        field: ConfigMismatchField,
+        reason: String,
+    },
 }
