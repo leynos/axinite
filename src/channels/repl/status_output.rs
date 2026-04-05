@@ -265,6 +265,29 @@ pub(super) fn print_image_generated(path: Option<&str>) {
     eprintln!("{}", render_image_generated(path));
 }
 
+/// Build a [`ToolApprovalRequest`] from destructured [`StatusUpdate::ApprovalNeeded`]
+/// fields and delegate to [`print_approval_needed`].
+fn handle_approval_needed(
+    request_id: &str,
+    tool_name: &str,
+    description: &str,
+    parameters: &serde_json::Value,
+) {
+    let request = ToolApprovalRequest { request_id, tool_name, description };
+    print_approval_needed(&request, parameters);
+}
+
+/// Build an [`AuthRequiredInfo`] from destructured [`StatusUpdate::AuthRequired`]
+/// fields and delegate to [`print_auth_required`].
+fn handle_auth_required(
+    extension_name: &str,
+    instructions: Option<&str>,
+    setup_url: Option<&str>,
+    auth_url: Option<&str>,
+) {
+    print_auth_required(&AuthRequiredInfo { extension_name, instructions, setup_url, auth_url });
+}
+
 /// Route a [`StatusUpdate`] to the appropriate `print_*` helper.
 pub(super) fn dispatch_status_update(
     status: StatusUpdate,
@@ -301,31 +324,16 @@ pub(super) fn dispatch_status_update(
             });
         }
         StatusUpdate::Status(msg) => print_status(is_debug, &msg),
-        StatusUpdate::ApprovalNeeded {
-            request_id,
-            tool_name,
-            description,
-            parameters,
-        } => {
-            let request = ToolApprovalRequest {
-                request_id: &request_id,
-                tool_name: &tool_name,
-                description: &description,
-            };
-            print_approval_needed(&request, &parameters);
+        StatusUpdate::ApprovalNeeded { request_id, tool_name, description, parameters } => {
+            handle_approval_needed(&request_id, &tool_name, &description, &parameters);
         }
-        StatusUpdate::AuthRequired {
-            extension_name,
-            instructions,
-            auth_url,
-            setup_url,
-        } => {
-            print_auth_required(&AuthRequiredInfo {
-                extension_name: &extension_name,
-                instructions: instructions.as_deref(),
-                setup_url: setup_url.as_deref(),
-                auth_url: auth_url.as_deref(),
-            });
+        StatusUpdate::AuthRequired { extension_name, instructions, auth_url, setup_url } => {
+            handle_auth_required(
+                &extension_name,
+                instructions.as_deref(),
+                setup_url.as_deref(),
+                auth_url.as_deref(),
+            );
         }
         StatusUpdate::AuthCompleted {
             extension_name,

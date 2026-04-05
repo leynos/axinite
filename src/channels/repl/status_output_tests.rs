@@ -12,9 +12,7 @@ fn status_output_stdout_snapshot() {
     assert_snapshot!(&stdout, @r###"
     stream-onestream-two
     "###);
-    assert_snapshot!(&separator, @r###"
-    [90m────────────────────────────────────────────────────────────────────────────────[0m
-    "###);
+    assert_snapshot!(&separator);
 }
 
 fn tool_output_section() -> String {

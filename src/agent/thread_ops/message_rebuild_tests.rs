@@ -37,6 +37,18 @@ fn assert_only_user_and_assistant(result: &[ChatMessage]) {
     assert_eq!(result[1].role, crate::llm::Role::Assistant);
 }
 
+/// Asserts the result is exactly a `User` message then an `Assistant` message
+/// with the specified text content for each.
+fn assert_user_assistant_with_content(
+    result: &[ChatMessage],
+    user_content: &str,
+    assistant_content: &str,
+) {
+    assert_only_user_and_assistant(result);
+    assert_eq!(result[0].content, user_content,      "unexpected user content");
+    assert_eq!(result[1].content, assistant_content, "unexpected assistant content");
+}
+
 /// Assert that a `tool_calls` row whose JSON content is `tool_json` is skipped
 /// entirely, leaving only the surrounding user and assistant messages in the
 /// output.
@@ -47,10 +59,7 @@ fn assert_malformed_tool_calls_skipped(safety: &SafetyLayer, tool_json: serde_js
         make_db_msg("assistant", "Done"),
     ];
     let result = rebuild_chat_messages_from_db(&messages, safety);
-
-    assert_only_user_and_assistant(&result);
-    assert_eq!(result[0].content, "Hi");
-    assert_eq!(result[1].content, "Done");
+    assert_user_assistant_with_content(&result, "Hi", "Done");
 }
 
 fn assert_malformed_tool_calls_boundary(
@@ -71,6 +80,22 @@ fn assert_malformed_tool_calls_boundary(
     }
 }
 
+/// Asserts that `content` contains a well-formed `<tool_output name="…">` opening
+/// tag for `tool_name` and that every string in `expected_fragments` is present.
+fn assert_tool_output_content(content: &str, tool_name: &str, expected_fragments: &[&str]) {
+    let opening_tag = format!("<tool_output name=\"{tool_name}\"");
+    assert!(
+        content.contains(&opening_tag),
+        "expected opening tag {opening_tag:?}; content: {content:?}"
+    );
+    for fragment in expected_fragments {
+        assert!(
+            content.contains(fragment),
+            "expected content to contain {fragment:?}; content: {content:?}"
+        );
+    }
+}
+
 /// Asserts that `msg` is a [`crate::llm::Role::Tool`] message with the given
 /// `call_id`, that its content is wrapped in a `<tool_output name="…">` tag
 /// for `tool_name`, and that every string in `expected_fragments` appears in
@@ -87,20 +112,7 @@ fn assert_tool_result_message(
         Some(call_id.to_string()),
         "expected tool_call_id = {call_id}"
     );
-    assert!(
-        msg.content.contains("<tool_output"),
-        "expected <tool_output> wrapper"
-    );
-    assert!(
-        msg.content.contains(&format!("name=\"{tool_name}\"")),
-        "expected tool_output name attribute for {tool_name}"
-    );
-    for fragment in expected_fragments {
-        assert!(
-            msg.content.contains(fragment),
-            "expected content to contain {fragment:?}"
-        );
-    }
+    assert_tool_output_content(&msg.content, tool_name, expected_fragments);
 }
 
 /// Asserts that `msg` is an [`crate::llm::Role::Assistant`] message with
@@ -196,11 +208,7 @@ fn test_rebuild_chat_messages_malformed_tool_calls_json(test_safety_layer: Safet
     ];
     let result = rebuild_chat_messages_from_db(&messages, &safety);
     // Malformed JSON is skipped with a warning (logs message_id and parse error)
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].role, crate::llm::Role::User);
-    assert_eq!(result[0].content, "Hi");
-    assert_eq!(result[1].role, crate::llm::Role::Assistant);
-    assert_eq!(result[1].content, "Done");
+    assert_user_assistant_with_content(&result, "Hi", "Done");
 }
 
 #[rstest]

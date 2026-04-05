@@ -69,8 +69,11 @@ pub(super) fn print_help() {
     println!();
 }
 
+/// The indentation prefix used when rendering JSON parameters inside an approval card.
+const CARD_PARAM_INDENT: &str = "  \u{2502}   ";
+
 /// Format JSON params as `key: value` lines for the approval card.
-pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> String {
+pub(super) fn format_json_params(params: &serde_json::Value) -> String {
     match params {
         serde_json::Value::Object(map) => {
             let mut lines = Vec::new();
@@ -88,7 +91,7 @@ pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> St
                         truncate_grapheme_aware(&sanitized, 120)
                     }
                 };
-                lines.push(format!("{indent}\x1b[36m{sanitized_key}\x1b[0m: {val_str}"));
+                lines.push(format!("{CARD_PARAM_INDENT}\x1b[36m{sanitized_key}\x1b[0m: {val_str}"));
             }
             lines.join("\n")
         }
@@ -98,7 +101,7 @@ pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> St
             let truncated = truncate_grapheme_aware(&sanitized, 300);
             truncated
                 .lines()
-                .map(|l| format!("{indent}\x1b[90m{l}\x1b[0m"))
+                .map(|l| format!("{CARD_PARAM_INDENT}\x1b[90m{l}\x1b[0m"))
                 .collect::<Vec<_>>()
                 .join("\n")
         }
@@ -260,7 +263,7 @@ pub(super) fn render_approval_card(
     lines.push("  \u{2502}".to_string());
 
     // Params - truncate each line to fit within the card width
-    let param_lines = format_json_params(parameters, "  \u{2502}   ");
+    let param_lines = format_json_params(parameters);
     for line in param_lines.lines() {
         lines.push(truncate_card_content(line, box_width));
     }

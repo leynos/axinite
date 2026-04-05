@@ -30,14 +30,13 @@ fn truncate_card_content_preserves_format_json_params_output() {
         &serde_json::json!({
             "status": "abcdefghijklmnopqrstuvwxyz"
         }),
-        "",
     );
 
-    let truncated = truncate_card_content(&rendered, 14);
+    let truncated = truncate_card_content(&rendered, 20);
 
-    assert_eq!(strip_ansi(&truncated), "status: \"abcd…");
+    assert_eq!(strip_ansi(&truncated), "  │   status: \"abcd…");
     assert!(truncated.ends_with("\x1b[0m"));
-    assert_eq!(visible_char_count(&truncated), 14);
+    assert_eq!(visible_char_count(&truncated), 20);
 }
 
 #[test]
@@ -138,7 +137,7 @@ fn format_json_params_never_splits_grapheme_clusters() {
         "wide": "工具工具"
     });
 
-    let formatted = format_json_params(&params, "");
+    let formatted = format_json_params(&params);
 
     // The formatted output should not split any grapheme clusters
     // Verify by checking that all lines are valid UTF-8 and don't have broken clusters
