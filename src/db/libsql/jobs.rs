@@ -20,42 +20,7 @@ use crate::history::{AgentJobRecord, AgentJobSummary, LlmCallRecord};
 
 use chrono::Utc;
 
-fn checked_duration_seconds(duration: std::time::Duration) -> Result<i64, DatabaseError> {
-    i64::try_from(duration.as_secs()).map_err(|error| {
-        DatabaseError::Serialization(format!(
-            "estimated_duration exceeds i64 range: {} ({error})",
-            duration.as_secs()
-        ))
-    })
-}
-
-fn checked_u32_to_i64(value: u32, _field: &str) -> Result<i64, DatabaseError> {
-    Ok(i64::from(value))
-}
-
-fn checked_u64_to_i64(value: u64, field: &str) -> Result<i64, DatabaseError> {
-    i64::try_from(value).map_err(|error| {
-        DatabaseError::Serialization(format!("{field} exceeds i64 range: {value} ({error})"))
-    })
-}
-
-impl NativeJobStore for LibSqlBackend {
-    async fn save_job(&self, ctx: &JobContext) -> Result<(), DatabaseError> {
-        let conn = self.connect().await?;
-        let status = ctx.state.to_string();
-        let estimated_time_secs = ctx
-            .estimated_duration
-            .map(checked_duration_seconds)
-            .transpose()?;
-        let repair_attempts = checked_u32_to_i64(ctx.repair_attempts, "repair_attempts")?;
-        let max_tokens = checked_u64_to_i64(ctx.max_tokens, "max_tokens")?;
-        let total_tokens_used = checked_u64_to_i64(ctx.total_tokens_used, "total_tokens_used")?;
-        let transitions = serde_json::to_string(&ctx.transitions)
-            .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
-
-        conn
-            .execute(
-                r#"
+const UPSERT_AGENT_JOB_SQL: &str = r#"
                 INSERT INTO agent_jobs (
                     id, conversation_id, title, description, category, status, source,
                     user_id,
@@ -80,36 +45,82 @@ impl NativeJobStore for LibSqlBackend {
                     total_tokens_used = excluded.total_tokens_used,
                     started_at = excluded.started_at,
                     completed_at = excluded.completed_at
-                "#,
-                params![
-                    ctx.job_id.to_string(),
-                    opt_text_owned(ctx.conversation_id.map(|id| id.to_string())),
-                    ctx.title.as_str(),
-                    ctx.description.as_str(),
-                    opt_text(ctx.category.as_deref()),
-                    status,
-                    "direct",
-                    ctx.user_id.as_str(),
-                    opt_text_owned(ctx.budget.map(|d| d.to_string())),
-                    opt_text(ctx.budget_token.as_deref()),
-                    opt_text_owned(ctx.bid_amount.map(|d| d.to_string())),
-                    opt_text_owned(ctx.estimated_cost.map(|d| d.to_string())),
-                    estimated_time_secs,
-                    ctx.actual_cost.to_string(),
-                    repair_attempts,
-                    transitions,
-                    ctx.metadata.to_string(),
-                    ctx.user_timezone.as_str(),
-                    max_tokens,
-                    total_tokens_used,
-                    fmt_ts(&ctx.created_at),
-                    fmt_opt_ts(&ctx.started_at),
-                    fmt_opt_ts(&ctx.completed_at),
-                ],
-            )
-            .await
-            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+                "#;
+
+fn checked_duration_seconds(duration: std::time::Duration) -> Result<i64, DatabaseError> {
+    i64::try_from(duration.as_secs()).map_err(|error| {
+        DatabaseError::Serialization(format!(
+            "estimated_duration exceeds i64 range: {} ({error})",
+            duration.as_secs()
+        ))
+    })
+}
+
+fn checked_u32_to_i64(value: u32, _field: &str) -> Result<i64, DatabaseError> {
+    Ok(i64::from(value))
+}
+
+fn checked_u64_to_i64(value: u64, field: &str) -> Result<i64, DatabaseError> {
+    i64::try_from(value).map_err(|error| {
+        DatabaseError::Serialization(format!("{field} exceeds i64 range: {value} ({error})"))
+    })
+}
+
+impl LibSqlBackend {
+    async fn upsert_agent_job(
+        &self,
+        conn: &libsql::Connection,
+        ctx: &JobContext,
+    ) -> Result<(), DatabaseError> {
+        let status = ctx.state.to_string();
+        let estimated_time_secs = ctx
+            .estimated_duration
+            .map(checked_duration_seconds)
+            .transpose()?;
+        let repair_attempts = checked_u32_to_i64(ctx.repair_attempts, "repair_attempts")?;
+        let max_tokens = checked_u64_to_i64(ctx.max_tokens, "max_tokens")?;
+        let total_tokens_used = checked_u64_to_i64(ctx.total_tokens_used, "total_tokens_used")?;
+        let transitions = serde_json::to_string(&ctx.transitions)
+            .map_err(|e| DatabaseError::Serialization(e.to_string()))?;
+
+        conn.execute(
+            UPSERT_AGENT_JOB_SQL,
+            params![
+                ctx.job_id.to_string(),
+                opt_text_owned(ctx.conversation_id.map(|id| id.to_string())),
+                ctx.title.as_str(),
+                ctx.description.as_str(),
+                opt_text(ctx.category.as_deref()),
+                status,
+                "direct",
+                ctx.user_id.as_str(),
+                opt_text_owned(ctx.budget.map(|d| d.to_string())),
+                opt_text(ctx.budget_token.as_deref()),
+                opt_text_owned(ctx.bid_amount.map(|d| d.to_string())),
+                opt_text_owned(ctx.estimated_cost.map(|d| d.to_string())),
+                estimated_time_secs,
+                ctx.actual_cost.to_string(),
+                repair_attempts,
+                transitions,
+                ctx.metadata.to_string(),
+                ctx.user_timezone.as_str(),
+                max_tokens,
+                total_tokens_used,
+                fmt_ts(&ctx.created_at),
+                fmt_opt_ts(&ctx.started_at),
+                fmt_opt_ts(&ctx.completed_at),
+            ],
+        )
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
         Ok(())
+    }
+}
+
+impl NativeJobStore for LibSqlBackend {
+    async fn save_job(&self, ctx: &JobContext) -> Result<(), DatabaseError> {
+        let conn = self.connect().await?;
+        self.upsert_agent_job(&conn, ctx).await
     }
 
     async fn get_job(&self, id: Uuid) -> Result<Option<JobContext>, DatabaseError> {
