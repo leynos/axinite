@@ -342,7 +342,6 @@ pub(super) fn dispatch_status_update(
     }
 }
 
-
 #[cfg(test)]
 #[path = "status_output_tests.rs"]
 mod tests;

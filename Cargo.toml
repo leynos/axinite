@@ -204,6 +204,7 @@ rstest = "0.26.1"
 tempfile = "3"
 mockall = "0.13"
 trybuild = "1"
+proptest = "1"
 
 [features]
 default = ["postgres", "libsql", "html-to-markdown", "docker"]
