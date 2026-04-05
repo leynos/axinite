@@ -132,11 +132,11 @@ mod tests {
         Some(Store::from_pool(backend.pool()))
     }
 
-    async fn cleanup_user(store: &Store, user_id: &str) {
-        let conn = store.conn().await.expect("connection should be available");
+    async fn cleanup_user(store: &Store, user_id: &str) -> Result<(), DatabaseError> {
+        let conn = store.conn().await?;
         conn.execute("DELETE FROM conversations WHERE user_id = $1", &[&user_id])
-            .await
-            .expect("conversations should be deleted");
+            .await?;
+        Ok(())
     }
 
     #[rstest]
@@ -166,7 +166,9 @@ mod tests {
         assert_eq!(metadata["routine_id"], routine_id.to_string());
         assert_eq!(metadata["routine_name"], "daily-standup");
 
-        cleanup_user(&store, &user_id).await;
+        cleanup_user(&store, &user_id)
+            .await
+            .expect("cleanup should succeed");
     }
 
     #[rstest]
@@ -191,7 +193,9 @@ mod tests {
         assert_eq!(first, second);
         assert_ne!(first, other_channel);
 
-        cleanup_user(&store, &user_id).await;
+        cleanup_user(&store, &user_id)
+            .await
+            .expect("cleanup should succeed");
     }
 
     #[rstest]
@@ -218,6 +222,8 @@ mod tests {
             .expect("metadata should exist");
         assert_eq!(metadata["thread_type"], "heartbeat");
 
-        cleanup_user(&store, &user_id).await;
+        cleanup_user(&store, &user_id)
+            .await
+            .expect("cleanup should succeed");
     }
 }

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use libsql::params;
 
-use super::{LibSqlBackend, fmt_ts, get_i64, get_json, get_text, get_ts};
+use super::{LibSqlBackend, fmt_ts, get_json, get_text, get_ts};
 use crate::db::{NativeSettingsStore, SettingKey, UserId};
 use crate::error::DatabaseError;
 use crate::history::SettingRow;
@@ -221,7 +221,7 @@ impl NativeSettingsStore for LibSqlBackend {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
-                "SELECT COUNT(*) as cnt FROM settings WHERE user_id = ?1",
+                "SELECT EXISTS(SELECT 1 FROM settings WHERE user_id = ?1)",
                 params![user_id.as_str()],
             )
             .await
@@ -232,7 +232,12 @@ impl NativeSettingsStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
-            Some(row) => Ok(get_i64(&row, 0) > 0),
+            Some(row) => {
+                let exists: i64 = row
+                    .get(0)
+                    .map_err(|e| DatabaseError::Query(e.to_string()))?;
+                Ok(exists != 0)
+            }
             None => Ok(false),
         }
     }

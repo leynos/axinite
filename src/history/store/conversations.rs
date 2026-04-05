@@ -180,12 +180,14 @@ impl Store {
         limit: i64,
     ) -> Result<(Vec<ConversationMessage>, bool), DatabaseError> {
         if limit <= 0 {
-            return Ok((Vec::new(), false));
+            return Err(DatabaseError::Validation(
+                "conversation message pagination limit must be > 0".to_string(),
+            ));
         }
 
         let conn = self.conn().await?;
         let fetch_limit = limit.checked_add(1).ok_or_else(|| {
-            DatabaseError::Query("conversation message pagination limit overflow".to_string())
+            DatabaseError::Validation("conversation message pagination limit overflow".to_string())
         })?;
 
         let rows = if let Some((before_ts, before_id)) = before {

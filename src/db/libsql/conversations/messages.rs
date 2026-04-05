@@ -68,13 +68,18 @@ pub(super) async fn list_conversation_messages_paginated(
     before: Option<(DateTime<Utc>, Uuid)>,
     limit: usize,
 ) -> Result<(Vec<ConversationMessage>, bool), DatabaseError> {
+    if limit == 0 {
+        return Err(DatabaseError::Validation(
+            "conversation message pagination limit must be > 0".to_string(),
+        ));
+    }
     let conn = backend.connect().await?;
     let fetch_limit = limit.checked_add(1).ok_or_else(|| {
-        DatabaseError::Query("conversation message pagination limit overflow".to_string())
+        DatabaseError::Validation("conversation message pagination limit overflow".to_string())
     })?;
     let cid = conversation_id.to_string();
     let fetch_limit_i64 = i64::try_from(fetch_limit).map_err(|_| {
-        DatabaseError::Query("conversation message pagination limit overflow".to_string())
+        DatabaseError::Validation("conversation message pagination limit overflow".to_string())
     })?;
 
     let mut rows = if let Some((before_ts, before_id)) = before {

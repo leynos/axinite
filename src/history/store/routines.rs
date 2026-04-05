@@ -324,16 +324,23 @@ impl Store {
         let conn = self.conn().await?;
         let status_str = status.to_string();
         let now = Utc::now();
-        conn.execute(
-            r#"
-            UPDATE routine_runs SET
-                completed_at = $2, status = $3,
-                result_summary = $4, tokens_used = $5
-            WHERE id = $1
-            "#,
-            &[&id, &now, &status_str, &result_summary, &tokens_used],
-        )
-        .await?;
+        let affected = conn
+            .execute(
+                r#"
+                UPDATE routine_runs SET
+                    completed_at = $2, status = $3,
+                    result_summary = $4, tokens_used = $5
+                WHERE id = $1
+                "#,
+                &[&id, &now, &status_str, &result_summary, &tokens_used],
+            )
+            .await?;
+        if affected == 0 {
+            return Err(DatabaseError::NotFound {
+                entity: "routine run".to_string(),
+                id: id.to_string(),
+            });
+        }
         Ok(())
     }
 
@@ -377,11 +384,18 @@ impl Store {
         job_id: Uuid,
     ) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
-        conn.execute(
-            "UPDATE routine_runs SET job_id = $1 WHERE id = $2",
-            &[&job_id, &run_id],
-        )
-        .await?;
+        let affected = conn
+            .execute(
+                "UPDATE routine_runs SET job_id = $1 WHERE id = $2",
+                &[&job_id, &run_id],
+            )
+            .await?;
+        if affected == 0 {
+            return Err(DatabaseError::NotFound {
+                entity: "routine run".to_string(),
+                id: run_id.to_string(),
+            });
+        }
         Ok(())
     }
 }

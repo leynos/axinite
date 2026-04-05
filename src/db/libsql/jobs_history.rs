@@ -76,7 +76,7 @@ pub(super) async fn save_action(
         params![
             action.id.to_string(),
             job_id.to_string(),
-            action.sequence as i64,
+            i64::from(action.sequence),
             action.tool_name.as_str(),
             action.input.to_string(),
             opt_text(action.output_raw.as_deref()),
@@ -232,16 +232,23 @@ pub(super) async fn update_estimation_actuals(
     } = params;
     let conn = backend.connect().await?;
     let actual_time_secs = i64::from(actual_time_secs);
-    conn.execute(
-        "UPDATE estimation_snapshots SET actual_cost = ?2, actual_time_secs = ?3, actual_value = ?4 WHERE id = ?1",
-        params![
-            id.to_string(),
-            actual_cost.to_string(),
-            actual_time_secs,
-            actual_value.map(|d| d.to_string()),
-        ],
-    )
-    .await
-    .map_err(|e| DatabaseError::Query(e.to_string()))?;
+    let rows = conn
+        .execute(
+            "UPDATE estimation_snapshots SET actual_cost = ?2, actual_time_secs = ?3, actual_value = ?4 WHERE id = ?1",
+            params![
+                id.to_string(),
+                actual_cost.to_string(),
+                actual_time_secs,
+                actual_value.map(|d| d.to_string()),
+            ],
+        )
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+    if rows == 0 {
+        return Err(DatabaseError::NotFound {
+            entity: "estimation snapshot".to_string(),
+            id: id.to_string(),
+        });
+    }
     Ok(())
 }

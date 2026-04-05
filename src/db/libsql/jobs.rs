@@ -284,7 +284,12 @@ impl NativeJobStore for LibSqlBackend {
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
             let status = get_text(&row, 0);
-            let count = get_i64(&row, 1) as usize;
+            let count_i64 = get_i64(&row, 1);
+            let count = usize::try_from(count_i64).map_err(|error| {
+                DatabaseError::Serialization(format!(
+                    "agent job summary count exceeds usize range: {error}"
+                ))
+            })?;
             summary.add_count(&status, count);
         }
         Ok(summary)

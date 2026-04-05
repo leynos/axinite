@@ -83,7 +83,12 @@ fn row_to_sandbox_job(r: &tokio_postgres::Row) -> SandboxJobRecord {
         created_at: r.get("created_at"),
         started_at: r.get("started_at"),
         completed_at: r.get("completed_at"),
-        credential_grants_json: r.get::<_, String>("description"),
+        // The `description` column is repurposed to store serialized credential grant JSON.
+        // This allows sandbox jobs to persist credential grants for restart support.
+        // Format: JSON array of CredentialGrant objects (secret_name, env_var pairs).
+        credential_grants_json: r
+            .get::<_, Option<String>>("description")
+            .unwrap_or_else(|| "[]".to_string()),
     }
 }
 

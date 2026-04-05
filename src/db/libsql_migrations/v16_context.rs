@@ -60,6 +60,100 @@ fn missing_context_field_statements(columns: &BTreeSet<String>) -> Vec<&'static 
     statements
 }
 
+async fn check_already_applied(
+    conn: &libsql::Connection,
+    version: i64,
+    name: &str,
+) -> Result<bool, crate::error::DatabaseError> {
+    use crate::error::DatabaseError;
+
+    let mut rows = conn
+        .query(
+            "SELECT 1 FROM _migrations WHERE version = ?1 AND name = ?2",
+            libsql::params![version, name],
+        )
+        .await
+        .map_err(|e| {
+            DatabaseError::Migration(format!(
+                "libSQL migration V{version}: failed to re-check migration state: {e}"
+            ))
+        })?;
+
+    if (rows.next().await.map_err(|e| {
+        DatabaseError::Migration(format!(
+            "libSQL migration V{version}: failed to read migration state: {e}"
+        ))
+    })?)
+    .is_some()
+    {
+        // Migration already applied by another node; skip
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+async fn record_migration_applied(
+    conn: &libsql::Connection,
+    version: i64,
+    name: &str,
+) -> Result<(), crate::error::DatabaseError> {
+    use crate::error::DatabaseError;
+
+    conn.execute(
+        "INSERT INTO _migrations (version, name) VALUES (?1, ?2)",
+        libsql::params![version, name],
+    )
+    .await
+    .map_err(|e| {
+        DatabaseError::Migration(format!(
+            "Failed to record migration V{version} ({name}): {e}"
+        ))
+    })?;
+
+    Ok(())
+}
+
+async fn finalize_transaction(
+    conn: &libsql::Connection,
+    version: i64,
+    name: &str,
+    result: Result<(), crate::error::DatabaseError>,
+) -> Result<(), crate::error::DatabaseError> {
+    use crate::error::DatabaseError;
+
+    match result {
+        Ok(()) => {
+            if let Err(commit_error) = conn.execute_batch("COMMIT;").await {
+                // Best-effort rollback to clean up the failed transaction
+                if let Err(rollback_error) = conn.execute_batch("ROLLBACK;").await {
+                    tracing::warn!(
+                        version,
+                        name,
+                        error = %rollback_error,
+                        "libSQL V{version} rollback after commit failure failed"
+                    );
+                }
+                return Err(DatabaseError::Migration(format!(
+                    "libSQL migration V{version} ({name}): commit failed: {commit_error}"
+                )));
+            }
+            Ok(())
+        }
+        Err(error) => {
+            if let Err(cleanup_error) = conn.execute_batch("ROLLBACK;").await {
+                tracing::warn!(
+                    version,
+                    name,
+                    error = %cleanup_error,
+                    "libSQL V{version} rollback failed"
+                );
+            }
+            Err(error)
+        }
+    }
+}
+
 /// Apply V16 `agent_jobs` context-field additions under an immediate lock.
 pub(super) async fn apply_agent_jobs_context_fields_migration(
     conn: &libsql::Connection,
@@ -75,6 +169,12 @@ pub(super) async fn apply_agent_jobs_context_fields_migration(
     })?;
 
     let result: Result<(), DatabaseError> = async {
+        // Re-check under lock: another node may have applied this migration
+        // while we were waiting for the lock.
+        if check_already_applied(conn, version, name).await? {
+            return Ok(());
+        }
+
         let columns = collect_existing_columns(conn, MigrationContext { version, name }).await?;
         let statements = missing_context_field_statements(&columns);
 
@@ -88,42 +188,13 @@ pub(super) async fn apply_agent_jobs_context_fields_migration(
                 })?;
         }
 
-        conn.execute(
-            "INSERT INTO _migrations (version, name) VALUES (?1, ?2)",
-            libsql::params![version, name],
-        )
-        .await
-        .map_err(|e| {
-            DatabaseError::Migration(format!(
-                "Failed to record migration V{version} ({name}): {e}"
-            ))
-        })?;
+        record_migration_applied(conn, version, name).await?;
 
         Ok(())
     }
     .await;
 
-    match result {
-        Ok(()) => {
-            conn.execute_batch("COMMIT;").await.map_err(|e| {
-                DatabaseError::Migration(format!(
-                    "libSQL migration V{version} ({name}): commit failed: {e}"
-                ))
-            })?;
-            Ok(())
-        }
-        Err(error) => {
-            if let Err(cleanup_error) = conn.execute_batch("ROLLBACK;").await {
-                tracing::warn!(
-                    version,
-                    name,
-                    error = %cleanup_error,
-                    "libSQL V16 rollback failed"
-                );
-            }
-            Err(error)
-        }
-    }
+    finalize_transaction(conn, version, name, result).await
 }
 
 #[cfg(test)]
@@ -133,7 +204,10 @@ mod tests {
     use rstest::rstest;
     use tempfile::tempdir;
 
-    use super::{V16_NAME, collect_existing_columns, missing_context_field_statements};
+    use super::{
+        V16_NAME, apply_agent_jobs_context_fields_migration, collect_existing_columns,
+        missing_context_field_statements,
+    };
     use crate::db::libsql_migrations::run_incremental;
     use crate::db::libsql_migrations::{INCREMENTAL_MIGRATIONS, MigrationContext};
 
@@ -161,15 +235,21 @@ mod tests {
                 title TEXT NOT NULL DEFAULT '',
                 description TEXT NOT NULL DEFAULT '{}',
                 status TEXT NOT NULL DEFAULT 'pending',
-                source TEXT NOT NULL DEFAULT 'direct'
+                source TEXT NOT NULL DEFAULT 'direct',
+                max_tokens INTEGER NOT NULL DEFAULT 0,
+                total_tokens_used INTEGER NOT NULL DEFAULT 0
             );
             "#,
         )
         .await?;
 
+        // Mark every migration except V16 as "already applied" so run_incremental
+        // will only apply V16. V13/V14/V15 are safe to pre-apply: V13 adds columns
+        // already present in our CREATE TABLE, V14 drops an index, and V15 requires
+        // the conversations table which we intentionally don't create here.
         for &(version, name, _) in INCREMENTAL_MIGRATIONS
             .iter()
-            .filter(|(version, _, _)| *version < 16)
+            .filter(|(version, _, _)| *version != 16)
         {
             conn.execute(
                 "INSERT INTO _migrations (version, name) VALUES (?1, ?2)",
@@ -247,10 +327,33 @@ mod tests {
     #[tokio::test]
     async fn run_incremental_applies_v16_once_to_partially_migrated_agent_jobs()
     -> Result<(), Box<dyn std::error::Error>> {
-        let (_dir, _db, conn) = build_partial_v16_db().await?;
+        let (_dir, db, conn) = build_partial_v16_db().await?;
 
+        // Open a second connection to exercise the lock/re-check path
+        let conn2 = db.connect()?;
+
+        // Run the migration directly and concurrently on both connections
+        // to deterministically exercise the BEGIN IMMEDIATE / re-check race path
+        tokio::try_join!(
+            apply_agent_jobs_context_fields_migration(
+                &conn,
+                MigrationContext {
+                    version: 16,
+                    name: V16_NAME,
+                }
+            ),
+            apply_agent_jobs_context_fields_migration(
+                &conn2,
+                MigrationContext {
+                    version: 16,
+                    name: V16_NAME,
+                }
+            ),
+        )?;
+
+        // Additional idempotence check via the public API
         run_incremental(&conn).await?;
-        run_incremental(&conn).await?;
+
         assert_v16_applied_once(&conn).await?;
         Ok(())
     }

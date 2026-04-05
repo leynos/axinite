@@ -152,6 +152,36 @@ pub(super) async fn restart_sandbox_job(
         .await
         .map_err(|e| internal_error("Failed to save restarted sandbox job", e))?;
 
+    // Persist the job mode if it's ClaudeCode.
+    //
+    // Invariant: Worker is the default mode; only non-default modes (e.g.,
+    // JobMode::ClaudeCode) are persisted to the DB. NULL job_mode implies Worker.
+    // The is_claude_code boolean tracks whether we need to persist
+    // SandboxMode::ClaudeCode. The load path (load_sandbox_job_mode) and API layer
+    // convert NULL to Worker. This conditional must preserve that behaviour:
+    // only persist when mode is explicitly ClaudeCode.
+    //
+    // Note: The two-step persistence (save_sandbox_job then update_sandbox_job_mode)
+    // is not transactional and may leave a NULL mode if the update fails, but this
+    // is safe due to the Worker default on load.
+    let is_claude_code = mode == crate::orchestrator::job_manager::JobMode::ClaudeCode;
+    if is_claude_code
+        && let Err(error) = store
+            .update_sandbox_job_mode(new_job_id, crate::db::SandboxMode::ClaudeCode)
+            .await
+    {
+        mark_sandbox_restart_failed(
+            store,
+            new_job_id,
+            "Failed to persist restarted sandbox job mode".to_string(),
+        )
+        .await?;
+        return Err(internal_error(
+            "Failed to persist restarted sandbox job mode",
+            error,
+        ));
+    }
+
     let credential_grants =
         parse_credential_grants(old_job.record.id, &old_job.record.credential_grants_json);
 

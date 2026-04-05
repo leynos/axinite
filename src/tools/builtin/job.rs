@@ -213,18 +213,15 @@ impl CreateJobTool {
         Ok(grants)
     }
 
-    /// Persist a sandbox job record (fire-and-forget).
-    fn persist_job(&self, record: SandboxJobRecord) {
-        if let Some(store) = self.store.clone() {
-            tokio::spawn(async move {
-                if let Err(e) = store.save_sandbox_job(&record).await {
-                    tracing::warn!(job_id = %record.id, "Failed to persist sandbox job: {}", e);
-                }
-            });
-        }
-    }
-
     /// Update sandbox job status in DB (fire-and-forget).
+    ///
+    /// This method uses `tokio::spawn` to make status updates intentionally
+    /// fire-and-forget. The sandbox job record is already persisted by
+    /// `save_sandbox_job`/`update_sandbox_job_mode`, so a missed or stale status
+    /// (e.g., "creating") is recoverable on the next poll or after restart.
+    /// Blocking to await status persistence would not help recover a failed
+    /// container and would unnecessarily delay the tool. Failures are still
+    /// observable because `tracing::warn!` logs any update errors.
     fn update_status(
         &self,
         job_id: Uuid,
@@ -329,7 +326,10 @@ impl CreateJobTool {
         ctx: &JobContext,
     ) -> Result<ToolOutput, ToolError> {
         let start = std::time::Instant::now();
-        let jm = self.job_manager.as_ref().expect("sandbox deps required");
+        let jm = self
+            .job_manager
+            .as_ref()
+            .ok_or_else(|| ToolError::ExecutionFailed("sandbox deps required".to_string()))?;
 
         let job_id = Uuid::new_v4();
         let (project_dir, browse_id) = resolve_project_dir(explicit_dir, job_id)?;
@@ -349,8 +349,8 @@ impl CreateJobTool {
             }
         };
 
-        // Persist the job to DB before creating the container.
-        self.persist_job(SandboxJobRecord {
+        // Build the job record and persist synchronously before creating the container.
+        let record = SandboxJobRecord {
             id: job_id,
             task: task.to_string(),
             status: "creating".to_string(),
@@ -362,21 +362,38 @@ impl CreateJobTool {
             started_at: None,
             completed_at: None,
             credential_grants_json,
-        });
+        };
 
-        // Persist the job mode to DB
-        if mode == JobMode::ClaudeCode
-            && let Some(store) = self.store.clone()
-        {
-            let job_id_copy = job_id;
-            tokio::spawn(async move {
-                if let Err(e) = store
-                    .update_sandbox_job_mode(job_id_copy, crate::db::SandboxMode::ClaudeCode)
+        // Persist the job and mode synchronously before creating the container
+        if let Some(store) = self.store.clone() {
+            store
+                .save_sandbox_job(&record)
+                .await
+                .map_err(|e| ToolError::ExecutionFailed(format!("failed to persist job: {}", e)))?;
+
+            if mode == JobMode::ClaudeCode
+                && let Err(e) = store
+                    .update_sandbox_job_mode(job_id, crate::db::SandboxMode::ClaudeCode)
                     .await
-                {
-                    tracing::warn!(job_id = %job_id_copy, "Failed to set job mode: {}", e);
-                }
-            });
+            {
+                // Synchronously update status to failed before returning error
+                // (don't use fire-and-forget update_status here)
+                let status = crate::db::SandboxJobStatus::from("failed");
+                let _ = store
+                    .update_sandbox_job_status(SandboxJobStatusUpdate {
+                        id: job_id,
+                        status,
+                        success: Some(false),
+                        message: Some(&e.to_string()),
+                        started_at: None,
+                        completed_at: Some(Utc::now()),
+                    })
+                    .await;
+                return Err(ToolError::ExecutionFailed(format!(
+                    "failed to persist job mode: {}",
+                    e
+                )));
+            }
         }
 
         // Create the container job with the pre-determined job_id.
