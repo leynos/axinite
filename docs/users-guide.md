@@ -82,5 +82,5 @@ and broadcast a notification such as:
 
 These notices are advisory. A success message means the runtime moved the job
 back into its normal retry path. A permanent failure or manual-intervention
-message means the runtime could not finish recovery automatically and the
+message means the runtime could not finish recovery automatically, and the
 operator should inspect the job or tool state before retrying work.

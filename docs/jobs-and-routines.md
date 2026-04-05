@@ -217,7 +217,7 @@ flowchart TD
     G -->|"No"| C
     G -->|"Yes"| H["Create StuckJob with
         ctx.job_id,
-        last_activity = stuck_since,
+        stuck_since,
         stuck_duration,
         last_error = None,
         repair_attempts = ctx.repair_attempts"]

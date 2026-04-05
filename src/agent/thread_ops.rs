@@ -3,7 +3,7 @@
 //! Extracted from `agent_loop.rs` to isolate thread management (user input
 //! processing, undo/redo, approval, auth, persistence) from the core loop.
 
-mod approval;
+pub(crate) mod approval;
 mod dispatch;
 mod document_store;
 mod message_rebuild;
@@ -78,27 +78,25 @@ impl Agent {
         session: Arc<Mutex<Session>>,
         thread_id: Uuid,
     ) -> Option<Result<Option<String>, Error>> {
+        // Atomically take pending_auth to avoid TOCTOU race
         let pending_auth = {
-            let sess = session.lock().await;
+            let mut sess = session.lock().await;
             sess.threads
-                .get(&thread_id)
-                .and_then(|t| t.pending_auth.clone())
+                .get_mut(&thread_id)
+                .and_then(|t| t.take_pending_auth())
         };
 
         if let Some(pending) = pending_auth {
             match submission {
                 Submission::UserInput { content } => {
-                    return Some(
-                        self.process_auth_token(message, &pending, content, session, thread_id)
-                            .await,
+                    let scope = crate::agent::thread_ops::approval::TurnScope::new(
+                        session, thread_id, message,
                     );
+                    return Some(self.process_auth_token(scope, &pending, content).await);
                 }
                 _ => {
                     // Any control submission (interrupt, undo, etc.) cancels auth mode
-                    let mut sess = session.lock().await;
-                    if let Some(thread) = sess.threads.get_mut(&thread_id) {
-                        thread.pending_auth = None;
-                    }
+                    // pending_auth was already cleared by take_pending_auth() above
                     // Fall through to normal handling
                 }
             }

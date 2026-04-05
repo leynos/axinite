@@ -82,7 +82,8 @@ async fn run_stuck_job_repairs(
                         job.stuck_duration.as_secs(),
                         message
                     ),
-                );
+                )
+                .await;
             }
             Ok(RepairResult::Retry { message }) => {
                 tracing::debug!(job = %job.job_id, status = "retry", "Stuck job repair needs retry: {}", message);
@@ -98,7 +99,8 @@ async fn run_stuck_job_repairs(
                         job.stuck_duration.as_secs(),
                         message
                     ),
-                );
+                )
+                .await;
             }
             Ok(RepairResult::ManualRequired { message }) => {
                 if escalated_jobs.insert(job.job_id) {
@@ -107,7 +109,8 @@ async fn run_stuck_job_repairs(
                         notification_tx.as_mut(),
                         notification_route,
                         format!("Job {} needs manual intervention: {}", job.job_id, message),
-                    );
+                    )
+                    .await;
                 }
             }
             Err(e) => {
@@ -155,7 +158,8 @@ async fn run_broken_tool_repairs(
                     notification_tx.as_mut(),
                     notification_route,
                     format!("Tool '{}' repaired: {}", tool.name, message),
-                );
+                )
+                .await;
             }
             Ok(RepairResult::Failed { message }) => {
                 tracing::error!(
@@ -168,7 +172,8 @@ async fn run_broken_tool_repairs(
                     notification_tx.as_mut(),
                     notification_route,
                     format!("Tool '{}' repair failed: {}", tool.name, message),
-                );
+                )
+                .await;
             }
             Ok(RepairResult::ManualRequired { message }) => {
                 if escalated_tools.insert(tool.name.clone()) {
@@ -185,7 +190,8 @@ async fn run_broken_tool_repairs(
                             "Tool '{}' needs manual intervention: {}",
                             tool.name, message
                         ),
-                    );
+                    )
+                    .await;
                 }
             }
             Ok(RepairResult::Retry { message }) => {
@@ -254,21 +260,21 @@ impl RepairTask {
     }
 }
 
-fn send_notification(
+async fn send_notification(
     notification_tx: Option<&mut mpsc::Sender<RepairNotification>>,
     notification_route: &RepairNotificationRoute,
     message: String,
 ) {
     if let Some(tx) = notification_tx {
-        match tx.try_send(RepairNotification {
-            message,
-            route: notification_route.clone(),
-        }) {
+        match tx
+            .send(RepairNotification {
+                message,
+                route: notification_route.clone(),
+            })
+            .await
+        {
             Ok(()) => {}
-            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                tracing::debug!("Dropping repair notification because channel is full");
-            }
-            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+            Err(_) => {
                 tracing::debug!("Dropping repair notification because receiver closed");
             }
         }

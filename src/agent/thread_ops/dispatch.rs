@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::agent::Agent;
 use crate::agent::session::Session;
 use crate::agent::submission::{Submission, SubmissionParser, SubmissionResult};
+use crate::agent::thread_ops::approval::{ApprovalParams, TurnScope};
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::error::Error;
 
@@ -150,19 +151,22 @@ impl Agent {
                 approved,
                 always,
             } => {
-                self.process_approval(
-                    message,
-                    session,
-                    thread_id,
-                    Some(request_id),
+                let scope = TurnScope::new(session, thread_id, message);
+                let params = ApprovalParams {
+                    request_id: Some(request_id),
                     approved,
                     always,
-                )
-                .await
+                };
+                self.process_approval(message, scope, params).await
             }
             Submission::ApprovalResponse { approved, always } => {
-                self.process_approval(message, session, thread_id, None, approved, always)
-                    .await
+                let scope = TurnScope::new(session, thread_id, message);
+                let params = ApprovalParams {
+                    request_id: None,
+                    approved,
+                    always,
+                };
+                self.process_approval(message, scope, params).await
             }
         }
     }

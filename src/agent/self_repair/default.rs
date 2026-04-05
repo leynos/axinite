@@ -270,7 +270,7 @@ impl NativeSelfRepair for DefaultSelfRepair {
 
 fn duration_since(now: DateTime<Utc>, start: DateTime<Utc>) -> Duration {
     let duration = now.signed_duration_since(start);
-    Duration::from_secs(duration.num_seconds().max(0) as u64)
+    Duration::from_millis(duration.num_milliseconds().max(0) as u64)
 }
 
 #[cfg(test)]
@@ -473,6 +473,27 @@ mod tests {
             matches!(result, RepairResult::ManualRequired { .. }),
             "Expected ManualRequired without builder, got: {:?}",
             result
+        );
+    }
+
+    #[test]
+    fn duration_since_millisecond_precision() {
+        use chrono::Duration as ChronoDuration;
+
+        let start = Utc::now() - ChronoDuration::milliseconds(500);
+        let now = Utc::now();
+        let elapsed = super::duration_since(now, start);
+
+        // Should be >= 500ms and < 1s (proving millisecond resolution, not second)
+        assert!(
+            elapsed >= Duration::from_millis(500),
+            "Expected >= 500ms, got {:?}",
+            elapsed
+        );
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "Expected < 1s, got {:?}",
+            elapsed
         );
     }
 }

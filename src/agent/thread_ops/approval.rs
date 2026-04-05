@@ -18,6 +18,74 @@ use crate::error::Error;
 use crate::llm::ChatMessage;
 use crate::tools::redact_params;
 
+/// Message environment context.
+#[derive(Clone)]
+pub(crate) struct MsgEnv {
+    channel: String,
+    user_id: String,
+    metadata: serde_json::Value,
+    timezone: Option<String>,
+}
+
+impl From<&IncomingMessage> for MsgEnv {
+    fn from(m: &IncomingMessage) -> Self {
+        Self {
+            channel: m.channel.clone(),
+            user_id: m.user_id.clone(),
+            metadata: m.metadata.clone(),
+            timezone: m.timezone.clone(),
+        }
+    }
+}
+
+/// Turn scope context bundling session, thread, and message environment.
+#[derive(Clone)]
+pub(crate) struct TurnScope {
+    session: Arc<Mutex<Session>>,
+    thread_id: Uuid,
+    env: MsgEnv,
+}
+
+impl TurnScope {
+    pub(crate) fn new(
+        session: Arc<Mutex<Session>>,
+        thread_id: Uuid,
+        message: &IncomingMessage,
+    ) -> Self {
+        Self {
+            session,
+            thread_id,
+            env: MsgEnv::from(message),
+        }
+    }
+}
+
+/// Approval parameters.
+#[derive(Clone, Copy)]
+pub(crate) struct ApprovalParams {
+    pub(crate) request_id: Option<Uuid>,
+    pub(crate) approved: bool,
+    pub(crate) always: bool,
+}
+
+/// Deferred execution environment.
+#[derive(Clone)]
+pub(crate) struct DeferredEnv {
+    job_ctx: JobContext,
+    env: MsgEnv,
+}
+
+/// Context for entering deferred approval.
+struct DeferredApprovalContext<'a> {
+    scope: &'a TurnScope,
+    approval_idx: usize,
+    tc: crate::llm::ToolCall,
+    tool: Arc<dyn crate::tools::Tool>,
+    deferred_tool_calls: &'a [crate::llm::ToolCall],
+    context_messages: &'a [ChatMessage],
+    pending: &'a PendingApproval,
+}
+
 impl Agent {
     /// Take pending approval if thread is in AwaitingApproval state.
     async fn take_pending_approval_if_awaiting(
@@ -99,15 +167,14 @@ impl Agent {
     /// Build JobContext for approval execution.
     fn build_job_context_for_approval(
         &self,
-        message: &IncomingMessage,
+        env: &MsgEnv,
         pending: &PendingApproval,
     ) -> JobContext {
-        let mut job_ctx =
-            JobContext::with_user(&message.user_id, "chat", "Interactive chat session");
+        let mut job_ctx = JobContext::with_user(&env.user_id, "chat", "Interactive chat session");
         job_ctx.http_interceptor = self.deps.http_interceptor.clone();
         // Prefer a valid timezone from the approval message, fall back to the
         // resolved timezone stored when the approval was originally requested.
-        let tz_candidate = message
+        let tz_candidate = env
             .timezone
             .as_deref()
             .filter(|tz| crate::timezone::parse_timezone(tz).is_some())
@@ -121,18 +188,18 @@ impl Agent {
     /// Execute primary tool and send notifications.
     async fn execute_primary_tool_and_notify(
         &self,
-        message: &IncomingMessage,
+        env: &MsgEnv,
         pending: &PendingApproval,
         job_ctx: &JobContext,
     ) -> (Result<String, Error>, Option<Arc<dyn crate::tools::Tool>>) {
         let _ = self
             .channels
             .send_status(
-                &message.channel,
+                &env.channel,
                 StatusUpdate::ToolStarted {
                     name: pending.tool_name.clone(),
                 },
-                &message.metadata,
+                &env.metadata,
             )
             .await;
 
@@ -144,14 +211,14 @@ impl Agent {
         let _ = self
             .channels
             .send_status(
-                &message.channel,
+                &env.channel,
                 StatusUpdate::tool_completed(
                     pending.tool_name.clone(),
                     &tool_result,
                     &pending.display_parameters,
                     tool_ref.as_deref(),
                 ),
-                &message.metadata,
+                &env.metadata,
             )
             .await;
 
@@ -161,12 +228,12 @@ impl Agent {
             let _ = self
                 .channels
                 .send_status(
-                    &message.channel,
+                    &env.channel,
                     StatusUpdate::ToolResult {
                         name: pending.tool_name.clone(),
                         preview: output.clone(),
                     },
-                    &message.metadata,
+                    &env.metadata,
                 )
                 .await;
         }
@@ -177,8 +244,7 @@ impl Agent {
     /// Record sanitized primary tool result and return content with error flag.
     async fn record_sanitised_primary_result(
         &self,
-        session: &Arc<Mutex<Session>>,
-        thread_id: Uuid,
+        scope: &TurnScope,
         pending: &PendingApproval,
         tool_result: &Result<String, Error>,
     ) -> (String, bool) {
@@ -192,8 +258,8 @@ impl Agent {
 
         // Record sanitized result in thread
         {
-            let mut sess = session.lock().await;
-            if let Some(thread) = sess.threads.get_mut(&thread_id)
+            let mut sess = scope.session.lock().await;
+            if let Some(thread) = sess.threads.get_mut(&scope.thread_id)
                 && let Some(turn) = thread.last_turn_mut()
             {
                 if is_tool_error {
@@ -210,18 +276,16 @@ impl Agent {
     /// Check for auth intercept after primary tool execution.
     async fn maybe_auth_intercept_after_primary(
         &self,
-        session: &Arc<Mutex<Session>>,
-        thread_id: Uuid,
-        message: &IncomingMessage,
+        scope: &TurnScope,
         pending: &PendingApproval,
         tool_result: &Result<String, Error>,
     ) -> Option<SubmissionResult> {
         if let Some((ext_name, instructions)) = check_auth_required(&pending.tool_name, tool_result)
         {
             self.handle_auth_intercept(
-                session,
-                thread_id,
-                message,
+                &scope.session,
+                scope.thread_id,
+                &scope.env,
                 tool_result,
                 ext_name,
                 instructions.clone(),
@@ -272,146 +336,165 @@ impl Agent {
         (runnable, approval_needed)
     }
 
-    /// Execute runnable deferred tools (inline for ≤1, JoinSet for >1).
-    async fn execute_runnable_deferred(
+    /// Run deferred tools inline (single or empty).
+    async fn run_deferred_inline(
         &self,
         runnable: &[crate::llm::ToolCall],
-        job_ctx: &JobContext,
-        channel: &str,
-        metadata: &serde_json::Value,
+        exec: &DeferredEnv,
     ) -> Vec<(crate::llm::ToolCall, Result<String, Error>)> {
-        if runnable.len() <= 1 {
-            // Single tool (or none): execute inline
-            let mut results = Vec::new();
-            for tc in runnable {
-                let _ = self
-                    .channels
+        let mut results = Vec::new();
+        for tc in runnable {
+            let _ = self
+                .channels
+                .send_status(
+                    &exec.env.channel,
+                    StatusUpdate::ToolStarted {
+                        name: tc.name.clone(),
+                    },
+                    &exec.env.metadata,
+                )
+                .await;
+
+            let result = self
+                .execute_chat_tool(&tc.name, &tc.arguments, &exec.job_ctx)
+                .await;
+
+            let deferred_tool = self.tools().get(&tc.name).await;
+            let _ = self
+                .channels
+                .send_status(
+                    &exec.env.channel,
+                    StatusUpdate::tool_completed(
+                        tc.name.clone(),
+                        &result,
+                        &tc.arguments,
+                        deferred_tool.as_deref(),
+                    ),
+                    &exec.env.metadata,
+                )
+                .await;
+
+            results.push((tc.clone(), result));
+        }
+        results
+    }
+
+    /// Collect and reorder parallel results.
+    async fn collect_and_reorder_parallel_results(
+        &self,
+        mut join_set: JoinSet<(usize, crate::llm::ToolCall, Result<String, Error>)>,
+        runnable: &[crate::llm::ToolCall],
+    ) -> Vec<(crate::llm::ToolCall, Result<String, Error>)> {
+        let mut ordered: Vec<Option<(crate::llm::ToolCall, Result<String, Error>)>> =
+            (0..runnable.len()).map(|_| None).collect();
+        while let Some(join_result) = join_set.join_next().await {
+            match join_result {
+                Ok((idx, tc, result)) => {
+                    ordered[idx] = Some((tc, result));
+                }
+                Err(e) => {
+                    if e.is_panic() {
+                        tracing::error!("Deferred tool execution task panicked: {}", e);
+                    } else {
+                        tracing::error!("Deferred tool execution task cancelled: {}", e);
+                    }
+                }
+            }
+        }
+
+        // Fill panicked slots with error results
+        ordered
+            .into_iter()
+            .enumerate()
+            .map(|(i, opt)| {
+                opt.unwrap_or_else(|| {
+                    let tc = runnable[i].clone();
+                    let err: Error = crate::error::ToolError::ExecutionFailed {
+                        name: tc.name.clone(),
+                        reason: "Task failed during execution".to_string(),
+                    }
+                    .into();
+                    (tc, Err(err))
+                })
+            })
+            .collect()
+    }
+
+    /// Run deferred tools in parallel via JoinSet.
+    async fn run_deferred_parallel(
+        &self,
+        runnable: &[crate::llm::ToolCall],
+        exec: &DeferredEnv,
+    ) -> Vec<(crate::llm::ToolCall, Result<String, Error>)> {
+        let mut join_set = JoinSet::new();
+
+        for (idx, tc) in runnable.iter().cloned().enumerate() {
+            let tools = self.tools().clone();
+            let safety = self.safety().clone();
+            let channels = self.channels.clone();
+            let job_ctx = exec.job_ctx.clone();
+            let env = exec.env.clone();
+            join_set.spawn(async move {
+                let _ = channels
                     .send_status(
-                        channel,
+                        &env.channel,
                         StatusUpdate::ToolStarted {
                             name: tc.name.clone(),
                         },
-                        metadata,
+                        &env.metadata,
                     )
                     .await;
 
-                let result = self
-                    .execute_chat_tool(&tc.name, &tc.arguments, job_ctx)
-                    .await;
+                let result = execute_chat_tool_standalone(
+                    &tools,
+                    &safety,
+                    &tc.name,
+                    &tc.arguments,
+                    &job_ctx,
+                )
+                .await;
 
-                let deferred_tool = self.tools().get(&tc.name).await;
-                let _ = self
-                    .channels
+                let par_tool = tools.get(&tc.name).await;
+                let _ = channels
                     .send_status(
-                        channel,
+                        &env.channel,
                         StatusUpdate::tool_completed(
                             tc.name.clone(),
                             &result,
                             &tc.arguments,
-                            deferred_tool.as_deref(),
+                            par_tool.as_deref(),
                         ),
-                        metadata,
+                        &env.metadata,
                     )
                     .await;
 
-                results.push((tc.clone(), result));
-            }
-            results
-        } else {
-            // Multiple tools: execute in parallel via JoinSet
-            let mut join_set = JoinSet::new();
-            let runnable_count = runnable.len();
-
-            for (spawn_idx, tc) in runnable.iter().enumerate() {
-                let tools = self.tools().clone();
-                let safety = self.safety().clone();
-                let channels = self.channels.clone();
-                let job_ctx = job_ctx.clone();
-                let tc = tc.clone();
-                let channel = channel.to_string();
-                let metadata = metadata.clone();
-
-                join_set.spawn(async move {
-                    let _ = channels
-                        .send_status(
-                            &channel,
-                            StatusUpdate::ToolStarted {
-                                name: tc.name.clone(),
-                            },
-                            &metadata,
-                        )
-                        .await;
-
-                    let result = execute_chat_tool_standalone(
-                        &tools,
-                        &safety,
-                        &tc.name,
-                        &tc.arguments,
-                        &job_ctx,
-                    )
-                    .await;
-
-                    let par_tool = tools.get(&tc.name).await;
-                    let _ = channels
-                        .send_status(
-                            &channel,
-                            StatusUpdate::tool_completed(
-                                tc.name.clone(),
-                                &result,
-                                &tc.arguments,
-                                par_tool.as_deref(),
-                            ),
-                            &metadata,
-                        )
-                        .await;
-
-                    (spawn_idx, tc, result)
-                });
-            }
-
-            // Collect and reorder by original index
-            let mut ordered: Vec<Option<(crate::llm::ToolCall, Result<String, Error>)>> =
-                (0..runnable_count).map(|_| None).collect();
-            while let Some(join_result) = join_set.join_next().await {
-                match join_result {
-                    Ok((idx, tc, result)) => {
-                        ordered[idx] = Some((tc, result));
-                    }
-                    Err(e) => {
-                        if e.is_panic() {
-                            tracing::error!("Deferred tool execution task panicked: {}", e);
-                        } else {
-                            tracing::error!("Deferred tool execution task cancelled: {}", e);
-                        }
-                    }
-                }
-            }
-
-            // Fill panicked slots with error results
-            ordered
-                .into_iter()
-                .enumerate()
-                .map(|(i, opt)| {
-                    opt.unwrap_or_else(|| {
-                        let tc = runnable[i].clone();
-                        let err: Error = crate::error::ToolError::ExecutionFailed {
-                            name: tc.name.clone(),
-                            reason: "Task failed during execution".to_string(),
-                        }
-                        .into();
-                        (tc, Err(err))
-                    })
-                })
-                .collect()
+                (idx, tc, result)
+            });
         }
+
+        self.collect_and_reorder_parallel_results(join_set, runnable)
+            .await
+    }
+
+    /// Execute runnable deferred tools (inline for ≤1, JoinSet for >1).
+    async fn execute_runnable_deferred(
+        &self,
+        runnable: &[crate::llm::ToolCall],
+        exec: &DeferredEnv,
+    ) -> Vec<(crate::llm::ToolCall, Result<String, Error>)> {
+        if runnable.is_empty() {
+            return Vec::new();
+        }
+        if runnable.len() == 1 {
+            return self.run_deferred_inline(runnable, exec).await;
+        }
+        self.run_deferred_parallel(runnable, exec).await
     }
 
     /// Postflight: record results, emit ToolResult previews, check for deferred auth.
     async fn postflight_record_and_maybe_deferred_auth(
         &self,
-        session: &Arc<Mutex<Session>>,
-        thread_id: Uuid,
-        message: &IncomingMessage,
+        scope: &TurnScope,
         exec_results: Vec<(crate::llm::ToolCall, Result<String, Error>)>,
         context_messages: &mut Vec<ChatMessage>,
     ) -> Option<String> {
@@ -424,12 +507,12 @@ impl Agent {
                 let _ = self
                     .channels
                     .send_status(
-                        &message.channel,
+                        &scope.env.channel,
                         StatusUpdate::ToolResult {
                             name: tc.name.clone(),
                             preview: output.clone(),
                         },
-                        &message.metadata,
+                        &scope.env.metadata,
                     )
                     .await;
             }
@@ -446,8 +529,8 @@ impl Agent {
 
             // Record sanitized result in thread
             {
-                let mut sess = session.lock().await;
-                if let Some(thread) = sess.threads.get_mut(&thread_id)
+                let mut sess = scope.session.lock().await;
+                if let Some(thread) = sess.threads.get_mut(&scope.thread_id)
                     && let Some(turn) = thread.last_turn_mut()
                 {
                     if is_deferred_error {
@@ -464,9 +547,9 @@ impl Agent {
                     check_auth_required(&tc.name, &deferred_result)
             {
                 self.handle_auth_intercept(
-                    session,
-                    thread_id,
-                    message,
+                    &scope.session,
+                    scope.thread_id,
+                    &scope.env,
                     &deferred_result,
                     ext_name,
                     instructions.clone(),
@@ -482,19 +565,19 @@ impl Agent {
     }
 
     /// Enter deferred approval mode and notify.
-    #[allow(clippy::too_many_arguments)]
     async fn enter_deferred_approval_and_notify(
         &self,
-        session: &Arc<Mutex<Session>>,
-        thread_id: Uuid,
-        message: &IncomingMessage,
-        approval_idx: usize,
-        tc: crate::llm::ToolCall,
-        tool: Arc<dyn crate::tools::Tool>,
-        deferred_tool_calls: &[crate::llm::ToolCall],
-        context_messages: &[ChatMessage],
-        pending: &PendingApproval,
+        ctx: DeferredApprovalContext<'_>,
     ) -> SubmissionResult {
+        let DeferredApprovalContext {
+            scope,
+            approval_idx,
+            tc,
+            tool,
+            deferred_tool_calls,
+            context_messages,
+            pending,
+        } = ctx;
         let new_pending = PendingApproval {
             request_id: Uuid::new_v4(),
             tool_name: tc.name.clone(),
@@ -514,8 +597,8 @@ impl Agent {
         let parameters = new_pending.display_parameters.clone();
 
         {
-            let mut sess = session.lock().await;
-            if let Some(thread) = sess.threads.get_mut(&thread_id) {
+            let mut sess = scope.session.lock().await;
+            if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
                 thread.await_approval(new_pending);
             }
         }
@@ -523,9 +606,9 @@ impl Agent {
         let _ = self
             .channels
             .send_status(
-                &message.channel,
+                &scope.env.channel,
                 StatusUpdate::Status("Awaiting approval".into()),
-                &message.metadata,
+                &scope.env.metadata,
             )
             .await;
 
@@ -537,94 +620,133 @@ impl Agent {
         }
     }
 
+    /// Finalize turn and persist response.
+    async fn finalize_turn_and_persist_response(
+        &self,
+        scope: &TurnScope,
+        response: &str,
+    ) -> Result<(), Error> {
+        let (turn_number, tool_calls) = {
+            let mut sess = scope.session.lock().await;
+            let thread = sess.threads.get_mut(&scope.thread_id).ok_or_else(|| {
+                Error::from(crate::error::JobError::NotFound {
+                    id: scope.thread_id,
+                })
+            })?;
+            thread.complete_turn(response);
+            thread
+                .turns
+                .last()
+                .map(|t| (t.turn_number, t.tool_calls.clone()))
+                .unwrap_or_default()
+        };
+        // User message already persisted at turn start; save tool calls then assistant response
+        self.persist_tool_calls(
+            scope.thread_id,
+            &scope.env.user_id,
+            turn_number,
+            &tool_calls,
+        )
+        .await;
+        self.persist_assistant_response(scope.thread_id, &scope.env.user_id, response)
+            .await;
+        let _ = self
+            .channels
+            .send_status(
+                &scope.env.channel,
+                StatusUpdate::Status("Done".into()),
+                &scope.env.metadata,
+            )
+            .await;
+        Ok(())
+    }
+
+    /// Enter awaiting approval state and notify.
+    async fn enter_awaiting_approval_and_notify(
+        &self,
+        scope: &TurnScope,
+        new_pending: PendingApproval,
+    ) -> Result<SubmissionResult, Error> {
+        let request_id = new_pending.request_id;
+        let tool_name = new_pending.tool_name.clone();
+        let description = new_pending.description.clone();
+        let parameters = new_pending.display_parameters.clone();
+        {
+            let mut sess = scope.session.lock().await;
+            let thread = sess.threads.get_mut(&scope.thread_id).ok_or_else(|| {
+                Error::from(crate::error::JobError::NotFound {
+                    id: scope.thread_id,
+                })
+            })?;
+            thread.await_approval(new_pending);
+        }
+        let _ = self
+            .channels
+            .send_status(
+                &scope.env.channel,
+                StatusUpdate::Status("Awaiting approval".into()),
+                &scope.env.metadata,
+            )
+            .await;
+        Ok(SubmissionResult::NeedApproval {
+            request_id,
+            tool_name,
+            description,
+            parameters,
+        })
+    }
+
+    /// Fail turn and return error submission result.
+    async fn fail_turn_and_error(
+        &self,
+        scope: &TurnScope,
+        error: String,
+    ) -> Result<SubmissionResult, Error> {
+        let mut sess = scope.session.lock().await;
+        let thread = sess.threads.get_mut(&scope.thread_id).ok_or_else(|| {
+            Error::from(crate::error::JobError::NotFound {
+                id: scope.thread_id,
+            })
+        })?;
+        thread.fail_turn(error.clone());
+        // User message already persisted at turn start
+        Ok(SubmissionResult::error(error))
+    }
+
     /// Continue loop after tool execution.
     async fn continue_loop_after_tool(
         &self,
         message: &IncomingMessage,
-        session: Arc<Mutex<Session>>,
-        thread_id: Uuid,
+        scope: &TurnScope,
         context_messages: Vec<ChatMessage>,
     ) -> Result<SubmissionResult, Error> {
         let result = self
-            .run_agentic_loop(message, session.clone(), thread_id, context_messages)
+            .run_agentic_loop(
+                message,
+                scope.session.clone(),
+                scope.thread_id,
+                context_messages,
+            )
             .await;
 
         match result {
             Ok(AgenticLoopResult::Response(response)) => {
-                let (turn_number, tool_calls) = {
-                    let mut sess = session.lock().await;
-                    let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
-                        Error::from(crate::error::JobError::NotFound { id: thread_id })
-                    })?;
-                    thread.complete_turn(&response);
-                    thread
-                        .turns
-                        .last()
-                        .map(|t| (t.turn_number, t.tool_calls.clone()))
-                        .unwrap_or_default()
-                };
-                // User message already persisted at turn start; save tool calls then assistant response
-                self.persist_tool_calls(thread_id, &message.user_id, turn_number, &tool_calls)
-                    .await;
-                self.persist_assistant_response(thread_id, &message.user_id, &response)
-                    .await;
-                let _ = self
-                    .channels
-                    .send_status(
-                        &message.channel,
-                        StatusUpdate::Status("Done".into()),
-                        &message.metadata,
-                    )
-                    .await;
+                self.finalize_turn_and_persist_response(scope, &response)
+                    .await?;
                 Ok(SubmissionResult::response(response))
             }
-            Ok(AgenticLoopResult::NeedApproval {
-                pending: new_pending,
-            }) => {
-                let request_id = new_pending.request_id;
-                let tool_name = new_pending.tool_name.clone();
-                let description = new_pending.description.clone();
-                let parameters = new_pending.display_parameters.clone();
-                {
-                    let mut sess = session.lock().await;
-                    let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
-                        Error::from(crate::error::JobError::NotFound { id: thread_id })
-                    })?;
-                    thread.await_approval(new_pending);
-                }
-                let _ = self
-                    .channels
-                    .send_status(
-                        &message.channel,
-                        StatusUpdate::Status("Awaiting approval".into()),
-                        &message.metadata,
-                    )
-                    .await;
-                Ok(SubmissionResult::NeedApproval {
-                    request_id,
-                    tool_name,
-                    description,
-                    parameters,
-                })
+            Ok(AgenticLoopResult::NeedApproval { pending }) => {
+                self.enter_awaiting_approval_and_notify(scope, pending)
+                    .await
             }
-            Err(e) => {
-                let mut sess = session.lock().await;
-                let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
-                    Error::from(crate::error::JobError::NotFound { id: thread_id })
-                })?;
-                thread.fail_turn(e.to_string());
-                // User message already persisted at turn start
-                Ok(SubmissionResult::error(e.to_string()))
-            }
+            Err(e) => self.fail_turn_and_error(scope, e.to_string()).await,
         }
     }
 
     /// Complete rejection and persist.
     async fn complete_rejection_and_persist(
         &self,
-        session: &Arc<Mutex<Session>>,
-        thread_id: Uuid,
-        message: &IncomingMessage,
+        scope: &TurnScope,
         pending: &PendingApproval,
     ) -> Result<SubmissionResult, Error> {
         // Rejected - complete the turn with a rejection message and persist
@@ -634,91 +756,35 @@ impl Agent {
             pending.tool_name
         );
         {
-            let mut sess = session.lock().await;
-            if let Some(thread) = sess.threads.get_mut(&thread_id) {
+            let mut sess = scope.session.lock().await;
+            if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
                 thread.clear_pending_approval();
                 thread.complete_turn(&rejection);
             }
         }
         // User message already persisted at turn start; save rejection response
-        self.persist_assistant_response(thread_id, &message.user_id, &rejection)
+        self.persist_assistant_response(scope.thread_id, &scope.env.user_id, &rejection)
             .await;
 
         let _ = self
             .channels
             .send_status(
-                &message.channel,
+                &scope.env.channel,
                 StatusUpdate::Status("Rejected".into()),
-                &message.metadata,
+                &scope.env.metadata,
             )
             .await;
 
         Ok(SubmissionResult::response(rejection))
     }
 
-    /// Process an approval or rejection of a pending tool execution.
-    pub(super) async fn process_approval(
+    /// Build context messages and notify for deferred execution.
+    async fn build_context_and_notify_for_deferred(
         &self,
-        message: &IncomingMessage,
-        session: Arc<Mutex<Session>>,
-        thread_id: Uuid,
-        request_id: Option<Uuid>,
-        approved: bool,
-        always: bool,
-    ) -> Result<SubmissionResult, Error> {
-        // a) Get pending approval
-        let pending = match self
-            .take_pending_approval_if_awaiting(&session, thread_id)
-            .await?
-        {
-            Some(p) => p,
-            None => return Ok(SubmissionResult::ok_with_message("")),
-        };
-
-        // b) Check request ID mismatch
-        if let Some(res) = self
-            .restage_on_request_id_mismatch(&session, thread_id, request_id, &pending)
-            .await?
-        {
-            return Ok(res);
-        }
-
-        // c) Handle rejection
-        if !approved {
-            return self
-                .complete_rejection_and_persist(&session, thread_id, message, &pending)
-                .await;
-        }
-
-        // d) Auto-approve and set processing state
-        self.auto_approve_if_always(&session, always, &pending.tool_name)
-            .await;
-        self.set_thread_processing(&session, thread_id).await;
-
-        // e) Build context and execute primary tool
-        let job_ctx = self.build_job_context_for_approval(message, &pending);
-        let (tool_result, _) = self
-            .execute_primary_tool_and_notify(message, &pending, &job_ctx)
-            .await;
-
-        // f) Record result and check for auth intercept
-        let (result_content, _) = self
-            .record_sanitised_primary_result(&session, thread_id, &pending, &tool_result)
-            .await;
-        if let Some(res) = self
-            .maybe_auth_intercept_after_primary(
-                &session,
-                thread_id,
-                message,
-                &pending,
-                &tool_result,
-            )
-            .await
-        {
-            return Ok(res);
-        }
-
-        // g) Build context messages and process deferred tools
+        env: &MsgEnv,
+        pending: &PendingApproval,
+        result_content: String,
+    ) -> (Vec<ChatMessage>, Vec<crate::llm::ToolCall>) {
         let mut context_messages = pending.context_messages.clone();
         context_messages.push(ChatMessage::tool_result(
             &pending.tool_call_id,
@@ -733,59 +799,148 @@ impl Agent {
             let _ = self
                 .channels
                 .send_status(
-                    &message.channel,
+                    &env.channel,
                     StatusUpdate::Thinking(format!(
                         "Executing {} deferred tool(s)...",
                         deferred_tool_calls.len()
                     )),
-                    &message.metadata,
+                    &env.metadata,
                 )
                 .await;
         }
 
+        (context_messages, deferred_tool_calls)
+    }
+
+    /// Handle deferred tools flow: preflight, execute, postflight.
+    async fn handle_deferred_tools_flow(
+        &self,
+        _message: &IncomingMessage,
+        scope: &TurnScope,
+        job_ctx: &JobContext,
+        context_messages: &mut Vec<ChatMessage>,
+        deferred_tool_calls: Vec<crate::llm::ToolCall>,
+        pending: &PendingApproval,
+    ) -> Result<Option<SubmissionResult>, Error> {
         // Preflight deferred tools
         let (runnable, approval_needed) = self
-            .preflight_deferred_tools(&session, &deferred_tool_calls)
+            .preflight_deferred_tools(&scope.session, &deferred_tool_calls)
             .await;
 
         // Execute runnable deferred tools
-        let exec_results = self
-            .execute_runnable_deferred(&runnable, &job_ctx, &message.channel, &message.metadata)
-            .await;
+        let exec = DeferredEnv {
+            job_ctx: job_ctx.clone(),
+            env: scope.env.clone(),
+        };
+        let exec_results = self.execute_runnable_deferred(&runnable, &exec).await;
 
         // Postflight: record results and check for auth
         if let Some(instructions) = self
-            .postflight_record_and_maybe_deferred_auth(
-                &session,
-                thread_id,
-                message,
-                exec_results,
-                &mut context_messages,
-            )
+            .postflight_record_and_maybe_deferred_auth(scope, exec_results, context_messages)
             .await
         {
-            return Ok(SubmissionResult::response(instructions));
+            return Ok(Some(SubmissionResult::response(instructions)));
         }
 
         // Handle deferred approval needed
         if let Some((idx, tc, tool)) = approval_needed {
-            return Ok(self
-                .enter_deferred_approval_and_notify(
-                    &session,
-                    thread_id,
-                    message,
-                    idx,
+            return Ok(Some(
+                self.enter_deferred_approval_and_notify(DeferredApprovalContext {
+                    scope,
+                    approval_idx: idx,
                     tc,
                     tool,
-                    &deferred_tool_calls,
-                    &context_messages,
-                    &pending,
-                )
-                .await);
+                    deferred_tool_calls: &deferred_tool_calls,
+                    context_messages,
+                    pending,
+                })
+                .await,
+            ));
+        }
+
+        // Continue agentic loop - not handled here, return None
+        Ok(None)
+    }
+
+    /// Process an approval or rejection of a pending tool execution.
+    pub(super) async fn process_approval(
+        &self,
+        message: &IncomingMessage,
+        scope: TurnScope,
+        params: ApprovalParams,
+    ) -> Result<SubmissionResult, Error> {
+        // a) Get pending approval
+        let pending = match self
+            .take_pending_approval_if_awaiting(&scope.session, scope.thread_id)
+            .await?
+        {
+            Some(p) => p,
+            None => return Ok(SubmissionResult::ok_with_message("")),
+        };
+
+        // b) Check request ID mismatch
+        if let Some(res) = self
+            .restage_on_request_id_mismatch(
+                &scope.session,
+                scope.thread_id,
+                params.request_id,
+                &pending,
+            )
+            .await?
+        {
+            return Ok(res);
+        }
+
+        // c) Handle rejection
+        if !params.approved {
+            return self.complete_rejection_and_persist(&scope, &pending).await;
+        }
+
+        // d) Auto-approve and set processing state
+        self.auto_approve_if_always(&scope.session, params.always, &pending.tool_name)
+            .await;
+        self.set_thread_processing(&scope.session, scope.thread_id)
+            .await;
+
+        // e) Build context and execute primary tool
+        let job_ctx = self.build_job_context_for_approval(&scope.env, &pending);
+        let (tool_result, _) = self
+            .execute_primary_tool_and_notify(&scope.env, &pending, &job_ctx)
+            .await;
+
+        // f) Record result and check for auth intercept
+        let (result_content, _) = self
+            .record_sanitised_primary_result(&scope, &pending, &tool_result)
+            .await;
+        if let Some(res) = self
+            .maybe_auth_intercept_after_primary(&scope, &pending, &tool_result)
+            .await
+        {
+            return Ok(res);
+        }
+
+        // g) Build context messages and process deferred tools
+        let (mut context_messages, deferred_tool_calls) = self
+            .build_context_and_notify_for_deferred(&scope.env, &pending, result_content)
+            .await;
+
+        // Handle deferred tools flow
+        if let Some(result) = self
+            .handle_deferred_tools_flow(
+                message,
+                &scope,
+                &job_ctx,
+                &mut context_messages,
+                deferred_tool_calls,
+                &pending,
+            )
+            .await?
+        {
+            return Ok(result);
         }
 
         // h) Continue agentic loop
-        self.continue_loop_after_tool(message, session, thread_id, context_messages)
+        self.continue_loop_after_tool(message, &scope, context_messages)
             .await
     }
 
@@ -798,7 +953,7 @@ impl Agent {
         &self,
         session: &Arc<Mutex<Session>>,
         thread_id: Uuid,
-        message: &IncomingMessage,
+        env: &MsgEnv,
         tool_result: &Result<String, Error>,
         ext_name: String,
         instructions: String,
@@ -812,29 +967,25 @@ impl Agent {
             }
         }
         // User message already persisted at turn start; save auth instructions
-        self.persist_assistant_response(thread_id, &message.user_id, &instructions)
+        self.persist_assistant_response(thread_id, &env.user_id, &instructions)
             .await;
         let _ = self
             .channels
             .send_status(
-                &message.channel,
+                &env.channel,
                 StatusUpdate::AuthRequired {
                     extension_name: ext_name,
                     instructions: Some(instructions.clone()),
                     auth_url: auth_data.auth_url,
                     setup_url: auth_data.setup_url,
                 },
-                &message.metadata,
+                &env.metadata,
             )
             .await;
     }
 
     /// Activate extension after successful auth and notify.
-    async fn activate_extension_and_notify(
-        &self,
-        message: &IncomingMessage,
-        ext_name: &str,
-    ) -> Option<String> {
+    async fn activate_extension_and_notify(&self, env: &MsgEnv, ext_name: &str) -> Option<String> {
         let ext_mgr = match self.deps.extension_manager.as_ref() {
             Some(mgr) => mgr,
             None => {
@@ -860,13 +1011,13 @@ impl Agent {
                 let _ = self
                     .channels
                     .send_status(
-                        &message.channel,
+                        &env.channel,
                         StatusUpdate::AuthCompleted {
                             extension_name: ext_name.to_string(),
                             success: true,
                             message: msg.clone(),
                         },
-                        &message.metadata,
+                        &env.metadata,
                     )
                     .await;
                 Some(msg)
@@ -885,13 +1036,13 @@ impl Agent {
                 let _ = self
                     .channels
                     .send_status(
-                        &message.channel,
+                        &env.channel,
                         StatusUpdate::AuthCompleted {
                             extension_name: ext_name.to_string(),
                             success: true,
                             message: msg.clone(),
                         },
-                        &message.metadata,
+                        &env.metadata,
                     )
                     .await;
                 Some(msg)
@@ -900,34 +1051,31 @@ impl Agent {
     }
 
     /// Re-enter auth mode and notify.
-    #[allow(clippy::too_many_arguments)]
     async fn reenter_auth_mode_and_notify(
         &self,
-        message: &IncomingMessage,
-        session: Arc<Mutex<Session>>,
-        thread_id: Uuid,
+        scope: &TurnScope,
         ext_name: &str,
         instructions: String,
         auth_url: Option<String>,
         setup_url: Option<String>,
     ) -> Option<String> {
         {
-            let mut sess = session.lock().await;
-            if let Some(thread) = sess.threads.get_mut(&thread_id) {
+            let mut sess = scope.session.lock().await;
+            if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
                 thread.enter_auth_mode(ext_name.to_string());
             }
         }
         let _ = self
             .channels
             .send_status(
-                &message.channel,
+                &scope.env.channel,
                 StatusUpdate::AuthRequired {
                     extension_name: ext_name.to_string(),
                     instructions: Some(instructions.clone()),
                     auth_url,
                     setup_url,
                 },
-                &message.metadata,
+                &scope.env.metadata,
             )
             .await;
         Some(instructions)
@@ -939,11 +1087,9 @@ impl Agent {
     /// completely bypassing logging, turn creation, history, and compaction.
     pub(super) async fn process_auth_token(
         &self,
-        message: &IncomingMessage,
+        scope: TurnScope,
         pending: &crate::agent::session::PendingAuth,
         token: &str,
-        session: Arc<Mutex<Session>>,
-        thread_id: Uuid,
     ) -> Result<Option<String>, Error> {
         let token = token.trim();
 
@@ -955,8 +1101,8 @@ impl Agent {
         match ext_mgr.auth(&pending.extension_name, Some(token)).await {
             Ok(result) if result.is_authenticated() => {
                 {
-                    let mut sess = session.lock().await;
-                    if let Some(thread) = sess.threads.get_mut(&thread_id) {
+                    let mut sess = scope.session.lock().await;
+                    if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
                         thread.pending_auth = None;
                     }
                 }
@@ -967,7 +1113,7 @@ impl Agent {
 
                 // Auto-activate so tools are available immediately after auth
                 Ok(self
-                    .activate_extension_and_notify(message, &pending.extension_name)
+                    .activate_extension_and_notify(&scope.env, &pending.extension_name)
                     .await)
             }
             Ok(result) => {
@@ -980,9 +1126,7 @@ impl Agent {
                 let setup_url = result.setup_url().map(String::from);
                 Ok(self
                     .reenter_auth_mode_and_notify(
-                        message,
-                        session,
-                        thread_id,
+                        &scope,
                         &pending.extension_name,
                         instructions,
                         auth_url,
@@ -998,13 +1142,13 @@ impl Agent {
                 let _ = self
                     .channels
                     .send_status(
-                        &message.channel,
+                        &scope.env.channel,
                         StatusUpdate::AuthCompleted {
                             extension_name: pending.extension_name.clone(),
                             success: false,
                             message: msg.clone(),
                         },
-                        &message.metadata,
+                        &scope.env.metadata,
                     )
                     .await;
                 Ok(Some(msg))
