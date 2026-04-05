@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use super::{ActionRecord, DatabaseError, Store};
 use crate::context::JobContext;
-use crate::testing::try_test_pg_db;
+use crate::testing::postgres::try_test_pg_db;
 
 #[fixture]
 async fn seeded_store() -> Option<(Store, Uuid)> {

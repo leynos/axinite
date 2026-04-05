@@ -3,7 +3,8 @@
 use uuid::Uuid;
 
 use crate::db::{
-    NativeSandboxStore, SandboxEventType, SandboxJobStatusUpdate, SandboxMode, UserId,
+    NativeSandboxStore, SandboxEventType, SandboxJobStatus, SandboxJobStatusUpdate, SandboxMode,
+    UserId,
 };
 use crate::error::DatabaseError;
 use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
@@ -87,7 +88,6 @@ mod tests {
         // the update_sandbox_job_status implementation
         let _ = (id, status, success, message, started_at, completed_at);
     }
-
 
     #[cfg(feature = "postgres")]
     mod behavioral {

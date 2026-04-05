@@ -270,7 +270,7 @@ mod tests {
     #[cfg(feature = "postgres")]
     use crate::context::StateTransition;
     #[cfg(feature = "postgres")]
-    use crate::testing::try_test_pg_db;
+    use crate::testing::postgres::try_test_pg_db;
     #[cfg(feature = "postgres")]
     use rstest::rstest;
 

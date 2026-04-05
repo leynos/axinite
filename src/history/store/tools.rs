@@ -98,7 +98,7 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::Store;
-    use crate::testing::try_test_pg_db;
+    use crate::testing::postgres::try_test_pg_db;
 
     #[fixture]
     async fn store() -> Option<Store> {

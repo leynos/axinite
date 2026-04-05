@@ -12,7 +12,7 @@ use crate::agent::routine::{
     NotifyConfig, Routine, RoutineAction, RoutineGuardrails, RoutineRun, RunStatus, Trigger,
 };
 use crate::db::RoutineRunCompletion;
-use crate::testing::try_test_pg_db;
+use crate::testing::postgres::try_test_pg_db;
 
 fn sample_routine() -> Routine {
     let now = Utc::now();

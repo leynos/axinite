@@ -66,7 +66,7 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::{LlmCallRecord, Store};
-    use crate::testing::try_test_pg_db;
+    use crate::testing::postgres::try_test_pg_db;
     use rust_decimal::Decimal;
     use uuid::Uuid;
 
