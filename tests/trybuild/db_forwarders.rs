@@ -1,3 +1,10 @@
+//! Compile-contract fixture for database trait forwarders.
+//!
+//! This module validates that the `ironclaw::db` forwarder traits compile
+//! correctly for both PostgreSQL and libSQL backends. It serves as a trybuild
+//! test target to ensure the public DB trait surface remains stable and
+//! backward-compatible across database implementations.
+
 use ironclaw::db::{
     ConversationStore, Database, SettingKey, SettingsStore, UserId,
 };

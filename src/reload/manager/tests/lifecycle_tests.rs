@@ -53,10 +53,13 @@ impl LifecycleFixture {
     }
 }
 
+/// Factory for creating a config loader, or None if loader is configured in test body.
+type LoaderFactoryFn = fn() -> Arc<dyn ConfigLoader>;
+
 /// Test scenario configuration and expected outcomes.
 struct Scenario {
     description: &'static str,
-    loader_factory: fn() -> Arc<dyn ConfigLoader>,
+    loader_factory: Option<LoaderFactoryFn>,
     injector_factory: fn() -> Arc<StubSecretInjector>,
     http_config_provider: fn() -> Option<(Option<crate::config::HttpConfig>, bool)>,
     expect_reload_ok: bool,
@@ -70,9 +73,9 @@ struct Scenario {
 #[rstest]
 #[case::config_load_failure(Scenario {
     description: "config load failure prevents listener restart",
-    loader_factory: || Arc::new(StubConfigLoader::new_error(
+    loader_factory: Some(|| Arc::new(StubConfigLoader::new_error(
         ConfigError::MissingEnvVar("TEST".to_string()),
-    )),
+    ))),
     injector_factory: || Arc::new(StubSecretInjector::new()),
     http_config_provider: || None,
     expect_reload_ok: false,
@@ -84,7 +87,7 @@ struct Scenario {
 })]
 #[case::http_config_removed(Scenario {
     description: "http config removed shuts down listener and clears secrets",
-    loader_factory: || panic!("loader configured in test body"),
+    loader_factory: None,
     injector_factory: || Arc::new(StubSecretInjector::new()),
     http_config_provider: || Some((None, true)),
     expect_reload_ok: true,
@@ -96,7 +99,7 @@ struct Scenario {
 })]
 #[case::secret_injector_failure(Scenario {
     description: "secret injector failure does not block config reload",
-    loader_factory: || panic!("loader configured in test body"),
+    loader_factory: None,
     injector_factory: || Arc::new(StubSecretInjector::new_failure()),
     http_config_provider: || Some((
         Some(http_config("127.0.0.1", 8081, Some("rotated-secret"))),
@@ -114,14 +117,17 @@ async fn lifecycle_scenarios(#[case] scenario: Scenario) -> Result<(), Box<dyn s
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
     let injector = (scenario.injector_factory)();
 
-    let loader: Arc<dyn ConfigLoader> =
-        if let Some((http_cfg, _)) = (scenario.http_config_provider)() {
-            let (_temp_dir, mut config) = test_config_with_http(None).await?;
-            config.channels.http = http_cfg;
-            Arc::new(StubConfigLoader::new_success(config))
-        } else {
-            (scenario.loader_factory)()
-        };
+    let loader: Arc<dyn ConfigLoader> = if let Some((http_cfg, _)) =
+        (scenario.http_config_provider)()
+    {
+        let (_temp_dir, mut config) = test_config_with_http(None).await?;
+        config.channels.http = http_cfg;
+        Arc::new(StubConfigLoader::new_success(config))
+    } else {
+        scenario
+            .loader_factory
+            .expect("loader_factory must be Some when http_config_provider returns None")()
+    };
 
     let fixture = LifecycleFixture::new(loader, injector, current_addr).await;
 

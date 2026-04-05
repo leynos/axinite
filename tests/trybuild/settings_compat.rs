@@ -1,3 +1,10 @@
+//! Compile-contract fixture for settings store compatibility.
+//!
+//! This module validates that the `SettingsStore` trait can be implemented
+//! using the `NativeSettingsStore` compatibility path. It serves as a trybuild
+//! test target to ensure the settings store abstraction remains compatible
+//! with both native and dynamic dispatch usage patterns.
+
 use std::collections::HashMap;
 
 use ironclaw::db::settings::{
