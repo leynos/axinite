@@ -14,6 +14,43 @@ pub(super) const CLI_TOOL_RESULT_MAX: usize = 200;
 /// Max characters for thinking/status messages in the terminal.
 pub(super) const CLI_STATUS_MAX: usize = 200;
 
+/// Sanitize user-controlled strings for safe terminal output.
+///
+/// Removes ANSI escape sequences, C1 control characters, and normalizes
+/// CR/LF to single spaces to prevent terminal spoofing or injection attacks.
+fn sanitize_for_terminal(text: &str) -> String {
+    text.chars()
+        .filter_map(|c| {
+            // Filter out control characters except tab
+            if c.is_control() && c != '\t' {
+                // Replace CR/LF with space
+                if c == '\r' || c == '\n' {
+                    Some(' ')
+                } else {
+                    // Drop other control characters (including ESC and C1 range)
+                    None
+                }
+            } else {
+                Some(c)
+            }
+        })
+        .collect::<String>()
+        // Remove ANSI escape sequences (ESC [ ... m)
+        .split("\x1b[")
+        .enumerate()
+        .map(|(i, part)| {
+            if i == 0 {
+                part.to_string()
+            } else {
+                // Skip everything until 'm' (end of SGR sequence)
+                part.split_once('m')
+                    .map(|(_, rest)| rest.to_string())
+                    .unwrap_or_default()
+            }
+        })
+        .collect()
+}
+
 /// Describes a completed tool invocation for terminal rendering.
 pub(super) struct ToolCompletedInfo<'a> {
     pub name: &'a str,
@@ -71,16 +108,21 @@ pub(super) fn print_tool_started(name: &str) {
 
 fn render_tool_completed_lines(info: &ToolCompletedInfo<'_>) -> Vec<String> {
     let mut lines = Vec::new();
+    let sanitized_name = sanitize_for_terminal(info.name);
     if info.success {
-        lines.push(format!("  \x1b[32m\u{25CF} {}\x1b[0m", info.name));
+        lines.push(format!("  \x1b[32m\u{25CF} {sanitized_name}\x1b[0m"));
     } else {
-        lines.push(format!("  \x1b[31m\u{2717} {} (failed)\x1b[0m", info.name));
+        lines.push(format!(
+            "  \x1b[31m\u{2717} {sanitized_name} (failed)\x1b[0m"
+        ));
         if let Some(error) = info.error {
-            let display = truncate_for_preview(error, CLI_TOOL_RESULT_MAX);
+            let sanitized_error = sanitize_for_terminal(error);
+            let display = truncate_for_preview(&sanitized_error, CLI_TOOL_RESULT_MAX);
             lines.push(format!("    \x1b[90merror: {display}\x1b[0m"));
         }
         if let Some(parameters) = info.parameters {
-            let display = truncate_for_preview(parameters, CLI_TOOL_RESULT_MAX);
+            let sanitized_params = sanitize_for_terminal(parameters);
+            let display = truncate_for_preview(&sanitized_params, CLI_TOOL_RESULT_MAX);
             lines.push(format!("    \x1b[90mparams: {display}\x1b[0m"));
         }
     }
@@ -131,9 +173,11 @@ pub(super) fn print_stream_chunk(is_streaming: &AtomicBool, chunk: &str) {
 }
 
 fn render_job_started(info: &JobStartedInfo<'_>) -> String {
+    let sanitized_title = sanitize_for_terminal(info.title);
+    let sanitized_job_id = sanitize_for_terminal(info.job_id);
+    let sanitized_url = sanitize_for_terminal(info.browse_url);
     format!(
-        "  \x1b[36m[job]\x1b[0m {} \x1b[90m({})\x1b[0m \x1b[4m{}\x1b[0m",
-        info.title, info.job_id, info.browse_url
+        "  \x1b[36m[job]\x1b[0m {sanitized_title} \x1b[90m({sanitized_job_id})\x1b[0m \x1b[4m{sanitized_url}\x1b[0m"
     )
 }
 
@@ -148,7 +192,8 @@ pub(super) fn print_job_started(info: &JobStartedInfo<'_>) {
 fn render_status(is_debug: bool, msg: &str) -> Option<String> {
     let approval_related = msg.to_lowercase().contains("approval");
     if is_debug || approval_related {
-        let display = truncate_for_preview(msg, CLI_STATUS_MAX);
+        let sanitized_msg = sanitize_for_terminal(msg);
+        let display = truncate_for_preview(&sanitized_msg, CLI_STATUS_MAX);
         Some(format!("  \x1b[90m{display}\x1b[0m"))
     } else {
         None
@@ -186,23 +231,24 @@ pub(super) fn print_approval_needed(
 }
 
 fn render_auth_required_lines(info: &AuthRequiredInfo<'_>) -> Vec<String> {
+    let sanitized_ext_name = sanitize_for_terminal(info.extension_name);
     let mut lines = vec![
         String::new(),
-        format!(
-            "\x1b[33m  Authentication required for {}\x1b[0m",
-            info.extension_name
-        ),
+        format!("\x1b[33m  Authentication required for {sanitized_ext_name}\x1b[0m"),
     ];
     if let Some(instr) = info.instructions {
-        lines.push(format!("  {instr}"));
+        let sanitized_instr = sanitize_for_terminal(instr);
+        lines.push(format!("  {sanitized_instr}"));
     }
     if let Some(url) = info.auth_url {
-        lines.push(format!("  \x1b[4m{url}\x1b[0m"));
+        let sanitized_url = sanitize_for_terminal(url);
+        lines.push(format!("  \x1b[4m{sanitized_url}\x1b[0m"));
     }
     if let Some(url) = info.setup_url
         && Some(url) != info.auth_url
     {
-        lines.push(format!("  \x1b[4m{url}\x1b[0m"));
+        let sanitized_url = sanitize_for_terminal(url);
+        lines.push(format!("  \x1b[4m{sanitized_url}\x1b[0m"));
     }
     lines.push(String::new());
     lines
@@ -219,10 +265,12 @@ pub(super) fn print_auth_required(info: &AuthRequiredInfo<'_>) {
 }
 
 fn render_auth_completed(info: &AuthCompletedInfo<'_>) -> String {
+    let sanitized_ext_name = sanitize_for_terminal(info.extension_name);
+    let sanitized_message = sanitize_for_terminal(info.message);
     if info.success {
-        format!("\x1b[32m  {}: {}\x1b[0m", info.extension_name, info.message)
+        format!("\x1b[32m  {sanitized_ext_name}: {sanitized_message}\x1b[0m")
     } else {
-        format!("\x1b[31m  {}: {}\x1b[0m", info.extension_name, info.message)
+        format!("\x1b[31m  {sanitized_ext_name}: {sanitized_message}\x1b[0m")
     }
 }
 
@@ -236,7 +284,8 @@ pub(super) fn print_auth_completed(info: &AuthCompletedInfo<'_>) {
 
 fn render_image_generated(path: Option<&str>) -> String {
     if let Some(p) = path {
-        format!("\x1b[36m  [image] {p}\x1b[0m")
+        let sanitized_path = sanitize_for_terminal(p);
+        format!("\x1b[36m  [image] {sanitized_path}\x1b[0m")
     } else {
         "\x1b[36m  [image generated]\x1b[0m".to_string()
     }

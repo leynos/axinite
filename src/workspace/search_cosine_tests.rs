@@ -84,6 +84,10 @@ fn test_cosine_similarity_special_values_do_not_return_nan() {
 
     for (a, b) in cases {
         let sim = cosine_similarity(a, b);
+        assert_eq!(
+            sim, 0.0,
+            "cosine_similarity should return 0.0 fallback for special values, got {sim} for a={a:?}, b={b:?}"
+        );
         assert!(
             !sim.is_nan(),
             "cosine_similarity returned NaN for a={a:?}, b={b:?}"

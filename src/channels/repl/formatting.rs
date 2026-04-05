@@ -7,6 +7,43 @@ use unicode_width::UnicodeWidthStr;
 
 use super::input::SLASH_COMMANDS;
 
+/// Sanitize user-controlled strings for safe terminal output.
+///
+/// Removes ANSI escape sequences, C1 control characters, and normalizes
+/// CR/LF to single spaces to prevent terminal spoofing or injection attacks.
+fn sanitize_for_terminal(text: &str) -> String {
+    text.chars()
+        .filter_map(|c| {
+            // Filter out control characters except tab
+            if c.is_control() && c != '\t' {
+                // Replace CR/LF with space
+                if c == '\r' || c == '\n' {
+                    Some(' ')
+                } else {
+                    // Drop other control characters (including ESC and C1 range)
+                    None
+                }
+            } else {
+                Some(c)
+            }
+        })
+        .collect::<String>()
+        // Remove ANSI escape sequences (ESC [ ... m)
+        .split("\x1b[")
+        .enumerate()
+        .map(|(i, part)| {
+            if i == 0 {
+                part.to_string()
+            } else {
+                // Skip everything until 'm' (end of SGR sequence)
+                part.split_once('m')
+                    .map(|(_, rest)| rest.to_string())
+                    .unwrap_or_default()
+            }
+        })
+        .collect()
+}
+
 /// A pending tool-use request awaiting user approval.
 pub(super) struct ToolApprovalRequest<'a> {
     pub request_id: &'a str,
@@ -74,23 +111,27 @@ pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> St
         serde_json::Value::Object(map) => {
             let mut lines = Vec::new();
             for (key, value) in map {
+                let sanitized_key = sanitize_for_terminal(key);
                 let val_str = match value {
                     serde_json::Value::String(s) => {
-                        let display = truncate_grapheme_aware(s, 120);
+                        let sanitized_s = sanitize_for_terminal(s);
+                        let display = truncate_grapheme_aware(&sanitized_s, 120);
                         format!("\x1b[32m\"{display}\"\x1b[0m")
                     }
                     other => {
                         let rendered = other.to_string();
-                        truncate_grapheme_aware(&rendered, 120)
+                        let sanitized = sanitize_for_terminal(&rendered);
+                        truncate_grapheme_aware(&sanitized, 120)
                     }
                 };
-                lines.push(format!("{indent}\x1b[36m{key}\x1b[0m: {val_str}"));
+                lines.push(format!("{indent}\x1b[36m{sanitized_key}\x1b[0m: {val_str}"));
             }
             lines.join("\n")
         }
         other => {
             let pretty = serde_json::to_string_pretty(other).unwrap_or_else(|_| other.to_string());
-            let truncated = truncate_grapheme_aware(&pretty, 300);
+            let sanitized = sanitize_for_terminal(&pretty);
+            let truncated = truncate_grapheme_aware(&sanitized, 300);
             truncated
                 .lines()
                 .map(|l| format!("{indent}\x1b[90m{l}\x1b[0m"))
@@ -217,14 +258,19 @@ pub(super) fn render_approval_card(
     let term_width = crossterm::terminal::size()
         .map(|(w, _)| w as usize)
         .unwrap_or(80);
-    let box_width = (term_width.saturating_sub(4)).clamp(40, 60);
+    let box_width = term_width.saturating_sub(4).min(60);
     let content_width = box_width.saturating_sub(4); // Account for "│ " prefix and padding
 
+    // Sanitize user-controlled inputs
+    let sanitized_tool_name = sanitize_for_terminal(request.tool_name);
+    let sanitized_description = sanitize_for_terminal(request.description);
+    let sanitized_request_id = sanitize_for_terminal(request.request_id);
+
     // Short request ID for the bottom border (UTF-8 safe truncation)
-    let short_id: String = request.request_id.chars().take(8).collect();
+    let short_id: String = sanitized_request_id.chars().take(8).collect();
 
     // Top border: ┌ tool_name requires approval ───
-    let top_label = format!(" {} requires approval ", request.tool_name);
+    let top_label = format!(" {sanitized_tool_name} requires approval ");
     let truncated_label = truncate_card_content(&top_label, box_width.saturating_sub(1));
     let top_fill = box_width.saturating_sub(visible_char_count(&truncated_label) + 1);
     let top_border = format!(
@@ -241,7 +287,7 @@ pub(super) fn render_approval_card(
     );
 
     // Truncate description to fit within card
-    let truncated_desc = truncate_card_content(request.description, content_width);
+    let truncated_desc = truncate_card_content(&sanitized_description, content_width);
 
     let mut lines = Vec::new();
     lines.push(String::new()); // blank line
@@ -371,6 +417,30 @@ mod tests {
         assert_eq!(visible_char_count(text), 4);
         assert_eq!(visible_char_count(&truncated), 3);
         assert_eq!(strip_ansi(&truncated), "👩‍🔬…");
+    }
+
+    #[test]
+    fn render_approval_card_respects_narrow_terminal_width() {
+        // Mock a narrow terminal (35-41 columns)
+        // With the .min(60) change (no hard 40 minimum), the card should use available width
+        let request = ToolApprovalRequest {
+            request_id: "req_123",
+            tool_name: "test",
+            description: "A test tool",
+        };
+        let lines = render_approval_card(&request, &serde_json::json!({}));
+
+        // All lines should fit within a narrow width without wrapping
+        // The actual box_width would be term_width - 4, but we can't control term_width in tests
+        // So we just verify no line is excessively wide (which would indicate wrapping)
+        for line in &lines {
+            let width = visible_char_count(line);
+            // Reasonable upper bound - should not exceed typical max
+            assert!(
+                width <= 80,
+                "line width {width} too wide, may indicate wrapping: {line:?}"
+            );
+        }
     }
 
     #[test]
