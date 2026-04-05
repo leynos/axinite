@@ -2372,12 +2372,48 @@ mod tests {
 
     #[test]
     fn test_select_active_skills_returns_empty_when_disabled() {
+        use crate::skills::{
+            ActivationCriteria, LoadedSkill, SkillManifest, SkillSource, SkillTrust,
+        };
+        use std::path::PathBuf;
+
         let registry = Arc::new(RwLock::new(SkillRegistry::new(PathBuf::from("."))));
+
+        // Populate registry with a skill before testing disabled state
+        {
+            let mut reg = registry.write().unwrap();
+            let skill = LoadedSkill {
+                manifest: SkillManifest {
+                    name: "test-skill".to_string(),
+                    version: "1.0.0".to_string(),
+                    description: "Test skill for disabled check".to_string(),
+                    activation: ActivationCriteria {
+                        keywords: vec!["test".to_string()],
+                        exclude_keywords: vec![],
+                        patterns: vec![],
+                        tags: vec![],
+                        max_context_tokens: 1000,
+                    },
+                    metadata: None,
+                },
+                prompt_content: "Test skill content".to_string(),
+                trust: SkillTrust::Trusted,
+                source: SkillSource::User(PathBuf::from(".")),
+                content_hash: "abc123".to_string(),
+                compiled_patterns: vec![],
+                lowercased_keywords: vec!["test".to_string()],
+                lowercased_exclude_keywords: vec![],
+                lowercased_tags: vec![],
+            };
+            reg.commit_install("test-skill", skill).unwrap();
+        }
+
         let skills_cfg = SkillsConfig {
             enabled: false,
             ..SkillsConfig::default()
         };
 
+        // Should return empty even though registry has skills, because skills are disabled
         assert!(select_active_skills(&registry, &skills_cfg, "hello").is_empty());
     }
 

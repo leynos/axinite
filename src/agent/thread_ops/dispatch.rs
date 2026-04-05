@@ -59,7 +59,8 @@ impl Agent {
             SubmissionResult::Response { content } => {
                 if crate::llm::is_silent_reply(&content) {
                     tracing::debug!("Suppressing silent reply token");
-                    Ok(None)
+                    // Return empty string sentinel instead of None to avoid shutdown signal
+                    Ok(Some(String::new()))
                 } else {
                     Ok(Some(content))
                 }
@@ -157,7 +158,7 @@ impl Agent {
                     approved,
                     always,
                 };
-                self.process_approval(message, scope, params).await
+                self.process_approval(scope, params).await
             }
             Submission::ApprovalResponse { approved, always } => {
                 let scope = TurnScope::new(session, thread_id, message);
@@ -166,7 +167,7 @@ impl Agent {
                     approved,
                     always,
                 };
-                self.process_approval(message, scope, params).await
+                self.process_approval(scope, params).await
             }
         }
     }

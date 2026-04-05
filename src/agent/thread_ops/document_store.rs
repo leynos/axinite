@@ -18,7 +18,10 @@ fn sanitise_filename_char(c: char) -> char {
 
 /// Returns `true` when extracted text is usable — i.e. not an error sentinel.
 fn is_usable_extracted_text(t: &str) -> bool {
-    !t.starts_with("[Failed") && !t.starts_with("[Error") && !t.starts_with("[Unsupported")
+    !t.starts_with("[Failed")
+        && !t.starts_with("[Error")
+        && !t.starts_with("[Unsupported")
+        && !t.starts_with("[Document")
 }
 
 fn get_valid_document_text(attachment: &IncomingAttachment) -> Option<&str> {
@@ -39,7 +42,12 @@ fn sanitise_filename(raw_name: &str) -> String {
     }
 }
 
-fn build_document_path(index: usize, attachment: &IncomingAttachment, date: &str) -> String {
+fn build_document_path(
+    index: usize,
+    attachment: &IncomingAttachment,
+    date: &str,
+    message_id: &str,
+) -> String {
     let raw_name = attachment.filename.as_deref().unwrap_or("unnamed_document");
     let filename = sanitise_filename(raw_name);
     let raw_id = if attachment.id.is_empty() {
@@ -48,8 +56,9 @@ fn build_document_path(index: usize, attachment: &IncomingAttachment, date: &str
         attachment.id.as_str()
     };
     let sanitized_id = sanitise_filename(raw_id);
+    let sanitized_message_id = sanitise_filename(message_id);
 
-    format!("documents/{date}/{index}-{sanitized_id}-{filename}")
+    format!("documents/{date}/{sanitized_message_id}/{index}-{sanitized_id}-{filename}")
 }
 
 async fn write_document_to_workspace(
@@ -93,7 +102,9 @@ pub(super) async fn store_extracted_documents(
 
         let filename =
             sanitise_filename(attachment.filename.as_deref().unwrap_or("unnamed_document"));
-        let path = build_document_path(index, attachment, &date);
+        // Use message.id as the stable identifier for the document path
+        let message_id = message.id.to_string();
+        let path = build_document_path(index, attachment, &date, &message_id);
 
         let header = format!(
             "# {filename}\n\n\
@@ -193,12 +204,12 @@ mod tests {
     #[test]
     fn build_document_path_uses_sanitized_id_and_filename() {
         let attachment = make_attachment("abc/../123", Some("../report.pdf"), Some("text"));
-        let path = build_document_path(7, &attachment, "2026-04-03");
-        assert!(path.starts_with("documents/2026-04-03/7-"));
+        let path = build_document_path(7, &attachment, "2026-04-03", "msg-123");
+        assert!(path.starts_with("documents/2026-04-03/msg-123/7-"));
         assert!(!path.contains(".."));
         let suffix = path
-            .strip_prefix("documents/2026-04-03/")
-            .expect("path should include date prefix");
+            .strip_prefix("documents/2026-04-03/msg-123/")
+            .expect("path should include date and message_id prefix");
         assert!(!suffix.contains('/'));
         assert!(!suffix.contains('\\'));
     }

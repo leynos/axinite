@@ -235,3 +235,67 @@ async fn repair_task_deduplicates_manual_required_notifications_for_broken_tools
     )
     .await;
 }
+
+#[tokio::test]
+async fn repair_task_sends_notification_for_stuck_job_failed() {
+    let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_stuck_job(
+        StuckJob {
+            job_id: Uuid::nil(),
+            stuck_since: Utc::now(),
+            stuck_duration: Duration::from_secs(120),
+            last_error: Some("persistent failure".to_string()),
+            repair_attempts: 2,
+        },
+        RepairResult::Failed {
+            message: "recovery failed permanently".to_string(),
+        },
+    ));
+    let mut harness = spawn_notification_task(repair);
+
+    let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
+        .await
+        .expect("stuck-job failed notification should arrive")
+        .expect("notification channel should remain open");
+
+    assert_eq!(
+        notification.message,
+        format!(
+            "Job {} was stuck for {}s, recovery failed permanently: recovery failed permanently",
+            Uuid::nil(),
+            120
+        )
+    );
+
+    harness.shutdown().await;
+}
+
+#[tokio::test]
+async fn repair_task_sends_notification_for_broken_tool_failed() {
+    let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_broken_tool(
+        BrokenTool {
+            name: "compiler".to_string(),
+            failure_count: 10,
+            last_error: Some("build failed".to_string()),
+            first_failure: Utc::now(),
+            last_failure: Utc::now(),
+            last_build_result: None,
+            repair_attempts: 2,
+        },
+        RepairResult::Failed {
+            message: "rebuild failed".to_string(),
+        },
+    ));
+    let mut harness = spawn_notification_task(repair);
+
+    let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
+        .await
+        .expect("broken-tool failed notification should arrive")
+        .expect("notification channel should remain open");
+
+    assert_eq!(
+        notification.message,
+        "Tool 'compiler' repair failed: rebuild failed"
+    );
+
+    harness.shutdown().await;
+}

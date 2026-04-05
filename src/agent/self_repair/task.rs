@@ -82,6 +82,7 @@ async fn run_stuck_job_repairs(
                         job.stuck_duration.as_secs(),
                         message
                     ),
+                    shutdown,
                 )
                 .await;
             }
@@ -99,6 +100,7 @@ async fn run_stuck_job_repairs(
                         job.stuck_duration.as_secs(),
                         message
                     ),
+                    shutdown,
                 )
                 .await;
             }
@@ -109,6 +111,7 @@ async fn run_stuck_job_repairs(
                         notification_tx.as_mut(),
                         notification_route,
                         format!("Job {} needs manual intervention: {}", job.job_id, message),
+                        shutdown,
                     )
                     .await;
                 }
@@ -158,6 +161,7 @@ async fn run_broken_tool_repairs(
                     notification_tx.as_mut(),
                     notification_route,
                     format!("Tool '{}' repaired: {}", tool.name, message),
+                    shutdown,
                 )
                 .await;
             }
@@ -172,6 +176,7 @@ async fn run_broken_tool_repairs(
                     notification_tx.as_mut(),
                     notification_route,
                     format!("Tool '{}' repair failed: {}", tool.name, message),
+                    shutdown,
                 )
                 .await;
             }
@@ -190,6 +195,7 @@ async fn run_broken_tool_repairs(
                             "Tool '{}' needs manual intervention: {}",
                             tool.name, message
                         ),
+                        shutdown,
                     )
                     .await;
                 }
@@ -264,18 +270,21 @@ async fn send_notification(
     notification_tx: Option<&mut mpsc::Sender<RepairNotification>>,
     notification_route: &RepairNotificationRoute,
     message: String,
+    shutdown: &mut std::pin::Pin<&mut tokio::sync::oneshot::Receiver<()>>,
 ) {
     if let Some(tx) = notification_tx {
-        match tx
-            .send(RepairNotification {
+        tokio::select! {
+            biased;
+            _ = shutdown.as_mut() => {
+                tracing::debug!("Dropping repair notification due to shutdown");
+            }
+            result = tx.send(RepairNotification {
                 message,
                 route: notification_route.clone(),
-            })
-            .await
-        {
-            Ok(()) => {}
-            Err(_) => {
-                tracing::debug!("Dropping repair notification because receiver closed");
+            }) => {
+                if result.is_err() {
+                    tracing::debug!("Dropping repair notification because receiver closed");
+                }
             }
         }
     }

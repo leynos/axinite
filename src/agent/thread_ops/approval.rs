@@ -25,6 +25,7 @@ pub(crate) struct MsgEnv {
     user_id: String,
     metadata: serde_json::Value,
     timezone: Option<String>,
+    content: String,
 }
 
 impl From<&IncomingMessage> for MsgEnv {
@@ -34,6 +35,7 @@ impl From<&IncomingMessage> for MsgEnv {
             user_id: m.user_id.clone(),
             metadata: m.metadata.clone(),
             timezone: m.timezone.clone(),
+            content: m.content.clone(),
         }
     }
 }
@@ -56,6 +58,23 @@ impl TurnScope {
             session,
             thread_id,
             env: MsgEnv::from(message),
+        }
+    }
+
+    /// Create a mock IncomingMessage from the environment for use with
+    /// functions that require the full message type.
+    fn to_message(&self) -> IncomingMessage {
+        IncomingMessage {
+            id: uuid::Uuid::new_v4(),
+            channel: self.env.channel.clone(),
+            user_id: self.env.user_id.clone(),
+            user_name: None,
+            content: self.env.content.clone(),
+            thread_id: None,
+            received_at: chrono::Utc::now(),
+            metadata: self.env.metadata.clone(),
+            attachments: vec![],
+            timezone: self.env.timezone.clone(),
         }
     }
 }
@@ -222,16 +241,27 @@ impl Agent {
             )
             .await;
 
-        if let Ok(ref output) = tool_result
-            && !output.is_empty()
-        {
+        // Process tool result through safety pipeline for preview
+        let processed_preview = if let Ok(ref _output) = tool_result {
+            let (processed, _) = crate::tools::execute::process_tool_result(
+                self.safety(),
+                &pending.tool_name,
+                &pending.tool_call_id,
+                &tool_result,
+            );
+            processed
+        } else {
+            String::new()
+        };
+
+        if !processed_preview.is_empty() {
             let _ = self
                 .channels
                 .send_status(
                     &env.channel,
                     StatusUpdate::ToolResult {
                         name: pending.tool_name.clone(),
-                        preview: output.clone(),
+                        preview: processed_preview,
                     },
                     &env.metadata,
                 )
@@ -716,13 +746,13 @@ impl Agent {
     /// Continue loop after tool execution.
     async fn continue_loop_after_tool(
         &self,
-        message: &IncomingMessage,
-        scope: &TurnScope,
+        scope: TurnScope,
         context_messages: Vec<ChatMessage>,
     ) -> Result<SubmissionResult, Error> {
+        let message = scope.to_message();
         let result = self
             .run_agentic_loop(
-                message,
+                &message,
                 scope.session.clone(),
                 scope.thread_id,
                 context_messages,
@@ -731,15 +761,40 @@ impl Agent {
 
         match result {
             Ok(AgenticLoopResult::Response(response)) => {
-                self.finalize_turn_and_persist_response(scope, &response)
+                // Hook: TransformResponse — allow hooks to modify or reject the final response
+                let response = {
+                    let event = crate::hooks::HookEvent::ResponseTransform {
+                        user_id: scope.env.user_id.clone(),
+                        thread_id: scope.thread_id.to_string(),
+                        response: response.clone(),
+                    };
+                    match self.hooks().run(&event).await {
+                        Err(crate::hooks::HookError::Rejected { reason }) => {
+                            format!("[Response filtered: {}]", reason)
+                        }
+                        Ok(crate::hooks::HookOutcome::Reject { reason }) => {
+                            format!("[Response filtered: {}]", reason)
+                        }
+                        Err(err) => {
+                            tracing::warn!("TransformResponse hook failed open: {}", err);
+                            response
+                        }
+                        Ok(crate::hooks::HookOutcome::Continue {
+                            modified: Some(new_response),
+                        }) => new_response,
+                        _ => response, // fail-open: use original
+                    }
+                };
+
+                self.finalize_turn_and_persist_response(&scope, &response)
                     .await?;
                 Ok(SubmissionResult::response(response))
             }
             Ok(AgenticLoopResult::NeedApproval { pending }) => {
-                self.enter_awaiting_approval_and_notify(scope, pending)
+                self.enter_awaiting_approval_and_notify(&scope, pending)
                     .await
             }
-            Err(e) => self.fail_turn_and_error(scope, e.to_string()).await,
+            Err(e) => self.fail_turn_and_error(&scope, e.to_string()).await,
         }
     }
 
@@ -813,15 +868,15 @@ impl Agent {
     }
 
     /// Handle deferred tools flow: preflight, execute, postflight.
+    /// Returns the (possibly mutated) context_messages and an optional SubmissionResult.
     async fn handle_deferred_tools_flow(
         &self,
-        _message: &IncomingMessage,
         scope: &TurnScope,
         job_ctx: &JobContext,
-        context_messages: &mut Vec<ChatMessage>,
+        mut context_messages: Vec<ChatMessage>,
         deferred_tool_calls: Vec<crate::llm::ToolCall>,
         pending: &PendingApproval,
-    ) -> Result<Option<SubmissionResult>, Error> {
+    ) -> Result<(Vec<ChatMessage>, Option<SubmissionResult>), Error> {
         // Preflight deferred tools
         let (runnable, approval_needed) = self
             .preflight_deferred_tools(&scope.session, &deferred_tool_calls)
@@ -836,36 +891,38 @@ impl Agent {
 
         // Postflight: record results and check for auth
         if let Some(instructions) = self
-            .postflight_record_and_maybe_deferred_auth(scope, exec_results, context_messages)
+            .postflight_record_and_maybe_deferred_auth(scope, exec_results, &mut context_messages)
             .await
         {
-            return Ok(Some(SubmissionResult::response(instructions)));
+            return Ok((
+                context_messages,
+                Some(SubmissionResult::response(instructions)),
+            ));
         }
 
         // Handle deferred approval needed
         if let Some((idx, tc, tool)) = approval_needed {
-            return Ok(Some(
-                self.enter_deferred_approval_and_notify(DeferredApprovalContext {
+            let result = self
+                .enter_deferred_approval_and_notify(DeferredApprovalContext {
                     scope,
                     approval_idx: idx,
                     tc,
                     tool,
                     deferred_tool_calls: &deferred_tool_calls,
-                    context_messages,
+                    context_messages: &context_messages,
                     pending,
                 })
-                .await,
-            ));
+                .await;
+            return Ok((context_messages, Some(result)));
         }
 
         // Continue agentic loop - not handled here, return None
-        Ok(None)
+        Ok((context_messages, None))
     }
 
     /// Process an approval or rejection of a pending tool execution.
     pub(super) async fn process_approval(
         &self,
-        message: &IncomingMessage,
         scope: TurnScope,
         params: ApprovalParams,
     ) -> Result<SubmissionResult, Error> {
@@ -920,28 +977,26 @@ impl Agent {
         }
 
         // g) Build context messages and process deferred tools
-        let (mut context_messages, deferred_tool_calls) = self
+        let (context_messages, deferred_tool_calls) = self
             .build_context_and_notify_for_deferred(&scope.env, &pending, result_content)
             .await;
 
         // Handle deferred tools flow
-        if let Some(result) = self
+        let (context_messages, result) = self
             .handle_deferred_tools_flow(
-                message,
                 &scope,
                 &job_ctx,
-                &mut context_messages,
+                context_messages,
                 deferred_tool_calls,
                 &pending,
             )
-            .await?
-        {
+            .await?;
+        if let Some(result) = result {
             return Ok(result);
         }
 
         // h) Continue agentic loop
-        self.continue_loop_after_tool(message, &scope, context_messages)
-            .await
+        self.continue_loop_after_tool(scope, context_messages).await
     }
 
     /// Handle an auth-required result from a tool execution.
@@ -1139,19 +1194,23 @@ impl Agent {
                     "Authentication failed for {}: {}",
                     pending.extension_name, e
                 );
-                let _ = self
-                    .channels
-                    .send_status(
-                        &scope.env.channel,
-                        StatusUpdate::AuthCompleted {
-                            extension_name: pending.extension_name.clone(),
-                            success: false,
-                            message: msg.clone(),
-                        },
-                        &scope.env.metadata,
+                // Restore pending_auth so the next user message is still intercepted
+                {
+                    let mut sess = scope.session.lock().await;
+                    if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
+                        thread.pending_auth = Some(pending.clone());
+                    }
+                }
+                // Re-enter auth mode to allow retry
+                Ok(self
+                    .reenter_auth_mode_and_notify(
+                        &scope,
+                        &pending.extension_name,
+                        format!("{} Please try again.", msg),
+                        None,
+                        None,
                     )
-                    .await;
-                Ok(Some(msg))
+                    .await)
             }
         }
     }

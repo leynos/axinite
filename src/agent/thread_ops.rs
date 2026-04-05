@@ -501,6 +501,7 @@ impl Agent {
         match result {
             Ok(AgenticLoopResult::Response(response)) => {
                 // Hook: TransformResponse — allow hooks to modify or reject the final response
+                // Run hook without holding the session lock
                 let response = {
                     let event = crate::hooks::HookEvent::ResponseTransform {
                         user_id: message.user_id.clone(),
@@ -525,12 +526,18 @@ impl Agent {
                     }
                 };
 
-                thread.complete_turn(&response);
-                let (turn_number, tool_calls) = thread
-                    .turns
-                    .last()
-                    .map(|t| (t.turn_number, t.tool_calls.clone()))
-                    .unwrap_or_default();
+                // Snapshot thread data while holding lock, then complete turn
+                let (turn_number, tool_calls) = {
+                    thread.complete_turn(&response);
+                    thread
+                        .turns
+                        .last()
+                        .map(|t| (t.turn_number, t.tool_calls.clone()))
+                        .unwrap_or_default()
+                };
+                // Drop the session lock before async operations
+                drop(sess);
+
                 let _ = self
                     .channels
                     .send_status(
@@ -555,6 +562,9 @@ impl Agent {
                 let description = pending.description.clone();
                 let parameters = pending.display_parameters.clone();
                 thread.await_approval(pending);
+                // Drop the session lock before async operations
+                drop(sess);
+
                 let _ = self
                     .channels
                     .send_status(

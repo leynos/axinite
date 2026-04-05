@@ -329,6 +329,7 @@ mod tests {
             .await
             .expect("failed to await create_job");
 
+        // First transition: InProgress -> Stuck (make it old so it's below threshold)
         cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
             .await
             .expect("failed to await update_context")
@@ -336,9 +337,9 @@ mod tests {
         cm.update_context(job_id, |ctx| ctx.transition_to(JobState::Stuck, None))
             .await
             .expect("failed to await update_context")
-            .expect("expected stuck transition to succeed");
+            .expect("expected first stuck transition to succeed");
         cm.update_context(job_id, |ctx| {
-            let stuck_since = Utc::now() - chrono::Duration::seconds(30);
+            let stuck_since = Utc::now() - chrono::Duration::seconds(120);
             let Some(last_transition) = ctx.transitions.last_mut() else {
                 return Err("missing stuck transition".to_string());
             };
@@ -349,13 +350,36 @@ mod tests {
         .expect("failed to await update_context")
         .expect("expected first stuck timestamp update to succeed");
 
+        // Second transition: Stuck -> InProgress -> Stuck (newer stuck)
+        cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
+            .await
+            .expect("failed to await update_context")
+            .expect("expected recovery transition to succeed");
+        cm.update_context(job_id, |ctx| ctx.transition_to(JobState::Stuck, None))
+            .await
+            .expect("failed to await update_context")
+            .expect("expected second stuck transition to succeed");
+        cm.update_context(job_id, |ctx| {
+            let stuck_since = Utc::now() - chrono::Duration::seconds(30);
+            let Some(last_transition) = ctx.transitions.last_mut() else {
+                return Err("missing stuck transition".to_string());
+            };
+            last_transition.timestamp = stuck_since;
+            Ok(())
+        })
+        .await
+        .expect("failed to await update_context")
+        .expect("expected second stuck timestamp update to succeed");
+
         let repair = DefaultSelfRepair::new(Arc::clone(&cm), Duration::from_secs(60), 3);
+        // Should be empty because the latest Stuck transition is only 30s old (below threshold)
         assert!(
             NativeSelfRepair::detect_stuck_jobs(&repair)
                 .await
                 .is_empty()
         );
 
+        // Now make the second (latest) Stuck transition old enough to trigger detection
         cm.update_context(job_id, |ctx| {
             let stuck_since = Utc::now() - chrono::Duration::seconds(120);
             let Some(last_transition) = ctx.transitions.last_mut() else {
@@ -370,6 +394,7 @@ mod tests {
 
         let stuck_jobs = NativeSelfRepair::detect_stuck_jobs(&repair).await;
         assert_eq!(stuck_jobs.len(), 1);
+        // Detection should use the latest Stuck transition timestamp
         assert_eq!(
             stuck_jobs[0].stuck_since,
             cm.get_context(job_id).await.unwrap().stuck_since().unwrap()
