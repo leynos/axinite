@@ -3,9 +3,10 @@
 use uuid::Uuid;
 
 use crate::db::{
-    NativeSandboxStore, SandboxEventType, SandboxJobStatus, SandboxJobStatusUpdate, SandboxMode,
-    UserId,
+    NativeSandboxStore, SandboxEventType, SandboxJobStatusUpdate, SandboxMode, UserId,
 };
+#[cfg(test)]
+use crate::db::SandboxJobStatus;
 use crate::error::DatabaseError;
 use crate::history::{JobEventRecord, SandboxJobRecord, SandboxJobSummary};
 
