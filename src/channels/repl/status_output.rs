@@ -49,6 +49,10 @@ fn render_thinking(msg: &str) -> String {
     format!("  \x1b[90m\u{25CB} {display}\x1b[0m")
 }
 
+/// Prints a thinking status line to stderr.
+///
+/// Renders the given message with a hollow circle bullet and gray styling,
+/// truncated to CLI_STATUS_MAX if necessary.
 pub(super) fn print_thinking(msg: &str) {
     eprintln!("{}", render_thinking(msg));
 }
@@ -57,6 +61,10 @@ fn render_tool_started(name: &str) -> String {
     format!("  \x1b[33m\u{25CB} {name}\x1b[0m")
 }
 
+/// Prints a tool-started status line to stderr.
+///
+/// Renders the tool name with a yellow hollow circle bullet to indicate
+/// the tool has started executing.
 pub(super) fn print_tool_started(name: &str) {
     eprintln!("{}", render_tool_started(name));
 }
@@ -79,6 +87,10 @@ fn render_tool_completed_lines(info: &ToolCompletedInfo<'_>) -> Vec<String> {
     lines
 }
 
+/// Prints a tool-completed status (success or failure) to stderr.
+///
+/// Renders completion info with a green checkmark (success) or red X (failure),
+/// optionally including error messages and parameters for failed tools.
 pub(super) fn print_tool_completed(info: &ToolCompletedInfo<'_>) {
     for line in render_tool_completed_lines(info) {
         eprintln!("{line}");
@@ -90,6 +102,10 @@ fn render_tool_result(preview: &str) -> String {
     format!("    \x1b[90m{display}\x1b[0m")
 }
 
+/// Prints a tool result preview to stderr.
+///
+/// Renders the result preview with gray styling and indentation,
+/// truncated to CLI_TOOL_RESULT_MAX if necessary.
 pub(super) fn print_tool_result(preview: &str) {
     eprintln!("{}", render_tool_result(preview));
 }
@@ -98,6 +114,11 @@ fn render_stream_chunk_separator(width: usize) -> String {
     format!("\x1b[90m{}\x1b[0m", "\u{2500}".repeat(width.min(80)))
 }
 
+/// Prints a streaming text chunk to stdout.
+///
+/// On the first chunk, prints a separator line to stderr. Subsequent chunks
+/// are printed directly to stdout and flushed immediately. The `is_streaming`
+/// flag tracks whether we've already printed the separator.
 pub(super) fn print_stream_chunk(is_streaming: &AtomicBool, chunk: &str) {
     if !is_streaming.swap(true, Ordering::Relaxed) {
         let width = crossterm::terminal::size()
@@ -116,6 +137,10 @@ fn render_job_started(info: &JobStartedInfo<'_>) -> String {
     )
 }
 
+/// Prints a job-started notification to stderr.
+///
+/// Renders the job title, ID, and browse URL with appropriate styling
+/// to indicate a background job has been spawned.
 pub(super) fn print_job_started(info: &JobStartedInfo<'_>) {
     eprintln!("{}", render_job_started(info));
 }
@@ -130,6 +155,10 @@ fn render_status(is_debug: bool, msg: &str) -> Option<String> {
     }
 }
 
+/// Prints a general status message to stderr (conditionally).
+///
+/// Only prints if debug mode is enabled or the message is approval-related.
+/// Renders the message with gray styling, truncated to CLI_STATUS_MAX.
 pub(super) fn print_status(is_debug: bool, msg: &str) {
     if let Some(line) = render_status(is_debug, msg) {
         eprintln!("{line}");
@@ -143,6 +172,10 @@ fn render_approval_needed_lines(
     render_approval_card(request, parameters)
 }
 
+/// Prints a tool approval request card to stderr.
+///
+/// Renders a formatted approval card showing the tool name, description,
+/// and parameters, prompting the user to approve or deny execution.
 pub(super) fn print_approval_needed(
     request: &ToolApprovalRequest<'_>,
     parameters: &serde_json::Value,
@@ -175,6 +208,10 @@ fn render_auth_required_lines(info: &AuthRequiredInfo<'_>) -> Vec<String> {
     lines
 }
 
+/// Prints an authentication required notification to stderr.
+///
+/// Renders the extension name, instructions, auth URL, and setup URL
+/// to prompt the user to complete authentication.
 pub(super) fn print_auth_required(info: &AuthRequiredInfo<'_>) {
     for line in render_auth_required_lines(info) {
         eprintln!("{line}");
@@ -189,6 +226,10 @@ fn render_auth_completed(info: &AuthCompletedInfo<'_>) -> String {
     }
 }
 
+/// Prints an authentication completion message to stderr.
+///
+/// Renders the extension name and completion message with green (success)
+/// or red (failure) styling based on the authentication result.
 pub(super) fn print_auth_completed(info: &AuthCompletedInfo<'_>) {
     eprintln!("{}", render_auth_completed(info));
 }
@@ -201,6 +242,10 @@ fn render_image_generated(path: Option<&str>) -> String {
     }
 }
 
+/// Prints an image generation notification to stderr.
+///
+/// Renders either the image path or a generic "image generated" message
+/// with cyan styling to indicate an image has been created.
 pub(super) fn print_image_generated(path: Option<&str>) {
     eprintln!("{}", render_image_generated(path));
 }

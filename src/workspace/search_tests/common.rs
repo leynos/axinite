@@ -98,9 +98,28 @@ pub(super) fn assert_config(config: &SearchConfig, expected: &ExpectedSearchConf
 }
 
 pub(super) fn assert_hybrid_chunk(result: &SearchResult, fts_rank: u32, vector_rank: u32) {
-    assert!(result.is_hybrid());
-    assert_eq!(result.fts_rank, Some(fts_rank));
-    assert_eq!(result.vector_rank, Some(vector_rank));
+    assert!(
+        result.is_hybrid(),
+        "expected hybrid chunk but got fts_rank={:?}, vector_rank={:?}",
+        result.fts_rank,
+        result.vector_rank
+    );
+    assert_eq!(
+        result.fts_rank,
+        Some(fts_rank),
+        "fts_rank mismatch for chunk_id={}: expected {}, got {:?}",
+        result.chunk_id,
+        fts_rank,
+        result.fts_rank
+    );
+    assert_eq!(
+        result.vector_rank,
+        Some(vector_rank),
+        "vector_rank mismatch for chunk_id={}: expected {}, got {:?}",
+        result.chunk_id,
+        vector_rank,
+        result.vector_rank
+    );
 }
 
 /// Runs RRF with three ranked inputs fed through one method slot only.

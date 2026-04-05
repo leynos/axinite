@@ -37,18 +37,16 @@ fn assert_only_user_and_assistant(result: &[ChatMessage]) {
 /// entirely, leaving only the surrounding user and assistant messages in the
 /// output.
 fn assert_malformed_tool_calls_skipped(safety: &SafetyLayer, tool_json: serde_json::Value) {
-    let user_message = make_db_msg("user", "Hi");
-    let assistant_message = make_db_msg("assistant", "Done");
     let messages = vec![
-        user_message.clone(),
+        make_db_msg("user", "Hi"),
         make_db_msg("tool_calls", &tool_json.to_string()),
-        assistant_message.clone(),
+        make_db_msg("assistant", "Done"),
     ];
     let result = rebuild_chat_messages_from_db(&messages, safety);
 
     assert_only_user_and_assistant(&result);
-    assert_eq!(result[0].content, user_message.content);
-    assert_eq!(result[1].content, assistant_message.content);
+    assert_eq!(result[0].content, "Hi");
+    assert_eq!(result[1].content, "Done");
 }
 
 fn assert_malformed_tool_calls_boundary(
@@ -199,6 +197,25 @@ fn test_rebuild_chat_messages_malformed_tool_calls_json(test_safety_layer: Safet
     assert_eq!(result[0].content, "Hi");
     assert_eq!(result[1].role, crate::llm::Role::Assistant);
     assert_eq!(result[1].content, "Done");
+}
+
+#[rstest]
+#[case::object(r#"{"name":"search"}"#)]
+#[case::number("42")]
+#[case::null("null")]
+fn test_rebuild_chat_messages_non_array_tool_calls_json(
+    test_safety_layer: SafetyLayer,
+    #[case] non_array_json: &str,
+) {
+    let safety = test_safety_layer;
+    let messages = vec![
+        make_db_msg("user", "Hi"),
+        make_db_msg("tool_calls", non_array_json),
+        make_db_msg("assistant", "Done"),
+    ];
+    let result = rebuild_chat_messages_from_db(&messages, &safety);
+    // Non-array JSON for tool_calls is skipped (expecting an array)
+    assert_only_user_and_assistant(&result);
 }
 
 #[rstest]

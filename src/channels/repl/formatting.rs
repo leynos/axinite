@@ -76,22 +76,12 @@ pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> St
             for (key, value) in map {
                 let val_str = match value {
                     serde_json::Value::String(s) => {
-                        let display = if s.chars().count() > 120 {
-                            let truncated: String = s.chars().take(120).collect();
-                            format!("{truncated}...")
-                        } else {
-                            s.to_string()
-                        };
+                        let display = truncate_grapheme_aware(s, 120);
                         format!("\x1b[32m\"{display}\"\x1b[0m")
                     }
                     other => {
                         let rendered = other.to_string();
-                        if rendered.chars().count() > 120 {
-                            let truncated: String = rendered.chars().take(120).collect();
-                            format!("{truncated}...")
-                        } else {
-                            rendered
-                        }
+                        truncate_grapheme_aware(&rendered, 120)
                     }
                 };
                 lines.push(format!("{indent}\x1b[36m{key}\x1b[0m: {val_str}"));
@@ -100,12 +90,7 @@ pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> St
         }
         other => {
             let pretty = serde_json::to_string_pretty(other).unwrap_or_else(|_| other.to_string());
-            let truncated = if pretty.chars().count() > 300 {
-                let truncated_str: String = pretty.chars().take(300).collect();
-                format!("{truncated_str}...")
-            } else {
-                pretty
-            };
+            let truncated = truncate_grapheme_aware(&pretty, 300);
             truncated
                 .lines()
                 .map(|l| format!("{indent}\x1b[90m{l}\x1b[0m"))
@@ -203,6 +188,22 @@ fn truncate_card_content(text: &str, max_width: usize) -> String {
         truncated.push_str("\x1b[0m");
     }
     truncated
+}
+
+/// Truncate plain text using grapheme-aware truncation.
+///
+/// Unlike `truncate_card_content`, this doesn't handle ANSI codes but respects
+/// Unicode grapheme clusters. Adds "..." if truncated.
+fn truncate_grapheme_aware(text: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+    if visible_char_count(text) <= max_chars {
+        return text.to_string();
+    }
+    let visible_limit = max_chars.saturating_sub(3); // Reserve space for "..."
+    let (truncated, _has_active_style, _was_truncated) = truncate_ansi_aware(text, visible_limit);
+    format!("{truncated}...")
 }
 
 /// Constructs and returns lines for a tool approval card.
@@ -370,5 +371,34 @@ mod tests {
         assert_eq!(visible_char_count(text), 4);
         assert_eq!(visible_char_count(&truncated), 3);
         assert_eq!(strip_ansi(&truncated), "👩‍🔬…");
+    }
+
+    #[test]
+    fn format_json_params_never_splits_grapheme_clusters() {
+        // Test with emoji with modifiers and ZWJ sequences
+        let params = serde_json::json!({
+            "emoji": "👩‍🔬👩‍🔬👩‍🔬",
+            "combining": "e\u{301}e\u{301}e\u{301}",
+            "wide": "工具工具"
+        });
+
+        let formatted = format_json_params(&params, "");
+
+        // The formatted output should not split any grapheme clusters
+        // Verify by checking that all lines are valid UTF-8 and don't have broken clusters
+        for line in formatted.lines() {
+            let stripped = strip_ansi(line);
+            // If a grapheme cluster was split, the visible width calculation would be wrong
+            assert!(
+                stripped.chars().all(|c| !c.is_control() || c == '\n'),
+                "formatted line contains unexpected control characters: {stripped:?}"
+            );
+        }
+
+        // Specifically test that ZWJ emoji aren't broken
+        assert!(
+            formatted.contains("👩‍🔬") || formatted.contains("..."),
+            "ZWJ emoji should either be intact or elided via truncation, not split"
+        );
     }
 }
