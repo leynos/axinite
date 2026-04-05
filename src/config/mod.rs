@@ -158,11 +158,7 @@ impl Config {
             .get_all_settings(crate::db::UserId::from(user_id))
             .await
         {
-            Ok(map) => Settings::from_db_map(
-                &map.into_iter()
-                    .map(|(key, value)| (key.as_str().to_string(), value))
-                    .collect(),
-            ),
+            Ok(map) => Settings::from_db_map(&map),
             Err(e) => {
                 tracing::warn!("Failed to load settings from DB, using defaults: {}", e);
                 Settings::default()
@@ -294,11 +290,7 @@ impl Config {
                 .get_all_settings(crate::db::UserId::from(user_id))
                 .await
             {
-                Ok(map) => Settings::from_db_map(
-                    &map.into_iter()
-                        .map(|(key, value)| (key.as_str().to_string(), value))
-                        .collect(),
-                ),
+                Ok(map) => Settings::from_db_map(&map),
                 Err(_) => Settings::default(),
             };
             runtime_support::apply_toml_overlay(&mut s, toml_path)?;

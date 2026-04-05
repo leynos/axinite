@@ -131,7 +131,7 @@ impl NativeSettingsStore for LibSqlBackend {
     async fn get_all_settings(
         &self,
         user_id: UserId,
-    ) -> Result<HashMap<SettingKey, serde_json::Value>, DatabaseError> {
+    ) -> Result<HashMap<String, serde_json::Value>, DatabaseError> {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
@@ -147,7 +147,7 @@ impl NativeSettingsStore for LibSqlBackend {
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?
         {
-            map.insert(SettingKey::from(get_text(&row, 0)), get_json(&row, 1));
+            map.insert(get_text(&row, 0), get_json(&row, 1));
         }
         Ok(map)
     }
@@ -155,7 +155,7 @@ impl NativeSettingsStore for LibSqlBackend {
     async fn set_all_settings(
         &self,
         user_id: UserId,
-        settings: &HashMap<SettingKey, serde_json::Value>,
+        settings: &HashMap<String, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         let now = fmt_ts(&Utc::now());

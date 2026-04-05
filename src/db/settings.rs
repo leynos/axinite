@@ -93,14 +93,14 @@ mod tests {
         async fn get_all_settings(
             &self,
             _user_id: UserId,
-        ) -> Result<HashMap<SettingKey, serde_json::Value>, DatabaseError> {
+        ) -> Result<HashMap<String, serde_json::Value>, DatabaseError> {
             Ok(HashMap::new())
         }
 
         async fn set_all_settings(
             &self,
             _user_id: UserId,
-            _settings: &HashMap<SettingKey, serde_json::Value>,
+            _settings: &HashMap<String, serde_json::Value>,
         ) -> Result<(), DatabaseError> {
             Ok(())
         }

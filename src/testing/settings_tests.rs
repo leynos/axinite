@@ -148,8 +148,8 @@ async fn test_settings_bulk_operations() {
     assert!(!has);
 
     let mut settings = std::collections::HashMap::new();
-    settings.insert(SettingKey::from("key1"), serde_json::json!("value1"));
-    settings.insert(SettingKey::from("key2"), serde_json::json!(42));
+    settings.insert("key1".to_string(), serde_json::json!("value1"));
+    settings.insert("key2".to_string(), serde_json::json!(42));
     db.set_all_settings(UserId::from("bulk_user"), &settings)
         .await
         .expect("set_all");
@@ -165,8 +165,8 @@ async fn test_settings_bulk_operations() {
         .await
         .expect("get_all");
     assert_eq!(all.len(), 2);
-    assert_eq!(all[&SettingKey::from("key1")], serde_json::json!("value1"));
-    assert_eq!(all[&SettingKey::from("key2")], serde_json::json!(42));
+    assert_eq!(all["key1"], serde_json::json!("value1"));
+    assert_eq!(all["key2"], serde_json::json!(42));
 
     let full = db
         .get_setting_full(UserId::from("bulk_user"), SettingKey::from("key1"))

@@ -177,8 +177,8 @@ impl_db_forwarders! {
         fn set_setting(user_id: UserId, key: SettingKey, value: &'a serde_json::Value) -> Result<(), DatabaseError>;
         fn delete_setting(user_id: UserId, key: SettingKey) -> Result<bool, DatabaseError>;
         fn list_settings(user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError>;
-        fn get_all_settings(user_id: UserId) -> Result<HashMap<SettingKey, serde_json::Value>, DatabaseError>;
-        fn set_all_settings(user_id: UserId, settings: &'a HashMap<SettingKey, serde_json::Value>) -> Result<(), DatabaseError>;
+        fn get_all_settings(user_id: UserId) -> Result<HashMap<String, serde_json::Value>, DatabaseError>;
+        fn set_all_settings(user_id: UserId, settings: &'a HashMap<String, serde_json::Value>) -> Result<(), DatabaseError>;
         fn has_settings(user_id: UserId) -> Result<bool, DatabaseError>;
     }
 }

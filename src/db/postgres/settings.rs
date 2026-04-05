@@ -16,8 +16,8 @@ impl NativeSettingsStore for PgBackend {
         async fn set_setting(&self, user_id: UserId, key: SettingKey, value: &serde_json::Value) -> Result<(), DatabaseError>;
         async fn delete_setting(&self, user_id: UserId, key: SettingKey) -> Result<bool, DatabaseError>;
         async fn list_settings(&self, user_id: UserId) -> Result<Vec<SettingRow>, DatabaseError>;
-        async fn get_all_settings(&self, user_id: UserId) -> Result<HashMap<SettingKey, serde_json::Value>, DatabaseError>;
-        async fn set_all_settings(&self, user_id: UserId, settings: &HashMap<SettingKey, serde_json::Value>) -> Result<(), DatabaseError>;
+        async fn get_all_settings(&self, user_id: UserId) -> Result<HashMap<String, serde_json::Value>, DatabaseError>;
+        async fn set_all_settings(&self, user_id: UserId, settings: &HashMap<String, serde_json::Value>) -> Result<(), DatabaseError>;
         async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError>;
     }
 }

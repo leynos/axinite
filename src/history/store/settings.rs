@@ -117,7 +117,7 @@ impl Store {
     pub async fn get_all_settings(
         &self,
         user_id: UserId,
-    ) -> Result<std::collections::HashMap<SettingKey, serde_json::Value>, DatabaseError> {
+    ) -> Result<std::collections::HashMap<String, serde_json::Value>, DatabaseError> {
         let conn = self.conn().await?;
         let rows = conn
             .query(
@@ -130,7 +130,7 @@ impl Store {
             .map(|r| {
                 let key: String = r.get("key");
                 let value: serde_json::Value = r.get("value");
-                (SettingKey::from(key), value)
+                (key, value)
             })
             .collect())
     }
@@ -139,7 +139,7 @@ impl Store {
     pub async fn set_all_settings(
         &self,
         user_id: UserId,
-        settings: &std::collections::HashMap<SettingKey, serde_json::Value>,
+        settings: &std::collections::HashMap<String, serde_json::Value>,
     ) -> Result<(), DatabaseError> {
         let mut conn = self.conn().await?;
         let tx = conn.transaction().await?;
@@ -153,7 +153,7 @@ impl Store {
         } else {
             let keys: Vec<String> = settings
                 .keys()
-                .map(|key| key.as_str().to_string())
+                .map(std::string::ToString::to_string)
                 .collect();
             tx.execute(
                 "DELETE FROM settings WHERE user_id = $1 AND NOT (key = ANY($2))",

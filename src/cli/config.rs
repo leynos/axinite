@@ -99,13 +99,7 @@ const DEFAULT_USER_ID: &str = "default";
 async fn load_settings(store: Option<&dyn crate::db::Database>) -> Settings {
     if let Some(store) = store {
         match store.get_all_settings(UserId::from(DEFAULT_USER_ID)).await {
-            Ok(map) if !map.is_empty() => {
-                let map = map
-                    .into_iter()
-                    .map(|(key, value)| (key.as_str().to_string(), value))
-                    .collect();
-                return Settings::from_db_map(&map);
-            }
+            Ok(map) if !map.is_empty() => return Settings::from_db_map(&map),
             _ => {}
         }
     }

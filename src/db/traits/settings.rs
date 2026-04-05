@@ -116,12 +116,12 @@ pub trait SettingsStore: Send + Sync {
     fn get_all_settings<'a>(
         &'a self,
         user_id: UserId,
-    ) -> DbFuture<'a, Result<HashMap<SettingKey, serde_json::Value>, DatabaseError>>;
+    ) -> DbFuture<'a, Result<HashMap<String, serde_json::Value>, DatabaseError>>;
     /// Replace the full settings set for `user_id` with `settings`.
     fn set_all_settings<'a>(
         &'a self,
         user_id: UserId,
-        settings: &'a HashMap<SettingKey, serde_json::Value>,
+        settings: &'a HashMap<String, serde_json::Value>,
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
     /// Report whether any settings exist for `user_id`.
     fn has_settings<'a>(&'a self, user_id: UserId) -> DbFuture<'a, Result<bool, DatabaseError>>;
@@ -163,12 +163,12 @@ pub trait NativeSettingsStore: Send + Sync {
     fn get_all_settings<'a>(
         &'a self,
         user_id: UserId,
-    ) -> impl Future<Output = Result<HashMap<SettingKey, serde_json::Value>, DatabaseError>> + Send + 'a;
+    ) -> impl Future<Output = Result<HashMap<String, serde_json::Value>, DatabaseError>> + Send + 'a;
     /// Replace the full settings set for `user_id` with `settings`.
     fn set_all_settings<'a>(
         &'a self,
         user_id: UserId,
-        settings: &'a HashMap<SettingKey, serde_json::Value>,
+        settings: &'a HashMap<String, serde_json::Value>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
     /// Report whether any settings exist for `user_id`.
     fn has_settings<'a>(
