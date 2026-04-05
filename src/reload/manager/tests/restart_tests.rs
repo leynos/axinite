@@ -255,9 +255,8 @@ async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_firs
     // Use a hostname that resolves to multiple addresses including current_addr
     let http_cfg = http_config("localhost", 8080, None);
 
-    let (_temp_dir, mut config) = test_config_with_http(Some(http_cfg.clone())).await?;
-    // Ensure the HTTP config uses localhost for DNS resolution
-    config.channels.http = Some(http_cfg.clone());
+    // Create a minimal config for the loader - temp_dir is dropped but config lives long enough
+    let (_temp_dir, config) = test_config_with_http(None).await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
     let manager = HotReloadManager::new(

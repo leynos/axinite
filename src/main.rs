@@ -712,9 +712,7 @@ async fn async_main() -> anyhow::Result<()> {
 
         // Construct hot-reload manager using the factory
         let reload_manager = ironclaw::reload::create_hot_reload_manager(
-            sighup_settings_store
-                .clone()
-                .map(|s| s as Arc<dyn ironclaw::db::SettingsStore>),
+            sighup_settings_store.clone(),
             webhook_server.clone(),
             components.secrets_store.clone(),
             secret_updaters,

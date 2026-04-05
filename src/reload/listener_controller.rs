@@ -128,6 +128,14 @@ mod tests {
     use super::*;
     use crate::channels::WebhookServerConfig;
 
+    /// Reserves an ephemeral port by binding a TCP listener and returning its address.
+    ///
+    /// # Port-reuse caveat
+    /// The listener is dropped before returning, which releases the port. Another process
+    /// could bind the same port before the caller uses it. This is acceptable for tests
+    /// where the port is consumed immediately, but production code should either:
+    /// - Keep the listener alive and pass it to the consumer
+    /// - Use socket options like `SO_REUSEADDR` if appropriate
     fn reserve_addr() -> SocketAddr {
         let listener =
             StdTcpListener::bind("127.0.0.1:0").expect("should reserve an ephemeral port");

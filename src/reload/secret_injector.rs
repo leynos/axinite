@@ -122,12 +122,17 @@ mod tests {
         }
     }
 
-    /// Synchronous mock trait for `NativeSecretsStore`.
+    /// Synchronous mirror of `NativeSecretsStore` for mockall compatibility.
     ///
-    /// This trait mirrors the async `NativeSecretsStore` but with synchronous
-    /// methods returning owned values, allowing it to be mocked with mockall.
+    /// This trait exists as a workaround for mockall's inability to mock async
+    /// traits with lifetime parameters directly. `SyncSecretsStore` mirrors
+    /// `NativeSecretsStore` but uses owned `String` types instead of `&str`
+    /// references, allowing mockall to generate `MockSyncSecretsStore`.
+    ///
     /// The `MockSecretsStore` wrapper implements `NativeSecretsStore` by
-    /// delegating to this mock.
+    /// delegating to the generated mock, converting `&str` to `String` at
+    /// each call boundary. This keeps tests synchronous and avoids the
+    /// complexity of boxed futures or the `async-trait` crate.
     #[automock]
     trait SyncSecretsStore {
         fn create(

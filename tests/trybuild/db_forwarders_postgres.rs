@@ -36,4 +36,7 @@ fn assert_postgres_backend(db: &ironclaw::db::postgres::PgBackend) {
     assert_dyn_database(db);
 }
 
-fn main() {}
+fn main() {
+    // Force monomorphisation of the generic assert function for PgBackend
+    let _: fn(&ironclaw::db::postgres::PgBackend) = assert_postgres_backend;
+}

@@ -36,4 +36,7 @@ fn assert_libsql_backend(db: &ironclaw::db::libsql::LibSqlBackend) {
     assert_dyn_database(db);
 }
 
-fn main() {}
+fn main() {
+    // Force monomorphisation of the generic assert function for LibSqlBackend
+    let _: fn(&ironclaw::db::libsql::LibSqlBackend) = assert_libsql_backend;
+}

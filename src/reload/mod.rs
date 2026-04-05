@@ -32,6 +32,11 @@ use crate::channels::{ChannelSecretUpdater, WebhookServer};
 use crate::db::{SettingsStore, UserId};
 use crate::secrets::SecretsStore;
 
+/// Default user identifier for hot-reload operations.
+///
+/// All hot-reload secret and config lookups are scoped to this single user.
+/// Multi-tenant behaviour is not supported; all reload operations use this
+/// hardcoded user context.
 const DEFAULT_USER_ID: &str = "default";
 
 fn default_user_id() -> UserId {
