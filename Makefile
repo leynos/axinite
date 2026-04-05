@@ -1,6 +1,7 @@
 CARGO ?= cargo
 NEXTEST ?= cargo nextest
 TEST_FEATURES ?= --features test-helpers
+NEXTEST_PROFILE ?= default
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
@@ -39,7 +40,7 @@ lint:
 
 test:
 	$(MAKE) build-github-tool-wasm
-	$(NEXTEST) run --workspace $(TEST_FEATURES)
+	$(NEXTEST) run --workspace $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
 	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)
 
 test-cargo:
@@ -49,9 +50,9 @@ test-cargo:
 
 test-matrix:
 	$(MAKE) build-github-tool-wasm
-	$(NEXTEST) run --workspace $(TEST_FEATURES)
-	$(NEXTEST) run --workspace --no-default-features --features libsql,test-helpers
-	$(NEXTEST) run --workspace --features postgres,libsql,html-to-markdown,test-helpers
+	$(NEXTEST) run --workspace $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
+	$(NEXTEST) run --workspace --no-default-features --features libsql,test-helpers --profile $(NEXTEST_PROFILE)
+	$(NEXTEST) run --workspace --features postgres,libsql,html-to-markdown,test-helpers --profile $(NEXTEST_PROFILE)
 	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
 
 test-matrix-cargo:

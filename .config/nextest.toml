@@ -1,0 +1,12 @@
+# Nextest configuration
+# https://nexte.st/docs/configuration/
+
+[profile.default]
+# Exclude expensive trybuild compile-contract tests from the local default
+# run. These spawn a fresh rustc per case against the full crate and take
+# ~7 minutes. The ci profile below includes them.
+default-filter = 'not binary_id(ironclaw::trybuild)'
+
+[profile.ci]
+# CI runs everything, including the trybuild compile-contract tests.
+default-filter = 'all()'

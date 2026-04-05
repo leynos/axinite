@@ -120,8 +120,12 @@ management.
     - `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`
   - `make test`
     - `make build-github-tool-wasm`
-    - `cargo nextest run --workspace`
+    - `cargo nextest run --workspace --profile $NEXTEST_PROFILE`
     - `cargo test --manifest-path tools-src/github/Cargo.toml`
+- Nextest profiles are configured in `.config/nextest.toml`. The `default`
+  profile excludes expensive compile-contract tests (trybuild); the `ci`
+  profile runs everything. Pass `NEXTEST_PROFILE=ci` to `make test` or
+  `make test-matrix` to include them locally.
 - Use `make test-matrix` when a change touches feature combinations,
   database-specific behaviour, or anything that warrants broader confidence
   than the default gate.

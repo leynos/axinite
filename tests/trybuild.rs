@@ -1,4 +1,9 @@
 //! Compile-time regression coverage for the public DB trait surface.
+//!
+//! Each trybuild case spawns a fresh `rustc` against the full crate, so the
+//! wall-clock cost is high (~7 min locally). The default nextest profile
+//! excludes this binary; the `ci` profile includes it. See
+//! `.config/nextest.toml`.
 
 #[test]
 fn db_surface_compile_contracts() {
