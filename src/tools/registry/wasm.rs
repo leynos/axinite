@@ -244,36 +244,30 @@ fn normalized_description(description: &str) -> Option<&str> {
     (!trimmed.is_empty()).then_some(trimmed)
 }
 
-fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
-    use crate::tools::wasm::is_placeholder_schema;
+/// Parse and validate a schema value stored as a JSON string by text-column backends.
+///
+/// Returns `None` for empty/null strings and strings that parse to the placeholder
+/// schema. Returns the parsed JSON for valid JSON strings, or the trimmed string
+/// as a JSON string value for non-JSON input.
+fn parse_schema_string(s: &str) -> Option<serde_json::Value> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
+        return None;
+    }
+    // Attempt to parse JSON strings for backends that return text
+    match serde_json::from_str::<serde_json::Value>(trimmed) {
+        Ok(parsed) if !crate::tools::wasm::is_placeholder_schema(&parsed) => Some(parsed),
+        Ok(_) => None,
+        Err(_) => Some(serde_json::Value::String(trimmed.to_string())),
+    }
+}
 
+fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
     match schema {
         serde_json::Value::Null => None,
-        serde_json::Value::String(value) => {
-            let trimmed = value.trim();
-            if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
-                None
-            } else {
-                // Attempt to parse JSON strings for backends that return text
-                match serde_json::from_str(trimmed) {
-                    Ok(parsed) => {
-                        // Check if the parsed value is a placeholder
-                        if is_placeholder_schema(&parsed) {
-                            None
-                        } else {
-                            Some(parsed)
-                        }
-                    }
-                    Err(_) => Some(serde_json::Value::String(trimmed.to_string())),
-                }
-            }
-        }
-        value => {
-            // Treat placeholder schemas as missing so guest export recovery runs.
-            if is_placeholder_schema(&value) {
-                return None;
-            }
-            Some(value)
-        }
+        serde_json::Value::String(value) => parse_schema_string(&value),
+        // Treat placeholder schemas as missing so guest export recovery runs.
+        value if crate::tools::wasm::is_placeholder_schema(&value) => None,
+        value => Some(value),
     }
 }
