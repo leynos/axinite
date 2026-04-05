@@ -34,6 +34,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_conv_heartbeat
 ON conversations (user_id)
 WHERE json_extract(metadata, '$.thread_type') = 'heartbeat';
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_conv_assistant
+ON conversations (user_id, channel)
+WHERE json_extract(metadata, '$.thread_type') = 'assistant';
+
 CREATE TABLE IF NOT EXISTS conversation_messages (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
@@ -71,6 +75,9 @@ CREATE TABLE IF NOT EXISTS agent_jobs (
     failure_reason TEXT,
     stuck_since TEXT,
     repair_attempts INTEGER NOT NULL DEFAULT 0,
+    transitions TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(transitions)),
+    metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata)),
+    user_timezone TEXT NOT NULL DEFAULT 'UTC',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     started_at TEXT,
     completed_at TEXT

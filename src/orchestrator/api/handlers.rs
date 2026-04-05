@@ -184,7 +184,11 @@ pub(super) async fn job_event_handler(
         let data = payload.data.clone();
         tokio::spawn(async move {
             if let Err(e) = store
-                .save_job_event(job_id, event_type.as_wire(), &data)
+                .save_job_event(
+                    job_id,
+                    crate::db::SandboxEventType::from(event_type.as_wire()),
+                    &data,
+                )
                 .await
             {
                 tracing::warn!(job_id = %job_id, "Failed to persist job event: {}", e);

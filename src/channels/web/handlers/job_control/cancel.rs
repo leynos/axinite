@@ -26,7 +26,7 @@ pub(super) async fn cancel_sandbox_job(
     store
         .update_sandbox_job_status(SandboxJobStatusUpdate {
             id: job_id,
-            status: "failed",
+            status: crate::db::SandboxJobStatus::from("failed"),
             success: Some(false),
             message: Some("Cancelled by user"),
             started_at: None,

@@ -68,38 +68,13 @@ impl NativeJobStore for PgBackend {
         &self,
         params: EstimationSnapshotParams<'_>,
     ) -> Result<Uuid, DatabaseError> {
-        let EstimationSnapshotParams {
-            job_id,
-            category,
-            tool_names,
-            estimated_cost,
-            estimated_time_secs,
-            estimated_value,
-        } = params;
-        self.store
-            .save_estimation_snapshot(
-                job_id,
-                category,
-                tool_names,
-                estimated_cost,
-                estimated_time_secs,
-                estimated_value,
-            )
-            .await
+        self.store.save_estimation_snapshot(params).await
     }
 
     async fn update_estimation_actuals(
         &self,
         params: EstimationActualsParams,
     ) -> Result<(), DatabaseError> {
-        let EstimationActualsParams {
-            id,
-            actual_cost,
-            actual_time_secs,
-            actual_value,
-        } = params;
-        self.store
-            .update_estimation_actuals(id, actual_cost, actual_time_secs, actual_value)
-            .await
+        self.store.update_estimation_actuals(params).await
     }
 }

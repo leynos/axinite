@@ -19,6 +19,8 @@
 //! ```
 
 pub mod credentials;
+#[cfg(test)]
+mod settings_tests;
 pub mod test_utils;
 
 use std::sync::Arc;
@@ -39,7 +41,7 @@ use crate::error::{ChannelError, LlmError};
 #[cfg(test)]
 use crate::db::{
     EnsureConversationParams, EstimationActualsParams, EstimationSnapshotParams,
-    RoutineRunCompletion, RoutineRuntimeUpdate, SandboxJobStatusUpdate,
+    RoutineRunCompletion, RoutineRuntimeUpdate, SandboxJobStatusUpdate, SettingKey, UserId,
 };
 use crate::llm::{
     CompletionRequest, CompletionResponse, FinishReason, LlmProvider, ToolCompletionRequest,
@@ -49,7 +51,6 @@ pub use crate::testing_wasm::{
     github_tool_source_dir, github_wasm_artifact, metadata_test_runtime,
 };
 use crate::tools::ToolRegistry;
-
 /// Create a libSQL-backed test database in a temporary directory.
 ///
 /// Returns the database and a `TempDir` guard — the database file is
@@ -929,70 +930,6 @@ mod tests {
         assert!(channel.health_check().await.is_err());
     }
 
-    // === Database CRUD coverage for untested trait methods ===
-
-    #[cfg(feature = "libsql")]
-    #[tokio::test]
-    async fn test_settings_crud() {
-        let harness = TestHarnessBuilder::new().build().await;
-        let db = &harness.db;
-
-        // Initially no setting
-        let val = db
-            .get_setting("user1".into(), "theme".into())
-            .await
-            .expect("get");
-        assert!(val.is_none());
-
-        // Set a value
-        db.set_setting("user1".into(), "theme".into(), &serde_json::json!("dark"))
-            .await
-            .expect("set");
-
-        // Read it back
-        let val = db
-            .get_setting("user1".into(), "theme".into())
-            .await
-            .expect("get")
-            .expect("should exist");
-        assert_eq!(val, serde_json::json!("dark"));
-
-        // Update it
-        db.set_setting("user1".into(), "theme".into(), &serde_json::json!("light"))
-            .await
-            .expect("set update");
-        let val = db
-            .get_setting("user1".into(), "theme".into())
-            .await
-            .expect("get")
-            .expect("should exist");
-        assert_eq!(val, serde_json::json!("light"));
-
-        // List settings
-        let all = db.list_settings("user1".into()).await.expect("list");
-        assert_eq!(all.len(), 1);
-
-        // Delete
-        let deleted = db
-            .delete_setting("user1".into(), "theme".into())
-            .await
-            .expect("delete");
-        assert!(deleted);
-
-        let val = db
-            .get_setting("user1".into(), "theme".into())
-            .await
-            .expect("get");
-        assert!(val.is_none());
-
-        // Delete non-existent
-        let deleted = db
-            .delete_setting("user1".into(), "theme".into())
-            .await
-            .expect("delete");
-        assert!(!deleted);
-    }
-
     #[tokio::test]
     async fn test_harness_with_channel() {
         let harness = TestHarnessBuilder::new().with_stub_channel().build().await;
@@ -1009,52 +946,6 @@ mod tests {
         // Verify channel is registered in the manager
         let names = channel_manager.channel_names().await;
         assert!(names.contains(&"stub".to_string()));
-    }
-
-    #[cfg(feature = "libsql")]
-    #[tokio::test]
-    async fn test_settings_bulk_operations() {
-        let harness = TestHarnessBuilder::new().build().await;
-        let db = &harness.db;
-
-        // Initially no settings
-        let has = db
-            .has_settings("bulk_user".into())
-            .await
-            .expect("has_settings");
-        assert!(!has);
-
-        // Set all settings at once
-        let mut settings = std::collections::HashMap::new();
-        settings.insert("key1".to_string(), serde_json::json!("value1"));
-        settings.insert("key2".to_string(), serde_json::json!(42));
-        db.set_all_settings("bulk_user".into(), &settings)
-            .await
-            .expect("set_all");
-
-        // Has settings should now be true
-        let has = db
-            .has_settings("bulk_user".into())
-            .await
-            .expect("has_settings");
-        assert!(has);
-
-        // Get all settings
-        let all = db
-            .get_all_settings("bulk_user".into())
-            .await
-            .expect("get_all");
-        assert_eq!(all.len(), 2);
-        assert_eq!(all["key1"], serde_json::json!("value1"));
-        assert_eq!(all["key2"], serde_json::json!(42));
-
-        // Get full setting row
-        let full = db
-            .get_setting_full("bulk_user".into(), "key1".into())
-            .await
-            .expect("get_full")
-            .expect("should exist");
-        assert_eq!(full.key, "key1");
     }
 
     #[cfg(feature = "libsql")]
@@ -1362,7 +1253,7 @@ mod tests {
             id: job_id,
             task: "Build a test tool".to_string(),
             status: "creating".to_string(),
-            user_id: "user1".to_string(),
+            user_id: crate::db::UserId::from("user1"),
             project_dir: "/workspace/test".to_string(),
             success: None,
             failure_reason: None,
@@ -1387,7 +1278,7 @@ mod tests {
         // Update status to running
         db.update_sandbox_job_status(SandboxJobStatusUpdate {
             id: job_id,
-            status: "running",
+            status: crate::db::SandboxJobStatus::from("running"),
             success: None,
             message: None,
             started_at: Some(chrono::Utc::now()),
@@ -1399,7 +1290,7 @@ mod tests {
         // Update to completed
         db.update_sandbox_job_status(SandboxJobStatusUpdate {
             id: job_id,
-            status: "completed",
+            status: crate::db::SandboxJobStatus::from("completed"),
             success: Some(true),
             message: Some("Done"),
             started_at: None,
@@ -1426,19 +1317,19 @@ mod tests {
 
         // Per-user list
         let user_jobs = db
-            .list_sandbox_jobs_for_user("user1")
+            .list_sandbox_jobs_for_user(crate::db::UserId::from("user1"))
             .await
             .expect("user list");
         assert!(!user_jobs.is_empty());
 
         // Ownership check
         let belongs = db
-            .sandbox_job_belongs_to_user(job_id, "user1")
+            .sandbox_job_belongs_to_user(job_id, crate::db::UserId::from("user1"))
             .await
             .expect("belongs check");
         assert!(belongs);
         let not_belongs = db
-            .sandbox_job_belongs_to_user(job_id, "other_user")
+            .sandbox_job_belongs_to_user(job_id, crate::db::UserId::from("other_user"))
             .await
             .expect("belongs check");
         assert!(!not_belongs);
@@ -1457,7 +1348,7 @@ mod tests {
             id: job_id,
             task: "Mode test".to_string(),
             status: "creating".to_string(),
-            user_id: "user1".to_string(),
+            user_id: crate::db::UserId::from("user1"),
             project_dir: "/workspace".to_string(),
             success: None,
             failure_reason: None,
@@ -1471,10 +1362,10 @@ mod tests {
         // Default mode
         let mode = db.get_sandbox_job_mode(job_id).await.expect("get mode");
         // Default is "worker" per schema or NULL
-        assert!(mode.is_none() || mode.as_deref() == Some("worker"));
+        assert!(mode.is_none() || mode == Some(crate::db::SandboxMode::Worker));
 
         // Update mode
-        db.update_sandbox_job_mode(job_id, "claude_code")
+        db.update_sandbox_job_mode(job_id, crate::db::SandboxMode::ClaudeCode)
             .await
             .expect("update mode");
         let mode = db
@@ -1482,7 +1373,7 @@ mod tests {
             .await
             .expect("get mode")
             .expect("should have mode");
-        assert_eq!(mode, "claude_code");
+        assert_eq!(mode, crate::db::SandboxMode::ClaudeCode);
     }
 
     #[cfg(feature = "libsql")]
@@ -1499,7 +1390,7 @@ mod tests {
             id: job_id,
             task: "Event test".to_string(),
             status: "running".to_string(),
-            user_id: "user1".to_string(),
+            user_id: crate::db::UserId::from("user1"),
             project_dir: "/workspace".to_string(),
             success: None,
             failure_reason: None,
@@ -1513,7 +1404,7 @@ mod tests {
         // Save events
         db.save_job_event(
             job_id,
-            "tool_call",
+            crate::db::SandboxEventType::from("tool_call"),
             &serde_json::json!({"tool": "shell", "args": {"command": "ls"}}),
         )
         .await
@@ -1521,7 +1412,7 @@ mod tests {
 
         db.save_job_event(
             job_id,
-            "tool_result",
+            crate::db::SandboxEventType::from("tool_result"),
             &serde_json::json!({"output": "file1.txt\nfile2.txt"}),
         )
         .await
@@ -1529,7 +1420,7 @@ mod tests {
 
         db.save_job_event(
             job_id,
-            "llm_response",
+            crate::db::SandboxEventType::from("llm_response"),
             &serde_json::json!({"content": "Found 2 files"}),
         )
         .await

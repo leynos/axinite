@@ -154,7 +154,10 @@ impl Config {
         crate::bootstrap::load_ironclaw_env();
 
         // Load all settings from DB into a Settings struct
-        let db_settings = match store.get_all_settings(user_id.into()).await {
+        let db_settings = match store
+            .get_all_settings(crate::db::UserId::from(user_id))
+            .await
+        {
             Ok(map) => Settings::from_db_map(&map),
             Err(e) => {
                 tracing::warn!("Failed to load settings from DB, using defaults: {}", e);
@@ -283,7 +286,10 @@ impl Config {
         toml_path: Option<&std::path::Path>,
     ) -> Result<(), ConfigError> {
         let settings = if let Some(store) = store {
-            let mut s = match store.get_all_settings(user_id.into()).await {
+            let mut s = match store
+                .get_all_settings(crate::db::UserId::from(user_id))
+                .await
+            {
                 Ok(map) => Settings::from_db_map(&map),
                 Err(_) => Settings::default(),
             };

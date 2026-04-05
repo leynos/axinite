@@ -9,7 +9,7 @@ use crate::history::SettingRow;
 use super::PgBackend;
 
 impl NativeSettingsStore for PgBackend {
-    crate::delegate_async! {
+    crate::db::delegate_async! {
         to store;
         async fn get_setting(&self, user_id: UserId, key: SettingKey) -> Result<Option<serde_json::Value>, DatabaseError>;
         async fn get_setting_full(&self, user_id: UserId, key: SettingKey) -> Result<Option<SettingRow>, DatabaseError>;

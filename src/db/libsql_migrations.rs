@@ -6,6 +6,11 @@
 //! Incremental migrations (V9+) are tracked in the `_migrations` table and run
 //! exactly once per database, in version order.
 
+#[path = "libsql_migrations/v12_wasm.rs"]
+mod v12_wasm;
+#[path = "libsql_migrations/v16_context.rs"]
+mod v16_context;
+
 /// Consolidated schema for libSQL.
 ///
 /// Translates PostgreSQL types and features:
@@ -21,45 +26,11 @@
 /// - PL/pgSQL functions -> SQLite triggers
 pub const SCHEMA: &str = include_str!("../../migrations/libsql_schema.sql");
 
-const V12_WASM_TOOLS_COLUMNS: &str = r#"    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    version TEXT NOT NULL DEFAULT '1.0.0',
-    wit_version TEXT NOT NULL DEFAULT '0.3.0',
-    description TEXT NOT NULL,
-    wasm_binary BLOB NOT NULL,
-    binary_hash BLOB NOT NULL,
-    parameters_schema TEXT NOT NULL,
-    source_url TEXT,
-    trust_level TEXT NOT NULL DEFAULT 'user',
-    status TEXT NOT NULL DEFAULT 'active',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    UNIQUE (user_id, name, version)"#;
-
-const V12_WASM_TOOLS_COPY_COLUMNS: &str = r#"id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
-    parameters_schema, source_url, trust_level, status, created_at, updated_at"#;
-
-const V12_WASM_TOOLS_POST_REBUILD_SQL: &str = r#"CREATE INDEX IF NOT EXISTS idx_wasm_tools_user ON wasm_tools(user_id);
-CREATE INDEX IF NOT EXISTS idx_wasm_tools_status ON wasm_tools(status);
-CREATE INDEX IF NOT EXISTS idx_wasm_tools_trust ON wasm_tools(trust_level);"#;
-
-const V12_WASM_CHANNELS_COLUMNS: &str = r#"    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    version TEXT NOT NULL DEFAULT '0.1.0',
-    wit_version TEXT NOT NULL DEFAULT '0.3.0',
-    description TEXT NOT NULL DEFAULT '',
-    wasm_binary BLOB NOT NULL,
-    binary_hash BLOB NOT NULL,
-    capabilities_json TEXT NOT NULL DEFAULT '{}',
-    status TEXT NOT NULL DEFAULT 'active',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    UNIQUE (user_id, name)"#;
-
-const V12_WASM_CHANNELS_COPY_COLUMNS: &str = r#"id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
-    capabilities_json, status, created_at, updated_at"#;
+/// Shared metadata for recording one incremental migration application.
+pub(super) struct MigrationContext<'a> {
+    version: i64,
+    name: &'a str,
+}
 
 /// Incremental migrations applied after the base schema.
 ///
@@ -161,7 +132,16 @@ ALTER TABLE agent_jobs ADD COLUMN total_tokens_used INTEGER NOT NULL DEFAULT 0;
         "drop_redundant_wasm_tools_name_index",
         include_str!("../../migrations/V14__drop_redundant_wasm_tools_name_index.sql"),
     ),
+    (
+        15,
+        "assistant_conversation_unique_index",
+        include_str!("../../migrations/V15__assistant_conversation_unique_index.sql"),
+    ),
+    (16, v16_context::V16_NAME, v16_context::V16_SQL_MARKER),
 ];
+
+pub(crate) use v12_wasm::v12_wasm_wit_default_migration_sql;
+use v16_context::apply_agent_jobs_context_fields_migration;
 
 /// Run incremental migrations that haven't been applied yet.
 ///
@@ -199,7 +179,15 @@ pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::err
         // outer transaction wrapper.
         if version == 12 {
             let sql = v12_wasm_wit_default_migration_sql();
-            apply_non_transactional_migration(conn, version, name, &sql).await?;
+            apply_non_transactional_migration(conn, MigrationContext { version, name }, &sql)
+                .await?;
+            tracing::info!(version, name, "libSQL: migration applied successfully");
+            continue;
+        }
+
+        if version == 16 {
+            apply_agent_jobs_context_fields_migration(conn, MigrationContext { version, name })
+                .await?;
             tracing::info!(version, name, "libSQL: migration applied successfully");
             continue;
         }
@@ -243,10 +231,10 @@ pub async fn run_incremental(conn: &libsql::Connection) -> Result<(), crate::err
 
 async fn apply_non_transactional_migration(
     conn: &libsql::Connection,
-    version: i64,
-    name: &str,
+    ctx: MigrationContext<'_>,
     sql: &str,
 ) -> Result<(), crate::error::DatabaseError> {
+    let MigrationContext { version, name } = ctx;
     use crate::error::DatabaseError;
 
     if let Err(e) = conn.execute_batch(sql).await {
@@ -278,103 +266,4 @@ async fn apply_non_transactional_migration(
     })?;
 
     Ok(())
-}
-
-fn append_table_rebuild_sql(
-    sql: &mut String,
-    table_name: &str,
-    columns: &str,
-    copy_columns: &str,
-    post_rebuild_sql: Option<&str>,
-) {
-    let old_table_name = format!("{table_name}_old");
-    sql.push_str(&format!(
-        "ALTER TABLE {table_name} RENAME TO {old_table_name};\n\n"
-    ));
-    sql.push_str(&format!("CREATE TABLE {table_name} (\n"));
-    sql.push_str(columns);
-    sql.push_str("\n);\n\n");
-    sql.push_str(&format!("INSERT INTO {table_name} (\n"));
-    sql.push_str(&format!("    {copy_columns}\n"));
-    sql.push_str(")\nSELECT\n");
-    sql.push_str(&format!("    {copy_columns}\n"));
-    sql.push_str(&format!("FROM {old_table_name};\n\n"));
-    sql.push_str(&format!("DROP TABLE {old_table_name};"));
-
-    if let Some(post_rebuild_sql) = post_rebuild_sql {
-        sql.push_str("\n\n");
-        sql.push_str(post_rebuild_sql);
-    }
-
-    sql.push_str("\n\n");
-}
-
-fn v12_wasm_wit_default_migration_sql() -> String {
-    let mut sql = String::from(
-        "PRAGMA legacy_alter_table=ON;\nPRAGMA foreign_keys=OFF;\nBEGIN IMMEDIATE;\n\n",
-    );
-
-    append_table_rebuild_sql(
-        &mut sql,
-        "wasm_tools",
-        V12_WASM_TOOLS_COLUMNS,
-        V12_WASM_TOOLS_COPY_COLUMNS,
-        Some(V12_WASM_TOOLS_POST_REBUILD_SQL),
-    );
-    append_table_rebuild_sql(
-        &mut sql,
-        "wasm_channels",
-        V12_WASM_CHANNELS_COLUMNS,
-        V12_WASM_CHANNELS_COPY_COLUMNS,
-        None,
-    );
-
-    sql.push_str("COMMIT;\nPRAGMA foreign_keys=ON;\nPRAGMA legacy_alter_table=OFF;\n");
-    sql
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{INCREMENTAL_MIGRATIONS, SCHEMA, v12_wasm_wit_default_migration_sql};
-
-    #[test]
-    fn schema_uses_current_wit_defaults_for_new_wasm_records() {
-        let expected = "wit_version TEXT NOT NULL DEFAULT '0.3.0'";
-        let count = SCHEMA.matches(expected).count();
-        assert_eq!(
-            count, 2,
-            "expected fresh libSQL schema to declare {expected} for both wasm tables"
-        );
-        assert!(
-            !SCHEMA.contains("wit_version TEXT NOT NULL DEFAULT '0.1.0'"),
-            "fresh libSQL schema should not default new wasm records to the historical 0.1.0 WIT version"
-        );
-    }
-
-    #[test]
-    fn incremental_migrations_upgrade_existing_wasm_wit_defaults_to_0_3_0() {
-        let (_, _, sql_marker) = INCREMENTAL_MIGRATIONS
-            .iter()
-            .find(|(version, _, _)| *version == 12)
-            .expect("expected a V12 libSQL migration for stale wasm wit_version defaults");
-        assert_eq!(
-            *sql_marker, "-- generated by v12_wasm_wit_default_migration_sql()",
-            "expected V12 migration entry to use the shared SQL builder"
-        );
-
-        let sql = v12_wasm_wit_default_migration_sql();
-
-        assert!(
-            sql.contains("0.3.0"),
-            "expected V12 libSQL migration to set wasm wit_version defaults to 0.3.0"
-        );
-        assert!(
-            !sql.contains("wit_version TEXT NOT NULL DEFAULT '0.1.0'"),
-            "expected V12 libSQL migration to remove stale 0.1.0 wit_version defaults"
-        );
-        assert!(
-            !sql.contains("INSERT INTO _migrations"),
-            "non-transactional migration SQL should not manage _migrations rows itself"
-        );
-    }
 }

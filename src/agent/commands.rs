@@ -827,7 +827,11 @@ impl Agent {
         if let Some(store) = self.store() {
             let value = serde_json::Value::String(model.to_string());
             if let Err(e) = store
-                .set_setting("default".into(), "selected_model".into(), &value)
+                .set_setting(
+                    crate::db::UserId::from("default"),
+                    crate::db::SettingKey::from("selected_model"),
+                    &value,
+                )
                 .await
             {
                 tracing::warn!("Failed to persist model to DB: {}", e);

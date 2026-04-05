@@ -235,12 +235,12 @@ impl CreateJobTool {
         completed_at: Option<chrono::DateTime<Utc>>,
     ) {
         if let Some(store) = self.store.clone() {
-            let status = status.to_string();
+            let status = crate::db::SandboxJobStatus::from(status);
             tokio::spawn(async move {
                 if let Err(e) = store
                     .update_sandbox_job_status(SandboxJobStatusUpdate {
                         id: job_id,
-                        status: &status,
+                        status,
                         success,
                         message: message.as_deref(),
                         started_at,
@@ -354,7 +354,7 @@ impl CreateJobTool {
             id: job_id,
             task: task.to_string(),
             status: "creating".to_string(),
-            user_id: ctx.user_id.clone(),
+            user_id: crate::db::UserId::from(ctx.user_id.clone()),
             project_dir: project_dir_str.clone(),
             success: None,
             failure_reason: None,
@@ -371,7 +371,7 @@ impl CreateJobTool {
             let job_id_copy = job_id;
             tokio::spawn(async move {
                 if let Err(e) = store
-                    .update_sandbox_job_mode(job_id_copy, "claude_code")
+                    .update_sandbox_job_mode(job_id_copy, crate::db::SandboxMode::ClaudeCode)
                     .await
                 {
                     tracing::warn!(job_id = %job_id_copy, "Failed to set job mode: {}", e);

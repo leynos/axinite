@@ -302,6 +302,34 @@ where
 - Test doubles can choose either style. A tiny fake may still implement
   `Tool` directly, while production tools use `NativeTool`.
 
+## Database call flow example
+
+Figure 1. Sequence diagram showing how an `Arc<dyn Database>` call reaches a
+native database implementation through the dyn-safe forwarding layer. The
+diagram highlights that the object-safe trait returns a boxed `DbFuture` while
+the concrete backend still executes an ordinary native async method.
+
+```mermaid
+sequenceDiagram
+    actor Caller
+    participant ArcDynDatabase as Arc_dyn_Database
+    participant DynConversation as ConversationStore_dyn
+    participant NativeImpl as NativeConversationStore_impl
+
+    Caller->>ArcDynDatabase: get Arc_dyn_Database
+    Note over ArcDynDatabase: Arc contains concrete type T implementing NativeDatabase
+
+    Caller->>ArcDynDatabase: create_conversation(channel, user_id, thread_id)
+    ArcDynDatabase->>DynConversation: dispatch create_conversation
+    DynConversation->>NativeImpl: create_conversation(channel, user_id, thread_id)
+    Note over DynConversation,NativeImpl: Forwarder impl calls native async method and Box::pin to DbFuture
+
+    NativeImpl->>NativeImpl: execute backend-specific SQL
+    NativeImpl-->>DynConversation: Result Uuid
+    DynConversation-->>ArcDynDatabase: DbFuture resolving to Result Uuid
+    ArcDynDatabase-->>Caller: Result Uuid
+```
+
 ## Consequences
 
 ### Positive consequences

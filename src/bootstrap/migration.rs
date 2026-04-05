@@ -3,6 +3,7 @@
 use std::{borrow::Cow, io, path::Path};
 
 use crate::bootstrap::{ironclaw_base_dir, ironclaw_env_path, save_database_url};
+use crate::db::{SettingKey, UserId};
 
 #[derive(Debug)]
 struct SidecarSpec<'a> {
@@ -202,7 +203,11 @@ async fn migrate_json_sidecar(
     };
 
     store
-        .set_setting(spec.user_id.into(), spec.setting_key.into(), &value)
+        .set_setting(
+            UserId::from(spec.user_id),
+            SettingKey::from(spec.setting_key),
+            &value,
+        )
         .await
         .map_err(|error| MigrationError::Database(format!("{}: {}", spec.db_error_msg, error)))?;
 
@@ -235,9 +240,12 @@ async fn apply_migration_to_db(
     legacy: &serde_json::Value,
     legacy_settings_path: &Path,
 ) -> Result<(), MigrationError> {
-    let has_settings = store.has_settings(user_id.into()).await.map_err(|error| {
-        MigrationError::Database(format!("Failed to check existing settings: {}", error))
-    })?;
+    let has_settings = store
+        .has_settings(UserId::from(user_id))
+        .await
+        .map_err(|error| {
+            MigrationError::Database(format!("Failed to check existing settings: {}", error))
+        })?;
     if has_settings {
         tracing::info!("DB already has settings, renaming stale settings.json");
         return Ok(());
@@ -250,7 +258,7 @@ async fn apply_migration_to_db(
     let db_map = settings.to_db_map();
     if !db_map.is_empty() {
         store
-            .set_all_settings(user_id.into(), &db_map)
+            .set_all_settings(UserId::from(user_id), &db_map)
             .await
             .map_err(|error| {
                 MigrationError::Database(format!("Failed to write settings to DB: {}", error))

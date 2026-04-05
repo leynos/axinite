@@ -48,7 +48,7 @@ pub async fn jobs_list_handler(
                     id: j.id,
                     title: j.task.clone(),
                     state: ui_state.to_string(),
-                    user_id: j.user_id.clone(),
+                    user_id: j.user_id.to_string(),
                     created_at: j.created_at.to_rfc3339(),
                     started_at: j.started_at.map(|dt| dt.to_rfc3339()),
                 });
@@ -185,21 +185,23 @@ pub async fn jobs_detail_handler(
         }
 
         let mode = store.get_sandbox_job_mode(job.id).await.ok().flatten();
-        let is_claude_code = mode.as_deref() == Some("claude_code");
+        let is_claude_code = mode == Some(crate::db::SandboxMode::ClaudeCode);
 
         return Ok(Json(JobDetailResponse {
             id: job.id,
             title: job.task.clone(),
             description: String::new(),
             state: ui_state.to_string(),
-            user_id: job.user_id.clone(),
+            user_id: job.user_id.to_string(),
             created_at: job.created_at.to_rfc3339(),
             started_at: job.started_at.map(|dt| dt.to_rfc3339()),
             completed_at: job.completed_at.map(|dt| dt.to_rfc3339()),
             elapsed_secs,
             project_dir: Some(job.project_dir.clone()),
             browse_url: Some(format!("/projects/{browse_id}/")),
-            job_mode: mode.filter(|m| m != "worker"),
+            job_mode: mode
+                .filter(|mode| *mode != crate::db::SandboxMode::Worker)
+                .map(|mode| mode.to_string()),
             transitions,
             can_restart: state.job_manager.is_some(),
             can_prompt: is_claude_code && state.prompt_queue.is_some(),

@@ -59,24 +59,6 @@ impl TryFrom<&str> for SandboxJobStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SandboxJobMode {
-    Worker,
-    ClaudeCode,
-}
-
-impl TryFrom<&str> for SandboxJobMode {
-    type Error = String;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "worker" => Ok(Self::Worker),
-            "claude_code" => Ok(Self::ClaudeCode),
-            other => Err(format!("unexpected sandbox job mode '{other}'")),
-        }
-    }
-}
-
 pub(super) struct LoadedSandboxJob {
     pub(super) record: crate::history::SandboxJobRecord,
     pub(super) status: SandboxJobStatus,
@@ -119,16 +101,11 @@ async fn load_agent_job(
 async fn load_sandbox_job_mode(
     store: &Arc<dyn Database>,
     job_id: Uuid,
-) -> Result<Option<SandboxJobMode>, (StatusCode, String)> {
-    let mode = store
+) -> Result<Option<crate::db::SandboxMode>, (StatusCode, String)> {
+    store
         .get_sandbox_job_mode(job_id)
         .await
-        .map_err(|e| internal_error("Failed to load sandbox job mode", e))?;
-    mode.map(|mode| {
-        SandboxJobMode::try_from(mode.as_str())
-            .map_err(|e| internal_error("Failed to parse sandbox job mode", e))
-    })
-    .transpose()
+        .map_err(|e| internal_error("Failed to load sandbox job mode", e))
 }
 
 pub async fn jobs_cancel_handler(

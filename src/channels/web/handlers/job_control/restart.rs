@@ -18,7 +18,7 @@ async fn mark_running(
 ) -> Result<(), crate::error::DatabaseError> {
     db.update_sandbox_job_status(SandboxJobStatusUpdate {
         id,
-        status: "running",
+        status: crate::db::SandboxJobStatus::from("running"),
         success: None,
         message: None,
         started_at: Some(now),
@@ -140,7 +140,7 @@ pub(super) async fn restart_sandbox_job(
     let new_job_id = Uuid::new_v4();
     let now = chrono::Utc::now();
     let mode = match load_sandbox_job_mode(store, old_job_id).await? {
-        Some(super::SandboxJobMode::ClaudeCode) => {
+        Some(crate::db::SandboxMode::ClaudeCode) => {
             crate::orchestrator::job_manager::JobMode::ClaudeCode
         }
         _ => crate::orchestrator::job_manager::JobMode::Worker,
@@ -248,7 +248,7 @@ async fn mark_sandbox_restart_failed(
     store
         .update_sandbox_job_status(SandboxJobStatusUpdate {
             id: job_id,
-            status: "failed",
+            status: crate::db::SandboxJobStatus::from("failed"),
             success: Some(false),
             message: Some(&message),
             started_at: None,

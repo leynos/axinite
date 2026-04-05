@@ -455,7 +455,10 @@ pub async fn load_mcp_servers_from_db(
     user_id: &str,
 ) -> Result<McpServersFile, ConfigError> {
     match store
-        .get_setting(user_id.into(), "mcp_servers".into())
+        .get_setting(
+            crate::db::UserId::from(user_id),
+            crate::db::SettingKey::from("mcp_servers"),
+        )
         .await
     {
         Ok(Some(value)) => {
@@ -484,7 +487,11 @@ pub async fn save_mcp_servers_to_db(
 ) -> Result<(), ConfigError> {
     let value = serde_json::to_value(config)?;
     store
-        .set_setting(user_id.into(), "mcp_servers".into(), &value)
+        .set_setting(
+            crate::db::UserId::from(user_id),
+            crate::db::SettingKey::from("mcp_servers"),
+            &value,
+        )
         .await
         .map_err(std::io::Error::other)?;
     Ok(())

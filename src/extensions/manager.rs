@@ -14,6 +14,7 @@ use crate::channels::ChannelManager;
 use crate::channels::wasm::{
     RegisteredEndpoint, SharedWasmChannel, WasmChannelLoader, WasmChannelRouter, WasmChannelRuntime,
 };
+use crate::db::{SettingKey, UserId};
 use crate::extensions::discovery::OnlineDiscovery;
 use crate::extensions::registry::ExtensionRegistry;
 use crate::extensions::{
@@ -303,8 +304,8 @@ impl ExtensionManager {
         let value = serde_json::json!(names);
         if let Err(e) = store
             .set_setting(
-                self.user_id.as_str().into(),
-                "activated_channels".into(),
+                UserId::from(self.user_id.as_str()),
+                SettingKey::from("activated_channels"),
                 &value,
             )
             .await
@@ -322,7 +323,10 @@ impl ExtensionManager {
             return Vec::new();
         };
         match store
-            .get_setting(self.user_id.as_str().into(), "activated_channels".into())
+            .get_setting(
+                UserId::from(self.user_id.as_str()),
+                SettingKey::from("activated_channels"),
+            )
             .await
         {
             Ok(Some(value)) => match serde_json::from_value(value) {
@@ -3316,7 +3320,10 @@ impl ExtensionManager {
         // Get team_id from settings
         let team_id = if let Some(ref store) = self.store {
             store
-                .get_setting(self.user_id.as_str().into(), team_id_key.as_str().into())
+                .get_setting(
+                    UserId::from(self.user_id.as_str()),
+                    SettingKey::from(team_id_key.as_str()),
+                )
                 .await
                 .ok()
                 .flatten()

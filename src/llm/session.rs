@@ -4,10 +4,10 @@
 //! OAuth flow. Tokens are stored in `~/.ironclaw/session.json` and refreshed
 //! automatically when expired.
 
+mod oauth;
+
 use std::path::PathBuf;
 use std::sync::Arc;
-
-use crate::llm::oauth_helpers::OAUTH_CALLBACK_PORT;
 
 use chrono::{DateTime, Utc};
 use reqwest::Client;
@@ -52,6 +52,8 @@ pub struct SessionManager {
     client: Client,
     /// Current token in memory.
     token: RwLock<Option<SecretString>>,
+    /// Optional in-memory API key for NEAR AI Cloud authentication.
+    api_key: RwLock<Option<SecretString>>,
     /// Prevents thundering herd during concurrent 401s.
     renewal_lock: Mutex<()>,
     /// Optional database store for persisting session to the settings table.
@@ -70,6 +72,7 @@ impl SessionManager {
                 .build()
                 .unwrap_or_else(|_| Client::new()),
             token: RwLock::new(None),
+            api_key: RwLock::new(None),
             renewal_lock: Mutex::new(()),
             store: RwLock::new(None),
             user_id: RwLock::new("default".to_string()),
@@ -101,6 +104,7 @@ impl SessionManager {
                 .build()
                 .unwrap_or_else(|_| Client::new()),
             token: RwLock::new(None),
+            api_key: RwLock::new(None),
             renewal_lock: Mutex::new(()),
             store: RwLock::new(None),
             user_id: RwLock::new("default".to_string()),
@@ -141,12 +145,21 @@ impl SessionManager {
         self.token.read().await.is_some()
     }
 
+    /// Check if we have an in-memory NEAR AI Cloud API key.
+    pub async fn has_api_key(&self) -> bool {
+        self.api_key.read().await.is_some()
+    }
+
     /// Ensure we have a valid session, triggering login flow if needed.
     ///
     /// If no token exists, triggers the OAuth login flow. If a token exists,
     /// validates it by making a test API call. If validation fails, triggers
     /// the login flow.
     pub async fn ensure_authenticated(&self) -> Result<(), LlmError> {
+        if self.has_api_key().await {
+            return Ok(());
+        }
+
         if !self.has_token().await {
             // No token, need to authenticate
             return self.initiate_login().await;
@@ -229,202 +242,21 @@ impl SessionManager {
     ///
     /// For NEAR AI Cloud API key:
     /// 1. Prompt user for API key from cloud.near.ai
-    /// 2. Set NEARAI_API_KEY env var and save to bootstrap .env
+    /// 2. Store the key in the in-memory session manager for the current run
     /// 3. No session token saved (different auth model)
     async fn initiate_login(&self) -> Result<(), LlmError> {
-        use crate::llm::oauth_helpers;
-
-        let cb_url = oauth_helpers::callback_url();
-        let host = oauth_helpers::callback_host();
-
-        // Show auth provider menu BEFORE binding the listener
-        println!();
-        println!("╔════════════════════════════════════════════════════════════════╗");
-        println!("║                    NEAR AI Authentication                      ║");
-        println!("╠════════════════════════════════════════════════════════════════╣");
-        println!("║  Choose an authentication method:                              ║");
-        println!("║                                                                ║");
-        println!("║    [1] GitHub            (requires localhost browser access)   ║");
-        println!("║    [2] Google            (requires localhost browser access)   ║");
-        println!("║    [3] NEAR Wallet (coming soon)                               ║");
-        println!("║    [4] NEAR AI Cloud API key                                   ║");
-        println!("║                                                                ║");
-        println!("╚════════════════════════════════════════════════════════════════╝");
-        println!();
-        print!("Enter choice [1-4]: ");
-
-        // Flush stdout to ensure prompt is displayed
-        use std::io::Write;
-        std::io::stdout().flush().ok();
-
-        // Read user choice
-        let mut choice = String::new();
-        std::io::stdin()
-            .read_line(&mut choice)
-            .map_err(|e| LlmError::SessionRenewalFailed {
-                provider: "nearai".to_string(),
-                reason: format!("Failed to read input: {}", e),
-            })?;
-
-        match choice.trim() {
-            "4" => return self.api_key_login().await,
-            "3" => {
-                println!();
-                println!("NEAR Wallet authentication is not yet implemented.");
-                println!("Please use GitHub or Google for now.");
-                return Err(LlmError::SessionRenewalFailed {
-                    provider: "nearai".to_string(),
-                    reason: "NEAR Wallet auth not yet implemented".to_string(),
-                });
-            }
-            "1" | "" | "2" => {} // handled below after listener bind
-            other => {
-                return Err(LlmError::SessionRenewalFailed {
-                    provider: "nearai".to_string(),
-                    reason: format!("Invalid choice: {}", other),
-                });
-            }
-        }
-
-        // Warn about plain-HTTP token transmission only for OAuth paths (1, 2)
-        // where the callback URL actually carries the session token.
-        if !oauth_helpers::is_loopback_host(&host) {
-            println!();
-            println!("Warning: OAuth callback is using plain HTTP to a remote host ({host}).");
-            println!("         The session token will be transmitted unencrypted.");
-            println!("         Consider SSH port forwarding instead:");
-            println!(
-                "           ssh -L {OAUTH_CALLBACK_PORT}:127.0.0.1:{OAUTH_CALLBACK_PORT} user@{host}"
-            );
-        }
-
-        // OAuth paths: bind the callback listener now
-        let listener = oauth_helpers::bind_callback_listener().await.map_err(|e| {
-            LlmError::SessionRenewalFailed {
-                provider: "nearai".to_string(),
-                reason: e.to_string(),
-            }
-        })?;
-
-        let (auth_provider, auth_url) = match choice.trim() {
-            "2" => {
-                let url = format!(
-                    "{}/v1/auth/google?frontend_callback={}",
-                    self.config.auth_base_url,
-                    urlencoding::encode(&cb_url)
-                );
-                ("google", url)
-            }
-            _ => {
-                // "1" or "" (default)
-                let url = format!(
-                    "{}/v1/auth/github?frontend_callback={}",
-                    self.config.auth_base_url,
-                    urlencoding::encode(&cb_url)
-                );
-                ("github", url)
-            }
-        };
-
-        println!();
-        println!("Opening {} authentication...", auth_provider);
-        println!();
-        println!("  {}", auth_url);
-        println!();
-
-        // Try to open browser automatically
-        if let Err(e) = open::that(&auth_url) {
-            tracing::debug!("Could not open browser automatically: {}", e);
-            println!("(Could not open browser automatically, please copy the URL above)");
-        } else {
-            println!("(Opening browser...)");
-        }
-        println!();
-        println!("Waiting for authentication...");
-
-        // The NEAR AI API redirects to: {frontend_callback}/auth/callback?token=X&...
-        let session_token =
-            oauth_helpers::wait_for_callback(listener, "/auth/callback", "token", "NEAR AI", None)
-                .await
-                .map_err(|e| LlmError::SessionRenewalFailed {
-                    provider: "nearai".to_string(),
-                    reason: e.to_string(),
-                })?;
-
-        let auth_provider = Some(auth_provider.to_string());
-
-        // Save the token
-        self.save_session(&session_token, auth_provider.as_deref())
-            .await?;
-
-        // Update in-memory token
-        {
-            let mut guard = self.token.write().await;
-            *guard = Some(SecretString::from(session_token));
-        }
-
-        println!();
-        println!("✓ Authentication successful!");
-        println!();
-
-        Ok(())
+        oauth::initiate_login_flow(self).await
     }
 
     /// NEAR AI Cloud API key entry flow.
     ///
     /// Prompts the user to enter a NEAR AI Cloud API key from
-    /// cloud.near.ai. The key is set as `NEARAI_API_KEY` env var so
-    /// `LlmConfig::resolve()` auto-selects ChatCompletions mode, and
-    /// saved to `~/.ironclaw/.env` for persistence across restarts.
+    /// cloud.near.ai. The key is stored in the session manager for the
+    /// current run; onboarding persists it to encrypted secrets storage.
     /// No session token is saved and no `/v1/users/me` validation is
     /// performed (different auth model).
     async fn api_key_login(&self) -> Result<(), LlmError> {
-        println!();
-        println!("NEAR AI Cloud API key");
-        println!("─────────────────────");
-        println!();
-        println!("  1. Open https://cloud.near.ai in your browser");
-        println!("  2. Sign in and navigate to API Keys");
-        println!("  3. Create or copy an existing API key");
-        println!();
-
-        let key_secret =
-            crate::setup::secret_input("API key").map_err(|e| LlmError::SessionRenewalFailed {
-                provider: "nearai".to_string(),
-                reason: format!("Failed to read input: {}", e),
-            })?;
-
-        use secrecy::ExposeSecret;
-        let key = key_secret.expose_secret().to_string();
-        if key.is_empty() {
-            return Err(LlmError::SessionRenewalFailed {
-                provider: "nearai".to_string(),
-                reason: "API key cannot be empty".to_string(),
-            });
-        }
-
-        // Set env var so Config picks it up immediately
-        // (LlmConfig::resolve() auto-selects ChatCompletions mode when
-        // NEARAI_API_KEY is present).
-        //
-        // SAFETY: called during single-threaded interactive login flow.
-        #[allow(unused_unsafe)]
-        unsafe {
-            std::env::set_var("NEARAI_API_KEY", &key);
-        }
-
-        // Persist to ~/.ironclaw/.env so the key survives restarts
-        // (bootstrap layer — available before DB is connected).
-        // Uses upsert to avoid clobbering existing bootstrap vars.
-        if let Err(e) = crate::bootstrap::upsert_bootstrap_var("NEARAI_API_KEY", &key) {
-            tracing::warn!("Failed to save API key to bootstrap .env: {}", e);
-        }
-
-        println!();
-        crate::setup::print_success("NEAR AI Cloud API key saved.");
-        println!();
-
-        Ok(())
+        oauth::api_key_flow(self).await
     }
 
     /// Save session data to disk and (if available) to the database.
@@ -492,8 +324,8 @@ impl SessionManager {
                 .unwrap_or(serde_json::Value::String(token.to_string()));
             if let Err(e) = store
                 .set_setting(
-                    user_id.as_str().into(),
-                    "nearai.session_token".into(),
+                    crate::db::UserId::from(user_id.as_str()),
+                    crate::db::SettingKey::from("nearai.session_token"),
                     &session_json,
                 )
                 .await
@@ -519,7 +351,10 @@ impl SessionManager {
 
         let user_id = self.user_id.read().await.clone();
         let value = if let Some(value) = store
-            .get_setting(user_id.as_str().into(), "nearai.session_token".into())
+            .get_setting(
+                crate::db::UserId::from(user_id.as_str()),
+                crate::db::SettingKey::from("nearai.session_token"),
+            )
             .await
             .map_err(|e| LlmError::SessionRenewalFailed {
                 provider: "nearai".to_string(),
@@ -531,7 +366,10 @@ impl SessionManager {
             // backwards-compat migration). When neither key is present
             // (fresh install), just return the "No session in DB" error.
             let legacy = store
-                .get_setting(user_id.as_str().into(), "nearai.session".into())
+                .get_setting(
+                    crate::db::UserId::from(user_id.as_str()),
+                    crate::db::SettingKey::from("nearai.session"),
+                )
                 .await
                 .map_err(|e| LlmError::SessionRenewalFailed {
                     provider: "nearai".to_string(),
@@ -606,6 +444,17 @@ impl SessionManager {
         let mut guard = self.token.write().await;
         *guard = Some(token);
     }
+
+    /// Set an in-memory NEAR AI Cloud API key.
+    pub async fn set_api_key(&self, api_key: SecretString) {
+        let mut guard = self.api_key.write().await;
+        *guard = Some(api_key);
+    }
+
+    /// Get the current in-memory NEAR AI Cloud API key, if one exists.
+    pub async fn get_api_key(&self) -> Option<SecretString> {
+        self.api_key.read().await.clone()
+    }
 }
 
 /// Create a session manager from a config, loading env var if present.
@@ -629,216 +478,4 @@ pub async fn create_session_manager(config: SessionConfig) -> Arc<SessionManager
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::testing::credentials::{
-        TEST_SESSION_NEARAI_ABC, TEST_SESSION_NEARAI_XYZ, TEST_SESSION_TOKEN,
-    };
-    use secrecy::ExposeSecret;
-    use tempfile::tempdir;
-
-    #[tokio::test]
-    async fn test_session_save_load() {
-        let dir = tempdir().unwrap();
-        let session_path = dir.path().join("session.json");
-
-        let config = SessionConfig {
-            auth_base_url: "https://example.com".to_string(),
-            session_path: session_path.clone(),
-        };
-
-        let manager = SessionManager::new_async(config.clone()).await;
-
-        // No token initially
-        assert!(!manager.has_token().await);
-
-        // Save a token
-        manager
-            .save_session(TEST_SESSION_TOKEN, Some("near"))
-            .await
-            .unwrap();
-        manager
-            .set_token(SecretString::from(TEST_SESSION_TOKEN))
-            .await;
-
-        // Verify it's set
-        assert!(manager.has_token().await);
-        let token = manager.get_token().await.unwrap();
-        assert_eq!(token.expose_secret(), TEST_SESSION_TOKEN);
-
-        // Create new manager and verify it loads the token
-        let manager2 = SessionManager::new_async(config).await;
-        assert!(manager2.has_token().await);
-        let token2 = manager2.get_token().await.unwrap();
-        assert_eq!(token2.expose_secret(), TEST_SESSION_TOKEN);
-
-        // Verify file contents
-        let data: SessionData =
-            serde_json::from_str(&std::fs::read_to_string(&session_path).unwrap()).unwrap();
-        assert_eq!(data.session_token, TEST_SESSION_TOKEN);
-        assert_eq!(data.auth_provider, Some("near".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_get_token_without_auth_fails() {
-        let dir = tempdir().unwrap();
-        let config = SessionConfig {
-            auth_base_url: "https://example.com".to_string(),
-            session_path: dir.path().join("nonexistent.json"),
-        };
-
-        let manager = SessionManager::new_async(config).await;
-        let result = manager.get_token().await;
-        assert!(result.is_err());
-        assert!(matches!(result, Err(LlmError::AuthFailed { .. })));
-    }
-
-    #[test]
-    fn test_session_data_serde_roundtrip_with_auth_provider() {
-        let original = SessionData {
-            session_token: TEST_SESSION_NEARAI_ABC.to_string(),
-            created_at: Utc::now(),
-            auth_provider: Some("github".to_string()),
-        };
-        let json = serde_json::to_string(&original).unwrap();
-        let deserialized: SessionData = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.session_token, original.session_token);
-        assert_eq!(deserialized.auth_provider, Some("github".to_string()));
-        assert_eq!(deserialized.created_at, original.created_at);
-    }
-
-    #[test]
-    fn test_session_data_serde_roundtrip_without_auth_provider() {
-        let original = SessionData {
-            session_token: TEST_SESSION_NEARAI_XYZ.to_string(),
-            created_at: Utc::now(),
-            auth_provider: None,
-        };
-        let json = serde_json::to_string(&original).unwrap();
-        let deserialized: SessionData = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.session_token, original.session_token);
-        assert_eq!(deserialized.auth_provider, None);
-    }
-
-    #[test]
-    fn test_session_data_missing_auth_provider_defaults_to_none() {
-        let json = r#"{"session_token":"tok_legacy","created_at":"2025-01-01T00:00:00Z"}"#;
-        let data: SessionData = serde_json::from_str(json).unwrap();
-        assert_eq!(data.session_token, "tok_legacy");
-        assert_eq!(data.auth_provider, None);
-    }
-
-    #[test]
-    fn test_session_config_default() {
-        let config = SessionConfig::default();
-        assert_eq!(config.auth_base_url, "https://private.near.ai");
-        assert!(config.session_path.ends_with("session.json"));
-    }
-
-    #[tokio::test]
-    async fn test_new_with_nonexistent_session_file() {
-        let dir = tempdir().unwrap();
-        let config = SessionConfig {
-            auth_base_url: "https://example.com".to_string(),
-            session_path: dir.path().join("does_not_exist.json"),
-        };
-        let manager = SessionManager::new(config);
-        assert!(!manager.has_token().await);
-    }
-
-    #[tokio::test]
-    async fn test_set_token_get_token_roundtrip() {
-        let dir = tempdir().unwrap();
-        let config = SessionConfig {
-            auth_base_url: "https://example.com".to_string(),
-            session_path: dir.path().join("session.json"),
-        };
-        let manager = SessionManager::new(config);
-        manager
-            .set_token(SecretString::from("my_secret_token"))
-            .await;
-        let token = manager.get_token().await.unwrap();
-        assert_eq!(token.expose_secret(), "my_secret_token");
-    }
-
-    #[tokio::test]
-    async fn test_has_token_false_then_true() {
-        let dir = tempdir().unwrap();
-        let config = SessionConfig {
-            auth_base_url: "https://example.com".to_string(),
-            session_path: dir.path().join("session.json"),
-        };
-        let manager = SessionManager::new(config);
-        assert!(!manager.has_token().await);
-        manager.set_token(SecretString::from("tok_something")).await;
-        assert!(manager.has_token().await);
-    }
-
-    #[tokio::test]
-    async fn test_save_session_then_load_in_new_manager() {
-        let dir = tempdir().unwrap();
-        let session_path = dir.path().join("session.json");
-        let config = SessionConfig {
-            auth_base_url: "https://example.com".to_string(),
-            session_path: session_path.clone(),
-        };
-
-        let manager = SessionManager::new_async(config.clone()).await;
-        manager
-            .save_session("persist_me", Some("google"))
-            .await
-            .unwrap();
-
-        // Load in a fresh manager
-        let manager2 = SessionManager::new_async(config).await;
-        assert!(manager2.has_token().await);
-        let token = manager2.get_token().await.unwrap();
-        assert_eq!(token.expose_secret(), "persist_me");
-
-        // Verify auth_provider was persisted
-        let raw: SessionData =
-            serde_json::from_str(&std::fs::read_to_string(&session_path).unwrap()).unwrap();
-        assert_eq!(raw.auth_provider, Some("google".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_save_session_with_no_auth_provider() {
-        let dir = tempdir().unwrap();
-        let session_path = dir.path().join("session.json");
-        let config = SessionConfig {
-            auth_base_url: "https://example.com".to_string(),
-            session_path: session_path.clone(),
-        };
-
-        let manager = SessionManager::new_async(config).await;
-        manager.save_session("anon_tok", None).await.unwrap();
-
-        let raw: SessionData =
-            serde_json::from_str(&std::fs::read_to_string(&session_path).unwrap()).unwrap();
-        assert_eq!(raw.session_token, "anon_tok");
-        assert_eq!(raw.auth_provider, None);
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn test_session_file_permissions() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = tempdir().unwrap();
-        let session_path = dir.path().join("session.json");
-        let config = SessionConfig {
-            auth_base_url: "https://example.com".to_string(),
-            session_path: session_path.clone(),
-        };
-
-        let manager = SessionManager::new_async(config).await;
-        manager
-            .save_session("secret_tok", Some("github"))
-            .await
-            .unwrap();
-
-        let metadata = std::fs::metadata(&session_path).unwrap();
-        let mode = metadata.permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600, "Session file should have 0600 permissions");
-    }
-}
+mod tests;

@@ -1,0 +1,8 @@
+ALTER TABLE agent_jobs
+    ADD COLUMN IF NOT EXISTS transitions JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE agent_jobs
+    ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE agent_jobs
+    ADD COLUMN IF NOT EXISTS user_timezone TEXT NOT NULL DEFAULT 'UTC';

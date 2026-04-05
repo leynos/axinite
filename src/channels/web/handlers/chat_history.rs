@@ -33,17 +33,34 @@ pub struct HistoryQuery {
 const DEFAULT_HISTORY_LIMIT: usize = 50;
 const MAX_HISTORY_LIMIT: usize = 200;
 
+fn parse_before_cursor(value: &str) -> Result<(chrono::DateTime<chrono::Utc>, Uuid), ()> {
+    if let Some((timestamp, message_id)) = value.split_once('|') {
+        let parsed_timestamp = chrono::DateTime::parse_from_rfc3339(timestamp)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .map_err(|_| ())?;
+        let parsed_id = Uuid::parse_str(message_id).map_err(|_| ())?;
+        Ok((parsed_timestamp, parsed_id))
+    } else {
+        let parsed_timestamp = chrono::DateTime::parse_from_rfc3339(value)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .map_err(|_| ())?;
+        Ok((parsed_timestamp, Uuid::nil()))
+    }
+}
+
 async fn load_stored_history(
     store: &Arc<dyn Database>,
     thread_id: Uuid,
-    before_cursor: Option<chrono::DateTime<chrono::Utc>>,
+    before_cursor: Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
     limit: usize,
 ) -> Result<HistoryResponse, (StatusCode, String)> {
     let (messages, has_more) = store
-        .list_conversation_messages_paginated(thread_id, before_cursor, limit as i64)
+        .list_conversation_messages_paginated(thread_id, before_cursor, limit)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let oldest_timestamp = messages.first().map(|m| m.created_at.to_rfc3339());
+    let oldest_timestamp = messages
+        .first()
+        .map(|message| format!("{}|{}", message.created_at.to_rfc3339(), message.id));
     let turns = build_turns_from_db_messages(&messages);
 
     Ok(HistoryResponse {
@@ -72,17 +89,14 @@ pub async fn chat_history_handler(
     let before_cursor = query
         .before
         .as_deref()
-        .map(|value| {
-            chrono::DateTime::parse_from_rfc3339(value)
-                .map(|dt| dt.with_timezone(&chrono::Utc))
-                .map_err(|_| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        "Invalid 'before' timestamp".to_string(),
-                    )
-                })
-        })
-        .transpose()?;
+        .map(parse_before_cursor)
+        .transpose()
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                "Invalid 'before' cursor".to_string(),
+            )
+        })?;
 
     let requested_thread_id = if let Some(ref tid) = query.thread_id {
         Uuid::parse_str(tid)
