@@ -2,10 +2,14 @@
 
 use super::*;
 
+/// Creates a [`RankedResult`] with the given chunk ID, document ID, and rank.
+/// The document path is auto-generated as `docs/{doc_id}.md`.
 pub(super) fn make_result(chunk_id: Uuid, doc_id: Uuid, rank: u32) -> RankedResult {
     make_result_with_path(chunk_id, doc_id, &format!("docs/{}.md", doc_id), rank)
 }
 
+/// Creates a [`RankedResult`] with the given chunk ID, document ID, path, and rank.
+/// Use this when you need to specify an explicit document path.
 pub(super) fn make_result_with_path(
     chunk_id: Uuid,
     doc_id: Uuid,
@@ -71,12 +75,20 @@ pub(super) fn assert_scores_descending(results: &[SearchResult]) {
 }
 
 /// Expected field values when asserting a [`SearchConfig`] in tests.
+/// Expected values for [`SearchConfig`] fields in test assertions.
+/// Used by [`assert_config`] to verify search configuration settings.
 pub(super) struct ExpectedSearchConfig {
+    /// Maximum number of results to return
     pub(super) limit: usize,
+    /// RRF constant k parameter for score normalization
     pub(super) rrf_k: u32,
+    /// Minimum score threshold for inclusion
     pub(super) min_score: f32,
+    /// Whether full-text search is enabled
     pub(super) use_fts: bool,
+    /// Whether vector search is enabled
     pub(super) use_vector: bool,
+    /// Pre-fusion limit for individual search methods
     pub(super) pre_fusion_limit: usize,
 }
 
@@ -127,11 +139,23 @@ pub(super) fn assert_hybrid_chunk(result: &SearchResult, fts_rank: u32, vector_r
 /// the vector argument.
 pub(super) fn build_single_method_rrf_results(use_fts: bool) -> Vec<SearchResult> {
     let config = SearchConfig::default().with_limit(10);
-    let doc = Uuid::new_v4();
+    let doc = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let inputs = vec![
-        make_result(Uuid::new_v4(), doc, 1),
-        make_result(Uuid::new_v4(), doc, 2),
-        make_result(Uuid::new_v4(), doc, 3),
+        make_result(
+            Uuid::parse_str("10000000-0000-0000-0000-000000000001").unwrap(),
+            doc,
+            1,
+        ),
+        make_result(
+            Uuid::parse_str("20000000-0000-0000-0000-000000000001").unwrap(),
+            doc,
+            2,
+        ),
+        make_result(
+            Uuid::parse_str("30000000-0000-0000-0000-000000000001").unwrap(),
+            doc,
+            3,
+        ),
     ];
     if use_fts {
         reciprocal_rank_fusion(inputs, Vec::new(), &config)

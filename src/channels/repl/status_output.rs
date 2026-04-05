@@ -19,31 +19,45 @@ pub(super) const CLI_STATUS_MAX: usize = 200;
 
 /// Describes a completed tool invocation for terminal rendering.
 pub(super) struct ToolCompletedInfo<'a> {
+    /// Tool name
     pub name: &'a str,
+    /// Whether invocation succeeded
     pub success: bool,
+    /// Error message if any
     pub error: Option<&'a str>,
+    /// Invocation parameters
     pub parameters: Option<&'a str>,
 }
 
 /// Describes a newly started background job for terminal rendering.
 pub(super) struct JobStartedInfo<'a> {
+    /// Job identifier
     pub job_id: &'a str,
+    /// Job title
     pub title: &'a str,
+    /// URL to browse the job
     pub browse_url: &'a str,
 }
 
 /// Describes an authentication-required event for terminal rendering.
 pub(super) struct AuthRequiredInfo<'a> {
+    /// Extension name
     pub extension_name: &'a str,
+    /// Authentication instructions
     pub instructions: Option<&'a str>,
+    /// Setup URL if any
     pub setup_url: Option<&'a str>,
+    /// Authentication URL if any
     pub auth_url: Option<&'a str>,
 }
 
 /// Describes a completed authentication attempt for terminal rendering.
 pub(super) struct AuthCompletedInfo<'a> {
+    /// Extension name
     pub extension_name: &'a str,
+    /// Whether authentication succeeded
     pub success: bool,
+    /// Status message
     pub message: &'a str,
 }
 
@@ -297,6 +311,37 @@ fn handle_auth_required(
     });
 }
 
+/// Build a [`ToolCompletedInfo`] from destructured [`StatusUpdate::ToolCompleted`]
+/// fields and delegate to [`print_tool_completed`].
+fn handle_tool_completed(name: &str, success: bool, error: Option<&str>, parameters: Option<&str>) {
+    print_tool_completed(&ToolCompletedInfo {
+        name,
+        success,
+        error,
+        parameters,
+    });
+}
+
+/// Build a [`JobStartedInfo`] from destructured [`StatusUpdate::JobStarted`]
+/// fields and delegate to [`print_job_started`].
+fn handle_job_started(job_id: &str, title: &str, browse_url: &str) {
+    print_job_started(&JobStartedInfo {
+        job_id,
+        title,
+        browse_url,
+    });
+}
+
+/// Build an [`AuthCompletedInfo`] from destructured [`StatusUpdate::AuthCompleted`]
+/// fields and delegate to [`print_auth_completed`].
+fn handle_auth_completed(extension_name: &str, success: bool, message: &str) {
+    print_auth_completed(&AuthCompletedInfo {
+        extension_name,
+        success,
+        message,
+    });
+}
+
 /// Route a [`StatusUpdate`] to the appropriate `print_*` helper.
 pub(super) fn dispatch_status_update(
     status: StatusUpdate,
@@ -312,12 +357,7 @@ pub(super) fn dispatch_status_update(
             error,
             parameters,
         } => {
-            print_tool_completed(&ToolCompletedInfo {
-                name: &name,
-                success,
-                error: error.as_deref(),
-                parameters: parameters.as_deref(),
-            });
+            handle_tool_completed(&name, success, error.as_deref(), parameters.as_deref());
         }
         StatusUpdate::ToolResult { name: _, preview } => print_tool_result(&preview),
         StatusUpdate::StreamChunk(chunk) => print_stream_chunk(is_streaming, &chunk),
@@ -326,11 +366,7 @@ pub(super) fn dispatch_status_update(
             title,
             browse_url,
         } => {
-            print_job_started(&JobStartedInfo {
-                job_id: &job_id,
-                title: &title,
-                browse_url: &browse_url,
-            });
+            handle_job_started(&job_id, &title, &browse_url);
         }
         StatusUpdate::Status(msg) => print_status(is_debug, &msg),
         StatusUpdate::ApprovalNeeded {
@@ -359,11 +395,7 @@ pub(super) fn dispatch_status_update(
             success,
             message,
         } => {
-            print_auth_completed(&AuthCompletedInfo {
-                extension_name: &extension_name,
-                success,
-                message: &message,
-            });
+            handle_auth_completed(&extension_name, success, &message);
         }
         StatusUpdate::ImageGenerated { path, .. } => print_image_generated(path.as_deref()),
     }

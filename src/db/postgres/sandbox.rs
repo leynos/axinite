@@ -276,8 +276,8 @@ mod tests {
             completed_job.project_dir = "/tmp/completed".to_string();
             completed_job.success = Some(true);
             completed_job.failure_reason = Some("Success".to_string());
-            completed_job.started_at = Some(Utc::now());
-            completed_job.completed_at = Some(Utc::now());
+            completed_job.started_at = Some(Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap());
+            completed_job.completed_at = Some(Utc.with_ymd_and_hms(2024, 1, 1, 11, 0, 0).unwrap());
 
             let mut other_user_job = pending_job.clone();
             other_user_job.id = Uuid::new_v4();

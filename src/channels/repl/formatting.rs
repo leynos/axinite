@@ -99,11 +99,13 @@ pub(super) fn format_json_params(params: &serde_json::Value) -> String {
         }
         other => {
             let pretty = serde_json::to_string_pretty(other).unwrap_or_else(|_| other.to_string());
-            let sanitized = sanitize_for_terminal(&pretty);
-            let truncated = truncate_grapheme_aware(&sanitized, 300);
-            truncated
+            pretty
                 .lines()
-                .map(|l| format!("{CARD_PARAM_INDENT}\x1b[90m{l}\x1b[0m"))
+                .map(|line| {
+                    let sanitized = sanitize_for_terminal(line);
+                    let truncated = truncate_grapheme_aware(&sanitized, 300);
+                    format!("{CARD_PARAM_INDENT}\x1b[90m{truncated}\x1b[0m")
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         }
