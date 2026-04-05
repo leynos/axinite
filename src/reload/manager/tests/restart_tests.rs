@@ -1,6 +1,6 @@
 //! Listener restart and address resolution tests for the hot-reload manager.
 //!
-//! These tests verify correct listener restart behavior across IPv4, IPv6,
+//! These tests verify correct listener restart behaviour across IPv4, IPv6,
 //! and hostname resolution, including unchanged-address optimization,
 //! restart-after-shutdown, and failure propagation.
 

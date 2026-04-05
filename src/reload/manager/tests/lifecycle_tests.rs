@@ -1,142 +1,191 @@
 //! Hot-reload manager lifecycle and error-handling tests.
 //!
-//! These tests verify lifecycle behavior including config load failures,
+//! These tests verify lifecycle behaviour including config load failures,
 //! HTTP listener removal and shutdown, and secret injector error handling
 //! during reload operations.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use rstest::rstest;
+
 use super::super::*;
 use super::common::{http_config, test_config_with_http};
 use crate::channels::ChannelSecretUpdater;
+use crate::error::ConfigError;
 use crate::reload::test_stubs::{
     SpySecretUpdater, StubConfigLoader, StubListenerController, StubSecretInjector,
 };
 
-#[tokio::test]
-async fn config_load_failure_prevents_listener_restart() {
-    let injector = Arc::new(StubSecretInjector::new());
-    let controller = Arc::new(StubListenerController::new(
-        "127.0.0.1:8080".parse().expect("valid test socket address"),
-    ));
-    let controller_clone = Arc::clone(&controller);
-    let loader = Arc::new(StubConfigLoader::new_error(
-        crate::error::ConfigError::MissingEnvVar("TEST".to_string()),
-    ));
-    let spy = Arc::new(SpySecretUpdater::new());
-    let spy_clone = Arc::clone(&spy);
-
-    let manager = HotReloadManager::new(
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        vec![spy as Arc<dyn ChannelSecretUpdater>],
-    );
-
-    let result = manager.perform_reload().await;
-    assert!(result.is_err(), "Reload should fail on config error");
-    assert_eq!(
-        controller_clone.restart_calls().await.len(),
-        0,
-        "Listener should not be restarted after config load failure"
-    );
-    assert!(
-        spy_clone.was_not_called().await,
-        "ChannelSecretUpdater should not be called after config load failure"
-    );
+/// Test fixture providing assembled reload manager dependencies.
+struct LifecycleFixture {
+    manager: HotReloadManager,
+    controller_clone: Arc<StubListenerController>,
+    injector_clone: Arc<StubSecretInjector>,
+    spy_clone: Arc<SpySecretUpdater>,
 }
 
-#[tokio::test]
-async fn http_config_removed_shuts_down_listener_and_clears_secrets()
--> Result<(), Box<dyn std::error::Error>> {
-    let injector = Arc::new(StubSecretInjector::new());
-    let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
-    let controller = Arc::new(StubListenerController::new(current_addr));
-    let controller_clone = Arc::clone(&controller);
-    let (_temp_dir, config) = test_config_with_http(None).await?;
-    let loader = Arc::new(StubConfigLoader::new_success(config));
-    let spy = Arc::new(SpySecretUpdater::new());
-    let spy_clone = Arc::clone(&spy);
+impl LifecycleFixture {
+    async fn new(
+        loader: Arc<dyn ConfigLoader>,
+        injector: Arc<StubSecretInjector>,
+        current_addr: SocketAddr,
+    ) -> Self {
+        let injector_clone = Arc::clone(&injector);
+        let controller = Arc::new(StubListenerController::new(current_addr));
+        let controller_clone = Arc::clone(&controller);
+        let spy = Arc::new(SpySecretUpdater::new());
+        let spy_clone = Arc::clone(&spy);
 
-    let manager = HotReloadManager::new(
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        vec![spy as Arc<dyn ChannelSecretUpdater>],
-    );
+        let manager = HotReloadManager::new(
+            loader,
+            Some(controller as Arc<dyn ListenerController>),
+            Some(injector as Arc<dyn SecretInjector>),
+            vec![spy as Arc<dyn ChannelSecretUpdater>],
+        );
 
-    let result = manager.perform_reload().await;
-    assert!(
-        result.is_ok(),
-        "Reload should succeed when HTTP config is removed"
-    );
-    assert_eq!(
-        controller_clone.restart_calls().await.len(),
-        0,
-        "Listener should not be restarted when HTTP config is removed"
-    );
-    assert_eq!(
-        controller_clone.shutdown_count(),
-        1,
-        "Listener should be shut down when HTTP config is removed"
-    );
-    assert_eq!(
-        spy_clone.call_count().await,
-        1,
-        "ChannelSecretUpdater should be called to clear secrets when HTTP config is removed"
-    );
-    assert_eq!(
-        spy_clone.last_secret().await,
-        Some(None),
-        "ChannelSecretUpdater should clear the webhook secret when HTTP config is removed"
-    );
-    Ok(())
+        Self {
+            manager,
+            controller_clone,
+            injector_clone,
+            spy_clone,
+        }
+    }
 }
 
+/// Test scenario configuration and expected outcomes.
+struct Scenario {
+    description: &'static str,
+    loader_factory: fn() -> Arc<dyn ConfigLoader>,
+    injector_factory: fn() -> Arc<StubSecretInjector>,
+    http_config_provider: fn() -> Option<(Option<crate::config::HttpConfig>, bool)>,
+    expect_reload_ok: bool,
+    expect_restart_count: usize,
+    expect_shutdown_count: usize,
+    expect_spy_call_count: usize,
+    expect_spy_last_secret: Option<Option<String>>,
+    expect_injector_called: Option<bool>,
+}
+
+#[rstest]
+#[case::config_load_failure(Scenario {
+    description: "config load failure prevents listener restart",
+    loader_factory: || Arc::new(StubConfigLoader::new_error(
+        ConfigError::MissingEnvVar("TEST".to_string()),
+    )),
+    injector_factory: || Arc::new(StubSecretInjector::new()),
+    http_config_provider: || None,
+    expect_reload_ok: false,
+    expect_restart_count: 0,
+    expect_shutdown_count: 0,
+    expect_spy_call_count: 0,
+    expect_spy_last_secret: None,
+    expect_injector_called: None,
+})]
+#[case::http_config_removed(Scenario {
+    description: "http config removed shuts down listener and clears secrets",
+    loader_factory: || panic!("loader configured in test body"),
+    injector_factory: || Arc::new(StubSecretInjector::new()),
+    http_config_provider: || Some((None, true)),
+    expect_reload_ok: true,
+    expect_restart_count: 0,
+    expect_shutdown_count: 1,
+    expect_spy_call_count: 1,
+    expect_spy_last_secret: Some(None),
+    expect_injector_called: None,
+})]
+#[case::secret_injector_failure(Scenario {
+    description: "secret injector failure does not block config reload",
+    loader_factory: || panic!("loader configured in test body"),
+    injector_factory: || Arc::new(StubSecretInjector::new_failure()),
+    http_config_provider: || Some((
+        Some(http_config("127.0.0.1", 8081, Some("rotated-secret"))),
+        true,
+    )),
+    expect_reload_ok: true,
+    expect_restart_count: 1,
+    expect_shutdown_count: 0,
+    expect_spy_call_count: 1,
+    expect_spy_last_secret: Some(Some("rotated-secret".to_string())),
+    expect_injector_called: Some(true),
+})]
 #[tokio::test]
-async fn secret_injector_failure_does_not_block_config_reload()
--> Result<(), Box<dyn std::error::Error>> {
-    let injector = Arc::new(StubSecretInjector::new_failure());
-    let injector_clone = Arc::clone(&injector);
+async fn lifecycle_scenarios(#[case] scenario: Scenario) -> Result<(), Box<dyn std::error::Error>> {
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
-    let controller = Arc::new(StubListenerController::new(current_addr));
-    let controller_clone = Arc::clone(&controller);
-    let spy = Arc::new(SpySecretUpdater::new());
-    let spy_clone = Arc::clone(&spy);
-    let (_temp_dir, config) =
-        test_config_with_http(Some(http_config("127.0.0.1", 8081, Some("rotated-secret")))).await?;
-    let loader = Arc::new(StubConfigLoader::new_success(config));
+    let injector = (scenario.injector_factory)();
 
-    let manager = HotReloadManager::new(
-        loader as Arc<dyn ConfigLoader>,
-        Some(controller as Arc<dyn ListenerController>),
-        Some(injector as Arc<dyn SecretInjector>),
-        vec![spy as Arc<dyn ChannelSecretUpdater>],
+    let loader: Arc<dyn ConfigLoader> =
+        if let Some((http_cfg, _)) = (scenario.http_config_provider)() {
+            let (_temp_dir, mut config) = test_config_with_http(None).await?;
+            config.channels.http = http_cfg;
+            Arc::new(StubConfigLoader::new_success(config))
+        } else {
+            (scenario.loader_factory)()
+        };
+
+    let fixture = LifecycleFixture::new(loader, injector, current_addr).await;
+
+    let result = fixture.manager.perform_reload().await;
+
+    if scenario.expect_reload_ok {
+        assert!(
+            result.is_ok(),
+            "Reload should succeed for {}",
+            scenario.description
+        );
+    } else {
+        assert!(
+            result.is_err(),
+            "Reload should fail for {}",
+            scenario.description
+        );
+    }
+
+    assert_eq!(
+        fixture.controller_clone.restart_calls().await.len(),
+        scenario.expect_restart_count,
+        "Listener restart count mismatch for {}",
+        scenario.description
     );
 
-    let result = manager.perform_reload().await;
-    assert!(
-        result.is_ok(),
-        "HotReloadManager::perform_reload should keep applying config when the injector fails"
-    );
-    assert!(
-        injector_clone.was_called().await,
-        "StubSecretInjector should still be invoked during reload"
-    );
     assert_eq!(
-        controller_clone.restart_calls().await,
-        vec![
-            "127.0.0.1:8081"
-                .parse()
-                .expect("valid socket address for restarted listener")
-        ],
-        "the listener should still restart onto the new address"
+        fixture.controller_clone.shutdown_count(),
+        scenario.expect_shutdown_count,
+        "Listener shutdown count mismatch for {}",
+        scenario.description
     );
+
     assert_eq!(
-        spy_clone.last_secret().await,
-        Some(Some("rotated-secret".to_string())),
-        "channel secret updates should still propagate the new webhook secret"
+        fixture.spy_clone.call_count().await,
+        scenario.expect_spy_call_count,
+        "ChannelSecretUpdater call count mismatch for {}",
+        scenario.description
     );
+
+    if let Some(expected_secret) = scenario.expect_spy_last_secret {
+        assert_eq!(
+            fixture.spy_clone.last_secret().await,
+            Some(expected_secret),
+            "ChannelSecretUpdater last_secret mismatch for {}",
+            scenario.description
+        );
+    } else if scenario.expect_spy_call_count == 0 {
+        assert!(
+            fixture.spy_clone.was_not_called().await,
+            "ChannelSecretUpdater should not be called for {}",
+            scenario.description
+        );
+    }
+
+    if let Some(expect_called) = scenario.expect_injector_called
+        && expect_called
+    {
+        assert!(
+            fixture.injector_clone.was_called().await,
+            "SecretInjector should be called for {}",
+            scenario.description
+        );
+    }
+
     Ok(())
 }

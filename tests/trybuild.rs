@@ -11,3 +11,13 @@ fn db_surface_compile_contracts() {
     cases.pass("tests/trybuild/db_forwarders.rs");
     cases.pass("tests/trybuild/settings_compat.rs");
 }
+
+fn db_surface_compile_contracts_postgres() {
+    let cases = trybuild::TestCases::new();
+    cases.pass("tests/trybuild/db_forwarders_postgres.rs");
+}
+
+fn db_surface_compile_contracts_libsql() {
+    let cases = trybuild::TestCases::new();
+    cases.pass("tests/trybuild/db_forwarders_libsql.rs");
+}
