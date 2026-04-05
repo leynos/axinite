@@ -83,6 +83,8 @@ pub struct RuntimeSideEffects {
     workspace_import_dir: Option<std::path::PathBuf>,
     embeddings_available: bool,
 }
+/// Options that control optional init phases.
+#[derive(Default)]
 pub struct AppBuilderFlags {
     pub no_db: bool,
 }
