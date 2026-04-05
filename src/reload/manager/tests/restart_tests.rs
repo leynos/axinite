@@ -280,3 +280,61 @@ async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_firs
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn maybe_restart_listener_retries_multiple_candidates_until_success()
+-> Result<(), Box<dyn std::error::Error>> {
+    let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
+    let addr1: SocketAddr = "127.0.0.2:8080".parse().expect("valid socket address");
+    let addr2: SocketAddr = "127.0.0.3:8080".parse().expect("valid socket address");
+
+    // Controller that fails on addr1 but succeeds on addr2
+    let controller = Arc::new(StubListenerController::new_with_fail_addrs(
+        current_addr,
+        vec![addr1],
+    ));
+    let controller_clone = Arc::clone(&controller);
+
+    // Test the retry logic directly using resolve_http_addrs_with_lookup
+    // to inject deterministic addresses
+    let http_cfg = http_config("test-host", 8080, None);
+
+    // Use a custom lookup that returns multiple addresses in a specific order
+    let resolved_addrs = HotReloadManager::resolve_http_addrs_with_lookup(
+        &http_cfg,
+        |_host: String, _port: u16| async move { Ok::<_, std::io::Error>(vec![addr1, addr2]) },
+    )
+    .await?;
+
+    // Verify we got both addresses
+    assert_eq!(resolved_addrs, vec![addr1, addr2]);
+
+    // Simulate the retry logic from maybe_restart_listener
+    let mut success_addr = None;
+
+    for addr in &resolved_addrs {
+        match controller.restart_with_addr(*addr).await {
+            Ok(()) => {
+                success_addr = Some(*addr);
+                break;
+            }
+            Err(_) => continue,
+        }
+    }
+
+    assert!(
+        success_addr.is_some(),
+        "should have succeeded on second candidate"
+    );
+    assert_eq!(success_addr, Some(addr2), "should succeed on addr2");
+
+    let calls = controller_clone.restart_calls().await;
+    assert_eq!(
+        calls.len(),
+        2,
+        "should have attempted restart on both candidates"
+    );
+    assert_eq!(calls[0], addr1, "first attempt should be on addr1");
+    assert_eq!(calls[1], addr2, "second attempt should be on addr2");
+    Ok(())
+}

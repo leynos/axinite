@@ -57,6 +57,8 @@ pub struct StubListenerController {
     shutdown_calls: Arc<AtomicUsize>,
     is_running: Arc<AtomicBool>,
     restart_should_fail: bool,
+    /// List of addresses that should fail when restart is attempted.
+    fail_addrs: Arc<Mutex<Vec<SocketAddr>>>,
 }
 
 impl StubListenerController {
@@ -71,6 +73,7 @@ impl StubListenerController {
             shutdown_calls: Arc::new(AtomicUsize::new(0)),
             is_running: Arc::new(AtomicBool::new(true)),
             restart_should_fail: false,
+            fail_addrs: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -85,6 +88,22 @@ impl StubListenerController {
             shutdown_calls: Arc::new(AtomicUsize::new(0)),
             is_running: Arc::new(AtomicBool::new(true)),
             restart_should_fail: true,
+            fail_addrs: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Construct a stub listener controller that fails on specific addresses.
+    ///
+    /// `addr` seeds the initial listener address. `fail_addrs` lists addresses
+    /// that should fail when restart is attempted; other addresses succeed.
+    pub fn new_with_fail_addrs(addr: SocketAddr, fail_addrs: Vec<SocketAddr>) -> Self {
+        Self {
+            current_addr: Arc::new(Mutex::new(addr)),
+            restart_calls: Arc::new(Mutex::new(Vec::new())),
+            shutdown_calls: Arc::new(AtomicUsize::new(0)),
+            is_running: Arc::new(AtomicBool::new(true)),
+            restart_should_fail: false,
+            fail_addrs: Arc::new(Mutex::new(fail_addrs)),
         }
     }
 
@@ -111,10 +130,13 @@ impl NativeListenerController for StubListenerController {
     async fn restart_with_addr(&self, addr: SocketAddr) -> Result<(), ChannelError> {
         self.restart_calls.lock().await.push(addr);
 
-        if self.restart_should_fail {
+        // Check if this specific address should fail
+        let should_fail = self.fail_addrs.lock().await.contains(&addr) || self.restart_should_fail;
+
+        if should_fail {
             Err(ChannelError::StartupFailed {
                 name: "stub_listener".to_string(),
-                reason: "Simulated restart failure".to_string(),
+                reason: format!("Simulated restart failure on {}", addr),
             })
         } else {
             *self.current_addr.lock().await = addr;

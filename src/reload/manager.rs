@@ -180,21 +180,44 @@ impl HotReloadManager {
             return Ok(());
         }
 
-        // Prefer reusing old_addr when listener is stopped and old_addr is still valid
-        let new_addr = if !is_running && resolved_addrs.contains(&old_addr) {
-            old_addr
+        // Try each candidate address in priority order:
+        // 1. old_addr if listener is stopped and old_addr is still valid
+        // 2. Each address in resolved_addrs in order
+        let candidates: Vec<SocketAddr> = if !is_running && resolved_addrs.contains(&old_addr) {
+            vec![old_addr]
         } else {
-            resolved_addrs[0]
+            resolved_addrs.clone()
         };
 
-        tracing::info!("Restarting HTTP listener: {} -> {}", old_addr, new_addr);
-        controller.restart_with_addr(new_addr).await.map_err(|e| {
-            tracing::error!("Listener restart failed: {}", e);
-            e
-        })?;
-        tracing::info!("HTTP listener restarted on {}", new_addr);
+        let mut last_error = None;
+        for (idx, addr) in candidates.iter().enumerate() {
+            tracing::info!(
+                "Restarting HTTP listener: {} -> {} (attempt {}/{})",
+                old_addr,
+                addr,
+                idx + 1,
+                candidates.len()
+            );
+            match controller.restart_with_addr(*addr).await {
+                Ok(()) => {
+                    tracing::info!("HTTP listener restarted on {}", addr);
+                    return Ok(());
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Listener restart failed on {} (attempt {}/{}): {}",
+                        addr,
+                        idx + 1,
+                        candidates.len(),
+                        e
+                    );
+                    last_error = Some(e);
+                }
+            }
+        }
 
-        Ok(())
+        // All candidates failed
+        Err(last_error.expect("at least one candidate address").into())
     }
 
     async fn update_channel_secrets(&self, http: &crate::config::HttpConfig) {
