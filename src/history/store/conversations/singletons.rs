@@ -122,11 +122,13 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::testing::try_test_pg_db;
+    use crate::testing::postgres::try_test_pg_db;
 
     #[fixture]
     async fn store() -> Option<Store> {
-        let backend = try_test_pg_db().await?;
+        let backend = try_test_pg_db()
+            .await
+            .expect("unexpected Postgres test setup error")?;
         Some(Store::from_pool(backend.pool()))
     }
 

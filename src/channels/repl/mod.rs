@@ -17,10 +17,13 @@
 //! - `yes`/`no`/`always` - Respond to tool approval prompts
 //! - `Esc` - Interrupt current operation
 
+mod common;
 mod formatting;
 mod input;
-
-use std::io::{self, IsTerminal, Write};
+mod status_output;
+#[cfg(test)]
+mod tests;
+use std::io::IsTerminal;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -30,21 +33,15 @@ use rustyline::{CompletionType, Editor, EventHandler, KeyCode, KeyEvent, Modifie
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::agent::truncate_for_preview;
 use crate::bootstrap::ironclaw_base_dir;
 use crate::channels::{
     IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
 };
 use crate::error::ChannelError;
 
-use formatting::{make_skin, print_help, render_approval_card};
+use formatting::{make_skin, print_help};
 use input::{EscInterruptHandler, ReplHelper};
-
-/// Max characters for tool result previews in the terminal.
-const CLI_TOOL_RESULT_MAX: usize = 200;
-
-/// Max characters for thinking/status messages in the terminal.
-const CLI_STATUS_MAX: usize = 200;
+use status_output::dispatch_status_update;
 
 /// REPL channel with line editing and markdown rendering.
 pub struct ReplChannel {
@@ -295,101 +292,7 @@ impl NativeChannel for ReplChannel {
         status: StatusUpdate,
         _metadata: &serde_json::Value,
     ) -> Result<(), ChannelError> {
-        let debug = self.is_debug();
-
-        match status {
-            StatusUpdate::Thinking(msg) => {
-                let display = truncate_for_preview(&msg, CLI_STATUS_MAX);
-                eprintln!("  \x1b[90m\u{25CB} {display}\x1b[0m");
-            }
-            StatusUpdate::ToolStarted { name } => {
-                eprintln!("  \x1b[33m\u{25CB} {name}\x1b[0m");
-            }
-            StatusUpdate::ToolCompleted { name, success, .. } => {
-                if success {
-                    eprintln!("  \x1b[32m\u{25CF} {name}\x1b[0m");
-                } else {
-                    eprintln!("  \x1b[31m\u{2717} {name} (failed)\x1b[0m");
-                }
-            }
-            StatusUpdate::ToolResult { name: _, preview } => {
-                let display = truncate_for_preview(&preview, CLI_TOOL_RESULT_MAX);
-                eprintln!("    \x1b[90m{display}\x1b[0m");
-            }
-            StatusUpdate::StreamChunk(chunk) => {
-                // Print separator on the false-to-true transition
-                if !self.is_streaming.swap(true, Ordering::Relaxed) {
-                    let width = crossterm::terminal::size()
-                        .map(|(w, _)| w as usize)
-                        .unwrap_or(80);
-                    let sep_width = width.min(80);
-                    eprintln!("\x1b[90m{}\x1b[0m", "\u{2500}".repeat(sep_width));
-                }
-                print!("{chunk}");
-                let _ = io::stdout().flush();
-            }
-            StatusUpdate::JobStarted {
-                job_id,
-                title,
-                browse_url,
-            } => {
-                eprintln!(
-                    "  \x1b[36m[job]\x1b[0m {title} \x1b[90m({job_id})\x1b[0m \x1b[4m{browse_url}\x1b[0m"
-                );
-            }
-            StatusUpdate::Status(msg) => {
-                if debug || msg.contains("approval") || msg.contains("Approval") {
-                    let display = truncate_for_preview(&msg, CLI_STATUS_MAX);
-                    eprintln!("  \x1b[90m{display}\x1b[0m");
-                }
-            }
-            StatusUpdate::ApprovalNeeded {
-                request_id,
-                tool_name,
-                description,
-                parameters,
-            } => {
-                let lines =
-                    render_approval_card(&request_id, &tool_name, &description, &parameters);
-                for line in lines {
-                    eprintln!("{line}");
-                }
-            }
-            StatusUpdate::AuthRequired {
-                extension_name,
-                instructions,
-                setup_url,
-                ..
-            } => {
-                eprintln!();
-                eprintln!("\x1b[33m  Authentication required for {extension_name}\x1b[0m");
-                if let Some(ref instr) = instructions {
-                    eprintln!("  {instr}");
-                }
-                if let Some(ref url) = setup_url {
-                    eprintln!("  \x1b[4m{url}\x1b[0m");
-                }
-                eprintln!();
-            }
-            StatusUpdate::AuthCompleted {
-                extension_name,
-                success,
-                message,
-            } => {
-                if success {
-                    eprintln!("\x1b[32m  {extension_name}: {message}\x1b[0m");
-                } else {
-                    eprintln!("\x1b[31m  {extension_name}: {message}\x1b[0m");
-                }
-            }
-            StatusUpdate::ImageGenerated { path, .. } => {
-                if let Some(ref p) = path {
-                    eprintln!("\x1b[36m  [image] {p}\x1b[0m");
-                } else {
-                    eprintln!("\x1b[36m  [image generated]\x1b[0m");
-                }
-            }
-        }
+        dispatch_status_update(status, &self.is_streaming, self.is_debug());
         Ok(())
     }
 
@@ -416,31 +319,5 @@ impl NativeChannel for ReplChannel {
 
     async fn shutdown(&self) -> Result<(), ChannelError> {
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use futures::StreamExt;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn single_message_mode_sends_message_then_quit() {
-        let repl = ReplChannel::with_message("hi".to_string());
-        let mut stream = repl.start().await.expect("repl start should succeed");
-
-        let first = stream.next().await.expect("first message missing");
-        assert_eq!(first.channel, "repl");
-        assert_eq!(first.content, "hi");
-
-        let second = stream.next().await.expect("quit message missing");
-        assert_eq!(second.channel, "repl");
-        assert_eq!(second.content, "/quit");
-
-        assert!(
-            stream.next().await.is_none(),
-            "stream should end after /quit"
-        );
     }
 }

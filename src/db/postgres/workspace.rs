@@ -62,21 +62,31 @@ mod tests {
     //! retrieve data through the full delegation chain.
 
     use super::*;
-    use crate::testing::try_test_pg_db;
+    use crate::testing::postgres::try_test_pg_db;
     use crate::workspace::SearchConfig;
     use rstest::{fixture, rstest};
 
     #[fixture]
     async fn db() -> Option<PgBackend> {
-        try_test_pg_db().await
+        try_test_pg_db()
+            .await
+            .expect("unexpected Postgres test setup error")
     }
 
     /// Create a document owned by a unique user so chunks can reference it.
     async fn setup_document(db: &PgBackend) -> (String, MemoryDocument) {
+        setup_document_for_agent(db, None).await
+    }
+
+    /// Create a document owned by a unique user and optional agent.
+    async fn setup_document_for_agent(
+        db: &PgBackend,
+        agent_id: Option<Uuid>,
+    ) -> (String, MemoryDocument) {
         let user_id = format!("ws-test-{}", Uuid::new_v4());
         let path = format!("/test/{}.md", Uuid::new_v4());
         let doc = db
-            .get_or_create_document_by_path(&user_id, None, &path)
+            .get_or_create_document_by_path(&user_id, agent_id, &path)
             .await
             .expect("get_or_create_document_by_path should succeed");
         (user_id, doc)
@@ -86,7 +96,7 @@ mod tests {
     #[tokio::test]
     async fn test_insert_chunk_persists_with_embedding(#[future] db: Option<PgBackend>) {
         let Some(db) = db.await else { return };
-        let (_user_id, doc) = setup_document(&db).await;
+        let (user_id, doc) = setup_document(&db).await;
 
         let embedding = vec![1.5, 2.7, 3.9, 4.2];
         let params = InsertChunkParams {
@@ -104,6 +114,17 @@ mod tests {
         // Verify the chunk was persisted by deleting and re-checking
         // (delete_chunks removes all chunks for a document)
         assert_ne!(chunk_id, Uuid::nil());
+
+        let missing = db
+            .get_chunks_without_embeddings(&user_id, None, 100)
+            .await
+            .expect("get_chunks_without_embeddings should succeed");
+
+        assert!(
+            !missing.iter().any(|chunk| chunk.id == chunk_id),
+            "chunk with embedding should not appear in \
+             get_chunks_without_embeddings"
+        );
     }
 
     #[rstest]
@@ -255,6 +276,60 @@ mod tests {
             !results.iter().any(|r| r.document_id == doc.id),
             "hybrid_search should not return chunks belonging \
              to a different user"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_hybrid_search_respects_agent_scope(#[future] db: Option<PgBackend>) {
+        let Some(db) = db.await else { return };
+        let agent_id = Uuid::new_v4();
+        let (user_id, doc) = setup_document_for_agent(&db, Some(agent_id)).await;
+
+        db.insert_chunk(InsertChunkParams {
+            document_id: doc.id,
+            chunk_index: 0,
+            content: "agent scoped workspace material",
+            embedding: None,
+        })
+        .await
+        .expect("insert_chunk should succeed");
+
+        let config = SearchConfig::default().fts_only();
+        let scoped_results = db
+            .hybrid_search(HybridSearchParams {
+                user_id: &user_id,
+                agent_id: Some(agent_id),
+                query: "agent scoped workspace",
+                embedding: None,
+                config: &config,
+            })
+            .await
+            .expect("agent-scoped hybrid_search should succeed");
+
+        assert!(
+            scoped_results
+                .iter()
+                .any(|result| result.document_id == doc.id),
+            "agent-scoped hybrid_search should find the chunk"
+        );
+
+        let unscoped_results = db
+            .hybrid_search(HybridSearchParams {
+                user_id: &user_id,
+                agent_id: None,
+                query: "agent scoped workspace",
+                embedding: None,
+                config: &config,
+            })
+            .await
+            .expect("unscoped hybrid_search should succeed");
+
+        assert!(
+            !unscoped_results
+                .iter()
+                .any(|result| result.document_id == doc.id),
+            "unscoped hybrid_search should not return agent-scoped chunks"
         );
     }
 }

@@ -270,7 +270,7 @@ mod tests {
     #[cfg(feature = "postgres")]
     use crate::context::StateTransition;
     #[cfg(feature = "postgres")]
-    use crate::testing::try_test_pg_db;
+    use crate::testing::postgres::try_test_pg_db;
     #[cfg(feature = "postgres")]
     use rstest::rstest;
 
@@ -282,7 +282,10 @@ mod tests {
     async fn test_save_job_persists_user_id() {
         use crate::context::JobContext;
 
-        let Some(backend) = try_test_pg_db().await else {
+        let Some(backend) = try_test_pg_db()
+            .await
+            .expect("unexpected Postgres test setup error")
+        else {
             return;
         };
         let store = Store::from_pool(backend.pool());

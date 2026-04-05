@@ -1,8 +1,19 @@
 //! Terminal formatting helpers: termimad skin, help text, and JSON param display.
 
+use lazy_regex::{Regex, regex};
 use termimad::MadSkin;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
+use super::common::sanitize_for_terminal;
 use super::input::SLASH_COMMANDS;
+
+/// A pending tool-use request awaiting user approval.
+pub(super) struct ToolApprovalRequest<'a> {
+    pub request_id: &'a str,
+    pub tool_name: &'a str,
+    pub description: &'a str,
+}
 
 /// Build a termimad skin with our color scheme.
 pub(super) fn make_skin() -> MadSkin {
@@ -58,63 +69,153 @@ pub(super) fn print_help() {
     println!();
 }
 
+/// The indentation prefix used when rendering JSON parameters inside an approval card.
+const CARD_PARAM_INDENT: &str = "  \u{2502}   ";
+
 /// Format JSON params as `key: value` lines for the approval card.
-pub(super) fn format_json_params(params: &serde_json::Value, indent: &str) -> String {
+pub(super) fn format_json_params(params: &serde_json::Value) -> String {
     match params {
         serde_json::Value::Object(map) => {
             let mut lines = Vec::new();
             for (key, value) in map {
+                let sanitized_key = sanitize_for_terminal(key);
                 let val_str = match value {
                     serde_json::Value::String(s) => {
-                        let display = if s.chars().count() > 120 {
-                            let truncated: String = s.chars().take(120).collect();
-                            format!("{truncated}...")
-                        } else {
-                            s.to_string()
-                        };
+                        let sanitized_s = sanitize_for_terminal(s);
+                        let display = truncate_grapheme_aware(&sanitized_s, 120);
                         format!("\x1b[32m\"{display}\"\x1b[0m")
                     }
                     other => {
                         let rendered = other.to_string();
-                        if rendered.chars().count() > 120 {
-                            let truncated: String = rendered.chars().take(120).collect();
-                            format!("{truncated}...")
-                        } else {
-                            rendered
-                        }
+                        let sanitized = sanitize_for_terminal(&rendered);
+                        truncate_grapheme_aware(&sanitized, 120)
                     }
                 };
-                lines.push(format!("{indent}\x1b[36m{key}\x1b[0m: {val_str}"));
+                lines.push(format!(
+                    "{CARD_PARAM_INDENT}\x1b[36m{sanitized_key}\x1b[0m: {val_str}"
+                ));
             }
             lines.join("\n")
         }
         other => {
             let pretty = serde_json::to_string_pretty(other).unwrap_or_else(|_| other.to_string());
-            let truncated = if pretty.chars().count() > 300 {
-                let truncated_str: String = pretty.chars().take(300).collect();
-                format!("{truncated_str}...")
-            } else {
-                pretty
-            };
-            truncated
+            pretty
                 .lines()
-                .map(|l| format!("{indent}\x1b[90m{l}\x1b[0m"))
+                .map(|line| {
+                    let sanitized = sanitize_for_terminal(line);
+                    let truncated = truncate_grapheme_aware(&sanitized, 300);
+                    format!("{CARD_PARAM_INDENT}\x1b[90m{truncated}\x1b[0m")
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         }
     }
 }
 
+fn ansi_sgr_regex() -> &'static Regex {
+    regex!(r"\x1b\[[0-9;]*m")
+}
+
+fn visible_char_count(text: &str) -> usize {
+    UnicodeWidthStr::width(ansi_sgr_regex().replace_all(text, "").as_ref())
+}
+
+fn append_visible_chars(
+    text: &str,
+    limit: usize,
+    visible_count: &mut usize,
+    output: &mut String,
+) -> bool {
+    for grapheme in UnicodeSegmentation::graphemes(text, true) {
+        let grapheme_width = UnicodeWidthStr::width(grapheme);
+        if grapheme_width > 0 && *visible_count + grapheme_width > limit {
+            return false;
+        }
+        output.push_str(grapheme);
+        *visible_count += grapheme_width;
+    }
+    true
+}
+
+/// Scan `text` for ANSI SGR sequences, copying at most `visible_limit` visible
+/// characters into a new `String`. Returns the accumulated string and a flag
+/// indicating whether an active (non-reset) style sequence was the last one
+/// emitted, plus whether additional visible text remained past the limit.
+fn truncate_ansi_aware(text: &str, visible_limit: usize) -> (String, bool, bool) {
+    let mut truncated = String::new();
+    let mut visible_count = 0;
+    let mut cursor = 0;
+    let mut has_active_style = false;
+    let mut was_truncated = false;
+
+    for ansi_match in ansi_sgr_regex().find_iter(text) {
+        if visible_count >= visible_limit {
+            was_truncated = visible_char_count(&text[cursor..]) > 0;
+            break;
+        }
+        let copied_full_segment = append_visible_chars(
+            &text[cursor..ansi_match.start()],
+            visible_limit,
+            &mut visible_count,
+            &mut truncated,
+        );
+        if visible_count >= visible_limit {
+            was_truncated =
+                !copied_full_segment || visible_char_count(&text[ansi_match.start()..]) > 0;
+            break;
+        }
+        let ansi_sequence = ansi_match.as_str();
+        truncated.push_str(ansi_sequence);
+        has_active_style = ansi_sequence != "\x1b[0m";
+        cursor = ansi_match.end();
+    }
+
+    if visible_count < visible_limit {
+        was_truncated = !append_visible_chars(
+            &text[cursor..],
+            visible_limit,
+            &mut visible_count,
+            &mut truncated,
+        );
+    }
+
+    (truncated, has_active_style, was_truncated)
+}
+
 /// Truncate content to fit within card width, respecting UTF-8 boundaries.
 ///
 /// Adds "…" if truncated. The returned string will fit within `max_width` characters.
 fn truncate_card_content(text: &str, max_width: usize) -> String {
-    if text.chars().count() <= max_width {
-        text.to_string()
-    } else {
-        let truncated: String = text.chars().take(max_width.saturating_sub(1)).collect();
-        format!("{}…", truncated)
+    if max_width == 0 {
+        return String::new();
     }
+    if visible_char_count(text) <= max_width {
+        return text.to_string();
+    }
+    let visible_limit = max_width.saturating_sub(1);
+    let (mut truncated, has_active_style, was_truncated) = truncate_ansi_aware(text, visible_limit);
+    debug_assert!(was_truncated || visible_limit == 0);
+    truncated.push('…');
+    if has_active_style && !truncated.ends_with("\x1b[0m") {
+        truncated.push_str("\x1b[0m");
+    }
+    truncated
+}
+
+/// Truncate plain text using grapheme-aware truncation.
+///
+/// Unlike `truncate_card_content`, this doesn't handle ANSI codes but respects
+/// Unicode grapheme clusters. Adds "..." if truncated.
+fn truncate_grapheme_aware(text: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+    if visible_char_count(text) <= max_chars {
+        return text.to_string();
+    }
+    let visible_limit = max_chars.saturating_sub(3); // Reserve space for "..."
+    let (truncated, _has_active_style, _was_truncated) = truncate_ansi_aware(text, visible_limit);
+    format!("{truncated}...")
 }
 
 /// Constructs and returns lines for a tool approval card.
@@ -122,24 +223,27 @@ fn truncate_card_content(text: &str, max_width: usize) -> String {
 /// Draws a bordered box with tool name, description, parameters, and approval options.
 /// The returned lines are intended for printing by the caller.
 pub(super) fn render_approval_card(
-    request_id: &str,
-    tool_name: &str,
-    description: &str,
+    request: &ToolApprovalRequest<'_>,
     parameters: &serde_json::Value,
 ) -> Vec<String> {
     let term_width = crossterm::terminal::size()
         .map(|(w, _)| w as usize)
         .unwrap_or(80);
-    let box_width = (term_width.saturating_sub(4)).clamp(40, 60);
+    let box_width = term_width.saturating_sub(4).min(60);
     let content_width = box_width.saturating_sub(4); // Account for "│ " prefix and padding
 
+    // Sanitize user-controlled inputs
+    let sanitized_tool_name = sanitize_for_terminal(request.tool_name);
+    let sanitized_description = sanitize_for_terminal(request.description);
+    let sanitized_request_id = sanitize_for_terminal(request.request_id);
+
     // Short request ID for the bottom border (UTF-8 safe truncation)
-    let short_id: String = request_id.chars().take(8).collect();
+    let short_id: String = sanitized_request_id.chars().take(8).collect();
 
     // Top border: ┌ tool_name requires approval ───
-    let top_label = format!(" {tool_name} requires approval ");
-    let truncated_label = truncate_card_content(&top_label, box_width);
-    let top_fill = box_width.saturating_sub(truncated_label.chars().count() + 1);
+    let top_label = format!(" {sanitized_tool_name} requires approval ");
+    let truncated_label = truncate_card_content(&top_label, box_width.saturating_sub(1));
+    let top_fill = box_width.saturating_sub(visible_char_count(&truncated_label) + 1);
     let top_border = format!(
         "\u{250C}\x1b[33m{truncated_label}\x1b[0m{}",
         "\u{2500}".repeat(top_fill)
@@ -147,14 +251,14 @@ pub(super) fn render_approval_card(
 
     // Bottom border: └─ short_id ─────
     let bot_label = format!(" {short_id} ");
-    let bot_fill = box_width.saturating_sub(bot_label.chars().count() + 2);
+    let bot_fill = box_width.saturating_sub(visible_char_count(&bot_label) + 2);
     let bot_border = format!(
         "\u{2514}\u{2500}\x1b[90m{bot_label}\x1b[0m{}",
         "\u{2500}".repeat(bot_fill)
     );
 
     // Truncate description to fit within card
-    let truncated_desc = truncate_card_content(description, content_width);
+    let truncated_desc = truncate_card_content(&sanitized_description, content_width);
 
     let mut lines = Vec::new();
     lines.push(String::new()); // blank line
@@ -163,7 +267,7 @@ pub(super) fn render_approval_card(
     lines.push("  \u{2502}".to_string());
 
     // Params - truncate each line to fit within the card width
-    let param_lines = format_json_params(parameters, "  \u{2502}   ");
+    let param_lines = format_json_params(parameters);
     for line in param_lines.lines() {
         lines.push(truncate_card_content(line, box_width));
     }
@@ -178,3 +282,7 @@ pub(super) fn render_approval_card(
 
     lines
 }
+
+#[cfg(test)]
+#[path = "formatting_tests.rs"]
+mod tests;

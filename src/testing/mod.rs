@@ -20,6 +20,8 @@
 
 pub mod credentials;
 pub mod github;
+#[cfg(feature = "postgres")]
+pub mod postgres;
 #[cfg(test)]
 mod settings_tests;
 pub mod test_utils;
@@ -71,50 +73,6 @@ pub async fn test_db() -> (Arc<dyn Database>, TempDir) {
         .await
         .expect("failed to run migrations");
     (Arc::new(backend) as Arc<dyn Database>, dir)
-}
-
-/// Create a PostgreSQL-backed test database.
-///
-/// Reads the test database URL from the `TEST_DATABASE_URL` environment
-/// variable, or falls back to a default local Postgres instance.
-/// Returns the `PgBackend` instance for testing, propagating any
-/// connection or pool errors to the caller.
-#[cfg(feature = "postgres")]
-pub async fn test_pg_db() -> Result<crate::db::postgres::PgBackend, crate::error::DatabaseError> {
-    use crate::config::{DatabaseBackend, DatabaseConfig, SslMode};
-    use crate::db::postgres::PgBackend;
-    use secrecy::SecretString;
-
-    let url = std::env::var("TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://localhost/ironclaw_test".to_string());
-
-    let config = DatabaseConfig {
-        backend: DatabaseBackend::Postgres,
-        url: SecretString::from(url),
-        pool_size: 5,
-        ssl_mode: SslMode::Prefer,
-        libsql_path: None,
-        libsql_url: None,
-        libsql_auth_token: None,
-    };
-
-    PgBackend::new(&config).await
-}
-
-/// Attempt to create a test `PgBackend`, returning `None` when the
-/// database is unreachable (connection refused, DNS failure, etc.).
-///
-/// Use this in test fixtures that should be silently skipped when no
-/// Postgres instance is available rather than panicking.
-#[cfg(feature = "postgres")]
-pub async fn try_test_pg_db() -> Option<crate::db::postgres::PgBackend> {
-    match test_pg_db().await {
-        Ok(db) => Some(db),
-        Err(e) => {
-            eprintln!("Skipping Postgres test (database unavailable): {e}");
-            None
-        }
-    }
 }
 
 /// What kind of error the stub should produce when failing.

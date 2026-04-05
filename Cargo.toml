@@ -97,7 +97,10 @@ cron = "0.13"
 
 # Safety/sanitization
 regex = "1"
+lazy-regex = "3"
 aho-corasick = "1"
+unicode-width = "0.2"
+unicode-segmentation = "1.12"
 
 # YAML parsing for SKILL.md frontmatter
 serde_yml = "0.0.12"
@@ -201,6 +204,7 @@ rstest = "0.26.1"
 tempfile = "3"
 mockall = "0.13"
 trybuild = "1"
+proptest = "1"
 
 [features]
 default = ["postgres", "libsql", "html-to-markdown", "docker"]
