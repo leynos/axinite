@@ -244,6 +244,8 @@ fn normalized_description(description: &str) -> Option<&str> {
     (!trimmed.is_empty()).then_some(trimmed)
 }
 
+
+
 /// Parse and validate a schema value stored as a JSON string by text-column backends.
 ///
 /// Returns `None` for empty/null strings and strings that parse to the placeholder
