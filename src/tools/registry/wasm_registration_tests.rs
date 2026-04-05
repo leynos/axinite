@@ -6,7 +6,7 @@ use uuid::Uuid;
 use super::{ToolRegistry, WasmFromStorageRegistration};
 use crate::llm::ToolDefinition;
 use crate::testing::{github_wasm_artifact, metadata_test_runtime};
-use crate::tools::wasm::storage::NativeWasmToolStore;
+use crate::tools::wasm::storage::{NativeWasmToolStore, ToolKey};
 use crate::tools::wasm::{
     StoredCapabilities, StoredWasmTool, StoredWasmToolWithBinary, ToolStatus, TrustLevel,
     WasmStorageError,
@@ -99,14 +99,13 @@ impl NativeWasmToolStore for StubWasmToolStore {
         ))
     }
 
-    async fn get(&self, _user_id: &str, _name: &str) -> Result<StoredWasmTool, WasmStorageError> {
+    async fn get(&self, _key: ToolKey<'_>) -> Result<StoredWasmTool, WasmStorageError> {
         Ok(self.tool.clone())
     }
 
     async fn get_with_binary(
         &self,
-        _user_id: &str,
-        _name: &str,
+        _key: ToolKey<'_>,
     ) -> Result<StoredWasmToolWithBinary, WasmStorageError> {
         Ok(StoredWasmToolWithBinary {
             tool: self.tool.clone(),
@@ -128,8 +127,7 @@ impl NativeWasmToolStore for StubWasmToolStore {
 
     async fn update_status(
         &self,
-        _user_id: &str,
-        _name: &str,
+        _key: ToolKey<'_>,
         _status: ToolStatus,
     ) -> Result<(), WasmStorageError> {
         Err(WasmStorageError::Database(
@@ -137,7 +135,7 @@ impl NativeWasmToolStore for StubWasmToolStore {
         ))
     }
 
-    async fn delete(&self, _user_id: &str, _name: &str) -> Result<bool, WasmStorageError> {
+    async fn delete(&self, _key: ToolKey<'_>) -> Result<bool, WasmStorageError> {
         Err(WasmStorageError::Database(
             "stub store does not support deletes".to_string(),
         ))

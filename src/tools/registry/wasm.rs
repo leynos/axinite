@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use crate::secrets::SecretsStore;
 use crate::tools::wasm::{
-    Capabilities, OAuthRefreshConfig, PreparedModule, ResourceLimits, WasmError, WasmStorageError,
-    WasmToolRuntime, WasmToolStore, WasmToolWrapper,
+    Capabilities, OAuthRefreshConfig, PreparedModule, ResourceLimits, ToolKey, WasmError,
+    WasmStorageError, WasmToolRuntime, WasmToolStore, WasmToolWrapper,
 };
 
 use super::ToolRegistry;
@@ -184,7 +184,7 @@ impl ToolRegistry {
             name,
         } = args;
         let tool_with_binary = store
-            .get_with_binary(user_id, name)
+            .get_with_binary(ToolKey { user_id, name })
             .await
             .map_err(WasmRegistrationError::Storage)?;
 

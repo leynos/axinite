@@ -125,8 +125,9 @@ pub use storage::LibSqlWasmToolStore;
 #[cfg(feature = "postgres")]
 pub use storage::PostgresWasmToolStore;
 pub use storage::{
-    StoreToolParams, StoredCapabilities, StoredWasmTool, StoredWasmToolWithBinary, ToolStatus,
-    TrustLevel, WasmStorageError, WasmToolStore, compute_binary_hash, verify_binary_integrity,
+    StoreToolParams, StoredCapabilities, StoredWasmTool, StoredWasmToolWithBinary, ToolKey,
+    ToolStatus, TrustLevel, WasmStorageError, WasmToolStore, compute_binary_hash,
+    verify_binary_integrity,
 };
 
 // Loader

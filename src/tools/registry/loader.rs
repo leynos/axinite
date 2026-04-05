@@ -8,7 +8,7 @@ use crate::secrets::SecretsStore;
 use crate::tools::rate_limiter::RateLimiter;
 use crate::tools::tool::Tool;
 use crate::tools::wasm::{
-    Capabilities, OAuthRefreshConfig, ResourceLimits, SharedCredentialRegistry, WasmError,
+    Capabilities, OAuthRefreshConfig, ResourceLimits, SharedCredentialRegistry, ToolKey, WasmError,
     WasmStorageError, WasmToolRuntime, WasmToolStore, WasmToolWrapper,
 };
 
@@ -241,28 +241,34 @@ impl ToolRegistry {
         } = reg;
 
         let wrapper = WasmToolWrapper::new(Arc::clone(runtime), prepared, capabilities);
-        let wrapper = recover_guest_metadata(wrapper, &WasmToolRegistration {
-            name: tool_name,
-            wasm_bytes: &[],
-            runtime,
-            capabilities: Capabilities::default(),
-            limits: None,
-            description,
-            schema: schema.clone(),
-            secrets_store: None,
-            oauth_refresh: None,
-        });
-        let wrapper = apply_wasm_overrides(wrapper, WasmToolRegistration {
-            name: tool_name,
-            wasm_bytes: &[],
-            runtime,
-            capabilities: Capabilities::default(),
-            limits: None,
-            description,
-            schema,
-            secrets_store,
-            oauth_refresh,
-        });
+        let wrapper = recover_guest_metadata(
+            wrapper,
+            &WasmToolRegistration {
+                name: tool_name,
+                wasm_bytes: &[],
+                runtime,
+                capabilities: Capabilities::default(),
+                limits: None,
+                description,
+                schema: schema.clone(),
+                secrets_store: None,
+                oauth_refresh: None,
+            },
+        );
+        let wrapper = apply_wasm_overrides(
+            wrapper,
+            WasmToolRegistration {
+                name: tool_name,
+                wasm_bytes: &[],
+                runtime,
+                capabilities: Capabilities::default(),
+                limits: None,
+                description,
+                schema,
+                secrets_store,
+                oauth_refresh,
+            },
+        );
 
         let registered = self.register(Arc::new(wrapper)).await;
         if !registered {
@@ -318,7 +324,7 @@ impl ToolRegistry {
         } = req;
         // Load tool with integrity verification
         let tool_with_binary = store
-            .get_with_binary(user_id, name)
+            .get_with_binary(ToolKey { user_id, name })
             .await
             .map_err(WasmRegistrationError::Storage)?;
 
