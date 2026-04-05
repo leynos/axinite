@@ -50,7 +50,10 @@ jobs:
       - name: Build WASM channels (for integration tests)
         run: ./scripts/build-wasm-extensions.sh --channels
       - name: Run Tests
-        run: cargo nextest run --workspace ${{ matrix.flags }} --features test-helpers
+        run: >-
+          make test
+          NEXTEST_PROFILE=ci
+          TEST_FEATURES="${{ matrix.flags }} --features test-helpers"
 
   telegram-tests:
     name: Telegram Channel Tests
