@@ -1,3 +1,9 @@
+//! Listener restart and address resolution tests for the hot-reload manager.
+//!
+//! These tests verify correct listener restart behavior across IPv4, IPv6,
+//! and hostname resolution, including unchanged-address optimization,
+//! restart-after-shutdown, and failure propagation.
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -30,7 +36,9 @@ use crate::reload::test_stubs::{
     description: "localhost hostname",
 })]
 #[tokio::test]
-async fn successful_reload_invokes_all_dependencies(#[case] test_case: AddrTestCase) {
+async fn successful_reload_invokes_all_dependencies(
+    #[case] test_case: AddrTestCase,
+) -> Result<(), Box<dyn std::error::Error>> {
     let injector = Arc::new(StubSecretInjector::new());
     let injector_clone = Arc::clone(&injector);
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
@@ -41,7 +49,7 @@ async fn successful_reload_invokes_all_dependencies(#[case] test_case: AddrTestC
         test_case.port,
         Some("new_secret"),
     )))
-    .await;
+    .await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
@@ -99,13 +107,16 @@ async fn successful_reload_invokes_all_dependencies(#[case] test_case: AddrTestC
         "ChannelSecretUpdater should receive the reloaded webhook secret for {}",
         test_case.description
     );
+    Ok(())
 }
 
 #[rstest]
 #[case::ipv4("127.0.0.1:8080")]
 #[case::ipv6("[::1]:8080")]
 #[tokio::test]
-async fn address_unchanged_skips_listener_restart(#[case] addr_str: &str) {
+async fn address_unchanged_skips_listener_restart(
+    #[case] addr_str: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let injector = Arc::new(StubSecretInjector::new());
     let addr: SocketAddr = addr_str.parse().expect("valid socket address");
     let controller = Arc::new(StubListenerController::new(addr));
@@ -115,7 +126,7 @@ async fn address_unchanged_skips_listener_restart(#[case] addr_str: &str) {
         SocketAddr::V6(v6) => (v6.ip().to_string(), v6.port()),
     };
     let (_temp_dir, config) =
-        test_config_with_http(Some(http_config(&host, port, Some("secret")))).await;
+        test_config_with_http(Some(http_config(&host, port, Some("secret")))).await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
@@ -140,13 +151,16 @@ async fn address_unchanged_skips_listener_restart(#[case] addr_str: &str) {
         Some(Some("secret".to_string())),
         "ChannelSecretUpdater should receive the current webhook secret"
     );
+    Ok(())
 }
 
 #[rstest]
 #[case::ipv4("127.0.0.1:8080")]
 #[case::ipv6("[::1]:8080")]
 #[tokio::test]
-async fn listener_restart_failure_prevents_secret_update(#[case] addr_str: &str) {
+async fn listener_restart_failure_prevents_secret_update(
+    #[case] addr_str: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let injector = Arc::new(StubSecretInjector::new());
     let addr: SocketAddr = addr_str.parse().expect("valid socket address");
     let controller = Arc::new(StubListenerController::new_with_restart_failure(addr));
@@ -155,7 +169,7 @@ async fn listener_restart_failure_prevents_secret_update(#[case] addr_str: &str)
         SocketAddr::V6(v6) => v6.ip().to_string(),
     };
     let (_temp_dir, config) =
-        test_config_with_http(Some(http_config(&host, 8081, Some("new_secret")))).await;
+        test_config_with_http(Some(http_config(&host, 8081, Some("new_secret")))).await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
@@ -177,17 +191,19 @@ async fn listener_restart_failure_prevents_secret_update(#[case] addr_str: &str)
         spy_clone.was_not_called().await,
         "ChannelSecretUpdater should not be called after listener restart failure"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn readding_same_listener_address_restarts_after_shutdown() {
+async fn readding_same_listener_address_restarts_after_shutdown()
+-> Result<(), Box<dyn std::error::Error>> {
     let injector = Arc::new(StubSecretInjector::new());
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
     let controller = Arc::new(StubListenerController::new(current_addr));
     let controller_clone = Arc::clone(&controller);
     let spy = Arc::new(SpySecretUpdater::new());
 
-    let (_remove_temp_dir, remove_config) = test_config_with_http(None).await;
+    let (_remove_temp_dir, remove_config) = test_config_with_http(None).await?;
     let remove_loader = Arc::new(StubConfigLoader::new_success(remove_config));
     let remove_manager = HotReloadManager::new(
         remove_loader as Arc<dyn ConfigLoader>,
@@ -207,7 +223,7 @@ async fn readding_same_listener_address_restarts_after_shutdown() {
         8080,
         Some("restored-secret"),
     )))
-    .await;
+    .await?;
     let readd_loader = Arc::new(StubConfigLoader::new_success(readd_config));
     let readd_manager = HotReloadManager::new(
         readd_loader as Arc<dyn ConfigLoader>,
@@ -226,15 +242,17 @@ async fn readding_same_listener_address_restarts_after_shutdown() {
         vec![current_addr],
         "the stopped listener should restart even when the address matches the previous one"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_first_resolved_addr() {
+async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_first_resolved_addr()
+-> Result<(), Box<dyn std::error::Error>> {
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
     let alternate_addr: SocketAddr = "127.0.0.2:8080".parse().expect("valid socket address");
     let controller = Arc::new(StubListenerController::new(current_addr));
     let controller_clone = Arc::clone(&controller);
-    let (_temp_dir, config) = test_config_with_http(None).await;
+    let (_temp_dir, config) = test_config_with_http(None).await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
     let manager = HotReloadManager::new(
@@ -254,4 +272,5 @@ async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_firs
         0,
         "listener should not restart when its current address matches a non-first resolved address"
     );
+    Ok(())
 }

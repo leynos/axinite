@@ -1,3 +1,9 @@
+//! Hot-reload manager lifecycle and error-handling tests.
+//!
+//! These tests verify lifecycle behavior including config load failures,
+//! HTTP listener removal and shutdown, and secret injector error handling
+//! during reload operations.
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -42,12 +48,13 @@ async fn config_load_failure_prevents_listener_restart() {
 }
 
 #[tokio::test]
-async fn http_config_removed_shuts_down_listener_and_clears_secrets() {
+async fn http_config_removed_shuts_down_listener_and_clears_secrets()
+-> Result<(), Box<dyn std::error::Error>> {
     let injector = Arc::new(StubSecretInjector::new());
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
     let controller = Arc::new(StubListenerController::new(current_addr));
     let controller_clone = Arc::clone(&controller);
-    let (_temp_dir, config) = test_config_with_http(None).await;
+    let (_temp_dir, config) = test_config_with_http(None).await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
@@ -84,10 +91,12 @@ async fn http_config_removed_shuts_down_listener_and_clears_secrets() {
         Some(None),
         "ChannelSecretUpdater should clear the webhook secret when HTTP config is removed"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn secret_injector_failure_does_not_block_config_reload() {
+async fn secret_injector_failure_does_not_block_config_reload()
+-> Result<(), Box<dyn std::error::Error>> {
     let injector = Arc::new(StubSecretInjector::new_failure());
     let injector_clone = Arc::clone(&injector);
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
@@ -96,7 +105,7 @@ async fn secret_injector_failure_does_not_block_config_reload() {
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
     let (_temp_dir, config) =
-        test_config_with_http(Some(http_config("127.0.0.1", 8081, Some("rotated-secret")))).await;
+        test_config_with_http(Some(http_config("127.0.0.1", 8081, Some("rotated-secret")))).await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
     let manager = HotReloadManager::new(
@@ -129,4 +138,5 @@ async fn secret_injector_failure_does_not_block_config_reload() {
         Some(Some("rotated-secret".to_string())),
         "channel secret updates should still propagate the new webhook secret"
     );
+    Ok(())
 }

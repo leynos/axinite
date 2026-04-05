@@ -1,3 +1,9 @@
+//! DNS timeout and resolution tests for the hot-reload manager.
+//!
+//! These tests verify that DNS resolution failures, timeouts, and empty
+//! results are handled correctly during hot-reload operations, including
+//! proper lock release after timeouts.
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -57,7 +63,8 @@ async fn resolve_http_addrs_times_out_slow_dns_lookup() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn perform_reload_returns_timeout_error_when_dns_resolution_stalls() {
+async fn perform_reload_returns_timeout_error_when_dns_resolution_stalls()
+-> Result<(), Box<dyn std::error::Error>> {
     let injector = Arc::new(StubSecretInjector::new());
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
     let controller = Arc::new(StubListenerController::new(current_addr));
@@ -66,7 +73,7 @@ async fn perform_reload_returns_timeout_error_when_dns_resolution_stalls() {
         8081,
         Some("new-secret"),
     )))
-    .await;
+    .await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
     let manager = HotReloadManager::new(
@@ -93,15 +100,16 @@ async fn perform_reload_returns_timeout_error_when_dns_resolution_stalls() {
         ),
         "perform_reload should return a timeout-derived reload error"
     );
+    Ok(())
 }
 
 #[tokio::test(start_paused = true)]
-async fn reload_lock_is_released_after_dns_timeout() {
+async fn reload_lock_is_released_after_dns_timeout() -> Result<(), Box<dyn std::error::Error>> {
     let injector = Arc::new(StubSecretInjector::new());
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");
     let controller = Arc::new(StubListenerController::new(current_addr));
     let (_temp_dir, config) =
-        test_config_with_http(Some(http_config("slow.example.test", 8081, None))).await;
+        test_config_with_http(Some(http_config("slow.example.test", 8081, None))).await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
     let manager = Arc::new(HotReloadManager::new(
@@ -134,4 +142,5 @@ async fn reload_lock_is_released_after_dns_timeout() {
         .await
         .expect("second reload task should complete")
         .expect_err("second reload should also time out cleanly");
+    Ok(())
 }

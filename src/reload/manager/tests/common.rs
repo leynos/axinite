@@ -1,3 +1,9 @@
+//! Shared test utilities and fixtures for reload manager tests.
+//!
+//! This module provides common test helpers including address test case structures,
+//! config builders, and HTTP config constructors used across the reload manager
+//! test suite.
+
 use std::net::SocketAddr;
 
 use tempfile::TempDir;
@@ -19,16 +25,15 @@ pub(super) struct AddrTestCase {
 /// Helper to create a minimal test config with the given HTTP config.
 pub(super) async fn test_config_with_http(
     http: Option<HttpConfig>,
-) -> (TempDir, crate::config::Config) {
-    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+) -> Result<(TempDir, crate::config::Config), Box<dyn std::error::Error>> {
+    let temp_dir = tempfile::tempdir()?;
     let temp_db = temp_dir.path().join("test_reload.db");
     let skills_dir = temp_dir.path().join("skills");
     let installed_skills_dir = temp_dir.path().join("installed_skills");
-    let mut config = crate::config::Config::for_testing(temp_db, skills_dir, installed_skills_dir)
-        .await
-        .expect("test config should build");
+    let mut config =
+        crate::config::Config::for_testing(temp_db, skills_dir, installed_skills_dir).await?;
     config.channels.http = http;
-    (temp_dir, config)
+    Ok((temp_dir, config))
 }
 
 /// Construct an [`HttpConfig`] with the supplied host, port, and webhook secret.
