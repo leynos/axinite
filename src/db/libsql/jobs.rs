@@ -45,6 +45,7 @@ const UPSERT_AGENT_JOB_SQL: &str = r#"
                     total_tokens_used = excluded.total_tokens_used,
                     started_at = excluded.started_at,
                     completed_at = excluded.completed_at
+                WHERE agent_jobs.source = 'direct'
                 "#;
 
 fn checked_duration_seconds(duration: std::time::Duration) -> Result<i64, DatabaseError> {
