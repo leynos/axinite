@@ -57,7 +57,7 @@ mod tests {
         let now = Utc::now();
         let update = SandboxJobStatusUpdate {
             id: Uuid::new_v4(),
-            status: "completed",
+            status: SandboxJobStatus::from("completed"),
             success: Some(true),
             message: Some("Test message"),
             started_at: Some(now),
@@ -80,7 +80,7 @@ mod tests {
             message.expect("expected `message` to be Some"),
             "Test message"
         );
-        assert_eq!(status, "completed");
+        assert_eq!(status.as_str(), "completed");
         assert!(started_at.is_some());
         assert!(completed_at.is_some());
 

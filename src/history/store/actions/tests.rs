@@ -13,7 +13,7 @@ use crate::testing::postgres::try_test_pg_db;
 
 #[fixture]
 async fn seeded_store() -> Option<(Store, Uuid)> {
-    let backend = try_test_pg_db().await?;
+    let backend = try_test_pg_db().await.expect("unexpected Postgres test setup error")?;
     let store = Store::from_pool(backend.pool());
     let ctx = JobContext::with_user(
         format!("actions-test-{}", Uuid::new_v4()),
