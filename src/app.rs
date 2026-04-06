@@ -468,6 +468,41 @@ impl AppBuilder {
         .await
     }
 
+    /// Resolves the LLM provider: returns the injected override if present,
+    /// otherwise delegates to `init_llm()`.
+    async fn resolve_llm(
+        &mut self,
+    ) -> Result<
+        (
+            Arc<dyn LlmProvider>,
+            Option<Arc<dyn LlmProvider>>,
+            Option<Arc<RecordingLlm>>,
+        ),
+        anyhow::Error,
+    > {
+        if let Some(llm) = self.llm_override.take() {
+            return Ok((llm, None, None));
+        }
+        self.init_llm().await
+    }
+
+    /// Phase 7: Initialise runtime metering (context manager and cost guard).
+    fn init_metering(
+        &self,
+    ) -> (
+        Arc<ContextManager>,
+        Arc<crate::agent::cost_guard::CostGuard>,
+    ) {
+        let context_manager = Arc::new(ContextManager::new(self.config.agent.max_parallel_jobs));
+        let cost_guard = Arc::new(crate::agent::cost_guard::CostGuard::new(
+            crate::agent::cost_guard::CostGuardConfig {
+                max_cost_per_day_cents: self.config.agent.max_cost_per_day_cents,
+                max_actions_per_hour: self.config.agent.max_actions_per_hour,
+            },
+        ));
+        (context_manager, cost_guard)
+    }
+
     /// Validates that LLM credentials are configured for non-nearai backends.
     fn validate_llm_config(&self) -> Result<(), anyhow::Error> {
         if self.config.llm.backend != "nearai" && self.config.llm.provider.is_none() {
@@ -494,11 +529,7 @@ impl AppBuilder {
         self.init_secrets().await?;
         self.validate_llm_config()?;
 
-        let (llm, cheap_llm, recording_handle) = if let Some(llm) = self.llm_override.take() {
-            (llm, None, None)
-        } else {
-            self.init_llm().await?
-        };
+        let (llm, cheap_llm, recording_handle) = self.resolve_llm().await?;
         let (safety, tools, embeddings, workspace) = self.init_tools(&llm).await?;
 
         // Create hook registry early so runtime extension activation can register hooks.
@@ -521,13 +552,7 @@ impl AppBuilder {
         // Skills system
         let (skill_registry, skill_catalog) = self.init_skills(&tools).await?;
 
-        let context_manager = Arc::new(ContextManager::new(self.config.agent.max_parallel_jobs));
-        let cost_guard = Arc::new(crate::agent::cost_guard::CostGuard::new(
-            crate::agent::cost_guard::CostGuardConfig {
-                max_cost_per_day_cents: self.config.agent.max_cost_per_day_cents,
-                max_actions_per_hour: self.config.agent.max_actions_per_hour,
-            },
-        ));
+        let (context_manager, cost_guard) = self.init_metering();
 
         tracing::debug!(
             "Tool registry initialized with {} total tools",
