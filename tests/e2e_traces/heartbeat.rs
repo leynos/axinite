@@ -13,7 +13,7 @@ use crate::support::trace_llm::{LlmTrace, TraceLlm, TraceResponse, TraceStep};
 
 #[tokio::test]
 async fn heartbeat_findings() {
-    let (db, _tmp) = create_test_db().await;
+    let (db, _tmp) = create_test_db().await.expect("create_test_db");
     let ws = create_workspace(&db);
 
     // Write a real heartbeat checklist.
@@ -71,7 +71,7 @@ async fn heartbeat_findings() {
 
 #[tokio::test]
 async fn heartbeat_empty_skip() {
-    let (db, _tmp) = create_test_db().await;
+    let (db, _tmp) = create_test_db().await.expect("create_test_db");
     let ws = create_workspace(&db);
 
     // Write an effectively empty heartbeat (just headers and comments).

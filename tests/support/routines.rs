@@ -44,17 +44,15 @@ impl<'a> SystemEventSpec<'a> {
 
 /// Create a temp libSQL database with migrations applied.
 #[allow(dead_code)]
-pub async fn create_test_db() -> (Arc<dyn Database>, TempDir) {
+pub async fn create_test_db() -> Result<(Arc<dyn Database>, TempDir), Box<dyn std::error::Error>> {
     use ironclaw::db::libsql::LibSqlBackend;
 
-    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let temp_dir = tempfile::tempdir()?;
     let db_path = temp_dir.path().join("test.db");
-    let backend = LibSqlBackend::new_local(&db_path)
-        .await
-        .expect("LibSqlBackend");
-    backend.run_migrations().await.expect("migrations");
+    let backend = LibSqlBackend::new_local(&db_path).await?;
+    backend.run_migrations().await?;
     let db: Arc<dyn Database> = Arc::new(backend);
-    (db, temp_dir)
+    Ok((db, temp_dir))
 }
 
 /// Create a workspace backed by the test database.

@@ -12,7 +12,7 @@ use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
 #[tokio::test]
 async fn event_trigger_matches() {
-    let (db, _tmp) = create_test_db().await;
+    let (db, _tmp) = create_test_db().await.expect("create_test_db");
     let ws = create_workspace(&db);
 
     let trace = LlmTrace::single_turn(

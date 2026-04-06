@@ -17,7 +17,7 @@ use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
 #[tokio::test]
 async fn routine_cooldown() {
-    let (db, _tmp) = create_test_db().await;
+    let (db, _tmp) = create_test_db().await.expect("create_test_db");
     let ws = create_workspace(&db);
 
     // Need two LLM responses (one for the first fire).
@@ -54,8 +54,24 @@ async fn routine_cooldown() {
     let fired1 = engine.check_event_triggers(&msg).await;
     assert!(fired1 >= 1, "First fire should work");
 
-    // Give spawn time, then update last_run_at to simulate recent execution.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Poll for routine completion with timeout before updating last_run_at.
+    let mut attempts = 0;
+    let max_attempts = 50;
+    loop {
+        let runs = db
+            .list_routine_runs(routine.id, 10)
+            .await
+            .expect("list_routine_runs");
+        if !runs.is_empty() {
+            break;
+        }
+        attempts += 1;
+        assert!(
+            attempts < max_attempts,
+            "Routine did not complete within timeout"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 
     // Update the routine's last_run_at to now (simulating it just ran).
     db.update_routine_runtime(RoutineRuntimeUpdate {

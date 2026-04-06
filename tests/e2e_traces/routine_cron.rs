@@ -16,7 +16,7 @@ use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
 #[tokio::test]
 async fn cron_routine_fires() {
-    let (db, _tmp) = create_test_db().await;
+    let (db, _tmp) = create_test_db().await.expect("create_test_db");
     let ws = create_workspace(&db);
 
     // Create a TraceLlm that responds with ROUTINE_OK.
@@ -50,18 +50,24 @@ async fn cron_routine_fires() {
     // Fire cron triggers.
     engine.check_cron_triggers().await;
 
-    // Give the spawned task time to execute.
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    // Verify a run was recorded.
-    let runs = db
-        .list_routine_runs(routine.id, 10)
-        .await
-        .expect("list_routine_runs");
-    assert!(
-        !runs.is_empty(),
-        "Expected at least one routine run after cron trigger"
-    );
+    // Poll for routine completion with timeout.
+    let mut attempts = 0;
+    let max_attempts = 50;
+    loop {
+        let runs = db
+            .list_routine_runs(routine.id, 10)
+            .await
+            .expect("list_routine_runs");
+        if !runs.is_empty() {
+            break;
+        }
+        attempts += 1;
+        assert!(
+            attempts < max_attempts,
+            "Routine did not complete within timeout"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 
     // Notification may or may not be sent depending on config;
     // just verify no panic occurred. Drain the channel.

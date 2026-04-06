@@ -11,7 +11,7 @@ use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
 #[tokio::test]
 async fn system_event_trigger_matches_and_filters() {
-    let (db, _tmp) = create_test_db().await;
+    let (db, _tmp) = create_test_db().await.expect("create_test_db");
     let ws = create_workspace(&db);
     let trace = LlmTrace::single_turn(
         "test-system-event-match",
@@ -41,15 +41,25 @@ async fn system_event_trigger_matches_and_filters() {
         "Expected one routine to fire for matching event",
     )
     .await;
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    let runs = db
-        .list_routine_runs(routine.id, 10)
-        .await
-        .expect("list runs");
-    assert!(
-        !runs.is_empty(),
-        "Expected run history after matching event"
-    );
+
+    // Poll for routine completion with timeout.
+    let mut attempts = 0;
+    let max_attempts = 50;
+    loop {
+        let runs = db
+            .list_routine_runs(routine.id, 10)
+            .await
+            .expect("list runs");
+        if !runs.is_empty() {
+            break;
+        }
+        attempts += 1;
+        assert!(
+            attempts < max_attempts,
+            "Routine did not complete within timeout"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
 
     // Table-driven checks for non-matching and case-insensitive scenarios.
     #[rustfmt::skip]
