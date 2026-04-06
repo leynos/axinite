@@ -71,8 +71,8 @@ async fn heartbeat_findings() {
 
 #[tokio::test]
 async fn heartbeat_empty_skip() {
-    let (_db, _tmp) = create_test_db().await;
-    let ws = create_workspace(&_db);
+    let (db, _tmp) = create_test_db().await;
+    let ws = create_workspace(&db);
 
     // Write an effectively empty heartbeat (just headers and comments).
     ws.write(

@@ -357,7 +357,10 @@ const _: fn() = test_rig_symbol_refs;
 // =============================================================================
 
 #[cfg(feature = "libsql")]
-#[expect(dead_code, reason = "compile-time signature assertions")]
+const _: fn() = routines_symbol_refs;
+
+#[cfg(feature = "libsql")]
+#[allow(dead_code)]
 fn routines_symbol_refs() {
     // Compile-time type assertions for routines module helpers.
     // These ensure the public API signatures remain stable.
@@ -370,10 +373,13 @@ fn routines_symbol_refs() {
         &str,
     ) -> ironclaw::agent::routine::Routine = routines::make_routine;
     const _: fn(&str) -> ironclaw::channels::IncomingMessage = routines::make_test_incoming_message;
+    #[allow(clippy::type_complexity)]
     const _: fn(
         trace_llm::LlmTrace,
         std::sync::Arc<dyn ironclaw::db::Database>,
         std::sync::Arc<ironclaw::workspace::Workspace>,
-    ) -> std::sync::Arc<ironclaw::agent::routine_engine::RoutineEngine> =
-        routines::make_minimal_engine;
+    ) -> (
+        std::sync::Arc<ironclaw::agent::routine_engine::RoutineEngine>,
+        tokio::sync::mpsc::Receiver<ironclaw::channels::OutgoingResponse>,
+    ) = routines::make_minimal_engine;
 }

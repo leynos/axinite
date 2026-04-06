@@ -4,8 +4,6 @@
 //! and engines used across routine-related E2E tests.
 
 #![cfg(feature = "libsql")]
-// These items are used in e2e_traces but not in other test binaries.
-#![allow(dead_code)]
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,12 +24,14 @@ use ironclaw::workspace::Workspace;
 use crate::support::trace_llm::{LlmTrace, TraceLlm};
 
 /// Describes a system event to be emitted in tests.
+#[allow(dead_code)]
 pub struct SystemEventSpec<'a> {
     pub source: &'a str,
     pub event_type: &'a str,
     pub payload: serde_json::Value,
 }
 
+#[allow(dead_code)]
 impl<'a> SystemEventSpec<'a> {
     pub fn new(source: &'a str, event_type: &'a str, payload: serde_json::Value) -> Self {
         Self {
@@ -43,6 +43,7 @@ impl<'a> SystemEventSpec<'a> {
 }
 
 /// Create a temp libSQL database with migrations applied.
+#[allow(dead_code)]
 pub async fn create_test_db() -> (Arc<dyn Database>, TempDir) {
     use ironclaw::db::libsql::LibSqlBackend;
 
@@ -57,11 +58,13 @@ pub async fn create_test_db() -> (Arc<dyn Database>, TempDir) {
 }
 
 /// Create a workspace backed by the test database.
+#[allow(dead_code)]
 pub fn create_workspace(db: &Arc<dyn Database>) -> Arc<Workspace> {
     Arc::new(Workspace::new_with_db("default", db.clone()))
 }
 
 /// Helper to insert a routine directly into the database.
+#[allow(dead_code)]
 pub fn make_routine(name: &str, trigger: Trigger, prompt: &str) -> Routine {
     Routine {
         id: Uuid::new_v4(),
@@ -92,6 +95,7 @@ pub fn make_routine(name: &str, trigger: Trigger, prompt: &str) -> Routine {
 }
 
 /// Build a minimal IncomingMessage for event-trigger tests.
+#[allow(dead_code)]
 pub fn make_test_incoming_message(content: &str) -> IncomingMessage {
     IncomingMessage {
         id: Uuid::new_v4(),
@@ -107,20 +111,24 @@ pub fn make_test_incoming_message(content: &str) -> IncomingMessage {
     }
 }
 
-/// Build a minimal RoutineEngine from a TraceLlm.
+/// Build a minimal RoutineEngine from a TraceLlm, returning both the engine and the notify receiver.
+#[allow(dead_code)]
 pub fn make_minimal_engine(
     trace: LlmTrace,
     db: Arc<dyn Database>,
     ws: Arc<Workspace>,
-) -> Arc<RoutineEngine> {
+) -> (
+    Arc<RoutineEngine>,
+    tokio::sync::mpsc::Receiver<ironclaw::channels::OutgoingResponse>,
+) {
     let llm = Arc::new(TraceLlm::from_trace(trace));
-    let (notify_tx, _notify_rx) = tokio::sync::mpsc::channel(16);
+    let (notify_tx, notify_rx) = tokio::sync::mpsc::channel(16);
     let tools = Arc::new(ToolRegistry::new());
     let safety = Arc::new(SafetyLayer::new(&SafetyConfig {
         max_output_length: 100_000,
         injection_check_enabled: true,
     }));
-    Arc::new(RoutineEngine::new(
+    let engine = Arc::new(RoutineEngine::new(
         RoutineConfig::default(),
         db,
         llm,
@@ -129,10 +137,12 @@ pub fn make_minimal_engine(
         None,
         tools,
         safety,
-    ))
+    ));
+    (engine, notify_rx)
 }
 
 /// Register a GitHub issue routine for system event tests.
+#[allow(dead_code)]
 pub async fn register_github_issue_routine(
     db: &Arc<dyn Database>,
     engine: &RoutineEngine,
@@ -154,6 +164,7 @@ pub async fn register_github_issue_routine(
 }
 
 /// Assert that a system event fires the expected number of routines.
+#[allow(dead_code)]
 pub async fn assert_system_event_count(
     engine: &RoutineEngine,
     spec: SystemEventSpec<'_>,

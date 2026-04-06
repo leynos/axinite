@@ -3,19 +3,16 @@
 //! Tests that routines with cron schedules fire correctly when their
 //! next_fire_at time is in the past.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
 
 use ironclaw::agent::routine::Trigger;
-use ironclaw::agent::routine_engine::RoutineEngine;
-use ironclaw::config::{RoutineConfig, SafetyConfig};
-use ironclaw::safety::SafetyLayer;
-use ironclaw::tools::ToolRegistry;
 
-use crate::support::routines::{create_test_db, create_workspace, make_routine};
-use crate::support::trace_llm::{LlmTrace, TraceLlm, TraceResponse, TraceStep};
+use crate::support::routines::{
+    create_test_db, create_workspace, make_minimal_engine, make_routine,
+};
+use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
 #[tokio::test]
 async fn cron_routine_fires() {
@@ -36,28 +33,7 @@ async fn cron_routine_fires() {
             expected_tool_results: vec![],
         }],
     );
-    let llm = Arc::new(TraceLlm::from_trace(trace));
-
-    let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel(16);
-
-    // Create minimal ToolRegistry and SafetyLayer for test.
-    let tools = Arc::new(ToolRegistry::new());
-    let safety_config = SafetyConfig {
-        max_output_length: 100_000,
-        injection_check_enabled: true,
-    };
-    let safety = Arc::new(SafetyLayer::new(&safety_config));
-
-    let engine = Arc::new(RoutineEngine::new(
-        RoutineConfig::default(),
-        db.clone(),
-        llm,
-        ws,
-        notify_tx,
-        None,
-        tools,
-        safety,
-    ));
+    let (engine, mut notify_rx) = make_minimal_engine(trace, db.clone(), ws);
 
     // Insert a cron routine with next_fire_at in the past.
     let mut routine = make_routine(

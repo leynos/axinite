@@ -34,7 +34,7 @@ async fn routine_cooldown() {
             expected_tool_results: vec![],
         }],
     );
-    let engine = make_minimal_engine(trace, db.clone(), ws);
+    let (engine, _notify_rx) = make_minimal_engine(trace, db.clone(), ws);
 
     // Insert an event routine with 1-hour cooldown.
     let mut routine = make_routine(

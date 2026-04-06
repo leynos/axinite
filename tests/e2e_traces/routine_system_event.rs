@@ -26,7 +26,7 @@ async fn system_event_trigger_matches_and_filters() {
             expected_tool_results: vec![],
         }],
     );
-    let engine = make_minimal_engine(trace, db.clone(), ws);
+    let (engine, _notify_rx) = make_minimal_engine(trace, db.clone(), ws);
     let routine = register_github_issue_routine(&db, &engine).await;
 
     // Matching event should fire and be recorded in run history.

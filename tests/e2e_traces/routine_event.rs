@@ -28,7 +28,7 @@ async fn event_trigger_matches() {
             expected_tool_results: vec![],
         }],
     );
-    let engine = make_minimal_engine(trace, db.clone(), ws);
+    let (engine, _notify_rx) = make_minimal_engine(trace, db.clone(), ws);
 
     // Insert an event routine matching "deploy.*production".
     let routine = make_routine(
@@ -52,8 +52,24 @@ async fn event_trigger_matches() {
         "Expected >= 1 routine fired on match, got {fired}"
     );
 
-    // Give spawn time.
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    // Poll for routine completion with timeout instead of fixed sleep.
+    let mut attempts = 0;
+    let max_attempts = 50;
+    loop {
+        let runs = db
+            .list_routine_runs(routine.id, 10)
+            .await
+            .expect("list_routine_runs");
+        if !runs.is_empty() {
+            break;
+        }
+        attempts += 1;
+        assert!(
+            attempts < max_attempts,
+            "Routine did not complete within timeout"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
 
     // Negative match: message that doesn't match.
     let non_matching_msg = make_test_incoming_message("check the staging environment");
