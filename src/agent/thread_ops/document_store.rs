@@ -152,6 +152,8 @@ mod tests {
         assert!(!is_usable_extracted_text("[Failed to extract]"));
         assert!(!is_usable_extracted_text("[Error parsing]"));
         assert!(!is_usable_extracted_text("[Unsupported format]"));
+        assert!(!is_usable_extracted_text("[Document too large to process]"));
+        assert!(!is_usable_extracted_text("[Document has no inline data]"));
     }
 
     #[test]
@@ -163,6 +165,9 @@ mod tests {
     fn get_valid_document_text_filters_sentinel_outputs() {
         let attachment = make_attachment("id", Some("doc.pdf"), Some("[Failed to extract]"));
         assert_eq!(get_valid_document_text(&attachment), None);
+
+        let attachment2 = make_attachment("id2", Some("doc2.pdf"), Some("[Document too large]"));
+        assert_eq!(get_valid_document_text(&attachment2), None);
     }
 
     #[test]

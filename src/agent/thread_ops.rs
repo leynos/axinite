@@ -109,15 +109,24 @@ impl Agent {
         // Set message tool context for this turn (current channel and target)
         // For Signal, use signal_target from metadata (group:ID or phone number),
         // otherwise fall back to user_id
-        let target = message
+        let target_opt = message
             .metadata
             .get("signal_target")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
-            .unwrap_or_else(|| message.user_id.clone());
-        self.tools()
-            .set_message_tool_context(Some(message.channel.clone()), Some(target))
-            .await;
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                if !message.user_id.is_empty() {
+                    Some(message.user_id.clone())
+                } else {
+                    None
+                }
+            });
+        if let Some(target) = target_opt {
+            self.tools()
+                .set_message_tool_context(Some(message.channel.clone()), Some(target))
+                .await;
+        }
     }
 
     pub(super) async fn handle_message(

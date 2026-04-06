@@ -531,24 +531,7 @@ impl Agent {
         let mut deferred_auth: Option<String> = None;
 
         for (tc, deferred_result) in exec_results {
-            if let Ok(ref output) = deferred_result
-                && !output.is_empty()
-            {
-                let _ = self
-                    .channels
-                    .send_status(
-                        &scope.env.channel,
-                        StatusUpdate::ToolResult {
-                            name: tc.name.clone(),
-                            preview: output.clone(),
-                        },
-                        &scope.env.metadata,
-                    )
-                    .await;
-            }
-
-            // Sanitize first, then record the cleaned version in thread.
-            // Must happen before auth detection which may set deferred_auth.
+            // Sanitize first before any use of the output
             let is_deferred_error = deferred_result.is_err();
             let (deferred_content, _) = crate::tools::execute::process_tool_result(
                 self.safety(),
@@ -556,6 +539,21 @@ impl Agent {
                 &tc.id,
                 &deferred_result,
             );
+
+            // Send ToolResult preview using sanitized content (only on success and non-empty)
+            if !is_deferred_error && !deferred_content.is_empty() {
+                let _ = self
+                    .channels
+                    .send_status(
+                        &scope.env.channel,
+                        StatusUpdate::ToolResult {
+                            name: tc.name.clone(),
+                            preview: deferred_content.clone(),
+                        },
+                        &scope.env.metadata,
+                    )
+                    .await;
+            }
 
             // Record sanitized result in thread
             {
@@ -1094,7 +1092,7 @@ impl Agent {
                         &env.channel,
                         StatusUpdate::AuthCompleted {
                             extension_name: ext_name.to_string(),
-                            success: true,
+                            success: false,
                             message: msg.clone(),
                         },
                         &env.metadata,

@@ -21,8 +21,7 @@ pub struct DefaultSelfRepair {
     max_repair_attempts: u32,
     store: Option<Arc<dyn Database>>,
     builder: Option<Arc<dyn SoftwareBuilder>>,
-    // TODO: use for tool hot-reload after repair
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "used for future tool hot-reload after repair")]
     tools: Option<Arc<ToolRegistry>>,
 }
 
@@ -44,14 +43,14 @@ impl DefaultSelfRepair {
     }
 
     /// Add a Store for tool failure tracking.
-    #[allow(dead_code)] // TODO: wire up in main.rs when persistence is needed
+    #[expect(dead_code, reason = "will be wired up in main.rs when persistence is needed")]
     pub(crate) fn with_store(mut self, store: Arc<dyn Database>) -> Self {
         self.store = Some(store);
         self
     }
 
     /// Add a Builder and ToolRegistry for automatic tool repair.
-    #[allow(dead_code)] // TODO: wire up in main.rs when auto-repair is needed
+    #[expect(dead_code, reason = "unused until auto-repair is wired in main")]
     pub(crate) fn with_builder(
         mut self,
         builder: Arc<dyn SoftwareBuilder>,
@@ -291,7 +290,9 @@ mod tests {
         let cm = Arc::new(ContextManager::new(10));
 
         // Create a job and leave it Pending (not stuck).
-        cm.create_job("Job 1", "desc").await.unwrap();
+        cm.create_job("Job 1", "desc")
+            .await
+            .expect("create job in detect_no_stuck_jobs_when_all_healthy");
 
         let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3);
         let stuck = NativeSelfRepair::detect_stuck_jobs(&repair).await;
@@ -301,19 +302,22 @@ mod tests {
     #[tokio::test]
     async fn detect_stuck_job_finds_stuck_state() {
         let cm = Arc::new(ContextManager::new(10));
-        let job_id = cm.create_job("Stuck job", "desc").await.unwrap();
+        let job_id = cm
+            .create_job("Stuck job", "desc")
+            .await
+            .expect("create job in detect_stuck_job_finds_stuck_state");
 
         // Transition to InProgress, then to Stuck.
         cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
             .await
-            .unwrap()
-            .unwrap();
+            .expect("transition to InProgress for job")
+            .expect("transition to InProgress succeeded");
         cm.update_context(job_id, |ctx| {
             ctx.transition_to(JobState::Stuck, Some("timed out".to_string()))
         })
         .await
-        .unwrap()
-        .unwrap();
+        .expect("transition to Stuck for job")
+        .expect("transition to Stuck succeeded");
 
         let repair = DefaultSelfRepair::new(cm, Duration::from_secs(0), 3);
         let stuck = NativeSelfRepair::detect_stuck_jobs(&repair).await;
@@ -405,17 +409,20 @@ mod tests {
     #[tokio::test]
     async fn repair_stuck_job_succeeds_within_limit() {
         let cm = Arc::new(ContextManager::new(10));
-        let job_id = cm.create_job("Repairable", "desc").await.unwrap();
+        let job_id = cm
+            .create_job("Repairable", "desc")
+            .await
+            .expect("failed to create job");
 
         // Move to InProgress -> Stuck.
         cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
             .await
-            .unwrap()
-            .unwrap();
+            .expect("failed to transition to InProgress")
+            .expect("transition to InProgress failed");
         cm.update_context(job_id, |ctx| ctx.transition_to(JobState::Stuck, None))
             .await
-            .unwrap()
-            .unwrap();
+            .expect("failed to transition to Stuck")
+            .expect("transition to Stuck failed");
 
         let repair = DefaultSelfRepair::new(Arc::clone(&cm), Duration::from_secs(60), 3);
 
@@ -429,7 +436,7 @@ mod tests {
 
         let result = NativeSelfRepair::repair_stuck_job(&repair, &stuck_job)
             .await
-            .unwrap();
+            .expect("repair_stuck_job failed");
         assert!(
             matches!(result, RepairResult::Success { .. }),
             "Expected Success, got: {:?}",
@@ -437,14 +444,20 @@ mod tests {
         );
 
         // Job should be back to InProgress after recovery.
-        let ctx = cm.get_context(job_id).await.unwrap();
+        let ctx = cm
+            .get_context(job_id)
+            .await
+            .expect("failed to get context");
         assert_eq!(ctx.state, JobState::InProgress);
     }
 
     #[tokio::test]
     async fn repair_stuck_job_returns_manual_when_limit_exceeded() {
         let cm = Arc::new(ContextManager::new(10));
-        let job_id = cm.create_job("Unrepairable", "desc").await.unwrap();
+        let job_id = cm
+            .create_job("Unrepairable", "desc")
+            .await
+            .expect("create_job failed in repair_stuck_job_returns_manual_when_limit_exceeded");
 
         let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 2);
 
@@ -458,7 +471,7 @@ mod tests {
 
         let result = NativeSelfRepair::repair_stuck_job(&repair, &stuck_job)
             .await
-            .unwrap();
+            .expect("repair_stuck_job failed in repair_stuck_job_returns_manual_when_limit_exceeded");
         assert!(
             matches!(result, RepairResult::ManualRequired { .. }),
             "Expected ManualRequired, got: {:?}",
@@ -472,7 +485,8 @@ mod tests {
         let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3);
 
         // No store configured, should return empty.
-        let broken = NativeSelfRepair::detect_broken_tools(&repair).await;
+        let broken = NativeSelfRepair::detect_broken_tools(&repair)
+            .await;
         assert!(broken.is_empty());
     }
 
@@ -493,7 +507,7 @@ mod tests {
 
         let result = NativeSelfRepair::repair_broken_tool(&repair, &broken)
             .await
-            .unwrap();
+            .expect("repair_broken_tool failed in repair_broken_tool_returns_manual_without_builder");
         assert!(
             matches!(result, RepairResult::ManualRequired { .. }),
             "Expected ManualRequired without builder, got: {:?}",

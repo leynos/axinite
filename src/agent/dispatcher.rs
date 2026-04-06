@@ -25,22 +25,50 @@ const PREVIEW_MAX_CHARS: usize = 1024;
 
 /// Collapse a tool output string into a single-line preview for display.
 pub(crate) fn truncate_for_preview(output: &str, max_chars: usize) -> String {
-    // Normalise first: replace all newlines with spaces, then collapse runs.
-    let replaced: String = output
-        .chars()
-        .map(|c| if c == '\n' { ' ' } else { c })
-        .collect();
-    let collapsed = replaced.split_whitespace().collect::<Vec<_>>().join(" ");
-    // char_indices gives us byte offsets at char boundaries, so the slice is always valid UTF-8.
-    if collapsed.chars().count() > max_chars {
-        let byte_offset = collapsed
-            .char_indices()
-            .nth(max_chars)
-            .map(|(i, _)| i)
-            .unwrap_or(collapsed.len());
-        format!("{}...", &collapsed[..byte_offset])
+    let mut result = String::new();
+    let mut last_was_space = true; // Start true to trim leading whitespace
+    let mut char_count = 0;
+    let mut exceeded_limit = false;
+
+    for c in output.chars() {
+        // Treat all whitespace (including newlines) as spaces
+        let is_space = c.is_whitespace();
+
+        if is_space {
+            if !last_was_space {
+                // Add a single space for runs of whitespace
+                if char_count < max_chars {
+                    result.push(' ');
+                    char_count += 1;
+                } else {
+                    exceeded_limit = true;
+                    break;
+                }
+            }
+            last_was_space = true;
+        } else {
+            // Non-whitespace character
+            if char_count < max_chars {
+                result.push(c);
+                char_count += 1;
+            } else {
+                exceeded_limit = true;
+                break;
+            }
+            last_was_space = false;
+        }
+    }
+
+    // Trim trailing space if present
+    if result.ends_with(' ') {
+        result.pop();
+    }
+
+    // Only add "..." if we exceeded the limit during processing
+    if exceeded_limit && !result.is_empty() {
+        format!("{}...", result)
     } else {
-        collapsed
+        result
     }
 }
 
@@ -818,11 +846,23 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
                         false
                     };
 
-                    // Send ToolResult preview
-                    if !is_image_sentinel
-                        && let Ok(ref output) = tool_result
-                        && !output.is_empty()
-                    {
+                    // Sanitize tool output first (before sending preview or using in context)
+                    let is_tool_error = tool_result.is_err();
+                    let sanitized_output = match &tool_result {
+                        Ok(output) => {
+                            let sanitized =
+                                self.agent.safety().sanitize_tool_output(&tc.name, output);
+                            self.agent.safety().wrap_for_llm(
+                                &tc.name,
+                                &sanitized.content,
+                                sanitized.was_modified,
+                            )
+                        }
+                        Err(e) => format!("Tool '{}' failed: {}", tc.name, e),
+                    };
+
+                    // Send ToolResult preview using sanitized output
+                    if !is_image_sentinel && !is_tool_error && !sanitized_output.is_empty() {
                         let _ = self
                             .agent
                             .channels
@@ -830,14 +870,14 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
                                 &self.message.channel,
                                 StatusUpdate::ToolResult {
                                     name: tc.name.clone(),
-                                    preview: truncate_for_preview(output, PREVIEW_MAX_CHARS),
+                                    preview: truncate_for_preview(&sanitized_output, PREVIEW_MAX_CHARS),
                                 },
                                 &self.message.metadata,
                             )
                             .await;
                     }
 
-                    // Check for auth awaiting
+                    // Check for auth awaiting (use original tool_result for auth detection)
                     if deferred_auth.is_none()
                         && let Some((ext_name, instructions)) =
                             check_auth_required(&tc.name, &tool_result)
@@ -875,20 +915,8 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
                             .insert(tc.id.clone(), output.clone());
                     }
 
-                    // Sanitize and add tool result to context
-                    let is_tool_error = tool_result.is_err();
-                    let result_content = match tool_result {
-                        Ok(output) => {
-                            let sanitized =
-                                self.agent.safety().sanitize_tool_output(&tc.name, &output);
-                            self.agent.safety().wrap_for_llm(
-                                &tc.name,
-                                &sanitized.content,
-                                sanitized.was_modified,
-                            )
-                        }
-                        Err(e) => format!("Tool '{}' failed: {}", tc.name, e),
-                    };
+                    // Use sanitized output for result content
+                    let result_content = sanitized_output;
 
                     // Record sanitized result in thread
                     {
