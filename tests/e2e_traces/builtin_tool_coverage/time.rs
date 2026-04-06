@@ -1,6 +1,6 @@
 //! Time tool tests: parse, diff, and invalid timestamp handling.
 
-use super::common::{run_trace_test, RigConfig};
+use super::common::{RigConfig, run_trace_test};
 
 #[tokio::test]
 async fn time_parse_and_diff() {

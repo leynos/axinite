@@ -1,6 +1,8 @@
 //! Routine tool tests: create, list, update, delete, history, and event emit.
 
-use super::common::{run_routine_started_test, run_trace_test, run_trace_test_with_timeout, RigConfig};
+use super::common::{
+    RigConfig, run_routine_started_test, run_trace_test, run_trace_test_with_timeout,
+};
 use crate::builtin_tool_coverage::common::routine_started_test;
 
 #[tokio::test]

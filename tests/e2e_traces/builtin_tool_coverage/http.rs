@@ -1,6 +1,6 @@
 //! HTTP tool tests: GET requests with replay.
 
-use super::common::{run_trace_test, RigConfig};
+use super::common::{RigConfig, run_trace_test};
 
 #[tokio::test]
 async fn http_get_with_replay() {

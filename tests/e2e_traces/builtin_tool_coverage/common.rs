@@ -59,11 +59,7 @@ pub async fn run_trace_test_with_timeout(
 }
 
 /// Run a test verifying that specific tools were started.
-pub async fn run_routine_started_test(
-    fixture_path: &str,
-    message: &str,
-    expected_tools: &[&str],
-) {
+pub async fn run_routine_started_test(fixture_path: &str, message: &str, expected_tools: &[&str]) {
     let (rig, _trace, _responses) = run_trace_test(
         fixture_path,
         message,

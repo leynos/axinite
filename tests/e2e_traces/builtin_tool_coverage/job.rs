@@ -1,6 +1,6 @@
 //! Job tool tests: create, status, list, and cancel operations.
 
-use super::common::{run_trace_test, RigConfig};
+use super::common::{RigConfig, run_trace_test};
 
 // Uses {{call_cj_1.job_id}} template to forward the dynamic UUID from
 // create_job's result into job_status's arguments.
