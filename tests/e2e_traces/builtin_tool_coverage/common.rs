@@ -81,12 +81,11 @@ pub async fn run_routine_started_test(fixture_path: &str, message: &str, expecte
 }
 
 /// Macro for generating routine started tests.
-#[macro_export]
 macro_rules! routine_started_test {
     ($name:ident, $fixture:literal, $message:literal, [$($tool:literal),+ $(,)?]) => {
         #[tokio::test]
         async fn $name() {
-            run_routine_started_test(
+            $crate::builtin_tool_coverage::common::run_routine_started_test(
                 concat!(env!("CARGO_MANIFEST_DIR"), $fixture),
                 $message,
                 &[$($tool),+],
@@ -96,6 +95,6 @@ macro_rules! routine_started_test {
     };
 }
 
-// Re-export the macro for internal use
+// Re-export the macro for use by sibling modules
 #[allow(unused_imports)]
-pub use routine_started_test;
+pub(crate) use routine_started_test;
