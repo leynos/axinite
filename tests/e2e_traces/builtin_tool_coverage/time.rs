@@ -3,7 +3,7 @@
 use super::common::{RigConfig, run_trace_test};
 
 #[tokio::test]
-async fn time_parse_and_diff() {
+async fn time_parse_and_diff() -> anyhow::Result<()> {
     let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/time_parse_diff.json"
@@ -17,7 +17,7 @@ async fn time_parse_and_diff() {
             skills: true,
         },
     )
-    .await;
+    .await?;
 
     // Time tool should have been called twice (parse + diff).
     let started = rig.tool_calls_started();
@@ -28,10 +28,11 @@ async fn time_parse_and_diff() {
     );
 
     rig.shutdown();
+    Ok(())
 }
 
 #[tokio::test]
-async fn time_parse_invalid() {
+async fn time_parse_invalid() -> anyhow::Result<()> {
     let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/time_parse_invalid.json"
@@ -45,7 +46,7 @@ async fn time_parse_invalid() {
             skills: true,
         },
     )
-    .await;
+    .await?;
 
     // The time tool call should have failed (invalid timestamp).
     let completed = rig.tool_calls_completed();
@@ -60,4 +61,5 @@ async fn time_parse_invalid() {
     );
 
     rig.shutdown();
+    Ok(())
 }

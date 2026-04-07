@@ -6,7 +6,7 @@ use super::common::{RigConfig, run_trace_test};
 // create_job's result into job_status's arguments.
 
 #[tokio::test]
-async fn job_create_status() {
+async fn job_create_status() -> anyhow::Result<()> {
     let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/job_create_status.json"
@@ -16,7 +16,7 @@ async fn job_create_status() {
         "Create a job and check its status",
         RigConfig::default(),
     )
-    .await;
+    .await?;
 
     // Both tools should have succeeded.
     let completed = rig.tool_calls_completed();
@@ -61,13 +61,14 @@ async fn job_create_status() {
     );
 
     rig.shutdown();
+    Ok(())
 }
 
 // Uses {{call_cj_lc.job_id}} template to forward the dynamic UUID from
 // create_job into cancel_job.
 
 #[tokio::test]
-async fn job_list_cancel() {
+async fn job_list_cancel() -> anyhow::Result<()> {
     let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/job_list_cancel.json"
@@ -77,7 +78,7 @@ async fn job_list_cancel() {
         "Create a job, list jobs, then cancel it",
         RigConfig::default(),
     )
-    .await;
+    .await?;
 
     // All three tools should have succeeded.
     let completed = rig.tool_calls_completed();
@@ -95,4 +96,5 @@ async fn job_list_cancel() {
     );
 
     rig.shutdown();
+    Ok(())
 }

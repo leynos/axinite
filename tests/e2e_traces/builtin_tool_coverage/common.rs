@@ -7,6 +7,26 @@ use ironclaw::channels::OutgoingResponse;
 use crate::support::test_rig::{TestRig, TestRigBuilder};
 use crate::support::trace_llm::LlmTrace;
 
+/// Error type for test harness operations.
+#[derive(Debug)]
+pub enum HarnessError {
+    /// Failed to load trace file.
+    TraceLoad(String),
+    /// Failed to build test rig.
+    RigBuild(String),
+}
+
+impl std::fmt::Display for HarnessError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HarnessError::TraceLoad(msg) => write!(f, "{msg}"),
+            HarnessError::RigBuild(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+impl std::error::Error for HarnessError {}
+
 /// Configuration for test rig setup.
 #[derive(Default)]
 pub struct RigConfig {
@@ -23,7 +43,7 @@ pub async fn run_trace_test(
     fixture_path: &str,
     message: &str,
     config: RigConfig,
-) -> (TestRig, LlmTrace, Vec<OutgoingResponse>) {
+) -> Result<(TestRig, LlmTrace, Vec<OutgoingResponse>), HarnessError> {
     run_trace_test_with_timeout(fixture_path, message, config, Duration::from_secs(15)).await
 }
 
@@ -33,27 +53,28 @@ pub async fn run_trace_test_with_timeout(
     message: &str,
     config: RigConfig,
     timeout: Duration,
-) -> (TestRig, LlmTrace, Vec<OutgoingResponse>) {
-    let load_error = format!("failed to load {fixture_path}");
+) -> Result<(TestRig, LlmTrace, Vec<OutgoingResponse>), HarnessError> {
     let trace = LlmTrace::from_file_async(fixture_path)
         .await
-        .expect(load_error.as_str());
+        .map_err(|e| HarnessError::TraceLoad(format!("failed to load {fixture_path}: {e}")))?;
 
-    let mut builder = TestRigBuilder::new().with_trace(trace.clone());
-    if config.auto_approve {
-        builder = builder.with_auto_approve_tools(true);
-    }
+    let mut builder = TestRigBuilder::new()
+        .with_trace(trace.clone())
+        .with_auto_approve_tools(config.auto_approve);
     if config.skills {
         builder = builder.with_skills();
     }
     if config.routines {
         builder = builder.with_routines();
     }
-    let rig = builder.build().await.expect("failed to build test rig");
+    let rig = builder
+        .build()
+        .await
+        .map_err(|e| HarnessError::RigBuild(format!("failed to build test rig: {e}")))?;
 
     rig.send_message(message).await;
     let responses = rig.wait_for_responses(1, timeout).await;
 
     rig.verify_trace_expects(&trace, &responses);
-    (rig, trace, responses)
+    Ok((rig, trace, responses))
 }

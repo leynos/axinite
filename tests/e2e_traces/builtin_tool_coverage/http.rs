@@ -3,7 +3,7 @@
 use super::common::{RigConfig, run_trace_test};
 
 #[tokio::test]
-async fn http_get_with_replay() {
+async fn http_get_with_replay() -> anyhow::Result<()> {
     let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/http_get_replay.json"
@@ -13,7 +13,7 @@ async fn http_get_with_replay() {
         "Make an http GET request",
         RigConfig::default(),
     )
-    .await;
+    .await?;
 
     // HTTP tool should have succeeded with the replayed exchange.
     let completed = rig.tool_calls_completed();
@@ -23,4 +23,5 @@ async fn http_get_with_replay() {
     );
 
     rig.shutdown();
+    Ok(())
 }
