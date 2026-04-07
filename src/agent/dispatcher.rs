@@ -25,51 +25,48 @@ const PREVIEW_MAX_CHARS: usize = 1024;
 
 /// Collapse a tool output string into a single-line preview for display.
 pub(crate) fn truncate_for_preview(output: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+
     let mut result = String::new();
-    let mut last_was_space = true; // Start true to trim leading whitespace
-    let mut char_count = 0;
-    let mut exceeded_limit = false;
+    let mut used = 0usize;
+    let mut exceeded = false;
 
-    for c in output.chars() {
-        // Treat all whitespace (including newlines) as spaces
-        let is_space = c.is_whitespace();
+    for token in output.split_whitespace() {
+        let token_chars = token.chars();
+        let token_len = token_chars.clone().count();
+        let sep = if result.is_empty() { 0 } else { 1 };
+        let required = sep + token_len;
 
-        if is_space {
-            if !last_was_space {
-                // Add a single space for runs of whitespace
-                if char_count < max_chars {
-                    result.push(' ');
-                    char_count += 1;
-                } else {
-                    exceeded_limit = true;
-                    break;
-                }
+        if used + required <= max_chars {
+            if sep == 1 {
+                result.push(' ');
+                used += 1;
             }
-            last_was_space = true;
+            result.push_str(token);
+            used += token_len;
+        } else if used < max_chars {
+            if sep == 1 && used < max_chars {
+                result.push(' ');
+                used += 1;
+            }
+            let remaining = max_chars - used;
+            if remaining > 0 {
+                result.extend(token.chars().take(remaining));
+            }
+            exceeded = true;
+            break;
         } else {
-            // Non-whitespace character
-            if char_count < max_chars {
-                result.push(c);
-                char_count += 1;
-            } else {
-                exceeded_limit = true;
-                break;
-            }
-            last_was_space = false;
+            exceeded = true;
+            break;
         }
     }
 
-    // Trim trailing space if present
-    if result.ends_with(' ') {
-        result.pop();
+    if exceeded && !result.is_empty() {
+        result.push_str("...");
     }
-
-    // Only add "..." if we exceeded the limit during processing
-    if exceeded_limit && !result.is_empty() {
-        format!("{}...", result)
-    } else {
-        result
-    }
+    result
 }
 
 /// Select active skills for a message using deterministic prefiltering.
