@@ -24,6 +24,7 @@ use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::error::Error;
 use crate::llm::ChatMessage;
 
+use dispatch::DispatchCtx;
 use document_store::store_extracted_documents as store_extracted_documents_impl;
 use message_rebuild::rebuild_chat_messages_from_db;
 use persistence::gateway_conversation_params;
@@ -178,9 +179,12 @@ impl Agent {
             return Ok(None);
         }
 
-        let result = self
-            .dispatch_submission(message, submission, session, thread_id)
-            .await?;
+        let ctx = DispatchCtx {
+            message: message.clone(),
+            session: session.clone(),
+            thread_id,
+        };
+        let result = self.dispatch_submission(ctx, submission).await?;
         self.map_submission_result(message, result).await
     }
 

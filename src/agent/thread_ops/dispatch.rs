@@ -12,6 +12,14 @@ use crate::agent::thread_ops::approval::{ApprovalParams, TurnScope};
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::error::Error;
 
+/// Dispatch context for bundling co-travelling arguments.
+#[derive(Clone)]
+pub(super) struct DispatchCtx {
+    pub message: IncomingMessage,
+    pub session: Arc<Mutex<Session>>,
+    pub thread_id: Uuid,
+}
+
 impl Agent {
     /// Apply the BeforeInbound hook to the parsed submission.
     ///
@@ -105,54 +113,53 @@ impl Agent {
 
     pub(super) async fn dispatch_submission(
         &self,
-        message: &IncomingMessage,
+        ctx: DispatchCtx,
         submission: Submission,
-        session: Arc<Mutex<Session>>,
-        thread_id: Uuid,
     ) -> Result<SubmissionResult, Error> {
         match submission {
             Submission::UserInput { content } => {
-                self.process_user_input(message, session, thread_id, &content)
+                self.process_user_input(&ctx.message, ctx.session, ctx.thread_id, &content)
                     .await
             }
             Submission::SystemCommand { command, args } => {
                 tracing::debug!(
                     "[agent_loop] SystemCommand: command={}, channel={}",
                     command,
-                    message.channel
+                    ctx.message.channel
                 );
-                self.handle_system_command(&command, &args, &message.channel)
+                self.handle_system_command(&command, &args, &ctx.message.channel)
                     .await
             }
-            Submission::Undo => self.process_undo(session, thread_id).await,
-            Submission::Redo => self.process_redo(session, thread_id).await,
-            Submission::Interrupt => self.process_interrupt(session, thread_id).await,
-            Submission::Compact => self.process_compact(session, thread_id).await,
-            Submission::Clear => self.process_clear(session, thread_id).await,
-            Submission::NewThread => self.process_new_thread(message).await,
+            Submission::Undo => self.process_undo(ctx.session, ctx.thread_id).await,
+            Submission::Redo => self.process_redo(ctx.session, ctx.thread_id).await,
+            Submission::Interrupt => self.process_interrupt(ctx.session, ctx.thread_id).await,
+            Submission::Compact => self.process_compact(ctx.session, ctx.thread_id).await,
+            Submission::Clear => self.process_clear(ctx.session, ctx.thread_id).await,
+            Submission::NewThread => self.process_new_thread(&ctx.message).await,
             Submission::Heartbeat => self.process_heartbeat().await,
-            Submission::Summarize => self.process_summarize(session, thread_id).await,
-            Submission::Suggest => self.process_suggest(session, thread_id).await,
+            Submission::Summarize => self.process_summarize(ctx.session, ctx.thread_id).await,
+            Submission::Suggest => self.process_suggest(ctx.session, ctx.thread_id).await,
             Submission::JobStatus { job_id } => {
-                self.process_job_status(&message.user_id, job_id.as_deref())
+                self.process_job_status(&ctx.message.user_id, job_id.as_deref())
                     .await
             }
             Submission::JobCancel { job_id } => {
-                self.process_job_cancel(&message.user_id, &job_id).await
+                self.process_job_cancel(&ctx.message.user_id, &job_id).await
             }
             Submission::Quit => Ok(SubmissionResult::Ok { message: None }),
             Submission::SwitchThread { thread_id: target } => {
-                self.process_switch_thread(message, target).await
+                self.process_switch_thread(&ctx.message, target).await
             }
             Submission::Resume { checkpoint_id } => {
-                self.process_resume(session, thread_id, checkpoint_id).await
+                self.process_resume(ctx.session, ctx.thread_id, checkpoint_id)
+                    .await
             }
             Submission::ExecApproval {
                 request_id,
                 approved,
                 always,
             } => {
-                let scope = TurnScope::new(session, thread_id, message);
+                let scope = TurnScope::new(ctx.session.clone(), ctx.thread_id, &ctx.message);
                 let params = ApprovalParams {
                     request_id: Some(request_id),
                     approved,
@@ -161,7 +168,7 @@ impl Agent {
                 self.process_approval(scope, params).await
             }
             Submission::ApprovalResponse { approved, always } => {
-                let scope = TurnScope::new(session, thread_id, message);
+                let scope = TurnScope::new(ctx.session.clone(), ctx.thread_id, &ctx.message);
                 let params = ApprovalParams {
                     request_id: None,
                     approved,

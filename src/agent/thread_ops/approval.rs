@@ -105,6 +105,24 @@ struct DeferredApprovalContext<'a> {
     pending: &'a PendingApproval,
 }
 
+/// Parameters for auth re-entry.
+struct AuthReentry {
+    ext_name: String,
+    instructions: String,
+    auth_url: Option<String>,
+    setup_url: Option<String>,
+}
+
+/// Deferred flow parameter object for bundling co-travelling arguments.
+#[derive(Clone)]
+struct DeferredFlow<'a> {
+    scope: &'a TurnScope,
+    job_ctx: &'a JobContext,
+    pending: &'a PendingApproval,
+    context_messages: Vec<ChatMessage>,
+    deferred_tool_calls: Vec<crate::llm::ToolCall>,
+}
+
 impl Agent {
     /// Take pending approval if thread is in AwaitingApproval state.
     async fn take_pending_approval_if_awaiting(
@@ -141,8 +159,7 @@ impl Agent {
     /// Restage pending approval if request ID doesn't match.
     async fn restage_on_request_id_mismatch(
         &self,
-        session: &Arc<Mutex<Session>>,
-        thread_id: Uuid,
+        scope: &TurnScope,
         provided: Option<Uuid>,
         pending: &PendingApproval,
     ) -> Result<Option<SubmissionResult>, Error> {
@@ -150,8 +167,8 @@ impl Agent {
             && req_id != pending.request_id
         {
             // Put it back and return error
-            let mut sess = session.lock().await;
-            if let Some(thread) = sess.threads.get_mut(&thread_id) {
+            let mut sess = scope.session.lock().await;
+            if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
                 thread.await_approval(pending.clone());
             }
             return Ok(Some(SubmissionResult::error(
@@ -870,38 +887,34 @@ impl Agent {
 
     /// Handle deferred tools flow: preflight, execute, postflight.
     /// Returns the (possibly mutated) context_messages and an optional SubmissionResult.
-    async fn handle_deferred_tools_flow(
+    async fn handle_deferred_tools_flow<'a>(
         &self,
-        scope: &TurnScope,
-        job_ctx: &JobContext,
-        mut context_messages: Vec<ChatMessage>,
-        deferred_tool_calls: Vec<crate::llm::ToolCall>,
-        pending: &PendingApproval,
+        mut flow: DeferredFlow<'a>,
     ) -> Result<(Vec<ChatMessage>, Option<SubmissionResult>), Error> {
         // Preflight deferred tools
         let (runnable, approval_needed) = self
-            .preflight_deferred_tools(&scope.session, &deferred_tool_calls)
+            .preflight_deferred_tools(&flow.scope.session, &flow.deferred_tool_calls)
             .await;
 
         // Execute runnable deferred tools
         let exec = DeferredEnv {
-            job_ctx: job_ctx.clone(),
-            env: scope.env.clone(),
+            job_ctx: flow.job_ctx.clone(),
+            env: flow.scope.env.clone(),
         };
         let exec_results = self.execute_runnable_deferred(&runnable, &exec).await;
 
         // Postflight: record results and check for auth
         if let Some(instructions) = self
             .postflight_record_and_maybe_deferred_auth(
-                scope,
+                flow.scope,
                 exec_results,
-                &mut context_messages,
-                pending,
+                &mut flow.context_messages,
+                flow.pending,
             )
             .await
         {
             return Ok((
-                context_messages,
+                flow.context_messages,
                 Some(SubmissionResult::response(instructions)),
             ));
         }
@@ -910,20 +923,20 @@ impl Agent {
         if let Some((idx, tc, tool)) = approval_needed {
             let result = self
                 .enter_deferred_approval_and_notify(DeferredApprovalContext {
-                    scope,
+                    scope: flow.scope,
                     approval_idx: idx,
                     tc,
                     tool,
-                    deferred_tool_calls: &deferred_tool_calls,
-                    context_messages: &context_messages,
-                    pending,
+                    deferred_tool_calls: &flow.deferred_tool_calls,
+                    context_messages: &flow.context_messages,
+                    pending: flow.pending,
                 })
                 .await;
-            return Ok((context_messages, Some(result)));
+            return Ok((flow.context_messages, Some(result)));
         }
 
         // Continue agentic loop - not handled here, return None
-        Ok((context_messages, None))
+        Ok((flow.context_messages, None))
     }
 
     /// Process an approval or rejection of a pending tool execution.
@@ -943,12 +956,7 @@ impl Agent {
 
         // b) Check request ID mismatch
         if let Some(res) = self
-            .restage_on_request_id_mismatch(
-                &scope.session,
-                scope.thread_id,
-                params.request_id,
-                &pending,
-            )
+            .restage_on_request_id_mismatch(&scope, params.request_id, &pending)
             .await?
         {
             return Ok(res);
@@ -988,16 +996,16 @@ impl Agent {
             .await;
 
         // Handle deferred tools flow
-        let (context_messages, result) = self
-            .handle_deferred_tools_flow(
-                &scope,
-                &job_ctx,
+        let (context_messages, maybe_outcome) = self
+            .handle_deferred_tools_flow(DeferredFlow {
+                scope: &scope,
+                job_ctx: &job_ctx,
+                pending: &pending,
                 context_messages,
                 deferred_tool_calls,
-                &pending,
-            )
+            })
             .await?;
-        if let Some(result) = result {
+        if let Some(result) = maybe_outcome {
             return Ok(result);
         }
 
@@ -1123,15 +1131,12 @@ impl Agent {
     async fn reenter_auth_mode_and_notify(
         &self,
         scope: &TurnScope,
-        ext_name: &str,
-        instructions: String,
-        auth_url: Option<String>,
-        setup_url: Option<String>,
+        reentry: AuthReentry,
     ) -> Option<String> {
         {
             let mut sess = scope.session.lock().await;
             if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
-                thread.enter_auth_mode(ext_name.to_string());
+                thread.enter_auth_mode(reentry.ext_name.clone());
             }
         }
         let _ = self
@@ -1139,15 +1144,15 @@ impl Agent {
             .send_status(
                 &scope.env.channel,
                 StatusUpdate::AuthRequired {
-                    extension_name: ext_name.to_string(),
-                    instructions: Some(instructions.clone()),
-                    auth_url,
-                    setup_url,
+                    extension_name: reentry.ext_name.clone(),
+                    instructions: Some(reentry.instructions.clone()),
+                    auth_url: reentry.auth_url,
+                    setup_url: reentry.setup_url,
                 },
                 &scope.env.metadata,
             )
             .await;
-        Some(instructions)
+        Some(reentry.instructions)
     }
 
     /// Handle an auth token submitted while the thread is in auth mode.
@@ -1193,15 +1198,14 @@ impl Agent {
                     .unwrap_or_else(|| "Invalid token. Please try again.".to_string());
                 let auth_url = result.auth_url().map(String::from);
                 let setup_url = result.setup_url().map(String::from);
-                Ok(self
-                    .reenter_auth_mode_and_notify(
-                        &scope,
-                        &pending.extension_name,
-                        instructions,
-                        auth_url,
-                        setup_url,
-                    )
-                    .await)
+                let reentry = AuthReentry {
+                    ext_name: pending.extension_name.clone(),
+                    instructions,
+                    auth_url,
+                    setup_url,
+                };
+                let _ = self.reenter_auth_mode_and_notify(&scope, reentry).await;
+                Ok(None)
             }
             Err(e) => {
                 let msg = format!(
@@ -1216,15 +1220,14 @@ impl Agent {
                     }
                 }
                 // Re-enter auth mode to allow retry
-                Ok(self
-                    .reenter_auth_mode_and_notify(
-                        &scope,
-                        &pending.extension_name,
-                        format!("{} Please try again.", msg),
-                        None,
-                        None,
-                    )
-                    .await)
+                let reentry = AuthReentry {
+                    ext_name: pending.extension_name.clone(),
+                    instructions: format!("{} Please try again.", msg),
+                    auth_url: None,
+                    setup_url: None,
+                };
+                let _ = self.reenter_auth_mode_and_notify(&scope, reentry).await;
+                Ok(None)
             }
         }
     }

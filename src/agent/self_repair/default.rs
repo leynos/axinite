@@ -8,8 +8,10 @@ use uuid::Uuid;
 use crate::context::ContextManager;
 use crate::db::Database;
 use crate::error::RepairError;
+#[cfg(any(test, feature = "self_repair_extras"))]
+use crate::tools::ToolRegistry;
 use crate::tools::builder::ProjectName;
-use crate::tools::{BuildRequirement, Language, SoftwareBuilder, SoftwareType, ToolRegistry};
+use crate::tools::{BuildRequirement, Language, SoftwareBuilder, SoftwareType};
 
 use super::traits::NativeSelfRepair;
 use super::types::{BrokenTool, RepairResult, StuckJob};
@@ -21,7 +23,8 @@ pub struct DefaultSelfRepair {
     max_repair_attempts: u32,
     store: Option<Arc<dyn Database>>,
     builder: Option<Arc<dyn SoftwareBuilder>>,
-    #[allow(dead_code, reason = "used for future tool hot-reload after repair")]
+    #[cfg(any(test, feature = "self_repair_extras"))]
+    #[allow(dead_code)]
     tools: Option<Arc<ToolRegistry>>,
 }
 
@@ -38,6 +41,7 @@ impl DefaultSelfRepair {
             max_repair_attempts,
             store: None,
             builder: None,
+            #[cfg(any(test, feature = "self_repair_extras"))]
             tools: None,
         }
     }
@@ -47,17 +51,25 @@ impl DefaultSelfRepair {
         self.store = Some(store);
         self
     }
+}
 
-    /// Add a Builder and ToolRegistry for automatic tool repair.
-    #[expect(dead_code, reason = "unused until auto-repair is wired in main")]
-    pub(crate) fn with_builder(
-        mut self,
-        builder: Arc<dyn SoftwareBuilder>,
-        tools: Arc<ToolRegistry>,
-    ) -> Self {
-        self.builder = Some(builder);
-        self.tools = Some(tools);
-        self
+#[cfg(any(test, feature = "self_repair_extras"))]
+mod extras {
+    #![allow(dead_code)]
+
+    use super::*;
+
+    impl DefaultSelfRepair {
+        /// Add a Builder and ToolRegistry for automatic tool repair.
+        pub(crate) fn with_builder(
+            mut self,
+            builder: Arc<dyn SoftwareBuilder>,
+            tools: Arc<ToolRegistry>,
+        ) -> Self {
+            self.builder = Some(builder);
+            self.tools = Some(tools);
+            self
+        }
     }
 }
 
