@@ -82,6 +82,84 @@ context accumulation without external model variance. The browser E2E suite
 uses the same principle at the HTTP and DOM layer: real runtime, fake upstream
 provider.
 
+### 2.6 Routine and heartbeat test helpers
+
+The `tests/support/routines.rs` module provides shared helpers for E2E tests
+that exercise the routine engine and heartbeat runner. These helpers are
+gated behind the `libsql` feature and use `TraceLlm` for deterministic
+execution without live LLM calls.
+
+#### `create_test_db() -> Result<(Arc<dyn Database>, TempDir), Box<dyn std::error::Error>>`
+
+Creates a temporary libSQL database with migrations applied. Returns the
+database handle and the temporary directory (to keep the database file alive
+for the duration of the test). Errors are propagated with `?` rather than
+panicking, allowing tests to use `.expect()` with a descriptive message.
+
+#### `create_workspace(db: &Arc<dyn Database>) -> Arc<Workspace>`
+
+Creates a workspace backed by the test database. The workspace is used by
+routine engine and heartbeat tests for persistence.
+
+#### `make_routine(name: &str, trigger: Trigger, prompt: &str) -> Routine`
+
+Factory function for creating a `Routine` with sensible defaults for tests.
+Sets up a lightweight action with the given prompt and trigger configuration.
+All guardrails use permissive defaults (no cooldown, max 5 concurrent).
+
+#### `make_test_incoming_message(content: &str) -> IncomingMessage`
+
+Builds a minimal `IncomingMessage` for event-trigger tests. The message has
+a unique ID, default user/channel values, and the provided content.
+
+#### `make_minimal_engine(trace: LlmTrace, db: Arc<dyn Database>, ws: Arc<Workspace>) -> (Arc<RoutineEngine>, Receiver<OutgoingResponse>)`
+
+Builds a minimal `RoutineEngine` from a `TraceLlm` and returns both the
+engine and the notification receiver. This allows tests to receive routine
+completion notifications without duplicating engine construction.
+
+#### `SystemEventSpec<'a>`
+
+Describes a system event to be emitted in tests. Used with
+`assert_system_event_count` to verify that system event triggers fire
+correctly.
+
+#### `register_github_issue_routine(db: &Arc<dyn Database>, engine: &RoutineEngine) -> Routine`
+
+Helper for system event tests that registers a GitHub issue-opened routine
+with a filter for the `nearai/ironclaw` repository.
+
+#### `assert_system_event_count(engine: &RoutineEngine, spec: SystemEventSpec<'_>, expected: usize, msg: &str)`
+
+Asserts that emitting a system event fires the expected number of routines.
+Used in table-driven tests for system event trigger matching and filtering.
+
+#### E2E test writing patterns
+
+When writing E2E tests for routines:
+
+1. Use `create_test_db().await.expect("...")` to set up the database.
+2. Use `create_workspace(&db)` to get a workspace.
+3. Use `make_minimal_engine(trace, db.clone(), ws)` to get an engine.
+4. For event-trigger tests, use polling loops rather than fixed sleeps:
+
+```rust
+// Poll for routine completion with timeout
+let mut attempts = 0;
+let max_attempts = 50;
+loop {
+    let runs = db.list_routine_runs(routine.id, 10).await.expect("...");
+    if !runs.is_empty() {
+        break;
+    }
+    attempts += 1;
+    assert!(attempts < max_attempts, "Routine did not complete within timeout");
+    tokio::time::sleep(Duration::from_millis(10)).await;
+}
+```
+
+This pattern provides deterministic synchronization without arbitrary delays.
+
 ### 2.5 Manual and ignored tests
 
 Some tests are intentionally excluded from the default path because they need
