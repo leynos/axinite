@@ -870,7 +870,10 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
                                 &self.message.channel,
                                 StatusUpdate::ToolResult {
                                     name: tc.name.clone(),
-                                    preview: truncate_for_preview(&sanitized_output, PREVIEW_MAX_CHARS),
+                                    preview: truncate_for_preview(
+                                        &sanitized_output,
+                                        PREVIEW_MAX_CHARS,
+                                    ),
                                 },
                                 &self.message.metadata,
                             )

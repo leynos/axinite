@@ -21,7 +21,7 @@ pub struct DefaultSelfRepair {
     max_repair_attempts: u32,
     store: Option<Arc<dyn Database>>,
     builder: Option<Arc<dyn SoftwareBuilder>>,
-    #[expect(dead_code, reason = "used for future tool hot-reload after repair")]
+    #[allow(dead_code, reason = "used for future tool hot-reload after repair")]
     tools: Option<Arc<ToolRegistry>>,
 }
 
@@ -43,7 +43,6 @@ impl DefaultSelfRepair {
     }
 
     /// Add a Store for tool failure tracking.
-    #[expect(dead_code, reason = "will be wired up in main.rs when persistence is needed")]
     pub(crate) fn with_store(mut self, store: Arc<dyn Database>) -> Self {
         self.store = Some(store);
         self
@@ -444,10 +443,7 @@ mod tests {
         );
 
         // Job should be back to InProgress after recovery.
-        let ctx = cm
-            .get_context(job_id)
-            .await
-            .expect("failed to get context");
+        let ctx = cm.get_context(job_id).await.expect("failed to get context");
         assert_eq!(ctx.state, JobState::InProgress);
     }
 
@@ -471,7 +467,9 @@ mod tests {
 
         let result = NativeSelfRepair::repair_stuck_job(&repair, &stuck_job)
             .await
-            .expect("repair_stuck_job failed in repair_stuck_job_returns_manual_when_limit_exceeded");
+            .expect(
+                "repair_stuck_job failed in repair_stuck_job_returns_manual_when_limit_exceeded",
+            );
         assert!(
             matches!(result, RepairResult::ManualRequired { .. }),
             "Expected ManualRequired, got: {:?}",
@@ -485,8 +483,7 @@ mod tests {
         let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3);
 
         // No store configured, should return empty.
-        let broken = NativeSelfRepair::detect_broken_tools(&repair)
-            .await;
+        let broken = NativeSelfRepair::detect_broken_tools(&repair).await;
         assert!(broken.is_empty());
     }
 
@@ -507,7 +504,9 @@ mod tests {
 
         let result = NativeSelfRepair::repair_broken_tool(&repair, &broken)
             .await
-            .expect("repair_broken_tool failed in repair_broken_tool_returns_manual_without_builder");
+            .expect(
+                "repair_broken_tool failed in repair_broken_tool_returns_manual_without_builder",
+            );
         assert!(
             matches!(result, RepairResult::ManualRequired { .. }),
             "Expected ManualRequired without builder, got: {:?}",

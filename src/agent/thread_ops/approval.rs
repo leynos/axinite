@@ -319,6 +319,7 @@ impl Agent {
                 tool_result,
                 ext_name,
                 instructions.clone(),
+                Some(pending.clone()),
             )
             .await;
             return Some(SubmissionResult::response(instructions));
@@ -527,6 +528,7 @@ impl Agent {
         scope: &TurnScope,
         exec_results: Vec<(crate::llm::ToolCall, Result<String, Error>)>,
         context_messages: &mut Vec<ChatMessage>,
+        pending: &PendingApproval,
     ) -> Option<String> {
         let mut deferred_auth: Option<String> = None;
 
@@ -581,6 +583,7 @@ impl Agent {
                     &deferred_result,
                     ext_name,
                     instructions.clone(),
+                    Some(pending.clone()),
                 )
                 .await;
                 deferred_auth = Some(instructions);
@@ -889,7 +892,12 @@ impl Agent {
 
         // Postflight: record results and check for auth
         if let Some(instructions) = self
-            .postflight_record_and_maybe_deferred_auth(scope, exec_results, &mut context_messages)
+            .postflight_record_and_maybe_deferred_auth(
+                scope,
+                exec_results,
+                &mut context_messages,
+                pending,
+            )
             .await
         {
             return Ok((
@@ -999,9 +1007,11 @@ impl Agent {
 
     /// Handle an auth-required result from a tool execution.
     ///
-    /// Enters auth mode on the thread, completes + persists the turn,
-    /// and sends the AuthRequired status to the channel.
+    /// Enters auth mode on the thread, stores the pending approval (if provided)
+    /// to preserve deferred tool calls and context messages, completes + persists
+    /// the turn, and sends the AuthRequired status to the channel.
     /// Returns the instructions string for the caller to wrap in a response.
+    #[allow(clippy::too_many_arguments)]
     async fn handle_auth_intercept(
         &self,
         session: &Arc<Mutex<Session>>,
@@ -1010,11 +1020,17 @@ impl Agent {
         tool_result: &Result<String, Error>,
         ext_name: String,
         instructions: String,
+        pending: Option<PendingApproval>,
     ) {
         let auth_data = parse_auth_result(tool_result);
         {
             let mut sess = session.lock().await;
             if let Some(thread) = sess.threads.get_mut(&thread_id) {
+                // Store pending approval to preserve deferred tool calls and context
+                // messages so the tool chain can resume after auth completion.
+                if let Some(pending) = pending {
+                    thread.await_approval(pending);
+                }
                 thread.enter_auth_mode(ext_name.clone());
                 thread.complete_turn(&instructions);
             }
