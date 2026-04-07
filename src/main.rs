@@ -41,110 +41,66 @@ fn main() -> anyhow::Result<()> {
         .block_on(async_main())
 }
 
+async fn dispatch_cli<F, Fut>(f: F) -> Option<anyhow::Result<()>>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
+{
+    init_cli_tracing();
+    Some(f().await)
+}
 async fn dispatch_subcommand(cli: &Cli) -> Option<anyhow::Result<()>> {
     match &cli.command {
-        Some(Command::Tool(tool_cmd)) => {
-            init_cli_tracing();
-            Some(run_tool_command(tool_cmd.clone()).await)
+        Some(Command::Tool(c)) => dispatch_cli(|| run_tool_command(c.clone())).await,
+        Some(Command::Config(c)) => {
+            dispatch_cli(|| ironclaw::cli::run_config_command(c.clone())).await
         }
-        Some(Command::Config(config_cmd)) => {
-            init_cli_tracing();
-            Some(ironclaw::cli::run_config_command(config_cmd.clone()).await)
+        Some(Command::Registry(c)) => {
+            dispatch_cli(|| ironclaw::cli::run_registry_command(c.clone())).await
         }
-        Some(Command::Registry(registry_cmd)) => {
+        Some(Command::Mcp(c)) => dispatch_cli(|| run_mcp_command(*c.clone())).await,
+        Some(Command::Memory(c)) => dispatch_cli(|| ironclaw::cli::run_memory_command(c)).await,
+        Some(Command::Pairing(c)) => {
             init_cli_tracing();
-            Some(ironclaw::cli::run_registry_command(registry_cmd.clone()).await)
+            Some(run_pairing_command(c.clone()).map_err(|e| anyhow::anyhow!("{}", e)))
         }
-        Some(Command::Mcp(mcp_cmd)) => {
+        Some(Command::Service(c)) => {
             init_cli_tracing();
-            Some(run_mcp_command(*mcp_cmd.clone()).await)
+            Some(run_service_command(c))
         }
-        Some(Command::Memory(mem_cmd)) => {
+        Some(Command::Doctor) => dispatch_cli(|| ironclaw::cli::run_doctor_command()).await,
+        Some(Command::Status) => dispatch_cli(|| run_status_command()).await,
+        Some(Command::Completion(c)) => {
             init_cli_tracing();
-            Some(ironclaw::cli::run_memory_command(mem_cmd).await)
-        }
-        Some(Command::Pairing(pairing_cmd)) => {
-            init_cli_tracing();
-            Some(run_pairing_command(pairing_cmd.clone()).map_err(|e| anyhow::anyhow!("{}", e)))
-        }
-        Some(Command::Service(service_cmd)) => {
-            init_cli_tracing();
-            Some(run_service_command(service_cmd))
-        }
-        Some(Command::Doctor) => {
-            init_cli_tracing();
-            Some(ironclaw::cli::run_doctor_command().await)
-        }
-        Some(Command::Status) => {
-            init_cli_tracing();
-            Some(run_status_command().await)
-        }
-        Some(Command::Completion(completion)) => {
-            init_cli_tracing();
-            Some(completion.run())
+            Some(c.run())
         }
         #[cfg(feature = "import")]
-        Some(Command::Import(import_cmd)) => {
+        Some(Command::Import(c)) => {
             init_cli_tracing();
-            Some(
-                async {
-                    let config = ironclaw::config::Config::from_env().await?;
-                    ironclaw::cli::run_import_command(import_cmd, &config).await
-                }
-                .await,
-            )
+            Some(run_import_subcommand(c).await)
         }
         Some(Command::Worker {
             job_id,
             orchestrator_url,
             max_iterations,
-        }) => {
-            init_worker_tracing();
-            Some(ironclaw::worker::run_worker(*job_id, orchestrator_url, *max_iterations).await)
-        }
+        }) => Some(dispatch_worker_subcommand(*job_id, orchestrator_url, *max_iterations).await),
         Some(Command::ClaudeBridge {
             job_id,
             orchestrator_url,
             max_turns,
             model,
-        }) => {
-            init_worker_tracing();
-            Some(
-                ironclaw::worker::run_claude_bridge(*job_id, orchestrator_url, *max_turns, model)
-                    .await,
-            )
-        }
+        }) => Some(
+            dispatch_claude_bridge_subcommand(*job_id, orchestrator_url, *max_turns, model).await,
+        ),
         Some(Command::Onboard {
             skip_auth,
             channels_only,
             provider_only,
             quick,
-        }) => Some(
-            async {
-                #[cfg(any(feature = "postgres", feature = "libsql"))]
-                {
-                    let config = SetupConfig {
-                        skip_auth: *skip_auth,
-                        channels_only: *channels_only,
-                        provider_only: *provider_only,
-                        quick: *quick,
-                    };
-                    let mut wizard = SetupWizard::with_config(config);
-                    wizard.run().await?;
-                }
-                #[cfg(not(any(feature = "postgres", feature = "libsql")))]
-                {
-                    let _ = (skip_auth, channels_only, provider_only, quick);
-                    eprintln!("Onboarding wizard requires the 'postgres' or 'libsql' feature.");
-                }
-                Ok(())
-            }
-            .await,
-        ),
-        None | Some(Command::Run) => {
-            // Continue to run agent
-            None
+        }) => {
+            Some(run_onboard_subcommand(*skip_auth, *channels_only, *provider_only, *quick).await)
         }
+        None | Some(Command::Run) => None,
     }
 }
 async fn async_main() -> anyhow::Result<()> {
@@ -797,4 +753,52 @@ async fn async_main() -> anyhow::Result<()> {
     tracing::debug!("Agent shutdown complete");
 
     Ok(())
+}
+
+async fn run_onboard_subcommand(
+    skip_auth: bool,
+    channels_only: bool,
+    provider_only: bool,
+    quick: bool,
+) -> anyhow::Result<()> {
+    #[cfg(any(feature = "postgres", feature = "libsql"))]
+    {
+        let config = SetupConfig {
+            skip_auth,
+            channels_only,
+            provider_only,
+            quick,
+        };
+        SetupWizard::with_config(config).run().await?;
+    }
+    #[cfg(not(any(feature = "postgres", feature = "libsql")))]
+    {
+        let _ = (skip_auth, channels_only, provider_only, quick);
+        eprintln!("Onboarding wizard requires the 'postgres' or 'libsql' feature.");
+    }
+    Ok(())
+}
+
+async fn run_import_subcommand(import_cmd: &ironclaw::cli::ImportCommand) -> anyhow::Result<()> {
+    let config = ironclaw::config::Config::from_env().await?;
+    ironclaw::cli::run_import_command(import_cmd, &config).await
+}
+
+async fn dispatch_claude_bridge_subcommand(
+    job_id: uuid::Uuid,
+    orchestrator_url: &str,
+    max_turns: u32,
+    model: &str,
+) -> anyhow::Result<()> {
+    init_worker_tracing();
+    ironclaw::worker::run_claude_bridge(job_id, orchestrator_url, max_turns, model).await
+}
+
+async fn dispatch_worker_subcommand(
+    job_id: uuid::Uuid,
+    orchestrator_url: &str,
+    max_iterations: u32,
+) -> anyhow::Result<()> {
+    init_worker_tracing();
+    ironclaw::worker::run_worker(job_id, orchestrator_url, max_iterations).await
 }
