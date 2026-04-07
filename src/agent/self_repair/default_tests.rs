@@ -127,7 +127,11 @@ async fn detect_stuck_jobs_uses_stuck_threshold_from_latest_stuck_transition() {
     // Detection should use the latest Stuck transition timestamp
     assert_eq!(
         stuck_jobs[0].stuck_since,
-        cm.get_context(job_id).await.unwrap().stuck_since().unwrap()
+        cm.get_context(job_id)
+            .await
+            .expect("context should exist after transitions")
+            .stuck_since()
+            .expect("stuck_since should be set after Stuck transition")
     );
     assert!(stuck_jobs[0].stuck_duration >= Duration::from_secs(60));
 }

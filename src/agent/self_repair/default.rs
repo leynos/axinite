@@ -25,14 +25,9 @@ pub struct DefaultSelfRepair {
     builder: Option<Arc<dyn SoftwareBuilder>>,
     #[cfg(any(test, feature = "self_repair_extras"))]
     #[cfg_attr(
-        feature = "self_repair_extras",
-        expect(
-            dead_code,
-            reason = "tool registry wiring is feature-gated and not yet consumed here"
-        )
+        all(feature = "self_repair_extras", not(test)),
+        expect(dead_code, reason = "reserved for future tool hot-reload after repair")
     )]
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg_attr(feature = "self_repair_extras", allow(unfulfilled_lint_expectations))]
     tools: Option<Arc<ToolRegistry>>,
 }
 

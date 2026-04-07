@@ -768,14 +768,18 @@ impl Agent {
         scope: &TurnScope,
         error: String,
     ) -> Result<SubmissionResult, Error> {
-        let mut sess = scope.session.lock().await;
-        let thread = sess.threads.get_mut(&scope.thread_id).ok_or_else(|| {
-            Error::from(crate::error::JobError::NotFound {
-                id: scope.thread_id,
-            })
-        })?;
-        thread.fail_turn(error.clone());
-        // User message already persisted at turn start
+        {
+            let mut sess = scope.session.lock().await;
+            let thread = sess.threads.get_mut(&scope.thread_id).ok_or_else(|| {
+                Error::from(crate::error::JobError::NotFound {
+                    id: scope.thread_id,
+                })
+            })?;
+            thread.fail_turn(error.clone());
+        }
+        // User message already persisted at turn start; save the failure response
+        self.persist_assistant_response(scope.thread_id, &scope.env.user_id, &error)
+            .await;
         Ok(SubmissionResult::error(error))
     }
 
@@ -1041,13 +1045,15 @@ impl Agent {
         {
             let mut sess = params.session.lock().await;
             if let Some(thread) = sess.threads.get_mut(&params.thread_id) {
+                // Complete turn first (resets state to Idle)
+                thread.complete_turn(&params.instructions);
                 // Store pending approval to preserve deferred tool calls and context
                 // messages so the tool chain can resume after auth completion.
                 if let Some(pending) = params.pending {
                     thread.await_approval(pending);
                 }
+                // Set pending auth (state unchanged)
                 thread.enter_auth_mode(params.ext_name.clone());
-                thread.complete_turn(&params.instructions);
             }
         }
         // User message already persisted at turn start; save auth instructions

@@ -551,17 +551,34 @@ impl Agent {
                 };
 
                 // Re-acquire lock to complete turn and snapshot data
-                let (turn_number, tool_calls) = {
+                let completion = {
                     let mut sess = session.lock().await;
                     let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
                         Error::from(crate::error::JobError::NotFound { id: thread_id })
                     })?;
-                    thread.complete_turn(&response);
-                    thread
-                        .turns
-                        .last()
-                        .map(|t| (t.turn_number, t.tool_calls.clone()))
-                        .unwrap_or_default()
+                    if thread.state == ThreadState::Interrupted {
+                        None
+                    } else {
+                        thread.complete_turn(&response);
+                        Some(
+                            thread
+                                .turns
+                                .last()
+                                .map(|t| (t.turn_number, t.tool_calls.clone()))
+                                .unwrap_or_default(),
+                        )
+                    }
+                };
+                let Some((turn_number, tool_calls)) = completion else {
+                    let _ = self
+                        .channels
+                        .send_status(
+                            &message.channel,
+                            StatusUpdate::Status("Interrupted".into()),
+                            &message.metadata,
+                        )
+                        .await;
+                    return Ok(SubmissionResult::Interrupted);
                 };
                 // Lock is dropped here at end of block
 
