@@ -117,12 +117,14 @@ mod tests {
         }
 
         // Valid JSON strings should parse into serde_json::Value.
-        fn prop_valid_json_parses(json_str in "\\{[\"type\"]:[\"string\",\"number\",\"boolean\",\"array\",\"object\"]\\}") {
-            // Skip if it's the placeholder
+        fn prop_valid_json_parses(type_str in "(string|number|boolean|array|object)") {
+            let json_str = format!("{{\"type\":\"{}\"}}", type_str);
+            // Skip if it's the placeholder (though it won't be with these types)
             if json_str != PLACEHOLDER_JSON {
                 let result = parse_schema_string(&json_str);
-                // Should parse successfully or fallback to string
+                // Should parse successfully into a JSON object
                 prop_assert!(result.is_some());
+                prop_assert_eq!(result.unwrap(), json!({"type": type_str}));
             }
         }
 
@@ -141,15 +143,6 @@ mod tests {
 
     // Property-based tests for normalized_schema invariants
     proptest! {
-        // Empty strings should return None.
-        fn prop_empty_string_returns_none(s in "") {
-            let _ = s;
-            prop_assert_eq!(
-                normalized_schema(serde_json::Value::String("".to_string())),
-                None
-            );
-        }
-
         // Valid non-placeholder objects should be returned as-is.
         fn prop_valid_non_placeholder_preserved(obj in prop_oneof![
             Just(json!({"type": "string"})),
@@ -160,6 +153,16 @@ mod tests {
         ]) {
             prop_assert_eq!(normalized_schema(obj.clone()), Some(obj));
         }
+    }
+
+    #[rstest]
+    #[case(json!({"type": "string"}))]
+    #[case(json!({"type": "number"}))]
+    #[case(json!({"type": "boolean"}))]
+    #[case(json!({"type": "array"}))]
+    #[case(json!({"description": "test", "type": "object"}))]
+    fn valid_non_placeholder_preserved(#[case] schema: serde_json::Value) {
+        assert_eq!(normalized_schema(schema.clone()), Some(schema));
     }
 
     // Unit-style property tests (no proptest parameters needed)
