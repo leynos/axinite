@@ -24,14 +24,22 @@ use ironclaw::workspace::Workspace;
 use crate::support::trace_llm::{LlmTrace, TraceLlm};
 
 /// Describes a system event to be emitted in tests.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "public test-support struct used across feature-gated E2E test modules; \
+              the compiler cannot see cross-module test usage"
+)]
 pub struct SystemEventSpec<'a> {
     pub source: &'a str,
     pub event_type: &'a str,
     pub payload: serde_json::Value,
 }
 
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "public test-support constructor used across feature-gated E2E test modules; \
+              the compiler cannot see cross-module test usage"
+)]
 impl<'a> SystemEventSpec<'a> {
     pub fn new(source: &'a str, event_type: &'a str, payload: serde_json::Value) -> Self {
         Self {
@@ -43,7 +51,11 @@ impl<'a> SystemEventSpec<'a> {
 }
 
 /// Create a temp libSQL database with migrations applied.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "public test-support helper used across feature-gated E2E test modules; \
+              the compiler cannot see cross-module test usage"
+)]
 pub async fn create_test_db() -> Result<(Arc<dyn Database>, TempDir), Box<dyn std::error::Error>> {
     use ironclaw::db::libsql::LibSqlBackend;
 
@@ -56,13 +68,21 @@ pub async fn create_test_db() -> Result<(Arc<dyn Database>, TempDir), Box<dyn st
 }
 
 /// Create a workspace backed by the test database.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "public test-support helper used across feature-gated E2E test modules; \
+              the compiler cannot see cross-module test usage"
+)]
 pub fn create_workspace(db: &Arc<dyn Database>) -> Arc<Workspace> {
     Arc::new(Workspace::new_with_db("default", db.clone()))
 }
 
 /// Helper to insert a routine directly into the database.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "public test-support helper used across feature-gated E2E test modules; \
+              the compiler cannot see cross-module test usage"
+)]
 pub fn make_routine(name: &str, trigger: Trigger, prompt: &str) -> Routine {
     Routine {
         id: Uuid::new_v4(),
@@ -93,7 +113,11 @@ pub fn make_routine(name: &str, trigger: Trigger, prompt: &str) -> Routine {
 }
 
 /// Build a minimal IncomingMessage for event-trigger tests.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "public test-support helper used across feature-gated E2E test modules; \
+              the compiler cannot see cross-module test usage"
+)]
 pub fn make_test_incoming_message(content: &str) -> IncomingMessage {
     IncomingMessage {
         id: Uuid::new_v4(),
@@ -110,7 +134,11 @@ pub fn make_test_incoming_message(content: &str) -> IncomingMessage {
 }
 
 /// Build a minimal RoutineEngine from a TraceLlm, returning both the engine and the notify receiver.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "public test-support helper used across feature-gated E2E test modules; \
+              the compiler cannot see cross-module test usage"
+)]
 pub fn make_minimal_engine(
     trace: LlmTrace,
     db: Arc<dyn Database>,
@@ -140,7 +168,11 @@ pub fn make_minimal_engine(
 }
 
 /// Register a GitHub issue routine for system event tests.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "public test-support helper used across feature-gated E2E test modules; \
+              the compiler cannot see cross-module test usage"
+)]
 pub async fn register_github_issue_routine(
     db: &Arc<dyn Database>,
     engine: &RoutineEngine,
@@ -162,7 +194,11 @@ pub async fn register_github_issue_routine(
 }
 
 /// Assert that a system event fires the expected number of routines.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "public test-support helper used across feature-gated E2E test modules; \
+              the compiler cannot see cross-module test usage"
+)]
 pub async fn assert_system_event_count(
     engine: &RoutineEngine,
     spec: SystemEventSpec<'_>,
@@ -173,4 +209,106 @@ pub async fn assert_system_event_count(
         .emit_system_event(spec.source, spec.event_type, &spec.payload, Some("default"))
         .await;
     assert_eq!(fired, expected, "{msg}");
+}
+
+#[cfg(test)]
+mod tests {
+    use ironclaw::agent::routine::Trigger;
+
+    use super::{SystemEventSpec, create_test_db, create_workspace, make_routine,
+                make_test_incoming_message};
+
+    #[test]
+    fn make_routine_sets_fields() {
+        let trigger = Trigger::Cron {
+            schedule: "* * * * *".to_string(),
+            timezone: None,
+        };
+        let routine = make_routine("my-routine", trigger, "Do the thing.");
+
+        assert_eq!(routine.name, "my-routine", "name should match argument");
+        assert!(
+            routine.description.contains("my-routine"),
+            "description should reference the routine name"
+        );
+        assert_eq!(
+            routine.user_id, "default",
+            "user_id should be 'default' for test routines"
+        );
+        assert!(routine.enabled, "test routines should be enabled");
+        assert_eq!(
+            routine.run_count, 0,
+            "run_count should start at zero"
+        );
+        assert!(routine.last_run_at.is_none(), "last_run_at should be None");
+        assert!(routine.next_fire_at.is_none(), "next_fire_at should be None");
+
+        match &routine.action {
+            ironclaw::agent::routine::RoutineAction::Lightweight { prompt, .. } => {
+                assert_eq!(prompt, "Do the thing.", "action prompt should match argument");
+            }
+        }
+    }
+
+    #[test]
+    fn make_test_incoming_message_sets_content() {
+        let msg = make_test_incoming_message("hello world");
+
+        assert_eq!(
+            msg.content, "hello world",
+            "content should match argument"
+        );
+        assert_eq!(
+            msg.channel, "test",
+            "channel should be 'test' for test messages"
+        );
+        assert_eq!(
+            msg.user_id, "default",
+            "user_id should be 'default' for test messages"
+        );
+        assert!(msg.user_name.is_none(), "user_name should be None");
+        assert!(msg.thread_id.is_none(), "thread_id should be None");
+        assert!(msg.attachments.is_empty(), "attachments should be empty");
+    }
+
+    #[test]
+    fn system_event_spec_new_stores_fields() {
+        let payload = serde_json::json!({"key": "value"});
+        let spec = SystemEventSpec::new("github", "issue.opened", payload.clone());
+
+        assert_eq!(spec.source, "github", "source should match argument");
+        assert_eq!(
+            spec.event_type, "issue.opened",
+            "event_type should match argument"
+        );
+        assert_eq!(spec.payload, payload, "payload should match argument");
+    }
+
+    #[tokio::test]
+    async fn create_test_db_returns_usable_database() {
+        let (db, _tmp) = create_test_db()
+            .await
+            .expect("create_test_db should succeed");
+
+        // Verify the database is functional by listing routines (empty result is fine).
+        let routines = db.list_routines("default").await;
+        assert!(
+            routines.is_ok(),
+            "database should be usable after creation: {routines:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_workspace_returns_workspace_with_correct_name() {
+        let (db, _tmp) = create_test_db()
+            .await
+            .expect("create_test_db should succeed");
+        let ws = create_workspace(&db);
+
+        assert_eq!(
+            ws.name(),
+            "default",
+            "workspace name should be 'default'"
+        );
+    }
 }
