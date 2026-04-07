@@ -79,25 +79,51 @@ impl Agent {
         session: Arc<Mutex<Session>>,
         thread_id: Uuid,
     ) -> Option<Result<Option<String>, Error>> {
-        // Atomically take pending_auth to avoid TOCTOU race
+        // Check for pending auth and claim it atomically to prevent concurrent bypass
         let pending_auth = {
             let mut sess = session.lock().await;
-            sess.threads
-                .get_mut(&thread_id)
-                .and_then(|t| t.take_pending_auth())
+            sess.threads.get_mut(&thread_id).and_then(|t| {
+                if t.in_flight_auth || t.pending_auth.is_none() {
+                    return None;
+                }
+                t.in_flight_auth = true;
+                t.pending_auth.clone()
+            })
         };
 
         if let Some(pending) = pending_auth {
             match submission {
                 Submission::UserInput { content } => {
                     let scope = crate::agent::thread_ops::approval::TurnScope::new(
-                        session, thread_id, message,
+                        session.clone(),
+                        thread_id,
+                        message,
                     );
-                    return Some(self.process_auth_token(scope, &pending, content).await);
+                    let result = match self.process_auth_token(scope, &pending, content).await {
+                        Ok(None) => Ok(Some(String::new())),
+                        Ok(Some(s)) => Ok(Some(s)),
+                        Err(e) => Err(e),
+                    };
+
+                    // Clear in_flight_auth and pending_auth after processing
+                    {
+                        let mut sess = session.lock().await;
+                        if let Some(thread) = sess.threads.get_mut(&thread_id) {
+                            thread.in_flight_auth = false;
+                            thread.pending_auth = None;
+                        }
+                    }
+
+                    return Some(result);
                 }
                 _ => {
                     // Any control submission (interrupt, undo, etc.) cancels auth mode
-                    // pending_auth was already cleared by take_pending_auth() above
+                    // Clear the in_flight_auth marker and pending_auth
+                    let mut sess = session.lock().await;
+                    if let Some(thread) = sess.threads.get_mut(&thread_id) {
+                        thread.in_flight_auth = false;
+                        thread.pending_auth = None;
+                    }
                     // Fall through to normal handling
                 }
             }

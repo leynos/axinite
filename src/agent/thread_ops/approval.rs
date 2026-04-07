@@ -1,4 +1,36 @@
 //! Approval and auth-intercept flows for thread operations.
+//!
+//! This module manages the approval and authentication state machines for tool execution.
+//!
+//! ## State Machine
+//!
+//! The approval flow follows this state progression:
+//! - **Initial/Unapproved**: Tool execution requires user approval
+//! - **Pending Approval**: Thread enters `AwaitingApproval` state with `PendingApproval` stored
+//! - **Approved/Authorised**: User approves; tool executes and thread returns to `Idle`
+//! - **Rejected/Terminated**: User rejects; thread returns to `Idle` with rejection recorded
+//!
+//! The auth flow follows this progression:
+//! - **Auth Required**: Extension requires authentication token
+//! - **Pending Auth**: Thread has `pending_auth` set; next user message is intercepted
+//! - **Authenticated**: Token provided and validated; extension activated
+//! - **Auth Failed**: Token invalid; re-enters auth mode for retry
+//!
+//! ## Entry Points
+//!
+//! - `process_approval`: Called by the dispatch layer when user approves/rejects a pending tool.
+//!   Caller must ensure thread is in `AwaitingApproval` state with valid `PendingApproval`.
+//!
+//! - `process_auth_token`: Called when user provides auth token while thread has `pending_auth`.
+//!   Caller must ensure thread has valid `PendingAuth` and handle retry on failure.
+//!
+//! ## Invariants
+//!
+//! - Callers must hold valid thread metadata (thread_id, session) before invoking.
+//! - Idempotent retries are supported; duplicate approvals with same request_id are ignored.
+//! - State transitions are atomic under the session lock.
+//! - Side effects (DB persistence, status updates) occur after state transitions complete.
+//! - Concurrency: Single-writer assumption per thread; session lock must be held for state changes.
 
 use std::sync::Arc;
 
@@ -371,6 +403,12 @@ impl Agent {
         Vec<crate::llm::ToolCall>,
         Option<(usize, crate::llm::ToolCall, Arc<dyn crate::tools::Tool>)>,
     ) {
+        // Precompute auto-approved tools to avoid repeated locking
+        let auto_approved: std::collections::HashSet<String> = {
+            let sess = session.lock().await;
+            sess.auto_approved_tools.iter().cloned().collect()
+        };
+
         let mut runnable: Vec<crate::llm::ToolCall> = Vec::new();
         let mut approval_needed: Option<(
             usize,
@@ -383,10 +421,7 @@ impl Agent {
                 use crate::tools::ApprovalRequirement;
                 let needs_approval = match tool.requires_approval(&tc.arguments) {
                     ApprovalRequirement::Never => false,
-                    ApprovalRequirement::UnlessAutoApproved => {
-                        let sess = session.lock().await;
-                        !sess.is_tool_auto_approved(&tc.name)
-                    }
+                    ApprovalRequirement::UnlessAutoApproved => !auto_approved.contains(&tc.name),
                     ApprovalRequirement::Always => true,
                 };
 

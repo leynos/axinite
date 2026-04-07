@@ -197,9 +197,17 @@ impl NativeSelfRepair for DefaultSelfRepair {
         );
 
         // Increment repair attempts
-        if let Err(e) = store.increment_repair_attempts(&tool.name).await {
-            tracing::warn!("Failed to increment repair attempts: {}", e);
-        }
+        store
+            .increment_repair_attempts(&tool.name)
+            .await
+            .map_err(|e| RepairError::Failed {
+                target_type: "tool".to_string(),
+                target_id: Uuid::nil(),
+                reason: format!(
+                    "failed to increment repair attempts for {}: {}",
+                    tool.name, e
+                ),
+            })?;
 
         // Create BuildRequirement for repair
         let requirement = BuildRequirement {
@@ -239,9 +247,14 @@ impl NativeSelfRepair for DefaultSelfRepair {
                 );
 
                 // Mark as repaired in database
-                if let Err(e) = store.mark_tool_repaired(&tool.name).await {
-                    tracing::warn!("Failed to mark tool as repaired: {}", e);
-                }
+                store
+                    .mark_tool_repaired(&tool.name)
+                    .await
+                    .map_err(|e| RepairError::Failed {
+                        target_type: "tool".to_string(),
+                        target_id: Uuid::nil(),
+                        reason: format!("failed to mark {} as repaired: {}", tool.name, e),
+                    })?;
 
                 // Log if the tool was auto-registered
                 if result.registered {

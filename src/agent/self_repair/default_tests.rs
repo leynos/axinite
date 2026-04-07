@@ -8,6 +8,7 @@ use chrono::Utc;
 use crate::agent::self_repair::default::{DefaultSelfRepair, duration_since};
 use crate::agent::self_repair::{BrokenTool, NativeSelfRepair, RepairResult, StuckJob};
 use crate::context::{ContextManager, JobState};
+use uuid::Uuid;
 
 // === QA Plan - Self-repair stuck job tests ===
 
@@ -51,15 +52,18 @@ async fn detect_stuck_job_finds_stuck_state() {
     assert_eq!(stuck[0].job_id, job_id);
 }
 
-#[tokio::test]
-async fn detect_stuck_jobs_uses_stuck_threshold_from_latest_stuck_transition() {
-    let cm = Arc::new(ContextManager::new(10));
+// Shared helper for these tests.
+async fn seed_job_with_two_stuck_transitions(
+    cm: &Arc<ContextManager>,
+    first_age_secs: i64,
+    second_age_secs: i64,
+) -> Uuid {
     let job_id = cm
         .create_job("Stuck job", "desc")
         .await
         .expect("failed to await create_job");
 
-    // First transition: InProgress -> Stuck (make it old so it's below threshold)
+    // First transition: InProgress -> Stuck, then backdate timestamp by first_age_secs
     cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
         .await
         .expect("failed to await update_context")
@@ -69,7 +73,7 @@ async fn detect_stuck_jobs_uses_stuck_threshold_from_latest_stuck_transition() {
         .expect("failed to await update_context")
         .expect("expected first stuck transition to succeed");
     cm.update_context(job_id, |ctx| {
-        let stuck_since = Utc::now() - chrono::Duration::seconds(120);
+        let stuck_since = Utc::now() - chrono::Duration::seconds(first_age_secs);
         let Some(last_transition) = ctx.transitions.last_mut() else {
             return Err("missing stuck transition".to_string());
         };
@@ -80,7 +84,7 @@ async fn detect_stuck_jobs_uses_stuck_threshold_from_latest_stuck_transition() {
     .expect("failed to await update_context")
     .expect("expected first stuck timestamp update to succeed");
 
-    // Second transition: Stuck -> InProgress -> Stuck (newer stuck)
+    // Second transition: Stuck -> InProgress -> Stuck, then backdate timestamp by second_age_secs
     cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
         .await
         .expect("failed to await update_context")
@@ -90,7 +94,7 @@ async fn detect_stuck_jobs_uses_stuck_threshold_from_latest_stuck_transition() {
         .expect("failed to await update_context")
         .expect("expected second stuck transition to succeed");
     cm.update_context(job_id, |ctx| {
-        let stuck_since = Utc::now() - chrono::Duration::seconds(30);
+        let stuck_since = Utc::now() - chrono::Duration::seconds(second_age_secs);
         let Some(last_transition) = ctx.transitions.last_mut() else {
             return Err("missing stuck transition".to_string());
         };
@@ -101,39 +105,57 @@ async fn detect_stuck_jobs_uses_stuck_threshold_from_latest_stuck_transition() {
     .expect("failed to await update_context")
     .expect("expected second stuck timestamp update to succeed");
 
-    let repair = DefaultSelfRepair::new(Arc::clone(&cm), Duration::from_secs(60), 3);
-    // Should be empty because the latest Stuck transition is only 30s old (below threshold)
+    job_id
+}
+
+#[tokio::test]
+async fn detect_stuck_jobs_uses_latest_stuck_transition_below_threshold() {
+    let cm = Arc::new(ContextManager::new(10));
+    let threshold = Duration::from_secs(60);
+
+    // Latest Stuck is only 30s old -> below threshold => no detection.
+    let job_id = seed_job_with_two_stuck_transitions(&cm, 120, 30).await;
+    let repair = DefaultSelfRepair::new(Arc::clone(&cm), threshold, 3);
+
+    let detected = NativeSelfRepair::detect_stuck_jobs(&repair).await;
     assert!(
-        NativeSelfRepair::detect_stuck_jobs(&repair)
-            .await
-            .is_empty()
+        detected.is_empty(),
+        "job {job_id} should not be detected while latest Stuck < threshold"
     );
+}
 
-    // Now make the second (latest) Stuck transition old enough to trigger detection
-    cm.update_context(job_id, |ctx| {
-        let stuck_since = Utc::now() - chrono::Duration::seconds(120);
-        let Some(last_transition) = ctx.transitions.last_mut() else {
-            return Err("missing stuck transition".to_string());
-        };
-        last_transition.timestamp = stuck_since;
-        Ok(())
-    })
-    .await
-    .expect("failed to await update_context")
-    .expect("expected second stuck timestamp update to succeed");
+#[tokio::test]
+async fn detect_stuck_jobs_uses_latest_stuck_transition_above_threshold() {
+    let cm = Arc::new(ContextManager::new(10));
+    let threshold = Duration::from_secs(60);
+
+    // Latest Stuck is 120s old -> above threshold => detected and timestamp comes from latest Stuck.
+    let job_id = seed_job_with_two_stuck_transitions(&cm, 120, 120).await;
+    let repair = DefaultSelfRepair::new(Arc::clone(&cm), threshold, 3);
 
     let stuck_jobs = NativeSelfRepair::detect_stuck_jobs(&repair).await;
-    assert_eq!(stuck_jobs.len(), 1);
-    // Detection should use the latest Stuck transition timestamp
     assert_eq!(
-        stuck_jobs[0].stuck_since,
-        cm.get_context(job_id)
-            .await
-            .expect("context should exist after transitions")
-            .stuck_since()
-            .expect("stuck_since should be set after Stuck transition")
+        stuck_jobs.len(),
+        1,
+        "expected exactly one detected stuck job"
     );
-    assert!(stuck_jobs[0].stuck_duration >= Duration::from_secs(60));
+
+    let ctx = cm
+        .get_context(job_id)
+        .await
+        .expect("context should exist after transitions");
+    let latest_stuck_since = ctx
+        .stuck_since()
+        .expect("stuck_since should be set after Stuck transition");
+
+    assert_eq!(
+        stuck_jobs[0].stuck_since, latest_stuck_since,
+        "detection must use the latest Stuck transition timestamp"
+    );
+    assert!(
+        stuck_jobs[0].stuck_duration >= threshold,
+        "stuck_duration must reflect time since latest Stuck >= threshold"
+    );
 }
 
 #[tokio::test]
