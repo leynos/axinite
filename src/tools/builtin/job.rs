@@ -315,132 +315,57 @@ impl CreateJobTool {
         }
     }
 
-    /// Execute via sandboxed Docker container.
-    async fn execute_sandbox(
+    /// Persist sandbox job record and optional mode to the database.
+    async fn persist_sandbox_job(
         &self,
-        task: &str,
-        explicit_dir: Option<PathBuf>,
-        wait: bool,
+        record: &SandboxJobRecord,
         mode: JobMode,
-        credential_grants: Vec<CredentialGrant>,
-        ctx: &JobContext,
-    ) -> Result<ToolOutput, ToolError> {
-        let start = std::time::Instant::now();
-        let jm = self
-            .job_manager
-            .as_ref()
-            .ok_or_else(|| ToolError::ExecutionFailed("sandbox deps required".to_string()))?;
-
-        let job_id = Uuid::new_v4();
-        let (project_dir, browse_id) = resolve_project_dir(explicit_dir, job_id)?;
-        let project_dir_str = project_dir.display().to_string();
-
-        // Serialize credential grants so restarts can reload them.
-        let credential_grants_json = match serde_json::to_string(&credential_grants) {
-            Ok(json) => json,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to serialize credential grants for job {}: {}. \
-                     Grants will not survive a restart.",
-                    job_id,
-                    e
-                );
-                String::from("[]")
-            }
+    ) -> Result<(), ToolError> {
+        let Some(store) = self.store.clone() else {
+            return Ok(());
         };
 
-        // Build the job record and persist synchronously before creating the container.
-        let record = SandboxJobRecord {
-            id: job_id,
-            task: task.to_string(),
-            status: "creating".to_string(),
-            user_id: crate::db::UserId::from(ctx.user_id.clone()),
-            project_dir: project_dir_str.clone(),
-            success: None,
-            failure_reason: None,
-            created_at: Utc::now(),
-            started_at: None,
-            completed_at: None,
-            credential_grants_json,
-        };
-
-        // Persist the job and mode synchronously before creating the container
-        if let Some(store) = self.store.clone() {
-            store
-                .save_sandbox_job(&record)
-                .await
-                .map_err(|e| ToolError::ExecutionFailed(format!("failed to persist job: {}", e)))?;
-
-            if mode == JobMode::ClaudeCode
-                && let Err(e) = store
-                    .update_sandbox_job_mode(job_id, crate::db::SandboxMode::ClaudeCode)
-                    .await
-            {
-                // Synchronously update status to failed before returning error
-                // (don't use fire-and-forget update_status here)
-                let status = crate::db::SandboxJobStatus::from("failed");
-                let _ = store
-                    .update_sandbox_job_status(SandboxJobStatusUpdate {
-                        id: job_id,
-                        status,
-                        success: Some(false),
-                        message: Some(&e.to_string()),
-                        started_at: None,
-                        completed_at: Some(Utc::now()),
-                    })
-                    .await;
-                return Err(ToolError::ExecutionFailed(format!(
-                    "failed to persist job mode: {}",
-                    e
-                )));
-            }
-        }
-
-        // Create the container job with the pre-determined job_id.
-        let _token = jm
-            .create_job(job_id, task, Some(project_dir), mode, credential_grants)
+        store
+            .save_sandbox_job(record)
             .await
-            .map_err(|e| {
-                self.update_status(
-                    job_id,
-                    "failed",
-                    Some(false),
-                    Some(e.to_string()),
-                    None,
-                    Some(Utc::now()),
-                );
-                ToolError::ExecutionFailed(format!("failed to create container: {}", e))
-            })?;
+            .map_err(|e| ToolError::ExecutionFailed(format!("failed to persist job: {}", e)))?;
 
-        // Container started successfully.
-        let now = Utc::now();
-        self.update_status(job_id, "running", None, None, Some(now), None);
-
-        if !wait {
-            // Spawn a background monitor that forwards Claude Code output
-            // into the main agent loop.
-            //
-            // This monitor is intentionally fire-and-forget: its lifetime is
-            // bound to the broadcast channel (etx) and the inject sender (itx).
-            // When the broadcast sender is dropped during shutdown the
-            // subscription closes and the monitor exits. Likewise, if the agent
-            // loop stops consuming from inject_tx the send will fail and the
-            // monitor terminates. No JoinHandle is retained.
-            if let (Some(etx), Some(itx)) = (&self.event_tx, &self.inject_tx) {
-                crate::agent::job_monitor::spawn_job_monitor(job_id, etx.subscribe(), itx.clone());
-            }
-
-            let result = serde_json::json!({
-                "job_id": job_id.to_string(),
-                "status": "started",
-                "message": "Container started. Use job_events to check status or job_prompt to send follow-up instructions.",
-                "project_dir": project_dir_str,
-                "browse_url": format!("/projects/{}", browse_id),
-            });
-            return Ok(ToolOutput::success(result, start.elapsed()));
+        if mode == JobMode::ClaudeCode
+            && let Err(e) = store
+                .update_sandbox_job_mode(record.id, crate::db::SandboxMode::ClaudeCode)
+                .await
+        {
+            // Synchronously update status to failed before returning error
+            // (don't use fire-and-forget update_status here)
+            let status = crate::db::SandboxJobStatus::from("failed");
+            let _ = store
+                .update_sandbox_job_status(SandboxJobStatusUpdate {
+                    id: record.id,
+                    status,
+                    success: Some(false),
+                    message: Some(&e.to_string()),
+                    started_at: None,
+                    completed_at: Some(Utc::now()),
+                })
+                .await;
+            return Err(ToolError::ExecutionFailed(format!(
+                "failed to persist job mode: {}",
+                e
+            )));
         }
 
-        // Wait for completion by polling the container state.
+        Ok(())
+    }
+
+    /// Poll container state until completion or timeout.
+    async fn await_container_completion(
+        &self,
+        jm: &ContainerJobManager,
+        job_id: Uuid,
+        project_dir_str: &str,
+        browse_id: &str,
+        start: std::time::Instant,
+    ) -> Result<ToolOutput, ToolError> {
         let timeout = Duration::from_secs(600);
         let poll_interval = Duration::from_secs(2);
         let deadline = tokio::time::Instant::now() + timeout;
@@ -555,6 +480,105 @@ impl CreateJobTool {
                 }
             }
         }
+    }
+
+    /// Execute via sandboxed Docker container.
+    async fn execute_sandbox(
+        &self,
+        task: &str,
+        explicit_dir: Option<PathBuf>,
+        wait: bool,
+        mode: JobMode,
+        credential_grants: Vec<CredentialGrant>,
+        ctx: &JobContext,
+    ) -> Result<ToolOutput, ToolError> {
+        let start = std::time::Instant::now();
+        let jm = self
+            .job_manager
+            .as_ref()
+            .ok_or_else(|| ToolError::ExecutionFailed("sandbox deps required".to_string()))?;
+
+        let job_id = Uuid::new_v4();
+        let (project_dir, browse_id) = resolve_project_dir(explicit_dir, job_id)?;
+        let project_dir_str = project_dir.display().to_string();
+
+        // Serialize credential grants so restarts can reload them.
+        let credential_grants_json = match serde_json::to_string(&credential_grants) {
+            Ok(json) => json,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to serialize credential grants for job {}: {}. \
+                     Grants will not survive a restart.",
+                    job_id,
+                    e
+                );
+                String::from("[]")
+            }
+        };
+
+        // Build the job record and persist synchronously before creating the container.
+        let record = SandboxJobRecord {
+            id: job_id,
+            task: task.to_string(),
+            status: "creating".to_string(),
+            user_id: crate::db::UserId::from(ctx.user_id.clone()),
+            project_dir: project_dir_str.clone(),
+            success: None,
+            failure_reason: None,
+            created_at: Utc::now(),
+            started_at: None,
+            completed_at: None,
+            credential_grants_json,
+        };
+
+        self.persist_sandbox_job(&record, mode).await?;
+
+        // Create the container job with the pre-determined job_id.
+        let _token = jm
+            .create_job(job_id, task, Some(project_dir), mode, credential_grants)
+            .await
+            .map_err(|e| {
+                self.update_status(
+                    job_id,
+                    "failed",
+                    Some(false),
+                    Some(e.to_string()),
+                    None,
+                    Some(Utc::now()),
+                );
+                ToolError::ExecutionFailed(format!("failed to create container: {}", e))
+            })?;
+
+        // Container started successfully.
+        let now = Utc::now();
+        self.update_status(job_id, "running", None, None, Some(now), None);
+
+        if !wait {
+            // Spawn a background monitor that forwards Claude Code output
+            // into the main agent loop.
+            //
+            // This monitor is intentionally fire-and-forget: its lifetime is
+            // bound to the broadcast channel (etx) and the inject sender (itx).
+            // When the broadcast sender is dropped during shutdown the
+            // subscription closes and the monitor exits. Likewise, if the agent
+            // loop stops consuming from inject_tx the send will fail and the
+            // monitor terminates. No JoinHandle is retained.
+            if let (Some(etx), Some(itx)) = (&self.event_tx, &self.inject_tx) {
+                crate::agent::job_monitor::spawn_job_monitor(job_id, etx.subscribe(), itx.clone());
+            }
+
+            let result = serde_json::json!({
+                "job_id": job_id.to_string(),
+                "status": "started",
+                "message": "Container started. Use job_events to check status or job_prompt to send follow-up instructions.",
+                "project_dir": project_dir_str,
+                "browse_url": format!("/projects/{}", browse_id),
+            });
+            return Ok(ToolOutput::success(result, start.elapsed()));
+        }
+
+        self.await_container_completion(jm, job_id, &project_dir_str, &browse_id, start)
+            .await
     }
 }
 

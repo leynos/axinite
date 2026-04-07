@@ -110,6 +110,78 @@ async fn handle_mark_running_failure(
     ))
 }
 
+/// Persist a restarted sandbox job record and optionally its mode.
+async fn persist_restart_job(
+    store: &Arc<dyn Database>,
+    old_job: &crate::history::SandboxJobRecord,
+    new_job_id: Uuid,
+    base_task: String,
+    now: chrono::DateTime<chrono::Utc>,
+    mode: crate::orchestrator::job_manager::JobMode,
+) -> Result<(), (StatusCode, String)> {
+    let record = build_restart_record(old_job, new_job_id, base_task, now);
+    store
+        .save_sandbox_job(&record)
+        .await
+        .map_err(|e| internal_error("Failed to save restarted sandbox job", e))?;
+
+    // Persist the job mode if it's ClaudeCode.
+    //
+    // Invariant: Worker is the default mode; only non-default modes (e.g.,
+    // JobMode::ClaudeCode) are persisted to the DB. NULL job_mode implies Worker.
+    // The is_claude_code boolean tracks whether we need to persist
+    // SandboxMode::ClaudeCode. The load path (load_sandbox_job_mode) and API layer
+    // convert NULL to Worker. This conditional must preserve that behaviour:
+    // only persist when mode is explicitly ClaudeCode.
+    //
+    // Note: The two-step persistence (save_sandbox_job then update_sandbox_job_mode)
+    // is not transactional and may leave a NULL mode if the update fails, but this
+    // is safe due to the Worker default on load.
+    let is_claude_code = mode == crate::orchestrator::job_manager::JobMode::ClaudeCode;
+    if is_claude_code
+        && let Err(error) = store
+            .update_sandbox_job_mode(new_job_id, crate::db::SandboxMode::ClaudeCode)
+            .await
+    {
+        mark_sandbox_restart_failed(
+            store,
+            new_job_id,
+            "Failed to persist restarted sandbox job mode".to_string(),
+        )
+        .await?;
+        return Err(internal_error(
+            "Failed to persist restarted sandbox job mode",
+            error,
+        ));
+    }
+
+    Ok(())
+}
+
+/// Create a container for a restarted sandbox job.
+async fn create_restart_container(
+    store: &Arc<dyn Database>,
+    job_manager: &crate::orchestrator::job_manager::ContainerJobManager,
+    old_job: &crate::history::SandboxJobRecord,
+    new_job_id: Uuid,
+    task: &str,
+    mode: crate::orchestrator::job_manager::JobMode,
+) -> Result<(), (StatusCode, String)> {
+    let credential_grants = parse_credential_grants(old_job.id, &old_job.credential_grants_json);
+
+    let project_dir = std::path::PathBuf::from(&old_job.project_dir);
+    if let Err(error) = job_manager
+        .create_job(new_job_id, task, Some(project_dir), mode, credential_grants)
+        .await
+    {
+        mark_sandbox_restart_failed(store, new_job_id, "Failed to create container".to_string())
+            .await?;
+        return Err(internal_error("Failed to create container", error));
+    }
+
+    Ok(())
+}
+
 pub(super) async fn restart_sandbox_job(
     state: &GatewayState,
     store: &Arc<dyn Database>,
@@ -146,60 +218,8 @@ pub(super) async fn restart_sandbox_job(
         _ => crate::orchestrator::job_manager::JobMode::Worker,
     };
 
-    let record = build_restart_record(&old_job.record, new_job_id, base_task.clone(), now);
-    store
-        .save_sandbox_job(&record)
-        .await
-        .map_err(|e| internal_error("Failed to save restarted sandbox job", e))?;
-
-    // Persist the job mode if it's ClaudeCode.
-    //
-    // Invariant: Worker is the default mode; only non-default modes (e.g.,
-    // JobMode::ClaudeCode) are persisted to the DB. NULL job_mode implies Worker.
-    // The is_claude_code boolean tracks whether we need to persist
-    // SandboxMode::ClaudeCode. The load path (load_sandbox_job_mode) and API layer
-    // convert NULL to Worker. This conditional must preserve that behaviour:
-    // only persist when mode is explicitly ClaudeCode.
-    //
-    // Note: The two-step persistence (save_sandbox_job then update_sandbox_job_mode)
-    // is not transactional and may leave a NULL mode if the update fails, but this
-    // is safe due to the Worker default on load.
-    let is_claude_code = mode == crate::orchestrator::job_manager::JobMode::ClaudeCode;
-    if is_claude_code
-        && let Err(error) = store
-            .update_sandbox_job_mode(new_job_id, crate::db::SandboxMode::ClaudeCode)
-            .await
-    {
-        mark_sandbox_restart_failed(
-            store,
-            new_job_id,
-            "Failed to persist restarted sandbox job mode".to_string(),
-        )
-        .await?;
-        return Err(internal_error(
-            "Failed to persist restarted sandbox job mode",
-            error,
-        ));
-    }
-
-    let credential_grants =
-        parse_credential_grants(old_job.record.id, &old_job.record.credential_grants_json);
-
-    let project_dir = std::path::PathBuf::from(&old_job.record.project_dir);
-    if let Err(error) = job_manager
-        .create_job(
-            new_job_id,
-            &task,
-            Some(project_dir),
-            mode,
-            credential_grants,
-        )
-        .await
-    {
-        mark_sandbox_restart_failed(store, new_job_id, "Failed to create container".to_string())
-            .await?;
-        return Err(internal_error("Failed to create container", error));
-    }
+    persist_restart_job(store, &old_job.record, new_job_id, base_task, now, mode).await?;
+    create_restart_container(store, job_manager, &old_job.record, new_job_id, &task, mode).await?;
 
     if let Err(error) = mark_running(&**store, new_job_id, now).await {
         return handle_mark_running_failure(store, job_manager, new_job_id, error).await;

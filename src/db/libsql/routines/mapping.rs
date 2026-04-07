@@ -184,15 +184,10 @@ pub(crate) fn row_to_routine_run_libsql(row: &libsql::Row) -> Result<RoutineRun,
 mod tests {
     use super::*;
 
-    /// Helper to create a mock libsql::Row for testing.
-    /// Uses a local in-memory database to create a real row.
-    async fn mock_routine_row_with_dedup_window(
-        dedup_window_secs: Option<i64>,
-    ) -> Result<libsql::Row, Box<dyn std::error::Error>> {
-        let db = libsql::Builder::new_local(":memory:").build().await?;
-        let conn = db.connect()?;
-
-        // Create a minimal routines table
+    /// Create the routines table for testing.
+    async fn create_routines_table(
+        conn: &libsql::Connection,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         conn.execute_batch(
             r#"
             CREATE TABLE routines (
@@ -224,8 +219,14 @@ mod tests {
             "#,
         )
         .await?;
+        Ok(())
+    }
 
-        // Insert test data
+    /// Insert a test routine row with the specified dedup_window_secs.
+    async fn insert_test_routine(
+        conn: &libsql::Connection,
+        dedup_window_secs: Option<i64>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let dedup_val = dedup_window_secs
             .map(|v| v.to_string())
             .unwrap_or_else(|| "NULL".to_string());
@@ -264,7 +265,18 @@ mod tests {
             (),
         )
         .await?;
+        Ok(())
+    }
 
+    /// Helper to create a mock libsql::Row for testing.
+    /// Uses a local in-memory database to create a real row.
+    async fn mock_routine_row_with_dedup_window(
+        dedup_window_secs: Option<i64>,
+    ) -> Result<libsql::Row, Box<dyn std::error::Error>> {
+        let db = libsql::Builder::new_local(":memory:").build().await?;
+        let conn = db.connect()?;
+        create_routines_table(&conn).await?;
+        insert_test_routine(&conn, dedup_window_secs).await?;
         let mut rows = conn.query("SELECT * FROM routines", ()).await?;
         let row = rows.next().await?.ok_or("no row returned")?;
         Ok(row)
@@ -357,28 +369,25 @@ mod tests {
         assert_eq!(run.tokens_used, Some(1500));
     }
 
-    #[tokio::test]
-    async fn test_tokens_used_out_of_range_returns_serialization_error() {
-        // i32::MAX + 1
-        let row = mock_routine_run_row_with_tokens(Some(i64::from(i32::MAX) + 1))
+    /// Assert that a tokens_used value results in a Serialization error.
+    async fn assert_tokens_used_serialisation_error(tokens: i64) {
+        let row = mock_routine_run_row_with_tokens(Some(tokens))
             .await
             .unwrap();
         let result = row_to_routine_run_libsql(&row);
         assert!(
             matches!(result, Err(DatabaseError::Serialization(_))),
-            "Expected Serialization error for out-of-range tokens_used, got {:?}",
-            result
+            "Expected Serialization error for tokens_used = {tokens}, got {result:?}",
         );
     }
 
     #[tokio::test]
+    async fn test_tokens_used_out_of_range_returns_serialization_error() {
+        assert_tokens_used_serialisation_error(i64::from(i32::MAX) + 1).await;
+    }
+
+    #[tokio::test]
     async fn test_tokens_used_negative_returns_serialization_error() {
-        let row = mock_routine_run_row_with_tokens(Some(-1)).await.unwrap();
-        let result = row_to_routine_run_libsql(&row);
-        assert!(
-            matches!(result, Err(DatabaseError::Serialization(_))),
-            "Expected Serialization error for negative tokens_used, got {:?}",
-            result
-        );
+        assert_tokens_used_serialisation_error(-1).await;
     }
 }
