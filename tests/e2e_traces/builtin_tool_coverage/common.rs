@@ -28,7 +28,6 @@ impl std::fmt::Display for HarnessError {
 impl std::error::Error for HarnessError {}
 
 /// Configuration for test rig setup.
-#[derive(Default)]
 pub struct RigConfig {
     /// Whether to auto-approve tool calls.
     pub auto_approve: bool,
@@ -36,6 +35,16 @@ pub struct RigConfig {
     pub routines: bool,
     /// Whether to enable skills.
     pub skills: bool,
+}
+
+impl Default for RigConfig {
+    fn default() -> Self {
+        Self {
+            auto_approve: true,
+            routines: false,
+            skills: false,
+        }
+    }
 }
 
 /// Run a trace test with a default 15-second timeout.
