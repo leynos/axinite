@@ -3,9 +3,11 @@
 //! Tests that routines with system event triggers fire correctly when
 //! system events match the configured source, event type, and filters.
 
+use std::time::Duration;
+
 use crate::support::routines::{
     SystemEventSpec, assert_system_event_count, create_test_db, create_workspace,
-    make_minimal_engine, register_github_issue_routine,
+    make_minimal_engine, register_github_issue_routine, wait_for_idle,
 };
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
@@ -42,7 +44,11 @@ async fn system_event_trigger_matches_and_filters() {
     )
     .await;
 
-    // Poll for routine completion with timeout.
+    // Wait for routine execution to complete using deterministic synchronisation,
+    // then verify the routine run was recorded.
+    wait_for_idle(&engine, Duration::from_secs(5)).await;
+
+    // Poll for routine completion with timeout to verify database persistence.
     let mut attempts = 0;
     let max_attempts = 50;
     loop {

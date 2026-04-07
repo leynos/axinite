@@ -1110,6 +1110,15 @@ async fn send_notification(
     }
 }
 
+impl RoutineEngine {
+    /// Returns a clone of the running count atomic counter.
+    ///
+    /// Intended for test synchronisation only — do not use in production paths.
+    pub fn running_count(&self) -> Arc<AtomicUsize> {
+        self.running_count.clone()
+    }
+}
+
 /// Spawn the cron ticker background task.
 pub fn spawn_cron_ticker(
     engine: Arc<RoutineEngine>,

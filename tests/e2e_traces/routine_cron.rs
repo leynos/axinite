@@ -10,7 +10,7 @@ use chrono::Utc;
 use ironclaw::agent::routine::Trigger;
 
 use crate::support::routines::{
-    create_test_db, create_workspace, make_minimal_engine, make_routine,
+    create_test_db, create_workspace, make_minimal_engine, make_routine, wait_for_idle,
 };
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
@@ -50,7 +50,11 @@ async fn cron_routine_fires() {
     // Fire cron triggers.
     engine.check_cron_triggers().await;
 
-    // Poll for routine completion with timeout.
+    // Wait for routine execution to complete using deterministic synchronisation,
+    // then verify the routine run was recorded.
+    wait_for_idle(&engine, Duration::from_secs(5)).await;
+
+    // Poll for routine completion with timeout to verify database persistence.
     let mut attempts = 0;
     let max_attempts = 50;
     loop {

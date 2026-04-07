@@ -6,6 +6,7 @@
 #![cfg(feature = "libsql")]
 
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -173,4 +174,31 @@ pub async fn assert_system_event_count(
         .emit_system_event(spec.source, spec.event_type, &spec.payload, Some("default"))
         .await;
     assert_eq!(fired, expected, "{msg}");
+}
+
+/// Polls until the engine's running count reaches zero or the timeout expires.
+///
+/// This provides deterministic synchronisation for tests that need to wait
+/// for asynchronous routine execution to complete, eliminating timing-dependent
+/// flakiness without slowing down the test suite on fast machines.
+#[allow(dead_code)]
+pub async fn wait_for_idle(engine: &RoutineEngine, timeout: Duration) {
+    let start = std::time::Instant::now();
+    let poll_interval = Duration::from_millis(10);
+
+    loop {
+        let count = engine.running_count().load(Ordering::SeqCst);
+        if count == 0 {
+            return;
+        }
+
+        if start.elapsed() >= timeout {
+            panic!(
+                "Timeout waiting for engine to become idle (running count: {})",
+                count
+            );
+        }
+
+        tokio::time::sleep(poll_interval).await;
+    }
 }

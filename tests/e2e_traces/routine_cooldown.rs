@@ -11,7 +11,8 @@ use ironclaw::agent::routine::Trigger;
 use ironclaw::db::RoutineRuntimeUpdate;
 
 use crate::support::routines::{
-    create_test_db, create_workspace, make_minimal_engine, make_routine, make_test_incoming_message,
+    create_test_db, create_workspace, make_minimal_engine, make_routine,
+    make_test_incoming_message, wait_for_idle,
 };
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
@@ -54,7 +55,11 @@ async fn routine_cooldown() {
     let fired1 = engine.check_event_triggers(&msg).await;
     assert!(fired1 >= 1, "First fire should work");
 
-    // Poll for routine completion with timeout before updating last_run_at.
+    // Wait for routine execution to complete using deterministic synchronisation,
+    // then verify the routine run was recorded before updating last_run_at.
+    wait_for_idle(&engine, Duration::from_secs(5)).await;
+
+    // Poll for routine completion with timeout to verify database persistence.
     let mut attempts = 0;
     let max_attempts = 50;
     loop {

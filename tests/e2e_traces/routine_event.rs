@@ -5,8 +5,11 @@
 
 use ironclaw::agent::routine::Trigger;
 
+use std::time::Duration;
+
 use crate::support::routines::{
-    create_test_db, create_workspace, make_minimal_engine, make_routine, make_test_incoming_message,
+    create_test_db, create_workspace, make_minimal_engine, make_routine,
+    make_test_incoming_message, wait_for_idle,
 };
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
@@ -52,7 +55,11 @@ async fn event_trigger_matches() {
         "Expected >= 1 routine fired on match, got {fired}"
     );
 
-    // Poll for routine completion with timeout instead of fixed sleep.
+    // Wait for routine execution to complete using deterministic synchronisation,
+    // then verify the routine run was recorded.
+    wait_for_idle(&engine, Duration::from_secs(5)).await;
+
+    // Poll for routine completion with timeout to verify database persistence.
     let mut attempts = 0;
     let max_attempts = 50;
     loop {
