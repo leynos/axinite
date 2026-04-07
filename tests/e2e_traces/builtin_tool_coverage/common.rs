@@ -80,21 +80,26 @@ pub async fn run_routine_started_test(fixture_path: &str, message: &str, expecte
     rig.shutdown();
 }
 
-/// Macro for generating routine started tests.
-macro_rules! routine_started_test {
-    ($name:ident, $fixture:literal, $message:literal, [$($tool:literal),+ $(,)?]) => {
-        #[tokio::test]
-        async fn $name() {
-            $crate::builtin_tool_coverage::common::run_routine_started_test(
-                concat!(env!("CARGO_MANIFEST_DIR"), $fixture),
-                $message,
-                &[$($tool),+],
-            )
-            .await;
-        }
-    };
-}
+/// Macros for routine-related tests.
+///
+/// These are defined in an inline module to co-locate the macro definition
+/// with its re-export, avoiding spurious unused-import warnings when the
+/// macro is not used in certain compilation configurations.
+pub(crate) mod macros {
+    /// Macro for generating routine started tests.
+    macro_rules! routine_started_test {
+        ($name:ident, $fixture:literal, $message:literal, [$($tool:literal),+ $(,)?]) => {
+            #[tokio::test]
+            async fn $name() {
+                $crate::builtin_tool_coverage::common::run_routine_started_test(
+                    concat!(env!("CARGO_MANIFEST_DIR"), $fixture),
+                    $message,
+                    &[$($tool),+],
+                )
+                .await;
+            }
+        };
+    }
 
-// Re-export the macro for use by sibling modules
-#[allow(unused_imports)]
-pub(crate) use routine_started_test;
+    pub(crate) use routine_started_test;
+}

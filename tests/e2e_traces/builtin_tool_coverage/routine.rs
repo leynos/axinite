@@ -1,6 +1,7 @@
 //! Routine tool tests: create, list, update, delete, history, and event emit.
 
-use super::common::{RigConfig, routine_started_test, run_trace_test, run_trace_test_with_timeout};
+use super::common::macros::routine_started_test;
+use super::common::{RigConfig, run_trace_test, run_trace_test_with_timeout};
 
 #[tokio::test]
 async fn routine_create_list() {
