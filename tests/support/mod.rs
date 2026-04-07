@@ -360,7 +360,11 @@ const _: fn() = test_rig_symbol_refs;
 const _: fn() = routines_symbol_refs;
 
 #[cfg(feature = "libsql")]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "compile-time signature assertion function; invoked only via a \
+              const reference to force type-checking at build time"
+)]
 fn routines_symbol_refs() {
     // Compile-time type assertions for routines module helpers.
     // These ensure the public API signatures remain stable.
@@ -373,7 +377,11 @@ fn routines_symbol_refs() {
         &str,
     ) -> ironclaw::agent::routine::Routine = routines::make_routine;
     const _: fn(&str) -> ironclaw::channels::IncomingMessage = routines::make_test_incoming_message;
-    #[allow(clippy::type_complexity)]
+    #[expect(
+        clippy::type_complexity,
+        reason = "the tuple return type is intentional: this const asserts the full \
+                  make_minimal_engine signature including the mpsc receiver"
+    )]
     const _: fn(
         trace_llm::LlmTrace,
         std::sync::Arc<dyn ironclaw::db::Database>,

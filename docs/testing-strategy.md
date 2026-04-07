@@ -82,7 +82,56 @@ context accumulation without external model variance. The browser E2E suite
 uses the same principle at the HTTP and DOM layer: real runtime, fake upstream
 provider.
 
-### 2.5 Manual and ignored tests
+### 2.5 Routine and heartbeat E2E test helpers
+
+The `tests/support/routines` module (compiled only when the `libsql` feature is
+enabled) provides reusable helpers for routine- and heartbeat-related E2E tests.
+These helpers reduce boilerplate in individual test files and keep the setup
+consistent across the five focused submodules under `tests/e2e_traces/`.
+
+#### Available helpers
+
+<!-- markdownlint-disable MD013 -->
+| Helper | Kind | Description |
+| ------ | ---- | ----------- |
+| `create_test_db()` | `async fn` | Creates a temporary libSQL database in a `TempDir`, applies all migrations, and returns an `Arc<dyn Database>` plus the `TempDir` guard. Returns a `Result` so callers propagate errors with `?` or `.expect()` in tests. |
+| `create_workspace(db)` | `fn` | Wraps a database reference in an `Arc<Workspace>` named `"default"`. |
+| `make_routine(name, trigger, prompt)` | `fn` | Builds a `Routine` value with sensible test defaults (zero cooldown, enabled, empty state). The trigger and prompt are supplied by the caller. |
+| `make_test_incoming_message(content)` | `fn` | Builds an `IncomingMessage` on channel `"test"` with `user_id = "default"` and the supplied content string. |
+| `make_minimal_engine(trace, db, ws)` | `fn` | Constructs a `RoutineEngine` backed by a `TraceLlm` replaying the given `LlmTrace`, a default `ToolRegistry`, and a `SafetyLayer` with injection checking enabled. Returns both the engine and the mpsc notification receiver so tests can observe or drain the channel. |
+| `register_github_issue_routine(db, engine)` | `async fn` | Inserts a `github`/`issue.opened` routine into the database and refreshes the engine's event cache. Used by system-event trigger tests. |
+| `assert_system_event_count(engine, spec, expected, msg)` | `async fn` | Emits a system event described by `SystemEventSpec` and asserts the number of fired routines equals `expected`. |
+<!-- markdownlint-enable MD013 -->
+
+#### `SystemEventSpec`
+
+`SystemEventSpec<'a>` is a plain data struct that groups the three fields
+needed to describe a system event in tests:
+
+- `source` — the event source (e.g., `"github"`).
+- `event_type` — the event type string (e.g., `"issue.opened"`).
+- `payload` — a `serde_json::Value` carrying event-specific metadata.
+
+Construct it with `SystemEventSpec::new(source, event_type, payload)`.
+
+#### Writing a new routine E2E test
+
+A typical routine E2E test follows this pattern:
+
+1. Call `create_test_db().await.expect(...)` to provision a database.
+2. Call `create_workspace(&db)` to create the workspace.
+3. Build a `LlmTrace` with the expected LLM responses for the test scenario.
+4. Call `make_minimal_engine(trace, db.clone(), ws)` to get an engine and
+   notification receiver.
+5. Call `make_routine(...)` to build the routine value, customise any fields
+   (e.g., `next_fire_at`, `guardrails.cooldown`), then persist it with
+   `db.create_routine(&routine).await.expect(...)`.
+6. For event-triggered tests, call `engine.refresh_event_cache().await` after
+   inserting routines.
+7. Poll `db.list_routine_runs(routine.id, 10)` in a bounded loop (rather than
+   sleeping for a fixed duration) to wait for the spawned task to complete.
+
+### 2.6 Manual and ignored tests
 
 Some tests are intentionally excluded from the default path because they need
 manual setup or environmental control.
