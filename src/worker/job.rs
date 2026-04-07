@@ -2021,6 +2021,13 @@ mod tests {
         async fn captured_calls(&self) -> Vec<CapturedCall> {
             self.calls.lock().await.clone()
         }
+
+        fn doc_not_found(doc_type: &str) -> crate::error::WorkspaceError {
+            crate::error::WorkspaceError::DocumentNotFound {
+                doc_type: doc_type.to_string(),
+                user_id: "test".to_string(),
+            }
+        }
     }
 
     impl crate::db::NativeDatabase for CapturingStore {
@@ -2513,19 +2520,13 @@ mod tests {
             _agent_id: Option<Uuid>,
             _path: &str,
         ) -> Result<crate::workspace::MemoryDocument, crate::error::WorkspaceError> {
-            Err(crate::error::WorkspaceError::DocumentNotFound {
-                doc_type: "file".to_string(),
-                user_id: "test".to_string(),
-            })
+            Err(Self::doc_not_found("file"))
         }
         async fn get_document_by_id(
             &self,
             _id: Uuid,
         ) -> Result<crate::workspace::MemoryDocument, crate::error::WorkspaceError> {
-            Err(crate::error::WorkspaceError::DocumentNotFound {
-                doc_type: "id".to_string(),
-                user_id: "test".to_string(),
-            })
+            Err(Self::doc_not_found("id"))
         }
         async fn get_or_create_document_by_path(
             &self,
@@ -2533,10 +2534,7 @@ mod tests {
             _agent_id: Option<Uuid>,
             _path: &str,
         ) -> Result<crate::workspace::MemoryDocument, crate::error::WorkspaceError> {
-            Err(crate::error::WorkspaceError::DocumentNotFound {
-                doc_type: "file".to_string(),
-                user_id: "test".to_string(),
-            })
+            Err(Self::doc_not_found("file"))
         }
         async fn update_document(
             &self,
@@ -2672,11 +2670,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_mark_completed_characterises_terminal_persistence() {
-        let (worker, store) = make_worker_with_capturing_store(vec![]).await;
-
-        // Transition to InProgress first
+    async fn transition_to_in_progress(worker: &Worker) {
         worker
             .context_manager()
             .update_context(worker.job_id, |ctx| {
@@ -2685,6 +2679,14 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_mark_completed_characterises_terminal_persistence() {
+        let (worker, store) = make_worker_with_capturing_store(vec![]).await;
+
+        // Transition to InProgress first
+        transition_to_in_progress(&worker).await;
 
         // Call mark_completed
         worker.mark_completed().await.unwrap();
@@ -2705,14 +2707,7 @@ mod tests {
         let (worker, store) = make_worker_with_capturing_store(vec![]).await;
 
         // Transition to InProgress first
-        worker
-            .context_manager()
-            .update_context(worker.job_id, |ctx| {
-                ctx.transition_to(JobState::InProgress, None)
-            })
-            .await
-            .unwrap()
-            .unwrap();
+        transition_to_in_progress(&worker).await;
 
         // Call mark_failed
         worker.mark_failed("budget exceeded").await.unwrap();
@@ -2734,14 +2729,7 @@ mod tests {
         let (worker, store) = make_worker_with_capturing_store(vec![]).await;
 
         // Transition to InProgress first
-        worker
-            .context_manager()
-            .update_context(worker.job_id, |ctx| {
-                ctx.transition_to(JobState::InProgress, None)
-            })
-            .await
-            .unwrap()
-            .unwrap();
+        transition_to_in_progress(&worker).await;
 
         // Call mark_stuck
         worker.mark_stuck("timeout").await.unwrap();
@@ -2762,14 +2750,7 @@ mod tests {
         let (worker, store) = make_worker_with_capturing_store(vec![]).await;
 
         // Transition to InProgress first
-        worker
-            .context_manager()
-            .update_context(worker.job_id, |ctx| {
-                ctx.transition_to(JobState::InProgress, None)
-            })
-            .await
-            .unwrap()
-            .unwrap();
+        transition_to_in_progress(&worker).await;
 
         // First call succeeds
         worker.mark_completed().await.unwrap();
