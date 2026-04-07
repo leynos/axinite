@@ -1434,6 +1434,7 @@ mod tests {
     };
     use crate::safety::SafetyLayer;
     use crate::tools::{NativeTool, Tool, ToolError as ToolExecError, ToolOutput};
+    use tokio::sync::Mutex;
 
     /// A test tool that sleeps for a configurable duration before returning.
     struct SlowTool {
@@ -2010,6 +2011,912 @@ mod tests {
             ctx.state,
             JobState::Failed,
             "Iteration cap should transition to Failed, not Stuck"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Terminal job-state persistence characterisation tests
+    // -----------------------------------------------------------------------
+
+    /// Captured call types for the mock database.
+    #[derive(Debug, Clone)]
+    enum CapturedCall {
+        UpdateJobStatus {
+            _job_id: Uuid,
+            status: JobState,
+            reason: Option<String>,
+        },
+        SaveJobEvent {
+            _job_id: Uuid,
+            event_type: String,
+            data: serde_json::Value,
+        },
+    }
+
+    /// Mock database that captures calls for characterisation testing.
+    #[derive(Debug, Default)]
+    struct CapturingStore {
+        calls: Arc<Mutex<Vec<CapturedCall>>>,
+    }
+
+    impl CapturingStore {
+        fn new() -> Self {
+            Self {
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+
+        async fn captured_calls(&self) -> Vec<CapturedCall> {
+            self.calls.lock().await.clone()
+        }
+    }
+
+    impl crate::db::NativeDatabase for CapturingStore {
+        async fn run_migrations(&self) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+    }
+
+    impl crate::db::NativeJobStore for CapturingStore {
+        async fn save_job(
+            &self,
+            _ctx: &crate::context::JobContext,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+
+        async fn get_job(
+            &self,
+            _id: Uuid,
+        ) -> Result<Option<crate::context::JobContext>, crate::error::DatabaseError> {
+            Ok(None)
+        }
+
+        async fn update_job_status(
+            &self,
+            id: Uuid,
+            status: JobState,
+            failure_reason: Option<&str>,
+        ) -> Result<(), crate::error::DatabaseError> {
+            self.calls.lock().await.push(CapturedCall::UpdateJobStatus {
+                _job_id: id,
+                status,
+                reason: failure_reason.map(|s| s.to_string()),
+            });
+            Ok(())
+        }
+
+        async fn mark_job_stuck(&self, _id: Uuid) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+
+        async fn get_stuck_jobs(&self) -> Result<Vec<Uuid>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+
+        async fn list_agent_jobs(
+            &self,
+        ) -> Result<Vec<crate::history::AgentJobRecord>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+
+        async fn agent_job_summary(
+            &self,
+        ) -> Result<crate::history::AgentJobSummary, crate::error::DatabaseError> {
+            Ok(crate::history::AgentJobSummary::default())
+        }
+
+        async fn get_agent_job_failure_reason(
+            &self,
+            _id: Uuid,
+        ) -> Result<Option<String>, crate::error::DatabaseError> {
+            Ok(None)
+        }
+
+        async fn save_action(
+            &self,
+            _job_id: Uuid,
+            _action: &crate::context::ActionRecord,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+
+        async fn get_job_actions(
+            &self,
+            _job_id: Uuid,
+        ) -> Result<Vec<crate::context::ActionRecord>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+
+        async fn record_llm_call(
+            &self,
+            _record: &crate::history::LlmCallRecord<'_>,
+        ) -> Result<Uuid, crate::error::DatabaseError> {
+            Ok(Uuid::new_v4())
+        }
+
+        async fn save_estimation_snapshot(
+            &self,
+            _params: crate::db::EstimationSnapshotParams<'_>,
+        ) -> Result<Uuid, crate::error::DatabaseError> {
+            Ok(Uuid::new_v4())
+        }
+
+        async fn update_estimation_actuals(
+            &self,
+            _params: crate::db::EstimationActualsParams,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+    }
+
+    impl crate::db::NativeSandboxStore for CapturingStore {
+        async fn save_sandbox_job(
+            &self,
+            _job: &crate::history::SandboxJobRecord,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+
+        async fn get_sandbox_job(
+            &self,
+            _id: Uuid,
+        ) -> Result<Option<crate::history::SandboxJobRecord>, crate::error::DatabaseError> {
+            Ok(None)
+        }
+
+        async fn list_sandbox_jobs(
+            &self,
+        ) -> Result<Vec<crate::history::SandboxJobRecord>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+
+        async fn update_sandbox_job_status(
+            &self,
+            _params: crate::db::SandboxJobStatusUpdate<'_>,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+
+        async fn cleanup_stale_sandbox_jobs(&self) -> Result<u64, crate::error::DatabaseError> {
+            Ok(0)
+        }
+
+        async fn sandbox_job_summary(
+            &self,
+        ) -> Result<crate::history::SandboxJobSummary, crate::error::DatabaseError> {
+            Ok(crate::history::SandboxJobSummary::default())
+        }
+
+        async fn list_sandbox_jobs_for_user(
+            &self,
+            _user_id: crate::db::UserId,
+        ) -> Result<Vec<crate::history::SandboxJobRecord>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+
+        async fn sandbox_job_summary_for_user(
+            &self,
+            _user_id: crate::db::UserId,
+        ) -> Result<crate::history::SandboxJobSummary, crate::error::DatabaseError> {
+            Ok(crate::history::SandboxJobSummary::default())
+        }
+
+        async fn sandbox_job_belongs_to_user(
+            &self,
+            _job_id: Uuid,
+            _user_id: crate::db::UserId,
+        ) -> Result<bool, crate::error::DatabaseError> {
+            Ok(false)
+        }
+
+        async fn update_sandbox_job_mode(
+            &self,
+            _id: Uuid,
+            _mode: crate::db::SandboxMode,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+
+        async fn get_sandbox_job_mode(
+            &self,
+            _id: Uuid,
+        ) -> Result<Option<crate::db::SandboxMode>, crate::error::DatabaseError> {
+            Ok(None)
+        }
+
+        async fn save_job_event(
+            &self,
+            job_id: Uuid,
+            event_type: crate::db::SandboxEventType,
+            data: &serde_json::Value,
+        ) -> Result<(), crate::error::DatabaseError> {
+            self.calls.lock().await.push(CapturedCall::SaveJobEvent {
+                _job_id: job_id,
+                event_type: event_type.as_str().to_string(),
+                data: data.clone(),
+            });
+            Ok(())
+        }
+
+        async fn list_job_events(
+            &self,
+            _job_id: Uuid,
+            _before_id: Option<i64>,
+            _limit: Option<i64>,
+        ) -> Result<Vec<crate::history::JobEventRecord>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+    }
+
+    // Stub implementations for remaining traits
+    impl crate::db::NativeConversationStore for CapturingStore {
+        async fn create_conversation(
+            &self,
+            _channel: &str,
+            _user_id: &str,
+            _thread_id: Option<&str>,
+        ) -> Result<Uuid, crate::error::DatabaseError> {
+            Ok(Uuid::new_v4())
+        }
+        async fn touch_conversation(&self, _id: Uuid) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+        async fn add_conversation_message(
+            &self,
+            _conversation_id: Uuid,
+            _role: &str,
+            _content: &str,
+        ) -> Result<Uuid, crate::error::DatabaseError> {
+            Ok(Uuid::new_v4())
+        }
+        async fn ensure_conversation(
+            &self,
+            _params: crate::db::EnsureConversationParams<'_>,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+        async fn list_conversations_with_preview(
+            &self,
+            _user_id: &str,
+            _channel: &str,
+            _limit: usize,
+        ) -> Result<Vec<crate::history::ConversationSummary>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+        async fn list_conversations_all_channels(
+            &self,
+            _user_id: &str,
+            _limit: usize,
+        ) -> Result<Vec<crate::history::ConversationSummary>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+        async fn get_or_create_routine_conversation(
+            &self,
+            _routine_id: Uuid,
+            _routine_name: &str,
+            _user_id: &str,
+        ) -> Result<Uuid, crate::error::DatabaseError> {
+            Ok(Uuid::new_v4())
+        }
+        async fn get_or_create_heartbeat_conversation(
+            &self,
+            _user_id: &str,
+        ) -> Result<Uuid, crate::error::DatabaseError> {
+            Ok(Uuid::new_v4())
+        }
+        async fn get_or_create_assistant_conversation(
+            &self,
+            _user_id: &str,
+            _channel: &str,
+        ) -> Result<Uuid, crate::error::DatabaseError> {
+            Ok(Uuid::new_v4())
+        }
+        async fn create_conversation_with_metadata(
+            &self,
+            _channel: &str,
+            _user_id: &str,
+            _metadata: &serde_json::Value,
+        ) -> Result<Uuid, crate::error::DatabaseError> {
+            Ok(Uuid::new_v4())
+        }
+        async fn list_conversation_messages_paginated(
+            &self,
+            _conversation_id: Uuid,
+            _before: Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
+            _limit: usize,
+        ) -> Result<(Vec<crate::history::ConversationMessage>, bool), crate::error::DatabaseError>
+        {
+            Ok((vec![], false))
+        }
+        async fn list_conversation_messages(
+            &self,
+            _conversation_id: Uuid,
+        ) -> Result<Vec<crate::history::ConversationMessage>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+        async fn conversation_belongs_to_user(
+            &self,
+            _conversation_id: Uuid,
+            _user_id: &str,
+        ) -> Result<bool, crate::error::DatabaseError> {
+            Ok(false)
+        }
+        async fn update_conversation_metadata_field(
+            &self,
+            _id: Uuid,
+            _key: &str,
+            _value: &serde_json::Value,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+        async fn get_conversation_metadata(
+            &self,
+            _id: Uuid,
+        ) -> Result<Option<serde_json::Value>, crate::error::DatabaseError> {
+            Ok(None)
+        }
+    }
+
+    impl crate::db::NativeRoutineStore for CapturingStore {
+        async fn create_routine(
+            &self,
+            _routine: &crate::agent::Routine,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+        async fn get_routine(
+            &self,
+            _id: Uuid,
+        ) -> Result<Option<crate::agent::Routine>, crate::error::DatabaseError> {
+            Ok(None)
+        }
+        async fn get_routine_by_name(
+            &self,
+            _user_id: &str,
+            _name: &str,
+        ) -> Result<Option<crate::agent::Routine>, crate::error::DatabaseError> {
+            Ok(None)
+        }
+        async fn list_routines(
+            &self,
+            _user_id: &str,
+        ) -> Result<Vec<crate::agent::Routine>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+        async fn list_all_routines(
+            &self,
+        ) -> Result<Vec<crate::agent::Routine>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+        async fn list_event_routines(
+            &self,
+        ) -> Result<Vec<crate::agent::Routine>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+        async fn list_due_cron_routines(
+            &self,
+        ) -> Result<Vec<crate::agent::Routine>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+        async fn update_routine(
+            &self,
+            _routine: &crate::agent::Routine,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+        async fn update_routine_runtime(
+            &self,
+            _params: crate::db::RoutineRuntimeUpdate<'_>,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+        async fn delete_routine(&self, _id: Uuid) -> Result<bool, crate::error::DatabaseError> {
+            Ok(false)
+        }
+        async fn create_routine_run(
+            &self,
+            _run: &crate::agent::RoutineRun,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+        async fn complete_routine_run(
+            &self,
+            _params: crate::db::RoutineRunCompletion<'_>,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+        async fn list_routine_runs(
+            &self,
+            _routine_id: Uuid,
+            _limit: i64,
+        ) -> Result<Vec<crate::agent::RoutineRun>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+        async fn count_running_routine_runs(
+            &self,
+            _routine_id: Uuid,
+        ) -> Result<i64, crate::error::DatabaseError> {
+            Ok(0)
+        }
+        async fn link_routine_run_to_job(
+            &self,
+            _run_id: Uuid,
+            _job_id: Uuid,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+    }
+
+    impl crate::db::NativeToolFailureStore for CapturingStore {
+        async fn record_tool_failure(
+            &self,
+            _tool_name: &str,
+            _error_message: &str,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+        async fn get_broken_tools(
+            &self,
+            _threshold: i32,
+        ) -> Result<Vec<crate::agent::BrokenTool>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+        async fn mark_tool_repaired(
+            &self,
+            _tool_name: &str,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+        async fn increment_repair_attempts(
+            &self,
+            _tool_name: &str,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+    }
+
+    impl crate::db::NativeSettingsStore for CapturingStore {
+        async fn get_setting(
+            &self,
+            _user_id: crate::db::UserId,
+            _key: crate::db::SettingKey,
+        ) -> Result<Option<serde_json::Value>, crate::error::DatabaseError> {
+            Ok(None)
+        }
+        async fn get_setting_full(
+            &self,
+            _user_id: crate::db::UserId,
+            _key: crate::db::SettingKey,
+        ) -> Result<Option<crate::history::SettingRow>, crate::error::DatabaseError> {
+            Ok(None)
+        }
+        async fn set_setting(
+            &self,
+            _user_id: crate::db::UserId,
+            _key: crate::db::SettingKey,
+            _value: &serde_json::Value,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+        async fn delete_setting(
+            &self,
+            _user_id: crate::db::UserId,
+            _key: crate::db::SettingKey,
+        ) -> Result<bool, crate::error::DatabaseError> {
+            Ok(false)
+        }
+        async fn list_settings(
+            &self,
+            _user_id: crate::db::UserId,
+        ) -> Result<Vec<crate::history::SettingRow>, crate::error::DatabaseError> {
+            Ok(vec![])
+        }
+        async fn get_all_settings(
+            &self,
+            _user_id: crate::db::UserId,
+        ) -> Result<std::collections::HashMap<String, serde_json::Value>, crate::error::DatabaseError>
+        {
+            Ok(std::collections::HashMap::new())
+        }
+        async fn set_all_settings(
+            &self,
+            _user_id: crate::db::UserId,
+            _settings: &std::collections::HashMap<String, serde_json::Value>,
+        ) -> Result<(), crate::error::DatabaseError> {
+            Ok(())
+        }
+        async fn has_settings(
+            &self,
+            _user_id: crate::db::UserId,
+        ) -> Result<bool, crate::error::DatabaseError> {
+            Ok(false)
+        }
+    }
+
+    impl crate::db::NativeWorkspaceStore for CapturingStore {
+        async fn get_document_by_path(
+            &self,
+            _user_id: &str,
+            _agent_id: Option<Uuid>,
+            _path: &str,
+        ) -> Result<crate::workspace::MemoryDocument, crate::error::WorkspaceError> {
+            Err(crate::error::WorkspaceError::DocumentNotFound {
+                doc_type: "file".to_string(),
+                user_id: "test".to_string(),
+            })
+        }
+        async fn get_document_by_id(
+            &self,
+            _id: Uuid,
+        ) -> Result<crate::workspace::MemoryDocument, crate::error::WorkspaceError> {
+            Err(crate::error::WorkspaceError::DocumentNotFound {
+                doc_type: "id".to_string(),
+                user_id: "test".to_string(),
+            })
+        }
+        async fn get_or_create_document_by_path(
+            &self,
+            _user_id: &str,
+            _agent_id: Option<Uuid>,
+            _path: &str,
+        ) -> Result<crate::workspace::MemoryDocument, crate::error::WorkspaceError> {
+            Err(crate::error::WorkspaceError::DocumentNotFound {
+                doc_type: "file".to_string(),
+                user_id: "test".to_string(),
+            })
+        }
+        async fn update_document(
+            &self,
+            _id: Uuid,
+            _content: &str,
+        ) -> Result<(), crate::error::WorkspaceError> {
+            Ok(())
+        }
+        async fn delete_document_by_path(
+            &self,
+            _user_id: &str,
+            _agent_id: Option<Uuid>,
+            _path: &str,
+        ) -> Result<(), crate::error::WorkspaceError> {
+            Ok(())
+        }
+        async fn list_directory(
+            &self,
+            _user_id: &str,
+            _agent_id: Option<Uuid>,
+            _directory: &str,
+        ) -> Result<Vec<crate::workspace::WorkspaceEntry>, crate::error::WorkspaceError> {
+            Ok(vec![])
+        }
+        async fn list_all_paths(
+            &self,
+            _user_id: &str,
+            _agent_id: Option<Uuid>,
+        ) -> Result<Vec<String>, crate::error::WorkspaceError> {
+            Ok(vec![])
+        }
+        async fn list_documents(
+            &self,
+            _user_id: &str,
+            _agent_id: Option<Uuid>,
+        ) -> Result<Vec<crate::workspace::MemoryDocument>, crate::error::WorkspaceError> {
+            Ok(vec![])
+        }
+        async fn delete_chunks(
+            &self,
+            _document_id: Uuid,
+        ) -> Result<(), crate::error::WorkspaceError> {
+            Ok(())
+        }
+        async fn insert_chunk(
+            &self,
+            _params: crate::db::InsertChunkParams<'_>,
+        ) -> Result<Uuid, crate::error::WorkspaceError> {
+            Ok(Uuid::new_v4())
+        }
+        async fn update_chunk_embedding(
+            &self,
+            _chunk_id: Uuid,
+            _embedding: &[f32],
+        ) -> Result<(), crate::error::WorkspaceError> {
+            Ok(())
+        }
+        async fn get_chunks_without_embeddings(
+            &self,
+            _user_id: &str,
+            _agent_id: Option<Uuid>,
+            _limit: usize,
+        ) -> Result<Vec<crate::workspace::MemoryChunk>, crate::error::WorkspaceError> {
+            Ok(vec![])
+        }
+        async fn hybrid_search(
+            &self,
+            _params: crate::db::HybridSearchParams<'_>,
+        ) -> Result<Vec<crate::workspace::SearchResult>, crate::error::WorkspaceError> {
+            Ok(vec![])
+        }
+    }
+
+    /// Build a Worker with a capturing store for characterisation tests.
+    async fn make_worker_with_capturing_store(
+        tools: Vec<Arc<dyn Tool>>,
+    ) -> (Worker, Arc<CapturingStore>) {
+        let registry = ToolRegistry::new();
+        for t in tools {
+            registry.register(t).await;
+        }
+
+        let cm = Arc::new(crate::context::ContextManager::new(5));
+        let job_id = cm.create_job("test", "test job").await.unwrap();
+
+        let store = Arc::new(CapturingStore::new());
+        let store_dyn: Arc<dyn crate::db::Database> = store.clone();
+
+        let deps = WorkerDeps {
+            context_manager: cm,
+            llm: Arc::new(StubLlm),
+            safety: Arc::new(SafetyLayer::new(&SafetyConfig {
+                max_output_length: 100_000,
+                injection_check_enabled: false,
+            })),
+            tools: Arc::new(registry),
+            store: Some(store_dyn),
+            hooks: Arc::new(crate::hooks::HookRegistry::new()),
+            timeout: Duration::from_secs(30),
+            use_planning: false,
+            sse_tx: None,
+            approval_context: None,
+            http_interceptor: None,
+        };
+
+        (Worker::new(job_id, deps), store)
+    }
+
+    #[tokio::test]
+    async fn test_mark_completed_characterises_terminal_persistence() {
+        let (worker, store) = make_worker_with_capturing_store(vec![]).await;
+
+        // Transition to InProgress first
+        worker
+            .context_manager()
+            .update_context(worker.job_id, |ctx| {
+                ctx.transition_to(JobState::InProgress, None)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Call mark_completed
+        worker.mark_completed().await.unwrap();
+
+        // Verify state in ContextManager
+        let ctx = worker
+            .context_manager()
+            .get_context(worker.job_id)
+            .await
+            .unwrap();
+        assert_eq!(ctx.state, JobState::Completed);
+
+        // Wait briefly for fire-and-forget tasks
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Verify captured calls
+        let calls = store.captured_calls().await;
+        let update_calls: Vec<_> = calls
+            .iter()
+            .filter(|c| matches!(c, CapturedCall::UpdateJobStatus { .. }))
+            .cloned()
+            .collect();
+        let event_calls: Vec<_> = calls
+            .iter()
+            .filter(|c| matches!(c, CapturedCall::SaveJobEvent { .. }))
+            .cloned()
+            .collect();
+
+        assert_eq!(
+            update_calls.len(),
+            1,
+            "Expected exactly one update_job_status call"
+        );
+        assert_eq!(
+            event_calls.len(),
+            1,
+            "Expected exactly one save_job_event call"
+        );
+
+        if let CapturedCall::UpdateJobStatus { status, .. } = &update_calls[0] {
+            assert_eq!(*status, JobState::Completed);
+        }
+
+        if let CapturedCall::SaveJobEvent {
+            event_type, data, ..
+        } = &event_calls[0]
+        {
+            assert_eq!(event_type, "result");
+            assert_eq!(data["status"], "completed");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mark_failed_characterises_terminal_persistence() {
+        let (worker, store) = make_worker_with_capturing_store(vec![]).await;
+
+        // Transition to InProgress first
+        worker
+            .context_manager()
+            .update_context(worker.job_id, |ctx| {
+                ctx.transition_to(JobState::InProgress, None)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Call mark_failed
+        worker.mark_failed("budget exceeded").await.unwrap();
+
+        // Verify state in ContextManager
+        let ctx = worker
+            .context_manager()
+            .get_context(worker.job_id)
+            .await
+            .unwrap();
+        assert_eq!(ctx.state, JobState::Failed);
+
+        // Wait briefly for fire-and-forget tasks
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Verify captured calls
+        let calls = store.captured_calls().await;
+        let update_calls: Vec<_> = calls
+            .iter()
+            .filter(|c| matches!(c, CapturedCall::UpdateJobStatus { .. }))
+            .cloned()
+            .collect();
+        let event_calls: Vec<_> = calls
+            .iter()
+            .filter(|c| matches!(c, CapturedCall::SaveJobEvent { .. }))
+            .cloned()
+            .collect();
+
+        assert_eq!(
+            update_calls.len(),
+            1,
+            "Expected exactly one update_job_status call"
+        );
+        assert_eq!(
+            event_calls.len(),
+            1,
+            "Expected exactly one save_job_event call"
+        );
+
+        if let CapturedCall::UpdateJobStatus { status, reason, .. } = &update_calls[0] {
+            assert_eq!(*status, JobState::Failed);
+            assert_eq!(reason.as_deref(), Some("budget exceeded"));
+        }
+
+        if let CapturedCall::SaveJobEvent {
+            event_type, data, ..
+        } = &event_calls[0]
+        {
+            assert_eq!(event_type, "result");
+            assert_eq!(data["status"], "failed");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mark_stuck_characterises_terminal_persistence() {
+        let (worker, store) = make_worker_with_capturing_store(vec![]).await;
+
+        // Transition to InProgress first
+        worker
+            .context_manager()
+            .update_context(worker.job_id, |ctx| {
+                ctx.transition_to(JobState::InProgress, None)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Call mark_stuck
+        worker.mark_stuck("timeout").await.unwrap();
+
+        // Verify state in ContextManager
+        let ctx = worker
+            .context_manager()
+            .get_context(worker.job_id)
+            .await
+            .unwrap();
+        assert_eq!(ctx.state, JobState::Stuck);
+
+        // Wait briefly for fire-and-forget tasks
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Verify captured calls
+        let calls = store.captured_calls().await;
+        let update_calls: Vec<_> = calls
+            .iter()
+            .filter(|c| matches!(c, CapturedCall::UpdateJobStatus { .. }))
+            .cloned()
+            .collect();
+        let event_calls: Vec<_> = calls
+            .iter()
+            .filter(|c| matches!(c, CapturedCall::SaveJobEvent { .. }))
+            .cloned()
+            .collect();
+
+        assert_eq!(
+            update_calls.len(),
+            1,
+            "Expected exactly one update_job_status call"
+        );
+        assert_eq!(
+            event_calls.len(),
+            1,
+            "Expected exactly one save_job_event call"
+        );
+
+        if let CapturedCall::UpdateJobStatus { status, reason, .. } = &update_calls[0] {
+            assert_eq!(*status, JobState::Stuck);
+            assert_eq!(reason.as_deref(), Some("timeout"));
+        }
+
+        if let CapturedCall::SaveJobEvent {
+            event_type, data, ..
+        } = &event_calls[0]
+        {
+            assert_eq!(event_type, "result");
+            assert_eq!(data["status"], "stuck");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_double_completed_transition_rejected() {
+        let (worker, store) = make_worker_with_capturing_store(vec![]).await;
+
+        // Transition to InProgress first
+        worker
+            .context_manager()
+            .update_context(worker.job_id, |ctx| {
+                ctx.transition_to(JobState::InProgress, None)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        // First call succeeds
+        worker.mark_completed().await.unwrap();
+
+        // Second call should fail
+        let result = worker.mark_completed().await;
+        assert!(
+            result.is_err(),
+            "Double transition to Completed should be rejected"
+        );
+
+        // Wait briefly for fire-and-forget tasks
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Verify only one set of calls was made
+        let calls = store.captured_calls().await;
+        let update_calls: Vec<_> = calls
+            .iter()
+            .filter(|c| matches!(c, CapturedCall::UpdateJobStatus { .. }))
+            .collect();
+        let event_calls: Vec<_> = calls
+            .iter()
+            .filter(|c| matches!(c, CapturedCall::SaveJobEvent { .. }))
+            .collect();
+
+        assert_eq!(
+            update_calls.len(),
+            1,
+            "Expected exactly one update_job_status call"
+        );
+        assert_eq!(
+            event_calls.len(),
+            1,
+            "Expected exactly one save_job_event call"
         );
     }
 }
