@@ -103,6 +103,23 @@ async fn dispatch_subcommand(cli: &Cli) -> Option<anyhow::Result<()>> {
         None | Some(Command::Run) => None,
     }
 }
+
+fn acquire_pid_lock() -> anyhow::Result<Option<ironclaw::bootstrap::PidLock>> {
+    match ironclaw::bootstrap::PidLock::acquire() {
+        Ok(lock) => Ok(Some(lock)),
+        Err(ironclaw::bootstrap::PidLockError::AlreadyRunning { pid }) => anyhow::bail!(
+            "Another IronClaw instance is already running (PID {}). \
+             If this is incorrect, remove the stale PID file: {}",
+            pid,
+            ironclaw::bootstrap::pid_lock_path().display()
+        ),
+        Err(e) => {
+            eprintln!("Warning: Could not acquire PID lock: {}", e);
+            eprintln!("Continuing without PID lock protection.");
+            Ok(None)
+        }
+    }
+}
 async fn async_main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -112,22 +129,7 @@ async fn async_main() -> anyhow::Result<()> {
     }
 
     // ── PID lock (prevent multiple instances) ────────────────────────
-    let _pid_lock = match ironclaw::bootstrap::PidLock::acquire() {
-        Ok(lock) => Some(lock),
-        Err(ironclaw::bootstrap::PidLockError::AlreadyRunning { pid }) => {
-            anyhow::bail!(
-                "Another IronClaw instance is already running (PID {}). \
-                 If this is incorrect, remove the stale PID file: {}",
-                pid,
-                ironclaw::bootstrap::pid_lock_path().display()
-            );
-        }
-        Err(e) => {
-            eprintln!("Warning: Could not acquire PID lock: {}", e);
-            eprintln!("Continuing without PID lock protection.");
-            None
-        }
-    };
+    let _pid_lock = acquire_pid_lock()?;
 
     // ── Agent startup ──────────────────────────────────────────────────
 
@@ -195,7 +197,7 @@ async fn async_main() -> anyhow::Result<()> {
     // embedding backfill, stale job cleanup) in the background.
     side_effects.start().await;
 
-    let config = components.config;
+    let config = components.config.clone();
 
     // ── Tunnel setup ───────────────────────────────────────────────────
 
@@ -401,73 +403,24 @@ async fn async_main() -> anyhow::Result<()> {
 
     // ── Gateway channel ────────────────────────────────────────────────
 
-    let mut gateway_url: Option<String> = None;
-    let mut sse_sender: Option<
-        tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
-    > = None;
-    let mut routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot> = None;
-    if let Some(ref gw_config) = config.channels.gateway {
-        let mut gw =
-            GatewayChannel::new(gw_config.clone()).with_llm_provider(Arc::clone(&components.llm));
-        if let Some(ref ws) = components.workspace {
-            gw = gw.with_workspace(Arc::clone(ws));
-        }
-        gw = gw.with_session_manager(Arc::clone(&session_manager));
-        gw = gw.with_log_broadcaster(Arc::clone(&log_broadcaster));
-        gw = gw.with_log_level_handle(Arc::clone(&log_level_handle));
-        gw = gw.with_tool_registry(Arc::clone(&components.tools));
-        if let Some(ref ext_mgr) = components.extension_manager {
-            gw = gw.with_extension_manager(Arc::clone(ext_mgr));
-        }
-        if !components.catalog_entries.is_empty() {
-            gw = gw.with_registry_entries(components.catalog_entries.clone());
-        }
-        if let Some(ref d) = components.db {
-            gw = gw.with_store(Arc::clone(d));
-        }
-        if let Some(ref jm) = container_job_manager {
-            gw = gw.with_job_manager(Arc::clone(jm));
-        }
-        gw = gw.with_scheduler(scheduler_slot.clone());
-        if let Some(ref sr) = components.skill_registry {
-            gw = gw.with_skill_registry(Arc::clone(sr));
-        }
-        if let Some(ref sc) = components.skill_catalog {
-            gw = gw.with_skill_catalog(Arc::clone(sc));
-        }
-        gw = gw.with_cost_guard(Arc::clone(&components.cost_guard));
-        if config.sandbox.enabled {
-            gw = gw.with_prompt_queue(Arc::clone(&prompt_queue));
-
-            if let Some(ref tx) = job_event_tx {
-                let mut rx = tx.subscribe();
-                let gw_state = Arc::clone(gw.state());
-                tokio::spawn(async move {
-                    while let Ok((_job_id, event)) = rx.recv().await {
-                        gw_state.sse.broadcast(event);
-                    }
-                });
-            }
-        }
-
-        gateway_url = Some(format!(
-            "http://{}:{}/?token={}",
-            gw_config.host,
-            gw_config.port,
-            gw.auth_token()
-        ));
-
-        tracing::debug!("Web UI: http://{}:{}/", gw_config.host, gw_config.port);
-
-        // Capture SSE sender and routine engine slot before moving gw into channels.
-        // IMPORTANT: This must come after all `with_*` calls since `rebuild_state`
-        // creates a new SseManager, which would orphan this sender.
-        sse_sender = Some(gw.state().sse.sender());
-        routine_engine_slot = Some(Arc::clone(&gw.state().routine_engine));
-
-        channel_names.push("gateway".to_string());
-        channels.add(Box::new(gw)).await;
-    }
+    let GatewaySetup {
+        gateway_url,
+        sse_sender,
+        routine_engine_slot,
+    } = setup_gateway_channel(
+        &config,
+        &components,
+        &container_job_manager,
+        &session_manager,
+        &log_broadcaster,
+        &log_level_handle,
+        &prompt_queue,
+        &scheduler_slot,
+        &job_event_tx,
+        &channels,
+        &mut channel_names,
+    )
+    .await;
 
     // ── Boot screen ────────────────────────────────────────────────────
 
@@ -779,6 +732,7 @@ async fn run_onboard_subcommand(
     Ok(())
 }
 
+#[cfg(feature = "import")]
 async fn run_import_subcommand(import_cmd: &ironclaw::cli::ImportCommand) -> anyhow::Result<()> {
     let config = ironclaw::config::Config::from_env().await?;
     ironclaw::cli::run_import_command(import_cmd, &config).await
@@ -801,4 +755,113 @@ async fn dispatch_worker_subcommand(
 ) -> anyhow::Result<()> {
     init_worker_tracing();
     ironclaw::worker::run_worker(job_id, orchestrator_url, max_iterations).await
+}
+
+async fn setup_gateway_channel(
+    config: &Config,
+    components: &ironclaw::app::AppComponents,
+    container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+    session_manager: &Arc<ironclaw::agent::SessionManager>,
+    log_broadcaster: &Arc<ironclaw::channels::web::log_layer::LogBroadcaster>,
+    log_level_handle: &Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    prompt_queue: &Arc<
+        tokio::sync::Mutex<
+            std::collections::HashMap<
+                uuid::Uuid,
+                std::collections::VecDeque<ironclaw::orchestrator::api::PendingPrompt>,
+            >,
+        >,
+    >,
+    scheduler_slot: &ironclaw::tools::builtin::SchedulerSlot,
+    job_event_tx: &Option<
+        tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
+    >,
+    channels: &ironclaw::channels::ChannelManager,
+    channel_names: &mut Vec<String>,
+) -> GatewaySetup {
+    let mut gateway_url: Option<String> = None;
+    let mut sse_sender: Option<
+        tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
+    > = None;
+    let mut routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot> = None;
+
+    if let Some(ref gw_config) = config.channels.gateway {
+        let mut gw =
+            GatewayChannel::new(gw_config.clone()).with_llm_provider(Arc::clone(&components.llm));
+        if let Some(ref ws) = components.workspace {
+            gw = gw.with_workspace(Arc::clone(ws));
+        }
+        gw = gw.with_session_manager(Arc::clone(session_manager));
+        gw = gw.with_log_broadcaster(Arc::clone(log_broadcaster));
+        gw = gw.with_log_level_handle(Arc::clone(log_level_handle));
+        gw = gw.with_tool_registry(Arc::clone(&components.tools));
+        if let Some(ref ext_mgr) = components.extension_manager {
+            gw = gw.with_extension_manager(Arc::clone(ext_mgr));
+        }
+        if !components.catalog_entries.is_empty() {
+            gw = gw.with_registry_entries(components.catalog_entries.clone());
+        }
+        if let Some(ref d) = components.db {
+            gw = gw.with_store(Arc::clone(d));
+        }
+        if let Some(jm) = container_job_manager {
+            gw = gw.with_job_manager(Arc::clone(jm));
+        }
+        gw = gw.with_scheduler(scheduler_slot.clone());
+        if let Some(ref sr) = components.skill_registry {
+            gw = gw.with_skill_registry(Arc::clone(sr));
+        }
+        if let Some(ref sc) = components.skill_catalog {
+            gw = gw.with_skill_catalog(Arc::clone(sc));
+        }
+        gw = gw.with_cost_guard(Arc::clone(&components.cost_guard));
+        if config.sandbox.enabled {
+            gw = gw.with_prompt_queue(Arc::clone(prompt_queue));
+
+            if let Some(tx) = job_event_tx {
+                let mut rx = tx.subscribe();
+                let gw_state = Arc::clone(gw.state());
+                tokio::spawn(async move {
+                    while let Ok((_job_id, event)) = rx.recv().await {
+                        gw_state.sse.broadcast(event);
+                    }
+                });
+            }
+        }
+
+        gateway_url = Some(format!(
+            "http://{}:{}/?token={}",
+            gw_config.host,
+            gw_config.port,
+            gw.auth_token()
+        ));
+
+        tracing::debug!("Web UI: http://{}:{}/", gw_config.host, gw_config.port);
+
+        // Capture SSE sender and routine engine slot before moving gw into channels.
+        // IMPORTANT: This must come after all `with_*` calls since `rebuild_state`
+        // creates a new SseManager, which would orphan this sender.
+        sse_sender = Some(gw.state().sse.sender());
+        routine_engine_slot = Some(Arc::clone(&gw.state().routine_engine));
+
+        channel_names.push("gateway".to_string());
+        channels.add(Box::new(gw)).await;
+    }
+
+    GatewaySetup {
+        gateway_url,
+        sse_sender,
+        routine_engine_slot,
+    }
+}
+
+// Note: spawn_sighup_handler has been removed in favor of the HotReloadManager
+// Note: spawn_sighup_handler has been removed in favor of the HotReloadManager
+// approach from the main branch, which provides better encapsulation of the
+// hot-reload logic. The SIGHUP handler is now implemented inline in async_main.
+
+struct GatewaySetup {
+    gateway_url: Option<String>,
+    sse_sender: Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
+    routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
 }
