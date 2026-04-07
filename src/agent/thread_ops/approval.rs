@@ -123,6 +123,24 @@ struct DeferredFlow<'a> {
     deferred_tool_calls: Vec<crate::llm::ToolCall>,
 }
 
+/// Parameters for auth intercept handling.
+struct AuthInterceptParams<'a> {
+    /// Session containing the thread.
+    session: &'a Arc<Mutex<Session>>,
+    /// Thread ID for the conversation.
+    thread_id: Uuid,
+    /// Message environment context.
+    env: &'a MsgEnv,
+    /// Tool execution result (used to extract auth URLs).
+    tool_result: &'a Result<String, Error>,
+    /// Extension name requiring authentication.
+    ext_name: String,
+    /// Instructions to display to the user.
+    instructions: String,
+    /// Pending approval to preserve for continuation after auth.
+    pending: Option<PendingApproval>,
+}
+
 impl Agent {
     /// Take pending approval if thread is in AwaitingApproval state.
     async fn take_pending_approval_if_awaiting(
@@ -329,15 +347,15 @@ impl Agent {
     ) -> Option<SubmissionResult> {
         if let Some((ext_name, instructions)) = check_auth_required(&pending.tool_name, tool_result)
         {
-            self.handle_auth_intercept(
-                &scope.session,
-                scope.thread_id,
-                &scope.env,
+            self.handle_auth_intercept(AuthInterceptParams {
+                session: &scope.session,
+                thread_id: scope.thread_id,
+                env: &scope.env,
                 tool_result,
                 ext_name,
-                instructions.clone(),
-                Some(pending.clone()),
-            )
+                instructions: instructions.clone(),
+                pending: Some(pending.clone()),
+            })
             .await;
             return Some(SubmissionResult::response(instructions));
         }
@@ -593,15 +611,15 @@ impl Agent {
                 && let Some((ext_name, instructions)) =
                     check_auth_required(&tc.name, &deferred_result)
             {
-                self.handle_auth_intercept(
-                    &scope.session,
-                    scope.thread_id,
-                    &scope.env,
-                    &deferred_result,
+                self.handle_auth_intercept(AuthInterceptParams {
+                    session: &scope.session,
+                    thread_id: scope.thread_id,
+                    env: &scope.env,
+                    tool_result: &deferred_result,
                     ext_name,
-                    instructions.clone(),
-                    Some(pending.clone()),
-                )
+                    instructions: instructions.clone(),
+                    pending: Some(pending.clone()),
+                })
                 .await;
                 deferred_auth = Some(instructions);
             }
@@ -1018,45 +1036,38 @@ impl Agent {
     /// Enters auth mode on the thread, stores the pending approval (if provided)
     /// to preserve deferred tool calls and context messages, completes + persists
     /// the turn, and sends the AuthRequired status to the channel.
-    /// Returns the instructions string for the caller to wrap in a response.
-    #[allow(clippy::too_many_arguments)]
-    async fn handle_auth_intercept(
-        &self,
-        session: &Arc<Mutex<Session>>,
-        thread_id: Uuid,
-        env: &MsgEnv,
-        tool_result: &Result<String, Error>,
-        ext_name: String,
-        instructions: String,
-        pending: Option<PendingApproval>,
-    ) {
-        let auth_data = parse_auth_result(tool_result);
+    async fn handle_auth_intercept(&self, params: AuthInterceptParams<'_>) {
+        let auth_data = parse_auth_result(params.tool_result);
         {
-            let mut sess = session.lock().await;
-            if let Some(thread) = sess.threads.get_mut(&thread_id) {
+            let mut sess = params.session.lock().await;
+            if let Some(thread) = sess.threads.get_mut(&params.thread_id) {
                 // Store pending approval to preserve deferred tool calls and context
                 // messages so the tool chain can resume after auth completion.
-                if let Some(pending) = pending {
+                if let Some(pending) = params.pending {
                     thread.await_approval(pending);
                 }
-                thread.enter_auth_mode(ext_name.clone());
-                thread.complete_turn(&instructions);
+                thread.enter_auth_mode(params.ext_name.clone());
+                thread.complete_turn(&params.instructions);
             }
         }
         // User message already persisted at turn start; save auth instructions
-        self.persist_assistant_response(thread_id, &env.user_id, &instructions)
-            .await;
+        self.persist_assistant_response(
+            params.thread_id,
+            &params.env.user_id,
+            &params.instructions,
+        )
+        .await;
         let _ = self
             .channels
             .send_status(
-                &env.channel,
+                &params.env.channel,
                 StatusUpdate::AuthRequired {
-                    extension_name: ext_name,
-                    instructions: Some(instructions.clone()),
+                    extension_name: params.ext_name,
+                    instructions: Some(params.instructions.clone()),
                     auth_url: auth_data.auth_url,
                     setup_url: auth_data.setup_url,
                 },
-                &env.metadata,
+                &params.env.metadata,
             )
             .await;
     }
