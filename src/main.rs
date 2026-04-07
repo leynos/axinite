@@ -68,8 +68,14 @@ async fn dispatch_subcommand(cli: &Cli) -> Option<anyhow::Result<()>> {
             init_cli_tracing();
             Some(run_service_command(c))
         }
-        Some(Command::Doctor) => dispatch_cli(|| ironclaw::cli::run_doctor_command()).await,
-        Some(Command::Status) => dispatch_cli(|| run_status_command()).await,
+        Some(Command::Doctor) => {
+            #[allow(clippy::redundant_closure)]
+            dispatch_cli(|| ironclaw::cli::run_doctor_command()).await
+        }
+        Some(Command::Status) => {
+            #[allow(clippy::redundant_closure)]
+            dispatch_cli(|| run_status_command()).await
+        }
         Some(Command::Completion(c)) => {
             init_cli_tracing();
             Some(c.run())
@@ -757,6 +763,7 @@ async fn dispatch_worker_subcommand(
     ironclaw::worker::run_worker(job_id, orchestrator_url, max_iterations).await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn setup_gateway_channel(
     config: &Config,
     components: &ironclaw::app::AppComponents,
