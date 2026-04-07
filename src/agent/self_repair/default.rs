@@ -24,7 +24,15 @@ pub struct DefaultSelfRepair {
     store: Option<Arc<dyn Database>>,
     builder: Option<Arc<dyn SoftwareBuilder>>,
     #[cfg(any(test, feature = "self_repair_extras"))]
-    #[allow(dead_code)]
+    #[cfg_attr(
+        feature = "self_repair_extras",
+        expect(
+            dead_code,
+            reason = "tool registry wiring is feature-gated and not yet consumed here"
+        )
+    )]
+    #[cfg_attr(test, allow(dead_code))]
+    #[cfg_attr(feature = "self_repair_extras", allow(unfulfilled_lint_expectations))]
     tools: Option<Arc<ToolRegistry>>,
 }
 
@@ -53,14 +61,14 @@ impl DefaultSelfRepair {
     }
 }
 
+/// Extras module for self-repair functionality that is feature-gated.
 #[cfg(any(test, feature = "self_repair_extras"))]
 mod extras {
-    #![allow(dead_code)]
-
     use super::*;
 
     impl DefaultSelfRepair {
         /// Add a Builder and ToolRegistry for automatic tool repair.
+        #[expect(dead_code, reason = "not yet wired outside tests")]
         pub(crate) fn with_builder(
             mut self,
             builder: Arc<dyn SoftwareBuilder>,
