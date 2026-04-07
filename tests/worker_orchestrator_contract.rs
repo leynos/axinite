@@ -50,6 +50,8 @@ impl NativeLlmProvider for StubLlm {
         &self,
         _req: CompletionRequest,
     ) -> Result<CompletionResponse, ironclaw::error::LlmError> {
+        // These transport types do not expose a canonical Default in the
+        // library crate because `finish_reason` has no unambiguous default.
         Ok(CompletionResponse {
             content: String::new(),
             input_tokens: 0,
@@ -196,32 +198,36 @@ fn authenticated_routes() -> Vec<&'static str> {
         .collect()
 }
 
-#[rstest]
-#[tokio::test]
-async fn no_auth_header_yields_unauthorized() {
-    let router = OrchestratorApi::router(make_state());
-    let job_id = Uuid::new_v4();
-
+async fn assert_all_authenticated_routes_yield_unauthorized(
+    router: axum::Router,
+    job_id: Uuid,
+    auth_header: Option<String>,
+) {
     for route in authenticated_routes() {
         let uri = route.replace("{job_id}", &job_id.to_string());
+        let mut builder = Request::builder().method("GET").uri(&uri);
+        if let Some(ref header) = auth_header {
+            builder = builder.header("Authorization", header.as_str());
+        }
         let resp = router
             .clone()
-            .oneshot(
-                Request::builder()
-                    .method("GET")
-                    .uri(&uri)
-                    .body(Body::empty())
-                    .expect("build request"),
-            )
+            .oneshot(builder.body(Body::empty()).expect("build request"))
             .await
             .expect("send request");
         assert_eq!(
             resp.status(),
             StatusCode::UNAUTHORIZED,
-            "no auth header on {} should yield 401",
-            route,
+            "route {route} should yield 401",
         );
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn no_auth_header_yields_unauthorized() {
+    let router = OrchestratorApi::router(make_state());
+    let job_id = Uuid::new_v4();
+    assert_all_authenticated_routes_yield_unauthorized(router, job_id, None).await;
 }
 
 #[rstest]
@@ -229,28 +235,12 @@ async fn no_auth_header_yields_unauthorized() {
 async fn wrong_bearer_token_yields_unauthorized() {
     let router = OrchestratorApi::router(make_state());
     let job_id = Uuid::new_v4();
-
-    for route in authenticated_routes() {
-        let uri = route.replace("{job_id}", &job_id.to_string());
-        let resp = router
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("GET")
-                    .uri(&uri)
-                    .header("Authorization", "Bearer totally-wrong-token")
-                    .body(Body::empty())
-                    .expect("build request"),
-            )
-            .await
-            .expect("send request");
-        assert_eq!(
-            resp.status(),
-            StatusCode::UNAUTHORIZED,
-            "wrong token on {} should yield 401",
-            route,
-        );
-    }
+    assert_all_authenticated_routes_yield_unauthorized(
+        router,
+        job_id,
+        Some("Bearer totally-wrong-token".to_string()),
+    )
+    .await;
 }
 
 #[rstest]
@@ -261,27 +251,12 @@ async fn valid_token_wrong_job_yields_unauthorized() {
     let token = state.token_store.create_token(other_job).await;
     let router = OrchestratorApi::router(state);
     let target_job = Uuid::new_v4();
-
-    for route in authenticated_routes() {
-        let uri = route.replace("{job_id}", &target_job.to_string());
-        let resp = router
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("GET")
-                    .uri(&uri)
-                    .header("Authorization", format!("Bearer {}", token))
-                    .body(Body::empty())
-                    .expect("build request"),
-            )
-            .await
-            .expect("send request");
-        assert_eq!(
-            resp.status(),
-            StatusCode::UNAUTHORIZED,
-            "token for job {other_job} on route for {target_job} should yield 401",
-        );
-    }
+    assert_all_authenticated_routes_yield_unauthorized(
+        router,
+        target_job,
+        Some(format!("Bearer {}", token)),
+    )
+    .await;
 }
 
 // ---------------------------------------------------------------------------

@@ -1498,32 +1498,44 @@ mod tests {
         }
     }
 
-    /// Build a Worker wired to a ToolRegistry containing the given tools.
-    async fn make_worker(tools: Vec<Arc<dyn Tool>>) -> Worker {
+    async fn build_registry(tools: Vec<Arc<dyn Tool>>) -> ToolRegistry {
         let registry = ToolRegistry::new();
-        for t in tools {
-            registry.register(t).await;
+        for tool in tools {
+            registry.register(tool).await;
         }
+        registry
+    }
 
-        let cm = Arc::new(crate::context::ContextManager::new(5));
-        let job_id = cm.create_job("test", "test job").await.unwrap();
-
-        let deps = WorkerDeps {
+    fn base_deps(
+        cm: Arc<crate::context::ContextManager>,
+        tools: Arc<ToolRegistry>,
+        store: Option<Arc<dyn crate::db::Database>>,
+        approval_context: Option<crate::tools::ApprovalContext>,
+    ) -> WorkerDeps {
+        WorkerDeps {
             context_manager: cm,
             llm: Arc::new(StubLlm),
             safety: Arc::new(SafetyLayer::new(&SafetyConfig {
                 max_output_length: 100_000,
                 injection_check_enabled: false,
             })),
-            tools: Arc::new(registry),
-            store: None,
+            tools,
+            store,
             hooks: Arc::new(crate::hooks::HookRegistry::new()),
             timeout: Duration::from_secs(30),
             use_planning: false,
             sse_tx: None,
-            approval_context: None,
+            approval_context,
             http_interceptor: None,
-        };
+        }
+    }
+
+    /// Build a Worker wired to a ToolRegistry containing the given tools.
+    async fn make_worker(tools: Vec<Arc<dyn Tool>>) -> Worker {
+        let registry = Arc::new(build_registry(tools).await);
+        let cm = Arc::new(crate::context::ContextManager::new(5));
+        let job_id = cm.create_job("test", "test job").await.unwrap();
+        let deps = base_deps(cm, registry, None, None);
 
         Worker::new(job_id, deps)
     }
@@ -1535,11 +1547,7 @@ mod tests {
         use crate::db::libsql::LibSqlBackend;
         use tempfile::tempdir;
 
-        let registry = ToolRegistry::new();
-        for t in tools {
-            registry.register(t).await;
-        }
-
+        let registry = Arc::new(build_registry(tools).await);
         let cm = Arc::new(crate::context::ContextManager::new(5));
         let job_id = cm
             .create_job("test", "test job")
@@ -1557,23 +1565,7 @@ mod tests {
         let store: Arc<dyn Database> = Arc::new(backend);
         let ctx = cm.get_context(job_id).await.expect("failed to get context");
         store.save_job(&ctx).await.expect("failed to save job");
-
-        let deps = WorkerDeps {
-            context_manager: cm,
-            llm: Arc::new(StubLlm),
-            safety: Arc::new(SafetyLayer::new(&SafetyConfig {
-                max_output_length: 100_000,
-                injection_check_enabled: false,
-            })),
-            tools: Arc::new(registry),
-            store: Some(store.clone()),
-            hooks: Arc::new(crate::hooks::HookRegistry::new()),
-            timeout: Duration::from_secs(30),
-            use_planning: false,
-            sse_tx: None,
-            approval_context: None,
-            http_interceptor: None,
-        };
+        let deps = base_deps(cm, registry, Some(store.clone()), None);
 
         (Worker::new(job_id, deps), store, dir)
     }
@@ -1785,30 +1777,10 @@ mod tests {
         tools: Vec<Arc<dyn Tool>>,
         approval_context: Option<crate::tools::ApprovalContext>,
     ) -> Worker {
-        let registry = ToolRegistry::new();
-        for t in tools {
-            registry.register(t).await;
-        }
-
+        let registry = Arc::new(build_registry(tools).await);
         let cm = Arc::new(crate::context::ContextManager::new(5));
         let job_id = cm.create_job("test", "test job").await.unwrap();
-
-        let deps = WorkerDeps {
-            context_manager: cm,
-            llm: Arc::new(StubLlm),
-            safety: Arc::new(SafetyLayer::new(&SafetyConfig {
-                max_output_length: 100_000,
-                injection_check_enabled: false,
-            })),
-            tools: Arc::new(registry),
-            store: None,
-            hooks: Arc::new(crate::hooks::HookRegistry::new()),
-            timeout: Duration::from_secs(30),
-            use_planning: false,
-            sse_tx: None,
-            approval_context,
-            http_interceptor: None,
-        };
+        let deps = base_deps(cm, registry, None, approval_context);
 
         Worker::new(job_id, deps)
     }
@@ -2642,35 +2614,62 @@ mod tests {
     async fn make_worker_with_capturing_store(
         tools: Vec<Arc<dyn Tool>>,
     ) -> (Worker, Arc<CapturingStore>) {
-        let registry = ToolRegistry::new();
-        for t in tools {
-            registry.register(t).await;
-        }
-
+        let registry = Arc::new(build_registry(tools).await);
         let cm = Arc::new(crate::context::ContextManager::new(5));
         let job_id = cm.create_job("test", "test job").await.unwrap();
 
         let store = Arc::new(CapturingStore::new());
         let store_dyn: Arc<dyn crate::db::Database> = store.clone();
-
-        let deps = WorkerDeps {
-            context_manager: cm,
-            llm: Arc::new(StubLlm),
-            safety: Arc::new(SafetyLayer::new(&SafetyConfig {
-                max_output_length: 100_000,
-                injection_check_enabled: false,
-            })),
-            tools: Arc::new(registry),
-            store: Some(store_dyn),
-            hooks: Arc::new(crate::hooks::HookRegistry::new()),
-            timeout: Duration::from_secs(30),
-            use_planning: false,
-            sse_tx: None,
-            approval_context: None,
-            http_interceptor: None,
-        };
+        let deps = base_deps(cm, registry, Some(store_dyn), None);
 
         (Worker::new(job_id, deps), store)
+    }
+
+    async fn assert_terminal_persistence(
+        store: &CapturingStore,
+        expected_state: JobState,
+        expected_status_str: &str,
+        expected_reason: Option<&str>,
+    ) {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let calls = store.captured_calls().await;
+        let update_calls: Vec<_> = calls
+            .iter()
+            .filter(|call| matches!(call, CapturedCall::UpdateJobStatus { .. }))
+            .cloned()
+            .collect();
+        let event_calls: Vec<_> = calls
+            .iter()
+            .filter(|call| matches!(call, CapturedCall::SaveJobEvent { .. }))
+            .cloned()
+            .collect();
+
+        assert_eq!(
+            update_calls.len(),
+            1,
+            "Expected exactly one update_job_status call"
+        );
+        assert_eq!(
+            event_calls.len(),
+            1,
+            "Expected exactly one save_job_event call"
+        );
+
+        if let CapturedCall::UpdateJobStatus { status, reason, .. } = &update_calls[0] {
+            assert_eq!(*status, expected_state);
+            if let Some(expected_reason) = expected_reason {
+                assert_eq!(reason.as_deref(), Some(expected_reason));
+            }
+        }
+
+        if let CapturedCall::SaveJobEvent {
+            event_type, data, ..
+        } = &event_calls[0]
+        {
+            assert_eq!(event_type, "result");
+            assert_eq!(data["status"], expected_status_str);
+        }
     }
 
     #[tokio::test]
@@ -2698,44 +2697,7 @@ mod tests {
             .unwrap();
         assert_eq!(ctx.state, JobState::Completed);
 
-        // Wait briefly for fire-and-forget tasks
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Verify captured calls
-        let calls = store.captured_calls().await;
-        let update_calls: Vec<_> = calls
-            .iter()
-            .filter(|c| matches!(c, CapturedCall::UpdateJobStatus { .. }))
-            .cloned()
-            .collect();
-        let event_calls: Vec<_> = calls
-            .iter()
-            .filter(|c| matches!(c, CapturedCall::SaveJobEvent { .. }))
-            .cloned()
-            .collect();
-
-        assert_eq!(
-            update_calls.len(),
-            1,
-            "Expected exactly one update_job_status call"
-        );
-        assert_eq!(
-            event_calls.len(),
-            1,
-            "Expected exactly one save_job_event call"
-        );
-
-        if let CapturedCall::UpdateJobStatus { status, .. } = &update_calls[0] {
-            assert_eq!(*status, JobState::Completed);
-        }
-
-        if let CapturedCall::SaveJobEvent {
-            event_type, data, ..
-        } = &event_calls[0]
-        {
-            assert_eq!(event_type, "result");
-            assert_eq!(data["status"], "completed");
-        }
+        assert_terminal_persistence(&store, JobState::Completed, "completed", None).await;
     }
 
     #[tokio::test]
@@ -2763,45 +2725,8 @@ mod tests {
             .unwrap();
         assert_eq!(ctx.state, JobState::Failed);
 
-        // Wait briefly for fire-and-forget tasks
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Verify captured calls
-        let calls = store.captured_calls().await;
-        let update_calls: Vec<_> = calls
-            .iter()
-            .filter(|c| matches!(c, CapturedCall::UpdateJobStatus { .. }))
-            .cloned()
-            .collect();
-        let event_calls: Vec<_> = calls
-            .iter()
-            .filter(|c| matches!(c, CapturedCall::SaveJobEvent { .. }))
-            .cloned()
-            .collect();
-
-        assert_eq!(
-            update_calls.len(),
-            1,
-            "Expected exactly one update_job_status call"
-        );
-        assert_eq!(
-            event_calls.len(),
-            1,
-            "Expected exactly one save_job_event call"
-        );
-
-        if let CapturedCall::UpdateJobStatus { status, reason, .. } = &update_calls[0] {
-            assert_eq!(*status, JobState::Failed);
-            assert_eq!(reason.as_deref(), Some("budget exceeded"));
-        }
-
-        if let CapturedCall::SaveJobEvent {
-            event_type, data, ..
-        } = &event_calls[0]
-        {
-            assert_eq!(event_type, "result");
-            assert_eq!(data["status"], "failed");
-        }
+        assert_terminal_persistence(&store, JobState::Failed, "failed", Some("budget exceeded"))
+            .await;
     }
 
     #[tokio::test]
@@ -2829,45 +2754,7 @@ mod tests {
             .unwrap();
         assert_eq!(ctx.state, JobState::Stuck);
 
-        // Wait briefly for fire-and-forget tasks
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Verify captured calls
-        let calls = store.captured_calls().await;
-        let update_calls: Vec<_> = calls
-            .iter()
-            .filter(|c| matches!(c, CapturedCall::UpdateJobStatus { .. }))
-            .cloned()
-            .collect();
-        let event_calls: Vec<_> = calls
-            .iter()
-            .filter(|c| matches!(c, CapturedCall::SaveJobEvent { .. }))
-            .cloned()
-            .collect();
-
-        assert_eq!(
-            update_calls.len(),
-            1,
-            "Expected exactly one update_job_status call"
-        );
-        assert_eq!(
-            event_calls.len(),
-            1,
-            "Expected exactly one save_job_event call"
-        );
-
-        if let CapturedCall::UpdateJobStatus { status, reason, .. } = &update_calls[0] {
-            assert_eq!(*status, JobState::Stuck);
-            assert_eq!(reason.as_deref(), Some("timeout"));
-        }
-
-        if let CapturedCall::SaveJobEvent {
-            event_type, data, ..
-        } = &event_calls[0]
-        {
-            assert_eq!(event_type, "result");
-            assert_eq!(data["status"], "stuck");
-        }
+        assert_terminal_persistence(&store, JobState::Stuck, "stuck", Some("timeout")).await;
     }
 
     #[tokio::test]
@@ -2894,29 +2781,6 @@ mod tests {
             "Double transition to Completed should be rejected"
         );
 
-        // Wait briefly for fire-and-forget tasks
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Verify only one set of calls was made
-        let calls = store.captured_calls().await;
-        let update_calls: Vec<_> = calls
-            .iter()
-            .filter(|c| matches!(c, CapturedCall::UpdateJobStatus { .. }))
-            .collect();
-        let event_calls: Vec<_> = calls
-            .iter()
-            .filter(|c| matches!(c, CapturedCall::SaveJobEvent { .. }))
-            .collect();
-
-        assert_eq!(
-            update_calls.len(),
-            1,
-            "Expected exactly one update_job_status call"
-        );
-        assert_eq!(
-            event_calls.len(),
-            1,
-            "Expected exactly one save_job_event call"
-        );
+        assert_terminal_persistence(&store, JobState::Completed, "completed", None).await;
     }
 }
