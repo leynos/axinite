@@ -28,45 +28,15 @@ pub(crate) fn truncate_for_preview(output: &str, max_chars: usize) -> String {
     if max_chars == 0 {
         return String::new();
     }
-
-    let mut result = String::new();
-    let mut used = 0usize;
-    let mut exceeded = false;
-
-    for token in output.split_whitespace() {
-        let token_chars = token.chars();
-        let token_len = token_chars.clone().count();
-        let sep = if result.is_empty() { 0 } else { 1 };
-        let required = sep + token_len;
-
-        if used + required <= max_chars {
-            if sep == 1 {
-                result.push(' ');
-                used += 1;
-            }
-            result.push_str(token);
-            used += token_len;
-        } else if used < max_chars {
-            if sep == 1 && used < max_chars {
-                result.push(' ');
-                used += 1;
-            }
-            let remaining = max_chars - used;
-            if remaining > 0 {
-                result.extend(token.chars().take(remaining));
-            }
-            exceeded = true;
-            break;
-        } else {
-            exceeded = true;
-            break;
-        }
+    let collapsed = output.split_whitespace().collect::<Vec<_>>().join(" ");
+    let total = collapsed.chars().count();
+    if total <= max_chars {
+        return collapsed;
     }
-
-    if exceeded && !result.is_empty() {
-        result.push_str("...");
-    }
-    result
+    let mut truncated = String::with_capacity(max_chars + 3);
+    truncated.extend(collapsed.chars().take(max_chars));
+    truncated.push_str("...");
+    truncated
 }
 
 /// Select active skills for a message using deterministic prefiltering.
