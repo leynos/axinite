@@ -2,7 +2,6 @@
 
 use std::time::Duration;
 
-use super::common::macros::routine_started_test;
 use super::common::{RigConfig, run_trace_test, run_trace_test_with_timeout};
 
 #[tokio::test]
@@ -36,20 +35,63 @@ async fn routine_create_list() {
     rig.shutdown();
 }
 
-// Invoke the macro for routine tests that verify specific tools were started.
-routine_started_test!(
-    routine_update_delete,
-    "/tests/fixtures/llm_traces/tools/routine_update_delete.json",
-    "Create, update, and delete a routine",
-    ["routine_create", "routine_update", "routine_delete"]
-);
+#[tokio::test]
+async fn routine_update_delete() {
+    let fixture_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/llm_traces/tools/routine_update_delete.json"
+    );
+    let (rig, _trace, _responses) = run_trace_test(
+        fixture_path,
+        "Create, update, and delete a routine",
+        RigConfig {
+            auto_approve: true,
+            routines: true,
+            skills: true,
+        },
+    )
+    .await;
 
-routine_started_test!(
-    routine_history,
-    "/tests/fixtures/llm_traces/tools/routine_history.json",
-    "Create a routine and check its history",
-    ["routine_create", "routine_history"]
-);
+    // Verify all tools completed successfully.
+    let completed = rig.tool_calls_completed();
+    for tool in &["routine_create", "routine_update", "routine_delete"] {
+        assert!(
+            completed.iter().any(|(n, ok)| n == tool && *ok),
+            "{tool} should succeed: {completed:?}"
+        );
+    }
+
+    rig.shutdown();
+}
+
+#[tokio::test]
+async fn routine_history() {
+    let fixture_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/llm_traces/tools/routine_history.json"
+    );
+    let (rig, _trace, _responses) = run_trace_test(
+        fixture_path,
+        "Create a routine and check its history",
+        RigConfig {
+            auto_approve: true,
+            routines: true,
+            skills: true,
+        },
+    )
+    .await;
+
+    // Verify all tools completed successfully.
+    let completed = rig.tool_calls_completed();
+    for tool in &["routine_create", "routine_history"] {
+        assert!(
+            completed.iter().any(|(n, ok)| n == tool && *ok),
+            "{tool} should succeed: {completed:?}"
+        );
+    }
+
+    rig.shutdown();
+}
 
 #[tokio::test]
 async fn routine_system_event_emit() {
