@@ -1,5 +1,7 @@
 //! Routine tool tests: create, list, update, delete, history, and event emit.
 
+use std::time::Duration;
+
 use super::common::macros::routine_started_test;
 use super::common::{RigConfig, run_trace_test, run_trace_test_with_timeout};
 
@@ -96,8 +98,6 @@ async fn routine_system_event_emit() {
 
 #[tokio::test]
 async fn skill_install_routine_webhook_sim() {
-    use std::time::Duration;
-
     let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/skill_install_routine_webhook_sim.json"
