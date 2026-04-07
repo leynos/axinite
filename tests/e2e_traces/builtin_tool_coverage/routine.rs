@@ -135,7 +135,7 @@ async fn skill_install_routine_webhook_sim() {
         serde_json::from_str(&emit_result.1).expect("event_emit result should be valid JSON");
     let fired_routines = emit_payload
         .get("fired_routines")
-        .and_then(serde_json::Value::as_i64)
+        .and_then(serde_json::Value::as_u64)
         .expect("event_emit result should include integer fired_routines");
     assert!(
         fired_routines > 0,
