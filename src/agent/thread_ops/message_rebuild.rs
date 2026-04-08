@@ -260,29 +260,39 @@ mod unit_tests {
     #[rstest]
     #[case::error_over_result(
         serde_json::json!({"error": "timeout", "result": "some data"}),
-        "Error"
+        "Error",
+        "timeout"
     )]
     #[case::result_over_preview(
         serde_json::json!({"result": "full result data", "result_preview": "preview..."}),
-        "Result"
+        "Result",
+        "full result data"
     )]
     #[case::preview_fallback(
         serde_json::json!({"result_preview": "preview data"}),
-        "ResultPreview"
+        "ResultPreview",
+        "preview data"
     )]
-    #[case::ok_when_empty(
-        serde_json::json!({}),
-        "Ok"
-    )]
+    #[case::ok_when_empty(serde_json::json!({}), "Ok", "")]
     fn test_classify_result_content(
         #[case] entry: serde_json::Value,
         #[case] expected_variant: &str,
+        #[case] expected_content: &str,
     ) {
         let kind = classify_result_content(&entry);
         match expected_variant {
-            "Error" => assert!(matches!(kind, ToolResultKind::Error(_))),
-            "Result" => assert!(matches!(kind, ToolResultKind::Result(_))),
-            "ResultPreview" => assert!(matches!(kind, ToolResultKind::ResultPreview(_))),
+            "Error" => match kind {
+                ToolResultKind::Error(err) => assert_eq!(err, expected_content),
+                _ => panic!("expected Error variant, got {:?}", kind),
+            },
+            "Result" => match kind {
+                ToolResultKind::Result(res) => assert_eq!(res, expected_content),
+                _ => panic!("expected Result variant, got {:?}", kind),
+            },
+            "ResultPreview" => match kind {
+                ToolResultKind::ResultPreview(pre) => assert_eq!(pre, expected_content),
+                _ => panic!("expected ResultPreview variant, got {:?}", kind),
+            },
             "Ok" => assert!(matches!(kind, ToolResultKind::Ok)),
             _ => panic!("unexpected variant {expected_variant}"),
         }
