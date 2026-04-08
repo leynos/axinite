@@ -46,86 +46,40 @@ impl SafetyLayer {
     }
 
     /// Sanitize tool output before it reaches the LLM.
+    ///
+    /// This is the canonical safety pipeline: length check → sanitizer → validator
+    /// → policy → leak detector. Use this for all tool output processing.
     pub fn sanitize_tool_output(&self, tool_name: &str, output: &str) -> SanitizedOutput {
-        // Check length limits — keep the beginning so the LLM has partial data
-        if output.len() > self.config.max_output_length {
-            // Find a safe truncation point on a char boundary
-            let mut cut = self.config.max_output_length;
-            while cut > 0 && !output.is_char_boundary(cut) {
-                cut -= 1;
-            }
-            let truncated = &output[..cut];
-            let notice = format!(
-                "\n\n[... truncated: showing {}/{} bytes. Use the json tool with \
-                 source_tool_call_id to query the full output.]",
-                cut,
-                output.len()
-            );
-            return SanitizedOutput {
-                content: format!("{}{}", truncated, notice),
-                warnings: vec![InjectionWarning {
-                    pattern: "output_too_large".to_string(),
-                    severity: Severity::Low,
-                    location: 0..output.len(),
-                    description: format!(
-                        "Output from tool '{}' was truncated due to size",
-                        tool_name
-                    ),
-                }],
-                was_modified: true,
-            };
-        }
+        self.process_tool_output(tool_name, output)
+    }
 
-        let mut content = output.to_string();
-        let mut was_modified = false;
-
-        // Leak detection and redaction
-        match self.leak_detector.scan_and_clean(&content) {
-            Ok(cleaned) => {
-                if cleaned != content {
-                    was_modified = true;
-                    content = cleaned;
-                }
-            }
-            Err(_) => {
-                return SanitizedOutput {
-                    content: "[Output blocked due to potential secret leakage]".to_string(),
-                    warnings: vec![],
-                    was_modified: true,
-                };
-            }
+    /// Truncate output to max length with char-boundary-safe cut.
+    fn truncate_for_max_length(
+        &self,
+        tool_name: &str,
+        output: &str,
+        max_length: usize,
+    ) -> SanitizedOutput {
+        let mut cut = max_length;
+        while cut > 0 && !output.is_char_boundary(cut) {
+            cut -= 1;
         }
-
-        // Safety policy enforcement
-        let violations = self.policy.check(&content);
-        if violations
-            .iter()
-            .any(|rule| rule.action == crate::safety::PolicyAction::Block)
-        {
-            return SanitizedOutput {
-                content: "[Output blocked by safety policy]".to_string(),
-                warnings: vec![],
-                was_modified: true,
-            };
-        }
-        let force_sanitize = violations
-            .iter()
-            .any(|rule| rule.action == crate::safety::PolicyAction::Sanitize);
-        if force_sanitize {
-            was_modified = true;
-        }
-
-        // Run sanitization once: if injection_check is enabled OR policy requires it
-        if self.config.injection_check_enabled || force_sanitize {
-            let mut sanitized = self.sanitizer.sanitize(&content);
-            sanitized.was_modified = sanitized.was_modified || was_modified;
-            sanitized
-        } else {
-            SanitizedOutput {
-                content,
-                warnings: vec![],
-                was_modified,
-            }
+        let truncated = &output[..cut];
+        let notice = format!(
+            "\n\n[... truncated: showing {}/{} bytes. Use the json tool with \
+             source_tool_call_id to query the full output.]",
+            cut,
+            output.len()
+        );
+        SanitizedOutput {
+            content: format!("{}{}", truncated, notice),
+            warnings: vec![InjectionWarning {
+                pattern: "output_too_large".to_string(),
+                severity: Severity::Low,
+                location: 0..output.len(),
+                description: format!("Output from tool '{}' was truncated due to size", tool_name),
+            }],
+            was_modified: true,
         }
     }
 
@@ -191,30 +145,7 @@ impl SafetyLayer {
     pub fn process_tool_output(&self, tool_name: &str, output: &str) -> SanitizedOutput {
         // Stage 1: Length check (prerequisite for all subsequent stages)
         if output.len() > self.config.max_output_length {
-            let mut cut = self.config.max_output_length;
-            while cut > 0 && !output.is_char_boundary(cut) {
-                cut -= 1;
-            }
-            let truncated = &output[..cut];
-            let notice = format!(
-                "\n\n[... truncated: showing {}/{} bytes. Use the json tool with \
-                 source_tool_call_id to query the full output.]",
-                cut,
-                output.len()
-            );
-            return SanitizedOutput {
-                content: format!("{}{}", truncated, notice),
-                warnings: vec![crate::safety::InjectionWarning {
-                    pattern: "output_too_large".to_string(),
-                    severity: crate::safety::Severity::Low,
-                    location: 0..output.len(),
-                    description: format!(
-                        "Output from tool '{}' was truncated due to size",
-                        tool_name
-                    ),
-                }],
-                was_modified: true,
-            };
+            return self.truncate_for_max_length(tool_name, output, self.config.max_output_length);
         }
 
         // Stage 2: Sanitizer (removes injection patterns)
@@ -344,7 +275,7 @@ mod tests {
         let safety = SafetyLayer::new(&config);
         let long_output = "a".repeat(1000);
         let result = safety.process_tool_output("test_tool", &long_output);
-        // This should be truncated by sanitize_tool_output, not blocked by validator
+        // This should be truncated by process_tool_output, not blocked by validator
         assert!(!result.content.is_empty());
         assert!(result.was_modified); // Truncated
     }
@@ -398,5 +329,67 @@ mod tests {
         let wrapped = wrap_external_content("webhook", payload);
         assert!(wrapped.contains("prompt injection"));
         assert!(wrapped.contains(payload));
+    }
+
+    /// Test that process_tool_output exercises the policy enforcement stage.
+    #[test]
+    fn test_process_tool_output_exercises_policy() {
+        let config = SafetyConfig {
+            max_output_length: 100_000,
+            injection_check_enabled: false,
+        };
+        let safety = SafetyLayer::new(&config);
+
+        // Test policy block: content matching system file access pattern
+        let blocked_result =
+            safety.process_tool_output("test_tool", "Let me read /etc/passwd for you");
+        assert_eq!(blocked_result.content, "[Output blocked by safety policy]");
+        assert!(blocked_result.was_modified);
+
+        // Test policy sanitize: content matching encoded exploit pattern
+        // The "encoded_exploit" rule has Sanitize action and triggers re-sanitization
+        let sanitized_result =
+            safety.process_tool_output("test_tool", "eval(base64_decode('abc123'))");
+        // Content should be modified (sanitized) but not blocked
+        assert!(sanitized_result.was_modified);
+        assert!(!sanitized_result.content.contains("[Output blocked"));
+
+        // Test normal content passes policy stage
+        let normal_result = safety.process_tool_output("test_tool", "normal text content");
+        assert_eq!(normal_result.content, "normal text content");
+        assert!(!normal_result.was_modified);
+    }
+
+    /// Test that process_tool_output exercises the leak detection stage.
+    #[test]
+    fn test_process_tool_output_exercises_leak_detection() {
+        let config = SafetyConfig {
+            max_output_length: 100_000,
+            injection_check_enabled: false,
+        };
+        let safety = SafetyLayer::new(&config);
+
+        // Test leak detection with an AWS Access Key ID pattern
+        let secret_output = "Your AWS key is: AKIAIOSFODNN7EXAMPLE for production use";
+        let result = safety.process_tool_output("test_tool", secret_output);
+        // The leak detector should block the output entirely
+        assert_eq!(
+            result.content,
+            "[Output blocked due to potential secret leakage]"
+        );
+        assert!(result.was_modified);
+
+        // Test leak detection with a Google API key pattern (redaction via scan_and_clean)
+        let google_key_output = "Google API key: AIzaSyDaBmWEtC3BEO6YJgzh2YwRR9kD9eOZnqi_test123";
+        let result = safety.process_tool_output("test_tool", google_key_output);
+        // The Google key should trigger leak detection (blocked since it's critical severity)
+        assert!(result.was_modified);
+        assert!(!result.content.contains("AIzaSyDaBmWEtC3BEO6YJgzh2YwRR9kD9eOZnqi_test123"));
+
+        // Test normal content without secrets passes leak detection
+        let normal_output = "This is a normal message without any secrets.";
+        let result = safety.process_tool_output("test_tool", normal_output);
+        assert_eq!(result.content, normal_output);
+        assert!(!result.was_modified);
     }
 }
