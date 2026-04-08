@@ -182,6 +182,25 @@ impl SafetyLayer {
     pub fn policy(&self) -> &Policy {
         &self.policy
     }
+
+    /// Run the full tool-output pipeline: sanitize → validate → (wrap is done by caller).
+    ///
+    /// Returns a `SanitizedOutput` whose `content` is safe to pass to
+    /// `wrap_for_llm`. If the validator rejects the sanitized content,
+    /// returns a `SanitizedOutput` with `content` set to
+    /// `"[Output blocked: failed validation]"` and `was_modified: true`.
+    pub fn process_tool_output(&self, tool_name: &str, output: &str) -> SanitizedOutput {
+        let sanitized = self.sanitize_tool_output(tool_name, output);
+        let validation = self.validator.validate(&sanitized.content);
+        if !validation.is_valid {
+            return SanitizedOutput {
+                content: "[Output blocked: failed validation]".to_string(),
+                warnings: vec![],
+                was_modified: true,
+            };
+        }
+        sanitized
+    }
 }
 
 /// Wrap external, untrusted content with a security notice for the LLM.
@@ -216,6 +235,38 @@ fn escape_xml_attr(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_process_tool_output_exercises_validator() {
+        let mut config = SafetyConfig {
+            max_output_length: 100_000,
+            injection_check_enabled: false,
+        };
+
+        // First, verify normal output passes through
+        let safety = SafetyLayer::new(&config);
+        let result = safety.process_tool_output("test_tool", "normal output");
+        assert_eq!(result.content, "normal output");
+        assert!(!result.was_modified);
+
+        // Create a safety layer with a validator that rejects a known pattern
+        let safety = SafetyLayer::new(&config);
+        // We need to set up the validator to reject a specific pattern.
+        // Since SafetyLayer doesn't expose setting forbidden patterns,
+        // we'll test validation failure by using empty input (which fails validation)
+        let result = safety.process_tool_output("test_tool", "");
+        assert_eq!(result.content, "[Output blocked: failed validation]");
+        assert!(result.was_modified);
+
+        // Test with output that's too long (exceeds max_length)
+        config.max_output_length = 10;
+        let safety = SafetyLayer::new(&config);
+        let long_output = "a".repeat(1000);
+        let result = safety.process_tool_output("test_tool", &long_output);
+        // This should be truncated by sanitize_tool_output, not blocked by validator
+        assert!(!result.content.is_empty());
+        assert!(result.was_modified); // Truncated
+    }
 
     #[test]
     fn test_wrap_for_llm() {

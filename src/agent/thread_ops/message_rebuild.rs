@@ -147,8 +147,8 @@ fn classify_result_content(entry: &serde_json::Value) -> ToolResultKind<'_> {
 /// Prefers `error` (formatted as `"Error: …"`), then `result`, then
 /// `result_preview`, defaulting to `"OK"`.
 ///
-/// Passes the raw content through `SafetyLayer::sanitize_tool_output`
-/// (leak detection → policy enforcement → sanitiser) and
+/// Passes the raw content through `SafetyLayer::process_tool_output`
+/// (leak detection → policy enforcement → sanitiser → validator) and
 /// `SafetyLayer::wrap_for_llm` (XML boundary wrapping) before returning.
 fn tool_result_content(
     entry: &serde_json::Value,
@@ -163,7 +163,7 @@ fn tool_result_content(
         ToolResultKind::Ok => "OK".to_string(),
     };
 
-    let sanitized = safety.sanitize_tool_output(tool_name, &raw_content);
+    let sanitized = safety.process_tool_output(tool_name, &raw_content);
     safety.wrap_for_llm(tool_name, &sanitized.content, sanitized.was_modified)
 }
 
