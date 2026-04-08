@@ -177,7 +177,7 @@ pub async fn assert_system_event_count(
 
 /// Polls until the engine's running count reaches zero or the timeout expires.
 ///
-/// This provides deterministic synchronisation for tests that need to wait
+/// This provides deterministic synchronization for tests that need to wait
 /// for asynchronous routine execution to complete, eliminating timing-dependent
 /// flakiness without slowing down the test suite on fast machines.
 ///
@@ -207,7 +207,7 @@ pub async fn wait_for_idle(engine: &RoutineEngine, timeout: Duration) {
 
 /// Polls until a routine run is persisted in the database or the timeout expires.
 ///
-/// This helper provides deterministic synchronisation for database persistence,
+/// This helper provides deterministic synchronization for database persistence,
 /// complementing `wait_for_idle` which only waits for in-memory execution completion.
 /// Use this helper after `wait_for_idle` to ensure the routine run is durably recorded.
 ///

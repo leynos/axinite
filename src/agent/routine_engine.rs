@@ -1126,7 +1126,7 @@ async fn send_notification(
 impl RoutineEngine {
     /// Returns the current number of in-flight routine tasks.
     ///
-    /// Intended for test synchronisation only.
+    /// Intended for test synchronization only.
     pub fn running_count(&self) -> usize {
         self.running_count.load(std::sync::atomic::Ordering::SeqCst)
     }
