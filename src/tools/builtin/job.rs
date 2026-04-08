@@ -315,6 +315,43 @@ impl CreateJobTool {
         }
     }
 
+    /// Build a sandbox job record from the given parameters.
+    fn build_sandbox_job_record(
+        task: &str,
+        job_id: Uuid,
+        user_id: crate::db::UserId,
+        project_dir_str: String,
+        credential_grants: &[CredentialGrant],
+    ) -> SandboxJobRecord {
+        // Serialize credential grants so restarts can reload them.
+        let credential_grants_json = match serde_json::to_string(credential_grants) {
+            Ok(json) => json,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to serialize credential grants for job {}: {}. \
+                     Grants will not survive a restart.",
+                    job_id,
+                    e
+                );
+                String::from("[]")
+            }
+        };
+
+        SandboxJobRecord {
+            id: job_id,
+            task: task.to_string(),
+            status: "creating".to_string(),
+            user_id,
+            project_dir: project_dir_str,
+            success: None,
+            failure_reason: None,
+            created_at: Utc::now(),
+            started_at: None,
+            completed_at: None,
+            credential_grants_json,
+        }
+    }
+
     /// Persist sandbox job record and optional mode to the database.
     async fn persist_sandbox_job(
         &self,
@@ -357,6 +394,89 @@ impl CreateJobTool {
         Ok(())
     }
 
+    /// Handle a stopped container, returning success or failure output.
+    async fn handle_stopped_container(
+        &self,
+        handle: &crate::orchestrator::job_manager::ContainerHandle,
+        jm: &ContainerJobManager,
+        job_id: Uuid,
+        project_dir_str: &str,
+        browse_id: &str,
+        start: std::time::Instant,
+    ) -> Result<ToolOutput, ToolError> {
+        let message = handle
+            .completion_result
+            .as_ref()
+            .and_then(|r| r.message.clone())
+            .unwrap_or_else(|| "Container job completed".to_string());
+        let success = handle
+            .completion_result
+            .as_ref()
+            .map(|r| r.success)
+            .unwrap_or(true);
+        jm.cleanup_job(job_id).await;
+
+        let finished_at = Utc::now();
+        if success {
+            self.update_status(
+                job_id,
+                "completed",
+                Some(true),
+                None,
+                None,
+                Some(finished_at),
+            );
+            let result = serde_json::json!({
+                "job_id": job_id.to_string(),
+                "status": "completed",
+                "output": message,
+                "project_dir": project_dir_str,
+                "browse_url": format!("/projects/{}", browse_id),
+            });
+            Ok(ToolOutput::success(result, start.elapsed()))
+        } else {
+            self.update_status(
+                job_id,
+                "failed",
+                Some(false),
+                Some(message.clone()),
+                None,
+                Some(finished_at),
+            );
+            Err(ToolError::ExecutionFailed(format!(
+                "container job failed: {}",
+                message
+            )))
+        }
+    }
+
+    /// Handle a failed container, returning an error.
+    async fn handle_failed_container(
+        &self,
+        handle: &crate::orchestrator::job_manager::ContainerHandle,
+        jm: &ContainerJobManager,
+        job_id: Uuid,
+    ) -> Result<ToolOutput, ToolError> {
+        let message = handle
+            .completion_result
+            .as_ref()
+            .and_then(|r| r.message.clone())
+            .unwrap_or_else(|| "unknown failure".to_string());
+        jm.cleanup_job(job_id).await;
+        self.update_status(
+            job_id,
+            "failed",
+            Some(false),
+            Some(message.clone()),
+            None,
+            Some(Utc::now()),
+        );
+        Err(ToolError::ExecutionFailed(format!(
+            "container job failed: {}",
+            message
+        )))
+    }
+
     /// Poll container state until completion or timeout.
     async fn await_container_completion(
         &self,
@@ -394,70 +514,19 @@ impl CreateJobTool {
                         tokio::time::sleep(poll_interval).await;
                     }
                     crate::orchestrator::job_manager::ContainerState::Stopped => {
-                        let message = handle
-                            .completion_result
-                            .as_ref()
-                            .and_then(|r| r.message.clone())
-                            .unwrap_or_else(|| "Container job completed".to_string());
-                        let success = handle
-                            .completion_result
-                            .as_ref()
-                            .map(|r| r.success)
-                            .unwrap_or(true);
-                        jm.cleanup_job(job_id).await;
-
-                        let finished_at = Utc::now();
-                        if success {
-                            self.update_status(
+                        return self
+                            .handle_stopped_container(
+                                &handle,
+                                jm,
                                 job_id,
-                                "completed",
-                                Some(true),
-                                None,
-                                None,
-                                Some(finished_at),
-                            );
-                            let result = serde_json::json!({
-                                "job_id": job_id.to_string(),
-                                "status": "completed",
-                                "output": message,
-                                "project_dir": project_dir_str,
-                                "browse_url": format!("/projects/{}", browse_id),
-                            });
-                            return Ok(ToolOutput::success(result, start.elapsed()));
-                        } else {
-                            self.update_status(
-                                job_id,
-                                "failed",
-                                Some(false),
-                                Some(message.clone()),
-                                None,
-                                Some(finished_at),
-                            );
-                            return Err(ToolError::ExecutionFailed(format!(
-                                "container job failed: {}",
-                                message
-                            )));
-                        }
+                                project_dir_str,
+                                browse_id,
+                                start,
+                            )
+                            .await;
                     }
                     crate::orchestrator::job_manager::ContainerState::Failed => {
-                        let message = handle
-                            .completion_result
-                            .as_ref()
-                            .and_then(|r| r.message.clone())
-                            .unwrap_or_else(|| "unknown failure".to_string());
-                        jm.cleanup_job(job_id).await;
-                        self.update_status(
-                            job_id,
-                            "failed",
-                            Some(false),
-                            Some(message.clone()),
-                            None,
-                            Some(Utc::now()),
-                        );
-                        return Err(ToolError::ExecutionFailed(format!(
-                            "container job failed: {}",
-                            message
-                        )));
+                        return self.handle_failed_container(&handle, jm, job_id).await;
                     }
                 },
                 None => {
@@ -502,34 +571,14 @@ impl CreateJobTool {
         let (project_dir, browse_id) = resolve_project_dir(explicit_dir, job_id)?;
         let project_dir_str = project_dir.display().to_string();
 
-        // Serialize credential grants so restarts can reload them.
-        let credential_grants_json = match serde_json::to_string(&credential_grants) {
-            Ok(json) => json,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to serialize credential grants for job {}: {}. \
-                     Grants will not survive a restart.",
-                    job_id,
-                    e
-                );
-                String::from("[]")
-            }
-        };
-
         // Build the job record and persist synchronously before creating the container.
-        let record = SandboxJobRecord {
-            id: job_id,
-            task: task.to_string(),
-            status: "creating".to_string(),
-            user_id: crate::db::UserId::from(ctx.user_id.clone()),
-            project_dir: project_dir_str.clone(),
-            success: None,
-            failure_reason: None,
-            created_at: Utc::now(),
-            started_at: None,
-            completed_at: None,
-            credential_grants_json,
-        };
+        let record = Self::build_sandbox_job_record(
+            task,
+            job_id,
+            crate::db::UserId::from(ctx.user_id.clone()),
+            project_dir_str.clone(),
+            &credential_grants,
+        );
 
         self.persist_sandbox_job(&record, mode).await?;
 

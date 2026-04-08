@@ -110,16 +110,33 @@ async fn handle_mark_running_failure(
     ))
 }
 
+/// Parameters describing the new job created during a sandbox restart.
+///
+/// Groups the values derived together in `restart_sandbox_job` so they
+/// can be threaded to helper functions without exceeding the argument-count
+/// threshold.
+struct RestartJobParams {
+    new_job_id: Uuid,
+    /// Unprefixed task text, used to build the new job record.
+    base_task: String,
+    /// Retry-prefixed task text, passed to the container on creation.
+    task: String,
+    now: chrono::DateTime<chrono::Utc>,
+    mode: crate::orchestrator::job_manager::JobMode,
+}
+
 /// Persist a restarted sandbox job record and optionally its mode.
 async fn persist_restart_job(
     store: &Arc<dyn Database>,
     old_job: &crate::history::SandboxJobRecord,
-    new_job_id: Uuid,
-    base_task: String,
-    now: chrono::DateTime<chrono::Utc>,
-    mode: crate::orchestrator::job_manager::JobMode,
+    params: &RestartJobParams,
 ) -> Result<(), (StatusCode, String)> {
-    let record = build_restart_record(old_job, new_job_id, base_task, now);
+    let record = build_restart_record(
+        old_job,
+        params.new_job_id,
+        params.base_task.clone(),
+        params.now,
+    );
     store
         .save_sandbox_job(&record)
         .await
@@ -137,15 +154,15 @@ async fn persist_restart_job(
     // Note: The two-step persistence (save_sandbox_job then update_sandbox_job_mode)
     // is not transactional and may leave a NULL mode if the update fails, but this
     // is safe due to the Worker default on load.
-    let is_claude_code = mode == crate::orchestrator::job_manager::JobMode::ClaudeCode;
+    let is_claude_code = params.mode == crate::orchestrator::job_manager::JobMode::ClaudeCode;
     if is_claude_code
         && let Err(error) = store
-            .update_sandbox_job_mode(new_job_id, crate::db::SandboxMode::ClaudeCode)
+            .update_sandbox_job_mode(params.new_job_id, crate::db::SandboxMode::ClaudeCode)
             .await
     {
         mark_sandbox_restart_failed(
             store,
-            new_job_id,
+            params.new_job_id,
             "Failed to persist restarted sandbox job mode".to_string(),
         )
         .await?;
@@ -158,24 +175,39 @@ async fn persist_restart_job(
     Ok(())
 }
 
+/// Specification for the container job to be created on restart.
+struct ContainerRestartParams<'a> {
+    new_job_id: Uuid,
+    task: &'a str,
+    mode: crate::orchestrator::job_manager::JobMode,
+}
+
 /// Create a container for a restarted sandbox job.
 async fn create_restart_container(
     store: &Arc<dyn Database>,
     job_manager: &crate::orchestrator::job_manager::ContainerJobManager,
     old_job: &crate::history::SandboxJobRecord,
-    new_job_id: Uuid,
-    task: &str,
-    mode: crate::orchestrator::job_manager::JobMode,
+    params: ContainerRestartParams<'_>,
 ) -> Result<(), (StatusCode, String)> {
     let credential_grants = parse_credential_grants(old_job.id, &old_job.credential_grants_json);
 
     let project_dir = std::path::PathBuf::from(&old_job.project_dir);
     if let Err(error) = job_manager
-        .create_job(new_job_id, task, Some(project_dir), mode, credential_grants)
+        .create_job(
+            params.new_job_id,
+            params.task,
+            Some(project_dir),
+            params.mode,
+            credential_grants,
+        )
         .await
     {
-        mark_sandbox_restart_failed(store, new_job_id, "Failed to create container".to_string())
-            .await?;
+        mark_sandbox_restart_failed(
+            store,
+            params.new_job_id,
+            "Failed to create container".to_string(),
+        )
+        .await?;
         return Err(internal_error("Failed to create container", error));
     }
 
@@ -208,24 +240,38 @@ pub(super) async fn restart_sandbox_job(
         &base_task,
         old_job.record.failure_reason.as_deref().unwrap_or(""),
     );
-
-    let new_job_id = Uuid::new_v4();
-    let now = chrono::Utc::now();
     let mode = match load_sandbox_job_mode(store, old_job_id).await? {
         Some(crate::db::SandboxMode::ClaudeCode) => {
             crate::orchestrator::job_manager::JobMode::ClaudeCode
         }
         _ => crate::orchestrator::job_manager::JobMode::Worker,
     };
+    let params = RestartJobParams {
+        new_job_id: Uuid::new_v4(),
+        base_task,
+        task,
+        now: chrono::Utc::now(),
+        mode,
+    };
 
-    persist_restart_job(store, &old_job.record, new_job_id, base_task, now, mode).await?;
-    create_restart_container(store, job_manager, &old_job.record, new_job_id, &task, mode).await?;
+    persist_restart_job(store, &old_job.record, &params).await?;
+    create_restart_container(
+        store,
+        job_manager,
+        &old_job.record,
+        ContainerRestartParams {
+            new_job_id: params.new_job_id,
+            task: &params.task,
+            mode: params.mode,
+        },
+    )
+    .await?;
 
-    if let Err(error) = mark_running(&**store, new_job_id, now).await {
-        return handle_mark_running_failure(store, job_manager, new_job_id, error).await;
+    if let Err(error) = mark_running(&**store, params.new_job_id, params.now).await {
+        return handle_mark_running_failure(store, job_manager, params.new_job_id, error).await;
     }
 
-    let (_status, json) = ok_restart_response(old_job_id, new_job_id);
+    let (_status, json) = ok_restart_response(old_job_id, params.new_job_id);
     Ok(json)
 }
 
