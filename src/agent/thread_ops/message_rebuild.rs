@@ -230,8 +230,8 @@ fn handle_tool_calls_row(
 /// whitespace-only fields) are skipped entirely — legacy rows without
 /// `call_id` are no longer accepted or silently coerced.
 ///
-/// Hydrated tool results pass through `SafetyLayer` (sanitizer → validator
-/// → policy → leak-detector) before being added to the message sequence.
+/// Hydrated tool results pass through `SafetyLayer` (sanitizer → policy
+/// → leak-detector) before being added to the message sequence.
 pub(super) fn rebuild_chat_messages_from_db(
     db_messages: &[ConversationMessage],
     safety: &crate::safety::SafetyLayer,
