@@ -245,50 +245,39 @@ pub(super) fn rebuild_chat_messages_from_db(
 #[cfg(test)]
 mod unit_tests {
     use super::*;
+    use rstest::rstest;
 
-    /// Unit tests for classify_result_content to ensure precedence ordering:
-    /// error > result > result_preview > Ok
-    #[test]
-    fn test_classify_result_content_error_precedence_over_result() {
-        // When both "error" and "result" are present, Error should be returned
-        let entry = serde_json::json!({
-            "error": "timeout",
-            "result": "some data"
-        });
+    /// Parameterised test for `classify_result_content` precedence ordering:
+    /// error > result > result_preview > Ok.
+    #[rstest]
+    #[case::error_over_result(
+        serde_json::json!({"error": "timeout", "result": "some data"}),
+        "Error"
+    )]
+    #[case::result_over_preview(
+        serde_json::json!({"result": "full result data", "result_preview": "preview..."}),
+        "Result"
+    )]
+    #[case::preview_fallback(
+        serde_json::json!({"result_preview": "preview data"}),
+        "ResultPreview"
+    )]
+    #[case::ok_when_empty(
+        serde_json::json!({}),
+        "Ok"
+    )]
+    fn test_classify_result_content(
+        #[case] entry: serde_json::Value,
+        #[case] expected_variant: &str,
+    ) {
         let kind = classify_result_content(&entry);
-        assert!(matches!(kind, ToolResultKind::Error("timeout")));
-    }
-
-    #[test]
-    fn test_classify_result_content_result_precedence_over_preview() {
-        // When both "result" and "result_preview" are present, Result should be returned
-        let entry = serde_json::json!({
-            "result": "full result data",
-            "result_preview": "preview..."
-        });
-        let kind = classify_result_content(&entry);
-        assert!(matches!(kind, ToolResultKind::Result("full result data")));
-    }
-
-    #[test]
-    fn test_classify_result_content_preview_fallback() {
-        // When only "result_preview" is present, ResultPreview should be returned
-        let entry = serde_json::json!({
-            "result_preview": "preview data"
-        });
-        let kind = classify_result_content(&entry);
-        assert!(matches!(
-            kind,
-            ToolResultKind::ResultPreview("preview data")
-        ));
-    }
-
-    #[test]
-    fn test_classify_result_content_ok_when_empty() {
-        // When no result fields are present, Ok should be returned
-        let entry = serde_json::json!({});
-        let kind = classify_result_content(&entry);
-        assert!(matches!(kind, ToolResultKind::Ok));
+        match expected_variant {
+            "Error" => assert!(matches!(kind, ToolResultKind::Error(_))),
+            "Result" => assert!(matches!(kind, ToolResultKind::Result(_))),
+            "ResultPreview" => assert!(matches!(kind, ToolResultKind::ResultPreview(_))),
+            "Ok" => assert!(matches!(kind, ToolResultKind::Ok)),
+            _ => panic!("unexpected variant {expected_variant}"),
+        }
     }
 }
 
