@@ -23,6 +23,15 @@ use crate::tools::redact_params;
 
 const PREVIEW_MAX_CHARS: usize = 1024;
 
+/// Check if a string is valid JSON (object or array).
+fn is_valid_json(s: &str) -> bool {
+    let t = s.trim();
+    if !(t.starts_with('{') || t.starts_with('[')) {
+        return false;
+    }
+    serde_json::from_str::<serde_json::Value>(t).is_ok()
+}
+
 /// Collapse a tool output string into a single-line preview for display.
 pub(crate) fn truncate_for_preview(output: &str, max_chars: usize) -> String {
     if max_chars == 0 {
@@ -744,11 +753,21 @@ impl<'a> ChatDelegate<'a> {
         // Detect image generation sentinel
         let is_image_sentinel = self.maybe_emit_image_sentinel(&tc.name, output).await;
 
-        // Sanitize tool output first (before sending preview or using in context)
-        let sanitized_output = self.sanitize_output(&tc.name, output);
+        // Determine result content and preview based on whether output is valid JSON
+        let (result_content, preview) = if is_valid_json(output) {
+            // For JSON-producing tools, persist raw JSON without wrapping
+            let collapsed: String = output.split_whitespace().collect::<Vec<_>>().join(" ");
+            let preview = truncate_for_preview(&collapsed, PREVIEW_MAX_CHARS);
+            (output.clone(), preview)
+        } else {
+            // Sanitize tool output first (before sending preview or using in context)
+            let sanitized_output = self.sanitize_output(&tc.name, output);
+            let preview = truncate_for_preview(&sanitized_output, PREVIEW_MAX_CHARS);
+            (sanitized_output, preview)
+        };
 
-        // Send ToolResult preview using sanitized output
-        if !is_image_sentinel && !sanitized_output.is_empty() {
+        // Send ToolResult preview
+        if !is_image_sentinel && !preview.is_empty() {
             let _ = self
                 .agent
                 .channels
@@ -756,7 +775,7 @@ impl<'a> ChatDelegate<'a> {
                     &self.message.channel,
                     StatusUpdate::ToolResult {
                         name: tc.name.clone(),
-                        preview: truncate_for_preview(&sanitized_output, PREVIEW_MAX_CHARS),
+                        preview,
                     },
                     &self.message.metadata,
                 )
@@ -800,7 +819,7 @@ impl<'a> ChatDelegate<'a> {
             .insert(tc.id.clone(), output.clone());
 
         // Fold result into context
-        self.fold_into_context(tc, sanitized_output, is_tool_error, reason_ctx)
+        self.fold_into_context(tc, result_content, is_tool_error, reason_ctx)
             .await;
 
         auth_instructions

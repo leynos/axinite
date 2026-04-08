@@ -4,6 +4,58 @@ use std::sync::Arc;
 
 use crate::channels::{IncomingAttachment, IncomingMessage};
 
+/// Metadata for building a document header.
+struct HeaderMeta<'a> {
+    filename: &'a str,
+    user_id: &'a str,
+    channel: &'a str,
+    date: chrono::NaiveDate,
+    mime: &'a str,
+    size_bytes: u64,
+}
+
+/// Components for building a document path.
+struct PathParts<'a> {
+    date: chrono::NaiveDate,
+    index: usize,
+    id: &'a str,
+    filename: &'a str,
+}
+
+/// Specification for writing a document to workspace.
+struct DocumentWriteSpec {
+    path: String,
+    content: String,
+    text_len: usize,
+}
+
+/// Build the document header string from metadata.
+fn build_header(meta: &HeaderMeta) -> String {
+    format!(
+        "# {filename}\n\n\
+         > Uploaded by **{user_id}** via **{channel}** on {date}\n\
+         > MIME: {mime} | Size: {size_bytes} bytes\n\n---\n\n",
+        filename = meta.filename,
+        user_id = meta.user_id,
+        channel = meta.channel,
+        date = meta.date,
+        mime = meta.mime,
+        size_bytes = meta.size_bytes,
+    )
+}
+
+/// Build the document path from parts.
+fn build_document_path(parts: &PathParts) -> String {
+    let date_str = parts.date.to_string();
+    format!(
+        "documents/{date}/{index}-{id}-{filename}",
+        date = date_str,
+        index = parts.index,
+        id = parts.id,
+        filename = parts.filename
+    )
+}
+
 /// Replace characters that are unsafe in file-system paths with an underscore.
 fn sanitise_filename_char(c: char) -> char {
     if matches!(
@@ -42,42 +94,21 @@ fn sanitise_filename(raw_name: &str) -> String {
     }
 }
 
-fn build_document_path(
-    index: usize,
-    attachment: &IncomingAttachment,
-    date: &str,
-    message_id: &str,
-) -> String {
-    let raw_name = attachment.filename.as_deref().unwrap_or("unnamed_document");
-    let filename = sanitise_filename(raw_name);
-    let raw_id = if attachment.id.is_empty() {
-        "unnamed_id"
-    } else {
-        attachment.id.as_str()
-    };
-    let sanitized_id = sanitise_filename(raw_id);
-    let sanitized_message_id = sanitise_filename(message_id);
-
-    format!("documents/{date}/{sanitized_message_id}/{index}-{sanitized_id}-{filename}")
-}
-
 async fn write_document_to_workspace(
     workspace: &Arc<crate::workspace::Workspace>,
-    path: &str,
-    content: &str,
-    text_len: usize,
+    spec: &DocumentWriteSpec,
 ) {
-    match workspace.write(path, content).await {
+    match workspace.write(&spec.path, &spec.content).await {
         Ok(_) => {
             tracing::info!(
-                path = %path,
-                text_len,
+                path = %spec.path,
+                text_len = spec.text_len,
                 "Stored extracted document in workspace memory"
             );
         }
         Err(e) => {
             tracing::warn!(
-                path = %path,
+                path = %spec.path,
                 error = %e,
                 "Failed to store extracted document in workspace"
             );
@@ -90,7 +121,7 @@ pub(super) async fn store_extracted_documents(
     workspace: &Arc<crate::workspace::Workspace>,
     message: &IncomingMessage,
 ) {
-    let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let today = chrono::Utc::now().date_naive();
 
     for (index, attachment) in message.attachments.iter().enumerate() {
         if attachment.kind != crate::channels::AttachmentKind::Document {
@@ -102,22 +133,37 @@ pub(super) async fn store_extracted_documents(
 
         let filename =
             sanitise_filename(attachment.filename.as_deref().unwrap_or("unnamed_document"));
-        // Use message.id as the stable identifier for the document path
-        let message_id = message.id.to_string();
-        let path = build_document_path(index, attachment, &date, &message_id);
-
-        let header = format!(
-            "# {filename}\n\n\
-             > Uploaded by **{}** via **{}** on {date}\n\
-             > MIME: {} | Size: {} bytes\n\n---\n\n",
-            "uploader",
-            message.channel,
-            attachment.mime_type,
-            attachment.size_bytes.unwrap_or(0),
+        let sanitized_id = sanitise_filename(
+            if attachment.id.is_empty() {
+                "unnamed_id"
+            } else {
+                &attachment.id
+            }
         );
-        let content = format!("{header}{text}");
 
-        write_document_to_workspace(workspace, &path, &content, text.len()).await;
+        let path = build_document_path(&PathParts {
+            date: today,
+            index,
+            id: &sanitized_id,
+            filename: &filename,
+        });
+
+        let header = build_header(&HeaderMeta {
+            filename: &filename,
+            user_id: &message.user_id,
+            channel: &message.channel,
+            date: today,
+            mime: &attachment.mime_type,
+            size_bytes: attachment.size_bytes.unwrap_or(0),
+        });
+
+        let content = format!("{header}{text}");
+        let spec = DocumentWriteSpec {
+            path,
+            content,
+            text_len: text.len(),
+        };
+        write_document_to_workspace(workspace, &spec).await;
     }
 }
 
@@ -125,6 +171,7 @@ pub(super) async fn store_extracted_documents(
 mod tests {
     use super::{
         build_document_path, get_valid_document_text, is_usable_extracted_text, sanitise_filename,
+        PathParts,
     };
     use crate::channels::{AttachmentKind, IncomingAttachment};
 
@@ -208,13 +255,20 @@ mod tests {
 
     #[test]
     fn build_document_path_uses_sanitized_id_and_filename() {
-        let attachment = make_attachment("abc/../123", Some("../report.pdf"), Some("text"));
-        let path = build_document_path(7, &attachment, "2026-04-03", "msg-123");
-        assert!(path.starts_with("documents/2026-04-03/msg-123/7-"));
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 4, 3).unwrap();
+        let sanitized_id = sanitise_filename("abc/../123");
+        let sanitized_filename = sanitise_filename("../report.pdf");
+        let path = build_document_path(&PathParts {
+            date,
+            index: 7,
+            id: &sanitized_id,
+            filename: &sanitized_filename,
+        });
+        assert!(path.starts_with("documents/2026-04-03/7-"));
         assert!(!path.contains(".."));
         let suffix = path
-            .strip_prefix("documents/2026-04-03/msg-123/")
-            .expect("path should include date and message_id prefix");
+            .strip_prefix("documents/2026-04-03/")
+            .expect("path should include date prefix");
         assert!(!suffix.contains('/'));
         assert!(!suffix.contains('\\'));
     }

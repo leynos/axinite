@@ -49,6 +49,19 @@ fn spawn_notification_task(repair: Arc<dyn SelfRepair>) -> NotificationHarness {
     }
 }
 
+async fn assert_single_notification(
+    mut harness: NotificationHarness,
+    expected_message: &str,
+    await_failure_msg: &str,
+) {
+    let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
+        .await
+        .expect(await_failure_msg)
+        .expect("notification channel should remain open");
+    assert_eq!(notification.message, expected_message);
+    harness.shutdown().await;
+}
+
 async fn assert_manual_required_deduplication(
     mut harness: NotificationHarness,
     expected_message: &str,
@@ -128,9 +141,10 @@ impl NativeSelfRepair for MockSelfRepair {
 
 #[tokio::test]
 async fn repair_task_sends_notification_for_stuck_job_success() {
+    let job_id = Uuid::new_v4();
     let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_stuck_job(
         StuckJob {
-            job_id: Uuid::new_v4(),
+            job_id,
             stuck_since: Utc::now(),
             stuck_duration: Duration::from_secs(120),
             last_error: None,
@@ -140,16 +154,17 @@ async fn repair_task_sends_notification_for_stuck_job_success() {
             message: "job recovered".to_string(),
         },
     ));
-    let mut harness = spawn_notification_task(repair);
-
-    let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
-        .await
-        .expect("stuck-job success notification should arrive")
-        .expect("notification channel should remain open");
-
-    assert!(notification.message.contains("recovery succeeded"));
-
-    harness.shutdown().await;
+    let harness = spawn_notification_task(repair);
+    let expected_message = format!(
+        "Job {} was stuck for {}s, recovery succeeded: job recovered",
+        job_id, 120
+    );
+    assert_single_notification(
+        harness,
+        &expected_message,
+        "stuck-job success notification should arrive",
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -168,19 +183,13 @@ async fn repair_task_sends_notification_for_broken_tool_success() {
             message: "tool rebuilt".to_string(),
         },
     ));
-    let mut harness = spawn_notification_task(repair);
-
-    let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
-        .await
-        .expect("broken-tool success notification should arrive")
-        .expect("notification channel should remain open");
-
-    assert_eq!(
-        notification.message,
-        "Tool 'compiler' repaired: tool rebuilt"
-    );
-
-    harness.shutdown().await;
+    let harness = spawn_notification_task(repair);
+    assert_single_notification(
+        harness,
+        "Tool 'compiler' repaired: tool rebuilt",
+        "broken-tool success notification should arrive",
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -250,23 +259,18 @@ async fn repair_task_sends_notification_for_stuck_job_failed() {
             message: "recovery failed permanently".to_string(),
         },
     ));
-    let mut harness = spawn_notification_task(repair);
-
-    let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
-        .await
-        .expect("stuck-job failed notification should arrive")
-        .expect("notification channel should remain open");
-
-    assert_eq!(
-        notification.message,
-        format!(
-            "Job {} was stuck for {}s, recovery failed permanently: recovery failed permanently",
-            Uuid::nil(),
-            120
-        )
+    let harness = spawn_notification_task(repair);
+    let expected_message = format!(
+        "Job {} was stuck for {}s, recovery failed permanently: recovery failed permanently",
+        Uuid::nil(),
+        120
     );
-
-    harness.shutdown().await;
+    assert_single_notification(
+        harness,
+        &expected_message,
+        "stuck-job failed notification should arrive",
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -285,17 +289,11 @@ async fn repair_task_sends_notification_for_broken_tool_failed() {
             message: "rebuild failed".to_string(),
         },
     ));
-    let mut harness = spawn_notification_task(repair);
-
-    let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
-        .await
-        .expect("broken-tool failed notification should arrive")
-        .expect("notification channel should remain open");
-
-    assert_eq!(
-        notification.message,
-        "Tool 'compiler' repair failed: rebuild failed"
-    );
-
-    harness.shutdown().await;
+    let harness = spawn_notification_task(repair);
+    assert_single_notification(
+        harness,
+        "Tool 'compiler' repair failed: rebuild failed",
+        "broken-tool failed notification should arrive",
+    )
+    .await;
 }
