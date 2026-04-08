@@ -24,10 +24,7 @@ pub struct DefaultSelfRepair {
     store: Option<Arc<dyn Database>>,
     builder: Option<Arc<dyn SoftwareBuilder>>,
     #[cfg(any(test, feature = "self_repair_extras"))]
-    #[cfg_attr(
-        all(feature = "self_repair_extras", not(test)),
-        expect(dead_code, reason = "reserved for future tool hot-reload after repair")
-    )]
+    #[allow(dead_code)]
     tools: Option<Arc<ToolRegistry>>,
 }
 
@@ -63,7 +60,7 @@ mod extras {
 
     impl DefaultSelfRepair {
         /// Add a Builder and ToolRegistry for automatic tool repair.
-        #[expect(dead_code, reason = "not yet wired outside tests")]
+        #[allow(dead_code)]
         pub(crate) fn with_builder(
             mut self,
             builder: Arc<dyn SoftwareBuilder>,
