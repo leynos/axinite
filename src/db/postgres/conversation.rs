@@ -35,7 +35,7 @@ impl NativeConversationStore for PgBackend {
         limit: usize,
     ) -> Result<(Vec<ConversationMessage>, bool), DatabaseError> {
         let limit = i64::try_from(limit).map_err(|_| {
-            DatabaseError::Query("conversation message pagination limit overflow".to_string())
+            DatabaseError::Validation("conversation message pagination limit overflow".to_string())
         })?;
         self.store
             .list_conversation_messages_paginated(conversation_id, before, limit)
