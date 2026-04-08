@@ -1,6 +1,6 @@
-//! Schema normalisation helpers for WASM tool registration.
+//! Schema normalization helpers for WASM tool registration.
 //!
-//! This module provides functions to normalise and validate parameter schemas
+//! This module provides functions to normalize and validate parameter schemas
 //! during WASM tool registration, handling placeholder schemas, JSON string
 //! parsing, and backend-specific format conversions.
 
@@ -24,7 +24,7 @@ pub(super) fn parse_schema_string(s: &str) -> Option<serde_json::Value> {
     }
 }
 
-/// Normalise a schema value for WASM tool registration.
+/// Normalize a schema value for WASM tool registration.
 ///
 /// Converts `Null` values, empty strings, and placeholder schemas to `None`,
 /// allowing guest export recovery to run. Parses JSON strings and passes
