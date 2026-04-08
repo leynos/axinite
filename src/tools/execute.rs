@@ -422,7 +422,8 @@ mod tests {
         let success_result: Result<String, String> = Ok("test success".to_string());
 
         let (error_content, _) = process_tool_result(&safety, "test_tool", "call_1", &error_result);
-        let (success_content, _) = process_tool_result(&safety, "test_tool", "call_2", &success_result);
+        let (success_content, _) =
+            process_tool_result(&safety, "test_tool", "call_2", &success_result);
 
         // Both error and success content should be XML-wrapped by the safety pipeline
         assert!(
