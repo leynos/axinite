@@ -39,7 +39,7 @@
     {
       "response": {
         "type": "text",
-        "content": "The first write failed because the directory didn't exist, but I recovered and wrote the file to /tmp/ironclaw_recovery_test.txt successfully.",
+        "content": "The first write failed because /dev/null is not a directory, but I recovered and wrote the file to /tmp/ironclaw_recovery_test.txt successfully.",
         "input_tokens": 200,
         "output_tokens": 30
       }

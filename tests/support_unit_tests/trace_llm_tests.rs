@@ -240,7 +240,6 @@ async fn errors_when_exhausted() {
     );
 }
 
-
 #[tokio::test]
 async fn from_json_file() {
     let fixture_path = concat!(
