@@ -173,6 +173,19 @@ fn handle_tool_calls_row(
     let parsed_calls = match parse_tool_call_entries(&calls) {
         Ok(parsed_calls) => parsed_calls,
         Err(invalid_indices) => {
+            // Check if all entries are legacy format (no valid call_id in any entry).
+            // Legacy rows should be skipped silently without warning.
+            let all_legacy = calls.iter().all(|call| {
+                call.get("call_id")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .is_none()
+            });
+
+            if all_legacy {
+                return;
+            }
+
             tracing::warn!(
                 message_id = %message.id,
                 total_calls = calls.len(),
