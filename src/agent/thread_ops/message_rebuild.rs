@@ -58,7 +58,12 @@ fn parse_tool_call_entries(calls: &[serde_json::Value]) -> Result<Vec<ParsedCall
                     .cloned()
                     .unwrap_or(serde_json::json!({}));
                 let raw_entry = call.clone();
-                parsed_calls.push((call_id_str.to_string(), name_str.to_string(), arguments, raw_entry));
+                parsed_calls.push((
+                    call_id_str.to_string(),
+                    name_str.to_string(),
+                    arguments,
+                    raw_entry,
+                ));
             }
             _ => {
                 invalid_indices.push(idx);
@@ -258,7 +263,10 @@ mod unit_tests {
             "result_preview": "preview data"
         });
         let kind = classify_result_content(&entry);
-        assert!(matches!(kind, ToolResultKind::ResultPreview("preview data")));
+        assert!(matches!(
+            kind,
+            ToolResultKind::ResultPreview("preview data")
+        ));
     }
 
     #[test]

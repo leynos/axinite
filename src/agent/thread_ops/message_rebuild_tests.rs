@@ -445,7 +445,10 @@ fn test_classify_result_content_result_precedence_over_preview() {
         "result_preview": "preview..."
     });
     let kind = classify_result_content(&entry);
-    assert!(matches!(kind, super::ToolResultKind::Result("full result data")));
+    assert!(matches!(
+        kind,
+        super::ToolResultKind::Result("full result data")
+    ));
 }
 
 #[rstest]
@@ -455,7 +458,10 @@ fn test_classify_result_content_preview_fallback() {
         "result_preview": "preview data"
     });
     let kind = classify_result_content(&entry);
-    assert!(matches!(kind, super::ToolResultKind::ResultPreview("preview data")));
+    assert!(matches!(
+        kind,
+        super::ToolResultKind::ResultPreview("preview data")
+    ));
 }
 
 #[rstest]
