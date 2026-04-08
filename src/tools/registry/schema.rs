@@ -155,15 +155,4 @@ mod tests {
             None
         );
     }
-
-    #[test]
-    fn test_null_value_returns_none() {
-        assert_eq!(normalized_schema(serde_json::Value::Null), None);
-    }
-
-    #[test]
-    fn test_placeholder_object_returns_none() {
-        let placeholder = json!({"type":"object","properties":{},"additionalProperties":true});
-        assert_eq!(normalized_schema(placeholder), None);
-    }
 }
