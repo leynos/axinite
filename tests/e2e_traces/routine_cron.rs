@@ -11,6 +11,7 @@ use ironclaw::agent::routine::Trigger;
 
 use crate::support::routines::{
     create_test_db, create_workspace, make_minimal_engine, make_routine, wait_for_idle,
+    wait_for_persisted_run,
 };
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
@@ -54,24 +55,9 @@ async fn cron_routine_fires() {
     // then verify the routine run was recorded.
     wait_for_idle(&engine, Duration::from_secs(5)).await;
 
-    // Poll for routine completion with timeout to verify database persistence.
-    let mut attempts = 0;
-    let max_attempts = 50;
-    loop {
-        let runs = db
-            .list_routine_runs(routine.id, 10)
-            .await
-            .expect("list_routine_runs");
-        if !runs.is_empty() {
-            break;
-        }
-        attempts += 1;
-        assert!(
-            attempts < max_attempts,
-            "Routine did not complete within timeout"
-        );
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    // Wait for routine run to be durably persisted in the database.
+    // This uses a shared helper to keep persistence semantics consistent across tests.
+    wait_for_persisted_run(&db, routine.id, Duration::from_secs(5)).await;
 
     // Notification may or may not be sent depending on config;
     // just verify no panic occurred. Drain the channel.
