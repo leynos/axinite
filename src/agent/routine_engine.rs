@@ -1147,6 +1147,7 @@ async fn send_notification(
     }
 }
 
+#[cfg(any(test, feature = "test-helpers"))]
 impl RoutineEngine {
     /// Returns the current number of in-flight routine tasks.
     ///
