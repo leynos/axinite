@@ -477,6 +477,35 @@ impl CreateJobTool {
         )))
     }
 
+    /// Handle the case where the container handle is no longer present.
+    ///
+    /// An absent handle is treated as a silent successful completion — the
+    /// container finished before we could observe a terminal state.
+    async fn handle_missing_container(
+        &self,
+        job_id: Uuid,
+        project_dir_str: &str,
+        browse_id: &str,
+        start: std::time::Instant,
+    ) -> Result<ToolOutput, ToolError> {
+        self.update_status(
+            job_id,
+            "completed",
+            Some(true),
+            None,
+            None,
+            Some(Utc::now()),
+        );
+        let result = serde_json::json!({
+            "job_id": job_id.to_string(),
+            "status": "completed",
+            "output": "Container job completed",
+            "project_dir": project_dir_str,
+            "browse_url": format!("/projects/{}", browse_id),
+        });
+        Ok(ToolOutput::success(result, start.elapsed()))
+    }
+
     /// Poll container state until completion or timeout.
     async fn await_container_completion(
         &self,
@@ -530,22 +559,9 @@ impl CreateJobTool {
                     }
                 },
                 None => {
-                    self.update_status(
-                        job_id,
-                        "completed",
-                        Some(true),
-                        None,
-                        None,
-                        Some(Utc::now()),
-                    );
-                    let result = serde_json::json!({
-                        "job_id": job_id.to_string(),
-                        "status": "completed",
-                        "output": "Container job completed",
-                        "project_dir": project_dir_str,
-                        "browse_url": format!("/projects/{}", browse_id),
-                    });
-                    return Ok(ToolOutput::success(result, start.elapsed()));
+                    return self
+                        .handle_missing_container(job_id, project_dir_str, browse_id, start)
+                        .await;
                 }
             }
         }

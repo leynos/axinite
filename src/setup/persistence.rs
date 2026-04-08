@@ -120,10 +120,21 @@ mod tests {
             "existing session token should be preserved after save_default_settings"
         );
 
-        // Also verify some default setting was saved
+        // Verify representative default settings were saved.
         assert!(
-            stored_settings.len() > 1,
-            "default settings should also be present alongside the token"
+            stored_settings.contains_key("agent.name"),
+            "default settings should contain 'agent.name', got keys: {:?}",
+            stored_settings.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            stored_settings.contains_key("sandbox.enabled"),
+            "default settings should contain 'sandbox.enabled', got keys: {:?}",
+            stored_settings.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            stored_settings.contains_key("wasm.enabled"),
+            "default settings should contain 'wasm.enabled', got keys: {:?}",
+            stored_settings.keys().collect::<Vec<_>>()
         );
     }
 }
