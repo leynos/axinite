@@ -346,10 +346,8 @@ impl RoutineEngine {
             created_at: Utc::now(),
         };
 
-        self.store
-            .create_routine_run(&run)
-            .await
-            .map_err(RoutineError::from)?;
+        // Pre-increment running count to prevent race between spawn and task start.
+        self.running_count.fetch_add(1, Ordering::Relaxed);
 
         // Execute inline for manual triggers (caller wants to wait)
         let engine = EngineContext {
@@ -364,7 +362,14 @@ impl RoutineEngine {
             safety: self.safety.clone(),
         };
 
+        let running_count = self.running_count.clone();
         tokio::spawn(async move {
+            if let Err(e) = engine.store.create_routine_run(&run).await {
+                tracing::error!(routine = %routine.name, "Failed to record run: {}", e);
+                // Decrement on early-return since execute_routine won't be called
+                running_count.fetch_sub(1, Ordering::Relaxed);
+                return;
+            }
             execute_routine(engine, routine, run).await;
         });
 
@@ -373,6 +378,11 @@ impl RoutineEngine {
 
     /// Spawn a fire in a background task.
     fn spawn_fire(&self, routine: Routine, trigger_type: &str, trigger_detail: Option<String>) {
+        // Pre-increment running count to prevent race between spawn and task start.
+        // This ensures wait_for_idle cannot observe 0 between spawn_fire returning
+        // and execute_routine's first await point.
+        self.running_count.fetch_add(1, Ordering::Relaxed);
+
         let run = RoutineRun {
             id: Uuid::new_v4(),
             routine_id: routine.id,
@@ -401,9 +411,12 @@ impl RoutineEngine {
 
         // Record the run in DB, then spawn execution
         let store = self.store.clone();
+        let running_count = self.running_count.clone();
         tokio::spawn(async move {
             if let Err(e) = store.create_routine_run(&run).await {
                 tracing::error!(routine = %routine.name, "Failed to record run: {}", e);
+                // Decrement on early-return since execute_routine won't be called
+                running_count.fetch_sub(1, Ordering::Relaxed);
                 return;
             }
             execute_routine(engine, routine, run).await;
@@ -450,10 +463,10 @@ struct EngineContext {
 }
 
 /// Execute a routine run. Handles both lightweight and full_job modes.
+///
+/// Note: The caller must pre-increment `running_count` before spawning this task.
+/// This ensures the counter is >0 from the moment the task is queued.
 async fn execute_routine(ctx: EngineContext, routine: Routine, run: RoutineRun) {
-    // Increment running count (atomic: survives panics in the execution below)
-    ctx.running_count.fetch_add(1, Ordering::Relaxed);
-
     let result = match &routine.action {
         RoutineAction::Lightweight {
             prompt,
@@ -1111,11 +1124,11 @@ async fn send_notification(
 }
 
 impl RoutineEngine {
-    /// Returns the current running count as a read-only snapshot.
+    /// Returns the current number of in-flight routine tasks.
     ///
-    /// Intended for test synchronisation only — do not use in production paths.
+    /// Intended for test synchronisation only.
     pub fn running_count(&self) -> usize {
-        self.running_count.load(Ordering::SeqCst)
+        self.running_count.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 

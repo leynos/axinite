@@ -190,15 +190,14 @@ pub async fn wait_for_idle(engine: &RoutineEngine, timeout: Duration) {
     let poll_interval = Duration::from_millis(10);
 
     loop {
-        let count = engine.running_count();
-        if count == 0 {
+        if engine.running_count() == 0 {
             return;
         }
 
         if start.elapsed() >= timeout {
             panic!(
                 "Timeout waiting for engine to become idle (running count: {})",
-                count
+                engine.running_count()
             );
         }
 
