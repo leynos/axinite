@@ -5,9 +5,10 @@
 
 use std::time::Duration;
 
+use crate::routine_sync::{wait_for_idle, wait_for_persisted_run};
 use crate::support::routines::{
     SystemEventSpec, assert_system_event_count, create_test_db, create_workspace,
-    make_minimal_engine, register_github_issue_routine, wait_for_idle, wait_for_persisted_run,
+    make_minimal_engine, register_github_issue_routine,
 };
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
