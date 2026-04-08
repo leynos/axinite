@@ -183,15 +183,52 @@ impl SafetyLayer {
         &self.policy
     }
 
-    /// Run the full tool-output pipeline: sanitize → validate → (wrap is done by caller).
+    /// Run the full tool-output pipeline: sanitizer → validator → policy → leak-detector.
     ///
     /// Returns a `SanitizedOutput` whose `content` is safe to pass to
-    /// `wrap_for_llm`. If the validator rejects the sanitized content,
-    /// returns a `SanitizedOutput` with `content` set to
-    /// `"[Output blocked: failed validation]"` and `was_modified: true`.
+    /// `wrap_for_llm`. If any stage blocks the content, returns an appropriate
+    /// blocked message with `was_modified: true`.
     pub fn process_tool_output(&self, tool_name: &str, output: &str) -> SanitizedOutput {
-        let sanitized = self.sanitize_tool_output(tool_name, output);
-        let validation = self.validator.validate(&sanitized.content);
+        // Stage 1: Length check (prerequisite for all subsequent stages)
+        if output.len() > self.config.max_output_length {
+            let mut cut = self.config.max_output_length;
+            while cut > 0 && !output.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            let truncated = &output[..cut];
+            let notice = format!(
+                "\n\n[... truncated: showing {}/{} bytes. Use the json tool with \
+                 source_tool_call_id to query the full output.]",
+                cut,
+                output.len()
+            );
+            return SanitizedOutput {
+                content: format!("{}{}", truncated, notice),
+                warnings: vec![crate::safety::InjectionWarning {
+                    pattern: "output_too_large".to_string(),
+                    severity: crate::safety::Severity::Low,
+                    location: 0..output.len(),
+                    description: format!(
+                        "Output from tool '{}' was truncated due to size",
+                        tool_name
+                    ),
+                }],
+                was_modified: true,
+            };
+        }
+
+        // Stage 2: Sanitizer (removes injection patterns)
+        let mut content = output.to_string();
+        let mut was_modified = false;
+
+        if self.config.injection_check_enabled {
+            let sanitized = self.sanitizer.sanitize(&content);
+            was_modified = sanitized.was_modified;
+            content = sanitized.content;
+        }
+
+        // Stage 3: Validator (structural validation)
+        let validation = self.validator.validate(&content);
         if !validation.is_valid {
             return SanitizedOutput {
                 content: "[Output blocked: failed validation]".to_string(),
@@ -199,7 +236,51 @@ impl SafetyLayer {
                 was_modified: true,
             };
         }
-        sanitized
+
+        // Stage 4: Policy enforcement (block/sanitize rules)
+        let violations = self.policy.check(&content);
+        if violations
+            .iter()
+            .any(|rule| rule.action == crate::safety::PolicyAction::Block)
+        {
+            return SanitizedOutput {
+                content: "[Output blocked by safety policy]".to_string(),
+                warnings: vec![],
+                was_modified: true,
+            };
+        }
+        if violations
+            .iter()
+            .any(|rule| rule.action == crate::safety::PolicyAction::Sanitize)
+        {
+            was_modified = true;
+            // Re-run sanitizer if policy requires it
+            let sanitized = self.sanitizer.sanitize(&content);
+            content = sanitized.content;
+        }
+
+        // Stage 5: Leak detection (final safety check)
+        match self.leak_detector.scan_and_clean(&content) {
+            Ok(cleaned) => {
+                if cleaned != content {
+                    was_modified = true;
+                    content = cleaned;
+                }
+            }
+            Err(_) => {
+                return SanitizedOutput {
+                    content: "[Output blocked due to potential secret leakage]".to_string(),
+                    warnings: vec![],
+                    was_modified: true,
+                };
+            }
+        }
+
+        SanitizedOutput {
+            content,
+            warnings: vec![],
+            was_modified,
+        }
     }
 }
 

@@ -147,9 +147,8 @@ fn classify_result_content(entry: &serde_json::Value) -> ToolResultKind<'_> {
 /// Prefers `error` (formatted as `"Error: …"`), then `result`, then
 /// `result_preview`, defaulting to `"OK"`.
 ///
-/// Passes the raw content through `SafetyLayer::process_tool_output`
-/// (leak detection → policy enforcement → sanitiser → validator) and
-/// `SafetyLayer::wrap_for_llm` (XML boundary wrapping) before returning.
+/// Passes the raw content through `SafetyLayer::process_tool_output()`
+/// and then `SafetyLayer::wrap_for_llm()` before returning.
 fn tool_result_content(
     entry: &serde_json::Value,
     tool_name: &str,
@@ -182,14 +181,9 @@ fn handle_tool_calls_row(
     let parsed_calls = match parse_tool_call_entries(&calls) {
         Ok(parsed_calls) => parsed_calls,
         Err(invalid_indices) => {
-            // Check if all entries are legacy format (no valid call_id in any entry).
+            // Check if all entries are legacy format (no call_id key in any entry).
             // Legacy rows should be skipped silently without warning.
-            let all_legacy = calls.iter().all(|call| {
-                call.get("call_id")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.trim().is_empty())
-                    .is_none()
-            });
+            let all_legacy = calls.iter().all(|call| call.get("call_id").is_none());
 
             if all_legacy {
                 return;
@@ -230,8 +224,8 @@ fn handle_tool_calls_row(
 /// whitespace-only fields) are skipped entirely — legacy rows without
 /// `call_id` are no longer accepted or silently coerced.
 ///
-/// Hydrated tool results pass through `SafetyLayer` (sanitizer → policy
-/// → leak-detector) before being added to the message sequence.
+/// Hydrated tool results pass through `SafetyLayer` for sanitization
+/// and validation before being added to the message sequence.
 pub(super) fn rebuild_chat_messages_from_db(
     db_messages: &[ConversationMessage],
     safety: &crate::safety::SafetyLayer,
