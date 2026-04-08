@@ -419,7 +419,31 @@ fn test_tool_result_content_fallbacks(
     );
 }
 
-#[cfg(test)]
+/// Regression test for the partial enrichment edge case where one tool call
+/// object has a call_id and a subsequent one does not. This should reject the
+/// entire tool_calls row to prevent duplicate ID handling issues.
+#[rstest]
+fn test_rebuild_chat_messages_partial_enrichment_rejected(test_safety_layer: SafetyLayer) {
+    // One entry with call_id, one without - this is malformed partial enrichment
+    let tool_json = serde_json::json!([
+        {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found"},
+        {"name": "echo", "parameters": {}, "result": "hello"}  // missing call_id
+    ]);
+    let messages = vec![
+        make_db_msg("user", "Hi"),
+        make_db_msg("tool_calls", &tool_json.to_string()),
+        make_db_msg("assistant", "Done"),
+    ];
+    let result = rebuild_chat_messages_from_db(&messages, &test_safety_layer);
+
+    // The malformed/partial tool_calls row should be rejected entirely
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].role, crate::llm::Role::User);
+    assert_eq!(result[0].content, "Hi");
+    assert_eq!(result[1].role, crate::llm::Role::Assistant);
+    assert_eq!(result[1].content, "Done");
+}
+
 #[cfg(test)]
 #[path = "message_rebuild_property_tests.rs"]
 mod property_tests;

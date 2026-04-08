@@ -20,8 +20,9 @@ enum ToolResultKind<'a> {
 /// Enforces presence and validity of both `call_id` and `name` on every
 /// entry: each must be a non-null, non-empty, non-whitespace-only string.
 ///
-/// Returns `Ok(Vec<(call_id, name, arguments)>)` when all entries pass
-/// validation.
+/// Returns `Ok(Vec<(call_id, name, arguments, raw_entry)>)` when all entries
+/// pass validation. The `raw_entry` is the original serde_json::Value for
+/// each call, preserved for result extraction.
 ///
 /// Returns `Err(Vec<usize>)` if any entry is malformed (missing, null,
 /// empty, or whitespace-only `call_id` or `name`); the `Vec` contains the
@@ -30,7 +31,7 @@ enum ToolResultKind<'a> {
 /// fallback is applied.
 fn parse_tool_call_entries(
     calls: &[serde_json::Value],
-) -> Result<Vec<(String, String, serde_json::Value)>, Vec<usize>> {
+) -> Result<Vec<(String, String, serde_json::Value, serde_json::Value)>, Vec<usize>> {
     let invalid_indices: Vec<usize> = calls
         .iter()
         .enumerate()
@@ -57,15 +58,25 @@ fn parse_tool_call_entries(
 
     Ok(calls
         .iter()
-        .filter_map(|call| {
-            let call_id = call.get("call_id")?.as_str()?.to_string();
-            let name = call.get("name")?.as_str()?.to_string();
+        .map(|call| {
+            // SAFETY: validation above ensures these fields are present and non-empty
+            let call_id = call
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .expect("call_id validated above")
+                .to_string();
+            let name = call
+                .get("name")
+                .and_then(|v| v.as_str())
+                .expect("name validated above")
+                .to_string();
             let arguments = call
                 .get("parameters")
                 .cloned()
                 .unwrap_or(serde_json::json!({}));
+            let raw_entry = call.clone();
 
-            Some((call_id, name, arguments))
+            (call_id, name, arguments, raw_entry)
         })
         .collect())
 }
@@ -95,10 +106,12 @@ fn parse_calls_json(message_id: uuid::Uuid, content: &str) -> Option<Vec<serde_j
 }
 
 /// Build a `ToolCall` list from validated call entries.
-fn build_tool_calls(parsed_calls: &[(String, String, serde_json::Value)]) -> Vec<ToolCall> {
+fn build_tool_calls(
+    parsed_calls: &[(String, String, serde_json::Value, serde_json::Value)],
+) -> Vec<ToolCall> {
     parsed_calls
         .iter()
-        .map(|(id, name, arguments)| ToolCall {
+        .map(|(id, name, arguments, _)| ToolCall {
             id: id.clone(),
             name: name.clone(),
             arguments: arguments.clone(),
@@ -106,6 +119,10 @@ fn build_tool_calls(parsed_calls: &[(String, String, serde_json::Value)]) -> Vec
         .collect()
 }
 
+/// Classifies the result content from a tool call entry.
+///
+/// Checks fields in precedence order: "error" first, then "result",
+/// then "result_preview". Returns [`ToolResultKind::Ok`] if none matched.
 fn classify_result_content(entry: &serde_json::Value) -> ToolResultKind<'_> {
     if let Some(error) = entry.get("error").and_then(|value| value.as_str()) {
         return ToolResultKind::Error(error);
@@ -176,11 +193,11 @@ fn handle_tool_calls_row(
         build_tool_calls(&parsed_calls),
     ));
 
-    for (idx, (call_id, name, _)) in parsed_calls.iter().enumerate() {
+    for (call_id, name, _, entry) in &parsed_calls {
         out.push(ChatMessage::tool_result(
             call_id.clone(),
             name.clone(),
-            tool_result_content(&calls[idx], name, safety),
+            tool_result_content(entry, name, safety),
         ));
     }
 }
