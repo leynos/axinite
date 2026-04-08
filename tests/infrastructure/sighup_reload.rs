@@ -11,12 +11,21 @@ use std::time::Duration;
 use axum::Json;
 use axum::http::StatusCode;
 use axum::routing::get;
+use reqwest::Client;
 use secrecy::SecretString;
 use serde_json::json;
 
 use ironclaw::channels::{HttpChannel, NativeChannel, WebhookServer, WebhookServerConfig};
 use ironclaw::config::HttpConfig;
+use rstest::{fixture, rstest};
 
+/// Obtain an ephemeral local address by binding a `StdTcpListener` on port 0,
+/// reading the assigned `SocketAddr`, and immediately dropping the listener.
+///
+/// **TOCTOU race:** because the listener is dropped before the caller binds the
+/// real server, another process on the same host may claim the same port in the
+/// gap. This is a common test pattern for obtaining free ports, but it can
+/// produce flaky failures under concurrent load. Use with that caveat in mind.
 fn ephemeral_addr() -> SocketAddr {
     let listener = StdTcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
     listener.local_addr().expect("local_addr")
@@ -32,11 +41,7 @@ fn health_server(addr: SocketAddr) -> WebhookServer {
 }
 
 /// POST a webhook payload and return the HTTP status.
-async fn post_webhook(
-    client: &reqwest::Client,
-    addr: SocketAddr,
-    secret: &str,
-) -> reqwest::StatusCode {
+async fn post_webhook(client: &Client, addr: SocketAddr, secret: &str) -> reqwest::StatusCode {
     client
         .post(format!("http://{}/webhook", addr))
         .json(&json!({"content": "hello", "secret": secret}))
@@ -46,19 +51,23 @@ async fn post_webhook(
         .status()
 }
 
+#[fixture]
+fn http_client() -> Client {
+    Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("build client")
+}
+
+#[rstest]
 #[tokio::test]
-async fn test_sighup_config_reload_address_change() {
+async fn test_sighup_config_reload_address_change(http_client: Client) {
     let addr1 = ephemeral_addr();
     let mut server = health_server(addr1);
     server.start().await.expect("start on first address");
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-        .expect("build client");
-
     // Confirm first address responds.
-    let resp = client
+    let resp = http_client
         .get(format!("http://{}/health", addr1))
         .send()
         .await
@@ -70,7 +79,7 @@ async fn test_sighup_config_reload_address_change() {
     server.restart_with_addr(addr2).await.expect("restart");
 
     // New address should respond.
-    let resp = client
+    let resp = http_client
         .get(format!("http://{}/health", addr2))
         .send()
         .await
@@ -80,19 +89,29 @@ async fn test_sighup_config_reload_address_change() {
     // Old address should refuse connections.
     let old_result = tokio::time::timeout(
         Duration::from_millis(200),
-        client.get(format!("http://{}/health", addr1)).send(),
+        http_client.get(format!("http://{}/health", addr1)).send(),
     )
     .await;
-    assert!(
-        old_result.is_err() || old_result.ok().and_then(|r| r.ok()).is_none(),
-        "old address should not respond after restart"
-    );
+
+    match old_result {
+        // Timeout expired — the old address no longer accepts connections.
+        Err(_) => {}
+        // Request reached the client stack but the old listener was gone.
+        Ok(Err(_)) => {}
+        Ok(Ok(resp)) => {
+            panic!(
+                "old address should not respond after restart, got status {}",
+                resp.status()
+            );
+        }
+    }
 
     server.shutdown().await;
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_sighup_secret_update_zero_downtime() {
+async fn test_sighup_secret_update_zero_downtime(http_client: Client) {
     let addr = ephemeral_addr();
 
     let channel = HttpChannel::new(HttpConfig {
@@ -110,13 +129,8 @@ async fn test_sighup_secret_update_zero_downtime() {
     server.add_routes(channel.routes());
     server.start().await.expect("start webhook server");
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-        .expect("build client");
-
     // Old secret should be accepted.
-    let status = post_webhook(&client, addr, "old-secret").await;
+    let status = post_webhook(&http_client, addr, "old-secret").await;
     assert_eq!(status, StatusCode::OK, "old secret should work initially");
 
     // Hot-swap secret.
@@ -125,7 +139,7 @@ async fn test_sighup_secret_update_zero_downtime() {
         .await;
 
     // Old secret should now be rejected.
-    let status = post_webhook(&client, addr, "old-secret").await;
+    let status = post_webhook(&http_client, addr, "old-secret").await;
     assert_eq!(
         status,
         StatusCode::UNAUTHORIZED,
@@ -133,25 +147,21 @@ async fn test_sighup_secret_update_zero_downtime() {
     );
 
     // New secret should be accepted.
-    let status = post_webhook(&client, addr, "new-secret").await;
+    let status = post_webhook(&http_client, addr, "new-secret").await;
     assert_eq!(status, StatusCode::OK, "new secret should work after swap");
 
     server.shutdown().await;
 }
 
+#[rstest]
 #[tokio::test]
-async fn test_sighup_rollback_on_address_bind_failure() {
+async fn test_sighup_rollback_on_address_bind_failure(http_client: Client) {
     let addr1 = ephemeral_addr();
     let mut server = health_server(addr1);
     server.start().await.expect("start on first address");
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-        .expect("build client");
-
     // Confirm initial address works.
-    let resp = client
+    let resp = http_client
         .get(format!("http://{}/health", addr1))
         .send()
         .await
@@ -172,7 +182,7 @@ async fn test_sighup_rollback_on_address_bind_failure() {
     drop(occupied);
 
     // Original listener must still respond.
-    let resp = client
+    let resp = http_client
         .get(format!("http://{}/health", addr1))
         .send()
         .await

@@ -26,21 +26,14 @@ pub mod postgres;
 mod settings_tests;
 pub mod test_utils;
 
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+pub mod null_db;
+
 
 use anyhow::Result;
-use rust_decimal::Decimal;
-use tempfile::TempDir;
-use tokio::sync::mpsc;
 
-use crate::agent::AgentDeps;
 use crate::channels::{
     ChannelManager, IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
 };
-use crate::db::Database;
-use crate::error::{ChannelError, LlmError};
 
 #[cfg(test)]
 use crate::db::{
@@ -54,7 +47,6 @@ use crate::llm::{
 pub use crate::testing_wasm::{
     github_tool_source_dir, github_wasm_artifact, metadata_test_runtime,
 };
-use crate::tools::ToolRegistry;
 use crate::tools::wasm::{Capabilities, WasmToolWrapper};
 /// Create a libSQL-backed test database in a temporary directory.
 ///

@@ -1,0 +1,10 @@
+---
+source: tests/worker_orchestrator_json_shapes.rs
+assertion_line: 46
+expression: "&original"
+---
+{
+  "success": true,
+  "message": "done",
+  "iterations": 10
+}

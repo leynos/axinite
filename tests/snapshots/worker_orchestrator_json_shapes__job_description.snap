@@ -1,0 +1,10 @@
+---
+source: tests/worker_orchestrator_json_shapes.rs
+assertion_line: 111
+expression: "&parsed"
+---
+{
+  "title": "Test Job",
+  "description": "Do something",
+  "project_dir": "/tmp/project"
+}
