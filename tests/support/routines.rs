@@ -224,11 +224,11 @@ pub mod engine_sync {
     /// routine run is durably recorded before asserting on database state.
     ///
     /// # Arguments
-    /// * `db`                  – The database to query for persisted runs.
-    /// * `routine_id`          – The ID of the routine to check for runs.
-    /// * `previous_run_count`  – Snapshot of the run count before firing; the
-    ///                           function waits until the count exceeds this value.
-    /// * `timeout`             – Maximum duration to wait for persistence.
+    /// * `db`                – The database to query for persisted runs.
+    /// * `routine_id`        – The ID of the routine to check for runs.
+    /// * `previous_run_count` – Snapshot of the run count before firing; the
+    ///   function waits until the count exceeds this value.
+    /// * `timeout`           – Maximum duration to wait for persistence.
     pub async fn wait_for_persisted_run(
         db: &Arc<dyn Database>,
         routine_id: Uuid,
