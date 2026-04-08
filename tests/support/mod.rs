@@ -360,7 +360,6 @@ const _: fn() = test_rig_symbol_refs;
 const _: fn() = routines_symbol_refs;
 
 #[cfg(feature = "libsql")]
-#[allow(dead_code)]
 fn routines_symbol_refs() {
     // Compile-time type assertions for routines module helpers.
     // These ensure the public API signatures remain stable.
@@ -382,4 +381,28 @@ fn routines_symbol_refs() {
         std::sync::Arc<ironclaw::agent::routine_engine::RoutineEngine>,
         tokio::sync::mpsc::Receiver<ironclaw::channels::OutgoingResponse>,
     ) = routines::make_minimal_engine;
+
+    // Compile-time type assertions for engine_sync helpers.
+    // Wrapper functions prove the async signatures are correct.
+    fn _wait_for_idle_sig<'a>(
+        engine: &'a ironclaw::agent::routine_engine::RoutineEngine,
+        timeout: std::time::Duration,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+        Box::pin(routines::engine_sync::wait_for_idle(engine, timeout))
+    }
+
+    fn _wait_for_persisted_run_sig<'a>(
+        db: &'a std::sync::Arc<dyn ironclaw::db::Database>,
+        routine_id: uuid::Uuid,
+        previous_run_count: usize,
+        timeout: std::time::Duration,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+        Box::pin(routines::engine_sync::wait_for_persisted_run(
+            db,
+            routine_id,
+            previous_run_count,
+            timeout,
+        ))
+    }
+    touch!(_wait_for_idle_sig, _wait_for_persisted_run_sig);
 }

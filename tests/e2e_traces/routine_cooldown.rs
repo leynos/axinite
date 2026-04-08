@@ -10,6 +10,7 @@ use chrono::Utc;
 use ironclaw::agent::routine::Trigger;
 use ironclaw::db::RoutineRuntimeUpdate;
 
+use crate::support::routines::engine_sync::{wait_for_idle, wait_for_persisted_run};
 use crate::support::routines::{
     create_test_db, create_workspace, make_minimal_engine, make_routine, make_test_incoming_message,
 };
@@ -54,24 +55,13 @@ async fn routine_cooldown() {
     let fired1 = engine.check_event_triggers(&msg).await;
     assert!(fired1 >= 1, "First fire should work");
 
-    // Poll for routine completion with timeout before updating last_run_at.
-    let mut attempts = 0;
-    let max_attempts = 50;
-    loop {
-        let runs = db
-            .list_routine_runs(routine.id, 10)
-            .await
-            .expect("list_routine_runs");
-        if !runs.is_empty() {
-            break;
-        }
-        attempts += 1;
-        assert!(
-            attempts < max_attempts,
-            "Routine did not complete within timeout"
-        );
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    // Wait for routine execution to complete using deterministic synchronization,
+    // then verify the routine run was recorded before updating last_run_at.
+    wait_for_idle(&engine, Duration::from_secs(5)).await;
+
+    // Wait for routine run to be durably persisted in the database.
+    // Snapshot run count before firing (zero for a freshly-created routine).
+    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await;
 
     // Update the routine's last_run_at to now (simulating it just ran).
     db.update_routine_runtime(RoutineRuntimeUpdate {

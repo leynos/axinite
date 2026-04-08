@@ -5,6 +5,9 @@
 
 use ironclaw::agent::routine::Trigger;
 
+use std::time::Duration;
+
+use crate::support::routines::engine_sync::{wait_for_idle, wait_for_persisted_run};
 use crate::support::routines::{
     create_test_db, create_workspace, make_minimal_engine, make_routine, make_test_incoming_message,
 };
@@ -52,24 +55,13 @@ async fn event_trigger_matches() {
         "Expected >= 1 routine fired on match, got {fired}"
     );
 
-    // Poll for routine completion with timeout instead of fixed sleep.
-    let mut attempts = 0;
-    let max_attempts = 50;
-    loop {
-        let runs = db
-            .list_routine_runs(routine.id, 10)
-            .await
-            .expect("list_routine_runs");
-        if !runs.is_empty() {
-            break;
-        }
-        attempts += 1;
-        assert!(
-            attempts < max_attempts,
-            "Routine did not complete within timeout"
-        );
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
+    // Wait for routine execution to complete using deterministic synchronization,
+    // then verify the routine run was recorded.
+    wait_for_idle(&engine, Duration::from_secs(5)).await;
+
+    // Wait for routine run to be durably persisted in the database.
+    // Snapshot run count before firing (zero for a freshly-created routine).
+    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await;
 
     // Negative match: message that doesn't match.
     let non_matching_msg = make_test_incoming_message("check the staging environment");
