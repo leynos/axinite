@@ -68,11 +68,13 @@ async fn dispatch_subcommand(cli: &Cli) -> Option<anyhow::Result<()>> {
             init_cli_tracing();
             Some(run_service_command(c))
         }
-        Some(Command::Doctor) => {
+        Some(Command::Doctor) =>
+        {
             #[allow(clippy::redundant_closure)]
             dispatch_cli(|| ironclaw::cli::run_doctor_command()).await
         }
-        Some(Command::Status) => {
+        Some(Command::Status) =>
+        {
             #[allow(clippy::redundant_closure)]
             dispatch_cli(|| run_status_command()).await
         }
@@ -126,6 +128,279 @@ fn acquire_pid_lock() -> anyhow::Result<Option<ironclaw::bootstrap::PidLock>> {
         }
     }
 }
+
+#[allow(dead_code)]
+struct ChannelInfrastructure {
+    webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
+    channel_names: Vec<String>,
+    loaded_wasm_channel_names: Vec<String>,
+    #[allow(clippy::type_complexity)]
+    wasm_channel_runtime_state: Option<(
+        Arc<WasmChannelRuntime>,
+        Arc<PairingStore>,
+        Arc<WasmChannelRouter>,
+    )>,
+    #[cfg(unix)]
+    http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
+}
+
+#[allow(dead_code)]
+async fn setup_channel_infrastructure(
+    cli: &Cli,
+    config: &Config,
+    components: &ironclaw::app::AppComponents,
+    channels: &ChannelManager,
+) -> anyhow::Result<ChannelInfrastructure> {
+    let mut channel_names: Vec<String> = Vec::new();
+    let mut loaded_wasm_channel_names: Vec<String> = Vec::new();
+    #[allow(clippy::type_complexity)]
+    let mut wasm_channel_runtime_state: Option<(
+        Arc<WasmChannelRuntime>,
+        Arc<PairingStore>,
+        Arc<WasmChannelRouter>,
+    )> = None;
+
+    // Create CLI channel
+    let repl_channel = if let Some(ref msg) = cli.message {
+        Some(ReplChannel::with_message(msg.clone()))
+    } else if config.channels.cli.enabled {
+        let repl = ReplChannel::new();
+        repl.suppress_banner();
+        Some(repl)
+    } else {
+        None
+    };
+
+    if let Some(repl) = repl_channel {
+        channels.add(Box::new(repl)).await;
+        if cli.message.is_some() {
+            tracing::debug!("Single message mode");
+        } else {
+            channel_names.push("repl".to_string());
+            tracing::debug!("REPL mode enabled");
+        }
+    }
+
+    // Collect webhook route fragments; a single WebhookServer hosts them all.
+    let mut webhook_routes: Vec<axum::Router> = Vec::new();
+
+    // Load WASM channels and register their webhook routes.
+    if config.channels.wasm_channels_enabled && config.channels.wasm_channels_dir.exists() {
+        let wasm_result = ironclaw::channels::wasm::setup_wasm_channels(
+            config,
+            &components.secrets_store,
+            components.extension_manager.as_ref(),
+            components.db.as_ref(),
+        )
+        .await;
+
+        if let Some(result) = wasm_result {
+            loaded_wasm_channel_names = result.channel_names;
+            wasm_channel_runtime_state = Some((
+                result.wasm_channel_runtime,
+                result.pairing_store,
+                result.wasm_channel_router,
+            ));
+            for (name, channel) in result.channels {
+                channel_names.push(name);
+                channels.add(channel).await;
+            }
+            if let Some(routes) = result.webhook_routes {
+                webhook_routes.push(routes);
+            }
+        }
+    }
+
+    // Add Signal channel if configured and not CLI-only mode.
+    if !cli.cli_only
+        && let Some(ref signal_config) = config.channels.signal
+    {
+        let signal_channel = SignalChannel::new(signal_config.clone())?;
+        channel_names.push("signal".to_string());
+        channels.add(Box::new(signal_channel)).await;
+        let safe_url = SignalChannel::redact_url(&signal_config.http_url);
+        tracing::debug!(
+            url = %safe_url,
+            "Signal channel enabled"
+        );
+        if signal_config.allow_from.is_empty() {
+            tracing::warn!(
+                "Signal channel has empty allow_from list - ALL messages will be DENIED."
+            );
+        }
+    }
+
+    // Add HTTP channel if configured and not CLI-only mode.
+    let mut webhook_server_addr: Option<std::net::SocketAddr> = None;
+    #[cfg(unix)]
+    let mut http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>> = None;
+    if !cli.cli_only
+        && let Some(ref http_config) = config.channels.http
+    {
+        let http_channel = HttpChannel::new(http_config.clone());
+        #[cfg(unix)]
+        {
+            http_channel_state = Some(http_channel.shared_state());
+        }
+        webhook_routes.push(http_channel.routes());
+        let (host, port) = http_channel.addr();
+        webhook_server_addr = Some(
+            format!("{}:{}", host, port)
+                .parse()
+                .expect("HttpConfig host:port must be a valid SocketAddr"),
+        );
+        channel_names.push("http".to_string());
+        channels.add(Box::new(http_channel)).await;
+        tracing::debug!(
+            "HTTP channel enabled on {}:{}",
+            http_config.host,
+            http_config.port
+        );
+    }
+
+    // Start the unified webhook server if any routes were registered.
+    let webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>> = if !webhook_routes
+        .is_empty()
+    {
+        let addr =
+            webhook_server_addr.unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], 8080)));
+        if addr.ip().is_unspecified() {
+            tracing::warn!(
+                "Webhook server is binding to {} — it will be reachable from all network interfaces. \
+                 Set HTTP_HOST=127.0.0.1 to restrict to localhost.",
+                addr.ip()
+            );
+        }
+        let mut server = WebhookServer::new(WebhookServerConfig { addr });
+        for routes in webhook_routes {
+            server.add_routes(routes);
+        }
+        server.start().await?;
+        Some(Arc::new(tokio::sync::Mutex::new(server)))
+    } else {
+        None
+    };
+
+    Ok(ChannelInfrastructure {
+        webhook_server,
+        channel_names,
+        loaded_wasm_channel_names,
+        wasm_channel_runtime_state,
+        #[cfg(unix)]
+        http_channel_state,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn wire_extension_manager(
+    extension_manager: &Option<Arc<ironclaw::extensions::ExtensionManager>>,
+    wasm_channel_runtime_state: &mut Option<(
+        Arc<WasmChannelRuntime>,
+        Arc<PairingStore>,
+        Arc<WasmChannelRouter>,
+    )>,
+    loaded_wasm_channel_names: &mut [String],
+    channels: &Arc<ChannelManager>,
+    sse_sender: &Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
+    wasm_channel_owner_ids: &std::collections::HashMap<String, i64>,
+) {
+    // Wire up channel runtime for hot-activation of WASM channels.
+    if let Some(ext_mgr) = extension_manager
+        && let Some((rt, ps, router)) = wasm_channel_runtime_state.take()
+    {
+        let active_at_startup: std::collections::HashSet<String> =
+            loaded_wasm_channel_names.iter().cloned().collect();
+        ext_mgr
+            .set_active_channels(loaded_wasm_channel_names.to_owned())
+            .await;
+        ext_mgr
+            .set_channel_runtime(
+                Arc::clone(channels),
+                rt,
+                ps,
+                router,
+                wasm_channel_owner_ids.clone(),
+            )
+            .await;
+        tracing::debug!("Channel runtime wired into extension manager for hot-activation");
+
+        // Auto-activate WASM channels that were active in a previous session.
+        // Relay channels are handled separately below via restore_relay_channels().
+        let persisted = ext_mgr.load_persisted_active_channels().await;
+        for name in &persisted {
+            if active_at_startup.contains(name) || ext_mgr.is_relay_channel(name).await {
+                continue;
+            }
+            match ext_mgr.activate(name).await {
+                Ok(result) => {
+                    tracing::debug!(
+                        channel = %name,
+                        message = %result.message,
+                        "Auto-activated persisted WASM channel"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        channel = %name,
+                        error = %e,
+                        "Failed to auto-activate persisted WASM channel"
+                    );
+                }
+            }
+        }
+    }
+
+    // Ensure the relay channel manager is always set (even without WASM runtime),
+    // then restore any persisted relay channels.
+    if let Some(ext_mgr) = extension_manager {
+        ext_mgr
+            .set_relay_channel_manager(Arc::clone(channels))
+            .await;
+        ext_mgr.restore_relay_channels().await;
+    }
+
+    // Wire SSE sender into extension manager for broadcasting status events.
+    if let Some(ext_mgr) = extension_manager
+        && let Some(sender) = sse_sender
+    {
+        ext_mgr.set_sse_sender(sender.clone()).await;
+    }
+}
+
+async fn run_shutdown_sequence(
+    shutdown_tx: &tokio::sync::broadcast::Sender<()>,
+    mcp_process_manager: &ironclaw::tools::mcp::McpProcessManager,
+    recording_handle: &Option<Arc<ironclaw::llm::recording::RecordingLlm>>,
+    webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
+    active_tunnel: &Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+) {
+    // Signal background tasks (SIGHUP handler, etc.) to gracefully shut down
+    let _ = shutdown_tx.send(());
+
+    // Shut down all stdio MCP server child processes.
+    mcp_process_manager.shutdown_all().await;
+
+    // Flush LLM trace recording if enabled
+    if let Some(recorder) = recording_handle
+        && let Err(e) = recorder.flush().await
+    {
+        tracing::warn!("Failed to write LLM trace: {}", e);
+    }
+
+    if let Some(ws_arc) = webhook_server {
+        ws_arc.lock().await.shutdown().await;
+    }
+
+    if let Some(tunnel) = active_tunnel {
+        tracing::debug!("Stopping {} tunnel...", tunnel.name());
+        if let Err(e) = tunnel.stop().await {
+            tracing::warn!("Failed to stop tunnel cleanly: {}", e);
+        }
+    }
+
+    tracing::debug!("Agent shutdown complete");
+}
+
 async fn async_main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -416,13 +691,15 @@ async fn async_main() -> anyhow::Result<()> {
     } = setup_gateway_channel(
         &config,
         &components,
-        &container_job_manager,
-        &session_manager,
-        &log_broadcaster,
-        &log_level_handle,
-        &prompt_queue,
-        &scheduler_slot,
-        &job_event_tx,
+        &GatewayDeps {
+            container_job_manager: &container_job_manager,
+            session_manager: &session_manager,
+            log_broadcaster: &log_broadcaster,
+            log_level_handle: &log_level_handle,
+            prompt_queue: &prompt_queue,
+            scheduler_slot: &scheduler_slot,
+            job_event_tx: &job_event_tx,
+        },
         &channels,
         &mut channel_names,
     )
@@ -486,64 +763,15 @@ async fn async_main() -> anyhow::Result<()> {
         .await;
 
     // Wire up channel runtime for hot-activation of WASM channels.
-    if let Some(ref ext_mgr) = components.extension_manager
-        && let Some((rt, ps, router)) = wasm_channel_runtime_state.take()
-    {
-        let active_at_startup: std::collections::HashSet<String> =
-            loaded_wasm_channel_names.iter().cloned().collect();
-        ext_mgr.set_active_channels(loaded_wasm_channel_names).await;
-        ext_mgr
-            .set_channel_runtime(
-                Arc::clone(&channels),
-                rt,
-                ps,
-                router,
-                config.channels.wasm_channel_owner_ids.clone(),
-            )
-            .await;
-        tracing::debug!("Channel runtime wired into extension manager for hot-activation");
-
-        // Auto-activate WASM channels that were active in a previous session.
-        // Relay channels are handled separately below via restore_relay_channels().
-        let persisted = ext_mgr.load_persisted_active_channels().await;
-        for name in &persisted {
-            if active_at_startup.contains(name) || ext_mgr.is_relay_channel(name).await {
-                continue;
-            }
-            match ext_mgr.activate(name).await {
-                Ok(result) => {
-                    tracing::debug!(
-                        channel = %name,
-                        message = %result.message,
-                        "Auto-activated persisted WASM channel"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        channel = %name,
-                        error = %e,
-                        "Failed to auto-activate persisted WASM channel"
-                    );
-                }
-            }
-        }
-    }
-
-    // Ensure the relay channel manager is always set (even without WASM runtime),
-    // then restore any persisted relay channels.
-    if let Some(ref ext_mgr) = components.extension_manager {
-        ext_mgr
-            .set_relay_channel_manager(Arc::clone(&channels))
-            .await;
-        ext_mgr.restore_relay_channels().await;
-    }
-
-    // Wire SSE sender into extension manager for broadcasting status events.
-    if let Some(ref ext_mgr) = components.extension_manager
-        && let Some(ref sender) = sse_sender
-    {
-        ext_mgr.set_sse_sender(sender.clone()).await;
-    }
+    wire_extension_manager(
+        &components.extension_manager,
+        &mut wasm_channel_runtime_state,
+        &mut loaded_wasm_channel_names[..],
+        &channels,
+        &sse_sender,
+        &config.channels.wasm_channel_owner_ids,
+    )
+    .await;
 
     // Snapshot memory for trace recording before the agent starts
     if let Some(ref recorder) = components.recording_handle
@@ -685,31 +913,14 @@ async fn async_main() -> anyhow::Result<()> {
 
     // ── Shutdown ────────────────────────────────────────────────────────
 
-    // Signal background tasks (SIGHUP handler, etc.) to gracefully shut down
-    let _ = shutdown_tx.send(());
-
-    // Shut down all stdio MCP server child processes.
-    components.mcp_process_manager.shutdown_all().await;
-
-    // Flush LLM trace recording if enabled
-    if let Some(ref recorder) = components.recording_handle
-        && let Err(e) = recorder.flush().await
-    {
-        tracing::warn!("Failed to write LLM trace: {}", e);
-    }
-
-    if let Some(ref ws_arc) = webhook_server {
-        ws_arc.lock().await.shutdown().await;
-    }
-
-    if let Some(tunnel) = active_tunnel {
-        tracing::debug!("Stopping {} tunnel...", tunnel.name());
-        if let Err(e) = tunnel.stop().await {
-            tracing::warn!("Failed to stop tunnel cleanly: {}", e);
-        }
-    }
-
-    tracing::debug!("Agent shutdown complete");
+    run_shutdown_sequence(
+        &shutdown_tx,
+        &components.mcp_process_manager,
+        &components.recording_handle,
+        &webhook_server,
+        &active_tunnel,
+    )
+    .await;
 
     Ok(())
 }
@@ -763,15 +974,13 @@ async fn dispatch_worker_subcommand(
     ironclaw::worker::run_worker(job_id, orchestrator_url, max_iterations).await
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn setup_gateway_channel(
-    config: &Config,
-    components: &ironclaw::app::AppComponents,
-    container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
-    session_manager: &Arc<ironclaw::agent::SessionManager>,
-    log_broadcaster: &Arc<ironclaw::channels::web::log_layer::LogBroadcaster>,
-    log_level_handle: &Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
-    prompt_queue: &Arc<
+/// Runtime-service dependencies required to configure the gateway channel.
+struct GatewayDeps<'a> {
+    container_job_manager: &'a Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+    session_manager: &'a Arc<ironclaw::agent::SessionManager>,
+    log_broadcaster: &'a Arc<ironclaw::channels::web::log_layer::LogBroadcaster>,
+    log_level_handle: &'a Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    prompt_queue: &'a Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<
                 uuid::Uuid,
@@ -779,10 +988,16 @@ async fn setup_gateway_channel(
             >,
         >,
     >,
-    scheduler_slot: &ironclaw::tools::builtin::SchedulerSlot,
-    job_event_tx: &Option<
+    scheduler_slot: &'a ironclaw::tools::builtin::SchedulerSlot,
+    job_event_tx: &'a Option<
         tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
     >,
+}
+
+async fn setup_gateway_channel(
+    config: &Config,
+    components: &ironclaw::app::AppComponents,
+    deps: &GatewayDeps<'_>,
     channels: &ironclaw::channels::ChannelManager,
     channel_names: &mut Vec<String>,
 ) -> GatewaySetup {
@@ -793,48 +1008,19 @@ async fn setup_gateway_channel(
     let mut routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot> = None;
 
     if let Some(ref gw_config) = config.channels.gateway {
-        let mut gw =
-            GatewayChannel::new(gw_config.clone()).with_llm_provider(Arc::clone(&components.llm));
-        if let Some(ref ws) = components.workspace {
-            gw = gw.with_workspace(Arc::clone(ws));
-        }
-        gw = gw.with_session_manager(Arc::clone(session_manager));
-        gw = gw.with_log_broadcaster(Arc::clone(log_broadcaster));
-        gw = gw.with_log_level_handle(Arc::clone(log_level_handle));
-        gw = gw.with_tool_registry(Arc::clone(&components.tools));
-        if let Some(ref ext_mgr) = components.extension_manager {
-            gw = gw.with_extension_manager(Arc::clone(ext_mgr));
-        }
-        if !components.catalog_entries.is_empty() {
-            gw = gw.with_registry_entries(components.catalog_entries.clone());
-        }
-        if let Some(ref d) = components.db {
-            gw = gw.with_store(Arc::clone(d));
-        }
-        if let Some(jm) = container_job_manager {
-            gw = gw.with_job_manager(Arc::clone(jm));
-        }
-        gw = gw.with_scheduler(scheduler_slot.clone());
-        if let Some(ref sr) = components.skill_registry {
-            gw = gw.with_skill_registry(Arc::clone(sr));
-        }
-        if let Some(ref sc) = components.skill_catalog {
-            gw = gw.with_skill_catalog(Arc::clone(sc));
-        }
-        gw = gw.with_cost_guard(Arc::clone(&components.cost_guard));
-        if config.sandbox.enabled {
-            gw = gw.with_prompt_queue(Arc::clone(prompt_queue));
-
-            if let Some(tx) = job_event_tx {
-                let mut rx = tx.subscribe();
-                let gw_state = Arc::clone(gw.state());
-                tokio::spawn(async move {
-                    while let Ok((_job_id, event)) = rx.recv().await {
-                        gw_state.sse.broadcast(event);
-                    }
-                });
-            }
-        }
+        let gw = configure_gateway_builder(
+            gw_config,
+            components,
+            deps.container_job_manager,
+            deps.session_manager,
+            deps.log_broadcaster,
+            deps.log_level_handle,
+            deps.prompt_queue,
+            deps.scheduler_slot,
+            deps.job_event_tx,
+            config.sandbox.enabled,
+        )
+        .await;
 
         gateway_url = Some(format!(
             "http://{}:{}/?token={}",
@@ -866,6 +1052,73 @@ async fn setup_gateway_channel(
 // Note: spawn_sighup_handler has been removed in favor of the HotReloadManager
 // approach from the main branch, which provides better encapsulation of the
 // hot-reload logic. The SIGHUP handler is now implemented inline in async_main.
+
+#[allow(clippy::too_many_arguments)]
+async fn configure_gateway_builder(
+    gw_config: &ironclaw::config::GatewayConfig,
+    components: &ironclaw::app::AppComponents,
+    container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+    session_manager: &Arc<ironclaw::agent::SessionManager>,
+    log_broadcaster: &Arc<ironclaw::channels::web::log_layer::LogBroadcaster>,
+    log_level_handle: &Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    prompt_queue: &Arc<
+        tokio::sync::Mutex<
+            std::collections::HashMap<
+                uuid::Uuid,
+                std::collections::VecDeque<ironclaw::orchestrator::api::PendingPrompt>,
+            >,
+        >,
+    >,
+    scheduler_slot: &ironclaw::tools::builtin::SchedulerSlot,
+    job_event_tx: &Option<
+        tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
+    >,
+    config_sandbox_enabled: bool,
+) -> GatewayChannel {
+    let mut gw =
+        GatewayChannel::new(gw_config.clone()).with_llm_provider(Arc::clone(&components.llm));
+    if let Some(ref ws) = components.workspace {
+        gw = gw.with_workspace(Arc::clone(ws));
+    }
+    gw = gw.with_session_manager(Arc::clone(session_manager));
+    gw = gw.with_log_broadcaster(Arc::clone(log_broadcaster));
+    gw = gw.with_log_level_handle(Arc::clone(log_level_handle));
+    gw = gw.with_tool_registry(Arc::clone(&components.tools));
+    if let Some(ref ext_mgr) = components.extension_manager {
+        gw = gw.with_extension_manager(Arc::clone(ext_mgr));
+    }
+    if !components.catalog_entries.is_empty() {
+        gw = gw.with_registry_entries(components.catalog_entries.clone());
+    }
+    if let Some(ref d) = components.db {
+        gw = gw.with_store(Arc::clone(d));
+    }
+    if let Some(jm) = container_job_manager {
+        gw = gw.with_job_manager(Arc::clone(jm));
+    }
+    gw = gw.with_scheduler(scheduler_slot.clone());
+    if let Some(ref sr) = components.skill_registry {
+        gw = gw.with_skill_registry(Arc::clone(sr));
+    }
+    if let Some(ref sc) = components.skill_catalog {
+        gw = gw.with_skill_catalog(Arc::clone(sc));
+    }
+    gw = gw.with_cost_guard(Arc::clone(&components.cost_guard));
+    if config_sandbox_enabled {
+        gw = gw.with_prompt_queue(Arc::clone(prompt_queue));
+
+        if let Some(tx) = job_event_tx {
+            let mut rx = tx.subscribe();
+            let gw_state = Arc::clone(gw.state());
+            tokio::spawn(async move {
+                while let Ok((_job_id, event)) = rx.recv().await {
+                    gw_state.sse.broadcast(event);
+                }
+            });
+        }
+    }
+    gw
+}
 
 struct GatewaySetup {
     gateway_url: Option<String>,
