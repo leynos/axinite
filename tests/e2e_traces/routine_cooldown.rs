@@ -55,7 +55,7 @@ async fn routine_cooldown() {
     let fired1 = engine.check_event_triggers(&msg).await;
     assert!(fired1 >= 1, "First fire should work");
 
-    // Wait for routine execution to complete using deterministic synchronisation,
+    // Wait for routine execution to complete using deterministic synchronization,
     // then verify the routine run was recorded before updating last_run_at.
     wait_for_idle(&engine, Duration::from_secs(5)).await;
 

@@ -55,7 +55,7 @@ async fn event_trigger_matches() {
         "Expected >= 1 routine fired on match, got {fired}"
     );
 
-    // Wait for routine execution to complete using deterministic synchronisation,
+    // Wait for routine execution to complete using deterministic synchronization,
     // then verify the routine run was recorded.
     wait_for_idle(&engine, Duration::from_secs(5)).await;
 

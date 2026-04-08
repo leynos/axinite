@@ -45,7 +45,7 @@ async fn system_event_trigger_matches_and_filters() {
     )
     .await;
 
-    // Wait for routine execution to complete using deterministic synchronisation,
+    // Wait for routine execution to complete using deterministic synchronization,
     // then verify the routine run was recorded.
     wait_for_idle(&engine, Duration::from_secs(5)).await;
 

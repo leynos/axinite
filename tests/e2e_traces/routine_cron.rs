@@ -51,7 +51,7 @@ async fn cron_routine_fires() {
     // Fire cron triggers.
     engine.check_cron_triggers().await;
 
-    // Wait for routine execution to complete using deterministic synchronisation,
+    // Wait for routine execution to complete using deterministic synchronization,
     // then verify the routine run was recorded.
     wait_for_idle(&engine, Duration::from_secs(5)).await;
 

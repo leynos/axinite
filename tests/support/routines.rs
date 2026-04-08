@@ -175,7 +175,7 @@ pub async fn assert_system_event_count(
     assert_eq!(fired, expected, "{msg}");
 }
 
-/// Deterministic synchronisation helpers for tests that drive [`RoutineEngine`].
+/// Deterministic synchronization helpers for tests that drive [`RoutineEngine`].
 ///
 /// Scoped into their own inline module so that test binaries which do not exercise
 /// `RoutineEngine` (e.g. `heartbeat`) never reference these items, while
@@ -191,7 +191,7 @@ pub mod engine_sync {
 
     /// Polls until the engine's running count reaches zero or the timeout expires.
     ///
-    /// This provides deterministic synchronisation for tests that need to wait
+    /// This provides deterministic synchronization for tests that need to wait
     /// for asynchronous routine execution to complete, eliminating timing-dependent
     /// flakiness without slowing down the test suite on fast machines.
     ///
