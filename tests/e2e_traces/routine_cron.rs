@@ -9,9 +9,9 @@ use chrono::Utc;
 
 use ironclaw::agent::routine::Trigger;
 
+use crate::support::routines::engine_sync::{wait_for_idle, wait_for_persisted_run};
 use crate::support::routines::{
-    create_test_db, create_workspace, make_minimal_engine, make_routine, wait_for_idle,
-    wait_for_persisted_run,
+    create_test_db, create_workspace, make_minimal_engine, make_routine,
 };
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 

@@ -7,9 +7,9 @@ use ironclaw::agent::routine::Trigger;
 
 use std::time::Duration;
 
+use crate::support::routines::engine_sync::{wait_for_idle, wait_for_persisted_run};
 use crate::support::routines::{
-    create_test_db, create_workspace, make_minimal_engine, make_routine,
-    make_test_incoming_message, wait_for_idle, wait_for_persisted_run,
+    create_test_db, create_workspace, make_minimal_engine, make_routine, make_test_incoming_message,
 };
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
