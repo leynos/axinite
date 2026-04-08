@@ -384,7 +384,11 @@ mod tests {
         let result = safety.process_tool_output("test_tool", google_key_output);
         // The Google key should trigger leak detection (blocked since it's critical severity)
         assert!(result.was_modified);
-        assert!(!result.content.contains("AIzaSyDaBmWEtC3BEO6YJgzh2YwRR9kD9eOZnqi_test123"));
+        assert!(
+            !result
+                .content
+                .contains("AIzaSyDaBmWEtC3BEO6YJgzh2YwRR9kD9eOZnqi_test123")
+        );
 
         // Test normal content without secrets passes leak detection
         let normal_output = "This is a normal message without any secrets.";
