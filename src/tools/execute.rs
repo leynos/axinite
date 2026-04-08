@@ -113,7 +113,10 @@ pub async fn execute_tool_with_safety(
 /// Process a tool result into a `ChatMessage::tool_result` with safety sanitization.
 ///
 /// On success: sanitize → wrap → ChatMessage::tool_result.
-/// On error: format error → ChatMessage::tool_result.
+/// On error: format error → sanitize → wrap → ChatMessage::tool_result.
+///
+/// Error content is routed through the same safety pipeline as success content
+/// to ensure consistent handling between live execution and reconstructed history.
 ///
 /// Returns the content string and the ChatMessage.
 pub fn process_tool_result(
@@ -127,7 +130,11 @@ pub fn process_tool_result(
             let sanitized = safety.sanitize_tool_output(tool_name, output);
             safety.wrap_for_llm(tool_name, &sanitized.content, sanitized.was_modified)
         }
-        Err(e) => format!("Error: {}", e),
+        Err(e) => {
+            let raw = format!("Error: {e}");
+            let sanitized = safety.sanitize_tool_output(tool_name, &raw);
+            safety.wrap_for_llm(tool_name, &sanitized.content, sanitized.was_modified)
+        }
     };
     let message = ChatMessage::tool_result(tool_call_id, tool_name, content.clone());
     (content, message)
@@ -386,9 +393,15 @@ mod tests {
 
         let (content, message) = process_tool_result(&safety, "echo", "call_1", &result);
 
+        // Error content is now XML-wrapped like success content (routed through safety pipeline)
+        assert!(
+            content.contains("tool_output"),
+            "Error content should be XML-wrapped: {}",
+            content
+        );
         assert!(
             content.contains("Error:"),
-            "Error content should start with 'Error:': {}",
+            "Error content should contain 'Error:': {}",
             content
         );
         assert!(
@@ -397,5 +410,42 @@ mod tests {
             content
         );
         assert_eq!(message.role, crate::llm::Role::Tool);
+        assert_eq!(message.name.as_deref(), Some("echo"));
+    }
+
+    /// Test that error content is routed through the safety pipeline,
+    /// ensuring consistent formatting between live execution and reconstructed history.
+    #[test]
+    fn test_process_tool_result_error_uses_safety_pipeline() {
+        let safety = test_safety();
+        let error_result: Result<String, String> = Err("test error".to_string());
+        let success_result: Result<String, String> = Ok("test success".to_string());
+
+        let (error_content, _) = process_tool_result(&safety, "test_tool", "call_1", &error_result);
+        let (success_content, _) = process_tool_result(&safety, "test_tool", "call_2", &success_result);
+
+        // Both error and success content should be XML-wrapped by the safety pipeline
+        assert!(
+            error_content.contains("<tool_output "),
+            "Error content should be XML-wrapped with <tool_output>: {}",
+            error_content
+        );
+        assert!(
+            success_content.contains("<tool_output "),
+            "Success content should be XML-wrapped with <tool_output>: {}",
+            success_content
+        );
+
+        // Both should end with </tool_output>
+        assert!(
+            error_content.contains("</tool_output>"),
+            "Error content should close XML tag: {}",
+            error_content
+        );
+        assert!(
+            success_content.contains("</tool_output>"),
+            "Success content should close XML tag: {}",
+            success_content
+        );
     }
 }

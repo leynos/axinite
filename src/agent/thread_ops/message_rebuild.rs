@@ -8,9 +8,17 @@ use crate::history::ConversationMessage;
 use crate::llm::{ChatMessage, ToolCall};
 
 /// A parsed tool call entry with its metadata and raw JSON.
-///
-/// Tuple contains: (call_id, name, arguments, raw_entry)
-type ParsedCall = (String, String, serde_json::Value, serde_json::Value);
+#[derive(Debug, Clone)]
+struct ParsedCall {
+    /// The unique identifier for this tool call.
+    call_id: String,
+    /// The name of the tool being called.
+    name: String,
+    /// The arguments/parameters passed to the tool.
+    arguments: serde_json::Value,
+    /// The original raw JSON entry from the database.
+    raw_entry: serde_json::Value,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToolResultKind<'a> {
@@ -25,9 +33,9 @@ enum ToolResultKind<'a> {
 /// Enforces presence and validity of both `call_id` and `name` on every
 /// entry: each must be a non-null, non-empty, non-whitespace-only string.
 ///
-/// Returns `Ok(Vec<(call_id, name, arguments, raw_entry)>)` when all entries
-/// pass validation. The `raw_entry` is the original serde_json::Value for
-/// each call, preserved for result extraction.
+/// Returns `Ok(Vec<ParsedCall>)` when all entries pass validation. The
+/// `raw_entry` field is the original serde_json::Value for each call,
+/// preserved for result extraction.
 ///
 /// Returns `Err(Vec<usize>)` if any entry is malformed (missing, null,
 /// empty, or whitespace-only `call_id` or `name`); the `Vec` contains the
@@ -58,12 +66,12 @@ fn parse_tool_call_entries(calls: &[serde_json::Value]) -> Result<Vec<ParsedCall
                     .cloned()
                     .unwrap_or(serde_json::json!({}));
                 let raw_entry = call.clone();
-                parsed_calls.push((
-                    call_id_str.to_string(),
-                    name_str.to_string(),
+                parsed_calls.push(ParsedCall {
+                    call_id: call_id_str.to_string(),
+                    name: name_str.to_string(),
                     arguments,
                     raw_entry,
-                ));
+                });
             }
             _ => {
                 invalid_indices.push(idx);
@@ -106,10 +114,10 @@ fn parse_calls_json(message_id: uuid::Uuid, content: &str) -> Option<Vec<serde_j
 fn build_tool_calls(parsed_calls: &[ParsedCall]) -> Vec<ToolCall> {
     parsed_calls
         .iter()
-        .map(|(id, name, arguments, _)| ToolCall {
-            id: id.clone(),
-            name: name.clone(),
-            arguments: arguments.clone(),
+        .map(|pc| ToolCall {
+            id: pc.call_id.clone(),
+            name: pc.name.clone(),
+            arguments: pc.arguments.clone(),
         })
         .collect()
 }
@@ -202,11 +210,11 @@ fn handle_tool_calls_row(
         build_tool_calls(&parsed_calls),
     ));
 
-    for (call_id, name, _, entry) in &parsed_calls {
+    for pc in &parsed_calls {
         out.push(ChatMessage::tool_result(
-            call_id.clone(),
-            name.clone(),
-            tool_result_content(entry, name, safety),
+            pc.call_id.clone(),
+            pc.name.clone(),
+            tool_result_content(&pc.raw_entry, &pc.name, safety),
         ));
     }
 }
