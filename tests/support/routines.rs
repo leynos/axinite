@@ -6,7 +6,6 @@
 #![cfg(feature = "libsql")]
 
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -191,7 +190,7 @@ pub async fn wait_for_idle(engine: &RoutineEngine, timeout: Duration) {
     let poll_interval = Duration::from_millis(10);
 
     loop {
-        let count = engine.running_count().load(Ordering::SeqCst);
+        let count = engine.running_count();
         if count == 0 {
             return;
         }
@@ -221,9 +220,7 @@ pub async fn wait_for_idle(engine: &RoutineEngine, timeout: Duration) {
 pub async fn wait_for_persisted_run(db: &Arc<dyn Database>, routine_id: Uuid, timeout: Duration) {
     let start = std::time::Instant::now();
     let poll_interval = Duration::from_millis(10);
-    let max_attempts = 500; // At 10ms intervals, this is ~5 seconds
 
-    let mut attempts = 0;
     loop {
         let runs = db
             .list_routine_runs(routine_id, 10)
@@ -234,11 +231,11 @@ pub async fn wait_for_persisted_run(db: &Arc<dyn Database>, routine_id: Uuid, ti
             return;
         }
 
-        attempts += 1;
-        if attempts >= max_attempts || start.elapsed() >= timeout {
+        if start.elapsed() >= timeout {
             panic!(
-                "Timeout waiting for routine run to be persisted (routine_id: {}, attempts: {})",
-                routine_id, attempts
+                "Timeout waiting for routine run to be persisted (routine_id: {}, elapsed: {:?})",
+                routine_id,
+                start.elapsed()
             );
         }
 

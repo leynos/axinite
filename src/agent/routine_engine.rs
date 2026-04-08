@@ -1111,11 +1111,11 @@ async fn send_notification(
 }
 
 impl RoutineEngine {
-    /// Returns a clone of the running count atomic counter.
+    /// Returns the current running count as a read-only snapshot.
     ///
     /// Intended for test synchronisation only — do not use in production paths.
-    pub fn running_count(&self) -> Arc<AtomicUsize> {
-        self.running_count.clone()
+    pub fn running_count(&self) -> usize {
+        self.running_count.load(Ordering::SeqCst)
     }
 }
 
