@@ -303,6 +303,11 @@ fn test_rebuild_chat_messages_malformed_tool_calls_boundary(
 #[case::whitespace_name(serde_json::json!([
     {"name": "  \t  ", "call_id": "call_0", "parameters": {}, "result": "ok"}
 ]))]
+// Partial enrichment: one entry has call_id, another doesn't - reject entire row
+#[case::partial_enrichment(serde_json::json!([
+    {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found"},
+    {"name": "echo", "parameters": {}, "result": "hello"}
+]))]
 fn test_rebuild_skips_malformed_tool_calls(
     test_safety_layer: SafetyLayer,
     #[case] malformed_json: serde_json::Value,
@@ -419,29 +424,46 @@ fn test_tool_result_content_fallbacks(
     );
 }
 
-/// Regression test for the partial enrichment edge case where one tool call
-/// object has a call_id and a subsequent one does not. This should reject the
-/// entire tool_calls row to prevent duplicate ID handling issues.
+/// Unit tests for classify_result_content to ensure precedence ordering:
+/// error > result > result_preview > Ok
 #[rstest]
-fn test_rebuild_chat_messages_partial_enrichment_rejected(test_safety_layer: SafetyLayer) {
-    // One entry with call_id, one without - this is malformed partial enrichment
-    let tool_json = serde_json::json!([
-        {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found"},
-        {"name": "echo", "parameters": {}, "result": "hello"}  // missing call_id
-    ]);
-    let messages = vec![
-        make_db_msg("user", "Hi"),
-        make_db_msg("tool_calls", &tool_json.to_string()),
-        make_db_msg("assistant", "Done"),
-    ];
-    let result = rebuild_chat_messages_from_db(&messages, &test_safety_layer);
+fn test_classify_result_content_error_precedence_over_result() {
+    // When both "error" and "result" are present, Error should be returned
+    let entry = serde_json::json!({
+        "error": "timeout",
+        "result": "some data"
+    });
+    let kind = classify_result_content(&entry);
+    assert!(matches!(kind, super::ToolResultKind::Error("timeout")));
+}
 
-    // The malformed/partial tool_calls row should be rejected entirely
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].role, crate::llm::Role::User);
-    assert_eq!(result[0].content, "Hi");
-    assert_eq!(result[1].role, crate::llm::Role::Assistant);
-    assert_eq!(result[1].content, "Done");
+#[rstest]
+fn test_classify_result_content_result_precedence_over_preview() {
+    // When both "result" and "result_preview" are present, Result should be returned
+    let entry = serde_json::json!({
+        "result": "full result data",
+        "result_preview": "preview..."
+    });
+    let kind = classify_result_content(&entry);
+    assert!(matches!(kind, super::ToolResultKind::Result("full result data")));
+}
+
+#[rstest]
+fn test_classify_result_content_preview_fallback() {
+    // When only "result_preview" is present, ResultPreview should be returned
+    let entry = serde_json::json!({
+        "result_preview": "preview data"
+    });
+    let kind = classify_result_content(&entry);
+    assert!(matches!(kind, super::ToolResultKind::ResultPreview("preview data")));
+}
+
+#[rstest]
+fn test_classify_result_content_ok_when_empty() {
+    // When no result fields are present, Ok should be returned
+    let entry = serde_json::json!({});
+    let kind = classify_result_content(&entry);
+    assert!(matches!(kind, super::ToolResultKind::Ok));
 }
 
 #[cfg(test)]

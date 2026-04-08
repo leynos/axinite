@@ -32,53 +32,42 @@ enum ToolResultKind<'a> {
 fn parse_tool_call_entries(
     calls: &[serde_json::Value],
 ) -> Result<Vec<(String, String, serde_json::Value, serde_json::Value)>, Vec<usize>> {
-    let invalid_indices: Vec<usize> = calls
-        .iter()
-        .enumerate()
-        .filter(|(_, call)| {
-            let call_id_invalid = call
-                .get("call_id")
-                .and_then(|value| value.as_str())
-                .map(|value| value.trim().is_empty())
-                .unwrap_or(true);
-            let name_invalid = call
-                .get("name")
-                .and_then(|value| value.as_str())
-                .map(|value| value.trim().is_empty())
-                .unwrap_or(true);
+    let mut parsed_calls = Vec::with_capacity(calls.len());
+    let mut invalid_indices = Vec::new();
 
-            call_id_invalid || name_invalid
-        })
-        .map(|(idx, _)| idx)
-        .collect();
+    for (idx, call) in calls.iter().enumerate() {
+        // Extract and validate call_id
+        let call_id = call
+            .get("call_id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty());
+
+        // Extract and validate name
+        let name = call
+            .get("name")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty());
+
+        match (call_id, name) {
+            (Some(call_id_str), Some(name_str)) => {
+                let arguments = call
+                    .get("parameters")
+                    .cloned()
+                    .unwrap_or(serde_json::json!({}));
+                let raw_entry = call.clone();
+                parsed_calls.push((call_id_str.to_string(), name_str.to_string(), arguments, raw_entry));
+            }
+            _ => {
+                invalid_indices.push(idx);
+            }
+        }
+    }
 
     if !invalid_indices.is_empty() {
         return Err(invalid_indices);
     }
 
-    Ok(calls
-        .iter()
-        .map(|call| {
-            // SAFETY: validation above ensures these fields are present and non-empty
-            let call_id = call
-                .get("call_id")
-                .and_then(|v| v.as_str())
-                .expect("call_id validated above")
-                .to_string();
-            let name = call
-                .get("name")
-                .and_then(|v| v.as_str())
-                .expect("name validated above")
-                .to_string();
-            let arguments = call
-                .get("parameters")
-                .cloned()
-                .unwrap_or(serde_json::json!({}));
-            let raw_entry = call.clone();
-
-            (call_id, name, arguments, raw_entry)
-        })
-        .collect())
+    Ok(parsed_calls)
 }
 
 /// Parse JSON array from enriched tool_calls row content.
@@ -231,6 +220,53 @@ pub(super) fn rebuild_chat_messages_from_db(
     }
 
     result
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+
+    /// Unit tests for classify_result_content to ensure precedence ordering:
+    /// error > result > result_preview > Ok
+    #[test]
+    fn test_classify_result_content_error_precedence_over_result() {
+        // When both "error" and "result" are present, Error should be returned
+        let entry = serde_json::json!({
+            "error": "timeout",
+            "result": "some data"
+        });
+        let kind = classify_result_content(&entry);
+        assert!(matches!(kind, ToolResultKind::Error("timeout")));
+    }
+
+    #[test]
+    fn test_classify_result_content_result_precedence_over_preview() {
+        // When both "result" and "result_preview" are present, Result should be returned
+        let entry = serde_json::json!({
+            "result": "full result data",
+            "result_preview": "preview..."
+        });
+        let kind = classify_result_content(&entry);
+        assert!(matches!(kind, ToolResultKind::Result("full result data")));
+    }
+
+    #[test]
+    fn test_classify_result_content_preview_fallback() {
+        // When only "result_preview" is present, ResultPreview should be returned
+        let entry = serde_json::json!({
+            "result_preview": "preview data"
+        });
+        let kind = classify_result_content(&entry);
+        assert!(matches!(kind, ToolResultKind::ResultPreview("preview data")));
+    }
+
+    #[test]
+    fn test_classify_result_content_ok_when_empty() {
+        // When no result fields are present, Ok should be returned
+        let entry = serde_json::json!({});
+        let kind = classify_result_content(&entry);
+        assert!(matches!(kind, ToolResultKind::Ok));
+    }
 }
 
 #[cfg(test)]
