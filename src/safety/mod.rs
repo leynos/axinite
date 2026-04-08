@@ -24,6 +24,25 @@ pub use validator::{ValidationResult, Validator};
 
 use crate::config::SafetyConfig;
 
+/// Compute the largest byte index ≤ `max_len` that is a valid UTF-8 char boundary.
+fn char_boundary_truncation(output: &str, max_len: usize) -> usize {
+    let mut cut = max_len;
+    while cut > 0 && !output.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    cut
+}
+
+/// Update `current` with `candidate` if they differ, returning the new content
+/// and an updated `was_modified` flag.
+fn update_if_changed(current: String, candidate: String, was_modified: bool) -> (String, bool) {
+    if candidate != current {
+        (candidate, true)
+    } else {
+        (current, was_modified)
+    }
+}
+
 /// Unified safety layer combining sanitizer, validator, and policy.
 pub struct SafetyLayer {
     sanitizer: Sanitizer,
@@ -60,10 +79,7 @@ impl SafetyLayer {
         output: &str,
         max_length: usize,
     ) -> SanitizedOutput {
-        let mut cut = max_length;
-        while cut > 0 && !output.is_char_boundary(cut) {
-            cut -= 1;
-        }
+        let cut = char_boundary_truncation(output, max_length);
         let truncated = &output[..cut];
         let notice = format!(
             "\n\n[... truncated: showing {}/{} bytes. Use the json tool with \
@@ -193,10 +209,9 @@ impl SafetyLayer {
         // Stage 5: Leak detection (final safety check)
         match self.leak_detector.scan_and_clean(&content) {
             Ok(cleaned) => {
-                if cleaned != content {
-                    was_modified = true;
-                    content = cleaned;
-                }
+                let (c, m) = update_if_changed(content, cleaned, was_modified);
+                content = c;
+                was_modified = m;
             }
             Err(_) => {
                 return SanitizedOutput {
