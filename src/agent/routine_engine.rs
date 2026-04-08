@@ -166,14 +166,14 @@ impl RoutineEngine {
                 continue;
             }
 
-            // Global capacity check
-            if self.running_count.load(Ordering::Relaxed) >= self.config.max_concurrent_routines {
+            // Global capacity check (atomic check-and-increment)
+            if !self.try_reserve_running_slot() {
                 tracing::warn!(routine = %routine.name, "Skipped: global max concurrent reached");
                 continue;
             }
 
             let detail = truncate(&message.content, 200);
-            self.spawn_fire(routine.clone(), "event", Some(detail));
+            self.spawn_fire_reserved(routine.clone(), "event", Some(detail));
             fired += 1;
         }
 
@@ -249,13 +249,14 @@ impl RoutineEngine {
                 continue;
             }
 
-            if self.running_count.load(Ordering::Relaxed) >= self.config.max_concurrent_routines {
+            // Global capacity check (atomic check-and-increment)
+            if !self.try_reserve_running_slot() {
                 tracing::warn!(routine = %routine.name, "Skipped: global max concurrent reached");
                 continue;
             }
 
             let detail = truncate(&format!("{source}:{event_type}"), 200);
-            self.spawn_fire(routine.clone(), "system_event", Some(detail));
+            self.spawn_fire_reserved(routine.clone(), "system_event", Some(detail));
             fired += 1;
         }
 
@@ -273,16 +274,21 @@ impl RoutineEngine {
         };
 
         for routine in routines {
-            if self.running_count.load(Ordering::Relaxed) >= self.config.max_concurrent_routines {
+            // Global capacity check (atomic check-and-increment)
+            if !self.try_reserve_running_slot() {
                 tracing::warn!("Global max concurrent routines reached, skipping remaining");
                 break;
             }
 
             if !self.check_cooldown(&routine) {
+                // Roll back the reservation since this routine won't fire.
+                self.running_count.fetch_sub(1, Ordering::Relaxed);
                 continue;
             }
 
             if !self.check_concurrent(&routine).await {
+                // Roll back the reservation since this routine won't fire.
+                self.running_count.fetch_sub(1, Ordering::Relaxed);
                 continue;
             }
 
@@ -292,7 +298,7 @@ impl RoutineEngine {
                 None
             };
 
-            self.spawn_fire(routine, "cron", detail);
+            self.spawn_fire_reserved(routine, "cron", detail);
         }
     }
 
@@ -349,7 +355,13 @@ impl RoutineEngine {
         // Pre-increment running count to prevent race between spawn and task start.
         self.running_count.fetch_add(1, Ordering::Relaxed);
 
-        // Execute inline for manual triggers (caller wants to wait)
+        self.store.create_routine_run(&run).await.map_err(|e| {
+            // Roll back the pre-increment since the run will not proceed.
+            self.running_count.fetch_sub(1, Ordering::Relaxed);
+            RoutineError::from(e)
+        })?;
+
+        // Build engine context for execution.
         let engine = EngineContext {
             config: self.config.clone(),
             store: self.store.clone(),
@@ -362,14 +374,7 @@ impl RoutineEngine {
             safety: self.safety.clone(),
         };
 
-        let running_count = self.running_count.clone();
         tokio::spawn(async move {
-            if let Err(e) = engine.store.create_routine_run(&run).await {
-                tracing::error!(routine = %routine.name, "Failed to record run: {}", e);
-                // Decrement on early-return since execute_routine won't be called
-                running_count.fetch_sub(1, Ordering::Relaxed);
-                return;
-            }
             execute_routine(engine, routine, run).await;
         });
 
@@ -377,12 +382,15 @@ impl RoutineEngine {
     }
 
     /// Spawn a fire in a background task.
-    fn spawn_fire(&self, routine: Routine, trigger_type: &str, trigger_detail: Option<String>) {
-        // Pre-increment running count to prevent race between spawn and task start.
-        // This ensures wait_for_idle cannot observe 0 between spawn_fire returning
-        // and execute_routine's first await point.
-        self.running_count.fetch_add(1, Ordering::Relaxed);
-
+    ///
+    /// The caller must have already reserved a running slot via
+    /// `try_reserve_running_slot` or equivalent pre-increment.
+    fn spawn_fire_reserved(
+        &self,
+        routine: Routine,
+        trigger_type: &str,
+        trigger_detail: Option<String>,
+    ) {
         let run = RoutineRun {
             id: Uuid::new_v4(),
             routine_id: routine.id,
@@ -447,6 +455,22 @@ impl RoutineEngine {
             }
         }
     }
+
+    /// Atomically check global capacity and reserve a running slot.
+    ///
+    /// Returns `true` if the current count was below `max_concurrent_routines`
+    /// and has been incremented; returns `false` without mutating if at capacity.
+    fn try_reserve_running_slot(&self) -> bool {
+        self.running_count
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                if current < self.config.max_concurrent_routines {
+                    Some(current + 1)
+                } else {
+                    None
+                }
+            })
+            .is_ok()
+    }
 }
 
 /// Shared context passed to the execution function.
@@ -491,9 +515,6 @@ async fn execute_routine(ctx: EngineContext, routine: Routine, run: RoutineRun) 
             .await
         }
     };
-
-    // Decrement running count
-    ctx.running_count.fetch_sub(1, Ordering::Relaxed);
 
     // Process result
     let (status, summary, tokens) = match result {
@@ -594,6 +615,9 @@ async fn execute_routine(ctx: EngineContext, routine: Routine, run: RoutineRun) 
         thread_id.as_deref(),
     )
     .await;
+
+    // Decrement running count after all finalization steps are complete.
+    ctx.running_count.fetch_sub(1, Ordering::Relaxed);
 }
 
 /// Sanitize a routine name for use in workspace paths.

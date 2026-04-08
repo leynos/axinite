@@ -60,8 +60,8 @@ async fn routine_cooldown() {
     wait_for_idle(&engine, Duration::from_secs(5)).await;
 
     // Wait for routine run to be durably persisted in the database.
-    // This uses a shared helper to keep persistence semantics consistent across tests.
-    wait_for_persisted_run(&db, routine.id, Duration::from_secs(5)).await;
+    // Snapshot run count before firing (zero for a freshly-created routine).
+    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await;
 
     // Update the routine's last_run_at to now (simulating it just ran).
     db.update_routine_runtime(RoutineRuntimeUpdate {

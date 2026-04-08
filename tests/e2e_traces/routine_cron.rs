@@ -56,8 +56,8 @@ async fn cron_routine_fires() {
     wait_for_idle(&engine, Duration::from_secs(5)).await;
 
     // Wait for routine run to be durably persisted in the database.
-    // This uses a shared helper to keep persistence semantics consistent across tests.
-    wait_for_persisted_run(&db, routine.id, Duration::from_secs(5)).await;
+    // Snapshot run count before firing (zero for a freshly-created routine).
+    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await;
 
     // Notification may or may not be sent depending on config;
     // just verify no panic occurred. Drain the channel.

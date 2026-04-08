@@ -394,10 +394,14 @@ fn routines_symbol_refs() {
     fn _wait_for_persisted_run_sig<'a>(
         db: &'a std::sync::Arc<dyn ironclaw::db::Database>,
         routine_id: uuid::Uuid,
+        previous_run_count: usize,
         timeout: std::time::Duration,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
         Box::pin(routines::engine_sync::wait_for_persisted_run(
-            db, routine_id, timeout,
+            db,
+            routine_id,
+            previous_run_count,
+            timeout,
         ))
     }
     touch!(_wait_for_idle_sig, _wait_for_persisted_run_sig);

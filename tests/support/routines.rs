@@ -218,18 +218,21 @@ pub mod engine_sync {
         }
     }
 
-    /// Polls until a routine run is persisted in the database or the timeout expires.
+    /// Polls until a new routine run is persisted in the database or the timeout expires.
     ///
     /// Complements [`wait_for_idle`]: call this after `wait_for_idle` to ensure the
     /// routine run is durably recorded before asserting on database state.
     ///
     /// # Arguments
-    /// * `db`         – The database to query for persisted runs.
-    /// * `routine_id` – The ID of the routine to check for runs.
-    /// * `timeout`    – Maximum duration to wait for persistence.
+    /// * `db`                  – The database to query for persisted runs.
+    /// * `routine_id`          – The ID of the routine to check for runs.
+    /// * `previous_run_count`  – Snapshot of the run count before firing; the
+    ///                           function waits until the count exceeds this value.
+    /// * `timeout`             – Maximum duration to wait for persistence.
     pub async fn wait_for_persisted_run(
         db: &Arc<dyn Database>,
         routine_id: Uuid,
+        previous_run_count: usize,
         timeout: Duration,
     ) {
         let start = std::time::Instant::now();
@@ -241,14 +244,17 @@ pub mod engine_sync {
                 .await
                 .expect("list_routine_runs should not fail");
 
-            if !runs.is_empty() {
+            if runs.len() > previous_run_count {
                 return;
             }
 
             if start.elapsed() >= timeout {
                 panic!(
-                    "Timeout waiting for routine run to be persisted (routine_id: {}, elapsed: {:?})",
+                    "Timeout waiting for routine run to be persisted (routine_id: {}, \
+                     previous_count: {}, current_count: {}, elapsed: {:?})",
                     routine_id,
+                    previous_run_count,
+                    runs.len(),
                     start.elapsed()
                 );
             }
