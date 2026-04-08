@@ -7,6 +7,11 @@
 use crate::history::ConversationMessage;
 use crate::llm::{ChatMessage, ToolCall};
 
+/// A parsed tool call entry with its metadata and raw JSON.
+///
+/// Tuple contains: (call_id, name, arguments, raw_entry)
+type ParsedCall = (String, String, serde_json::Value, serde_json::Value);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ToolResultKind<'a> {
     Error(&'a str),
@@ -29,9 +34,7 @@ enum ToolResultKind<'a> {
 /// zero-based indices of the offending entries for diagnostic logging.
 /// Legacy rows without `call_id` are rejected — no silent coercion or
 /// fallback is applied.
-fn parse_tool_call_entries(
-    calls: &[serde_json::Value],
-) -> Result<Vec<(String, String, serde_json::Value, serde_json::Value)>, Vec<usize>> {
+fn parse_tool_call_entries(calls: &[serde_json::Value]) -> Result<Vec<ParsedCall>, Vec<usize>> {
     let mut parsed_calls = Vec::with_capacity(calls.len());
     let mut invalid_indices = Vec::new();
 
@@ -95,9 +98,7 @@ fn parse_calls_json(message_id: uuid::Uuid, content: &str) -> Option<Vec<serde_j
 }
 
 /// Build a `ToolCall` list from validated call entries.
-fn build_tool_calls(
-    parsed_calls: &[(String, String, serde_json::Value, serde_json::Value)],
-) -> Vec<ToolCall> {
+fn build_tool_calls(parsed_calls: &[ParsedCall]) -> Vec<ToolCall> {
     parsed_calls
         .iter()
         .map(|(id, name, arguments, _)| ToolCall {
