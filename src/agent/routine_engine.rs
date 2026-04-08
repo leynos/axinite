@@ -1110,12 +1110,13 @@ async fn send_notification(
     }
 }
 
+#[cfg(feature = "libsql")]
 impl RoutineEngine {
-    /// Returns the current running count as a read-only snapshot.
+    /// Returns a clone of the running count atomic counter.
     ///
     /// Intended for test synchronisation only — do not use in production paths.
-    pub fn running_count(&self) -> usize {
-        self.running_count.load(Ordering::SeqCst)
+    pub fn running_count(&self) -> Arc<AtomicUsize> {
+        self.running_count.clone()
     }
 }
 

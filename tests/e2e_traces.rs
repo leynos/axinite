@@ -3,6 +3,10 @@
 
 mod support;
 
+#[cfg(feature = "libsql")]
+#[path = "support/routine_sync.rs"]
+mod routine_sync;
+
 #[path = "e2e_traces/advanced_traces.rs"]
 mod advanced_traces;
 #[path = "e2e_traces/attachments.rs"]
