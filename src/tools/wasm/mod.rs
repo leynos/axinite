@@ -104,6 +104,17 @@ pub use limits::{
 };
 pub use runtime::{PreparedModule, WasmRuntimeConfig, WasmToolRuntime, enable_compilation_cache};
 pub(crate) use wrapper::metadata::is_placeholder_schema;
+
+/// Return the placeholder schema JSON string used until real guest metadata is recovered.
+#[cfg(test)]
+pub(crate) fn placeholder_json() -> String {
+    serde_json::json!({
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+    })
+    .to_string()
+}
 pub use wrapper::{OAuthRefreshConfig, WasmToolWrapper};
 
 // Capabilities (V2)

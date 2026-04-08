@@ -49,10 +49,6 @@ mod tests {
 
     use super::{normalized_schema, parse_schema_string};
 
-    /// The placeholder schema that should be treated as None.
-    const PLACEHOLDER_JSON: &str =
-        r#"{"type":"object","properties":{},"additionalProperties":true}"#;
-
     #[rstest]
     #[case("", None)]
     #[case("   ", None)]
@@ -125,11 +121,9 @@ mod tests {
             Just(r#"{"type":"number"}"#.to_string()),
             Just(r#"{"type":"boolean"}"#.to_string()),
             Just(r#"{"type":"array"}"#.to_string()),
-            Just(r#"{"type":"object"}"#.to_string()),
         ]) {
-            if schema != PLACEHOLDER_JSON {
-                prop_assert!(parse_schema_string(&schema).is_some());
-            }
+            // These types are never the placeholder, so no guard needed
+            prop_assert!(parse_schema_string(&schema).is_some());
         }
 
         // Invalid JSON should fallback to returning the raw trimmed string.
@@ -153,19 +147,22 @@ mod tests {
         assert_eq!(normalized_schema(schema.clone()), Some(schema));
     }
 
-    // Unit-style property tests (no proptest parameters needed)
+    // Standard unit tests
     #[test]
-    fn prop_placeholder_json_returns_none() {
-        assert_eq!(parse_schema_string(PLACEHOLDER_JSON), None);
+    fn test_placeholder_json_returns_none() {
+        assert_eq!(
+            parse_schema_string(&crate::tools::wasm::placeholder_json()),
+            None
+        );
     }
 
     #[test]
-    fn prop_null_value_returns_none() {
+    fn test_null_value_returns_none() {
         assert_eq!(normalized_schema(serde_json::Value::Null), None);
     }
 
     #[test]
-    fn prop_placeholder_object_returns_none() {
+    fn test_placeholder_object_returns_none() {
         let placeholder = json!({"type":"object","properties":{},"additionalProperties":true});
         assert_eq!(normalized_schema(placeholder), None);
     }
