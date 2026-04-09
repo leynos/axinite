@@ -10,6 +10,21 @@ use crate::tools::redact_params;
 use super::ChatDelegate;
 use crate::agent::dispatcher::types::*;
 
+/// Restore original values of sensitive parameters into a hook-modified JSON
+/// object, ensuring that fields the hook was not permitted to see are not
+/// inadvertently erased.
+fn restore_sensitive_params(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    original_tc: &crate::llm::ToolCall,
+    sensitive: &[&str],
+) {
+    for key in sensitive {
+        if let Some(orig_val) = original_tc.arguments.get(*key) {
+            obj.insert((*key).to_string(), orig_val.clone());
+        }
+    }
+}
+
 /// Apply hook-modified parameters back onto `tc`, restoring any sensitive
 /// fields from the original arguments to prevent them being erased.
 fn apply_hook_params(
@@ -21,11 +36,7 @@ fn apply_hook_params(
     match serde_json::from_str::<serde_json::Value>(new_params) {
         Ok(mut parsed) => {
             if let Some(obj) = parsed.as_object_mut() {
-                for key in sensitive {
-                    if let Some(orig_val) = original_tc.arguments.get(*key) {
-                        obj.insert((*key).to_string(), orig_val.clone());
-                    }
-                }
+                restore_sensitive_params(obj, original_tc, sensitive);
             }
             tc.arguments = parsed;
         }
