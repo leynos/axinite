@@ -1,7 +1,7 @@
 //! Message compaction tests.
 
-use super::*;
 use super::super::types::compact_messages_for_retry;
+use super::*;
 
 /// Asserts the standard preamble of a compacted message list:
 /// - Expected total length

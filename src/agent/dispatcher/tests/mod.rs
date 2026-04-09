@@ -10,8 +10,6 @@ use crate::agent::agent_loop::{Agent, AgentDeps};
 use crate::agent::cost_guard::{CostGuard, CostGuardConfig};
 use crate::agent::session::Session;
 use crate::channels::{ChannelManager, IncomingMessage};
-use crate::tools::builtin::EchoTool;
-use tokio::sync::Mutex;
 use crate::config::{AgentConfig, SafetyConfig, SkillsConfig};
 use crate::context::ContextManager;
 use crate::error::Error;
@@ -23,6 +21,8 @@ use crate::llm::{
 use crate::safety::SafetyLayer;
 use crate::skills::SkillRegistry;
 use crate::tools::ToolRegistry;
+use crate::tools::builtin::EchoTool;
+use tokio::sync::Mutex;
 
 use super::types::*;
 
@@ -30,8 +30,7 @@ use super::types::*;
 pub(super) struct MockLlmProvider {
     name: &'static str,
     text: String,
-    tool_responder:
-        Arc<dyn Fn(ToolCompletionRequest) -> ToolCompletionResponse + Send + Sync>,
+    tool_responder: Arc<dyn Fn(ToolCompletionRequest) -> ToolCompletionResponse + Send + Sync>,
 }
 
 impl MockLlmProvider {
@@ -206,7 +205,10 @@ pub(super) fn make_test_agent() -> Agent {
 
 /// Helper to build a test Agent with a custom LLM provider and
 /// `max_tool_iterations` override.
-pub(super) fn make_test_agent_with_llm(llm: Arc<dyn LlmProvider>, max_tool_iterations: usize) -> Agent {
+pub(super) fn make_test_agent_with_llm(
+    llm: Arc<dyn LlmProvider>,
+    max_tool_iterations: usize,
+) -> Agent {
     let deps = AgentDeps {
         store: None,
         llm,

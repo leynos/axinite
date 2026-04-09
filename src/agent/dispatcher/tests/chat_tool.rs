@@ -1,7 +1,7 @@
 //! Chat tool execution tests.
 
-use super::*;
 use super::super::execute_chat_tool_standalone;
+use super::*;
 
 #[tokio::test]
 async fn test_execute_chat_tool_standalone_success() {

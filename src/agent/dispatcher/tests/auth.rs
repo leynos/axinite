@@ -1,7 +1,7 @@
 //! Auth detection tests.
 
-use super::*;
 use super::super::check_auth_required;
+use super::*;
 
 #[test]
 fn test_detect_auth_awaiting_positive() {

@@ -1,7 +1,7 @@
 //! Skill selection tests.
 
-use super::*;
 use super::super::types::select_active_skills;
+use super::*;
 
 #[test]
 fn test_select_active_skills_returns_empty_when_disabled() {

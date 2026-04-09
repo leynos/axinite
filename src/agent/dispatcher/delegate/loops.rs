@@ -14,8 +14,7 @@ use crate::agent::dispatcher::types::*;
 impl<'a> ChatDelegate<'a> {
     /// Record tool calls in the active session thread, redacting sensitive parameters.
     async fn record_tool_calls_in_thread(&self, tool_calls: &[crate::llm::ToolCall]) {
-        let mut redacted_args: Vec<serde_json::Value> =
-            Vec::with_capacity(tool_calls.len());
+        let mut redacted_args: Vec<serde_json::Value> = Vec::with_capacity(tool_calls.len());
         for tc in tool_calls {
             let safe = if let Some(tool) = self.agent.tools().get(&tc.name).await {
                 redact_params(&tc.arguments, tool.sensitive_params())
@@ -297,7 +296,10 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
 
         // === Phase 1: Preflight (sequential) ===
         let (batch, approval_needed) = self.group_tool_calls(&tool_calls).await?;
-        let ToolBatch { preflight, runnable } = batch;
+        let ToolBatch {
+            preflight,
+            runnable,
+        } = batch;
 
         // === Phase 2: Parallel execution ===
         let mut exec_results: Vec<Option<Result<String, Error>>> =
