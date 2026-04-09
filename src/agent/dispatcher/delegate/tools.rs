@@ -10,7 +10,56 @@ use crate::tools::redact_params;
 use super::ChatDelegate;
 use crate::agent::dispatcher::types::*;
 
+/// Apply hook-modified parameters back onto `tc`, restoring any sensitive
+/// fields from the original arguments to prevent them being erased.
+fn apply_hook_params(
+    tc: &mut crate::llm::ToolCall,
+    original_tc: &crate::llm::ToolCall,
+    sensitive: &[&str],
+    new_params: &str,
+) {
+    match serde_json::from_str::<serde_json::Value>(new_params) {
+        Ok(mut parsed) => {
+            if let Some(obj) = parsed.as_object_mut() {
+                for key in sensitive {
+                    if let Some(orig_val) = original_tc.arguments.get(*key) {
+                        obj.insert((*key).to_string(), orig_val.clone());
+                    }
+                }
+            }
+            tc.arguments = parsed;
+        }
+        Err(e) => {
+            tracing::warn!(
+                tool = %tc.name,
+                "Hook returned non-JSON modification for ToolCall, ignoring: {}",
+                e
+            );
+        }
+    }
+}
+
 impl<'a> ChatDelegate<'a> {
+    /// Return `true` if `tool` requires human approval for this invocation.
+    /// Consults the session's auto-approve list when the requirement is
+    /// `UnlessAutoApproved`.
+    async fn resolve_needs_approval(
+        &self,
+        tool: &Arc<dyn crate::tools::Tool>,
+        tc_name: &str,
+        arguments: &serde_json::Value,
+    ) -> bool {
+        use crate::tools::ApprovalRequirement;
+        match tool.requires_approval(arguments) {
+            ApprovalRequirement::Never => false,
+            ApprovalRequirement::UnlessAutoApproved => {
+                let sess = self.session.lock().await;
+                !sess.is_tool_auto_approved(tc_name)
+            }
+            ApprovalRequirement::Always => true,
+        }
+    }
+
     /// Group tool calls into preflight outcomes and runnable batch.
     pub(super) async fn group_tool_calls(
         &self,
@@ -70,46 +119,19 @@ impl<'a> ChatDelegate<'a> {
                 }
                 Ok(crate::hooks::HookOutcome::Continue {
                     modified: Some(new_params),
-                }) => match serde_json::from_str::<serde_json::Value>(&new_params) {
-                    Ok(mut parsed) => {
-                        if let Some(obj) = parsed.as_object_mut() {
-                            for key in sensitive {
-                                if let Some(orig_val) = original_tc.arguments.get(*key) {
-                                    obj.insert((*key).to_string(), orig_val.clone());
-                                }
-                            }
-                        }
-                        tc.arguments = parsed;
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            tool = %tc.name,
-                            "Hook returned non-JSON modification for ToolCall, ignoring: {}",
-                            e
-                        );
-                    }
-                },
+                }) => {
+                    apply_hook_params(&mut tc, original_tc, sensitive, &new_params);
+                }
                 _ => {}
             }
 
             // Check if tool requires approval
             if !self.agent.config.auto_approve_tools
                 && let Some(tool) = tool_opt
+                && self.resolve_needs_approval(&tool, &tc.name, &tc.arguments).await
             {
-                use crate::tools::ApprovalRequirement;
-                let needs_approval = match tool.requires_approval(&tc.arguments) {
-                    ApprovalRequirement::Never => false,
-                    ApprovalRequirement::UnlessAutoApproved => {
-                        let sess = self.session.lock().await;
-                        !sess.is_tool_auto_approved(&tc.name)
-                    }
-                    ApprovalRequirement::Always => true,
-                };
-
-                if needs_approval {
-                    approval_needed = Some((idx, tc, tool));
-                    break;
-                }
+                approval_needed = Some((idx, tc, tool));
+                break;
             }
 
             let preflight_idx = preflight.len();
