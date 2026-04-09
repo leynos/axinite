@@ -1632,80 +1632,65 @@ mod tests {
         );
     }
 
+    fn slow_tool(
+        name: &str,
+        delay_ms: u64,
+        current: &Arc<AtomicUsize>,
+        max: &Arc<AtomicUsize>,
+    ) -> Arc<dyn Tool> {
+        Arc::new(SlowTool {
+            tool_name: name.into(),
+            delay: Duration::from_millis(delay_ms),
+            current_active: Arc::clone(current),
+            max_active: Arc::clone(max),
+        })
+    }
+
+    fn tool_selection(name: &str, call_id: &str) -> ToolSelection {
+        ToolSelection {
+            tool_name: name.into(),
+            parameters: serde_json::json!({}),
+            reasoning: String::new(),
+            alternatives: vec![],
+            tool_call_id: call_id.into(),
+        }
+    }
+
     #[tokio::test]
     async fn test_result_ordering_preserved() {
         let current_active = Arc::new(AtomicUsize::new(0));
         let max_active = Arc::new(AtomicUsize::new(0));
+
         let tools: Vec<Arc<dyn Tool>> = vec![
-            Arc::new(SlowTool {
-                tool_name: "tool_a".into(),
-                delay: Duration::from_millis(300),
-                current_active: Arc::clone(&current_active),
-                max_active: Arc::clone(&max_active),
-            }),
-            Arc::new(SlowTool {
-                tool_name: "tool_b".into(),
-                delay: Duration::from_millis(100),
-                current_active: Arc::clone(&current_active),
-                max_active: Arc::clone(&max_active),
-            }),
-            Arc::new(SlowTool {
-                tool_name: "tool_c".into(),
-                delay: Duration::from_millis(200),
-                current_active: Arc::clone(&current_active),
-                max_active: Arc::clone(&max_active),
-            }),
+            slow_tool("tool_a", 300, &current_active, &max_active),
+            slow_tool("tool_b", 100, &current_active, &max_active),
+            slow_tool("tool_c", 200, &current_active, &max_active),
         ];
 
         let worker = make_worker(tools).await;
 
         let selections = vec![
-            ToolSelection {
-                tool_name: "tool_a".into(),
-                parameters: serde_json::json!({}),
-                reasoning: String::new(),
-                alternatives: vec![],
-                tool_call_id: "call_a".into(),
-            },
-            ToolSelection {
-                tool_name: "tool_b".into(),
-                parameters: serde_json::json!({}),
-                reasoning: String::new(),
-                alternatives: vec![],
-                tool_call_id: "call_b".into(),
-            },
-            ToolSelection {
-                tool_name: "tool_c".into(),
-                parameters: serde_json::json!({}),
-                reasoning: String::new(),
-                alternatives: vec![],
-                tool_call_id: "call_c".into(),
-            },
+            tool_selection("tool_a", "call_a"),
+            tool_selection("tool_b", "call_b"),
+            tool_selection("tool_c", "call_c"),
         ];
 
         let results = worker.execute_tools_parallel(&selections).await;
 
-        assert!(
-            results[0]
-                .result
-                .as_ref()
-                .expect("tool a should return a captured result")
-                .contains("done_tool_a")
-        );
-        assert!(
-            results[1]
-                .result
-                .as_ref()
-                .expect("tool b should return a captured result")
-                .contains("done_tool_b")
-        );
-        assert!(
-            results[2]
-                .result
-                .as_ref()
-                .expect("tool c should return a captured result")
-                .contains("done_tool_c")
-        );
+        for (i, (result, expected)) in results
+            .iter()
+            .zip(["done_tool_a", "done_tool_b", "done_tool_c"])
+            .enumerate()
+        {
+            assert!(
+                result
+                    .result
+                    .as_ref()
+                    .expect(&format!("tool {i} should return a captured result"))
+                    .contains(expected),
+                "result[{i}] should contain '{expected}'",
+            );
+        }
     }
 
     #[tokio::test]
