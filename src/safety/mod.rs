@@ -126,6 +126,36 @@ impl SafetyLayer {
         &self.policy
     }
 
+    /// Apply policy enforcement to `content`.
+    ///
+    /// Returns `Ok((content, was_modified))` on pass or sanitise, or
+    /// `Err(SanitizedOutput)` when the policy blocks the output.
+    fn apply_policy(
+        &self,
+        content: String,
+        was_modified: bool,
+    ) -> Result<(String, bool), SanitizedOutput> {
+        let violations = self.policy.check(&content);
+        if violations
+            .iter()
+            .any(|rule| rule.action == crate::safety::PolicyAction::Block)
+        {
+            return Err(SanitizedOutput {
+                content: "[Output blocked by safety policy]".to_string(),
+                warnings: vec![],
+                was_modified: true,
+            });
+        }
+        if violations
+            .iter()
+            .any(|rule| rule.action == crate::safety::PolicyAction::Sanitize)
+        {
+            let sanitised = self.sanitizer.sanitize(&content);
+            return Ok((sanitised.content, true));
+        }
+        Ok((content, was_modified))
+    }
+
     /// Run the full tool-output pipeline: length gate → sanitizer → validator → policy → leak-detector.
     ///
     /// Returns a `SanitizedOutput` whose `content` is safe to pass to
@@ -169,26 +199,13 @@ impl SafetyLayer {
             };
         }
 
-        // Stage 4: Policy enforcement (block/sanitize rules)
-        let violations = self.policy.check(&content);
-        if violations
-            .iter()
-            .any(|rule| rule.action == crate::safety::PolicyAction::Block)
-        {
-            return SanitizedOutput {
-                content: "[Output blocked by safety policy]".to_string(),
-                warnings: vec![],
-                was_modified: true,
-            };
-        }
-        if violations
-            .iter()
-            .any(|rule| rule.action == crate::safety::PolicyAction::Sanitize)
-        {
-            was_modified = true;
-            // Re-run sanitizer if policy requires it
-            let sanitized = self.sanitizer.sanitize(&content);
-            content = sanitized.content;
+        // Stage 4: Policy enforcement (block/sanitise rules)
+        match self.apply_policy(content, was_modified) {
+            Ok((c, m)) => {
+                content = c;
+                was_modified = m;
+            }
+            Err(blocked) => return blocked,
         }
 
         // Stage 5: Leak detection (final safety check)
