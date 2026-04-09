@@ -12,17 +12,33 @@ use super::ChatDelegate;
 use crate::agent::dispatcher::types::*;
 
 impl<'a> ChatDelegate<'a> {
-    /// Record tool calls in the active session thread, redacting sensitive parameters.
-    async fn record_tool_calls_in_thread(&self, tool_calls: &[crate::llm::ToolCall]) {
-        let mut redacted_args: Vec<serde_json::Value> = Vec::with_capacity(tool_calls.len());
+    /// Build a redacted copy of each tool call's arguments.
+    ///
+    /// For each call, looks up the registered tool and applies `redact_params`
+    /// to strip sensitive fields; falls back to the raw arguments if the tool
+    /// is not registered.
+    async fn redact_tool_call_args(
+        &self,
+        tool_calls: &[crate::llm::ToolCall],
+    ) -> Vec<serde_json::Value> {
+        let mut redacted = Vec::with_capacity(tool_calls.len());
         for tc in tool_calls {
             let safe = if let Some(tool) = self.agent.tools().get(&tc.name).await {
                 redact_params(&tc.arguments, tool.sensitive_params())
             } else {
                 tc.arguments.clone()
             };
-            redacted_args.push(safe);
+            redacted.push(safe);
         }
+        redacted
+    }
+
+    /// Write redacted tool-call records into the current turn of the active thread.
+    async fn write_tool_calls_to_thread(
+        &self,
+        tool_calls: &[crate::llm::ToolCall],
+        redacted_args: Vec<serde_json::Value>,
+    ) {
         let mut sess = self.session.lock().await;
         if let Some(thread) = sess.threads.get_mut(&self.thread_id)
             && let Some(turn) = thread.last_turn_mut()
@@ -31,6 +47,13 @@ impl<'a> ChatDelegate<'a> {
                 turn.record_tool_call(&tc.name, safe_args);
             }
         }
+    }
+
+    /// Record tool calls in the active session thread, redacting sensitive parameters.
+    async fn record_tool_calls_in_thread(&self, tool_calls: &[crate::llm::ToolCall]) {
+        let redacted_args = self.redact_tool_call_args(tool_calls).await;
+        self.write_tool_calls_to_thread(tool_calls, redacted_args)
+            .await;
     }
 
     /// Run the runnable subset of the batch, choosing inline vs. parallel dispatch.
