@@ -89,6 +89,13 @@ impl WebhookServer {
                 name: "webhook_server".to_string(),
                 reason: format!("Failed to bind to {}: {e}", self.config.addr),
             })?;
+        let addr = listener
+            .local_addr()
+            .map_err(|e| ChannelError::StartupFailed {
+                name: "webhook_server".to_string(),
+                reason: format!("local_addr failed: {e}"),
+            })?;
+        self.config.addr = addr;
         self.spawn_on_listener(listener, app).await
     }
 
