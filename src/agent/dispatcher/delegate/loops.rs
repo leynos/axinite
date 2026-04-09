@@ -82,22 +82,19 @@ impl<'a> ChatDelegate<'a> {
     /// Construct a `PendingApproval` for a tool call that requires user authorisation.
     fn build_pending_approval(
         &self,
-        approval_idx: usize,
-        tc: &crate::llm::ToolCall,
-        tool: &dyn crate::tools::Tool,
+        target: &ApprovalTarget<'_>,
         reason_ctx: &ReasoningContext,
-        tool_calls: &[crate::llm::ToolCall],
     ) -> crate::agent::session::PendingApproval {
-        let display_params = redact_params(&tc.arguments, tool.sensitive_params());
+        let display_params = redact_params(&target.tc.arguments, target.tool.sensitive_params());
         crate::agent::session::PendingApproval {
             request_id: Uuid::new_v4(),
-            tool_name: tc.name.clone(),
-            parameters: tc.arguments.clone(),
+            tool_name: target.tc.name.clone(),
+            parameters: target.tc.arguments.clone(),
             display_parameters: display_params,
-            description: tool.description().to_string(),
-            tool_call_id: tc.id.clone(),
+            description: target.tool.description().to_string(),
+            tool_call_id: target.tc.id.clone(),
             context_messages: reason_ctx.messages.clone(),
-            deferred_tool_calls: tool_calls[approval_idx + 1..].to_vec(),
+            deferred_tool_calls: target.deferred_calls.to_vec(),
             user_timezone: Some(self.user_tz.name().to_string()),
         }
     }
@@ -315,8 +312,12 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
         }
 
         if let Some((approval_idx, tc, tool)) = approval_needed {
-            let pending =
-                self.build_pending_approval(approval_idx, &tc, &*tool, reason_ctx, &tool_calls);
+            let target = ApprovalTarget {
+                tc: &tc,
+                tool: &*tool,
+                deferred_calls: &tool_calls[approval_idx + 1..],
+            };
+            let pending = self.build_pending_approval(&target, reason_ctx);
             return Ok(Some(LoopOutcome::NeedApproval(Box::new(pending))));
         }
 
