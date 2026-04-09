@@ -213,15 +213,12 @@ impl CreateJobTool {
         Ok(grants)
     }
 
-    /// Update sandbox job status in DB (fire-and-forget).
+    /// Update sandbox job status in DB (fire-and-forget for best-effort updates).
     ///
     /// This method uses `tokio::spawn` to make status updates intentionally
-    /// fire-and-forget. The sandbox job record is already persisted by
-    /// `save_sandbox_job`/`update_sandbox_job_mode`, so a missed or stale status
-    /// (e.g., "creating") is recoverable on the next poll or after restart.
-    /// Blocking to await status persistence would not help recover a failed
-    /// container and would unnecessarily delay the tool. Failures are still
-    /// observable because `tracing::warn!` logs any update errors.
+    /// fire-and-forget for non-terminal states (e.g., "creating", "running").
+    /// These are recoverable on the next poll or after restart.
+    /// For terminal states and pre-container failures, use `update_status_sync`.
     fn update_status(
         &self,
         job_id: Uuid,
@@ -248,6 +245,39 @@ impl CreateJobTool {
                     tracing::warn!(job_id = %job_id, "Failed to update sandbox job status: {}", e);
                 }
             });
+        }
+    }
+
+    /// Update sandbox job status synchronously (for terminal states and pre-container failures).
+    ///
+    /// This method awaits the status update to ensure durability before returning.
+    /// Use for terminal states (completed, failed, cancelled) and pre-container
+    /// failure transitions where the job state must be persisted before returning.
+    async fn update_status_sync(
+        &self,
+        job_id: Uuid,
+        status: &str,
+        success: Option<bool>,
+        message: Option<String>,
+        started_at: Option<chrono::DateTime<Utc>>,
+        completed_at: Option<chrono::DateTime<Utc>>,
+    ) {
+        let Some(store) = self.store.clone() else {
+            return;
+        };
+        let status = crate::db::SandboxJobStatus::from(status);
+        if let Err(e) = store
+            .update_sandbox_job_status(SandboxJobStatusUpdate {
+                id: job_id,
+                status,
+                success,
+                message: message.as_deref(),
+                started_at,
+                completed_at,
+            })
+            .await
+        {
+            tracing::warn!(job_id = %job_id, "Failed to update sandbox job status: {}", e);
         }
     }
 
@@ -418,14 +448,15 @@ impl CreateJobTool {
 
         let finished_at = Utc::now();
         if success {
-            self.update_status(
+            self.update_status_sync(
                 job_id,
                 "completed",
                 Some(true),
                 None,
                 None,
                 Some(finished_at),
-            );
+            )
+            .await;
             let result = serde_json::json!({
                 "job_id": job_id.to_string(),
                 "status": "completed",
@@ -435,14 +466,15 @@ impl CreateJobTool {
             });
             Ok(ToolOutput::success(result, start.elapsed()))
         } else {
-            self.update_status(
+            self.update_status_sync(
                 job_id,
                 "failed",
                 Some(false),
                 Some(message.clone()),
                 None,
                 Some(finished_at),
-            );
+            )
+            .await;
             Err(ToolError::ExecutionFailed(format!(
                 "container job failed: {}",
                 message
@@ -463,14 +495,15 @@ impl CreateJobTool {
             .and_then(|r| r.message.clone())
             .unwrap_or_else(|| "unknown failure".to_string());
         jm.cleanup_job(job_id).await;
-        self.update_status(
+        self.update_status_sync(
             job_id,
             "failed",
             Some(false),
             Some(message.clone()),
             None,
             Some(Utc::now()),
-        );
+        )
+        .await;
         Err(ToolError::ExecutionFailed(format!(
             "container job failed: {}",
             message
@@ -488,14 +521,15 @@ impl CreateJobTool {
         browse_id: &str,
         start: std::time::Instant,
     ) -> Result<ToolOutput, ToolError> {
-        self.update_status(
+        self.update_status_sync(
             job_id,
             "completed",
             Some(true),
             None,
             None,
             Some(Utc::now()),
-        );
+        )
+        .await;
         let result = serde_json::json!({
             "job_id": job_id.to_string(),
             "status": "completed",
@@ -523,14 +557,15 @@ impl CreateJobTool {
             if tokio::time::Instant::now() > deadline {
                 let _ = jm.stop_job(job_id).await;
                 jm.cleanup_job(job_id).await;
-                self.update_status(
+                self.update_status_sync(
                     job_id,
                     "failed",
                     Some(false),
                     Some("Timed out (10 minutes)".to_string()),
                     None,
                     Some(Utc::now()),
-                );
+                )
+                .await;
                 return Err(ToolError::ExecutionFailed(
                     "container execution timed out (10 minutes)".to_string(),
                 ));
