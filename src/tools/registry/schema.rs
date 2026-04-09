@@ -42,6 +42,12 @@ pub(super) fn normalized_schema(schema: serde_json::Value) -> Option<serde_json:
 }
 
 #[cfg(test)]
+/// Unit and property-based tests for schema normalization.
+///
+/// This module verifies the behavior of `parse_schema_string` and `normalized_schema`,
+/// including: handling of empty/null inputs, JSON string parsing, placeholder schema
+/// detection, fallback to string values for invalid JSON, and preservation of valid
+/// non-placeholder schemas.
 mod tests {
     use proptest::prelude::*;
     use rstest::rstest;
@@ -98,15 +104,24 @@ mod tests {
         assert_eq!(result, expected);
     }
 
-    // Valid JSON strings should parse into serde_json::Value.
+    // Valid JSON strings should parse into serde_json::Value (not fallback to String).
     #[rstest]
     #[case(r#"{"type":"string"}"#)]
     #[case(r#"{"type":"number"}"#)]
     #[case(r#"{"type":"boolean"}"#)]
     #[case(r#"{"type":"array"}"#)]
     fn test_valid_json_parses(#[case] schema: &str) {
-        // These types are never the placeholder, so no guard needed
-        assert!(parse_schema_string(schema).is_some());
+        // These types are never the placeholder, so no guard needed.
+        // Verify we get a proper JSON value, not the Value::String fallback.
+        let result = parse_schema_string(schema);
+        assert!(
+            matches!(
+                result,
+                Some(serde_json::Value::Object(_) | serde_json::Value::Array(_))
+            ),
+            "expected parsed JSON value, got {:?}",
+            result
+        );
     }
 
     // Property-based tests for parse_schema_string invariants
