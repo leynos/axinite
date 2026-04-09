@@ -51,6 +51,11 @@ fn apply_hook_params(
 }
 
 impl<'a> ChatDelegate<'a> {
+    /// Return `true` if tool approval is enforced (auto-approve is disabled).
+    fn tool_approval_enforced(&self) -> bool {
+        !self.agent.config.auto_approve_tools
+    }
+
     /// Return `true` if `tool` requires human approval for this invocation.
     /// Consults the session's auto-approve list when the requirement is
     /// `UnlessAutoApproved`.
@@ -72,6 +77,9 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Group tool calls into preflight outcomes and runnable batch.
+    // Intentionally decomposed from a complex single-line conditional to reduce
+    // cognitive complexity (CodeScene: Complex Conditional).
+    #[allow(clippy::collapsible_if)]
     pub(super) async fn group_tool_calls(
         &self,
         tool_calls: &[crate::llm::ToolCall],
@@ -137,14 +145,16 @@ impl<'a> ChatDelegate<'a> {
             }
 
             // Check if tool requires approval
-            if !self.agent.config.auto_approve_tools
-                && let Some(tool) = tool_opt
-                && self
-                    .resolve_needs_approval(&tool, &tc.name, &tc.arguments)
-                    .await
-            {
-                approval_needed = Some((idx, tc, tool));
-                break;
+            if self.tool_approval_enforced() {
+                if let Some(tool) = tool_opt {
+                    if self
+                        .resolve_needs_approval(&tool, &tc.name, &tc.arguments)
+                        .await
+                    {
+                        approval_needed = Some((idx, tc, tool));
+                        break;
+                    }
+                }
             }
 
             let preflight_idx = preflight.len();
