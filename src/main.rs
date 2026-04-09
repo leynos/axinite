@@ -160,12 +160,13 @@ struct HttpChannelResult {
     http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
 }
 
-async fn setup_repl_channel(
-    cli: &Cli,
-    config: &Config,
-    channels: &ChannelManager,
-    channel_names: &mut Vec<String>,
-) {
+/// Registration sinks shared across channel-setup helpers.
+struct ChannelRegistrar<'a> {
+    channels: &'a ChannelManager,
+    channel_names: &'a mut Vec<String>,
+    webhook_routes: &'a mut Vec<axum::Router>,
+}
+async fn setup_repl_channel(cli: &Cli, config: &Config, reg: &mut ChannelRegistrar<'_>) {
     let repl_channel = if let Some(ref msg) = cli.message {
         Some(ReplChannel::with_message(msg.clone()))
     } else if config.channels.cli.enabled {
@@ -176,11 +177,11 @@ async fn setup_repl_channel(
         None
     };
     let Some(repl) = repl_channel else { return };
-    channels.add(Box::new(repl)).await;
+    reg.channels.add(Box::new(repl)).await;
     if cli.message.is_some() {
         tracing::debug!("Single message mode");
     } else {
-        channel_names.push("repl".to_string());
+        reg.channel_names.push("repl".to_string());
         tracing::debug!("REPL mode enabled");
     }
 }
@@ -188,9 +189,7 @@ async fn setup_repl_channel(
 async fn setup_wasm_channels_infra(
     config: &Config,
     components: &ironclaw::app::AppComponents,
-    channels: &ChannelManager,
-    channel_names: &mut Vec<String>,
-    webhook_routes: &mut Vec<axum::Router>,
+    reg: &mut ChannelRegistrar<'_>,
 ) -> WasmInfraResult {
     let empty = WasmInfraResult {
         channel_names: vec![],
@@ -219,11 +218,11 @@ async fn setup_wasm_channels_infra(
     let mut wasm_channel_names = Vec::new();
     for (name, channel) in result.channels {
         wasm_channel_names.push(name.clone());
-        channel_names.push(name);
-        channels.add(channel).await;
+        reg.channel_names.push(name);
+        reg.channels.add(channel).await;
     }
     if let Some(routes) = result.webhook_routes {
-        webhook_routes.push(routes);
+        reg.webhook_routes.push(routes);
     }
     WasmInfraResult {
         channel_names: wasm_channel_names,
@@ -235,8 +234,7 @@ async fn setup_wasm_channels_infra(
 async fn setup_signal_channel(
     cli: &Cli,
     config: &Config,
-    channels: &ChannelManager,
-    channel_names: &mut Vec<String>,
+    reg: &mut ChannelRegistrar<'_>,
 ) -> anyhow::Result<()> {
     if cli.cli_only {
         return Ok(());
@@ -245,8 +243,8 @@ async fn setup_signal_channel(
         return Ok(());
     };
     let signal_channel = SignalChannel::new(signal_config.clone())?;
-    channel_names.push("signal".to_string());
-    channels.add(Box::new(signal_channel)).await;
+    reg.channel_names.push("signal".to_string());
+    reg.channels.add(Box::new(signal_channel)).await;
     let safe_url = SignalChannel::redact_url(&signal_config.http_url);
     tracing::debug!(url = %safe_url, "Signal channel enabled");
     if signal_config.allow_from.is_empty() {
@@ -258,9 +256,7 @@ async fn setup_signal_channel(
 async fn setup_http_channel(
     cli: &Cli,
     config: &Config,
-    channels: &ChannelManager,
-    channel_names: &mut Vec<String>,
-    webhook_routes: &mut Vec<axum::Router>,
+    reg: &mut ChannelRegistrar<'_>,
 ) -> HttpChannelResult {
     let none_result = HttpChannelResult {
         webhook_server_addr: None,
@@ -276,15 +272,15 @@ async fn setup_http_channel(
     let http_channel = HttpChannel::new(http_config.clone());
     #[cfg(unix)]
     let http_channel_state = Some(http_channel.shared_state());
-    webhook_routes.push(http_channel.routes());
+    reg.webhook_routes.push(http_channel.routes());
     let (host, port) = http_channel.addr();
     let webhook_server_addr = Some(
         format!("{}:{}", host, port)
             .parse()
             .expect("HttpConfig host:port must be a valid SocketAddr"),
     );
-    channel_names.push("http".to_string());
-    channels.add(Box::new(http_channel)).await;
+    reg.channel_names.push("http".to_string());
+    reg.channels.add(Box::new(http_channel)).await;
     tracing::debug!(
         "HTTP channel enabled on {}:{}",
         http_config.host,
@@ -328,28 +324,24 @@ async fn setup_channel_infrastructure(
 ) -> anyhow::Result<ChannelInfrastructure> {
     let mut channel_names: Vec<String> = Vec::new();
     let mut webhook_routes: Vec<axum::Router> = Vec::new();
-
-    setup_repl_channel(cli, config, channels, &mut channel_names).await;
-
-    let wasm = setup_wasm_channels_infra(
-        config,
-        components,
+    let mut reg = ChannelRegistrar {
         channels,
-        &mut channel_names,
-        &mut webhook_routes,
-    )
-    .await;
+        channel_names: &mut channel_names,
+        webhook_routes: &mut webhook_routes,
+    };
 
-    setup_signal_channel(cli, config, channels, &mut channel_names).await?;
+    setup_repl_channel(cli, config, &mut reg).await;
 
-    let http = setup_http_channel(
-        cli,
-        config,
-        channels,
-        &mut channel_names,
-        &mut webhook_routes,
-    )
-    .await;
+    let wasm = setup_wasm_channels_infra(config, components, &mut reg).await;
+
+    setup_signal_channel(cli, config, &mut reg).await?;
+
+    let http = setup_http_channel(cli, config, &mut reg).await;
+
+    // `reg` is dropped here, releasing the mutable borrows, so `webhook_routes`
+    // is usable again in the next call.
+    #[allow(clippy::drop_non_drop)]
+    drop(reg);
 
     let webhook_server = build_webhook_server(http.webhook_server_addr, webhook_routes).await?;
 
