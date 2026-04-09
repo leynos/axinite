@@ -223,12 +223,15 @@ mod tests {
     }
 
     /// Insert a test routine row with the specified dedup_window_secs.
+    /// When `raw_dedup` is provided, it is used verbatim (for injecting malformed values).
     async fn insert_test_routine(
         conn: &libsql::Connection,
         dedup_window_secs: Option<i64>,
+        raw_dedup: Option<&str>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let dedup_val = dedup_window_secs
-            .map(|v| v.to_string())
+        let dedup_val = raw_dedup
+            .map(|s| s.to_string())
+            .or_else(|| dedup_window_secs.map(|v| v.to_string()))
             .unwrap_or_else(|| "NULL".to_string());
         let action_config = r#"{"prompt": "test", "context_paths": [], "max_tokens": 1000}"#;
         conn.execute(
@@ -270,21 +273,25 @@ mod tests {
 
     /// Helper to create a mock libsql::Row for testing.
     /// Uses a local in-memory database to create a real row.
+    /// When `raw_dedup` is provided, it is used verbatim (for injecting malformed values).
     async fn mock_routine_row_with_dedup_window(
         dedup_window_secs: Option<i64>,
+        raw_dedup: Option<&str>,
     ) -> Result<libsql::Row, Box<dyn std::error::Error>> {
         let db = libsql::Builder::new_local(":memory:").build().await?;
         let conn = db.connect()?;
         create_routines_table(&conn).await?;
-        insert_test_routine(&conn, dedup_window_secs).await?;
+        insert_test_routine(&conn, dedup_window_secs, raw_dedup).await?;
         let mut rows = conn.query("SELECT * FROM routines", ()).await?;
         let row = rows.next().await?.ok_or("no row returned")?;
         Ok(row)
     }
 
     /// Helper to create a mock libsql::Row for routine_runs testing.
+    /// When `raw_tokens` is provided, it is used verbatim (for injecting malformed values).
     async fn mock_routine_run_row_with_tokens(
         tokens_used: Option<i64>,
+        raw_tokens: Option<&str>,
     ) -> Result<libsql::Row, Box<dyn std::error::Error>> {
         let db = libsql::Builder::new_local(":memory:").build().await?;
         let conn = db.connect()?;
@@ -308,8 +315,9 @@ mod tests {
         )
         .await?;
 
-        let tokens_val = tokens_used
-            .map(|v| v.to_string())
+        let tokens_val = raw_tokens
+            .map(|s| s.to_string())
+            .or_else(|| tokens_used.map(|v| v.to_string()))
             .unwrap_or_else(|| "NULL".to_string());
         conn.execute(
             &format!(
@@ -340,15 +348,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_dedup_window_null_yields_none() {
-        let row = mock_routine_row_with_dedup_window(None).await.unwrap();
-        let routine = row_to_routine_libsql(&row).unwrap();
+        let row = mock_routine_row_with_dedup_window(None, None)
+            .await
+            .expect("failed to create mock row");
+        let routine = row_to_routine_libsql(&row).expect("failed to map row to routine");
         assert!(routine.guardrails.dedup_window.is_none());
     }
 
     #[tokio::test]
     async fn test_dedup_window_valid_value() {
-        let row = mock_routine_row_with_dedup_window(Some(300)).await.unwrap();
-        let routine = row_to_routine_libsql(&row).unwrap();
+        let row = mock_routine_row_with_dedup_window(Some(300), None)
+            .await
+            .expect("failed to create mock row");
+        let routine = row_to_routine_libsql(&row).expect("failed to map row to routine");
         assert_eq!(
             routine.guardrails.dedup_window,
             Some(std::time::Duration::from_secs(300))
@@ -357,23 +369,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_tokens_used_null_yields_none() {
-        let row = mock_routine_run_row_with_tokens(None).await.unwrap();
-        let run = row_to_routine_run_libsql(&row).unwrap();
+        let row = mock_routine_run_row_with_tokens(None, None)
+            .await
+            .expect("failed to create mock row");
+        let run = row_to_routine_run_libsql(&row).expect("failed to map row to run");
         assert!(run.tokens_used.is_none());
     }
 
     #[tokio::test]
     async fn test_tokens_used_valid_value() {
-        let row = mock_routine_run_row_with_tokens(Some(1500)).await.unwrap();
-        let run = row_to_routine_run_libsql(&row).unwrap();
+        let row = mock_routine_run_row_with_tokens(Some(1500), None)
+            .await
+            .expect("failed to create mock row");
+        let run = row_to_routine_run_libsql(&row).expect("failed to map row to run");
         assert_eq!(run.tokens_used, Some(1500));
     }
 
     /// Assert that a tokens_used value results in a Serialization error.
     async fn assert_tokens_used_serialisation_error(tokens: i64) {
-        let row = mock_routine_run_row_with_tokens(Some(tokens))
+        let row = mock_routine_run_row_with_tokens(Some(tokens), None)
             .await
-            .unwrap();
+            .expect("failed to create mock row");
         let result = row_to_routine_run_libsql(&row);
         assert!(
             matches!(result, Err(DatabaseError::Serialization(_))),
