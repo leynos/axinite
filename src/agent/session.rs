@@ -194,6 +194,10 @@ pub struct Thread {
     /// Pending auth token request (thread is in auth mode).
     #[serde(default)]
     pub pending_auth: Option<PendingAuth>,
+    /// In-flight auth marker to prevent concurrent auth bypass.
+    /// Transient: not serialized, always starts as false on deserialization.
+    #[serde(skip)]
+    pub in_flight_auth: bool,
 }
 
 impl Thread {
@@ -210,6 +214,7 @@ impl Thread {
             metadata: serde_json::Value::Null,
             pending_approval: None,
             pending_auth: None,
+            in_flight_auth: false,
         }
     }
 
@@ -226,6 +231,7 @@ impl Thread {
             metadata: serde_json::Value::Null,
             pending_approval: None,
             pending_auth: None,
+            in_flight_auth: false,
         }
     }
 

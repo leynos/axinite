@@ -189,15 +189,43 @@ through DB-backed job views today.
 The agent loop also starts a background self-repair task. That task:
 
 - periodically checks for jobs already marked `stuck`
+- filters those jobs by elapsed time since the latest `stuck` transition
+  before they become repair-eligible
 - attempts recovery by calling `attempt_recovery()` on the context
 - optionally emits user-visible notifications on success, permanent failure, or
   manual intervention
 - separately checks for broken tools through the tool-failure store
 
-This is not a full watchdog. In the current implementation, the self-repair
-layer detects stuck jobs by looking for the explicit `stuck` state, not by
-using elapsed time from `stuck_threshold`. The source marks that time-based
-threshold handling as a TODO.
+This is still not a full watchdog. The self-repair layer only considers jobs
+that the state machine has already marked `stuck`, but it now enforces
+`stuck_threshold` by measuring elapsed time from the latest recorded transition
+into that state before returning the job to the repair loop.
+
+Figure 2. Stuck-job detection flow in the default self-repair policy.
+
+```mermaid
+flowchart TD
+    A["Start stuck job detection"] --> B["ContextManager.find_stuck_contexts() returns contexts"]
+    B --> C["Iterate over ctx"]
+
+    C --> D["ctx.stuck_since() returns Option<DateTime<Utc>>"]
+    D -->|"None (no stuck transition)"| C
+    D -->|"Some(stuck_since)"| E["now = Utc::now()"]
+    E --> F["stuck_duration = duration_since(now, stuck_since)"]
+
+    F --> G{"stuck_duration >= stuck_threshold"}
+    G -->|"No"| C
+    G -->|"Yes"| H["Create StuckJob with
+        ctx.job_id,
+        stuck_since,
+        stuck_duration,
+        last_error = None,
+        repair_attempts = ctx.repair_attempts"]
+
+    H --> C
+    C --> J["All ctx processed"]
+    J --> K["Return Vec<StuckJob> to RepairTask"]
+```
 
 ### 3.6 User-facing touchpoints
 
@@ -412,8 +440,6 @@ The current implementation has several constraints that matter for maintainers:
 - the `create_job` tool has a fallback mode when the scheduler slot is still
   empty; it creates a pending in-memory job that is not scheduled.
 - subtask execution does not yet inherit the parent job's approval context.
-- self-repair only acts on jobs already marked `stuck`; the configured stuck
-  threshold is not yet used for time-based detection.
 - tool auto-repair wiring is incomplete. The source marks store and builder
   integration as TODOs.
 - the jobs gateway intentionally merges sandbox and agent jobs into one surface,

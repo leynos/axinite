@@ -277,7 +277,7 @@ Table 19. Core runtime behaviour variables.
 | `AGENT_NAME` | Agent display name. | Falls back to the persisted setting. |
 | `AGENT_MAX_PARALLEL_JOBS` | Maximum concurrent jobs. | Falls back to the persisted setting. |
 | `AGENT_JOB_TIMEOUT_SECS` | Per-job timeout. | Falls back to the persisted setting. |
-| `AGENT_STUCK_THRESHOLD_SECS` | Threshold for treating a job as stuck. | Falls back to the persisted setting. |
+| `AGENT_STUCK_THRESHOLD_SECS` | Minimum time a job must remain in the explicit `stuck` state before self-repair will attempt recovery. | Falls back to the persisted setting. |
 | `SELF_REPAIR_CHECK_INTERVAL_SECS` | Interval between self-repair checks. | Falls back to the persisted setting. |
 | `SELF_REPAIR_MAX_ATTEMPTS` | Maximum self-repair attempts. | Falls back to the persisted setting. |
 | `AGENT_USE_PLANNING` | Enable planning before tool execution. | Boolean; falls back to the persisted setting. |

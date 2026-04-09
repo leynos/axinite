@@ -7,9 +7,18 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use uuid::Uuid;
 
 use crate::llm::recording::HttpInterceptor;
+
+/// Errors that can occur during job recovery.
+#[derive(Debug, Error, Clone, PartialEq)]
+pub enum JobRecoveryError {
+    /// Job is not in the Stuck state and cannot be recovered.
+    #[error("Job is not stuck")]
+    NotStuck,
+}
 
 /// State of a job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -315,18 +324,28 @@ impl JobContext {
         })
     }
 
+    /// Return when the job most recently entered the stuck state.
+    pub fn stuck_since(&self) -> Option<DateTime<Utc>> {
+        self.transitions
+            .iter()
+            .rev()
+            .find(|transition| transition.to == JobState::Stuck)
+            .map(|transition| transition.timestamp)
+    }
+
     /// Mark the job as stuck.
     pub fn mark_stuck(&mut self, reason: impl Into<String>) -> Result<(), String> {
         self.transition_to(JobState::Stuck, Some(reason.into()))
     }
 
     /// Attempt to recover from stuck state.
-    pub fn attempt_recovery(&mut self) -> Result<(), String> {
+    pub fn attempt_recovery(&mut self) -> Result<(), JobRecoveryError> {
         if self.state != JobState::Stuck {
-            return Err("Job is not stuck".to_string());
+            return Err(JobRecoveryError::NotStuck);
         }
         self.repair_attempts += 1;
         self.transition_to(JobState::InProgress, Some("Recovery attempt".to_string()))
+            .map_err(|e| panic!("Failed to transition from Stuck to InProgress: {}", e))
     }
 }
 
@@ -337,128 +356,5 @@ impl Default for JobContext {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_state_transitions() {
-        assert!(JobState::Pending.can_transition_to(JobState::InProgress));
-        assert!(JobState::InProgress.can_transition_to(JobState::Completed));
-        assert!(!JobState::Completed.can_transition_to(JobState::Pending));
-        assert!(!JobState::Accepted.can_transition_to(JobState::InProgress));
-    }
-
-    #[test]
-    fn test_terminal_states() {
-        assert!(JobState::Accepted.is_terminal());
-        assert!(JobState::Failed.is_terminal());
-        assert!(JobState::Cancelled.is_terminal());
-        assert!(!JobState::InProgress.is_terminal());
-    }
-
-    #[test]
-    fn test_job_state_from_str_parses_known_values() {
-        assert_eq!("pending".parse::<JobState>().unwrap(), JobState::Pending);
-        assert_eq!(
-            "in_progress".parse::<JobState>().unwrap(),
-            JobState::InProgress
-        );
-        assert_eq!(
-            "completed".parse::<JobState>().unwrap(),
-            JobState::Completed
-        );
-        assert_eq!(
-            "submitted".parse::<JobState>().unwrap(),
-            JobState::Submitted
-        );
-        assert_eq!("accepted".parse::<JobState>().unwrap(), JobState::Accepted);
-        assert_eq!("failed".parse::<JobState>().unwrap(), JobState::Failed);
-        assert_eq!("stuck".parse::<JobState>().unwrap(), JobState::Stuck);
-        assert_eq!(
-            "cancelled".parse::<JobState>().unwrap(),
-            JobState::Cancelled
-        );
-    }
-
-    #[test]
-    fn test_job_state_from_str_rejects_unknown_values() {
-        assert!("unknown".parse::<JobState>().is_err());
-    }
-
-    #[test]
-    fn test_job_context_transitions() {
-        let mut ctx = JobContext::new("Test", "Test job");
-        assert_eq!(ctx.state, JobState::Pending);
-
-        ctx.transition_to(JobState::InProgress, None).unwrap();
-        assert_eq!(ctx.state, JobState::InProgress);
-        assert!(ctx.started_at.is_some());
-
-        ctx.transition_to(JobState::Completed, Some("Done".to_string()))
-            .unwrap();
-        assert_eq!(ctx.state, JobState::Completed);
-    }
-
-    #[test]
-    fn test_transition_history_capped() {
-        let mut ctx = JobContext::new("Test", "Transition cap test");
-        // Cycle through Pending -> InProgress -> Stuck -> InProgress -> Stuck ...
-        ctx.transition_to(JobState::InProgress, None).unwrap();
-        for i in 0..250 {
-            ctx.mark_stuck(format!("stuck {}", i)).unwrap();
-            ctx.attempt_recovery().unwrap();
-        }
-        // 1 initial + 250*2 = 501 transitions, should be capped at 200
-        assert!(
-            ctx.transitions.len() <= 200,
-            "transitions should be capped at 200, got {}",
-            ctx.transitions.len()
-        );
-    }
-
-    #[test]
-    fn test_add_tokens_enforces_budget() {
-        let mut ctx = JobContext::new("Test", "Budget test");
-        ctx.max_tokens = 1000;
-        assert!(ctx.add_tokens(500).is_ok());
-        assert_eq!(ctx.total_tokens_used, 500);
-        assert!(ctx.add_tokens(600).is_err());
-        assert_eq!(ctx.total_tokens_used, 1100); // tokens still recorded
-    }
-
-    #[test]
-    fn test_add_tokens_unlimited() {
-        let mut ctx = JobContext::new("Test", "No budget");
-        // max_tokens = 0 means unlimited
-        assert!(ctx.add_tokens(1_000_000).is_ok());
-    }
-
-    #[test]
-    fn test_budget_exceeded() {
-        let mut ctx = JobContext::new("Test", "Money test");
-        ctx.budget = Some(Decimal::new(100, 0)); // $100
-        assert!(!ctx.budget_exceeded());
-        ctx.add_cost(Decimal::new(50, 0));
-        assert!(!ctx.budget_exceeded());
-        ctx.add_cost(Decimal::new(60, 0));
-        assert!(ctx.budget_exceeded());
-    }
-
-    #[test]
-    fn test_budget_exceeded_none() {
-        let ctx = JobContext::new("Test", "No budget");
-        assert!(!ctx.budget_exceeded()); // No budget = never exceeded
-    }
-
-    #[test]
-    fn test_stuck_recovery() {
-        let mut ctx = JobContext::new("Test", "Test job");
-        ctx.transition_to(JobState::InProgress, None).unwrap();
-        ctx.mark_stuck("Timed out").unwrap();
-        assert_eq!(ctx.state, JobState::Stuck);
-
-        ctx.attempt_recovery().unwrap();
-        assert_eq!(ctx.state, JobState::InProgress);
-        assert_eq!(ctx.repair_attempts, 1);
-    }
-}
+#[path = "state_tests.rs"]
+mod tests;

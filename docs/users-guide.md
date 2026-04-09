@@ -62,3 +62,25 @@ may still be hidden when they:
 If a hosted-visible remote tool is selected, the worker sends one generic
 execution request to the orchestrator rather than using tool-family-specific
 proxy routes.
+
+## Self-repair notifications
+
+Axinite can emit proactive self-repair notices when a background job remains in
+the explicit `stuck` state long enough to cross the configured repair
+threshold.
+
+The repair loop currently checks only jobs that the runtime has already marked
+`stuck`. Once a job has remained in that state for at least
+`AGENT_STUCK_THRESHOLD_SECS`, the background repair task may attempt recovery
+and broadcast a notification such as:
+
+- `Self-Repair: Job <id> was stuck for <n>s, recovery succeeded: ...`
+- `Self-Repair: Job <id> was stuck for <n>s, recovery failed permanently: ...`
+- `Self-Repair: Job <id> needs manual intervention: ...`
+- `Self-Repair: Tool '<name>' repaired: ...`
+- `Self-Repair: Tool '<name>' needs manual intervention: ...`
+
+These notices are advisory. A success message means the runtime moved the job
+back into its normal retry path. A permanent failure or manual-intervention
+message means the runtime could not finish recovery automatically, and the
+operator should inspect the job or tool state before retrying work.
