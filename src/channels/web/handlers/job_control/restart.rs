@@ -42,6 +42,14 @@ fn ok_restart_response(
     )
 }
 
+/// Normalize credential grants JSON, returning "[]" if invalid or not an array.
+fn normalize_credential_grants_json(json: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(json) {
+        Ok(serde_json::Value::Array(_)) => json.to_string(),
+        _ => "[]".to_string(),
+    }
+}
+
 /// Build a new sandbox job record for a restart operation.
 fn build_restart_record(
     old_job: &crate::history::SandboxJobRecord,
@@ -60,7 +68,7 @@ fn build_restart_record(
         created_at: now,
         started_at: None,
         completed_at: None,
-        credential_grants_json: old_job.credential_grants_json.clone(),
+        credential_grants_json: normalize_credential_grants_json(&old_job.credential_grants_json),
     }
 }
 
@@ -352,4 +360,57 @@ async fn mark_sandbox_restart_failed(
         })
         .await
         .map_err(|e| internal_error("Failed to update sandbox job status", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_credential_grants_json_valid_array() {
+        let valid_array = r#"[{"tool": "test", "credential": "secret"}]"#;
+        assert_eq!(normalize_credential_grants_json(valid_array), valid_array);
+    }
+
+    #[test]
+    fn test_normalize_credential_grants_json_empty_array() {
+        assert_eq!(normalize_credential_grants_json("[]"), "[]");
+    }
+
+    #[test]
+    fn test_normalize_credential_grants_json_malformed_plaintext() {
+        // Legacy sandbox rows may have malformed/plaintext credential_grants_json
+        // This should normalize to empty array
+        assert_eq!(normalize_credential_grants_json("not valid json"), "[]");
+    }
+
+    #[test]
+    fn test_normalize_credential_grants_json_non_array_object() {
+        // JSON object (not array) should normalize to empty array
+        assert_eq!(
+            normalize_credential_grants_json(r#"{"tool": "test"}"#),
+            "[]"
+        );
+    }
+
+    #[test]
+    fn test_normalize_credential_grants_json_non_array_string() {
+        // JSON string (not array) should normalize to empty array
+        assert_eq!(
+            normalize_credential_grants_json("\"plaintext string\""),
+            "[]"
+        );
+    }
+
+    #[test]
+    fn test_normalize_credential_grants_json_non_array_number() {
+        // JSON number (not array) should normalize to empty array
+        assert_eq!(normalize_credential_grants_json("42"), "[]");
+    }
+
+    #[test]
+    fn test_normalize_credential_grants_json_non_array_null() {
+        // JSON null (not array) should normalize to empty array
+        assert_eq!(normalize_credential_grants_json("null"), "[]");
+    }
 }
