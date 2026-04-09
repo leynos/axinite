@@ -255,26 +255,3 @@ pub(super) struct ExecCtx<'a> {
     pub(super) metadata: &'a serde_json::Value,
     pub(super) preview_limit: usize,
 }
-
-#[expect(dead_code, reason = "scaffolding for future tool-exec refactor")]
-impl<'a> ExecCtx<'a> {
-    pub(super) fn new(
-        tools: &'a Arc<crate::tools::ToolRegistry>,
-        safety: &'a Arc<crate::safety::SafetyLayer>,
-        channels: &'a Arc<crate::channels::ChannelManager>,
-        channel: &'a str,
-        user_id: &'a str,
-        metadata: &'a serde_json::Value,
-        preview_limit: usize,
-    ) -> Self {
-        Self {
-            tools,
-            safety,
-            channels,
-            channel,
-            user_id,
-            metadata,
-            preview_limit,
-        }
-    }
-}
