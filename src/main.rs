@@ -129,7 +129,6 @@ fn acquire_pid_lock() -> anyhow::Result<Option<ironclaw::bootstrap::PidLock>> {
     }
 }
 
-#[allow(dead_code)]
 struct ChannelInfrastructure {
     webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     channel_names: Vec<String>,
@@ -144,23 +143,30 @@ struct ChannelInfrastructure {
     http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
 }
 
-#[allow(dead_code)]
-async fn setup_channel_infrastructure(
-    cli: &Cli,
-    config: &Config,
-    components: &ironclaw::app::AppComponents,
-    channels: &ChannelManager,
-) -> anyhow::Result<ChannelInfrastructure> {
-    let mut channel_names: Vec<String> = Vec::new();
-    let mut loaded_wasm_channel_names: Vec<String> = Vec::new();
+struct WasmInfraResult {
+    #[allow(dead_code)]
+    channel_names: Vec<String>,
+    loaded_wasm_channel_names: Vec<String>,
     #[allow(clippy::type_complexity)]
-    let mut wasm_channel_runtime_state: Option<(
+    wasm_channel_runtime_state: Option<(
         Arc<WasmChannelRuntime>,
         Arc<PairingStore>,
         Arc<WasmChannelRouter>,
-    )> = None;
+    )>,
+}
 
-    // Create CLI channel
+struct HttpChannelResult {
+    webhook_server_addr: Option<std::net::SocketAddr>,
+    #[cfg(unix)]
+    http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
+}
+
+async fn setup_repl_channel(
+    cli: &Cli,
+    config: &Config,
+    channels: &ChannelManager,
+    channel_names: &mut Vec<String>,
+) {
     let repl_channel = if let Some(ref msg) = cli.message {
         Some(ReplChannel::with_message(msg.clone()))
     } else if config.channels.cli.enabled {
@@ -170,124 +176,191 @@ async fn setup_channel_infrastructure(
     } else {
         None
     };
-
-    if let Some(repl) = repl_channel {
-        channels.add(Box::new(repl)).await;
-        if cli.message.is_some() {
-            tracing::debug!("Single message mode");
-        } else {
-            channel_names.push("repl".to_string());
-            tracing::debug!("REPL mode enabled");
-        }
+    let Some(repl) = repl_channel else { return };
+    channels.add(Box::new(repl)).await;
+    if cli.message.is_some() {
+        tracing::debug!("Single message mode");
+    } else {
+        channel_names.push("repl".to_string());
+        tracing::debug!("REPL mode enabled");
     }
+}
 
-    // Collect webhook route fragments; a single WebhookServer hosts them all.
+async fn setup_wasm_channels_infra(
+    config: &Config,
+    components: &ironclaw::app::AppComponents,
+    channels: &ChannelManager,
+    channel_names: &mut Vec<String>,
+    webhook_routes: &mut Vec<axum::Router>,
+) -> WasmInfraResult {
+    let empty = WasmInfraResult {
+        channel_names: vec![],
+        loaded_wasm_channel_names: vec![],
+        wasm_channel_runtime_state: None,
+    };
+    if !config.channels.wasm_channels_enabled || !config.channels.wasm_channels_dir.exists() {
+        return empty;
+    }
+    let Some(result) = ironclaw::channels::wasm::setup_wasm_channels(
+        config,
+        &components.secrets_store,
+        components.extension_manager.as_ref(),
+        components.db.as_ref(),
+    )
+    .await
+    else {
+        return empty;
+    };
+    let loaded_wasm_channel_names = result.channel_names;
+    let wasm_channel_runtime_state = Some((
+        result.wasm_channel_runtime,
+        result.pairing_store,
+        result.wasm_channel_router,
+    ));
+    let mut wasm_channel_names = Vec::new();
+    for (name, channel) in result.channels {
+        wasm_channel_names.push(name.clone());
+        channel_names.push(name);
+        channels.add(channel).await;
+    }
+    if let Some(routes) = result.webhook_routes {
+        webhook_routes.push(routes);
+    }
+    WasmInfraResult {
+        channel_names: wasm_channel_names,
+        loaded_wasm_channel_names,
+        wasm_channel_runtime_state,
+    }
+}
+
+async fn setup_signal_channel(
+    cli: &Cli,
+    config: &Config,
+    channels: &ChannelManager,
+    channel_names: &mut Vec<String>,
+) -> anyhow::Result<()> {
+    if cli.cli_only {
+        return Ok(());
+    }
+    let Some(ref signal_config) = config.channels.signal else {
+        return Ok(());
+    };
+    let signal_channel = SignalChannel::new(signal_config.clone())?;
+    channel_names.push("signal".to_string());
+    channels.add(Box::new(signal_channel)).await;
+    let safe_url = SignalChannel::redact_url(&signal_config.http_url);
+    tracing::debug!(url = %safe_url, "Signal channel enabled");
+    if signal_config.allow_from.is_empty() {
+        tracing::warn!("Signal channel has empty allow_from list - ALL messages will be DENIED.");
+    }
+    Ok(())
+}
+
+async fn setup_http_channel(
+    cli: &Cli,
+    config: &Config,
+    channels: &ChannelManager,
+    channel_names: &mut Vec<String>,
+    webhook_routes: &mut Vec<axum::Router>,
+) -> HttpChannelResult {
+    let none_result = HttpChannelResult {
+        webhook_server_addr: None,
+        #[cfg(unix)]
+        http_channel_state: None,
+    };
+    if cli.cli_only {
+        return none_result;
+    }
+    let Some(ref http_config) = config.channels.http else {
+        return none_result;
+    };
+    let http_channel = HttpChannel::new(http_config.clone());
+    #[cfg(unix)]
+    let http_channel_state = Some(http_channel.shared_state());
+    webhook_routes.push(http_channel.routes());
+    let (host, port) = http_channel.addr();
+    let webhook_server_addr = Some(
+        format!("{}:{}", host, port)
+            .parse()
+            .expect("HttpConfig host:port must be a valid SocketAddr"),
+    );
+    channel_names.push("http".to_string());
+    channels.add(Box::new(http_channel)).await;
+    tracing::debug!(
+        "HTTP channel enabled on {}:{}",
+        http_config.host,
+        http_config.port
+    );
+    HttpChannelResult {
+        webhook_server_addr,
+        #[cfg(unix)]
+        http_channel_state,
+    }
+}
+
+async fn build_webhook_server(
+    addr: Option<std::net::SocketAddr>,
+    webhook_routes: Vec<axum::Router>,
+) -> anyhow::Result<Option<Arc<tokio::sync::Mutex<WebhookServer>>>> {
+    if webhook_routes.is_empty() {
+        return Ok(None);
+    }
+    let addr = addr.unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], 8080)));
+    if addr.ip().is_unspecified() {
+        tracing::warn!(
+            "Webhook server is binding to {} — it will be reachable from all network \
+             interfaces. Set HTTP_HOST=127.0.0.1 to restrict to localhost.",
+            addr.ip()
+        );
+    }
+    let mut server = WebhookServer::new(WebhookServerConfig { addr });
+    for routes in webhook_routes {
+        server.add_routes(routes);
+    }
+    server.start().await?;
+    Ok(Some(Arc::new(tokio::sync::Mutex::new(server))))
+}
+
+async fn setup_channel_infrastructure(
+    cli: &Cli,
+    config: &Config,
+    components: &ironclaw::app::AppComponents,
+    channels: &ChannelManager,
+) -> anyhow::Result<ChannelInfrastructure> {
+    let mut channel_names: Vec<String> = Vec::new();
     let mut webhook_routes: Vec<axum::Router> = Vec::new();
 
-    // Load WASM channels and register their webhook routes.
-    if config.channels.wasm_channels_enabled && config.channels.wasm_channels_dir.exists() {
-        let wasm_result = ironclaw::channels::wasm::setup_wasm_channels(
-            config,
-            &components.secrets_store,
-            components.extension_manager.as_ref(),
-            components.db.as_ref(),
-        )
-        .await;
+    setup_repl_channel(cli, config, channels, &mut channel_names).await;
 
-        if let Some(result) = wasm_result {
-            loaded_wasm_channel_names = result.channel_names;
-            wasm_channel_runtime_state = Some((
-                result.wasm_channel_runtime,
-                result.pairing_store,
-                result.wasm_channel_router,
-            ));
-            for (name, channel) in result.channels {
-                channel_names.push(name);
-                channels.add(channel).await;
-            }
-            if let Some(routes) = result.webhook_routes {
-                webhook_routes.push(routes);
-            }
-        }
-    }
+    let wasm = setup_wasm_channels_infra(
+        config,
+        components,
+        channels,
+        &mut channel_names,
+        &mut webhook_routes,
+    )
+    .await;
 
-    // Add Signal channel if configured and not CLI-only mode.
-    if !cli.cli_only
-        && let Some(ref signal_config) = config.channels.signal
-    {
-        let signal_channel = SignalChannel::new(signal_config.clone())?;
-        channel_names.push("signal".to_string());
-        channels.add(Box::new(signal_channel)).await;
-        let safe_url = SignalChannel::redact_url(&signal_config.http_url);
-        tracing::debug!(
-            url = %safe_url,
-            "Signal channel enabled"
-        );
-        if signal_config.allow_from.is_empty() {
-            tracing::warn!(
-                "Signal channel has empty allow_from list - ALL messages will be DENIED."
-            );
-        }
-    }
+    setup_signal_channel(cli, config, channels, &mut channel_names).await?;
 
-    // Add HTTP channel if configured and not CLI-only mode.
-    let mut webhook_server_addr: Option<std::net::SocketAddr> = None;
-    #[cfg(unix)]
-    let mut http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>> = None;
-    if !cli.cli_only
-        && let Some(ref http_config) = config.channels.http
-    {
-        let http_channel = HttpChannel::new(http_config.clone());
-        #[cfg(unix)]
-        {
-            http_channel_state = Some(http_channel.shared_state());
-        }
-        webhook_routes.push(http_channel.routes());
-        let (host, port) = http_channel.addr();
-        webhook_server_addr = Some(
-            format!("{}:{}", host, port)
-                .parse()
-                .expect("HttpConfig host:port must be a valid SocketAddr"),
-        );
-        channel_names.push("http".to_string());
-        channels.add(Box::new(http_channel)).await;
-        tracing::debug!(
-            "HTTP channel enabled on {}:{}",
-            http_config.host,
-            http_config.port
-        );
-    }
+    let http = setup_http_channel(
+        cli,
+        config,
+        channels,
+        &mut channel_names,
+        &mut webhook_routes,
+    )
+    .await;
 
-    // Start the unified webhook server if any routes were registered.
-    let webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>> = if !webhook_routes
-        .is_empty()
-    {
-        let addr =
-            webhook_server_addr.unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], 8080)));
-        if addr.ip().is_unspecified() {
-            tracing::warn!(
-                "Webhook server is binding to {} — it will be reachable from all network interfaces. \
-                 Set HTTP_HOST=127.0.0.1 to restrict to localhost.",
-                addr.ip()
-            );
-        }
-        let mut server = WebhookServer::new(WebhookServerConfig { addr });
-        for routes in webhook_routes {
-            server.add_routes(routes);
-        }
-        server.start().await?;
-        Some(Arc::new(tokio::sync::Mutex::new(server)))
-    } else {
-        None
-    };
+    let webhook_server = build_webhook_server(http.webhook_server_addr, webhook_routes).await?;
 
     Ok(ChannelInfrastructure {
         webhook_server,
         channel_names,
-        loaded_wasm_channel_names,
-        wasm_channel_runtime_state,
+        loaded_wasm_channel_names: wasm.loaded_wasm_channel_names,
+        wasm_channel_runtime_state: wasm.wasm_channel_runtime_state,
         #[cfg(unix)]
-        http_channel_state,
+        http_channel_state: http.http_channel_state,
     })
 }
 
@@ -502,135 +575,14 @@ async fn async_main() -> anyhow::Result<()> {
     // ── Channel setup ──────────────────────────────────────────────────
 
     let channels = ChannelManager::new();
-    let mut channel_names: Vec<String> = Vec::new();
-    let mut loaded_wasm_channel_names: Vec<String> = Vec::new();
-    #[allow(clippy::type_complexity)]
-    let mut wasm_channel_runtime_state: Option<(
-        Arc<WasmChannelRuntime>,
-        Arc<PairingStore>,
-        Arc<WasmChannelRouter>,
-    )> = None;
-
-    // Create CLI channel
-    let repl_channel = if let Some(ref msg) = cli.message {
-        Some(ReplChannel::with_message(msg.clone()))
-    } else if config.channels.cli.enabled {
-        let repl = ReplChannel::new();
-        repl.suppress_banner();
-        Some(repl)
-    } else {
-        None
-    };
-
-    if let Some(repl) = repl_channel {
-        channels.add(Box::new(repl)).await;
-        if cli.message.is_some() {
-            tracing::debug!("Single message mode");
-        } else {
-            channel_names.push("repl".to_string());
-            tracing::debug!("REPL mode enabled");
-        }
-    }
-
-    // Collect webhook route fragments; a single WebhookServer hosts them all.
-    let mut webhook_routes: Vec<axum::Router> = Vec::new();
-
-    // Load WASM channels and register their webhook routes.
-    if config.channels.wasm_channels_enabled && config.channels.wasm_channels_dir.exists() {
-        let wasm_result = ironclaw::channels::wasm::setup_wasm_channels(
-            &config,
-            &components.secrets_store,
-            components.extension_manager.as_ref(),
-            components.db.as_ref(),
-        )
-        .await;
-
-        if let Some(result) = wasm_result {
-            loaded_wasm_channel_names = result.channel_names;
-            wasm_channel_runtime_state = Some((
-                result.wasm_channel_runtime,
-                result.pairing_store,
-                result.wasm_channel_router,
-            ));
-            for (name, channel) in result.channels {
-                channel_names.push(name);
-                channels.add(channel).await;
-            }
-            if let Some(routes) = result.webhook_routes {
-                webhook_routes.push(routes);
-            }
-        }
-    }
-
-    // Add Signal channel if configured and not CLI-only mode.
-    if !cli.cli_only
-        && let Some(ref signal_config) = config.channels.signal
-    {
-        let signal_channel = SignalChannel::new(signal_config.clone())?;
-        channel_names.push("signal".to_string());
-        channels.add(Box::new(signal_channel)).await;
-        let safe_url = SignalChannel::redact_url(&signal_config.http_url);
-        tracing::debug!(
-            url = %safe_url,
-            "Signal channel enabled"
-        );
-        if signal_config.allow_from.is_empty() {
-            tracing::warn!(
-                "Signal channel has empty allow_from list - ALL messages will be DENIED."
-            );
-        }
-    }
-
-    // Add HTTP channel if configured and not CLI-only mode.
-    let mut webhook_server_addr: Option<std::net::SocketAddr> = None;
-    #[cfg(unix)]
-    let mut http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>> = None;
-    if !cli.cli_only
-        && let Some(ref http_config) = config.channels.http
-    {
-        let http_channel = HttpChannel::new(http_config.clone());
+    let ChannelInfrastructure {
+        webhook_server,
+        mut channel_names,
+        mut loaded_wasm_channel_names,
+        mut wasm_channel_runtime_state,
         #[cfg(unix)]
-        {
-            http_channel_state = Some(http_channel.shared_state());
-        }
-        webhook_routes.push(http_channel.routes());
-        let (host, port) = http_channel.addr();
-        webhook_server_addr = Some(
-            format!("{}:{}", host, port)
-                .parse()
-                .expect("HttpConfig host:port must be a valid SocketAddr"),
-        );
-        channel_names.push("http".to_string());
-        channels.add(Box::new(http_channel)).await;
-        tracing::debug!(
-            "HTTP channel enabled on {}:{}",
-            http_config.host,
-            http_config.port
-        );
-    }
-
-    // Start the unified webhook server if any routes were registered.
-    let webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>> = if !webhook_routes
-        .is_empty()
-    {
-        let addr =
-            webhook_server_addr.unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], 8080)));
-        if addr.ip().is_unspecified() {
-            tracing::warn!(
-                "Webhook server is binding to {} — it will be reachable from all network interfaces. \
-                 Set HTTP_HOST=127.0.0.1 to restrict to localhost.",
-                addr.ip()
-            );
-        }
-        let mut server = WebhookServer::new(WebhookServerConfig { addr });
-        for routes in webhook_routes {
-            server.add_routes(routes);
-        }
-        server.start().await?;
-        Some(Arc::new(tokio::sync::Mutex::new(server)))
-    } else {
-        None
-    };
+        http_channel_state,
+    } = setup_channel_infrastructure(&cli, &config, &components, &channels).await?;
 
     // Register lifecycle hooks.
     let active_tool_names = components.tools.list().await;
@@ -691,7 +643,7 @@ async fn async_main() -> anyhow::Result<()> {
     } = setup_gateway_channel(
         &config,
         &components,
-        &GatewayDeps {
+        &mut GatewayContext {
             container_job_manager: &container_job_manager,
             session_manager: &session_manager,
             log_broadcaster: &log_broadcaster,
@@ -699,9 +651,9 @@ async fn async_main() -> anyhow::Result<()> {
             prompt_queue: &prompt_queue,
             scheduler_slot: &scheduler_slot,
             job_event_tx: &job_event_tx,
+            channels: &channels,
+            channel_names: &mut channel_names,
         },
-        &channels,
-        &mut channel_names,
     )
     .await;
 
@@ -713,44 +665,17 @@ async fn async_main() -> anyhow::Result<()> {
         .cheap_llm
         .as_ref()
         .map(|c| c.model_name().to_string());
-
-    if config.channels.cli.enabled && cli.message.is_none() {
-        let boot_info = ironclaw::boot_screen::BootInfo {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            agent_name: config.agent.name.clone(),
-            llm_backend: config.llm.backend.to_string(),
-            llm_model: boot_llm_model,
-            cheap_model: boot_cheap_model,
-            db_backend: if cli.no_db {
-                "none".to_string()
-            } else {
-                config.database.backend.to_string()
-            },
-            db_connected: !cli.no_db,
-            tool_count: boot_tool_count,
-            gateway_url,
-            embeddings_enabled: config.embeddings.enabled,
-            embeddings_provider: if config.embeddings.enabled {
-                Some(config.embeddings.provider.clone())
-            } else {
-                None
-            },
-            heartbeat_enabled: config.heartbeat.enabled,
-            heartbeat_interval_secs: config.heartbeat.interval_secs,
-            sandbox_enabled: config.sandbox.enabled,
-            docker_status,
-            claude_code_enabled: config.claude_code.enabled,
-            routines_enabled: config.routines.enabled,
-            skills_enabled: config.skills.enabled,
-            channels: channel_names,
-            tunnel_url: active_tunnel
-                .as_ref()
-                .and_then(|t| t.public_url())
-                .or_else(|| config.tunnel.public_url.clone()),
-            tunnel_provider: active_tunnel.as_ref().map(|t| t.name().to_string()),
-        };
-        ironclaw::boot_screen::print_boot_screen(&boot_info);
-    }
+    print_startup_info(
+        &config,
+        &cli,
+        boot_llm_model,
+        boot_cheap_model,
+        boot_tool_count,
+        gateway_url,
+        docker_status,
+        channel_names,
+        &active_tunnel,
+    );
 
     // ── Run the agent ──────────────────────────────────────────────────
 
@@ -861,52 +786,17 @@ async fn async_main() -> anyhow::Result<()> {
     #[cfg(unix)]
     {
         use ironclaw::channels::ChannelSecretUpdater;
-
-        // Collect all channels that support secret updates
         let mut secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>> = Vec::new();
         if let Some(ref state) = http_channel_state {
             secret_updaters.push(Arc::clone(state) as Arc<dyn ChannelSecretUpdater>);
         }
-
-        // Construct hot-reload manager using the factory
         let reload_manager = ironclaw::reload::create_hot_reload_manager(
             sighup_settings_store.clone(),
             webhook_server.clone(),
             components.secrets_store.clone(),
             secret_updaters,
         );
-
-        let mut shutdown_rx = shutdown_tx.subscribe();
-
-        tokio::spawn(async move {
-            use tokio::signal::unix::{SignalKind, signal};
-            let mut sighup = match signal(SignalKind::hangup()) {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!("Failed to register SIGHUP handler: {}", e);
-                    return;
-                }
-            };
-
-            loop {
-                // Exit loop on shutdown signal or when SIGHUP is received
-                tokio::select! {
-                    _ = shutdown_rx.recv() => {
-                        tracing::debug!("SIGHUP handler shutting down");
-                        break;
-                    }
-                    _ = sighup.recv() => {
-                        // Handle SIGHUP signal
-                    }
-                }
-                tracing::info!("SIGHUP received — reloading HTTP webhook config");
-
-                // Perform hot-reload via manager
-                if let Err(e) = reload_manager.perform_reload().await {
-                    tracing::error!("Hot-reload failed: {}", e);
-                }
-            }
-        });
+        spawn_sighup_handler(Arc::new(reload_manager), &shutdown_tx);
     }
 
     agent.run().await?;
@@ -923,6 +813,88 @@ async fn async_main() -> anyhow::Result<()> {
     .await;
 
     Ok(())
+}
+
+#[cfg(unix)]
+fn spawn_sighup_handler(
+    reload_manager: Arc<ironclaw::reload::HotReloadManager>,
+    shutdown_tx: &tokio::sync::broadcast::Sender<()>,
+) {
+    let mut shutdown_rx = shutdown_tx.subscribe();
+    tokio::spawn(async move {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut sighup = match signal(SignalKind::hangup()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("Failed to register SIGHUP handler: {}", e);
+                return;
+            }
+        };
+        loop {
+            tokio::select! {
+                _ = shutdown_rx.recv() => {
+                    tracing::debug!("SIGHUP handler shutting down");
+                    break;
+                }
+                _ = sighup.recv() => {}
+            }
+            tracing::info!("SIGHUP received — reloading HTTP webhook config");
+            if let Err(e) = reload_manager.perform_reload().await {
+                tracing::error!("Hot-reload failed: {}", e);
+            }
+        }
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn print_startup_info(
+    config: &Config,
+    cli: &Cli,
+    boot_llm_model: String,
+    boot_cheap_model: Option<String>,
+    boot_tool_count: usize,
+    gateway_url: Option<String>,
+    docker_status: ironclaw::sandbox::DockerStatus,
+    channel_names: Vec<String>,
+    active_tunnel: &Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+) {
+    if !config.channels.cli.enabled || cli.message.is_some() {
+        return;
+    }
+    let boot_info = ironclaw::boot_screen::BootInfo {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        agent_name: config.agent.name.clone(),
+        llm_backend: config.llm.backend.to_string(),
+        llm_model: boot_llm_model,
+        cheap_model: boot_cheap_model,
+        db_backend: if cli.no_db {
+            "none".to_string()
+        } else {
+            config.database.backend.to_string()
+        },
+        db_connected: !cli.no_db,
+        tool_count: boot_tool_count,
+        gateway_url,
+        embeddings_enabled: config.embeddings.enabled,
+        embeddings_provider: config
+            .embeddings
+            .enabled
+            .then(|| config.embeddings.provider.clone()),
+        heartbeat_enabled: config.heartbeat.enabled,
+        heartbeat_interval_secs: config.heartbeat.interval_secs,
+        sandbox_enabled: config.sandbox.enabled,
+        docker_status,
+        claude_code_enabled: config.claude_code.enabled,
+        routines_enabled: config.routines.enabled,
+        skills_enabled: config.skills.enabled,
+        channels: channel_names,
+        tunnel_url: active_tunnel
+            .as_ref()
+            .and_then(|t| t.public_url())
+            .or_else(|| config.tunnel.public_url.clone()),
+        tunnel_provider: active_tunnel.as_ref().map(|t| t.name().to_string()),
+    };
+    ironclaw::boot_screen::print_boot_screen(&boot_info);
 }
 
 async fn run_onboard_subcommand(
@@ -975,7 +947,7 @@ async fn dispatch_worker_subcommand(
 }
 
 /// Runtime-service dependencies required to configure the gateway channel.
-struct GatewayDeps<'a> {
+struct GatewayContext<'a> {
     container_job_manager: &'a Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
     session_manager: &'a Arc<ironclaw::agent::SessionManager>,
     log_broadcaster: &'a Arc<ironclaw::channels::web::log_layer::LogBroadcaster>,
@@ -992,14 +964,14 @@ struct GatewayDeps<'a> {
     job_event_tx: &'a Option<
         tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
     >,
+    channels: &'a ironclaw::channels::ChannelManager,
+    channel_names: &'a mut Vec<String>,
 }
 
 async fn setup_gateway_channel(
     config: &Config,
     components: &ironclaw::app::AppComponents,
-    deps: &GatewayDeps<'_>,
-    channels: &ironclaw::channels::ChannelManager,
-    channel_names: &mut Vec<String>,
+    ctx: &mut GatewayContext<'_>,
 ) -> GatewaySetup {
     let mut gateway_url: Option<String> = None;
     let mut sse_sender: Option<
@@ -1011,13 +983,13 @@ async fn setup_gateway_channel(
         let gw = configure_gateway_builder(
             gw_config,
             components,
-            deps.container_job_manager,
-            deps.session_manager,
-            deps.log_broadcaster,
-            deps.log_level_handle,
-            deps.prompt_queue,
-            deps.scheduler_slot,
-            deps.job_event_tx,
+            ctx.container_job_manager,
+            ctx.session_manager,
+            ctx.log_broadcaster,
+            ctx.log_level_handle,
+            ctx.prompt_queue,
+            ctx.scheduler_slot,
+            ctx.job_event_tx,
             config.sandbox.enabled,
         )
         .await;
@@ -1037,8 +1009,8 @@ async fn setup_gateway_channel(
         sse_sender = Some(gw.state().sse.sender());
         routine_engine_slot = Some(Arc::clone(&gw.state().routine_engine));
 
-        channel_names.push("gateway".to_string());
-        channels.add(Box::new(gw)).await;
+        ctx.channel_names.push("gateway".to_string());
+        ctx.channels.add(Box::new(gw)).await;
     }
 
     GatewaySetup {
