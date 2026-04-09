@@ -2533,7 +2533,7 @@ mod tests {
 
     #[test]
     fn test_truncate_large_whitespace_run_does_not_hide_content() {
-        // "A" followed by 100 newlines then "B": after normalisation this is "A B" (3 chars).
+        // "A" followed by 101 newlines then "B": after normalisation this is "A B" (3 chars).
         let input = format!("A{}\nB", "\n".repeat(100));
         assert_eq!(truncate_for_preview(&input, 3), "A B");
     }

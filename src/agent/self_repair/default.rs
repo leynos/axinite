@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::context::ContextManager;
+use crate::context::{ContextManager, JobRecoveryError};
 use crate::db::Database;
 use crate::error::RepairError;
 #[cfg(any(test, feature = "self_repair_extras"))]
@@ -15,6 +15,12 @@ use crate::tools::{BuildRequirement, Language, SoftwareBuilder, SoftwareType};
 
 use super::traits::NativeSelfRepair;
 use super::types::{BrokenTool, RepairResult, StuckJob};
+
+/// Tuple of builder and database references for tool repair.
+///
+/// This alias simplifies the return type of `validate_repair_preconditions`
+/// and avoids the need for a clippy type_complexity suppression.
+pub(crate) type BuilderAndDb<'a> = (&'a Arc<dyn SoftwareBuilder>, &'a Arc<dyn Database>);
 
 /// Default self-repair implementation.
 pub struct DefaultSelfRepair {
@@ -53,11 +59,10 @@ impl DefaultSelfRepair {
 
     /// Validates preconditions for tool repair: builder/store availability and attempt limits.
     /// Returns the builder and store references on success, or a terminal RepairResult on failure.
-    #[expect(clippy::type_complexity)]
     fn validate_repair_preconditions(
         &self,
         tool: &BrokenTool,
-    ) -> Result<(&Arc<dyn SoftwareBuilder>, &Arc<dyn Database>), RepairResult> {
+    ) -> Result<BuilderAndDb<'_>, RepairResult> {
         let Some(ref builder) = self.builder else {
             return Err(RepairResult::ManualRequired {
                 message: format!("Builder not available for repairing tool '{}'", tool.name),
@@ -157,20 +162,11 @@ impl NativeSelfRepair for DefaultSelfRepair {
                     message: format!("Job {} recovered and will be retried", job.job_id),
                 })
             }
-            Ok(Err(e)) => {
-                tracing::warn!("Failed to recover job {}: {}", job.job_id, e);
-                // Discriminate error kinds:
-                // - "Job is not stuck" means already recovered (no-op success)
-                // - Other errors are terminal state-transition failures (Failed, not Retry)
-                if e == "Job is not stuck" {
-                    Ok(RepairResult::Success {
-                        message: format!("Job {} already recovered", job.job_id),
-                    })
-                } else {
-                    Ok(RepairResult::Failed {
-                        message: format!("Recovery failed permanently: {}", e),
-                    })
-                }
+            Ok(Err(JobRecoveryError::NotStuck)) => {
+                tracing::debug!("Job {} already recovered (not stuck)", job.job_id);
+                Ok(RepairResult::Success {
+                    message: format!("Job {} already recovered", job.job_id),
+                })
             }
             Err(e) => Err(RepairError::Failed {
                 target_type: "job".to_string(),

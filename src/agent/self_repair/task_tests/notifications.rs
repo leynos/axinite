@@ -99,43 +99,57 @@ fn spawn_notification_task(repair: Arc<dyn SelfRepair>) -> NotificationHarness {
     }
 }
 
+/// Expectations for a single notification assertion.
+struct SingleNotificationExpectation<'a> {
+    expected_message: &'a str,
+    expected_route: &'a RepairNotificationRoute,
+    await_failure_msg: &'a str,
+}
+
 async fn assert_single_notification(
     mut harness: NotificationHarness,
-    expected_message: &str,
-    expected_route: &RepairNotificationRoute,
-    await_failure_msg: &str,
+    expectation: SingleNotificationExpectation<'_>,
 ) {
     let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
         .await
-        .expect(await_failure_msg)
+        .expect(expectation.await_failure_msg)
         .expect("notification channel should remain open");
     harness.shutdown().await;
-    assert_eq!(notification.message, expected_message);
-    assert_eq!(&notification.route, expected_route);
+    assert_eq!(notification.message, expectation.expected_message);
+    assert_eq!(&notification.route, expectation.expected_route);
+}
+
+/// Expectations for manual-required deduplication assertion.
+struct ManualDedupExpectation<'a> {
+    expected_message: &'a str,
+    expected_route: &'a RepairNotificationRoute,
+    await_failure_msg: &'a str,
+    dedup_failure_msg: &'a str,
 }
 
 async fn assert_manual_required_deduplication(
     mut harness: NotificationHarness,
-    expected_message: &str,
-    expected_route: &RepairNotificationRoute,
-    await_failure_msg: &str,
-    dedup_failure_msg: &str,
+    expectation: ManualDedupExpectation<'_>,
 ) {
+    // First capture both receive outcomes into local variables
     let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
         .await
-        .expect(await_failure_msg)
+        .expect(expectation.await_failure_msg)
         .expect("notification channel should remain open");
 
-    assert!(
-        tokio::time::timeout(Duration::from_millis(50), harness.notification_rx.recv())
-            .await
-            .is_err(),
-        "{dedup_failure_msg}"
-    );
+    let second_recv_result = tokio::time::timeout(
+        Duration::from_millis(50),
+        harness.notification_rx.recv(),
+    )
+    .await;
 
+    // Then shutdown
     harness.shutdown().await;
-    assert_eq!(notification.message, expected_message);
-    assert_eq!(&notification.route, expected_route);
+
+    // Only after shutdown, perform the assertions
+    assert!(second_recv_result.is_err(), "{}", expectation.dedup_failure_msg);
+    assert_eq!(notification.message, expectation.expected_message);
+    assert_eq!(&notification.route, expectation.expected_route);
 }
 
 /// Test case parameters for repair notification tests.
@@ -299,13 +313,23 @@ async fn repair_task_sends_notification(
     if test_case.is_manual_required() {
         assert_manual_required_deduplication(
             harness,
-            &expected_message,
-            &expected_route,
-            await_msg,
-            "manual notification should be deduplicated",
+            ManualDedupExpectation {
+                expected_message: &expected_message,
+                expected_route: &expected_route,
+                await_failure_msg: await_msg,
+                dedup_failure_msg: "manual notification should be deduplicated",
+            },
         )
         .await;
     } else {
-        assert_single_notification(harness, &expected_message, &expected_route, await_msg).await;
+        assert_single_notification(
+            harness,
+            SingleNotificationExpectation {
+                expected_message: &expected_message,
+                expected_route: &expected_route,
+                await_failure_msg: await_msg,
+            },
+        )
+        .await;
     }
 }

@@ -274,9 +274,9 @@ impl Agent {
             self.context_manager
                 .update_context(uuid, |ctx| ctx.attempt_recovery())
                 .await?
-                .map_err(|s| crate::error::JobError::ContextError {
+                .map_err(|e| crate::error::JobError::ContextError {
                     id: uuid,
-                    reason: s,
+                    reason: e.to_string(),
                 })?;
 
             // Reschedule

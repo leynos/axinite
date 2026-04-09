@@ -7,9 +7,18 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use uuid::Uuid;
 
 use crate::llm::recording::HttpInterceptor;
+
+/// Errors that can occur during job recovery.
+#[derive(Debug, Error, Clone, PartialEq)]
+pub enum JobRecoveryError {
+    /// Job is not in the Stuck state and cannot be recovered.
+    #[error("Job is not stuck")]
+    NotStuck,
+}
 
 /// State of a job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -330,12 +339,13 @@ impl JobContext {
     }
 
     /// Attempt to recover from stuck state.
-    pub fn attempt_recovery(&mut self) -> Result<(), String> {
+    pub fn attempt_recovery(&mut self) -> Result<(), JobRecoveryError> {
         if self.state != JobState::Stuck {
-            return Err("Job is not stuck".to_string());
+            return Err(JobRecoveryError::NotStuck);
         }
         self.repair_attempts += 1;
         self.transition_to(JobState::InProgress, Some("Recovery attempt".to_string()))
+            .map_err(|e| panic!("Failed to transition from Stuck to InProgress: {}", e))
     }
 }
 
