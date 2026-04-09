@@ -98,6 +98,17 @@ mod tests {
         assert_eq!(result, expected);
     }
 
+    // Valid JSON strings should parse into serde_json::Value.
+    #[rstest]
+    #[case(r#"{"type":"string"}"#)]
+    #[case(r#"{"type":"number"}"#)]
+    #[case(r#"{"type":"boolean"}"#)]
+    #[case(r#"{"type":"array"}"#)]
+    fn test_valid_json_parses(#[case] schema: &str) {
+        // These types are never the placeholder, so no guard needed
+        assert!(parse_schema_string(schema).is_some());
+    }
+
     // Property-based tests for parse_schema_string invariants
     proptest! {
         // Empty and whitespace-only strings should return None.
@@ -112,18 +123,6 @@ mod tests {
             s in "[nN][uU][lL][lL]"
         ) {
             prop_assert_eq!(parse_schema_string(&s), None);
-        }
-
-        // Valid JSON strings should parse into serde_json::Value.
-        #[test]
-        fn prop_valid_json_parses(schema in prop_oneof![
-            Just(r#"{"type":"string"}"#.to_string()),
-            Just(r#"{"type":"number"}"#.to_string()),
-            Just(r#"{"type":"boolean"}"#.to_string()),
-            Just(r#"{"type":"array"}"#.to_string()),
-        ]) {
-            // These types are never the placeholder, so no guard needed
-            prop_assert!(parse_schema_string(&schema).is_some());
         }
 
         // Invalid JSON should fallback to returning the raw trimmed string.
