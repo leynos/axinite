@@ -129,6 +129,9 @@ mod tests {
         #[test]
         fn prop_invalid_json_fallbacks_to_string(s in "[a-zA-Z_][a-zA-Z0-9_]*") {
             prop_assume!(!s.eq_ignore_ascii_case("null"));
+            // Ensure the generated string actually fails JSON parsing
+            // (e.g., "true"/"false" are valid JSON literals and should not reach here)
+            prop_assume!(serde_json::from_str::<serde_json::Value>(&s).is_err());
             prop_assert_eq!(
                 parse_schema_string(&s),
                 Some(serde_json::Value::String(s.clone()))
