@@ -658,13 +658,15 @@ async fn async_main() -> anyhow::Result<()> {
     print_startup_info(
         &config,
         &cli,
-        boot_llm_model,
-        boot_cheap_model,
-        boot_tool_count,
-        gateway_url,
-        docker_status,
-        channel_names,
-        &active_tunnel,
+        &BootData {
+            llm_model: boot_llm_model,
+            cheap_model: boot_cheap_model,
+            tool_count: boot_tool_count,
+            gateway_url,
+            docker_status,
+            channel_names,
+            active_tunnel: &active_tunnel,
+        },
     );
 
     // ── Run the agent ──────────────────────────────────────────────────
@@ -836,18 +838,18 @@ fn spawn_sighup_handler(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
-fn print_startup_info(
-    config: &Config,
-    cli: &Cli,
-    boot_llm_model: String,
-    boot_cheap_model: Option<String>,
-    boot_tool_count: usize,
+/// Runtime-computed values used to populate the startup boot screen.
+struct BootData<'a> {
+    llm_model: String,
+    cheap_model: Option<String>,
+    tool_count: usize,
     gateway_url: Option<String>,
     docker_status: ironclaw::sandbox::DockerStatus,
     channel_names: Vec<String>,
-    active_tunnel: &Option<Box<dyn ironclaw::tunnel::Tunnel>>,
-) {
+    active_tunnel: &'a Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+}
+
+fn print_startup_info(config: &Config, cli: &Cli, data: &BootData<'_>) {
     if !config.channels.cli.enabled || cli.message.is_some() {
         return;
     }
@@ -855,16 +857,16 @@ fn print_startup_info(
         version: env!("CARGO_PKG_VERSION").to_string(),
         agent_name: config.agent.name.clone(),
         llm_backend: config.llm.backend.to_string(),
-        llm_model: boot_llm_model,
-        cheap_model: boot_cheap_model,
+        llm_model: data.llm_model.clone(),
+        cheap_model: data.cheap_model.clone(),
         db_backend: if cli.no_db {
             "none".to_string()
         } else {
             config.database.backend.to_string()
         },
         db_connected: !cli.no_db,
-        tool_count: boot_tool_count,
-        gateway_url,
+        tool_count: data.tool_count,
+        gateway_url: data.gateway_url.clone(),
         embeddings_enabled: config.embeddings.enabled,
         embeddings_provider: config
             .embeddings
@@ -873,16 +875,17 @@ fn print_startup_info(
         heartbeat_enabled: config.heartbeat.enabled,
         heartbeat_interval_secs: config.heartbeat.interval_secs,
         sandbox_enabled: config.sandbox.enabled,
-        docker_status,
+        docker_status: data.docker_status,
         claude_code_enabled: config.claude_code.enabled,
         routines_enabled: config.routines.enabled,
         skills_enabled: config.skills.enabled,
-        channels: channel_names,
-        tunnel_url: active_tunnel
+        channels: data.channel_names.clone(),
+        tunnel_url: data
+            .active_tunnel
             .as_ref()
             .and_then(|t| t.public_url())
             .or_else(|| config.tunnel.public_url.clone()),
-        tunnel_provider: active_tunnel.as_ref().map(|t| t.name().to_string()),
+        tunnel_provider: data.active_tunnel.as_ref().map(|t| t.name().to_string()),
     };
     ironclaw::boot_screen::print_boot_screen(&boot_info);
 }
