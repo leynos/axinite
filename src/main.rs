@@ -133,7 +133,6 @@ struct ChannelInfrastructure {
     webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     channel_names: Vec<String>,
     loaded_wasm_channel_names: Vec<String>,
-    #[allow(clippy::type_complexity)]
     wasm_channel_runtime_state: Option<(
         Arc<WasmChannelRuntime>,
         Arc<PairingStore>,
@@ -473,7 +472,6 @@ async fn run_shutdown_sequence(
 
     tracing::debug!("Agent shutdown complete");
 }
-
 async fn async_main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -790,13 +788,13 @@ async fn async_main() -> anyhow::Result<()> {
         if let Some(ref state) = http_channel_state {
             secret_updaters.push(Arc::clone(state) as Arc<dyn ChannelSecretUpdater>);
         }
-        let reload_manager = ironclaw::reload::create_hot_reload_manager(
+        let reload_manager = Arc::new(ironclaw::reload::create_hot_reload_manager(
             sighup_settings_store.clone(),
             webhook_server.clone(),
             components.secrets_store.clone(),
             secret_updaters,
-        );
-        spawn_sighup_handler(Arc::new(reload_manager), &shutdown_tx);
+        ));
+        spawn_sighup_handler(reload_manager, &shutdown_tx);
     }
 
     agent.run().await?;
@@ -1019,11 +1017,6 @@ async fn setup_gateway_channel(
         routine_engine_slot,
     }
 }
-
-// Note: spawn_sighup_handler has been removed in favor of the HotReloadManager
-// Note: spawn_sighup_handler has been removed in favor of the HotReloadManager
-// approach from the main branch, which provides better encapsulation of the
-// hot-reload logic. The SIGHUP handler is now implemented inline in async_main.
 
 #[allow(clippy::too_many_arguments)]
 async fn configure_gateway_builder(
