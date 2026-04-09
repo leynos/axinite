@@ -199,12 +199,13 @@ tracing-test = "0.2"
 tokio-tungstenite = "0.26"
 testcontainers-modules = { version = "0.11", features = ["postgres"] }
 pretty_assertions = "1"
-insta = { version = "1.46.3", features = ["json"] }
+insta = "1.46.3"
 rstest = "0.26.1"
-proptest = "1.6.0"
 tempfile = "3"
 mockall = "0.13"
 trybuild = "1"
+proptest = "1.6.0"
+delegate = "0.13"
 gag = "1.0.0"
 
 [features]
