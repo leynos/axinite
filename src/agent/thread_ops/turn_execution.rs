@@ -24,21 +24,13 @@ use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::error::Error;
 
 impl Agent {
-    pub(super) async fn process_user_input(
+    /// Check thread state and return error if not in a processable state.
+    async fn check_thread_state(
         &self,
         message: &IncomingMessage,
-        session: Arc<Mutex<Session>>,
+        session: &Arc<Mutex<Session>>,
         thread_id: Uuid,
-        content: &str,
-    ) -> Result<SubmissionResult, Error> {
-        tracing::debug!(
-            message_id = %message.id,
-            thread_id = %thread_id,
-            content_len = content.len(),
-            "Processing user input"
-        );
-
-        // First check thread state without holding lock during I/O
+    ) -> Result<Option<SubmissionResult>, Error> {
         let thread_state = {
             let sess = session.lock().await;
             let thread = sess
@@ -55,7 +47,6 @@ impl Agent {
             "Checked thread state"
         );
 
-        // Check thread state
         match thread_state {
             ThreadState::Processing => {
                 tracing::warn!(
@@ -63,9 +54,9 @@ impl Agent {
                     thread_id = %thread_id,
                     "Thread is processing, rejecting new input"
                 );
-                return Ok(SubmissionResult::error(
+                Ok(Some(SubmissionResult::error(
                     "Turn in progress. Use /interrupt to cancel.",
-                ));
+                )))
             }
             ThreadState::AwaitingApproval => {
                 tracing::warn!(
@@ -73,9 +64,9 @@ impl Agent {
                     thread_id = %thread_id,
                     "Thread awaiting approval, rejecting new input"
                 );
-                return Ok(SubmissionResult::error(
+                Ok(Some(SubmissionResult::error(
                     "Waiting for approval. Use /interrupt to cancel.",
-                ));
+                )))
             }
             ThreadState::Completed => {
                 tracing::warn!(
@@ -83,16 +74,20 @@ impl Agent {
                     thread_id = %thread_id,
                     "Thread completed, rejecting new input"
                 );
-                return Ok(SubmissionResult::error(
+                Ok(Some(SubmissionResult::error(
                     "Thread completed. Use /thread new.",
-                ));
+                )))
             }
-            ThreadState::Idle | ThreadState::Interrupted => {
-                // Can proceed
-            }
+            ThreadState::Idle | ThreadState::Interrupted => Ok(None),
         }
+    }
 
-        // Safety validation for user input
+    /// Validate safety for user input.
+    fn validate_safety(
+        &self,
+        message: &IncomingMessage,
+        content: &str,
+    ) -> Option<SubmissionResult> {
         let validation = self.safety().validate_input(content);
         if !validation.is_valid {
             let details = validation
@@ -101,7 +96,7 @@ impl Agent {
                 .map(|e| format!("{}: {}", e.field, e.message))
                 .collect::<Vec<_>>()
                 .join("; ");
-            return Ok(SubmissionResult::error(format!(
+            return Some(SubmissionResult::error(format!(
                 "Input rejected by safety validation: {}",
                 details
             )));
@@ -112,90 +107,90 @@ impl Agent {
             .iter()
             .any(|rule| rule.action == crate::safety::PolicyAction::Block)
         {
-            return Ok(SubmissionResult::error("Input rejected by safety policy."));
+            return Some(SubmissionResult::error("Input rejected by safety policy."));
         }
 
         // Scan inbound messages for secrets (API keys, tokens).
-        // Catching them here prevents the LLM from echoing them back, which
-        // would trigger the outbound leak detector and create error loops.
         if let Some(warning) = self.safety().scan_inbound_for_secrets(content) {
             tracing::warn!(
                 user = %message.user_id,
                 channel = %message.channel,
                 "Inbound message blocked: contains leaked secret"
             );
-            return Ok(SubmissionResult::error(warning));
+            return Some(SubmissionResult::error(warning));
         }
 
-        // Handle explicit commands (starting with /) directly
-        // Everything else goes through the normal agentic loop with tools
-        let temp_message = IncomingMessage {
-            content: content.to_string(),
-            ..message.clone()
-        };
+        None
+    }
 
-        if let Some(intent) = self.router.route_command(&temp_message) {
-            // Explicit command like /status, /job, /list - handle directly
-            return self.handle_job_or_command(intent, message).await;
-        }
+    /// Auto-compact context if needed before adding new turn.
+    async fn maybe_compact_context(
+        &self,
+        message: &IncomingMessage,
+        session: &Arc<Mutex<Session>>,
+        thread_id: Uuid,
+    ) -> Result<(), Error> {
+        let mut sess = session.lock().await;
+        let thread = sess
+            .threads
+            .get_mut(&thread_id)
+            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
 
-        // Natural language goes through the agentic loop
-        // Job tools (create_job, list_jobs, etc.) are in the tool registry
+        let messages = thread.messages();
+        if let Some(strategy) = self.context_monitor.suggest_compaction(&messages) {
+            let pct = self.context_monitor.usage_percent(&messages);
+            tracing::info!("Context at {:.1}% capacity, auto-compacting", pct);
 
-        // Auto-compact if needed BEFORE adding new turn
-        {
-            let mut sess = session.lock().await;
-            let thread = sess
-                .threads
-                .get_mut(&thread_id)
-                .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+            let _ = self
+                .channels
+                .send_status(
+                    &message.channel,
+                    StatusUpdate::Status(format!("Context at {:.0}% capacity, compacting...", pct)),
+                    &message.metadata,
+                )
+                .await;
 
-            let messages = thread.messages();
-            if let Some(strategy) = self.context_monitor.suggest_compaction(&messages) {
-                let pct = self.context_monitor.usage_percent(&messages);
-                tracing::info!("Context at {:.1}% capacity, auto-compacting", pct);
-
-                // Notify the user that compaction is happening
-                let _ = self
-                    .channels
-                    .send_status(
-                        &message.channel,
-                        StatusUpdate::Status(format!(
-                            "Context at {:.0}% capacity, compacting...",
-                            pct
-                        )),
-                        &message.metadata,
-                    )
-                    .await;
-
-                let compactor = ContextCompactor::new(self.llm().clone());
-                if let Err(e) = compactor
-                    .compact(thread, strategy, self.workspace().map(|w| w.as_ref()))
-                    .await
-                {
-                    tracing::warn!("Auto-compaction failed: {}", e);
-                }
+            let compactor = ContextCompactor::new(self.llm().clone());
+            if let Err(e) = compactor
+                .compact(thread, strategy, self.workspace().map(|w| w.as_ref()))
+                .await
+            {
+                tracing::warn!("Auto-compaction failed: {}", e);
             }
         }
+        Ok(())
+    }
 
-        // Create checkpoint before turn
+    /// Create checkpoint before turn.
+    async fn checkpoint_before_turn(
+        &self,
+        session: &Arc<Mutex<Session>>,
+        thread_id: Uuid,
+    ) -> Result<(), Error> {
         let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
-        {
-            let sess = session.lock().await;
-            let thread = sess
-                .threads
-                .get(&thread_id)
-                .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+        let sess = session.lock().await;
+        let thread = sess
+            .threads
+            .get(&thread_id)
+            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
 
-            let mut mgr = undo_mgr.lock().await;
-            mgr.checkpoint(
-                thread.turn_number(),
-                thread.messages(),
-                format!("Before turn {}", thread.turn_number()),
-            );
-        }
+        let mut mgr = undo_mgr.lock().await;
+        mgr.checkpoint(
+            thread.turn_number(),
+            thread.messages(),
+            format!("Before turn {}", thread.turn_number()),
+        );
+        Ok(())
+    }
 
-        // Augment content with attachment context (transcripts, metadata, images)
+    /// Prepare turn by augmenting content and starting the turn.
+    async fn prepare_turn(
+        &self,
+        message: &IncomingMessage,
+        session: &Arc<Mutex<Session>>,
+        thread_id: Uuid,
+        content: &str,
+    ) -> Result<(Vec<crate::llm::ChatMessage>, String), Error> {
         let augmented =
             crate::agent::attachments::augment_with_attachments(content, &message.attachments);
         let (effective_content, image_parts) = match &augmented {
@@ -203,7 +198,6 @@ impl Agent {
             None => (content, Vec::new()),
         };
 
-        // Start the turn and get messages
         let turn_messages = {
             let mut sess = session.lock().await;
             let thread = sess
@@ -215,7 +209,6 @@ impl Agent {
             thread.messages()
         };
 
-        // Persist user message to DB immediately so it survives crashes
         tracing::debug!(
             message_id = %message.id,
             thread_id = %thread_id,
@@ -230,22 +223,48 @@ impl Agent {
             "User message persisted, starting agentic loop"
         );
 
-        // Send thinking status
-        let _ = self
-            .channels
-            .send_status(
-                &message.channel,
-                StatusUpdate::Thinking("Processing...".into()),
-                &message.metadata,
-            )
-            .await;
+        Ok((turn_messages, effective_content.to_string()))
+    }
 
-        // Run the agentic tool execution loop
-        let result = self
-            .run_agentic_loop(message, session.clone(), thread_id, turn_messages)
-            .await;
+    /// Apply response transform hook.
+    async fn apply_response_transform_hook(
+        &self,
+        message: &IncomingMessage,
+        thread_id: Uuid,
+        response: String,
+    ) -> String {
+        let event = crate::hooks::HookEvent::ResponseTransform {
+            user_id: message.user_id.clone(),
+            thread_id: thread_id.to_string(),
+            response: response.clone(),
+        };
+        match self.hooks().run(&event).await {
+            Err(crate::hooks::HookError::Rejected { reason }) => {
+                format!("[Response filtered: {}]", reason)
+            }
+            Ok(crate::hooks::HookOutcome::Reject { reason }) => {
+                format!("[Response filtered: {}]", reason)
+            }
+            Err(err) => {
+                tracing::warn!("TransformResponse hook failed open: {}", err);
+                response
+            }
+            Ok(crate::hooks::HookOutcome::Continue {
+                modified: Some(new_response),
+            }) => new_response,
+            _ => response,
+        }
+    }
 
-        // Re-acquire lock and check if interrupted
+    /// Handle the result from the agentic loop.
+    async fn handle_loop_result(
+        &self,
+        message: &IncomingMessage,
+        session: &Arc<Mutex<Session>>,
+        thread_id: Uuid,
+        result: Result<AgenticLoopResult, Error>,
+    ) -> Result<SubmissionResult, Error> {
+        // Check for interruption first
         let interrupted = {
             let mut sess = session.lock().await;
             let thread = sess
@@ -254,6 +273,7 @@ impl Agent {
                 .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
             thread.state == ThreadState::Interrupted
         };
+
         if interrupted {
             let _ = self
                 .channels
@@ -266,45 +286,19 @@ impl Agent {
             return Ok(SubmissionResult::Interrupted);
         }
 
-        // Re-acquire lock for processing result
         let mut sess = session.lock().await;
         let thread = sess
             .threads
             .get_mut(&thread_id)
             .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
 
-        // Complete, fail, or request approval
         match result {
             Ok(AgenticLoopResult::Response(response)) => {
-                // Drop the session lock before running the response transform hook
                 drop(sess);
+                let response = self
+                    .apply_response_transform_hook(message, thread_id, response)
+                    .await;
 
-                // Hook: TransformResponse — allow hooks to modify or reject the final response
-                let response = {
-                    let event = crate::hooks::HookEvent::ResponseTransform {
-                        user_id: message.user_id.clone(),
-                        thread_id: thread_id.to_string(),
-                        response: response.clone(),
-                    };
-                    match self.hooks().run(&event).await {
-                        Err(crate::hooks::HookError::Rejected { reason }) => {
-                            format!("[Response filtered: {}]", reason)
-                        }
-                        Ok(crate::hooks::HookOutcome::Reject { reason }) => {
-                            format!("[Response filtered: {}]", reason)
-                        }
-                        Err(err) => {
-                            tracing::warn!("TransformResponse hook failed open: {}", err);
-                            response
-                        }
-                        Ok(crate::hooks::HookOutcome::Continue {
-                            modified: Some(new_response),
-                        }) => new_response,
-                        _ => response, // fail-open: use original
-                    }
-                };
-
-                // Re-acquire lock to complete turn and snapshot data
                 let completion = {
                     let mut sess = session.lock().await;
                     let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
@@ -323,6 +317,7 @@ impl Agent {
                         )
                     }
                 };
+
                 let Some((turn_number, tool_calls)) = completion else {
                     let _ = self
                         .channels
@@ -334,7 +329,6 @@ impl Agent {
                         .await;
                     return Ok(SubmissionResult::Interrupted);
                 };
-                // Lock is dropped here at end of block
 
                 let _ = self
                     .channels
@@ -345,7 +339,6 @@ impl Agent {
                     )
                     .await;
 
-                // Persist tool calls then assistant response (user message already persisted at turn start)
                 self.persist_tool_calls(thread_id, &message.user_id, turn_number, &tool_calls)
                     .await;
                 self.persist_assistant_response(thread_id, &message.user_id, &response)
@@ -354,13 +347,11 @@ impl Agent {
                 Ok(SubmissionResult::response(response))
             }
             Ok(AgenticLoopResult::NeedApproval { pending }) => {
-                // Store pending approval in thread and update state
                 let request_id = pending.request_id;
                 let tool_name = pending.tool_name.clone();
                 let description = pending.description.clone();
                 let parameters = pending.display_parameters.clone();
                 thread.await_approval(pending);
-                // Drop the session lock before async operations
                 drop(sess);
 
                 let _ = self
@@ -380,9 +371,75 @@ impl Agent {
             }
             Err(e) => {
                 thread.fail_turn(e.to_string());
-                // User message already persisted at turn start; nothing else to save
                 Ok(SubmissionResult::error(e.to_string()))
             }
         }
+    }
+
+    pub(super) async fn process_user_input(
+        &self,
+        message: &IncomingMessage,
+        session: Arc<Mutex<Session>>,
+        thread_id: Uuid,
+        content: &str,
+    ) -> Result<SubmissionResult, Error> {
+        tracing::debug!(
+            message_id = %message.id,
+            thread_id = %thread_id,
+            content_len = content.len(),
+            "Processing user input"
+        );
+
+        // Phase 1: Check thread state
+        if let Some(result) = self
+            .check_thread_state(message, &session, thread_id)
+            .await?
+        {
+            return Ok(result);
+        }
+
+        // Phase 2: Safety validation
+        if let Some(result) = self.validate_safety(message, content) {
+            return Ok(result);
+        }
+
+        // Phase 3: Route explicit commands
+        let temp_message = IncomingMessage {
+            content: content.to_string(),
+            ..message.clone()
+        };
+        if let Some(intent) = self.router.route_command(&temp_message) {
+            return self.handle_job_or_command(intent, message).await;
+        }
+
+        // Phase 4: Auto-compact context if needed
+        self.maybe_compact_context(message, &session, thread_id)
+            .await?;
+
+        // Phase 5: Create checkpoint
+        self.checkpoint_before_turn(&session, thread_id).await?;
+
+        // Phase 6: Prepare turn
+        let (turn_messages, _effective_content) = self
+            .prepare_turn(message, &session, thread_id, content)
+            .await?;
+
+        // Phase 7: Send thinking status and run agentic loop
+        let _ = self
+            .channels
+            .send_status(
+                &message.channel,
+                StatusUpdate::Thinking("Processing...".into()),
+                &message.metadata,
+            )
+            .await;
+
+        let result = self
+            .run_agentic_loop(message, session.clone(), thread_id, turn_messages)
+            .await;
+
+        // Phase 8: Handle loop result
+        self.handle_loop_result(message, &session, thread_id, result)
+            .await
     }
 }
