@@ -21,6 +21,34 @@ pub(crate) struct TurnPersistContext<'a> {
     pub turn_number: usize,
 }
 
+/// Convert a JSON value to a preview string with the given character limit.
+fn value_to_preview(v: &serde_json::Value, limit: usize) -> String {
+    match v {
+        serde_json::Value::String(s) => truncate_preview(s, limit),
+        other => truncate_preview(&other.to_string(), limit),
+    }
+}
+
+/// Summarise a single tool call into a JSON object.
+fn summarise_tool_call(
+    turn_number: usize,
+    i: usize,
+    tc: &crate::agent::session::TurnToolCall,
+) -> serde_json::Value {
+    let mut obj = serde_json::json!({
+        "name": tc.name,
+        "call_id": format!("turn{}_{}", turn_number, i),
+    });
+    if let Some(ref result) = tc.result {
+        obj["result_preview"] = serde_json::Value::String(value_to_preview(result, 500));
+        obj["result"] = serde_json::Value::String(value_to_preview(result, 1000));
+    }
+    if let Some(ref error) = tc.error {
+        obj["error"] = serde_json::Value::String(error.clone());
+    }
+    obj
+}
+
 /// Helper to build EnsureConversationParams for gateway conversations.
 ///
 /// Gateway conversations use channel="gateway", id=thread_id, and thread_id=None.
@@ -122,29 +150,7 @@ impl Agent {
         let summaries: Vec<serde_json::Value> = tool_calls
             .iter()
             .enumerate()
-            .map(|(i, tc)| {
-                let mut obj = serde_json::json!({
-                    "name": tc.name,
-                    "call_id": format!("turn{}_{}", ctx.turn_number, i),
-                });
-                if let Some(ref result) = tc.result {
-                    let preview = match result {
-                        serde_json::Value::String(s) => truncate_preview(s, 500),
-                        other => truncate_preview(&other.to_string(), 500),
-                    };
-                    obj["result_preview"] = serde_json::Value::String(preview);
-                    // Store full result (truncated to ~1000 chars) for LLM context rebuild
-                    let full_result = match result {
-                        serde_json::Value::String(s) => truncate_preview(s, 1000),
-                        other => truncate_preview(&other.to_string(), 1000),
-                    };
-                    obj["result"] = serde_json::Value::String(full_result);
-                }
-                if let Some(ref error) = tc.error {
-                    obj["error"] = serde_json::Value::String(error.clone());
-                }
-                obj
-            })
+            .map(|(i, tc)| summarise_tool_call(ctx.turn_number, i, tc))
             .collect();
 
         let content = match serde_json::to_string(&summaries) {
