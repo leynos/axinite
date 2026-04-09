@@ -137,17 +137,18 @@ async fn assert_manual_required_deduplication(
         .expect(expectation.await_failure_msg)
         .expect("notification channel should remain open");
 
-    let second_recv_result = tokio::time::timeout(
-        Duration::from_millis(50),
-        harness.notification_rx.recv(),
-    )
-    .await;
+    let second_recv_result =
+        tokio::time::timeout(Duration::from_millis(50), harness.notification_rx.recv()).await;
 
     // Then shutdown
     harness.shutdown().await;
 
     // Only after shutdown, perform the assertions
-    assert!(second_recv_result.is_err(), "{}", expectation.dedup_failure_msg);
+    assert!(
+        second_recv_result.is_err(),
+        "{}",
+        expectation.dedup_failure_msg
+    );
     assert_eq!(notification.message, expectation.expected_message);
     assert_eq!(&notification.route, expectation.expected_route);
 }

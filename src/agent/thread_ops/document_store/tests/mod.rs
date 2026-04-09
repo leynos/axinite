@@ -6,8 +6,8 @@ use crate::channels::{AttachmentKind, IncomingAttachment};
 use crate::workspace::Workspace;
 
 use super::{
-    build_document_path, get_valid_document_text, is_usable_extracted_text, sanitise_filename,
-    store_extracted_documents, PathParts,
+    PathParts, build_document_path, get_valid_document_text, is_usable_extracted_text,
+    sanitise_filename, store_extracted_documents,
 };
 
 fn make_attachment(
