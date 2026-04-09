@@ -39,39 +39,6 @@ pub(super) struct ChatDelegate<'a> {
     pub(super) user_tz: chrono_tz::Tz,
 }
 
-impl<'a> ChatDelegate<'a> {
-    /// Create a new ChatDelegate.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(dead_code)]
-    pub(super) fn new(
-        agent: &'a Agent,
-        session: Arc<Mutex<Session>>,
-        thread_id: Uuid,
-        message: &'a IncomingMessage,
-        job_ctx: JobContext,
-        active_skills: Vec<crate::skills::LoadedSkill>,
-        cached_prompt: String,
-        cached_prompt_no_tools: String,
-        nudge_at: usize,
-        force_text_at: usize,
-        user_tz: chrono_tz::Tz,
-    ) -> Self {
-        Self {
-            agent,
-            session,
-            thread_id,
-            message,
-            job_ctx,
-            active_skills,
-            cached_prompt,
-            cached_prompt_no_tools,
-            nudge_at,
-            force_text_at,
-            user_tz,
-        }
-    }
-}
-
 mod loops;
 
 pub(in crate::agent::dispatcher) mod preflight;
