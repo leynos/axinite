@@ -11,6 +11,99 @@ use uuid::Uuid;
 use super::ChatDelegate;
 use crate::agent::dispatcher::types::*;
 
+impl<'a> ChatDelegate<'a> {
+    /// Record tool calls in the active session thread, redacting sensitive parameters.
+    async fn record_tool_calls_in_thread(&self, tool_calls: &[crate::llm::ToolCall]) {
+        let mut redacted_args: Vec<serde_json::Value> =
+            Vec::with_capacity(tool_calls.len());
+        for tc in tool_calls {
+            let safe = if let Some(tool) = self.agent.tools().get(&tc.name).await {
+                redact_params(&tc.arguments, tool.sensitive_params())
+            } else {
+                tc.arguments.clone()
+            };
+            redacted_args.push(safe);
+        }
+        let mut sess = self.session.lock().await;
+        if let Some(thread) = sess.threads.get_mut(&self.thread_id)
+            && let Some(turn) = thread.last_turn_mut()
+        {
+            for (tc, safe_args) in tool_calls.iter().zip(redacted_args) {
+                turn.record_tool_call(&tc.name, safe_args);
+            }
+        }
+    }
+
+    /// Run the runnable subset of the batch, choosing inline vs. parallel dispatch.
+    async fn dispatch_tool_batch(
+        &self,
+        runnable: &[(usize, crate::llm::ToolCall)],
+        exec_results: &mut [Option<Result<String, Error>>],
+    ) {
+        if runnable.len() <= 1 {
+            self.run_tool_batch_inline(runnable, exec_results).await;
+        } else {
+            self.run_tool_batch_parallel(runnable, exec_results).await;
+        }
+    }
+
+    /// Phase 3: process outcomes in original order; return any deferred auth instructions.
+    async fn run_postflight(
+        &self,
+        preflight: Vec<(crate::llm::ToolCall, PreflightOutcome)>,
+        exec_results: &mut [Option<Result<String, Error>>],
+        reason_ctx: &mut ReasoningContext,
+    ) -> Option<String> {
+        let mut deferred_auth: Option<String> = None;
+        for (pf_idx, (tc, outcome)) in preflight.into_iter().enumerate() {
+            match outcome {
+                PreflightOutcome::Rejected(error_msg) => {
+                    self.handle_rejected_tool(&tc, &error_msg, reason_ctx).await;
+                }
+                PreflightOutcome::Runnable => {
+                    let tool_result = exec_results[pf_idx].take().unwrap_or_else(|| {
+                        Err(crate::error::ToolError::ExecutionFailed {
+                            name: tc.name.clone(),
+                            reason: "No result available".to_string(),
+                        }
+                        .into())
+                    });
+                    if let Some(instructions) = self
+                        .process_runnable_tool(&tc, tool_result, reason_ctx)
+                        .await
+                    {
+                        deferred_auth = Some(instructions);
+                    }
+                }
+            }
+        }
+        deferred_auth
+    }
+
+    /// Construct a `PendingApproval` for a tool call that requires user authorisation.
+    fn build_pending_approval(
+        &self,
+        approval_idx: usize,
+        tc: &crate::llm::ToolCall,
+        tool: &dyn crate::tools::Tool,
+        reason_ctx: &ReasoningContext,
+        tool_calls: &[crate::llm::ToolCall],
+    ) -> crate::agent::session::PendingApproval {
+        let display_params = redact_params(&tc.arguments, tool.sensitive_params());
+        crate::agent::session::PendingApproval {
+            request_id: Uuid::new_v4(),
+            tool_name: tc.name.clone(),
+            parameters: tc.arguments.clone(),
+            display_parameters: display_params,
+            description: tool.description().to_string(),
+            tool_call_id: tc.id.clone(),
+            context_messages: reason_ctx.messages.clone(),
+            deferred_tool_calls: tool_calls[approval_idx + 1..].to_vec(),
+            user_timezone: Some(self.user_tz.name().to_string()),
+        }
+    }
+}
+
 impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
     async fn check_signals(&self) -> LoopSignal {
         let sess = self.session.lock().await;
@@ -182,8 +275,7 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
         content: Option<String>,
         reason_ctx: &mut ReasoningContext,
     ) -> Result<Option<LoopOutcome>, Error> {
-        // Add the assistant message with tool_calls to context.
-        // OpenAI protocol requires this before tool-result messages.
+        // OpenAI protocol: assistant message with tool_calls must precede tool results.
         reason_ctx
             .messages
             .push(ChatMessage::assistant_with_tool_calls(
@@ -191,7 +283,6 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
                 tool_calls.clone(),
             ));
 
-        // Execute tools and add results to context
         let _ = self
             .agent
             .channels
@@ -202,93 +293,28 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
             )
             .await;
 
-        // Record tool calls in the thread with sensitive params redacted.
-        {
-            let mut redacted_args: Vec<serde_json::Value> = Vec::with_capacity(tool_calls.len());
-            for tc in &tool_calls {
-                let safe = if let Some(tool) = self.agent.tools().get(&tc.name).await {
-                    redact_params(&tc.arguments, tool.sensitive_params())
-                } else {
-                    tc.arguments.clone()
-                };
-                redacted_args.push(safe);
-            }
-            let mut sess = self.session.lock().await;
-            if let Some(thread) = sess.threads.get_mut(&self.thread_id)
-                && let Some(turn) = thread.last_turn_mut()
-            {
-                for (tc, safe_args) in tool_calls.iter().zip(redacted_args) {
-                    turn.record_tool_call(&tc.name, safe_args);
-                }
-            }
-        }
+        self.record_tool_calls_in_thread(&tool_calls).await;
 
         // === Phase 1: Preflight (sequential) ===
         let (batch, approval_needed) = self.group_tool_calls(&tool_calls).await?;
-        let ToolBatch {
-            preflight,
-            runnable,
-        } = batch;
+        let ToolBatch { preflight, runnable } = batch;
 
         // === Phase 2: Parallel execution ===
         let mut exec_results: Vec<Option<Result<String, Error>>> =
             (0..preflight.len()).map(|_| None).collect();
-
-        if runnable.len() <= 1 {
-            self.run_tool_batch_inline(&runnable, &mut exec_results)
-                .await;
-        } else {
-            self.run_tool_batch_parallel(&runnable, &mut exec_results)
-                .await;
-        }
+        self.dispatch_tool_batch(&runnable, &mut exec_results).await;
 
         // === Phase 3: Post-flight (sequential, in original order) ===
-        let mut deferred_auth: Option<String> = None;
-
-        for (pf_idx, (tc, outcome)) in preflight.into_iter().enumerate() {
-            match outcome {
-                PreflightOutcome::Rejected(error_msg) => {
-                    self.handle_rejected_tool(&tc, &error_msg, reason_ctx).await;
-                }
-                PreflightOutcome::Runnable => {
-                    let tool_result = exec_results[pf_idx].take().unwrap_or_else(|| {
-                        Err(crate::error::ToolError::ExecutionFailed {
-                            name: tc.name.clone(),
-                            reason: "No result available".to_string(),
-                        }
-                        .into())
-                    });
-
-                    if let Some(instructions) = self
-                        .process_runnable_tool(&tc, tool_result, reason_ctx)
-                        .await
-                    {
-                        deferred_auth = Some(instructions);
-                    }
-                }
-            }
-        }
-
-        // Return auth response after all results are recorded
-        if let Some(instructions) = deferred_auth {
+        if let Some(instructions) = self
+            .run_postflight(preflight, &mut exec_results, reason_ctx)
+            .await
+        {
             return Ok(Some(LoopOutcome::Response(instructions)));
         }
 
-        // Handle approval if a tool needed it
         if let Some((approval_idx, tc, tool)) = approval_needed {
-            let display_params = redact_params(&tc.arguments, tool.sensitive_params());
-            let pending = crate::agent::session::PendingApproval {
-                request_id: Uuid::new_v4(),
-                tool_name: tc.name.clone(),
-                parameters: tc.arguments.clone(),
-                display_parameters: display_params,
-                description: tool.description().to_string(),
-                tool_call_id: tc.id.clone(),
-                context_messages: reason_ctx.messages.clone(),
-                deferred_tool_calls: tool_calls[approval_idx + 1..].to_vec(),
-                user_timezone: Some(self.user_tz.name().to_string()),
-            };
-
+            let pending =
+                self.build_pending_approval(approval_idx, &tc, &*tool, reason_ctx, &tool_calls);
             return Ok(Some(LoopOutcome::NeedApproval(Box::new(pending))));
         }
 

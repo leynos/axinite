@@ -160,47 +160,51 @@ pub(super) fn compact_messages_for_retry(
 ) -> Vec<crate::llm::ChatMessage> {
     use crate::llm::Role;
 
-    let mut compacted = Vec::new();
+    match messages.iter().rposition(|m| m.role == Role::User) {
+        Some(idx) => compact_from_last_user(messages, idx),
+        None => reorder_system_messages_first(messages),
+    }
+}
 
-    // Find the last User message index
-    let last_user_idx = messages.iter().rposition(|m| m.role == Role::User);
+/// Build a compacted history anchored at the last User message.
+///
+/// Retains System messages that precede `idx`, appends a compaction note when
+/// earlier history exists, then extends with the current turn (`messages[idx..]`).
+fn compact_from_last_user(
+    messages: &[crate::llm::ChatMessage],
+    idx: usize,
+) -> Vec<crate::llm::ChatMessage> {
+    use crate::llm::Role;
 
-    if let Some(idx) = last_user_idx {
-        // Keep System messages that appear BEFORE the last User message.
-        // System messages after that point (e.g. nudges) are included in the
-        // slice extension below, avoiding duplication.
-        for msg in &messages[..idx] {
-            if msg.role == Role::System {
-                compacted.push(msg.clone());
-            }
-        }
+    let mut compacted: Vec<_> = messages[..idx]
+        .iter()
+        .filter(|m| m.role == Role::System)
+        .cloned()
+        .collect();
 
-        // Only add a compaction note if there was earlier history that is being dropped
-        if idx > 0 {
-            compacted.push(crate::llm::ChatMessage::system(
-                "[Note: Earlier conversation history was automatically compacted \
-                 to fit within the context window. The most recent exchange is preserved below.]",
-            ));
-        }
-
-        // Keep the last User message and everything after it
-        compacted.extend_from_slice(&messages[idx..]);
-    } else {
-        // No user messages found (shouldn't happen normally); keep everything,
-        // with system messages first to preserve prompt ordering.
-        for msg in messages {
-            if msg.role == Role::System {
-                compacted.push(msg.clone());
-            }
-        }
-        for msg in messages {
-            if msg.role != Role::System {
-                compacted.push(msg.clone());
-            }
-        }
+    if idx > 0 {
+        compacted.push(crate::llm::ChatMessage::system(
+            "[Note: Earlier conversation history was automatically compacted \
+             to fit within the context window. The most recent exchange is preserved below.]",
+        ));
     }
 
+    compacted.extend_from_slice(&messages[idx..]);
     compacted
+}
+
+/// Fallback when no User message exists: return System messages first, then the rest.
+fn reorder_system_messages_first(
+    messages: &[crate::llm::ChatMessage],
+) -> Vec<crate::llm::ChatMessage> {
+    use crate::llm::Role;
+
+    messages
+        .iter()
+        .filter(|m| m.role == Role::System)
+        .chain(messages.iter().filter(|m| m.role != Role::System))
+        .cloned()
+        .collect()
 }
 
 /// Strip internal `[Called tool ...]` and `[Tool ... returned: ...]` markers
@@ -235,6 +239,12 @@ pub(super) fn strip_internal_tool_call_text(text: &str) -> String {
     }
 }
 
+/// Describes a single tool invocation passed to `execute_chat_tool_standalone`.
+pub(crate) struct ChatToolRequest<'a> {
+    pub(crate) tool_name: &'a str,
+    pub(crate) params: &'a serde_json::Value,
+}
+
 /// Execute a chat tool without requiring `&Agent`.
 ///
 /// This standalone function enables parallel invocation from spawned JoinSet
@@ -243,11 +253,17 @@ pub(super) fn strip_internal_tool_call_text(text: &str) -> String {
 pub(crate) async fn execute_chat_tool_standalone(
     tools: &crate::tools::ToolRegistry,
     safety: &crate::safety::SafetyLayer,
-    tool_name: &str,
-    params: &serde_json::Value,
+    request: &ChatToolRequest<'_>,
     job_ctx: &crate::context::JobContext,
 ) -> Result<String, crate::error::Error> {
-    crate::tools::execute::execute_tool_with_safety(tools, safety, tool_name, params, job_ctx).await
+    crate::tools::execute::execute_tool_with_safety(
+        tools,
+        safety,
+        request.tool_name,
+        request.params,
+        job_ctx,
+    )
+    .await
 }
 
 /// Execution context for tool calls.

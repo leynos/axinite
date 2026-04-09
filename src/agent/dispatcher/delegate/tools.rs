@@ -331,8 +331,10 @@ impl<'a> ChatDelegate<'a> {
                 let result = execute_chat_tool_standalone(
                     &tools,
                     &safety,
-                    &tc.name,
-                    &tc.arguments,
+                    &ChatToolRequest {
+                        tool_name: &tc.name,
+                        params: &tc.arguments,
+                    },
                     &job_ctx,
                 )
                 .await;
