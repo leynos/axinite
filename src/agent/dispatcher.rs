@@ -760,8 +760,7 @@ impl<'a> ChatDelegate<'a> {
         // Determine result content and preview based on whether output is valid JSON
         let (result_content, preview) = if is_valid_json(output) {
             // For JSON-producing tools, persist raw JSON without wrapping
-            let collapsed: String = output.split_whitespace().collect::<Vec<_>>().join(" ");
-            let preview = truncate_for_preview(&collapsed, PREVIEW_MAX_CHARS);
+            let preview = truncate_for_preview(output, PREVIEW_MAX_CHARS);
             (output.clone(), preview)
         } else {
             // Sanitize tool output first (before sending preview or using in context)

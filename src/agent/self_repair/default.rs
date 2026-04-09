@@ -130,13 +130,14 @@ impl NativeSelfRepair for DefaultSelfRepair {
                 tracing::warn!("Failed to recover job {}: {}", job.job_id, e);
                 // Discriminate error kinds:
                 // - "Job is not stuck" means already recovered (no-op success)
+                // - Other errors are terminal state-transition failures (Failed, not Retry)
                 if e == "Job is not stuck" {
                     Ok(RepairResult::Success {
                         message: format!("Job {} already recovered", job.job_id),
                     })
                 } else {
-                    Ok(RepairResult::Retry {
-                        message: format!("Recovery attempt failed: {}", e),
+                    Ok(RepairResult::Failed {
+                        message: format!("Recovery failed permanently: {}", e),
                     })
                 }
             }

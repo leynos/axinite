@@ -102,6 +102,7 @@ fn spawn_notification_task(repair: Arc<dyn SelfRepair>) -> NotificationHarness {
 async fn assert_single_notification(
     mut harness: NotificationHarness,
     expected_message: &str,
+    expected_route: &RepairNotificationRoute,
     await_failure_msg: &str,
 ) {
     let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
@@ -109,12 +110,14 @@ async fn assert_single_notification(
         .expect(await_failure_msg)
         .expect("notification channel should remain open");
     assert_eq!(notification.message, expected_message);
+    assert_eq!(&notification.route, expected_route);
     harness.shutdown().await;
 }
 
 async fn assert_manual_required_deduplication(
     mut harness: NotificationHarness,
     expected_message: &str,
+    expected_route: &RepairNotificationRoute,
     await_failure_msg: &str,
     dedup_failure_msg: &str,
 ) {
@@ -123,6 +126,7 @@ async fn assert_manual_required_deduplication(
         .expect(await_failure_msg)
         .expect("notification channel should remain open");
     assert_eq!(notification.message, expected_message);
+    assert_eq!(&notification.route, expected_route);
 
     assert!(
         tokio::time::timeout(Duration::from_millis(50), harness.notification_rx.recv())
@@ -288,15 +292,20 @@ async fn repair_task_sends_notification(
         } => expected_message.clone(),
     };
 
+    let expected_route = RepairNotificationRoute::BroadcastAll {
+        user_id: "default".to_string(),
+    };
+
     if test_case.is_manual_required() {
         assert_manual_required_deduplication(
             harness,
             &expected_message,
+            &expected_route,
             await_msg,
             "manual notification should be deduplicated",
         )
         .await;
     } else {
-        assert_single_notification(harness, &expected_message, await_msg).await;
+        assert_single_notification(harness, &expected_message, &expected_route, await_msg).await;
     }
 }

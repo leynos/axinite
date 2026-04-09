@@ -1,4 +1,26 @@
 //! Extracted-document storage helpers for thread operations.
+//!
+//! This module persists text extracted from document attachments (PDFs, text files, etc.)
+//! into a workspace-level store for future retrieval and search. When a message contains
+//! document attachments, the extracted text is written to the workspace at paths following
+//! the scheme: `documents/{YYYY-MM-DD}/{index}-{sanitized_id}-{sanitized_filename}`.
+//!
+//! Path structure:
+//! - Documents are organized by date in `documents/{date}/` subdirectories
+//! - Each document filename includes: index (attachment position), sanitized attachment ID,
+//!   and sanitized original filename
+//! - All path components are sanitized via `sanitise_filename()` to remove path traversal
+//!   sequences (`..`), directory separators (`/`, `\`, Unicode variants), and leading dots
+//!
+//! Sanitization applied:
+//! - Path traversal sequences (`..`) are replaced with `__`
+//! - Directory separators and lookalikes are replaced with `_`
+//! - Leading dots are stripped (preventing hidden files)
+//! - Empty names fall back to `unnamed_document` or `unnamed_id`
+//!
+//! The main entry point is `store_extracted_documents()`, which iterates message attachments,
+//! filters to document types with usable extracted text (skipping error sentinels like
+//! "[Failed to extract]"), builds metadata headers, and writes to the workspace.
 
 use std::sync::Arc;
 
@@ -20,6 +42,8 @@ struct PathParts<'a> {
     index: usize,
     id: &'a str,
     filename: &'a str,
+    /// Message-level unique identifier to prevent collisions for unnamed attachments.
+    message_id: &'a str,
 }
 
 /// Specification for writing a document to workspace.
@@ -48,9 +72,10 @@ fn build_header(meta: &HeaderMeta) -> String {
 fn build_document_path(parts: &PathParts) -> String {
     let date_str = parts.date.to_string();
     format!(
-        "documents/{date}/{index}-{id}-{filename}",
+        "documents/{date}/{index}-{message_id}-{id}-{filename}",
         date = date_str,
         index = parts.index,
+        message_id = parts.message_id,
         id = parts.id,
         filename = parts.filename
     )
@@ -144,6 +169,7 @@ pub(super) async fn store_extracted_documents(
             index,
             id: &sanitized_id,
             filename: &filename,
+            message_id: &message.id.to_string(),
         });
 
         let header = build_header(&HeaderMeta {
@@ -168,10 +194,11 @@ pub(super) async fn store_extracted_documents(
 #[cfg(test)]
 mod tests {
     use super::{
-        PathParts, build_document_path, get_valid_document_text, is_usable_extracted_text,
-        sanitise_filename,
+        store_extracted_documents, PathParts, build_document_path, get_valid_document_text,
+        is_usable_extracted_text, sanitise_filename,
     };
     use crate::channels::{AttachmentKind, IncomingAttachment};
+    use crate::workspace::Workspace;
 
     fn make_attachment(
         id: &str,
@@ -261,6 +288,7 @@ mod tests {
             index: 7,
             id: &sanitized_id,
             filename: &sanitized_filename,
+            message_id: "msg-uuid-123",
         });
         assert!(path.starts_with("documents/2026-04-03/7-"));
         assert!(!path.contains(".."));
@@ -269,5 +297,138 @@ mod tests {
             .expect("path should include date prefix");
         assert!(!suffix.contains('/'));
         assert!(!suffix.contains('\\'));
+    }
+
+    #[tokio::test]
+    async fn store_extracted_documents_filters_and_stores_correctly() {
+        use std::sync::Arc;
+
+        use crate::channels::AttachmentKind;
+        use crate::db::Database;
+        use chrono::Utc;
+        use uuid::Uuid;
+
+        // Create local libSQL backend with temp file and workspace
+        let tmp_dir = tempfile::tempdir().expect("create tempdir");
+        let db_path = tmp_dir.path().join("doc_store_test.db");
+        let backend = crate::db::libsql::LibSqlBackend::new_local(&db_path)
+            .await
+            .expect("failed to create local backend");
+        Database::run_migrations(&backend)
+            .await
+            .expect("failed to run migrations");
+        let workspace = Arc::new(Workspace::new_with_db(
+            "test-user",
+            Arc::new(backend),
+        ));
+
+        // Build message with mixed attachments
+        let message_id = Uuid::new_v4();
+        let message = crate::channels::IncomingMessage {
+            id: message_id,
+            channel: "test-channel".to_string(),
+            user_id: "test-user".to_string(),
+            user_name: None,
+            content: "test message".to_string(),
+            thread_id: None,
+            received_at: Utc::now(),
+            timezone: None,
+            metadata: serde_json::Value::Null,
+            attachments: vec![
+                // Document with usable text (should be stored)
+                IncomingAttachment {
+                    id: "doc1".to_string(),
+                    kind: AttachmentKind::Document,
+                    mime_type: "application/pdf".to_string(),
+                    filename: Some("report.pdf".to_string()),
+                    size_bytes: Some(1024),
+                    source_url: None,
+                    storage_key: None,
+                    extracted_text: Some("This is extracted document text".to_string()),
+                    data: Vec::new(),
+                    duration_secs: None,
+                },
+                // Non-document attachment (should be skipped)
+                IncomingAttachment {
+                    id: "audio1".to_string(),
+                    kind: AttachmentKind::Audio,
+                    mime_type: "audio/mpeg".to_string(),
+                    filename: Some("recording.mp3".to_string()),
+                    size_bytes: Some(2048),
+                    source_url: None,
+                    storage_key: None,
+                    extracted_text: Some("some transcript".to_string()),
+                    data: Vec::new(),
+                    duration_secs: Some(60),
+                },
+                // Document with sentinel extracted text (should be skipped)
+                IncomingAttachment {
+                    id: "doc2".to_string(),
+                    kind: AttachmentKind::Document,
+                    mime_type: "application/pdf".to_string(),
+                    filename: Some("failed.pdf".to_string()),
+                    size_bytes: Some(512),
+                    source_url: None,
+                    storage_key: None,
+                    extracted_text: Some("[Failed to extract]".to_string()),
+                    data: Vec::new(),
+                    duration_secs: None,
+                },
+                // Document without extracted text (should be skipped)
+                IncomingAttachment {
+                    id: "doc3".to_string(),
+                    kind: AttachmentKind::Document,
+                    mime_type: "application/pdf".to_string(),
+                    filename: Some("no_text.pdf".to_string()),
+                    size_bytes: Some(256),
+                    source_url: None,
+                    storage_key: None,
+                    extracted_text: None,
+                    data: Vec::new(),
+                    duration_secs: None,
+                },
+            ],
+        };
+
+        store_extracted_documents(&workspace, &message).await;
+
+        // Query workspace for stored documents
+        let paths = workspace
+            .list_all()
+            .await
+            .expect("failed to list paths");
+
+        // Only one document should be stored (doc1 with usable text)
+        assert_eq!(paths.len(), 1, "expected exactly one stored document");
+        assert!(
+            paths[0].contains("doc1"),
+            "stored path should contain doc1 id"
+        );
+        assert!(
+            paths[0].contains("report.pdf"),
+            "stored path should contain sanitized filename"
+        );
+        assert!(
+            paths[0].contains(&message_id.to_string()),
+            "stored path should contain message_id"
+        );
+
+        // Verify content
+        let doc = workspace
+            .read(&paths[0])
+            .await
+            .expect("failed to read document");
+        assert!(
+            doc.content.contains("This is extracted document text"),
+            "document should contain extracted text"
+        );
+        assert!(
+            doc.content.contains("report.pdf"),
+            "document should contain filename in header"
+        );
+        assert!(
+            doc.content.contains("test-user"),
+            "document should contain user_id in header"
+        );
     }
 }

@@ -738,6 +738,8 @@ impl Agent {
         scope: &TurnScope,
         response: &str,
     ) -> Result<(), Error> {
+        // Acquire session lock and check for interruption before finalizing turn.
+        // This mirrors the pattern in process_user_input to prevent races.
         let (turn_number, tool_calls) = {
             let mut sess = scope.session.lock().await;
             let thread = sess.threads.get_mut(&scope.thread_id).ok_or_else(|| {
@@ -745,6 +747,12 @@ impl Agent {
                     id: scope.thread_id,
                 })
             })?;
+
+            // Check for interrupt before completing turn
+            if thread.state == crate::agent::session::ThreadState::Interrupted {
+                return Ok(());
+            }
+
             thread.complete_turn(response);
             thread
                 .turns
@@ -752,19 +760,6 @@ impl Agent {
                 .map(|t| (t.turn_number, t.tool_calls.clone()))
                 .unwrap_or_default()
         };
-
-        // Re-check state after dropping the session lock: an interrupt may have
-        // raced in. If the thread is interrupted, do not persist.
-        {
-            let sess = scope.session.lock().await;
-            if sess
-                .threads
-                .get(&scope.thread_id)
-                .is_some_and(|t| t.state == crate::agent::session::ThreadState::Interrupted)
-            {
-                return Ok(());
-            }
-        }
 
         // User message already persisted at turn start; save tool calls then assistant response
         self.persist_tool_calls(
