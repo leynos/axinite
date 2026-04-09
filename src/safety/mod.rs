@@ -43,6 +43,49 @@ fn update_if_changed(current: String, candidate: String, was_modified: bool) -> 
     }
 }
 
+#[cfg(test)]
+mod helper_tests {
+    use super::*;
+
+    #[test]
+    fn test_char_boundary_truncation_multibyte_utf8() {
+        // "café": c a f é (é is 2 bytes: 0xc3 0xa9)
+        // Byte positions: 0 1 2 3 4
+        // char positions: 0 1 2 3
+        assert_eq!(char_boundary_truncation("café", 4), 3); // Would cut into é, so back up to 3
+        assert_eq!(char_boundary_truncation("café", 3), 3); // Safe cut after 'f'
+        assert_eq!(char_boundary_truncation("café", 2), 2); // Safe cut after 'a'
+
+        // "a🦀b": a 🦀 b (🦀 is 4 bytes)
+        // Byte positions: 0 1 2 3 4 5
+        // char positions: 0 1 2
+        assert_eq!(char_boundary_truncation("a🦀b", 4), 1); // Would cut into 🦀, so back up to 1 (after 'a')
+        assert_eq!(char_boundary_truncation("a🦀b", 5), 5); // Safe cut after 🦀
+        assert_eq!(char_boundary_truncation("a🦀b", 1), 1); // Safe cut after 'a'
+    }
+
+    #[test]
+    fn test_update_if_changed_changed() {
+        let (content, modified) = update_if_changed("old".to_string(), "new".to_string(), false);
+        assert_eq!(content, "new");
+        assert!(modified);
+    }
+
+    #[test]
+    fn test_update_if_changed_unchanged_was_modified_false() {
+        let (content, modified) = update_if_changed("same".to_string(), "same".to_string(), false);
+        assert_eq!(content, "same");
+        assert!(!modified);
+    }
+
+    #[test]
+    fn test_update_if_changed_unchanged_was_modified_true() {
+        let (content, modified) = update_if_changed("same".to_string(), "same".to_string(), true);
+        assert_eq!(content, "same");
+        assert!(modified); // Preserve prior modification flag
+    }
+}
+
 /// Unified safety layer combining sanitizer, validator, and policy.
 pub struct SafetyLayer {
     sanitizer: Sanitizer,
@@ -138,7 +181,7 @@ impl SafetyLayer {
         let violations = self.policy.check(&content);
         if violations
             .iter()
-            .any(|rule| rule.action == crate::safety::PolicyAction::Block)
+            .any(|rule| rule.action == PolicyAction::Block)
         {
             return Err(SanitizedOutput {
                 content: "[Output blocked by safety policy]".to_string(),
@@ -148,7 +191,7 @@ impl SafetyLayer {
         }
         if violations
             .iter()
-            .any(|rule| rule.action == crate::safety::PolicyAction::Sanitize)
+            .any(|rule| rule.action == PolicyAction::Sanitize)
         {
             let sanitised = self.sanitizer.sanitize(&content);
             return Ok((sanitised.content, true));
@@ -271,7 +314,22 @@ mod tests {
     use super::*;
 
     use insta::assert_snapshot;
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
+
+    /// Fixture providing a standard SafetyConfig for tests.
+    #[fixture]
+    fn default_config() -> SafetyConfig {
+        SafetyConfig {
+            max_output_length: 100_000,
+            injection_check_enabled: false,
+        }
+    }
+
+    /// Fixture providing a SafetyLayer from the default config.
+    #[fixture]
+    fn safety_layer(default_config: SafetyConfig) -> SafetyLayer {
+        SafetyLayer::new(&default_config)
+    }
 
     #[rstest]
     #[case::normal_pass_through("normal output", 100_000, "normal output", false)]
@@ -293,7 +351,7 @@ mod tests {
         assert_eq!(result.was_modified, expected_modified);
     }
 
-    #[test]
+    #[rstest]
     fn test_process_tool_output_truncation_runs_stages_3_to_5() {
         // Truncation should not return early - stages 3-5 should still run
         let config = SafetyConfig {
@@ -309,7 +367,7 @@ mod tests {
         assert!(result.was_modified);
     }
 
-    #[test]
+    #[rstest]
     fn test_truncation_preserves_was_modified_with_injection_check() {
         // Truncation should still set was_modified even when injection check logic runs
         let config = SafetyConfig {
@@ -324,30 +382,20 @@ mod tests {
         assert!(result.content.contains("truncated"));
     }
 
-    #[test]
-    fn test_wrap_for_llm() {
-        let config = SafetyConfig {
-            max_output_length: 100_000,
-            injection_check_enabled: true,
-        };
-        let safety = SafetyLayer::new(&config);
-
-        let wrapped = safety.wrap_for_llm("test_tool", "Hello <world>", true);
+    #[rstest]
+    fn test_wrap_for_llm(safety_layer: SafetyLayer) {
+        let wrapped = safety_layer.wrap_for_llm("test_tool", "Hello <world>", true);
         assert!(wrapped.contains("name=\"test_tool\""));
         assert!(wrapped.contains("sanitized=\"true\""));
         assert!(wrapped.contains("Hello <world>"));
     }
 
-    #[test]
-    fn test_sanitize_action_forces_sanitization_when_injection_check_disabled() {
-        let config = SafetyConfig {
-            max_output_length: 100_000,
-            injection_check_enabled: false,
-        };
-        let safety = SafetyLayer::new(&config);
-
+    #[rstest]
+    fn test_sanitize_action_forces_sanitization_when_injection_check_disabled(
+        safety_layer: SafetyLayer,
+    ) {
         // Content with an injection-like pattern that a policy might flag
-        let output = safety.sanitize_tool_output("test", "normal text");
+        let output = safety_layer.sanitize_tool_output("test", "normal text");
         // With injection_check disabled and no policy violations, content
         // should pass through unmodified
         assert_eq!(output.content, "normal text");
@@ -376,46 +424,34 @@ mod tests {
     }
 
     /// Test that process_tool_output exercises the policy enforcement stage.
-    #[test]
-    fn test_process_tool_output_exercises_policy() {
-        let config = SafetyConfig {
-            max_output_length: 100_000,
-            injection_check_enabled: false,
-        };
-        let safety = SafetyLayer::new(&config);
-
+    #[rstest]
+    fn test_process_tool_output_exercises_policy(safety_layer: SafetyLayer) {
         // Test policy block: content matching system file access pattern
         let blocked_result =
-            safety.process_tool_output("test_tool", "Let me read /etc/passwd for you");
+            safety_layer.process_tool_output("test_tool", "Let me read /etc/passwd for you");
         assert_eq!(blocked_result.content, "[Output blocked by safety policy]");
         assert!(blocked_result.was_modified);
 
         // Test policy sanitize: content matching encoded exploit pattern
         // The "encoded_exploit" rule has Sanitize action and triggers re-sanitization
         let sanitized_result =
-            safety.process_tool_output("test_tool", "eval(base64_decode('abc123'))");
+            safety_layer.process_tool_output("test_tool", "eval(base64_decode('abc123'))");
         // Content should be modified (sanitized) but not blocked
         assert!(sanitized_result.was_modified);
         assert!(!sanitized_result.content.contains("[Output blocked"));
 
         // Test normal content passes policy stage
-        let normal_result = safety.process_tool_output("test_tool", "normal text content");
+        let normal_result = safety_layer.process_tool_output("test_tool", "normal text content");
         assert_eq!(normal_result.content, "normal text content");
         assert!(!normal_result.was_modified);
     }
 
     /// Test that process_tool_output exercises the leak detection stage.
-    #[test]
-    fn test_process_tool_output_exercises_leak_detection() {
-        let config = SafetyConfig {
-            max_output_length: 100_000,
-            injection_check_enabled: false,
-        };
-        let safety = SafetyLayer::new(&config);
-
+    #[rstest]
+    fn test_process_tool_output_exercises_leak_detection(safety_layer: SafetyLayer) {
         // Test leak detection with an AWS Access Key ID pattern
         let secret_output = "Your AWS key is: AKIAIOSFODNN7EXAMPLE for production use";
-        let result = safety.process_tool_output("test_tool", secret_output);
+        let result = safety_layer.process_tool_output("test_tool", secret_output);
         // The leak detector should block the output entirely
         assert_eq!(
             result.content,
@@ -428,14 +464,14 @@ mod tests {
         let google_key_parts = ["AIzaSyDaBmWEtC3BEO6YJgzh2YwRR", "9kD9eOZnqi_test123"];
         let google_key = google_key_parts.join("");
         let google_key_output = format!("Google API key: {}", google_key);
-        let result = safety.process_tool_output("test_tool", &google_key_output);
+        let result = safety_layer.process_tool_output("test_tool", &google_key_output);
         // The Google key should trigger leak detection (blocked since it's critical severity)
         assert!(result.was_modified);
         assert!(!result.content.contains(&google_key));
 
         // Test normal content without secrets passes leak detection
         let normal_output = "This is a normal message without any secrets.";
-        let result = safety.process_tool_output("test_tool", normal_output);
+        let result = safety_layer.process_tool_output("test_tool", normal_output);
         assert_eq!(result.content, normal_output);
         assert!(!result.was_modified);
     }
