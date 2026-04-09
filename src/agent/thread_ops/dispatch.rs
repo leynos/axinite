@@ -112,6 +112,26 @@ impl Agent {
         }
     }
 
+    /// Route an approval decision to `process_approval`.
+    ///
+    /// Called by both `ExecApproval` (which carries an explicit `request_id`) and
+    /// `ApprovalResponse` (which relies on the session's pending approval slot).
+    async fn dispatch_approval(
+        &self,
+        ctx: &DispatchCtx,
+        request_id: Option<Uuid>,
+        approved: bool,
+        always: bool,
+    ) -> Result<SubmissionResult, Error> {
+        let scope = TurnScope::new(ctx.session.clone(), ctx.thread_id, &ctx.message);
+        let params = ApprovalParams {
+            request_id,
+            approved,
+            always,
+        };
+        self.process_approval(scope, params).await
+    }
+
     pub(super) async fn dispatch_submission(
         &self,
         ctx: DispatchCtx,
@@ -164,22 +184,11 @@ impl Agent {
                 approved,
                 always,
             } => {
-                let scope = TurnScope::new(ctx.session.clone(), ctx.thread_id, &ctx.message);
-                let params = ApprovalParams {
-                    request_id: Some(request_id),
-                    approved,
-                    always,
-                };
-                self.process_approval(scope, params).await
+                self.dispatch_approval(&ctx, Some(request_id), approved, always)
+                    .await
             }
             Submission::ApprovalResponse { approved, always } => {
-                let scope = TurnScope::new(ctx.session.clone(), ctx.thread_id, &ctx.message);
-                let params = ApprovalParams {
-                    request_id: None,
-                    approved,
-                    always,
-                };
-                self.process_approval(scope, params).await
+                self.dispatch_approval(&ctx, None, approved, always).await
             }
         }
     }
