@@ -194,8 +194,8 @@ pub(super) async fn store_extracted_documents(
 #[cfg(test)]
 mod tests {
     use super::{
-        store_extracted_documents, PathParts, build_document_path, get_valid_document_text,
-        is_usable_extracted_text, sanitise_filename,
+        PathParts, build_document_path, get_valid_document_text, is_usable_extracted_text,
+        sanitise_filename, store_extracted_documents,
     };
     use crate::channels::{AttachmentKind, IncomingAttachment};
     use crate::workspace::Workspace;
@@ -317,10 +317,7 @@ mod tests {
         Database::run_migrations(&backend)
             .await
             .expect("failed to run migrations");
-        let workspace = Arc::new(Workspace::new_with_db(
-            "test-user",
-            Arc::new(backend),
-        ));
+        let workspace = Arc::new(Workspace::new_with_db("test-user", Arc::new(backend)));
 
         // Build message with mixed attachments
         let message_id = Uuid::new_v4();
@@ -393,10 +390,7 @@ mod tests {
         store_extracted_documents(&workspace, &message).await;
 
         // Query workspace for stored documents
-        let paths = workspace
-            .list_all()
-            .await
-            .expect("failed to list paths");
+        let paths = workspace.list_all().await.expect("failed to list paths");
 
         // Only one document should be stored (doc1 with usable text)
         assert_eq!(paths.len(), 1, "expected exactly one stored document");
