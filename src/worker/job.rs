@@ -1682,12 +1682,13 @@ mod tests {
             .zip(["done_tool_a", "done_tool_b", "done_tool_c"])
             .enumerate()
         {
+            let result_str = result
+                .result
+                .as_ref()
+                .unwrap_or_else(|_| panic!("tool {i} should return a captured result"))
+                .clone();
             assert!(
-                result
-                    .result
-                    .as_ref()
-                    .expect(&format!("tool {i} should return a captured result"))
-                    .contains(expected),
+                result_str.contains(expected),
                 "result[{i}] should contain '{expected}'",
             );
         }
