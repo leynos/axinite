@@ -155,7 +155,7 @@ impl SafetyLayer {
 
         if self.config.injection_check_enabled {
             let sanitized = self.sanitizer.sanitize(&content);
-            was_modified = sanitized.was_modified;
+            was_modified = was_modified || sanitized.was_modified;
             content = sanitized.content;
         }
 
@@ -290,6 +290,21 @@ mod tests {
         assert!(!result.content.is_empty());
         assert!(result.content.contains("truncated"));
         assert!(result.was_modified);
+    }
+
+    #[test]
+    fn test_truncation_preserves_was_modified_with_injection_check() {
+        // Truncation should still set was_modified even when injection check logic runs
+        let config = SafetyConfig {
+            max_output_length: 10,
+            injection_check_enabled: true,
+        };
+        let safety = SafetyLayer::new(&config);
+        let long_output = "a".repeat(1000);
+        let result = safety.process_tool_output("test_tool", &long_output);
+        // was_modified should be true due to truncation, even with injection check enabled
+        assert!(result.was_modified);
+        assert!(result.content.contains("truncated"));
     }
 
     #[test]
