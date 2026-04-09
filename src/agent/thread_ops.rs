@@ -22,6 +22,7 @@ mod message_rebuild;
 mod persistence;
 mod turn_execution;
 
+pub(super) use persistence::TurnPersistContext;
 pub(super) use turn_execution::UserTurnRequest;
 
 use std::sync::Arc;

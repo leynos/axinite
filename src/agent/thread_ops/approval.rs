@@ -45,6 +45,7 @@ use crate::agent::dispatcher::{
 };
 use crate::agent::session::{PendingApproval, Session, ThreadState};
 use crate::agent::submission::SubmissionResult;
+use crate::agent::thread_ops::TurnPersistContext;
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::context::JobContext;
 use crate::error::Error;
@@ -773,13 +774,12 @@ impl Agent {
         };
 
         // User message already persisted at turn start; save tool calls then assistant response
-        self.persist_tool_calls(
-            scope.thread_id,
-            &scope.env.user_id,
+        let persist_ctx = TurnPersistContext {
+            thread_id: scope.thread_id,
+            user_id: &scope.env.user_id,
             turn_number,
-            &tool_calls,
-        )
-        .await;
+        };
+        self.persist_tool_calls(&persist_ctx, &tool_calls).await;
         self.persist_assistant_response(scope.thread_id, &scope.env.user_id, response)
             .await;
         let _ = self

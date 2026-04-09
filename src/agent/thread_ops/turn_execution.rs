@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use crate::agent::Agent;
 use crate::agent::compaction::ContextCompactor;
+use crate::agent::thread_ops::TurnPersistContext;
 
 /// Request parameters for processing a user turn.
 ///
@@ -350,8 +351,12 @@ impl Agent {
                     )
                     .await;
 
-                self.persist_tool_calls(thread_id, &message.user_id, turn_number, &tool_calls)
-                    .await;
+                let persist_ctx = TurnPersistContext {
+                    thread_id,
+                    user_id: &message.user_id,
+                    turn_number,
+                };
+                self.persist_tool_calls(&persist_ctx, &tool_calls).await;
                 self.persist_assistant_response(thread_id, &message.user_id, &response)
                     .await;
 

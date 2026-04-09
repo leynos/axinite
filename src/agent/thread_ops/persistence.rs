@@ -10,6 +10,17 @@ use crate::agent::Agent;
 use crate::channels::web::util::truncate_preview;
 use crate::db::EnsureConversationParams;
 
+/// Context for persisting turn-related data.
+///
+/// Groups thread_id, user_id, and turn_number to reduce the argument count
+/// of persistence functions (addresses CodeScene "Excess Number of Function Arguments").
+#[derive(Clone)]
+pub(crate) struct TurnPersistContext<'a> {
+    pub thread_id: Uuid,
+    pub user_id: &'a str,
+    pub turn_number: usize,
+}
+
 /// Helper to build EnsureConversationParams for gateway conversations.
 ///
 /// Gateway conversations use channel="gateway", id=thread_id, and thread_id=None.
@@ -96,9 +107,7 @@ impl Agent {
     /// Content is a JSON array of tool call summaries.
     pub(super) async fn persist_tool_calls(
         &self,
-        thread_id: Uuid,
-        user_id: &str,
-        turn_number: usize,
+        ctx: &TurnPersistContext<'_>,
         tool_calls: &[crate::agent::session::TurnToolCall],
     ) {
         if tool_calls.is_empty() {
@@ -116,7 +125,7 @@ impl Agent {
             .map(|(i, tc)| {
                 let mut obj = serde_json::json!({
                     "name": tc.name,
-                    "call_id": format!("turn{}_{}", turn_number, i),
+                    "call_id": format!("turn{}_{}", ctx.turn_number, i),
                 });
                 if let Some(ref result) = tc.result {
                     let preview = match result {
@@ -147,15 +156,15 @@ impl Agent {
         };
 
         if let Err(e) = store
-            .ensure_conversation(gateway_conversation_params(thread_id, user_id))
+            .ensure_conversation(gateway_conversation_params(ctx.thread_id, ctx.user_id))
             .await
         {
-            tracing::warn!("Failed to ensure conversation {}: {}", thread_id, e);
+            tracing::warn!("Failed to ensure conversation {}: {}", ctx.thread_id, e);
             return;
         }
 
         if let Err(e) = store
-            .add_conversation_message(thread_id, "tool_calls", &content)
+            .add_conversation_message(ctx.thread_id, "tool_calls", &content)
             .await
         {
             tracing::warn!("Failed to persist tool calls: {}", e);
