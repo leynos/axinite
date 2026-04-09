@@ -1433,6 +1433,7 @@ mod tests {
         CompletionRequest, CompletionResponse, ToolCompletionRequest, ToolCompletionResponse,
     };
     use crate::safety::SafetyLayer;
+    use crate::testing::null_db::{EventCall, StatusCall};
     use crate::tools::{NativeTool, Tool, ToolError as ToolExecError, ToolOutput};
 
     /// A test tool that sleeps for a configurable duration before returning.
@@ -2023,28 +2024,32 @@ mod tests {
         (Worker::new(job_id, deps), store)
     }
 
+    fn check_terminal_persistence_calls(
+        status_call: &StatusCall,
+        event_call: &EventCall,
+        expected_state: JobState,
+        expected_status_str: &str,
+        expected_reason: Option<&str>,
+    ) {
+        assert_eq!(status_call.status, expected_state);
+        if let Some(reason) = expected_reason {
+            assert_eq!(status_call.reason.as_deref(), Some(reason));
+        } else {
+            assert!(
+                status_call.reason.is_none(),
+                "Expected no failure reason, but got {:?}",
+                status_call.reason
+            );
+        }
+        assert_eq!(event_call.event_type, "result");
+        assert_eq!(event_call.data["status"], expected_status_str);
+    }
+
     async fn assert_terminal_persistence(
         store: &CapturingStore,
         expected_state: JobState,
         expected_status_str: &str,
         expected_reason: Option<&str>,
-    ) {
-        assert_terminal_persistence_inner(
-            store,
-            expected_state,
-            expected_status_str,
-            expected_reason,
-            true,
-        )
-        .await;
-    }
-
-    async fn assert_terminal_persistence_inner(
-        store: &CapturingStore,
-        expected_state: JobState,
-        expected_status_str: &str,
-        expected_reason: Option<&str>,
-        snapshot: bool,
     ) {
         let status_call = store
             .calls()
@@ -2053,18 +2058,6 @@ mod tests {
             .await
             .clone()
             .expect("expected a status update");
-
-        assert_eq!(status_call.status, expected_state);
-        if let Some(expected_reason) = expected_reason {
-            assert_eq!(status_call.reason.as_deref(), Some(expected_reason));
-        } else {
-            assert!(
-                status_call.reason.is_none(),
-                "Expected no failure reason, but got {:?}",
-                status_call.reason
-            );
-        }
-
         let event_call = store
             .calls()
             .last_event
@@ -2072,17 +2065,46 @@ mod tests {
             .await
             .clone()
             .expect("expected a job event");
+        check_terminal_persistence_calls(
+            &status_call,
+            &event_call,
+            expected_state,
+            expected_status_str,
+            expected_reason,
+        );
+    }
 
-        assert_eq!(event_call.event_type, "result");
-        assert_eq!(event_call.data["status"], expected_status_str);
-
-        // Snapshot the full event payload to catch contract drift (only when snapshot=true)
-        if snapshot {
-            insta::assert_json_snapshot!(
-                format!("terminal_persistence_result_{}", expected_status_str),
-                &event_call.data
-            );
-        }
+    async fn assert_terminal_persistence_with_snapshot(
+        store: &CapturingStore,
+        expected_state: JobState,
+        expected_status_str: &str,
+        expected_reason: Option<&str>,
+    ) {
+        let status_call = store
+            .calls()
+            .last_status
+            .lock()
+            .await
+            .clone()
+            .expect("expected a status update");
+        let event_call = store
+            .calls()
+            .last_event
+            .lock()
+            .await
+            .clone()
+            .expect("expected a job event");
+        check_terminal_persistence_calls(
+            &status_call,
+            &event_call,
+            expected_state,
+            expected_status_str,
+            expected_reason,
+        );
+        insta::assert_json_snapshot!(
+            format!("terminal_persistence_result_{}", expected_status_str),
+            &event_call.data
+        );
     }
 
     async fn transition_to_in_progress(worker: &Worker) {
@@ -2139,7 +2161,7 @@ mod tests {
             .expect("failed to get context after terminal transition");
         assert_eq!(ctx.state, case.expected_state);
 
-        assert_terminal_persistence(
+        assert_terminal_persistence_with_snapshot(
             &store,
             case.expected_state,
             case.expected_status,
@@ -2209,7 +2231,7 @@ mod tests {
             "Double transition to Completed should be rejected"
         );
 
-        assert_terminal_persistence(
+        assert_terminal_persistence_with_snapshot(
             &store,
             JobState::Completed,
             "completed",
@@ -2268,14 +2290,8 @@ mod tests {
                 "State should match expected terminal state"
             );
 
-            assert_terminal_persistence_inner(
-                &store,
-                expected_state,
-                expected_status,
-                expected_reason,
-                false, // don't snapshot in property test
-            )
-            .await;
+            assert_terminal_persistence(&store, expected_state, expected_status, expected_reason)
+                .await;
 
             // Test double transition rejection
             let result = match method {
