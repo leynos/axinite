@@ -176,6 +176,39 @@ pub(crate) async fn handle_text_response(_delegate: &ChatDelegate<'_>, text: &st
     TextAction::Return(LoopOutcome::Response(sanitized))
 }
 
+/// Collect all System messages from the slice.
+fn collect_system_messages(messages: &[ChatMessage]) -> Vec<ChatMessage> {
+    use crate::llm::Role;
+    messages
+        .iter()
+        .filter(|m| m.role == Role::System)
+        .cloned()
+        .collect()
+}
+
+/// Compact messages when a User message is present.
+fn compact_around_user_message(messages: &[ChatMessage], user_idx: usize) -> Vec<ChatMessage> {
+    let mut compacted = collect_system_messages(&messages[..user_idx]);
+
+    if user_idx > 0 {
+        compacted.push(ChatMessage::system(
+            "[Note: Earlier conversation history was automatically compacted \
+             to fit within the context window. The most recent exchange is preserved below.]",
+        ));
+    }
+
+    compacted.extend_from_slice(&messages[user_idx..]);
+    compacted
+}
+
+/// Compact messages when no User message exists (edge case).
+fn compact_without_user_message(messages: &[ChatMessage]) -> Vec<ChatMessage> {
+    use crate::llm::Role;
+    let mut compacted = collect_system_messages(messages);
+    compacted.extend(messages.iter().filter(|m| m.role != Role::System).cloned());
+    compacted
+}
+
 /// Compact messages for retry after a context-length-exceeded error.
 ///
 /// Keeps all `System` messages (which carry the system prompt and instructions),
@@ -184,48 +217,10 @@ pub(crate) async fn handle_text_response(_delegate: &ChatDelegate<'_>, text: &st
 /// inserted so the LLM knows earlier history was dropped.
 pub(crate) fn compact_messages_for_retry(messages: &[ChatMessage]) -> Vec<ChatMessage> {
     use crate::llm::Role;
-
-    let mut compacted = Vec::new();
-
-    // Find the last User message index
-    let last_user_idx = messages.iter().rposition(|m| m.role == Role::User);
-
-    if let Some(idx) = last_user_idx {
-        // Keep System messages that appear BEFORE the last User message.
-        // System messages after that point (e.g. nudges) are included in the
-        // slice extension below, avoiding duplication.
-        for msg in &messages[..idx] {
-            if msg.role == Role::System {
-                compacted.push(msg.clone());
-            }
-        }
-
-        // Only add a compaction note if there was earlier history that is being dropped
-        if idx > 0 {
-            compacted.push(ChatMessage::system(
-                "[Note: Earlier conversation history was automatically compacted \
-                 to fit within the context window. The most recent exchange is preserved below.]",
-            ));
-        }
-
-        // Keep the last User message and everything after it
-        compacted.extend_from_slice(&messages[idx..]);
-    } else {
-        // No user messages found (shouldn't happen normally); keep everything,
-        // with system messages first to preserve prompt ordering.
-        for msg in messages {
-            if msg.role == Role::System {
-                compacted.push(msg.clone());
-            }
-        }
-        for msg in messages {
-            if msg.role != Role::System {
-                compacted.push(msg.clone());
-            }
-        }
+    match messages.iter().rposition(|m| m.role == Role::User) {
+        Some(idx) => compact_around_user_message(messages, idx),
+        None => compact_without_user_message(messages),
     }
-
-    compacted
 }
 
 /// Strip internal `[Called tool ...]` and `[Tool ... returned: ...]` markers
