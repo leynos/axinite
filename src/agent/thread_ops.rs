@@ -105,24 +105,24 @@ impl Agent {
                         Err(e) => Err(e),
                     };
 
-                    // Clear in_flight_auth and pending_auth after processing
+                    // Clear in_flight_auth after processing; process_auth_token is
+                    // authoritative for clearing or keeping pending_auth.
                     {
                         let mut sess = session.lock().await;
                         if let Some(thread) = sess.threads.get_mut(&thread_id) {
                             thread.in_flight_auth = false;
-                            thread.pending_auth = None;
                         }
                     }
 
                     return Some(result);
                 }
                 _ => {
-                    // Any control submission (interrupt, undo, etc.) cancels auth mode
-                    // Clear the in_flight_auth marker and pending_auth
+                    // Any control submission (interrupt, undo, etc.) cancels auth mode.
+                    // Clear the in_flight_auth marker; pending_auth is cleared separately
+                    // by the control handler path.
                     let mut sess = session.lock().await;
                     if let Some(thread) = sess.threads.get_mut(&thread_id) {
                         thread.in_flight_auth = false;
-                        thread.pending_auth = None;
                     }
                     // Fall through to normal handling
                 }

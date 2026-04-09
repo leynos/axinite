@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
+use rstest::rstest;
 
 use crate::agent::self_repair::default::{DefaultSelfRepair, duration_since};
 use crate::agent::self_repair::{BrokenTool, NativeSelfRepair, RepairResult, StuckJob};
@@ -108,54 +109,54 @@ async fn seed_job_with_two_stuck_transitions(
     job_id
 }
 
+#[rstest]
+#[case(59, false)]
+#[case(60, true)]
+#[case(61, true)]
+#[case(120, true)]
 #[tokio::test]
-async fn detect_stuck_jobs_uses_latest_stuck_transition_below_threshold() {
+async fn detect_stuck_jobs_uses_latest_stuck_transition(
+    #[case] second_age_secs: i64,
+    #[case] should_detect: bool,
+) {
     let cm = Arc::new(ContextManager::new(10));
     let threshold = Duration::from_secs(60);
 
-    // Latest Stuck is only 30s old -> below threshold => no detection.
-    let job_id = seed_job_with_two_stuck_transitions(&cm, 120, 30).await;
-    let repair = DefaultSelfRepair::new(Arc::clone(&cm), threshold, 3);
-
-    let detected = NativeSelfRepair::detect_stuck_jobs(&repair).await;
-    assert!(
-        detected.is_empty(),
-        "job {job_id} should not be detected while latest Stuck < threshold"
-    );
-}
-
-#[tokio::test]
-async fn detect_stuck_jobs_uses_latest_stuck_transition_above_threshold() {
-    let cm = Arc::new(ContextManager::new(10));
-    let threshold = Duration::from_secs(60);
-
-    // Latest Stuck is 120s old -> above threshold => detected and timestamp comes from latest Stuck.
-    let job_id = seed_job_with_two_stuck_transitions(&cm, 120, 120).await;
+    // First transition is always 120s old, second transition age varies by test case.
+    let job_id = seed_job_with_two_stuck_transitions(&cm, 120, second_age_secs).await;
     let repair = DefaultSelfRepair::new(Arc::clone(&cm), threshold, 3);
 
     let stuck_jobs = NativeSelfRepair::detect_stuck_jobs(&repair).await;
-    assert_eq!(
-        stuck_jobs.len(),
-        1,
-        "expected exactly one detected stuck job"
-    );
 
-    let ctx = cm
-        .get_context(job_id)
-        .await
-        .expect("context should exist after transitions");
-    let latest_stuck_since = ctx
-        .stuck_since()
-        .expect("stuck_since should be set after Stuck transition");
+    if should_detect {
+        assert_eq!(
+            stuck_jobs.len(),
+            1,
+            "expected exactly one detected stuck job when second transition is {second_age_secs}s old"
+        );
 
-    assert_eq!(
-        stuck_jobs[0].stuck_since, latest_stuck_since,
-        "detection must use the latest Stuck transition timestamp"
-    );
-    assert!(
-        stuck_jobs[0].stuck_duration >= threshold,
-        "stuck_duration must reflect time since latest Stuck >= threshold"
-    );
+        let ctx = cm
+            .get_context(job_id)
+            .await
+            .expect("context should exist after transitions");
+        let latest_stuck_since = ctx
+            .stuck_since()
+            .expect("stuck_since should be set after Stuck transition");
+
+        assert_eq!(
+            stuck_jobs[0].stuck_since, latest_stuck_since,
+            "detection must use the latest Stuck transition timestamp"
+        );
+        assert!(
+            stuck_jobs[0].stuck_duration >= threshold,
+            "stuck_duration must reflect time since latest Stuck >= threshold"
+        );
+    } else {
+        assert!(
+            stuck_jobs.is_empty(),
+            "job {job_id} should not be detected while latest Stuck ({second_age_secs}s) < threshold"
+        );
+    }
 }
 
 #[tokio::test]
@@ -229,6 +230,51 @@ async fn repair_stuck_job_returns_manual_when_limit_exceeded() {
 }
 
 #[tokio::test]
+async fn repair_stuck_job_returns_success_when_already_recovered() {
+    let cm = Arc::new(ContextManager::new(10));
+    let job_id = cm
+        .create_job("AlreadyRecovered", "desc")
+        .await
+        .expect("create_job failed in repair_stuck_job_returns_success_when_already_recovered");
+
+    // Move to InProgress -> Stuck -> InProgress (recovered without repair)
+    cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
+        .await
+        .expect("failed to transition to InProgress")
+        .expect("transition to InProgress failed");
+    cm.update_context(job_id, |ctx| ctx.transition_to(JobState::Stuck, None))
+        .await
+        .expect("failed to transition to Stuck")
+        .expect("transition to Stuck failed");
+    cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
+        .await
+        .expect("failed to transition to InProgress")
+        .expect("transition to InProgress failed");
+
+    let repair = DefaultSelfRepair::new(Arc::clone(&cm), Duration::from_secs(60), 3);
+
+    let stuck_job = StuckJob {
+        job_id,
+        stuck_since: Utc::now(),
+        stuck_duration: Duration::from_secs(120),
+        last_error: None,
+        repair_attempts: 0,
+    };
+
+    let result = NativeSelfRepair::repair_stuck_job(&repair, &stuck_job)
+        .await
+        .expect("repair_stuck_job failed in repair_stuck_job_returns_success_when_already_recovered");
+
+    // Should return Success (no-op) because job is already recovered
+    assert!(
+        matches!(result, RepairResult::Success { .. }),
+        "Expected Success when job already recovered, got: {:?}",
+        result
+    );
+}
+
+
+#[tokio::test]
 async fn detect_broken_tools_returns_empty_without_store() {
     let cm = Arc::new(ContextManager::new(10));
     let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3);
@@ -267,8 +313,8 @@ async fn repair_broken_tool_returns_manual_without_builder() {
 fn duration_since_millisecond_precision() {
     use chrono::Duration as ChronoDuration;
 
-    let start = Utc::now() - ChronoDuration::milliseconds(500);
     let now = Utc::now();
+    let start = now - ChronoDuration::milliseconds(500);
     let elapsed = duration_since(now, start);
 
     // Should be >= 500ms and < 1s (proving millisecond resolution, not second)

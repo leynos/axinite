@@ -202,6 +202,10 @@ impl Agent {
                 %thread_id,
                 "Ignoring stale approval: no pending approval found"
             );
+        } else {
+            // Atomically transition to Processing under the same lock to prevent race with interrupt
+            thread.state = ThreadState::Processing;
+            thread.updated_at = chrono::Utc::now();
         }
         Ok(pending)
     }
@@ -239,14 +243,6 @@ impl Agent {
             let mut sess = session.lock().await;
             sess.auto_approve_tool(tool_name);
             tracing::info!("Auto-approved tool '{}' for session {}", tool_name, sess.id);
-        }
-    }
-
-    /// Set thread state to Processing.
-    async fn set_thread_processing(&self, session: &Arc<Mutex<Session>>, thread_id: Uuid) {
-        let mut sess = session.lock().await;
-        if let Some(thread) = sess.threads.get_mut(&thread_id) {
-            thread.state = ThreadState::Processing;
         }
     }
 
@@ -646,6 +642,21 @@ impl Agent {
                 && let Some((ext_name, instructions)) =
                     check_auth_required(&tc.name, &deferred_result)
             {
+                // Build fresh PendingApproval representing the live deferred continuation.
+                // Take the original pending and update it with the current context_messages
+                // (which includes results from deferred calls that have already executed)
+                // and clear deferred_tool_calls since we can't resume partial deferred batches.
+                let fresh_pending = PendingApproval {
+                    request_id: pending.request_id,
+                    tool_name: tc.name.clone(),
+                    parameters: tc.arguments.clone(),
+                    display_parameters: redact_params(&tc.arguments, &[]),
+                    description: format!("Authenticate to continue with {}", tc.name),
+                    tool_call_id: tc.id.clone(),
+                    context_messages: context_messages.clone(),
+                    deferred_tool_calls: Vec::new(),
+                    user_timezone: pending.user_timezone.clone(),
+                };
                 self.handle_auth_intercept(AuthInterceptParams {
                     session: &scope.session,
                     thread_id: scope.thread_id,
@@ -653,7 +664,7 @@ impl Agent {
                     tool_result: &deferred_result,
                     ext_name,
                     instructions: instructions.clone(),
-                    pending: Some(pending.clone()),
+                    pending: Some(fresh_pending),
                 })
                 .await;
                 deferred_auth = Some(instructions);
@@ -741,6 +752,20 @@ impl Agent {
                 .map(|t| (t.turn_number, t.tool_calls.clone()))
                 .unwrap_or_default()
         };
+
+        // Re-check state after dropping the session lock: an interrupt may have
+        // raced in. If the thread is interrupted, do not persist.
+        {
+            let sess = scope.session.lock().await;
+            if sess
+                .threads
+                .get(&scope.thread_id)
+                .is_some_and(|t| t.state == crate::agent::session::ThreadState::Interrupted)
+            {
+                return Ok(());
+            }
+        }
+
         // User message already persisted at turn start; save tool calls then assistant response
         self.persist_tool_calls(
             scope.thread_id,
@@ -1024,10 +1049,8 @@ impl Agent {
             return self.complete_rejection_and_persist(&scope, &pending).await;
         }
 
-        // d) Auto-approve and set processing state
+        // d) Auto-approve (thread already transitioned to Processing in take_pending_approval_if_awaiting)
         self.auto_approve_if_always(&scope.session, params.always, &pending.tool_name)
-            .await;
-        self.set_thread_processing(&scope.session, scope.thread_id)
             .await;
 
         // e) Build context and execute primary tool

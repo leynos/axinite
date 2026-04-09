@@ -255,7 +255,8 @@ mod tests {
 
     #[test]
     fn build_document_path_uses_sanitized_id_and_filename() {
-        let date = chrono::NaiveDate::from_ymd_opt(2026, 4, 3).unwrap();
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 4, 3)
+            .expect("2026-04-03 is a valid date");
         let sanitized_id = sanitise_filename("abc/../123");
         let sanitized_filename = sanitise_filename("../report.pdf");
         let path = build_document_path(&PathParts {

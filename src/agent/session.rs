@@ -195,7 +195,8 @@ pub struct Thread {
     #[serde(default)]
     pub pending_auth: Option<PendingAuth>,
     /// In-flight auth marker to prevent concurrent auth bypass.
-    #[serde(default)]
+    /// Transient: not serialized, always starts as false on deserialization.
+    #[serde(skip)]
     pub in_flight_auth: bool,
 }
 

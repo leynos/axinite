@@ -24,7 +24,6 @@ pub struct DefaultSelfRepair {
     store: Option<Arc<dyn Database>>,
     builder: Option<Arc<dyn SoftwareBuilder>>,
     #[cfg(any(test, feature = "self_repair_extras"))]
-    #[allow(dead_code)]
     tools: Option<Arc<ToolRegistry>>,
 }
 
@@ -129,9 +128,17 @@ impl NativeSelfRepair for DefaultSelfRepair {
             }
             Ok(Err(e)) => {
                 tracing::warn!("Failed to recover job {}: {}", job.job_id, e);
-                Ok(RepairResult::Retry {
-                    message: format!("Recovery attempt failed: {}", e),
-                })
+                // Discriminate error kinds:
+                // - "Job is not stuck" means already recovered (no-op success)
+                if e == "Job is not stuck" {
+                    Ok(RepairResult::Success {
+                        message: format!("Job {} already recovered", job.job_id),
+                    })
+                } else {
+                    Ok(RepairResult::Retry {
+                        message: format!("Recovery attempt failed: {}", e),
+                    })
+                }
             }
             Err(e) => Err(RepairError::Failed {
                 target_type: "job".to_string(),
@@ -187,6 +194,16 @@ impl NativeSelfRepair for DefaultSelfRepair {
             });
         }
 
+        // Validate tool name and create BuildRequirement before incrementing attempts
+        let project_name = ProjectName::new(&tool.name).map_err(|error| RepairError::Failed {
+            target_type: "tool".to_string(),
+            target_id: Uuid::nil(),
+            reason: format!(
+                "invalid tool name '{}' for repair build: {error}",
+                tool.name
+            ),
+        })?;
+
         tracing::info!(
             "Attempting to repair tool '{}' (attempt {})",
             tool.name,
@@ -208,14 +225,7 @@ impl NativeSelfRepair for DefaultSelfRepair {
 
         // Create BuildRequirement for repair
         let requirement = BuildRequirement {
-            name: ProjectName::new(&tool.name).map_err(|error| RepairError::Failed {
-                target_type: "tool".to_string(),
-                target_id: Uuid::nil(),
-                reason: format!(
-                    "invalid tool name '{}' for repair build: {error}",
-                    tool.name
-                ),
-            })?,
+            name: project_name,
             description: format!(
                 "Repair broken WASM tool.\n\n\
                  Tool name: {}\n\

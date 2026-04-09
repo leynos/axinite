@@ -317,7 +317,7 @@ struct ChatDelegate<'a> {
 }
 
 /// Execution context for tool calls.
-#[expect(dead_code)]
+#[expect(dead_code, reason = "scaffolding for future tool-exec refactor")]
 struct ExecCtx<'a> {
     tools: &'a Arc<crate::tools::ToolRegistry>,
     safety: &'a Arc<crate::safety::SafetyLayer>,
@@ -329,7 +329,7 @@ struct ExecCtx<'a> {
 }
 
 impl<'a> ExecCtx<'a> {
-    #[expect(dead_code)]
+    #[expect(dead_code, reason = "scaffolding for future tool-exec refactor")]
     fn new(
         tools: &'a Arc<crate::tools::ToolRegistry>,
         safety: &'a Arc<crate::safety::SafetyLayer>,
@@ -530,12 +530,15 @@ impl<'a> ChatDelegate<'a> {
         result
     }
 
-    /// Sanitize tool output and create preview.
-    fn sanitize_output(&self, tool_name: &str, output: &str) -> String {
+    /// Sanitize tool output and return both preview text (raw sanitized) and wrapped text (for LLM).
+    fn sanitize_output(&self, tool_name: &str, output: &str) -> (String, String) {
         let sanitized = self.agent.safety().sanitize_tool_output(tool_name, output);
-        self.agent
+        let preview_text = sanitized.content.clone();
+        let wrapped_text = self
+            .agent
             .safety()
-            .wrap_for_llm(tool_name, &sanitized.content, sanitized.was_modified)
+            .wrap_for_llm(tool_name, &sanitized.content, sanitized.was_modified);
+        (preview_text, wrapped_text)
     }
 
     /// Record tool outcome in the thread.
@@ -741,14 +744,15 @@ impl<'a> ChatDelegate<'a> {
         let is_tool_error = tool_result.is_err();
 
         // Handle error case early
-        if let Err(ref e) = tool_result {
-            let error_msg = format!("Tool '{}' failed: {}", tc.name, e);
-            self.fold_into_context(tc, error_msg, true, reason_ctx)
-                .await;
-            return None;
-        }
-
-        let output = tool_result.as_ref().unwrap();
+        let output = match &tool_result {
+            Ok(output) => output,
+            Err(e) => {
+                let error_msg = format!("Tool '{}' failed: {}", tc.name, e);
+                self.fold_into_context(tc, error_msg, true, reason_ctx)
+                    .await;
+                return None;
+            }
+        };
 
         // Detect image generation sentinel
         let is_image_sentinel = self.maybe_emit_image_sentinel(&tc.name, output).await;
@@ -761,9 +765,10 @@ impl<'a> ChatDelegate<'a> {
             (output.clone(), preview)
         } else {
             // Sanitize tool output first (before sending preview or using in context)
-            let sanitized_output = self.sanitize_output(&tc.name, output);
-            let preview = truncate_for_preview(&sanitized_output, PREVIEW_MAX_CHARS);
-            (sanitized_output, preview)
+            // preview_text is raw sanitized for preview, wrapped_text is for LLM context
+            let (preview_text, wrapped_text) = self.sanitize_output(&tc.name, output);
+            let preview = truncate_for_preview(&preview_text, PREVIEW_MAX_CHARS);
+            (wrapped_text, preview)
         };
 
         // Send ToolResult preview
@@ -2553,7 +2558,7 @@ mod tests {
 
         // Populate registry with a skill before testing disabled state
         {
-            let mut reg = registry.write().unwrap();
+            let mut reg = registry.write().expect("failed to acquire registry write lock");
             let skill = LoadedSkill {
                 manifest: SkillManifest {
                     name: "test-skill".to_string(),

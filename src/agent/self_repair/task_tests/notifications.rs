@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
+use rstest::rstest;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
@@ -11,6 +12,55 @@ use uuid::Uuid;
 use super::super::{RepairNotification, RepairNotificationRoute, RepairTask};
 use crate::agent::self_repair::{BrokenTool, NativeSelfRepair, RepairResult, SelfRepair, StuckJob};
 use crate::error::RepairError;
+
+/// Test-scoped mock for self-repair notifications.
+#[derive(Clone)]
+struct MockSelfRepair {
+    stuck_jobs: Arc<tokio::sync::Mutex<Vec<StuckJob>>>,
+    broken_tools: Arc<tokio::sync::Mutex<Vec<BrokenTool>>>,
+    stuck_result: Arc<tokio::sync::Mutex<RepairResult>>,
+    broken_result: Arc<tokio::sync::Mutex<RepairResult>>,
+}
+
+impl MockSelfRepair {
+    fn new(
+        stuck_jobs: Vec<StuckJob>,
+        broken_tools: Vec<BrokenTool>,
+        stuck_result: RepairResult,
+        broken_result: RepairResult,
+    ) -> Self {
+        Self {
+            stuck_jobs: Arc::new(tokio::sync::Mutex::new(stuck_jobs)),
+            broken_tools: Arc::new(tokio::sync::Mutex::new(broken_tools)),
+            stuck_result: Arc::new(tokio::sync::Mutex::new(stuck_result)),
+            broken_result: Arc::new(tokio::sync::Mutex::new(broken_result)),
+        }
+    }
+}
+
+impl NativeSelfRepair for MockSelfRepair {
+    async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
+        self.stuck_jobs.lock().await.clone()
+    }
+
+    async fn repair_stuck_job<'a>(
+        &'a self,
+        _job: &'a StuckJob,
+    ) -> Result<RepairResult, RepairError> {
+        Ok(self.stuck_result.lock().await.clone())
+    }
+
+    async fn detect_broken_tools(&self) -> Vec<BrokenTool> {
+        self.broken_tools.lock().await.clone()
+    }
+
+    async fn repair_broken_tool<'a>(
+        &'a self,
+        _tool: &'a BrokenTool,
+    ) -> Result<RepairResult, RepairError> {
+        Ok(self.broken_result.lock().await.clone())
+    }
+}
 
 struct NotificationHarness {
     notification_rx: mpsc::Receiver<RepairNotification>,
@@ -84,216 +134,164 @@ async fn assert_manual_required_deduplication(
     harness.shutdown().await;
 }
 
-struct MockSelfRepair {
-    stuck_jobs: Vec<StuckJob>,
-    broken_tools: Vec<BrokenTool>,
-    stuck_repair_result: RepairResult,
-    broken_repair_result: RepairResult,
+
+/// Test case parameters for repair notification tests.
+#[derive(Debug, Clone)]
+enum RepairTestCase {
+    /// Stuck job with a given result type and expected message.
+    StuckJob {
+        job_id: Uuid,
+        stuck_duration_secs: u64,
+        result: RepairResult,
+        expected_message: String,
+    },
+    /// Broken tool with a given result type and expected message.
+    BrokenTool {
+        name: String,
+        result: RepairResult,
+        expected_message: String,
+    },
 }
 
-impl MockSelfRepair {
-    fn with_stuck_job(job: StuckJob, result: RepairResult) -> Self {
-        Self {
-            stuck_jobs: vec![job],
-            broken_tools: vec![],
-            stuck_repair_result: result,
-            broken_repair_result: RepairResult::Success {
-                message: "noop".to_string(),
-            },
-        }
-    }
-
-    fn with_broken_tool(tool: BrokenTool, result: RepairResult) -> Self {
-        Self {
-            stuck_jobs: vec![],
-            broken_tools: vec![tool],
-            stuck_repair_result: RepairResult::Success {
-                message: "noop".to_string(),
-            },
-            broken_repair_result: result,
-        }
-    }
-}
-
-impl NativeSelfRepair for MockSelfRepair {
-    async fn detect_stuck_jobs(&self) -> Vec<StuckJob> {
-        self.stuck_jobs.clone()
-    }
-
-    async fn repair_stuck_job<'a>(
-        &'a self,
-        _job: &'a StuckJob,
-    ) -> Result<RepairResult, RepairError> {
-        Ok(self.stuck_repair_result.clone())
-    }
-
-    async fn detect_broken_tools(&self) -> Vec<BrokenTool> {
-        self.broken_tools.clone()
-    }
-
-    async fn repair_broken_tool<'a>(
-        &'a self,
-        _tool: &'a BrokenTool,
-    ) -> Result<RepairResult, RepairError> {
-        Ok(self.broken_repair_result.clone())
+impl RepairTestCase {
+    fn is_manual_required(&self) -> bool {
+        matches!(
+            self,
+            RepairTestCase::StuckJob {
+                result: RepairResult::ManualRequired { .. },
+                ..
+            } | RepairTestCase::BrokenTool {
+                result: RepairResult::ManualRequired { .. },
+                ..
+            }
+        )
     }
 }
 
-#[tokio::test]
-async fn repair_task_sends_notification_for_stuck_job_success() {
-    let job_id = Uuid::new_v4();
-    let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_stuck_job(
-        StuckJob {
+/// Create mock inputs for the given test case.
+fn make_mock_inputs(case: &RepairTestCase) -> (Vec<StuckJob>, Vec<BrokenTool>, RepairResult, RepairResult) {
+    match case.clone() {
+        RepairTestCase::StuckJob {
             job_id,
-            stuck_since: Utc::now(),
-            stuck_duration: Duration::from_secs(120),
-            last_error: None,
-            repair_attempts: 0,
-        },
-        RepairResult::Success {
-            message: "job recovered".to_string(),
-        },
-    ));
-    let harness = spawn_notification_task(repair);
-    let expected_message = format!(
-        "Job {} was stuck for {}s, recovery succeeded: job recovered",
-        job_id, 120
-    );
-    assert_single_notification(
-        harness,
-        &expected_message,
-        "stuck-job success notification should arrive",
-    )
-    .await;
+            stuck_duration_secs,
+            result,
+            ..
+        } => {
+            let job = StuckJob {
+                job_id,
+                stuck_since: Utc::now(),
+                stuck_duration: Duration::from_secs(stuck_duration_secs),
+                last_error: None,
+                repair_attempts: 0,
+            };
+            (
+                vec![job],
+                vec![],
+                result,
+                RepairResult::Success {
+                    message: "noop".to_string(),
+                },
+            )
+        }
+        RepairTestCase::BrokenTool { name, result, .. } => {
+            let tool = BrokenTool {
+                name: name.clone(),
+                failure_count: 5,
+                last_error: Some("build failed".to_string()),
+                first_failure: Utc::now(),
+                last_failure: Utc::now(),
+                last_build_result: None,
+                repair_attempts: 0,
+            };
+            (
+                vec![],
+                vec![tool],
+                RepairResult::Success {
+                    message: "noop".to_string(),
+                },
+                result,
+            )
+        }
+    }
 }
 
+#[rstest]
+#[case::stuck_job_success(
+    RepairTestCase::StuckJob {
+        job_id: Uuid::nil(),
+        stuck_duration_secs: 120,
+        result: RepairResult::Success { message: "job recovered".to_string() },
+        expected_message: "Job 00000000-0000-0000-0000-000000000000 was stuck for 120s, recovery succeeded: job recovered".to_string(),
+    },
+    "stuck-job success notification should arrive"
+)]
+#[case::broken_tool_success(
+    RepairTestCase::BrokenTool {
+        name: "compiler".to_string(),
+        result: RepairResult::Success { message: "tool rebuilt".to_string() },
+        expected_message: "Tool 'compiler' repaired: tool rebuilt".to_string(),
+    },
+    "broken-tool success notification should arrive"
+)]
+#[case::stuck_job_manual(
+    RepairTestCase::StuckJob {
+        job_id: Uuid::nil(),
+        stuck_duration_secs: 120,
+        result: RepairResult::ManualRequired { message: "manual job recovery".to_string() },
+        expected_message: "Job 00000000-0000-0000-0000-000000000000 needs manual intervention: manual job recovery".to_string(),
+    },
+    "stuck-job manual notification should arrive"
+)]
+#[case::broken_tool_manual(
+    RepairTestCase::BrokenTool {
+        name: "compiler".to_string(),
+        result: RepairResult::ManualRequired { message: "manual tool repair".to_string() },
+        expected_message: "Tool 'compiler' needs manual intervention: manual tool repair".to_string(),
+    },
+    "broken-tool manual notification should arrive"
+)]
+#[case::stuck_job_failed(
+    RepairTestCase::StuckJob {
+        job_id: Uuid::nil(),
+        stuck_duration_secs: 120,
+        result: RepairResult::Failed { message: "recovery failed permanently".to_string() },
+        expected_message: "Job 00000000-0000-0000-0000-000000000000 was stuck for 120s, recovery failed permanently: recovery failed permanently".to_string(),
+    },
+    "stuck-job failed notification should arrive"
+)]
+#[case::broken_tool_failed(
+    RepairTestCase::BrokenTool {
+        name: "compiler".to_string(),
+        result: RepairResult::Failed { message: "rebuild failed".to_string() },
+        expected_message: "Tool 'compiler' repair failed: rebuild failed".to_string(),
+    },
+    "broken-tool failed notification should arrive"
+)]
 #[tokio::test]
-async fn repair_task_sends_notification_for_broken_tool_success() {
-    let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_broken_tool(
-        BrokenTool {
-            name: "compiler".to_string(),
-            failure_count: 5,
-            last_error: Some("build failed".to_string()),
-            first_failure: Utc::now(),
-            last_failure: Utc::now(),
-            last_build_result: None,
-            repair_attempts: 0,
-        },
-        RepairResult::Success {
-            message: "tool rebuilt".to_string(),
-        },
-    ));
+async fn repair_task_sends_notification(
+    #[case] test_case: RepairTestCase,
+    #[case] await_msg: &str,
+) {
+    let (stuck_jobs, broken_tools, stuck_result, broken_result) = make_mock_inputs(&test_case);
+    let mock = MockSelfRepair::new(stuck_jobs, broken_tools, stuck_result, broken_result);
+    // Blanket impl converts NativeSelfRepair -> SelfRepair
+    let repair: Arc<dyn SelfRepair> = Arc::new(mock);
     let harness = spawn_notification_task(repair);
-    assert_single_notification(
-        harness,
-        "Tool 'compiler' repaired: tool rebuilt",
-        "broken-tool success notification should arrive",
-    )
-    .await;
-}
 
-#[tokio::test]
-async fn repair_task_deduplicates_manual_required_notifications_for_stuck_jobs() {
-    let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_stuck_job(
-        StuckJob {
-            job_id: Uuid::nil(),
-            stuck_since: Utc::now(),
-            stuck_duration: Duration::from_secs(120),
-            last_error: None,
-            repair_attempts: 3,
-        },
-        RepairResult::ManualRequired {
-            message: "manual job recovery".to_string(),
-        },
-    ));
-    let harness = spawn_notification_task(repair);
-    assert_manual_required_deduplication(
-        harness,
-        &format!(
-            "Job {} needs manual intervention: manual job recovery",
-            Uuid::nil()
-        ),
-        "stuck-job manual notification should arrive",
-        "manual stuck-job notification should be deduplicated",
-    )
-    .await;
-}
+    let expected_message = match &test_case {
+        RepairTestCase::StuckJob { expected_message, .. } => expected_message.clone(),
+        RepairTestCase::BrokenTool { expected_message, .. } => expected_message.clone(),
+    };
 
-#[tokio::test]
-async fn repair_task_deduplicates_manual_required_notifications_for_broken_tools() {
-    let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_broken_tool(
-        BrokenTool {
-            name: "compiler".to_string(),
-            failure_count: 5,
-            last_error: Some("build failed".to_string()),
-            first_failure: Utc::now(),
-            last_failure: Utc::now(),
-            last_build_result: None,
-            repair_attempts: 3,
-        },
-        RepairResult::ManualRequired {
-            message: "manual tool repair".to_string(),
-        },
-    ));
-    let harness = spawn_notification_task(repair);
-    assert_manual_required_deduplication(
-        harness,
-        "Tool 'compiler' needs manual intervention: manual tool repair",
-        "broken-tool manual notification should arrive",
-        "manual broken-tool notification should be deduplicated",
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn repair_task_sends_notification_for_stuck_job_failed() {
-    let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_stuck_job(
-        StuckJob {
-            job_id: Uuid::nil(),
-            stuck_since: Utc::now(),
-            stuck_duration: Duration::from_secs(120),
-            last_error: Some("persistent failure".to_string()),
-            repair_attempts: 2,
-        },
-        RepairResult::Failed {
-            message: "recovery failed permanently".to_string(),
-        },
-    ));
-    let harness = spawn_notification_task(repair);
-    let expected_message = format!(
-        "Job {} was stuck for {}s, recovery failed permanently: recovery failed permanently",
-        Uuid::nil(),
-        120
-    );
-    assert_single_notification(
-        harness,
-        &expected_message,
-        "stuck-job failed notification should arrive",
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn repair_task_sends_notification_for_broken_tool_failed() {
-    let repair: Arc<dyn SelfRepair> = Arc::new(MockSelfRepair::with_broken_tool(
-        BrokenTool {
-            name: "compiler".to_string(),
-            failure_count: 10,
-            last_error: Some("build failed".to_string()),
-            first_failure: Utc::now(),
-            last_failure: Utc::now(),
-            last_build_result: None,
-            repair_attempts: 2,
-        },
-        RepairResult::Failed {
-            message: "rebuild failed".to_string(),
-        },
-    ));
-    let harness = spawn_notification_task(repair);
-    assert_single_notification(
-        harness,
-        "Tool 'compiler' repair failed: rebuild failed",
-        "broken-tool failed notification should arrive",
-    )
-    .await;
+    if test_case.is_manual_required() {
+        assert_manual_required_deduplication(
+            harness,
+            &expected_message,
+            await_msg,
+            "manual notification should be deduplicated",
+        )
+        .await;
+    } else {
+        assert_single_notification(harness, &expected_message, await_msg).await;
+    }
 }
