@@ -134,7 +134,6 @@ async fn assert_manual_required_deduplication(
     harness.shutdown().await;
 }
 
-
 /// Test case parameters for repair notification tests.
 #[derive(Debug, Clone)]
 enum RepairTestCase {
@@ -169,7 +168,9 @@ impl RepairTestCase {
 }
 
 /// Create mock inputs for the given test case.
-fn make_mock_inputs(case: &RepairTestCase) -> (Vec<StuckJob>, Vec<BrokenTool>, RepairResult, RepairResult) {
+fn make_mock_inputs(
+    case: &RepairTestCase,
+) -> (Vec<StuckJob>, Vec<BrokenTool>, RepairResult, RepairResult) {
     match case.clone() {
         RepairTestCase::StuckJob {
             job_id,
@@ -279,8 +280,12 @@ async fn repair_task_sends_notification(
     let harness = spawn_notification_task(repair);
 
     let expected_message = match &test_case {
-        RepairTestCase::StuckJob { expected_message, .. } => expected_message.clone(),
-        RepairTestCase::BrokenTool { expected_message, .. } => expected_message.clone(),
+        RepairTestCase::StuckJob {
+            expected_message, ..
+        } => expected_message.clone(),
+        RepairTestCase::BrokenTool {
+            expected_message, ..
+        } => expected_message.clone(),
     };
 
     if test_case.is_manual_required() {

@@ -133,13 +133,11 @@ pub(super) async fn store_extracted_documents(
 
         let filename =
             sanitise_filename(attachment.filename.as_deref().unwrap_or("unnamed_document"));
-        let sanitized_id = sanitise_filename(
-            if attachment.id.is_empty() {
-                "unnamed_id"
-            } else {
-                &attachment.id
-            }
-        );
+        let sanitized_id = sanitise_filename(if attachment.id.is_empty() {
+            "unnamed_id"
+        } else {
+            &attachment.id
+        });
 
         let path = build_document_path(&PathParts {
             date: today,
@@ -170,8 +168,8 @@ pub(super) async fn store_extracted_documents(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_document_path, get_valid_document_text, is_usable_extracted_text, sanitise_filename,
-        PathParts,
+        PathParts, build_document_path, get_valid_document_text, is_usable_extracted_text,
+        sanitise_filename,
     };
     use crate::channels::{AttachmentKind, IncomingAttachment};
 
@@ -255,8 +253,7 @@ mod tests {
 
     #[test]
     fn build_document_path_uses_sanitized_id_and_filename() {
-        let date = chrono::NaiveDate::from_ymd_opt(2026, 4, 3)
-            .expect("2026-04-03 is a valid date");
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 4, 3).expect("2026-04-03 is a valid date");
         let sanitized_id = sanitise_filename("abc/../123");
         let sanitized_filename = sanitise_filename("../report.pdf");
         let path = build_document_path(&PathParts {

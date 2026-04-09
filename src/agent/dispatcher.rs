@@ -534,10 +534,10 @@ impl<'a> ChatDelegate<'a> {
     fn sanitize_output(&self, tool_name: &str, output: &str) -> (String, String) {
         let sanitized = self.agent.safety().sanitize_tool_output(tool_name, output);
         let preview_text = sanitized.content.clone();
-        let wrapped_text = self
-            .agent
-            .safety()
-            .wrap_for_llm(tool_name, &sanitized.content, sanitized.was_modified);
+        let wrapped_text =
+            self.agent
+                .safety()
+                .wrap_for_llm(tool_name, &sanitized.content, sanitized.was_modified);
         (preview_text, wrapped_text)
     }
 
@@ -2558,7 +2558,9 @@ mod tests {
 
         // Populate registry with a skill before testing disabled state
         {
-            let mut reg = registry.write().expect("failed to acquire registry write lock");
+            let mut reg = registry
+                .write()
+                .expect("failed to acquire registry write lock");
             let skill = LoadedSkill {
                 manifest: SkillManifest {
                     name: "test-skill".to_string(),

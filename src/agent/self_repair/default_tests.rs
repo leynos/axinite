@@ -263,7 +263,9 @@ async fn repair_stuck_job_returns_success_when_already_recovered() {
 
     let result = NativeSelfRepair::repair_stuck_job(&repair, &stuck_job)
         .await
-        .expect("repair_stuck_job failed in repair_stuck_job_returns_success_when_already_recovered");
+        .expect(
+            "repair_stuck_job failed in repair_stuck_job_returns_success_when_already_recovered",
+        );
 
     // Should return Success (no-op) because job is already recovered
     assert!(
@@ -272,7 +274,6 @@ async fn repair_stuck_job_returns_success_when_already_recovered() {
         result
     );
 }
-
 
 #[tokio::test]
 async fn detect_broken_tools_returns_empty_without_store() {
