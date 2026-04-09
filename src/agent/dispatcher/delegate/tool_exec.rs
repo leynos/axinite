@@ -84,6 +84,79 @@ pub(crate) fn check_auth_required(
     Some((name, instructions))
 }
 
+/// Allocate the exec-results buffer and dispatch Phase 2 tool execution.
+async fn run_phase2(
+    delegate: &ChatDelegate<'_>,
+    preflight_len: usize,
+    runnable: &[(usize, crate::llm::ToolCall)],
+) -> Vec<Option<Result<String, Error>>> {
+    let mut exec_results: Vec<Option<Result<String, Error>>> =
+        (0..preflight_len).map(|_| None).collect();
+    if runnable.len() <= 1 {
+        run_tool_batch_inline(delegate, runnable, &mut exec_results).await;
+    } else {
+        run_tool_batch_parallel(delegate, runnable, &mut exec_results).await;
+    }
+    exec_results
+}
+
+/// Phase 3: iterate preflight outcomes in original order, dispatching each
+/// to `handle_rejected_tool` or `process_runnable_tool`.
+/// Returns the first deferred-auth instruction string, if any.
+async fn run_postflight(
+    delegate: &ChatDelegate<'_>,
+    preflight: Vec<(crate::llm::ToolCall, PreflightOutcome)>,
+    exec_results: &mut [Option<Result<String, Error>>],
+    reason_ctx: &mut ReasoningContext,
+) -> Option<String> {
+    let mut deferred_auth: Option<String> = None;
+    for (pf_idx, (tc, outcome)) in preflight.into_iter().enumerate() {
+        match outcome {
+            PreflightOutcome::Rejected(error_msg) => {
+                handle_rejected_tool(delegate, &tc, &error_msg, reason_ctx).await;
+            }
+            PreflightOutcome::Runnable => {
+                let tool_result = exec_results[pf_idx].take().unwrap_or_else(|| {
+                    Err(crate::error::ToolError::ExecutionFailed {
+                        name: tc.name.clone(),
+                        reason: "No result available".to_string(),
+                    }
+                    .into())
+                });
+                if let Some(instructions) =
+                    process_runnable_tool(delegate, &tc, tool_result, reason_ctx).await
+                {
+                    deferred_auth = Some(instructions);
+                }
+            }
+        }
+    }
+    deferred_auth
+}
+
+/// Construct the `PendingApproval` value for a tool that requires user consent.
+fn build_pending_approval(
+    delegate: &ChatDelegate<'_>,
+    approval_idx: usize,
+    tc: crate::llm::ToolCall,
+    tool: Arc<dyn crate::tools::Tool>,
+    tool_calls: &[crate::llm::ToolCall],
+    reason_ctx: &ReasoningContext,
+) -> PendingApproval {
+    let display_params = redact_params(&tc.arguments, tool.sensitive_params());
+    PendingApproval {
+        request_id: Uuid::new_v4(),
+        tool_name: tc.name.clone(),
+        parameters: tc.arguments.clone(),
+        display_parameters: display_params,
+        description: tool.description().to_string(),
+        tool_call_id: tc.id.clone(),
+        context_messages: reason_ctx.messages.clone(),
+        deferred_tool_calls: tool_calls[approval_idx + 1..].to_vec(),
+        user_timezone: Some(delegate.user_tz.name().to_string()),
+    }
+}
+
 /// Execute tool calls with 3-phase pipeline (preflight → execution → post-flight).
 pub(crate) async fn execute_tool_calls(
     delegate: &ChatDelegate<'_>,
@@ -102,7 +175,6 @@ pub(crate) async fn execute_tool_calls(
             tool_calls.clone(),
         ));
 
-    // Execute tools and add results to context
     let _ = delegate
         .agent
         .channels
@@ -113,72 +185,28 @@ pub(crate) async fn execute_tool_calls(
         )
         .await;
 
-    // Record tool calls in the thread with sensitive params redacted.
     record_redacted_tool_calls(delegate, &tool_calls).await;
 
-    // === Phase 1: Preflight (sequential) ===
+    // === Phase 1: Preflight ===
     let (batch, approval_needed) = group_tool_calls(delegate, &tool_calls).await?;
     let ToolBatch {
         preflight,
         runnable,
     } = batch;
 
-    // === Phase 2: Parallel execution ===
-    let mut exec_results: Vec<Option<Result<String, Error>>> =
-        (0..preflight.len()).map(|_| None).collect();
+    // === Phase 2: Execute ===
+    let mut exec_results = run_phase2(delegate, preflight.len(), &runnable).await;
 
-    if runnable.len() <= 1 {
-        run_tool_batch_inline(delegate, &runnable, &mut exec_results).await;
-    } else {
-        run_tool_batch_parallel(delegate, &runnable, &mut exec_results).await;
-    }
+    // === Phase 3: Post-flight ===
+    let deferred_auth = run_postflight(delegate, preflight, &mut exec_results, reason_ctx).await;
 
-    // === Phase 3: Post-flight (sequential, in original order) ===
-    let mut deferred_auth: Option<String> = None;
-
-    for (pf_idx, (tc, outcome)) in preflight.into_iter().enumerate() {
-        match outcome {
-            PreflightOutcome::Rejected(error_msg) => {
-                handle_rejected_tool(delegate, &tc, &error_msg, reason_ctx).await;
-            }
-            PreflightOutcome::Runnable => {
-                let tool_result = exec_results[pf_idx].take().unwrap_or_else(|| {
-                    Err(crate::error::ToolError::ExecutionFailed {
-                        name: tc.name.clone(),
-                        reason: "No result available".to_string(),
-                    }
-                    .into())
-                });
-
-                if let Some(instructions) =
-                    process_runnable_tool(delegate, &tc, tool_result, reason_ctx).await
-                {
-                    deferred_auth = Some(instructions);
-                }
-            }
-        }
-    }
-
-    // Return auth response after all results are recorded
     if let Some(instructions) = deferred_auth {
         return Ok(Some(LoopOutcome::Response(instructions)));
     }
 
-    // Handle approval if a tool needed it
     if let Some((approval_idx, tc, tool)) = approval_needed {
-        let display_params = redact_params(&tc.arguments, tool.sensitive_params());
-        let pending = PendingApproval {
-            request_id: Uuid::new_v4(),
-            tool_name: tc.name.clone(),
-            parameters: tc.arguments.clone(),
-            display_parameters: display_params,
-            description: tool.description().to_string(),
-            tool_call_id: tc.id.clone(),
-            context_messages: reason_ctx.messages.clone(),
-            deferred_tool_calls: tool_calls[approval_idx + 1..].to_vec(),
-            user_timezone: Some(delegate.user_tz.name().to_string()),
-        };
-
+        let pending =
+            build_pending_approval(delegate, approval_idx, tc, tool, &tool_calls, reason_ctx);
         return Ok(Some(LoopOutcome::NeedApproval(Box::new(pending))));
     }
 
