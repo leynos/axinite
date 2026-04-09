@@ -109,9 +109,9 @@ async fn assert_single_notification(
         .await
         .expect(await_failure_msg)
         .expect("notification channel should remain open");
+    harness.shutdown().await;
     assert_eq!(notification.message, expected_message);
     assert_eq!(&notification.route, expected_route);
-    harness.shutdown().await;
 }
 
 async fn assert_manual_required_deduplication(
@@ -125,8 +125,6 @@ async fn assert_manual_required_deduplication(
         .await
         .expect(await_failure_msg)
         .expect("notification channel should remain open");
-    assert_eq!(notification.message, expected_message);
-    assert_eq!(&notification.route, expected_route);
 
     assert!(
         tokio::time::timeout(Duration::from_millis(50), harness.notification_rx.recv())
@@ -136,6 +134,8 @@ async fn assert_manual_required_deduplication(
     );
 
     harness.shutdown().await;
+    assert_eq!(notification.message, expected_message);
+    assert_eq!(&notification.route, expected_route);
 }
 
 /// Test case parameters for repair notification tests.

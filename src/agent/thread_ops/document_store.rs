@@ -3,12 +3,12 @@
 //! This module persists text extracted from document attachments (PDFs, text files, etc.)
 //! into a workspace-level store for future retrieval and search. When a message contains
 //! document attachments, the extracted text is written to the workspace at paths following
-//! the scheme: `documents/{YYYY-MM-DD}/{index}-{sanitized_id}-{sanitized_filename}`.
+//! the scheme: `documents/{YYYY-MM-DD}/{index}-{message_id}-{sanitised_id}-{sanitised_filename}`.
 //!
 //! Path structure:
 //! - Documents are organized by date in `documents/{date}/` subdirectories
-//! - Each document filename includes: index (attachment position), sanitized attachment ID,
-//!   and sanitized original filename
+//! - Each document filename includes: index (attachment position), message-level unique identifier,
+//!   sanitized attachment ID, and sanitized original filename
 //! - All path components are sanitized via `sanitise_filename()` to remove path traversal
 //!   sequences (`..`), directory separators (`/`, `\`, Unicode variants), and leading dots
 //!
@@ -147,6 +147,7 @@ pub(super) async fn store_extracted_documents(
     message: &IncomingMessage,
 ) {
     let today = chrono::Utc::now().date_naive();
+    let message_id = message.id.to_string();
 
     for (index, attachment) in message.attachments.iter().enumerate() {
         if attachment.kind != crate::channels::AttachmentKind::Document {
@@ -169,7 +170,7 @@ pub(super) async fn store_extracted_documents(
             index,
             id: &sanitized_id,
             filename: &filename,
-            message_id: &message.id.to_string(),
+            message_id: &message_id,
         });
 
         let header = build_header(&HeaderMeta {

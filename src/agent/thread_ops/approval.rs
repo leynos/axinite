@@ -318,13 +318,17 @@ impl Agent {
         };
 
         if !processed_preview.is_empty() {
+            let preview = crate::agent::dispatcher::truncate_for_preview(
+                &processed_preview,
+                crate::agent::dispatcher::PREVIEW_MAX_CHARS,
+            );
             let _ = self
                 .channels
                 .send_status(
                     &env.channel,
                     StatusUpdate::ToolResult {
                         name: pending.tool_name.clone(),
-                        preview: processed_preview,
+                        preview,
                     },
                     &env.metadata,
                 )
@@ -610,13 +614,17 @@ impl Agent {
 
             // Send ToolResult preview using sanitized content (only on success and non-empty)
             if !is_deferred_error && !deferred_content.is_empty() {
+                let preview = crate::agent::dispatcher::truncate_for_preview(
+                    &deferred_content,
+                    crate::agent::dispatcher::PREVIEW_MAX_CHARS,
+                );
                 let _ = self
                     .channels
                     .send_status(
                         &scope.env.channel,
                         StatusUpdate::ToolResult {
                             name: tc.name.clone(),
-                            preview: deferred_content.clone(),
+                            preview,
                         },
                         &scope.env.metadata,
                     )

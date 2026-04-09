@@ -21,7 +21,7 @@ use crate::agent::agentic_loop::{
 use crate::llm::{ChatMessage, Reasoning, ReasoningContext};
 use crate::tools::redact_params;
 
-const PREVIEW_MAX_CHARS: usize = 1024;
+pub(crate) const PREVIEW_MAX_CHARS: usize = 1024;
 
 /// Check if a string is valid JSON (object or array).
 fn is_valid_json(s: &str) -> bool {
