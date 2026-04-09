@@ -292,7 +292,13 @@ impl Agent {
         params: &serde_json::Value,
         job_ctx: &JobContext,
     ) -> Result<String, Error> {
-        execute_chat_tool_standalone(self.tools(), self.safety(), tool_name, params, job_ctx).await
+        execute_chat_tool_standalone(
+            self.tools(),
+            self.safety(),
+            &ChatToolRequest { tool_name, params },
+            job_ctx,
+        )
+        .await
     }
 }
 
@@ -657,8 +663,10 @@ impl<'a> ChatDelegate<'a> {
                 let result = execute_chat_tool_standalone(
                     &tools,
                     &safety,
-                    &tc.name,
-                    &tc.arguments,
+                    &ChatToolRequest {
+                        tool_name: &tc.name,
+                        params: &tc.arguments,
+                    },
                     &job_ctx,
                 )
                 .await;
@@ -1116,6 +1124,11 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
     }
 }
 
+/// Describes a single tool invocation passed to `execute_chat_tool_standalone`.
+pub(crate) struct ChatToolRequest<'a> {
+    pub(crate) tool_name: &'a str,
+    pub(crate) params: &'a serde_json::Value,
+}
 /// Execute a chat tool without requiring `&Agent`.
 ///
 /// This standalone function enables parallel invocation from spawned JoinSet
@@ -1124,11 +1137,17 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
 pub(super) async fn execute_chat_tool_standalone(
     tools: &crate::tools::ToolRegistry,
     safety: &crate::safety::SafetyLayer,
-    tool_name: &str,
-    params: &serde_json::Value,
+    request: &ChatToolRequest<'_>,
     job_ctx: &crate::context::JobContext,
 ) -> Result<String, Error> {
-    crate::tools::execute::execute_tool_with_safety(tools, safety, tool_name, params, job_ctx).await
+    crate::tools::execute::execute_tool_with_safety(
+        tools,
+        safety,
+        request.tool_name,
+        request.params,
+        job_ctx,
+    )
+    .await
 }
 
 /// Parsed auth result fields for emitting StatusUpdate::AuthRequired.
@@ -1692,8 +1711,10 @@ mod tests {
         let result = super::execute_chat_tool_standalone(
             &registry,
             &safety,
-            "echo",
-            &serde_json::json!({"message": "hello"}),
+            &super::ChatToolRequest {
+                tool_name: "echo",
+                params: &serde_json::json!({"message": "hello"}),
+            },
             &job_ctx,
         )
         .await;
@@ -1720,8 +1741,10 @@ mod tests {
         let result = super::execute_chat_tool_standalone(
             &registry,
             &safety,
-            "nonexistent",
-            &serde_json::json!({}),
+            &super::ChatToolRequest {
+                tool_name: "nonexistent",
+                params: &serde_json::json!({}),
+            },
             &job_ctx,
         )
         .await;
