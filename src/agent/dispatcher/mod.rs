@@ -10,29 +10,9 @@
 //! - `delegate`: Chat delegate implementation of NativeLoopDelegate
 
 mod delegate;
-mod execution;
-mod postflight;
-mod preflight;
-
-use std::sync::Arc;
-
-use tokio::sync::Mutex;
-use uuid::Uuid;
-
-use crate::agent::Agent;
-use crate::agent::dispatcher::delegate::ChatDelegate;
-use crate::agent::session::{PendingApproval, Session};
-use crate::channels::IncomingMessage;
-use crate::context::JobContext;
-use crate::error::Error;
-
-use crate::agent::agentic_loop::{AgenticLoopConfig, LoopOutcome};
-use crate::llm::{ChatMessage, Reasoning, ReasoningContext};
-
 pub(crate) const PREVIEW_MAX_CHARS: usize = 1024;
-// Re-export items used by other modules
-pub(crate) use execution::execute_chat_tool_standalone;
-pub(crate) use postflight::{check_auth_required, parse_auth_result};
+// Re-export items used by other modules from the delegate submodule
+pub(crate) use delegate::{check_auth_required, execute_chat_tool_standalone, parse_auth_result};
 
 /// Check if a string is valid JSON (object or array).
 fn is_valid_json(s: &str) -> bool {
@@ -239,7 +219,7 @@ impl Agent {
         let force_text_at = max_tool_iterations;
         let nudge_at = max_tool_iterations.saturating_sub(1);
 
-        let delegate = ChatDelegate {
+        let delegate = delegate::ChatDelegate {
             agent: self,
             session: session.clone(),
             thread_id,
@@ -1147,17 +1127,11 @@ pub(crate) struct ChatToolRequest<'a> {
 pub(super) async fn execute_chat_tool_standalone(
     tools: &crate::tools::ToolRegistry,
     safety: &crate::safety::SafetyLayer,
-    request: &ChatToolRequest<'_>,
+    tool_name: &str,
+    params: &serde_json::Value,
     job_ctx: &crate::context::JobContext,
 ) -> Result<String, Error> {
-    crate::tools::execute::execute_tool_with_safety(
-        tools,
-        safety,
-        request.tool_name,
-        request.params,
-        job_ctx,
-    )
-    .await
+    crate::tools::execute::execute_tool_with_safety(tools, safety, tool_name, params, job_ctx).await
 }
 
 /// Parsed auth result fields for emitting StatusUpdate::AuthRequired.
@@ -2105,91 +2079,6 @@ pub(super) fn check_auth_required(
     Some((name, instructions))
 }
 
-/// Compact messages for retry after a context-length-exceeded error.
-///
-/// Keeps all `System` messages (which carry the system prompt and instructions),
-/// finds the last `User` message, and retains it plus every subsequent message
-/// (the current turn's assistant tool calls and tool results). A short note is
-/// inserted so the LLM knows earlier history was dropped.
-fn compact_messages_for_retry(messages: &[ChatMessage]) -> Vec<ChatMessage> {
-    use crate::llm::Role;
-
-    let mut compacted = Vec::new();
-
-    // Find the last User message index
-    let last_user_idx = messages.iter().rposition(|m| m.role == Role::User);
-
-    if let Some(idx) = last_user_idx {
-        // Keep System messages that appear BEFORE the last User message.
-        // System messages after that point (e.g. nudges) are included in the
-        // slice extension below, avoiding duplication.
-        for msg in &messages[..idx] {
-            if msg.role == Role::System {
-                compacted.push(msg.clone());
-            }
-        }
-
-        // Only add a compaction note if there was earlier history that is being dropped
-        if idx > 0 {
-            compacted.push(ChatMessage::system(
-                "[Note: Earlier conversation history was automatically compacted \
-                 to fit within the context window. The most recent exchange is preserved below.]",
-            ));
-        }
-
-        // Keep the last User message and everything after it
-        compacted.extend_from_slice(&messages[idx..]);
-    } else {
-        // No user messages found (shouldn't happen normally); keep everything,
-        // with system messages first to preserve prompt ordering.
-        for msg in messages {
-            if msg.role == Role::System {
-                compacted.push(msg.clone());
-            }
-        }
-        for msg in messages {
-            if msg.role != Role::System {
-                compacted.push(msg.clone());
-            }
-        }
-    }
-
-    compacted
-}
-
-/// Strip internal `[Called tool ...]` and `[Tool ... returned: ...]` markers
-/// from a response string. These markers are inserted by provider-level message
-/// flattening (e.g. NEAR AI) and can leak into the user-visible response when
-/// the LLM echoes them back.
-fn strip_internal_tool_call_text(text: &str) -> String {
-    // Remove lines that are purely internal tool-call markers.
-    // Pattern: lines matching `[Called tool <name>(...)]` or `[Tool <name> returned: ...]`
-    let result = text
-        .lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            !((trimmed.starts_with("[Called tool ") && trimmed.ends_with(']'))
-                || (trimmed.starts_with("[Tool ")
-                    && trimmed.contains(" returned:")
-                    && trimmed.ends_with(']')))
-        })
-        .fold(String::new(), |mut acc, s| {
-            if !acc.is_empty() {
-                acc.push('\n');
-            }
-            acc.push_str(s);
-            acc
-        });
-
-    let result = result.trim();
-    if result.is_empty() {
-        "I wasn't able to complete that request. Could you try rephrasing or providing more details?".to_string()
-    } else {
-        result.to_string()
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use std::path::PathBuf;
     use std::sync::{Arc, RwLock};
@@ -2658,7 +2547,7 @@ mod tests {
 
     // ---- compact_messages_for_retry tests ----
 
-    use super::compact_messages_for_retry;
+    use super::delegate::{compact_messages_for_retry, strip_internal_tool_call_text};
     use crate::llm::{ChatMessage, Role};
 
     #[test]
@@ -3312,28 +3201,28 @@ mod tests {
     #[test]
     fn test_strip_internal_tool_call_text_removes_markers() {
         let input = "[Called tool search({\"query\": \"test\"})]\nHere is the answer.";
-        let result = super::strip_internal_tool_call_text(input);
+        let result = strip_internal_tool_call_text(input);
         assert_eq!(result, "Here is the answer.");
     }
 
     #[test]
     fn test_strip_internal_tool_call_text_removes_returned_markers() {
         let input = "[Tool search returned: some result]\nSummary of findings.";
-        let result = super::strip_internal_tool_call_text(input);
+        let result = strip_internal_tool_call_text(input);
         assert_eq!(result, "Summary of findings.");
     }
 
     #[test]
     fn test_strip_internal_tool_call_text_all_markers_yields_fallback() {
         let input = "[Called tool search({\"query\": \"test\"})]\n[Tool search returned: error]";
-        let result = super::strip_internal_tool_call_text(input);
+        let result = strip_internal_tool_call_text(input);
         assert!(result.contains("wasn't able to complete"));
     }
 
     #[test]
     fn test_strip_internal_tool_call_text_preserves_normal_text() {
         let input = "This is a normal response with [brackets] inside.";
-        let result = super::strip_internal_tool_call_text(input);
+        let result = strip_internal_tool_call_text(input);
         assert_eq!(result, input);
     }
 
