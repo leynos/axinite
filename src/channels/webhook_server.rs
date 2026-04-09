@@ -58,6 +58,28 @@ impl WebhookServer {
         self.bind_and_spawn(app).await
     }
 
+    /// Bind using an already-bound [`tokio::net::TcpListener`], merge all route
+    /// fragments, and spawn the server. The listener's local address is stored
+    /// in `config.addr` so `current_addr()` stays accurate.
+    pub async fn start_with_listener(
+        &mut self,
+        listener: tokio::net::TcpListener,
+    ) -> Result<(), ChannelError> {
+        let addr = listener
+            .local_addr()
+            .map_err(|e| ChannelError::StartupFailed {
+                name: "webhook_server".to_string(),
+                reason: format!("local_addr failed: {e}"),
+            })?;
+        self.config.addr = addr;
+        let mut app = Router::new();
+        for fragment in self.routes.drain(..) {
+            app = app.merge(fragment);
+        }
+        self.merged_router = Some(app.clone());
+        self.spawn_on_listener(listener, app).await
+    }
+
     /// Bind a listener to the configured address and spawn the server task.
     /// Private helper used by both start() and restart_with_addr().
     async fn bind_and_spawn(&mut self, app: Router) -> Result<(), ChannelError> {
@@ -65,14 +87,21 @@ impl WebhookServer {
             .await
             .map_err(|e| ChannelError::StartupFailed {
                 name: "webhook_server".to_string(),
-                reason: format!("Failed to bind to {}: {}", self.config.addr, e),
+                reason: format!("Failed to bind to {}: {e}", self.config.addr),
             })?;
+        self.spawn_on_listener(listener, app).await
+    }
 
+    /// Spawn the server on an already-bound listener.
+    /// Private helper that contains the common shutdown-channel and task-spawn logic.
+    async fn spawn_on_listener(
+        &mut self,
+        listener: tokio::net::TcpListener,
+        app: Router,
+    ) -> Result<(), ChannelError> {
         tracing::info!("Webhook server listening on {}", self.config.addr);
-
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         self.shutdown_tx = Some(shutdown_tx);
-
         let handle = tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, app)
                 .with_graceful_shutdown(async {
@@ -81,10 +110,9 @@ impl WebhookServer {
                 })
                 .await
             {
-                tracing::error!("Webhook server error: {}", e);
+                tracing::error!("Webhook server error: {e}");
             }
         });
-
         self.handle = Some(handle);
         Ok(())
     }

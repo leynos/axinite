@@ -19,25 +19,29 @@ use ironclaw::channels::{HttpChannel, NativeChannel, WebhookServer, WebhookServe
 use ironclaw::config::HttpConfig;
 use rstest::{fixture, rstest};
 
-/// Obtain an ephemeral local address by binding a `StdTcpListener` on port 0,
-/// reading the assigned `SocketAddr`, and immediately dropping the listener.
-///
-/// **TOCTOU race:** because the listener is dropped before the caller binds the
-/// real server, another process on the same host may claim the same port in the
-/// gap. This is a common test pattern for obtaining free ports, but it can
-/// produce flaky failures under concurrent load. Use with that caveat in mind.
-fn ephemeral_addr() -> SocketAddr {
-    let listener = StdTcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
-    listener.local_addr().expect("local_addr")
+/// Bind an ephemeral listener on `127.0.0.1:0` and return it.
+/// The caller must pass it directly to `start_with_listener` so the port
+/// is never released between allocation and server bind.
+async fn ephemeral_listener() -> tokio::net::TcpListener {
+    tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind ephemeral listener")
 }
 
-/// Build a minimal health-check server on the given address.
-fn health_server(addr: SocketAddr) -> WebhookServer {
-    let mut server = WebhookServer::new(WebhookServerConfig { addr });
+/// Build a minimal health-check server using the given already-bound listener.
+/// Returns the started server and the bound address.
+async fn health_server(listener: tokio::net::TcpListener) -> (WebhookServer, SocketAddr) {
+    let addr = listener.local_addr().expect("local_addr");
+    let config = WebhookServerConfig { addr };
+    let mut server = WebhookServer::new(config);
     server.add_routes(
         axum::Router::new().route("/health", get(|| async { Json(json!({"status": "ok"})) })),
     );
     server
+        .start_with_listener(listener)
+        .await
+        .expect("start with listener");
+    (server, addr)
 }
 
 /// POST a webhook payload and return the HTTP status.
@@ -62,9 +66,8 @@ fn http_client() -> Client {
 #[rstest]
 #[tokio::test]
 async fn test_sighup_config_reload_address_change(http_client: Client) {
-    let addr1 = ephemeral_addr();
-    let mut server = health_server(addr1);
-    server.start().await.expect("start on first address");
+    let listener1 = ephemeral_listener().await;
+    let (mut server, addr1) = health_server(listener1).await;
 
     // Confirm first address responds.
     let resp = http_client
@@ -75,7 +78,9 @@ async fn test_sighup_config_reload_address_change(http_client: Client) {
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Restart on a second ephemeral port.
-    let addr2 = ephemeral_addr();
+    // Note: restart_with_addr still has a small race window on rebind,
+    // but the initial bind is now race-free.
+    let addr2 = ephemeral_listener().await.local_addr().expect("addr2");
     server.restart_with_addr(addr2).await.expect("restart");
 
     // New address should respond.
@@ -112,7 +117,8 @@ async fn test_sighup_config_reload_address_change(http_client: Client) {
 #[rstest]
 #[tokio::test]
 async fn test_sighup_secret_update_zero_downtime(http_client: Client) {
-    let addr = ephemeral_addr();
+    let listener = ephemeral_listener().await;
+    let addr = listener.local_addr().expect("local_addr");
 
     let channel = HttpChannel::new(HttpConfig {
         host: "127.0.0.1".to_string(),
@@ -127,7 +133,10 @@ async fn test_sighup_secret_update_zero_downtime(http_client: Client) {
 
     let mut server = WebhookServer::new(WebhookServerConfig { addr });
     server.add_routes(channel.routes());
-    server.start().await.expect("start webhook server");
+    server
+        .start_with_listener(listener)
+        .await
+        .expect("start webhook server");
 
     // Old secret should be accepted.
     let status = post_webhook(&http_client, addr, "old-secret").await;
@@ -156,9 +165,8 @@ async fn test_sighup_secret_update_zero_downtime(http_client: Client) {
 #[rstest]
 #[tokio::test]
 async fn test_sighup_rollback_on_address_bind_failure(http_client: Client) {
-    let addr1 = ephemeral_addr();
-    let mut server = health_server(addr1);
-    server.start().await.expect("start on first address");
+    let listener1 = ephemeral_listener().await;
+    let (mut server, addr1) = health_server(listener1).await;
 
     // Confirm initial address works.
     let resp = http_client
