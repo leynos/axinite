@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::agent::Agent;
 use crate::agent::session::Session;
 use crate::agent::submission::{Submission, SubmissionParser, SubmissionResult};
+use crate::agent::thread_ops::UserTurnRequest;
 use crate::agent::thread_ops::approval::{ApprovalParams, TurnScope};
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::error::Error;
@@ -118,8 +119,12 @@ impl Agent {
     ) -> Result<SubmissionResult, Error> {
         match submission {
             Submission::UserInput { content } => {
-                self.process_user_input(&ctx.message, ctx.session, ctx.thread_id, &content)
-                    .await
+                let req = UserTurnRequest {
+                    session: ctx.session,
+                    thread_id: ctx.thread_id,
+                    content,
+                };
+                self.process_user_input(&ctx.message, req).await
             }
             Submission::SystemCommand { command, args } => {
                 tracing::debug!(

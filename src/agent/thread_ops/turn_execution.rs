@@ -17,6 +17,17 @@ use uuid::Uuid;
 
 use crate::agent::Agent;
 use crate::agent::compaction::ContextCompactor;
+
+/// Request parameters for processing a user turn.
+///
+/// Groups the session, thread ID, and content to reduce the argument count
+/// of `process_user_input` (addresses CodeScene "Excess Number of Function Arguments").
+#[derive(Clone)]
+pub(crate) struct UserTurnRequest {
+    pub session: Arc<Mutex<Session>>,
+    pub thread_id: Uuid,
+    pub content: String,
+}
 use crate::agent::dispatcher::AgenticLoopResult;
 use crate::agent::session::{Session, ThreadState};
 use crate::agent::submission::SubmissionResult;
@@ -379,10 +390,14 @@ impl Agent {
     pub(super) async fn process_user_input(
         &self,
         message: &IncomingMessage,
-        session: Arc<Mutex<Session>>,
-        thread_id: Uuid,
-        content: &str,
+        req: UserTurnRequest,
     ) -> Result<SubmissionResult, Error> {
+        let UserTurnRequest {
+            session,
+            thread_id,
+            content,
+        } = req;
+
         tracing::debug!(
             message_id = %message.id,
             thread_id = %thread_id,
@@ -399,7 +414,7 @@ impl Agent {
         }
 
         // Phase 2: Safety validation
-        if let Some(result) = self.validate_safety(message, content) {
+        if let Some(result) = self.validate_safety(message, &content) {
             return Ok(result);
         }
 
@@ -421,7 +436,7 @@ impl Agent {
 
         // Phase 6: Prepare turn
         let (turn_messages, _effective_content) = self
-            .prepare_turn(message, &session, thread_id, content)
+            .prepare_turn(message, &session, thread_id, &content)
             .await?;
 
         // Phase 7: Send thinking status and run agentic loop
