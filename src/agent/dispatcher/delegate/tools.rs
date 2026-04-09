@@ -128,7 +128,9 @@ impl<'a> ChatDelegate<'a> {
             // Check if tool requires approval
             if !self.agent.config.auto_approve_tools
                 && let Some(tool) = tool_opt
-                && self.resolve_needs_approval(&tool, &tc.name, &tc.arguments).await
+                && self
+                    .resolve_needs_approval(&tool, &tc.name, &tc.arguments)
+                    .await
             {
                 approval_needed = Some((idx, tc, tool));
                 break;
