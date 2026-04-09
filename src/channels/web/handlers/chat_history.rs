@@ -90,7 +90,7 @@ pub async fn chat_history_handler(
     if query.limit == Some(0) {
         return Err((
             StatusCode::BAD_REQUEST,
-            "limit must be greater than 0".to_string(),
+            "conversation message pagination limit must be > 0".to_string(),
         ));
     }
 
