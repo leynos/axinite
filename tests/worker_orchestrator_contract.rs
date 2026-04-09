@@ -12,7 +12,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use ironclaw::llm::{
-    CompletionRequest, CompletionResponse, FinishReason, NativeLlmProvider, ToolCompletionRequest,
+    CompletionRequest, CompletionResponse, NativeLlmProvider, ToolCompletionRequest,
     ToolCompletionResponse,
 };
 use ironclaw::orchestrator::api::{OrchestratorApi, OrchestratorState};
@@ -45,29 +45,14 @@ impl NativeLlmProvider for StubLlm {
         &self,
         _req: CompletionRequest,
     ) -> Result<CompletionResponse, ironclaw::error::LlmError> {
-        Ok(CompletionResponse {
-            content: String::new(),
-            input_tokens: 0,
-            output_tokens: 0,
-            finish_reason: FinishReason::Stop,
-            cache_read_input_tokens: 0,
-            cache_creation_input_tokens: 0,
-        })
+        Ok(Default::default())
     }
 
     async fn complete_with_tools(
         &self,
         _req: ToolCompletionRequest,
     ) -> Result<ToolCompletionResponse, ironclaw::error::LlmError> {
-        Ok(ToolCompletionResponse {
-            content: None,
-            tool_calls: vec![],
-            input_tokens: 0,
-            output_tokens: 0,
-            finish_reason: FinishReason::Stop,
-            cache_read_input_tokens: 0,
-            cache_creation_input_tokens: 0,
-        })
+        Ok(Default::default())
     }
 }
 
