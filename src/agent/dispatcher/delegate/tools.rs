@@ -250,17 +250,15 @@ impl<'a> ChatDelegate<'a> {
     pub(super) async fn fold_into_context(
         &self,
         tc: &crate::llm::ToolCall,
-        result_content: String,
-        is_tool_error: bool,
+        outcome: ToolExecutionOutcome,
         reason_ctx: &mut ReasoningContext,
     ) {
-        // Record sanitized result in thread
-        self.record_tool_outcome(&tc.name, &result_content, is_tool_error)
+        self.record_tool_outcome(&tc.name, &outcome.content, outcome.is_error)
             .await;
 
         reason_ctx
             .messages
-            .push(ChatMessage::tool_result(&tc.id, &tc.name, result_content));
+            .push(ChatMessage::tool_result(&tc.id, &tc.name, outcome.content));
     }
 
     /// Run a batch of tools inline (sequential execution for small batches).
@@ -400,8 +398,15 @@ impl<'a> ChatDelegate<'a> {
             Ok(output) => output,
             Err(e) => {
                 let error_msg = format!("Tool '{}' failed: {}", tc.name, e);
-                self.fold_into_context(tc, error_msg, true, reason_ctx)
-                    .await;
+                self.fold_into_context(
+                    tc,
+                    ToolExecutionOutcome {
+                        content: error_msg,
+                        is_error: true,
+                    },
+                    reason_ctx,
+                )
+                .await;
                 return None;
             }
         };
@@ -475,8 +480,15 @@ impl<'a> ChatDelegate<'a> {
             .insert(tc.id.clone(), output.clone());
 
         // Fold result into context
-        self.fold_into_context(tc, result_content, is_tool_error, reason_ctx)
-            .await;
+        self.fold_into_context(
+            tc,
+            ToolExecutionOutcome {
+                content: result_content,
+                is_error: is_tool_error,
+            },
+            reason_ctx,
+        )
+        .await;
 
         auth_instructions
     }

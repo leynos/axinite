@@ -92,6 +92,12 @@ pub(super) struct ToolBatch {
     pub(super) runnable: Vec<(usize, crate::llm::ToolCall)>,
 }
 
+/// The sanitised result of a single tool execution, bundled for context folding.
+pub(super) struct ToolExecutionOutcome {
+    pub(super) content: String,
+    pub(super) is_error: bool,
+}
+
 /// Parsed auth result fields for emitting StatusUpdate::AuthRequired.
 pub(crate) struct ParsedAuthData {
     pub(crate) auth_url: Option<String>,
