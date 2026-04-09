@@ -42,13 +42,12 @@ pub(super) fn normalized_schema(schema: serde_json::Value) -> Option<serde_json:
 }
 
 #[cfg(test)]
-/// Unit and property-based tests for schema normalization.
-///
-/// This module verifies the behavior of `parse_schema_string` and `normalized_schema`,
-/// including: handling of empty/null inputs, JSON string parsing, placeholder schema
-/// detection, fallback to string values for invalid JSON, and preservation of valid
-/// non-placeholder schemas.
 mod tests {
+    //! Unit and property-based tests for `parse_schema_string` and
+    //! `normalized_schema`, covering null/empty/whitespace handling,
+    //! placeholder detection, fallback-to-string for invalid JSON, and
+    //! preservation of valid non-placeholder schemas.
+
     use proptest::prelude::*;
     use rstest::rstest;
     use serde_json::json;
