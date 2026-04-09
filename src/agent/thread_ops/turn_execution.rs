@@ -199,10 +199,9 @@ impl Agent {
     async fn prepare_turn(
         &self,
         message: &IncomingMessage,
-        session: &Arc<Mutex<Session>>,
-        thread_id: Uuid,
-        content: &str,
+        req: &UserTurnRequest,
     ) -> Result<(Vec<crate::llm::ChatMessage>, String), Error> {
+        let content = req.content.as_str();
         let augmented =
             crate::agent::attachments::augment_with_attachments(content, &message.attachments);
         let (effective_content, image_parts) = match &augmented {
@@ -211,11 +210,10 @@ impl Agent {
         };
 
         let turn_messages = {
-            let mut sess = session.lock().await;
-            let thread = sess
-                .threads
-                .get_mut(&thread_id)
-                .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+            let mut sess = req.session.lock().await;
+            let thread = sess.threads.get_mut(&req.thread_id).ok_or_else(|| {
+                Error::from(crate::error::JobError::NotFound { id: req.thread_id })
+            })?;
             let turn = thread.start_turn(effective_content);
             turn.image_content_parts = image_parts;
             thread.messages()
@@ -223,15 +221,15 @@ impl Agent {
 
         tracing::debug!(
             message_id = %message.id,
-            thread_id = %thread_id,
+            thread_id = %req.thread_id,
             "Persisting user message to DB"
         );
-        self.persist_user_message(thread_id, &message.user_id, effective_content)
+        self.persist_user_message(req.thread_id, &message.user_id, effective_content)
             .await;
 
         tracing::debug!(
             message_id = %message.id,
-            thread_id = %thread_id,
+            thread_id = %req.thread_id,
             "User message persisted, starting agentic loop"
         );
 
@@ -397,35 +395,29 @@ impl Agent {
         message: &IncomingMessage,
         req: UserTurnRequest,
     ) -> Result<SubmissionResult, Error> {
-        let UserTurnRequest {
-            session,
-            thread_id,
-            content,
-        } = req;
-
         tracing::debug!(
             message_id = %message.id,
-            thread_id = %thread_id,
-            content_len = content.len(),
+            thread_id = %req.thread_id,
+            content_len = req.content.len(),
             "Processing user input"
         );
 
         // Phase 1: Check thread state
         if let Some(result) = self
-            .check_thread_state(message, &session, thread_id)
+            .check_thread_state(message, &req.session, req.thread_id)
             .await?
         {
             return Ok(result);
         }
 
         // Phase 2: Safety validation
-        if let Some(result) = self.validate_safety(message, &content) {
+        if let Some(result) = self.validate_safety(message, &req.content) {
             return Ok(result);
         }
 
         // Phase 3: Route explicit commands
         let temp_message = IncomingMessage {
-            content: content.to_string(),
+            content: req.content.to_string(),
             ..message.clone()
         };
         if let Some(intent) = self.router.route_command(&temp_message) {
@@ -433,16 +425,15 @@ impl Agent {
         }
 
         // Phase 4: Auto-compact context if needed
-        self.maybe_compact_context(message, &session, thread_id)
+        self.maybe_compact_context(message, &req.session, req.thread_id)
             .await?;
 
         // Phase 5: Create checkpoint
-        self.checkpoint_before_turn(&session, thread_id).await?;
+        self.checkpoint_before_turn(&req.session, req.thread_id)
+            .await?;
 
         // Phase 6: Prepare turn
-        let (turn_messages, _effective_content) = self
-            .prepare_turn(message, &session, thread_id, &content)
-            .await?;
+        let (turn_messages, _effective_content) = self.prepare_turn(message, &req).await?;
 
         // Phase 7: Send thinking status and run agentic loop
         let _ = self
@@ -455,11 +446,11 @@ impl Agent {
             .await;
 
         let result = self
-            .run_agentic_loop(message, session.clone(), thread_id, turn_messages)
+            .run_agentic_loop(message, req.session.clone(), req.thread_id, turn_messages)
             .await;
 
         // Phase 8: Handle loop result
-        self.handle_loop_result(message, &session, thread_id, result)
+        self.handle_loop_result(message, &req.session, req.thread_id, result)
             .await
     }
 }
