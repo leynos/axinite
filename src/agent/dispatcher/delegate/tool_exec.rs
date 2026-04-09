@@ -405,9 +405,16 @@ async fn run_tool_batch_parallel(
                 )
                 .await;
 
-            let result =
-                execute_chat_tool_standalone(&tools, &safety, &tc.name, &tc.arguments, &job_ctx)
-                    .await;
+            let result = execute_chat_tool_standalone(
+                &tools,
+                &safety,
+                &ToolCallSpec {
+                    name: &tc.name,
+                    params: &tc.arguments,
+                },
+                &job_ctx,
+            )
+            .await;
 
             let par_tool = tools.get(&tc.name).await;
             let _ = channels
@@ -549,7 +556,16 @@ async fn process_runnable_tool(
         Ok(output) => output,
         Err(e) => {
             let error_msg = format!("Tool '{}' failed: {}", tc.name, e);
-            fold_into_context(delegate, tc, error_msg, true, reason_ctx).await;
+            fold_into_context(
+                delegate,
+                tc,
+                ToolOutcome {
+                    result_content: error_msg,
+                    is_tool_error: true,
+                },
+                reason_ctx,
+            )
+            .await;
             return None;
         }
     };
@@ -624,7 +640,16 @@ async fn process_runnable_tool(
         .insert(tc.id.clone(), output.clone());
 
     // Fold result into context
-    fold_into_context(delegate, tc, result_content, is_tool_error, reason_ctx).await;
+    fold_into_context(
+        delegate,
+        tc,
+        ToolOutcome {
+            result_content,
+            is_tool_error,
+        },
+        reason_ctx,
+    )
+    .await;
 
     auth_instructions
 }
@@ -684,20 +709,33 @@ fn sanitize_output(delegate: &ChatDelegate<'_>, tool_name: &str, output: &str) -
     (preview_text, wrapped_text)
 }
 
+/// Outcome of a tool execution for folding into context.
+struct ToolOutcome {
+    result_content: String,
+    is_tool_error: bool,
+}
+
 /// Fold tool result into context messages.
 async fn fold_into_context(
     delegate: &ChatDelegate<'_>,
     tc: &crate::llm::ToolCall,
-    result_content: String,
-    is_tool_error: bool,
+    outcome: ToolOutcome,
     reason_ctx: &mut ReasoningContext,
 ) {
     // Record sanitized result in thread
-    record_tool_outcome(delegate, &tc.name, &result_content, is_tool_error).await;
+    record_tool_outcome(
+        delegate,
+        &tc.name,
+        &outcome.result_content,
+        outcome.is_tool_error,
+    )
+    .await;
 
-    reason_ctx
-        .messages
-        .push(ChatMessage::tool_result(&tc.id, &tc.name, result_content));
+    reason_ctx.messages.push(ChatMessage::tool_result(
+        &tc.id,
+        &tc.name,
+        outcome.result_content,
+    ));
 }
 
 /// Record tool outcome in the thread.
@@ -719,6 +757,12 @@ async fn record_tool_outcome(
     }
 }
 
+/// Specification for a tool call to be executed.
+pub(crate) struct ToolCallSpec<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) params: &'a serde_json::Value,
+}
+
 /// Execute a chat tool without requiring `&Agent`.
 ///
 /// This standalone function enables parallel invocation from spawned JoinSet
@@ -727,9 +771,9 @@ async fn record_tool_outcome(
 pub(crate) async fn execute_chat_tool_standalone(
     tools: &ToolRegistry,
     safety: &SafetyLayer,
-    tool_name: &str,
-    params: &serde_json::Value,
+    spec: &ToolCallSpec<'_>,
     job_ctx: &JobContext,
 ) -> Result<String, Error> {
-    crate::tools::execute::execute_tool_with_safety(tools, safety, tool_name, params, job_ctx).await
+    crate::tools::execute::execute_tool_with_safety(tools, safety, spec.name, spec.params, job_ctx)
+        .await
 }

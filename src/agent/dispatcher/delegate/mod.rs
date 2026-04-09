@@ -27,7 +27,9 @@ use crate::llm::{Reasoning, ReasoningContext};
 // These are used by tests and other modules, but not within this module
 #[allow(unused_imports)]
 pub(crate) use llm_hooks::{compact_messages_for_retry, strip_internal_tool_call_text};
-pub(crate) use tool_exec::{check_auth_required, execute_chat_tool_standalone, parse_auth_result};
+pub(crate) use tool_exec::{
+    ToolCallSpec, check_auth_required, execute_chat_tool_standalone, parse_auth_result,
+};
 
 /// Delegate for the chat (dispatcher) context.
 ///

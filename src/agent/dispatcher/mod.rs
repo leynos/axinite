@@ -12,7 +12,9 @@
 mod delegate;
 pub(crate) const PREVIEW_MAX_CHARS: usize = 1024;
 // Re-export items used by other modules from the delegate submodule
-pub(crate) use delegate::{check_auth_required, execute_chat_tool_standalone, parse_auth_result};
+pub(crate) use delegate::{
+    ToolCallSpec, check_auth_required, execute_chat_tool_standalone, parse_auth_result,
+};
 
 /// Check if a string is valid JSON (object or array).
 fn is_valid_json(s: &str) -> bool {
@@ -286,7 +288,10 @@ impl Agent {
         execute_chat_tool_standalone(
             self.tools(),
             self.safety(),
-            &ChatToolRequest { tool_name, params },
+            &ToolCallSpec {
+                name: tool_name,
+                params,
+            },
             job_ctx,
         )
         .await
@@ -2080,30 +2085,6 @@ pub(super) fn check_auth_required(
 }
 
 mod tests {
-    use std::path::PathBuf;
-    use std::sync::{Arc, RwLock};
-    use std::time::Duration;
-
-    use rust_decimal::Decimal;
-
-    use crate::agent::agent_loop::{Agent, AgentDeps};
-    use crate::agent::cost_guard::{CostGuard, CostGuardConfig};
-    use crate::agent::session::Session;
-    use crate::channels::ChannelManager;
-    use crate::config::{AgentConfig, SafetyConfig, SkillsConfig};
-    use crate::context::ContextManager;
-    use crate::error::Error;
-    use crate::hooks::HookRegistry;
-    use crate::llm::{
-        CompletionRequest, CompletionResponse, FinishReason, LlmProvider, ToolCall,
-        ToolCompletionRequest, ToolCompletionResponse,
-    };
-    use crate::safety::SafetyLayer;
-    use crate::skills::SkillRegistry;
-    use crate::tools::ToolRegistry;
-
-    use super::{check_auth_required, select_active_skills, truncate_for_preview};
-
     /// Minimal LLM provider for unit tests that always returns a static response.
     struct StaticLlmProvider;
 
@@ -2504,8 +2485,8 @@ mod tests {
         let result = super::execute_chat_tool_standalone(
             &registry,
             &safety,
-            &super::ChatToolRequest {
-                tool_name: "echo",
+            &super::ToolCallSpec {
+                name: "echo",
                 params: &serde_json::json!({"message": "hello"}),
             },
             &job_ctx,
@@ -2534,8 +2515,8 @@ mod tests {
         let result = super::execute_chat_tool_standalone(
             &registry,
             &safety,
-            &super::ChatToolRequest {
-                tool_name: "nonexistent",
+            &super::ToolCallSpec {
+                name: "nonexistent",
                 params: &serde_json::json!({}),
             },
             &job_ctx,
@@ -2544,11 +2525,6 @@ mod tests {
 
         assert!(result.is_err());
     }
-
-    // ---- compact_messages_for_retry tests ----
-
-    use super::delegate::{compact_messages_for_retry, strip_internal_tool_call_text};
-    use crate::llm::{ChatMessage, Role};
 
     #[test]
     fn test_compact_keeps_system_and_last_user_exchange() {
