@@ -1,46 +1,18 @@
-//! Chat delegate implementation for the agentic loop.
+//! Tool execution helpers for ChatDelegate.
 
 use std::sync::Arc;
 
-use tokio::sync::Mutex;
-use tokio::task::JoinSet;
-use uuid::Uuid;
-
-use crate::agent::Agent;
-use crate::agent::session::{Session, ThreadState};
-use crate::channels::{IncomingMessage, StatusUpdate};
-use crate::context::JobContext;
+use crate::channels::StatusUpdate;
 use crate::error::Error;
-
-use crate::agent::agentic_loop::{LoopOutcome, LoopSignal, NativeLoopDelegate, TextAction};
-use crate::llm::{ChatMessage, Reasoning, ReasoningContext};
+use crate::llm::{ChatMessage, ReasoningContext};
 use crate::tools::redact_params;
 
-use super::types::*;
-
-/// Delegate for the chat (dispatcher) context.
-///
-/// Implements `LoopDelegate` to customize the shared agentic loop for
-/// interactive chat sessions with the full 3-phase tool execution
-/// (preflight -> parallel exec -> post-flight), approval flow, hooks,
-/// auth intercept, and cost tracking.
-pub(super) struct ChatDelegate<'a> {
-    pub(super) agent: &'a Agent,
-    pub(super) session: Arc<Mutex<Session>>,
-    pub(super) thread_id: Uuid,
-    pub(super) message: &'a IncomingMessage,
-    pub(super) job_ctx: JobContext,
-    pub(super) active_skills: Vec<crate::skills::LoadedSkill>,
-    pub(super) cached_prompt: String,
-    pub(super) cached_prompt_no_tools: String,
-    pub(super) nudge_at: usize,
-    pub(super) force_text_at: usize,
-    pub(super) user_tz: chrono_tz::Tz,
-}
+use super::ChatDelegate;
+use crate::agent::dispatcher::types::*;
 
 impl<'a> ChatDelegate<'a> {
     /// Group tool calls into preflight outcomes and runnable batch.
-    async fn group_tool_calls(
+    pub(super) async fn group_tool_calls(
         &self,
         tool_calls: &[crate::llm::ToolCall],
     ) -> Result<
@@ -155,7 +127,7 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Send ToolStarted status update.
-    async fn send_tool_started(&self, tool_name: &str) {
+    pub(super) async fn send_tool_started(&self, tool_name: &str) {
         let _ = self
             .agent
             .channels
@@ -170,7 +142,7 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Send tool_completed status update.
-    async fn send_tool_completed(
+    pub(super) async fn send_tool_completed(
         &self,
         tool_name: &str,
         result: &Result<String, Error>,
@@ -194,7 +166,10 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Execute a single tool inline (for small batches).
-    async fn execute_one_tool(&self, tc: &crate::llm::ToolCall) -> Result<String, Error> {
+    pub(super) async fn execute_one_tool(
+        &self,
+        tc: &crate::llm::ToolCall,
+    ) -> Result<String, Error> {
         self.send_tool_started(&tc.name).await;
         let result = self
             .agent
@@ -206,7 +181,7 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Sanitize tool output and return both preview text (raw sanitized) and wrapped text (for LLM).
-    fn sanitize_output(&self, tool_name: &str, output: &str) -> (String, String) {
+    pub(super) fn sanitize_output(&self, tool_name: &str, output: &str) -> (String, String) {
         let sanitized = self.agent.safety().sanitize_tool_output(tool_name, output);
         let preview_text = sanitized.content.clone();
         let wrapped_text =
@@ -217,7 +192,7 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Record tool outcome in the thread.
-    async fn record_tool_outcome(
+    pub(super) async fn record_tool_outcome(
         &self,
         _tool_name: &str,
         result_content: &str,
@@ -236,7 +211,7 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Emit image sentinel status update if applicable.
-    async fn maybe_emit_image_sentinel(&self, tool_name: &str, output: &str) -> bool {
+    pub(super) async fn maybe_emit_image_sentinel(&self, tool_name: &str, output: &str) -> bool {
         if !matches!(tool_name, "image_generate" | "image_edit") {
             return false;
         }
@@ -272,7 +247,7 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Fold tool result into context messages.
-    async fn fold_into_context(
+    pub(super) async fn fold_into_context(
         &self,
         tc: &crate::llm::ToolCall,
         result_content: String,
@@ -289,7 +264,7 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Run a batch of tools inline (sequential execution for small batches).
-    async fn run_tool_batch_inline(
+    pub(super) async fn run_tool_batch_inline(
         &self,
         runnable: &[(usize, crate::llm::ToolCall)],
         exec_results: &mut [Option<Result<String, Error>>],
@@ -301,11 +276,13 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Run a batch of tools in parallel (for large batches).
-    async fn run_tool_batch_parallel(
+    pub(super) async fn run_tool_batch_parallel(
         &self,
         runnable: &[(usize, crate::llm::ToolCall)],
         exec_results: &mut [Option<Result<String, Error>>],
     ) {
+        use tokio::task::JoinSet;
+
         let mut join_set = JoinSet::new();
 
         for (pf_idx, tc) in runnable {
@@ -388,7 +365,7 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Handle rejected tool call outcome.
-    async fn handle_rejected_tool(
+    pub(super) async fn handle_rejected_tool(
         &self,
         tc: &crate::llm::ToolCall,
         error_msg: &str,
@@ -410,7 +387,7 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Process post-flight for a single runnable tool.
-    async fn process_runnable_tool(
+    pub(super) async fn process_runnable_tool(
         &self,
         tc: &crate::llm::ToolCall,
         tool_result: Result<String, Error>,
@@ -502,291 +479,5 @@ impl<'a> ChatDelegate<'a> {
             .await;
 
         auth_instructions
-    }
-}
-
-impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
-    async fn check_signals(&self) -> LoopSignal {
-        let sess = self.session.lock().await;
-        if let Some(thread) = sess.threads.get(&self.thread_id)
-            && thread.state == ThreadState::Interrupted
-        {
-            return LoopSignal::Stop;
-        }
-        LoopSignal::Continue
-    }
-
-    async fn before_llm_call(
-        &self,
-        reason_ctx: &mut ReasoningContext,
-        iteration: usize,
-    ) -> Option<LoopOutcome> {
-        // Inject a nudge message when approaching the iteration limit so the
-        // LLM is aware it should produce a final answer on the next turn.
-        if iteration == self.nudge_at {
-            reason_ctx.messages.push(ChatMessage::system(
-                "You are approaching the tool call limit. \
-                 Provide your best final answer on the next response \
-                 using the information you have gathered so far. \
-                 Do not call any more tools.",
-            ));
-        }
-
-        let force_text = iteration >= self.force_text_at;
-
-        // Refresh tool definitions each iteration so newly built tools become visible
-        let tool_defs = self.agent.tools().tool_definitions().await;
-
-        // Apply trust-based tool attenuation if skills are active.
-        let tool_defs = if !self.active_skills.is_empty() {
-            let result = crate::skills::attenuate_tools(&tool_defs, &self.active_skills);
-            tracing::debug!(
-                min_trust = %result.min_trust,
-                tools_available = result.tools.len(),
-                tools_removed = result.removed_tools.len(),
-                removed = ?result.removed_tools,
-                explanation = %result.explanation,
-                "Tool attenuation applied"
-            );
-            result.tools
-        } else {
-            tool_defs
-        };
-
-        // Update context for this iteration
-        reason_ctx.available_tools = tool_defs;
-        reason_ctx.system_prompt = Some(if force_text {
-            self.cached_prompt_no_tools.clone()
-        } else {
-            self.cached_prompt.clone()
-        });
-        reason_ctx.force_text = force_text;
-
-        if force_text {
-            tracing::info!(
-                iteration,
-                "Forcing text-only response (iteration limit reached)"
-            );
-        }
-
-        let _ = self
-            .agent
-            .channels
-            .send_status(
-                &self.message.channel,
-                StatusUpdate::Thinking("Calling LLM...".into()),
-                &self.message.metadata,
-            )
-            .await;
-
-        None
-    }
-
-    async fn call_llm(
-        &self,
-        reasoning: &Reasoning,
-        reason_ctx: &mut ReasoningContext,
-        iteration: usize,
-    ) -> Result<crate::llm::RespondOutput, Error> {
-        // Enforce cost guardrails before the LLM call
-        if let Err(limit) = self.agent.cost_guard().check_allowed().await {
-            return Err(crate::error::LlmError::InvalidResponse {
-                provider: "agent".to_string(),
-                reason: limit.to_string(),
-            }
-            .into());
-        }
-
-        let output = match reasoning.respond_with_tools(reason_ctx).await {
-            Ok(output) => output,
-            Err(crate::error::LlmError::ContextLengthExceeded { used, limit }) => {
-                tracing::warn!(
-                    used,
-                    limit,
-                    iteration,
-                    "Context length exceeded, compacting messages and retrying"
-                );
-
-                // Compact messages in place and retry
-                reason_ctx.messages = compact_messages_for_retry(&reason_ctx.messages);
-
-                // When force_text, clear tools to further reduce token count
-                if reason_ctx.force_text {
-                    reason_ctx.available_tools.clear();
-                }
-
-                reasoning
-                    .respond_with_tools(reason_ctx)
-                    .await
-                    .map_err(|retry_err| {
-                        tracing::error!(
-                            original_used = used,
-                            original_limit = limit,
-                            retry_error = %retry_err,
-                            "Retry after auto-compaction also failed"
-                        );
-                        crate::error::Error::from(retry_err)
-                    })?
-            }
-            Err(e) => return Err(e.into()),
-        };
-
-        // Record cost and track token usage
-        let model_name = self.agent.llm().active_model_name();
-        let read_discount = self.agent.llm().cache_read_discount();
-        let write_multiplier = self.agent.llm().cache_write_multiplier();
-        let call_cost = self
-            .agent
-            .cost_guard()
-            .record_llm_call(
-                &model_name,
-                output.usage.input_tokens,
-                output.usage.output_tokens,
-                output.usage.cache_read_input_tokens,
-                output.usage.cache_creation_input_tokens,
-                read_discount,
-                write_multiplier,
-                Some(self.agent.llm().cost_per_token()),
-            )
-            .await;
-        tracing::debug!(
-            "LLM call used {} input + {} output tokens (${:.6})",
-            output.usage.input_tokens,
-            output.usage.output_tokens,
-            call_cost,
-        );
-
-        Ok(output)
-    }
-
-    async fn handle_text_response(
-        &self,
-        text: &str,
-        _reason_ctx: &mut ReasoningContext,
-    ) -> TextAction {
-        // Strip internal "[Called tool ...]" text that can leak when
-        // provider flattening (e.g. NEAR AI) converts tool_calls to
-        // plain text and the LLM echoes it back.
-        let sanitized = strip_internal_tool_call_text(text);
-        TextAction::Return(LoopOutcome::Response(sanitized))
-    }
-
-    async fn execute_tool_calls(
-        &self,
-        tool_calls: Vec<crate::llm::ToolCall>,
-        content: Option<String>,
-        reason_ctx: &mut ReasoningContext,
-    ) -> Result<Option<LoopOutcome>, Error> {
-        // Add the assistant message with tool_calls to context.
-        // OpenAI protocol requires this before tool-result messages.
-        reason_ctx
-            .messages
-            .push(ChatMessage::assistant_with_tool_calls(
-                content,
-                tool_calls.clone(),
-            ));
-
-        // Execute tools and add results to context
-        let _ = self
-            .agent
-            .channels
-            .send_status(
-                &self.message.channel,
-                StatusUpdate::Thinking(format!("Executing {} tool(s)...", tool_calls.len())),
-                &self.message.metadata,
-            )
-            .await;
-
-        // Record tool calls in the thread with sensitive params redacted.
-        {
-            let mut redacted_args: Vec<serde_json::Value> = Vec::with_capacity(tool_calls.len());
-            for tc in &tool_calls {
-                let safe = if let Some(tool) = self.agent.tools().get(&tc.name).await {
-                    redact_params(&tc.arguments, tool.sensitive_params())
-                } else {
-                    tc.arguments.clone()
-                };
-                redacted_args.push(safe);
-            }
-            let mut sess = self.session.lock().await;
-            if let Some(thread) = sess.threads.get_mut(&self.thread_id)
-                && let Some(turn) = thread.last_turn_mut()
-            {
-                for (tc, safe_args) in tool_calls.iter().zip(redacted_args) {
-                    turn.record_tool_call(&tc.name, safe_args);
-                }
-            }
-        }
-
-        // === Phase 1: Preflight (sequential) ===
-        let (batch, approval_needed) = self.group_tool_calls(&tool_calls).await?;
-        let ToolBatch {
-            preflight,
-            runnable,
-        } = batch;
-
-        // === Phase 2: Parallel execution ===
-        let mut exec_results: Vec<Option<Result<String, Error>>> =
-            (0..preflight.len()).map(|_| None).collect();
-
-        if runnable.len() <= 1 {
-            self.run_tool_batch_inline(&runnable, &mut exec_results)
-                .await;
-        } else {
-            self.run_tool_batch_parallel(&runnable, &mut exec_results)
-                .await;
-        }
-
-        // === Phase 3: Post-flight (sequential, in original order) ===
-        let mut deferred_auth: Option<String> = None;
-
-        for (pf_idx, (tc, outcome)) in preflight.into_iter().enumerate() {
-            match outcome {
-                PreflightOutcome::Rejected(error_msg) => {
-                    self.handle_rejected_tool(&tc, &error_msg, reason_ctx).await;
-                }
-                PreflightOutcome::Runnable => {
-                    let tool_result = exec_results[pf_idx].take().unwrap_or_else(|| {
-                        Err(crate::error::ToolError::ExecutionFailed {
-                            name: tc.name.clone(),
-                            reason: "No result available".to_string(),
-                        }
-                        .into())
-                    });
-
-                    if let Some(instructions) = self
-                        .process_runnable_tool(&tc, tool_result, reason_ctx)
-                        .await
-                    {
-                        deferred_auth = Some(instructions);
-                    }
-                }
-            }
-        }
-
-        // Return auth response after all results are recorded
-        if let Some(instructions) = deferred_auth {
-            return Ok(Some(LoopOutcome::Response(instructions)));
-        }
-
-        // Handle approval if a tool needed it
-        if let Some((approval_idx, tc, tool)) = approval_needed {
-            let display_params = redact_params(&tc.arguments, tool.sensitive_params());
-            let pending = crate::agent::session::PendingApproval {
-                request_id: Uuid::new_v4(),
-                tool_name: tc.name.clone(),
-                parameters: tc.arguments.clone(),
-                display_parameters: display_params,
-                description: tool.description().to_string(),
-                tool_call_id: tc.id.clone(),
-                context_messages: reason_ctx.messages.clone(),
-                deferred_tool_calls: tool_calls[approval_idx + 1..].to_vec(),
-                user_timezone: Some(self.user_tz.name().to_string()),
-            };
-
-            return Ok(Some(LoopOutcome::NeedApproval(Box::new(pending))));
-        }
-
-        Ok(None)
     }
 }

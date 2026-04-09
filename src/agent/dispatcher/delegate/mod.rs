@@ -89,3 +89,9 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
         tool_exec::execute_tool_calls(self, tool_calls, content, reason_ctx).await
     }
 }
+
+//! Chat delegate implementation for the agentic loop.
+
+mod loops;
+
+mod tools;
