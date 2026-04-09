@@ -1,6 +1,6 @@
 //! JSON shape symmetry tests for worker-orchestrator wire types.
 //!
-//! Each test round-trips a DTO through JSON serialisation and asserts the
+//! Each test round-trips a DTO through JSON serialization and asserts the
 //! wire shape via `insta` snapshot macros, so changes produce a single
 //! diffable artifact.
 
@@ -94,7 +94,7 @@ fn proxy_completion_response_from_fixture() {
     assert_eq!(parsed.input_tokens, 100);
     assert_eq!(parsed.finish_reason, ProxyFinishReason::Stop);
 
-    let re = serde_json::to_string(&parsed).expect("serialise");
+    let re = serde_json::to_string(&parsed).expect("serialize");
     let back: ProxyCompletionResponse = serde_json::from_str(&re).expect("re-parse");
     assert_eq!(back.content, parsed.content);
     assert_eq!(back.input_tokens, parsed.input_tokens);
@@ -113,7 +113,7 @@ fn job_description_from_fixture() {
     assert_eq!(parsed.description, "Do something");
     assert_eq!(parsed.project_dir.as_deref(), Some("/tmp/project"));
 
-    let re = serde_json::to_string(&parsed).expect("serialise");
+    let re = serde_json::to_string(&parsed).expect("serialize");
     let back: JobDescription = serde_json::from_str(&re).expect("re-parse");
     assert_eq!(back.title, parsed.title);
     assert_eq!(back.description, parsed.description);
@@ -130,7 +130,7 @@ fn remote_tool_catalog_response_from_fixture() {
     insta::assert_json_snapshot!("remote_tool_catalog_response", &parsed);
     assert_eq!(parsed.catalog_version, 7);
 
-    let re = serde_json::to_string(&parsed).expect("serialise");
+    let re = serde_json::to_string(&parsed).expect("serialize");
     let back: RemoteToolCatalogResponse = serde_json::from_str(&re).expect("re-parse");
     assert_eq!(back, parsed);
 }

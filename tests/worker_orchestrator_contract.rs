@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
-use rstest::rstest;
+
 use tokio::sync::Mutex;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -159,7 +159,6 @@ const ROUTE_METHOD_TABLE: &[(&str, &str)] = &[
     (CREDENTIALS_ROUTE, "GET"),
 ];
 
-#[rstest]
 #[tokio::test]
 async fn wrong_method_yields_method_not_allowed() {
     let state = make_state();
@@ -221,7 +220,6 @@ async fn assert_all_authenticated_routes_yield_unauthorized(
     }
 }
 
-#[rstest]
 #[tokio::test]
 async fn no_auth_header_yields_unauthorized() {
     let router = OrchestratorApi::router(make_state());
@@ -229,7 +227,6 @@ async fn no_auth_header_yields_unauthorized() {
     assert_all_authenticated_routes_yield_unauthorized(router, job_id, None).await;
 }
 
-#[rstest]
 #[tokio::test]
 async fn wrong_bearer_token_yields_unauthorized() {
     let router = OrchestratorApi::router(make_state());
@@ -242,7 +239,6 @@ async fn wrong_bearer_token_yields_unauthorized() {
     .await;
 }
 
-#[rstest]
 #[tokio::test]
 async fn valid_token_wrong_job_yields_unauthorized() {
     let other_job = Uuid::new_v4();

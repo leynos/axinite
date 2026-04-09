@@ -3,8 +3,6 @@
 //! Exercises the reload path end-to-end by driving `WebhookServer` and
 //! `HttpChannelState` directly — no live binary spawning.
 
-#![cfg(unix)]
-
 use std::net::{SocketAddr, TcpListener as StdTcpListener};
 use std::time::Duration;
 
@@ -22,37 +20,37 @@ use rstest::{fixture, rstest};
 /// Bind an ephemeral listener on `127.0.0.1:0` and return it.
 /// The caller must pass it directly to `start_with_listener` so the port
 /// is never released between allocation and server bind.
-async fn ephemeral_listener() -> tokio::net::TcpListener {
-    tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind ephemeral listener")
+async fn ephemeral_listener() -> Result<tokio::net::TcpListener, Box<dyn std::error::Error>> {
+    Ok(tokio::net::TcpListener::bind("127.0.0.1:0").await?)
 }
 
 /// Build a minimal health-check server using the given already-bound listener.
 /// Returns the started server and the bound address.
-async fn health_server(listener: tokio::net::TcpListener) -> (WebhookServer, SocketAddr) {
-    let addr = listener.local_addr().expect("local_addr");
+async fn health_server(
+    listener: tokio::net::TcpListener,
+) -> Result<(WebhookServer, SocketAddr), Box<dyn std::error::Error>> {
+    let addr = listener.local_addr()?;
     let config = WebhookServerConfig { addr };
     let mut server = WebhookServer::new(config);
     server.add_routes(
         axum::Router::new().route("/health", get(|| async { Json(json!({"status": "ok"})) })),
     );
-    server
-        .start_with_listener(listener)
-        .await
-        .expect("start with listener");
-    (server, addr)
+    server.start_with_listener(listener).await?;
+    Ok((server, addr))
 }
 
 /// POST a webhook payload and return the HTTP status.
-async fn post_webhook(client: &Client, addr: SocketAddr, secret: &str) -> reqwest::StatusCode {
-    client
+async fn post_webhook(
+    client: &Client,
+    addr: SocketAddr,
+    secret: &str,
+) -> Result<reqwest::StatusCode, reqwest::Error> {
+    Ok(client
         .post(format!("http://{}/webhook", addr))
         .json(&json!({"content": "hello", "secret": secret}))
         .send()
-        .await
-        .expect("webhook request")
-        .status()
+        .await?
+        .status())
 }
 
 #[fixture]
@@ -65,9 +63,11 @@ fn http_client() -> Client {
 
 #[rstest]
 #[tokio::test]
-async fn test_sighup_config_reload_address_change(http_client: Client) {
-    let listener1 = ephemeral_listener().await;
-    let (mut server, addr1) = health_server(listener1).await;
+async fn test_sighup_config_reload_address_change(
+    http_client: Client,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener1 = ephemeral_listener().await?;
+    let (mut server, addr1) = health_server(listener1).await?;
 
     // Confirm first address responds.
     let resp = http_client
@@ -80,7 +80,7 @@ async fn test_sighup_config_reload_address_change(http_client: Client) {
     // Restart on a second ephemeral port.
     // Note: restart_with_addr still has a small race window on rebind,
     // but the initial bind is now race-free.
-    let addr2 = ephemeral_listener().await.local_addr().expect("addr2");
+    let addr2 = ephemeral_listener().await?.local_addr()?;
     server.restart_with_addr(addr2).await.expect("restart");
 
     // New address should respond.
@@ -112,13 +112,16 @@ async fn test_sighup_config_reload_address_change(http_client: Client) {
     }
 
     server.shutdown().await;
+    Ok(())
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_sighup_secret_update_zero_downtime(http_client: Client) {
-    let listener = ephemeral_listener().await;
-    let addr = listener.local_addr().expect("local_addr");
+async fn test_sighup_secret_update_zero_downtime(
+    http_client: Client,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener = ephemeral_listener().await?;
+    let addr = listener.local_addr()?;
 
     let channel = HttpChannel::new(HttpConfig {
         host: "127.0.0.1".to_string(),
@@ -133,13 +136,10 @@ async fn test_sighup_secret_update_zero_downtime(http_client: Client) {
 
     let mut server = WebhookServer::new(WebhookServerConfig { addr });
     server.add_routes(channel.routes());
-    server
-        .start_with_listener(listener)
-        .await
-        .expect("start webhook server");
+    server.start_with_listener(listener).await?;
 
     // Old secret should be accepted.
-    let status = post_webhook(&http_client, addr, "old-secret").await;
+    let status = post_webhook(&http_client, addr, "old-secret").await?;
     assert_eq!(status, StatusCode::OK, "old secret should work initially");
 
     // Hot-swap secret.
@@ -148,7 +148,7 @@ async fn test_sighup_secret_update_zero_downtime(http_client: Client) {
         .await;
 
     // Old secret should now be rejected.
-    let status = post_webhook(&http_client, addr, "old-secret").await;
+    let status = post_webhook(&http_client, addr, "old-secret").await?;
     assert_eq!(
         status,
         StatusCode::UNAUTHORIZED,
@@ -156,17 +156,20 @@ async fn test_sighup_secret_update_zero_downtime(http_client: Client) {
     );
 
     // New secret should be accepted.
-    let status = post_webhook(&http_client, addr, "new-secret").await;
+    let status = post_webhook(&http_client, addr, "new-secret").await?;
     assert_eq!(status, StatusCode::OK, "new secret should work after swap");
 
     server.shutdown().await;
+    Ok(())
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_sighup_rollback_on_address_bind_failure(http_client: Client) {
-    let listener1 = ephemeral_listener().await;
-    let (mut server, addr1) = health_server(listener1).await;
+async fn test_sighup_rollback_on_address_bind_failure(
+    http_client: Client,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let listener1 = ephemeral_listener().await?;
+    let (mut server, addr1) = health_server(listener1).await?;
 
     // Confirm initial address works.
     let resp = http_client
@@ -208,4 +211,5 @@ async fn test_sighup_rollback_on_address_bind_failure(http_client: Client) {
     );
 
     server.shutdown().await;
+    Ok(())
 }
