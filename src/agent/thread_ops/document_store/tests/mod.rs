@@ -29,6 +29,72 @@ fn make_attachment(
     }
 }
 
+async fn make_workspace() -> (tempfile::TempDir, std::sync::Arc<Workspace>) {
+    use crate::db::Database;
+    use std::sync::Arc;
+
+    let tmp_dir = tempfile::tempdir().expect("create tempdir");
+    let db_path = tmp_dir.path().join("doc_store_test.db");
+    let backend = crate::db::libsql::LibSqlBackend::new_local(&db_path)
+        .await
+        .expect("failed to create local backend");
+    Database::run_migrations(&backend)
+        .await
+        .expect("failed to run migrations");
+    let workspace = Arc::new(Workspace::new_with_db("test-user", Arc::new(backend)));
+    (tmp_dir, workspace)
+}
+
+fn new_doc(id: &str, filename: &str, text: Option<&str>, size: u64) -> IncomingAttachment {
+    IncomingAttachment {
+        id: id.to_string(),
+        kind: AttachmentKind::Document,
+        mime_type: "application/pdf".to_string(),
+        filename: Some(filename.to_string()),
+        size_bytes: Some(size),
+        source_url: None,
+        storage_key: None,
+        extracted_text: text.map(ToString::to_string),
+        data: Vec::new(),
+        duration_secs: None,
+    }
+}
+
+fn new_audio(id: &str) -> IncomingAttachment {
+    IncomingAttachment {
+        id: id.to_string(),
+        kind: AttachmentKind::Audio,
+        mime_type: "audio/mpeg".to_string(),
+        filename: Some("recording.mp3".to_string()),
+        size_bytes: Some(2048),
+        source_url: None,
+        storage_key: None,
+        extracted_text: Some("some transcript".to_string()),
+        data: Vec::new(),
+        duration_secs: Some(60),
+    }
+}
+
+fn new_message(
+    message_id: uuid::Uuid,
+    attachments: Vec<IncomingAttachment>,
+) -> crate::channels::IncomingMessage {
+    use chrono::Utc;
+
+    crate::channels::IncomingMessage {
+        id: message_id,
+        channel: "test-channel".to_string(),
+        user_id: "test-user".to_string(),
+        user_name: None,
+        content: "test message".to_string(),
+        thread_id: None,
+        received_at: Utc::now(),
+        timezone: None,
+        metadata: serde_json::Value::Null,
+        attachments,
+    }
+}
+
 #[rstest]
 #[case("[Failed to extract]")]
 #[case("[Error parsing]")]
@@ -117,92 +183,27 @@ fn build_document_path_uses_sanitized_id_and_filename() {
 }
 
 #[tokio::test]
-async fn store_extracted_documents_filters_and_stores_correctly() {
-    use std::sync::Arc;
-
-    use crate::channels::AttachmentKind;
-    use crate::db::Database;
-    use chrono::Utc;
+async fn store_extracted_documents_filters_and_stores_only_usable_documents() {
     use uuid::Uuid;
 
-    // Create local libSQL backend with temp file and workspace
-    let tmp_dir = tempfile::tempdir().expect("create tempdir");
-    let db_path = tmp_dir.path().join("doc_store_test.db");
-    let backend = crate::db::libsql::LibSqlBackend::new_local(&db_path)
-        .await
-        .expect("failed to create local backend");
-    Database::run_migrations(&backend)
-        .await
-        .expect("failed to run migrations");
-    let workspace = Arc::new(Workspace::new_with_db("test-user", Arc::new(backend)));
+    let (_tmp_dir, workspace) = make_workspace().await;
 
-    // Build message with mixed attachments
+    // Build message with: usable doc1, non-document audio1, sentinel doc2, and no-text doc3
     let message_id = Uuid::new_v4();
-    let message = crate::channels::IncomingMessage {
-        id: message_id,
-        channel: "test-channel".to_string(),
-        user_id: "test-user".to_string(),
-        user_name: None,
-        content: "test message".to_string(),
-        thread_id: None,
-        received_at: Utc::now(),
-        timezone: None,
-        metadata: serde_json::Value::Null,
-        attachments: vec![
-            // Document with usable text (should be stored)
-            IncomingAttachment {
-                id: "doc1".to_string(),
-                kind: AttachmentKind::Document,
-                mime_type: "application/pdf".to_string(),
-                filename: Some("report.pdf".to_string()),
-                size_bytes: Some(1024),
-                source_url: None,
-                storage_key: None,
-                extracted_text: Some("This is extracted document text".to_string()),
-                data: Vec::new(),
-                duration_secs: None,
-            },
-            // Non-document attachment (should be skipped)
-            IncomingAttachment {
-                id: "audio1".to_string(),
-                kind: AttachmentKind::Audio,
-                mime_type: "audio/mpeg".to_string(),
-                filename: Some("recording.mp3".to_string()),
-                size_bytes: Some(2048),
-                source_url: None,
-                storage_key: None,
-                extracted_text: Some("some transcript".to_string()),
-                data: Vec::new(),
-                duration_secs: Some(60),
-            },
-            // Document with sentinel extracted text (should be skipped)
-            IncomingAttachment {
-                id: "doc2".to_string(),
-                kind: AttachmentKind::Document,
-                mime_type: "application/pdf".to_string(),
-                filename: Some("failed.pdf".to_string()),
-                size_bytes: Some(512),
-                source_url: None,
-                storage_key: None,
-                extracted_text: Some("[Failed to extract]".to_string()),
-                data: Vec::new(),
-                duration_secs: None,
-            },
-            // Document without extracted text (should be skipped)
-            IncomingAttachment {
-                id: "doc3".to_string(),
-                kind: AttachmentKind::Document,
-                mime_type: "application/pdf".to_string(),
-                filename: Some("no_text.pdf".to_string()),
-                size_bytes: Some(256),
-                source_url: None,
-                storage_key: None,
-                extracted_text: None,
-                data: Vec::new(),
-                duration_secs: None,
-            },
+    let message = new_message(
+        message_id,
+        vec![
+            new_doc(
+                "doc1",
+                "report.pdf",
+                Some("This is extracted document text"),
+                1024,
+            ),
+            new_audio("audio1"),
+            new_doc("doc2", "failed.pdf", Some("[Failed to extract]"), 512),
+            new_doc("doc3", "no_text.pdf", None, 256),
         ],
-    };
+    );
 
     store_extracted_documents(&workspace, &message).await;
 
@@ -223,6 +224,31 @@ async fn store_extracted_documents_filters_and_stores_correctly() {
         paths[0].contains(&message_id.to_string()),
         "stored path should contain message_id"
     );
+}
+
+#[tokio::test]
+async fn store_extracted_documents_writes_expected_header_and_body() {
+    use uuid::Uuid;
+
+    let (_tmp_dir, workspace) = make_workspace().await;
+
+    // Build message with only usable doc1
+    let message_id = Uuid::new_v4();
+    let message = new_message(
+        message_id,
+        vec![new_doc(
+            "doc1",
+            "report.pdf",
+            Some("This is extracted document text"),
+            1024,
+        )],
+    );
+
+    store_extracted_documents(&workspace, &message).await;
+
+    // Query workspace for stored documents
+    let paths = workspace.list_all().await.expect("failed to list paths");
+    assert_eq!(paths.len(), 1, "expected exactly one stored document");
 
     // Verify content
     let doc = workspace
