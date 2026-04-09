@@ -46,6 +46,37 @@ fn update_if_changed(current: String, candidate: String, was_modified: bool) -> 
 #[cfg(test)]
 mod helper_tests {
     use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn char_boundary_truncation_returns_valid_boundary(
+            s in "\u{0}\u{10ffff}*",  // Arbitrary valid UTF-8 strings
+            max_len in 0usize..100usize
+        ) {
+            let cut = char_boundary_truncation(&s, max_len);
+            // Invariant: cut must be <= max_len
+            prop_assert!(cut <= max_len);
+            // Invariant: cut must be at a valid UTF-8 char boundary
+            prop_assert!(s.is_char_boundary(cut));
+        }
+
+        #[test]
+        fn char_boundary_truncation_edge_cases(
+            s in "\u{0}\u{10ffff}*"  // Any valid UTF-8 string
+        ) {
+            // Edge case: max_len == 0
+            let cut = char_boundary_truncation(&s, 0);
+            prop_assert_eq!(cut, 0);
+            prop_assert!(s.is_char_boundary(cut));
+
+            // Edge case: max_len > string length
+            let max_len = s.len() + 10;
+            let cut = char_boundary_truncation(&s, max_len);
+            prop_assert!(cut <= s.len());
+            prop_assert!(s.is_char_boundary(cut));
+        }
+    }
 
     #[test]
     fn test_char_boundary_truncation_multibyte_utf8() {
@@ -171,13 +202,14 @@ impl SafetyLayer {
 
     /// Apply policy enforcement to `content`.
     ///
-    /// Returns `Ok((content, was_modified))` on pass or sanitise, or
+    /// Returns `Ok((content, was_modified, warnings))` on pass or sanitise, or
     /// `Err(SanitizedOutput)` when the policy blocks the output.
     fn apply_policy(
         &self,
         content: String,
         was_modified: bool,
-    ) -> Result<(String, bool), SanitizedOutput> {
+        warnings: Vec<InjectionWarning>,
+    ) -> Result<(String, bool, Vec<InjectionWarning>), SanitizedOutput> {
         let violations = self.policy.check(&content);
         if violations
             .iter()
@@ -185,7 +217,7 @@ impl SafetyLayer {
         {
             return Err(SanitizedOutput {
                 content: "[Output blocked by safety policy]".to_string(),
-                warnings: vec![],
+                warnings,
                 was_modified: true,
             });
         }
@@ -194,9 +226,11 @@ impl SafetyLayer {
             .any(|rule| rule.action == PolicyAction::Sanitize)
         {
             let sanitised = self.sanitizer.sanitize(&content);
-            return Ok((sanitised.content, true));
+            let mut all_warnings = warnings;
+            all_warnings.extend(sanitised.warnings);
+            return Ok((sanitised.content, true, all_warnings));
         }
-        Ok((content, was_modified))
+        Ok((content, was_modified, warnings))
     }
 
     /// Run the full tool-output pipeline: length gate → sanitizer → validator → policy → leak-detector.
@@ -204,7 +238,7 @@ impl SafetyLayer {
     /// Returns a `SanitizedOutput` whose `content` is safe to pass to
     /// `wrap_for_llm`. If any stage blocks the content, returns an appropriate
     /// blocked message with `was_modified: true`.
-    pub fn process_tool_output(&self, _tool_name: &str, output: &str) -> SanitizedOutput {
+    pub(crate) fn process_tool_output(&self, _tool_name: &str, output: &str) -> SanitizedOutput {
         // Stage 1: Length check (prerequisite for all subsequent stages)
         let mut truncation_notice = None;
         let mut output = output;
@@ -225,10 +259,12 @@ impl SafetyLayer {
         // Stage 2: Sanitizer (removes injection patterns)
         let mut content = output.to_string();
         let mut was_modified = truncation_notice.is_some();
+        let mut warnings: Vec<InjectionWarning> = vec![];
 
         if self.config.injection_check_enabled {
             let sanitized = self.sanitizer.sanitize(&content);
             was_modified = was_modified || sanitized.was_modified;
+            warnings.extend(sanitized.warnings);
             content = sanitized.content;
         }
 
@@ -237,19 +273,20 @@ impl SafetyLayer {
         if !validation.is_valid {
             return SanitizedOutput {
                 content: "[Output blocked: failed validation]".to_string(),
-                warnings: vec![],
+                warnings,
                 was_modified: true,
             };
         }
 
         // Stage 4: Policy enforcement (block/sanitise rules)
-        match self.apply_policy(content, was_modified) {
-            Ok((c, m)) => {
+        let warnings = match self.apply_policy(content, was_modified, warnings) {
+            Ok((c, m, w)) => {
                 content = c;
                 was_modified = m;
+                w
             }
             Err(blocked) => return blocked,
-        }
+        };
 
         // Stage 5: Leak detection (final safety check)
         match self.leak_detector.scan_and_clean(&content) {
@@ -261,7 +298,7 @@ impl SafetyLayer {
             Err(_) => {
                 return SanitizedOutput {
                     content: "[Output blocked due to potential secret leakage]".to_string(),
-                    warnings: vec![],
+                    warnings,
                     was_modified: true,
                 };
             }
@@ -274,7 +311,7 @@ impl SafetyLayer {
 
         SanitizedOutput {
             content,
-            warnings: vec![],
+            warnings,
             was_modified,
         }
     }
