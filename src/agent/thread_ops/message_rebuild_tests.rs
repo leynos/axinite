@@ -303,6 +303,13 @@ fn test_rebuild_chat_messages_malformed_tool_calls_boundary(
 #[case::whitespace_name(serde_json::json!([
     {"name": "  \t  ", "call_id": "call_0", "parameters": {}, "result": "ok"}
 ]))]
+// Partial enrichment: one entry has call_id, another doesn't - reject entire row
+#[case::partial_enrichment(serde_json::json!([
+    {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found"},
+    {"name": "echo", "parameters": {}, "result": "hello"}
+]))]
+// Empty array fast path: should be skipped without processing
+#[case::empty_array_skip(serde_json::json!([]))]
 fn test_rebuild_skips_malformed_tool_calls(
     test_safety_layer: SafetyLayer,
     #[case] malformed_json: serde_json::Value,
@@ -419,7 +426,6 @@ fn test_tool_result_content_fallbacks(
     );
 }
 
-#[cfg(test)]
 #[cfg(test)]
 #[path = "message_rebuild_property_tests.rs"]
 mod property_tests;
