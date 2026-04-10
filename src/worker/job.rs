@@ -999,6 +999,15 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
     }
 
     pub(crate) async fn mark_completed(&self) -> Result<(), Error> {
+        // Record the previous state for potential rollback.
+        let previous = self
+            .context_manager()
+            .get_context(self.job_id)
+            .await
+            .ok()
+            .map(|ctx| ctx.state);
+
+        // Apply the context transition first.
         self.context_manager()
             .update_context(self.job_id, |ctx| {
                 ctx.transition_to(
@@ -1012,24 +1021,61 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: s,
             })?;
 
-        self.log_terminal_result_event(
-            "result",
-            serde_json::json!({
-                "status": "completed",
-                "success": true,
-                "message": "Job completed successfully",
-            }),
-        )
-        .await?;
-        self.persist_status(
-            JobState::Completed,
-            Some("Job completed successfully".to_string()),
-        )
-        .await?;
+        // Attempt to log and persist. Roll back on failure.
+        if let Err(e) = self
+            .log_terminal_result_event(
+                "result",
+                serde_json::json!({
+                    "status": "completed",
+                    "success": true,
+                    "message": "Job completed successfully",
+                }),
+            )
+            .await
+        {
+            self.rollback_context(previous, "mark_completed").await;
+            return Err(e);
+        }
+
+        if let Err(e) = self
+            .persist_status(
+                JobState::Completed,
+                Some("Job completed successfully".to_string()),
+            )
+            .await
+        {
+            self.rollback_context(previous, "mark_completed").await;
+            return Err(e);
+        }
+
         Ok(())
     }
 
+    /// Roll back the context to the previous state on persistence failure.
+    async fn rollback_context(&self, previous: Option<JobState>, operation: &str) {
+        if let Some(state) = previous {
+            let _ = self
+                .context_manager()
+                .update_context(self.job_id, |ctx| ctx.transition_to(state, None))
+                .await;
+            tracing::error!(
+                job_id = %self.job_id,
+                operation,
+                "Rolled back context state after persistence failure"
+            );
+        }
+    }
+
     pub(crate) async fn mark_failed(&self, reason: &str) -> Result<(), Error> {
+        // Record the previous state for potential rollback.
+        let previous = self
+            .context_manager()
+            .get_context(self.job_id)
+            .await
+            .ok()
+            .map(|ctx| ctx.state);
+
+        // Apply the context transition first.
         self.context_manager()
             .update_context(self.job_id, |ctx| {
                 ctx.transition_to(JobState::Failed, Some(reason.to_string()))
@@ -1040,21 +1086,43 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: s,
             })?;
 
-        self.log_terminal_result_event(
-            "result",
-            serde_json::json!({
-                "status": "failed",
-                "success": false,
-                "message": format!("Execution failed: {}", reason),
-            }),
-        )
-        .await?;
-        self.persist_status(JobState::Failed, Some(reason.to_string()))
-            .await?;
+        // Attempt to log and persist. Roll back on failure.
+        if let Err(e) = self
+            .log_terminal_result_event(
+                "result",
+                serde_json::json!({
+                    "status": "failed",
+                    "success": false,
+                    "message": format!("Execution failed: {}", reason),
+                }),
+            )
+            .await
+        {
+            self.rollback_context(previous, "mark_failed").await;
+            return Err(e);
+        }
+
+        if let Err(e) = self
+            .persist_status(JobState::Failed, Some(reason.to_string()))
+            .await
+        {
+            self.rollback_context(previous, "mark_failed").await;
+            return Err(e);
+        }
+
         Ok(())
     }
 
     pub(crate) async fn mark_stuck(&self, reason: &str) -> Result<(), Error> {
+        // Record the previous state for potential rollback.
+        let previous = self
+            .context_manager()
+            .get_context(self.job_id)
+            .await
+            .ok()
+            .map(|ctx| ctx.state);
+
+        // Apply the context transition first.
         self.context_manager()
             .update_context(self.job_id, |ctx| ctx.mark_stuck(reason))
             .await?
@@ -1063,17 +1131,30 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: s,
             })?;
 
-        self.log_terminal_result_event(
-            "result",
-            serde_json::json!({
-                "status": "stuck",
-                "success": false,
-                "message": format!("Job stuck: {}", reason),
-            }),
-        )
-        .await?;
-        self.persist_status(JobState::Stuck, Some(reason.to_string()))
-            .await?;
+        // Attempt to log and persist. Roll back on failure.
+        if let Err(e) = self
+            .log_terminal_result_event(
+                "result",
+                serde_json::json!({
+                    "status": "stuck",
+                    "success": false,
+                    "message": format!("Job stuck: {}", reason),
+                }),
+            )
+            .await
+        {
+            self.rollback_context(previous, "mark_stuck").await;
+            return Err(e);
+        }
+
+        if let Err(e) = self
+            .persist_status(JobState::Stuck, Some(reason.to_string()))
+            .await
+        {
+            self.rollback_context(previous, "mark_stuck").await;
+            return Err(e);
+        }
+
         Ok(())
     }
 }
@@ -1691,16 +1772,13 @@ mod tests {
     async fn make_worker_with_approval(
         tools: Vec<Arc<dyn Tool>>,
         approval_context: Option<crate::tools::ApprovalContext>,
-    ) -> Worker {
+    ) -> Result<Worker, Box<dyn std::error::Error + Send + Sync>> {
         let registry = Arc::new(build_registry(tools).await);
         let cm = Arc::new(crate::context::ContextManager::new(5));
-        let job_id = cm
-            .create_job("test", "test job")
-            .await
-            .expect("failed to create job in ContextManager");
+        let job_id = cm.create_job("test", "test job").await?;
         let deps = base_deps(cm, registry, None, approval_context);
 
-        Worker::new(job_id, deps)
+        Ok(Worker::new(job_id, deps))
     }
 
     /// A tool that requires approval (UnlessAutoApproved).
@@ -1774,7 +1852,7 @@ mod tests {
     #[tokio::test]
     async fn test_approval_context_unblocks_unless_auto_approved()
     -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let worker_blocked = make_worker_with_approval(vec![Arc::new(ApprovalTool)], None).await;
+        let worker_blocked = make_worker_with_approval(vec![Arc::new(ApprovalTool)], None).await?;
         let result = worker_blocked
             .execute_tool("needs_approval", &serde_json::json!({}))
             .await;
@@ -1787,7 +1865,7 @@ mod tests {
             vec![Arc::new(ApprovalTool)],
             Some(crate::tools::ApprovalContext::autonomous()),
         )
-        .await;
+        .await?;
         let result = worker_allowed
             .execute_tool("needs_approval", &serde_json::json!({}))
             .await;
@@ -1802,7 +1880,7 @@ mod tests {
             vec![Arc::new(AlwaysApprovalTool)],
             Some(crate::tools::ApprovalContext::autonomous()),
         )
-        .await;
+        .await?;
         let result = worker_blocked
             .execute_tool("always_approval", &serde_json::json!({}))
             .await;
@@ -1817,7 +1895,7 @@ mod tests {
                 "always_approval".to_string(),
             ])),
         )
-        .await;
+        .await?;
         let result = worker_allowed
             .execute_tool("always_approval", &serde_json::json!({}))
             .await;
@@ -1948,7 +2026,7 @@ mod tests {
         let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
 
         // Transition to InProgress first
-        transition_to_in_progress(&worker).await;
+        transition_to_in_progress(&worker).await?;
 
         // Execute the terminal state transition
         case.method.apply_transition(&worker).await?;
@@ -1985,7 +2063,7 @@ mod tests {
         let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
 
         // Transition to InProgress first
-        transition_to_in_progress(&worker).await;
+        transition_to_in_progress(&worker).await?;
 
         // First call succeeds
         worker
@@ -2062,7 +2140,7 @@ mod tests {
         for (method, expected_state, expected_status, expected_reason) in test_cases {
             // Test single transition
             let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
-            transition_to_in_progress(&worker).await;
+            transition_to_in_progress(&worker).await?;
 
             method.apply_transition(&worker).await?;
 

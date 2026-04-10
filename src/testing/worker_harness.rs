@@ -148,16 +148,18 @@ pub async fn make_worker_with_capturing_store(
 }
 
 /// Transition a worker's job to InProgress state.
-pub async fn transition_to_in_progress(worker: &Worker) {
+pub async fn transition_to_in_progress(
+    worker: &Worker,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use crate::context::JobContext;
     worker
         .context_manager()
         .update_context(worker.job_id, |ctx: &mut JobContext| {
             ctx.transition_to(JobState::InProgress, None)
         })
-        .await
-        .expect("context update should succeed")
-        .expect("job context should exist for InProgress transition");
+        .await?
+        .map_err(|s| format!("context transition failed: {s}"))?;
+    Ok(())
 }
 
 /// Bundles the expected terminal-state outcome for persistence assertions.

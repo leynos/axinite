@@ -136,7 +136,6 @@ async fn test_sighup_secret_update_zero_downtime(
     // ensuring the `HttpChannel`'s internal sender/registration is not dropped
     // and the channel lifecycle remains active for the duration of the test.
     let _stream = channel.start().await.expect("start channel");
-    let state = channel.shared_state();
 
     let mut server = WebhookServer::new(WebhookServerConfig { addr });
     server.add_routes(channel.routes());
@@ -146,8 +145,8 @@ async fn test_sighup_secret_update_zero_downtime(
     let status = post_webhook(&http_client, addr, "old-secret").await?;
     assert_eq!(status, StatusCode::OK, "old secret should work initially");
 
-    // Hot-swap secret.
-    state
+    // Hot-swap secret via the public API.
+    channel
         .update_secret(Some(SecretString::from("new-secret".to_string())))
         .await;
 

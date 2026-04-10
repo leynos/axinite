@@ -34,7 +34,10 @@ async fn started_webhook_server()
     Ok(StartedWebhookServer {
         server,
         addr,
-        client: reqwest::Client::new(),
+        client: reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(2))
+            .build()
+            .expect("build client"),
     })
 }
 

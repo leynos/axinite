@@ -1,4 +1,4 @@
-# Testing Abstractions Guide
+# Testing abstractions guide
 
 This document describes the crate-wide testing abstractions available in the
 `ironclaw::testing` module and when to use each one.
@@ -8,11 +8,11 @@ This document describes the crate-wide testing abstractions available in the
 The testing module provides several complementary abstractions for different
 testing scenarios:
 
-| Abstraction | Purpose | Use When |
+| Abstraction | Purpose | Use when |
 |-------------|---------|----------|
-| `TestHarnessBuilder` | Full integration testing with real database | You need to test actual persistence |
-| `CapturingStore` | Unit testing without database | You need to verify calls without hitting a real DB |
-| `NullDatabase` | Baseline test double | You're writing custom mocks |
+| `TestHarnessBuilder` | Full integration testing with real database | Testing actual persistence with a real database |
+| `CapturingStore` | Unit testing without database | Verifying interactions without a real database |
+| `NullDatabase` | Baseline test double | Creating baseline test doubles or custom mocks |
 
 ## TestHarnessBuilder
 
@@ -21,7 +21,7 @@ Located in: `crate::testing::TestHarnessBuilder`
 The `TestHarnessBuilder` constructs a fully-wired `AgentDeps` with a real
 libSQL-backed database (when the `libsql` feature is enabled). This is the
 correct choice for integration-style tests that need to verify actual
-persistence behavior.
+persistence behaviour.
 
 ```rust
 use ironclaw::testing::TestHarnessBuilder;
@@ -38,7 +38,7 @@ actual database persistence or when testing components that require a real
 `Database` trait implementation.
 
 **Do not mix with:** `CapturingStore`. The harness uses its own database
-internally; mixing it with `CapturingStore` will cause confusing behavior.
+internally; mixing it with `CapturingStore` will cause confusing behaviour.
 
 ## CapturingStore
 
@@ -90,7 +90,7 @@ let db = NullDatabase::new();
 **When to use:** Use `NullDatabase` as a base for custom mocks when you need
 fine-grained control over specific database operations.
 
-## Worker Harness
+## Worker harness
 
 Located in: `crate::testing::worker_harness`
 
@@ -111,7 +111,7 @@ TerminalMethod::Completed.apply_transition(&worker).await;
 **When to use:** Use the worker harness when testing `Worker` behavior
 specifically.
 
-## Choosing the Right Abstraction
+## Choosing the right abstraction
 
 ```plaintext
 Need to test persistence? ──Yes──► TestHarnessBuilder
@@ -127,7 +127,7 @@ Need to verify calls? ────Yes───► CapturingStore
 Writing a custom mock? ───Yes───► NullDatabase (as base)
 ```
 
-## Additional Resources
+## Additional resources
 
 - `crate::testing::TestHarnessBuilder` — Full harness builder
 - `crate::testing::null_db::{NullDatabase, CapturingStore, EventCall, StatusCall}` —
