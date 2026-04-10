@@ -9,7 +9,7 @@
 //! - Attaching runtime concerns such as secrets injection and OAuth
 //!   refresh configuration.
 //! - Registering tools from persistent storage by fetching the stored
-//!   record and binary, normalising metadata via [`schema::normalized_schema`],
+//!   record and binary, normalizing metadata via [`schema::normalized_schema`],
 //!   and delegating to [`ToolRegistry::register_wasm`].
 
 use std::collections::HashMap;

@@ -382,10 +382,10 @@ testing:
 Use these in unit tests to verify manager behaviour without real I/O.
 Example usage is in `src/reload/manager/tests.rs`.
 
-## WASM tool schema normalisation
+## WASM tool schema normalization
 
-WASM tools carry a parameter schema that describes their inputs to the LLM.
-The canonical normalisation logic lives in
+WASM tools carry a parameter schema that describes their inputs to the
+language model (LLM). The canonical normalization logic lives in
 `src/tools/registry/schema.rs`.
 
 ### When `normalized_schema` returns `None`
@@ -400,7 +400,7 @@ missing:
 - Placeholder schemas produced by the guest at initial registration
   (matched by `is_placeholder_schema`).
 
-When normalisation yields `None`, the registration path falls through to
+When normalization yields `None`, the registration path falls through to
 guest-export recovery — the host asks the compiled WASM component for
 its own exported metadata.
 
@@ -413,10 +413,10 @@ its own exported metadata.
 
 2. **`register_wasm_from_storage`** — the database-driven entry point.
    Loads the stored tool record and binary with integrity verification,
-   normalises description and schema via `normalized_schema` and
+   normalizes description and schema via `normalized_schema` and
    `normalized_description`, then delegates to `register_wasm`.
 
-The storage path is the one that exercises schema normalisation, because
+The storage path is the one that exercises schema normalization, because
 backends may persist placeholder or null schemas that must be stripped
 before the guest-export recovery logic can run.
 
