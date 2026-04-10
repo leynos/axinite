@@ -13,6 +13,51 @@ use crate::tools::wasm::{
 };
 
 #[tokio::test]
+async fn register_wasm_from_storage_triggers_guest_export_recovery_for_placeholder_schema() {
+    // Verify that when the stored schema is the placeholder JSON,
+    // normalized_schema returns None and the loader triggers guest export recovery.
+    let registry = ToolRegistry::new();
+    let runtime = metadata_test_runtime().expect("create metadata test runtime");
+    let wasm_binary = github_wasm_bytes();
+
+    // Use the placeholder schema as the stored parameters_schema
+    let placeholder_schema: serde_json::Value =
+        serde_json::from_str(&crate::tools::wasm::placeholder_json())
+            .expect("parse placeholder JSON");
+
+    // Verify the placeholder schema normalizes to None (this is the key assertion)
+    assert!(
+        super::schema::normalized_schema(placeholder_schema.clone()).is_none(),
+        "placeholder schema should normalize to None to trigger recovery"
+    );
+
+    let store = StubWasmToolStore::new(wasm_binary, placeholder_schema);
+
+    registry
+        .register_wasm_from_storage(WasmFromStorageRegistration {
+            store: &store,
+            runtime: &runtime,
+            user_id: "test-user",
+            name: "github",
+        })
+        .await
+        .expect("register wasm tool from storage");
+
+    // Verify the tool was registered with the real guest-exported schema
+    // (not the placeholder), indicating recovery was triggered
+    let definition = registry
+        .tool_definitions()
+        .await
+        .into_iter()
+        .find(|definition| definition.name == "github")
+        .expect("github definition should be registered");
+
+    // Assert we got the real GitHub schema (with actual properties),
+    // not the placeholder empty object schema
+    assert_real_github_schema(definition);
+}
+
+#[tokio::test]
 async fn register_wasm_from_storage_publishes_guest_schema_when_storage_schema_is_null() {
     let registry = ToolRegistry::new();
     let runtime = metadata_test_runtime().expect("create metadata test runtime");
