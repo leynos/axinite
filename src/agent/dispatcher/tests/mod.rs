@@ -105,8 +105,15 @@ impl MockLlmProvider {
             name: "always-tool-call",
             text: "forced text response".to_string(),
             tool_responder: text_or_tool_call_responder(
-                ForcedTextSpec { text: "forced text response", output_tokens: 5 },
-                ToolCallSpec { name: "echo", args: serde_json::json!({"message": "looping"}), output_tokens: 5 },
+                ForcedTextSpec {
+                    text: "forced text response",
+                    output_tokens: 5,
+                },
+                ToolCallSpec {
+                    name: "echo",
+                    args: serde_json::json!({"message": "looping"}),
+                    output_tokens: 5,
+                },
             ),
         }
     }
@@ -117,8 +124,15 @@ impl MockLlmProvider {
             name: "failing-tool-call",
             text: "forced text".to_string(),
             tool_responder: text_or_tool_call_responder(
-                ForcedTextSpec { text: "forced text", output_tokens: 2 },
-                ToolCallSpec { name: "nonexistent_tool", args: serde_json::json!({}), output_tokens: 5 },
+                ForcedTextSpec {
+                    text: "forced text",
+                    output_tokens: 2,
+                },
+                ToolCallSpec {
+                    name: "nonexistent_tool",
+                    args: serde_json::json!({}),
+                    output_tokens: 5,
+                },
             ),
         }
     }
