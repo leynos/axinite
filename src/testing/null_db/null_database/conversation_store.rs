@@ -60,28 +60,21 @@ impl crate::db::NativeConversationStore for NullDatabase {
     async fn get_or_create_routine_conversation(
         &self,
         routine_id: Uuid,
-        routine_name: &str,
+        _routine_name: &str,
         user_id: &str,
     ) -> Result<Uuid, DatabaseError> {
         let key = RoutineConvKey {
             routine_id,
-            routine_name: routine_name.to_string(),
             user_id: user_id.to_string(),
         };
-        let mut cache = self.routine_conv_cache.lock().unwrap();
-        Ok(*cache
-            .entry(key)
-            .or_insert_with(|| self.next_synthetic_uuid()))
+        Ok(self.get_or_create_in_cache(&self.routine_conv_cache, key))
     }
 
     async fn get_or_create_heartbeat_conversation(
         &self,
         user_id: &str,
     ) -> Result<Uuid, DatabaseError> {
-        let mut cache = self.heartbeat_conv_cache.lock().unwrap();
-        Ok(*cache
-            .entry(user_id.to_string())
-            .or_insert_with(|| self.next_synthetic_uuid()))
+        Ok(self.get_or_create_in_cache(&self.heartbeat_conv_cache, user_id.to_string()))
     }
 
     async fn get_or_create_assistant_conversation(
@@ -93,10 +86,7 @@ impl crate::db::NativeConversationStore for NullDatabase {
             user_id: user_id.to_string(),
             channel: channel.to_string(),
         };
-        let mut cache = self.assistant_conv_cache.lock().unwrap();
-        Ok(*cache
-            .entry(key)
-            .or_insert_with(|| self.next_synthetic_uuid()))
+        Ok(self.get_or_create_in_cache(&self.assistant_conv_cache, key))
     }
 
     async fn create_conversation_with_metadata(
@@ -170,14 +160,14 @@ mod tests {
 
         assert_eq!(uuid1, uuid2, "Same inputs should return same UUID");
 
-        // Different inputs should return different UUIDs
+        // Different routine_name but same routine_id should return same UUID (singleton semantics)
         let uuid3 = db
             .get_or_create_routine_conversation(routine_id, "different_routine", "user1")
             .await
             .unwrap();
-        assert_ne!(
+        assert_eq!(
             uuid1, uuid3,
-            "Different routine_name should return different UUID"
+            "Same routine_id should return same UUID regardless of routine_name"
         );
 
         let uuid4 = db

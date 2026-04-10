@@ -133,6 +133,9 @@ async fn test_sighup_secret_update_zero_downtime(
     });
 
     // Start the channel so the internal sender is populated.
+    // `_stream` is intentionally kept to hold the returned `MessageStream` alive,
+    // ensuring the `HttpChannel`'s internal sender/registration is not dropped
+    // and the channel lifecycle remains active for the duration of the test.
     let _stream = channel.start().await.expect("start channel");
     let state = channel.shared_state();
 

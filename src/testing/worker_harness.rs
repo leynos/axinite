@@ -33,13 +33,32 @@ impl NativeLlmProvider for StubLlm {
         &self,
         _req: CompletionRequest,
     ) -> Result<CompletionResponse, crate::error::LlmError> {
-        unimplemented!("stub")
+        // Return a deterministic stub response instead of panicking.
+        // This allows tests that construct a Worker to run without
+        // hitting unimplemented! if the LLM path is accidentally exercised.
+        Ok(CompletionResponse {
+            content: "stub response".to_string(),
+            input_tokens: 0,
+            output_tokens: 0,
+            finish_reason: crate::llm::FinishReason::Stop,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+        })
     }
     async fn complete_with_tools(
         &self,
         _req: ToolCompletionRequest,
     ) -> Result<ToolCompletionResponse, crate::error::LlmError> {
-        unimplemented!("stub")
+        // Return a deterministic stub response instead of panicking.
+        Ok(ToolCompletionResponse {
+            content: None,
+            tool_calls: vec![],
+            input_tokens: 0,
+            output_tokens: 0,
+            finish_reason: crate::llm::FinishReason::Stop,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+        })
     }
 }
 

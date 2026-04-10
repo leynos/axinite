@@ -8,6 +8,7 @@
 //! null behaviour.
 
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::sync::Mutex;
 
 use crate::error::WorkspaceError;
@@ -21,10 +22,12 @@ mod tool_failure_store;
 mod workspace_store;
 
 /// Key for the routine conversation cache.
+///
+/// Only includes routine_id and user_id to ensure singleton semantics
+/// (changing the routine name should not create a new conversation).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct RoutineConvKey {
     pub routine_id: uuid::Uuid,
-    pub routine_name: String,
     pub user_id: String,
 }
 
@@ -45,7 +48,7 @@ pub(super) struct AssistantConvKey {
 /// null behaviour.
 #[derive(Debug, Default)]
 pub struct NullDatabase {
-    /// Stable UUIDs for routine conversations, keyed by (routine_id, routine_name, user_id).
+    /// Stable UUIDs for routine conversations, keyed by (routine_id, user_id).
     pub(super) routine_conv_cache: Mutex<HashMap<RoutineConvKey, uuid::Uuid>>,
     /// Stable UUIDs for heartbeat conversations, keyed by user_id.
     pub(super) heartbeat_conv_cache: Mutex<HashMap<String, uuid::Uuid>>,
@@ -75,7 +78,12 @@ impl NullDatabase {
     /// value embedded in the UUID bytes. This provides reproducible IDs
     /// for tests that need stable values across multiple calls.
     pub(super) fn next_synthetic_uuid(&self) -> uuid::Uuid {
-        let mut counter = self.uuid_counter.lock().unwrap();
+        // Recover from poisoned mutex to avoid panicking in tests.
+        // The counter value is still valid even if a previous holder panicked.
+        let mut counter = self
+            .uuid_counter
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *counter += 1;
         // Embed counter in UUID bytes for deterministic generation
         let bytes = counter.to_be_bytes();
@@ -85,6 +93,21 @@ impl NullDatabase {
             bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
         ]);
         uuid::Uuid::from_bytes(uuid_bytes)
+    }
+
+    /// Lock `cache` and return the UUID already stored under `key`,
+    /// inserting a fresh synthetic UUID if the entry is absent.
+    ///
+    /// Recovers from poisoned mutex to avoid panicking in tests.
+    pub(super) fn get_or_create_in_cache<K: Eq + Hash>(
+        &self,
+        cache: &Mutex<HashMap<K, uuid::Uuid>>,
+        key: K,
+    ) -> uuid::Uuid {
+        let mut map = cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *map.entry(key).or_insert_with(|| self.next_synthetic_uuid())
     }
 }
 
