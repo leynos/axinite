@@ -3,18 +3,26 @@
 use super::super::check_auth_required;
 use super::*;
 
+/// Serialise `json` as a successful `Result<String, Error>` and call
+/// `check_auth_required`. Eliminates the repeated two-line setup in every
+/// auth detection test.
+fn check_auth_json(tool_name: &str, json: serde_json::Value) -> Option<(String, String)> {
+    let result: Result<String, Error> = Ok(json.to_string());
+    check_auth_required(tool_name, &result)
+}
+
 #[test]
 fn test_detect_auth_awaiting_positive() {
-    let result: Result<String, Error> = Ok(serde_json::json!({
-        "name": "telegram",
-        "kind": "WasmTool",
-        "awaiting_token": true,
-        "status": "awaiting_token",
-        "instructions": "Please provide your Telegram Bot API token."
-    })
-    .to_string());
-
-    let detected = check_auth_required("tool_auth", &result);
+    let detected = check_auth_json(
+        "tool_auth",
+        serde_json::json!({
+            "name": "telegram",
+            "kind": "WasmTool",
+            "awaiting_token": true,
+            "status": "awaiting_token",
+            "instructions": "Please provide your Telegram Bot API token."
+        }),
+    );
     assert!(detected.is_some());
     let (name, instructions) = detected.unwrap();
     assert_eq!(name, "telegram");
@@ -23,26 +31,32 @@ fn test_detect_auth_awaiting_positive() {
 
 #[test]
 fn test_detect_auth_awaiting_not_awaiting() {
-    let result: Result<String, Error> = Ok(serde_json::json!({
-        "name": "telegram",
-        "kind": "WasmTool",
-        "awaiting_token": false,
-        "status": "authenticated"
-    })
-    .to_string());
-
-    assert!(check_auth_required("tool_auth", &result).is_none());
+    assert!(
+        check_auth_json(
+            "tool_auth",
+            serde_json::json!({
+                "name": "telegram",
+                "kind": "WasmTool",
+                "awaiting_token": false,
+                "status": "authenticated"
+            })
+        )
+        .is_none()
+    );
 }
 
 #[test]
 fn test_detect_auth_awaiting_wrong_tool() {
-    let result: Result<String, Error> = Ok(serde_json::json!({
-        "name": "telegram",
-        "awaiting_token": true,
-    })
-    .to_string());
-
-    assert!(check_auth_required("tool_list", &result).is_none());
+    assert!(
+        check_auth_json(
+            "tool_list",
+            serde_json::json!({
+                "name": "telegram",
+                "awaiting_token": true,
+            })
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -67,16 +81,16 @@ fn test_detect_auth_awaiting_default_instructions() {
 
 #[test]
 fn test_detect_auth_awaiting_tool_activate() {
-    let result: Result<String, Error> = Ok(serde_json::json!({
-        "name": "slack",
-        "kind": "McpServer",
-        "awaiting_token": true,
-        "status": "awaiting_token",
-        "instructions": "Provide your Slack Bot token."
-    })
-    .to_string());
-
-    let detected = check_auth_required("tool_activate", &result);
+    let detected = check_auth_json(
+        "tool_activate",
+        serde_json::json!({
+            "name": "slack",
+            "kind": "McpServer",
+            "awaiting_token": true,
+            "status": "awaiting_token",
+            "instructions": "Provide your Slack Bot token."
+        }),
+    );
     assert!(detected.is_some());
     let (name, instructions) = detected.unwrap();
     assert_eq!(name, "slack");

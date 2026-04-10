@@ -26,6 +26,44 @@ use tokio::sync::Mutex;
 
 use super::types::*;
 
+/// Build a `tool_responder` closure that returns forced text when the tool
+/// list is empty and a single tool call otherwise.
+fn text_or_tool_call_responder(
+    forced_text: &'static str,
+    text_output_tokens: u32,
+    tool_name: &'static str,
+    tool_args: serde_json::Value,
+    tool_output_tokens: u32,
+) -> Arc<dyn Fn(ToolCompletionRequest) -> ToolCompletionResponse + Send + Sync> {
+    Arc::new(move |request: ToolCompletionRequest| {
+        if request.tools.is_empty() {
+            ToolCompletionResponse {
+                content: Some(forced_text.to_string()),
+                tool_calls: Vec::new(),
+                input_tokens: 0,
+                output_tokens: text_output_tokens,
+                finish_reason: FinishReason::Stop,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+            }
+        } else {
+            ToolCompletionResponse {
+                content: None,
+                tool_calls: vec![ToolCall {
+                    id: format!("call_{}", uuid::Uuid::new_v4()),
+                    name: tool_name.to_string(),
+                    arguments: tool_args.clone(),
+                }],
+                input_tokens: 0,
+                output_tokens: tool_output_tokens,
+                finish_reason: FinishReason::ToolUse,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+            }
+        }
+    })
+}
+
 /// Flexible mock LLM provider for unit tests.
 pub(super) struct MockLlmProvider {
     name: &'static str,
@@ -56,32 +94,13 @@ impl MockLlmProvider {
         Self {
             name: "always-tool-call",
             text: "forced text response".to_string(),
-            tool_responder: Arc::new(|request| {
-                if request.tools.is_empty() {
-                    return ToolCompletionResponse {
-                        content: Some("forced text response".to_string()),
-                        tool_calls: Vec::new(),
-                        input_tokens: 0,
-                        output_tokens: 5,
-                        finish_reason: FinishReason::Stop,
-                        cache_read_input_tokens: 0,
-                        cache_creation_input_tokens: 0,
-                    };
-                }
-                ToolCompletionResponse {
-                    content: None,
-                    tool_calls: vec![ToolCall {
-                        id: format!("call_{}", uuid::Uuid::new_v4()),
-                        name: "echo".to_string(),
-                        arguments: serde_json::json!({"message": "looping"}),
-                    }],
-                    input_tokens: 0,
-                    output_tokens: 5,
-                    finish_reason: FinishReason::ToolUse,
-                    cache_read_input_tokens: 0,
-                    cache_creation_input_tokens: 0,
-                }
-            }),
+            tool_responder: text_or_tool_call_responder(
+                "forced text response",
+                5,
+                "echo",
+                serde_json::json!({"message": "looping"}),
+                5,
+            ),
         }
     }
 
@@ -90,32 +109,13 @@ impl MockLlmProvider {
         Self {
             name: "failing-tool-call",
             text: "forced text".to_string(),
-            tool_responder: Arc::new(|request| {
-                if request.tools.is_empty() {
-                    return ToolCompletionResponse {
-                        content: Some("forced text".to_string()),
-                        tool_calls: Vec::new(),
-                        input_tokens: 0,
-                        output_tokens: 2,
-                        finish_reason: FinishReason::Stop,
-                        cache_read_input_tokens: 0,
-                        cache_creation_input_tokens: 0,
-                    };
-                }
-                ToolCompletionResponse {
-                    content: None,
-                    tool_calls: vec![ToolCall {
-                        id: format!("call_{}", uuid::Uuid::new_v4()),
-                        name: "nonexistent_tool".to_string(),
-                        arguments: serde_json::json!({}),
-                    }],
-                    input_tokens: 0,
-                    output_tokens: 5,
-                    finish_reason: FinishReason::ToolUse,
-                    cache_read_input_tokens: 0,
-                    cache_creation_input_tokens: 0,
-                }
-            }),
+            tool_responder: text_or_tool_call_responder(
+                "forced text",
+                2,
+                "nonexistent_tool",
+                serde_json::json!({}),
+                5,
+            ),
         }
     }
 }
@@ -151,15 +151,16 @@ impl crate::llm::NativeLlmProvider for MockLlmProvider {
     }
 }
 
-/// Build a minimal `Agent` for unit testing (no DB, no workspace, no extensions).
-pub(super) fn make_test_agent() -> Agent {
-    let deps = AgentDeps {
+/// Construct `AgentDeps` for testing. Only `llm` and `injection_check_enabled` vary
+/// between the two test-agent builders.
+fn make_agent_deps(llm: Arc<dyn LlmProvider>, injection_check_enabled: bool) -> AgentDeps {
+    AgentDeps {
         store: None,
-        llm: Arc::new(MockLlmProvider::static_ok()),
+        llm,
         cheap_llm: None,
         safety: Arc::new(SafetyLayer::new(&SafetyConfig {
             max_output_length: 100_000,
-            injection_check_enabled: true,
+            injection_check_enabled,
         })),
         tools: Arc::new(ToolRegistry::new()),
         workspace: None,
@@ -173,27 +174,36 @@ pub(super) fn make_test_agent() -> Agent {
         http_interceptor: None,
         transcription: None,
         document_extraction: None,
-    };
+    }
+}
 
+/// Construct `AgentConfig` for testing. Only `max_tool_iterations` and
+/// `auto_approve_tools` vary between the two test-agent builders.
+fn make_agent_config(max_tool_iterations: usize, auto_approve_tools: bool) -> AgentConfig {
+    AgentConfig {
+        name: "test-agent".to_string(),
+        max_parallel_jobs: 1,
+        job_timeout: Duration::from_secs(60),
+        stuck_threshold: Duration::from_secs(60),
+        repair_check_interval: Duration::from_secs(30),
+        max_repair_attempts: 1,
+        use_planning: false,
+        session_idle_timeout: Duration::from_secs(300),
+        allow_local_tools: false,
+        max_cost_per_day_cents: None,
+        max_actions_per_hour: None,
+        max_tool_iterations,
+        auto_approve_tools,
+        default_timezone: "UTC".to_string(),
+        max_tokens_per_job: 0,
+    }
+}
+
+/// Build a minimal `Agent` for unit testing (no DB, no workspace, no extensions).
+pub(super) fn make_test_agent() -> Agent {
     Agent::new(
-        AgentConfig {
-            name: "test-agent".to_string(),
-            max_parallel_jobs: 1,
-            job_timeout: Duration::from_secs(60),
-            stuck_threshold: Duration::from_secs(60),
-            repair_check_interval: Duration::from_secs(30),
-            max_repair_attempts: 1,
-            use_planning: false,
-            session_idle_timeout: Duration::from_secs(300),
-            allow_local_tools: false,
-            max_cost_per_day_cents: None,
-            max_actions_per_hour: None,
-            max_tool_iterations: 50,
-            auto_approve_tools: false,
-            default_timezone: "UTC".to_string(),
-            max_tokens_per_job: 0,
-        },
-        deps,
+        make_agent_config(50, false),
+        make_agent_deps(Arc::new(MockLlmProvider::static_ok()), true),
         Arc::new(ChannelManager::new()),
         None,
         None,
@@ -209,47 +219,9 @@ pub(super) fn make_test_agent_with_llm(
     llm: Arc<dyn LlmProvider>,
     max_tool_iterations: usize,
 ) -> Agent {
-    let deps = AgentDeps {
-        store: None,
-        llm,
-        cheap_llm: None,
-        safety: Arc::new(SafetyLayer::new(&SafetyConfig {
-            max_output_length: 100_000,
-            injection_check_enabled: false,
-        })),
-        tools: Arc::new(ToolRegistry::new()),
-        workspace: None,
-        extension_manager: None,
-        skill_registry: None,
-        skill_catalog: None,
-        skills_config: SkillsConfig::default(),
-        hooks: Arc::new(HookRegistry::new()),
-        cost_guard: Arc::new(CostGuard::new(CostGuardConfig::default())),
-        sse_tx: None,
-        http_interceptor: None,
-        transcription: None,
-        document_extraction: None,
-    };
-
     Agent::new(
-        AgentConfig {
-            name: "test-agent".to_string(),
-            max_parallel_jobs: 1,
-            job_timeout: Duration::from_secs(60),
-            stuck_threshold: Duration::from_secs(60),
-            repair_check_interval: Duration::from_secs(30),
-            max_repair_attempts: 1,
-            use_planning: false,
-            session_idle_timeout: Duration::from_secs(300),
-            allow_local_tools: false,
-            max_cost_per_day_cents: None,
-            max_actions_per_hour: None,
-            max_tool_iterations,
-            auto_approve_tools: true,
-            default_timezone: "UTC".to_string(),
-            max_tokens_per_job: 0,
-        },
-        deps,
+        make_agent_config(max_tool_iterations, true),
+        make_agent_deps(llm, false),
         Arc::new(ChannelManager::new()),
         None,
         None,
