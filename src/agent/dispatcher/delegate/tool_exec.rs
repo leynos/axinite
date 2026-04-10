@@ -33,6 +33,14 @@ pub(crate) struct ToolBatch {
     pub(super) runnable: Vec<(usize, crate::llm::ToolCall)>,
 }
 
+/// A tool call that requires user approval, together with its index in the
+/// original call sequence (used to build the deferred-call slice).
+pub(super) struct ApprovalCandidate {
+    pub idx: usize,
+    pub tool_call: crate::llm::ToolCall,
+    pub tool: Arc<dyn crate::tools::Tool>,
+}
+
 /// Parsed auth result fields for emitting StatusUpdate::AuthRequired.
 pub(crate) struct ParsedAuthData {
     pub(crate) auth_url: Option<String>,
@@ -137,22 +145,23 @@ async fn run_postflight(
 /// Construct the `PendingApproval` value for a tool that requires user consent.
 fn build_pending_approval(
     delegate: &ChatDelegate<'_>,
-    approval_idx: usize,
-    tc: crate::llm::ToolCall,
-    tool: Arc<dyn crate::tools::Tool>,
+    candidate: ApprovalCandidate,
     tool_calls: &[crate::llm::ToolCall],
     reason_ctx: &ReasoningContext,
 ) -> PendingApproval {
-    let display_params = redact_params(&tc.arguments, tool.sensitive_params());
+    let display_params = redact_params(
+        &candidate.tool_call.arguments,
+        candidate.tool.sensitive_params(),
+    );
     PendingApproval {
         request_id: Uuid::new_v4(),
-        tool_name: tc.name.clone(),
-        parameters: tc.arguments.clone(),
+        tool_name: candidate.tool_call.name.clone(),
+        parameters: candidate.tool_call.arguments.clone(),
         display_parameters: display_params,
-        description: tool.description().to_string(),
-        tool_call_id: tc.id.clone(),
+        description: candidate.tool.description().to_string(),
+        tool_call_id: candidate.tool_call.id.clone(),
         context_messages: reason_ctx.messages.clone(),
-        deferred_tool_calls: tool_calls[approval_idx + 1..].to_vec(),
+        deferred_tool_calls: tool_calls[candidate.idx + 1..].to_vec(),
         user_timezone: Some(delegate.user_tz.name().to_string()),
     }
 }
@@ -204,9 +213,8 @@ pub(crate) async fn execute_tool_calls(
         return Ok(Some(LoopOutcome::Response(instructions)));
     }
 
-    if let Some((approval_idx, tc, tool)) = approval_needed {
-        let pending =
-            build_pending_approval(delegate, approval_idx, tc, tool, &tool_calls, reason_ctx);
+    if let Some(candidate) = approval_needed {
+        let pending = build_pending_approval(delegate, candidate, &tool_calls, reason_ctx);
         return Ok(Some(LoopOutcome::NeedApproval(Box::new(pending))));
     }
 
@@ -333,13 +341,7 @@ async fn tool_requires_approval(
 async fn group_tool_calls(
     delegate: &ChatDelegate<'_>,
     tool_calls: &[crate::llm::ToolCall],
-) -> Result<
-    (
-        ToolBatch,
-        Option<(usize, crate::llm::ToolCall, Arc<dyn crate::tools::Tool>)>,
-    ),
-    Error,
-> {
+) -> Result<(ToolBatch, Option<ApprovalCandidate>), Error> {
     let mut preflight: Vec<(crate::llm::ToolCall, PreflightOutcome)> = Vec::new();
     let mut runnable: Vec<(usize, crate::llm::ToolCall)> = Vec::new();
     let mut approval_needed = None;
@@ -366,7 +368,11 @@ async fn group_tool_calls(
             && let Some(tool) = tool_opt
         {
             if tool_requires_approval(delegate, &tool, &tc).await {
-                approval_needed = Some((idx, tc, tool));
+                approval_needed = Some(ApprovalCandidate {
+                    idx,
+                    tool_call: tc,
+                    tool,
+                });
                 break;
             }
             let preflight_idx = preflight.len();
