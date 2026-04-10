@@ -1,3 +1,17 @@
+//! WASM tool loading and registration.
+//!
+//! This module owns the [`ToolRegistry`] struct and its associated WASM
+//! registration methods. It is responsible for:
+//!
+//! - Compiling and preparing raw WASM bytes via [`WasmToolRuntime`].
+//! - Recovering or overriding guest-exported metadata (description and
+//!   parameter schema) when stored overrides are absent.
+//! - Attaching runtime concerns such as secrets injection and OAuth
+//!   refresh configuration.
+//! - Registering tools from persistent storage by fetching the stored
+//!   record and binary, normalising metadata via [`schema::normalized_schema`],
+//!   and delegating to [`ToolRegistry::register_wasm`].
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
