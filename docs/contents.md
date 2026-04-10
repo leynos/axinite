@@ -139,6 +139,9 @@
   - [Extend the hosted remote-tool catalogue to include orchestrator-owned WASM tools](execplans/1-2-2-orchestrator-owned-wasm-tools-in-tool-catalogue.md)
     plans roadmap item `1.2.2` for hosted advertisement for orchestrator-owned
     WebAssembly (WASM) tools through the shared remote catalogue path.
+  - [Demote schema-bearing retry hints to fallback diagnostics](execplans/1-2-3-demote-schema-bearing-retry-hints.md)
+    plans roadmap item `1.2.3` for making WebAssembly (WASM) retry hints
+    supplemental diagnostics rather than the primary tool contract.
 
 ## RFCs
 
