@@ -299,6 +299,30 @@ classDiagram
     WorkerRemoteToolsClient --> OrchestratorRemoteToolsApi : calls
 ```
 
+Figure 2. Hosted worker execution flow for an advertised orchestrator-owned
+WASM tool.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Worker as Worker_container
+    participant Orchestrator as Orchestrator_execute_hosted_remote_tool
+    participant Registry as HostedToolRegistry
+
+    User->>Worker: Call_WASM_tool_via_LLM_tool_array
+    Worker->>Orchestrator: execute_hosted_remote_tool(tool_name, parameters)
+    Orchestrator->>Registry: get_hosted_tool(tool_name)
+    Registry-->>Orchestrator: ToolDefinition_or_rejection
+    alt Tool_is_hosted_safe_WASM
+        Orchestrator->>Orchestrator: Invoke_WASM_implementation()
+        Orchestrator-->>Worker: Execution_result
+        Worker-->>User: Tool_result
+    else Tool_not_visible_or_requires_approval
+        Orchestrator-->>Worker: Fail_closed_error
+        Worker-->>User: Hosted_execution_rejected
+    end
+```
+
 Suggested hosted catalogue response:
 
 ```json
