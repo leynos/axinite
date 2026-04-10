@@ -245,6 +245,60 @@ filter seam, extending its eligibility rules to include orchestrator-owned WASM
 tools, rather than reconstructing hosted visibility in a second WASM-specific
 adapter path.
 
+Figure 1. Hosted remote-tool catalogue flow for MCP and orchestrator-owned
+WASM tools.
+
+```mermaid
+classDiagram
+    class HostedToolCatalogSource {
+      <<enum>>
+      Mcp
+      Wasm
+    }
+
+    class ToolDefinition {
+      +String name
+      +String description
+      +JsonSchema parameters
+      +HostedToolCatalogSource source
+    }
+
+    class WasmToolWrapper {
+      +ToolDefinition definition
+      +HostedToolCatalogSource get_hosted_source()
+    }
+
+    class HostedToolRegistry {
+      +Vec~ToolDefinition~ hosted_tool_definitions(sources)
+      +Option~ToolDefinition~ get_hosted_tool(name)
+    }
+
+    class ApprovalPolicy {
+      +bool is_hosted_eligible(tool_definition)
+    }
+
+    class OrchestratorRemoteToolsApi {
+      +RemoteToolCatalogResponse get_remote_catalog()
+      +ExecutionResult execute_hosted_remote_tool(name, parameters)
+    }
+
+    class WorkerRemoteToolsClient {
+      +RemoteToolCatalogResponse fetch_catalog()
+      +void register_remote_proxies(catalog)
+    }
+
+    HostedToolCatalogSource <.. ToolDefinition : uses
+    WasmToolWrapper --> ToolDefinition : wraps
+    WasmToolWrapper --> HostedToolCatalogSource : reports_Wasm
+
+    HostedToolRegistry --> ToolDefinition : manages
+    HostedToolRegistry --> ApprovalPolicy : consults
+    HostedToolRegistry --> HostedToolCatalogSource : filters_by
+
+    OrchestratorRemoteToolsApi --> HostedToolRegistry : queries
+    WorkerRemoteToolsClient --> OrchestratorRemoteToolsApi : calls
+```
+
 Suggested hosted catalogue response:
 
 ```json
