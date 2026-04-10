@@ -1,14 +1,12 @@
 //! Integration tests for SIGHUP hot-reload of HTTP webhook configuration.
 //!
 //! Exercises the reload path end-to-end by driving `WebhookServer` and
-//! `HttpChannelState` directly — no live binary spawning.
+//! `HttpChannel` directly — no live binary spawning.
 
 use std::net::{SocketAddr, TcpListener as StdTcpListener};
 use std::time::Duration;
 
-use axum::Json;
 use axum::http::StatusCode;
-use axum::routing::get;
 use reqwest::Client;
 use secrecy::SecretString;
 use serde_json::json;
@@ -17,12 +15,7 @@ use ironclaw::channels::{HttpChannel, NativeChannel, WebhookServer, WebhookServe
 use ironclaw::config::HttpConfig;
 use rstest::{fixture, rstest};
 
-/// Bind an ephemeral listener on `127.0.0.1:0` and return it.
-/// The caller must pass it directly to `start_with_listener` so the port
-/// is never released between allocation and server bind.
-async fn ephemeral_listener() -> Result<tokio::net::TcpListener, Box<dyn std::error::Error>> {
-    Ok(tokio::net::TcpListener::bind("127.0.0.1:0").await?)
-}
+use crate::support::webhook_helpers;
 
 /// Build a minimal health-check server using the given already-bound listener.
 /// Returns the started server and the bound address.
@@ -32,9 +25,7 @@ async fn health_server(
     let addr = listener.local_addr()?;
     let config = WebhookServerConfig { addr };
     let mut server = WebhookServer::new(config);
-    server.add_routes(
-        axum::Router::new().route("/health", get(|| async { Json(json!({"status": "ok"})) })),
-    );
+    server.add_routes(webhook_helpers::health_routes());
     server.start_with_listener(listener).await?;
     Ok((server, addr))
 }
@@ -55,7 +46,7 @@ async fn post_webhook(
 
 #[fixture]
 fn http_client() -> Result<Client, reqwest::Error> {
-    Client::builder().timeout(Duration::from_secs(2)).build()
+    webhook_helpers::test_http_client()
 }
 
 #[rstest]
@@ -64,7 +55,7 @@ async fn test_sighup_config_reload_address_change(
     http_client: Result<Client, reqwest::Error>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let http_client = http_client?;
-    let listener1 = ephemeral_listener().await?;
+    let listener1 = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let (mut server, addr1) = health_server(listener1).await?;
 
     // Confirm first address responds.
@@ -76,7 +67,7 @@ async fn test_sighup_config_reload_address_change(
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Restart on a second ephemeral port.
-    let listener2 = ephemeral_listener().await?;
+    let listener2 = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr2 = listener2.local_addr()?;
     server
         .restart_with_listener(listener2)
@@ -121,7 +112,7 @@ async fn test_sighup_secret_update_zero_downtime(
     http_client: Result<Client, reqwest::Error>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let http_client = http_client?;
-    let listener = ephemeral_listener().await?;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
 
     let channel = HttpChannel::new(HttpConfig {
@@ -172,7 +163,7 @@ async fn test_sighup_rollback_on_address_bind_failure(
     http_client: Result<Client, reqwest::Error>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let http_client = http_client?;
-    let listener1 = ephemeral_listener().await?;
+    let listener1 = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let (mut server, addr1) = health_server(listener1).await?;
 
     // Confirm initial address works.

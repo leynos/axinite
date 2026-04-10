@@ -3,19 +3,11 @@
 use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
 
-use axum::Json;
-use axum::Router;
 use rstest::{fixture, rstest};
-use serde_json::json;
 
-use ironclaw::channels::{WebhookServer, WebhookServerConfig};
+mod support;
 
-/// A started webhook server with a `/health` route and a pre-built client.
-struct StartedWebhookServer {
-    server: WebhookServer,
-    addr: SocketAddr,
-    client: reqwest::Client,
-}
+use support::webhook_helpers::{self, StartedWebhookServer};
 
 /// Binds an ephemeral port, creates a [`WebhookServer`] with a `/health`
 /// route, starts the server on the already-bound listener, and returns the
@@ -23,21 +15,7 @@ struct StartedWebhookServer {
 #[fixture]
 async fn started_webhook_server()
 -> Result<StartedWebhookServer, Box<dyn std::error::Error + Send + Sync>> {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-    let addr = listener.local_addr()?;
-    let mut server = WebhookServer::new(WebhookServerConfig { addr });
-    server.add_routes(Router::new().route(
-        "/health",
-        axum::routing::get(|| async { Json(json!({"status": "ok"})) }),
-    ));
-    server.start_with_listener(listener).await?;
-    Ok(StartedWebhookServer {
-        server,
-        addr,
-        client: reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(2))
-            .build()?,
-    })
+    webhook_helpers::start_health_server().await
 }
 
 #[rstest]

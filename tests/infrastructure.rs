@@ -1,6 +1,8 @@
 //! Infrastructure integration tests covering heartbeat, pairing, provider
 //! chaos, SIGHUP reload, and workspace functionality.
 
+mod support;
+
 #[path = "infrastructure/heartbeat.rs"]
 mod heartbeat;
 #[path = "infrastructure/pairing.rs"]

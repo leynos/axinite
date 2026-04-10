@@ -16,6 +16,7 @@ pub mod test_rig;
 pub mod trace_llm;
 mod trace_provider;
 pub mod trace_types;
+pub mod webhook_helpers;
 
 #[cfg(feature = "libsql")]
 #[expect(
