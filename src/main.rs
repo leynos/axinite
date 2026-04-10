@@ -258,27 +258,28 @@ async fn setup_http_channel(
     cli: &Cli,
     config: &Config,
     reg: &mut ChannelRegistrar<'_>,
-) -> HttpChannelResult {
+) -> anyhow::Result<HttpChannelResult> {
     let none_result = HttpChannelResult {
         webhook_server_addr: None,
         #[cfg(unix)]
         http_channel_state: None,
     };
     if cli.cli_only {
-        return none_result;
+        return Ok(none_result);
     }
     let Some(ref http_config) = config.channels.http else {
-        return none_result;
+        return Ok(none_result);
     };
     let http_channel = HttpChannel::new(http_config.clone());
     #[cfg(unix)]
     let http_channel_state = Some(http_channel.shared_state());
     reg.webhook_routes.push(http_channel.routes());
     let (host, port) = http_channel.addr();
+    let addr_str = format!("{}:{}", host, port);
     let webhook_server_addr = Some(
-        format!("{}:{}", host, port)
+        addr_str
             .parse()
-            .expect("HttpConfig host:port must be a valid SocketAddr"),
+            .map_err(|e| anyhow::anyhow!("Invalid HTTP host:port '{}': {}", addr_str, e))?,
     );
     reg.channel_names.push("http".to_string());
     reg.channels.add(Box::new(http_channel)).await;
@@ -287,11 +288,11 @@ async fn setup_http_channel(
         http_config.host,
         http_config.port
     );
-    HttpChannelResult {
+    Ok(HttpChannelResult {
         webhook_server_addr,
         #[cfg(unix)]
         http_channel_state,
-    }
+    })
 }
 
 async fn build_webhook_server(
@@ -338,7 +339,7 @@ async fn setup_channel_infrastructure(
 
     setup_signal_channel(cli, config, &mut reg).await?;
 
-    let http = setup_http_channel(cli, config, &mut reg).await;
+    let http = setup_http_channel(cli, config, &mut reg).await?;
 
     // `reg` is dropped here, releasing the mutable borrows, so `webhook_routes`
     // is usable again in the next call.
@@ -531,7 +532,12 @@ async fn async_main() -> anyhow::Result<()> {
 
     // ── Phase 1-5: Build all core components via AppBuilder ────────────
 
-    let flags = AppBuilderFlags { no_db: cli.no_db };
+    let flags = AppBuilderFlags {
+        no_db: cli.no_db,
+        workspace_import_dir: std::env::var("WORKSPACE_IMPORT_DIR")
+            .ok()
+            .map(std::path::PathBuf::from),
+    };
     let (components, side_effects) = AppBuilder::new(
         config,
         flags,

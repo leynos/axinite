@@ -83,10 +83,13 @@ pub struct RuntimeSideEffects {
     workspace_import_dir: Option<std::path::PathBuf>,
     embeddings_available: bool,
 }
+
 /// Options that control optional init phases.
 #[derive(Default)]
 pub struct AppBuilderFlags {
     pub no_db: bool,
+    /// Workspace import directory (overrides WORKSPACE_IMPORT_DIR env var if set).
+    pub workspace_import_dir: Option<std::path::PathBuf>,
 }
 
 /// Builder that orchestrates the 5 mechanical init phases.
@@ -413,7 +416,7 @@ impl AppBuilder {
         Ok((safety, tools, embeddings, workspace))
     }
 
-    /// Phase 6: Initialise the skills system.
+    /// Phase 5: Initialise the skills system.
     pub async fn init_skills(
         &self,
         tools: &Arc<ToolRegistry>,
@@ -440,7 +443,7 @@ impl AppBuilder {
         Ok((Some(registry), Some(catalog)))
     }
 
-    /// Phase 5: Load WASM tools, MCP servers, and create extension manager.
+    /// Phase 6: Load WASM tools, MCP servers, and create extension manager.
     pub async fn init_extensions(
         &self,
         tools: &Arc<ToolRegistry>,
@@ -545,9 +548,7 @@ impl AppBuilder {
         ) = self.init_extensions(&tools, &hooks).await?;
 
         // Capture workspace import directory for deferred side effects.
-        let workspace_import_dir = std::env::var("WORKSPACE_IMPORT_DIR")
-            .ok()
-            .map(std::path::PathBuf::from);
+        let workspace_import_dir = self.flags.workspace_import_dir.clone();
 
         // Skills system
         let (skill_registry, skill_catalog) = self.init_skills(&tools).await?;
