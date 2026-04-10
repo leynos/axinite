@@ -7,5 +7,7 @@
 mod capturing_store;
 mod null_database;
 
-pub use capturing_store::{Calls, CapturingStore, EventCall, StatusCall};
+pub use capturing_store::{
+    Calls, CapturingStore, EventCall, EventCallWithId, StatusCall, StatusCallWithId,
+};
 pub use null_database::NullDatabase;

@@ -1,8 +1,14 @@
 //! Null database implementation for tests.
 //!
-//! All methods return empty defaults (`Ok(None)`, `Ok(vec![])`, etc.).
-//! Use this as a baseline for test doubles that need to override only
-//! specific methods while delegating the rest to null behaviour.
+//! Most methods return empty defaults (`Ok(None)`, `Ok(vec![])`, etc.), but
+//! some return [`WorkspaceError::DocumentNotFound`] for missing documents
+//! and many methods synthesise new UUIDs via [`Uuid::new_v4()`] rather than
+//! returning stable values. Use this as a baseline for test doubles that
+//! need to override only specific methods while delegating the rest to
+//! null behaviour.
+
+use std::collections::HashMap;
+use std::sync::Mutex;
 
 use crate::error::WorkspaceError;
 
@@ -14,18 +20,45 @@ mod settings_store;
 mod tool_failure_store;
 mod workspace_store;
 
+/// Key for the routine conversation cache.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct RoutineConvKey {
+    pub routine_id: uuid::Uuid,
+    pub routine_name: String,
+    pub user_id: String,
+}
+
+/// Key for the assistant conversation cache.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct AssistantConvKey {
+    pub user_id: String,
+    pub channel: String,
+}
+
 /// A no-op database implementation for testing.
 ///
-/// All methods return empty defaults (`Ok(None)`, `Ok(vec![])`, etc.).
-/// Use this as a baseline for test doubles that need to override only
-/// specific methods while delegating the rest to null behaviour.
+/// Most methods return empty defaults (`Ok(None)`, `Ok(vec![])`, etc.), but
+/// some return [`WorkspaceError::DocumentNotFound`] for missing documents
+/// and many methods synthesise new UUIDs via [`Uuid::new_v4()`] rather than
+/// returning stable values. Use this as a baseline for test doubles that
+/// need to override only specific methods while delegating the rest to
+/// null behaviour.
 #[derive(Debug, Default)]
-pub struct NullDatabase;
+pub struct NullDatabase {
+    /// Stable UUIDs for routine conversations, keyed by (routine_id, routine_name, user_id).
+    pub(super) routine_conv_cache: Mutex<HashMap<RoutineConvKey, uuid::Uuid>>,
+    /// Stable UUIDs for heartbeat conversations, keyed by user_id.
+    pub(super) heartbeat_conv_cache: Mutex<HashMap<String, uuid::Uuid>>,
+    /// Stable UUIDs for assistant conversations, keyed by (user_id, channel).
+    pub(super) assistant_conv_cache: Mutex<HashMap<AssistantConvKey, uuid::Uuid>>,
+    /// Counter for deterministic synthetic UUIDs.
+    pub(super) uuid_counter: Mutex<u128>,
+}
 
 impl NullDatabase {
     /// Create a new null database instance.
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
     /// Helper for document-not-found errors in workspace operations.
@@ -34,6 +67,26 @@ impl NullDatabase {
             doc_type: doc_type.to_string(),
             user_id: "test".to_string(),
         }
+    }
+
+    /// Generate a deterministic synthetic UUID based on an internal counter.
+    ///
+    /// Each call increments the counter and returns a UUID with the counter
+    /// value embedded in the UUID bytes. This provides reproducible IDs
+    /// for tests that need stable values across multiple calls.
+    pub(super) fn next_synthetic_uuid(&self) -> uuid::Uuid {
+        let mut counter = self.uuid_counter.lock().unwrap();
+        *counter += 1;
+        // Embed counter in UUID bytes for deterministic generation
+        let bytes = counter.to_be_bytes();
+        let mut uuid_bytes = [0u8; 16];
+        uuid_bytes[0..16].copy_from_slice(&[
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15],
+        ]);
+        uuid::Uuid::from_bytes(uuid_bytes)
     }
 }
 

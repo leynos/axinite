@@ -167,6 +167,56 @@ impl WebhookServer {
         }
     }
 
+    /// Shut down the running server and restart it on the already-bound
+    /// `listener`, inheriting all previously added routes from
+    /// `self.merged_router`.
+    pub async fn restart_with_listener(
+        &mut self,
+        listener: tokio::net::TcpListener,
+    ) -> Result<(), ChannelError> {
+        let app = self
+            .merged_router
+            .clone()
+            .ok_or_else(|| ChannelError::StartupFailed {
+                name: "webhook_server".to_string(),
+                reason: "restart_with_listener called before start()".to_string(),
+            })?;
+
+        // Save old state for rollback if spawn fails
+        let old_addr = self.config.addr;
+        let old_shutdown_tx = self.shutdown_tx.take();
+        let old_handle = self.handle.take();
+
+        // Extract address from the provided listener and try to spawn
+        let addr = listener
+            .local_addr()
+            .map_err(|e| ChannelError::StartupFailed {
+                name: "webhook_server".to_string(),
+                reason: format!("local_addr failed: {e}"),
+            })?;
+        self.config.addr = addr;
+
+        match self.spawn_on_listener(listener, app).await {
+            Ok(()) => {
+                // New listener is running, gracefully shut down the old one
+                if let Some(tx) = old_shutdown_tx {
+                    let _ = tx.send(());
+                }
+                if let Some(handle) = old_handle {
+                    let _ = handle.await;
+                }
+                Ok(())
+            }
+            Err(e) => {
+                // Restore old state; old listener remains active
+                self.config.addr = old_addr;
+                self.shutdown_tx = old_shutdown_tx;
+                self.handle = old_handle;
+                Err(e)
+            }
+        }
+    }
+
     /// Return the current bind address.
     pub fn current_addr(&self) -> SocketAddr {
         self.config.addr
@@ -208,22 +258,20 @@ mod tests {
         client: reqwest::Client,
     }
 
-    /// Finds an available port, creates a [`WebhookServer`] with a `/health`
-    /// route, starts the server, and returns the address and a client.
+    /// Binds an ephemeral port, creates a [`WebhookServer`] with a `/health`
+    /// route, starts the server on the already-bound listener, and returns the
+    /// address and a client.
     #[fixture]
     async fn started_webhook_server()
     -> Result<StartedWebhookServer, Box<dyn std::error::Error + Send + Sync>> {
-        let port = {
-            let listener = StdTcpListener::bind("127.0.0.1:0")?;
-            listener.local_addr()?.port()
-        };
-        let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()?;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
         let mut server = WebhookServer::new(WebhookServerConfig { addr });
         server.add_routes(Router::new().route(
             "/health",
             axum::routing::get(|| async { Json(json!({"status": "ok"})) }),
         ));
-        server.start().await?;
+        server.start_with_listener(listener).await?;
         Ok(StartedWebhookServer {
             server,
             addr,

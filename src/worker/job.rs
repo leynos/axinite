@@ -57,7 +57,7 @@ pub struct WorkerDeps {
 
 /// Worker that executes a single job.
 pub struct Worker {
-    job_id: Uuid,
+    pub(crate) job_id: Uuid,
     deps: WorkerDeps,
 }
 
@@ -79,7 +79,7 @@ impl Worker {
     }
 
     // Convenience accessors to avoid deps.field everywhere
-    fn context_manager(&self) -> &Arc<ContextManager> {
+    pub(crate) fn context_manager(&self) -> &Arc<ContextManager> {
         &self.deps.context_manager
     }
 
@@ -998,7 +998,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         Self::execute_tool_inner(&self.deps, self.job_id, tool_name, params).await
     }
 
-    async fn mark_completed(&self) -> Result<(), Error> {
+    pub(crate) async fn mark_completed(&self) -> Result<(), Error> {
         self.context_manager()
             .update_context(self.job_id, |ctx| {
                 ctx.transition_to(
@@ -1029,7 +1029,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         Ok(())
     }
 
-    async fn mark_failed(&self, reason: &str) -> Result<(), Error> {
+    pub(crate) async fn mark_failed(&self, reason: &str) -> Result<(), Error> {
         self.context_manager()
             .update_context(self.job_id, |ctx| {
                 ctx.transition_to(JobState::Failed, Some(reason.to_string()))
@@ -1054,7 +1054,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         Ok(())
     }
 
-    async fn mark_stuck(&self, reason: &str) -> Result<(), Error> {
+    pub(crate) async fn mark_stuck(&self, reason: &str) -> Result<(), Error> {
         self.context_manager()
             .update_context(self.job_id, |ctx| ctx.mark_stuck(reason))
             .await?
@@ -1426,14 +1426,9 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
-    use crate::config::SafetyConfig;
     use crate::context::JobContext;
     use crate::llm::ToolSelection;
-    use crate::llm::{
-        CompletionRequest, CompletionResponse, ToolCompletionRequest, ToolCompletionResponse,
-    };
-    use crate::safety::SafetyLayer;
-    use crate::testing::null_db::{EventCall, StatusCall};
+    use crate::testing::worker_harness::*;
     use crate::tools::{NativeTool, Tool, ToolError as ToolExecError, ToolOutput};
 
     /// A test tool that sleeps for a configurable duration before returning.
@@ -1472,105 +1467,6 @@ mod tests {
         fn requires_sanitization(&self) -> bool {
             false
         }
-    }
-
-    /// Stub LLM provider (never called in these tests).
-    struct StubLlm;
-
-    impl crate::llm::NativeLlmProvider for StubLlm {
-        fn model_name(&self) -> &str {
-            "stub"
-        }
-        fn cost_per_token(&self) -> (rust_decimal::Decimal, rust_decimal::Decimal) {
-            (rust_decimal::Decimal::ZERO, rust_decimal::Decimal::ZERO)
-        }
-        async fn complete(
-            &self,
-            _req: CompletionRequest,
-        ) -> Result<CompletionResponse, crate::error::LlmError> {
-            unimplemented!("stub")
-        }
-        async fn complete_with_tools(
-            &self,
-            _req: ToolCompletionRequest,
-        ) -> Result<ToolCompletionResponse, crate::error::LlmError> {
-            unimplemented!("stub")
-        }
-    }
-
-    async fn build_registry(tools: Vec<Arc<dyn Tool>>) -> ToolRegistry {
-        let registry = ToolRegistry::new();
-        for tool in tools {
-            registry.register(tool).await;
-        }
-        registry
-    }
-
-    fn base_deps(
-        cm: Arc<crate::context::ContextManager>,
-        tools: Arc<ToolRegistry>,
-        store: Option<Arc<dyn crate::db::Database>>,
-        approval_context: Option<crate::tools::ApprovalContext>,
-    ) -> WorkerDeps {
-        WorkerDeps {
-            context_manager: cm,
-            llm: Arc::new(StubLlm),
-            safety: Arc::new(SafetyLayer::new(&SafetyConfig {
-                max_output_length: 100_000,
-                injection_check_enabled: false,
-            })),
-            tools,
-            store,
-            hooks: Arc::new(crate::hooks::HookRegistry::new()),
-            timeout: Duration::from_secs(30),
-            use_planning: false,
-            sse_tx: None,
-            approval_context,
-            http_interceptor: None,
-        }
-    }
-
-    /// Build a Worker wired to a ToolRegistry containing the given tools.
-    async fn make_worker(tools: Vec<Arc<dyn Tool>>) -> Worker {
-        let registry = Arc::new(build_registry(tools).await);
-        let cm = Arc::new(crate::context::ContextManager::new(5));
-        let job_id = cm
-            .create_job("test", "test job")
-            .await
-            .expect("failed to create job in ContextManager");
-        let deps = base_deps(cm, registry, None, None);
-
-        Worker::new(job_id, deps)
-    }
-
-    #[cfg(feature = "libsql")]
-    async fn make_worker_with_store(
-        tools: Vec<Arc<dyn Tool>>,
-    ) -> (Worker, Arc<dyn Database>, tempfile::TempDir) {
-        use crate::db::libsql::LibSqlBackend;
-        use tempfile::tempdir;
-
-        let registry = Arc::new(build_registry(tools).await);
-        let cm = Arc::new(crate::context::ContextManager::new(5));
-        let job_id = cm
-            .create_job("test", "test job")
-            .await
-            .expect("failed to create job");
-        let dir = tempdir().expect("failed to create tempdir");
-        let path = dir.path().join("worker-test.db");
-        let backend = LibSqlBackend::new_local(&path)
-            .await
-            .expect("failed to open libsql backend");
-        backend
-            .run_migrations()
-            .await
-            .expect("failed to run migrations");
-        let store: Arc<dyn Database> = Arc::new(backend);
-        let ctx = cm.get_context(job_id).await.expect("failed to get context");
-        store.save_job(&ctx).await.expect("failed to save job");
-        let deps = base_deps(cm, registry, Some(store.clone()), None);
-
-        (Worker::new(job_id, deps), store, dir)
     }
 
     #[test]
@@ -2003,121 +1899,6 @@ mod tests {
     // Terminal job-state persistence characterisation tests
     // -----------------------------------------------------------------------
 
-    /// Re-export capturing types from the shared test-support module.
-    use crate::testing::null_db::CapturingStore;
-
-    /// Build a Worker with a capturing store for characterisation tests.
-    async fn make_worker_with_capturing_store(
-        tools: Vec<Arc<dyn Tool>>,
-    ) -> (Worker, Arc<CapturingStore>) {
-        let registry = Arc::new(build_registry(tools).await);
-        let cm = Arc::new(crate::context::ContextManager::new(5));
-        let job_id = cm
-            .create_job("test", "test job")
-            .await
-            .expect("failed to create job in ContextManager");
-
-        let store = Arc::new(CapturingStore::new());
-        let store_dyn: Arc<dyn crate::db::Database> = store.clone();
-        let deps = base_deps(cm, registry, Some(store_dyn), None);
-
-        (Worker::new(job_id, deps), store)
-    }
-
-    fn check_terminal_persistence_calls(
-        status_call: &StatusCall,
-        event_call: &EventCall,
-        expected_state: JobState,
-        expected_status_str: &str,
-        expected_reason: Option<&str>,
-    ) {
-        assert_eq!(status_call.status, expected_state);
-        if let Some(reason) = expected_reason {
-            assert_eq!(status_call.reason.as_deref(), Some(reason));
-        } else {
-            assert!(
-                status_call.reason.is_none(),
-                "Expected no failure reason, but got {:?}",
-                status_call.reason
-            );
-        }
-        assert_eq!(event_call.event_type, "result");
-        assert_eq!(event_call.data["status"], expected_status_str);
-    }
-
-    async fn assert_terminal_persistence(
-        store: &CapturingStore,
-        expected_state: JobState,
-        expected_status_str: &str,
-        expected_reason: Option<&str>,
-    ) {
-        let status_call = store
-            .calls()
-            .last_status
-            .lock()
-            .await
-            .clone()
-            .expect("expected a status update");
-        let event_call = store
-            .calls()
-            .last_event
-            .lock()
-            .await
-            .clone()
-            .expect("expected a job event");
-        check_terminal_persistence_calls(
-            &status_call,
-            &event_call,
-            expected_state,
-            expected_status_str,
-            expected_reason,
-        );
-    }
-
-    async fn assert_terminal_persistence_with_snapshot(
-        store: &CapturingStore,
-        expected_state: JobState,
-        expected_status_str: &str,
-        expected_reason: Option<&str>,
-    ) {
-        let status_call = store
-            .calls()
-            .last_status
-            .lock()
-            .await
-            .clone()
-            .expect("expected a status update");
-        let event_call = store
-            .calls()
-            .last_event
-            .lock()
-            .await
-            .clone()
-            .expect("expected a job event");
-        check_terminal_persistence_calls(
-            &status_call,
-            &event_call,
-            expected_state,
-            expected_status_str,
-            expected_reason,
-        );
-        insta::assert_json_snapshot!(
-            format!("terminal_persistence_result_{}", expected_status_str),
-            &event_call.data
-        );
-    }
-
-    async fn transition_to_in_progress(worker: &Worker) {
-        worker
-            .context_manager()
-            .update_context(worker.job_id, |ctx| {
-                ctx.transition_to(JobState::InProgress, None)
-            })
-            .await
-            .expect("failed to transition to InProgress")
-            .expect("job context should exist for InProgress transition");
-    }
-
     #[rstest::rstest]
     #[case::completed(
         TerminalTestCase {
@@ -2178,39 +1959,6 @@ mod tests {
         expected_reason: Option<&'static str>,
     }
 
-    /// The terminal method to invoke on the worker.
-    #[derive(Clone, Debug)]
-    enum TerminalMethod {
-        Completed,
-        Failed(&'static str),
-        Stuck(&'static str),
-    }
-
-    impl TerminalMethod {
-        async fn apply_transition(&self, worker: &Worker) {
-            match self {
-                TerminalMethod::Completed => {
-                    worker
-                        .mark_completed()
-                        .await
-                        .expect("mark_completed should succeed");
-                }
-                TerminalMethod::Failed(reason) => {
-                    worker
-                        .mark_failed(reason)
-                        .await
-                        .expect("mark_failed should succeed");
-                }
-                TerminalMethod::Stuck(reason) => {
-                    worker
-                        .mark_stuck(reason)
-                        .await
-                        .expect("mark_stuck should succeed");
-                }
-            }
-        }
-    }
-
     #[tokio::test]
     async fn test_double_completed_transition_rejected() {
         let (worker, store) = make_worker_with_capturing_store(vec![]).await;
@@ -2224,11 +1972,27 @@ mod tests {
             .await
             .expect("first mark_completed should succeed");
 
+        // Record call counts before attempting duplicate transition
+        let status_count_before = store.calls().status_history.lock().await.len();
+        let event_count_before = store.calls().event_history.lock().await.len();
+
         // Second call should fail
         let result = worker.mark_completed().await;
         assert!(
             result.is_err(),
             "Double transition to Completed should be rejected"
+        );
+
+        // Verify no new persistence calls were made on rejected transition
+        let status_count_after = store.calls().status_history.lock().await.len();
+        let event_count_after = store.calls().event_history.lock().await.len();
+        assert_eq!(
+            status_count_after, status_count_before,
+            "Rejected transition should not persist status"
+        );
+        assert_eq!(
+            event_count_after, event_count_before,
+            "Rejected transition should not persist event"
         );
 
         assert_terminal_persistence_with_snapshot(
@@ -2240,17 +2004,16 @@ mod tests {
         .await;
     }
 
-    /// Bounded property-style test for terminal state transition invariants.
+    /// Terminal transition rejection test for duplicate state changes.
     ///
-    /// Generates sequences of state-transition actions up to a fixed depth
-    /// and asserts the same invariants checked in the curated tests.
+    /// Verifies that after transitioning to a terminal state (Completed,
+    /// Failed, or Stuck), subsequent attempts to transition to the same
+    /// state are rejected and persistence calls remain unchanged.
     ///
-    /// Note: This test verifies that:
-    /// - First transition from InProgress to a terminal state succeeds
-    /// - Double transitions to the same state are rejected
-    /// - State machine invariants are maintained
+    /// This is a curated test covering the three terminal states; it does
+    /// not generate arbitrary sequences or property-based inputs.
     #[tokio::test]
-    async fn test_transition_invariants_property() {
+    async fn test_terminal_transition_rejects_duplicates() {
         // Test each terminal state transition independently
         let test_cases = [
             (
@@ -2293,6 +2056,10 @@ mod tests {
             assert_terminal_persistence(&store, expected_state, expected_status, expected_reason)
                 .await;
 
+            // Record call counts before attempting duplicate transition
+            let status_count_before = store.calls().status_history.lock().await.len();
+            let event_count_before = store.calls().event_history.lock().await.len();
+
             // Test double transition rejection
             let result = match method {
                 TerminalMethod::Completed => worker.mark_completed().await,
@@ -2302,6 +2069,20 @@ mod tests {
             assert!(
                 result.is_err(),
                 "Double transition to {:?} should be rejected",
+                expected_state
+            );
+
+            // Verify no new persistence calls were made on rejected transition
+            let status_count_after = store.calls().status_history.lock().await.len();
+            let event_count_after = store.calls().event_history.lock().await.len();
+            assert_eq!(
+                status_count_after, status_count_before,
+                "Rejected transition to {:?} should not persist status",
+                expected_state
+            );
+            assert_eq!(
+                event_count_after, event_count_before,
+                "Rejected transition to {:?} should not persist event",
                 expected_state
             );
         }

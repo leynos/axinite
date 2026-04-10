@@ -78,10 +78,9 @@ async fn test_sighup_config_reload_address_change(
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Restart on a second ephemeral port.
-    // Note: restart_with_addr still has a small race window on rebind,
-    // but the initial bind is now race-free.
-    let addr2 = ephemeral_listener().await?.local_addr()?;
-    server.restart_with_addr(addr2).await.expect("restart");
+    let listener2 = ephemeral_listener().await?;
+    let addr2 = listener2.local_addr()?;
+    server.restart_with_listener(listener2).await.expect("restart");
 
     // New address should respond.
     let resp = http_client

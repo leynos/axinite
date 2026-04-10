@@ -28,6 +28,8 @@ pub mod test_utils;
 
 pub mod null_db;
 
+pub mod worker_harness;
+
 
 use anyhow::Result;
 
