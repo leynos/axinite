@@ -362,7 +362,9 @@ async fn group_tool_calls(
         }
 
         // Check if tool requires approval
-        if !delegate.agent.config.auto_approve_tools && let Some(tool) = tool_opt {
+        if !delegate.agent.config.auto_approve_tools
+            && let Some(tool) = tool_opt
+        {
             if tool_requires_approval(delegate, &tool, &tc).await {
                 approval_needed = Some((idx, tc, tool));
                 break;
