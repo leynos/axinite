@@ -102,10 +102,17 @@ tests, including:
 - `TerminalMethod` — Helper enum for driving terminal state transitions
 
 ```rust
-use ironclaw::testing::worker_harness::{make_worker, TerminalMethod};
+#[tokio::test]
+async fn test_terminal_completed() -> anyhow::Result<()> {
+    use ironclaw::testing::worker_harness::{make_worker, TerminalMethod};
 
-let worker = make_worker(vec![]).await;
-TerminalMethod::Completed.apply_transition(&worker).await;
+    let worker = make_worker(vec![]).await.expect("build worker");
+    TerminalMethod::Completed
+        .apply_transition(&worker)
+        .await
+        .expect("apply transition");
+    Ok(())
+}
 ```
 
 **When to use:** Use the worker harness when testing `Worker` behavior

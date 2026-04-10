@@ -1054,15 +1054,35 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
     /// Roll back the context to the previous state on persistence failure.
     async fn rollback_context(&self, previous: Option<JobState>, operation: &str) {
         if let Some(state) = previous {
-            let _ = self
+            match self
                 .context_manager()
                 .update_context(self.job_id, |ctx| ctx.transition_to(state, None))
-                .await;
-            tracing::error!(
-                job_id = %self.job_id,
-                operation,
-                "Rolled back context state after persistence failure"
-            );
+                .await
+            {
+                Ok(Ok(())) => {
+                    tracing::error!(
+                        job_id = %self.job_id,
+                        operation,
+                        "Rolled back context state after persistence failure"
+                    );
+                }
+                Ok(Err(transition_err)) => {
+                    tracing::error!(
+                        job_id = %self.job_id,
+                        operation,
+                        %transition_err,
+                        "Rollback transition rejected — context state may be inconsistent"
+                    );
+                }
+                Err(store_err) => {
+                    tracing::error!(
+                        job_id = %self.job_id,
+                        operation,
+                        %store_err,
+                        "Rollback failed — could not update context"
+                    );
+                }
+            }
         }
     }
 

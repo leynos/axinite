@@ -5,6 +5,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context as _;
+
 use crate::config::SafetyConfig;
 use crate::context::{ContextManager, JobState};
 use crate::db::Database;
@@ -97,12 +99,13 @@ pub fn base_deps(
 }
 
 /// Build a Worker wired to a ToolRegistry containing the given tools.
-pub async fn make_worker(
-    tools: Vec<Arc<dyn Tool>>,
-) -> Result<Worker, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn make_worker(tools: Vec<Arc<dyn Tool>>) -> anyhow::Result<Worker> {
     let registry = Arc::new(build_registry(tools).await);
     let cm = Arc::new(ContextManager::new(5));
-    let job_id = cm.create_job("test", "test job").await?;
+    let job_id = cm
+        .create_job("test", "test job")
+        .await
+        .context("make_worker: create_job failed")?;
     let deps = base_deps(cm, registry, None, None);
 
     Ok(Worker::new(job_id, deps))
@@ -112,21 +115,34 @@ pub async fn make_worker(
 #[cfg(feature = "libsql")]
 pub async fn make_worker_with_store(
     tools: Vec<Arc<dyn Tool>>,
-) -> Result<(Worker, Arc<dyn Database>, tempfile::TempDir), Box<dyn std::error::Error + Send + Sync>>
-{
+) -> anyhow::Result<(Worker, Arc<dyn Database>, tempfile::TempDir)> {
     use crate::db::libsql::LibSqlBackend;
     use tempfile::tempdir;
 
     let registry = Arc::new(build_registry(tools).await);
     let cm = Arc::new(ContextManager::new(5));
-    let job_id = cm.create_job("test", "test job").await?;
+    let job_id = cm
+        .create_job("test", "test job")
+        .await
+        .context("make_worker_with_store: create_job failed")?;
     let dir = tempdir()?;
     let path = dir.path().join("worker-test.db");
-    let backend = LibSqlBackend::new_local(&path).await?;
-    backend.run_migrations().await?;
+    let backend = LibSqlBackend::new_local(&path)
+        .await
+        .context("make_worker_with_store: LibSqlBackend::new_local failed")?;
+    backend
+        .run_migrations()
+        .await
+        .context("make_worker_with_store: run_migrations failed")?;
     let store: Arc<dyn Database> = Arc::new(backend);
-    let ctx = cm.get_context(job_id).await?;
-    store.save_job(&ctx).await?;
+    let ctx = cm
+        .get_context(job_id)
+        .await
+        .context("make_worker_with_store: get_context failed")?;
+    store
+        .save_job(&ctx)
+        .await
+        .context("make_worker_with_store: save_job failed")?;
     let deps = base_deps(cm, registry, Some(store.clone()), None);
 
     Ok((Worker::new(job_id, deps), store, dir))
@@ -135,10 +151,13 @@ pub async fn make_worker_with_store(
 /// Build a Worker with a capturing store for characterisation tests.
 pub async fn make_worker_with_capturing_store(
     tools: Vec<Arc<dyn Tool>>,
-) -> Result<(Worker, Arc<CapturingStore>), Box<dyn std::error::Error + Send + Sync>> {
+) -> anyhow::Result<(Worker, Arc<CapturingStore>)> {
     let registry = Arc::new(build_registry(tools).await);
     let cm = Arc::new(ContextManager::new(5));
-    let job_id = cm.create_job("test", "test job").await?;
+    let job_id = cm
+        .create_job("test", "test job")
+        .await
+        .context("make_worker_with_capturing_store: create_job failed")?;
 
     let store = Arc::new(CapturingStore::new());
     let store_dyn: Arc<dyn Database> = store.clone();
@@ -148,17 +167,16 @@ pub async fn make_worker_with_capturing_store(
 }
 
 /// Transition a worker's job to InProgress state.
-pub async fn transition_to_in_progress(
-    worker: &Worker,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn transition_to_in_progress(worker: &Worker) -> anyhow::Result<()> {
     use crate::context::JobContext;
     worker
         .context_manager()
         .update_context(worker.job_id, |ctx: &mut JobContext| {
             ctx.transition_to(JobState::InProgress, None)
         })
-        .await?
-        .map_err(|s| format!("context transition failed: {s}"))?;
+        .await
+        .context("transition_to_in_progress: update_context failed")?
+        .map_err(|s| anyhow::anyhow!("context transition failed: {s}"))?;
     Ok(())
 }
 
@@ -266,19 +284,25 @@ pub enum TerminalMethod {
 
 impl TerminalMethod {
     /// Apply this terminal transition to a worker.
-    pub async fn apply_transition(
-        &self,
-        worker: &Worker,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn apply_transition(&self, worker: &Worker) -> anyhow::Result<()> {
         match self {
             TerminalMethod::Completed => {
-                worker.mark_completed().await?;
+                worker
+                    .mark_completed()
+                    .await
+                    .context("apply_transition: mark_completed failed")?;
             }
             TerminalMethod::Failed(reason) => {
-                worker.mark_failed(reason).await?;
+                worker
+                    .mark_failed(reason)
+                    .await
+                    .context("apply_transition: mark_failed failed")?;
             }
             TerminalMethod::Stuck(reason) => {
-                worker.mark_stuck(reason).await?;
+                worker
+                    .mark_stuck(reason)
+                    .await
+                    .context("apply_transition: mark_stuck failed")?;
             }
         }
         Ok(())
