@@ -19,25 +19,37 @@ use crate::worker::container::{
     HOSTED_GUIDANCE_HEADING, WorkerConfig, WorkerHttpClient, WorkerRuntime,
 };
 
-fn expected_remote_tool_definition() -> ToolDefinition {
+fn make_tool_definition(
+    name: &str,
+    description: &str,
+    parameters: serde_json::Value,
+) -> ToolDefinition {
     ToolDefinition {
-        name: "hosted_worker_remote_tool_fixture".to_string(),
-        description: "Remote tool from orchestrator catalog".to_string(),
-        parameters: serde_json::json!({
+        name: name.to_string(),
+        description: description.to_string(),
+        parameters,
+    }
+}
+
+fn expected_remote_tool_definition() -> ToolDefinition {
+    make_tool_definition(
+        "hosted_worker_remote_tool_fixture",
+        "Remote tool from orchestrator catalog",
+        serde_json::json!({
             "type": "object",
             "properties": {
                 "query": {"type": "string"}
             },
             "required": ["query"]
         }),
-    }
+    )
 }
 
 fn expected_remote_wasm_tool_definition() -> ToolDefinition {
-    ToolDefinition {
-        name: "hosted_worker_remote_wasm_tool_fixture".to_string(),
-        description: "Remote WASM tool from orchestrator catalog".to_string(),
-        parameters: serde_json::json!({
+    make_tool_definition(
+        "hosted_worker_remote_wasm_tool_fixture",
+        "Remote WASM tool from orchestrator catalog",
+        serde_json::json!({
             "type": "object",
             "properties": {
                 "repository": {"type": "string"},
@@ -45,7 +57,7 @@ fn expected_remote_wasm_tool_definition() -> ToolDefinition {
             },
             "required": ["repository"]
         }),
-    }
+    )
 }
 
 fn expected_merged_tool_names() -> Vec<String> {
