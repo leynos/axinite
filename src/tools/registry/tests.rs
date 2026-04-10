@@ -310,39 +310,74 @@ async fn hosted_tool_definitions_only_include_requested_sources(
 ) {
     let registry = hosted_registry.await;
 
-    let defs = registry
+    let mcp_defs = registry
         .hosted_tool_definitions(&[HostedToolCatalogSource::Mcp])
         .await;
-    assert_eq!(defs.len(), 1);
-    assert_eq!(defs[0].name, "mcp_visible");
-    assert_eq!(defs[0].description, "Hosted-visible MCP tool");
-    assert_eq!(defs[0].parameters, serde_json::json!({}));
+    assert_eq!(mcp_defs.len(), 1);
+    assert_eq!(mcp_defs[0].name, "mcp_visible");
+    assert_eq!(mcp_defs[0].description, "Hosted-visible MCP tool");
+    assert_eq!(mcp_defs[0].parameters, serde_json::json!({}));
+
+    let wasm_defs = registry
+        .hosted_tool_definitions(&[HostedToolCatalogSource::Wasm])
+        .await;
+    assert_eq!(wasm_defs.len(), 1);
+    assert_eq!(wasm_defs[0].name, "wasm_visible");
+    assert_eq!(wasm_defs[0].description, "Hosted-visible WASM tool");
+    assert_eq!(wasm_defs[0].parameters, serde_json::json!({}));
+
+    let mixed_defs = registry
+        .hosted_tool_definitions(&[HostedToolCatalogSource::Mcp, HostedToolCatalogSource::Wasm])
+        .await;
+    assert_eq!(
+        mixed_defs
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["mcp_visible", "wasm_visible"]
+    );
 }
 
 #[rstest]
-#[case("mcp_visible", HostedLookupExpectation::Ok)]
+#[case(
+    "mcp_visible",
+    &[HostedToolCatalogSource::Mcp][..],
+    HostedLookupExpectation::Ok
+)]
+#[case(
+    "wasm_visible",
+    &[HostedToolCatalogSource::Wasm][..],
+    HostedLookupExpectation::Ok
+)]
+#[case(
+    "wasm_visible",
+    &[HostedToolCatalogSource::Mcp, HostedToolCatalogSource::Wasm][..],
+    HostedLookupExpectation::Ok
+)]
 #[case(
     "missing_tool",
+    &[HostedToolCatalogSource::Mcp, HostedToolCatalogSource::Wasm][..],
     HostedLookupExpectation::Err(HostedToolLookupError::NotFound)
 )]
 #[case(
     "mcp_gated",
+    &[HostedToolCatalogSource::Mcp, HostedToolCatalogSource::Wasm][..],
     HostedLookupExpectation::Err(HostedToolLookupError::ApprovalGated)
 )]
 #[case(
     "wasm_visible",
+    &[HostedToolCatalogSource::Mcp][..],
     HostedLookupExpectation::Err(HostedToolLookupError::Ineligible)
 )]
 #[tokio::test]
 async fn get_hosted_tool_reports_lookup_reason(
     #[future] hosted_registry: ToolRegistry,
     #[case] name: &'static str,
+    #[case] allowed_sources: &[HostedToolCatalogSource],
     #[case] expected: HostedLookupExpectation,
 ) {
     let registry = hosted_registry.await;
-    let result = registry
-        .get_hosted_tool(name, &[HostedToolCatalogSource::Mcp])
-        .await;
+    let result = registry.get_hosted_tool(name, allowed_sources).await;
 
     match expected {
         HostedLookupExpectation::Ok => assert!(result.is_ok(), "expected Ok for {name}"),

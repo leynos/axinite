@@ -9,8 +9,9 @@ Hosted workers now advertise two tool families to the model:
 
 - container-local development tools such as `shell`, `read_file`,
   `write_file`, `list_dir`, and `apply_patch`
-- active hosted-visible Model Context Protocol (MCP) tools fetched from the
-  worker-authenticated remote catalogue at startup
+- active hosted-visible orchestrator-owned tools fetched from the
+  worker-authenticated remote catalogue at startup, including both Model
+  Context Protocol (MCP) tools and WebAssembly (WASM) tools
 
 When the worker receives the remote catalogue, it registers a local proxy for
 each advertised remote tool. The model therefore sees the orchestrator-owned
@@ -41,11 +42,11 @@ later refreshes update only the tool list and any queued follow-up prompts.
 ```
 
 The hosted-visible remote catalogue is now filtered from the canonical
-`ToolRegistry` rather than from the HTTP adapter layer. For the current MCP
-parity step, that catalogue includes only active MCP tools that are executable
-in hosted mode. Other orchestrator-owned tool families, including
-extension-management built-ins and orchestrator-owned WebAssembly (WASM) tools,
-remain outside the hosted-visible catalogue until their roadmap items land.
+`ToolRegistry` rather than from the HTTP adapter layer. That catalogue now
+includes active hosted-visible MCP tools plus active hosted-visible
+orchestrator-owned WASM tools that are executable in hosted mode.
+Extension-management built-ins and other ineligible orchestrator-owned tools
+still remain outside the hosted-visible catalogue.
 
 Not every tool in the orchestrator registry is visible in hosted mode. Tools
 may still be hidden when they:
@@ -56,8 +57,9 @@ may still be hidden when they:
 | --- | --- | --- |
 | Requires interactive approval | Hidden | Omitted from the remote catalogue because hosted workers cannot satisfy interactive approval prompts |
 | Depends on worker-local execution | Hidden | Omitted because the orchestrator cannot safely proxy a worker-local dependency |
-| Other ineligible, protected, or non-MCP cases | Hidden | Omitted from the remote catalogue and rejected if called directly |
+| Other ineligible, protected, or non-hosted-visible cases | Hidden | Omitted from the remote catalogue and rejected if called directly |
 | Active hosted-visible MCP tool | Visible | Advertised unchanged in the remote catalogue and executed through the generic remote-tool request |
+| Active hosted-visible orchestrator-owned WASM tool | Visible | Advertised unchanged in the remote catalogue and executed through the same generic remote-tool request |
 
 If a hosted-visible remote tool is selected, the worker sends one generic
 execution request to the orchestrator rather than using tool-family-specific

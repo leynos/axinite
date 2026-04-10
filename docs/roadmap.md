@@ -116,7 +116,7 @@ by tightening the contract around active WASM tools.
   - Success: guest-exported metadata or explicit host overrides are applied
     during registration, and active WASM tools never rely on a failure path to
     teach the model their arguments.
-- [ ] 1.2.2. Extend the remote tool catalog to include orchestrator-owned WASM
+- [x] 1.2.2. Extend the remote tool catalog to include orchestrator-owned WASM
       tools. Requires 1.1.1 and 1.2.1.
   - See [RFC 0002 §Problem](./rfcs/0002-expose-wasm-tool-definitions.md#problem)
     and

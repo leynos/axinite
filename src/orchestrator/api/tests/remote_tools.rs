@@ -25,6 +25,9 @@ async fn populate_catalog_visibility_fixtures(tools: &ToolRegistry) {
         .register(build_tool_fixture(ToolFixture::CatalogAlpha))
         .await;
     tools
+        .register(build_tool_fixture(ToolFixture::CatalogWasm))
+        .await;
+    tools
         .register(Arc::new(StubTool {
             name: "hosted_extension_catalog_builtin",
             description: "Hosted-safe extension-management built-in".to_string(),
@@ -81,6 +84,18 @@ fn expected_catalog_fixture_definition() -> crate::llm::ToolDefinition {
     }
 }
 
+fn expected_catalog_wasm_fixture_definition() -> crate::llm::ToolDefinition {
+    crate::llm::ToolDefinition {
+        name: "remote_tool_catalog_fixture_wasm".to_string(),
+        description: "Hosted-safe WASM tool for catalog tests".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {"repository": {"type": "string", "description": "repository name"}},
+            "required": ["repository"]
+        }),
+    }
+}
+
 #[rstest]
 #[tokio::test]
 async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: OrchestratorState) {
@@ -110,12 +125,12 @@ async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: Or
 
     assert_eq!(catalog.toolset_instructions, Vec::<String>::new());
     assert_ne!(catalog.catalog_version, 0);
-    assert_eq!(catalog.tools.len(), 1);
-    let tool = &catalog.tools[0];
-    let expected = expected_catalog_fixture_definition();
-    assert_eq!(tool.name, expected.name);
-    assert_eq!(tool.description, expected.description);
-    assert_eq!(tool.parameters, expected.parameters);
+    assert_eq!(catalog.tools.len(), 2);
+    let expected = vec![
+        expected_catalog_fixture_definition(),
+        expected_catalog_wasm_fixture_definition(),
+    ];
+    assert_eq!(catalog.tools, expected);
 }
 
 async fn assert_catalog_excludes_stub(excluded_stub: StubTool) {
@@ -280,6 +295,18 @@ async fn remote_tool_execute_rejects_approval_gated_tools(test_state: Orchestrat
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[rstest]
+#[tokio::test]
+async fn remote_tool_execute_allows_hosted_wasm_tools(test_state: OrchestratorState) {
+    let status = execute_remote_tool_status(
+        test_state,
+        build_tool_fixture(ToolFixture::CatalogWasm),
+        "remote_tool_catalog_fixture_wasm",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[rstest]

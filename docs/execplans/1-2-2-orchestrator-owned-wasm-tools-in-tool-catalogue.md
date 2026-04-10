@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: DRAFT
+Status: IN PROGRESS
 
 ## Purpose / big picture
 
@@ -366,12 +366,23 @@ documentation all match the hosted WASM catalogue contract.
 - [x] 2026-04-10T17:32:32+02:00 Drafted this ExecPlan for roadmap item
   `1.2.2`.
 - [ ] Implementation approved by a human reviewer.
-- [ ] Hosted source-family broadening implemented through the canonical filter
-  seam.
-- [ ] Unit and behavioural regression coverage added and passing.
-- [ ] Documentation updated, including `docs/roadmap.md` and the relevant
-  architecture references.
-- [ ] Final gates passed, evidence recorded, and feature commit created.
+- [x] 2026-04-10T19:36:00+02:00 Reconfirmed that the worker-side proxy
+  registration path is already generic over remote `ToolDefinition` values, so
+  `1.2.2` remains a narrow hosted-visibility extension rather than a transport
+  redesign.
+- [x] 2026-04-10T19:56:00+02:00 Hosted source-family broadening implemented
+  through the canonical filter seam by extending
+  `src/orchestrator/api/remote_tools.rs` from MCP-only to MCP-plus-WASM.
+- [x] 2026-04-10T19:56:00+02:00 Unit and behavioural regression coverage added
+  and passing in targeted runs for registry lookups, orchestrator catalogue and
+  execute flows, worker remote-tool registration, and worker fidelity.
+- [x] 2026-04-10T19:56:00+02:00 Documentation updated, including
+  `docs/roadmap.md`, RFC 0002, the users guide, and the relevant architecture
+  references.
+- [x] 2026-04-10T20:21:00+02:00 Final gates passed and evidence recorded:
+  targeted `cargo test` runs, `make all`, Markdown lint, and `git diff --check`
+  all succeeded.
+- [ ] Feature commit created.
 
 ## Surprises & Discoveries
 
@@ -386,6 +397,21 @@ documentation all match the hosted WASM catalogue contract.
 - 2026-04-10T17:32:32+02:00 This subsystem currently has no visible
   `rstest-bdd` or `.feature` coverage, so behavioural BDD coverage needs an
   explicit proportionality check before new harness code is introduced.
+- 2026-04-10T19:36:00+02:00 `src/tools/registry/tests.rs` already contains a
+  hosted-visible WASM fixture and `src/worker/container/tests/remote_tools.rs`
+  already proves that the worker merges remote catalogue definitions into its
+  local reasoning surface. The remaining test work is to broaden those
+  assertions from MCP-only to mixed MCP-plus-WASM catalogues and preserve
+  schema fidelity.
+- 2026-04-10T19:36:00+02:00 A fresh proportionality check still points away
+  from `rstest-bdd` for this slice. The subsystem has no existing BDD harness,
+  and equivalent observable behaviour can be locked down in the existing
+  `rstest` integration tests without adding new support files or feature
+  plumbing.
+- 2026-04-10T19:56:00+02:00 The worker runtime did not need any source-aware
+  changes. Once the orchestrator catalogue admitted hosted-visible WASM tools,
+  the existing remote proxy registration path accepted them unchanged because it
+  already consumes only canonical `ToolDefinition` values.
 
 ## Decision Log
 
@@ -405,9 +431,43 @@ documentation all match the hosted WASM catalogue contract.
   current subsystem has no existing Gherkin harness, so the plan must preserve
   a path to strong behavioural assertions without forcing scaffolding that
   exceeds the feature's scope.
+- 2026-04-10T19:36:00+02:00 Keep the behavioural proof in the existing
+  `rstest` integration suites rather than introducing new `rstest-bdd`
+  scaffolding for `1.2.2`.
+  Rationale: the existing worker/orchestrator harness already exercises the
+  exact observable catalogue fetch and proxy-registration flow. Adding BDD
+  support here would create disproportionate scaffolding for no contract gain.
+- 2026-04-10T19:56:00+02:00 Express the policy change at the orchestrator
+  adapter seam by broadening `HOSTED_REMOTE_TOOL_SOURCES` rather than altering
+  `ToolRegistry::hosted_tool_definitions()` or the shared transport types.
+  Rationale: the registry already owned the hosted-visibility predicate, and
+  the shared transport already carried the canonical `ToolDefinition` shape.
 
 ## Outcomes & Retrospective
 
-Not started. Update this section during implementation with the final shipped
-behaviour, validation evidence, any deviations from the plan, and lessons that
-should inform `1.2.3` and `1.2.4`.
+- 2026-04-10T20:21:00+02:00 Shipped behaviour:
+  - hosted workers now receive hosted-visible orchestrator-owned WASM tool
+    definitions through the same remote catalogue as MCP tools
+  - worker-side proxy registration and reasoning-surface merging required no
+    new transport or source-aware logic because the existing path already
+    consumes canonical `ToolDefinition` values
+  - generic hosted execution now accepts eligible WASM-backed tools through the
+    same lookup and execute path as MCP-backed tools
+- 2026-04-10T20:21:00+02:00 Validation evidence:
+  - `cargo test hosted_tool --lib`
+  - `cargo test remote_tool_ --lib`
+  - `cargo test fidelity --lib`
+  - `make all`
+  - `bunx markdownlint-cli2`
+    `docs/execplans/1-2-2-orchestrator-owned-wasm-tools-in-tool-catalogue.md`
+    `docs/roadmap.md`
+    `docs/rfcs/0002-expose-wasm-tool-definitions.md`
+    `docs/users-guide.md`
+    `docs/worker-orchestrator-contract.md`
+    `docs/axinite-architecture-overview.md`
+  - `git diff --check`
+- 2026-04-10T20:21:00+02:00 Lessons for `1.2.3` and `1.2.4`:
+  - the main hosted WASM contract gap was policy exposure, not transport or
+    worker plumbing
+  - the existing `rstest` integration harness was sufficient behavioural proof
+    for this slice without introducing new `rstest-bdd` scaffolding

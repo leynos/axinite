@@ -5,11 +5,13 @@
 - **RFC number:** 0002
 - **Status:** Proposed
 - **Created:** 2026-03-11
-- **Implementation status:** Roadmap item `1.2.1` is complete. Active WASM
-  registration paths now recover guest-exported metadata before publication,
-  warn when registration falls back to a placeholder schema, and are covered by
-  regression tests for file-loaded, storage-backed, and dev-build paths.
-  Roadmap items `1.2.2`, `1.2.3`, and `1.2.4` remain open.
+- **Implementation status:** Roadmap items `1.2.1` and `1.2.2` are complete.
+  Active WASM registration paths now recover guest-exported metadata before
+  publication, warn when registration falls back to a placeholder schema, and
+  are covered by regression tests for file-loaded, storage-backed, and
+  dev-build paths. Hosted workers now receive hosted-visible
+  orchestrator-owned WASM definitions through the shared remote-tool catalogue.
+  Roadmap items `1.2.3` and `1.2.4` remain open.
 
 ## Summary
 
@@ -130,9 +132,10 @@ The remaining problem is contractual, not structural:
 - hosted mode does not yet have a unified remote-tool catalogue for
   orchestrator-owned dynamic tools, including WASM tools
 
-Roadmap item `1.2.1` closes the first two gaps for in-process WASM tools. The
-remaining hosted-mode catalogue work is still tracked separately under
-`1.2.2`.
+Roadmap items `1.2.1` and `1.2.2` close the first two gaps for in-process and
+hosted WASM tools. The remaining work is now to demote schema-bearing retry
+hints and add the end-to-end first-call regression coverage tracked under
+`1.2.3` and `1.2.4`.
 
 ## Goals
 
@@ -234,10 +237,10 @@ The companion RFC [0001-expose-mcp-tool-definitions.md](0001-expose-mcp-tool-def
 proposes a worker-authenticated hosted tool catalogue plus generic remote tool
 execution endpoint.
 
-That same mechanism should cover orchestrator-owned active WASM tools.
+That same mechanism now covers orchestrator-owned active WASM tools.
 Roadmap item `1.1.2` is the specific prerequisite that moves hosted-visible
 catalogue filtering into the canonical `ToolRegistry` or policy layer. Roadmap
-item `1.2.2` should explicitly consume that same canonical hosted-visible
+item `1.2.2` explicitly consumes that same canonical hosted-visible
 filter seam, extending its eligibility rules to include orchestrator-owned WASM
 tools, rather than reconstructing hosted visibility in a second WASM-specific
 adapter path.
@@ -353,7 +356,7 @@ GET  /worker/{job_id}/tools/catalog
 POST /worker/{job_id}/tools/execute
 ```
 
-The catalogue should include hosted-visible active WASM tools alongside other
+The catalogue includes hosted-visible active WASM tools alongside other
 orchestrator-owned tools.
 
 ### Error interface
