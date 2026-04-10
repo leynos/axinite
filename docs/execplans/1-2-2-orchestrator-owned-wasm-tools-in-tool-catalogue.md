@@ -318,21 +318,21 @@ Use the repository's documented gates and retain logs.
    `/tmp`, for example:
 
    ```plaintext
-   BRANCH_SLUG=$(git branch --show | tr '/' '-')
+   BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
    cargo test -p <crate> <targeted-test> | tee /tmp/test-axinite-${BRANCH_SLUG}.out
    ```
 
 2. Before commit, run the full repository gate:
 
    ```plaintext
-   BRANCH_SLUG=$(git branch --show | tr '/' '-')
+   BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
    make all | tee /tmp/make-all-axinite-${BRANCH_SLUG}.out
    ```
 
 3. Run Markdown validation for changed documentation:
 
    ```plaintext
-   BRANCH_SLUG=$(git branch --show | tr '/' '-')
+   BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
    bunx markdownlint-cli2 \
      docs/execplans/1-2-2-orchestrator-owned-wasm-tools-in-tool-catalogue.md \
      docs/roadmap.md \
@@ -347,7 +347,7 @@ Use the repository's documented gates and retain logs.
 4. Run the diff hygiene check:
 
    ```plaintext
-   BRANCH_SLUG=$(git branch --show | tr '/' '-')
+   BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
    git diff --check | tee /tmp/diff-check-axinite-${BRANCH_SLUG}.out
    ```
 
