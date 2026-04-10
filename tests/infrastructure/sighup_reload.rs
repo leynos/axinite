@@ -80,7 +80,10 @@ async fn test_sighup_config_reload_address_change(
     // Restart on a second ephemeral port.
     let listener2 = ephemeral_listener().await?;
     let addr2 = listener2.local_addr()?;
-    server.restart_with_listener(listener2).await.expect("restart");
+    server
+        .restart_with_listener(listener2)
+        .await
+        .expect("restart");
 
     // New address should respond.
     let resp = http_client

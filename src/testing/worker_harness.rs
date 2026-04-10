@@ -9,7 +9,10 @@ use crate::config::SafetyConfig;
 use crate::context::{ContextManager, JobState};
 use crate::db::Database;
 use crate::hooks::HookRegistry;
-use crate::llm::{CompletionRequest, CompletionResponse, NativeLlmProvider, ToolCompletionRequest, ToolCompletionResponse};
+use crate::llm::{
+    CompletionRequest, CompletionResponse, NativeLlmProvider, ToolCompletionRequest,
+    ToolCompletionResponse,
+};
 use crate::safety::SafetyLayer;
 use crate::testing::null_db::{CapturingStore, EventCall, StatusCall};
 use crate::tools::{ApprovalContext, Tool, ToolRegistry};

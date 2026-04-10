@@ -69,7 +69,9 @@ impl crate::db::NativeConversationStore for NullDatabase {
             user_id: user_id.to_string(),
         };
         let mut cache = self.routine_conv_cache.lock().unwrap();
-        Ok(*cache.entry(key).or_insert_with(|| self.next_synthetic_uuid()))
+        Ok(*cache
+            .entry(key)
+            .or_insert_with(|| self.next_synthetic_uuid()))
     }
 
     async fn get_or_create_heartbeat_conversation(
@@ -92,7 +94,9 @@ impl crate::db::NativeConversationStore for NullDatabase {
             channel: channel.to_string(),
         };
         let mut cache = self.assistant_conv_cache.lock().unwrap();
-        Ok(*cache.entry(key).or_insert_with(|| self.next_synthetic_uuid()))
+        Ok(*cache
+            .entry(key)
+            .or_insert_with(|| self.next_synthetic_uuid()))
     }
 
     async fn create_conversation_with_metadata(
@@ -171,19 +175,28 @@ mod tests {
             .get_or_create_routine_conversation(routine_id, "different_routine", "user1")
             .await
             .unwrap();
-        assert_ne!(uuid1, uuid3, "Different routine_name should return different UUID");
+        assert_ne!(
+            uuid1, uuid3,
+            "Different routine_name should return different UUID"
+        );
 
         let uuid4 = db
             .get_or_create_routine_conversation(Uuid::new_v4(), "test_routine", "user1")
             .await
             .unwrap();
-        assert_ne!(uuid1, uuid4, "Different routine_id should return different UUID");
+        assert_ne!(
+            uuid1, uuid4,
+            "Different routine_id should return different UUID"
+        );
 
         let uuid5 = db
             .get_or_create_routine_conversation(routine_id, "test_routine", "user2")
             .await
             .unwrap();
-        assert_ne!(uuid1, uuid5, "Different user_id should return different UUID");
+        assert_ne!(
+            uuid1, uuid5,
+            "Different user_id should return different UUID"
+        );
     }
 
     #[tokio::test]
@@ -206,7 +219,10 @@ mod tests {
             .get_or_create_heartbeat_conversation("user2")
             .await
             .unwrap();
-        assert_ne!(uuid1, uuid3, "Different user_id should return different UUID");
+        assert_ne!(
+            uuid1, uuid3,
+            "Different user_id should return different UUID"
+        );
     }
 
     #[tokio::test]
@@ -229,12 +245,18 @@ mod tests {
             .get_or_create_assistant_conversation("user2", "slack")
             .await
             .unwrap();
-        assert_ne!(uuid1, uuid3, "Different user_id should return different UUID");
+        assert_ne!(
+            uuid1, uuid3,
+            "Different user_id should return different UUID"
+        );
 
         let uuid4 = db
             .get_or_create_assistant_conversation("user1", "discord")
             .await
             .unwrap();
-        assert_ne!(uuid1, uuid4, "Different channel should return different UUID");
+        assert_ne!(
+            uuid1, uuid4,
+            "Different channel should return different UUID"
+        );
     }
 }
