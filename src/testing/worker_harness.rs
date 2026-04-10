@@ -97,76 +97,66 @@ pub fn base_deps(
 }
 
 /// Build a Worker wired to a ToolRegistry containing the given tools.
-pub async fn make_worker(tools: Vec<Arc<dyn Tool>>) -> Worker {
+pub async fn make_worker(
+    tools: Vec<Arc<dyn Tool>>,
+) -> Result<Worker, Box<dyn std::error::Error + Send + Sync>> {
     let registry = Arc::new(build_registry(tools).await);
     let cm = Arc::new(ContextManager::new(5));
-    let job_id = cm
-        .create_job("test", "test job")
-        .await
-        .expect("failed to create job in ContextManager");
+    let job_id = cm.create_job("test", "test job").await?;
     let deps = base_deps(cm, registry, None, None);
 
-    Worker::new(job_id, deps)
+    Ok(Worker::new(job_id, deps))
 }
 
 /// Build a Worker with a real database store (libsql feature required).
 #[cfg(feature = "libsql")]
 pub async fn make_worker_with_store(
     tools: Vec<Arc<dyn Tool>>,
-) -> (Worker, Arc<dyn Database>, tempfile::TempDir) {
+) -> Result<(Worker, Arc<dyn Database>, tempfile::TempDir), Box<dyn std::error::Error + Send + Sync>>
+{
     use crate::db::libsql::LibSqlBackend;
     use tempfile::tempdir;
 
     let registry = Arc::new(build_registry(tools).await);
     let cm = Arc::new(ContextManager::new(5));
-    let job_id = cm
-        .create_job("test", "test job")
-        .await
-        .expect("failed to create job");
-    let dir = tempdir().expect("failed to create tempdir");
+    let job_id = cm.create_job("test", "test job").await?;
+    let dir = tempdir()?;
     let path = dir.path().join("worker-test.db");
-    let backend = LibSqlBackend::new_local(&path)
-        .await
-        .expect("failed to open libsql backend");
-    backend
-        .run_migrations()
-        .await
-        .expect("failed to run migrations");
+    let backend = LibSqlBackend::new_local(&path).await?;
+    backend.run_migrations().await?;
     let store: Arc<dyn Database> = Arc::new(backend);
-    let ctx = cm.get_context(job_id).await.expect("failed to get context");
-    store.save_job(&ctx).await.expect("failed to save job");
+    let ctx = cm.get_context(job_id).await?;
+    store.save_job(&ctx).await?;
     let deps = base_deps(cm, registry, Some(store.clone()), None);
 
-    (Worker::new(job_id, deps), store, dir)
+    Ok((Worker::new(job_id, deps), store, dir))
 }
 
 /// Build a Worker with a capturing store for characterisation tests.
 pub async fn make_worker_with_capturing_store(
     tools: Vec<Arc<dyn Tool>>,
-) -> (Worker, Arc<CapturingStore>) {
+) -> Result<(Worker, Arc<CapturingStore>), Box<dyn std::error::Error + Send + Sync>> {
     let registry = Arc::new(build_registry(tools).await);
     let cm = Arc::new(ContextManager::new(5));
-    let job_id = cm
-        .create_job("test", "test job")
-        .await
-        .expect("failed to create job in ContextManager");
+    let job_id = cm.create_job("test", "test job").await?;
 
     let store = Arc::new(CapturingStore::new());
     let store_dyn: Arc<dyn Database> = store.clone();
     let deps = base_deps(cm, registry, Some(store_dyn), None);
 
-    (Worker::new(job_id, deps), store)
+    Ok((Worker::new(job_id, deps), store))
 }
 
 /// Transition a worker's job to InProgress state.
 pub async fn transition_to_in_progress(worker: &Worker) {
+    use crate::context::JobContext;
     worker
         .context_manager()
-        .update_context(worker.job_id, |ctx| {
+        .update_context(worker.job_id, |ctx: &mut JobContext| {
             ctx.transition_to(JobState::InProgress, None)
         })
         .await
-        .expect("failed to transition to InProgress")
+        .expect("context update should succeed")
         .expect("job context should exist for InProgress transition");
 }
 
@@ -274,26 +264,21 @@ pub enum TerminalMethod {
 
 impl TerminalMethod {
     /// Apply this terminal transition to a worker.
-    pub async fn apply_transition(&self, worker: &Worker) {
+    pub async fn apply_transition(
+        &self,
+        worker: &Worker,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match self {
             TerminalMethod::Completed => {
-                worker
-                    .mark_completed()
-                    .await
-                    .expect("mark_completed should succeed");
+                worker.mark_completed().await?;
             }
             TerminalMethod::Failed(reason) => {
-                worker
-                    .mark_failed(reason)
-                    .await
-                    .expect("mark_failed should succeed");
+                worker.mark_failed(reason).await?;
             }
             TerminalMethod::Stuck(reason) => {
-                worker
-                    .mark_stuck(reason)
-                    .await
-                    .expect("mark_stuck should succeed");
+                worker.mark_stuck(reason).await?;
             }
         }
+        Ok(())
     }
 }

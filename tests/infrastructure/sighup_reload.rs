@@ -54,18 +54,16 @@ async fn post_webhook(
 }
 
 #[fixture]
-fn http_client() -> Client {
-    Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-        .expect("build client")
+fn http_client() -> Result<Client, reqwest::Error> {
+    Client::builder().timeout(Duration::from_secs(2)).build()
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_sighup_config_reload_address_change(
-    http_client: Client,
+    http_client: Result<Client, reqwest::Error>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let http_client = http_client?;
     let listener1 = ephemeral_listener().await?;
     let (mut server, addr1) = health_server(listener1).await?;
 
@@ -120,8 +118,9 @@ async fn test_sighup_config_reload_address_change(
 #[rstest]
 #[tokio::test]
 async fn test_sighup_secret_update_zero_downtime(
-    http_client: Client,
+    http_client: Result<Client, reqwest::Error>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let http_client = http_client?;
     let listener = ephemeral_listener().await?;
     let addr = listener.local_addr()?;
 
@@ -171,8 +170,9 @@ async fn test_sighup_secret_update_zero_downtime(
 #[rstest]
 #[tokio::test]
 async fn test_sighup_rollback_on_address_bind_failure(
-    http_client: Client,
+    http_client: Result<Client, reqwest::Error>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let http_client = http_client?;
     let listener1 = ephemeral_listener().await?;
     let (mut server, addr1) = health_server(listener1).await?;
 

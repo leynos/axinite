@@ -51,11 +51,15 @@ trait and can be used anywhere a database is required.
 ```rust
 use ironclaw::testing::CapturingStore;
 
-let store = CapturingStore::new();
-// Pass store.clone() to components that need a Database
+#[tokio::test]
+async fn captures_calls() {
+    let store = CapturingStore::new();
+    // Pass store.clone() to components that need a Database
+    // ... exercise the system under test ...
 
-// Later, inspect captured calls:
-let status = store.calls().last_status.lock().await.clone();
+    // Later, inspect captured calls:
+    let status = store.calls().last_status.lock().await.clone();
+}
 ```
 
 **Related types:**
@@ -109,7 +113,7 @@ specifically.
 
 ## Choosing the Right Abstraction
 
-```
+```plaintext
 Need to test persistence? ──Yes──► TestHarnessBuilder
          │
          No
@@ -125,6 +129,6 @@ Writing a custom mock? ───Yes───► NullDatabase (as base)
 
 ## Additional Resources
 
-- `crate::testing::worker_harness::TestHarnessBuilder` — Full harness builder
+- `crate::testing::TestHarnessBuilder` — Full harness builder
 - `crate::testing::null_db::{NullDatabase, CapturingStore, EventCall, StatusCall}` —
   Database test doubles

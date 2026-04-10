@@ -1490,7 +1490,7 @@ mod tests {
     // See: test_completion_signals, test_completion_negative, etc.
 
     #[tokio::test]
-    async fn test_parallel_speedup() {
+    async fn test_parallel_speedup() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let current_active = Arc::new(AtomicUsize::new(0));
         let max_active = Arc::new(AtomicUsize::new(0));
         let tools: Vec<Arc<dyn Tool>> = (0..3)
@@ -1504,7 +1504,7 @@ mod tests {
             })
             .collect();
 
-        let worker = make_worker(tools).await;
+        let worker = make_worker(tools).await?;
 
         let selections: Vec<ToolSelection> = (0..3)
             .map(|i| ToolSelection {
@@ -1527,6 +1527,7 @@ mod tests {
             "Expected parallel tool execution to overlap, but max concurrency was {}",
             max_active.load(Ordering::SeqCst)
         );
+        Ok(())
     }
 
     fn slow_tool(
@@ -1554,7 +1555,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_result_ordering_preserved() {
+    async fn test_result_ordering_preserved() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    {
         let current_active = Arc::new(AtomicUsize::new(0));
         let max_active = Arc::new(AtomicUsize::new(0));
 
@@ -1564,7 +1566,7 @@ mod tests {
             slow_tool("tool_c", 200, &current_active, &max_active),
         ];
 
-        let worker = make_worker(tools).await;
+        let worker = make_worker(tools).await?;
 
         let selections = vec![
             tool_selection("tool_a", "call_a"),
@@ -1589,11 +1591,13 @@ mod tests {
                 "result[{i}] should contain '{expected}'",
             );
         }
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_missing_tool_produces_error_not_panic() {
-        let worker = make_worker(vec![]).await;
+    async fn test_missing_tool_produces_error_not_panic()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let worker = make_worker(vec![]).await?;
 
         let selections = vec![ToolSelection {
             tool_name: "nonexistent_tool".into(),
@@ -1609,11 +1613,13 @@ mod tests {
             results[0].result.is_err(),
             "Missing tool should produce an error, not a panic"
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_mark_completed_twice_returns_error() {
-        let worker = make_worker(vec![]).await;
+    async fn test_mark_completed_twice_returns_error()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let worker = make_worker(vec![]).await?;
 
         worker
             .context_manager()
@@ -1641,12 +1647,14 @@ mod tests {
             result.is_err(),
             "Completed → Completed transition should be rejected by state machine"
         );
+        Ok(())
     }
 
     #[cfg(feature = "libsql")]
     #[tokio::test]
-    async fn test_mark_completed_persists_result_before_returning() {
-        let (worker, store, _dir) = make_worker_with_store(vec![]).await;
+    async fn test_mark_completed_persists_result_before_returning()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let (worker, store, _dir) = make_worker_with_store(vec![]).await?;
 
         worker
             .context_manager()
@@ -1676,6 +1684,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event_type, "result");
         assert_eq!(events[0].data["status"], "completed");
+        Ok(())
     }
 
     /// Build a Worker with the given approval context.
@@ -1763,7 +1772,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_approval_context_unblocks_unless_auto_approved() {
+    async fn test_approval_context_unblocks_unless_auto_approved()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let worker_blocked = make_worker_with_approval(vec![Arc::new(ApprovalTool)], None).await;
         let result = worker_blocked
             .execute_tool("needs_approval", &serde_json::json!({}))
@@ -1782,10 +1792,12 @@ mod tests {
             .execute_tool("needs_approval", &serde_json::json!({}))
             .await;
         assert!(result.is_ok(), "Should be allowed with autonomous context");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_approval_context_blocks_always_unless_permitted() {
+    async fn test_approval_context_blocks_always_unless_permitted()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let worker_blocked = make_worker_with_approval(
             vec![Arc::new(AlwaysApprovalTool)],
             Some(crate::tools::ApprovalContext::autonomous()),
@@ -1813,11 +1825,13 @@ mod tests {
             result.is_ok(),
             "Always tool should be allowed with permission"
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_token_budget_exceeded_fails_job() {
-        let worker = make_worker(vec![]).await;
+    async fn test_token_budget_exceeded_fails_job()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let worker = make_worker(vec![]).await?;
 
         // Transition to InProgress (required for mark_failed)
         worker
@@ -1861,11 +1875,13 @@ mod tests {
             .await
             .expect("failed to reload job context after token-budget failure");
         assert_eq!(ctx.state, JobState::Failed);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_iteration_cap_marks_failed_not_stuck() {
-        let worker = make_worker(vec![]).await;
+    async fn test_iteration_cap_marks_failed_not_stuck()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let worker = make_worker(vec![]).await?;
 
         // Transition to InProgress (required for mark_failed)
         worker
@@ -1893,6 +1909,7 @@ mod tests {
             JobState::Failed,
             "Iteration cap should transition to Failed, not Stuck"
         );
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -1925,14 +1942,16 @@ mod tests {
         }
     )]
     #[tokio::test]
-    async fn test_terminal_state_characterises_persistence(#[case] case: TerminalTestCase) {
-        let (worker, store) = make_worker_with_capturing_store(vec![]).await;
+    async fn test_terminal_state_characterises_persistence(
+        #[case] case: TerminalTestCase,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
 
         // Transition to InProgress first
         transition_to_in_progress(&worker).await;
 
         // Execute the terminal state transition
-        case.method.apply_transition(&worker).await;
+        case.method.apply_transition(&worker).await?;
 
         // Verify state in ContextManager
         let ctx = worker
@@ -1949,6 +1968,7 @@ mod tests {
             case.expected_reason,
         )
         .await;
+        Ok(())
     }
 
     /// Test case structure for parameterised terminal state tests.
@@ -1960,8 +1980,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_double_completed_transition_rejected() {
-        let (worker, store) = make_worker_with_capturing_store(vec![]).await;
+    async fn test_double_completed_transition_rejected()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
 
         // Transition to InProgress first
         transition_to_in_progress(&worker).await;
@@ -2002,6 +2023,7 @@ mod tests {
             Some("Job completed successfully"),
         )
         .await;
+        Ok(())
     }
 
     /// Terminal transition rejection test for duplicate state changes.
@@ -2013,7 +2035,8 @@ mod tests {
     /// This is a curated test covering the three terminal states; it does
     /// not generate arbitrary sequences or property-based inputs.
     #[tokio::test]
-    async fn test_terminal_transition_rejects_duplicates() {
+    async fn test_terminal_transition_rejects_duplicates()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Test each terminal state transition independently
         let test_cases = [
             (
@@ -2038,10 +2061,10 @@ mod tests {
 
         for (method, expected_state, expected_status, expected_reason) in test_cases {
             // Test single transition
-            let (worker, store) = make_worker_with_capturing_store(vec![]).await;
+            let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
             transition_to_in_progress(&worker).await;
 
-            method.apply_transition(&worker).await;
+            method.apply_transition(&worker).await?;
 
             let ctx = worker
                 .context_manager()
@@ -2086,5 +2109,6 @@ mod tests {
                 expected_state
             );
         }
+        Ok(())
     }
 }

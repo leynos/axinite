@@ -152,11 +152,15 @@ mod tests {
         let uuid1 = db
             .get_or_create_routine_conversation(routine_id, "test_routine", "user1")
             .await
-            .unwrap();
+            .expect(
+                "first get_or_create_routine_conversation for test_routine user1 should succeed",
+            );
         let uuid2 = db
             .get_or_create_routine_conversation(routine_id, "test_routine", "user1")
             .await
-            .unwrap();
+            .expect(
+                "second get_or_create_routine_conversation for test_routine user1 should succeed",
+            );
 
         assert_eq!(uuid1, uuid2, "Same inputs should return same UUID");
 
@@ -164,7 +168,7 @@ mod tests {
         let uuid3 = db
             .get_or_create_routine_conversation(routine_id, "different_routine", "user1")
             .await
-            .unwrap();
+            .expect("get_or_create_routine_conversation with different routine_name for user1 should succeed");
         assert_eq!(
             uuid1, uuid3,
             "Same routine_id should return same UUID regardless of routine_name"
@@ -173,7 +177,7 @@ mod tests {
         let uuid4 = db
             .get_or_create_routine_conversation(Uuid::new_v4(), "test_routine", "user1")
             .await
-            .unwrap();
+            .expect("get_or_create_routine_conversation with different routine_id for user1 should succeed");
         assert_ne!(
             uuid1, uuid4,
             "Different routine_id should return different UUID"
@@ -182,7 +186,7 @@ mod tests {
         let uuid5 = db
             .get_or_create_routine_conversation(routine_id, "test_routine", "user2")
             .await
-            .unwrap();
+            .expect("get_or_create_routine_conversation for user2 should succeed");
         assert_ne!(
             uuid1, uuid5,
             "Different user_id should return different UUID"
@@ -196,11 +200,11 @@ mod tests {
         let uuid1 = db
             .get_or_create_heartbeat_conversation("user1")
             .await
-            .unwrap();
+            .expect("first get_or_create_heartbeat_conversation for user1 should succeed");
         let uuid2 = db
             .get_or_create_heartbeat_conversation("user1")
             .await
-            .unwrap();
+            .expect("second get_or_create_heartbeat_conversation for user1 should succeed");
 
         assert_eq!(uuid1, uuid2, "Same user_id should return same UUID");
 
@@ -208,7 +212,7 @@ mod tests {
         let uuid3 = db
             .get_or_create_heartbeat_conversation("user2")
             .await
-            .unwrap();
+            .expect("get_or_create_heartbeat_conversation for user2 should succeed");
         assert_ne!(
             uuid1, uuid3,
             "Different user_id should return different UUID"
@@ -222,11 +226,11 @@ mod tests {
         let uuid1 = db
             .get_or_create_assistant_conversation("user1", "slack")
             .await
-            .unwrap();
+            .expect("first get_or_create_assistant_conversation for user1 slack should succeed");
         let uuid2 = db
             .get_or_create_assistant_conversation("user1", "slack")
             .await
-            .unwrap();
+            .expect("second get_or_create_assistant_conversation for user1 slack should succeed");
 
         assert_eq!(uuid1, uuid2, "Same inputs should return same UUID");
 
@@ -234,7 +238,7 @@ mod tests {
         let uuid3 = db
             .get_or_create_assistant_conversation("user2", "slack")
             .await
-            .unwrap();
+            .expect("get_or_create_assistant_conversation for user2 slack should succeed");
         assert_ne!(
             uuid1, uuid3,
             "Different user_id should return different UUID"
@@ -243,7 +247,7 @@ mod tests {
         let uuid4 = db
             .get_or_create_assistant_conversation("user1", "discord")
             .await
-            .unwrap();
+            .expect("get_or_create_assistant_conversation for user1 discord should succeed");
         assert_ne!(
             uuid1, uuid4,
             "Different channel should return different UUID"

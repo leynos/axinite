@@ -68,7 +68,13 @@ async fn test_restart_with_addr_rebinds_listener(
         "First server should respond to health check"
     );
 
-    // Find a second available port and restart
+    // Find a second available port and restart.
+    // NOTE: This allocates an ephemeral port via StdTcpListener and then drops
+    // the listener, which creates a TOCTOU race: another process could claim the
+    // port before restart_with_addr binds to it. This is unavoidable for testing
+    // restart_with_addr (which accepts an address, not a bound listener). The test
+    // accepts this risk because the probability of collision on an ephemeral port
+    // in a controlled test environment is acceptably low.
     let port2 = {
         let listener = StdTcpListener::bind("127.0.0.1:0")?;
         listener.local_addr()?.port()
@@ -102,10 +108,18 @@ async fn test_restart_with_addr_rebinds_listener(
         client.get(format!("http://{}/health", addr1)).send(),
     )
     .await;
-    assert!(
-        old_result.is_err() || old_result.ok().and_then(|r| r.ok()).is_none(),
-        "Old address should not respond after server restarts"
-    );
+    match old_result {
+        // Timeout expired — the old address no longer accepts connections.
+        Err(_) => {}
+        // Request reached the client stack but the old listener was gone.
+        Ok(Err(_)) => {}
+        Ok(Ok(resp)) => {
+            panic!(
+                "Old address should not respond after server restarts, got status {}",
+                resp.status()
+            );
+        }
+    }
 
     server.shutdown().await;
     Ok(())

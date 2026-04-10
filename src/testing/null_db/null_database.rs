@@ -1,11 +1,12 @@
 //! Null database implementation for tests.
 //!
 //! Most methods return empty defaults (`Ok(None)`, `Ok(vec![])`, etc.), but
-//! some return [`WorkspaceError::DocumentNotFound`] for missing documents
-//! and many methods synthesise new UUIDs via [`Uuid::new_v4()`] rather than
-//! returning stable values. Use this as a baseline for test doubles that
-//! need to override only specific methods while delegating the rest to
-//! null behaviour.
+//! some return [`WorkspaceError::DocumentNotFound`] for missing documents.
+//! UUIDs are generated deterministically via an internal counter (see
+//! [`next_synthetic_uuid`](NullDatabase::next_synthetic_uuid)) and cache
+//! entries are stable per-key, ensuring reproducible test results.
+//! Use this as a baseline for test doubles that need to override only
+//! specific methods while delegating the rest to null behavior.
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -41,11 +42,12 @@ pub(super) struct AssistantConvKey {
 /// A no-op database implementation for testing.
 ///
 /// Most methods return empty defaults (`Ok(None)`, `Ok(vec![])`, etc.), but
-/// some return [`WorkspaceError::DocumentNotFound`] for missing documents
-/// and many methods synthesise new UUIDs via [`Uuid::new_v4()`] rather than
-/// returning stable values. Use this as a baseline for test doubles that
-/// need to override only specific methods while delegating the rest to
-/// null behaviour.
+/// some return [`WorkspaceError::DocumentNotFound`] for missing documents.
+/// UUIDs are generated deterministically via an internal counter (see
+/// [`next_synthetic_uuid`](NullDatabase::next_synthetic_uuid)) and cache
+/// entries are stable per-key, ensuring reproducible test results.
+/// Use this as a baseline for test doubles that need to override only
+/// specific methods while delegating the rest to null behavior.
 #[derive(Debug, Default)]
 pub struct NullDatabase {
     /// Stable UUIDs for routine conversations, keyed by (routine_id, user_id).
