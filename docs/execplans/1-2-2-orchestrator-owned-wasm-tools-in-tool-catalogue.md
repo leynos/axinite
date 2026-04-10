@@ -187,7 +187,7 @@ The following files are the core orientation points for this feature.
   Mitigation: keep catalogue eligibility tests and execute-time rejection tests
   aligned, including at least one param-aware unhappy path.
 
-- Risk: Documentation drift is likely because the current users guide,
+- Risk: Documentation drift is likely because the current user's guide,
   architecture overview, worker-orchestrator contract document, roadmap, and
   RFC 0002 all describe adjacent parts of this behaviour.
   Severity: medium
