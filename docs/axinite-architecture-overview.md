@@ -315,8 +315,7 @@ That keeps the worker HTTP adapter and the orchestrator router aligned, while
 the canonical hosted-visible catalogue filter now lives with the tool registry
 and policy layer instead of in the HTTP adapter. The current source set is
 active hosted-visible MCP tools plus active hosted-visible orchestrator-owned
-WASM tools. Later roadmap work extends that same filter seam for richer
-refresh behaviour.
+WASM tools. Later roadmap work focuses on richer refresh behaviour.
 
 On the worker side, the merged tool surface is now explicit rather than
 incidental. Startup still registers the remote proxies into the worker-local

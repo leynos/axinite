@@ -153,8 +153,9 @@ Hosted remote tools use a parallel mechanism:
    container-local tools.
 
 The orchestrator-owned portion of that hosted catalogue is now source-agnostic
-at the wire level. Hosted-visible MCP tools and hosted-visible
-orchestrator-owned WASM tools travel through the same `GET
+at the wire level. Hosted-visible Model Context Protocol (MCP) tools and
+hosted-visible orchestrator-owned WebAssembly (WASM) tools travel through the
+same `GET
 /worker/{job_id}/tools/catalog` route and execute through the same `POST
 /worker/{job_id}/tools/execute` route, while the registry-owned hosted
 visibility policy continues to filter out protected, approval-gated, and other

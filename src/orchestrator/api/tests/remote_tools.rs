@@ -72,28 +72,39 @@ async fn populate_catalog_visibility_fixtures(tools: &ToolRegistry) {
         .await;
 }
 
-fn expected_catalog_fixture_definition() -> crate::llm::ToolDefinition {
+fn make_catalog_fixture_definition(
+    name: &str,
+    description: &str,
+    param_name: &str,
+    param_description: &str,
+) -> crate::llm::ToolDefinition {
     crate::llm::ToolDefinition {
-        name: "remote_tool_catalog_fixture".to_string(),
-        description: "Hosted-safe tool for catalog tests".to_string(),
+        name: name.to_string(),
+        description: description.to_string(),
         parameters: serde_json::json!({
             "type": "object",
-            "properties": {"query": {"type": "string", "description": "search query"}},
-            "required": ["query"]
+            "properties": {param_name: {"type": "string", "description": param_description}},
+            "required": [param_name]
         }),
     }
 }
 
+fn expected_catalog_fixture_definition() -> crate::llm::ToolDefinition {
+    make_catalog_fixture_definition(
+        "remote_tool_catalog_fixture",
+        "Hosted-safe tool for catalog tests",
+        "query",
+        "search query",
+    )
+}
+
 fn expected_catalog_wasm_fixture_definition() -> crate::llm::ToolDefinition {
-    crate::llm::ToolDefinition {
-        name: "remote_tool_catalog_fixture_wasm".to_string(),
-        description: "Hosted-safe WASM tool for catalog tests".to_string(),
-        parameters: serde_json::json!({
-            "type": "object",
-            "properties": {"repository": {"type": "string", "description": "repository name"}},
-            "required": ["repository"]
-        }),
-    }
+    make_catalog_fixture_definition(
+        "remote_tool_catalog_fixture_wasm",
+        "Hosted-safe WASM tool for catalog tests",
+        "repository",
+        "repository name",
+    )
 }
 
 #[rstest]

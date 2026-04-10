@@ -113,9 +113,9 @@ impl NativeTool for StubTool {
 #[derive(Clone, Copy, Debug)]
 /// Shared hosted-remote-tool fixture presets for catalogue and execute tests.
 ///
-/// `CatalogAlpha` and `CatalogBeta` model hosted-safe catalogue entries,
-/// `ApprovalGated` models a hosted tool that must never execute without
-/// approval, and `ContainerOnly` models a non-catalogue container tool.
+/// `CatalogAlpha`, `CatalogBeta`, and `CatalogWasm` model hosted-safe
+/// catalogue entries. `ApprovalGated` models a hosted tool that must never
+/// execute without approval.
 pub(crate) enum ToolFixture {
     CatalogAlpha,
     CatalogBeta,

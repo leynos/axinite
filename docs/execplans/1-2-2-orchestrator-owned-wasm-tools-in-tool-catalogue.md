@@ -377,7 +377,7 @@ documentation all match the hosted WASM catalogue contract.
   and passing in targeted runs for registry lookups, orchestrator catalogue and
   execute flows, worker remote-tool registration, and worker fidelity.
 - [x] 2026-04-10T19:56:00+02:00 Documentation updated, including
-  `docs/roadmap.md`, RFC 0002, the users guide, and the relevant architecture
+  `docs/roadmap.md`, RFC 0002, the user's guide, and the relevant architecture
   references.
 - [x] 2026-04-10T20:21:00+02:00 Final gates passed and evidence recorded:
   targeted `cargo test` runs, `make all`, Markdown lint, and `git diff --check`

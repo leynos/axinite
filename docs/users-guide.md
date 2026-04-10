@@ -46,7 +46,7 @@ The hosted-visible remote catalogue is now filtered from the canonical
 includes active hosted-visible MCP tools plus active hosted-visible
 orchestrator-owned WASM tools that are executable in hosted mode.
 Extension-management built-ins and other ineligible orchestrator-owned tools
-still remain outside the hosted-visible catalogue.
+remain outside the hosted-visible catalogue.
 
 Not every tool in the orchestrator registry is visible in hosted mode. Tools
 may still be hidden when they:

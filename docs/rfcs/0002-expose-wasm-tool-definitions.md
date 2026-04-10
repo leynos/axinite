@@ -260,7 +260,6 @@ classDiagram
       +String name
       +String description
       +JsonSchema parameters
-      +HostedToolCatalogSource source
     }
 
     class WasmToolWrapper {

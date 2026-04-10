@@ -116,13 +116,13 @@ by tightening the contract around active WASM tools.
   - Success: guest-exported metadata or explicit host overrides are applied
     during registration, and active WASM tools never rely on a failure path to
     teach the model their arguments.
-- [x] 1.2.2. Extend the remote tool catalog to include orchestrator-owned WASM
+- [x] 1.2.2. Extend the remote tool catalogue to include orchestrator-owned WASM
       tools. Requires 1.1.1 and 1.2.1.
   - See [RFC 0002 §Problem](./rfcs/0002-expose-wasm-tool-definitions.md#problem)
     and
     [RFC 0002 §Migration Plan](./rfcs/0002-expose-wasm-tool-definitions.md#migration-plan).
   - Success: hosted workers receive proactive WASM definitions through the same
-    catalog path used for MCP tools, and hosted mode stops omitting
+    catalogue path used for MCP tools, and hosted mode stops omitting
     orchestrator-owned WASM tools from the tool array.
 - [ ] 1.2.3. Demote schema-bearing retry hints to fallback diagnostics. Requires
       1.2.1.
