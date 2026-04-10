@@ -263,6 +263,23 @@ async fn record_redacted_tool_calls(
     write_tool_calls_to_thread(delegate, tool_calls, redacted_args).await;
 }
 
+/// Restore original values for sensitive fields into a mutable JSON object.
+///
+/// After a hook modifies tool parameters, any sensitive key that was
+/// redacted before the hook must be put back from the original call to
+/// prevent secret loss.
+fn restore_sensitive_fields(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    original_args: &serde_json::Value,
+    sensitive: &[&str],
+) {
+    for key in sensitive {
+        if let Some(orig_val) = original_args.get(*key) {
+            obj.insert((*key).to_string(), orig_val.clone());
+        }
+    }
+}
+
 /// Apply hook parameter modification to a tool call.
 fn apply_hook_param_modification(
     tc: &mut crate::llm::ToolCall,
@@ -273,11 +290,7 @@ fn apply_hook_param_modification(
     match serde_json::from_str::<serde_json::Value>(new_params) {
         Ok(mut parsed) => {
             if let Some(obj) = parsed.as_object_mut() {
-                for key in sensitive {
-                    if let Some(orig_val) = original_tc.arguments.get(*key) {
-                        obj.insert((*key).to_string(), orig_val.clone());
-                    }
-                }
+                restore_sensitive_fields(obj, &original_tc.arguments, sensitive);
             }
             tc.arguments = parsed;
         }
