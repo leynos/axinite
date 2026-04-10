@@ -550,7 +550,7 @@ async fn async_main() -> anyhow::Result<()> {
 
     // Start deferred runtime side effects (workspace import, seeding,
     // embedding backfill, stale job cleanup) in the background.
-    side_effects.start().await;
+    side_effects.start();
 
     let config = components.config.clone();
 

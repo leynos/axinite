@@ -472,7 +472,7 @@ impl AppBuilder {
     }
 
     /// Resolves the LLM provider: returns the injected override if present,
-    /// otherwise delegates to `init_llm()`.
+    /// otherwise validates credentials and delegates to `init_llm()`.
     async fn resolve_llm(
         &mut self,
     ) -> Result<
@@ -486,6 +486,8 @@ impl AppBuilder {
         if let Some(llm) = self.llm_override.take() {
             return Ok((llm, None, None));
         }
+        // Validate credentials only when not using an override.
+        self.validate_llm_config()?;
         self.init_llm().await
     }
 
@@ -522,7 +524,7 @@ impl AppBuilder {
     /// along with deferred runtime side effects.
     ///
     /// This method performs pure construction without activating background
-    /// tasks or I/O-heavy operations. Call `side_effects.start().await` to
+    /// tasks or I/O-heavy operations. Call `side_effects.start()` to
     /// activate deferred work (workspace import, seeding, embedding backfill,
     /// stale job cleanup).
     pub async fn build_components(
@@ -530,7 +532,6 @@ impl AppBuilder {
     ) -> Result<(AppComponents, RuntimeSideEffects), anyhow::Error> {
         self.init_database().await?;
         self.init_secrets().await?;
-        self.validate_llm_config()?;
 
         let (llm, cheap_llm, recording_handle) = self.resolve_llm().await?;
         let (safety, tools, embeddings, workspace) = self.init_tools(&llm).await?;
@@ -601,11 +602,11 @@ impl AppBuilder {
     /// runtime side effects.
     ///
     /// This is equivalent to calling `build_components()` followed by
-    /// `side_effects.start().await`. Use `build_components()` directly when
+    /// `side_effects.start()`. Use `build_components()` directly when
     /// you need control over side-effect timing (e.g., in tests).
     pub async fn build_all(self) -> Result<AppComponents, anyhow::Error> {
         let (components, side_effects) = self.build_components().await?;
-        side_effects.start().await;
+        side_effects.start();
         Ok(components)
     }
 }
@@ -629,15 +630,14 @@ impl RuntimeSideEffects {
     /// Start all deferred runtime side effects.
     ///
     /// This method is fire-and-forget; it spawns background tasks and returns
-    /// immediately. Callers need not await unless ordering guarantees are required
-    /// (e.g., ensuring side effects start before accepting requests).
+    /// immediately. Callers need not await.
     ///
     /// Side effects include:
     /// - Stale sandbox job cleanup (via database)
     /// - Workspace import from disk (if `WORKSPACE_IMPORT_DIR` is set)
     /// - Workspace seeding (if workspace is empty)
     /// - Embedding backfill (spawns a background task)
-    pub async fn start(self) {
+    pub fn start(self) {
         // Spawn stale sandbox cleanup task if database is available.
         if let Some(db) = self.db {
             tokio::spawn(async move {
@@ -647,45 +647,47 @@ impl RuntimeSideEffects {
             });
         }
 
-        // Run workspace import, seeding, and embedding backfill if workspace is available.
-        if let Some(ref ws) = self.workspace {
-            // Import workspace files from disk FIRST if WORKSPACE_IMPORT_DIR is set.
-            // This lets Docker images / deployment scripts ship customized workspace
-            // templates that override generic seeds. Only imports files that don't
-            // already exist in the database — never overwrites user edits.
-            if let Some(import_dir) = self.workspace_import_dir {
-                match ws.import_from_directory(&import_dir).await {
-                    Ok(count) if count > 0 => {
-                        tracing::debug!(
-                            "Imported {} workspace file(s) from {}",
-                            count,
-                            import_dir.display()
-                        );
+        // Spawn workspace import, seeding, and embedding backfill if workspace is available.
+        if let Some(ws) = self.workspace {
+            let import_dir = self.workspace_import_dir;
+            let embeddings_available = self.embeddings_available;
+
+            tokio::spawn(async move {
+                // Import workspace files from disk FIRST if WORKSPACE_IMPORT_DIR is set.
+                // This lets Docker images / deployment scripts ship customized workspace
+                // templates that override generic seeds. Only imports files that don't
+                // already exist in the database — never overwrites user edits.
+                if let Some(dir) = import_dir {
+                    match ws.import_from_directory(&dir).await {
+                        Ok(count) if count > 0 => {
+                            tracing::debug!(
+                                "Imported {} workspace file(s) from {}",
+                                count,
+                                dir.display()
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to import workspace files from {}: {}",
+                                dir.display(),
+                                e
+                            );
+                        }
                     }
+                }
+
+                // Seed workspace with default content if empty.
+                match ws.seed_if_empty().await {
                     Ok(_) => {}
                     Err(e) => {
-                        tracing::warn!(
-                            "Failed to import workspace files from {}: {}",
-                            import_dir.display(),
-                            e
-                        );
+                        tracing::warn!("Failed to seed workspace: {}", e);
                     }
                 }
-            }
 
-            // Seed workspace with default content if empty.
-            match ws.seed_if_empty().await {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!("Failed to seed workspace: {}", e);
-                }
-            }
-
-            // Spawn embedding backfill in background if embeddings are configured.
-            if self.embeddings_available {
-                let ws_bg = Arc::clone(ws);
-                tokio::spawn(async move {
-                    match ws_bg.backfill_embeddings().await {
+                // Backfill embeddings in background if embeddings are configured.
+                if embeddings_available {
+                    match ws.backfill_embeddings().await {
                         Ok(count) if count > 0 => {
                             tracing::debug!("Backfilled embeddings for {} chunks", count);
                         }
@@ -694,8 +696,8 @@ impl RuntimeSideEffects {
                             tracing::warn!("Failed to backfill embeddings: {}", e);
                         }
                     }
-                });
-            }
+                }
+            });
         }
     }
 }
