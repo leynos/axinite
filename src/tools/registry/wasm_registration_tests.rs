@@ -22,13 +22,11 @@ use crate::tools::wasm::{
 async fn register_wasm_from_storage_recovers_guest_schema_for_absent_or_placeholder_schema(
     #[case] parameters_schema: serde_json::Value,
 ) {
-    // Verify that when the stored schema is Null or the placeholder JSON,
-    // normalized_schema returns None and the loader triggers guest export recovery.
+    // Null or placeholder schemas trigger guest export recovery.
     let registry = ToolRegistry::new();
     let runtime = metadata_test_runtime().expect("create metadata test runtime");
     let wasm_binary = github_wasm_bytes();
 
-    // Verify the schema normalizes to None (this is the key assertion)
     assert!(
         super::schema::normalized_schema(parameters_schema.clone()).is_none(),
         "schema should normalize to None to trigger recovery"
@@ -46,8 +44,6 @@ async fn register_wasm_from_storage_recovers_guest_schema_for_absent_or_placehol
         .await
         .expect("register wasm tool from storage");
 
-    // Verify the tool was registered with the real guest-exported schema
-    // (not the placeholder/empty), indicating recovery was triggered
     let definition = registry
         .tool_definitions()
         .await
@@ -55,8 +51,6 @@ async fn register_wasm_from_storage_recovers_guest_schema_for_absent_or_placehol
         .find(|definition| definition.name == "github")
         .expect("github definition should be registered");
 
-    // Assert we got the real GitHub schema (with actual properties),
-    // not the placeholder empty object schema
     assert_real_github_schema(definition);
 }
 
