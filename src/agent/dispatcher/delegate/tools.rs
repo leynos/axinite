@@ -130,7 +130,10 @@ impl<'a> ChatDelegate<'a> {
     /// `group_tool_calls` can remain free of nested conditional logic.
     // Intentionally decomposed from a complex single-line conditional to reduce
     // cognitive complexity (CodeScene: Complex Conditional).
-    #[allow(clippy::collapsible_if)]
+    #[expect(
+        clippy::collapsible_if,
+        reason = "Nested if statements are intentionally decomposed for readability per CodeScene Complex Conditional pattern"
+    )]
     async fn preflight_one_tool_call(
         &self,
         idx: usize,

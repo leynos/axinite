@@ -70,3 +70,60 @@ fn test_select_active_skills_returns_empty_when_registry_lock_is_poisoned() {
 
     assert!(select_active_skills(&registry, &skills_cfg, "hello").is_empty());
 }
+
+#[test]
+fn test_select_active_skills_selects_matching_skill() {
+    use crate::skills::{ActivationCriteria, LoadedSkill, SkillManifest, SkillSource, SkillTrust};
+    use std::path::PathBuf;
+
+    let registry = Arc::new(RwLock::new(SkillRegistry::new(PathBuf::from("."))));
+
+    // Register a skill with keyword-based activation
+    {
+        let mut reg = registry
+            .write()
+            .expect("failed to acquire registry write lock");
+        let skill = LoadedSkill {
+            manifest: SkillManifest {
+                name: "weather-helper".to_string(),
+                version: "2.1.0".to_string(),
+                description: "Provides weather-related assistance".to_string(),
+                activation: ActivationCriteria {
+                    keywords: vec!["weather".to_string(), "forecast".to_string()],
+                    exclude_keywords: vec![],
+                    patterns: vec![],
+                    tags: vec![],
+                    max_context_tokens: 500,
+                },
+                metadata: None,
+            },
+            prompt_content: "You are a weather assistant.".to_string(),
+            trust: SkillTrust::Trusted,
+            source: SkillSource::User(PathBuf::from(".")),
+            content_hash: "def456".to_string(),
+            compiled_patterns: vec![],
+            lowercased_keywords: vec!["weather".to_string(), "forecast".to_string()],
+            lowercased_exclude_keywords: vec![],
+            lowercased_tags: vec![],
+        };
+        reg.commit_install("weather-helper", skill).unwrap();
+    }
+
+    let skills_cfg = SkillsConfig {
+        enabled: true,
+        max_active_skills: 5,
+        max_context_tokens: 10000,
+        ..SkillsConfig::default()
+    };
+
+    // Message containing a keyword should select the skill
+    let active = select_active_skills(&registry, &skills_cfg, "What's the weather today?");
+
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].manifest.name, "weather-helper");
+    assert_eq!(active[0].manifest.version, "2.1.0");
+    assert_eq!(
+        active[0].manifest.description,
+        "Provides weather-related assistance"
+    );
+}

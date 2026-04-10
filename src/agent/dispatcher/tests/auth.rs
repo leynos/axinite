@@ -1,6 +1,6 @@
 //! Auth detection tests.
 
-use super::super::check_auth_required;
+use super::super::{check_auth_required, parse_auth_result};
 use super::*;
 
 /// Serialise `json` as a successful `Result<String, Error>` and call
@@ -125,4 +125,71 @@ fn test_detect_auth_awaiting_tool_activate_not_awaiting() {
     .to_string());
 
     assert!(check_auth_required("tool_activate", &result).is_none());
+}
+
+// Tests for parse_auth_result
+
+#[test]
+fn test_parse_auth_result_auth_url_only() {
+    let json = serde_json::json!({
+        "auth_url": "https://example.com/auth"
+    });
+    let result: Result<String, Error> = Ok(json.to_string());
+
+    let parsed = parse_auth_result(&result);
+
+    assert_eq!(parsed.auth_url.as_deref(), Some("https://example.com/auth"));
+    assert!(parsed.setup_url.is_none());
+}
+
+#[test]
+fn test_parse_auth_result_setup_url_only() {
+    let json = serde_json::json!({
+        "setup_url": "https://example.com/setup"
+    });
+    let result: Result<String, Error> = Ok(json.to_string());
+
+    let parsed = parse_auth_result(&result);
+
+    assert!(parsed.auth_url.is_none());
+    assert_eq!(
+        parsed.setup_url.as_deref(),
+        Some("https://example.com/setup")
+    );
+}
+
+#[test]
+fn test_parse_auth_result_neither_url_present() {
+    let json = serde_json::json!({
+        "message": "no urls here"
+    });
+    let result: Result<String, Error> = Ok(json.to_string());
+
+    let parsed = parse_auth_result(&result);
+
+    assert!(parsed.auth_url.is_none());
+    assert!(parsed.setup_url.is_none());
+}
+
+#[test]
+fn test_parse_auth_result_malformed_json_defaults_to_none() {
+    // Not valid JSON, but should not cause a panic; URLs should default to None.
+    let result: Result<String, Error> = Ok("this is not json".to_string());
+
+    let parsed = parse_auth_result(&result);
+
+    assert!(parsed.auth_url.is_none());
+    assert!(parsed.setup_url.is_none());
+}
+
+#[test]
+fn test_parse_auth_result_error_result_defaults_to_none() {
+    // Err input should not cause a panic; URLs should default to None.
+    let result: Result<String, Error> =
+        Err(crate::error::ToolError::NotFound { name: "x".into() }.into());
+
+    let parsed = parse_auth_result(&result);
+
+    assert!(parsed.auth_url.is_none());
+    assert!(parsed.setup_url.is_none());
 }
