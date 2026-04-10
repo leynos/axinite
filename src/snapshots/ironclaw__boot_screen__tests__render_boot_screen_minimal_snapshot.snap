@@ -1,0 +1,17 @@
+---
+source: src/boot_screen.rs
+assertion_line: 267
+expression: "&output"
+---
+
+  [90m╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶[0m
+
+  [1mironclaw[0m v0.2.0
+
+  [90mmodel[0m     [36mgpt-4o[0m  [90mvia nearai[0m
+  [90mdatabase[0m  [36mnone[0m [90m(none)[0m
+  [90mtools[0m     [36m5[0m [90mregistered[0m
+
+  [90m╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶[0m
+
+  /help for commands, /quit to exit

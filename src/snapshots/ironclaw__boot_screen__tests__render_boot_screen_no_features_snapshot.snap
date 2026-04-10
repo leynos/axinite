@@ -1,0 +1,18 @@
+---
+source: src/boot_screen.rs
+assertion_line: 274
+expression: "&output"
+---
+
+  [90m╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶[0m
+
+  [1mtest[0m v0.1.0
+
+  [90mmodel[0m     [36mgpt-4o[0m  [90mvia openai[0m
+  [90mdatabase[0m  [36mpostgres[0m [90m(connected)[0m
+  [90mtools[0m     [36m10[0m [90mregistered[0m
+  [90mchannels[0m  [36mrepl[0m
+
+  [90m╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶[0m
+
+  /help for commands, /quit to exit
