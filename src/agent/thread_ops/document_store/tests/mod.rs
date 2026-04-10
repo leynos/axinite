@@ -10,23 +10,43 @@ use super::{
     sanitise_filename, store_extracted_documents,
 };
 
+fn make_incoming_attachment(
+    id: &str,
+    kind: AttachmentKind,
+    mime_type: &str,
+    filename: Option<&str>,
+    size_bytes: Option<u64>,
+    extracted_text: Option<&str>,
+    duration_secs: Option<u32>,
+) -> IncomingAttachment {
+    IncomingAttachment {
+        id: id.to_string(),
+        kind,
+        mime_type: mime_type.to_string(),
+        filename: filename.map(ToString::to_string),
+        size_bytes,
+        source_url: None,
+        storage_key: None,
+        extracted_text: extracted_text.map(ToString::to_string),
+        data: Vec::new(),
+        duration_secs,
+    }
+}
+
 fn make_attachment(
     id: &str,
     filename: Option<&str>,
     extracted_text: Option<&str>,
 ) -> IncomingAttachment {
-    IncomingAttachment {
-        id: id.to_string(),
-        kind: AttachmentKind::Document,
-        mime_type: "application/pdf".to_string(),
-        filename: filename.map(ToString::to_string),
-        size_bytes: Some(42),
-        source_url: None,
-        storage_key: None,
-        extracted_text: extracted_text.map(ToString::to_string),
-        data: Vec::new(),
-        duration_secs: None,
-    }
+    make_incoming_attachment(
+        id,
+        AttachmentKind::Document,
+        "application/pdf",
+        filename,
+        Some(42),
+        extracted_text,
+        None,
+    )
 }
 
 async fn make_workspace() -> (tempfile::TempDir, std::sync::Arc<Workspace>) {
@@ -46,33 +66,27 @@ async fn make_workspace() -> (tempfile::TempDir, std::sync::Arc<Workspace>) {
 }
 
 fn new_doc(id: &str, filename: &str, text: Option<&str>, size: u64) -> IncomingAttachment {
-    IncomingAttachment {
-        id: id.to_string(),
-        kind: AttachmentKind::Document,
-        mime_type: "application/pdf".to_string(),
-        filename: Some(filename.to_string()),
-        size_bytes: Some(size),
-        source_url: None,
-        storage_key: None,
-        extracted_text: text.map(ToString::to_string),
-        data: Vec::new(),
-        duration_secs: None,
-    }
+    make_incoming_attachment(
+        id,
+        AttachmentKind::Document,
+        "application/pdf",
+        Some(filename),
+        Some(size),
+        text,
+        None,
+    )
 }
 
 fn new_audio(id: &str) -> IncomingAttachment {
-    IncomingAttachment {
-        id: id.to_string(),
-        kind: AttachmentKind::Audio,
-        mime_type: "audio/mpeg".to_string(),
-        filename: Some("recording.mp3".to_string()),
-        size_bytes: Some(2048),
-        source_url: None,
-        storage_key: None,
-        extracted_text: Some("some transcript".to_string()),
-        data: Vec::new(),
-        duration_secs: Some(60),
-    }
+    make_incoming_attachment(
+        id,
+        AttachmentKind::Audio,
+        "audio/mpeg",
+        Some("recording.mp3"),
+        Some(2048),
+        Some("some transcript"),
+        Some(60),
+    )
 }
 
 fn new_message(
