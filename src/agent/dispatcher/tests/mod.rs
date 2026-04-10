@@ -1,6 +1,5 @@
 //! Tests for the dispatcher module.
 
-use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 

@@ -90,8 +90,18 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
     }
 }
 
-//! Chat delegate implementation for the agentic loop.
-
 mod loops;
 
-mod tools;
+mod preflight;
+
+//! Chat delegate implementation for the agentic loop.
+
+mod execution;
+
+//! Chat delegate implementation for the agentic loop.
+
+mod execution;
+
+mod status;
+
+mod recording;

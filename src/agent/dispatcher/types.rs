@@ -5,15 +5,6 @@ use std::sync::Arc;
 /// Maximum characters for tool output preview.
 pub(crate) const PREVIEW_MAX_CHARS: usize = 1024;
 
-/// Check if a string is valid JSON (object or array).
-pub(crate) fn is_valid_json(s: &str) -> bool {
-    let t = s.trim();
-    if !(t.starts_with('{') || t.starts_with('[')) {
-        return false;
-    }
-    serde_json::from_str::<serde_json::Value>(t).is_ok()
-}
-
 /// Collapse a tool output string into a single-line preview for display.
 pub(crate) fn truncate_for_preview(output: &str, max_chars: usize) -> String {
     if max_chars == 0 {

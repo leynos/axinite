@@ -19,7 +19,8 @@ fn assert_auth_detected(
     expected_instructions_fragment: &str,
 ) {
     assert!(detected.is_some(), "expected auth detection to fire");
-    let (name, instructions) = detected.unwrap();
+    let (name, instructions) =
+        detected.expect("expected auth detection to fire and return (name, instructions)");
     assert_eq!(name, expected_name);
     assert!(
         instructions.contains(expected_instructions_fragment),
@@ -93,7 +94,8 @@ fn test_detect_auth_awaiting_default_instructions() {
     })
     .to_string());
 
-    let (_, instructions) = check_auth_required("tool_auth", &result).unwrap();
+    let (_, instructions) = check_auth_required("tool_auth", &result)
+        .expect("expected auth detection to fire for tool_auth with awaiting_token");
     assert_eq!(instructions, "Please provide your API token/key.");
 }
 
@@ -129,67 +131,39 @@ fn test_detect_auth_awaiting_tool_activate_not_awaiting() {
 
 // Tests for parse_auth_result
 
-#[test]
-fn test_parse_auth_result_auth_url_only() {
-    let json = serde_json::json!({
-        "auth_url": "https://example.com/auth"
-    });
-    let result: Result<String, Error> = Ok(json.to_string());
-
+#[rstest::rstest]
+#[case::auth_url_only(
+    Ok(serde_json::json!({ "auth_url": "https://example.com/auth" }).to_string()),
+    Some("https://example.com/auth"),
+    None,
+)]
+#[case::setup_url_only(
+    Ok(serde_json::json!({ "setup_url": "https://example.com/setup" }).to_string()),
+    None,
+    Some("https://example.com/setup"),
+)]
+#[case::neither_url(
+    Ok(serde_json::json!({ "message": "no urls here" }).to_string()),
+    None,
+    None,
+)]
+#[case::malformed_json(
+    Ok("this is not json".to_string()),
+    None,
+    None,
+)]
+#[case::error_result(
+    Err::<String, Error>(crate::error::ToolError::NotFound { name: "x".into() }.into()),
+    None,
+    None,
+)]
+fn test_parse_auth_result(
+    #[case] result: Result<String, Error>,
+    #[case] expected_auth_url: Option<&str>,
+    #[case] expected_setup_url: Option<&str>,
+) {
     let parsed = parse_auth_result(&result);
 
-    assert_eq!(parsed.auth_url.as_deref(), Some("https://example.com/auth"));
-    assert!(parsed.setup_url.is_none());
-}
-
-#[test]
-fn test_parse_auth_result_setup_url_only() {
-    let json = serde_json::json!({
-        "setup_url": "https://example.com/setup"
-    });
-    let result: Result<String, Error> = Ok(json.to_string());
-
-    let parsed = parse_auth_result(&result);
-
-    assert!(parsed.auth_url.is_none());
-    assert_eq!(
-        parsed.setup_url.as_deref(),
-        Some("https://example.com/setup")
-    );
-}
-
-#[test]
-fn test_parse_auth_result_neither_url_present() {
-    let json = serde_json::json!({
-        "message": "no urls here"
-    });
-    let result: Result<String, Error> = Ok(json.to_string());
-
-    let parsed = parse_auth_result(&result);
-
-    assert!(parsed.auth_url.is_none());
-    assert!(parsed.setup_url.is_none());
-}
-
-#[test]
-fn test_parse_auth_result_malformed_json_defaults_to_none() {
-    // Not valid JSON, but should not cause a panic; URLs should default to None.
-    let result: Result<String, Error> = Ok("this is not json".to_string());
-
-    let parsed = parse_auth_result(&result);
-
-    assert!(parsed.auth_url.is_none());
-    assert!(parsed.setup_url.is_none());
-}
-
-#[test]
-fn test_parse_auth_result_error_result_defaults_to_none() {
-    // Err input should not cause a panic; URLs should default to None.
-    let result: Result<String, Error> =
-        Err(crate::error::ToolError::NotFound { name: "x".into() }.into());
-
-    let parsed = parse_auth_result(&result);
-
-    assert!(parsed.auth_url.is_none());
-    assert!(parsed.setup_url.is_none());
+    assert_eq!(parsed.auth_url.as_deref(), expected_auth_url);
+    assert_eq!(parsed.setup_url.as_deref(), expected_setup_url);
 }
