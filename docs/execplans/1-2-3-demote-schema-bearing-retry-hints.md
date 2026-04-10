@@ -90,9 +90,9 @@ The following files are the important orientation points for this feature.
   `src/worker/container/tests/remote_tools.rs` already cover hosted tool
   advertisement and remote execution. They are the best existing behavioural
   evidence that hosted flows do not need a failure-first schema path.
-- `docs/users-guide.md` currently describes hosted advertisement of MCP and
-  WASM tools but does not yet explicitly say that retry hints are fallback
-  diagnostics only.
+- `docs/users-guide.md` currently describes hosted advertisement of
+  Model Context Protocol (MCP) and WASM tools but does not yet explicitly say
+  that retry hints are fallback diagnostics only.
 - `docs/worker-orchestrator-contract.md` is the relevant internally facing
   architecture document if the hosted-contract description needs a concise note
   that error hints are supplemental to the advertised `ToolDefinition`.
@@ -138,8 +138,9 @@ The following files are the important orientation points for this feature.
   from roadmap item `1.2.4` or broader provider-shaping changes has not leaked
   into this slice.
 - Interface: if demoting retry hints requires changing `ToolDefinition`,
-  `NativeTool`, the WIT interface, or the worker-orchestrator transport types,
-  stop and document why the existing contract cannot express the feature.
+  `NativeTool`, the WebAssembly Interface Types (WIT) interface, or the
+  worker-orchestrator transport types, stop and document why the existing
+  contract cannot express the feature.
 - Behavioural drift: if preserving actionable guidance requires making retry
   hints longer or more schema-heavy than today for common failures, stop and
   document the trade-off instead of silently broadening the payload.
@@ -257,7 +258,7 @@ Lock the new rule down with tests before wider refactoring.
    `src/worker/container/tests/remote_tools.rs` that proves hosted flows still
    receive the canonical schema before any fallback path is exercised.
 
-### Behavioural coverage with `rstest-bdd` where applicable
+### Behavioural coverage with `rstest-bdd` where behaviour-driven development (BDD) is applicable
 
 Attempt one narrow, in-process scenario only if it stays within the tolerances.
 The preferred scenario is:
