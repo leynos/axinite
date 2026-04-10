@@ -125,20 +125,28 @@ impl Agent {
         self.process_approval(scope, params).await
     }
 
+    /// Build a [`UserTurnRequest`] from the dispatch context and delegate to
+    /// [`Agent::process_user_input`].
+    async fn dispatch_user_input(
+        &self,
+        ctx: DispatchCtx,
+        content: String,
+    ) -> Result<SubmissionResult, Error> {
+        let req = UserTurnRequest {
+            session: ctx.session,
+            thread_id: ctx.thread_id,
+            content,
+        };
+        self.process_user_input(&ctx.message, req).await
+    }
+
     pub(super) async fn dispatch_submission(
         &self,
         ctx: DispatchCtx,
         submission: Submission,
     ) -> Result<SubmissionResult, Error> {
         match submission {
-            Submission::UserInput { content } => {
-                let req = UserTurnRequest {
-                    session: ctx.session,
-                    thread_id: ctx.thread_id,
-                    content,
-                };
-                self.process_user_input(&ctx.message, req).await
-            }
+            Submission::UserInput { content } => self.dispatch_user_input(ctx, content).await,
             Submission::SystemCommand { command, args } => {
                 tracing::debug!(
                     "[agent_loop] SystemCommand: command={}, channel={}",
