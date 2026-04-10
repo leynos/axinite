@@ -26,22 +26,32 @@ use tokio::sync::Mutex;
 
 use super::types::*;
 
+/// Describes the response returned when no tools are available.
+struct ForcedTextSpec {
+    text: &'static str,
+    output_tokens: u32,
+}
+
+/// Describes the single tool call returned when tools are available.
+struct ToolCallSpec {
+    name: &'static str,
+    args: serde_json::Value,
+    output_tokens: u32,
+}
+
 /// Build a `tool_responder` closure that returns forced text when the tool
 /// list is empty and a single tool call otherwise.
 fn text_or_tool_call_responder(
-    forced_text: &'static str,
-    text_output_tokens: u32,
-    tool_name: &'static str,
-    tool_args: serde_json::Value,
-    tool_output_tokens: u32,
+    text_spec: ForcedTextSpec,
+    call_spec: ToolCallSpec,
 ) -> Arc<dyn Fn(ToolCompletionRequest) -> ToolCompletionResponse + Send + Sync> {
     Arc::new(move |request: ToolCompletionRequest| {
         if request.tools.is_empty() {
             ToolCompletionResponse {
-                content: Some(forced_text.to_string()),
+                content: Some(text_spec.text.to_string()),
                 tool_calls: Vec::new(),
                 input_tokens: 0,
-                output_tokens: text_output_tokens,
+                output_tokens: text_spec.output_tokens,
                 finish_reason: FinishReason::Stop,
                 cache_read_input_tokens: 0,
                 cache_creation_input_tokens: 0,
@@ -51,11 +61,11 @@ fn text_or_tool_call_responder(
                 content: None,
                 tool_calls: vec![ToolCall {
                     id: format!("call_{}", uuid::Uuid::new_v4()),
-                    name: tool_name.to_string(),
-                    arguments: tool_args.clone(),
+                    name: call_spec.name.to_string(),
+                    arguments: call_spec.args.clone(),
                 }],
                 input_tokens: 0,
-                output_tokens: tool_output_tokens,
+                output_tokens: call_spec.output_tokens,
                 finish_reason: FinishReason::ToolUse,
                 cache_read_input_tokens: 0,
                 cache_creation_input_tokens: 0,
@@ -95,11 +105,8 @@ impl MockLlmProvider {
             name: "always-tool-call",
             text: "forced text response".to_string(),
             tool_responder: text_or_tool_call_responder(
-                "forced text response",
-                5,
-                "echo",
-                serde_json::json!({"message": "looping"}),
-                5,
+                ForcedTextSpec { text: "forced text response", output_tokens: 5 },
+                ToolCallSpec { name: "echo", args: serde_json::json!({"message": "looping"}), output_tokens: 5 },
             ),
         }
     }
@@ -110,11 +117,8 @@ impl MockLlmProvider {
             name: "failing-tool-call",
             text: "forced text".to_string(),
             tool_responder: text_or_tool_call_responder(
-                "forced text",
-                2,
-                "nonexistent_tool",
-                serde_json::json!({}),
-                5,
+                ForcedTextSpec { text: "forced text", output_tokens: 2 },
+                ToolCallSpec { name: "nonexistent_tool", args: serde_json::json!({}), output_tokens: 5 },
             ),
         }
     }
