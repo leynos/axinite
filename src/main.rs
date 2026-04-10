@@ -41,74 +41,91 @@ fn main() -> anyhow::Result<()> {
         .block_on(async_main())
 }
 
-async fn dispatch_cli<F, Fut>(f: F) -> Option<anyhow::Result<()>>
-where
-    F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = anyhow::Result<()>>,
-{
-    init_cli_tracing();
-    Some(f().await)
-}
-async fn dispatch_subcommand(cli: &Cli) -> Option<anyhow::Result<()>> {
+async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<bool> {
     match &cli.command {
-        Some(Command::Tool(c)) => dispatch_cli(|| run_tool_command(c.clone())).await,
+        Some(Command::Tool(c)) => {
+            init_cli_tracing();
+            run_tool_command(c.clone()).await?;
+            Ok(true)
+        }
         Some(Command::Config(c)) => {
-            dispatch_cli(|| ironclaw::cli::run_config_command(c.clone())).await
+            init_cli_tracing();
+            ironclaw::cli::run_config_command(c.clone()).await?;
+            Ok(true)
         }
         Some(Command::Registry(c)) => {
-            dispatch_cli(|| ironclaw::cli::run_registry_command(c.clone())).await
+            init_cli_tracing();
+            ironclaw::cli::run_registry_command(c.clone()).await?;
+            Ok(true)
         }
-        Some(Command::Mcp(c)) => dispatch_cli(|| run_mcp_command(*c.clone())).await,
-        Some(Command::Memory(c)) => dispatch_cli(|| ironclaw::cli::run_memory_command(c)).await,
+        Some(Command::Mcp(c)) => {
+            init_cli_tracing();
+            run_mcp_command(*c.clone()).await?;
+            Ok(true)
+        }
+        Some(Command::Memory(c)) => {
+            init_cli_tracing();
+            ironclaw::cli::run_memory_command(c).await?;
+            Ok(true)
+        }
         Some(Command::Pairing(c)) => {
             init_cli_tracing();
-            Some(run_pairing_command(c.clone()).map_err(|e| anyhow::anyhow!("{}", e)))
+            run_pairing_command(c.clone()).map_err(|e| anyhow::anyhow!("{}", e))?;
+            Ok(true)
         }
         Some(Command::Service(c)) => {
             init_cli_tracing();
-            Some(run_service_command(c))
+            run_service_command(c)?;
+            Ok(true)
         }
-        Some(Command::Doctor) =>
-        {
-            #[allow(clippy::redundant_closure)]
-            dispatch_cli(|| ironclaw::cli::run_doctor_command()).await
+        Some(Command::Doctor) => {
+            init_cli_tracing();
+            ironclaw::cli::run_doctor_command().await?;
+            Ok(true)
         }
-        Some(Command::Status) =>
-        {
-            #[allow(clippy::redundant_closure)]
-            dispatch_cli(|| run_status_command()).await
+        Some(Command::Status) => {
+            init_cli_tracing();
+            run_status_command().await?;
+            Ok(true)
         }
         Some(Command::Completion(c)) => {
             init_cli_tracing();
-            Some(c.run())
+            c.run()?;
+            Ok(true)
         }
         #[cfg(feature = "import")]
         Some(Command::Import(c)) => {
             init_cli_tracing();
-            Some(run_import_subcommand(c).await)
+            run_import_subcommand(c).await?;
+            Ok(true)
         }
         Some(Command::Worker {
             job_id,
             orchestrator_url,
             max_iterations,
-        }) => Some(dispatch_worker_subcommand(*job_id, orchestrator_url, *max_iterations).await),
+        }) => {
+            dispatch_worker_subcommand(*job_id, orchestrator_url, *max_iterations).await?;
+            Ok(true)
+        }
         Some(Command::ClaudeBridge {
             job_id,
             orchestrator_url,
             max_turns,
             model,
-        }) => Some(
-            dispatch_claude_bridge_subcommand(*job_id, orchestrator_url, *max_turns, model).await,
-        ),
+        }) => {
+            dispatch_claude_bridge_subcommand(*job_id, orchestrator_url, *max_turns, model).await?;
+            Ok(true)
+        }
         Some(Command::Onboard {
             skip_auth,
             channels_only,
             provider_only,
             quick,
         }) => {
-            Some(run_onboard_subcommand(*skip_auth, *channels_only, *provider_only, *quick).await)
+            run_onboard_subcommand(*skip_auth, *channels_only, *provider_only, *quick).await?;
+            Ok(true)
         }
-        None | Some(Command::Run) => None,
+        None | Some(Command::Run) => Ok(false),
     }
 }
 
@@ -140,18 +157,6 @@ struct ChannelInfrastructure {
     )>,
     #[cfg(unix)]
     http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
-}
-
-struct WasmInfraResult {
-    #[allow(dead_code)]
-    channel_names: Vec<String>,
-    loaded_wasm_channel_names: Vec<String>,
-    #[allow(clippy::type_complexity)]
-    wasm_channel_runtime_state: Option<(
-        Arc<WasmChannelRuntime>,
-        Arc<PairingStore>,
-        Arc<WasmChannelRouter>,
-    )>,
 }
 
 struct HttpChannelResult {
@@ -190,14 +195,16 @@ async fn setup_wasm_channels_infra(
     config: &Config,
     components: &ironclaw::app::AppComponents,
     reg: &mut ChannelRegistrar<'_>,
-) -> WasmInfraResult {
-    let empty = WasmInfraResult {
-        channel_names: vec![],
-        loaded_wasm_channel_names: vec![],
-        wasm_channel_runtime_state: None,
-    };
+) -> (
+    Vec<String>,
+    Option<(
+        Arc<WasmChannelRuntime>,
+        Arc<PairingStore>,
+        Arc<WasmChannelRouter>,
+    )>,
+) {
     if !config.channels.wasm_channels_enabled || !config.channels.wasm_channels_dir.exists() {
-        return empty;
+        return (vec![], None);
     }
     let Some(result) = ironclaw::channels::wasm::setup_wasm_channels(
         config,
@@ -207,7 +214,7 @@ async fn setup_wasm_channels_infra(
     )
     .await
     else {
-        return empty;
+        return (vec![], None);
     };
     let loaded_wasm_channel_names = result.channel_names;
     let wasm_channel_runtime_state = Some((
@@ -215,20 +222,14 @@ async fn setup_wasm_channels_infra(
         result.pairing_store,
         result.wasm_channel_router,
     ));
-    let mut wasm_channel_names = Vec::new();
     for (name, channel) in result.channels {
-        wasm_channel_names.push(name.clone());
-        reg.channel_names.push(name);
+        reg.channel_names.push(name.clone());
         reg.channels.add(channel).await;
     }
     if let Some(routes) = result.webhook_routes {
         reg.webhook_routes.push(routes);
     }
-    WasmInfraResult {
-        channel_names: wasm_channel_names,
-        loaded_wasm_channel_names,
-        wasm_channel_runtime_state,
-    }
+    (loaded_wasm_channel_names, wasm_channel_runtime_state)
 }
 
 async fn setup_signal_channel(
@@ -332,7 +333,8 @@ async fn setup_channel_infrastructure(
 
     setup_repl_channel(cli, config, &mut reg).await;
 
-    let wasm = setup_wasm_channels_infra(config, components, &mut reg).await;
+    let (loaded_wasm_channel_names, wasm_channel_runtime_state) =
+        setup_wasm_channels_infra(config, components, &mut reg).await;
 
     setup_signal_channel(cli, config, &mut reg).await?;
 
@@ -340,7 +342,10 @@ async fn setup_channel_infrastructure(
 
     // `reg` is dropped here, releasing the mutable borrows, so `webhook_routes`
     // is usable again in the next call.
-    #[allow(clippy::drop_non_drop)]
+    #[expect(
+        clippy::drop_non_drop,
+        reason = "Explicit drop to release mutable borrows"
+    )]
     drop(reg);
 
     let webhook_server = build_webhook_server(http.webhook_server_addr, webhook_routes).await?;
@@ -348,14 +353,13 @@ async fn setup_channel_infrastructure(
     Ok(ChannelInfrastructure {
         webhook_server,
         channel_names,
-        loaded_wasm_channel_names: wasm.loaded_wasm_channel_names,
-        wasm_channel_runtime_state: wasm.wasm_channel_runtime_state,
+        loaded_wasm_channel_names,
+        wasm_channel_runtime_state,
         #[cfg(unix)]
         http_channel_state: http.http_channel_state,
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn wire_extension_manager(
     extension_manager: &Option<Arc<ironclaw::extensions::ExtensionManager>>,
     wasm_channel_runtime_state: &mut Option<(
@@ -468,8 +472,9 @@ async fn async_main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Handle non-agent commands first (they don't need full setup)
-    if let Some(result) = dispatch_subcommand(&cli).await {
-        return result;
+    let handled = dispatch_subcommand(&cli).await?;
+    if handled {
+        return Ok(());
     }
 
     // ── PID lock (prevent multiple instances) ────────────────────────
@@ -973,19 +978,48 @@ async fn setup_gateway_channel(
     let mut routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot> = None;
 
     if let Some(ref gw_config) = config.channels.gateway {
-        let gw = configure_gateway_builder(
-            gw_config,
-            components,
-            ctx.container_job_manager,
-            ctx.session_manager,
-            ctx.log_broadcaster,
-            ctx.log_level_handle,
-            ctx.prompt_queue,
-            ctx.scheduler_slot,
-            ctx.job_event_tx,
-            config.sandbox.enabled,
-        )
-        .await;
+        let mut gw =
+            GatewayChannel::new(gw_config.clone()).with_llm_provider(Arc::clone(&components.llm));
+        if let Some(ref ws) = components.workspace {
+            gw = gw.with_workspace(Arc::clone(ws));
+        }
+        gw = gw.with_session_manager(Arc::clone(ctx.session_manager));
+        gw = gw.with_log_broadcaster(Arc::clone(ctx.log_broadcaster));
+        gw = gw.with_log_level_handle(Arc::clone(ctx.log_level_handle));
+        gw = gw.with_tool_registry(Arc::clone(&components.tools));
+        if let Some(ref ext_mgr) = components.extension_manager {
+            gw = gw.with_extension_manager(Arc::clone(ext_mgr));
+        }
+        if !components.catalog_entries.is_empty() {
+            gw = gw.with_registry_entries(components.catalog_entries.clone());
+        }
+        if let Some(ref d) = components.db {
+            gw = gw.with_store(Arc::clone(d));
+        }
+        if let Some(jm) = ctx.container_job_manager {
+            gw = gw.with_job_manager(Arc::clone(jm));
+        }
+        gw = gw.with_scheduler(ctx.scheduler_slot.clone());
+        if let Some(ref sr) = components.skill_registry {
+            gw = gw.with_skill_registry(Arc::clone(sr));
+        }
+        if let Some(ref sc) = components.skill_catalog {
+            gw = gw.with_skill_catalog(Arc::clone(sc));
+        }
+        gw = gw.with_cost_guard(Arc::clone(&components.cost_guard));
+        if config.sandbox.enabled {
+            gw = gw.with_prompt_queue(Arc::clone(ctx.prompt_queue));
+
+            if let Some(tx) = ctx.job_event_tx {
+                let mut rx = tx.subscribe();
+                let gw_state = Arc::clone(gw.state());
+                tokio::spawn(async move {
+                    while let Ok((_job_id, event)) = rx.recv().await {
+                        gw_state.sse.broadcast(event);
+                    }
+                });
+            }
+        }
 
         gateway_url = Some(format!(
             "http://{}:{}/?token={}",
@@ -1011,73 +1045,6 @@ async fn setup_gateway_channel(
         sse_sender,
         routine_engine_slot,
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn configure_gateway_builder(
-    gw_config: &ironclaw::config::GatewayConfig,
-    components: &ironclaw::app::AppComponents,
-    container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
-    session_manager: &Arc<ironclaw::agent::SessionManager>,
-    log_broadcaster: &Arc<ironclaw::channels::web::log_layer::LogBroadcaster>,
-    log_level_handle: &Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
-    prompt_queue: &Arc<
-        tokio::sync::Mutex<
-            std::collections::HashMap<
-                uuid::Uuid,
-                std::collections::VecDeque<ironclaw::orchestrator::api::PendingPrompt>,
-            >,
-        >,
-    >,
-    scheduler_slot: &ironclaw::tools::builtin::SchedulerSlot,
-    job_event_tx: &Option<
-        tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
-    >,
-    config_sandbox_enabled: bool,
-) -> GatewayChannel {
-    let mut gw =
-        GatewayChannel::new(gw_config.clone()).with_llm_provider(Arc::clone(&components.llm));
-    if let Some(ref ws) = components.workspace {
-        gw = gw.with_workspace(Arc::clone(ws));
-    }
-    gw = gw.with_session_manager(Arc::clone(session_manager));
-    gw = gw.with_log_broadcaster(Arc::clone(log_broadcaster));
-    gw = gw.with_log_level_handle(Arc::clone(log_level_handle));
-    gw = gw.with_tool_registry(Arc::clone(&components.tools));
-    if let Some(ref ext_mgr) = components.extension_manager {
-        gw = gw.with_extension_manager(Arc::clone(ext_mgr));
-    }
-    if !components.catalog_entries.is_empty() {
-        gw = gw.with_registry_entries(components.catalog_entries.clone());
-    }
-    if let Some(ref d) = components.db {
-        gw = gw.with_store(Arc::clone(d));
-    }
-    if let Some(jm) = container_job_manager {
-        gw = gw.with_job_manager(Arc::clone(jm));
-    }
-    gw = gw.with_scheduler(scheduler_slot.clone());
-    if let Some(ref sr) = components.skill_registry {
-        gw = gw.with_skill_registry(Arc::clone(sr));
-    }
-    if let Some(ref sc) = components.skill_catalog {
-        gw = gw.with_skill_catalog(Arc::clone(sc));
-    }
-    gw = gw.with_cost_guard(Arc::clone(&components.cost_guard));
-    if config_sandbox_enabled {
-        gw = gw.with_prompt_queue(Arc::clone(prompt_queue));
-
-        if let Some(tx) = job_event_tx {
-            let mut rx = tx.subscribe();
-            let gw_state = Arc::clone(gw.state());
-            tokio::spawn(async move {
-                while let Ok((_job_id, event)) = rx.recv().await {
-                    gw_state.sse.broadcast(event);
-                }
-            });
-        }
-    }
-    gw
 }
 
 struct GatewaySetup {

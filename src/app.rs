@@ -647,7 +647,7 @@ impl RuntimeSideEffects {
         }
 
         // Run workspace import, seeding, and embedding backfill if workspace is available.
-        if let Some(ws) = self.workspace {
+        if let Some(ref ws) = self.workspace {
             // Import workspace files from disk FIRST if WORKSPACE_IMPORT_DIR is set.
             // This lets Docker images / deployment scripts ship customized workspace
             // templates that override generic seeds. Only imports files that don't
@@ -682,7 +682,7 @@ impl RuntimeSideEffects {
 
             // Spawn embedding backfill in background if embeddings are configured.
             if self.embeddings_available {
-                let ws_bg = Arc::clone(&ws);
+                let ws_bg = Arc::clone(ws);
                 tokio::spawn(async move {
                     match ws_bg.backfill_embeddings().await {
                         Ok(count) if count > 0 => {
