@@ -1056,30 +1056,24 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         if let Some(state) = previous {
             match self
                 .context_manager()
-                .update_context(self.job_id, |ctx| ctx.transition_to(state, None))
+                .update_context(self.job_id, |ctx| {
+                    ctx.set_state_rollback(state);
+                })
                 .await
             {
-                Ok(Ok(())) => {
+                Ok(()) => {
                     tracing::error!(
                         job_id = %self.job_id,
                         operation,
                         "Rolled back context state after persistence failure"
                     );
                 }
-                Ok(Err(transition_err)) => {
+                Err(e) => {
                     tracing::error!(
                         job_id = %self.job_id,
                         operation,
-                        %transition_err,
-                        "Rollback transition rejected — context state may be inconsistent"
-                    );
-                }
-                Err(store_err) => {
-                    tracing::error!(
-                        job_id = %self.job_id,
-                        operation,
-                        %store_err,
-                        "Rollback failed — could not update context"
+                        error = %e,
+                        "Failed to roll back context state after persistence failure"
                     );
                 }
             }

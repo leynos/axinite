@@ -287,6 +287,15 @@ impl JobContext {
         Ok(())
     }
 
+    /// Directly set the state without transition validation.
+    ///
+    /// Intended for rollback paths where the in-memory context must be
+    /// restored to a previous state after a persistence failure, bypassing
+    /// [`Self::transition_to`] validation.
+    pub fn set_state_rollback(&mut self, previous: JobState) {
+        self.state = previous;
+    }
+
     /// Add to the actual cost.
     pub fn add_cost(&mut self, cost: Decimal) {
         self.actual_cost += cost;
