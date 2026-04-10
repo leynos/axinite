@@ -346,25 +346,29 @@ mod tests {
         Ok(row)
     }
 
-    #[tokio::test]
-    async fn test_dedup_window_null_yields_none() {
-        let row = mock_routine_row_with_dedup_window(None, None)
-            .await
-            .expect("failed to create mock row");
-        let routine = row_to_routine_libsql(&row).expect("failed to map row to routine");
-        assert!(routine.guardrails.dedup_window.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_dedup_window_valid_value() {
-        let row = mock_routine_row_with_dedup_window(Some(300), None)
+    /// Assert that a `dedup_window_secs` value decodes to the expected `dedup_window`.
+    async fn assert_dedup_window_maps_to(
+        dedup_window_secs: Option<i64>,
+        expected: Option<std::time::Duration>,
+    ) {
+        let row = mock_routine_row_with_dedup_window(dedup_window_secs, None)
             .await
             .expect("failed to create mock row");
         let routine = row_to_routine_libsql(&row).expect("failed to map row to routine");
         assert_eq!(
-            routine.guardrails.dedup_window,
-            Some(std::time::Duration::from_secs(300))
+            routine.guardrails.dedup_window, expected,
+            "dedup_window mismatch for input {dedup_window_secs:?}",
         );
+    }
+
+    #[tokio::test]
+    async fn test_dedup_window_null_yields_none() {
+        assert_dedup_window_maps_to(None, None).await;
+    }
+
+    #[tokio::test]
+    async fn test_dedup_window_valid_value() {
+        assert_dedup_window_maps_to(Some(300), Some(std::time::Duration::from_secs(300))).await;
     }
 
     #[tokio::test]
