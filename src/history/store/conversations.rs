@@ -19,7 +19,7 @@ mod singletons;
 use super::Store;
 #[cfg(feature = "postgres")]
 use crate::db::EnsureConversationParams;
-#[cfg(feature = "postgres")]
+#[cfg(any(feature = "postgres", test))]
 use crate::error::DatabaseError;
 
 /// Summary of a conversation for the thread list.
@@ -60,6 +60,23 @@ pub(super) async fn touch_conversation_with_client(
             &[&id],
         )
         .await?;
+    Ok(())
+}
+
+/// Validate a pagination limit for message queries.
+///
+/// Rejects non-positive limits and limits that would overflow when
+/// incremented by one for the fetch-extra-row pagination strategy.
+#[cfg(any(feature = "postgres", test))]
+fn validate_message_pagination_limit(limit: i64) -> Result<(), DatabaseError> {
+    if limit <= 0 {
+        return Err(DatabaseError::Validation(
+            "conversation message pagination limit must be > 0".to_string(),
+        ));
+    }
+    limit.checked_add(1).ok_or_else(|| {
+        DatabaseError::Validation("conversation message pagination limit overflow".to_string())
+    })?;
     Ok(())
 }
 
@@ -179,13 +196,11 @@ impl Store {
         before: Option<(DateTime<Utc>, Uuid)>,
         limit: i64,
     ) -> Result<(Vec<ConversationMessage>, bool), DatabaseError> {
-        if limit <= 0 {
-            return Ok((Vec::new(), false));
-        }
+        validate_message_pagination_limit(limit)?;
 
         let conn = self.conn().await?;
         let fetch_limit = limit.checked_add(1).ok_or_else(|| {
-            DatabaseError::Query("conversation message pagination limit overflow".to_string())
+            DatabaseError::Validation("conversation message pagination limit overflow".to_string())
         })?;
 
         let rows = if let Some((before_ts, before_id)) = before {
@@ -269,6 +284,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+    use crate::error::DatabaseError;
 
     #[test]
     fn test_conversation_summary_has_channel_field() {
@@ -298,5 +314,36 @@ mod tests {
             };
             assert_eq!(summary.channel, ch);
         }
+    }
+
+    #[test]
+    fn test_pagination_rejects_zero_limit() {
+        let err = validate_message_pagination_limit(0).expect_err("zero limit should be rejected");
+        assert!(
+            matches!(err, DatabaseError::Validation(ref msg) if msg.contains("must be > 0")),
+            "expected Validation error for zero limit, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_pagination_rejects_negative_limit() {
+        for limit in [-1, -100, i64::MIN] {
+            let err = validate_message_pagination_limit(limit)
+                .expect_err(&format!("negative limit {limit} should be rejected"));
+            assert!(
+                matches!(err, DatabaseError::Validation(ref msg) if msg.contains("must be > 0")),
+                "expected Validation error for limit {limit}, got: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_pagination_rejects_i64_max_overflow() {
+        let err = validate_message_pagination_limit(i64::MAX)
+            .expect_err("i64::MAX limit should be rejected");
+        assert!(
+            matches!(err, DatabaseError::Validation(ref msg) if msg.contains("overflow")),
+            "expected overflow Validation error, got: {err:?}"
+        );
     }
 }

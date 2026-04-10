@@ -42,7 +42,8 @@
 - [Chat model](chat-model.md) traces the chat pipeline from ingress through
   context assembly, tool execution, approvals, and outbound sinks.
 - [Database integrations](database-integrations.md) explains the PostgreSQL,
-  `pgvector`, and libSQL persistence backends and the differences between them.
+  `pgvector`, and libSQL persistence backends, their differences, error handling
+  conventions, migration helpers, and job persistence patterns.
 - [Embedding integrations](embedding-integrations.md) documents the embedding
   provider interfaces, adapters, and the places embeddings are used.
 - [Jobs and routines](jobs-and-routines.md) covers the scheduler, background
@@ -83,6 +84,9 @@
   Telegram channel integration.
 - [Building channels](BUILDING_CHANNELS.md) describes how to implement and wire
   new channels into the application.
+- [Web API reference](web-api-reference.md) documents the HTTP endpoints exposed
+  by the web gateway. Currently a stub covering chat history pagination; the
+  full route table will be completed in a future PR.
 - [Writing WebAssembly tools for ironclaw](writing-web-assembly-tools-for-ironclaw.md)
   explains how extension authors build and package WebAssembly tools for the
   existing runtime and tool contract.

@@ -21,6 +21,9 @@ pub enum DatabaseError {
     #[error("Serialization error: {0}")]
     Serialization(String),
 
+    #[error("Validation error: {0}")]
+    Validation(String),
+
     #[cfg(feature = "postgres")]
     #[error("PostgreSQL error: {0}")]
     Postgres(#[from] tokio_postgres::Error),

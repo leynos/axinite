@@ -67,9 +67,10 @@ impl Store {
         .await?;
 
         if rows == 0 {
-            return Err(DatabaseError::Query(format!(
-                "estimation snapshot not found: {id}"
-            )));
+            return Err(DatabaseError::NotFound {
+                entity: "estimation snapshot".to_string(),
+                id: id.to_string(),
+            });
         }
 
         Ok(())

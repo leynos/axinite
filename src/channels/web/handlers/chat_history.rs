@@ -57,7 +57,10 @@ async fn load_stored_history(
     let (messages, has_more) = store
         .list_conversation_messages_paginated(thread_id, before_cursor, limit)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| match e {
+            crate::error::DatabaseError::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        })?;
     let oldest_timestamp = messages
         .first()
         .map(|message| format!("{}|{}", message.created_at.to_rfc3339(), message.id));
@@ -82,6 +85,15 @@ pub async fn chat_history_handler(
     ))?;
 
     let session = session_manager.get_or_create_session(&state.user_id).await;
+
+    // Early validation: reject limit == 0 before any history-branch logic
+    if query.limit == Some(0) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "conversation message pagination limit must be > 0".to_string(),
+        ));
+    }
+
     let limit = query
         .limit
         .unwrap_or(DEFAULT_HISTORY_LIMIT)

@@ -49,23 +49,30 @@ pub(super) async fn complete_routine_run(
     } = params;
     let conn = backend.connect().await?;
     let now = fmt_ts(&Utc::now());
-    conn.execute(
-        r#"
+    let affected = conn
+        .execute(
+            r#"
             UPDATE routine_runs SET
                 completed_at = ?5, status = ?2,
                 result_summary = ?3, tokens_used = ?4
             WHERE id = ?1
             "#,
-        params![
-            id.to_string(),
-            status.to_string(),
-            opt_text(result_summary),
-            tokens_used.map(i64::from),
-            now,
-        ],
-    )
-    .await
-    .map_err(|e| DatabaseError::Query(e.to_string()))?;
+            params![
+                id.to_string(),
+                status.to_string(),
+                opt_text(result_summary),
+                tokens_used.map(i64::from),
+                now,
+            ],
+        )
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+    if affected == 0 {
+        return Err(DatabaseError::NotFound {
+            entity: "routine run".to_string(),
+            id: id.to_string(),
+        });
+    }
     Ok(())
 }
 
@@ -131,11 +138,18 @@ pub(super) async fn link_routine_run_to_job(
     job_id: Uuid,
 ) -> Result<(), DatabaseError> {
     let conn = backend.connect().await?;
-    conn.execute(
-        "UPDATE routine_runs SET job_id = ?1 WHERE id = ?2",
-        params![job_id.to_string(), run_id.to_string()],
-    )
-    .await
-    .map_err(|e| DatabaseError::Query(e.to_string()))?;
+    let affected = conn
+        .execute(
+            "UPDATE routine_runs SET job_id = ?1 WHERE id = ?2",
+            params![job_id.to_string(), run_id.to_string()],
+        )
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+    if affected == 0 {
+        return Err(DatabaseError::NotFound {
+            entity: "routine run".to_string(),
+            id: run_id.to_string(),
+        });
+    }
     Ok(())
 }

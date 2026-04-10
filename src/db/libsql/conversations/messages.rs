@@ -68,13 +68,18 @@ pub(super) async fn list_conversation_messages_paginated(
     before: Option<(DateTime<Utc>, Uuid)>,
     limit: usize,
 ) -> Result<(Vec<ConversationMessage>, bool), DatabaseError> {
+    if limit == 0 {
+        return Err(DatabaseError::Validation(
+            "conversation message pagination limit must be > 0".to_string(),
+        ));
+    }
     let conn = backend.connect().await?;
     let fetch_limit = limit.checked_add(1).ok_or_else(|| {
-        DatabaseError::Query("conversation message pagination limit overflow".to_string())
+        DatabaseError::Validation("conversation message pagination limit overflow".to_string())
     })?;
     let cid = conversation_id.to_string();
     let fetch_limit_i64 = i64::try_from(fetch_limit).map_err(|_| {
-        DatabaseError::Query("conversation message pagination limit overflow".to_string())
+        DatabaseError::Validation("conversation message pagination limit overflow".to_string())
     })?;
 
     let mut rows = if let Some((before_ts, before_id)) = before {
@@ -152,4 +157,65 @@ pub(super) async fn list_conversation_messages(
         messages.push(row_to_conversation_message(&row)?);
     }
     Ok(messages)
+}
+
+#[cfg(test)]
+mod tests {
+    use uuid::Uuid;
+
+    use crate::db::Database;
+    use crate::db::libsql::LibSqlBackend;
+    use crate::error::DatabaseError;
+
+    async fn in_memory_backend() -> LibSqlBackend {
+        let backend = LibSqlBackend::new_memory()
+            .await
+            .expect("in-memory backend creation");
+        backend.run_migrations().await.expect("migrations");
+        backend
+    }
+
+    #[tokio::test]
+    async fn test_zero_limit_rejected() {
+        let backend = in_memory_backend().await;
+        let err = super::list_conversation_messages_paginated(&backend, Uuid::new_v4(), None, 0)
+            .await
+            .expect_err("zero limit should be rejected");
+
+        assert!(
+            matches!(err, DatabaseError::Validation(ref msg) if msg.contains("must be > 0")),
+            "expected Validation error for zero limit, got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_usize_max_limit_rejected() {
+        let backend = in_memory_backend().await;
+        let err =
+            super::list_conversation_messages_paginated(&backend, Uuid::new_v4(), None, usize::MAX)
+                .await
+                .expect_err("usize::MAX limit should be rejected");
+
+        assert!(
+            matches!(err, DatabaseError::Validation(ref msg) if msg.contains("overflow")),
+            "expected overflow Validation error, got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_limit_exceeding_i64_range_rejected() {
+        let backend = in_memory_backend().await;
+        // i64::MAX as usize: passes checked_add(1) on 64-bit but fails
+        // i64::try_from because the result exceeds i64::MAX.
+        let limit = i64::MAX as usize;
+        let err =
+            super::list_conversation_messages_paginated(&backend, Uuid::new_v4(), None, limit)
+                .await
+                .expect_err("limit exceeding i64 range should be rejected");
+
+        assert!(
+            matches!(err, DatabaseError::Validation(ref msg) if msg.contains("overflow")),
+            "expected overflow Validation error, got: {err:?}"
+        );
+    }
 }

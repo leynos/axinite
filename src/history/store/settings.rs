@@ -154,10 +154,7 @@ impl Store {
             )
             .await?;
         } else {
-            let keys: Vec<String> = settings
-                .keys()
-                .map(std::string::ToString::to_string)
-                .collect();
+            let keys: Vec<String> = settings.keys().cloned().collect();
             tx.execute(
                 "DELETE FROM settings WHERE user_id = $1 AND NOT (key = ANY($2))",
                 &[&user_id.as_str(), &keys],
@@ -188,11 +185,11 @@ impl Store {
         let conn = self.conn().await?;
         let row = conn
             .query_one(
-                "SELECT COUNT(*) as cnt FROM settings WHERE user_id = $1",
+                "SELECT EXISTS(SELECT 1 FROM settings WHERE user_id = $1)",
                 &[&user_id.as_str()],
             )
             .await?;
-        let count: i64 = row.get("cnt");
-        Ok(count > 0)
+        let exists: bool = row.get(0);
+        Ok(exists)
     }
 }

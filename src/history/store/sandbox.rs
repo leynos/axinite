@@ -68,6 +68,16 @@ pub struct JobEventRecord {
     pub created_at: DateTime<Utc>,
 }
 
+/// Map the `description` column value to a `credential_grants_json` string.
+///
+/// The `description` column was repurposed to store serialised credential
+/// grant JSON. When the column is NULL (e.g. rows created before this
+/// repurposing), the function falls back to an empty JSON array.
+#[cfg(any(feature = "postgres", test))]
+fn credential_grants_from_description(description: Option<String>) -> String {
+    description.unwrap_or_else(|| "[]".to_string())
+}
+
 #[cfg(feature = "postgres")]
 fn row_to_sandbox_job(r: &tokio_postgres::Row) -> SandboxJobRecord {
     SandboxJobRecord {
@@ -83,7 +93,12 @@ fn row_to_sandbox_job(r: &tokio_postgres::Row) -> SandboxJobRecord {
         created_at: r.get("created_at"),
         started_at: r.get("started_at"),
         completed_at: r.get("completed_at"),
-        credential_grants_json: r.get::<_, String>("description"),
+        // The `description` column is repurposed to store serialized credential grant JSON.
+        // This allows sandbox jobs to persist credential grants for restart support.
+        // Format: JSON array of CredentialGrant objects (secret_name, env_var pairs).
+        credential_grants_json: credential_grants_from_description(
+            r.get::<_, Option<String>>("description"),
+        ),
     }
 }
 
@@ -348,5 +363,42 @@ impl Store {
                     .map_err(|error| DatabaseError::Serialization(error.to_string()))
             })
             .transpose()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_null_description_falls_back_to_empty_array() {
+        assert_eq!(credential_grants_from_description(None), "[]");
+    }
+
+    #[test]
+    fn test_valid_json_array_passes_through() {
+        let json = r#"[{"secret_name":"API_KEY","env_var":"API_KEY"}]"#;
+        assert_eq!(
+            credential_grants_from_description(Some(json.to_string())),
+            json
+        );
+    }
+
+    #[test]
+    fn test_malformed_legacy_plaintext_passes_through() {
+        // Legacy rows with plaintext descriptions from before the column was
+        // repurposed should pass through unchanged. Normalisation happens at
+        // restart time via `normalize_credential_grants_json`.
+        assert_eq!(
+            credential_grants_from_description(Some("Build a web server".to_string())),
+            "Build a web server"
+        );
+    }
+
+    #[test]
+    fn test_empty_string_passes_through() {
+        // The libSQL backend returns "" for NULL columns. This should pass
+        // through at this layer; normalisation occurs at restart.
+        assert_eq!(credential_grants_from_description(Some(String::new())), "");
     }
 }
