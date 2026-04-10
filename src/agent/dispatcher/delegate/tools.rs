@@ -76,6 +76,44 @@ impl<'a> ChatDelegate<'a> {
         }
     }
 
+    /// Run the `BeforeToolCall` hook for one tool invocation.
+    ///
+    /// Returns `Some(PreflightOutcome::Rejected(…))` when the hook blocks the
+    /// call (the caller should push that outcome and `continue` to the next
+    /// tool). Returns `None` when the call should proceed; `tc.arguments` may
+    /// have been mutated to incorporate hook-supplied parameter overrides.
+    async fn run_tool_hook_preflight(
+        &self,
+        tc: &mut crate::llm::ToolCall,
+        original_tc: &crate::llm::ToolCall,
+        sensitive: &[&str],
+    ) -> Option<PreflightOutcome> {
+        let hook_params = redact_params(&tc.arguments, sensitive);
+        let event = crate::hooks::HookEvent::ToolCall {
+            tool_name: tc.name.clone(),
+            parameters: hook_params,
+            user_id: self.message.user_id.clone(),
+            context: "chat".to_string(),
+        };
+
+        match self.agent.hooks().run(&event).await {
+            Err(crate::hooks::HookError::Rejected { reason }) => Some(PreflightOutcome::Rejected(
+                format!("Tool call rejected by hook: {}", reason),
+            )),
+            Err(err) => Some(PreflightOutcome::Rejected(format!(
+                "Tool call blocked by hook policy: {}",
+                err
+            ))),
+            Ok(crate::hooks::HookOutcome::Continue {
+                modified: Some(new_params),
+            }) => {
+                apply_hook_params(tc, original_tc, sensitive, &new_params);
+                None
+            }
+            _ => None,
+        }
+    }
+
     /// Group tool calls into preflight outcomes and runnable batch.
     // Intentionally decomposed from a complex single-line conditional to reduce
     // cognitive complexity (CodeScene: Complex Conditional).
@@ -108,40 +146,12 @@ impl<'a> ChatDelegate<'a> {
                 .unwrap_or(&[]);
 
             // Hook: BeforeToolCall
-            let hook_params = redact_params(&tc.arguments, sensitive);
-            let event = crate::hooks::HookEvent::ToolCall {
-                tool_name: tc.name.clone(),
-                parameters: hook_params,
-                user_id: self.message.user_id.clone(),
-                context: "chat".to_string(),
-            };
-            match self.agent.hooks().run(&event).await {
-                Err(crate::hooks::HookError::Rejected { reason }) => {
-                    preflight.push((
-                        tc,
-                        PreflightOutcome::Rejected(format!(
-                            "Tool call rejected by hook: {}",
-                            reason
-                        )),
-                    ));
-                    continue;
-                }
-                Err(err) => {
-                    preflight.push((
-                        tc,
-                        PreflightOutcome::Rejected(format!(
-                            "Tool call blocked by hook policy: {}",
-                            err
-                        )),
-                    ));
-                    continue;
-                }
-                Ok(crate::hooks::HookOutcome::Continue {
-                    modified: Some(new_params),
-                }) => {
-                    apply_hook_params(&mut tc, original_tc, sensitive, &new_params);
-                }
-                _ => {}
+            if let Some(rejected) = self
+                .run_tool_hook_preflight(&mut tc, original_tc, sensitive)
+                .await
+            {
+                preflight.push((tc, rejected));
+                continue;
             }
 
             // Check if tool requires approval
