@@ -255,6 +255,80 @@ async fn record_redacted_tool_calls(
     write_tool_calls_to_thread(delegate, tool_calls, redacted_args).await;
 }
 
+/// Apply hook parameter modification to a tool call.
+fn apply_hook_param_modification(
+    tc: &mut crate::llm::ToolCall,
+    original_tc: &crate::llm::ToolCall,
+    sensitive: &[&str],
+    new_params: &str,
+) {
+    match serde_json::from_str::<serde_json::Value>(new_params) {
+        Ok(mut parsed) => {
+            if let Some(obj) = parsed.as_object_mut() {
+                for key in sensitive {
+                    if let Some(orig_val) = original_tc.arguments.get(*key) {
+                        obj.insert((*key).to_string(), orig_val.clone());
+                    }
+                }
+            }
+            tc.arguments = parsed;
+        }
+        Err(e) => {
+            tracing::warn!(
+                tool = %tc.name,
+                "Hook returned non-JSON modification for ToolCall, ignoring: {}",
+                e
+            );
+        }
+    }
+}
+
+/// Apply the BeforeToolCall hook and return rejection message if any.
+async fn apply_before_tool_call_hook(
+    delegate: &ChatDelegate<'_>,
+    original_tc: &crate::llm::ToolCall,
+    tc: &mut crate::llm::ToolCall,
+    sensitive: &[&str],
+) -> Option<String> {
+    let hook_params = redact_params(&tc.arguments, sensitive);
+    let event = crate::hooks::HookEvent::ToolCall {
+        tool_name: tc.name.clone(),
+        parameters: hook_params,
+        user_id: delegate.message.user_id.clone(),
+        context: "chat".to_string(),
+    };
+    match delegate.agent.hooks().run(&event).await {
+        Err(crate::hooks::HookError::Rejected { reason }) => {
+            Some(format!("Tool call rejected by hook: {}", reason))
+        }
+        Err(err) => Some(format!("Tool call blocked by hook policy: {}", err)),
+        Ok(crate::hooks::HookOutcome::Continue {
+            modified: Some(new_params),
+        }) => {
+            apply_hook_param_modification(tc, original_tc, sensitive, &new_params);
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Check if a tool requires approval based on its configuration and auto-approve settings.
+async fn tool_requires_approval(
+    delegate: &ChatDelegate<'_>,
+    tool: &std::sync::Arc<dyn crate::tools::Tool>,
+    tc: &crate::llm::ToolCall,
+) -> bool {
+    use crate::tools::ApprovalRequirement;
+    match tool.requires_approval(&tc.arguments) {
+        ApprovalRequirement::Never => false,
+        ApprovalRequirement::Always => true,
+        ApprovalRequirement::UnlessAutoApproved => {
+            let sess = delegate.session.lock().await;
+            !sess.is_tool_auto_approved(&tc.name)
+        }
+    }
+}
+
 /// Group tool calls into preflight outcomes and runnable batch.
 async fn group_tool_calls(
     delegate: &ChatDelegate<'_>,
@@ -268,8 +342,7 @@ async fn group_tool_calls(
 > {
     let mut preflight: Vec<(crate::llm::ToolCall, PreflightOutcome)> = Vec::new();
     let mut runnable: Vec<(usize, crate::llm::ToolCall)> = Vec::new();
-    let mut approval_needed: Option<(usize, crate::llm::ToolCall, Arc<dyn crate::tools::Tool>)> =
-        None;
+    let mut approval_needed = None;
 
     for (idx, original_tc) in tool_calls.iter().enumerate() {
         let mut tc = original_tc.clone();
@@ -281,73 +354,23 @@ async fn group_tool_calls(
             .unwrap_or(&[]);
 
         // Hook: BeforeToolCall
-        let hook_params = redact_params(&tc.arguments, sensitive);
-        let event = crate::hooks::HookEvent::ToolCall {
-            tool_name: tc.name.clone(),
-            parameters: hook_params,
-            user_id: delegate.message.user_id.clone(),
-            context: "chat".to_string(),
-        };
-        match delegate.agent.hooks().run(&event).await {
-            Err(crate::hooks::HookError::Rejected { reason }) => {
-                preflight.push((
-                    tc,
-                    PreflightOutcome::Rejected(format!("Tool call rejected by hook: {}", reason)),
-                ));
-                continue;
-            }
-            Err(err) => {
-                preflight.push((
-                    tc,
-                    PreflightOutcome::Rejected(format!(
-                        "Tool call blocked by hook policy: {}",
-                        err
-                    )),
-                ));
-                continue;
-            }
-            Ok(crate::hooks::HookOutcome::Continue {
-                modified: Some(new_params),
-            }) => match serde_json::from_str::<serde_json::Value>(&new_params) {
-                Ok(mut parsed) => {
-                    if let Some(obj) = parsed.as_object_mut() {
-                        for key in sensitive {
-                            if let Some(orig_val) = original_tc.arguments.get(*key) {
-                                obj.insert((*key).to_string(), orig_val.clone());
-                            }
-                        }
-                    }
-                    tc.arguments = parsed;
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        tool = %tc.name,
-                        "Hook returned non-JSON modification for ToolCall, ignoring: {}",
-                        e
-                    );
-                }
-            },
-            _ => {}
+        if let Some(rejection_msg) =
+            apply_before_tool_call_hook(delegate, original_tc, &mut tc, sensitive).await
+        {
+            preflight.push((tc, PreflightOutcome::Rejected(rejection_msg)));
+            continue;
         }
 
         // Check if tool requires approval
-        if !delegate.agent.config.auto_approve_tools
-            && let Some(tool) = tool_opt
-        {
-            use crate::tools::ApprovalRequirement;
-            let needs_approval = match tool.requires_approval(&tc.arguments) {
-                ApprovalRequirement::Never => false,
-                ApprovalRequirement::UnlessAutoApproved => {
-                    let sess = delegate.session.lock().await;
-                    !sess.is_tool_auto_approved(&tc.name)
-                }
-                ApprovalRequirement::Always => true,
-            };
-
-            if needs_approval {
+        if !delegate.agent.config.auto_approve_tools && let Some(tool) = tool_opt {
+            if tool_requires_approval(delegate, &tool, &tc).await {
                 approval_needed = Some((idx, tc, tool));
                 break;
             }
+            let preflight_idx = preflight.len();
+            preflight.push((tc.clone(), PreflightOutcome::Runnable));
+            runnable.push((preflight_idx, tc));
+            continue;
         }
 
         let preflight_idx = preflight.len();
