@@ -50,6 +50,16 @@ fn apply_hook_params(
     }
 }
 
+/// The outcome of pre-flighting a single tool call in `group_tool_calls`.
+enum ToolPreflightResult {
+    /// The hook or policy rejected this call before execution.
+    Rejected(crate::llm::ToolCall, PreflightOutcome),
+    /// The tool requires human approval; the loop must stop here.
+    NeedsApproval(usize, crate::llm::ToolCall, Arc<dyn crate::tools::Tool>),
+    /// The tool may proceed; append to the runnable batch.
+    Runnable(crate::llm::ToolCall),
+}
+
 impl<'a> ChatDelegate<'a> {
     /// Return `true` if tool approval is enforced (auto-approve is disabled).
     fn tool_approval_enforced(&self) -> bool {
@@ -114,10 +124,47 @@ impl<'a> ChatDelegate<'a> {
         }
     }
 
-    /// Group tool calls into preflight outcomes and runnable batch.
+    /// Evaluate the hook and approval pre-flight for a single tool call.
+    ///
+    /// Returns the appropriate [`ToolPreflightResult`] variant so that
+    /// `group_tool_calls` can remain free of nested conditional logic.
     // Intentionally decomposed from a complex single-line conditional to reduce
     // cognitive complexity (CodeScene: Complex Conditional).
     #[allow(clippy::collapsible_if)]
+    async fn preflight_one_tool_call(
+        &self,
+        idx: usize,
+        original_tc: &crate::llm::ToolCall,
+    ) -> ToolPreflightResult {
+        let mut tc = original_tc.clone();
+        let tool_opt = self.agent.tools().get(&tc.name).await;
+        let sensitive = tool_opt
+            .as_ref()
+            .map(|t| t.sensitive_params())
+            .unwrap_or(&[]);
+
+        if let Some(rejected) = self
+            .run_tool_hook_preflight(&mut tc, original_tc, sensitive)
+            .await
+        {
+            return ToolPreflightResult::Rejected(tc, rejected);
+        }
+
+        if self.tool_approval_enforced() {
+            if let Some(tool) = tool_opt {
+                if self
+                    .resolve_needs_approval(&tool, &tc.name, &tc.arguments)
+                    .await
+                {
+                    return ToolPreflightResult::NeedsApproval(idx, tc, tool);
+                }
+            }
+        }
+
+        ToolPreflightResult::Runnable(tc)
+    }
+
+    /// Group tool calls into preflight outcomes and runnable batch.
     pub(super) async fn group_tool_calls(
         &self,
         tool_calls: &[crate::llm::ToolCall],
@@ -137,39 +184,20 @@ impl<'a> ChatDelegate<'a> {
         )> = None;
 
         for (idx, original_tc) in tool_calls.iter().enumerate() {
-            let mut tc = original_tc.clone();
-
-            let tool_opt = self.agent.tools().get(&tc.name).await;
-            let sensitive = tool_opt
-                .as_ref()
-                .map(|t| t.sensitive_params())
-                .unwrap_or(&[]);
-
-            // Hook: BeforeToolCall
-            if let Some(rejected) = self
-                .run_tool_hook_preflight(&mut tc, original_tc, sensitive)
-                .await
-            {
-                preflight.push((tc, rejected));
-                continue;
-            }
-
-            // Check if tool requires approval
-            if self.tool_approval_enforced() {
-                if let Some(tool) = tool_opt {
-                    if self
-                        .resolve_needs_approval(&tool, &tc.name, &tc.arguments)
-                        .await
-                    {
-                        approval_needed = Some((idx, tc, tool));
-                        break;
-                    }
+            match self.preflight_one_tool_call(idx, original_tc).await {
+                ToolPreflightResult::Rejected(tc, outcome) => {
+                    preflight.push((tc, outcome));
+                }
+                ToolPreflightResult::NeedsApproval(idx, tc, tool) => {
+                    approval_needed = Some((idx, tc, tool));
+                    break;
+                }
+                ToolPreflightResult::Runnable(tc) => {
+                    let preflight_idx = preflight.len();
+                    preflight.push((tc.clone(), PreflightOutcome::Runnable));
+                    runnable.push((preflight_idx, tc));
                 }
             }
-
-            let preflight_idx = preflight.len();
-            preflight.push((tc.clone(), PreflightOutcome::Runnable));
-            runnable.push((preflight_idx, tc));
         }
 
         Ok((
