@@ -395,7 +395,8 @@ documentation all match the hosted WASM catalogue contract.
   `HostedToolCatalogSource::Wasm`; the main implementation gap is that the
   orchestrator's hosted source allowlist is still hard-coded to MCP-only.
 - 2026-04-10T17:32:32+02:00 This subsystem currently has no visible
-  `rstest-bdd` or `.feature` coverage, so behavioural BDD coverage needs an
+  `rstest-bdd` or `.feature` coverage, so behavioural BDD
+  (behaviour-driven development) coverage needs an
   explicit proportionality check before new harness code is introduced.
 - 2026-04-10T19:36:00+02:00 `src/tools/registry/tests.rs` already contains a
   hosted-visible WASM fixture and `src/worker/container/tests/remote_tools.rs`
