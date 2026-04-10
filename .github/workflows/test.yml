@@ -45,6 +45,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang
       - name: Install mold
         uses: rui314/setup-mold@v1
       - uses: Swatinem/rust-cache@v2
