@@ -26,6 +26,11 @@ impl<'a> ChatDelegate<'a> {
             let safe = if let Some(tool) = self.agent.tools().get(&tc.name).await {
                 redact_params(&tc.arguments, tool.sensitive_params())
             } else {
+                tracing::warn!(
+                    tool = %tc.name,
+                    "Encountered tool call for unregistered tool; \
+                     falling back to raw arguments"
+                );
                 tc.arguments.clone()
             };
             redacted.push(safe);
@@ -155,21 +160,19 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
         // Refresh tool definitions each iteration so newly built tools become visible
         let tool_defs = self.agent.tools().tool_definitions().await;
 
-        // Apply trust-based tool attenuation if skills are active.
-        let tool_defs = if !self.active_skills.is_empty() {
-            let result = crate::skills::attenuate_tools(&tool_defs, &self.active_skills);
+        // Apply trust-based tool attenuation based on active skills.
+        let attenuation = crate::skills::attenuate_tools(&tool_defs, &self.active_skills);
+        if !self.active_skills.is_empty() {
             tracing::debug!(
-                min_trust = %result.min_trust,
-                tools_available = result.tools.len(),
-                tools_removed = result.removed_tools.len(),
-                removed = ?result.removed_tools,
-                explanation = %result.explanation,
+                min_trust = %attenuation.min_trust,
+                tools_available = attenuation.tools.len(),
+                tools_removed = attenuation.removed_tools.len(),
+                removed = ?attenuation.removed_tools,
+                explanation = %attenuation.explanation,
                 "Tool attenuation applied"
             );
-            result.tools
-        } else {
-            tool_defs
-        };
+        }
+        let tool_defs = attenuation.tools;
 
         // Update context for this iteration
         reason_ctx.available_tools = tool_defs;

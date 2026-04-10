@@ -33,7 +33,7 @@ async fn test_execute_chat_tool_standalone_success() {
     .await;
 
     assert!(result.is_ok());
-    let output = result.unwrap();
+    let output = result.expect("echo tool execution unexpectedly errored");
     assert!(output.contains("hello"));
 }
 

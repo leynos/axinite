@@ -19,9 +19,15 @@ use super::types::*;
 impl Agent {
     /// Run the agentic loop: call LLM, execute tools, repeat until text response.
     ///
-    /// Returns `AgenticLoopResult::Response` on completion, or
-    /// `AgenticLoopResult::NeedApproval` if a tool requires user approval.
+    /// Returns `Ok(AgenticLoopResult::Response)` on completion, or
+    /// `Ok(AgenticLoopResult::NeedApproval)` if a tool requires user approval.
     ///
+    /// Returns `Err` in two cases:
+    /// - `LoopOutcome::Stopped` (thread interrupted) → `JobError::ContextError`.
+    ///   The dispatcher treats interruption as an error because it represents an
+    ///   externally forced stop mid-processing, in contrast to the worker module
+    ///   where a graceful exit is `Ok(WorkerLoopOutcome::Exited)`.
+    /// - `LoopOutcome::MaxIterations` → `LlmError::InvalidResponse`.
     pub(crate) async fn run_agentic_loop(
         &self,
         message: &IncomingMessage,
@@ -134,11 +140,8 @@ impl Agent {
         // Build system prompts once for this turn. Two variants: with tools
         // (normal iterations) and without (force_text final iteration).
         let initial_tool_defs = self.tools().tool_definitions().await;
-        let initial_tool_defs = if !active_skills.is_empty() {
-            crate::skills::attenuate_tools(&initial_tool_defs, &active_skills).tools
-        } else {
-            initial_tool_defs
-        };
+        let initial_tool_defs =
+            crate::skills::attenuate_tools(&initial_tool_defs, &active_skills).tools;
         let cached_prompt = reasoning.build_system_prompt_with_tools(&initial_tool_defs);
         let cached_prompt_no_tools = reasoning.build_system_prompt_with_tools(&[]);
 
@@ -189,6 +192,10 @@ impl Agent {
             crate::agent::agentic_loop::LoopOutcome::Response(text) => {
                 Ok(AgenticLoopResult::Response(text))
             }
+            // Stopped = thread was interrupted mid-processing.  The dispatcher
+            // maps this to an error because interruption represents an externally
+            // forced stop, unlike the worker where a graceful exit is
+            // `Ok(WorkerLoopOutcome::Exited)`.
             crate::agent::agentic_loop::LoopOutcome::Stopped => {
                 Err(crate::error::JobError::ContextError {
                     id: thread_id,

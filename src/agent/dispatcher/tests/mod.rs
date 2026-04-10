@@ -1,6 +1,6 @@
 //! Tests for the dispatcher module.
 
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use rust_decimal::Decimal;

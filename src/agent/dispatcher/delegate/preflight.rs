@@ -132,12 +132,6 @@ impl<'a> ChatDelegate<'a> {
     ///
     /// Returns the appropriate [`ToolPreflightResult`] variant so that
     /// `group_tool_calls` can remain free of nested conditional logic.
-    // Intentionally decomposed from a complex single-line conditional to reduce
-    // cognitive complexity (CodeScene: Complex Conditional).
-    #[expect(
-        clippy::collapsible_if,
-        reason = "Nested if statements are intentionally decomposed for readability per CodeScene Complex Conditional pattern"
-    )]
     async fn preflight_one_tool_call(
         &self,
         idx: usize,
@@ -157,6 +151,15 @@ impl<'a> ChatDelegate<'a> {
             return ToolPreflightResult::Rejected(tc, rejected);
         }
 
+        // Approval gate: only reached when enforcement is on and a matching
+        // tool is found.  The inner check is intentionally kept as a separate
+        // `if` so each condition is independently visible (CodeScene: Complex
+        // Conditional).
+        #[expect(
+            clippy::collapsible_if,
+            reason = "Approval-enforced + tool-found + needs-approval are intentionally \
+                      decomposed for readability per CodeScene Complex Conditional pattern"
+        )]
         if self.tool_approval_enforced() {
             if let Some(tool) = tool_opt {
                 if self

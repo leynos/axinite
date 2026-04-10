@@ -1,6 +1,7 @@
 //! Skill selection tests.
 
 use std::path::PathBuf;
+use std::sync::RwLock;
 
 use super::super::types::select_active_skills;
 use super::*;

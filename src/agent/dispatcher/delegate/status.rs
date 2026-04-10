@@ -59,7 +59,11 @@ impl<'a> ChatDelegate<'a> {
     }
 
     /// Emit image sentinel status update if applicable.
-    pub(super) async fn maybe_emit_image_sentinel(&self, tool_name: &str, output: &str) -> bool {
+    pub(in crate::agent::dispatcher) async fn maybe_emit_image_sentinel(
+        &self,
+        tool_name: &str,
+        output: &str,
+    ) -> bool {
         if !matches!(tool_name, "image_generate" | "image_edit") {
             return false;
         }

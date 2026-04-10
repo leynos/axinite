@@ -265,15 +265,3 @@ pub(crate) async fn execute_chat_tool_standalone(
     )
     .await
 }
-
-/// Execution context for tool calls.
-#[expect(dead_code, reason = "scaffolding for future tool-exec refactor")]
-pub(super) struct ExecCtx<'a> {
-    pub(super) tools: &'a Arc<crate::tools::ToolRegistry>,
-    pub(super) safety: &'a Arc<crate::safety::SafetyLayer>,
-    pub(super) channels: &'a Arc<crate::channels::ChannelManager>,
-    pub(super) channel: &'a str,
-    pub(super) user_id: &'a str,
-    pub(super) metadata: &'a serde_json::Value,
-    pub(super) preview_limit: usize,
-}
