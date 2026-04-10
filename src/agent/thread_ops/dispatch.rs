@@ -119,16 +119,9 @@ impl Agent {
     async fn dispatch_approval(
         &self,
         ctx: &DispatchCtx,
-        request_id: Option<Uuid>,
-        approved: bool,
-        always: bool,
+        params: ApprovalParams,
     ) -> Result<SubmissionResult, Error> {
         let scope = TurnScope::new(ctx.session.clone(), ctx.thread_id, &ctx.message);
-        let params = ApprovalParams {
-            request_id,
-            approved,
-            always,
-        };
         self.process_approval(scope, params).await
     }
 
@@ -184,11 +177,26 @@ impl Agent {
                 approved,
                 always,
             } => {
-                self.dispatch_approval(&ctx, Some(request_id), approved, always)
-                    .await
+                self.dispatch_approval(
+                    &ctx,
+                    ApprovalParams {
+                        request_id: Some(request_id),
+                        approved,
+                        always,
+                    },
+                )
+                .await
             }
             Submission::ApprovalResponse { approved, always } => {
-                self.dispatch_approval(&ctx, None, approved, always).await
+                self.dispatch_approval(
+                    &ctx,
+                    ApprovalParams {
+                        request_id: None,
+                        approved,
+                        always,
+                    },
+                )
+                .await
             }
         }
     }
