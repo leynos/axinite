@@ -11,22 +11,40 @@ fn check_auth_json(tool_name: &str, json: serde_json::Value) -> Option<(String, 
     check_auth_required(tool_name, &result)
 }
 
+/// Assert that an auth-awaiting detection result is `Some`, and that the
+/// returned name and instructions match the expected values.
+fn assert_auth_detected(
+    detected: Option<(String, String)>,
+    expected_name: &str,
+    expected_instructions_fragment: &str,
+) {
+    assert!(detected.is_some(), "expected auth detection to fire");
+    let (name, instructions) = detected.unwrap();
+    assert_eq!(name, expected_name);
+    assert!(
+        instructions.contains(expected_instructions_fragment),
+        "instructions did not contain {:?}: {:?}",
+        expected_instructions_fragment,
+        instructions,
+    );
+}
+
 #[test]
 fn test_detect_auth_awaiting_positive() {
-    let detected = check_auth_json(
-        "tool_auth",
-        serde_json::json!({
-            "name": "telegram",
-            "kind": "WasmTool",
-            "awaiting_token": true,
-            "status": "awaiting_token",
-            "instructions": "Please provide your Telegram Bot API token."
-        }),
+    assert_auth_detected(
+        check_auth_json(
+            "tool_auth",
+            serde_json::json!({
+                "name": "telegram",
+                "kind": "WasmTool",
+                "awaiting_token": true,
+                "status": "awaiting_token",
+                "instructions": "Please provide your Telegram Bot API token."
+            }),
+        ),
+        "telegram",
+        "Telegram Bot API",
     );
-    assert!(detected.is_some());
-    let (name, instructions) = detected.unwrap();
-    assert_eq!(name, "telegram");
-    assert!(instructions.contains("Telegram Bot API"));
 }
 
 #[test]
@@ -81,20 +99,20 @@ fn test_detect_auth_awaiting_default_instructions() {
 
 #[test]
 fn test_detect_auth_awaiting_tool_activate() {
-    let detected = check_auth_json(
-        "tool_activate",
-        serde_json::json!({
-            "name": "slack",
-            "kind": "McpServer",
-            "awaiting_token": true,
-            "status": "awaiting_token",
-            "instructions": "Provide your Slack Bot token."
-        }),
+    assert_auth_detected(
+        check_auth_json(
+            "tool_activate",
+            serde_json::json!({
+                "name": "slack",
+                "kind": "McpServer",
+                "awaiting_token": true,
+                "status": "awaiting_token",
+                "instructions": "Provide your Slack Bot token."
+            }),
+        ),
+        "slack",
+        "Slack Bot",
     );
-    assert!(detected.is_some());
-    let (name, instructions) = detected.unwrap();
-    assert_eq!(name, "slack");
-    assert!(instructions.contains("Slack Bot"));
 }
 
 #[test]
