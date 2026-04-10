@@ -1,6 +1,7 @@
 //! Regression tests for proactive WASM schema publication during registration.
 
 use chrono::Utc;
+use rstest::rstest;
 use uuid::Uuid;
 
 use super::{ToolRegistry, WasmFromStorageRegistration};
@@ -12,26 +13,28 @@ use crate::tools::wasm::{
     WasmStorageError,
 };
 
+#[rstest]
+#[case(
+    serde_json::from_str(&crate::tools::wasm::placeholder_json()).expect("parse placeholder JSON")
+)]
+#[case(serde_json::Value::Null)]
 #[tokio::test]
-async fn register_wasm_from_storage_triggers_guest_export_recovery_for_placeholder_schema() {
-    // Verify that when the stored schema is the placeholder JSON,
+async fn register_wasm_from_storage_recovers_guest_schema_for_absent_or_placeholder_schema(
+    #[case] parameters_schema: serde_json::Value,
+) {
+    // Verify that when the stored schema is Null or the placeholder JSON,
     // normalized_schema returns None and the loader triggers guest export recovery.
     let registry = ToolRegistry::new();
     let runtime = metadata_test_runtime().expect("create metadata test runtime");
     let wasm_binary = github_wasm_bytes();
 
-    // Use the placeholder schema as the stored parameters_schema
-    let placeholder_schema: serde_json::Value =
-        serde_json::from_str(&crate::tools::wasm::placeholder_json())
-            .expect("parse placeholder JSON");
-
-    // Verify the placeholder schema normalizes to None (this is the key assertion)
+    // Verify the schema normalizes to None (this is the key assertion)
     assert!(
-        super::schema::normalized_schema(placeholder_schema.clone()).is_none(),
-        "placeholder schema should normalize to None to trigger recovery"
+        super::schema::normalized_schema(parameters_schema.clone()).is_none(),
+        "schema should normalize to None to trigger recovery"
     );
 
-    let store = StubWasmToolStore::new(wasm_binary, placeholder_schema);
+    let store = StubWasmToolStore::new(wasm_binary, parameters_schema);
 
     registry
         .register_wasm_from_storage(WasmFromStorageRegistration {
@@ -44,7 +47,7 @@ async fn register_wasm_from_storage_triggers_guest_export_recovery_for_placehold
         .expect("register wasm tool from storage");
 
     // Verify the tool was registered with the real guest-exported schema
-    // (not the placeholder), indicating recovery was triggered
+    // (not the placeholder/empty), indicating recovery was triggered
     let definition = registry
         .tool_definitions()
         .await
@@ -55,33 +58,6 @@ async fn register_wasm_from_storage_triggers_guest_export_recovery_for_placehold
     // Assert we got the real GitHub schema (with actual properties),
     // not the placeholder empty object schema
     assert_real_github_schema(definition);
-}
-
-#[tokio::test]
-async fn register_wasm_from_storage_publishes_guest_schema_when_storage_schema_is_null() {
-    let registry = ToolRegistry::new();
-    let runtime = metadata_test_runtime().expect("create metadata test runtime");
-    let wasm_binary = github_wasm_bytes();
-    let store = StubWasmToolStore::new(wasm_binary, serde_json::Value::Null);
-
-    registry
-        .register_wasm_from_storage(WasmFromStorageRegistration {
-            store: &store,
-            runtime: &runtime,
-            user_id: "test-user",
-            name: "github",
-        })
-        .await
-        .expect("register wasm tool from storage");
-
-    assert_real_github_schema(
-        registry
-            .tool_definitions()
-            .await
-            .into_iter()
-            .find(|definition| definition.name == "github")
-            .expect("github definition should be registered"),
-    );
 }
 
 fn github_wasm_bytes() -> Vec<u8> {
