@@ -366,3 +366,142 @@ behaviour after the flexible-dimension migration path.
    fallback that the current code does not implement.
 4. Workspace memory and memory tools are absent in `--no-db` mode because the
    host does not build a workspace without a database.
+
+## 8. Error handling and persistence conventions
+
+### 8.1 DatabaseError variants and when to use each
+
+`DatabaseError` (`src/error/database.rs`) is the unified error type for all
+persistence operations. Each variant has a distinct purpose:
+
+Table 5. DatabaseError variant usage guide.
+
+| Variant | Purpose | Typical producer | Example |
+| --- | --- | --- | --- |
+| `Validation(String)` | Caller-supplied value fails a precondition check before any query is built or executed | Pagination limit checks, parameter-range enforcement | `limit == 0` rejected with "conversation message pagination limit must be > 0" |
+| `Query(String)` | A SQL statement was constructed and sent but the database rejected it or the connection failed mid-query | Connection errors, syntax errors, constraint violations surfaced as strings | `conn.execute(…).await.map_err(\|e\| DatabaseError::Query(e.to_string()))` |
+| `NotFound { entity, id }` | A lookup by primary key or unique identifier returned zero rows | `get_*` methods on Store implementations | `get_sandbox_job` when the UUID does not exist |
+| `Constraint(String)` | A database-level constraint was violated and the caller should treat it as a business-rule failure | Unique-constraint violations, FK violations | Duplicate conversation ID on insert |
+| `Serialization(String)` | A value could not be converted between its Rust type and the stored representation | `i64` range exceeded when converting a count, malformed JSON | `usize::try_from(row.get::<_, i64>("cnt"))` failure |
+| `Migration(String)` | A schema migration step failed | `refinery` (PostgreSQL), Rust-side migration runner (libSQL) | `_migrations` table unreadable |
+| `Pool(String)` | Connection pool exhaustion or configuration error | Pool creation or checkout timeout | deadpool-postgres pool build failure |
+| `Postgres`, `PoolBuild`, `PoolRuntime` | Feature-gated automatic conversions from `tokio_postgres` and `deadpool_postgres` errors | `?` propagation in PostgreSQL-backed code | `conn.query(…).await?` |
+| `LibSql` | Feature-gated automatic conversion from `libsql::Error` | `?` propagation in libSQL-backed code | `conn.execute(…).await?` |
+
+**Validation vs Query — the key distinction.** `Validation` is for errors
+detected before the database is involved: bad limits, out-of-range parameters,
+or missing required fields. `Query` is for errors that occur during or after
+database interaction. Keeping them separate lets the HTTP handler layer map
+`Validation` to `400 Bad Request` and `Query` to `500 Internal Server Error`
+without inspecting error strings. For example, `chat_history.rs` matches on
+`DatabaseError::Validation(msg)` and returns `StatusCode::BAD_REQUEST`, while
+all other variants become `INTERNAL_SERVER_ERROR`.
+
+### 8.2 Incremental libSQL migration helpers
+
+libSQL does not support `ALTER TABLE` through the consolidated schema, so
+incremental schema changes use a Rust-side migration runner tracked by the
+`_migrations` table. Complex migrations use three helper functions defined in
+`src/db/libsql_migrations/`:
+
+1. `check_already_applied(conn, version, name)` — queries `_migrations` for the
+   given `(version, name)` row. Returns `Ok(true)` when another node or an
+   earlier boot already applied the migration.
+2. `record_migration_applied(conn, version, name)` — inserts a row into
+   `_migrations` to mark the migration as done.
+3. `finalize_transaction(conn, version, name, result)` — commits on `Ok(())`,
+   rolls back on `Err`, and wraps any commit failure in
+   `DatabaseError::Migration`.
+
+The standard migration skeleton looks like this:
+
+```rust
+pub(super) async fn apply_example_migration(
+    conn: &libsql::Connection,
+) -> Result<(), DatabaseError> {
+    conn.execute_batch("BEGIN IMMEDIATE;").await
+        .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+
+    let result: Result<(), DatabaseError> = async {
+        if check_already_applied(conn, version, name).await? {
+            return Ok(());
+        }
+        // Apply ALTER TABLE statements or data transformations.
+        conn.execute_batch("ALTER TABLE …").await
+            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+        record_migration_applied(conn, version, name).await?;
+        Ok(())
+    }.await;
+
+    finalize_transaction(conn, version, name, result).await
+}
+```
+
+The `BEGIN IMMEDIATE` lock prevents TOCTOU races when multiple nodes start up
+concurrently and race to apply the same migration.
+
+### 8.3 Job persistence: build, persist, and synchronous-await
+
+Sandbox job creation follows a strict ordering to ensure durability before any
+external side effects:
+
+1. **Build the record** — `build_sandbox_job_record` constructs a
+   `SandboxJobRecord` in status `"creating"` with serialized
+   `credential_grants_json`. If serialisation fails, it logs a warning and
+   falls back to `"[]"`.
+2. **Persist synchronously** — `persist_sandbox_job` awaits
+   `store.save_sandbox_job(&record)` and, when `mode == ClaudeCode`, also
+   awaits `store.update_sandbox_job_mode(…)`. If the mode update fails, it
+   synchronously marks the job as `"failed"` before returning the error.
+3. **Only then create the container** — the code only proceeds to external
+   side effects (container creation) after the database write succeeds.
+
+**Fire-and-forget vs synchronous-await for status updates.** The codebase
+uses two strategies:
+
+- `update_status` — uses `tokio::spawn` to make status updates intentionally
+  fire-and-forget. Used for non-terminal, recoverable states like `"running"`.
+  If the write is lost, the next poll or process restart recovers.
+- `update_status_sync` — directly `.await`s the store call. Used for terminal
+  states (`"completed"`, `"failed"`, `"cancelled"`) and pre-container failure
+  transitions where the job state must be persisted before the function
+  returns.
+
+### 8.4 Parameter-struct convention
+
+When a function needs more than about four related values, the codebase groups
+them into a named struct rather than passing individual arguments. Two examples
+from the restart flow:
+
+**`RestartJobParams`** (`src/channels/web/handlers/job_control/restart.rs`)
+groups the values derived in `restart_sandbox_job`:
+
+```rust
+struct RestartJobParams {
+    new_job_id: Uuid,
+    base_task: String,
+    task: String,
+    now: chrono::DateTime<chrono::Utc>,
+    mode: JobMode,
+}
+```
+
+This struct is constructed once and then passed by reference to
+`persist_restart_job`. Its fields also feed into the lighter
+`ContainerRestartParams`:
+
+```rust
+struct ContainerRestartParams<'a> {
+    new_job_id: Uuid,
+    task: &'a str,
+    mode: JobMode,
+}
+```
+
+The borrowing lifetime ties `ContainerRestartParams::task` to the
+`RestartJobParams::task` field, avoiding a clone while keeping the two structs'
+lifetimes clear at the call site.
+
+When adding new persistence flows, prefer the same convention: define a
+parameter struct when the argument count would exceed three or four, and prefer
+borrowing over cloning when the struct is consumed within the same scope.

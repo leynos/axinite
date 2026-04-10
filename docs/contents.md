@@ -42,7 +42,8 @@
 - [Chat model](chat-model.md) traces the chat pipeline from ingress through
   context assembly, tool execution, approvals, and outbound sinks.
 - [Database integrations](database-integrations.md) explains the PostgreSQL,
-  `pgvector`, and libSQL persistence backends and the differences between them.
+  `pgvector`, and libSQL persistence backends, their differences, error handling
+  conventions, migration helpers, and job persistence patterns.
 - [Embedding integrations](embedding-integrations.md) documents the embedding
   provider interfaces, adapters, and the places embeddings are used.
 - [Jobs and routines](jobs-and-routines.md) covers the scheduler, background
