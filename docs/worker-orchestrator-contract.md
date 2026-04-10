@@ -152,5 +152,14 @@ Hosted remote tools use a parallel mechanism:
 3. The runtime merges those definitions into the reasoning context alongside
    container-local tools.
 
+The orchestrator-owned portion of that hosted catalogue is now source-agnostic
+at the wire level. Hosted-visible Model Context Protocol (MCP) tools and
+hosted-visible orchestrator-owned WebAssembly (WASM) tools travel through the
+same `GET
+/worker/{job_id}/tools/catalog` route and execute through the same `POST
+/worker/{job_id}/tools/execute` route, while the registry-owned hosted
+visibility policy continues to filter out protected, approval-gated, and other
+ineligible tools before advertisement.
+
 The shared route constants and transport types are what keep that hosted tool
 surface consistent across the sandbox boundary.

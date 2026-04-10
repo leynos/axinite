@@ -16,7 +16,8 @@ use crate::tools::{
     HostedToolCatalogSource, HostedToolLookupError, Tool, ToolError, ToolOutput, ToolRegistry,
 };
 
-const HOSTED_REMOTE_TOOL_SOURCES: [HostedToolCatalogSource; 1] = [HostedToolCatalogSource::Mcp];
+const HOSTED_REMOTE_TOOL_SOURCES: [HostedToolCatalogSource; 2] =
+    [HostedToolCatalogSource::Mcp, HostedToolCatalogSource::Wasm];
 
 /// Request context for executing a hosted-eligible remote tool.
 ///

@@ -19,23 +19,51 @@ use crate::worker::container::{
     HOSTED_GUIDANCE_HEADING, WorkerConfig, WorkerHttpClient, WorkerRuntime,
 };
 
-fn expected_remote_tool_definition() -> ToolDefinition {
+fn make_tool_definition(
+    name: &str,
+    description: &str,
+    parameters: serde_json::Value,
+) -> ToolDefinition {
     ToolDefinition {
-        name: "hosted_worker_remote_tool_fixture".to_string(),
-        description: "Remote tool from orchestrator catalog".to_string(),
-        parameters: serde_json::json!({
+        name: name.to_string(),
+        description: description.to_string(),
+        parameters,
+    }
+}
+
+fn expected_remote_tool_definition() -> ToolDefinition {
+    make_tool_definition(
+        "hosted_worker_remote_tool_fixture",
+        "Remote tool from orchestrator catalog",
+        serde_json::json!({
             "type": "object",
             "properties": {
                 "query": {"type": "string"}
             },
             "required": ["query"]
         }),
-    }
+    )
+}
+
+fn expected_remote_wasm_tool_definition() -> ToolDefinition {
+    make_tool_definition(
+        "hosted_worker_remote_wasm_tool_fixture",
+        "Remote WASM tool from orchestrator catalog",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "repository": {"type": "string"},
+                "include_private": {"type": "boolean", "default": false}
+            },
+            "required": ["repository"]
+        }),
+    )
 }
 
 fn expected_merged_tool_names() -> Vec<String> {
     let mut names = expected_local_tool_names();
     names.push(expected_remote_tool_definition().name);
+    names.push(expected_remote_wasm_tool_definition().name);
     names.sort();
     names
 }
@@ -55,7 +83,10 @@ async fn remote_tool_catalog(
     Path(_job_id): Path<Uuid>,
 ) -> Json<RemoteToolCatalogResponse> {
     Json(RemoteToolCatalogResponse {
-        tools: vec![expected_remote_tool_definition()],
+        tools: vec![
+            expected_remote_tool_definition(),
+            expected_remote_wasm_tool_definition(),
+        ],
         toolset_instructions: vec!["Prefer hosted remote tools for external systems.".to_string()],
         catalog_version: 42,
     })
@@ -146,6 +177,19 @@ async fn hosted_worker_remote_tool_catalog_registers_remote_tools()
     assert_eq!(remote_tool.description(), expected.description);
     assert_eq!(remote_tool.parameters_schema(), expected.parameters);
 
+    let remote_wasm_tool = runtime
+        .tools
+        .get("hosted_worker_remote_wasm_tool_fixture")
+        .await
+        .expect("hosted remote WASM tool should be registered");
+    let expected_wasm = expected_remote_wasm_tool_definition();
+    assert_eq!(remote_wasm_tool.name(), expected_wasm.name);
+    assert_eq!(remote_wasm_tool.description(), expected_wasm.description);
+    assert_eq!(
+        remote_wasm_tool.parameters_schema(),
+        expected_wasm.parameters
+    );
+
     server.abort();
     let _ = server.await;
     Ok(())
@@ -196,6 +240,15 @@ async fn worker_runtime_build_reasoning_context_merges_local_and_remote_tools()
     let expected = expected_remote_tool_definition();
     assert_eq!(remote_tool.description, expected.description);
     assert_eq!(remote_tool.parameters, expected.parameters);
+
+    let remote_wasm_tool = reason_ctx
+        .available_tools
+        .iter()
+        .find(|tool| tool.name == "hosted_worker_remote_wasm_tool_fixture")
+        .expect("reasoning context should expose the hosted remote WASM tool");
+    let expected_wasm = expected_remote_wasm_tool_definition();
+    assert_eq!(remote_wasm_tool.description, expected_wasm.description);
+    assert_eq!(remote_wasm_tool.parameters, expected_wasm.parameters);
 
     server.abort();
     let _ = server.await;

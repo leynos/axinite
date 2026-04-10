@@ -27,11 +27,12 @@ pub struct HostedCatalogHarness {
     pub server: tokio::task::JoinHandle<()>,
 }
 
-fn complex_orchestrator_tool_definition() -> ToolDefinition {
+fn complex_orchestrator_wasm_tool_definition() -> ToolDefinition {
     crate::test_support::build_complex_tool_definition(
-        "complex_fidelity_fixture",
+        "complex_orchestrator_wasm_fidelity_fixture",
         concat!(
-            "A **complex** tool for end-to-end fidelity testing. ",
+            "A **complex** orchestrator-owned WASM tool for end-to-end fidelity ",
+            "testing. ",
             "Handles UTF-8: \u{1F680}\u{1F4A1}. ",
             "Supports `inline code` and [markdown](https://example.com). ",
             "Special chars: <>&\"'{}[]()."
@@ -44,7 +45,7 @@ async fn remote_tool_catalog_with_complex_tool(
     Path(_job_id): Path<Uuid>,
 ) -> Json<RemoteToolCatalogResponse> {
     Json(RemoteToolCatalogResponse {
-        tools: vec![complex_orchestrator_tool_definition()],
+        tools: vec![complex_orchestrator_wasm_tool_definition()],
         toolset_instructions: vec![],
         catalog_version: 99,
     })
@@ -84,7 +85,7 @@ async fn hosted_worker_proxy_definition_matches_orchestrator_canonical_definitio
 
     let proxy_tool = runtime
         .tools
-        .get("complex_fidelity_fixture")
+        .get("complex_orchestrator_wasm_fidelity_fixture")
         .await
         .expect("complex tool proxy should be registered");
 
@@ -94,7 +95,7 @@ async fn hosted_worker_proxy_definition_matches_orchestrator_canonical_definitio
         parameters: proxy_tool.parameters_schema(),
     };
 
-    let expected = complex_orchestrator_tool_definition();
+    let expected = complex_orchestrator_wasm_tool_definition();
 
     assert_eq!(
         proxy_definition, expected,

@@ -5,11 +5,13 @@
 - **RFC number:** 0002
 - **Status:** Proposed
 - **Created:** 2026-03-11
-- **Implementation status:** Roadmap item `1.2.1` is complete. Active WASM
-  registration paths now recover guest-exported metadata before publication,
-  warn when registration falls back to a placeholder schema, and are covered by
-  regression tests for file-loaded, storage-backed, and dev-build paths.
-  Roadmap items `1.2.2`, `1.2.3`, and `1.2.4` remain open.
+- **Implementation status:** Roadmap items `1.2.1` and `1.2.2` are complete.
+  Active WASM registration paths now recover guest-exported metadata before
+  publication, warn when registration falls back to a placeholder schema, and
+  are covered by regression tests for file-loaded, storage-backed, and
+  dev-build paths. Hosted workers now receive hosted-visible
+  orchestrator-owned WASM definitions through the shared remote-tool catalogue.
+  Roadmap items `1.2.3` and `1.2.4` remain open.
 
 ## Summary
 
@@ -130,9 +132,10 @@ The remaining problem is contractual, not structural:
 - hosted mode does not yet have a unified remote-tool catalogue for
   orchestrator-owned dynamic tools, including WASM tools
 
-Roadmap item `1.2.1` closes the first two gaps for in-process WASM tools. The
-remaining hosted-mode catalogue work is still tracked separately under
-`1.2.2`.
+Roadmap items `1.2.1` and `1.2.2` close the first two gaps for in-process and
+hosted WASM tools. The remaining work is now to demote schema-bearing retry
+hints and add the end-to-end first-call regression coverage tracked under
+`1.2.3` and `1.2.4`.
 
 ## Goals
 
@@ -234,13 +237,90 @@ The companion RFC [0001-expose-mcp-tool-definitions.md](0001-expose-mcp-tool-def
 proposes a worker-authenticated hosted tool catalogue plus generic remote tool
 execution endpoint.
 
-That same mechanism should cover orchestrator-owned active WASM tools.
+That same mechanism now covers orchestrator-owned active WASM tools.
 Roadmap item `1.1.2` is the specific prerequisite that moves hosted-visible
 catalogue filtering into the canonical `ToolRegistry` or policy layer. Roadmap
-item `1.2.2` should explicitly consume that same canonical hosted-visible
+item `1.2.2` explicitly consumes that same canonical hosted-visible
 filter seam, extending its eligibility rules to include orchestrator-owned WASM
 tools, rather than reconstructing hosted visibility in a second WASM-specific
 adapter path.
+
+Figure 1. Hosted remote-tool catalogue flow for MCP and orchestrator-owned
+WASM tools.
+
+```mermaid
+classDiagram
+    class HostedToolCatalogSource {
+      <<enum>>
+      Mcp
+      Wasm
+    }
+
+    class ToolDefinition {
+      +String name
+      +String description
+      +JsonSchema parameters
+    }
+
+    class WasmToolWrapper {
+      +ToolDefinition definition
+      +HostedToolCatalogSource get_hosted_source()
+    }
+
+    class HostedToolRegistry {
+      +Vec~ToolDefinition~ hosted_tool_definitions(sources)
+      +Option~ToolDefinition~ get_hosted_tool(name)
+    }
+
+    class ApprovalPolicy {
+      +bool is_hosted_eligible(tool_definition)
+    }
+
+    class OrchestratorRemoteToolsApi {
+      +RemoteToolCatalogResponse get_remote_catalog()
+      +ExecutionResult execute_hosted_remote_tool(name, parameters)
+    }
+
+    class WorkerRemoteToolsClient {
+      +RemoteToolCatalogResponse fetch_catalog()
+      +void register_remote_proxies(catalog)
+    }
+
+    HostedToolCatalogSource <.. ToolDefinition : uses
+    WasmToolWrapper --> ToolDefinition : wraps
+    WasmToolWrapper --> HostedToolCatalogSource : reports_Wasm
+
+    HostedToolRegistry --> ToolDefinition : manages
+    HostedToolRegistry --> ApprovalPolicy : consults
+    HostedToolRegistry --> HostedToolCatalogSource : filters_by
+
+    OrchestratorRemoteToolsApi --> HostedToolRegistry : queries
+    WorkerRemoteToolsClient --> OrchestratorRemoteToolsApi : calls
+```
+
+Figure 2. Hosted worker execution flow for an advertised orchestrator-owned
+WASM tool.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Worker as Worker_container
+    participant Orchestrator as Orchestrator_execute_hosted_remote_tool
+    participant Registry as HostedToolRegistry
+
+    User->>Worker: Call_WASM_tool_via_LLM_tool_array
+    Worker->>Orchestrator: execute_hosted_remote_tool(tool_name, parameters)
+    Orchestrator->>Registry: get_hosted_tool(tool_name)
+    Registry-->>Orchestrator: ToolDefinition_or_rejection
+    alt Tool_is_hosted_safe_WASM
+        Orchestrator->>Orchestrator: Invoke_WASM_implementation()
+        Orchestrator-->>Worker: Execution_result
+        Worker-->>User: Tool_result
+    else Tool_not_visible_or_requires_approval
+        Orchestrator-->>Worker: Fail_closed_error
+        Worker-->>User: Hosted_execution_rejected
+    end
+```
 
 Suggested hosted catalogue response:
 
@@ -353,7 +433,7 @@ GET  /worker/{job_id}/tools/catalog
 POST /worker/{job_id}/tools/execute
 ```
 
-The catalogue should include hosted-visible active WASM tools alongside other
+The catalogue includes hosted-visible active WASM tools alongside other
 orchestrator-owned tools.
 
 ### Error interface

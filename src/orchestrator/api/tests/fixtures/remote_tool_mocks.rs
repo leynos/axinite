@@ -51,6 +51,17 @@ impl StubTool {
             output: StubOutput::EchoParams,
         }
     }
+
+    pub(crate) fn hosted_wasm(
+        name: &'static str,
+        description: impl Into<String>,
+        parameters: serde_json::Value,
+    ) -> Self {
+        Self {
+            catalog_source: Some(HostedToolCatalogSource::Wasm),
+            ..Self::hosted(name, description, parameters)
+        }
+    }
 }
 
 impl NativeTool for StubTool {
@@ -102,12 +113,13 @@ impl NativeTool for StubTool {
 #[derive(Clone, Copy, Debug)]
 /// Shared hosted-remote-tool fixture presets for catalogue and execute tests.
 ///
-/// `CatalogAlpha` and `CatalogBeta` model hosted-safe catalogue entries,
-/// `ApprovalGated` models a hosted tool that must never execute without
-/// approval, and `ContainerOnly` models a non-catalogue container tool.
+/// `CatalogAlpha`, `CatalogBeta`, and `CatalogWasm` model hosted-safe
+/// catalogue entries. `ApprovalGated` models a hosted tool that must never
+/// execute without approval.
 pub(crate) enum ToolFixture {
     CatalogAlpha,
     CatalogBeta,
+    CatalogWasm,
     ApprovalGated,
     ContainerOnly,
 }
@@ -134,6 +146,15 @@ pub(crate) fn build_tool_fixture(kind: ToolFixture) -> Arc<dyn Tool> {
                 "type":"object",
                 "properties":{"path":{"type":"string"}},
                 "required":["path"]
+            }),
+        )) as Arc<dyn Tool>,
+        ToolFixture::CatalogWasm => Arc::new(StubTool::hosted_wasm(
+            "remote_tool_catalog_fixture_wasm",
+            "Hosted-safe WASM tool for catalog tests",
+            serde_json::json!({
+                "type":"object",
+                "properties":{"repository":{"type":"string","description":"repository name"}},
+                "required":["repository"]
             }),
         )) as Arc<dyn Tool>,
         ToolFixture::ApprovalGated => Arc::new(StubTool {

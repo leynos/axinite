@@ -132,6 +132,9 @@
   - [Audit and fix WASM registration paths for proactive schema publication](execplans/1-2-1-audit-and-fix-wasm-registration-paths.md)
     plans roadmap item `1.2.1` for proactive WebAssembly (WASM) schema
     publication across active registration paths.
+  - [Extend the hosted remote-tool catalogue to include orchestrator-owned WASM tools](execplans/1-2-2-orchestrator-owned-wasm-tools-in-tool-catalogue.md)
+    plans roadmap item `1.2.2` for hosted advertisement for orchestrator-owned
+    WebAssembly (WASM) tools through the shared remote catalogue path.
 
 ## RFCs
 
