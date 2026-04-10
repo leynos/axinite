@@ -33,22 +33,6 @@ fn make_incoming_attachment(
     }
 }
 
-fn make_attachment(
-    id: &str,
-    filename: Option<&str>,
-    extracted_text: Option<&str>,
-) -> IncomingAttachment {
-    make_incoming_attachment(
-        id,
-        AttachmentKind::Document,
-        "application/pdf",
-        filename,
-        Some(42),
-        extracted_text,
-        None,
-    )
-}
-
 async fn make_workspace() -> (tempfile::TempDir, std::sync::Arc<Workspace>) {
     use crate::db::Database;
     use std::sync::Arc;
@@ -120,7 +104,7 @@ fn is_usable_extracted_text_rejects_sentinels(#[case] sentinel: &str) {
         !is_usable_extracted_text(sentinel),
         "should reject sentinel: {sentinel}"
     );
-    let attachment = make_attachment("id", Some("doc.pdf"), Some(sentinel));
+    let attachment = new_doc("id", "doc.pdf", Some(sentinel), 42);
     assert_eq!(
         get_valid_document_text(&attachment),
         None,
@@ -137,7 +121,7 @@ fn is_usable_extracted_text_accepts_valid_text(#[case] text: &str) {
         is_usable_extracted_text(text),
         "should accept valid text: {text}"
     );
-    let attachment = make_attachment("id", Some("doc.pdf"), Some(text));
+    let attachment = new_doc("id", "doc.pdf", Some(text), 42);
     assert_eq!(
         get_valid_document_text(&attachment),
         Some(text),
