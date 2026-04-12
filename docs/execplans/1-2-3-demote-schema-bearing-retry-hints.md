@@ -122,10 +122,11 @@ The following files are the important orientation points for this feature.
   should own the fallback-diagnostic rule; the worker and orchestrator adapters
   should only consume already decided contract data.
 - New or modified Rust tests must use `rstest` fixtures for shared setup.
-- Add `rstest-bdd` coverage only if one focused scenario can be introduced
-  without a disproportionate new harness. If that threshold is exceeded,
-  document why behavioural BDD coverage is not applicable for this slice and
-  keep the observable proof in the existing `rstest` integration suites.
+- Add `rstest-bdd` coverage only if one focused behaviour-driven development
+  (BDD) scenario can be introduced without a disproportionate new harness. If
+  that threshold is exceeded, document why behavioural BDD coverage is not
+  applicable for this slice and keep the observable proof in the existing
+  `rstest` integration suites.
 - Update user-facing and maintainers-facing documentation in the same delivery
   pass, and mark roadmap item `1.2.3` done only after the implementation lands.
 - Check `FEATURE_PARITY.md` during implementation and update it in the same
