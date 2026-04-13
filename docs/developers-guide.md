@@ -416,7 +416,7 @@ its own exported metadata.
    normalises description and schema via `normalized_schema` and
    `normalized_description`, then delegates to `register_wasm`.
 
-The storage path is the one that exercises schema normalisation, because
+The storage path is the one that exercises schema normalisation because
 backends may persist placeholder or null schemas that must be stripped
 before the guest-export recovery logic can run.
 
