@@ -4,6 +4,15 @@
 //! state: model, database, tool count, enabled features, active channels,
 //! and the gateway URL.
 
+use crate::sandbox::detect::DockerStatus;
+
+const ANSI_BOLD: &str = "\x1b[1m";
+const ANSI_CYAN: &str = "\x1b[36m";
+const ANSI_DIM: &str = "\x1b[90m";
+const ANSI_RESET: &str = "\x1b[0m";
+const ANSI_YELLOW: &str = "\x1b[33m";
+const ANSI_YELLOW_UNDERLINE: &str = "\x1b[33;4m";
+
 /// All displayable fields for the boot screen.
 pub struct BootInfo {
     pub version: String,
@@ -31,62 +40,70 @@ pub struct BootInfo {
     pub tunnel_provider: Option<String>,
 }
 
-/// Render the boot screen to a string.
-pub fn render_boot_screen(info: &BootInfo) -> String {
-    // ANSI codes matching existing REPL palette
-    let bold = "\x1b[1m";
-    let cyan = "\x1b[36m";
-    let dim = "\x1b[90m";
-    let yellow = "\x1b[33m";
-    let yellow_underline = "\x1b[33;4m";
-    let reset = "\x1b[0m";
+fn border_line() -> String {
+    format!("  {ANSI_DIM}{}{ANSI_RESET}", "\u{2576}".repeat(58))
+}
 
-    let border = format!("  {dim}{}{reset}", "\u{2576}".repeat(58));
-
+fn render_header(info: &BootInfo) -> String {
     let mut output = String::new();
-
     output.push('\n');
-    output.push_str(&border);
+    output.push_str(&border_line());
     output.push('\n');
     output.push('\n');
     output.push_str(&format!(
-        "  {bold}{}{reset} v{}\n",
+        "  {ANSI_BOLD}{}{ANSI_RESET} v{}\n",
         info.agent_name, info.version
     ));
     output.push('\n');
+    output
+}
 
-    // Model line
+fn render_main_rows(info: &BootInfo) -> String {
     let model_display = if let Some(ref cheap) = info.cheap_model {
         format!(
-            "{cyan}{}{reset}  {dim}cheap{reset} {cyan}{}{reset}",
+            "{ANSI_CYAN}{}{ANSI_RESET}  {ANSI_DIM}cheap{ANSI_RESET} {ANSI_CYAN}{}{ANSI_RESET}",
             info.llm_model, cheap
         )
     } else {
-        format!("{cyan}{}{reset}", info.llm_model)
+        format!("{ANSI_CYAN}{}{ANSI_RESET}", info.llm_model)
     };
-    output.push_str(&format!(
-        "  {dim}model{reset}     {model_display}  {dim}via {}{reset}\n",
-        info.llm_backend
-    ));
-
-    // Database line
     let db_status = if info.db_connected {
         "connected"
     } else {
         "none"
     };
-    output.push_str(&format!(
-        "  {dim}database{reset}  {cyan}{}{reset} {dim}({db_status}){reset}\n",
-        info.db_backend
-    ));
 
-    // Tools line
-    output.push_str(&format!(
-        "  {dim}tools{reset}     {cyan}{}{reset} {dim}registered{reset}\n",
-        info.tool_count
-    ));
+    [
+        format!(
+            "  {ANSI_DIM}model{ANSI_RESET}     {model_display}  {ANSI_DIM}via {}{ANSI_RESET}\n",
+            info.llm_backend
+        ),
+        format!(
+            "  {ANSI_DIM}database{ANSI_RESET}  {ANSI_CYAN}{}{ANSI_RESET} {ANSI_DIM}({db_status}){ANSI_RESET}\n",
+            info.db_backend
+        ),
+        format!(
+            "  {ANSI_DIM}tools{ANSI_RESET}     {ANSI_CYAN}{}{ANSI_RESET} {ANSI_DIM}registered{ANSI_RESET}\n",
+            info.tool_count
+        ),
+    ]
+    .concat()
+}
 
-    // Features line
+fn docker_feature_label(status: DockerStatus) -> Option<String> {
+    match status {
+        DockerStatus::Available => Some("sandbox".to_string()),
+        DockerStatus::NotInstalled => Some(format!(
+            "{ANSI_YELLOW}sandbox (docker not installed){ANSI_RESET}"
+        )),
+        DockerStatus::NotRunning => Some(format!(
+            "{ANSI_YELLOW}sandbox (docker not running){ANSI_RESET}"
+        )),
+        DockerStatus::Disabled => None,
+    }
+}
+
+fn render_features_row(info: &BootInfo) -> Option<String> {
     let mut features = Vec::new();
     if info.embeddings_enabled {
         if let Some(ref provider) = info.embeddings_provider {
@@ -99,19 +116,8 @@ pub fn render_boot_screen(info: &BootInfo) -> String {
         let mins = info.heartbeat_interval_secs / 60;
         features.push(format!("heartbeat ({mins}m)"));
     }
-    match info.docker_status {
-        crate::sandbox::detect::DockerStatus::Available => {
-            features.push("sandbox".to_string());
-        }
-        crate::sandbox::detect::DockerStatus::NotInstalled => {
-            features.push(format!("{yellow}sandbox (docker not installed){reset}"));
-        }
-        crate::sandbox::detect::DockerStatus::NotRunning => {
-            features.push(format!("{yellow}sandbox (docker not running){reset}"));
-        }
-        crate::sandbox::detect::DockerStatus::Disabled => {
-            // Don't show sandbox when disabled
-        }
+    if let Some(label) = docker_feature_label(info.docker_status) {
+        features.push(label);
     }
     if info.claude_code_enabled {
         features.push("claude-code".to_string());
@@ -122,48 +128,72 @@ pub fn render_boot_screen(info: &BootInfo) -> String {
     if info.skills_enabled {
         features.push("skills".to_string());
     }
-    if !features.is_empty() {
-        output.push_str(&format!(
-            "  {dim}features{reset}  {cyan}{}{reset}\n",
+
+    (!features.is_empty()).then(|| {
+        format!(
+            "  {ANSI_DIM}features{ANSI_RESET}  {ANSI_CYAN}{}{ANSI_RESET}\n",
             features.join("  ")
-        ));
-    }
+        )
+    })
+}
 
-    // Channels line
-    if !info.channels.is_empty() {
-        output.push_str(&format!(
-            "  {dim}channels{reset}  {cyan}{}{reset}\n",
+fn render_channels_row(info: &BootInfo) -> Option<String> {
+    (!info.channels.is_empty()).then(|| {
+        format!(
+            "  {ANSI_DIM}channels{ANSI_RESET}  {ANSI_CYAN}{}{ANSI_RESET}\n",
             info.channels.join("  ")
-        ));
-    }
+        )
+    })
+}
 
-    // Gateway URL (highlighted)
+fn render_urls_block(info: &BootInfo) -> String {
+    let mut output = String::new();
+
     if let Some(ref url) = info.gateway_url {
         output.push('\n');
         output.push_str(&format!(
-            "  {dim}gateway{reset}   {yellow_underline}{url}{reset}\n"
+            "  {ANSI_DIM}gateway{ANSI_RESET}   {ANSI_YELLOW_UNDERLINE}{url}{ANSI_RESET}\n"
         ));
     }
 
-    // Tunnel URL
     if let Some(ref url) = info.tunnel_url {
         let provider_tag = info
             .tunnel_provider
             .as_deref()
-            .map(|p| format!(" {dim}({p}){reset}"))
+            .map(|p| format!(" {ANSI_DIM}({p}){ANSI_RESET}"))
             .unwrap_or_default();
         output.push_str(&format!(
-            "  {dim}tunnel{reset}    {yellow_underline}{url}{reset}{provider_tag}\n"
+            "  {ANSI_DIM}tunnel{ANSI_RESET}    {ANSI_YELLOW_UNDERLINE}{url}{ANSI_RESET}{provider_tag}\n"
         ));
     }
 
+    output
+}
+
+fn render_footer() -> String {
+    let mut output = String::new();
     output.push('\n');
-    output.push_str(&border);
+    output.push_str(&border_line());
     output.push('\n');
     output.push('\n');
     output.push_str("  /help for commands, /quit to exit\n");
     output.push('\n');
+    output
+}
 
+/// Render the boot screen to a string.
+pub fn render_boot_screen(info: &BootInfo) -> String {
+    let mut output = String::new();
+    output.push_str(&render_header(info));
+    output.push_str(&render_main_rows(info));
+    if let Some(features_row) = render_features_row(info) {
+        output.push_str(&features_row);
+    }
+    if let Some(channels_row) = render_channels_row(info) {
+        output.push_str(&channels_row);
+    }
+    output.push_str(&render_urls_block(info));
+    output.push_str(&render_footer());
     output
 }
 
@@ -175,8 +205,8 @@ pub fn print_boot_screen(info: &BootInfo) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sandbox::detect::DockerStatus;
     use insta::assert_snapshot;
+    use rstest::rstest;
 
     fn full_boot_info() -> BootInfo {
         BootInfo {
@@ -260,25 +290,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_render_boot_screen_full_snapshot() {
-        let info = full_boot_info();
+    #[rstest]
+    #[case::full("render_boot_screen_full_snapshot", full_boot_info())]
+    #[case::minimal("render_boot_screen_minimal_snapshot", minimal_boot_info())]
+    #[case::no_features("render_boot_screen_no_features_snapshot", no_features_boot_info())]
+    fn test_render_boot_screen_snapshot(#[case] snapshot_name: &str, #[case] info: BootInfo) {
         let output = render_boot_screen(&info);
-        assert_snapshot!(&output);
-    }
-
-    #[test]
-    fn test_render_boot_screen_minimal_snapshot() {
-        let info = minimal_boot_info();
-        let output = render_boot_screen(&info);
-        assert_snapshot!(&output);
-    }
-
-    #[test]
-    fn test_render_boot_screen_no_features_snapshot() {
-        let info = no_features_boot_info();
-        let output = render_boot_screen(&info);
-        assert_snapshot!(&output);
+        assert_snapshot!(snapshot_name, &output);
     }
 
     #[test]
@@ -297,21 +315,12 @@ mod tests {
         assert_snapshot!(&output);
     }
 
-    #[test]
-    fn test_print_boot_screen_full() {
+    #[rstest]
+    #[case::full(full_boot_info())]
+    #[case::minimal(minimal_boot_info())]
+    #[case::no_features(no_features_boot_info())]
+    fn test_print_boot_screen(#[case] info: BootInfo) {
         // Should not panic
-        print_boot_screen(&full_boot_info());
-    }
-
-    #[test]
-    fn test_print_boot_screen_minimal() {
-        // Should not panic
-        print_boot_screen(&minimal_boot_info());
-    }
-
-    #[test]
-    fn test_print_boot_screen_no_features() {
-        // Should not panic
-        print_boot_screen(&no_features_boot_info());
+        print_boot_screen(&info);
     }
 }
