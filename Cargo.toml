@@ -205,6 +205,7 @@ proptest = "1.6.0"
 tempfile = "3"
 mockall = "0.13"
 trybuild = "1"
+gag = "1.0.0"
 
 [features]
 default = ["postgres", "libsql", "html-to-markdown", "docker"]

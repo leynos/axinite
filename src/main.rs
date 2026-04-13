@@ -1058,3 +1058,119 @@ struct GatewaySetup {
     sse_sender: Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
     routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+
+    use gag::BufferRedirect;
+    use insta::assert_snapshot;
+    use ironclaw::{
+        config::Config,
+        sandbox::DockerStatus,
+        tunnel::{NativeTunnel, Tunnel},
+    };
+
+    use super::{BootData, print_startup_info};
+
+    struct TestTunnel {
+        public_url: Option<String>,
+    }
+
+    impl NativeTunnel for TestTunnel {
+        fn name(&self) -> &str {
+            "ngrok"
+        }
+
+        fn start<'a>(
+            &'a self,
+            _local_host: &'a str,
+            _local_port: u16,
+        ) -> impl std::future::Future<Output = anyhow::Result<String>> + Send + 'a {
+            let url = self
+                .public_url
+                .clone()
+                .expect("test tunnel should have a public URL");
+            async move { Ok(url) }
+        }
+
+        async fn stop(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn health_check(&self) -> bool {
+            true
+        }
+
+        fn public_url(&self) -> Option<String> {
+            self.public_url.clone()
+        }
+    }
+
+    fn capture_stdout(action: impl FnOnce()) -> String {
+        let mut stdout = BufferRedirect::stdout().expect("stdout redirection should succeed");
+        action();
+        std::io::stdout()
+            .flush()
+            .expect("stdout flush should succeed");
+
+        let mut output = String::new();
+        stdout
+            .read_to_string(&mut output)
+            .expect("captured stdout should be readable");
+        output
+    }
+
+    #[tokio::test]
+    async fn print_startup_info_matches_snapshot() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let mut config = Config::for_testing(
+            tempdir.path().join("test.db"),
+            tempdir.path().join("skills"),
+            tempdir.path().join("installed-skills"),
+        )
+        .await
+        .expect("test config should be built");
+        config.agent.name = "startup-test-agent".to_string();
+        config.llm.backend = "openai".to_string();
+        config.channels.cli.enabled = true;
+        config.embeddings.enabled = true;
+        config.embeddings.provider = "openai".to_string();
+        config.heartbeat.enabled = true;
+        config.heartbeat.interval_secs = 1_800;
+        config.sandbox.enabled = true;
+        config.claude_code.enabled = true;
+        config.routines.enabled = true;
+        config.skills.enabled = true;
+        config.tunnel.public_url = Some("https://fallback.example.test".to_string());
+
+        let cli = ironclaw::cli::Cli {
+            command: None,
+            cli_only: false,
+            no_db: false,
+            message: None,
+            config: None,
+            no_onboard: false,
+        };
+
+        let active_tunnel: Option<Box<dyn Tunnel>> = Some(Box::new(TestTunnel {
+            public_url: Some("https://runtime.ngrok.app".to_string()),
+        }));
+        let data = BootData {
+            llm_model: "gpt-4.1".to_string(),
+            cheap_model: Some("gpt-4.1-mini".to_string()),
+            tool_count: 42,
+            gateway_url: Some("http://127.0.0.1:4040/?token=startup-token".to_string()),
+            docker_status: DockerStatus::NotRunning,
+            channel_names: vec![
+                "repl".to_string(),
+                "gateway".to_string(),
+                "signal".to_string(),
+            ],
+            active_tunnel: &active_tunnel,
+        };
+
+        let output = capture_stdout(|| print_startup_info(&config, &cli, &data));
+        assert_snapshot!("startup_info_boot_screen", output);
+    }
+}

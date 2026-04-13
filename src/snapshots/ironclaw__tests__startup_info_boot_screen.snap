@@ -1,0 +1,22 @@
+---
+source: src/main.rs
+assertion_line: 1174
+expression: output
+---
+
+  [90m╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶[0m
+
+  [1mstartup-test-agent[0m v0.18.0
+
+  [90mmodel[0m     [36mgpt-4.1[0m  [90mcheap[0m [36mgpt-4.1-mini[0m  [90mvia openai[0m
+  [90mdatabase[0m  [36mlibsql[0m [90m(connected)[0m
+  [90mtools[0m     [36m42[0m [90mregistered[0m
+  [90mfeatures[0m  [36membeddings (openai)  heartbeat (30m)  [33msandbox (docker not running)[0m  claude-code  routines  skills[0m
+  [90mchannels[0m  [36mrepl  gateway  signal[0m
+
+  [90mgateway[0m   [33;4mhttp://127.0.0.1:4040/?token=startup-token[0m
+  [90mtunnel[0m    [33;4mhttps://runtime.ngrok.app[0m [90m(ngrok)[0m
+
+  [90m╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶[0m
+
+  /help for commands, /quit to exit
