@@ -161,5 +161,10 @@ same `GET
 visibility policy continues to filter out protected, approval-gated, and other
 ineligible tools before advertisement.
 
+For hosted-visible WASM tools, the advertised `ToolDefinition.parameters`
+payload is the canonical contract. Any later execution failure hint is a
+supplemental fallback diagnostic and must not become a second schema transport
+path across the worker boundary.
+
 The shared route constants and transport types are what keep that hosted tool
 surface consistent across the sandbox boundary.

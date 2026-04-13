@@ -68,13 +68,13 @@ pub enum WasmError {
     Timeout(std::time::Duration),
 
     /// Component returned an error response.
-    /// When `hint` is non-empty it carries the tool's description and parameter
-    /// schema so the LLM can retry with correct arguments.
-    #[error("Tool error: {message}{}", if hint.is_empty() { String::new() } else { format!("\n\nTool usage hint:\n{hint}") })]
+    /// When `hint` is non-empty it adds fallback recovery guidance that points
+    /// back to the already advertised tool contract.
+    #[error("Tool error: {message}{}", if hint.is_empty() { String::new() } else { format!("\n\nFallback guidance:\n{hint}") })]
     ToolReturnedError {
         /// The error message from the WASM tool.
         message: String,
-        /// Optional description + schema hint (empty when unavailable).
+        /// Optional recovery guidance (empty when unavailable).
         hint: String,
     },
 
@@ -211,19 +211,19 @@ mod tests {
         };
         let display = err.to_string();
         assert!(display.contains("unknown action: foobar"));
-        assert!(!display.contains("Tool usage hint"));
+        assert!(!display.contains("Fallback guidance"));
     }
 
     #[test]
     fn test_tool_returned_error_with_hint() {
         let err = WasmError::ToolReturnedError {
             message: "unknown action: foobar".to_string(),
-            hint: "Description: Gmail tool\nParameters schema: {\"type\":\"object\"}".to_string(),
+            hint: "Retry using the advertised tool schema for `gmail`.\nAdvertised schema excerpt: {\"type\":\"object\"}".to_string(),
         };
         let display = err.to_string();
         assert!(display.contains("unknown action: foobar"));
-        assert!(display.contains("Tool usage hint"));
-        assert!(display.contains("Gmail tool"));
-        assert!(display.contains("Parameters schema"));
+        assert!(display.contains("Fallback guidance"));
+        assert!(display.contains("advertised tool schema"));
+        assert!(display.contains("Advertised schema excerpt"));
     }
 }

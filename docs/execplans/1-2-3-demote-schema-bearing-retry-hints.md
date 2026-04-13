@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: DRAFT
+Status: COMPLETED
 
 ## Purpose / big picture
 
@@ -371,12 +371,12 @@ documentation all match the intended contract.
   metadata, error, registry, orchestrator, and worker seams.
 - [x] 2026-04-10T22:02:24+02:00 Drafted this ExecPlan for roadmap item
   `1.2.3`.
-- [ ] Implementation approved by a human reviewer.
-- [ ] Implementation started.
-- [ ] Fallback-diagnostic policy implemented in code.
-- [ ] Unit and behavioural regression coverage added and passing.
-- [ ] Documentation synchronized and roadmap item `1.2.3` marked done.
-- [ ] Final validation evidence recorded.
+- [x] Implementation approved by a human reviewer.
+- [x] Implementation started.
+- [x] Fallback-diagnostic policy implemented in code.
+- [x] Unit and behavioural regression coverage added and passing.
+- [x] Documentation synchronized and roadmap item `1.2.3` marked done.
+- [x] Final validation evidence recorded.
 - [ ] Feature commit created.
 
 ## Surprises & Discoveries
@@ -395,6 +395,18 @@ documentation all match the intended contract.
   `.feature` files or `#[scenario]` usage, so any `rstest-bdd` coverage for
   this roadmap item needs an explicit proportionality check rather than a
   default assumption.
+- 2026-04-13T11:12:00+02:00 The workspace does not currently include an
+  `rstest-bdd` dependency, checked-in feature files, or `#[scenario]` tests.
+  Adding them for this slice would require new harness scaffolding rather than
+  extending an existing path.
+- 2026-04-13T11:12:00+02:00 Existing hosted behavioural tests already assert
+  that orchestrator and worker remote-tool catalogues expose hosted-safe WASM
+  `ToolDefinition.parameters` before execution. That evidence can be retained
+  without inventing a hosted-specific failure-path harness for `1.2.3`.
+- 2026-04-13T12:54:00+02:00 The implementation fit inside the planned seam:
+  wrapper metadata helper, wrapper error wording, one focused malformed-call
+  regression, and synchronized documentation updates. No transport, WIT, or
+  hosted-catalogue shape changes were required.
 
 ## Decision Log
 
@@ -414,7 +426,30 @@ documentation all match the intended contract.
   Rationale: the user asked for behavioural tests where applicable, but the
   current subsystem has no visible BDD harness. The plan must preserve quality
   without forcing a broader test-framework rollout into a narrow contract task.
+- 2026-04-13T11:12:00+02:00 Keep behavioural coverage in the existing `rstest`
+  suites and do not add `rstest-bdd` scaffolding for this roadmap item.
+  Rationale: the workspace has no existing BDD harness, so introducing one
+  would exceed the plan's proportionality tolerance for a narrow contract
+  semantics change.
+- 2026-04-13T12:54:00+02:00 Implement fallback guidance as a short imperative
+  that points back to the advertised schema, then append truncated guest
+  metadata only as optional diagnostic context.
+  Rationale: this preserves actionable recovery for malformed first calls while
+  making the pre-advertised `ToolDefinition.parameters` contract unmistakably
+  primary.
+- 2026-04-13T13:18:00+02:00 Keep the existing hosted behavioural assertions as
+  the cross-boundary proof point and add one focused wrapper regression for the
+  malformed first-call path.
+  Rationale: the hosted catalogue tests already prove that workers and the
+  orchestrator advertise the canonical schema before execution, so this slice
+  only needed one local failure-path test to lock the fallback wording down.
 
 ## Outcomes & Retrospective
 
-- Pending implementation.
+- 2026-04-13T12:54:00+02:00 Focused regression coverage passed with
+  `cargo test fallback_guidance --lib`, including the new malformed first-call
+  wrapper test and direct helper wording tests.
+- 2026-04-13T13:18:00+02:00 Final validation passed with
+  `bunx markdownlint-cli2` on the touched Markdown files, `make all`, and
+  `git diff --check`. The aggregate Rust gate completed successfully after one
+  formatting-only retry through `cargo fmt --all`.

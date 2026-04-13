@@ -696,10 +696,10 @@ impl WasmToolWrapper {
         let logs = store.data_mut().host_state.take_logs();
 
         // Check for tool-level error. The LLM should already have seen the
-        // advertised schema at registration time; this export-based hint is
-        // only supplemental recovery guidance for a failed retry path.
+        // advertised schema at registration time; guest exports are only used
+        // here to add compact fallback guidance after a failed call.
         if let Some(err) = response.error {
-            let hint = metadata::build_tool_hint(tool_iface, &mut store);
+            let hint = metadata::build_fallback_guidance(self.name(), tool_iface, &mut store);
             return Err(WasmError::ToolReturnedError { message: err, hint });
         }
 
@@ -1233,13 +1233,31 @@ fn coerce_params_to_schema(
 mod tests {
     use std::sync::Arc;
 
+    use rstest::{fixture, rstest};
+
     use crate::testing::credentials::{
         TEST_BEARER_TOKEN_123, TEST_GOOGLE_OAUTH_FRESH, TEST_GOOGLE_OAUTH_LEGACY,
         TEST_GOOGLE_OAUTH_TOKEN, TEST_OAUTH_CLIENT_ID, TEST_OAUTH_CLIENT_SECRET,
         test_secrets_store,
     };
+    use crate::testing::{github_wasm_artifact, metadata_test_runtime};
     use crate::tools::wasm::capabilities::Capabilities;
+    use crate::tools::wasm::error::WasmError;
     use crate::tools::wasm::runtime::{WasmRuntimeConfig, WasmToolRuntime};
+    use crate::tools::wasm::wrapper::WasmToolWrapper;
+
+    #[fixture]
+    async fn github_wrapper() -> WasmToolWrapper {
+        let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
+
+        let runtime = metadata_test_runtime().expect("create metadata test runtime");
+        let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm artifact");
+        let prepared = runtime
+            .prepare("github", &wasm_bytes, None)
+            .await
+            .expect("prepare github wasm component");
+        WasmToolWrapper::new(runtime, prepared, Capabilities::default())
+    }
 
     #[test]
     fn test_wrapper_creation() {
@@ -1695,6 +1713,29 @@ mod tests {
 
         let result = resolve_host_credentials(&caps, Some(&store), "user1", None).await;
         assert!(result.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn malformed_first_call_returns_fallback_guidance(
+        #[future] github_wrapper: WasmToolWrapper,
+    ) {
+        let wrapper = github_wrapper.await;
+        let error = wrapper
+            .execute_sync(serde_json::json!({}), None, Vec::new())
+            .expect_err("missing required action should fail");
+
+        match error {
+            WasmError::ToolReturnedError { message, hint } => {
+                assert!(message.contains("Invalid parameters"));
+                assert!(message.contains("missing field `action`"));
+                assert!(hint.contains("Retry using the advertised tool schema"));
+                assert!(hint.contains("`github`"));
+                assert!(hint.contains("Advertised schema excerpt"));
+                assert!(!hint.contains("Tool usage hint"));
+            }
+            other => panic!("expected ToolReturnedError, got {other:?}"),
+        }
     }
 
     #[tokio::test]

@@ -124,7 +124,7 @@ by tightening the contract around active WASM tools.
   - Success: hosted workers receive proactive WASM definitions through the same
     catalogue path used for MCP tools, and hosted mode stops omitting
     orchestrator-owned WASM tools from the tool array.
-- [ ] 1.2.3. Demote schema-bearing retry hints to fallback diagnostics. Requires
+- [x] 1.2.3. Demote schema-bearing retry hints to fallback diagnostics. Requires
       1.2.1.
   - See [RFC 0002 §Summary](./rfcs/0002-expose-wasm-tool-definitions.md#summary)
     and
