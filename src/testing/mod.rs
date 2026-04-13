@@ -54,6 +54,7 @@ pub use crate::testing_wasm::{
     github_tool_source_dir, github_wasm_artifact, metadata_test_runtime,
 };
 use crate::tools::ToolRegistry;
+use crate::tools::wasm::{Capabilities, WasmToolWrapper};
 /// Create a libSQL-backed test database in a temporary directory.
 ///
 /// Returns the database and a `TempDir` guard — the database file is
@@ -73,6 +74,22 @@ pub async fn test_db() -> (Arc<dyn Database>, TempDir) {
         .await
         .expect("failed to run migrations");
     (Arc::new(backend) as Arc<dyn Database>, dir)
+}
+
+/// Build a `WasmToolWrapper` for the shared GitHub WASM fixture.
+///
+/// Tests use this helper to avoid duplicating the fixture runtime wiring in
+/// each module that needs a real WASM component instance.
+pub async fn github_wasm_wrapper() -> WasmToolWrapper {
+    let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
+    let runtime = metadata_test_runtime().expect("create metadata test runtime");
+    let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm artifact");
+    let prepared = runtime
+        .prepare("github", &wasm_bytes, None)
+        .await
+        .expect("prepare github wasm component");
+
+    WasmToolWrapper::new(runtime, prepared, Capabilities::default())
 }
 
 /// What kind of error the stub should produce when failing.

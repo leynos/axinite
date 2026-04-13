@@ -1240,23 +1240,15 @@ mod tests {
         TEST_GOOGLE_OAUTH_TOKEN, TEST_OAUTH_CLIENT_ID, TEST_OAUTH_CLIENT_SECRET,
         test_secrets_store,
     };
-    use crate::testing::{github_wasm_artifact, metadata_test_runtime};
+    use crate::testing::github_wasm_wrapper;
+    use crate::tools::wasm::WasmToolWrapper;
     use crate::tools::wasm::capabilities::Capabilities;
     use crate::tools::wasm::error::WasmError;
     use crate::tools::wasm::runtime::{WasmRuntimeConfig, WasmToolRuntime};
-    use crate::tools::wasm::wrapper::WasmToolWrapper;
 
     #[fixture]
     async fn github_wrapper() -> WasmToolWrapper {
-        let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
-
-        let runtime = metadata_test_runtime().expect("create metadata test runtime");
-        let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm artifact");
-        let prepared = runtime
-            .prepare("github", &wasm_bytes, None)
-            .await
-            .expect("prepare github wasm component");
-        WasmToolWrapper::new(runtime, prepared, Capabilities::default())
+        github_wasm_wrapper().await
     }
 
     #[test]
@@ -1727,8 +1719,10 @@ mod tests {
 
         match error {
             WasmError::ToolReturnedError { message, hint } => {
-                assert!(message.contains("Invalid parameters"));
-                assert!(message.contains("missing field `action`"));
+                assert!(
+                    !message.trim().is_empty(),
+                    "tool error should preserve a parameter failure message"
+                );
                 assert!(hint.contains("Retry using the advertised tool schema"));
                 assert!(hint.contains("`github`"));
                 assert!(hint.contains("Advertised schema excerpt"));

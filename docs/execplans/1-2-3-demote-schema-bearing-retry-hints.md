@@ -377,7 +377,7 @@ documentation all match the intended contract.
 - [x] Unit and behavioural regression coverage added and passing.
 - [x] Documentation synchronized and roadmap item `1.2.3` marked done.
 - [x] Final validation evidence recorded.
-- [ ] Feature commit created.
+- [x] Feature commit created.
 
 ## Surprises & Discoveries
 
@@ -407,6 +407,10 @@ documentation all match the intended contract.
   wrapper metadata helper, wrapper error wording, one focused malformed-call
   regression, and synchronized documentation updates. No transport, WIT, or
   hosted-catalogue shape changes were required.
+- 2026-04-13T13:29:00+02:00 Review follow-up identified that the GitHub WASM
+  wrapper fixture had been duplicated across `wrapper.rs` and
+  `metadata.rs`, and that the malformed-call regression asserted too much of
+  the guest's exact validation wording.
 
 ## Decision Log
 
@@ -443,6 +447,12 @@ documentation all match the intended contract.
   Rationale: the hosted catalogue tests already prove that workers and the
   orchestrator advertise the canonical schema before execution, so this slice
   only needed one local failure-path test to lock the fallback wording down.
+- 2026-04-13T13:29:00+02:00 Centralize the GitHub WASM wrapper test setup in
+  `src/testing` and relax the malformed-call regression to assert contract
+  stability rather than the guest's precise validation string.
+  Rationale: this keeps fixture wiring from diverging between modules and
+  makes the regression resilient to future schema or guest-error wording
+  changes.
 
 ## Outcomes & Retrospective
 
@@ -453,3 +463,9 @@ documentation all match the intended contract.
   `bunx markdownlint-cli2` on the touched Markdown files, `make all`, and
   `git diff --check`. The aggregate Rust gate completed successfully after one
   formatting-only retry through `cargo fmt --all`.
+- 2026-04-13T13:29:00+02:00 Follow-up review cleanup is in progress to share
+  the GitHub WASM wrapper fixture and make the malformed-call assertion less
+  brittle.
+- 2026-04-13T13:43:00+02:00 Follow-up review cleanup passed with
+  `cargo test fallback_guidance --lib`, `make all`, and `git diff --check`
+  after centralizing the shared GitHub WASM wrapper helper in `src/testing`.
