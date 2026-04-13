@@ -192,14 +192,52 @@ fn truncate_card_content(text: &str, max_width: usize) -> String {
     if visible_char_count(text) <= max_width {
         return text.to_string();
     }
-    let visible_limit = max_width.saturating_sub(1);
-    let (mut truncated, has_active_style, was_truncated) = truncate_ansi_aware(text, visible_limit);
-    debug_assert!(was_truncated || visible_limit == 0);
+    let (mut truncated, has_active_style) =
+        build_truncated_ansi_string(text, max_width.saturating_sub(1));
     truncated.push('…');
     if has_active_style && !truncated.ends_with("\x1b[0m") {
         truncated.push_str("\x1b[0m");
     }
     truncated
+}
+
+fn build_truncated_ansi_string(text: &str, visible_limit: usize) -> (String, bool) {
+    let mut truncated = String::new();
+    let mut visible_count = 0;
+    let mut cursor = 0;
+    let mut has_active_style = false;
+
+    for ansi_match in ansi_sgr_regex().find_iter(text) {
+        if visible_count >= visible_limit {
+            break;
+        }
+        let copied_full_segment = append_visible_chars(
+            &text[cursor..ansi_match.start()],
+            visible_limit,
+            &mut visible_count,
+            &mut truncated,
+        );
+        if visible_count >= visible_limit {
+            if !copied_full_segment || visible_char_count(&text[ansi_match.start()..]) > 0 {
+                break;
+            }
+        }
+        let ansi_sequence = ansi_match.as_str();
+        truncated.push_str(ansi_sequence);
+        has_active_style = ansi_sequence != "\x1b[0m";
+        cursor = ansi_match.end();
+    }
+
+    if visible_count < visible_limit {
+        append_visible_chars(
+            &text[cursor..],
+            visible_limit,
+            &mut visible_count,
+            &mut truncated,
+        );
+    }
+
+    (truncated, has_active_style)
 }
 
 /// Truncate plain text using grapheme-aware truncation.
