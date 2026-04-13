@@ -908,20 +908,23 @@ mod tests {
         use crate::db::{InsertChunkParams, NativeDatabase, NativeWorkspaceStore};
         use crate::workspace::SearchConfig;
 
-        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir = tempfile::tempdir().expect("failed to create tempdir");
         let backend = LibSqlBackend::new_local(&tempdir.path().join("workspace.db"))
             .await
-            .unwrap();
-        backend.run_migrations().await.unwrap();
+            .expect("failed to create local libsql backend");
+        backend
+            .run_migrations()
+            .await
+            .expect("failed to run libsql migrations");
 
         let document = backend
             .get_or_create_document_by_path("default", None, "notes/search.md")
             .await
-            .unwrap();
+            .expect("failed to create search test document");
         backend
             .update_document(document.id, "semantic search fallback test")
             .await
-            .unwrap();
+            .expect("failed to update search test document");
         backend
             .insert_chunk(InsertChunkParams {
                 document_id: document.id,
@@ -930,7 +933,7 @@ mod tests {
                 embedding: Some(&[1.0, 0.0, 0.0]),
             })
             .await
-            .unwrap();
+            .expect("failed to insert search test chunk");
 
         let results = backend
             .hybrid_search(HybridSearchParams {
@@ -941,7 +944,7 @@ mod tests {
                 config: &SearchConfig::default().vector_only().with_limit(5),
             })
             .await
-            .unwrap();
+            .expect("failed to execute hybrid search");
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].document_path, "notes/search.md");
