@@ -6,13 +6,6 @@
 
 use crate::sandbox::detect::DockerStatus;
 
-const ANSI_BOLD: &str = "\x1b[1m";
-const ANSI_CYAN: &str = "\x1b[36m";
-const ANSI_DIM: &str = "\x1b[90m";
-const ANSI_RESET: &str = "\x1b[0m";
-const ANSI_YELLOW: &str = "\x1b[33m";
-const ANSI_YELLOW_UNDERLINE: &str = "\x1b[33;4m";
-
 /// All displayable fields for the boot screen.
 pub struct BootInfo {
     pub version: String,
@@ -40,70 +33,46 @@ pub struct BootInfo {
     pub tunnel_provider: Option<String>,
 }
 
-fn border_line() -> String {
-    format!("  {ANSI_DIM}{}{ANSI_RESET}", "\u{2576}".repeat(58))
+struct Palette<'a> {
+    cyan: &'a str,
+    dim: &'a str,
+    yellow: &'a str,
+    yellow_underline: &'a str,
+    reset: &'a str,
 }
 
-fn render_header(info: &BootInfo) -> String {
-    let mut output = String::new();
-    output.push('\n');
-    output.push_str(&border_line());
-    output.push('\n');
-    output.push('\n');
-    output.push_str(&format!(
-        "  {ANSI_BOLD}{}{ANSI_RESET} v{}\n",
-        info.agent_name, info.version
-    ));
-    output.push('\n');
-    output
-}
-
-fn render_main_rows(info: &BootInfo) -> String {
+fn render_model_line(info: &BootInfo, p: &Palette<'_>) -> String {
     let model_display = if let Some(ref cheap) = info.cheap_model {
         format!(
-            "{ANSI_CYAN}{}{ANSI_RESET}  {ANSI_DIM}cheap{ANSI_RESET} {ANSI_CYAN}{}{ANSI_RESET}",
-            info.llm_model, cheap
+            "{cyan}{llm}{reset}  {dim}cheap{reset} {cyan}{cheap}{reset}",
+            cyan = p.cyan,
+            dim = p.dim,
+            reset = p.reset,
+            llm = info.llm_model,
         )
     } else {
-        format!("{ANSI_CYAN}{}{ANSI_RESET}", info.llm_model)
+        format!("{}{}{}", p.cyan, info.llm_model, p.reset)
     };
-    let db_status = if info.db_connected {
-        "connected"
-    } else {
-        "none"
-    };
-
-    [
-        format!(
-            "  {ANSI_DIM}model{ANSI_RESET}     {model_display}  {ANSI_DIM}via {}{ANSI_RESET}\n",
-            info.llm_backend
-        ),
-        format!(
-            "  {ANSI_DIM}database{ANSI_RESET}  {ANSI_CYAN}{}{ANSI_RESET} {ANSI_DIM}({db_status}){ANSI_RESET}\n",
-            info.db_backend
-        ),
-        format!(
-            "  {ANSI_DIM}tools{ANSI_RESET}     {ANSI_CYAN}{}{ANSI_RESET} {ANSI_DIM}registered{ANSI_RESET}\n",
-            info.tool_count
-        ),
-    ]
-    .concat()
+    format!(
+        "  {dim}model{reset}     {model_display}  {dim}via {backend}{reset}\n",
+        dim = p.dim,
+        reset = p.reset,
+        backend = info.llm_backend,
+    )
 }
 
-fn docker_feature_label(status: DockerStatus) -> Option<String> {
+fn format_docker_feature(status: &DockerStatus, yellow: &str, reset: &str) -> Option<String> {
     match status {
         DockerStatus::Available => Some("sandbox".to_string()),
-        DockerStatus::NotInstalled => Some(format!(
-            "{ANSI_YELLOW}sandbox (docker not installed){ANSI_RESET}"
-        )),
-        DockerStatus::NotRunning => Some(format!(
-            "{ANSI_YELLOW}sandbox (docker not running){ANSI_RESET}"
-        )),
+        DockerStatus::NotInstalled => {
+            Some(format!("{yellow}sandbox (docker not installed){reset}"))
+        }
+        DockerStatus::NotRunning => Some(format!("{yellow}sandbox (docker not running){reset}")),
         DockerStatus::Disabled => None,
     }
 }
 
-fn render_features_row(info: &BootInfo) -> Option<String> {
+fn collect_features(info: &BootInfo, yellow: &str, reset: &str) -> Vec<String> {
     let mut features = Vec::new();
     if info.embeddings_enabled {
         if let Some(ref provider) = info.embeddings_provider {
@@ -116,7 +85,7 @@ fn render_features_row(info: &BootInfo) -> Option<String> {
         let mins = info.heartbeat_interval_secs / 60;
         features.push(format!("heartbeat ({mins}m)"));
     }
-    if let Some(label) = docker_feature_label(info.docker_status) {
+    if let Some(label) = format_docker_feature(&info.docker_status, yellow, reset) {
         features.push(label);
     }
     if info.claude_code_enabled {
@@ -128,72 +97,98 @@ fn render_features_row(info: &BootInfo) -> Option<String> {
     if info.skills_enabled {
         features.push("skills".to_string());
     }
-
-    (!features.is_empty()).then(|| {
-        format!(
-            "  {ANSI_DIM}features{ANSI_RESET}  {ANSI_CYAN}{}{ANSI_RESET}\n",
-            features.join("  ")
-        )
-    })
+    features
 }
 
-fn render_channels_row(info: &BootInfo) -> Option<String> {
-    (!info.channels.is_empty()).then(|| {
-        format!(
-            "  {ANSI_DIM}channels{ANSI_RESET}  {ANSI_CYAN}{}{ANSI_RESET}\n",
-            info.channels.join("  ")
-        )
-    })
-}
-
-fn render_urls_block(info: &BootInfo) -> String {
-    let mut output = String::new();
-
+fn render_footer_urls(info: &BootInfo, p: &Palette<'_>) -> String {
+    let mut out = String::new();
     if let Some(ref url) = info.gateway_url {
-        output.push('\n');
-        output.push_str(&format!(
-            "  {ANSI_DIM}gateway{ANSI_RESET}   {ANSI_YELLOW_UNDERLINE}{url}{ANSI_RESET}\n"
+        out.push('\n');
+        out.push_str(&format!(
+            "  {dim}gateway{reset}   {yu}{url}{reset}\n",
+            dim = p.dim,
+            reset = p.reset,
+            yu = p.yellow_underline,
         ));
     }
-
     if let Some(ref url) = info.tunnel_url {
         let provider_tag = info
             .tunnel_provider
             .as_deref()
-            .map(|p| format!(" {ANSI_DIM}({p}){ANSI_RESET}"))
+            .map(|name| format!(" {dim}({name}){reset}", dim = p.dim, reset = p.reset))
             .unwrap_or_default();
-        output.push_str(&format!(
-            "  {ANSI_DIM}tunnel{ANSI_RESET}    {ANSI_YELLOW_UNDERLINE}{url}{ANSI_RESET}{provider_tag}\n"
+        out.push_str(&format!(
+            "  {dim}tunnel{reset}    {yu}{url}{reset}{provider_tag}\n",
+            dim = p.dim,
+            reset = p.reset,
+            yu = p.yellow_underline,
         ));
     }
-
-    output
-}
-
-fn render_footer() -> String {
-    let mut output = String::new();
-    output.push('\n');
-    output.push_str(&border_line());
-    output.push('\n');
-    output.push('\n');
-    output.push_str("  /help for commands, /quit to exit\n");
-    output.push('\n');
-    output
+    out
 }
 
 /// Render the boot screen to a string.
 pub fn render_boot_screen(info: &BootInfo) -> String {
+    let bold = "\x1b[1m";
+    let cyan = "\x1b[36m";
+    let dim = "\x1b[90m";
+    let yellow = "\x1b[33m";
+    let yellow_underline = "\x1b[33;4m";
+    let reset = "\x1b[0m";
+
+    let palette = Palette {
+        cyan,
+        dim,
+        yellow,
+        yellow_underline,
+        reset,
+    };
+    let border = format!("  {dim}{}{reset}", "\u{2576}".repeat(58));
+    let db_status = if info.db_connected {
+        "connected"
+    } else {
+        "none"
+    };
+    let features = collect_features(info, palette.yellow, palette.reset);
+
     let mut output = String::new();
-    output.push_str(&render_header(info));
-    output.push_str(&render_main_rows(info));
-    if let Some(features_row) = render_features_row(info) {
-        output.push_str(&features_row);
+    output.push('\n');
+    output.push_str(&border);
+    output.push('\n');
+    output.push('\n');
+    output.push_str(&format!(
+        "  {bold}{}{reset} v{}\n",
+        info.agent_name, info.version
+    ));
+    output.push('\n');
+    output.push_str(&render_model_line(info, &palette));
+    output.push_str(&format!(
+        "  {dim}database{reset}  {cyan}{}{reset} {dim}({db_status}){reset}\n",
+        info.db_backend
+    ));
+    output.push_str(&format!(
+        "  {dim}tools{reset}     {cyan}{}{reset} {dim}registered{reset}\n",
+        info.tool_count
+    ));
+    if !features.is_empty() {
+        output.push_str(&format!(
+            "  {dim}features{reset}  {cyan}{}{reset}\n",
+            features.join("  ")
+        ));
     }
-    if let Some(channels_row) = render_channels_row(info) {
-        output.push_str(&channels_row);
+    if !info.channels.is_empty() {
+        output.push_str(&format!(
+            "  {dim}channels{reset}  {cyan}{}{reset}\n",
+            info.channels.join("  ")
+        ));
     }
-    output.push_str(&render_urls_block(info));
-    output.push_str(&render_footer());
+    output.push_str(&render_footer_urls(info, &palette));
+    output.push('\n');
+    output.push_str(&border);
+    output.push('\n');
+    output.push('\n');
+    output.push_str("  /help for commands, /quit to exit\n");
+    output.push('\n');
     output
 }
 
