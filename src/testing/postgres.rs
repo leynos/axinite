@@ -90,24 +90,8 @@ fn is_pool_unavailable(error: &PoolError) -> bool {
     }
 }
 
-fn has_unavailable_connection_cause(error: &tokio_postgres::Error) -> bool {
-    error_chain_has_unavailable_pattern(error)
-}
-
 fn error_chain_has_unavailable_pattern(error: &dyn std::error::Error) -> bool {
-    let mut current = Some(error);
-    while let Some(source) = current {
-        let lowered = source.to_string().to_lowercase();
-        if UNAVAILABLE_PATTERNS
-            .iter()
-            .any(|pattern| lowered.contains(pattern))
-        {
-            return true;
-        }
-        current = source.source();
-    }
-
-    false
+    error_has_unavailable_pattern(error) || error_source_chain_has_unavailable_pattern(error)
 }
 
 mod tests {
@@ -158,5 +142,26 @@ mod tests {
 }
 
 fn is_postgres_unavailable(error: &tokio_postgres::Error) -> bool {
-    error.is_closed() || has_unavailable_connection_cause(error)
+    error.is_closed()
+        || error_has_unavailable_pattern(error)
+        || error_source_chain_has_unavailable_pattern(error)
+}
+
+fn error_has_unavailable_pattern(error: &dyn std::error::Error) -> bool {
+    let lowered = error.to_string().to_lowercase();
+    UNAVAILABLE_PATTERNS
+        .iter()
+        .any(|pattern| lowered.contains(pattern))
+}
+
+fn error_source_chain_has_unavailable_pattern(error: &dyn std::error::Error) -> bool {
+    let mut current = error.source();
+    while let Some(source) = current {
+        if error_has_unavailable_pattern(source) {
+            return true;
+        }
+        current = source.source();
+    }
+
+    false
 }
