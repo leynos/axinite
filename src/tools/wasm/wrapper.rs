@@ -1252,7 +1252,7 @@ mod tests {
     use crate::tools::wasm::runtime::{WasmRuntimeConfig, WasmToolRuntime};
 
     #[fixture]
-    async fn github_wrapper() -> WasmToolWrapper {
+    async fn github_wrapper() -> anyhow::Result<WasmToolWrapper> {
         github_wasm_wrapper().await
     }
 
@@ -1715,9 +1715,9 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn malformed_first_call_returns_fallback_guidance(
-        #[future] github_wrapper: WasmToolWrapper,
-    ) {
-        let wrapper = github_wrapper.await;
+        #[future] github_wrapper: anyhow::Result<WasmToolWrapper>,
+    ) -> anyhow::Result<()> {
+        let wrapper = github_wrapper.await?;
         let error = wrapper
             .execute_sync(serde_json::json!({}), None, Vec::new())
             .expect_err("missing required action should fail");
@@ -1735,14 +1735,16 @@ mod tests {
             }
             other => panic!("expected ToolReturnedError, got {other:?}"),
         }
+
+        Ok(())
     }
 
     #[rstest]
     #[tokio::test]
     async fn malformed_first_call_uses_wrapper_advertised_schema_in_fallback_guidance(
-        #[future] github_wrapper: WasmToolWrapper,
-    ) {
-        let wrapper = github_wrapper.await.with_schema(serde_json::json!({
+        #[future] github_wrapper: anyhow::Result<WasmToolWrapper>,
+    ) -> anyhow::Result<()> {
+        let wrapper = github_wrapper.await?.with_schema(serde_json::json!({
             "type": "object",
             "properties": {
                 "operation": { "type": "string" }
@@ -1762,6 +1764,8 @@ mod tests {
             }
             other => panic!("expected ToolReturnedError, got {other:?}"),
         }
+
+        Ok(())
     }
 
     #[tokio::test]

@@ -318,16 +318,16 @@ mod tests {
     }
 
     #[fixture]
-    async fn github_wrapper() -> WasmToolWrapper {
+    async fn github_wrapper() -> anyhow::Result<WasmToolWrapper> {
         github_wasm_wrapper().await
     }
 
     #[rstest]
     #[tokio::test]
     async fn test_exported_metadata_from_real_github_component(
-        #[future] github_wrapper: WasmToolWrapper,
-    ) {
-        let wrapper = github_wrapper.await;
+        #[future] github_wrapper: anyhow::Result<WasmToolWrapper>,
+    ) -> anyhow::Result<()> {
+        let wrapper = github_wrapper.await?;
 
         let (description, schema) = wrapper
             .exported_metadata()
@@ -358,18 +358,22 @@ mod tests {
             schema["properties"]["owner"]["type"],
             serde_json::json!("string")
         );
+
+        Ok(())
     }
 
     #[rstest]
     #[tokio::test]
     async fn wasm_tool_wrapper_reports_wasm_catalog_source(
-        #[future] github_wrapper: WasmToolWrapper,
-    ) {
-        let wrapper = github_wrapper.await;
+        #[future] github_wrapper: anyhow::Result<WasmToolWrapper>,
+    ) -> anyhow::Result<()> {
+        let wrapper = github_wrapper.await?;
 
         assert_eq!(
             wrapper.hosted_tool_catalog_source(),
             Some(HostedToolCatalogSource::Wasm)
         );
+
+        Ok(())
     }
 }

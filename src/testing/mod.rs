@@ -30,6 +30,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+use anyhow::Result;
 use rust_decimal::Decimal;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
@@ -80,16 +81,17 @@ pub async fn test_db() -> (Arc<dyn Database>, TempDir) {
 ///
 /// Tests use this helper to avoid duplicating the fixture runtime wiring in
 /// each module that needs a real WASM component instance.
-pub async fn github_wasm_wrapper() -> WasmToolWrapper {
-    let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
-    let runtime = metadata_test_runtime().expect("create metadata test runtime");
-    let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm artifact");
-    let prepared = runtime
-        .prepare("github", &wasm_bytes, None)
-        .await
-        .expect("prepare github wasm component");
+pub async fn github_wasm_wrapper() -> Result<WasmToolWrapper> {
+    let wasm_path = github_wasm_artifact()?;
+    let runtime = metadata_test_runtime()?;
+    let wasm_bytes = std::fs::read(&wasm_path)?;
+    let prepared = runtime.prepare("github", &wasm_bytes, None).await?;
 
-    WasmToolWrapper::new(runtime, prepared, Capabilities::default())
+    Ok(WasmToolWrapper::new(
+        runtime,
+        prepared,
+        Capabilities::default(),
+    ))
 }
 
 /// What kind of error the stub should produce when failing.
