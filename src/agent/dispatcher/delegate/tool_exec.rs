@@ -350,6 +350,48 @@ async fn tool_requires_approval(
     }
 }
 
+/// The outcome of pre-flight classification for a single tool call.
+enum ToolCallOutcome {
+    /// The before-hook rejected this call with a message.
+    Rejected(String),
+    /// The call requires user approval before it may run.
+    NeedsApproval(ApprovalCandidate),
+    /// The call is cleared to run immediately.
+    Runnable,
+}
+
+async fn classify_tool_call(
+    delegate: &ChatDelegate<'_>,
+    idx: usize,
+    original_tc: &crate::llm::ToolCall,
+    tc: &mut crate::llm::ToolCall,
+) -> ToolCallOutcome {
+    let tool_opt = delegate.agent.tools().get(&tc.name).await;
+    let sensitive = tool_opt
+        .as_ref()
+        .map(|t| t.sensitive_params())
+        .unwrap_or(&[]);
+
+    if let Some(rejection_msg) =
+        apply_before_tool_call_hook(delegate, original_tc, tc, sensitive).await
+    {
+        return ToolCallOutcome::Rejected(rejection_msg);
+    }
+
+    if !delegate.agent.config.auto_approve_tools
+        && let Some(tool) = tool_opt
+        && tool_requires_approval(delegate, &tool, tc).await
+    {
+        return ToolCallOutcome::NeedsApproval(ApprovalCandidate {
+            idx,
+            tool_call: tc.clone(),
+            tool,
+        });
+    }
+
+    ToolCallOutcome::Runnable
+}
+
 /// Group tool calls into preflight outcomes and runnable batch.
 async fn group_tool_calls(
     delegate: &ChatDelegate<'_>,
@@ -362,41 +404,20 @@ async fn group_tool_calls(
     for (idx, original_tc) in tool_calls.iter().enumerate() {
         let mut tc = original_tc.clone();
 
-        let tool_opt = delegate.agent.tools().get(&tc.name).await;
-        let sensitive = tool_opt
-            .as_ref()
-            .map(|t| t.sensitive_params())
-            .unwrap_or(&[]);
-
-        // Hook: BeforeToolCall
-        if let Some(rejection_msg) =
-            apply_before_tool_call_hook(delegate, original_tc, &mut tc, sensitive).await
-        {
-            preflight.push((tc, PreflightOutcome::Rejected(rejection_msg)));
-            continue;
-        }
-
-        // Check if tool requires approval
-        if !delegate.agent.config.auto_approve_tools
-            && let Some(tool) = tool_opt
-        {
-            if tool_requires_approval(delegate, &tool, &tc).await {
-                approval_needed = Some(ApprovalCandidate {
-                    idx,
-                    tool_call: tc,
-                    tool,
-                });
+        match classify_tool_call(delegate, idx, original_tc, &mut tc).await {
+            ToolCallOutcome::Rejected(msg) => {
+                preflight.push((tc, PreflightOutcome::Rejected(msg)));
+            }
+            ToolCallOutcome::NeedsApproval(candidate) => {
+                approval_needed = Some(candidate);
                 break;
             }
-            let preflight_idx = preflight.len();
-            preflight.push((tc.clone(), PreflightOutcome::Runnable));
-            runnable.push((preflight_idx, tc));
-            continue;
+            ToolCallOutcome::Runnable => {
+                let pf_idx = preflight.len();
+                preflight.push((tc.clone(), PreflightOutcome::Runnable));
+                runnable.push((pf_idx, tc));
+            }
         }
-
-        let preflight_idx = preflight.len();
-        preflight.push((tc.clone(), PreflightOutcome::Runnable));
-        runnable.push((preflight_idx, tc));
     }
 
     Ok((
