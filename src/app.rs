@@ -416,7 +416,7 @@ impl AppBuilder {
         Ok((safety, tools, embeddings, workspace))
     }
 
-    /// Phase 5: Initialise the skills system.
+    /// Phase 5: Initialize the skills system.
     pub async fn init_skills(
         &self,
         tools: &Arc<ToolRegistry>,
@@ -491,7 +491,7 @@ impl AppBuilder {
         self.init_llm().await
     }
 
-    /// Phase 7: Initialise runtime metering (context manager and cost guard).
+    /// Phase 7: Initialize runtime metering (context manager and cost guard).
     fn init_metering(
         &self,
     ) -> (

@@ -920,7 +920,7 @@ async fn run_onboard_subcommand(
     #[cfg(not(any(feature = "postgres", feature = "libsql")))]
     {
         let _ = (skip_auth, channels_only, provider_only, quick);
-        eprintln!("Onboarding wizard requires the 'postgres' or 'libsql' feature.");
+        anyhow::bail!("Onboarding wizard requires the 'postgres' or 'libsql' feature.");
     }
     Ok(())
 }
@@ -1020,8 +1020,16 @@ async fn setup_gateway_channel(
                 let mut rx = tx.subscribe();
                 let gw_state = Arc::clone(gw.state());
                 tokio::spawn(async move {
-                    while let Ok((_job_id, event)) = rx.recv().await {
-                        gw_state.sse.broadcast(event);
+                    loop {
+                        match rx.recv().await {
+                            Ok((_job_id, event)) => {
+                                gw_state.sse.broadcast(event);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                                tracing::warn!(skipped, "Gateway job-event stream lagged");
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        }
                     }
                 });
             }
