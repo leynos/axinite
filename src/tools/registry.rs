@@ -4,6 +4,7 @@ mod builtins;
 mod hosted;
 mod loader;
 mod names;
+mod schema;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

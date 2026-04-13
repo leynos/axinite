@@ -36,3 +36,6 @@ trace_*.json
 
 # GrepAI index
 .grepai/
+
+# Pending snapshot files (transient test artifacts)
+*.pending-snap

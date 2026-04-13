@@ -1,3 +1,17 @@
+//! WASM tool loading and registration.
+//!
+//! This module owns the [`ToolRegistry`] struct and its associated WASM
+//! registration methods. It is responsible for:
+//!
+//! - Compiling and preparing raw WASM bytes via [`WasmToolRuntime`].
+//! - Recovering or overriding guest-exported metadata (description and
+//!   parameter schema) when stored overrides are absent.
+//! - Attaching runtime concerns such as secrets injection and OAuth
+//!   refresh configuration.
+//! - Registering tools from persistent storage by fetching the stored
+//!   record and binary, normalizing metadata via [`schema::normalized_schema`],
+//!   and delegating to [`ToolRegistry::register_wasm`].
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -12,7 +26,7 @@ use crate::tools::wasm::{
     WasmStorageError, WasmToolRuntime, WasmToolStore, WasmToolWrapper,
 };
 
-use super::{PROTECTED_TOOL_NAMES, is_protected_tool_name};
+use super::{PROTECTED_TOOL_NAMES, is_protected_tool_name, schema::normalized_schema};
 
 pub struct WasmFromStorageRegistration<'a> {
     pub store: &'a dyn WasmToolStore,
@@ -452,38 +466,4 @@ fn apply_wasm_overrides(
 fn normalized_description(description: &str) -> Option<&str> {
     let trimmed = description.trim();
     (!trimmed.is_empty()).then_some(trimmed)
-}
-
-fn normalized_schema(schema: serde_json::Value) -> Option<serde_json::Value> {
-    use crate::tools::wasm::is_placeholder_schema;
-
-    match schema {
-        serde_json::Value::Null => None,
-        serde_json::Value::String(value) => {
-            let trimmed = value.trim();
-            if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("null") {
-                None
-            } else {
-                // Attempt to parse JSON strings for backends that return text
-                match serde_json::from_str(trimmed) {
-                    Ok(parsed) => {
-                        // Check if the parsed value is a placeholder
-                        if is_placeholder_schema(&parsed) {
-                            None
-                        } else {
-                            Some(parsed)
-                        }
-                    }
-                    Err(_) => Some(serde_json::Value::String(trimmed.to_string())),
-                }
-            }
-        }
-        value => {
-            // Treat placeholder schemas as missing so guest export recovery runs.
-            if is_placeholder_schema(&value) {
-                return None;
-            }
-            Some(value)
-        }
-    }
 }

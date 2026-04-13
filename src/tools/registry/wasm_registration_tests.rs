@@ -1,6 +1,7 @@
 //! Regression tests for proactive WASM schema publication during registration.
 
 use chrono::Utc;
+use rstest::rstest;
 use uuid::Uuid;
 
 use super::{ToolRegistry, WasmFromStorageRegistration};
@@ -12,12 +13,26 @@ use crate::tools::wasm::{
     WasmStorageError,
 };
 
+#[rstest]
+#[case(
+    serde_json::from_str(&crate::tools::wasm::placeholder_json()).expect("parse placeholder JSON")
+)]
+#[case(serde_json::Value::Null)]
 #[tokio::test]
-async fn register_wasm_from_storage_publishes_guest_schema_when_storage_schema_is_null() {
+async fn register_wasm_from_storage_recovers_guest_schema_for_absent_or_placeholder_schema(
+    #[case] parameters_schema: serde_json::Value,
+) {
+    // Null or placeholder schemas trigger guest export recovery.
     let registry = ToolRegistry::new();
     let runtime = metadata_test_runtime().expect("create metadata test runtime");
     let wasm_binary = github_wasm_bytes();
-    let store = StubWasmToolStore::new(wasm_binary, serde_json::Value::Null);
+
+    assert!(
+        super::schema::normalized_schema(parameters_schema.clone()).is_none(),
+        "schema should normalize to None to trigger recovery"
+    );
+
+    let store = StubWasmToolStore::new(wasm_binary, parameters_schema);
 
     registry
         .register_wasm_from_storage(WasmFromStorageRegistration {
@@ -29,14 +44,14 @@ async fn register_wasm_from_storage_publishes_guest_schema_when_storage_schema_i
         .await
         .expect("register wasm tool from storage");
 
-    assert_real_github_schema(
-        registry
-            .tool_definitions()
-            .await
-            .into_iter()
-            .find(|definition| definition.name == "github")
-            .expect("github definition should be registered"),
-    );
+    let definition = registry
+        .tool_definitions()
+        .await
+        .into_iter()
+        .find(|definition| definition.name == "github")
+        .expect("github definition should be registered");
+
+    assert_real_github_schema(definition);
 }
 
 fn github_wasm_bytes() -> Vec<u8> {
