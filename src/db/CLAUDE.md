@@ -88,7 +88,7 @@ The `Database` supertrait is composed of seven sub-traits. Leaf consumers can de
 | Numeric/Decimal | `NUMERIC` | `TEXT` (preserves `rust_decimal` precision) |
 | Arrays | `TEXT[]` | `TEXT` (JSON-encoded array) |
 | Booleans | `BOOLEAN` | `INTEGER` (0/1) |
-| Vector embeddings | `VECTOR` (any dim, V9 removed fixed 1536) | `F32_BLOB(1536)` via `libsql_vector_idx` |
+| Vector embeddings | `VECTOR` (any dim, V9 removed fixed 1536) | `BLOB`; V9 dropped `libsql_vector_idx`, so `vector_top_k(...)` falls back to brute-force cosine similarity in Rust when unavailable |
 | Full-text search | `tsvector` + `ts_rank_cd` | FTS5 virtual table + sync triggers |
 | JSON path update | `jsonb_set(col, '{key}', val)` | `json_patch(col, '{"key": val}')` |
 | PL/pgSQL | Functions | Triggers (no stored procs in SQLite) |

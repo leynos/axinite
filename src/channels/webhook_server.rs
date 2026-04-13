@@ -59,9 +59,13 @@ impl WebhookServer {
     }
 
     /// Accept a pre-bound listener, merge route fragments, and spawn the
-    /// server. Eliminates the TOCTOU window that `start()` has between port
-    /// discovery and the actual bind, making it suitable for tests that
-    /// allocate ephemeral ports.
+    /// server.
+    ///
+    /// Unlike [`Self::start`], this test-only entrypoint accepts a listener
+    /// that is already bound, eliminating the TOCTOU window between external
+    /// test port allocation and the server bind. That makes it suitable for
+    /// tests that reserve ephemeral ports before handing ownership to the
+    /// server.
     #[cfg(test)]
     pub async fn start_with_listener(
         &mut self,
@@ -359,6 +363,65 @@ mod tests {
             response.status(),
             200,
             "Server should respond to health check after start()"
+        );
+
+        server.shutdown().await;
+        Ok(())
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_and_restart_with_addr_use_production_bind_path()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut server = WebhookServer::new(WebhookServerConfig {
+            addr: "127.0.0.1:0".parse()?,
+        });
+        server.add_routes(Router::new().route(
+            "/health",
+            axum::routing::get(|| async { Json(json!({"status": "ok"})) }),
+        ));
+
+        server.start().await?;
+        let addr1 = server.current_addr();
+        assert_ne!(
+            addr1.port(),
+            0,
+            "Server should resolve the initial ephemeral bind to a concrete port"
+        );
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!("http://{}/health", addr1))
+            .send()
+            .await?;
+        assert_eq!(
+            response.status(),
+            200,
+            "Server should respond to health check after start()"
+        );
+
+        let restart_addr: SocketAddr = "127.0.0.1:0".parse()?;
+        server.restart_with_addr(restart_addr).await?;
+        let addr2 = server.current_addr();
+
+        assert_ne!(
+            addr2.port(),
+            0,
+            "Server should resolve the restarted ephemeral bind to a concrete port"
+        );
+        assert_ne!(
+            addr1, addr2,
+            "Address should change after restart_with_addr"
+        );
+
+        let response = client
+            .get(format!("http://{}/health", addr2))
+            .send()
+            .await?;
+        assert_eq!(
+            response.status(),
+            200,
+            "Server should respond to health check after restart_with_addr"
         );
 
         server.shutdown().await;

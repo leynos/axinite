@@ -139,6 +139,15 @@ impl LibSqlBackend {
             if chunk_embedding.is_empty() {
                 continue;
             }
+            if chunk_embedding.len() != query_embedding.len() {
+                tracing::debug!(
+                    "Skipping chunk {} because embedding dimension {} does not match query dimension {}",
+                    chunk_id,
+                    chunk_embedding.len(),
+                    query_embedding.len()
+                );
+                continue;
+            }
 
             // Compute cosine similarity
             let similarity = cosine_similarity(query_embedding, &chunk_embedding);
@@ -979,5 +988,54 @@ mod tests {
         assert_eq!(results[0].fts_rank, Some(1));
         assert_eq!(results[0].vector_rank, Some(1));
         assert!(results[0].is_hybrid());
+    }
+
+    #[tokio::test]
+    async fn brute_force_vector_search_skips_mismatched_embedding_dimensions() {
+        use crate::db::{InsertChunkParams, NativeDatabase, NativeWorkspaceStore};
+
+        let tempdir = tempfile::tempdir().expect("failed to create tempdir");
+        let backend = LibSqlBackend::new_local(&tempdir.path().join("workspace.db"))
+            .await
+            .expect("failed to create local libsql backend");
+        backend
+            .run_migrations()
+            .await
+            .expect("failed to run libsql migrations");
+
+        let document = backend
+            .get_or_create_document_by_path("default", None, "notes/mixed-dim.md")
+            .await
+            .expect("failed to create mixed-dimension search document");
+        backend
+            .update_document(document.id, "mixed dimension vector search test")
+            .await
+            .expect("failed to update mixed-dimension search document");
+        backend
+            .insert_chunk(InsertChunkParams {
+                document_id: document.id,
+                chunk_index: 0,
+                content: "same-dimension chunk",
+                embedding: Some(&[1.0, 0.0, 0.0]),
+            })
+            .await
+            .expect("failed to insert same-dimension chunk");
+        backend
+            .insert_chunk(InsertChunkParams {
+                document_id: document.id,
+                chunk_index: 1,
+                content: "different-dimension chunk",
+                embedding: Some(&[1.0, 0.0]),
+            })
+            .await
+            .expect("failed to insert different-dimension chunk");
+
+        let results = backend
+            .brute_force_vector_search("default", None, &[1.0, 0.0, 0.0], 10)
+            .await
+            .expect("failed to run brute-force vector search");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].content, "same-dimension chunk");
     }
 }
