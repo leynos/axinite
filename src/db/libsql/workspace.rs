@@ -32,7 +32,13 @@ enum VectorSearchOutcome {
 }
 
 fn is_missing_vector_index_error(error: &libsql::Error) -> bool {
-    let error_message = error.to_string().to_ascii_lowercase();
+    let sqlite_message = match error {
+        libsql::Error::SqliteFailure(_, message)
+        | libsql::Error::RemoteSqliteFailure(_, _, message) => message,
+        _ => return false,
+    };
+
+    let error_message = sqlite_message.to_ascii_lowercase();
 
     error_message.contains("vector_top_k")
         || error_message.contains("no such function")
