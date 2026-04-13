@@ -3,14 +3,13 @@
 use crate::config::{DatabaseBackend, DatabaseConfig, SslMode};
 use crate::db::postgres::PgBackend;
 use crate::error::DatabaseError;
+use deadpool_postgres::PoolError;
 use secrecy::SecretString;
 
 // These substrings are limited to concrete local transport and name-resolution
 // failures observed when a test Postgres instance is absent. We intentionally
 // exclude generic timeout wording so TLS, authentication, and other
 // misconfiguration-related delays still fail loudly instead of being skipped.
-use std::error::Error as _;
-use deadpool_postgres::PoolError;
 const UNAVAILABLE_PATTERNS: &[&str] = &[
     "connection refused",
     "failed to lookup address information",
@@ -20,6 +19,12 @@ const UNAVAILABLE_PATTERNS: &[&str] = &[
     "no such file or directory",
     "could not connect to server",
 ];
+
+// `tokio_postgres` reports some connection stalls only on the top-level error
+// text without a source chain. We treat this one transport timeout as an
+// unavailable server so test fixtures skip slow or absent local Postgres
+// instances, while leaving broader timeout wording out of the shared matcher.
+const POSTGRES_TOP_LEVEL_TIMEOUT_PATTERNS: &[&str] = &["timeout waiting for server"];
 
 /// Create a PostgreSQL-backed test database.
 ///
@@ -94,6 +99,40 @@ fn error_chain_has_unavailable_pattern(error: &dyn std::error::Error) -> bool {
     error_has_unavailable_pattern(error) || error_source_chain_has_unavailable_pattern(error)
 }
 
+fn is_postgres_unavailable(error: &tokio_postgres::Error) -> bool {
+    error.is_closed()
+        || error_has_unavailable_pattern(error)
+        || postgres_error_has_top_level_timeout_pattern(error)
+        || error_source_chain_has_unavailable_pattern(error)
+}
+
+fn postgres_error_has_top_level_timeout_pattern(error: &tokio_postgres::Error) -> bool {
+    let lowered = error.to_string().to_lowercase();
+    POSTGRES_TOP_LEVEL_TIMEOUT_PATTERNS
+        .iter()
+        .any(|pattern| lowered.contains(pattern))
+}
+
+fn error_has_unavailable_pattern(error: &dyn std::error::Error) -> bool {
+    let lowered = error.to_string().to_lowercase();
+    UNAVAILABLE_PATTERNS
+        .iter()
+        .any(|pattern| lowered.contains(pattern))
+}
+
+fn error_source_chain_has_unavailable_pattern(error: &dyn std::error::Error) -> bool {
+    let mut current = error.source();
+    while let Some(source) = current {
+        if error_has_unavailable_pattern(source) {
+            return true;
+        }
+        current = source.source();
+    }
+
+    false
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use deadpool_postgres::TimeoutType;
@@ -139,29 +178,4 @@ mod tests {
             "post-create hook errors with unavailable connection messages should be skippable"
         );
     }
-}
-
-fn is_postgres_unavailable(error: &tokio_postgres::Error) -> bool {
-    error.is_closed()
-        || error_has_unavailable_pattern(error)
-        || error_source_chain_has_unavailable_pattern(error)
-}
-
-fn error_has_unavailable_pattern(error: &dyn std::error::Error) -> bool {
-    let lowered = error.to_string().to_lowercase();
-    UNAVAILABLE_PATTERNS
-        .iter()
-        .any(|pattern| lowered.contains(pattern))
-}
-
-fn error_source_chain_has_unavailable_pattern(error: &dyn std::error::Error) -> bool {
-    let mut current = error.source();
-    while let Some(source) = current {
-        if error_has_unavailable_pattern(source) {
-            return true;
-        }
-        current = source.source();
-    }
-
-    false
 }

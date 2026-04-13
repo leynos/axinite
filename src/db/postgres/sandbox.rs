@@ -43,10 +43,10 @@ impl NativeSandboxStore for PgBackend {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use chrono::{TimeZone, Utc};
 
     #[test]
-
     fn test_sandbox_job_status_update_destructuring() {
         // This test verifies that the SandboxJobStatusUpdate struct is correctly
         // destructured and all fields are passed through to the underlying store method.
@@ -89,7 +89,6 @@ mod tests {
     }
 
     #[cfg(feature = "postgres")]
-
     mod behavioral {
         //! Behavioural tests for `NativeSandboxStore` on `PgBackend`.
         //!

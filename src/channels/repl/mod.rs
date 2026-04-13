@@ -261,7 +261,44 @@ impl NativeChannel for ReplChannel {
         &self,
         _msg: &IncomingMessage,
         response: OutgoingResponse,
+    ) -> Result<(), ChannelError> {
+        let width = crossterm::terminal::size()
+            .map(|(w, _)| w as usize)
+            .unwrap_or(80);
 
+        // If we were streaming, the content was already printed via StreamChunk.
+        // Just finish the line and reset.
+        if self.is_streaming.swap(false, Ordering::Relaxed) {
+            println!();
+            println!();
+            return Ok(());
+        }
+
+        // Dim separator line before the response
+        let sep_width = width.min(80);
+        eprintln!("\x1b[90m{}\x1b[0m", "\u{2500}".repeat(sep_width));
+
+        let skin = make_skin();
+        let text = termimad::FmtText::from(&skin, &response.content, Some(width));
+
+        print!("{text}");
+        println!();
+        Ok(())
+    }
+
+    async fn send_status(
+        &self,
+        status: StatusUpdate,
+        _metadata: &serde_json::Value,
+    ) -> Result<(), ChannelError> {
+        dispatch_status_update(status, &self.is_streaming, self.is_debug());
+        Ok(())
+    }
+
+    async fn broadcast(
+        &self,
+        _user_id: &str,
+        response: OutgoingResponse,
     ) -> Result<(), ChannelError> {
         let skin = make_skin();
         let width = crossterm::terminal::size()
@@ -274,16 +311,6 @@ impl NativeChannel for ReplChannel {
         eprintln!();
         Ok(())
     }
-
-    async fn send_status(
-        &self,
-        status: StatusUpdate,
-        _metadata: &serde_json::Value,
-
-    async fn broadcast(
-        &self,
-        _user_id: &str,
-        response: OutgoingResponse,
 
     async fn health_check(&self) -> Result<(), ChannelError> {
         Ok(())
