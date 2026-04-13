@@ -316,7 +316,7 @@ required by the repository instructions.
    surfaces. Use stable log filenames keyed by the branch name.
 
    ```plaintext
-   BRANCH_SLUG=$(git branch --show | tr '/' '-')
+   BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
    cargo test wasm_tool --lib \
      | tee /tmp/test-wasm-contract-axinite-${BRANCH_SLUG}.out
    cargo test remote_tool_ --lib \
@@ -330,14 +330,14 @@ required by the repository instructions.
 3. Run the full repository gate.
 
    ```plaintext
-   BRANCH_SLUG=$(git branch --show | tr '/' '-')
+   BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
    make all | tee /tmp/make-all-axinite-${BRANCH_SLUG}.out
    ```
 
 4. Run Markdown validation for every changed document.
 
    ```plaintext
-   BRANCH_SLUG=$(git branch --show | tr '/' '-')
+   BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
    bunx markdownlint-cli2 \
      docs/execplans/1-2-3-demote-schema-bearing-retry-hints.md \
      docs/roadmap.md \
@@ -352,7 +352,7 @@ required by the repository instructions.
 5. Run the diff hygiene check.
 
    ```plaintext
-   BRANCH_SLUG=$(git branch --show | tr '/' '-')
+   BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
    git diff --check | tee /tmp/diff-check-axinite-${BRANCH_SLUG}.out
    ```
 
