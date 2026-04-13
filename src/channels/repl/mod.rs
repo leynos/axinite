@@ -20,10 +20,12 @@
 mod common;
 mod formatting;
 mod input;
+#[cfg(test)]
+#[allow(dead_code)]
 mod status_output;
 #[cfg(test)]
 mod tests;
-use std::io::IsTerminal;
+use std::io::{self, IsTerminal, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -38,10 +40,12 @@ use crate::channels::{
     IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
 };
 use crate::error::ChannelError;
+use crate::{agent::truncate_for_preview, channels::StatusUpdate::StreamChunk};
 
+use common::sanitize_for_terminal;
 use formatting::{make_skin, print_help};
+use formatting::{ToolApprovalRequest, render_approval_card};
 use input::{EscInterruptHandler, ReplHelper};
-use status_output::dispatch_status_update;
 
 /// REPL channel with line editing and markdown rendering.
 pub struct ReplChannel {
@@ -83,6 +87,111 @@ impl ReplChannel {
 
     fn is_debug(&self) -> bool {
         self.debug_mode.load(Ordering::Relaxed)
+    }
+
+    fn print_thinking(msg: &str) {
+        let display = truncate_for_preview(msg, 200);
+        eprintln!("  \x1b[90m\u{25CB} {display}\x1b[0m");
+    }
+
+    fn print_tool_started(name: &str) {
+        eprintln!("  \x1b[33m\u{25CB} {name}\x1b[0m");
+    }
+
+    fn print_tool_completed(name: &str, success: bool) {
+        let sanitized_name = sanitize_for_terminal(name);
+        if success {
+            eprintln!("  \x1b[32m\u{25CF} {sanitized_name}\x1b[0m");
+        } else {
+            eprintln!("  \x1b[31m\u{2717} {sanitized_name} (failed)\x1b[0m");
+        }
+    }
+
+    fn print_tool_result(preview: &str) {
+        let display = truncate_for_preview(preview, 200);
+        eprintln!("    \x1b[90m{display}\x1b[0m");
+    }
+
+    fn print_stream_chunk(&self, chunk: &str) {
+        if !self.is_streaming.swap(true, Ordering::Relaxed) {
+            let width = crossterm::terminal::size()
+                .map(|(w, _)| w as usize)
+                .unwrap_or(80);
+            eprintln!("\x1b[90m{}\x1b[0m", "\u{2500}".repeat(width.min(80)));
+        }
+        print!("{chunk}");
+        let _ = io::stdout().flush();
+    }
+
+    fn print_job_started(job_id: &str, title: &str, browse_url: &str) {
+        let sanitized_title = sanitize_for_terminal(title);
+        let sanitized_job_id = sanitize_for_terminal(job_id);
+        let sanitized_url = sanitize_for_terminal(browse_url);
+        eprintln!(
+            "  \x1b[36m[job]\x1b[0m {sanitized_title} \x1b[90m({sanitized_job_id})\x1b[0m \x1b[4m{sanitized_url}\x1b[0m"
+        );
+    }
+
+    fn print_status_message(msg: &str, debug: bool) {
+        if debug || msg.contains("approval") || msg.contains("Approval") {
+            let sanitized_msg = sanitize_for_terminal(msg);
+            let display = truncate_for_preview(&sanitized_msg, 200);
+            eprintln!("  \x1b[90m{display}\x1b[0m");
+        }
+    }
+
+    fn print_approval_needed(
+        request_id: &str,
+        tool_name: &str,
+        description: &str,
+        parameters: &serde_json::Value,
+    ) {
+        let request = ToolApprovalRequest {
+            request_id,
+            tool_name,
+            description,
+        };
+        for line in render_approval_card(&request, parameters) {
+            eprintln!("{line}");
+        }
+    }
+
+    fn print_auth_required(
+        extension_name: &str,
+        instructions: Option<&str>,
+        setup_url: Option<&str>,
+    ) {
+        let sanitized_ext_name = sanitize_for_terminal(extension_name);
+        eprintln!();
+        eprintln!("\x1b[33m  Authentication required for {sanitized_ext_name}\x1b[0m");
+        if let Some(instr) = instructions {
+            let sanitized_instr = sanitize_for_terminal(instr);
+            eprintln!("  {sanitized_instr}");
+        }
+        if let Some(url) = setup_url {
+            let sanitized_url = sanitize_for_terminal(url);
+            eprintln!("  \x1b[4m{sanitized_url}\x1b[0m");
+        }
+        eprintln!();
+    }
+
+    fn print_auth_completed(extension_name: &str, success: bool, message: &str) {
+        let sanitized_ext_name = sanitize_for_terminal(extension_name);
+        let sanitized_message = sanitize_for_terminal(message);
+        if success {
+            eprintln!("\x1b[32m  {sanitized_ext_name}: {sanitized_message}\x1b[0m");
+        } else {
+            eprintln!("\x1b[31m  {sanitized_ext_name}: {sanitized_message}\x1b[0m");
+        }
+    }
+
+    fn print_image_generated(path: Option<&str>) {
+        if let Some(p) = path {
+            let sanitized_path = sanitize_for_terminal(p);
+            eprintln!("\x1b[36m  [image] {sanitized_path}\x1b[0m");
+        } else {
+            eprintln!("\x1b[36m  [image generated]\x1b[0m");
+        }
     }
 }
 
@@ -291,7 +400,46 @@ impl NativeChannel for ReplChannel {
         status: StatusUpdate,
         _metadata: &serde_json::Value,
     ) -> Result<(), ChannelError> {
-        dispatch_status_update(status, &self.is_streaming, self.is_debug());
+        match status {
+            StatusUpdate::Thinking(msg) => Self::print_thinking(&msg),
+            StatusUpdate::ToolStarted { name } => Self::print_tool_started(&name),
+            StatusUpdate::ToolCompleted {
+                name,
+                success,
+                error: _,
+                parameters: _,
+            } => Self::print_tool_completed(&name, success),
+            StatusUpdate::ToolResult { name: _, preview } => Self::print_tool_result(&preview),
+            StreamChunk(chunk) => self.print_stream_chunk(&chunk),
+            StatusUpdate::JobStarted {
+                job_id,
+                title,
+                browse_url,
+            } => Self::print_job_started(&job_id, &title, &browse_url),
+            StatusUpdate::Status(msg) => Self::print_status_message(&msg, self.is_debug()),
+            StatusUpdate::ApprovalNeeded {
+                request_id,
+                tool_name,
+                description,
+                parameters,
+            } => Self::print_approval_needed(&request_id, &tool_name, &description, &parameters),
+            StatusUpdate::AuthRequired {
+                extension_name,
+                instructions,
+                auth_url: _,
+                setup_url,
+            } => Self::print_auth_required(
+                &extension_name,
+                instructions.as_deref(),
+                setup_url.as_deref(),
+            ),
+            StatusUpdate::AuthCompleted {
+                extension_name,
+                success,
+                message,
+            } => Self::print_auth_completed(&extension_name, success, &message),
+            StatusUpdate::ImageGenerated { path, .. } => Self::print_image_generated(path.as_deref()),
+        }
         Ok(())
     }
 
