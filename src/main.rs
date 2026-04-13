@@ -42,63 +42,11 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<bool> {
+    if let Some(dispatched) = dispatch_cli_subcommand(cli).await? {
+        return Ok(dispatched);
+    }
+
     match &cli.command {
-        Some(Command::Tool(c)) => {
-            init_cli_tracing();
-            run_tool_command(c.clone()).await?;
-            Ok(true)
-        }
-        Some(Command::Config(c)) => {
-            init_cli_tracing();
-            ironclaw::cli::run_config_command(c.clone()).await?;
-            Ok(true)
-        }
-        Some(Command::Registry(c)) => {
-            init_cli_tracing();
-            ironclaw::cli::run_registry_command(c.clone()).await?;
-            Ok(true)
-        }
-        Some(Command::Mcp(c)) => {
-            init_cli_tracing();
-            run_mcp_command(*c.clone()).await?;
-            Ok(true)
-        }
-        Some(Command::Memory(c)) => {
-            init_cli_tracing();
-            ironclaw::cli::run_memory_command(c).await?;
-            Ok(true)
-        }
-        Some(Command::Pairing(c)) => {
-            init_cli_tracing();
-            run_pairing_command(c.clone()).map_err(|e| anyhow::anyhow!("{}", e))?;
-            Ok(true)
-        }
-        Some(Command::Service(c)) => {
-            init_cli_tracing();
-            run_service_command(c)?;
-            Ok(true)
-        }
-        Some(Command::Doctor) => {
-            init_cli_tracing();
-            ironclaw::cli::run_doctor_command().await?;
-            Ok(true)
-        }
-        Some(Command::Status) => {
-            init_cli_tracing();
-            run_status_command().await?;
-            Ok(true)
-        }
-        Some(Command::Completion(c)) => {
-            init_cli_tracing();
-            c.run()?;
-            Ok(true)
-        }
-        #[cfg(feature = "import")]
-        Some(Command::Import(c)) => {
-            init_cli_tracing();
-            run_import_subcommand(c).await?;
-            Ok(true)
-        }
         Some(Command::Worker {
             job_id,
             orchestrator_url,
@@ -126,6 +74,90 @@ async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<bool> {
             Ok(true)
         }
         None | Some(Command::Run) => Ok(false),
+        Some(
+            Command::Tool(_)
+            | Command::Config(_)
+            | Command::Registry(_)
+            | Command::Mcp(_)
+            | Command::Memory(_)
+            | Command::Pairing(_)
+            | Command::Service(_)
+            | Command::Doctor
+            | Command::Status
+            | Command::Completion(_),
+        ) => unreachable!("CLI subcommands should have been handled earlier"),
+        #[cfg(feature = "import")]
+        Some(Command::Import(_)) => {
+            unreachable!("CLI subcommands should have been handled earlier")
+        }
+    }
+}
+
+async fn run_traced_async<F, Fut>(f: F) -> anyhow::Result<bool>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
+{
+    init_cli_tracing();
+    f().await?;
+    Ok(true)
+}
+
+fn run_traced_sync<F>(f: F) -> anyhow::Result<bool>
+where
+    F: FnOnce() -> anyhow::Result<()>,
+{
+    init_cli_tracing();
+    f()?;
+    Ok(true)
+}
+
+async fn dispatch_cli_subcommand(cli: &Cli) -> anyhow::Result<Option<bool>> {
+    match &cli.command {
+        Some(Command::Tool(c)) => run_traced_async(|| async { run_tool_command(c.clone()).await })
+            .await
+            .map(Some),
+        Some(Command::Config(c)) => {
+            run_traced_async(|| async { ironclaw::cli::run_config_command(c.clone()).await })
+                .await
+                .map(Some)
+        }
+        Some(Command::Registry(c)) => {
+            run_traced_async(|| async { ironclaw::cli::run_registry_command(c.clone()).await })
+                .await
+                .map(Some)
+        }
+        Some(Command::Mcp(c)) => run_traced_async(|| async { run_mcp_command(*c.clone()).await })
+            .await
+            .map(Some),
+        Some(Command::Memory(c)) => {
+            run_traced_async(|| async { ironclaw::cli::run_memory_command(c).await })
+                .await
+                .map(Some)
+        }
+        Some(Command::Pairing(c)) => {
+            run_traced_sync(|| run_pairing_command(c.clone()).map_err(|e| anyhow::anyhow!("{}", e)))
+                .map(Some)
+        }
+        Some(Command::Service(c)) => run_traced_sync(|| run_service_command(c)).map(Some),
+        Some(Command::Doctor) => {
+            run_traced_async(|| async { ironclaw::cli::run_doctor_command().await })
+                .await
+                .map(Some)
+        }
+        Some(Command::Status) => run_traced_async(|| async { run_status_command().await })
+            .await
+            .map(Some),
+        Some(Command::Completion(c)) => run_traced_sync(|| c.run()).map(Some),
+        #[cfg(feature = "import")]
+        Some(Command::Import(c)) => run_traced_async(|| async { run_import_subcommand(c).await })
+            .await
+            .map(Some),
+        Some(Command::Worker { .. })
+        | Some(Command::ClaudeBridge { .. })
+        | Some(Command::Onboard { .. })
+        | None
+        | Some(Command::Run) => Ok(None),
     }
 }
 
