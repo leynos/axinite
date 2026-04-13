@@ -238,16 +238,19 @@ mod tests {
         }
     }
 
-    fn minimal_boot_info() -> BootInfo {
+    /// Provides a BootInfo with all optional feature fields set to their
+    /// "disabled / none" state. Individual test helpers override only the
+    /// fields relevant to their scenario.
+    fn base_disabled_boot_info() -> BootInfo {
         BootInfo {
-            version: "0.2.0".to_string(),
-            agent_name: "ironclaw".to_string(),
-            llm_backend: "nearai".to_string(),
-            llm_model: "gpt-4o".to_string(),
+            version: String::new(),
+            agent_name: String::new(),
+            llm_backend: String::new(),
+            llm_model: String::new(),
             cheap_model: None,
-            db_backend: "none".to_string(),
+            db_backend: String::new(),
             db_connected: false,
-            tool_count: 5,
+            tool_count: 0,
             gateway_url: None,
             embeddings_enabled: false,
             embeddings_provider: None,
@@ -264,29 +267,29 @@ mod tests {
         }
     }
 
+    fn minimal_boot_info() -> BootInfo {
+        BootInfo {
+            version: "0.2.0".to_string(),
+            agent_name: "ironclaw".to_string(),
+            llm_backend: "nearai".to_string(),
+            llm_model: "gpt-4o".to_string(),
+            db_backend: "none".to_string(),
+            tool_count: 5,
+            ..base_disabled_boot_info()
+        }
+    }
+
     fn no_features_boot_info() -> BootInfo {
         BootInfo {
             version: "0.1.0".to_string(),
             agent_name: "test".to_string(),
             llm_backend: "openai".to_string(),
             llm_model: "gpt-4o".to_string(),
-            cheap_model: None,
             db_backend: "postgres".to_string(),
             db_connected: true,
             tool_count: 10,
-            gateway_url: None,
-            embeddings_enabled: false,
-            embeddings_provider: None,
-            heartbeat_enabled: false,
-            heartbeat_interval_secs: 0,
-            sandbox_enabled: false,
-            docker_status: DockerStatus::Disabled,
-            claude_code_enabled: false,
-            routines_enabled: false,
-            skills_enabled: false,
             channels: vec!["repl".to_string()],
-            tunnel_url: None,
-            tunnel_provider: None,
+            ..base_disabled_boot_info()
         }
     }
 
