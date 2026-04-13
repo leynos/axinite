@@ -239,8 +239,8 @@ impl WebhookServer {
 
     /// Return the server address currently stored in `self.config.addr`.
     ///
-    /// Before the first successful [`Self::start`], [`Self::start_with_listener`],
-    /// [`Self::restart_with_addr`], or [`Self::restart_with_listener`] call,
+    /// Before the first successful [`Self::start`], `start_with_listener`,
+    /// [`Self::restart_with_addr`], or `restart_with_listener` call,
     /// this is only the configured address and may not correspond to a live
     /// bound listener. After a successful start or restart, it reflects the
     /// actual bound address, including any OS-assigned port chosen for `:0`

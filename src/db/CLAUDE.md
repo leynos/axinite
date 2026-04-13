@@ -122,7 +122,9 @@ The `Database` supertrait is composed of seven sub-traits. Leaf consumers can de
 
 **Workspace/Memory:**
 - `memory_documents` — flexible path-based files
-- `memory_chunks` — chunked content with FTS + vector indexes
+- `memory_chunks` — chunked content with FTS; embeddings are stored as plain
+  BLOBs after V9, so `vector_top_k(...)` may fall back to brute-force cosine
+  similarity when the fixed-dimension vector index is unavailable
 - `memory_chunks_fts` — FTS5 virtual table (libSQL) / `tsvector` column (PostgreSQL)
 - `heartbeat_state` — periodic execution tracking
 

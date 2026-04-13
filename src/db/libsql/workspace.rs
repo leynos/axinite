@@ -106,6 +106,7 @@ impl LibSqlBackend {
         query_embedding: &[f32],
     ) -> Result<Vec<Candidate>, WorkspaceError> {
         let mut candidates = Vec::new();
+        let mut skipped_mismatched_dims = 0usize;
         while let Some(row) = rows
             .next()
             .await
@@ -140,12 +141,7 @@ impl LibSqlBackend {
                 continue;
             }
             if chunk_embedding.len() != query_embedding.len() {
-                tracing::debug!(
-                    "Skipping chunk {} because embedding dimension {} does not match query dimension {}",
-                    chunk_id,
-                    chunk_embedding.len(),
-                    query_embedding.len()
-                );
+                skipped_mismatched_dims += 1;
                 continue;
             }
 
@@ -160,6 +156,15 @@ impl LibSqlBackend {
                 similarity,
             });
         }
+
+        if skipped_mismatched_dims > 0 {
+            tracing::debug!(
+                "Brute-force vector search skipped {} candidates with embedding dimension mismatches (query dimension: {})",
+                skipped_mismatched_dims,
+                query_embedding.len()
+            );
+        }
+
         Ok(candidates)
     }
 
@@ -945,10 +950,9 @@ mod tests {
         use crate::db::{InsertChunkParams, NativeDatabase, NativeWorkspaceStore};
         use crate::workspace::SearchConfig;
 
-        let tempdir = tempfile::tempdir().expect("failed to create tempdir");
-        let backend = LibSqlBackend::new_local(&tempdir.path().join("workspace.db"))
+        let backend = LibSqlBackend::new_memory()
             .await
-            .expect("failed to create local libsql backend");
+            .expect("failed to create in-memory libsql backend");
         backend
             .run_migrations()
             .await
@@ -972,6 +976,18 @@ mod tests {
             .await
             .expect("failed to insert search test chunk");
 
+        let conn = backend
+            .connect()
+            .await
+            .expect("failed to open libsql connection for vector precondition");
+        let vector_outcome = vector_ranked_results(&conn, "default", None, &[1.0, 0.0, 0.0], 5)
+            .await
+            .expect("failed to run vector search precondition");
+        assert!(
+            matches!(vector_outcome, VectorSearchOutcome::IndexUnavailable),
+            "Test requires the vector-index-unavailable path before hybrid fallback assertions"
+        );
+
         let results = backend
             .hybrid_search(HybridSearchParams {
                 user_id: "default",
@@ -994,10 +1010,9 @@ mod tests {
     async fn brute_force_vector_search_skips_mismatched_embedding_dimensions() {
         use crate::db::{InsertChunkParams, NativeDatabase, NativeWorkspaceStore};
 
-        let tempdir = tempfile::tempdir().expect("failed to create tempdir");
-        let backend = LibSqlBackend::new_local(&tempdir.path().join("workspace.db"))
+        let backend = LibSqlBackend::new_memory()
             .await
-            .expect("failed to create local libsql backend");
+            .expect("failed to create in-memory libsql backend");
         backend
             .run_migrations()
             .await

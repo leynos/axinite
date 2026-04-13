@@ -15,7 +15,7 @@ mod sandbox;
 mod settings;
 mod tool_failures;
 mod workspace;
-
+use std::path::PathBuf;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -30,6 +30,7 @@ pub(crate) use helpers::{
     get_ts, opt_text, opt_text_owned, parse_job_state,
 };
 pub(crate) use row_conversion::row_to_memory_document;
+use uuid::Uuid;
 
 /// libSQL/Turso database backend.
 ///
@@ -38,6 +39,7 @@ pub(crate) use row_conversion::row_to_memory_document;
 /// create their own connections per-operation.
 pub struct LibSqlBackend {
     db: Arc<LibSqlDatabase>,
+    temp_path: Option<PathBuf>,
 }
 
 impl LibSqlBackend {
@@ -59,19 +61,27 @@ impl LibSqlBackend {
             .build()
             .await
             .map_err(|e| DatabaseError::Pool(format!("Failed to open libSQL database: {e}")))?;
-        Ok(Self { db: Arc::new(db) })
+        Ok(Self {
+            db: Arc::new(db),
+            temp_path: None,
+        })
     }
 
     /// Create a new in-memory database (for testing).
     pub async fn new_memory() -> Result<Self, DatabaseError> {
-        let db = libsql::Builder::new_local(":memory:")
+        let temp_path =
+            std::env::temp_dir().join(format!("axinite-libsql-memory-{}.db", Uuid::new_v4()));
+        let db = libsql::Builder::new_local(&temp_path)
             .build()
             .await
             .map_err(|e| {
                 DatabaseError::Pool(format!("Failed to create in-memory database: {}", e))
             })?;
 
-        Ok(Self { db: Arc::new(db) })
+        Ok(Self {
+            db: Arc::new(db),
+            temp_path: Some(temp_path),
+        })
     }
 
     /// Create with Turso cloud sync (embedded replica).
@@ -85,7 +95,10 @@ impl LibSqlBackend {
             .build()
             .await
             .map_err(|e| DatabaseError::Pool(format!("Failed to open remote replica: {e}")))?;
-        Ok(Self { db: Arc::new(db) })
+        Ok(Self {
+            db: Arc::new(db),
+            temp_path: None,
+        })
     }
 
     /// Get a shared reference to the underlying database handle.
@@ -135,6 +148,15 @@ impl LibSqlBackend {
     }
 }
 
+impl Drop for LibSqlBackend {
+    fn drop(&mut self) {
+        if let Some(path) = &self.temp_path {
+            let _ = std::fs::remove_file(path);
+            let _ = std::fs::remove_file(path.with_extension("db-wal"));
+            let _ = std::fs::remove_file(path.with_extension("db-shm"));
+        }
+    }
+}
 impl NativeDatabase for LibSqlBackend {
     async fn persist_terminal_result_and_status(
         &self,
@@ -355,6 +377,7 @@ mod tests {
         for _ in 0..10 {
             let b = LibSqlBackend {
                 db: backend.shared_db(),
+                temp_path: None,
             };
             handles.push(tokio::spawn(async move { b.connect().await }));
         }
