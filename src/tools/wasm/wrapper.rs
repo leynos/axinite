@@ -699,7 +699,12 @@ impl WasmToolWrapper {
         // advertised schema at registration time; guest exports are only used
         // here to add compact fallback guidance after a failed call.
         if let Some(err) = response.error {
-            let hint = metadata::build_fallback_guidance(self.name(), tool_iface, &mut store);
+            let hint = metadata::build_fallback_guidance(
+                self.name(),
+                &self.schema,
+                tool_iface,
+                &mut store,
+            );
             return Err(WasmError::ToolReturnedError { message: err, hint });
         }
 
@@ -1727,6 +1732,33 @@ mod tests {
                 assert!(hint.contains("`github`"));
                 assert!(hint.contains("Advertised schema excerpt"));
                 assert!(!hint.contains("Tool usage hint"));
+            }
+            other => panic!("expected ToolReturnedError, got {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn malformed_first_call_uses_wrapper_advertised_schema_in_fallback_guidance(
+        #[future] github_wrapper: WasmToolWrapper,
+    ) {
+        let wrapper = github_wrapper.await.with_schema(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "operation": { "type": "string" }
+            },
+            "required": ["operation"],
+            "additionalProperties": false
+        }));
+        let error = wrapper
+            .execute_sync(serde_json::json!({}), None, Vec::new())
+            .expect_err("missing required action should fail");
+
+        match error {
+            WasmError::ToolReturnedError { hint, .. } => {
+                assert!(hint.contains("Advertised schema excerpt"));
+                assert!(hint.contains("\"operation\""));
+                assert!(!hint.contains("\"action\""));
             }
             other => panic!("expected ToolReturnedError, got {other:?}"),
         }

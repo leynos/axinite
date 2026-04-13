@@ -212,7 +212,11 @@ fn push_truncated_line(output: &mut String, label: &str, text: &str, max_len: us
     }
 }
 
-fn build_fallback_guidance_text(tool_name: &str, description: &str, schema: &str) -> String {
+fn build_fallback_guidance_text(
+    tool_name: &str,
+    description: &str,
+    advertised_schema: &str,
+) -> String {
     let mut guidance = format!("Retry using the advertised tool schema for `{tool_name}`.");
     push_truncated_line(
         &mut guidance,
@@ -223,23 +227,28 @@ fn build_fallback_guidance_text(tool_name: &str, description: &str, schema: &str
     push_truncated_line(
         &mut guidance,
         "Advertised schema excerpt: ",
-        schema,
+        advertised_schema,
         HINT_SCHEMA_MAX,
     );
     guidance
 }
 
-/// Build fallback guidance from the guest's `description()` and `schema()`
-/// exports.
+/// Build fallback guidance from the guest's `description()` export and the
+/// wrapper's advertised schema.
 pub(super) fn build_fallback_guidance(
     tool_name: &str,
+    advertised_schema: &serde_json::Value,
     tool_iface: &wit_tool::Guest,
     store: &mut Store<StoreData>,
 ) -> String {
-    let (description, schema) = exported_metadata_strings(tool_iface, store)
+    let description = tool_iface
+        .call_description(&mut *store)
         .ok()
         .unwrap_or_default();
-    build_fallback_guidance_text(tool_name, &description, &schema)
+    let advertised_schema =
+        serde_json::to_string(advertised_schema).unwrap_or_else(|_| advertised_schema.to_string());
+
+    build_fallback_guidance_text(tool_name, &description, &advertised_schema)
 }
 
 #[cfg(test)]
