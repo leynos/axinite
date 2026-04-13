@@ -452,7 +452,7 @@ impl Agent {
                 if is_tool_error {
                     turn.record_tool_error(result_content.clone());
                 } else {
-                    turn.record_tool_result(serde_json::json!(result_content));
+                    turn.record_tool_result_content(&result_content);
                 }
             }
         }

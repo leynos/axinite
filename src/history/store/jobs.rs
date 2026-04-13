@@ -14,6 +14,8 @@ use super::Store;
 #[cfg(feature = "postgres")]
 use crate::context::{JobContext, JobState};
 #[cfg(feature = "postgres")]
+use crate::db::TerminalJobPersistence;
+#[cfg(feature = "postgres")]
 use crate::error::DatabaseError;
 
 #[cfg(feature = "postgres")]
@@ -165,6 +167,39 @@ impl Store {
         )
         .await?;
 
+        Ok(())
+    }
+
+    /// Persist a terminal result event and terminal status in one transaction.
+    pub async fn persist_terminal_result_and_status(
+        &self,
+        params: TerminalJobPersistence<'_>,
+    ) -> Result<(), DatabaseError> {
+        let TerminalJobPersistence {
+            job_id,
+            status,
+            failure_reason,
+            event_type,
+            event_data,
+        } = params;
+        let mut conn = self.conn().await?;
+        let tx = conn.transaction().await?;
+        let status_str = status.to_string();
+
+        tx.execute(
+            r#"
+            INSERT INTO job_events (job_id, event_type, data)
+            VALUES ($1, $2, $3)
+            "#,
+            &[&job_id, &event_type.as_str(), event_data],
+        )
+        .await?;
+        tx.execute(
+            "UPDATE agent_jobs SET status = $2, failure_reason = $3 WHERE id = $1 AND source = 'direct'",
+            &[&job_id, &status_str, &failure_reason],
+        )
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 

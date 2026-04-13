@@ -123,6 +123,14 @@ pub(crate) async fn call_llm(
                 reason_ctx.available_tools.clear();
             }
 
+            if let Err(limit) = delegate.agent.cost_guard().check_allowed().await {
+                return Err(crate::error::LlmError::InvalidResponse {
+                    provider: "agent".to_string(),
+                    reason: limit.to_string(),
+                }
+                .into());
+            }
+
             reasoning
                 .respond_with_tools(reason_ctx)
                 .await

@@ -11,7 +11,10 @@
 //! - `hydration`: Thread hydration from database
 //! - `message_rebuild`: Message reconstruction from DB records
 //! - `persistence`: Database persistence for messages and tool calls
+//! - `turn_compaction_checkpointing`: Pre-turn compaction and undo checkpoints
 //! - `turn_execution`: User turn execution and agentic loop orchestration
+//! - `turn_preparation`: Thread-state checks, safety validation, and turn setup
+//! - `turn_result_finalisation`: Loop-result handling and response persistence
 
 pub(crate) mod approval;
 mod control;
@@ -20,10 +23,13 @@ mod document_store;
 mod hydration;
 mod message_rebuild;
 mod persistence;
+mod turn_compaction_checkpointing;
 mod turn_execution;
+mod turn_preparation;
+mod turn_result_finalisation;
 
 pub(super) use persistence::TurnPersistContext;
-pub(super) use turn_execution::UserTurnRequest;
+pub(super) use turn_preparation::UserTurnRequest;
 
 use std::sync::Arc;
 
@@ -93,11 +99,11 @@ impl Agent {
                 }
                 _ => {
                     // Any control submission (interrupt, undo, etc.) cancels auth mode.
-                    // Clear the in_flight_auth marker; pending_auth is cleared separately
-                    // by the control handler path.
+                    // Clear both auth markers so the next user turn is not intercepted.
                     let mut sess = session.lock().await;
                     if let Some(thread) = sess.threads.get_mut(&thread_id) {
                         thread.in_flight_auth = false;
+                        thread.pending_auth = None;
                     }
                     // Fall through to normal handling
                 }
@@ -138,7 +144,7 @@ impl Agent {
         // Parse submission type first
         let submission = SubmissionParser::parse(&message.content);
 
-        let (session, thread_id) = self.hydrate_and_resolve_session_thread(message).await;
+        let (session, thread_id) = self.hydrate_and_resolve_session_thread(message).await?;
 
         if let Some(result) = self
             .check_auth_mode_intercept(message, &submission, session.clone(), thread_id)

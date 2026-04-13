@@ -293,7 +293,22 @@ impl JobContext {
     /// restored to a previous state after a persistence failure, bypassing
     /// [`Self::transition_to`] validation.
     pub fn set_state_rollback(&mut self, previous: JobState) {
+        if let Some(last_transition) = self.transitions.last()
+            && last_transition.from == previous
+            && last_transition.to == self.state
+        {
+            self.transitions.pop();
+        }
         self.state = previous;
+        self.completed_at = self
+            .transitions
+            .iter()
+            .rev()
+            .find(|transition| transition.to.is_terminal())
+            .map(|transition| transition.timestamp);
+        if !self.state.is_terminal() {
+            self.completed_at = None;
+        }
     }
 
     /// Add to the actual cost.

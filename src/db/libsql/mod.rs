@@ -137,6 +137,13 @@ impl LibSqlBackend {
 }
 
 impl NativeDatabase for LibSqlBackend {
+    async fn persist_terminal_result_and_status(
+        &self,
+        params: crate::db::TerminalJobPersistence<'_>,
+    ) -> Result<(), DatabaseError> {
+        LibSqlBackend::persist_terminal_result_and_status(self, params).await
+    }
+
     async fn run_migrations(&self) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         // WAL mode persists in the database file: all future connections benefit.

@@ -114,6 +114,13 @@ impl NullDatabase {
 }
 
 impl crate::db::NativeDatabase for NullDatabase {
+    async fn persist_terminal_result_and_status(
+        &self,
+        _params: crate::db::TerminalJobPersistence<'_>,
+    ) -> Result<(), crate::error::DatabaseError> {
+        Ok(())
+    }
+
     async fn run_migrations(&self) -> Result<(), crate::error::DatabaseError> {
         Ok(())
     }

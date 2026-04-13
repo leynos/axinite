@@ -8,8 +8,10 @@ This document describes the crate-wide testing abstractions available in the
 The testing module provides several complementary abstractions for different
 testing scenarios:
 
+Table: Testing abstractions and recommended use cases
+
 | Abstraction | Purpose | Use when |
-|-------------|---------|----------|
+| ----------- | ------- | -------- |
 | `TestHarnessBuilder` | Full integration testing with real database | Testing actual persistence with a real database |
 | `CapturingStore` | Unit testing without database | Verifying interactions without a real database |
 | `NullDatabase` | Baseline test double | Creating baseline test doubles or custom mocks |
@@ -63,6 +65,7 @@ async fn captures_calls() {
 ```
 
 **Related types:**
+
 - `StatusCall` / `StatusCallWithId` — Captured status update calls
 - `EventCall` / `EventCallWithId` — Captured event calls with full history
 
@@ -120,22 +123,32 @@ specifically.
 
 ## Choosing the right abstraction
 
-```plaintext
-Need to test persistence? ──Yes──► TestHarnessBuilder
-         │
-         No
-         │
-         ▼
-Need to verify calls? ────Yes───► CapturingStore
-         │
-         No
-         │
-         ▼
-Writing a custom mock? ───Yes───► NullDatabase (as base)
+This flowchart guides maintainers to the right testing abstraction by first
+checking whether the test needs real persistence, then whether it only needs
+to inspect captured calls, and finally whether it needs a bespoke mock.
+
+```mermaid
+flowchart TD
+    start[Choose a testing abstraction]
+    persist{Need to test persistence?}
+    calls{Need to verify calls?}
+    mock{Writing a custom mock?}
+    harness[TestHarnessBuilder]
+    capturing[CapturingStore]
+    null_db[NullDatabase]
+
+    start --> persist
+    persist -- Yes --> harness
+    persist -- No --> calls
+    calls -- Yes --> capturing
+    calls -- No --> mock
+    mock -- Yes --> null_db
 ```
+
+Figure: Choosing the right testing abstraction
 
 ## Additional resources
 
 - `crate::testing::TestHarnessBuilder` — Full harness builder
-- `crate::testing::null_db::{NullDatabase, CapturingStore, EventCall, StatusCall}` —
-  Database test doubles
+- `crate::testing::null_db::{NullDatabase, CapturingStore, EventCall,
+  StatusCall}` — Database test doubles

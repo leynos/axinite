@@ -19,7 +19,7 @@ use crate::agent::scheduler::WorkerMessage;
 use crate::agent::task::TaskOutput;
 use crate::channels::web::types::SseEvent;
 use crate::context::{ContextManager, JobState};
-use crate::db::Database;
+use crate::db::{Database, TerminalJobPersistence};
 use crate::error::Error;
 use crate::hooks::HookRegistry;
 use crate::llm::{
@@ -108,21 +108,6 @@ impl Worker {
         self.deps.use_planning
     }
 
-    /// Persist a terminal job status before returning to the caller.
-    async fn persist_status(&self, status: JobState, reason: Option<String>) -> Result<(), Error> {
-        if let Some(store) = self.store() {
-            let job_id = self.job_id;
-            store
-                .update_job_status(job_id, status, reason.as_deref())
-                .await
-                .map_err(|e| crate::error::JobError::PersistenceError {
-                    id: job_id,
-                    reason: e.to_string(),
-                })?;
-        }
-        Ok(())
-    }
-
     /// Fire-and-forget persistence and SSE broadcast for non-terminal job
     /// events only.
     ///
@@ -150,16 +135,24 @@ impl Worker {
         self.broadcast_event(event_type, &data);
     }
 
-    /// Persist a terminal result event before returning to the caller.
-    async fn log_terminal_result_event(
+    /// Persist the terminal event and terminal status in one durable write.
+    async fn persist_terminal_result_and_status(
         &self,
+        status: JobState,
+        failure_reason: Option<&str>,
         event_type: &str,
-        data: serde_json::Value,
+        data: &serde_json::Value,
     ) -> Result<(), Error> {
         let job_id = self.job_id;
         if let Some(store) = self.store() {
             store
-                .save_job_event(job_id, crate::db::SandboxEventType::from(event_type), &data)
+                .persist_terminal_result_and_status(TerminalJobPersistence {
+                    job_id,
+                    status,
+                    failure_reason,
+                    event_type: crate::db::SandboxEventType::from(event_type),
+                    event_data: data,
+                })
                 .await
                 .map_err(|e| crate::error::JobError::PersistenceError {
                     id: job_id,
@@ -167,7 +160,7 @@ impl Worker {
                 })?;
         }
 
-        self.broadcast_event(event_type, &data);
+        self.broadcast_event(event_type, data);
         Ok(())
     }
 
@@ -240,6 +233,28 @@ impl Worker {
                 let _ = tx.send(event);
             }
         }
+    }
+
+    async fn transition_terminal_state<F>(&self, transition: F) -> Result<JobState, Error>
+    where
+        F: FnOnce(&mut crate::context::JobContext) -> Result<(), String>,
+    {
+        let previous = self
+            .context_manager()
+            .update_context(self.job_id, |ctx| {
+                let previous = ctx.state;
+                let result = transition(ctx);
+                (previous, result)
+            })
+            .await?;
+
+        let (previous_state, transition_result) = previous;
+        transition_result.map_err(|reason| crate::error::JobError::ContextError {
+            id: self.job_id,
+            reason,
+        })?;
+
+        Ok(previous_state)
     }
 
     /// Run the worker until the job is complete or stopped.
@@ -999,52 +1014,32 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
     }
 
     pub(crate) async fn mark_completed(&self) -> Result<(), Error> {
-        // Record the previous state for potential rollback.
         let previous = self
-            .context_manager()
-            .get_context(self.job_id)
-            .await
-            .ok()
-            .map(|ctx| ctx.state);
-
-        // Apply the context transition first.
-        self.context_manager()
-            .update_context(self.job_id, |ctx| {
+            .transition_terminal_state(|ctx| {
                 ctx.transition_to(
                     JobState::Completed,
                     Some("Job completed successfully".to_string()),
                 )
             })
-            .await?
-            .map_err(|s| crate::error::JobError::ContextError {
-                id: self.job_id,
-                reason: s,
-            })?;
+            .await?;
 
-        // Attempt to log and persist. Roll back on failure.
-        if let Err(e) = self
-            .log_terminal_result_event(
-                "result",
-                serde_json::json!({
-                    "status": "completed",
-                    "success": true,
-                    "message": "Job completed successfully",
-                }),
-            )
-            .await
-        {
-            self.rollback_context(previous, "mark_completed").await;
-            return Err(e);
-        }
+        let event = serde_json::json!({
+            "status": "completed",
+            "success": true,
+            "message": "Job completed successfully",
+        });
 
         if let Err(e) = self
-            .persist_status(
+            .persist_terminal_result_and_status(
                 JobState::Completed,
-                Some("Job completed successfully".to_string()),
+                Some("Job completed successfully"),
+                "result",
+                &event,
             )
             .await
         {
-            self.rollback_context(previous, "mark_completed").await;
+            self.rollback_context(Some(previous), "mark_completed")
+                .await;
             return Err(e);
         }
 
@@ -1081,46 +1076,23 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
     }
 
     pub(crate) async fn mark_failed(&self, reason: &str) -> Result<(), Error> {
-        // Record the previous state for potential rollback.
         let previous = self
-            .context_manager()
-            .get_context(self.job_id)
-            .await
-            .ok()
-            .map(|ctx| ctx.state);
-
-        // Apply the context transition first.
-        self.context_manager()
-            .update_context(self.job_id, |ctx| {
+            .transition_terminal_state(|ctx| {
                 ctx.transition_to(JobState::Failed, Some(reason.to_string()))
             })
-            .await?
-            .map_err(|s| crate::error::JobError::ContextError {
-                id: self.job_id,
-                reason: s,
-            })?;
+            .await?;
 
-        // Attempt to log and persist. Roll back on failure.
-        if let Err(e) = self
-            .log_terminal_result_event(
-                "result",
-                serde_json::json!({
-                    "status": "failed",
-                    "success": false,
-                    "message": format!("Execution failed: {}", reason),
-                }),
-            )
-            .await
-        {
-            self.rollback_context(previous, "mark_failed").await;
-            return Err(e);
-        }
+        let event = serde_json::json!({
+            "status": "failed",
+            "success": false,
+            "message": format!("Execution failed: {}", reason),
+        });
 
         if let Err(e) = self
-            .persist_status(JobState::Failed, Some(reason.to_string()))
+            .persist_terminal_result_and_status(JobState::Failed, Some(reason), "result", &event)
             .await
         {
-            self.rollback_context(previous, "mark_failed").await;
+            self.rollback_context(Some(previous), "mark_failed").await;
             return Err(e);
         }
 
@@ -1128,44 +1100,21 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
     }
 
     pub(crate) async fn mark_stuck(&self, reason: &str) -> Result<(), Error> {
-        // Record the previous state for potential rollback.
         let previous = self
-            .context_manager()
-            .get_context(self.job_id)
-            .await
-            .ok()
-            .map(|ctx| ctx.state);
+            .transition_terminal_state(|ctx| ctx.mark_stuck(reason))
+            .await?;
 
-        // Apply the context transition first.
-        self.context_manager()
-            .update_context(self.job_id, |ctx| ctx.mark_stuck(reason))
-            .await?
-            .map_err(|s| crate::error::JobError::ContextError {
-                id: self.job_id,
-                reason: s,
-            })?;
-
-        // Attempt to log and persist. Roll back on failure.
-        if let Err(e) = self
-            .log_terminal_result_event(
-                "result",
-                serde_json::json!({
-                    "status": "stuck",
-                    "success": false,
-                    "message": format!("Job stuck: {}", reason),
-                }),
-            )
-            .await
-        {
-            self.rollback_context(previous, "mark_stuck").await;
-            return Err(e);
-        }
+        let event = serde_json::json!({
+            "status": "stuck",
+            "success": false,
+            "message": format!("Job stuck: {}", reason),
+        });
 
         if let Err(e) = self
-            .persist_status(JobState::Stuck, Some(reason.to_string()))
+            .persist_terminal_result_and_status(JobState::Stuck, Some(reason), "result", &event)
             .await
         {
-            self.rollback_context(previous, "mark_stuck").await;
+            self.rollback_context(Some(previous), "mark_stuck").await;
             return Err(e);
         }
 

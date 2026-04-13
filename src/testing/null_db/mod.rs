@@ -1,8 +1,14 @@
-//! Null database helper for tests.
+//! Test-only database doubles and captured-call helpers.
 //!
-//! Provides a [`NullDatabase`] struct that implements all `Native*Store` traits
-//! with no-op methods returning default values. Useful as a baseline for
-//! test doubles that need to override only specific methods.
+//! [`NullDatabase`] provides null defaults across the `Native*Store` traits for
+//! bespoke mocks, while [`CapturingStore`] wraps that baseline with captured
+//! [`Calls`], [`EventCall`], [`EventCallWithId`], [`StatusCall`], and
+//! [`StatusCallWithId`] records for persistence assertions.
+//!
+//! Choose the right testing abstraction for the job: use
+//! [`crate::testing::TestHarnessBuilder`] for persistence testing with a real
+//! database, [`CapturingStore`] for verifying calls without durable storage,
+//! or [`NullDatabase`] when a test needs a custom mock with null behaviour.
 
 mod capturing_store;
 mod null_database;

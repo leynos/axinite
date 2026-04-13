@@ -574,6 +574,13 @@ impl Turn {
         }
     }
 
+    /// Record tool call result, parsing structured JSON where possible.
+    pub fn record_tool_result_content(&mut self, result_content: &str) {
+        let result = serde_json::from_str(result_content)
+            .unwrap_or_else(|_| serde_json::Value::String(result_content.to_string()));
+        self.record_tool_result(result);
+    }
+
     /// Record tool call error.
     pub fn record_tool_error(&mut self, error: impl Into<String>) {
         if let Some(call) = self.tool_calls.last_mut() {

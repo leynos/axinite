@@ -38,6 +38,8 @@ fn summarise_tool_call(
     let mut obj = serde_json::json!({
         "name": tc.name,
         "call_id": format!("turn{}_{}", turn_number, i),
+        "parameters": serde_json::to_value(&tc.parameters)
+            .unwrap_or_else(|_| serde_json::json!({})),
     });
     if let Some(ref result) = tc.result {
         obj["result_preview"] = serde_json::Value::String(value_to_preview(result, 500));

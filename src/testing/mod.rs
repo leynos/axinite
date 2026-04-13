@@ -1,10 +1,17 @@
-//! Test harness for constructing `AgentDeps` with sensible defaults.
+//! Test harnesses, doubles, and helpers for crate-level tests.
 //!
-//! Provides:
-//! - [`StubLlm`]: A configurable LLM provider that returns a fixed response
-//! - [`StubChannel`]: A configurable channel stub with message injection and response capture
-//! - [`TestHarnessBuilder`]: Builder for wiring `AgentDeps` with defaults
-//! - [`TestHarness`]: The assembled components ready for use in tests
+//! The public surface here supports both full integration-style tests and
+//! targeted unit tests. Use [`TestHarnessBuilder`] and [`TestHarness`] when a
+//! test needs fully wired `AgentDeps` with sensible defaults, [`null_db`] when
+//! the test needs null persistence or captured persistence calls, and
+//! [`worker_harness`] when the focus is `Worker` setup and terminal-state
+//! behaviour.
+//!
+//! The [`null_db`] exports cover both null persistence and call verification:
+//! [`NullDatabase`] is the baseline no-op database, [`CapturingStore`] records
+//! persistence interactions, and [`Calls`], [`EventCall`],
+//! [`EventCallWithId`], [`StatusCall`], and [`StatusCallWithId`] expose the
+//! captured status and event payloads for assertions.
 //!
 //! # Usage
 //!

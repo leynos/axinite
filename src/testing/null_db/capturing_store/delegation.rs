@@ -25,6 +25,19 @@ use crate::workspace::{MemoryChunk, MemoryDocument, SearchResult, WorkspaceEntry
 use super::CapturingStore;
 
 impl crate::db::NativeDatabase for CapturingStore {
+    async fn persist_terminal_result_and_status(
+        &self,
+        params: crate::db::TerminalJobPersistence<'_>,
+    ) -> Result<(), DatabaseError> {
+        self.calls
+            .record_event(params.job_id, params.event_type, params.event_data)
+            .await;
+        self.calls
+            .record_status(params.job_id, params.status, params.failure_reason)
+            .await;
+        Ok(())
+    }
+
     delegate! {
         to self.inner {
             async fn run_migrations(&self) -> Result<(), DatabaseError>;

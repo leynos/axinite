@@ -2886,7 +2886,7 @@ mod tests {
                 if iteration >= force_text_at {
                     hit_force_text = true;
                 }
-                if iteration > max_iter + 1 {
+                if iteration >= hard_ceiling {
                     hit_ceiling = true;
                 }
             }

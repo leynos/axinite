@@ -14,7 +14,9 @@ use super::{
     opt_text, opt_text_owned,
 };
 use crate::context::{ActionRecord, JobContext, JobState};
-use crate::db::{EstimationActualsParams, EstimationSnapshotParams, NativeJobStore};
+use crate::db::{
+    EstimationActualsParams, EstimationSnapshotParams, NativeJobStore, TerminalJobPersistence,
+};
 use crate::error::DatabaseError;
 use crate::history::{AgentJobRecord, AgentJobSummary, LlmCallRecord};
 
@@ -114,6 +116,44 @@ impl LibSqlBackend {
         )
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        Ok(())
+    }
+
+    pub(crate) async fn persist_terminal_result_and_status(
+        &self,
+        params: TerminalJobPersistence<'_>,
+    ) -> Result<(), DatabaseError> {
+        let TerminalJobPersistence {
+            job_id,
+            status,
+            failure_reason,
+            event_type,
+            event_data,
+        } = params;
+        let conn = self.connect().await?;
+        let tx = conn
+            .transaction()
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        tx.execute(
+            "INSERT INTO job_events (job_id, event_type, data) VALUES (?1, ?2, ?3)",
+            params![
+                job_id.to_string(),
+                event_type.as_str().to_string(),
+                event_data.to_string()
+            ],
+        )
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        tx.execute(
+            "UPDATE agent_jobs SET status = ?2, failure_reason = ?3 WHERE id = ?1 AND source = 'direct'",
+            params![job_id.to_string(), status.to_string(), opt_text(failure_reason)],
+        )
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        tx.commit()
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
         Ok(())
     }
 }

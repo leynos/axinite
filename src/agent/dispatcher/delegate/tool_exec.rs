@@ -209,13 +209,13 @@ pub(crate) async fn execute_tool_calls(
     // === Phase 3: Post-flight ===
     let deferred_auth = run_postflight(delegate, preflight, &mut exec_results, reason_ctx).await;
 
-    if let Some(instructions) = deferred_auth {
-        return Ok(Some(LoopOutcome::Response(instructions)));
-    }
-
     if let Some(candidate) = approval_needed {
         let pending = build_pending_approval(delegate, candidate, &tool_calls, reason_ctx);
         return Ok(Some(LoopOutcome::NeedApproval(Box::new(pending))));
+    }
+
+    if let Some(instructions) = deferred_auth {
+        return Ok(Some(LoopOutcome::Response(instructions)));
     }
 
     Ok(None)
@@ -796,7 +796,7 @@ async fn record_tool_outcome(
         if is_tool_error {
             turn.record_tool_error(result_content.to_string());
         } else {
-            turn.record_tool_result(serde_json::json!(result_content));
+            turn.record_tool_result_content(result_content);
         }
     }
 }

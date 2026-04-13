@@ -56,6 +56,13 @@ impl PgBackend {
 }
 
 impl NativeDatabase for PgBackend {
+    async fn persist_terminal_result_and_status(
+        &self,
+        params: crate::db::TerminalJobPersistence<'_>,
+    ) -> Result<(), DatabaseError> {
+        self.store.persist_terminal_result_and_status(params).await
+    }
+
     async fn run_migrations(&self) -> Result<(), DatabaseError> {
         self.store.run_migrations().await
     }

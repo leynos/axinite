@@ -53,6 +53,16 @@ type AsyncTraceMetrics<'a> =
 type AsyncTraceRun<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Vec<Vec<ironclaw::channels::OutgoingResponse>>> + 'a>,
 >;
+type AsyncStartedWebhookServer = std::pin::Pin<
+    Box<
+        dyn std::future::Future<
+                Output = Result<
+                    webhook_helpers::StartedWebhookServer,
+                    Box<dyn std::error::Error + Send + Sync>,
+                >,
+            > + Send,
+    >,
+>;
 #[cfg(feature = "libsql")]
 type AsyncBuildRig =
     std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<test_rig::TestRig>>>>;
@@ -350,8 +360,26 @@ fn test_rig_symbol_refs() {
     touch_test_rig_symbols();
 }
 
+fn webhook_helpers_symbol_refs() {
+    const _: fn() -> axum::Router = webhook_helpers::health_routes;
+    const _: fn() -> Result<reqwest::Client, reqwest::Error> = webhook_helpers::test_http_client;
+    const _: fn() -> std::mem::MaybeUninit<webhook_helpers::StartedWebhookServer> =
+        std::mem::MaybeUninit::<webhook_helpers::StartedWebhookServer>::uninit;
+    const _: fn(&webhook_helpers::StartedWebhookServer) = _touch_started_webhook_server_fields;
+    const _: fn() -> AsyncStartedWebhookServer = _start_health_server_sig;
+}
+
+fn _start_health_server_sig() -> AsyncStartedWebhookServer {
+    Box::pin(webhook_helpers::start_health_server())
+}
+
+fn _touch_started_webhook_server_fields(server: &webhook_helpers::StartedWebhookServer) {
+    let _ = (&server.server, &server.addr, &server.client);
+}
+
 const _: fn() = trace_support_symbol_refs;
 const _: fn() = test_rig_symbol_refs;
+const _: fn() = webhook_helpers_symbol_refs;
 
 // =============================================================================
 // Routines module compile-time assertions

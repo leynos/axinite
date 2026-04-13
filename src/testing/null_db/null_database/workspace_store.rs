@@ -80,7 +80,7 @@ impl crate::db::NativeWorkspaceStore for NullDatabase {
     }
 
     async fn insert_chunk(&self, _params: InsertChunkParams<'_>) -> Result<Uuid, WorkspaceError> {
-        Ok(Uuid::new_v4())
+        Ok(self.next_synthetic_uuid())
     }
 
     async fn update_chunk_embedding(

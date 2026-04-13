@@ -517,6 +517,41 @@ reload sequence:
 The manager is created via `create_hot_reload_manager()` which wires
 together the default implementations based on available stores.
 
+
+### Webhook server lifecycle / listener-based API
+
+`WebhookServer::start_with_listener()` and
+`WebhookServer::restart_with_listener()` are the listener-oriented variants of
+the older bind-by-address lifecycle. They accept a pre-bound
+`tokio::net::TcpListener`, which means the caller owns listener acquisition and
+bind failure timing before handing the socket to the webhook server.
+
+The contract differs from `start()` and `restart_with_addr()` in three
+important ways:
+
+- the caller passes an already-bound listener instead of asking
+  `WebhookServer` to bind one internally;
+- `config.addr` is updated from `listener.local_addr()` so the stored runtime
+  address reflects the real bound socket; and
+- the server still merges any queued route fragments into one router on first
+  start and saves that router in `merged_router` for later listener restarts.
+
+Use the listener-based API for hot-reload and integration-test flows that need
+OS-selected ports, externally managed socket setup, or socket handoff between
+components. In both methods, route ownership remains with the server once the
+listener has been accepted; callers should finish route registration before the
+first start, just as they would with `start()`.
+
+Migration notes for maintainers:
+
+- pre-bind the listener yourself and pass ownership into the method;
+- expect the methods to remain async because the serving task is still spawned
+  and graceful shutdown wiring still happens inside `WebhookServer`;
+- handle bind and startup failures through `ChannelError::StartupFailed`, which
+  now covers listener-derived startup errors as well as internal bind errors;
+- prefer `restart_with_listener()` in reload paths when the caller needs to
+  validate a replacement listener before the old one is torn down.
+
 ### Extension guidance
 
 Adding a new config source:

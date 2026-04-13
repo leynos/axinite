@@ -22,7 +22,7 @@ impl Agent {
     pub(super) async fn hydrate_and_resolve_session_thread(
         &self,
         message: &IncomingMessage,
-    ) -> (Arc<Mutex<Session>>, Uuid) {
+    ) -> Result<(Arc<Mutex<Session>>, Uuid), crate::error::Error> {
         // Hydrate thread from DB if it's a historical thread not in memory
         if let Some(ref external_thread_id) = message.thread_id {
             tracing::trace!(
@@ -30,7 +30,8 @@ impl Agent {
                 thread_id = %external_thread_id,
                 "Hydrating thread from DB"
             );
-            self.maybe_hydrate_thread(message, external_thread_id).await;
+            self.maybe_hydrate_thread(message, external_thread_id)
+                .await?;
         }
 
         tracing::debug!(
@@ -51,7 +52,7 @@ impl Agent {
             "Resolved session and thread"
         );
 
-        (session, thread_id)
+        Ok((session, thread_id))
     }
 
     /// Hydrate a historical thread from DB into memory if not already present.
@@ -67,11 +68,11 @@ impl Agent {
         &self,
         message: &IncomingMessage,
         external_thread_id: &str,
-    ) {
+    ) -> Result<(), crate::error::Error> {
         // Only hydrate UUID-shaped thread IDs (web gateway uses UUIDs)
         let thread_uuid = match Uuid::parse_str(external_thread_id) {
             Ok(id) => id,
-            Err(_) => return,
+            Err(_) => return Ok(()),
         };
 
         // Check if already in memory
@@ -82,7 +83,7 @@ impl Agent {
         {
             let sess = session.lock().await;
             if sess.threads.contains_key(&thread_uuid) {
-                return;
+                return Ok(());
             }
         }
 
@@ -91,10 +92,7 @@ impl Agent {
         let msg_count;
 
         if let Some(store) = self.store() {
-            let db_messages = store
-                .list_conversation_messages(thread_uuid)
-                .await
-                .unwrap_or_default();
+            let db_messages = store.list_conversation_messages(thread_uuid).await?;
             msg_count = db_messages.len();
             chat_messages = rebuild_chat_messages_from_db(&db_messages, self.safety());
         } else {
@@ -115,6 +113,9 @@ impl Agent {
         // Insert into session and register with session manager
         {
             let mut sess = session.lock().await;
+            if sess.threads.contains_key(&thread_uuid) {
+                return Ok(());
+            }
             sess.threads.insert(thread_uuid, thread);
             sess.active_thread = Some(thread_uuid);
             sess.last_active_at = chrono::Utc::now();
@@ -134,5 +135,7 @@ impl Agent {
             thread_uuid,
             msg_count
         );
+
+        Ok(())
     }
 }

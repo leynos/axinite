@@ -11,6 +11,7 @@
 
 use std::sync::Arc;
 
+use chrono::Utc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -116,27 +117,42 @@ impl Agent {
         session: Arc<Mutex<Session>>,
         thread_id: Uuid,
     ) -> Result<SubmissionResult, Error> {
-        let mut sess = session.lock().await;
-        let thread = sess
-            .threads
-            .get_mut(&thread_id)
-            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+        let (mut thread_snapshot, usage, strategy) = {
+            let sess = session.lock().await;
+            let thread = sess
+                .threads
+                .get(&thread_id)
+                .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
 
-        let messages = thread.messages();
-        let usage = self.context_monitor.usage_percent(&messages);
-        let strategy = self
-            .context_monitor
-            .suggest_compaction(&messages)
-            .unwrap_or(
-                crate::agent::context_monitor::CompactionStrategy::Summarize { keep_recent: 5 },
-            );
+            let messages = thread.messages();
+            let usage = self.context_monitor.usage_percent(&messages);
+            let strategy = self
+                .context_monitor
+                .suggest_compaction(&messages)
+                .unwrap_or(
+                    crate::agent::context_monitor::CompactionStrategy::Summarize { keep_recent: 5 },
+                );
+
+            (thread.clone(), usage, strategy)
+        };
 
         let compactor = ContextCompactor::new(self.llm().clone());
         match compactor
-            .compact(thread, strategy, self.workspace().map(|w| w.as_ref()))
+            .compact(
+                &mut thread_snapshot,
+                strategy,
+                self.workspace().map(|w| w.as_ref()),
+            )
             .await
         {
             Ok(result) => {
+                let mut sess = session.lock().await;
+                let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
+                    Error::from(crate::error::JobError::NotFound { id: thread_id })
+                })?;
+                thread.turns = thread_snapshot.turns;
+                thread.updated_at = Utc::now();
+
                 let mut msg = format!(
                     "Compacted: {} turns removed, {} → {} tokens (was {:.1}% full)",
                     result.turns_removed, result.tokens_before, result.tokens_after, usage
@@ -155,6 +171,9 @@ impl Agent {
         session: Arc<Mutex<Session>>,
         thread_id: Uuid,
     ) -> Result<SubmissionResult, Error> {
+        let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
+        undo_mgr.lock().await.clear();
+
         let mut sess = session.lock().await;
         let thread = sess
             .threads
@@ -162,10 +181,7 @@ impl Agent {
             .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
         thread.turns.clear();
         thread.state = ThreadState::Idle;
-
-        // Clear undo history too
-        let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
-        undo_mgr.lock().await.clear();
+        thread.updated_at = Utc::now();
 
         Ok(SubmissionResult::ok_with_message("Thread cleared."))
     }

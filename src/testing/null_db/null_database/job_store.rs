@@ -131,8 +131,14 @@ mod tests {
             purpose: Some("test"),
         };
 
-        let uuid1 = db.record_llm_call(&record).await.unwrap();
-        let uuid2 = db.record_llm_call(&record).await.unwrap();
+        let uuid1 = db
+            .record_llm_call(&record)
+            .await
+            .expect("record_llm_call failed for uuid1");
+        let uuid2 = db
+            .record_llm_call(&record)
+            .await
+            .expect("record_llm_call failed for uuid2");
 
         assert_ne!(uuid1, uuid2, "Each call should return a new UUID");
 
