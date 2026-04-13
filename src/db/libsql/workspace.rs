@@ -30,6 +30,16 @@ enum VectorSearchOutcome {
     Indexed(Vec<RankedResult>),
     IndexUnavailable,
 }
+
+fn is_missing_vector_index_error(error: &libsql::Error) -> bool {
+    let error_message = error.to_string().to_ascii_lowercase();
+
+    error_message.contains("vector_top_k")
+        || error_message.contains("no such function")
+        || error_message.contains("idx_memory_chunks_embedding")
+        || error_message.contains("failed to parse vector index parameters")
+}
+
 fn rank_candidates(mut candidates: Vec<Candidate>, limit: usize) -> Vec<RankedResult> {
     // Sort by similarity descending
     candidates.sort_by(|a, b| {
@@ -273,10 +283,16 @@ async fn vector_ranked_results(
             while let Some(row) = match rows.next().await {
                 Ok(row) => row,
                 Err(e) => {
-                    tracing::debug!(
-                        "Vector index row fetch failed, brute-force fallback required: {e}"
-                    );
-                    return Ok(VectorSearchOutcome::IndexUnavailable);
+                    if is_missing_vector_index_error(&e) {
+                        tracing::debug!(
+                            "Vector index row fetch failed, brute-force fallback required: {e}"
+                        );
+                        return Ok(VectorSearchOutcome::IndexUnavailable);
+                    }
+
+                    return Err(WorkspaceError::SearchFailed {
+                        reason: format!("Vector index row fetch failed: {e}"),
+                    });
                 }
             } {
                 results.push(RankedResult {
@@ -295,11 +311,17 @@ async fn vector_ranked_results(
             Ok(VectorSearchOutcome::Indexed(results))
         }
         Err(e) => {
-            tracing::debug!(
-                "Vector index query failed (expected after V9 migration), \
-                 brute-force fallback required: {e}"
-            );
-            Ok(VectorSearchOutcome::IndexUnavailable)
+            if is_missing_vector_index_error(&e) {
+                tracing::debug!(
+                    "Vector index query failed (expected after V9 migration), \
+                     brute-force fallback required: {e}"
+                );
+                Ok(VectorSearchOutcome::IndexUnavailable)
+            } else {
+                Err(WorkspaceError::SearchFailed {
+                    reason: format!("Vector index query failed: {e}"),
+                })
+            }
         }
     }
 }
@@ -827,10 +849,10 @@ impl NativeWorkspaceStore for LibSqlBackend {
                         tracing::info!("Using brute-force vector search (no vector index)");
                         self.brute_force_vector_search(user_id, agent_id, emb, pre_limit as usize)
                             .await
-                            .unwrap_or_else(|e| {
+                            .map_err(|e| {
                                 tracing::warn!("Brute-force vector search failed: {e}");
-                                Vec::new()
-                            })
+                                e
+                            })?
                     }
                 }
             } else {
@@ -941,14 +963,15 @@ mod tests {
                 agent_id: None,
                 query: "semantic",
                 embedding: Some(&[1.0, 0.0, 0.0]),
-                config: &SearchConfig::default().vector_only().with_limit(5),
+                config: &SearchConfig::default().with_limit(5),
             })
             .await
             .expect("failed to execute hybrid search");
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].document_path, "notes/search.md");
+        assert_eq!(results[0].fts_rank, Some(1));
         assert_eq!(results[0].vector_rank, Some(1));
-        assert!(results[0].fts_rank.is_none());
+        assert!(results[0].is_hybrid());
     }
 }

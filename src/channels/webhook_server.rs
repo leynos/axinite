@@ -429,7 +429,7 @@ mod tests {
         )
         .await;
         assert!(
-            old_result.is_err() || old_result.ok().and_then(|r| r.ok()).is_none(),
+            matches!(old_result, Err(_) | Ok(Err(_))),
             "Old address should not respond after server restarts"
         );
 

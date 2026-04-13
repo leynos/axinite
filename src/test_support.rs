@@ -9,7 +9,7 @@ use crate::llm::ToolDefinition;
 /// Returns the canonical complex parameters JSON schema used for fidelity testing.
 ///
 /// This schema exercises nested objects, arrays, enums, constraints, and various
-/// JSON Schema features to validate that tool definitions survive serialization,
+/// JSON Schema features to validate that tool definitions survive serialisation,
 /// transport, and reconstruction without data loss.
 pub fn complex_tool_definition_parameters() -> serde_json::Value {
     serde_json::json!({

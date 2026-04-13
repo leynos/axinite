@@ -113,11 +113,12 @@ impl NativeTool for StubTool {
 #[derive(Clone, Copy, Debug)]
 /// Shared hosted-remote-tool fixture presets for catalogue and execute tests.
 ///
-/// `CatalogAlpha`, `CatalogBeta`, and `CatalogWasm` model hosted-safe
-/// catalogue entries. `ApprovalGated` models a hosted tool that must never
-/// execute without approval.
+/// `CatalogAlpha`, `CatalogAlphaWithDifferentPayload`, `CatalogBeta`, and
+/// `CatalogWasm` model hosted-safe catalogue entries. `ApprovalGated` models
+/// a hosted tool that must never execute without approval.
 pub(crate) enum ToolFixture {
     CatalogAlpha,
+    CatalogAlphaWithDifferentPayload,
     CatalogBeta,
     CatalogWasm,
     ApprovalGated,
@@ -137,6 +138,18 @@ pub(crate) fn build_tool_fixture(kind: ToolFixture) -> Arc<dyn Tool> {
                 "type":"object",
                 "properties":{"query":{"type":"string","description":"search query"}},
                 "required":["query"]
+            }),
+        )) as Arc<dyn Tool>,
+        ToolFixture::CatalogAlphaWithDifferentPayload => Arc::new(StubTool::hosted(
+            "remote_tool_catalog_fixture",
+            "Hosted-safe tool for catalog tests with updated payload",
+            serde_json::json!({
+                "type":"object",
+                "properties":{
+                    "query":{"type":"string","description":"search query"},
+                    "limit":{"type":"integer","minimum":1}
+                },
+                "required":["query", "limit"]
             }),
         )) as Arc<dyn Tool>,
         ToolFixture::CatalogBeta => Arc::new(StubTool::hosted(

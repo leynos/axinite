@@ -367,8 +367,9 @@ over all candidate embeddings for that workspace scope.
    handshake.
 2. PostgreSQL still supports vector search after V9, but no longer through the
    old fixed-dimension HNSW index.
-3. libSQL migration and schema comments still describe a brute-force vector
-   fallback that the current code does not implement.
+3. libSQL falls back to brute-force cosine similarity in Rust when
+   `vector_top_k(...)` cannot run because the fixed-dimension vector index is
+   absent after the V9 migration.
 4. Workspace memory and memory tools are absent in `--no-db` mode because the
    host does not build a workspace without a database.
 
