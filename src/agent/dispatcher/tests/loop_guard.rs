@@ -1,6 +1,7 @@
 //! Loop guard and termination tests.
 
 use proptest::prelude::*;
+use uuid::Uuid;
 
 use super::*;
 
@@ -105,6 +106,20 @@ async fn force_text_prevents_infinite_tool_call_loop() {
     );
 }
 
+async fn build_loop_ctx(
+    prompt: &str,
+) -> (Arc<Mutex<Session>>, Uuid, IncomingMessage, Vec<ChatMessage>) {
+    let session = Arc::new(Mutex::new(Session::new("test-user")));
+    let thread_id = {
+        let mut sess = session.lock().await;
+        sess.create_thread().id
+    };
+    let message = IncomingMessage::new("test", "test-user", prompt);
+    let initial_messages = vec![ChatMessage::user(prompt)];
+
+    (session, thread_id, message, initial_messages)
+}
+
 /// Regression test for the infinite loop bug (PR #252) where `continue`
 /// skipped the index increment. When every tool call fails (e.g., tool not
 /// found), the dispatcher must still advance through all calls and
@@ -113,16 +128,7 @@ async fn force_text_prevents_infinite_tool_call_loop() {
 async fn test_dispatcher_terminates_with_all_tool_calls_failing() {
     let agent = make_test_agent_with_llm(Arc::new(MockLlmProvider::failing_tool_call()), 5);
 
-    let session = Arc::new(Mutex::new(Session::new("test-user")));
-
-    // Initialize a thread in the session so the loop can record tool calls.
-    let thread_id = {
-        let mut sess = session.lock().await;
-        sess.create_thread().id
-    };
-
-    let message = IncomingMessage::new("test", "test-user", "do something");
-    let initial_messages = vec![ChatMessage::user("do something")];
+    let (session, thread_id, message, initial_messages) = build_loop_ctx("do something").await;
 
     // The dispatcher must terminate within 5 seconds. If there is an
     // infinite loop bug (e.g., index not advancing on tool failure), the
@@ -221,14 +227,8 @@ async fn test_dispatcher_terminates_with_max_iterations() {
         None,
     );
 
-    let session = Arc::new(Mutex::new(Session::new("test-user")));
-    let thread_id = {
-        let mut sess = session.lock().await;
-        sess.create_thread().id
-    };
-
-    let message = IncomingMessage::new("test", "test-user", "keep calling tools");
-    let initial_messages = vec![ChatMessage::user("keep calling tools")];
+    let (session, thread_id, message, initial_messages) =
+        build_loop_ctx("keep calling tools").await;
 
     let result = tokio::time::timeout(
         Duration::from_secs(5),
