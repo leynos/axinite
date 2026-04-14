@@ -70,6 +70,7 @@ pub(crate) struct LoopThresholds {
 }
 
 pub(crate) fn compute_loop_thresholds(max_tool_iterations: usize) -> LoopThresholds {
+    let max_tool_iterations = max_tool_iterations.max(1);
     LoopThresholds {
         nudge_at: max_tool_iterations.saturating_sub(1),
         force_text_at: max_tool_iterations,
