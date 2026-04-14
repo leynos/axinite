@@ -203,6 +203,74 @@ pub(super) async fn delete_document_by_path(
     Ok(())
 }
 
+fn normalise_dir_prefix(directory: &str) -> String {
+    if !directory.is_empty() && !directory.ends_with('/') {
+        format!("{}/", directory)
+    } else {
+        directory.to_string()
+    }
+}
+
+fn dir_like_pattern(dir: &str) -> String {
+    if dir.is_empty() {
+        "%".to_string()
+    } else {
+        format!("{}%", dir)
+    }
+}
+
+fn resolve_entry(full_path: &str, dir: &str) -> Option<(String, bool, String)> {
+    let relative = if dir.is_empty() {
+        full_path
+    } else {
+        full_path.strip_prefix(dir)?
+    };
+    let child_name = if let Some(slash_pos) = relative.find('/') {
+        &relative[..slash_pos]
+    } else {
+        relative
+    };
+    if child_name.is_empty() {
+        return None;
+    }
+    let is_dir = relative.contains('/');
+    let entry_path = if dir.is_empty() {
+        child_name.to_string()
+    } else {
+        format!("{}{}", dir, child_name)
+    };
+    Some((child_name.to_string(), is_dir, entry_path))
+}
+
+fn merge_entry(
+    entries_map: &mut HashMap<String, WorkspaceEntry>,
+    child_name: String,
+    entry_path: String,
+    is_dir: bool,
+    updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    content_preview: Option<String>,
+) {
+    entries_map
+        .entry(child_name)
+        .and_modify(|entry| {
+            if is_dir {
+                entry.is_directory = true;
+                entry.content_preview = None;
+            }
+            if let (Some(existing), Some(new)) = (&entry.updated_at, &updated_at)
+                && new > existing
+            {
+                entry.updated_at = Some(*new);
+            }
+        })
+        .or_insert(WorkspaceEntry {
+            path: entry_path,
+            is_directory: is_dir,
+            updated_at,
+            content_preview: if is_dir { None } else { content_preview },
+        });
+}
+
 pub(super) async fn list_directory(
     backend: &LibSqlBackend,
     scope: &AgentScope<'_>,
@@ -214,18 +282,10 @@ pub(super) async fn list_directory(
         .map_err(|e| WorkspaceError::SearchFailed {
             reason: e.to_string(),
         })?;
-    let dir = if !directory.is_empty() && !directory.ends_with('/') {
-        format!("{}/", directory)
-    } else {
-        directory.to_string()
-    };
+    let dir = normalise_dir_prefix(directory);
 
     let agent_id_str = scope.agent_id.map(|id| id.to_string());
-    let pattern = if dir.is_empty() {
-        "%".to_string()
-    } else {
-        format!("{}%", dir)
-    };
+    let pattern = dir_like_pattern(&dir);
 
     let mut rows = conn
         .query(
@@ -252,51 +312,17 @@ pub(super) async fn list_directory(
         })?
     {
         let full_path = get_text(&row, 0);
-        let updated_at = get_opt_ts(&row, 1);
-        let content_preview = get_opt_text(&row, 2);
-        let relative = if dir.is_empty() {
-            &full_path
-        } else if let Some(stripped) = full_path.strip_prefix(&dir) {
-            stripped
-        } else {
+        let Some((child_name, is_dir, entry_path)) = resolve_entry(&full_path, &dir) else {
             continue;
         };
-
-        let child_name = if let Some(slash_pos) = relative.find('/') {
-            &relative[..slash_pos]
-        } else {
-            relative
-        };
-        if child_name.is_empty() {
-            continue;
-        }
-
-        let is_dir = relative.contains('/');
-        let entry_path = if dir.is_empty() {
-            child_name.to_string()
-        } else {
-            format!("{}{}", dir, child_name)
-        };
-
-        entries_map
-            .entry(child_name.to_string())
-            .and_modify(|entry| {
-                if is_dir {
-                    entry.is_directory = true;
-                    entry.content_preview = None;
-                }
-                if let (Some(existing), Some(new)) = (&entry.updated_at, &updated_at)
-                    && new > existing
-                {
-                    entry.updated_at = Some(*new);
-                }
-            })
-            .or_insert(WorkspaceEntry {
-                path: entry_path,
-                is_directory: is_dir,
-                updated_at,
-                content_preview: if is_dir { None } else { content_preview },
-            });
+        merge_entry(
+            &mut entries_map,
+            child_name,
+            entry_path,
+            is_dir,
+            get_opt_ts(&row, 1),
+            get_opt_text(&row, 2),
+        );
     }
 
     let mut entries: Vec<WorkspaceEntry> = entries_map.into_values().collect();
