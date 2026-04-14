@@ -56,7 +56,15 @@ pub struct WorkerDeps {
 }
 
 /// Worker that executes a single job.
+///
+/// The scheduler and worker-oriented unit tests own this type. It coordinates
+/// in-memory job state, tool execution, and terminal persistence for one job.
 pub struct Worker {
+    /// Stable job identifier exposed to internal callers and unit tests.
+    ///
+    /// Callers use this to correlate scheduler state, context-manager lookups,
+    /// and persistence assertions. Reading this field has no side effects and
+    /// does not itself make any state durable.
     pub(crate) job_id: Uuid,
     deps: WorkerDeps,
 }
@@ -79,6 +87,12 @@ impl Worker {
     }
 
     // Convenience accessors to avoid deps.field everywhere
+    /// Return the shared context manager for this worker's job.
+    ///
+    /// Internal crates and unit tests use this accessor to inspect or prepare
+    /// the in-memory job state before driving the worker. This is a pure
+    /// accessor: it does not persist anything and requires no rollback by the
+    /// caller.
     pub(crate) fn context_manager(&self) -> &Arc<ContextManager> {
         &self.deps.context_manager
     }
@@ -245,7 +259,7 @@ impl Worker {
                 let previous = ctx.state;
                 let result = if matches!(
                     previous,
-                    JobState::Completed | JobState::Failed | JobState::Stuck
+                    JobState::Completed | JobState::Failed | JobState::Stuck | JobState::Cancelled
                 ) {
                     Err(format!(
                         "Cannot transition from terminal worker state {}",
@@ -1023,6 +1037,16 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         Self::execute_tool_inner(&self.deps, self.job_id, tool_name, params).await
     }
 
+    /// Mark the job completed and durably persist that terminal outcome.
+    ///
+    /// Internal scheduler paths and worker unit tests call this once the job's
+    /// successful result is known. The method first moves the in-memory
+    /// [`JobContext`] to `Completed`, then attempts an atomic terminal
+    /// persistence write for the result event and job status. If persistence
+    /// fails, it performs a best-effort rollback to the previous in-memory
+    /// state before returning the error; callers do not need to issue an extra
+    /// rollback step, but they should treat the terminal outcome as not
+    /// durable.
     pub(crate) async fn mark_completed(&self) -> Result<(), Error> {
         let previous = self
             .transition_terminal_state(|ctx| {
@@ -1085,6 +1109,15 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         }
     }
 
+    /// Mark the job failed and durably persist the terminal failure.
+    ///
+    /// Internal scheduler paths and unit tests call this when execution has
+    /// reached a terminal error. The method updates the in-memory
+    /// [`JobContext`] to `Failed`, then attempts one atomic persistence write
+    /// for the terminal event and status. If that write fails, it best-effort
+    /// rolls the context back to the previous state before returning the
+    /// persistence error; callers should not perform additional rollback, but
+    /// must treat the failure as non-durable.
     pub(crate) async fn mark_failed(&self, reason: &str) -> Result<(), Error> {
         let previous = self
             .transition_terminal_state(|ctx| {
@@ -1109,6 +1142,15 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         Ok(())
     }
 
+    /// Mark the job stuck and durably persist the terminal stuck result.
+    ///
+    /// Internal scheduler timeout handling and unit tests call this when the
+    /// worker cannot make further progress. The method transitions the
+    /// in-memory [`JobContext`] to `Stuck`, then attempts one atomic terminal
+    /// persistence write for the result event and status. If persistence
+    /// fails, it best-effort rolls the context back to the prior state before
+    /// returning the error; callers do not need to clean up the context
+    /// themselves, but the stuck outcome should be treated as non-durable.
     pub(crate) async fn mark_stuck(&self, reason: &str) -> Result<(), Error> {
         let previous = self
             .transition_terminal_state(|ctx| ctx.mark_stuck(reason))
@@ -1740,6 +1782,66 @@ mod tests {
         assert_eq!(events[0].event_type, "result");
         assert_eq!(events[0].data["status"], "completed");
         Ok(())
+    }
+
+    #[cfg(feature = "libsql")]
+    async fn make_worker_with_unpersisted_store(
+        tools: Vec<Arc<dyn Tool>>,
+    ) -> anyhow::Result<(Worker, tempfile::TempDir)> {
+        use crate::db::libsql::LibSqlBackend;
+        use tempfile::tempdir;
+
+        let registry = Arc::new(build_registry(tools).await);
+        let cm = Arc::new(ContextManager::new(5));
+        let job_id = cm.create_job("test", "test job").await?;
+        let dir = tempdir()?;
+        let path = dir.path().join("worker-test.db");
+        let backend = LibSqlBackend::new_local(&path).await?;
+        backend.run_migrations().await?;
+        let store: Arc<dyn Database> = Arc::new(backend);
+        let deps = base_deps(cm, registry, Some(store), None);
+
+        Ok((Worker::new(job_id, deps), dir))
+    }
+
+    #[cfg(feature = "libsql")]
+    async fn assert_terminal_persistence_failure_rolls_back(
+        transition: TerminalMethod,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let (worker, _dir) = make_worker_with_unpersisted_store(vec![]).await?;
+        transition_to_in_progress(&worker).await?;
+
+        let result = transition.apply_transition(&worker).await;
+        assert!(result.is_err(), "terminal persistence should fail");
+
+        let ctx = worker.context_manager().get_context(worker.job_id).await?;
+        assert_eq!(
+            ctx.state,
+            JobState::InProgress,
+            "persistence failure should roll context back to InProgress"
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_mark_completed_rolls_back_context_when_persistence_fails()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        assert_terminal_persistence_failure_rolls_back(TerminalMethod::Completed).await
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_mark_failed_rolls_back_context_when_persistence_fails()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        assert_terminal_persistence_failure_rolls_back(TerminalMethod::Failed("test failure")).await
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_mark_stuck_rolls_back_context_when_persistence_fails()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        assert_terminal_persistence_failure_rolls_back(TerminalMethod::Stuck("test stuck")).await
     }
 
     /// Build a Worker with the given approval context.

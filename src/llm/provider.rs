@@ -686,6 +686,8 @@ mod tests {
     fn default_completion_response_matches_contract() {
         let response = CompletionResponse::default();
         assert_is_default_completion_response(&response);
+        assert_eq!(response.cache_read_input_tokens, 0);
+        assert_eq!(response.cache_creation_input_tokens, 0);
     }
 
     #[test]
@@ -696,6 +698,8 @@ mod tests {
         assert_eq!(response.input_tokens, 0);
         assert_eq!(response.output_tokens, 0);
         assert_eq!(response.finish_reason, FinishReason::Stop);
+        assert_eq!(response.cache_read_input_tokens, 0);
+        assert_eq!(response.cache_creation_input_tokens, 0);
     }
 
     #[test]
