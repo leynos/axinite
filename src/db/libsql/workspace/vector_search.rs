@@ -50,6 +50,7 @@ fn rank_candidates(mut candidates: Vec<Candidate>, limit: usize) -> Vec<RankedRe
         b.similarity
             .partial_cmp(&a.similarity)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.chunk_id.cmp(&b.chunk_id))
     });
 
     let total_candidates = candidates.len();

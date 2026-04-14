@@ -47,12 +47,17 @@ pub(super) async fn insert_chunk(
         })?;
     let id = Uuid::new_v4();
     let chunk_index = i64::from(chunk_index);
-    let embedding_blob = embedding.map(|values| {
-        values
-            .iter()
-            .flat_map(|f| f.to_le_bytes())
-            .collect::<Vec<u8>>()
+    let embedding_blob = embedding.and_then(|values| {
+        (!values.is_empty()).then(|| {
+            values
+                .iter()
+                .flat_map(|f| f.to_le_bytes())
+                .collect::<Vec<u8>>()
+        })
     });
+    let embedding_value = embedding_blob
+        .map(libsql::Value::Blob)
+        .unwrap_or(libsql::Value::Null);
 
     conn.execute(
         r#"
@@ -64,7 +69,7 @@ pub(super) async fn insert_chunk(
             document_id.to_string(),
             chunk_index,
             content,
-            embedding_blob.map(libsql::Value::Blob),
+            embedding_value,
         ],
     )
     .await
@@ -85,11 +90,16 @@ pub(super) async fn update_chunk_embedding(
         .map_err(|e| WorkspaceError::EmbeddingFailed {
             reason: e.to_string(),
         })?;
-    let bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+    let embedding_value = if embedding.is_empty() {
+        libsql::Value::Null
+    } else {
+        let bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+        libsql::Value::Blob(bytes)
+    };
 
     conn.execute(
         "UPDATE memory_chunks SET embedding = ?2 WHERE id = ?1",
-        params![chunk_id.to_string(), libsql::Value::Blob(bytes)],
+        params![chunk_id.to_string(), embedding_value],
     )
     .await
     .map_err(|e| WorkspaceError::EmbeddingFailed {

@@ -180,19 +180,47 @@ pub(super) async fn delete_document_by_path(
     scope: &AgentScope<'_>,
     path: &str,
 ) -> Result<(), WorkspaceError> {
-    let doc =
-        NativeWorkspaceStore::get_document_by_path(backend, scope.user_id, scope.agent_id, path)
-            .await?;
-    NativeWorkspaceStore::delete_chunks(backend, doc.id).await?;
-
-    let conn = backend
-        .connect()
+    let conn = connect_backend(backend).await?;
+    let agent_id_str = scope.agent_id.map(|id| id.to_string());
+    let tx = conn
+        .transaction()
         .await
         .map_err(|e| WorkspaceError::SearchFailed {
-            reason: e.to_string(),
+            reason: format!("Delete failed: {}", e),
         })?;
-    let agent_id_str = scope.agent_id.map(|id| id.to_string());
-    conn.execute(
+    let rows = tx
+        .query(
+            r#"
+            SELECT id, user_id, agent_id, path, content,
+                   created_at, updated_at, metadata
+            FROM memory_documents
+            WHERE user_id = ?1 AND agent_id IS ?2 AND path = ?3
+            "#,
+            params![scope.user_id, agent_id_str.as_deref(), path],
+        )
+        .await
+        .map_err(|e| WorkspaceError::SearchFailed {
+            reason: format!("Query failed: {}", e),
+        })?;
+    let doc = match fetch_first_row(rows).await? {
+        Some(row) => row_to_memory_document(&row),
+        None => {
+            return Err(WorkspaceError::DocumentNotFound {
+                doc_type: path.to_string(),
+                user_id: scope.user_id.to_string(),
+            });
+        }
+    };
+
+    tx.execute(
+        "DELETE FROM memory_chunks WHERE document_id = ?1",
+        params![doc.id.to_string()],
+    )
+    .await
+    .map_err(|e| WorkspaceError::SearchFailed {
+        reason: format!("Delete failed: {}", e),
+    })?;
+    tx.execute(
         "DELETE FROM memory_documents WHERE user_id = ?1 AND agent_id IS ?2 AND path = ?3",
         params![scope.user_id, agent_id_str.as_deref(), path],
     )
@@ -200,6 +228,11 @@ pub(super) async fn delete_document_by_path(
     .map_err(|e| WorkspaceError::SearchFailed {
         reason: format!("Delete failed: {}", e),
     })?;
+    tx.commit()
+        .await
+        .map_err(|e| WorkspaceError::SearchFailed {
+            reason: format!("Delete failed: {}", e),
+        })?;
     Ok(())
 }
 
