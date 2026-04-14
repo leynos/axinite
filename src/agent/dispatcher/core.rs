@@ -62,6 +62,21 @@ struct ChatDelegateParams<'a> {
     user_tz: chrono_tz::Tz,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LoopThresholds {
+    pub(crate) nudge_at: usize,
+    pub(crate) force_text_at: usize,
+    pub(crate) hard_ceiling: usize,
+}
+
+pub(crate) fn compute_loop_thresholds(max_tool_iterations: usize) -> LoopThresholds {
+    LoopThresholds {
+        nudge_at: max_tool_iterations.saturating_sub(1),
+        force_text_at: max_tool_iterations,
+        hard_ceiling: max_tool_iterations + 1,
+    }
+}
+
 impl Agent {
     async fn prepare_reasoning(
         &self,
@@ -193,7 +208,7 @@ impl Agent {
         job_ctx.http_interceptor = self.deps.http_interceptor.clone();
         job_ctx.user_timezone = user_tz.name().to_string();
 
-        let max_tool_iterations = self.config.max_tool_iterations;
+        let thresholds = compute_loop_thresholds(self.config.max_tool_iterations);
 
         ChatDelegate {
             agent: self,
@@ -204,8 +219,8 @@ impl Agent {
             active_skills,
             cached_prompt: prompts.with_tools,
             cached_prompt_no_tools: prompts.no_tools,
-            nudge_at: max_tool_iterations.saturating_sub(1),
-            force_text_at: max_tool_iterations,
+            nudge_at: thresholds.nudge_at,
+            force_text_at: thresholds.force_text_at,
             user_tz,
         }
     }
@@ -227,8 +242,9 @@ impl Agent {
                 metadata
             });
 
+        let thresholds = compute_loop_thresholds(spec.max_tool_iterations);
         let loop_config = crate::agent::agentic_loop::AgenticLoopConfig {
-            max_iterations: spec.max_tool_iterations + 1,
+            max_iterations: thresholds.hard_ceiling,
             enable_tool_intent_nudge: true,
             max_tool_intent_nudges: 2,
         };

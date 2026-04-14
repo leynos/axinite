@@ -1,15 +1,15 @@
 //! Loop guard and termination tests.
 
 use proptest::prelude::*;
-use uuid::Uuid;
 
 use super::*;
 
 /// Asserts iteration bounds guarantee termination for a given max_iter.
 fn assert_iteration_bounds(max_iter: usize) {
-    let force_text_at = max_iter;
-    let nudge_at = max_iter.saturating_sub(1);
-    let hard_ceiling = max_iter + 1;
+    let thresholds = super::super::core::compute_loop_thresholds(max_iter);
+    let force_text_at = thresholds.force_text_at;
+    let nudge_at = thresholds.nudge_at;
+    let hard_ceiling = thresholds.hard_ceiling;
 
     // force_text_at must be reachable (> 0)
     assert!(
@@ -106,9 +106,7 @@ async fn force_text_prevents_infinite_tool_call_loop() {
     );
 }
 
-async fn build_loop_ctx(
-    prompt: &str,
-) -> (Arc<Mutex<Session>>, Uuid, IncomingMessage, Vec<ChatMessage>) {
+async fn build_loop_ctx(prompt: &str) -> (IncomingMessage, super::super::core::RunLoopCtx) {
     let session = Arc::new(Mutex::new(Session::new("test-user")));
     let thread_id = {
         let mut sess = session.lock().await;
@@ -116,8 +114,13 @@ async fn build_loop_ctx(
     };
     let message = IncomingMessage::new("test", "test-user", prompt);
     let initial_messages = vec![ChatMessage::user(prompt)];
+    let ctx = super::super::core::RunLoopCtx {
+        session,
+        thread_id,
+        initial_messages,
+    };
 
-    (session, thread_id, message, initial_messages)
+    (message, ctx)
 }
 
 /// Regression test for the infinite loop bug (PR #252) where `continue`
@@ -128,21 +131,14 @@ async fn build_loop_ctx(
 async fn test_dispatcher_terminates_with_all_tool_calls_failing() {
     let agent = make_test_agent_with_llm(Arc::new(MockLlmProvider::failing_tool_call()), 5);
 
-    let (session, thread_id, message, initial_messages) = build_loop_ctx("do something").await;
+    let (message, ctx) = build_loop_ctx("do something").await;
 
     // The dispatcher must terminate within 5 seconds. If there is an
     // infinite loop bug (e.g., index not advancing on tool failure), the
     // timeout will fire and the test will fail.
     let result = tokio::time::timeout(
         Duration::from_secs(5),
-        agent.run_agentic_loop(
-            &message,
-            super::super::core::RunLoopCtx {
-                session,
-                thread_id,
-                initial_messages,
-            },
-        ),
+        agent.run_agentic_loop(&message, ctx),
     )
     .await;
 
@@ -156,7 +152,7 @@ async fn test_dispatcher_terminates_with_all_tool_calls_failing() {
     let inner = result.expect("test timed out or dispatcher context lost");
     match inner {
         Ok(super::super::AgenticLoopResult::Response(text)) => {
-            assert!(!text.is_empty(), "Expected non-empty forced text response");
+            assert_eq!(text, "forced text");
         }
         Ok(super::super::AgenticLoopResult::NeedApproval { .. }) => {
             panic!("Expected force-text response or hard-ceiling error, got NeedApproval");
@@ -194,6 +190,7 @@ fn build_test_agent_config(max_tool_iterations: usize) -> AgentConfig {
 /// Assert that the timeout-wrapped agentic loop result is a text response.
 fn assert_agentic_loop_text_response<E: std::fmt::Debug>(
     result: Result<Result<super::super::AgenticLoopResult, E>, tokio::time::error::Elapsed>,
+    expected_text: &str,
 ) {
     assert!(
         result.is_ok(),
@@ -202,7 +199,7 @@ fn assert_agentic_loop_text_response<E: std::fmt::Debug>(
     let inner = result.expect("test timed out or dispatcher context lost");
     match inner.expect("Expected Ok(AgenticLoopResult) but dispatcher returned Err") {
         super::super::AgenticLoopResult::Response(text) => {
-            assert!(!text.is_empty(), "Expected non-empty forced text response");
+            assert_eq!(text, expected_text);
         }
         super::super::AgenticLoopResult::NeedApproval { .. } => {
             panic!("Expected text response, got NeedApproval");
@@ -227,21 +224,13 @@ async fn test_dispatcher_terminates_with_max_iterations() {
         None,
     );
 
-    let (session, thread_id, message, initial_messages) =
-        build_loop_ctx("keep calling tools").await;
+    let (message, ctx) = build_loop_ctx("keep calling tools").await;
 
     let result = tokio::time::timeout(
         Duration::from_secs(5),
-        agent.run_agentic_loop(
-            &message,
-            super::super::core::RunLoopCtx {
-                session,
-                thread_id,
-                initial_messages,
-            },
-        ),
+        agent.run_agentic_loop(&message, ctx),
     )
     .await;
 
-    assert_agentic_loop_text_response(result);
+    assert_agentic_loop_text_response(result, "forced text response");
 }
