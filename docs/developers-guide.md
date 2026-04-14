@@ -209,6 +209,30 @@ The `build_all()` function provides a backward-compatible single-call
 form; it invokes `build_components()` and then
 `side_effects.start()`.
 
+- `init_skills()` runs during `build_components()` construction;
+  `RuntimeSideEffects::start()` does not load skills.
+
+#### init_skills()
+
+Phase: after tool registry initialization and before extensions.
+Purpose: discover local and installed skills, register their tools into
+the shared `ToolRegistry`, and expose:
+
+- `SkillRegistry` (`Arc<RwLock<...>>`) for mutation by the agent at
+  runtime.
+- `SkillCatalog` (`Arc<...>`) for lookups.
+
+Behaviour:
+
+- When `config.skills.enabled = false` it returns `(None, None)`.
+- When enabled it loads skills from `skills.local_dir` and
+  `skills.installed_dir` (if present), logs loaded names at debug, and
+  registers tool shims into the `ToolRegistry`.
+
+Tests:
+
+- See `src/app.rs` `#[cfg(test)]` for smoke coverage.
+
 #### AppBuilderFlags
 
 `AppBuilderFlags` controls optional construction behaviour:
