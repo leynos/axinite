@@ -274,6 +274,35 @@ mod tests {
         assert_eq!(timeout, 5000);
     }
 
+    #[tokio::test]
+    async fn new_memory_drop_removes_temp_files() {
+        let backend = LibSqlBackend::new_memory()
+            .await
+            .expect("failed to create temp-file-backed backend");
+
+        let path = backend
+            .db
+            .temp_path
+            .clone()
+            .expect("new_memory must set temp_path");
+        let wal = path.with_extension("db-wal");
+        let shm = path.with_extension("db-shm");
+
+        // Touch the database and sidecar files so the drop handler has
+        // something concrete to delete.
+        std::fs::write(&path, b"").unwrap_or_default();
+        std::fs::write(&wal, b"").unwrap_or_default();
+        std::fs::write(&shm, b"").unwrap_or_default();
+
+        assert!(path.exists(), "temp db file must exist before drop");
+
+        drop(backend);
+
+        assert!(!path.exists(), "temp db file must be removed after drop");
+        assert!(!wal.exists(), "WAL sidecar must be removed after drop");
+        assert!(!shm.exists(), "SHM sidecar must be removed after drop");
+    }
+
     /// Regression test: save_job must persist user_id and get_job must return it.
     #[tokio::test]
     async fn test_save_job_persists_user_id() {
