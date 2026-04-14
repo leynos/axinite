@@ -91,7 +91,7 @@ impl LibSqlBackend {
             .build()
             .await
             .map_err(|e| {
-                DatabaseError::Pool(format!("Failed to create in-memory database: {}", e))
+                DatabaseError::Pool(format!("Failed to create temp-file-backed database: {}", e))
             })?;
 
         Ok(Self {
