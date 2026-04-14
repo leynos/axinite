@@ -1,6 +1,8 @@
 //! Approval-related tests.
 
 use super::*;
+use crate::agent::dispatcher::delegate::preflight::approval_requirement_needs_approval;
+use crate::tools::ApprovalRequirement;
 
 #[test]
 fn test_make_test_agent_succeeds() {
@@ -53,8 +55,6 @@ fn test_shell_destructive_command_requires_explicit_approval() {
 fn test_always_approval_requirement_bypasses_session_auto_approve() {
     // Regression test: even if tool is auto-approved in session,
     // ApprovalRequirement::Always must still trigger approval.
-    use crate::tools::ApprovalRequirement;
-
     let mut session = Session::new("user-1");
     let tool_name = "tool_remove";
 
@@ -67,12 +67,8 @@ fn test_always_approval_requirement_bypasses_session_auto_approve() {
 
     // However, ApprovalRequirement::Always should always require approval
     // This is verified by the dispatcher logic: Always => true (ignores session state)
-    let always_req = ApprovalRequirement::Always;
-    let requires_approval = match always_req {
-        ApprovalRequirement::Never => false,
-        ApprovalRequirement::UnlessAutoApproved => !session.is_tool_auto_approved(tool_name),
-        ApprovalRequirement::Always => true,
-    };
+    let requires_approval =
+        approval_requirement_needs_approval(ApprovalRequirement::Always, &session, tool_name);
 
     assert!(
         requires_approval,
@@ -83,8 +79,6 @@ fn test_always_approval_requirement_bypasses_session_auto_approve() {
 #[test]
 fn test_always_approval_requirement_vs_unless_auto_approved() {
     // Verify the two requirements behave differently
-    use crate::tools::ApprovalRequirement;
-
     let mut session = Session::new("user-2");
     let tool_name = "http";
 
@@ -92,24 +86,19 @@ fn test_always_approval_requirement_vs_unless_auto_approved() {
     session.auto_approve_tool(tool_name);
 
     // UnlessAutoApproved => doesn't require approval if auto-approved
-    let unless_req = ApprovalRequirement::UnlessAutoApproved;
-    let unless_needs = match unless_req {
-        ApprovalRequirement::Never => false,
-        ApprovalRequirement::UnlessAutoApproved => !session.is_tool_auto_approved(tool_name),
-        ApprovalRequirement::Always => true,
-    };
+    let unless_needs = approval_requirement_needs_approval(
+        ApprovalRequirement::UnlessAutoApproved,
+        &session,
+        tool_name,
+    );
     assert!(
         !unless_needs,
         "UnlessAutoApproved should not need approval when auto-approved"
     );
 
     // Always => always requires approval
-    let always_req = ApprovalRequirement::Always;
-    let always_needs = match always_req {
-        ApprovalRequirement::Never => false,
-        ApprovalRequirement::UnlessAutoApproved => !session.is_tool_auto_approved(tool_name),
-        ApprovalRequirement::Always => true,
-    };
+    let always_needs =
+        approval_requirement_needs_approval(ApprovalRequirement::Always, &session, tool_name);
     assert!(
         always_needs,
         "Always must always require approval, even when auto-approved"
@@ -120,21 +109,28 @@ fn test_always_approval_requirement_vs_unless_auto_approved() {
     assert!(!session.is_tool_auto_approved(new_tool));
 
     // UnlessAutoApproved => requires approval
-    let unless_needs = match unless_req {
-        ApprovalRequirement::Never => false,
-        ApprovalRequirement::UnlessAutoApproved => !session.is_tool_auto_approved(new_tool),
-        ApprovalRequirement::Always => true,
-    };
+    let unless_needs = approval_requirement_needs_approval(
+        ApprovalRequirement::UnlessAutoApproved,
+        &session,
+        new_tool,
+    );
     assert!(
         unless_needs,
         "UnlessAutoApproved should need approval when not auto-approved"
     );
 
     // Always => always requires approval
-    let always_needs = match always_req {
-        ApprovalRequirement::Never => false,
-        ApprovalRequirement::UnlessAutoApproved => !session.is_tool_auto_approved(new_tool),
-        ApprovalRequirement::Always => true,
-    };
+    let always_needs =
+        approval_requirement_needs_approval(ApprovalRequirement::Always, &session, new_tool);
     assert!(always_needs, "Always must always require approval");
+}
+
+#[test]
+fn test_never_approval_requirement_never_requires_approval() {
+    let session = Session::new("user-3");
+
+    assert!(
+        !approval_requirement_needs_approval(ApprovalRequirement::Never, &session, "echo"),
+        "Never should never require approval"
+    );
 }

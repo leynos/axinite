@@ -92,7 +92,7 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
 
 mod loops;
 
-mod preflight;
+pub(in crate::agent::dispatcher) mod preflight;
 
 //! Chat delegate implementation for the agentic loop.
 

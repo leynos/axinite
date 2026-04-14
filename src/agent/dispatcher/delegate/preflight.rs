@@ -9,6 +9,21 @@ use crate::tools::redact_params;
 use super::ChatDelegate;
 use crate::agent::dispatcher::types::*;
 
+/// Return `true` if a tool invocation requires interactive approval.
+pub(in crate::agent::dispatcher) fn approval_requirement_needs_approval(
+    requirement: crate::tools::ApprovalRequirement,
+    session: &crate::agent::session::Session,
+    tool_name: &str,
+) -> bool {
+    use crate::tools::ApprovalRequirement;
+
+    match requirement {
+        ApprovalRequirement::Never => false,
+        ApprovalRequirement::UnlessAutoApproved => !session.is_tool_auto_approved(tool_name),
+        ApprovalRequirement::Always => true,
+    }
+}
+
 /// Restore original values of sensitive parameters into a hook-modified JSON
 /// object, ensuring that fields the hook was not permitted to see are not
 /// inadvertently erased.
@@ -79,15 +94,9 @@ impl<'a> ChatDelegate<'a> {
         tc_name: &str,
         arguments: &serde_json::Value,
     ) -> bool {
-        use crate::tools::ApprovalRequirement;
-        match tool.requires_approval(arguments) {
-            ApprovalRequirement::Never => false,
-            ApprovalRequirement::UnlessAutoApproved => {
-                let sess = self.session.lock().await;
-                !sess.is_tool_auto_approved(tc_name)
-            }
-            ApprovalRequirement::Always => true,
-        }
+        let requirement = tool.requires_approval(arguments);
+        let sess = self.session.lock().await;
+        approval_requirement_needs_approval(requirement, &sess, tc_name)
     }
 
     /// Run the `BeforeToolCall` hook for one tool invocation.

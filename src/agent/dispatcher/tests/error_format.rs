@@ -40,9 +40,9 @@ fn test_tool_error_format_includes_tool_name() {
         name: tool_name.to_string(),
         reason: "connection refused".to_string(),
     };
-    let formatted = format!("Tool '{}' failed: {}", tool_name, err);
+    let formatted = err.to_string();
     assert!(
-        formatted.contains("Tool 'http' failed:"),
+        formatted.contains(tool_name),
         "Error should identify the tool by name, got: {formatted}"
     );
     assert!(

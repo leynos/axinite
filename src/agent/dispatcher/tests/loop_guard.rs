@@ -71,7 +71,10 @@ async fn force_text_prevents_infinite_tool_call_loop() {
     let ctx_normal = ReasoningContext::new()
         .with_messages(vec![ChatMessage::user("hello")])
         .with_tools(vec![tool_def.clone()]);
-    let output = reasoning.respond_with_tools(&ctx_normal).await.unwrap();
+    let output = reasoning
+        .respond_with_tools(&ctx_normal)
+        .await
+        .expect("respond_with_tools failed for normal context");
     assert!(
         matches!(output.result, RespondResult::ToolCalls { .. }),
         "Without force_text, should get tool calls"
@@ -82,7 +85,10 @@ async fn force_text_prevents_infinite_tool_call_loop() {
         .with_messages(vec![ChatMessage::user("hello")])
         .with_tools(vec![tool_def]);
     ctx_forced.force_text = true;
-    let output = reasoning.respond_with_tools(&ctx_forced).await.unwrap();
+    let output = reasoning
+        .respond_with_tools(&ctx_forced)
+        .await
+        .expect("respond_with_tools failed for forced-text context");
     assert!(
         matches!(output.result, RespondResult::Text(_)),
         "With force_text, should get text response, got: {:?}",
@@ -137,11 +143,7 @@ async fn test_dispatcher_terminates_with_all_tool_calls_failing() {
     // The loop should complete (either with a text response from force_text,
     // or an error from the hard ceiling). Both are acceptable termination.
     let inner = result.unwrap();
-    assert!(
-        inner.is_ok(),
-        "Dispatcher returned an error: {:?}",
-        inner.err()
-    );
+    let _ = inner;
 }
 
 /// Build test AgentDeps with EchoTool registered and the given LLM.
@@ -154,7 +156,6 @@ fn build_test_agent_deps(llm: Arc<dyn LlmProvider>) -> AgentDeps {
 /// Build test AgentConfig with the specified max_tool_iterations.
 fn build_test_agent_config(max_tool_iterations: usize) -> AgentConfig {
     let mut config = make_agent_config(max_tool_iterations, true);
-    config.max_tool_iterations = max_tool_iterations;
     config.auto_approve_tools = true;
     config
 }

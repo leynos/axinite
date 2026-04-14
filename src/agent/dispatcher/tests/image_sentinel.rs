@@ -58,6 +58,25 @@ fn test_image_sentinel_present_data_url_is_valid() {
     );
 }
 
+#[test]
+fn test_image_sentinel_http_url_is_invalid() {
+    let sentinel = serde_json::json!({
+        "type": "image_generated",
+        "data": "https://example.test/image.png",
+        "path": "/tmp/image.png"
+    });
+
+    let data_url = sentinel
+        .get("data")
+        .and_then(|v| v.as_str())
+        .filter(|value| value.starts_with("data:image/"));
+
+    assert!(
+        data_url.is_none(),
+        "Non-data URLs should be rejected for image sentinel payloads"
+    );
+}
+
 // === Delegate-level tests ===
 
 /// Build a minimal `Agent` wired to a `ChannelManager` with a registered stub.
@@ -171,6 +190,54 @@ async fn delegate_skips_broadcast_when_data_url_is_empty() {
     assert!(
         captured.is_empty(),
         "should NOT emit any status when data URL is empty"
+    );
+}
+
+#[tokio::test]
+async fn delegate_skips_broadcast_when_data_url_is_not_a_data_url() {
+    let (stub, _sender) = StubChannel::new("test-chan");
+    let statuses = stub.captured_statuses_handle();
+    let channels = Arc::new(ChannelManager::new());
+    channels.add(Box::new(stub)).await;
+
+    let agent = build_agent_with_stub_channel(channels);
+    let session = Arc::new(Mutex::new(Session::new("test-user")));
+    let message = IncomingMessage::new("test-chan", "test-user", "generate an image");
+
+    let delegate = super::super::delegate::ChatDelegate {
+        agent: &agent,
+        session,
+        thread_id: uuid::Uuid::new_v4(),
+        message: &message,
+        job_ctx: JobContext::with_user("test-user", "test", "test session"),
+        active_skills: vec![],
+        cached_prompt: String::new(),
+        cached_prompt_no_tools: String::new(),
+        nudge_at: 0,
+        force_text_at: 0,
+        user_tz: chrono_tz::UTC,
+    };
+
+    let output = serde_json::json!({
+        "type": "image_generated",
+        "data": "https://example.test/image.png",
+        "path": "/tmp/image.png"
+    })
+    .to_string();
+
+    let result = delegate
+        .maybe_emit_image_sentinel("image_generate", &output)
+        .await;
+
+    assert!(
+        result,
+        "should return true (sentinel detected) even when data URL is invalid"
+    );
+
+    let captured = statuses.lock().expect("statuses lock poisoned");
+    assert!(
+        captured.is_empty(),
+        "should NOT emit any status when data URL is not a data URL"
     );
 }
 

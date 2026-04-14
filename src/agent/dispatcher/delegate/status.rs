@@ -6,6 +6,14 @@ use crate::error::Error;
 
 use super::ChatDelegate;
 
+fn validate_image_data_url(data_url: &str) -> Option<String> {
+    if data_url.starts_with("data:image/") {
+        Some(data_url.to_string())
+    } else {
+        None
+    }
+}
+
 impl<'a> ChatDelegate<'a> {
     /// Send ToolStarted status update.
     pub(super) async fn send_tool_started(&self, tool_name: &str) {
@@ -71,18 +79,13 @@ impl<'a> ChatDelegate<'a> {
         if let Ok(sentinel) = serde_json::from_str::<serde_json::Value>(output)
             && sentinel.get("type").and_then(|v| v.as_str()) == Some("image_generated")
         {
-            let data_url = sentinel
-                .get("data")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string();
+            let raw_data_url = sentinel.get("data").and_then(|v| v.as_str());
+            let data_url = raw_data_url.and_then(validate_image_data_url);
             let path = sentinel
                 .get("path")
                 .and_then(|v| v.as_str())
                 .map(String::from);
-            if data_url.is_empty() {
-                tracing::warn!("Image generation sentinel has empty data URL, skipping broadcast");
-            } else {
+            if let Some(data_url) = data_url {
                 let _ = self
                     .agent
                     .channels
@@ -92,6 +95,11 @@ impl<'a> ChatDelegate<'a> {
                         &self.message.metadata,
                     )
                     .await;
+            } else {
+                tracing::warn!(
+                    has_data = raw_data_url.is_some(),
+                    "Image generation sentinel has invalid or empty data URL, skipping broadcast"
+                );
             }
             return true;
         }
