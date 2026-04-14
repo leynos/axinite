@@ -207,7 +207,6 @@ cargo nextest run --workspace --no-default-features --features libsql \
 To compare behaviour against the legacy harness, use `make test-cargo`
 or `make test-matrix-cargo`.
 
-
 ## Self-repair internals
 
 The agent loop starts the self-repair subsystem in
@@ -311,6 +310,33 @@ is the Rust host crate. Common explicit commands are:
   `target/wasm-extensions/` target dir,
 - `./channels-src/telegram/build.sh` for a deployable Telegram channel
   artifact with `telegram.wasm`.
+
+For host-side tests that need a real GitHub WASM component instead of a
+hand-built fixture, use the shared helper in `src/testing/mod.rs`:
+`github_wasm_wrapper() -> anyhow::Result<WasmToolWrapper>`.
+
+This helper:
+
+- builds a `WasmToolWrapper` around the shared GitHub test artifact,
+- recovers the exported description and schema before returning, so the
+  wrapper exposes the same advertised contract used by runtime
+  fallback-guidance tests,
+- avoids duplicating WASM runtime preparation in each test module.
+
+Typical usage from an async test or `rstest` fixture is:
+
+```rust
+use ironclaw::testing::github_wasm_wrapper;
+
+#[tokio::test]
+async fn github_wasm_fixture_executes() -> anyhow::Result<()> {
+    let wrapper = github_wasm_wrapper().await?;
+    let definition = wrapper.definition();
+
+    assert_eq!(definition.name, "github");
+    Ok(())
+}
+```
 
 ## When to use cargo test versus cargo-nextest
 
