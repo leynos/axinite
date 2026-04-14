@@ -16,9 +16,26 @@ use crate::llm::Reasoning;
 use super::delegate::ChatDelegate;
 use super::types::*;
 
+/// Owned inputs captured for a single agentic loop run.
+///
+/// This crate-visible context is re-exported for dispatcher callers, so its
+/// ownership and thread-safety contracts are part of the internal API.
 pub(crate) struct RunLoopCtx {
+    /// Shared handle to the live session state for this run.
+    ///
+    /// The session is guarded by a Tokio `Mutex`, so callers should clone the
+    /// `Arc` when handing it across async boundaries rather than moving the
+    /// underlying `Session`. All mutation must happen through the mutex guard.
     pub session: Arc<Mutex<Session>>,
+    /// Stable identifier for the thread being processed by this run loop.
+    ///
+    /// `Uuid` has owned copy semantics, so callers may copy or clone this
+    /// value freely when they need to correlate work across components.
     pub thread_id: Uuid,
+    /// Initial chat history moved into the run loop for this invocation.
+    ///
+    /// Ownership of the message vector transfers into `RunLoopCtx`, and the
+    /// loop consumes it as the starting prompt state for the agent.
     pub initial_messages: Vec<ChatMessage>,
 }
 

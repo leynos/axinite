@@ -149,7 +149,7 @@ async fn test_dispatcher_terminates_with_all_tool_calls_failing() {
 
     // The loop should complete (either with a text response from force_text,
     // or an error from the hard ceiling). Both are acceptable termination.
-    let inner = result.unwrap();
+    let inner = result.expect("test timed out or dispatcher context lost");
     let _ = inner;
 }
 
@@ -175,7 +175,7 @@ fn assert_agentic_loop_text_response<E: std::fmt::Debug>(
         result.is_ok(),
         "Dispatcher timed out -- max_iterations guard failed to terminate the loop"
     );
-    let inner = result.unwrap();
+    let inner = result.expect("test timed out or dispatcher context lost");
     assert!(
         inner.is_ok(),
         "Dispatcher returned an error: {:?}",
