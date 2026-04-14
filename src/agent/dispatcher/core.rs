@@ -40,6 +40,15 @@ pub(crate) struct RunLoopCtx {
     pub initial_messages: Vec<ChatMessage>,
 }
 
+#[derive(Debug)]
+struct LoopCtxSpec {
+    initial_messages: Vec<ChatMessage>,
+    initial_tool_defs: Vec<ToolDefinition>,
+    cached_prompt: String,
+    thread_id: Uuid,
+    max_tool_iterations: usize,
+}
+
 impl Agent {
     async fn prepare_reasoning(
         &self,
@@ -190,27 +199,23 @@ impl Agent {
 
     fn build_loop_context(
         &self,
-        initial_messages: Vec<ChatMessage>,
-        initial_tool_defs: Vec<ToolDefinition>,
-        cached_prompt: String,
-        thread_id: Uuid,
-        max_tool_iterations: usize,
+        spec: LoopCtxSpec,
     ) -> (
         crate::llm::ReasoningContext,
         crate::agent::agentic_loop::AgenticLoopConfig,
     ) {
         let reason_ctx = crate::llm::ReasoningContext::new()
-            .with_messages(initial_messages)
-            .with_tools(initial_tool_defs)
-            .with_system_prompt(cached_prompt)
+            .with_messages(spec.initial_messages)
+            .with_tools(spec.initial_tool_defs)
+            .with_system_prompt(spec.cached_prompt)
             .with_metadata({
                 let mut metadata = std::collections::HashMap::new();
-                metadata.insert("thread_id".to_string(), thread_id.to_string());
+                metadata.insert("thread_id".to_string(), spec.thread_id.to_string());
                 metadata
             });
 
         let loop_config = crate::agent::agentic_loop::AgenticLoopConfig {
-            max_iterations: max_tool_iterations + 1,
+            max_iterations: spec.max_tool_iterations + 1,
             enable_tool_intent_nudge: true,
             max_tool_intent_nudges: 2,
         };
@@ -253,13 +258,13 @@ impl Agent {
             cached_prompt_no_tools,
             user_tz,
         );
-        let (mut reason_ctx, loop_config) = self.build_loop_context(
-            ctx.initial_messages,
+        let (mut reason_ctx, loop_config) = self.build_loop_context(LoopCtxSpec {
+            initial_messages: ctx.initial_messages,
             initial_tool_defs,
             cached_prompt,
-            ctx.thread_id,
+            thread_id: ctx.thread_id,
             max_tool_iterations,
-        );
+        });
 
         let outcome = crate::agent::agentic_loop::run_agentic_loop(
             &delegate,
