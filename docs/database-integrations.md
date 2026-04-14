@@ -342,8 +342,8 @@ Table 4. Current backend comparison.
 
 Choose PostgreSQL when:
 
-- full hybrid workspace search quality matters and search latency under larger
-  workspaces matters too
+- full hybrid workspace search quality and search latency under larger
+  workspaces matter
 - the deployment already has PostgreSQL 15+ with pgvector available
 - query behaviour should match the default and most-tested path as closely as
   possible
