@@ -21,17 +21,30 @@ use crate::agent::session::{Session, ThreadState};
 use crate::agent::submission::SubmissionResult;
 use crate::error::Error;
 
+enum RewindOp {
+    Undo,
+    Redo,
+}
+
 impl Agent {
-    pub(super) async fn process_undo(
+    async fn process_rewind(
         &self,
         session: Arc<Mutex<Session>>,
         thread_id: Uuid,
+        op: RewindOp,
     ) -> Result<SubmissionResult, Error> {
         let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
         let mut mgr = undo_mgr.lock().await;
 
-        if !mgr.can_undo() {
-            return Ok(SubmissionResult::ok_with_message("Nothing to undo."));
+        let can_rewind = match op {
+            RewindOp::Undo => mgr.can_undo(),
+            RewindOp::Redo => mgr.can_redo(),
+        };
+        if !can_rewind {
+            return Ok(match op {
+                RewindOp::Undo => SubmissionResult::ok_with_message("Nothing to undo."),
+                RewindOp::Redo => SubmissionResult::ok_with_message("Nothing to redo."),
+            });
         }
 
         let mut sess = session.lock().await;
@@ -40,21 +53,42 @@ impl Agent {
             .get_mut(&thread_id)
             .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
 
-        // Save current state to redo, get previous checkpoint
         let current_messages = thread.messages();
         let current_turn = thread.turn_number();
 
-        if let Some(checkpoint) = mgr.undo(current_turn, current_messages) {
+        let checkpoint = match op {
+            RewindOp::Undo => mgr.undo(current_turn, current_messages),
+            RewindOp::Redo => mgr.redo(current_turn, current_messages),
+        };
+
+        if let Some(checkpoint) = checkpoint {
             let turn_number = checkpoint.turn_number;
-            let undo_count = mgr.undo_count();
             thread.restore_from_messages(checkpoint.messages);
-            Ok(SubmissionResult::ok_with_message(format!(
-                "Undone to turn {}. {} undo(s) remaining.",
-                turn_number, undo_count
-            )))
+            Ok(match op {
+                RewindOp::Undo => SubmissionResult::ok_with_message(format!(
+                    "Undone to turn {}. {} undo(s) remaining.",
+                    turn_number,
+                    mgr.undo_count()
+                )),
+                RewindOp::Redo => {
+                    SubmissionResult::ok_with_message(format!("Redone to turn {}.", turn_number))
+                }
+            })
         } else {
-            Ok(SubmissionResult::error("Undo failed."))
+            Ok(match op {
+                RewindOp::Undo => SubmissionResult::error("Undo failed."),
+                RewindOp::Redo => SubmissionResult::error("Redo failed."),
+            })
         }
+    }
+
+    pub(super) async fn process_undo(
+        &self,
+        session: Arc<Mutex<Session>>,
+        thread_id: Uuid,
+    ) -> Result<SubmissionResult, Error> {
+        self.process_rewind(session, thread_id, RewindOp::Undo)
+            .await
     }
 
     pub(super) async fn process_redo(
@@ -62,31 +96,8 @@ impl Agent {
         session: Arc<Mutex<Session>>,
         thread_id: Uuid,
     ) -> Result<SubmissionResult, Error> {
-        let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
-        let mut mgr = undo_mgr.lock().await;
-
-        if !mgr.can_redo() {
-            return Ok(SubmissionResult::ok_with_message("Nothing to redo."));
-        }
-
-        let mut sess = session.lock().await;
-        let thread = sess
-            .threads
-            .get_mut(&thread_id)
-            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
-
-        let current_messages = thread.messages();
-        let current_turn = thread.turn_number();
-
-        if let Some(checkpoint) = mgr.redo(current_turn, current_messages) {
-            thread.restore_from_messages(checkpoint.messages);
-            Ok(SubmissionResult::ok_with_message(format!(
-                "Redone to turn {}.",
-                checkpoint.turn_number
-            )))
-        } else {
-            Ok(SubmissionResult::error("Redo failed."))
-        }
+        self.process_rewind(session, thread_id, RewindOp::Redo)
+            .await
     }
 
     pub(super) async fn process_interrupt(
