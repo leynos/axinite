@@ -1482,6 +1482,7 @@ mod tests {
     use super::*;
     use crate::context::JobContext;
     use crate::llm::ToolSelection;
+    use crate::testing::CapturingStore;
     use crate::testing::worker_harness::*;
     use crate::tools::{NativeTool, Tool, ToolError as ToolExecError, ToolOutput};
 
@@ -2030,6 +2031,77 @@ mod tests {
         expected_reason: Option<&'static str>,
     }
 
+    async fn get_call_counts(store: &CapturingStore) -> (usize, usize) {
+        let calls = store.calls();
+        let status_count = calls.status_history.lock().await.len();
+        let event_count = calls.event_history.lock().await.len();
+        (status_count, event_count)
+    }
+
+    async fn assert_rejected_does_not_persist(
+        worker: &Worker,
+        store: &CapturingStore,
+        rejected: TerminalMethod,
+        expected_state: JobState,
+        before: (usize, usize),
+    ) {
+        let result = match rejected {
+            TerminalMethod::Completed => worker.mark_completed().await,
+            TerminalMethod::Failed(reason) => worker.mark_failed(reason).await,
+            TerminalMethod::Stuck(reason) => worker.mark_stuck(reason).await,
+        };
+        assert!(
+            result.is_err(),
+            "Terminal transition {:?} after {:?} should be rejected",
+            rejected,
+            expected_state
+        );
+
+        let after = get_call_counts(store).await;
+        assert_eq!(
+            after.0, before.0,
+            "Rejected transition {:?} after {:?} should not persist status",
+            rejected, expected_state
+        );
+        assert_eq!(
+            after.1, before.1,
+            "Rejected transition {:?} after {:?} should not persist event",
+            rejected, expected_state
+        );
+    }
+
+    async fn run_single_terminal_case(
+        method: TerminalMethod,
+        expected_state: JobState,
+        expected_status: &str,
+        expected_reason: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
+        transition_to_in_progress(&worker).await?;
+
+        method.apply_transition(&worker).await?;
+
+        let ctx = worker.context_manager().get_context(worker.job_id).await?;
+        assert_eq!(
+            ctx.state, expected_state,
+            "State should match expected terminal state"
+        );
+
+        assert_terminal_persistence(&store, expected_state, expected_status, expected_reason).await;
+        let before = get_call_counts(&store).await;
+
+        for rejected in [
+            TerminalMethod::Completed,
+            TerminalMethod::Failed("cross-terminal failure"),
+            TerminalMethod::Stuck("cross-terminal stuck"),
+        ] {
+            assert_rejected_does_not_persist(&worker, &store, rejected, expected_state, before)
+                .await;
+        }
+
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_double_completed_transition_rejected()
     -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -2088,7 +2160,6 @@ mod tests {
     #[tokio::test]
     async fn test_terminal_transition_rejects_duplicates()
     -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // Test each terminal state transition independently
         let test_cases = [
             (
                 TerminalMethod::Completed,
@@ -2111,59 +2182,8 @@ mod tests {
         ];
 
         for (method, expected_state, expected_status, expected_reason) in test_cases {
-            // Test single transition
-            let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
-            transition_to_in_progress(&worker).await?;
-
-            method.apply_transition(&worker).await?;
-
-            let ctx = worker
-                .context_manager()
-                .get_context(worker.job_id)
-                .await
-                .expect("failed to get context");
-            assert_eq!(
-                ctx.state, expected_state,
-                "State should match expected terminal state"
-            );
-
-            assert_terminal_persistence(&store, expected_state, expected_status, expected_reason)
-                .await;
-
-            // Record call counts before attempting duplicate transition
-            let status_count_before = store.calls().status_history.lock().await.len();
-            let event_count_before = store.calls().event_history.lock().await.len();
-
-            for rejected in [
-                TerminalMethod::Completed,
-                TerminalMethod::Failed("cross-terminal failure"),
-                TerminalMethod::Stuck("cross-terminal stuck"),
-            ] {
-                let result = match rejected {
-                    TerminalMethod::Completed => worker.mark_completed().await,
-                    TerminalMethod::Failed(reason) => worker.mark_failed(reason).await,
-                    TerminalMethod::Stuck(reason) => worker.mark_stuck(reason).await,
-                };
-                assert!(
-                    result.is_err(),
-                    "Terminal transition {:?} after {:?} should be rejected",
-                    rejected,
-                    expected_state
-                );
-
-                let status_count_after = store.calls().status_history.lock().await.len();
-                let event_count_after = store.calls().event_history.lock().await.len();
-                assert_eq!(
-                    status_count_after, status_count_before,
-                    "Rejected transition {:?} after {:?} should not persist status",
-                    rejected, expected_state
-                );
-                assert_eq!(
-                    event_count_after, event_count_before,
-                    "Rejected transition {:?} after {:?} should not persist event",
-                    rejected, expected_state
-                );
-            }
+            run_single_terminal_case(method, expected_state, expected_status, expected_reason)
+                .await?;
         }
         Ok(())
     }
