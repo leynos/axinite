@@ -199,7 +199,7 @@ fn assert_agentic_loop_text_response<E: std::fmt::Debug>(
         "Dispatcher returned an error: {:?}",
         inner.err()
     );
-    match inner.unwrap() {
+    match inner.expect("Expected Ok(AgenticLoopResult) but dispatcher returned Err") {
         super::super::AgenticLoopResult::Response(text) => {
             assert!(!text.is_empty(), "Expected non-empty forced text response");
         }

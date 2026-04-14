@@ -10,8 +10,8 @@ use crate::agent::session::Session;
 use crate::channels::IncomingMessage;
 use crate::context::JobContext;
 use crate::error::Error;
-use crate::llm::ChatMessage;
-use crate::llm::Reasoning;
+use crate::llm::{ChatMessage, Reasoning, ToolDefinition};
+use crate::skills::LoadedSkill;
 
 use super::delegate::ChatDelegate;
 use super::types::*;
@@ -20,6 +20,7 @@ use super::types::*;
 ///
 /// This crate-visible context is re-exported for dispatcher callers, so its
 /// ownership and thread-safety contracts are part of the internal API.
+#[derive(Clone)]
 pub(crate) struct RunLoopCtx {
     /// Shared handle to the live session state for this run.
     ///
@@ -40,6 +41,37 @@ pub(crate) struct RunLoopCtx {
 }
 
 impl Agent {
+    async fn prepare_reasoning(
+        &self,
+        message: &IncomingMessage,
+    ) -> (Reasoning, Vec<LoadedSkill>, chrono_tz::Tz) {
+        let is_group_chat = self.detect_is_group_chat(&message.metadata);
+        let user_tz = self.resolve_user_tz(message);
+        let system_prompt = self.load_system_prompt(is_group_chat, user_tz).await;
+        let active_skills = self.select_active_skills_for_message(message);
+        let skill_context = self.build_skill_context_block(&active_skills);
+
+        let mut reasoning = Reasoning::new(self.llm().clone())
+            .with_channel(message.channel.clone())
+            .with_model_name(self.llm().active_model_name())
+            .with_group_chat(is_group_chat);
+
+        if let Some(channel) = self.channels.get_channel(&message.channel).await {
+            for (key, value) in channel.conversation_context(&message.metadata) {
+                reasoning = reasoning.with_conversation_data(&key, &value);
+            }
+        }
+
+        if let Some(prompt) = system_prompt {
+            reasoning = reasoning.with_system_prompt(prompt);
+        }
+        if let Some(context) = skill_context {
+            reasoning = reasoning.with_skill_context(context);
+        }
+
+        (reasoning, active_skills, user_tz)
+    }
+
     fn detect_is_group_chat(&self, metadata: &serde_json::Value) -> bool {
         metadata
             .get("chat_type")
@@ -125,6 +157,67 @@ impl Agent {
         Some(context_parts.join("\n\n"))
     }
 
+    fn build_chat_delegate<'a>(
+        &'a self,
+        message: &'a IncomingMessage,
+        ctx: RunLoopCtx,
+        active_skills: Vec<LoadedSkill>,
+        cached_prompt: String,
+        cached_prompt_no_tools: String,
+        user_tz: chrono_tz::Tz,
+    ) -> ChatDelegate<'a> {
+        let mut job_ctx =
+            JobContext::with_user(&message.user_id, "chat", "Interactive chat session");
+        job_ctx.http_interceptor = self.deps.http_interceptor.clone();
+        job_ctx.user_timezone = user_tz.name().to_string();
+
+        let max_tool_iterations = self.config.max_tool_iterations;
+
+        ChatDelegate {
+            agent: self,
+            session: ctx.session,
+            thread_id: ctx.thread_id,
+            message,
+            job_ctx,
+            active_skills,
+            cached_prompt,
+            cached_prompt_no_tools,
+            nudge_at: max_tool_iterations.saturating_sub(1),
+            force_text_at: max_tool_iterations,
+            user_tz,
+        }
+    }
+
+    fn build_loop_context(
+        &self,
+        initial_messages: Vec<ChatMessage>,
+        initial_tool_defs: Vec<ToolDefinition>,
+        cached_prompt: String,
+        thread_id: Uuid,
+        max_tool_iterations: usize,
+    ) -> (
+        crate::llm::ReasoningContext,
+        crate::agent::agentic_loop::AgenticLoopConfig,
+    ) {
+        let reason_ctx = crate::llm::ReasoningContext::new()
+            .with_messages(initial_messages)
+            .with_tools(initial_tool_defs)
+            .with_system_prompt(cached_prompt)
+            .with_metadata({
+                let mut metadata = std::collections::HashMap::new();
+                metadata.insert("thread_id".to_string(), thread_id.to_string());
+                metadata
+            });
+
+        let loop_config = crate::agent::agentic_loop::AgenticLoopConfig {
+            max_iterations: max_tool_iterations + 1,
+            enable_tool_intent_nudge: true,
+            max_tool_intent_nudges: 2,
+        };
+
+        (reason_ctx, loop_config)
+    }
+
     /// Run the agentic loop: call LLM, execute tools, repeat until text response.
     ///
     /// Returns `Ok(AgenticLoopResult::Response)` on completion, or
@@ -141,46 +234,7 @@ impl Agent {
         message: &IncomingMessage,
         ctx: RunLoopCtx,
     ) -> Result<AgenticLoopResult, Error> {
-        // Detect group chat from channel metadata (needed before loading system prompt)
-        let is_group_chat = self.detect_is_group_chat(&message.metadata);
-
-        // Load workspace system prompt (identity files: AGENTS.md, SOUL.md, etc.)
-        // In group chats, MEMORY.md is excluded to prevent leaking personal context.
-        // Resolve the user's timezone
-        let user_tz = self.resolve_user_tz(message);
-        let system_prompt = self.load_system_prompt(is_group_chat, user_tz).await;
-
-        // Select and prepare active skills (if skills system is enabled)
-        let active_skills = self.select_active_skills_for_message(message);
-
-        // Build skill context block
-        let skill_context = self.build_skill_context_block(&active_skills);
-
-        let mut reasoning = Reasoning::new(self.llm().clone())
-            .with_channel(message.channel.clone())
-            .with_model_name(self.llm().active_model_name())
-            .with_group_chat(is_group_chat);
-
-        // Pass channel-specific conversation context to the LLM.
-        // This helps the agent know who/group it's talking to.
-        if let Some(channel) = self.channels.get_channel(&message.channel).await {
-            for (key, value) in channel.conversation_context(&message.metadata) {
-                reasoning = reasoning.with_conversation_data(&key, &value);
-            }
-        }
-
-        if let Some(prompt) = system_prompt {
-            reasoning = reasoning.with_system_prompt(prompt);
-        }
-        if let Some(ctx) = skill_context {
-            reasoning = reasoning.with_skill_context(ctx);
-        }
-
-        // Create a JobContext for tool execution (chat doesn't have a real job)
-        let mut job_ctx =
-            JobContext::with_user(&message.user_id, "chat", "Interactive chat session");
-        job_ctx.http_interceptor = self.deps.http_interceptor.clone();
-        job_ctx.user_timezone = user_tz.name().to_string();
+        let (reasoning, active_skills, user_tz) = self.prepare_reasoning(message).await;
 
         // Build system prompts once for this turn. Two variants: with tools
         // (normal iterations) and without (force_text final iteration).
@@ -191,39 +245,21 @@ impl Agent {
         let cached_prompt_no_tools = reasoning.build_system_prompt_with_tools(&[]);
 
         let max_tool_iterations = self.config.max_tool_iterations;
-        let force_text_at = max_tool_iterations;
-        let nudge_at = max_tool_iterations.saturating_sub(1);
-
-        let delegate = ChatDelegate {
-            agent: self,
-            session: ctx.session.clone(),
-            thread_id: ctx.thread_id,
+        let delegate = self.build_chat_delegate(
             message,
-            job_ctx,
+            ctx.clone(),
             active_skills,
-            cached_prompt,
+            cached_prompt.clone(),
             cached_prompt_no_tools,
-            nudge_at,
-            force_text_at,
             user_tz,
-        };
-
-        let mut reason_ctx = crate::llm::ReasoningContext::new()
-            .with_messages(ctx.initial_messages)
-            .with_tools(initial_tool_defs)
-            .with_system_prompt(delegate.cached_prompt.clone())
-            .with_metadata({
-                let mut m = std::collections::HashMap::new();
-                m.insert("thread_id".to_string(), ctx.thread_id.to_string());
-                m
-            });
-
-        let loop_config = crate::agent::agentic_loop::AgenticLoopConfig {
-            // Hard ceiling: one past force_text_at (safety net).
-            max_iterations: max_tool_iterations + 1,
-            enable_tool_intent_nudge: true,
-            max_tool_intent_nudges: 2,
-        };
+        );
+        let (mut reason_ctx, loop_config) = self.build_loop_context(
+            ctx.initial_messages,
+            initial_tool_defs,
+            cached_prompt,
+            ctx.thread_id,
+            max_tool_iterations,
+        );
 
         let outcome = crate::agent::agentic_loop::run_agentic_loop(
             &delegate,
