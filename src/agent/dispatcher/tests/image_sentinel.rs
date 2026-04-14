@@ -148,6 +148,20 @@ fn sentinel_json(data: Option<&str>, path: Option<&str>) -> String {
     serde_json::Value::Object(sentinel).to_string()
 }
 
+async fn run_image_generate_and_count_statuses(data_url: Option<&str>) -> (bool, usize) {
+    let (channels, statuses) = new_stubbed_channels("test-chan").await;
+    let agent = build_agent_with_stub_channel(channels);
+    let session = Arc::new(Mutex::new(Session::new("test-user")));
+    let message = IncomingMessage::new("test-chan", "test-user", "generate an image");
+    let delegate = make_delegate(&agent, session, &message);
+    let output = sentinel_json(data_url, Some("/tmp/image.png"));
+    let result = delegate
+        .maybe_emit_image_sentinel("image_generate", &output)
+        .await;
+    let count = statuses.lock().expect("statuses lock poisoned").len();
+    (result, count)
+}
+
 struct ImageSentinelHarness {
     agent: Agent,
     session: Arc<Mutex<Session>>,
@@ -208,56 +222,31 @@ async fn delegate_emits_image_generated_for_valid_data_url(
 
 #[rstest]
 #[tokio::test]
-async fn delegate_skips_broadcast_when_data_url_is_empty(
-    #[future] image_sentinel_harness: ImageSentinelHarness,
-) {
-    let harness = image_sentinel_harness.await;
-    let delegate = harness.delegate();
-
-    // Missing "data" field — empty data URL
-    let output = sentinel_json(None, Some("/tmp/image.png"));
-
-    let result = delegate
-        .maybe_emit_image_sentinel("image_generate", &output)
-        .await;
+async fn delegate_skips_broadcast_when_data_url_is_empty() {
+    let (result, count) = run_image_generate_and_count_statuses(None).await;
 
     assert!(
         result,
         "should return true (sentinel detected) even when data is empty"
     );
-
-    let captured = harness.statuses.lock().expect("statuses lock poisoned");
-    assert!(
-        captured.is_empty(),
+    assert_eq!(
+        count, 0,
         "should NOT emit any status when data URL is empty"
     );
 }
 
 #[rstest]
 #[tokio::test]
-async fn delegate_skips_broadcast_when_data_url_is_not_a_data_url(
-    #[future] image_sentinel_harness: ImageSentinelHarness,
-) {
-    let harness = image_sentinel_harness.await;
-    let delegate = harness.delegate();
-
-    let output = sentinel_json(
-        Some("https://example.test/image.png"),
-        Some("/tmp/image.png"),
-    );
-
-    let result = delegate
-        .maybe_emit_image_sentinel("image_generate", &output)
-        .await;
+async fn delegate_skips_broadcast_when_data_url_is_not_a_data_url() {
+    let (result, count) =
+        run_image_generate_and_count_statuses(Some("https://example.test/image.png")).await;
 
     assert!(
         result,
         "should return true (sentinel detected) even when data URL is invalid"
     );
-
-    let captured = harness.statuses.lock().expect("statuses lock poisoned");
-    assert!(
-        captured.is_empty(),
+    assert_eq!(
+        count, 0,
         "should NOT emit any status when data URL is not a data URL"
     );
 }
