@@ -319,6 +319,19 @@ Meaning: PostgreSQL connection URL used by the app.
 Default or rule:
 
 
+### libSQL test databases
+
+Unit tests that exercise the libSQL backend call
+`LibSqlBackend::new_memory()` rather than `new_local()`. `new_memory()`
+creates a UUID-named file in the OS temp directory so that multiple
+connections within a single test share state, matching production semantics.
+The shared database handle removes that file and its `-wal`/`-shm` sidecars
+automatically when the final clone is dropped, so tests should not leave
+artefacts behind on disk.
+
+Do **not** use `new_local()` in unit tests; reserve it for integration tests
+or tests that specifically require filesystem-path behaviour.
+
 ## Dispatcher Architecture
 
 The dispatcher orchestrates interactive chat turns by preparing an LLM
@@ -725,6 +738,20 @@ When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
 
 
+### WebhookServer test helpers
+
+`WebhookServer` exposes two `#[cfg(test)]`-only methods to eliminate
+port-allocation races:
+
+- `start_with_listener(listener: TcpListener)` — accepts a pre-bound
+  listener, merges queued route fragments, resolves the live listener
+  address, and spawns the server.
+- `restart_with_listener(listener: TcpListener)` — shuts the current server
+  down, resolves the new listener's address, and spawns a fresh server.
+
+Tests should pre-bind via `TcpListener::bind("127.0.0.1:0")` and pass the
+result to these helpers instead of relying on `start()` /
+`restart_with_addr()` to pick a free port.
 ### Key APIs
 
 - `RunLoopCtx`: per-run container that carries the session handle,

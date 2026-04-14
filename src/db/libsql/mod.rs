@@ -4,7 +4,10 @@
 //! Supports three modes:
 //! - Local embedded (file-based, no server needed)
 //! - Turso cloud with embedded replica (sync to cloud)
-//! - Temp-file-backed test mode (for testing)
+//! - Temp-file-backed (for testing) — creates a UUID-named `.db` file in the
+//!   OS temp directory; fresh connections share state via the file; the file
+//!   and its WAL/SHM sidecars are deleted automatically when the backend is
+//!   dropped.
 
 mod conversations;
 pub(crate) mod helpers;
@@ -26,6 +29,11 @@ mod workspace;
 /// `temp_path` keeps test-database cleanup tied to the final shared owner.
 pub struct LibSqlDatabase {
     db: RawLibSqlDatabase,
+    /// Path to the ephemeral database file created by
+    /// [`LibSqlBackend::new_memory`].
+    /// `None` for persistent (`new_local` / `new_remote_replica`) backends.
+    /// When `Some`, the file and its `-wal`/`-shm` sidecars are removed in
+    /// [`Drop`].
     temp_path: Option<PathBuf>,
 }
 pub(crate) use helpers::{
@@ -67,13 +75,15 @@ impl LibSqlBackend {
         Ok(Self::from_db(db))
     }
 
-    /// Create a temporary file-backed database for tests.
+    /// Create a temp-file-backed database for testing.
     ///
-    /// Despite the name, this does not use SQLite's `:memory:` mode. It
-    /// creates a temp file whose path is retained for the lifetime of the
-    /// returned database so multiple fresh connections share the same state.
-    /// The temp file and its sidecar files are cleaned up when the final
-    /// shared database handle is dropped.
+    /// Creates a UUID-named `.db` file in [`std::env::temp_dir`]. Multiple
+    /// calls to [`Self::connect`] share state through that file, matching the
+    /// behaviour of the production `new_local` path without requiring a
+    /// caller-supplied path.
+    ///
+    /// The file and its `-wal`/`-shm` sidecars are removed automatically when
+    /// the final shared database handle created for this backend is dropped.
     pub async fn new_memory() -> Result<Self, DatabaseError> {
         let temp_path =
             std::env::temp_dir().join(format!("axinite-libsql-memory-{}.db", Uuid::new_v4()));
