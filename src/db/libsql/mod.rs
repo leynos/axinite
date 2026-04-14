@@ -40,20 +40,24 @@ pub struct LibSqlBackend {
 }
 
 impl LibSqlBackend {
-    /// Create a new local embedded database.
-    pub async fn new_local(path: &Path) -> Result<Self, DatabaseError> {
-        // Ensure parent directory exists
+    /// Ensure the parent directory of `path` exists, creating it and all
+    /// ancestors if necessary.
+    fn ensure_parent_dir(path: &Path) -> Result<(), DatabaseError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                DatabaseError::Pool(format!("Failed to create database directory: {}", e))
+                DatabaseError::Pool(format!("Failed to create database directory: {e}"))
             })?;
         }
+        Ok(())
+    }
 
+    /// Create a new local embedded database.
+    pub async fn new_local(path: &Path) -> Result<Self, DatabaseError> {
+        Self::ensure_parent_dir(path)?;
         let db = libsql::Builder::new_local(path)
             .build()
             .await
-            .map_err(|e| DatabaseError::Pool(format!("Failed to open libSQL database: {}", e)))?;
-
+            .map_err(|e| DatabaseError::Pool(format!("Failed to open libSQL database: {e}")))?;
         Ok(Self { db: Arc::new(db) })
     }
 
@@ -75,17 +79,11 @@ impl LibSqlBackend {
         url: &str,
         auth_token: &str,
     ) -> Result<Self, DatabaseError> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                DatabaseError::Pool(format!("Failed to create database directory: {}", e))
-            })?;
-        }
-
+        Self::ensure_parent_dir(path)?;
         let db = libsql::Builder::new_remote_replica(path, url.to_string(), auth_token.to_string())
             .build()
             .await
-            .map_err(|e| DatabaseError::Pool(format!("Failed to open remote replica: {}", e)))?;
-
+            .map_err(|e| DatabaseError::Pool(format!("Failed to open remote replica: {e}")))?;
         Ok(Self { db: Arc::new(db) })
     }
 
