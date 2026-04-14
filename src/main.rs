@@ -616,10 +616,6 @@ async fn async_main() -> anyhow::Result<()> {
     .build_components()
     .await?;
 
-    // Start deferred runtime side effects (workspace import, seeding,
-    // embedding backfill, stale job cleanup) in the background.
-    side_effects.start();
-
     let config = components.config.clone();
 
     // ── Tunnel setup ───────────────────────────────────────────────────
@@ -863,6 +859,10 @@ async fn async_main() -> anyhow::Result<()> {
         ));
         spawn_sighup_handler(reload_manager, &shutdown_tx);
     }
+
+    // Start deferred runtime side effects only after all fallible startup
+    // work has completed successfully.
+    side_effects.start()?;
 
     let run_result = agent.run().await;
 
@@ -1142,6 +1142,7 @@ struct GatewaySetup {
 #[cfg(test)]
 mod tests {
     use std::io::{Read, Write};
+    use std::sync::{Mutex, OnceLock};
 
     use gag::BufferRedirect;
     use insta::assert_snapshot;
@@ -1152,6 +1153,8 @@ mod tests {
     };
 
     use super::{BootData, print_startup_info};
+
+    static STDOUT_CAPTURE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     struct TestTunnel {
         public_url: Option<String>,
@@ -1188,6 +1191,10 @@ mod tests {
     }
 
     fn capture_stdout(action: impl FnOnce()) -> String {
+        let _guard = STDOUT_CAPTURE_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("stdout capture lock should be acquired");
         let mut stdout = BufferRedirect::stdout().expect("stdout redirection should succeed");
         action();
         std::io::stdout()

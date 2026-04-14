@@ -170,6 +170,8 @@ Table 2. AppBuilder phases and the state they add.
 alongside `AppComponents`. `RuntimeSideEffects` encapsulates deferred
 background work that must not run during tests:
 
+Table: Runtime side-effect trigger conditions.
+
 | Task | Trigger condition |
 | --- | --- |
 | Stale sandbox job cleanup | `db` is present |

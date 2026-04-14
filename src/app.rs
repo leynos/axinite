@@ -16,11 +16,11 @@
 //!
 //! - Use `build_components()` when you need control over side-effect timing
 //!   (e.g., in tests where I/O and background tasks should be avoided).
-//! - Use `build_all()` as a convenience wrapper that constructs components
-//!   and immediately starts side effects — suitable for production startup.
+//! - Use `build_all()` as a convenience wrapper that constructs components,
+//!   starts side effects, and waits for workspace bootstrap to finish.
 //!
-//! The `RuntimeSideEffects::start()` method is fire-and-forget; callers need
-//! not await unless ordering guarantees are required.
+//! The `RuntimeSideEffects::start()` method returns task handles so callers
+//! can choose whether to detach runtime work or await workspace bootstrap.
 
 use std::sync::Arc;
 
@@ -40,6 +40,7 @@ use crate::tools::wasm::SharedCredentialRegistry;
 use crate::tools::wasm::WasmToolRuntime;
 use crate::tools::{ImageToolsRegistration, ToolRegistry, VisionToolsRegistration};
 use crate::workspace::{EmbeddingProvider, Workspace};
+use anyhow::Context;
 
 /// Fully initialized application components, ready for channel wiring
 /// and agent construction.
@@ -82,6 +83,24 @@ pub struct RuntimeSideEffects {
     workspace: Option<Arc<Workspace>>,
     workspace_import_dir: Option<std::path::PathBuf>,
     embeddings_available: bool,
+}
+
+/// Join handles for deferred runtime side effects.
+pub struct RuntimeSideEffectsHandle {
+    workspace_bootstrap: Option<tokio::task::JoinHandle<()>>,
+    _cleanup: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl RuntimeSideEffectsHandle {
+    /// Wait until workspace bootstrap work has finished.
+    pub async fn wait_until_bootstrapped(self) -> Result<(), anyhow::Error> {
+        if let Some(handle) = self.workspace_bootstrap {
+            handle
+                .await
+                .map_err(|e| anyhow::anyhow!("Workspace bootstrap task failed: {}", e))?;
+        }
+        Ok(())
+    }
 }
 
 /// Options that control optional init phases.
@@ -601,12 +620,13 @@ impl AppBuilder {
     /// Convenience wrapper that builds components and immediately starts
     /// runtime side effects.
     ///
-    /// This is equivalent to calling `build_components()` followed by
-    /// `side_effects.start()`. Use `build_components()` directly when
-    /// you need control over side-effect timing (e.g., in tests).
+    /// This is equivalent to calling `build_components()`, then
+    /// `side_effects.start()`, then awaiting workspace bootstrap completion.
+    /// Use `build_components()` directly when you need control over
+    /// side-effect timing (e.g., in tests).
     pub async fn build_all(self) -> Result<AppComponents, anyhow::Error> {
         let (components, side_effects) = self.build_components().await?;
-        side_effects.start();
+        side_effects.start()?.wait_until_bootstrapped().await?;
         Ok(components)
     }
 }
@@ -629,30 +649,37 @@ impl RuntimeSideEffects {
 
     /// Start all deferred runtime side effects.
     ///
-    /// This method is fire-and-forget; it spawns background tasks and returns
-    /// immediately. Callers need not await.
+    /// This method spawns background tasks and returns their handles. Callers
+    /// can drop the returned value to detach the work, or await
+    /// `wait_until_bootstrapped()` when ordering guarantees are required.
     ///
     /// Side effects include:
     /// - Stale sandbox job cleanup (via database)
     /// - Workspace import from disk (if `WORKSPACE_IMPORT_DIR` is set)
     /// - Workspace seeding (if workspace is empty)
     /// - Embedding backfill (spawns a background task)
-    pub fn start(self) {
+    pub fn start(self) -> Result<RuntimeSideEffectsHandle, anyhow::Error> {
         // Spawn stale sandbox cleanup task if database is available.
-        if let Some(db) = self.db {
-            tokio::spawn(async move {
+        let cleanup = if let Some(db) = self.db {
+            let handle = tokio::runtime::Handle::try_current()
+                .context("RuntimeSideEffects::start() requires a Tokio runtime")?;
+            Some(handle.spawn(async move {
                 if let Err(e) = db.cleanup_stale_sandbox_jobs().await {
                     tracing::warn!("Failed to cleanup stale sandbox jobs: {}", e);
                 }
-            });
-        }
+            }))
+        } else {
+            None
+        };
 
         // Spawn workspace import, seeding, and embedding backfill if workspace is available.
-        if let Some(ws) = self.workspace {
+        let workspace_bootstrap = if let Some(ws) = self.workspace {
             let import_dir = self.workspace_import_dir;
             let embeddings_available = self.embeddings_available;
+            let handle = tokio::runtime::Handle::try_current()
+                .context("RuntimeSideEffects::start() requires a Tokio runtime")?;
 
-            tokio::spawn(async move {
+            Some(handle.spawn(async move {
                 // Import workspace files from disk FIRST if WORKSPACE_IMPORT_DIR is set.
                 // This lets Docker images / deployment scripts ship customized workspace
                 // templates that override generic seeds. Only imports files that don't
@@ -697,8 +724,15 @@ impl RuntimeSideEffects {
                         }
                     }
                 }
-            });
-        }
+            }))
+        } else {
+            None
+        };
+
+        Ok(RuntimeSideEffectsHandle {
+            workspace_bootstrap,
+            _cleanup: cleanup,
+        })
     }
 }
 
@@ -729,10 +763,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_side_effects_start_no_ops_when_nothing_configured() {
+    async fn runtime_side_effects_start_no_ops_when_nothing_configured() -> anyhow::Result<()> {
         let se = RuntimeSideEffects::new(None, None, None, false);
-        // start() returns () — the test passes if it does not panic.
-        se.start();
+        se.start()?.wait_until_bootstrapped().await?;
+        Ok(())
     }
 
     async fn assert_no_activation(
@@ -827,14 +861,31 @@ mod tests {
             .as_ref()
             .context("workspace should be constructed during build_components()")?;
         assert_no_activation(workspace, &workspace_import_dir).await?;
-        side_effects.start();
-        wait_for_import_and_seed(workspace, 5).await?;
+        side_effects.start()?.wait_until_bootstrapped().await?;
         let marker = workspace.read("MARKER.md").await?;
         assert_eq!(
             marker.content,
             "# Marker\n\nImported by RuntimeSideEffects::start().\n"
         );
 
+        Ok(())
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn build_all_waits_for_workspace_bootstrap() -> anyhow::Result<()> {
+        let (builder, _workspace_import_dir, _temp_dir) = two_phase_fixture().await?;
+        let components = builder.build_all().await?;
+        let workspace = components
+            .workspace
+            .as_ref()
+            .context("workspace should be constructed during build_all()")?;
+        wait_for_import_and_seed(workspace, 0).await?;
+        let marker = workspace.read("MARKER.md").await?;
+        assert_eq!(
+            marker.content,
+            "# Marker\n\nImported by RuntimeSideEffects::start().\n"
+        );
         Ok(())
     }
 }
