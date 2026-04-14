@@ -86,12 +86,10 @@ pub async fn github_wasm_wrapper() -> Result<WasmToolWrapper> {
     let runtime = metadata_test_runtime()?;
     let wasm_bytes = std::fs::read(&wasm_path)?;
     let prepared = runtime.prepare("github", &wasm_bytes, None).await?;
+    let wrapper = WasmToolWrapper::new(runtime, prepared, Capabilities::default());
+    let (description, schema) = wrapper.exported_metadata()?;
 
-    Ok(WasmToolWrapper::new(
-        runtime,
-        prepared,
-        Capabilities::default(),
-    ))
+    Ok(wrapper.with_description(description).with_schema(schema))
 }
 
 /// What kind of error the stub should produce when failing.

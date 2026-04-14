@@ -1728,6 +1728,13 @@ mod tests {
                     !message.trim().is_empty(),
                     "tool error should preserve a parameter failure message"
                 );
+                let message = message.to_lowercase();
+                assert!(
+                    message.contains("parameter")
+                        || message.contains("invalid")
+                        || message.contains("validation"),
+                    "tool error should signal parameter validation failure: {message}"
+                );
                 assert!(hint.contains("Retry using the advertised tool schema"));
                 assert!(hint.contains("`github`"));
                 assert!(hint.contains("Advertised schema excerpt"));

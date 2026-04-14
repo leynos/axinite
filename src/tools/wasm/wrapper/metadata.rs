@@ -253,6 +253,7 @@ pub(super) fn build_fallback_guidance(
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
     use rstest::{fixture, rstest};
 
     use crate::testing::github_wasm_wrapper;
@@ -315,6 +316,24 @@ mod tests {
         assert!(guidance.contains("Advertised schema excerpt"));
         assert!(!guidance.contains("Tool usage hint"));
         assert!(!guidance.contains("Parameters schema:"));
+    }
+
+    #[test]
+    fn fallback_guidance_rendering_snapshot() {
+        let guidance = super::build_fallback_guidance_text(
+            "github",
+            "GitHub integration",
+            "{\"type\":\"object\",\"required\":[\"action\"],\"properties\":{\"action\":{\"type\":\"string\"}}}",
+        );
+
+        assert_snapshot!(
+            guidance,
+            @r###"
+Retry using the advertised tool schema for `github`.
+Guest description: GitHub integration
+Advertised schema excerpt: {"type":"object","required":["action"],"properties":{"action":{"type":"string"}}}
+"###
+        );
     }
 
     #[fixture]
