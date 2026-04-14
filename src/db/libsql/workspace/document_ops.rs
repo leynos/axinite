@@ -24,19 +24,46 @@ pub(super) struct AgentScope<'a> {
     pub(super) agent_id: Option<uuid::Uuid>,
 }
 
+async fn connect_backend(backend: &LibSqlBackend) -> Result<libsql::Connection, WorkspaceError> {
+    backend
+        .connect()
+        .await
+        .map_err(|e| WorkspaceError::SearchFailed {
+            reason: e.to_string(),
+        })
+}
+
+async fn fetch_first_row(mut rows: libsql::Rows) -> Result<Option<libsql::Row>, WorkspaceError> {
+    rows.next().await.map_err(|e| WorkspaceError::SearchFailed {
+        reason: format!("Query failed: {}", e),
+    })
+}
+
+async fn drain_rows<T, F>(mut rows: libsql::Rows, map_row: F) -> Result<Vec<T>, WorkspaceError>
+where
+    F: Fn(libsql::Row) -> T,
+{
+    let mut out = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|e| WorkspaceError::SearchFailed {
+            reason: format!("Query failed: {}", e),
+        })?
+    {
+        out.push(map_row(row));
+    }
+    Ok(out)
+}
+
 pub(super) async fn get_document_by_path(
     backend: &LibSqlBackend,
     scope: &AgentScope<'_>,
     path: &str,
 ) -> Result<MemoryDocument, WorkspaceError> {
-    let conn = backend
-        .connect()
-        .await
-        .map_err(|e| WorkspaceError::SearchFailed {
-            reason: e.to_string(),
-        })?;
+    let conn = connect_backend(backend).await?;
     let agent_id_str = scope.agent_id.map(|id| id.to_string());
-    let mut rows = conn
+    let rows = conn
         .query(
             r#"
             SELECT id, user_id, agent_id, path, content,
@@ -51,12 +78,7 @@ pub(super) async fn get_document_by_path(
             reason: format!("Query failed: {}", e),
         })?;
 
-    match rows
-        .next()
-        .await
-        .map_err(|e| WorkspaceError::SearchFailed {
-            reason: format!("Query failed: {}", e),
-        })? {
+    match fetch_first_row(rows).await? {
         Some(row) => Ok(row_to_memory_document(&row)),
         None => Err(WorkspaceError::DocumentNotFound {
             doc_type: path.to_string(),
@@ -69,13 +91,8 @@ pub(super) async fn get_document_by_id(
     backend: &LibSqlBackend,
     id: Uuid,
 ) -> Result<MemoryDocument, WorkspaceError> {
-    let conn = backend
-        .connect()
-        .await
-        .map_err(|e| WorkspaceError::SearchFailed {
-            reason: e.to_string(),
-        })?;
-    let mut rows = conn
+    let conn = connect_backend(backend).await?;
+    let rows = conn
         .query(
             r#"
             SELECT id, user_id, agent_id, path, content,
@@ -89,12 +106,7 @@ pub(super) async fn get_document_by_id(
             reason: format!("Query failed: {}", e),
         })?;
 
-    match rows
-        .next()
-        .await
-        .map_err(|e| WorkspaceError::SearchFailed {
-            reason: format!("Query failed: {}", e),
-        })? {
+    match fetch_first_row(rows).await? {
         Some(row) => Ok(row_to_memory_document(&row)),
         None => Err(WorkspaceError::DocumentNotFound {
             doc_type: "unknown".to_string(),
@@ -296,14 +308,9 @@ pub(super) async fn list_all_paths(
     backend: &LibSqlBackend,
     scope: &AgentScope<'_>,
 ) -> Result<Vec<String>, WorkspaceError> {
-    let conn = backend
-        .connect()
-        .await
-        .map_err(|e| WorkspaceError::SearchFailed {
-            reason: e.to_string(),
-        })?;
+    let conn = connect_backend(backend).await?;
     let agent_id_str = scope.agent_id.map(|id| id.to_string());
-    let mut rows = conn
+    let rows = conn
         .query(
             "SELECT path FROM memory_documents WHERE user_id = ?1 AND agent_id IS ?2 ORDER BY path",
             params![scope.user_id, agent_id_str.as_deref()],
@@ -313,31 +320,16 @@ pub(super) async fn list_all_paths(
             reason: format!("List paths failed: {}", e),
         })?;
 
-    let mut paths = Vec::new();
-    while let Some(row) = rows
-        .next()
-        .await
-        .map_err(|e| WorkspaceError::SearchFailed {
-            reason: format!("Query failed: {}", e),
-        })?
-    {
-        paths.push(get_text(&row, 0));
-    }
-    Ok(paths)
+    drain_rows(rows, |row| get_text(&row, 0)).await
 }
 
 pub(super) async fn list_documents(
     backend: &LibSqlBackend,
     scope: &AgentScope<'_>,
 ) -> Result<Vec<MemoryDocument>, WorkspaceError> {
-    let conn = backend
-        .connect()
-        .await
-        .map_err(|e| WorkspaceError::SearchFailed {
-            reason: e.to_string(),
-        })?;
+    let conn = connect_backend(backend).await?;
     let agent_id_str = scope.agent_id.map(|id| id.to_string());
-    let mut rows = conn
+    let rows = conn
         .query(
             r#"
             SELECT id, user_id, agent_id, path, content,
@@ -353,15 +345,5 @@ pub(super) async fn list_documents(
             reason: format!("Query failed: {}", e),
         })?;
 
-    let mut docs = Vec::new();
-    while let Some(row) = rows
-        .next()
-        .await
-        .map_err(|e| WorkspaceError::SearchFailed {
-            reason: format!("Query failed: {}", e),
-        })?
-    {
-        docs.push(row_to_memory_document(&row));
-    }
-    Ok(docs)
+    drain_rows(rows, |row| row_to_memory_document(&row)).await
 }
