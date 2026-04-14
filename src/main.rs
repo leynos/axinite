@@ -46,50 +46,34 @@ async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<bool> {
         return Ok(dispatched);
     }
 
-    match &cli.command {
-        Some(Command::Worker {
-            job_id,
-            orchestrator_url,
-            max_iterations,
-        }) => {
-            dispatch_worker_subcommand(*job_id, orchestrator_url, *max_iterations).await?;
-            Ok(true)
-        }
-        Some(Command::ClaudeBridge {
-            job_id,
-            orchestrator_url,
-            max_turns,
-            model,
-        }) => {
-            dispatch_claude_bridge_subcommand(*job_id, orchestrator_url, *max_turns, model).await?;
-            Ok(true)
-        }
-        Some(Command::Onboard {
-            skip_auth,
-            channels_only,
-            provider_only,
-            quick,
-        }) => {
-            run_onboard_subcommand(*skip_auth, *channels_only, *provider_only, *quick).await?;
-            Ok(true)
-        }
-        None | Some(Command::Run) => Ok(false),
-        Some(
-            Command::Tool(_)
-            | Command::Config(_)
-            | Command::Registry(_)
-            | Command::Mcp(_)
-            | Command::Memory(_)
-            | Command::Pairing(_)
-            | Command::Service(_)
-            | Command::Doctor
-            | Command::Status
-            | Command::Completion(_),
-        ) => unreachable!("CLI subcommands should have been handled earlier"),
-        #[cfg(feature = "import")]
-        Some(Command::Import(_)) => {
-            unreachable!("CLI subcommands should have been handled earlier")
-        }
+    if let Some(Command::Worker {
+        job_id,
+        orchestrator_url,
+        max_iterations,
+    }) = &cli.command
+    {
+        dispatch_worker_subcommand(*job_id, orchestrator_url, *max_iterations).await?;
+        Ok(true)
+    } else if let Some(Command::ClaudeBridge {
+        job_id,
+        orchestrator_url,
+        max_turns,
+        model,
+    }) = &cli.command
+    {
+        dispatch_claude_bridge_subcommand(*job_id, orchestrator_url, *max_turns, model).await?;
+        Ok(true)
+    } else if let Some(Command::Onboard {
+        skip_auth,
+        channels_only,
+        provider_only,
+        quick,
+    }) = &cli.command
+    {
+        run_onboard_subcommand(*skip_auth, *channels_only, *provider_only, *quick).await?;
+        Ok(true)
+    } else {
+        Ok(false)
     }
 }
 
