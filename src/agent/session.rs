@@ -671,6 +671,54 @@ mod tests {
     }
 
     #[test]
+    fn record_tool_result_content_parses_json_array() {
+        let mut turn = Turn::new(1, "input");
+        turn.record_tool_call("json", serde_json::json!({}));
+        turn.record_tool_result_content("[1,2,3]");
+
+        assert_eq!(
+            turn.tool_calls[0].result,
+            Some(serde_json::json!([1, 2, 3]))
+        );
+    }
+
+    #[test]
+    fn record_tool_result_content_falls_back_on_malformed_object() {
+        let mut turn = Turn::new(1, "input");
+        turn.record_tool_call("json", serde_json::json!({}));
+        turn.record_tool_result_content("{bad");
+
+        assert_eq!(
+            turn.tool_calls[0].result,
+            Some(serde_json::Value::String("{bad".to_string()))
+        );
+    }
+
+    #[test]
+    fn record_tool_result_content_falls_back_on_malformed_array() {
+        let mut turn = Turn::new(1, "input");
+        turn.record_tool_call("json", serde_json::json!({}));
+        turn.record_tool_result_content("[bad");
+
+        assert_eq!(
+            turn.tool_calls[0].result,
+            Some(serde_json::Value::String("[bad".to_string()))
+        );
+    }
+
+    #[test]
+    fn record_tool_result_content_handles_whitespace_prefixed_json() {
+        let mut turn = Turn::new(1, "input");
+        turn.record_tool_call("json", serde_json::json!({}));
+        turn.record_tool_result_content("   {\"ok\":true}");
+
+        assert_eq!(
+            turn.tool_calls[0].result,
+            Some(serde_json::json!({"ok": true}))
+        );
+    }
+
+    #[test]
     fn test_turn_tool_calls() {
         let mut turn = Turn::new(0, "Test input");
         turn.record_tool_call("echo", serde_json::json!({"message": "test"}));

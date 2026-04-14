@@ -115,11 +115,7 @@ impl Agent {
         };
 
         let mut mgr = undo_mgr.lock().await;
-        mgr.checkpoint(
-            turn_number,
-            messages,
-            format!("Before turn {}", turn_number),
-        );
+        mgr.checkpoint(turn_number, messages, format!("Before turn {turn_number}"));
         Ok(())
     }
 }

@@ -298,7 +298,7 @@ impl JobContext {
             .is_some_and(|t| t.from == previous && t.to == self.state)
     }
 
-    pub fn set_state_rollback(&mut self, previous: JobState) {
+    pub(crate) fn set_state_rollback(&mut self, previous: JobState) {
         if self.last_transition_matches_rollback(previous) {
             self.transitions.pop();
         }

@@ -3,6 +3,13 @@
 This document describes the crate-wide testing abstractions available in the
 `ironclaw::testing` module and when to use each one.
 
+Note: `ironclaw::testing` and all of its re-exports are test-only surfaces.
+They are compiled only when `#[cfg(test)]` is active, so these symbols are
+unavailable in non-test builds and will fail with unresolved import or
+visibility errors if used from production code or library consumers. Use the
+`ironclaw::testing` module and its re-exports only from tests or
+`#[cfg(test)]`-gated helper crates.
+
 ## Overview
 
 The testing module provides several complementary abstractions for different
@@ -126,7 +133,7 @@ async fn test_terminal_completed() -> anyhow::Result<()> {
 }
 ```
 
-**When to use:** Use the worker harness when testing `Worker` behavior
+**When to use:** Use the worker harness when testing `Worker` behaviour
 specifically.
 
 ## Choosing the right abstraction
