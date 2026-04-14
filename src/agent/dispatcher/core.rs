@@ -20,7 +20,6 @@ use super::types::*;
 ///
 /// This crate-visible context is re-exported for dispatcher callers, so its
 /// ownership and thread-safety contracts are part of the internal API.
-#[derive(Clone)]
 pub(crate) struct RunLoopCtx {
     /// Shared handle to the live session state for this run.
     ///
@@ -56,7 +55,8 @@ struct CachedPrompts {
 
 struct ChatDelegateParams<'a> {
     message: &'a IncomingMessage,
-    ctx: RunLoopCtx,
+    session: Arc<Mutex<Session>>,
+    thread_id: Uuid,
     active_skills: Vec<LoadedSkill>,
     prompts: CachedPrompts,
     user_tz: chrono_tz::Tz,
@@ -194,7 +194,8 @@ impl Agent {
     fn build_chat_delegate<'a>(&'a self, params: ChatDelegateParams<'a>) -> ChatDelegate<'a> {
         let ChatDelegateParams {
             message,
-            ctx,
+            session,
+            thread_id,
             active_skills,
             prompts,
             user_tz,
@@ -209,8 +210,8 @@ impl Agent {
 
         ChatDelegate {
             agent: self,
-            session: ctx.session,
-            thread_id: ctx.thread_id,
+            session,
+            thread_id,
             message,
             job_ctx,
             active_skills,
@@ -268,6 +269,11 @@ impl Agent {
         message: &IncomingMessage,
         ctx: RunLoopCtx,
     ) -> Result<AgenticLoopResult, Error> {
+        let RunLoopCtx {
+            session,
+            thread_id,
+            initial_messages,
+        } = ctx;
         let (reasoning, active_skills, user_tz) = self.prepare_reasoning(message).await;
 
         // Build system prompts once for this turn. Two variants: with tools
@@ -281,7 +287,8 @@ impl Agent {
         let max_tool_iterations = self.config.max_tool_iterations;
         let delegate = self.build_chat_delegate(ChatDelegateParams {
             message,
-            ctx: ctx.clone(),
+            session: session.clone(),
+            thread_id,
             active_skills,
             prompts: CachedPrompts {
                 with_tools: cached_prompt.clone(),
@@ -290,10 +297,10 @@ impl Agent {
             user_tz,
         });
         let (mut reason_ctx, loop_config) = self.build_loop_context(LoopCtxSpec {
-            initial_messages: ctx.initial_messages,
+            initial_messages,
             initial_tool_defs,
             cached_prompt,
-            thread_id: ctx.thread_id,
+            thread_id,
             max_tool_iterations,
         });
 
@@ -315,7 +322,7 @@ impl Agent {
             // `Ok(WorkerLoopOutcome::Exited)`.
             crate::agent::agentic_loop::LoopOutcome::Stopped => {
                 Err(crate::error::JobError::ContextError {
-                    id: ctx.thread_id,
+                    id: thread_id,
                     reason: "Interrupted".to_string(),
                 }
                 .into())
