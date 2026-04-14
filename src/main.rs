@@ -864,7 +864,7 @@ async fn async_main() -> anyhow::Result<()> {
         spawn_sighup_handler(reload_manager, &shutdown_tx);
     }
 
-    agent.run().await?;
+    let run_result = agent.run().await;
 
     // ── Shutdown ────────────────────────────────────────────────────────
 
@@ -876,6 +876,8 @@ async fn async_main() -> anyhow::Result<()> {
         &active_tunnel,
     )
     .await;
+
+    run_result?;
 
     Ok(())
 }

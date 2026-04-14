@@ -205,16 +205,19 @@ let (components, _side_effects) = builder.build_components().await?;
 // _side_effects is intentionally discarded — no background I/O during tests
 ```
 
-Use `build_all()` when you need the backward-compatible single-call form;
-it calls `build_components()` and `side_effects.start()` in sequence.
+The `build_all()` function provides a backward-compatible single-call
+form; it invokes `build_components()` and then
+`side_effects.start()`.
 
 #### AppBuilderFlags
 
 `AppBuilderFlags` controls optional construction behaviour:
 
+Table: `AppBuilderFlags` fields and effects.
+
 | Field | Type | Effect |
 | --- | --- | --- |
-| `no_db` | `bool` | Skip database initialisation |
+| `no_db` | `bool` | Skip database initialization |
 | `workspace_import_dir` | `Option<PathBuf>` | Directory to import into the workspace on activation; captured at construction so `RuntimeSideEffects::start()` does not re-read the environment |
 
 ## Fast local validation loop

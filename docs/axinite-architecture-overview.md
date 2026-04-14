@@ -173,7 +173,8 @@ background work that must not run during tests:
 | Task | Trigger condition |
 | --- | --- |
 | Stale sandbox job cleanup | `db` is present |
-| Workspace import / seeding | `workspace` and `workspace_import_dir` are set |
+| Workspace import | `workspace` and `workspace_import_dir` are set |
+| Workspace seeding | `workspace` is present (`seed_if_empty()`) |
 | Embedding backfill | `workspace` is present and `embeddings_available` is true |
 
 Call `side_effects.start()` once in `main.rs` after construction is
