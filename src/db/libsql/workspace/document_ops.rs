@@ -39,6 +39,18 @@ async fn fetch_first_row(mut rows: libsql::Rows) -> Result<Option<libsql::Row>, 
     })
 }
 
+/// Maps an optional row to a [`MemoryDocument`], returning `not_found` when
+/// the row is absent.
+fn document_from_row_or_not_found(
+    row: Option<libsql::Row>,
+    not_found: WorkspaceError,
+) -> Result<MemoryDocument, WorkspaceError> {
+    match row {
+        Some(row) => Ok(row_to_memory_document(&row)),
+        None => Err(not_found),
+    }
+}
+
 async fn drain_rows<T, F>(mut rows: libsql::Rows, map_row: F) -> Result<Vec<T>, WorkspaceError>
 where
     F: Fn(libsql::Row) -> T,
@@ -78,13 +90,13 @@ pub(super) async fn get_document_by_path(
             reason: format!("Query failed: {}", e),
         })?;
 
-    match fetch_first_row(rows).await? {
-        Some(row) => Ok(row_to_memory_document(&row)),
-        None => Err(WorkspaceError::DocumentNotFound {
+    document_from_row_or_not_found(
+        fetch_first_row(rows).await?,
+        WorkspaceError::DocumentNotFound {
             doc_type: path.to_string(),
             user_id: scope.user_id.to_string(),
-        }),
-    }
+        },
+    )
 }
 
 pub(super) async fn get_document_by_id(
@@ -106,13 +118,13 @@ pub(super) async fn get_document_by_id(
             reason: format!("Query failed: {}", e),
         })?;
 
-    match fetch_first_row(rows).await? {
-        Some(row) => Ok(row_to_memory_document(&row)),
-        None => Err(WorkspaceError::DocumentNotFound {
+    document_from_row_or_not_found(
+        fetch_first_row(rows).await?,
+        WorkspaceError::DocumentNotFound {
             doc_type: "unknown".to_string(),
             user_id: "unknown".to_string(),
-        }),
-    }
+        },
+    )
 }
 
 pub(super) async fn get_or_create_document_by_path(
