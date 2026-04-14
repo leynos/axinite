@@ -7,11 +7,61 @@ use uuid::Uuid;
 
 use crate::agent::Agent;
 use crate::agent::compaction::ContextCompactor;
-use crate::agent::session::Session;
+use crate::agent::session::{Session, Thread};
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::error::Error;
 
 impl Agent {
+    async fn notify_compaction_status(&self, message: &IncomingMessage, pct: f32) {
+        let _ = self
+            .channels
+            .send_status(
+                &message.channel,
+                StatusUpdate::Status(format!("Context at {:.0}% capacity, compacting...", pct)),
+                &message.metadata,
+            )
+            .await;
+    }
+
+    async fn try_compact_snapshot(
+        &self,
+        snapshot: &mut Thread,
+        strategy: crate::agent::context_monitor::CompactionStrategy,
+    ) -> bool {
+        let compactor = ContextCompactor::new(self.llm().clone());
+        match compactor
+            .compact(snapshot, strategy, self.workspace().map(|w| w.as_ref()))
+            .await
+        {
+            Ok(_) => true,
+            Err(e) => {
+                tracing::warn!("Auto-compaction failed: {}", e);
+                false
+            }
+        }
+    }
+
+    async fn apply_compaction_if_fresh(
+        &self,
+        session: &Arc<Mutex<Session>>,
+        thread_id: Uuid,
+        snapshot: Thread,
+    ) {
+        let mut sess = session.lock().await;
+        if let Some(thread) = sess.threads.get_mut(&thread_id) {
+            if thread.updated_at == snapshot.updated_at
+                && thread.turns.len() == snapshot.turns.len()
+            {
+                *thread = snapshot;
+            } else {
+                tracing::warn!(
+                    thread_id = %thread_id,
+                    "Skipped applying stale auto-compaction result"
+                );
+            }
+        }
+    }
+
     /// Auto-compact context if needed before adding new turn.
     pub(super) async fn maybe_compact_context(
         &self,
@@ -28,45 +78,23 @@ impl Agent {
         };
 
         let messages = thread_snapshot.messages();
-        if let Some(strategy) = self.context_monitor.suggest_compaction(&messages) {
-            let pct = self.context_monitor.usage_percent(&messages);
-            tracing::info!("Context at {:.1}% capacity, auto-compacting", pct);
+        let Some(strategy) = self.context_monitor.suggest_compaction(&messages) else {
+            return Ok(());
+        };
 
-            let _ = self
-                .channels
-                .send_status(
-                    &message.channel,
-                    StatusUpdate::Status(format!("Context at {:.0}% capacity, compacting...", pct)),
-                    &message.metadata,
-                )
-                .await;
+        let pct = self.context_monitor.usage_percent(&messages);
+        tracing::info!("Context at {:.1}% capacity, auto-compacting", pct);
+        self.notify_compaction_status(message, pct as f32).await;
 
-            let compactor = ContextCompactor::new(self.llm().clone());
-            if let Err(e) = compactor
-                .compact(
-                    &mut thread_snapshot,
-                    strategy,
-                    self.workspace().map(|w| w.as_ref()),
-                )
-                .await
-            {
-                tracing::warn!("Auto-compaction failed: {}", e);
-            } else {
-                let mut sess = session.lock().await;
-                if let Some(thread) = sess.threads.get_mut(&thread_id) {
-                    if thread.updated_at == thread_snapshot.updated_at
-                        && thread.turns.len() == thread_snapshot.turns.len()
-                    {
-                        *thread = thread_snapshot;
-                    } else {
-                        tracing::warn!(
-                            thread_id = %thread_id,
-                            "Skipped applying stale auto-compaction result"
-                        );
-                    }
-                }
-            }
+        if !self
+            .try_compact_snapshot(&mut thread_snapshot, strategy)
+            .await
+        {
+            return Ok(());
         }
+
+        self.apply_compaction_if_fresh(session, thread_id, thread_snapshot)
+            .await;
         Ok(())
     }
 
