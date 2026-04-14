@@ -49,6 +49,19 @@ struct LoopCtxSpec {
     max_tool_iterations: usize,
 }
 
+struct CachedPrompts {
+    with_tools: String,
+    no_tools: String,
+}
+
+struct ChatDelegateParams<'a> {
+    message: &'a IncomingMessage,
+    ctx: RunLoopCtx,
+    active_skills: Vec<LoadedSkill>,
+    prompts: CachedPrompts,
+    user_tz: chrono_tz::Tz,
+}
+
 impl Agent {
     async fn prepare_reasoning(
         &self,
@@ -166,15 +179,15 @@ impl Agent {
         Some(context_parts.join("\n\n"))
     }
 
-    fn build_chat_delegate<'a>(
-        &'a self,
-        message: &'a IncomingMessage,
-        ctx: RunLoopCtx,
-        active_skills: Vec<LoadedSkill>,
-        cached_prompt: String,
-        cached_prompt_no_tools: String,
-        user_tz: chrono_tz::Tz,
-    ) -> ChatDelegate<'a> {
+    fn build_chat_delegate<'a>(&'a self, params: ChatDelegateParams<'a>) -> ChatDelegate<'a> {
+        let ChatDelegateParams {
+            message,
+            ctx,
+            active_skills,
+            prompts,
+            user_tz,
+        } = params;
+
         let mut job_ctx =
             JobContext::with_user(&message.user_id, "chat", "Interactive chat session");
         job_ctx.http_interceptor = self.deps.http_interceptor.clone();
@@ -189,8 +202,8 @@ impl Agent {
             message,
             job_ctx,
             active_skills,
-            cached_prompt,
-            cached_prompt_no_tools,
+            cached_prompt: prompts.with_tools,
+            cached_prompt_no_tools: prompts.no_tools,
             nudge_at: max_tool_iterations.saturating_sub(1),
             force_text_at: max_tool_iterations,
             user_tz,
@@ -250,14 +263,16 @@ impl Agent {
         let cached_prompt_no_tools = reasoning.build_system_prompt_with_tools(&[]);
 
         let max_tool_iterations = self.config.max_tool_iterations;
-        let delegate = self.build_chat_delegate(
+        let delegate = self.build_chat_delegate(ChatDelegateParams {
             message,
-            ctx.clone(),
+            ctx: ctx.clone(),
             active_skills,
-            cached_prompt.clone(),
-            cached_prompt_no_tools,
+            prompts: CachedPrompts {
+                with_tools: cached_prompt.clone(),
+                no_tools: cached_prompt_no_tools,
+            },
             user_tz,
-        );
+        });
         let (mut reason_ctx, loop_config) = self.build_loop_context(LoopCtxSpec {
             initial_messages: ctx.initial_messages,
             initial_tool_defs,
