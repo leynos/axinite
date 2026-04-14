@@ -485,6 +485,80 @@ async fn run_shutdown_sequence(
 
     tracing::debug!("Agent shutdown complete");
 }
+
+#[cfg(any(feature = "postgres", feature = "libsql"))]
+async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
+    if !cli.no_onboard
+        && let Some(reason) = ironclaw::setup::check_onboard_needed()
+    {
+        println!("Onboarding needed: {}", reason);
+        println!();
+        let mut wizard = SetupWizard::with_config(SetupConfig {
+            quick: true,
+            ..Default::default()
+        });
+        wizard.run().await?;
+    }
+    Ok(())
+}
+
+#[cfg(not(any(feature = "postgres", feature = "libsql")))]
+async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
+    let _ = cli;
+    Ok(())
+}
+
+async fn load_initial_config(toml_path: Option<&std::path::Path>) -> anyhow::Result<Config> {
+    match Config::from_env_with_toml(toml_path).await {
+        Ok(c) => Ok(c),
+        Err(ironclaw::error::ConfigError::MissingRequired { key, hint }) => {
+            anyhow::bail!(
+                "Configuration error: Missing required setting '{}'. {}. \
+                 Run 'ironclaw onboard' to configure, or set the required environment variables.",
+                key,
+                hint
+            );
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+struct OrchestratorContext {
+    container_job_manager: Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+    job_event_tx: Option<
+        tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
+    >,
+    prompt_queue: Arc<
+        tokio::sync::Mutex<
+            std::collections::HashMap<
+                uuid::Uuid,
+                std::collections::VecDeque<ironclaw::orchestrator::api::PendingPrompt>,
+            >,
+        >,
+    >,
+    docker_status: ironclaw::sandbox::DockerStatus,
+}
+
+async fn setup_orchestrator_context(
+    config: &Config,
+    components: &ironclaw::app::AppComponents,
+) -> OrchestratorContext {
+    let orch = ironclaw::orchestrator::setup_orchestrator(
+        config,
+        &components.llm,
+        &components.tools,
+        components.db.as_ref(),
+        components.secrets_store.as_ref(),
+    )
+    .await;
+    OrchestratorContext {
+        container_job_manager: orch.container_job_manager,
+        job_event_tx: orch.job_event_tx,
+        prompt_queue: orch.prompt_queue,
+        docker_status: orch.docker_status,
+    }
+}
+
 async fn async_main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -500,36 +574,14 @@ async fn async_main() -> anyhow::Result<()> {
     // ── Agent startup ──────────────────────────────────────────────────
 
     // Enhanced first-run detection
-    #[cfg(any(feature = "postgres", feature = "libsql"))]
-    if !cli.no_onboard
-        && let Some(reason) = ironclaw::setup::check_onboard_needed()
-    {
-        println!("Onboarding needed: {}", reason);
-        println!();
-        let mut wizard = SetupWizard::with_config(SetupConfig {
-            quick: true,
-            ..Default::default()
-        });
-        wizard.run().await?;
-    }
+    run_first_run_onboarding_if_needed(&cli).await?;
 
     // Load initial config from env + disk + optional TOML (before DB is available).
     // Credentials may be missing at this point — that's fine. LlmConfig::resolve()
     // defers gracefully, and AppBuilder::build_all() re-resolves after loading
     // secrets from the encrypted DB.
     let toml_path = cli.config.as_deref();
-    let config = match Config::from_env_with_toml(toml_path).await {
-        Ok(c) => c,
-        Err(ironclaw::error::ConfigError::MissingRequired { key, hint }) => {
-            anyhow::bail!(
-                "Configuration error: Missing required setting '{}'. {}. \
-                 Run 'ironclaw onboard' to configure, or set the required environment variables.",
-                key,
-                hint
-            );
-        }
-        Err(e) => return Err(e.into()),
-    };
+    let config = load_initial_config(toml_path).await?;
 
     // Initialize session manager before channel setup
     let session = create_session_manager(config.llm.session.clone()).await;
@@ -576,18 +628,12 @@ async fn async_main() -> anyhow::Result<()> {
 
     // ── Orchestrator / container job manager ────────────────────────────
 
-    let orch = ironclaw::orchestrator::setup_orchestrator(
-        &config,
-        &components.llm,
-        &components.tools,
-        components.db.as_ref(),
-        components.secrets_store.as_ref(),
-    )
-    .await;
-    let container_job_manager = orch.container_job_manager;
-    let job_event_tx = orch.job_event_tx;
-    let prompt_queue = orch.prompt_queue;
-    let docker_status = orch.docker_status;
+    let OrchestratorContext {
+        container_job_manager,
+        job_event_tx,
+        prompt_queue,
+        docker_status,
+    } = setup_orchestrator_context(&config, &components).await;
 
     // ── Channel setup ──────────────────────────────────────────────────
 
@@ -988,6 +1034,41 @@ struct GatewayContext<'a> {
     channel_names: &'a mut Vec<String>,
 }
 
+fn configure_gateway_builder(
+    mut gw: GatewayChannel,
+    components: &ironclaw::app::AppComponents,
+    ctx: &GatewayContext<'_>,
+) -> GatewayChannel {
+    gw = gw.with_llm_provider(Arc::clone(&components.llm));
+    if let Some(ref ws) = components.workspace {
+        gw = gw.with_workspace(Arc::clone(ws));
+    }
+    gw = gw.with_session_manager(Arc::clone(ctx.session_manager));
+    gw = gw.with_log_broadcaster(Arc::clone(ctx.log_broadcaster));
+    gw = gw.with_log_level_handle(Arc::clone(ctx.log_level_handle));
+    gw = gw.with_tool_registry(Arc::clone(&components.tools));
+    if let Some(ref ext_mgr) = components.extension_manager {
+        gw = gw.with_extension_manager(Arc::clone(ext_mgr));
+    }
+    if !components.catalog_entries.is_empty() {
+        gw = gw.with_registry_entries(components.catalog_entries.clone());
+    }
+    if let Some(ref d) = components.db {
+        gw = gw.with_store(Arc::clone(d));
+    }
+    if let Some(jm) = ctx.container_job_manager {
+        gw = gw.with_job_manager(Arc::clone(jm));
+    }
+    gw = gw.with_scheduler(ctx.scheduler_slot.clone());
+    if let Some(ref sr) = components.skill_registry {
+        gw = gw.with_skill_registry(Arc::clone(sr));
+    }
+    if let Some(ref sc) = components.skill_catalog {
+        gw = gw.with_skill_catalog(Arc::clone(sc));
+    }
+    gw.with_cost_guard(Arc::clone(&components.cost_guard))
+}
+
 async fn setup_gateway_channel(
     config: &Config,
     components: &ironclaw::app::AppComponents,
@@ -1001,34 +1082,7 @@ async fn setup_gateway_channel(
 
     if let Some(ref gw_config) = config.channels.gateway {
         let mut gw =
-            GatewayChannel::new(gw_config.clone()).with_llm_provider(Arc::clone(&components.llm));
-        if let Some(ref ws) = components.workspace {
-            gw = gw.with_workspace(Arc::clone(ws));
-        }
-        gw = gw.with_session_manager(Arc::clone(ctx.session_manager));
-        gw = gw.with_log_broadcaster(Arc::clone(ctx.log_broadcaster));
-        gw = gw.with_log_level_handle(Arc::clone(ctx.log_level_handle));
-        gw = gw.with_tool_registry(Arc::clone(&components.tools));
-        if let Some(ref ext_mgr) = components.extension_manager {
-            gw = gw.with_extension_manager(Arc::clone(ext_mgr));
-        }
-        if !components.catalog_entries.is_empty() {
-            gw = gw.with_registry_entries(components.catalog_entries.clone());
-        }
-        if let Some(ref d) = components.db {
-            gw = gw.with_store(Arc::clone(d));
-        }
-        if let Some(jm) = ctx.container_job_manager {
-            gw = gw.with_job_manager(Arc::clone(jm));
-        }
-        gw = gw.with_scheduler(ctx.scheduler_slot.clone());
-        if let Some(ref sr) = components.skill_registry {
-            gw = gw.with_skill_registry(Arc::clone(sr));
-        }
-        if let Some(ref sc) = components.skill_catalog {
-            gw = gw.with_skill_catalog(Arc::clone(sc));
-        }
-        gw = gw.with_cost_guard(Arc::clone(&components.cost_guard));
+            configure_gateway_builder(GatewayChannel::new(gw_config.clone()), components, ctx);
         if config.sandbox.enabled {
             gw = gw.with_prompt_queue(Arc::clone(ctx.prompt_queue));
 
