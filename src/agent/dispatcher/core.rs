@@ -241,7 +241,10 @@ impl Agent {
     /// Returns `Ok(AgenticLoopResult::Response)` on completion, or
     /// `Ok(AgenticLoopResult::NeedApproval)` if a tool requires user approval.
     ///
-    /// Returns `Err` in two cases:
+    /// Returns `Err` for any error produced by the underlying agentic loop,
+    /// forwarding tool, provider, and other loop errors unchanged.
+    ///
+    /// This wrapper performs two specific outcome-to-error mappings:
     /// - `LoopOutcome::Stopped` (thread interrupted) → `JobError::ContextError`.
     ///   The dispatcher treats interruption as an error because it represents an
     ///   externally forced stop mid-processing, in contrast to the worker module
