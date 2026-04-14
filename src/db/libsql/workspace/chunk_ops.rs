@@ -146,13 +146,35 @@ pub(super) async fn get_chunks_without_embeddings(
             reason: format!("Query failed: {}", e),
         })?
     {
+        let raw_chunk_id = get_text(&row, 0);
+        let id: Uuid = match raw_chunk_id.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::warn!(
+                    "Invalid chunk_id UUID in memory_chunks ('{}'): {e}",
+                    raw_chunk_id
+                );
+                continue;
+            }
+        };
+        let raw_document_id = get_text(&row, 1);
+        let document_id: Uuid = match raw_document_id.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::warn!(
+                    "Invalid document_id UUID in memory_chunks ('{}'): {e}",
+                    raw_document_id
+                );
+                continue;
+            }
+        };
         let chunk_index =
             u32::try_from(get_i64(&row, 2)).map_err(|_| WorkspaceError::SearchFailed {
                 reason: "memory_chunks.chunk_index must be non-negative".to_string(),
             })?;
         chunks.push(MemoryChunk {
-            id: get_text(&row, 0).parse().unwrap_or_default(),
-            document_id: get_text(&row, 1).parse().unwrap_or_default(),
+            id,
+            document_id,
             chunk_index,
             content: get_text(&row, 3),
             embedding: None,
