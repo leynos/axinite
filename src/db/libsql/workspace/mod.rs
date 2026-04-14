@@ -24,7 +24,9 @@ use document_ops::{
     update_document,
 };
 use fts::{FtsSearchParams, fts_ranked_results};
-use vector_search::{VectorSearchOutcome, VectorSearchQuery, vector_ranked_results};
+use vector_search::{
+    VectorIndexQuery, VectorSearchOutcome, VectorSearchQuery, vector_ranked_results,
+};
 
 impl NativeWorkspaceStore for LibSqlBackend {
     async fn get_document_by_path(
@@ -157,12 +159,12 @@ impl NativeWorkspaceStore for LibSqlBackend {
             if let Some(emb) = embedding {
                 match vector_ranked_results(
                     &conn,
-                    VectorSearchQuery {
+                    &VectorIndexQuery {
                         user_id,
-                        agent_id,
+                        agent_id: agent_id_str.as_deref(),
                         embedding: emb,
+                        limit: pre_limit,
                     },
-                    pre_limit,
                 )
                 .await?
                 {

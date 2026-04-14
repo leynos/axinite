@@ -2,7 +2,8 @@
 
 use super::super::LibSqlBackend;
 use super::vector_search::{
-    VectorSearchOutcome, VectorSearchQuery, deserialize_embedding, vector_ranked_results,
+    VectorIndexQuery, VectorSearchOutcome, VectorSearchQuery, deserialize_embedding,
+    vector_ranked_results,
 };
 use crate::db::{HybridSearchParams, InsertChunkParams, NativeDatabase, NativeWorkspaceStore};
 use crate::workspace::SearchConfig;
@@ -90,12 +91,12 @@ async fn hybrid_search_uses_brute_force_when_vector_index_is_unavailable() {
         .expect("failed to open libsql connection for vector precondition");
     let vector_outcome = vector_ranked_results(
         &conn,
-        VectorSearchQuery {
+        &VectorIndexQuery {
             user_id: "default",
             agent_id: None,
             embedding: &[1.0, 0.0, 0.0],
+            limit: 5,
         },
-        5,
     )
     .await
     .expect("failed to run vector search precondition");

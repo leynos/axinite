@@ -246,6 +246,17 @@ async fn collect_vector_index_rows(
     Ok(VectorSearchOutcome::Indexed(results))
 }
 
+/// Parameters for a vector-index similarity query.
+///
+/// Groups the search-intent arguments for [`vector_ranked_results`] to keep
+/// its arity within the project limit of four.
+pub(super) struct VectorIndexQuery<'a> {
+    pub(super) user_id: &'a str,
+    pub(super) agent_id: Option<&'a str>,
+    pub(super) embedding: &'a [f32],
+    pub(super) limit: i64,
+}
+
 /// Execute vector similarity search via libSQL's vector index.
 ///
 /// Returns [`VectorSearchOutcome::IndexUnavailable`] when `vector_top_k(...)`
@@ -253,10 +264,8 @@ async fn collect_vector_index_rows(
 /// the expected state after the V9 flexible-dimension migration.
 pub(super) async fn vector_ranked_results(
     conn: &libsql::Connection,
-    query: VectorSearchQuery<'_>,
-    limit: i64,
+    query: &VectorIndexQuery<'_>,
 ) -> Result<VectorSearchOutcome, WorkspaceError> {
-    let agent_id_str = query.agent_id.map(|id| id.to_string());
     let vector_json = embedding_to_vector_json(query.embedding);
 
     match conn
@@ -268,11 +277,11 @@ pub(super) async fn vector_ranked_results(
             JOIN memory_documents d ON d.id = c.document_id
             WHERE d.user_id = ?3 AND d.agent_id IS ?4
             "#,
-            params![vector_json, limit, query.user_id, agent_id_str.as_deref()],
+            params![vector_json, query.limit, query.user_id, query.agent_id],
         )
         .await
     {
-        Ok(rows) => collect_vector_index_rows(rows, limit).await,
+        Ok(rows) => collect_vector_index_rows(rows, query.limit).await,
         Err(e) => {
             if is_missing_vector_index_error(&e) {
                 tracing::debug!(
