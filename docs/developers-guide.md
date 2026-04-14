@@ -338,6 +338,49 @@ async fn github_wasm_fixture_executes() -> anyhow::Result<()> {
 }
 ```
 
+### Internal execution helpers
+
+`WasmToolWrapper::configure_store` lives in
+`src/tools/wasm/wrapper.rs` as a private method on
+`WasmToolWrapper`.
+
+It encapsulates the Wasmtime `Store<StoreData>` lifecycle setup for a
+single tool call: store construction, fuel injection when fuel is
+enabled, epoch-deadline configuration, and resource-limiter wiring. The
+method accepts `host_credentials: Vec<ResolvedHostCredential>` and
+returns `Result<Store<StoreData>, WasmError>`, so `execute_sync` does
+not need to manage store setup details directly.
+
+When adding new store-level configuration, extend
+`configure_store` rather than `execute_sync`. That includes new
+Wasmtime resource limits, deadline handling, or per-call credential
+state that must be present in the `StoreData` before component
+instantiation.
+
+`build_fallback_guidance` lives in
+`src/tools/wasm/wrapper/metadata.rs` and replaces the former
+`build_tool_hint`.
+
+It constructs the fallback-guidance string attached to
+`WasmError::ToolReturnedError` after a tool call fails. The guidance
+always starts with `Retry using the advertised tool schema for
+`{tool_name}`.` and uses the advertised
+`ToolDefinition.parameters` schema as the canonical LLM-facing contract.
+If available, it also appends the guest's exported description and a
+compact advertised-schema excerpt so the retry path stays aligned with
+the already-advertised schema instead of relying on a separately
+transported one.
+
+In signature terms, it takes the tool name, the advertised schema
+value, the guest tool interface, and the mutable store, then returns the
+rendered `String`. Long schema excerpts are truncated to the configured
+maximum line length and end with `…`.
+
+Modify `build_fallback_guidance` when the fallback-guidance format,
+labels, truncation rules, or input set needs to change. Do not use it as
+a primary schema-transport mechanism: the canonical schema remains the
+advertised `ToolDefinition.parameters` value.
+
 ## When to use cargo test versus cargo-nextest
 
 Today:
