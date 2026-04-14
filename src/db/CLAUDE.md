@@ -161,13 +161,17 @@ DATABASE_BACKEND=libsql LIBSQL_PATH=~/.ironclaw/test.db cargo run
 # Use Turso cloud (embedded replica syncs local file to cloud)
 DATABASE_BACKEND=libsql LIBSQL_URL=libsql://xxx.turso.io LIBSQL_AUTH_TOKEN=xxx cargo run
 
-# In-memory (tests only — data is lost when the process exits)
+# Temp-file-backed test database (data is lost when the last shared handle drops)
 # Use LibSqlBackend::new_memory() directly in test code
 ```
 
 ## Testing the libSQL Backend
 
-Use `LibSqlBackend::new_memory()` in unit tests — no files, no cleanup required:
+Use `LibSqlBackend::new_memory()` in unit tests when fresh connections need to
+share state. Despite the name, it creates a temp-file-backed database and
+stores the `temp_path` on the shared database handle so the file persists until
+the final `Arc` clone is dropped. Tests do not need manual cleanup, but they
+should assume a temp file exists for the lifetime of the shared handle:
 
 ```rust
 #[tokio::test]
@@ -178,7 +182,10 @@ async fn test_my_feature() {
 }
 ```
 
-For concurrency tests that require multiple connections sharing state, use `LibSqlBackend::new_local(&tmp_path)` with a `tempfile::tempdir()`. In-memory databases do not share state between connections.
+`LibSqlBackend::new_memory()` is appropriate for multi-connection tests because
+all fresh connections share the same temp-file-backed state. Use
+`LibSqlBackend::new_local(&tmp_path)` with a `tempfile::tempdir()` when a test
+needs an explicit on-disk path it can inspect or control directly.
 
 ## Sharing the libSQL Database Handle
 

@@ -703,12 +703,12 @@ fn row_to_tool(row: &tokio_postgres::Row) -> Result<StoredWasmTool, WasmStorageE
 /// matching the connection-per-request pattern used by the main `LibSqlBackend`.
 #[cfg(feature = "libsql")]
 pub struct LibSqlWasmToolStore {
-    db: std::sync::Arc<libsql::Database>,
+    db: std::sync::Arc<crate::db::libsql::LibSqlDatabase>,
 }
 
 #[cfg(feature = "libsql")]
 impl LibSqlWasmToolStore {
-    pub fn new(db: std::sync::Arc<libsql::Database>) -> Self {
+    pub fn new(db: std::sync::Arc<crate::db::libsql::LibSqlDatabase>) -> Self {
         Self { db }
     }
 

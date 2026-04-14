@@ -23,6 +23,7 @@ pub struct WebhookServerConfig {
 /// `start()` call binds the listener and spawns the server task.
 pub struct WebhookServer {
     config: WebhookServerConfig,
+    resolved_addr: Option<SocketAddr>,
     routes: Vec<Router>,
     /// Merged router saved after start() for restart_with_addr().
     merged_router: Option<Router>,
@@ -35,6 +36,7 @@ impl WebhookServer {
     pub fn new(config: WebhookServerConfig) -> Self {
         Self {
             config,
+            resolved_addr: None,
             routes: Vec::new(),
             merged_router: None,
             shutdown_tx: None,
@@ -56,6 +58,103 @@ impl WebhookServer {
         }
         self.merged_router = Some(app.clone());
         self.bind_and_spawn(app).await
+    }
+
+    /// Bind a listener to the configured address and spawn the server task.
+    /// Private helper used by both start() and restart_with_addr().
+    async fn bind_and_spawn(&mut self, app: Router) -> Result<(), ChannelError> {
+        let listener = tokio::net::TcpListener::bind(self.config.addr)
+            .await
+            .map_err(|e| ChannelError::StartupFailed {
+                name: "webhook_server".to_string(),
+                reason: format!("Failed to bind to {}: {}", self.config.addr, e),
+            })?;
+
+        let resolved_addr = listener
+            .local_addr()
+            .map_err(|e| ChannelError::StartupFailed {
+                name: "webhook_server".to_string(),
+                reason: format!("Failed to get listener local address: {e}"),
+            })?;
+        self.resolved_addr = Some(resolved_addr);
+
+        self.spawn_with_listener(listener, app, resolved_addr);
+        Ok(())
+    }
+
+    /// Gracefully shut down the current listener and rebind to a new address.
+    /// The merged router from the original `start()` call is reused.
+    ///
+    /// If binding to the new address fails, the old listener remains active and
+    /// state is restored. This prevents a denial-of-service if the new address
+    /// is invalid or already in use.
+    pub async fn restart_with_addr(&mut self, new_addr: SocketAddr) -> Result<(), ChannelError> {
+        let app = self
+            .merged_router
+            .clone()
+            .ok_or_else(|| ChannelError::StartupFailed {
+                name: "webhook_server".to_string(),
+                reason: "restart_with_addr called before start()".to_string(),
+            })?;
+
+        // Save old state for rollback if new bind fails
+        let old_addr = self.config.addr;
+        let old_resolved_addr = self.resolved_addr;
+        let old_shutdown_tx = self.shutdown_tx.take();
+        let old_handle = self.handle.take();
+
+        // Update config to new address and try to bind
+        self.config.addr = new_addr;
+        match self.bind_and_spawn(app).await {
+            Ok(()) => {
+                // New listener is running, gracefully shut down the old one
+                if let Some(tx) = old_shutdown_tx {
+                    let _ = tx.send(());
+                }
+                if let Some(handle) = old_handle {
+                    let _ = handle.await;
+                }
+                Ok(())
+            }
+            Err(e) => {
+                // Restore old state; old listener remains active
+                self.config.addr = old_addr;
+                self.resolved_addr = old_resolved_addr;
+                self.shutdown_tx = old_shutdown_tx;
+                self.handle = old_handle;
+                Err(e)
+            }
+        }
+    }
+
+    /// Return the current listener address.
+    ///
+    /// Before the first successful [`Self::start`], start_with_listener,
+    /// [`Self::restart_with_addr`], or restart_with_listener call, this
+    /// returns the configured bind address from `self.config.addr` and it may
+    /// not correspond to a live listener. After a successful start or restart,
+    /// it returns the resolved listener address, including any OS-assigned port
+    /// chosen for `:0` binds, while leaving `self.config.addr` unchanged.
+    pub fn current_addr(&self) -> SocketAddr {
+        self.resolved_addr.unwrap_or(self.config.addr)
+    }
+
+    /// Returns whether the server currently has a running listener task.
+    pub fn is_running(&self) -> bool {
+        self.handle
+            .as_ref()
+            .map(|handle| !handle.is_finished())
+            .unwrap_or(false)
+    }
+
+    /// Signal graceful shutdown and wait for the server task to finish.
+    pub async fn shutdown(&mut self) {
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.await;
+        }
     }
 
     /// Accept a pre-bound listener, merge route fragments, and spawn the
@@ -83,41 +182,22 @@ impl WebhookServer {
                 name: "webhook_server".to_string(),
                 reason: format!("Failed to get listener local address: {e}"),
             })?;
-        self.config.addr = local_addr;
+        self.resolved_addr = Some(local_addr);
 
-        self.spawn_with_listener(listener, app);
+        self.spawn_with_listener(listener, app, local_addr);
         Ok(())
     }
 
-    /// Bind a listener to the configured address and spawn the server task.
-    /// Private helper used by both start() and restart_with_addr().
-    async fn bind_and_spawn(&mut self, app: Router) -> Result<(), ChannelError> {
-        let listener = tokio::net::TcpListener::bind(self.config.addr)
-            .await
-            .map_err(|e| ChannelError::StartupFailed {
-                name: "webhook_server".to_string(),
-                reason: format!("Failed to bind to {}: {e}", self.config.addr),
-            })?;
-        let addr = listener
-            .local_addr()
-            .map_err(|e| ChannelError::StartupFailed {
-                name: "webhook_server".to_string(),
-                reason: format!("local_addr failed: {e}"),
-            })?;
-        self.config.addr = addr;
-        self.spawn_on_listener(listener, app).await
-    }
-
-    /// Spawn the server on an already-bound listener.
-    /// Private helper that contains the common shutdown-channel and task-spawn logic.
-    async fn spawn_on_listener(
+    /// Spawn the axum server on an already-bound listener.
+    fn spawn_with_listener(
         &mut self,
         listener: tokio::net::TcpListener,
         app: Router,
-    ) -> Result<(), ChannelError> {
-        tracing::info!("Webhook server listening on {}", self.config.addr);
+        addr: SocketAddr,
+    ) {
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         self.shutdown_tx = Some(shutdown_tx);
+
         let handle = tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, app)
                 .with_graceful_shutdown(async {
@@ -126,75 +206,12 @@ impl WebhookServer {
                 })
                 .await
             {
-                tracing::error!("Webhook server error: {e}");
+                tracing::error!("Webhook server error: {}", e);
             }
         });
+
+        tracing::info!("Webhook server listening on {}", addr);
         self.handle = Some(handle);
-        Ok(())
-    }
-
-    /// Shared restart kernel. Saves current listener state, spawns the server on
-    /// `listener` bound at `new_addr`, shuts down the old server on success, or
-    /// restores the previous state on failure.
-    async fn swap_listener(
-        &mut self,
-        new_addr: SocketAddr,
-        listener: tokio::net::TcpListener,
-        app: Router,
-    ) -> Result<(), ChannelError> {
-        let old_addr = self.config.addr;
-        let old_shutdown_tx = self.shutdown_tx.take();
-        let old_handle = self.handle.take();
-
-        self.config.addr = new_addr;
-        match self.spawn_on_listener(listener, app).await {
-            Ok(()) => {
-                if let Some(tx) = old_shutdown_tx {
-                    let _ = tx.send(());
-                }
-                if let Some(handle) = old_handle {
-                    let _ = handle.await;
-                }
-                Ok(())
-            }
-            Err(e) => {
-                self.config.addr = old_addr;
-                self.shutdown_tx = old_shutdown_tx;
-                self.handle = old_handle;
-                Err(e)
-            }
-        }
-    }
-
-    /// Gracefully shut down the current listener and rebind to a new address.
-    /// The merged router from the original `start()` call is reused.
-    ///
-    /// If binding to the new address fails, the old listener remains active and
-    /// state is restored. This prevents a denial-of-service if the new address
-    /// is invalid or already in use.
-    pub async fn restart_with_addr(&mut self, new_addr: SocketAddr) -> Result<(), ChannelError> {
-        let app = self
-            .merged_router
-            .clone()
-            .ok_or_else(|| ChannelError::StartupFailed {
-                name: "webhook_server".to_string(),
-                reason: "restart_with_addr called before start()".to_string(),
-            })?;
-
-        let listener = tokio::net::TcpListener::bind(new_addr).await.map_err(|e| {
-            ChannelError::StartupFailed {
-                name: "webhook_server".to_string(),
-                reason: format!("Failed to bind to {new_addr}: {e}"),
-            }
-        })?;
-        let addr = listener
-            .local_addr()
-            .map_err(|e| ChannelError::StartupFailed {
-                name: "webhook_server".to_string(),
-                reason: format!("local_addr failed: {e}"),
-            })?;
-
-        self.swap_listener(addr, listener, app).await
     }
 
     /// Gracefully shut down the current listener and rebind using a pre-bound
@@ -232,63 +249,12 @@ impl WebhookServer {
         // new listener is already bound and assumed to be valid.
         self.shutdown().await;
 
-        self.config.addr = new_addr;
-        self.spawn_with_listener(listener, app);
+        self.resolved_addr = Some(new_addr);
+        self.spawn_with_listener(listener, app, new_addr);
         Ok(())
     }
-
-    /// Return the server address currently stored in `self.config.addr`.
-    ///
-    /// Before the first successful [`Self::start`], `start_with_listener`,
-    /// [`Self::restart_with_addr`], or `restart_with_listener` call,
-    /// this is only the configured address and may not correspond to a live
-    /// bound listener. After a successful start or restart, it reflects the
-    /// actual bound address, including any OS-assigned port chosen for `:0`
-    /// binds.
-    pub fn current_addr(&self) -> SocketAddr {
-        self.config.addr
-    }
-
-    /// Returns whether the server currently has a running listener task.
-    pub fn is_running(&self) -> bool {
-        self.handle
-            .as_ref()
-            .map(|handle| !handle.is_finished())
-            .unwrap_or(false)
-    }
-
-    /// Signal graceful shutdown and wait for the server task to finish.
-    pub async fn shutdown(&mut self) {
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(());
-        }
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.await;
-        }
-    }
-
-    /// Spawn the axum server on an already-bound listener.
-    fn spawn_with_listener(&mut self, listener: tokio::net::TcpListener, app: Router) {
-        let addr = self.config.addr;
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
-        self.shutdown_tx = Some(shutdown_tx);
-
-        let handle = tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, app)
-                .with_graceful_shutdown(async {
-                    let _ = shutdown_rx.await;
-                    tracing::debug!("Webhook server shutting down");
-                })
-                .await
-            {
-                tracing::error!("Webhook server error: {}", e);
-            }
-        });
-
-        tracing::info!("Webhook server listening on {}", addr);
-        self.handle = Some(handle);
-    }
 }
+
 #[cfg(test)]
 mod tests {
     use std::net::TcpListener as StdTcpListener;
@@ -412,6 +378,21 @@ mod tests {
         assert_ne!(
             addr1, addr2,
             "Address should change after restart_with_addr"
+        );
+
+        let old_result = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            client.get(format!("http://{}/health", addr1)).send(),
+        )
+        .await;
+        assert!(
+            old_result.is_err()
+                || old_result.as_ref().is_ok_and(|request_result| {
+                    request_result.as_ref().map_or(true, |response| {
+                        response.status() != reqwest::StatusCode::OK
+                    })
+                }),
+            "Old address should not respond after restart_with_addr"
         );
 
         let response = client

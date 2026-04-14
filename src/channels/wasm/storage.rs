@@ -351,12 +351,12 @@ fn pg_row_to_channel(
 /// matching the connection-per-request pattern used by the main `LibSqlBackend`.
 #[cfg(feature = "libsql")]
 pub struct LibSqlWasmChannelStore {
-    db: std::sync::Arc<libsql::Database>,
+    db: std::sync::Arc<crate::db::libsql::LibSqlDatabase>,
 }
 
 #[cfg(feature = "libsql")]
 impl LibSqlWasmChannelStore {
-    pub fn new(db: std::sync::Arc<libsql::Database>) -> Self {
+    pub fn new(db: std::sync::Arc<crate::db::libsql::LibSqlDatabase>) -> Self {
         Self { db }
     }
 

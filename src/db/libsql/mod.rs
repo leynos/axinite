@@ -4,7 +4,7 @@
 //! Supports three modes:
 //! - Local embedded (file-based, no server needed)
 //! - Turso cloud with embedded replica (sync to cloud)
-//! - In-memory (for testing)
+//! - Temp-file-backed test mode (for testing)
 
 mod conversations;
 pub(crate) mod helpers;
@@ -15,30 +15,27 @@ mod sandbox;
 mod settings;
 mod tool_failures;
 mod workspace;
-use std::path::Path;
-use std::path::PathBuf;
-use std::sync::Arc;
-
-use crate::db::NativeDatabase;
-use crate::error::DatabaseError;
-use libsql::{Connection, Database as LibSqlDatabase};
-
-use crate::db::libsql_migrations;
-pub(crate) use helpers::{
-    fmt_opt_ts, fmt_ts, get_i64, get_json, get_opt_bool, get_opt_text, get_opt_ts, get_text,
-    get_ts, opt_text, opt_text_owned, parse_job_state,
-};
-pub(crate) use row_conversion::row_to_memory_document;
-use uuid::Uuid;
 
 /// libSQL/Turso database backend.
 ///
 /// Stores the `Database` handle in an `Arc` so that the same underlying
 /// database can be shared with stores (SecretsStore, WasmToolStore) that
 /// create their own connections per-operation.
+///
+/// When constructed through [`LibSqlBackend::new_memory`], the optional
+/// `temp_path` keeps test-database cleanup tied to the final shared owner.
+pub struct LibSqlDatabase {
+    db: RawLibSqlDatabase,
+    temp_path: Option<PathBuf>,
+}
+pub(crate) use helpers::{
+    fmt_opt_ts, fmt_ts, get_i64, get_json, get_opt_bool, get_opt_text, get_opt_ts, get_text,
+    get_ts, opt_text, opt_text_owned, parse_job_state,
+};
+pub(crate) use row_conversion::row_to_memory_document;
+
 pub struct LibSqlBackend {
     db: Arc<LibSqlDatabase>,
-    temp_path: Option<PathBuf>,
 }
 
 impl LibSqlBackend {
@@ -52,10 +49,9 @@ impl LibSqlBackend {
     }
 
     /// Wraps a built `libsql::Database` in `Self` with no temp-file path.
-    fn from_db(db: libsql::Database) -> Self {
+    fn from_db(db: RawLibSqlDatabase) -> Self {
         Self {
-            db: Arc::new(db),
-            temp_path: None,
+            db: Arc::new(LibSqlDatabase::new(db, None)),
         }
     }
 
@@ -71,7 +67,13 @@ impl LibSqlBackend {
         Ok(Self::from_db(db))
     }
 
-    /// Create a new in-memory database (for testing).
+    /// Create a temporary file-backed database for tests.
+    ///
+    /// Despite the name, this does not use SQLite's `:memory:` mode. It
+    /// creates a temp file whose path is retained for the lifetime of the
+    /// returned database so multiple fresh connections share the same state.
+    /// The temp file and its sidecar files are cleaned up when the final
+    /// shared database handle is dropped.
     pub async fn new_memory() -> Result<Self, DatabaseError> {
         let temp_path =
             std::env::temp_dir().join(format!("axinite-libsql-memory-{}.db", Uuid::new_v4()));
@@ -83,8 +85,7 @@ impl LibSqlBackend {
             })?;
 
         Ok(Self {
-            db: Arc::new(db),
-            temp_path: Some(temp_path),
+            db: Arc::new(LibSqlDatabase::new(db, Some(temp_path))),
         })
     }
 
@@ -158,8 +159,7 @@ impl LibSqlBackend {
         }
     }
 }
-
-impl Drop for LibSqlBackend {
+impl Drop for LibSqlDatabase {
     fn drop(&mut self) {
         if let Some(path) = &self.temp_path {
             let _ = std::fs::remove_file(path);
@@ -258,13 +258,8 @@ mod tests {
         let mut rows = conn.query("PRAGMA journal_mode", ()).await.unwrap();
         let row = rows.next().await.unwrap().unwrap();
         let mode: String = row.get(0).unwrap();
-        // In-memory databases use "memory" journal mode (WAL doesn't apply to :memory:),
-        // but the PRAGMA still executes without error. For file-based databases it returns "wal".
-        assert!(
-            mode == "wal" || mode == "memory",
-            "expected wal or memory, got: {}",
-            mode,
-        );
+        // The temp-file-backed test database should still enable WAL mode.
+        assert!(mode == "wal", "expected wal, got: {}", mode,);
     }
 
     #[tokio::test]
@@ -388,7 +383,6 @@ mod tests {
         for _ in 0..10 {
             let b = LibSqlBackend {
                 db: backend.shared_db(),
-                temp_path: None,
             };
             handles.push(tokio::spawn(async move { b.connect().await }));
         }
@@ -401,5 +395,26 @@ mod tests {
                 result.err()
             );
         }
+    }
+}
+
+impl Drop for LibSqlDatabase {
+    fn drop(&mut self) {
+        if let Some(path) = &self.temp_path {
+            let _ = std::fs::remove_file(path);
+            let _ = std::fs::remove_file(path.with_extension("db-wal"));
+            let _ = std::fs::remove_file(path.with_extension("db-shm"));
+        }
+    }
+}
+
+impl LibSqlDatabase {
+    fn new(db: RawLibSqlDatabase, temp_path: Option<PathBuf>) -> Self {
+        Self { db, temp_path }
+    }
+
+    /// Create a fresh libSQL connection from the shared database handle.
+    pub fn connect(&self) -> Result<Connection, libsql::Error> {
+        self.db.connect()
     }
 }

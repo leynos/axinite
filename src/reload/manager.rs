@@ -175,7 +175,7 @@ impl HotReloadManager {
 
         let is_running = controller.is_running().await;
         let old_addr = controller.current_addr().await;
-        if is_running && resolved_addrs.contains(&old_addr) {
+        if is_running && Self::listener_matches_resolved_addr(old_addr, &resolved_addrs) {
             tracing::debug!("HTTP listener address unchanged, skipping restart");
             return Ok(());
         }
@@ -218,6 +218,16 @@ impl HotReloadManager {
 
         // All candidates failed
         Err(last_error.expect("at least one candidate address").into())
+    }
+
+    fn listener_matches_resolved_addr(
+        current_addr: SocketAddr,
+        resolved_addrs: &[SocketAddr],
+    ) -> bool {
+        resolved_addrs.iter().any(|resolved_addr| {
+            *resolved_addr == current_addr
+                || (resolved_addr.port() == 0 && resolved_addr.ip() == current_addr.ip())
+        })
     }
 
     async fn update_channel_secrets(&self, http: &crate::config::HttpConfig) {

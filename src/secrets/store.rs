@@ -472,14 +472,14 @@ fn row_to_secret(row: &tokio_postgres::Row) -> Secret {
 /// matching the connection-per-request pattern used by the main `LibSqlBackend`.
 #[cfg(feature = "libsql")]
 pub struct LibSqlSecretsStore {
-    db: Arc<libsql::Database>,
+    db: Arc<crate::db::libsql::LibSqlDatabase>,
     crypto: Arc<SecretsCrypto>,
 }
 
 #[cfg(feature = "libsql")]
 impl LibSqlSecretsStore {
     /// Create a new store with the given shared libsql database handle and crypto instance.
-    pub fn new(db: Arc<libsql::Database>, crypto: Arc<SecretsCrypto>) -> Self {
+    pub fn new(db: Arc<crate::db::libsql::LibSqlDatabase>, crypto: Arc<SecretsCrypto>) -> Self {
         Self { db, crypto }
     }
 
