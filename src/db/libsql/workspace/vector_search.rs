@@ -231,9 +231,23 @@ async fn collect_vector_index_rows(
             });
         }
     } {
+        let chunk_id: Uuid = match get_text(&row, 0).parse() {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::warn!("Invalid chunk_id UUID in memory_chunks: {e}");
+                continue;
+            }
+        };
+        let document_id: Uuid = match get_text(&row, 1).parse() {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::warn!("Invalid document_id UUID in memory_documents: {e}");
+                continue;
+            }
+        };
         results.push(RankedResult {
-            chunk_id: get_text(&row, 0).parse().unwrap_or_default(),
-            document_id: get_text(&row, 1).parse().unwrap_or_default(),
+            chunk_id,
+            document_id,
             document_path: get_text(&row, 2),
             content: get_text(&row, 3),
             rank: results.len() as u32 + 1,
