@@ -23,7 +23,7 @@ use document_ops::{
     get_or_create_document_by_path, list_all_paths, list_directory, list_documents,
     update_document,
 };
-use fts::fts_ranked_results;
+use fts::{FtsSearchParams, fts_ranked_results};
 use vector_search::{VectorSearchOutcome, vector_ranked_results};
 
 impl NativeWorkspaceStore for LibSqlBackend {
@@ -133,9 +133,16 @@ impl NativeWorkspaceStore for LibSqlBackend {
         let pre_limit = config.pre_fusion_limit as i64;
 
         let fts_results = if config.use_fts {
-            let results =
-                fts_ranked_results(&conn, user_id, agent_id_str.as_deref(), query, pre_limit)
-                    .await?;
+            let results = fts_ranked_results(
+                &conn,
+                FtsSearchParams {
+                    user_id,
+                    agent_id: agent_id_str.as_deref(),
+                    query,
+                    limit: pre_limit,
+                },
+            )
+            .await?;
             tracing::debug!(
                 "FTS search returned {} results (pre-fusion limit: {})",
                 results.len(),

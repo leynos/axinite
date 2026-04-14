@@ -6,6 +6,14 @@ use super::super::get_text;
 use crate::error::WorkspaceError;
 use crate::workspace::RankedResult;
 
+/// Parameters for a full-text search query.
+pub(super) struct FtsSearchParams<'a> {
+    pub(super) user_id: &'a str,
+    pub(super) agent_id: Option<&'a str>,
+    pub(super) query: &'a str,
+    pub(super) limit: i64,
+}
+
 /// Execute full-text search and return ranked results.
 ///
 /// Queries the memory_chunks_fts virtual table, joining with memory_chunks
@@ -13,10 +21,7 @@ use crate::workspace::RankedResult;
 /// rank based on result order.
 pub(super) async fn fts_ranked_results(
     conn: &libsql::Connection,
-    user_id: &str,
-    agent_id: Option<&str>,
-    query: &str,
-    limit: i64,
+    params: FtsSearchParams<'_>,
 ) -> Result<Vec<RankedResult>, WorkspaceError> {
     let mut rows = conn
         .query(
@@ -30,7 +35,7 @@ pub(super) async fn fts_ranked_results(
             ORDER BY rank
             LIMIT ?4
             "#,
-            params![user_id, agent_id, query, limit],
+            params![params.user_id, params.agent_id, params.query, params.limit],
         )
         .await
         .map_err(|e| WorkspaceError::SearchFailed {
