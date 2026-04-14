@@ -93,37 +93,69 @@ fn build_agent_with_stub_channel(channels: Arc<ChannelManager>) -> Agent {
     )
 }
 
-#[tokio::test]
-async fn delegate_emits_image_generated_for_valid_data_url() {
-    let (stub, _sender) = StubChannel::new("test-chan");
+async fn new_stubbed_channels(
+    name: &str,
+) -> (
+    Arc<ChannelManager>,
+    Arc<std::sync::Mutex<Vec<StatusUpdate>>>,
+) {
+    let (stub, _sender) = StubChannel::new(name);
     let statuses = stub.captured_statuses_handle();
     let channels = Arc::new(ChannelManager::new());
     channels.add(Box::new(stub)).await;
+    (channels, statuses)
+}
 
-    let agent = build_agent_with_stub_channel(channels);
-    let session = Arc::new(Mutex::new(Session::new("test-user")));
-    let message = IncomingMessage::new("test-chan", "test-user", "generate an image");
-
-    let delegate = super::super::delegate::ChatDelegate {
-        agent: &agent,
+fn make_delegate<'a>(
+    agent: &'a Agent,
+    session: Arc<Mutex<Session>>,
+    message: &'a IncomingMessage,
+) -> super::super::delegate::ChatDelegate<'a> {
+    super::super::delegate::ChatDelegate {
+        agent,
         session,
         thread_id: uuid::Uuid::new_v4(),
-        message: &message,
-        job_ctx: JobContext::with_user("test-user", "test", "test session"),
+        message,
+        job_ctx: JobContext::with_user(&message.user_id, &message.channel, "test session"),
         active_skills: vec![],
         cached_prompt: String::new(),
         cached_prompt_no_tools: String::new(),
         nudge_at: 0,
         force_text_at: 0,
         user_tz: chrono_tz::UTC,
-    };
+    }
+}
 
-    let output = serde_json::json!({
-        "type": "image_generated",
-        "data": "data:image/png;base64,abc123",
-        "path": "/tmp/image.png"
-    })
-    .to_string();
+fn sentinel_json(data: Option<&str>, path: Option<&str>) -> String {
+    let mut sentinel = serde_json::Map::from_iter([(
+        "type".to_string(),
+        serde_json::Value::String("image_generated".to_string()),
+    )]);
+    if let Some(data) = data {
+        sentinel.insert(
+            "data".to_string(),
+            serde_json::Value::String(data.to_string()),
+        );
+    }
+    if let Some(path) = path {
+        sentinel.insert(
+            "path".to_string(),
+            serde_json::Value::String(path.to_string()),
+        );
+    }
+    serde_json::Value::Object(sentinel).to_string()
+}
+
+#[tokio::test]
+async fn delegate_emits_image_generated_for_valid_data_url() {
+    let (channels, statuses) = new_stubbed_channels("test-chan").await;
+    let agent = build_agent_with_stub_channel(channels);
+    let session = Arc::new(Mutex::new(Session::new("test-user")));
+    let message = IncomingMessage::new("test-chan", "test-user", "generate an image");
+
+    let delegate = make_delegate(&agent, session, &message);
+
+    let output = sentinel_json(Some("data:image/png;base64,abc123"), Some("/tmp/image.png"));
 
     let result = delegate
         .maybe_emit_image_sentinel("image_generate", &output)
@@ -147,35 +179,15 @@ async fn delegate_emits_image_generated_for_valid_data_url() {
 
 #[tokio::test]
 async fn delegate_skips_broadcast_when_data_url_is_empty() {
-    let (stub, _sender) = StubChannel::new("test-chan");
-    let statuses = stub.captured_statuses_handle();
-    let channels = Arc::new(ChannelManager::new());
-    channels.add(Box::new(stub)).await;
-
+    let (channels, statuses) = new_stubbed_channels("test-chan").await;
     let agent = build_agent_with_stub_channel(channels);
     let session = Arc::new(Mutex::new(Session::new("test-user")));
     let message = IncomingMessage::new("test-chan", "test-user", "generate an image");
 
-    let delegate = super::super::delegate::ChatDelegate {
-        agent: &agent,
-        session,
-        thread_id: uuid::Uuid::new_v4(),
-        message: &message,
-        job_ctx: JobContext::with_user("test-user", "test", "test session"),
-        active_skills: vec![],
-        cached_prompt: String::new(),
-        cached_prompt_no_tools: String::new(),
-        nudge_at: 0,
-        force_text_at: 0,
-        user_tz: chrono_tz::UTC,
-    };
+    let delegate = make_delegate(&agent, session, &message);
 
     // Missing "data" field — empty data URL
-    let output = serde_json::json!({
-        "type": "image_generated",
-        "path": "/tmp/image.png"
-    })
-    .to_string();
+    let output = sentinel_json(None, Some("/tmp/image.png"));
 
     let result = delegate
         .maybe_emit_image_sentinel("image_generate", &output)
@@ -195,35 +207,17 @@ async fn delegate_skips_broadcast_when_data_url_is_empty() {
 
 #[tokio::test]
 async fn delegate_skips_broadcast_when_data_url_is_not_a_data_url() {
-    let (stub, _sender) = StubChannel::new("test-chan");
-    let statuses = stub.captured_statuses_handle();
-    let channels = Arc::new(ChannelManager::new());
-    channels.add(Box::new(stub)).await;
-
+    let (channels, statuses) = new_stubbed_channels("test-chan").await;
     let agent = build_agent_with_stub_channel(channels);
     let session = Arc::new(Mutex::new(Session::new("test-user")));
     let message = IncomingMessage::new("test-chan", "test-user", "generate an image");
 
-    let delegate = super::super::delegate::ChatDelegate {
-        agent: &agent,
-        session,
-        thread_id: uuid::Uuid::new_v4(),
-        message: &message,
-        job_ctx: JobContext::with_user("test-user", "test", "test session"),
-        active_skills: vec![],
-        cached_prompt: String::new(),
-        cached_prompt_no_tools: String::new(),
-        nudge_at: 0,
-        force_text_at: 0,
-        user_tz: chrono_tz::UTC,
-    };
+    let delegate = make_delegate(&agent, session, &message);
 
-    let output = serde_json::json!({
-        "type": "image_generated",
-        "data": "https://example.test/image.png",
-        "path": "/tmp/image.png"
-    })
-    .to_string();
+    let output = sentinel_json(
+        Some("https://example.test/image.png"),
+        Some("/tmp/image.png"),
+    );
 
     let result = delegate
         .maybe_emit_image_sentinel("image_generate", &output)
@@ -243,34 +237,14 @@ async fn delegate_skips_broadcast_when_data_url_is_not_a_data_url() {
 
 #[tokio::test]
 async fn delegate_returns_false_for_non_image_tool() {
-    let (stub, _sender) = StubChannel::new("test-chan");
-    let statuses = stub.captured_statuses_handle();
-    let channels = Arc::new(ChannelManager::new());
-    channels.add(Box::new(stub)).await;
-
+    let (channels, statuses) = new_stubbed_channels("test-chan").await;
     let agent = build_agent_with_stub_channel(channels);
     let session = Arc::new(Mutex::new(Session::new("test-user")));
     let message = IncomingMessage::new("test-chan", "test-user", "do something");
 
-    let delegate = super::super::delegate::ChatDelegate {
-        agent: &agent,
-        session,
-        thread_id: uuid::Uuid::new_v4(),
-        message: &message,
-        job_ctx: JobContext::with_user("test-user", "test", "test session"),
-        active_skills: vec![],
-        cached_prompt: String::new(),
-        cached_prompt_no_tools: String::new(),
-        nudge_at: 0,
-        force_text_at: 0,
-        user_tz: chrono_tz::UTC,
-    };
+    let delegate = make_delegate(&agent, session, &message);
 
-    let output = serde_json::json!({
-        "type": "image_generated",
-        "data": "data:image/png;base64,abc123"
-    })
-    .to_string();
+    let output = sentinel_json(Some("data:image/png;base64,abc123"), None);
 
     let result = delegate.maybe_emit_image_sentinel("echo", &output).await;
 
