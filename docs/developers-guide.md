@@ -364,9 +364,9 @@ instantiation.
 It constructs the fallback-guidance string attached to
 `WasmError::ToolReturnedError` after a tool call fails. The guidance
 always starts with `Retry using the advertised tool schema for
-`{tool_name}`.` and uses the advertised
-`ToolDefinition.parameters` schema as the canonical LLM-facing contract.
-If available, it also appends the guest's exported description and a
+{tool_name}.` and uses the advertised `ToolDefinition.parameters`
+schema as the canonical language model (LLM)-facing contract. If
+available, it also appends the guest's exported description and a
 compact advertised-schema excerpt so the retry path stays aligned with
 the already-advertised schema instead of relying on a separately
 transported one.
