@@ -191,8 +191,11 @@ async fn image_sentinel_harness() -> ImageSentinelHarness {
 }
 
 #[rstest]
+#[case("image_generate")]
+#[case("image_edit")]
 #[tokio::test]
 async fn delegate_emits_image_generated_for_valid_data_url(
+    #[case] tool_name: &str,
     #[future] image_sentinel_harness: ImageSentinelHarness,
 ) {
     let harness = image_sentinel_harness.await;
@@ -200,13 +203,11 @@ async fn delegate_emits_image_generated_for_valid_data_url(
 
     let output = sentinel_json(Some("data:image/png;base64,abc123"), Some("/tmp/image.png"));
 
-    let result = delegate
-        .maybe_emit_image_sentinel("image_generate", &output)
-        .await;
+    let result = delegate.maybe_emit_image_sentinel(tool_name, &output).await;
 
     assert!(
         result,
-        "should return true for image_generate with valid sentinel"
+        "should return true for {tool_name} with valid sentinel"
     );
 
     let captured = harness.statuses.lock().expect("statuses lock poisoned");
@@ -221,34 +222,23 @@ async fn delegate_emits_image_generated_for_valid_data_url(
 }
 
 #[rstest]
+#[case(None, "should NOT emit any status when data URL is empty")]
+#[case(
+    Some("https://example.test/image.png"),
+    "should NOT emit any status when data URL is not a data URL"
+)]
 #[tokio::test]
-async fn delegate_skips_broadcast_when_data_url_is_empty() {
-    let (result, count) = run_image_generate_and_count_statuses(None).await;
+async fn delegate_skips_broadcast_for_invalid_data_urls(
+    #[case] data_url: Option<&str>,
+    #[case] expected_message: &str,
+) {
+    let (result, count) = run_image_generate_and_count_statuses(data_url).await;
 
     assert!(
         result,
-        "should return true (sentinel detected) even when data is empty"
+        "should return true (sentinel detected) even when data is invalid"
     );
-    assert_eq!(
-        count, 0,
-        "should NOT emit any status when data URL is empty"
-    );
-}
-
-#[rstest]
-#[tokio::test]
-async fn delegate_skips_broadcast_when_data_url_is_not_a_data_url() {
-    let (result, count) =
-        run_image_generate_and_count_statuses(Some("https://example.test/image.png")).await;
-
-    assert!(
-        result,
-        "should return true (sentinel detected) even when data URL is invalid"
-    );
-    assert_eq!(
-        count, 0,
-        "should NOT emit any status when data URL is not a data URL"
-    );
+    assert_eq!(count, 0, "{expected_message}");
 }
 
 #[rstest]
