@@ -752,7 +752,6 @@ mod tests {
         testing::StubLlm,
     };
     use anyhow::Context;
-    use tokio::time::{Duration, Instant};
 
     #[cfg(feature = "libsql")]
     use crate::db::libsql::LibSqlBackend;
@@ -785,27 +784,6 @@ mod tests {
             !workspace.exists(crate::workspace::paths::README).await?,
             "build_components() must not run seed_if_empty()"
         );
-        Ok(())
-    }
-
-    async fn wait_for_import_and_seed(
-        workspace: &Arc<Workspace>,
-        timeout_secs: u64,
-    ) -> anyhow::Result<()> {
-        let deadline = Instant::now() + Duration::from_secs(timeout_secs);
-        loop {
-            if workspace.exists("MARKER.md").await?
-                && workspace.exists(crate::workspace::paths::README).await?
-            {
-                break;
-            }
-            if Instant::now() >= deadline {
-                anyhow::bail!(
-                    "RuntimeSideEffects::start() did not import MARKER.md and seed the workspace in time"
-                );
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
         Ok(())
     }
 
@@ -880,7 +858,10 @@ mod tests {
             .workspace
             .as_ref()
             .context("workspace should be constructed during build_all()")?;
-        wait_for_import_and_seed(workspace, 0).await?;
+        assert!(
+            workspace.exists(crate::workspace::paths::README).await?,
+            "build_all() must complete workspace seeding before returning"
+        );
         let marker = workspace.read("MARKER.md").await?;
         assert_eq!(
             marker.content,
