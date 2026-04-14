@@ -301,9 +301,11 @@ impl JobContext {
     /// restored to a previous state after a persistence failure, bypassing
     /// [`Self::transition_to`] validation.
     pub(crate) fn set_state_rollback(&mut self, previous: JobState) {
-        if self.last_transition_matches_rollback(previous) {
-            self.transitions.pop();
+        if !self.last_transition_matches_rollback(previous) {
+            return;
         }
+
+        self.transitions.pop();
         self.state = previous;
         self.completed_at = if matches!(
             self.state,

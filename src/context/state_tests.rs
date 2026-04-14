@@ -172,6 +172,48 @@ fn test_stuck_since_returns_latest_stuck_transition() {
     assert_eq!(ctx.stuck_since(), Some(second_stuck_at));
 }
 
+#[test]
+fn test_set_state_rollback_ignores_mismatched_transition_history() {
+    let mut ctx = JobContext::new("Test", "Rollback mismatch test");
+    ctx.transition_to(JobState::InProgress, None)
+        .expect("failed to transition to InProgress");
+    ctx.transition_to(JobState::Completed, Some("Done".to_string()))
+        .expect("failed to transition to Completed");
+
+    let expected_state = ctx.state;
+    let expected_completed_at = ctx.completed_at;
+    let expected_transition_len = ctx.transitions.len();
+    let expected_last_transition = ctx
+        .transitions
+        .last()
+        .map(|transition| (transition.from, transition.to, transition.reason.clone()));
+
+    ctx.set_state_rollback(JobState::Pending);
+
+    assert_eq!(
+        ctx.state, expected_state,
+        "rollback should not change state when the latest transition does not match"
+    );
+    assert_eq!(
+        ctx.completed_at, expected_completed_at,
+        "rollback should not change completed_at when the latest transition does not match"
+    );
+    assert_eq!(
+        ctx.transitions.len(),
+        expected_transition_len,
+        "rollback should not change transition count when the latest transition does not match"
+    );
+    assert_eq!(
+        ctx.transitions.last().map(|transition| (
+            transition.from,
+            transition.to,
+            transition.reason.clone()
+        )),
+        expected_last_transition,
+        "rollback should not change the latest transition when the latest transition does not match"
+    );
+}
+
 /// Simulate random `JobContext` and `JobState` transitions with `StdRng`; the `_` branch intentionally ignores random choices that are invalid for the current `JobState`.
 fn apply_random_step(ctx: &mut JobContext, rng: &mut StdRng, case_idx: usize, step: usize) {
     match rng.gen_range(0..4) {
