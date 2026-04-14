@@ -260,6 +260,53 @@ async fn fts_ranked_results(
     Ok(results)
 }
 
+fn embedding_to_vector_json(embedding: &[f32]) -> String {
+    format!(
+        "[{}]",
+        embedding
+            .iter()
+            .map(|f| f.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+}
+
+async fn collect_vector_index_rows(
+    mut rows: libsql::Rows,
+    limit: i64,
+) -> Result<VectorSearchOutcome, WorkspaceError> {
+    let mut results = Vec::new();
+    while let Some(row) = match rows.next().await {
+        Ok(row) => row,
+        Err(e) => {
+            if is_missing_vector_index_error(&e) {
+                tracing::debug!(
+                    "Vector index row fetch failed, brute-force fallback required: {e}"
+                );
+                return Ok(VectorSearchOutcome::IndexUnavailable);
+            }
+
+            return Err(WorkspaceError::SearchFailed {
+                reason: format!("Vector index row fetch failed: {e}"),
+            });
+        }
+    } {
+        results.push(RankedResult {
+            chunk_id: get_text(&row, 0).parse().unwrap_or_default(),
+            document_id: get_text(&row, 1).parse().unwrap_or_default(),
+            document_path: get_text(&row, 2),
+            content: get_text(&row, 3),
+            rank: results.len() as u32 + 1,
+        });
+    }
+    tracing::debug!(
+        "libSQL vector index search returned {} results (pre-fusion limit: {})",
+        results.len(),
+        limit
+    );
+    Ok(VectorSearchOutcome::Indexed(results))
+}
+
 /// Execute vector similarity search via libSQL's vector index.
 ///
 /// Returns [`VectorSearchOutcome::IndexUnavailable`] when `vector_top_k(...)`
@@ -272,14 +319,7 @@ async fn vector_ranked_results(
     embedding: &[f32],
     limit: i64,
 ) -> Result<VectorSearchOutcome, WorkspaceError> {
-    let vector_json = format!(
-        "[{}]",
-        embedding
-            .iter()
-            .map(|f| f.to_string())
-            .collect::<Vec<_>>()
-            .join(",")
-    );
+    let vector_json = embedding_to_vector_json(embedding);
 
     // vector_top_k requires a libsql_vector_idx index. After the V9
     // migration the index is dropped (to support flexible embedding
@@ -298,38 +338,7 @@ async fn vector_ranked_results(
         )
         .await
     {
-        Ok(mut rows) => {
-            let mut results = Vec::new();
-            while let Some(row) = match rows.next().await {
-                Ok(row) => row,
-                Err(e) => {
-                    if is_missing_vector_index_error(&e) {
-                        tracing::debug!(
-                            "Vector index row fetch failed, brute-force fallback required: {e}"
-                        );
-                        return Ok(VectorSearchOutcome::IndexUnavailable);
-                    }
-
-                    return Err(WorkspaceError::SearchFailed {
-                        reason: format!("Vector index row fetch failed: {e}"),
-                    });
-                }
-            } {
-                results.push(RankedResult {
-                    chunk_id: get_text(&row, 0).parse().unwrap_or_default(),
-                    document_id: get_text(&row, 1).parse().unwrap_or_default(),
-                    document_path: get_text(&row, 2),
-                    content: get_text(&row, 3),
-                    rank: results.len() as u32 + 1,
-                });
-            }
-            tracing::debug!(
-                "libSQL vector index search returned {} results (pre-fusion limit: {})",
-                results.len(),
-                limit
-            );
-            Ok(VectorSearchOutcome::Indexed(results))
-        }
+        Ok(rows) => collect_vector_index_rows(rows, limit).await,
         Err(e) => {
             if is_missing_vector_index_error(&e) {
                 tracing::debug!(
