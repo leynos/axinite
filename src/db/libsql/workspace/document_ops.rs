@@ -13,10 +13,20 @@ use crate::db::NativeWorkspaceStore;
 use crate::error::WorkspaceError;
 use crate::workspace::{MemoryDocument, WorkspaceEntry};
 
+/// Identifies the user/agent context for a workspace document query.
+///
+/// Bundles the `user_id` + `agent_id` pair that every document-scoped
+/// helper requires, reducing per-function arity and making call sites
+/// self-documenting.
+#[derive(Clone, Copy)]
+pub(super) struct AgentScope<'a> {
+    pub(super) user_id: &'a str,
+    pub(super) agent_id: Option<uuid::Uuid>,
+}
+
 pub(super) async fn get_document_by_path(
     backend: &LibSqlBackend,
-    user_id: &str,
-    agent_id: Option<Uuid>,
+    scope: &AgentScope<'_>,
     path: &str,
 ) -> Result<MemoryDocument, WorkspaceError> {
     let conn = backend
@@ -25,7 +35,7 @@ pub(super) async fn get_document_by_path(
         .map_err(|e| WorkspaceError::SearchFailed {
             reason: e.to_string(),
         })?;
-    let agent_id_str = agent_id.map(|id| id.to_string());
+    let agent_id_str = scope.agent_id.map(|id| id.to_string());
     let mut rows = conn
         .query(
             r#"
@@ -34,7 +44,7 @@ pub(super) async fn get_document_by_path(
             FROM memory_documents
             WHERE user_id = ?1 AND agent_id IS ?2 AND path = ?3
             "#,
-            params![user_id, agent_id_str.as_deref(), path],
+            params![scope.user_id, agent_id_str.as_deref(), path],
         )
         .await
         .map_err(|e| WorkspaceError::SearchFailed {
@@ -50,7 +60,7 @@ pub(super) async fn get_document_by_path(
         Some(row) => Ok(row_to_memory_document(&row)),
         None => Err(WorkspaceError::DocumentNotFound {
             doc_type: path.to_string(),
-            user_id: user_id.to_string(),
+            user_id: scope.user_id.to_string(),
         }),
     }
 }
@@ -95,11 +105,12 @@ pub(super) async fn get_document_by_id(
 
 pub(super) async fn get_or_create_document_by_path(
     backend: &LibSqlBackend,
-    user_id: &str,
-    agent_id: Option<Uuid>,
+    scope: &AgentScope<'_>,
     path: &str,
 ) -> Result<MemoryDocument, WorkspaceError> {
-    match NativeWorkspaceStore::get_document_by_path(backend, user_id, agent_id, path).await {
+    match NativeWorkspaceStore::get_document_by_path(backend, scope.user_id, scope.agent_id, path)
+        .await
+    {
         Ok(doc) => return Ok(doc),
         Err(WorkspaceError::DocumentNotFound { .. }) => {}
         Err(e) => return Err(e),
@@ -112,21 +123,21 @@ pub(super) async fn get_or_create_document_by_path(
             reason: e.to_string(),
         })?;
     let id = Uuid::new_v4();
-    let agent_id_str = agent_id.map(|id| id.to_string());
+    let agent_id_str = scope.agent_id.map(|id| id.to_string());
     conn.execute(
         r#"
             INSERT INTO memory_documents (id, user_id, agent_id, path, content, metadata)
             VALUES (?1, ?2, ?3, ?4, '', '{}')
             ON CONFLICT DO NOTHING
             "#,
-        params![id.to_string(), user_id, agent_id_str.as_deref(), path],
+        params![id.to_string(), scope.user_id, agent_id_str.as_deref(), path],
     )
     .await
     .map_err(|e| WorkspaceError::SearchFailed {
         reason: format!("Insert failed: {}", e),
     })?;
 
-    NativeWorkspaceStore::get_document_by_path(backend, user_id, agent_id, path).await
+    NativeWorkspaceStore::get_document_by_path(backend, scope.user_id, scope.agent_id, path).await
 }
 
 pub(super) async fn update_document(
@@ -154,11 +165,12 @@ pub(super) async fn update_document(
 
 pub(super) async fn delete_document_by_path(
     backend: &LibSqlBackend,
-    user_id: &str,
-    agent_id: Option<Uuid>,
+    scope: &AgentScope<'_>,
     path: &str,
 ) -> Result<(), WorkspaceError> {
-    let doc = NativeWorkspaceStore::get_document_by_path(backend, user_id, agent_id, path).await?;
+    let doc =
+        NativeWorkspaceStore::get_document_by_path(backend, scope.user_id, scope.agent_id, path)
+            .await?;
     NativeWorkspaceStore::delete_chunks(backend, doc.id).await?;
 
     let conn = backend
@@ -167,10 +179,10 @@ pub(super) async fn delete_document_by_path(
         .map_err(|e| WorkspaceError::SearchFailed {
             reason: e.to_string(),
         })?;
-    let agent_id_str = agent_id.map(|id| id.to_string());
+    let agent_id_str = scope.agent_id.map(|id| id.to_string());
     conn.execute(
         "DELETE FROM memory_documents WHERE user_id = ?1 AND agent_id IS ?2 AND path = ?3",
-        params![user_id, agent_id_str.as_deref(), path],
+        params![scope.user_id, agent_id_str.as_deref(), path],
     )
     .await
     .map_err(|e| WorkspaceError::SearchFailed {
@@ -181,8 +193,7 @@ pub(super) async fn delete_document_by_path(
 
 pub(super) async fn list_directory(
     backend: &LibSqlBackend,
-    user_id: &str,
-    agent_id: Option<Uuid>,
+    scope: &AgentScope<'_>,
     directory: &str,
 ) -> Result<Vec<WorkspaceEntry>, WorkspaceError> {
     let conn = backend
@@ -197,7 +208,7 @@ pub(super) async fn list_directory(
         directory.to_string()
     };
 
-    let agent_id_str = agent_id.map(|id| id.to_string());
+    let agent_id_str = scope.agent_id.map(|id| id.to_string());
     let pattern = if dir.is_empty() {
         "%".to_string()
     } else {
@@ -213,7 +224,7 @@ pub(super) async fn list_directory(
               AND (?3 = '%' OR path LIKE ?3)
             ORDER BY path
             "#,
-            params![user_id, agent_id_str.as_deref(), pattern],
+            params![scope.user_id, agent_id_str.as_deref(), pattern],
         )
         .await
         .map_err(|e| WorkspaceError::SearchFailed {
@@ -283,8 +294,7 @@ pub(super) async fn list_directory(
 
 pub(super) async fn list_all_paths(
     backend: &LibSqlBackend,
-    user_id: &str,
-    agent_id: Option<Uuid>,
+    scope: &AgentScope<'_>,
 ) -> Result<Vec<String>, WorkspaceError> {
     let conn = backend
         .connect()
@@ -292,11 +302,11 @@ pub(super) async fn list_all_paths(
         .map_err(|e| WorkspaceError::SearchFailed {
             reason: e.to_string(),
         })?;
-    let agent_id_str = agent_id.map(|id| id.to_string());
+    let agent_id_str = scope.agent_id.map(|id| id.to_string());
     let mut rows = conn
         .query(
             "SELECT path FROM memory_documents WHERE user_id = ?1 AND agent_id IS ?2 ORDER BY path",
-            params![user_id, agent_id_str.as_deref()],
+            params![scope.user_id, agent_id_str.as_deref()],
         )
         .await
         .map_err(|e| WorkspaceError::SearchFailed {
@@ -318,8 +328,7 @@ pub(super) async fn list_all_paths(
 
 pub(super) async fn list_documents(
     backend: &LibSqlBackend,
-    user_id: &str,
-    agent_id: Option<Uuid>,
+    scope: &AgentScope<'_>,
 ) -> Result<Vec<MemoryDocument>, WorkspaceError> {
     let conn = backend
         .connect()
@@ -327,7 +336,7 @@ pub(super) async fn list_documents(
         .map_err(|e| WorkspaceError::SearchFailed {
             reason: e.to_string(),
         })?;
-    let agent_id_str = agent_id.map(|id| id.to_string());
+    let agent_id_str = scope.agent_id.map(|id| id.to_string());
     let mut rows = conn
         .query(
             r#"
@@ -337,7 +346,7 @@ pub(super) async fn list_documents(
             WHERE user_id = ?1 AND agent_id IS ?2
             ORDER BY updated_at DESC
             "#,
-            params![user_id, agent_id_str.as_deref()],
+            params![scope.user_id, agent_id_str.as_deref()],
         )
         .await
         .map_err(|e| WorkspaceError::SearchFailed {

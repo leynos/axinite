@@ -19,7 +19,7 @@ use chunk_ops::{
     delete_chunks, get_chunks_without_embeddings, insert_chunk, update_chunk_embedding,
 };
 use document_ops::{
-    delete_document_by_path, get_document_by_id, get_document_by_path,
+    AgentScope, delete_document_by_path, get_document_by_id, get_document_by_path,
     get_or_create_document_by_path, list_all_paths, list_directory, list_documents,
     update_document,
 };
@@ -33,7 +33,7 @@ impl NativeWorkspaceStore for LibSqlBackend {
         agent_id: Option<Uuid>,
         path: &str,
     ) -> Result<MemoryDocument, WorkspaceError> {
-        get_document_by_path(self, user_id, agent_id, path).await
+        get_document_by_path(self, &AgentScope { user_id, agent_id }, path).await
     }
 
     async fn get_document_by_id(&self, id: Uuid) -> Result<MemoryDocument, WorkspaceError> {
@@ -46,7 +46,7 @@ impl NativeWorkspaceStore for LibSqlBackend {
         agent_id: Option<Uuid>,
         path: &str,
     ) -> Result<MemoryDocument, WorkspaceError> {
-        get_or_create_document_by_path(self, user_id, agent_id, path).await
+        get_or_create_document_by_path(self, &AgentScope { user_id, agent_id }, path).await
     }
 
     async fn update_document(&self, id: Uuid, content: &str) -> Result<(), WorkspaceError> {
@@ -59,7 +59,7 @@ impl NativeWorkspaceStore for LibSqlBackend {
         agent_id: Option<Uuid>,
         path: &str,
     ) -> Result<(), WorkspaceError> {
-        delete_document_by_path(self, user_id, agent_id, path).await
+        delete_document_by_path(self, &AgentScope { user_id, agent_id }, path).await
     }
 
     async fn list_directory(
@@ -68,7 +68,7 @@ impl NativeWorkspaceStore for LibSqlBackend {
         agent_id: Option<Uuid>,
         directory: &str,
     ) -> Result<Vec<WorkspaceEntry>, WorkspaceError> {
-        list_directory(self, user_id, agent_id, directory).await
+        list_directory(self, &AgentScope { user_id, agent_id }, directory).await
     }
 
     async fn list_all_paths(
@@ -76,7 +76,7 @@ impl NativeWorkspaceStore for LibSqlBackend {
         user_id: &str,
         agent_id: Option<Uuid>,
     ) -> Result<Vec<String>, WorkspaceError> {
-        list_all_paths(self, user_id, agent_id).await
+        list_all_paths(self, &AgentScope { user_id, agent_id }).await
     }
 
     async fn list_documents(
@@ -84,7 +84,7 @@ impl NativeWorkspaceStore for LibSqlBackend {
         user_id: &str,
         agent_id: Option<Uuid>,
     ) -> Result<Vec<MemoryDocument>, WorkspaceError> {
-        list_documents(self, user_id, agent_id).await
+        list_documents(self, &AgentScope { user_id, agent_id }).await
     }
 
     async fn delete_chunks(&self, document_id: Uuid) -> Result<(), WorkspaceError> {
