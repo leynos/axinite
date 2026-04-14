@@ -131,7 +131,14 @@ async fn test_dispatcher_terminates_with_all_tool_calls_failing() {
     // timeout will fire and the test will fail.
     let result = tokio::time::timeout(
         Duration::from_secs(5),
-        agent.run_agentic_loop(&message, session, thread_id, initial_messages),
+        agent.run_agentic_loop(
+            &message,
+            super::super::core::RunLoopCtx {
+                session,
+                thread_id,
+                initial_messages,
+            },
+        ),
     )
     .await;
 
@@ -212,7 +219,14 @@ async fn test_dispatcher_terminates_with_max_iterations() {
 
     let result = tokio::time::timeout(
         Duration::from_secs(5),
-        agent.run_agentic_loop(&message, session, thread_id, initial_messages),
+        agent.run_agentic_loop(
+            &message,
+            super::super::core::RunLoopCtx {
+                session,
+                thread_id,
+                initial_messages,
+            },
+        ),
     )
     .await;
 

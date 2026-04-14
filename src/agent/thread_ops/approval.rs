@@ -863,9 +863,11 @@ impl Agent {
         let result = self
             .run_agentic_loop(
                 &message,
-                scope.session.clone(),
-                scope.thread_id,
-                context_messages,
+                crate::agent::dispatcher::RunLoopCtx {
+                    session: scope.session.clone(),
+                    thread_id: scope.thread_id,
+                    initial_messages: context_messages,
+                },
             )
             .await;
 

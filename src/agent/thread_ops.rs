@@ -59,6 +59,7 @@ impl Agent {
         submission: &Submission,
         session: Arc<Mutex<Session>>,
         thread_id: Uuid,
+
     ) -> Option<Result<Option<String>, Error>> {
         // Check for pending auth and claim it atomically to prevent concurrent bypass
         let pending_auth = {
@@ -140,6 +141,7 @@ impl Agent {
     pub(super) async fn handle_message(
         &self,
         message: &IncomingMessage,
+
     ) -> Result<Option<String>, Error> {
         // Parse submission type first
         let submission = SubmissionParser::parse(&message.content);
