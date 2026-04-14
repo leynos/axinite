@@ -97,7 +97,13 @@ pub(crate) async fn call_llm(
     reason_ctx: &mut ReasoningContext,
     iteration: usize,
 ) -> Result<crate::llm::RespondOutput, Error> {
-    // Enforce cost guardrails before the LLM call
+    check_cost_guardrail(delegate).await?;
+    let output = invoke_with_retry(delegate, reasoning, reason_ctx, iteration).await?;
+    record_and_log_cost(delegate, &output).await;
+    Ok(output)
+}
+
+async fn check_cost_guardrail(delegate: &ChatDelegate<'_>) -> Result<(), Error> {
     if let Err(limit) = delegate.agent.cost_guard().check_allowed().await {
         return Err(crate::error::LlmError::InvalidResponse {
             provider: "agent".to_string(),
@@ -105,8 +111,16 @@ pub(crate) async fn call_llm(
         }
         .into());
     }
+    Ok(())
+}
 
-    let output = match reasoning.respond_with_tools(reason_ctx).await {
+async fn invoke_with_retry(
+    delegate: &ChatDelegate<'_>,
+    reasoning: &Reasoning,
+    reason_ctx: &mut ReasoningContext,
+    iteration: usize,
+) -> Result<crate::llm::RespondOutput, Error> {
+    Ok(match reasoning.respond_with_tools(reason_ctx).await {
         Ok(output) => output,
         Err(crate::error::LlmError::ContextLengthExceeded { used, limit }) => {
             tracing::warn!(
@@ -127,13 +141,7 @@ pub(crate) async fn call_llm(
                 reason_ctx.available_tools.clear();
             }
 
-            if let Err(limit) = delegate.agent.cost_guard().check_allowed().await {
-                return Err(crate::error::LlmError::InvalidResponse {
-                    provider: "agent".to_string(),
-                    reason: limit.to_string(),
-                }
-                .into());
-            }
+            check_cost_guardrail(delegate).await?;
 
             reasoning
                 .respond_with_tools(reason_ctx)
@@ -149,9 +157,10 @@ pub(crate) async fn call_llm(
                 })?
         }
         Err(e) => return Err(e.into()),
-    };
+    })
+}
 
-    // Record cost and track token usage
+async fn record_and_log_cost(delegate: &ChatDelegate<'_>, output: &crate::llm::RespondOutput) {
     let model_name = delegate.agent.llm().active_model_name();
     let read_discount = delegate.agent.llm().cache_read_discount();
     let write_multiplier = delegate.agent.llm().cache_write_multiplier();
@@ -175,8 +184,6 @@ pub(crate) async fn call_llm(
         output.usage.output_tokens,
         call_cost,
     );
-
-    Ok(output)
 }
 
 async fn record_partial_llm_call(delegate: &ChatDelegate<'_>, used: u32) {
