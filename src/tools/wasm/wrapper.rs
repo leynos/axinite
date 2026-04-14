@@ -606,13 +606,10 @@ impl WasmToolWrapper {
         Ok(())
     }
 
-    /// Execute the WASM tool synchronously (called from spawn_blocking).
-    fn execute_sync(
+    fn configure_store(
         &self,
-        params: serde_json::Value,
-        context_json: Option<String>,
         host_credentials: Vec<ResolvedHostCredential>,
-    ) -> Result<(String, Vec<crate::tools::wasm::host::LogEntry>), WasmError> {
+    ) -> Result<Store<StoreData>, WasmError> {
         let engine = self.runtime.engine();
         let limits = &self.prepared.limits;
 
@@ -642,6 +639,19 @@ impl WasmToolWrapper {
 
         // Set up resource limiter
         store.limiter(|data| &mut data.limiter);
+
+        Ok(store)
+    }
+
+    /// Execute the WASM tool synchronously (called from spawn_blocking).
+    fn execute_sync(
+        &self,
+        params: serde_json::Value,
+        context_json: Option<String>,
+        host_credentials: Vec<ResolvedHostCredential>,
+    ) -> Result<(String, Vec<crate::tools::wasm::host::LogEntry>), WasmError> {
+        let engine = self.runtime.engine();
+        let mut store = self.configure_store(host_credentials)?;
 
         // Use the pre-compiled component (no recompilation needed)
         let component = self.prepared.component().clone();
@@ -684,7 +694,9 @@ impl WasmToolWrapper {
         let response = tool_iface.call_execute(&mut store, &request).map_err(|e| {
             let error_str = e.to_string();
             if error_str.contains("out of fuel") {
-                WasmError::FuelExhausted { limit: limits.fuel }
+                WasmError::FuelExhausted {
+                    limit: self.prepared.limits.fuel,
+                }
             } else if error_str.contains("unreachable") {
                 WasmError::Trapped("unreachable code executed".to_string())
             } else {
