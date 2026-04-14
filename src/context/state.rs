@@ -287,17 +287,19 @@ impl JobContext {
         Ok(())
     }
 
-    /// Directly set the state without transition validation.
-    ///
-    /// Intended for rollback paths where the in-memory context must be
-    /// restored to a previous state after a persistence failure, bypassing
-    /// [`Self::transition_to`] validation.
+    /// Check whether the newest recorded transition matches a rollback from
+    /// `previous` back to the current in-memory state.
     fn last_transition_matches_rollback(&self, previous: JobState) -> bool {
         self.transitions
             .last()
             .is_some_and(|t| t.from == previous && t.to == self.state)
     }
 
+    /// Directly set the state without transition validation.
+    ///
+    /// Intended for rollback paths where the in-memory context must be
+    /// restored to a previous state after a persistence failure, bypassing
+    /// [`Self::transition_to`] validation.
     pub(crate) fn set_state_rollback(&mut self, previous: JobState) {
         if self.last_transition_matches_rollback(previous) {
             self.transitions.pop();

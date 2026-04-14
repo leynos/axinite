@@ -1,3 +1,8 @@
+//! Execution stage for chat tool execution.
+//!
+//! Runs the preflight-approved tool calls, batches them where safe, and
+//! captures raw results for the later postflight phase to interpret.
+
 use tokio::task::JoinSet;
 
 use crate::agent::dispatcher::delegate::ChatDelegate;

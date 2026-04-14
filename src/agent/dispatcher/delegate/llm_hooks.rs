@@ -62,7 +62,7 @@ pub(crate) async fn before_llm_call(
     };
 
     // Update context for this iteration
-    reason_ctx.available_tools = tool_defs;
+    reason_ctx.available_tools = if force_text { Vec::new() } else { tool_defs };
     reason_ctx.system_prompt = if force_text {
         Some(delegate.cached_prompt_no_tools.clone())
     } else {
@@ -143,18 +143,25 @@ async fn invoke_with_retry(
 
             check_cost_guardrail(delegate).await?;
 
-            reasoning
-                .respond_with_tools(reason_ctx)
-                .await
-                .map_err(|retry_err| {
+            match reasoning.respond_with_tools(reason_ctx).await {
+                Ok(output) => output,
+                Err(retry_err) => {
+                    if let crate::error::LlmError::ContextLengthExceeded {
+                        used: retry_used, ..
+                    } = &retry_err
+                    {
+                        let retry_used = u32::try_from(*retry_used).unwrap_or(u32::MAX);
+                        record_partial_llm_call(delegate, retry_used).await;
+                    }
                     tracing::error!(
                         original_used = used,
                         original_limit = limit,
                         retry_error = %retry_err,
                         "Retry after auto-compaction also failed"
                     );
-                    crate::error::Error::from(retry_err)
-                })?
+                    return Err(crate::error::Error::from(retry_err));
+                }
+            }
         }
         Err(e) => return Err(e.into()),
     })

@@ -94,7 +94,8 @@ test doubles that need to override only specific methods. There are important
 exceptions: `NullWorkspaceStore` document reads return
 `NullDatabase::doc_not_found(...)`, which constructs the concrete
 `WorkspaceError::DocumentNotFound` variant, and chunk insertion synthesizes
-stable UUIDs instead of returning a trivial default.
+stable Universally Unique Identifiers (UUIDs) instead of returning a trivial
+default.
 
 ```rust
 use ironclaw::testing::NullDatabase;
@@ -158,6 +159,7 @@ flowchart TD
     calls -- Yes --> capturing
     calls -- No --> mock
     mock -- Yes --> null_db
+    mock -- No --> null_db
 ```
 
 Figure: Choosing the right testing abstraction

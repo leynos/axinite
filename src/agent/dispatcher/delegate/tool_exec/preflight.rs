@@ -1,3 +1,8 @@
+//! Preflight stage for chat tool execution.
+//!
+//! Applies hooks, validates tool calls, and classifies each call as runnable,
+//! rejected, or requiring explicit user approval before execution.
+
 use std::sync::Arc;
 
 use crate::agent::dispatcher::delegate::ChatDelegate;

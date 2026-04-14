@@ -99,14 +99,14 @@ pub(crate) async fn execute_tool_calls(
     let deferred_auth =
         postflight::run_postflight(delegate, preflight, &mut exec_results, reason_ctx).await;
 
+    if let Some(instructions) = deferred_auth {
+        return Ok(Some(LoopOutcome::Response(instructions)));
+    }
+
     if let Some(candidate) = approval_needed {
         let pending =
             build_pending_approval(delegate, candidate, &finalized_tool_calls, reason_ctx);
         return Ok(Some(LoopOutcome::NeedApproval(Box::new(pending))));
-    }
-
-    if let Some(instructions) = deferred_auth {
-        return Ok(Some(LoopOutcome::Response(instructions)));
     }
 
     Ok(None)

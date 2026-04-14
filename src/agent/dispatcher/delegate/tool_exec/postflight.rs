@@ -1,3 +1,8 @@
+//! Postflight stage for chat tool execution.
+//!
+//! Interprets tool results, emits auth and image side effects, and folds each
+//! indexed outcome back into both thread history and the reasoning context.
+
 use crate::agent::dispatcher::delegate::ChatDelegate;
 use crate::channels::StatusUpdate;
 use crate::error::Error;
@@ -69,7 +74,7 @@ pub(super) async fn run_postflight(
     for (pf_idx, (tc, outcome)) in preflight.into_iter().enumerate() {
         match outcome {
             super::preflight::PreflightOutcome::Rejected(error_msg) => {
-                handle_rejected_tool(delegate, &tc, &error_msg, reason_ctx).await;
+                handle_rejected_tool(delegate, pf_idx, &tc, &error_msg, reason_ctx).await;
             }
             super::preflight::PreflightOutcome::Runnable => {
                 let tool_result = exec_results[pf_idx].take().unwrap_or_else(|| {
@@ -80,7 +85,7 @@ pub(super) async fn run_postflight(
                     .into())
                 });
                 if let Some(instructions) =
-                    process_runnable_tool(delegate, &tc, tool_result, reason_ctx).await
+                    process_runnable_tool(delegate, pf_idx, &tc, tool_result, reason_ctx).await
                 {
                     deferred_auth = Some(instructions);
                     break;
@@ -94,18 +99,12 @@ pub(super) async fn run_postflight(
 /// Handle rejected tool call outcome.
 pub(super) async fn handle_rejected_tool(
     delegate: &ChatDelegate<'_>,
+    pf_idx: usize,
     tc: &crate::llm::ToolCall,
     error_msg: &str,
     reason_ctx: &mut ReasoningContext,
 ) {
-    {
-        let mut sess = delegate.session.lock().await;
-        if let Some(thread) = sess.threads.get_mut(&delegate.thread_id)
-            && let Some(turn) = thread.last_turn_mut()
-        {
-            turn.record_tool_error(error_msg.to_string());
-        }
-    }
+    record_tool_outcome(delegate, pf_idx, error_msg, true).await;
     reason_ctx.messages.push(ChatMessage::tool_result(
         &tc.id,
         &tc.name,
@@ -116,6 +115,7 @@ pub(super) async fn handle_rejected_tool(
 /// Process post-flight for a single runnable tool.
 pub(super) async fn process_runnable_tool(
     delegate: &ChatDelegate<'_>,
+    pf_idx: usize,
     tc: &crate::llm::ToolCall,
     tool_result: Result<String, Error>,
     reason_ctx: &mut ReasoningContext,
@@ -130,6 +130,7 @@ pub(super) async fn process_runnable_tool(
             let error_msg = format!("Tool '{}' failed: {}", tc.name, e);
             fold_into_context(
                 delegate,
+                pf_idx,
                 tc,
                 ToolOutcome {
                     result_content: error_msg,
@@ -209,6 +210,7 @@ pub(super) async fn process_runnable_tool(
 
     fold_into_context(
         delegate,
+        pf_idx,
         tc,
         ToolOutcome {
             result_content,
@@ -306,13 +308,14 @@ pub(super) struct ToolOutcome {
 /// Fold tool result into context messages.
 pub(super) async fn fold_into_context(
     delegate: &ChatDelegate<'_>,
+    pf_idx: usize,
     tc: &crate::llm::ToolCall,
     outcome: ToolOutcome,
     reason_ctx: &mut ReasoningContext,
 ) {
     record_tool_outcome(
         delegate,
-        &tc.name,
+        pf_idx,
         &outcome.result_content,
         outcome.is_tool_error,
     )

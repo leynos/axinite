@@ -574,6 +574,13 @@ impl Turn {
         }
     }
 
+    /// Record tool call result for a specific tool-call slot.
+    pub fn record_tool_result_at(&mut self, idx: usize, result: serde_json::Value) {
+        if let Some(call) = self.tool_calls.get_mut(idx) {
+            call.result = Some(result);
+        }
+    }
+
     /// Record tool call result, parsing structured JSON where possible.
     pub fn record_tool_result_content(&mut self, result_content: &str) {
         let trimmed = result_content.trim_start();
@@ -586,9 +593,29 @@ impl Turn {
         self.record_tool_result(result);
     }
 
+    /// Record tool call result for a specific slot, parsing structured JSON
+    /// where possible.
+    pub fn record_tool_result_content_at(&mut self, idx: usize, result_content: &str) {
+        let trimmed = result_content.trim_start();
+        let result = if matches!(trimmed.as_bytes().first(), Some(b'{' | b'[')) {
+            serde_json::from_str(result_content)
+                .unwrap_or_else(|_| serde_json::Value::String(result_content.to_string()))
+        } else {
+            serde_json::Value::String(result_content.to_string())
+        };
+        self.record_tool_result_at(idx, result);
+    }
+
     /// Record tool call error.
     pub fn record_tool_error(&mut self, error: impl Into<String>) {
         if let Some(call) = self.tool_calls.last_mut() {
+            call.error = Some(error.into());
+        }
+    }
+
+    /// Record tool call error for a specific tool-call slot.
+    pub fn record_tool_error_at(&mut self, idx: usize, error: impl Into<String>) {
+        if let Some(call) = self.tool_calls.get_mut(idx) {
             call.error = Some(error.into());
         }
     }
@@ -610,6 +637,8 @@ pub struct TurnToolCall {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod record_tool_result_content;
 
     #[test]
     fn test_session_creation() {
@@ -644,78 +673,6 @@ mod tests {
 
         let messages = thread.messages();
         assert_eq!(messages.len(), 4);
-    }
-
-    #[test]
-    fn record_tool_result_content_parses_json_values() {
-        let mut turn = Turn::new(1, "input");
-        turn.record_tool_call("json", serde_json::json!({}));
-        turn.record_tool_result_content(r#"{"ok":true,"items":[1,2]}"#);
-
-        assert_eq!(
-            turn.tool_calls[0].result,
-            Some(serde_json::json!({"ok": true, "items": [1, 2]}))
-        );
-    }
-
-    #[test]
-    fn record_tool_result_content_falls_back_to_plain_string() {
-        let mut turn = Turn::new(1, "input");
-        turn.record_tool_call("echo", serde_json::json!({}));
-        turn.record_tool_result_content("plain text");
-
-        assert_eq!(
-            turn.tool_calls[0].result,
-            Some(serde_json::Value::String("plain text".to_string()))
-        );
-    }
-
-    #[test]
-    fn record_tool_result_content_parses_json_array() {
-        let mut turn = Turn::new(1, "input");
-        turn.record_tool_call("json", serde_json::json!({}));
-        turn.record_tool_result_content("[1,2,3]");
-
-        assert_eq!(
-            turn.tool_calls[0].result,
-            Some(serde_json::json!([1, 2, 3]))
-        );
-    }
-
-    #[test]
-    fn record_tool_result_content_falls_back_on_malformed_object() {
-        let mut turn = Turn::new(1, "input");
-        turn.record_tool_call("json", serde_json::json!({}));
-        turn.record_tool_result_content("{bad");
-
-        assert_eq!(
-            turn.tool_calls[0].result,
-            Some(serde_json::Value::String("{bad".to_string()))
-        );
-    }
-
-    #[test]
-    fn record_tool_result_content_falls_back_on_malformed_array() {
-        let mut turn = Turn::new(1, "input");
-        turn.record_tool_call("json", serde_json::json!({}));
-        turn.record_tool_result_content("[bad");
-
-        assert_eq!(
-            turn.tool_calls[0].result,
-            Some(serde_json::Value::String("[bad".to_string()))
-        );
-    }
-
-    #[test]
-    fn record_tool_result_content_handles_whitespace_prefixed_json() {
-        let mut turn = Turn::new(1, "input");
-        turn.record_tool_call("json", serde_json::json!({}));
-        turn.record_tool_result_content("   {\"ok\":true}");
-
-        assert_eq!(
-            turn.tool_calls[0].result,
-            Some(serde_json::json!({"ok": true}))
-        );
     }
 
     #[test]

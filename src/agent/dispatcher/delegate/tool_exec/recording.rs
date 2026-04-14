@@ -1,3 +1,8 @@
+//! Recording helpers for chat tool execution.
+//!
+//! Persists redacted tool calls and writes indexed outcomes back to the
+//! current turn so later results stay aligned with the originating call.
+
 use crate::agent::dispatcher::delegate::ChatDelegate;
 
 /// Compute the safe (redacted) argument map for a single tool call.
@@ -45,7 +50,7 @@ pub(super) async fn record_redacted_tool_calls(
 /// Record tool outcome in the thread.
 pub(super) async fn record_tool_outcome(
     delegate: &ChatDelegate<'_>,
-    _tool_name: &str,
+    tool_call_idx: usize,
     result_content: &str,
     is_tool_error: bool,
 ) {
@@ -54,9 +59,9 @@ pub(super) async fn record_tool_outcome(
         && let Some(turn) = thread.last_turn_mut()
     {
         if is_tool_error {
-            turn.record_tool_error(result_content.to_string());
+            turn.record_tool_error_at(tool_call_idx, result_content.to_string());
         } else {
-            turn.record_tool_result_content(result_content);
+            turn.record_tool_result_content_at(tool_call_idx, result_content);
         }
     }
 }
