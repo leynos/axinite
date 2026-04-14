@@ -15,14 +15,13 @@ mod sandbox;
 mod settings;
 mod tool_failures;
 mod workspace;
-use std::path::PathBuf;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::db::NativeDatabase;
 use crate::error::DatabaseError;
 use libsql::{Connection, Database as LibSqlDatabase};
-use tokio::fs;
 
 use crate::db::libsql_migrations;
 pub(crate) use helpers::{
@@ -43,28 +42,33 @@ pub struct LibSqlBackend {
 }
 
 impl LibSqlBackend {
-    /// Ensure the parent directory of `path` exists, creating it and all
-    /// ancestors if necessary.
-    async fn ensure_parent_dir(path: &Path) -> Result<(), DatabaseError> {
+    fn ensure_parent_dir(path: &Path) -> Result<(), DatabaseError> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).await.map_err(|e| {
-                DatabaseError::Pool(format!("Failed to create database directory: {e}"))
+            std::fs::create_dir_all(parent).map_err(|e| {
+                DatabaseError::Pool(format!("Failed to create database directory: {}", e))
             })?;
         }
         Ok(())
     }
 
+    /// Wraps a built `libsql::Database` in `Self` with no temp-file path.
+    fn from_db(db: libsql::Database) -> Self {
+        Self {
+            db: Arc::new(db),
+            temp_path: None,
+        }
+    }
+
     /// Create a new local embedded database.
     pub async fn new_local(path: &Path) -> Result<Self, DatabaseError> {
-        Self::ensure_parent_dir(path).await?;
+        Self::ensure_parent_dir(path)?;
+
         let db = libsql::Builder::new_local(path)
             .build()
             .await
-            .map_err(|e| DatabaseError::Pool(format!("Failed to open libSQL database: {e}")))?;
-        Ok(Self {
-            db: Arc::new(db),
-            temp_path: None,
-        })
+            .map_err(|e| DatabaseError::Pool(format!("Failed to open libSQL database: {}", e)))?;
+
+        Ok(Self::from_db(db))
     }
 
     /// Create a new in-memory database (for testing).
@@ -90,15 +94,14 @@ impl LibSqlBackend {
         url: &str,
         auth_token: &str,
     ) -> Result<Self, DatabaseError> {
-        Self::ensure_parent_dir(path).await?;
+        Self::ensure_parent_dir(path)?;
+
         let db = libsql::Builder::new_remote_replica(path, url.to_string(), auth_token.to_string())
             .build()
             .await
-            .map_err(|e| DatabaseError::Pool(format!("Failed to open remote replica: {e}")))?;
-        Ok(Self {
-            db: Arc::new(db),
-            temp_path: None,
-        })
+            .map_err(|e| DatabaseError::Pool(format!("Failed to open remote replica: {}", e)))?;
+
+        Ok(Self::from_db(db))
     }
 
     /// Get a shared reference to the underlying database handle.
@@ -145,6 +148,14 @@ impl LibSqlBackend {
             "Failed to create connection after 3 attempts: {}",
             last_err.map(|e| e.to_string()).unwrap_or_default()
         )))
+    }
+
+    /// Wraps a built `libsql::Database` in `Self` with no temp-file path.
+    fn from_db(db: libsql::Database) -> Self {
+        Self {
+            db: Arc::new(db),
+            temp_path: None,
+        }
     }
 }
 
