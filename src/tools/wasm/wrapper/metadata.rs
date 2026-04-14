@@ -1,10 +1,10 @@
-//! Placeholder metadata defaults, guest export recovery, and tool-hint helpers
-//! for WASM tool wrappers.
+//! Placeholder metadata defaults, guest export recovery, and fallback-guidance
+//! helpers for WASM tool wrappers.
 //!
 //! This module centralises the metadata path used while a wrapper is being
 //! constructed: placeholder description/schema values, recovery of the guest's
-//! exported `description()` and `schema()`, and generation of compact retry
-//! hints for schema-aware failures.
+//! exported `description()` and `schema()`, and generation of compact
+//! fallback guidance for schema-aware failures.
 
 use wasmtime::Store;
 use wasmtime::component::Linker;
@@ -31,9 +31,9 @@ pub(crate) fn is_placeholder_schema(schema: &serde_json::Value) -> bool {
     *schema == placeholder_schema()
 }
 
-/// Maximum characters for the description portion of a tool hint.
+/// Maximum characters for the description portion of fallback guidance.
 const HINT_DESC_MAX: usize = 500;
-/// Maximum characters for the schema portion of a tool hint.
+/// Maximum characters for the schema portion of fallback guidance.
 const HINT_SCHEMA_MAX: usize = 3000;
 
 impl WasmToolWrapper {
@@ -196,50 +196,69 @@ where
     Ok((description, schema))
 }
 
-/// Build a retry hint from the guest's `description()` and `schema()` exports.
-pub(super) fn build_tool_hint(
+fn push_truncated_line(output: &mut String, label: &str, text: &str, max_len: usize) {
+    if text.is_empty() {
+        return;
+    }
+
+    output.push('\n');
+    output.push_str(label);
+    if text.len() > max_len {
+        let end = crate::util::floor_char_boundary(text, max_len);
+        output.push_str(&text[..end]);
+        output.push('…');
+    } else {
+        output.push_str(text);
+    }
+}
+
+fn build_fallback_guidance_text(
+    tool_name: &str,
+    description: &str,
+    advertised_schema: &str,
+) -> String {
+    let mut guidance = format!("Retry using the advertised tool schema for `{tool_name}`.");
+    push_truncated_line(
+        &mut guidance,
+        "Guest description: ",
+        description,
+        HINT_DESC_MAX,
+    );
+    push_truncated_line(
+        &mut guidance,
+        "Advertised schema excerpt: ",
+        advertised_schema,
+        HINT_SCHEMA_MAX,
+    );
+    guidance
+}
+
+/// Build fallback guidance from the guest's `description()` export and the
+/// wrapper's advertised schema.
+pub(super) fn build_fallback_guidance(
+    tool_name: &str,
+    advertised_schema: &serde_json::Value,
     tool_iface: &wit_tool::Guest,
     store: &mut Store<StoreData>,
 ) -> String {
-    let (desc, schema) = exported_metadata_strings(tool_iface, store)
+    let description = tool_iface
+        .call_description(&mut *store)
         .ok()
         .unwrap_or_default();
-    if desc.is_empty() && schema.is_empty() {
-        return String::new();
-    }
-    let mut hint = String::new();
-    if !desc.is_empty() {
-        hint.push_str("Description: ");
-        if desc.len() > HINT_DESC_MAX {
-            let end = crate::util::floor_char_boundary(&desc, HINT_DESC_MAX);
-            hint.push_str(&desc[..end]);
-            hint.push('…');
-        } else {
-            hint.push_str(&desc);
-        }
-        hint.push('\n');
-    }
-    if !schema.is_empty() {
-        hint.push_str("Parameters schema: ");
-        if schema.len() > HINT_SCHEMA_MAX {
-            let end = crate::util::floor_char_boundary(&schema, HINT_SCHEMA_MAX);
-            hint.push_str(&schema[..end]);
-            hint.push('…');
-        } else {
-            hint.push_str(&schema);
-        }
-    }
-    hint
+    let advertised_schema =
+        serde_json::to_string(advertised_schema).unwrap_or_else(|_| advertised_schema.to_string());
+
+    build_fallback_guidance_text(tool_name, &description, &advertised_schema)
 }
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
     use rstest::{fixture, rstest};
 
-    use crate::testing::{github_wasm_artifact, metadata_test_runtime};
+    use crate::testing::github_wasm_wrapper;
     use crate::tools::Tool;
     use crate::tools::tool::HostedToolCatalogSource;
-    use crate::tools::wasm::capabilities::Capabilities;
 
     use super::super::WasmToolWrapper;
 
@@ -261,25 +280,73 @@ mod tests {
         assert!(!super::is_placeholder_schema(&real_schema));
     }
 
-    #[fixture]
-    async fn github_wrapper() -> WasmToolWrapper {
-        let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
+    #[test]
+    fn fallback_guidance_without_guest_exports_still_points_to_advertised_schema() {
+        let guidance = super::build_fallback_guidance_text("github", "", "");
 
-        let runtime = metadata_test_runtime().expect("create metadata test runtime");
-        let wasm_bytes = std::fs::read(&wasm_path).expect("read github wasm artifact");
-        let prepared = runtime
-            .prepare("github", &wasm_bytes, None)
-            .await
-            .expect("prepare github wasm component");
-        WasmToolWrapper::new(runtime, prepared, Capabilities::default())
+        assert_eq!(
+            guidance,
+            "Retry using the advertised tool schema for `github`."
+        );
+    }
+
+    #[test]
+    fn fallback_guidance_truncates_guest_exports() {
+        let description = "d".repeat(super::HINT_DESC_MAX + 20);
+        let schema = "s".repeat(super::HINT_SCHEMA_MAX + 20);
+
+        let guidance = super::build_fallback_guidance_text("github", &description, &schema);
+
+        assert!(guidance.contains("Retry using the advertised tool schema"));
+        assert!(guidance.contains("Guest description: "));
+        assert!(guidance.contains("Advertised schema excerpt: "));
+        assert!(guidance.matches('…').count() >= 2);
+    }
+
+    #[test]
+    fn fallback_guidance_prefers_advertised_schema_wording() {
+        let guidance = super::build_fallback_guidance_text(
+            "github",
+            "GitHub integration",
+            "{\"type\":\"object\"}",
+        );
+
+        assert!(guidance.contains("Retry using the advertised tool schema"));
+        assert!(guidance.contains("GitHub integration"));
+        assert!(guidance.contains("Advertised schema excerpt"));
+        assert!(!guidance.contains("Tool usage hint"));
+        assert!(!guidance.contains("Parameters schema:"));
+    }
+
+    #[test]
+    fn fallback_guidance_rendering_snapshot() {
+        let guidance = super::build_fallback_guidance_text(
+            "github",
+            "GitHub integration",
+            "{\"type\":\"object\",\"required\":[\"action\"],\"properties\":{\"action\":{\"type\":\"string\"}}}",
+        );
+
+        assert_snapshot!(
+            guidance,
+            @r###"
+Retry using the advertised tool schema for `github`.
+Guest description: GitHub integration
+Advertised schema excerpt: {"type":"object","required":["action"],"properties":{"action":{"type":"string"}}}
+"###
+        );
+    }
+
+    #[fixture]
+    async fn github_wrapper() -> anyhow::Result<WasmToolWrapper> {
+        github_wasm_wrapper().await
     }
 
     #[rstest]
     #[tokio::test]
     async fn test_exported_metadata_from_real_github_component(
-        #[future] github_wrapper: WasmToolWrapper,
-    ) {
-        let wrapper = github_wrapper.await;
+        #[future] github_wrapper: anyhow::Result<WasmToolWrapper>,
+    ) -> anyhow::Result<()> {
+        let wrapper = github_wrapper.await?;
 
         let (description, schema) = wrapper
             .exported_metadata()
@@ -310,18 +377,22 @@ mod tests {
             schema["properties"]["owner"]["type"],
             serde_json::json!("string")
         );
+
+        Ok(())
     }
 
     #[rstest]
     #[tokio::test]
     async fn wasm_tool_wrapper_reports_wasm_catalog_source(
-        #[future] github_wrapper: WasmToolWrapper,
-    ) {
-        let wrapper = github_wrapper.await;
+        #[future] github_wrapper: anyhow::Result<WasmToolWrapper>,
+    ) -> anyhow::Result<()> {
+        let wrapper = github_wrapper.await?;
 
         assert_eq!(
             wrapper.hosted_tool_catalog_source(),
             Some(HostedToolCatalogSource::Wasm)
         );
+
+        Ok(())
     }
 }

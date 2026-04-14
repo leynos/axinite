@@ -606,13 +606,10 @@ impl WasmToolWrapper {
         Ok(())
     }
 
-    /// Execute the WASM tool synchronously (called from spawn_blocking).
-    fn execute_sync(
+    fn configure_store(
         &self,
-        params: serde_json::Value,
-        context_json: Option<String>,
         host_credentials: Vec<ResolvedHostCredential>,
-    ) -> Result<(String, Vec<crate::tools::wasm::host::LogEntry>), WasmError> {
+    ) -> Result<Store<StoreData>, WasmError> {
         let engine = self.runtime.engine();
         let limits = &self.prepared.limits;
 
@@ -642,6 +639,19 @@ impl WasmToolWrapper {
 
         // Set up resource limiter
         store.limiter(|data| &mut data.limiter);
+
+        Ok(store)
+    }
+
+    /// Execute the WASM tool synchronously (called from spawn_blocking).
+    fn execute_sync(
+        &self,
+        params: serde_json::Value,
+        context_json: Option<String>,
+        host_credentials: Vec<ResolvedHostCredential>,
+    ) -> Result<(String, Vec<crate::tools::wasm::host::LogEntry>), WasmError> {
+        let engine = self.runtime.engine();
+        let mut store = self.configure_store(host_credentials)?;
 
         // Use the pre-compiled component (no recompilation needed)
         let component = self.prepared.component().clone();
@@ -684,7 +694,9 @@ impl WasmToolWrapper {
         let response = tool_iface.call_execute(&mut store, &request).map_err(|e| {
             let error_str = e.to_string();
             if error_str.contains("out of fuel") {
-                WasmError::FuelExhausted { limit: limits.fuel }
+                WasmError::FuelExhausted {
+                    limit: self.prepared.limits.fuel,
+                }
             } else if error_str.contains("unreachable") {
                 WasmError::Trapped("unreachable code executed".to_string())
             } else {
@@ -696,10 +708,15 @@ impl WasmToolWrapper {
         let logs = store.data_mut().host_state.take_logs();
 
         // Check for tool-level error. The LLM should already have seen the
-        // advertised schema at registration time; this export-based hint is
-        // only supplemental recovery guidance for a failed retry path.
+        // advertised schema at registration time; guest exports are only used
+        // here to add compact fallback guidance after a failed call.
         if let Some(err) = response.error {
-            let hint = metadata::build_tool_hint(tool_iface, &mut store);
+            let hint = metadata::build_fallback_guidance(
+                self.name(),
+                &self.schema,
+                tool_iface,
+                &mut store,
+            );
             return Err(WasmError::ToolReturnedError { message: err, hint });
         }
 
@@ -1233,13 +1250,24 @@ fn coerce_params_to_schema(
 mod tests {
     use std::sync::Arc;
 
+    use insta::assert_snapshot;
+    use rstest::{fixture, rstest};
+
     use crate::testing::credentials::{
         TEST_BEARER_TOKEN_123, TEST_GOOGLE_OAUTH_FRESH, TEST_GOOGLE_OAUTH_LEGACY,
         TEST_GOOGLE_OAUTH_TOKEN, TEST_OAUTH_CLIENT_ID, TEST_OAUTH_CLIENT_SECRET,
         test_secrets_store,
     };
+    use crate::testing::github_wasm_wrapper;
+    use crate::tools::wasm::WasmToolWrapper;
     use crate::tools::wasm::capabilities::Capabilities;
+    use crate::tools::wasm::error::WasmError;
     use crate::tools::wasm::runtime::{WasmRuntimeConfig, WasmToolRuntime};
+
+    #[fixture]
+    async fn github_wrapper() -> anyhow::Result<WasmToolWrapper> {
+        github_wasm_wrapper().await
+    }
 
     #[test]
     fn test_wrapper_creation() {
@@ -1695,6 +1723,74 @@ mod tests {
 
         let result = resolve_host_credentials(&caps, Some(&store), "user1", None).await;
         assert!(result.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn malformed_first_call_returns_fallback_guidance(
+        #[future] github_wrapper: anyhow::Result<WasmToolWrapper>,
+    ) -> anyhow::Result<()> {
+        let wrapper = github_wrapper.await?;
+        let error = wrapper
+            .execute_sync(serde_json::json!({}), None, Vec::new())
+            .expect_err("missing required action should fail");
+
+        match error {
+            WasmError::ToolReturnedError { message, hint } => {
+                assert!(
+                    !message.trim().is_empty(),
+                    "tool error should preserve a parameter failure message"
+                );
+                let message_lower = message.to_lowercase();
+                assert!(
+                    message_lower.contains("parameter")
+                        || message_lower.contains("invalid")
+                        || message_lower.contains("validation"),
+                    "tool error should signal parameter validation failure: {message_lower}"
+                );
+                assert!(hint.contains("Retry using the advertised tool schema"));
+                assert!(hint.contains("`github`"));
+                assert!(hint.contains("Advertised schema excerpt"));
+                assert!(!hint.contains("Tool usage hint"));
+                assert_snapshot!(
+                    "malformed_first_call_tool_returned_error",
+                    format!("message: {message}\n\nhint:\n{hint}")
+                );
+            }
+            other => panic!("expected ToolReturnedError, got {other:?}"),
+        }
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn malformed_first_call_uses_wrapper_advertised_schema_in_fallback_guidance(
+        #[future] github_wrapper: anyhow::Result<WasmToolWrapper>,
+    ) -> anyhow::Result<()> {
+        let wrapper = github_wrapper.await?.with_schema(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "operation": { "type": "string" }
+            },
+            "required": ["operation"],
+            "additionalProperties": false
+        }));
+        let error = wrapper
+            .execute_sync(serde_json::json!({}), None, Vec::new())
+            .expect_err("missing required action should fail");
+
+        match error {
+            WasmError::ToolReturnedError { hint, .. } => {
+                assert!(hint.contains("`github`"));
+                assert!(hint.contains("\"operation\""));
+                assert!(!hint.contains("\"action\""));
+                assert_snapshot!("malformed_first_call_wrapper_advertised_schema_hint", hint);
+            }
+            other => panic!("expected ToolReturnedError, got {other:?}"),
+        }
+
+        Ok(())
     }
 
     #[tokio::test]

@@ -18,6 +18,11 @@ each advertised remote tool. The model therefore sees the orchestrator-owned
 tool's `name`, `description`, and JSON Schema parameters unchanged, even though
 execution still happens in the orchestrator process.
 
+If one of those hosted-visible WASM tools later fails, any retry guidance is
+supplemental recovery help only. The worker and orchestrator still treat the
+advertised `ToolDefinition.parameters` schema as the primary contract for the
+first call.
+
 The worker now computes one registry-backed tool surface for reasoning. That
 merged view is used both when the initial reasoning context is built and when
 later hosted-loop iterations refresh `available_tools`, so long-running jobs

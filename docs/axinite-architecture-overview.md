@@ -317,6 +317,10 @@ and policy layer instead of in the HTTP adapter. The current source set is
 active hosted-visible MCP tools plus active hosted-visible orchestrator-owned
 WASM tools. Later roadmap work focuses on richer refresh behaviour.
 
+For those advertised WASM tools, `ToolDefinition.parameters` is the canonical
+LLM-facing contract before first execution. Any runtime retry hint is only
+fallback diagnostic guidance after a call has already failed.
+
 On the worker side, the merged tool surface is now explicit rather than
 incidental. Startup still registers the remote proxies into the worker-local
 registry, but both initial reasoning-context construction and later
