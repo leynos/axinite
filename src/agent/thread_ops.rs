@@ -196,4 +196,132 @@ impl Agent {
         let result = self.dispatch_submission(ctx, submission).await?;
         self.map_submission_result(message, result).await
     }
+
+    async fn send_status(&self, channel: &str, status: StatusUpdate, metadata: &serde_json::Value) {
+        let _ = self.channels.send_status(channel, status, metadata).await;
+    }
+
+    fn reject_for_thread_state(
+        &self,
+        message: &IncomingMessage,
+        thread_id: Uuid,
+        thread_state: ThreadState,
+
+    ) -> Option<SubmissionResult> {
+        let validation = self.safety().validate_input(content);
+        if !validation.is_valid {
+            let details = validation
+                .errors
+                .iter()
+                .map(|e| format!("{}: {}", e.field, e.message))
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Some(SubmissionResult::error(format!(
+                "Input rejected by safety validation: {}",
+                details
+            )));
+        }
+
+        let violations = self.safety().check_policy(content);
+        if violations
+            .iter()
+            .any(|rule| rule.action == crate::safety::PolicyAction::Block)
+        {
+            return Some(SubmissionResult::error("Input rejected by safety policy."));
+        }
+
+        if let Some(warning) = self.safety().scan_inbound_for_secrets(content) {
+            tracing::warn!(
+                user = %message.user_id,
+                channel = %message.channel,
+                "Inbound message blocked: contains leaked secret"
+            );
+            return Some(SubmissionResult::error(warning));
+        }
+
+        None
+    }
+
+    fn reject_for_unsafe_input(
+        &self,
+        message: &IncomingMessage,
+        content: &str,
+
+    async fn auto_compact_if_needed(
+        &self,
+        message: &IncomingMessage,
+        session: &Arc<Mutex<Session>>,
+        thread_id: Uuid,
+
+    ) -> Result<(), Error> {
+        let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
+        let sess = session.lock().await;
+        let thread = sess
+            .threads
+            .get(&thread_id)
+            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+
+        let mut mgr = undo_mgr.lock().await;
+        mgr.checkpoint(
+            thread.turn_number(),
+            thread.messages(),
+            format!("Before turn {}", thread.turn_number()),
+        );
+        Ok(())
+    }
+
+    async fn checkpoint_before_turn(
+        &self,
+        session: &Arc<Mutex<Session>>,
+        thread_id: Uuid,
+
+    async fn start_turn_and_persist(
+        &self,
+        message: &IncomingMessage,
+        session: &Arc<Mutex<Session>>,
+        thread_id: Uuid,
+        content: &str,
+
+    ) -> Result<Vec<ChatMessage>, Error> {
+        let augmented =
+            crate::agent::attachments::augment_with_attachments(content, &message.attachments);
+        let (effective_content, image_parts) = match &augmented {
+            Some(result) => (result.text.as_str(), result.image_parts.clone()),
+            None => (content, Vec::new()),
+        };
+
+        let turn_messages = {
+            let mut sess = session.lock().await;
+            let thread = sess
+                .threads
+                .get_mut(&thread_id)
+                .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+            let turn = thread.start_turn(effective_content);
+            turn.image_content_parts = image_parts;
+            thread.messages()
+        };
+
+        tracing::debug!(
+            message_id = %message.id,
+            thread_id = %thread_id,
+            "Persisting user message to DB"
+        );
+        self.persist_user_message(thread_id, &message.user_id, effective_content)
+            .await;
+
+        tracing::debug!(
+            message_id = %message.id,
+            thread_id = %thread_id,
+            "User message persisted, starting agentic loop"
+        );
+
+        Ok(turn_messages)
+    }
+
+    async fn run_chat_loop(
+        &self,
+        message: &IncomingMessage,
+        session: Arc<Mutex<Session>>,
+        thread_id: Uuid,
+        initial_messages: Vec<ChatMessage>,
 }
