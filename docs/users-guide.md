@@ -101,11 +101,11 @@ When workspace memory is enabled, the search backend differs by database:
 - **libSQL / Turso** — attempts an indexed `vector_top_k(...)` query when a
   compatible fixed-dimension vector index exists. After the V9 migration
   (which removed the fixed-dimension index in favour of flexible-dimension
-  vector storage, with `memory_chunks.embedding` stored as a flexible vector),
-  the backend automatically falls back to brute-force cosine similarity
-  computed in Rust. Results from both paths feed into the same Reciprocal
-  Rank Fusion (RRF) pipeline, so hybrid full-text search (FTS) + vector
-  retrieval is preserved.
+  vector storage, with `memory_chunks.embedding` stored as a
+  flexible vector), the backend automatically falls back to brute-force
+  cosine similarity computed in Rust. Results from both paths feed into the
+  same Reciprocal Rank Fusion (RRF) pipeline, so hybrid full-text search
+  (FTS) + vector retrieval is preserved.
 
 To determine which search mode is active for a workspace, run:
 

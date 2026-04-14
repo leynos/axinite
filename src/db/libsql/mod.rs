@@ -6,8 +6,10 @@
 //! - Turso cloud with embedded replica (sync to cloud)
 //! - Temp-file-backed (for testing) — creates a UUID-named `.db` file in the
 //!   OS temp directory; fresh connections share state via the file; the file
-//!   and its WAL/SHM sidecars are deleted automatically when the backend is
-//!   dropped.
+//!   and its WAL/SHM sidecars are deleted automatically when the final shared
+//!   [`LibSqlDatabase`] handle is dropped. Clones returned by `shared_db()`
+//!   can outlive the [`LibSqlBackend`], so cleanup follows the last shared
+//!   handle rather than the backend wrapper.
 
 mod conversations;
 pub(crate) mod helpers;
@@ -284,11 +286,13 @@ mod tests {
 
         // Touch the database and sidecar files so the drop handler has
         // something concrete to delete.
-        std::fs::write(&path, b"").unwrap_or_default();
-        std::fs::write(&wal, b"").unwrap_or_default();
-        std::fs::write(&shm, b"").unwrap_or_default();
+        std::fs::write(&path, b"").expect("failed to create temp db file");
+        std::fs::write(&wal, b"").expect("failed to create sidecar file");
+        std::fs::write(&shm, b"").expect("failed to create sidecar file");
 
         assert!(path.exists(), "temp db file must exist before drop");
+        assert!(wal.exists(), "WAL sidecar must exist before drop");
+        assert!(shm.exists(), "SHM sidecar must exist before drop");
 
         drop(backend);
         assert!(
