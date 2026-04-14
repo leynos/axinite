@@ -487,10 +487,8 @@ impl LibSqlSecretsStore {
         let conn = self
             .db
             .connect()
-            .map_err(|e| SecretError::Database(format!("Connection failed: {}", e)))?;
-        conn.query("PRAGMA busy_timeout = 5000", ())
             .await
-            .map_err(|e| SecretError::Database(format!("Failed to set busy_timeout: {}", e)))?;
+            .map_err(|e| SecretError::Database(format!("Connection failed: {}", e)))?;
         Ok(conn)
     }
 }

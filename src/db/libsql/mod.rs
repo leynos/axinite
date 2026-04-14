@@ -19,14 +19,14 @@ mod settings;
 mod tool_failures;
 mod workspace;
 
-/// libSQL/Turso database backend.
+/// Shared libSQL database handle.
 ///
-/// Stores the `Database` handle in an `Arc` so that the same underlying
-/// database can be shared with stores (SecretsStore, WasmToolStore) that
-/// create their own connections per-operation.
-///
-/// When constructed through [`LibSqlBackend::new_memory`], the optional
-/// `temp_path` keeps test-database cleanup tied to the final shared owner.
+/// Wraps the underlying [`RawLibSqlDatabase`] plus optional temp-file metadata
+/// used by test-only temp-file-backed databases. Stores such as
+/// `LibSqlSecretsStore`, `LibSqlWasmChannelStore`, and `LibSqlWasmToolStore`
+/// share this handle via `Arc` so they all create connections against the same
+/// underlying database and so temp-file cleanup runs when the last shared owner
+/// is dropped.
 pub struct LibSqlDatabase {
     db: RawLibSqlDatabase,
     /// Path to the ephemeral database file created by
@@ -42,6 +42,13 @@ pub(crate) use helpers::{
 };
 pub(crate) use row_conversion::row_to_memory_document;
 
+/// libSQL/Turso backend implementation of [`NativeDatabase`].
+///
+/// Owns one shared [`LibSqlDatabase`] handle and exposes constructors for the
+/// local, remote-replica, and temp-file-backed test modes. Callers that need
+/// backend-specific sharing can clone the underlying handle with
+/// [`LibSqlBackend::shared_db`], while normal database operations go through
+/// [`LibSqlBackend::connect`] and the trait implementations on this type.
 pub struct LibSqlBackend {
     db: Arc<LibSqlDatabase>,
 }
@@ -133,32 +140,7 @@ impl LibSqlBackend {
     /// "unable to open database file" errors from concurrent connection
     /// creation (e.g. cron ticker vs main thread).
     pub async fn connect(&self) -> Result<Connection, DatabaseError> {
-        let mut last_err = None;
-        for attempt in 0..3u32 {
-            match self.db.connect() {
-                Ok(conn) => {
-                    conn.query("PRAGMA busy_timeout = 5000", ())
-                        .await
-                        .map_err(|e| {
-                            DatabaseError::Pool(format!("Failed to set busy_timeout: {}", e))
-                        })?;
-                    return Ok(conn);
-                }
-                Err(e) => {
-                    last_err = Some(e);
-                    if attempt < 2 {
-                        tokio::time::sleep(std::time::Duration::from_millis(
-                            50 * 2u64.pow(attempt),
-                        ))
-                        .await;
-                    }
-                }
-            }
-        }
-        Err(DatabaseError::Pool(format!(
-            "Failed to create connection after 3 attempts: {}",
-            last_err.map(|e| e.to_string()).unwrap_or_default()
-        )))
+        self.db.connect().await
     }
 
     /// Wraps a built `libsql::Database` in `Self` with no temp-file path.
@@ -216,6 +198,8 @@ impl NativeDatabase for LibSqlBackend {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use chrono::{TimeZone, Utc};
 
     use crate::db::Database;
@@ -284,16 +268,16 @@ mod tests {
         assert_eq!(timeout, 5000);
     }
 
-    #[tokio::test]
-    async fn new_memory_drop_removes_temp_files() {
-        let backend = LibSqlBackend::new_memory()
-            .await
+    #[test]
+    fn shared_libsql_database_drop_removes_temp_files() {
+        let runtime = tokio::runtime::Runtime::new().expect("create runtime for libsql test");
+        let backend = runtime
+            .block_on(LibSqlBackend::new_memory())
             .expect("failed to create temp-file-backed backend");
+        let shared_db = backend.shared_db();
 
-        let path = backend
-            .db
-            .temp_path
-            .clone()
+        let path = shared_db
+            .temp_path()
             .expect("new_memory must set temp_path");
         let wal = path.with_extension("db-wal");
         let shm = path.with_extension("db-shm");
@@ -307,6 +291,17 @@ mod tests {
         assert!(path.exists(), "temp db file must exist before drop");
 
         drop(backend);
+        assert!(
+            path.exists(),
+            "shared handle should keep temp db file alive after backend drop"
+        );
+
+        let shared_db = match Arc::try_unwrap(shared_db) {
+            Ok(shared_db) => shared_db,
+            Err(_) => panic!("test should hold the final shared libsql database handle"),
+        };
+
+        drop(shared_db);
 
         assert!(!path.exists(), "temp db file must be removed after drop");
         assert!(!wal.exists(), "WAL sidecar must be removed after drop");
@@ -452,8 +447,42 @@ impl LibSqlDatabase {
         Self { db, temp_path }
     }
 
+    #[cfg(test)]
+    pub fn temp_path(&self) -> Option<PathBuf> {
+        self.temp_path.clone()
+    }
+
     /// Create a fresh libSQL connection from the shared database handle.
-    pub fn connect(&self) -> Result<Connection, libsql::Error> {
-        self.db.connect()
+    ///
+    /// Applies the same retry and `busy_timeout` setup used by
+    /// [`LibSqlBackend::connect`] so all shared-handle consumers behave
+    /// consistently.
+    pub async fn connect(&self) -> Result<Connection, DatabaseError> {
+        let mut last_err = None;
+        for attempt in 0..3u32 {
+            match self.db.connect() {
+                Ok(conn) => {
+                    conn.query("PRAGMA busy_timeout = 5000", ())
+                        .await
+                        .map_err(|e| {
+                            DatabaseError::Pool(format!("Failed to set busy_timeout: {}", e))
+                        })?;
+                    return Ok(conn);
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    if attempt < 2 {
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            50 * 2u64.pow(attempt),
+                        ))
+                        .await;
+                    }
+                }
+            }
+        }
+        Err(DatabaseError::Pool(format!(
+            "Failed to create connection after 3 attempts: {}",
+            last_err.map(|e| e.to_string()).unwrap_or_default()
+        )))
     }
 }

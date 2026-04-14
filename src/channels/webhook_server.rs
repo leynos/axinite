@@ -386,12 +386,7 @@ mod tests {
         )
         .await;
         assert!(
-            old_result.is_err()
-                || old_result.as_ref().is_ok_and(|request_result| {
-                    request_result.as_ref().map_or(true, |response| {
-                        response.status() != reqwest::StatusCode::OK
-                    })
-                }),
+            matches!(old_result, Err(_) | Ok(Err(_))),
             "Old address should not respond after restart_with_addr"
         );
 

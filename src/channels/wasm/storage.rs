@@ -361,14 +361,9 @@ impl LibSqlWasmChannelStore {
     }
 
     async fn connect(&self) -> Result<libsql::Connection, WasmChannelStoreError> {
-        let conn = self
-            .db
-            .connect()
-            .map_err(|e| WasmChannelStoreError::Database(format!("Connection failed: {}", e)))?;
-        conn.query("PRAGMA busy_timeout = 5000", ())
-            .await
-            .map_err(|e| {
-                WasmChannelStoreError::Database(format!("Failed to set busy_timeout: {}", e))
+        let conn =
+            self.db.connect().await.map_err(|e| {
+                WasmChannelStoreError::Database(format!("Connection failed: {}", e))
             })?;
         Ok(conn)
     }
