@@ -184,6 +184,39 @@ For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
 tests independent of host machine secrets, keychains, and shell state.
 
+## AppBuilder
+
+`AppBuilder` owns the mechanical bootstrap sequence for host startup.
+It constructs `AppComponents` in phase order and keeps activation of
+runtime side effects separate from construction so tests can avoid
+background I/O.
+
+### Two-phase bootstrap
+
+`build_components()` separates construction from activation:
+
+```rust
+// Production usage (src/main.rs):
+let (components, side_effects) = AppBuilder::new(…).build_components().await?;
+side_effects.start();   // activates background tasks
+
+// Test usage (tests/support/test_rig/builder.rs):
+let (components, _side_effects) = builder.build_components().await?;
+// _side_effects is intentionally discarded — no background I/O during tests
+```
+
+Use `build_all()` when you need the backward-compatible single-call form;
+it calls `build_components()` and `side_effects.start()` in sequence.
+
+#### AppBuilderFlags
+
+`AppBuilderFlags` controls optional construction behaviour:
+
+| Field | Type | Effect |
+| --- | --- | --- |
+| `no_db` | `bool` | Skip database initialisation |
+| `workspace_import_dir` | `Option<PathBuf>` | Directory to import into the workspace on activation; captured at construction so `RuntimeSideEffects::start()` does not re-read the environment |
+
 ## Fast local validation loop
 
 For quick host-side iteration on Linux or WSL with the current branch
@@ -206,7 +239,6 @@ cargo nextest run --workspace --no-default-features --features libsql \
 
 To compare behaviour against the legacy harness, use `make test-cargo`
 or `make test-matrix-cargo`.
-
 
 ## Self-repair internals
 

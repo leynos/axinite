@@ -70,7 +70,7 @@ flowchart TD
     Webhooks[HTTP and webhook channels]
     WasmChannels[WASM channels]
     Agent[Agent runtime]
-    AppBuilder[AppBuilder bootstrap]
+    AppBuilder[AppBuilder bootstrap / RuntimeSideEffects]
     Config[Config overlay]
     DB[(Database)]
     Workspace[Workspace memory]
@@ -132,9 +132,14 @@ before channels and background services start.
    behaviour while tests and internal callers use `Config::from_context(...)`
    for deterministic resolution. The database is not yet required at this
    point.
-6. `AppBuilder::build_all()` executes the mechanical initialization phases in a
-   fixed order: database, secrets, language model providers, tools and
-   workspace, then extensions.
+6. `AppBuilder::build_components()` executes the mechanical initialization
+   phases in a fixed order, returning `(AppComponents, RuntimeSideEffects)`.
+   In production `main.rs` calls `side_effects.start()` immediately
+   afterwards to activate deferred background work (stale job cleanup,
+   workspace import/seeding, embedding backfill). In tests the
+   `RuntimeSideEffects` value is discarded to avoid unnecessary I/O.
+   A backward-compatible `build_all()` wrapper calls both in sequence for
+   callers that do not need the separation.
 7. After core components exist, `async_main()` starts optional tunnel support,
    configures the sandbox orchestrator, wires interaction channels, registers
    hooks, and creates the agent.
@@ -158,6 +163,26 @@ Table 2. AppBuilder phases and the state they add.
 | Tools and workspace | Creates the safety layer, tool registry, embedding provider, workspace memory, and optional image or builder tools | Workspace memory only exists when a database backend is active |
 | Extensions | Starts MCP session and process managers, creates the WASM runtime, loads runtime extensions, loads registry metadata, and creates the extension manager | The extension manager is registered back into the tool system so the agent can discover and manage extensions in chat |
 <!-- markdownlint-enable MD013 MD060 -->
+
+#### 3.2.1 RuntimeSideEffects
+
+`AppBuilder::build_components()` returns a `RuntimeSideEffects` value
+alongside `AppComponents`. `RuntimeSideEffects` encapsulates deferred
+background work that must not run during tests:
+
+| Task | Trigger condition |
+| --- | --- |
+| Stale sandbox job cleanup | `db` is present |
+| Workspace import / seeding | `workspace` and `workspace_import_dir` are set |
+| Embedding backfill | `workspace` is present and `embeddings_available` is true |
+
+Call `side_effects.start()` once in `main.rs` after construction is
+complete. Tests discard the value to keep the test environment isolated.
+
+`AppBuilderFlags` has a `workspace_import_dir: Option<PathBuf>` field
+that captures the import directory at construction time (from the
+`WORKSPACE_IMPORT_DIR` environment variable in production) so that
+activation does not need to re-read the environment.
 
 ### 3.3 Long-running services
 
