@@ -100,12 +100,38 @@ async fn run_phase2(
 ) -> Vec<Option<Result<String, Error>>> {
     let mut exec_results: Vec<Option<Result<String, Error>>> =
         (0..preflight_len).map(|_| None).collect();
-    if runnable.len() <= 1 {
-        run_tool_batch_inline(delegate, runnable, &mut exec_results).await;
-    } else {
-        run_tool_batch_parallel(delegate, runnable, &mut exec_results).await;
+    let mut start = 0;
+    while start < runnable.len() {
+        if is_auth_barrier_tool(&runnable[start].1.name) {
+            let batch = &runnable[start..=start];
+            run_tool_batch_inline(delegate, batch, &mut exec_results).await;
+            if let Some(result) = &exec_results[runnable[start].0]
+                && check_auth_required(&runnable[start].1.name, result).is_some()
+            {
+                break;
+            }
+            start += 1;
+            continue;
+        }
+
+        let mut end = start;
+        while end < runnable.len() && !is_auth_barrier_tool(&runnable[end].1.name) {
+            end += 1;
+        }
+
+        let batch = &runnable[start..end];
+        if batch.len() <= 1 {
+            run_tool_batch_inline(delegate, batch, &mut exec_results).await;
+        } else {
+            run_tool_batch_parallel(delegate, batch, &mut exec_results).await;
+        }
+        start = end;
     }
     exec_results
+}
+
+fn is_auth_barrier_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "tool_auth" | "tool_activate")
 }
 
 /// Phase 3: iterate preflight outcomes in original order, dispatching each
@@ -135,6 +161,7 @@ async fn run_postflight(
                     process_runnable_tool(delegate, &tc, tool_result, reason_ctx).await
                 {
                     deferred_auth = Some(instructions);
+                    break;
                 }
             }
         }

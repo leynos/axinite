@@ -543,7 +543,7 @@ first start, just as they would with `start()`.
 
 Migration notes for maintainers:
 
-- pre-bind the listener yourself and pass ownership into the method;
+- pre-bind the listener and pass ownership into the method;
 - expect the methods to remain async because the serving task is still spawned,
   and graceful shutdown wiring still happens inside `WebhookServer`;
 - handle bind and startup failures through `ChannelError::StartupFailed`, which

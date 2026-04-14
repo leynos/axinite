@@ -105,17 +105,20 @@ impl Agent {
         thread_id: Uuid,
     ) -> Result<(), Error> {
         let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
-        let sess = session.lock().await;
-        let thread = sess
-            .threads
-            .get(&thread_id)
-            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+        let (turn_number, messages) = {
+            let sess = session.lock().await;
+            let thread = sess
+                .threads
+                .get(&thread_id)
+                .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+            (thread.turn_number(), thread.messages())
+        };
 
         let mut mgr = undo_mgr.lock().await;
         mgr.checkpoint(
-            thread.turn_number(),
-            thread.messages(),
-            format!("Before turn {}", thread.turn_number()),
+            turn_number,
+            messages,
+            format!("Before turn {}", turn_number),
         );
         Ok(())
     }

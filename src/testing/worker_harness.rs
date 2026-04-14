@@ -184,7 +184,21 @@ pub async fn transition_to_in_progress(worker: &Worker) -> anyhow::Result<()> {
 pub struct TerminalPersistenceExpectation<'a> {
     pub state: JobState,
     pub status_str: &'a str,
+    pub success: bool,
+    pub message: Option<String>,
     pub reason: Option<&'a str>,
+}
+
+fn terminal_event_message(
+    expected_state: JobState,
+    expected_reason: Option<&str>,
+) -> Option<String> {
+    match (expected_state, expected_reason) {
+        (JobState::Completed, _) => Some("Job completed successfully".to_string()),
+        (JobState::Failed, Some(reason)) => Some(format!("Execution failed: {reason}")),
+        (JobState::Stuck, Some(reason)) => Some(format!("Job stuck: {reason}")),
+        _ => None,
+    }
 }
 
 /// Check captured persistence calls against expected values.
@@ -205,6 +219,16 @@ pub fn check_terminal_persistence_calls(
     }
     assert_eq!(event_call.event_type, "result");
     assert_eq!(event_call.data["status"], expected.status_str);
+    assert_eq!(event_call.data["success"], expected.success);
+    if let Some(message) = &expected.message {
+        assert_eq!(event_call.data["message"], message.as_str());
+    } else {
+        assert!(
+            event_call.data["message"].is_null(),
+            "Expected no event message, but got {:?}",
+            event_call.data["message"]
+        );
+    }
 }
 
 /// Assert terminal persistence state matches expected values.
@@ -234,6 +258,8 @@ pub async fn assert_terminal_persistence(
         &TerminalPersistenceExpectation {
             state: expected_state,
             status_str: expected_status_str,
+            success: expected_state == JobState::Completed,
+            message: terminal_event_message(expected_state, expected_reason),
             reason: expected_reason,
         },
     );
@@ -266,6 +292,8 @@ pub async fn assert_terminal_persistence_with_snapshot(
         &TerminalPersistenceExpectation {
             state: expected_state,
             status_str: expected_status_str,
+            success: expected_state == JobState::Completed,
+            message: terminal_event_message(expected_state, expected_reason),
             reason: expected_reason,
         },
     );

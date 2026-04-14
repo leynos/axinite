@@ -136,6 +136,8 @@ impl Agent {
             (thread.clone(), usage, strategy)
         };
 
+        let original_updated_at = thread_snapshot.updated_at;
+        let original_turns_len = thread_snapshot.turns.len();
         let compactor = ContextCompactor::new(self.llm().clone());
         match compactor
             .compact(
@@ -150,8 +152,8 @@ impl Agent {
                 let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
                     Error::from(crate::error::JobError::NotFound { id: thread_id })
                 })?;
-                if thread.updated_at != thread_snapshot.updated_at
-                    || thread.turns.len() != thread_snapshot.turns.len()
+                if thread.updated_at != original_updated_at
+                    || thread.turns.len() != original_turns_len
                 {
                     return Ok(SubmissionResult::error(
                         "Thread changed while compaction was running. Please retry.",

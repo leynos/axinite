@@ -63,11 +63,11 @@ pub(crate) async fn before_llm_call(
 
     // Update context for this iteration
     reason_ctx.available_tools = tool_defs;
-    reason_ctx.system_prompt = Some(if force_text {
-        delegate.cached_prompt_no_tools.clone()
+    reason_ctx.system_prompt = if force_text {
+        Some(delegate.cached_prompt_no_tools.clone())
     } else {
-        delegate.cached_prompt.clone()
-    });
+        None
+    };
     reason_ctx.force_text = force_text;
 
     if force_text {

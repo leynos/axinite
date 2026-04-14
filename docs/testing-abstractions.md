@@ -85,15 +85,20 @@ Located in: `crate::testing::NullDatabase`
 defaults (`Ok(None)`, `Ok(vec![])`, and similar) and serves as a baseline for
 test doubles that need to override only specific methods. There are important
 exceptions: `NullWorkspaceStore` document reads return
-`WorkspaceError::doc_not_found(...)`, and chunk insertion synthesizes stable
-UUIDs instead of returning a trivial default.
+`NullDatabase::doc_not_found(...)`, which constructs the concrete
+`WorkspaceError::DocumentNotFound` variant, and chunk insertion synthesizes
+stable UUIDs instead of returning a trivial default.
 
 ```rust
 use ironclaw::testing::NullDatabase;
 
-let db = NullDatabase::new();
-// Most operations return empty defaults, but workspace reads return
-// WorkspaceError::doc_not_found(...) and insert_chunk synthesizes IDs.
+fn example() {
+    let db = NullDatabase::new();
+    // Most operations return empty defaults, but workspace reads return
+    // NullDatabase::doc_not_found(...) / WorkspaceError::DocumentNotFound,
+    // and insert_chunk synthesizes IDs.
+    let _ = db;
+}
 ```
 
 **When to use:** Use `NullDatabase` as a base for custom mocks when you need

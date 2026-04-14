@@ -308,7 +308,6 @@ impl JobContext {
                 matches!(
                     transition.to,
                     JobState::Completed
-                        | JobState::Submitted
                         | JobState::Accepted
                         | JobState::Failed
                         | JobState::Cancelled
@@ -317,11 +316,7 @@ impl JobContext {
             .map(|transition| transition.timestamp);
         if !matches!(
             self.state,
-            JobState::Completed
-                | JobState::Submitted
-                | JobState::Accepted
-                | JobState::Failed
-                | JobState::Cancelled
+            JobState::Completed | JobState::Accepted | JobState::Failed | JobState::Cancelled
         ) {
             self.completed_at = None;
         }

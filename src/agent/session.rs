@@ -576,8 +576,13 @@ impl Turn {
 
     /// Record tool call result, parsing structured JSON where possible.
     pub fn record_tool_result_content(&mut self, result_content: &str) {
-        let result = serde_json::from_str(result_content)
-            .unwrap_or_else(|_| serde_json::Value::String(result_content.to_string()));
+        let trimmed = result_content.trim_start();
+        let result = if matches!(trimmed.as_bytes().first(), Some(b'{' | b'[')) {
+            serde_json::from_str(result_content)
+                .unwrap_or_else(|_| serde_json::Value::String(result_content.to_string()))
+        } else {
+            serde_json::Value::String(result_content.to_string())
+        };
         self.record_tool_result(result);
     }
 
