@@ -22,6 +22,7 @@ use std::sync::Arc;
 use crate::db::NativeDatabase;
 use crate::error::DatabaseError;
 use libsql::{Connection, Database as LibSqlDatabase};
+use tokio::fs;
 
 use crate::db::libsql_migrations;
 pub(crate) use helpers::{
@@ -42,9 +43,9 @@ pub struct LibSqlBackend {
 impl LibSqlBackend {
     /// Ensure the parent directory of `path` exists, creating it and all
     /// ancestors if necessary.
-    fn ensure_parent_dir(path: &Path) -> Result<(), DatabaseError> {
+    async fn ensure_parent_dir(path: &Path) -> Result<(), DatabaseError> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
+            fs::create_dir_all(parent).await.map_err(|e| {
                 DatabaseError::Pool(format!("Failed to create database directory: {e}"))
             })?;
         }
@@ -53,7 +54,7 @@ impl LibSqlBackend {
 
     /// Create a new local embedded database.
     pub async fn new_local(path: &Path) -> Result<Self, DatabaseError> {
-        Self::ensure_parent_dir(path)?;
+        Self::ensure_parent_dir(path).await?;
         let db = libsql::Builder::new_local(path)
             .build()
             .await
@@ -79,7 +80,7 @@ impl LibSqlBackend {
         url: &str,
         auth_token: &str,
     ) -> Result<Self, DatabaseError> {
-        Self::ensure_parent_dir(path)?;
+        Self::ensure_parent_dir(path).await?;
         let db = libsql::Builder::new_remote_replica(path, url.to_string(), auth_token.to_string())
             .build()
             .await
