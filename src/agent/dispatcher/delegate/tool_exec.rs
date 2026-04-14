@@ -175,13 +175,22 @@ pub(crate) async fn execute_tool_calls(
 ) -> Result<Option<crate::agent::agentic_loop::LoopOutcome>, Error> {
     use crate::agent::agentic_loop::LoopOutcome;
 
+    // === Phase 1: Preflight ===
+    let (batch, approval_needed) = group_tool_calls(delegate, &tool_calls).await?;
+    let ToolBatch {
+        preflight,
+        runnable,
+    } = batch;
+    let finalized_tool_calls =
+        finalized_tool_calls(&tool_calls, &preflight, approval_needed.as_ref());
+
     // Add the assistant message with tool_calls to context.
     // OpenAI protocol requires this before tool-result messages.
     reason_ctx
         .messages
         .push(ChatMessage::assistant_with_tool_calls(
             content,
-            tool_calls.clone(),
+            finalized_tool_calls.clone(),
         ));
 
     let _ = delegate
@@ -194,14 +203,7 @@ pub(crate) async fn execute_tool_calls(
         )
         .await;
 
-    record_redacted_tool_calls(delegate, &tool_calls).await;
-
-    // === Phase 1: Preflight ===
-    let (batch, approval_needed) = group_tool_calls(delegate, &tool_calls).await?;
-    let ToolBatch {
-        preflight,
-        runnable,
-    } = batch;
+    record_redacted_tool_calls(delegate, &finalized_tool_calls).await;
 
     // === Phase 2: Execute ===
     let mut exec_results = run_phase2(delegate, preflight.len(), &runnable).await;
@@ -210,7 +212,8 @@ pub(crate) async fn execute_tool_calls(
     let deferred_auth = run_postflight(delegate, preflight, &mut exec_results, reason_ctx).await;
 
     if let Some(candidate) = approval_needed {
-        let pending = build_pending_approval(delegate, candidate, &tool_calls, reason_ctx);
+        let pending =
+            build_pending_approval(delegate, candidate, &finalized_tool_calls, reason_ctx);
         return Ok(Some(LoopOutcome::NeedApproval(Box::new(pending))));
     }
 
@@ -219,6 +222,22 @@ pub(crate) async fn execute_tool_calls(
     }
 
     Ok(None)
+}
+
+fn finalized_tool_calls(
+    original_tool_calls: &[crate::llm::ToolCall],
+    preflight: &[(crate::llm::ToolCall, PreflightOutcome)],
+    approval_needed: Option<&ApprovalCandidate>,
+) -> Vec<crate::llm::ToolCall> {
+    let mut finalized = preflight
+        .iter()
+        .map(|(tc, _)| tc.clone())
+        .collect::<Vec<_>>();
+    if let Some(candidate) = approval_needed {
+        finalized.push(candidate.tool_call.clone());
+        finalized.extend_from_slice(&original_tool_calls[candidate.idx + 1..]);
+    }
+    finalized
 }
 
 /// Compute the safe (redacted) argument map for a single tool call.
@@ -637,9 +656,13 @@ async fn process_runnable_tool(
 
     // Detect image generation sentinel
     let is_image_sentinel = maybe_emit_image_sentinel(delegate, &tc.name, output).await;
+    let image_sentinel_summary = image_sentinel_summary(output);
 
     // Determine result content and preview based on whether output is valid JSON
-    let (result_content, preview) = if is_valid_json(output) {
+    let (result_content, preview) = if is_image_sentinel {
+        let summary = image_sentinel_summary.unwrap_or_else(|| "[Image generated]".to_string());
+        (summary.clone(), summary)
+    } else if is_valid_json(output) {
         // For JSON-producing tools, persist raw JSON without wrapping
         let preview = truncate_for_preview(output, PREVIEW_MAX_CHARS);
         (output.clone(), preview)
@@ -757,6 +780,27 @@ async fn maybe_emit_image_sentinel(
         return true;
     }
     false
+}
+
+fn image_sentinel_summary(output: &str) -> Option<String> {
+    let sentinel = serde_json::from_str::<serde_json::Value>(output).ok()?;
+    if sentinel.get("type").and_then(|value| value.as_str()) != Some("image_generated") {
+        return None;
+    }
+
+    let mut parts = vec!["[Image generated]".to_string()];
+    if let Some(media_type) = sentinel.get("media_type").and_then(|value| value.as_str()) {
+        parts.push(format!("type={media_type}"));
+    }
+    if let Some(size) = sentinel.get("size").and_then(|value| value.as_str()) {
+        parts.push(format!("size={size}"));
+    }
+    if let Some(path) = sentinel.get("path").and_then(|value| value.as_str()) {
+        parts.push(format!("path={path}"));
+    } else if let Some(source_path) = sentinel.get("source_path").and_then(|value| value.as_str()) {
+        parts.push(format!("source={source_path}"));
+    }
+    Some(parts.join(" "))
 }
 
 /// Sanitize tool output and return both preview text (raw sanitized) and wrapped text (for LLM).

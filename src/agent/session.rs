@@ -642,6 +642,30 @@ mod tests {
     }
 
     #[test]
+    fn record_tool_result_content_parses_json_values() {
+        let mut turn = Turn::new(1, "input");
+        turn.record_tool_call("json", serde_json::json!({}));
+        turn.record_tool_result_content(r#"{"ok":true,"items":[1,2]}"#);
+
+        assert_eq!(
+            turn.tool_calls[0].result,
+            Some(serde_json::json!({"ok": true, "items": [1, 2]}))
+        );
+    }
+
+    #[test]
+    fn record_tool_result_content_falls_back_to_plain_string() {
+        let mut turn = Turn::new(1, "input");
+        turn.record_tool_call("echo", serde_json::json!({}));
+        turn.record_tool_result_content("plain text");
+
+        assert_eq!(
+            turn.tool_calls[0].result,
+            Some(serde_json::Value::String("plain text".to_string()))
+        );
+    }
+
+    #[test]
     fn test_turn_tool_calls() {
         let mut turn = Turn::new(0, "Test input");
         turn.record_tool_call("echo", serde_json::json!({"message": "test"}));

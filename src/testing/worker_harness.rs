@@ -276,6 +276,7 @@ pub async fn assert_terminal_persistence_with_snapshot(
 }
 
 /// Methods for driving terminal state transitions in tests.
+#[derive(Debug, Clone, Copy)]
 pub enum TerminalMethod {
     Completed,
     Failed(&'static str),

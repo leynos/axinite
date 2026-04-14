@@ -9,6 +9,7 @@ use crate::agent::dispatcher::delegate::ChatDelegate;
 use crate::agent::session::ThreadState;
 use crate::channels::StatusUpdate;
 use crate::error::Error;
+use crate::history::LlmCallRecord;
 use crate::llm::{ChatMessage, Reasoning, ReasoningContext};
 
 /// Check if the agent loop should stop due to external signals.
@@ -115,6 +116,9 @@ pub(crate) async fn call_llm(
                 "Context length exceeded, compacting messages and retrying"
             );
 
+            let used = u32::try_from(used).unwrap_or(u32::MAX);
+            record_partial_llm_call(delegate, used).await;
+
             // Compact messages in place and retry
             reason_ctx.messages = compact_messages_for_retry(&reason_ctx.messages);
 
@@ -173,6 +177,47 @@ pub(crate) async fn call_llm(
     );
 
     Ok(output)
+}
+
+async fn record_partial_llm_call(delegate: &ChatDelegate<'_>, used: u32) {
+    let model_name = delegate.agent.llm().active_model_name();
+    let read_discount = delegate.agent.llm().cache_read_discount();
+    let write_multiplier = delegate.agent.llm().cache_write_multiplier();
+    let call_cost = delegate
+        .agent
+        .cost_guard()
+        .record_llm_call(
+            &model_name,
+            used,
+            0,
+            0,
+            0,
+            read_discount,
+            write_multiplier,
+            Some(delegate.agent.llm().cost_per_token()),
+        )
+        .await;
+
+    let Some(store) = delegate.agent.store() else {
+        return;
+    };
+
+    let purpose =
+        "context_length_exceeded:auto_compaction_retry (partial/estimated input tokens only)";
+    let record = LlmCallRecord {
+        job_id: Some(delegate.job_ctx.job_id),
+        conversation_id: delegate.job_ctx.conversation_id,
+        provider: "agent",
+        model: &model_name,
+        input_tokens: used,
+        output_tokens: 0,
+        cost: call_cost,
+        purpose: Some(purpose),
+    };
+
+    if let Err(error) = store.record_llm_call(&record).await {
+        tracing::warn!(%error, "Failed to persist partial LLM call audit entry");
+    }
 }
 
 /// Handle a text response from the LLM.

@@ -125,3 +125,44 @@ impl crate::db::NativeDatabase for NullDatabase {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn synthetic_uuid_sequence_is_unique_across_many_calls() {
+        let db = NullDatabase::new();
+        let mut seen = std::collections::HashSet::new();
+
+        for _ in 0..100 {
+            let id = db.next_synthetic_uuid();
+            assert!(seen.insert(id), "duplicate synthetic UUID: {id}");
+        }
+    }
+
+    #[test]
+    fn cached_ids_are_stable_per_key_and_distinct_across_keys() {
+        let db = NullDatabase::new();
+        let cache = Mutex::new(HashMap::new());
+        let keys = (0..10).map(|idx| format!("key-{idx}")).collect::<Vec<_>>();
+        let mut expected = HashMap::new();
+
+        for _ in 0..5 {
+            for key in &keys {
+                let id = db.get_or_create_in_cache(&cache, key.clone());
+                if let Some(existing) = expected.get(key) {
+                    assert_eq!(*existing, id, "cache entry for {key} changed");
+                } else {
+                    expected.insert(key.clone(), id);
+                }
+            }
+        }
+
+        let unique = expected
+            .values()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(unique.len(), keys.len(), "different keys shared a UUID");
+    }
+}

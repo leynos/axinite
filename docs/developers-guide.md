@@ -517,7 +517,6 @@ reload sequence:
 The manager is created via `create_hot_reload_manager()` which wires
 together the default implementations based on available stores.
 
-
 ### Webhook server lifecycle / listener-based API
 
 `WebhookServer::start_with_listener()` and
@@ -545,7 +544,7 @@ first start, just as they would with `start()`.
 Migration notes for maintainers:
 
 - pre-bind the listener yourself and pass ownership into the method;
-- expect the methods to remain async because the serving task is still spawned
+- expect the methods to remain async because the serving task is still spawned,
   and graceful shutdown wiring still happens inside `WebhookServer`;
 - handle bind and startup failures through `ChannelError::StartupFailed`, which
   now covers listener-derived startup errors as well as internal bind errors;

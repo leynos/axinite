@@ -19,13 +19,15 @@ impl Agent {
         session: &Arc<Mutex<Session>>,
         thread_id: Uuid,
     ) -> Result<(), Error> {
-        let mut sess = session.lock().await;
-        let thread = sess
-            .threads
-            .get_mut(&thread_id)
-            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+        let mut thread_snapshot = {
+            let sess = session.lock().await;
+            sess.threads
+                .get(&thread_id)
+                .cloned()
+                .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?
+        };
 
-        let messages = thread.messages();
+        let messages = thread_snapshot.messages();
         if let Some(strategy) = self.context_monitor.suggest_compaction(&messages) {
             let pct = self.context_monitor.usage_percent(&messages);
             tracing::info!("Context at {:.1}% capacity, auto-compacting", pct);
@@ -41,10 +43,28 @@ impl Agent {
 
             let compactor = ContextCompactor::new(self.llm().clone());
             if let Err(e) = compactor
-                .compact(thread, strategy, self.workspace().map(|w| w.as_ref()))
+                .compact(
+                    &mut thread_snapshot,
+                    strategy,
+                    self.workspace().map(|w| w.as_ref()),
+                )
                 .await
             {
                 tracing::warn!("Auto-compaction failed: {}", e);
+            } else {
+                let mut sess = session.lock().await;
+                if let Some(thread) = sess.threads.get_mut(&thread_id) {
+                    if thread.updated_at == thread_snapshot.updated_at
+                        && thread.turns.len() == thread_snapshot.turns.len()
+                    {
+                        *thread = thread_snapshot;
+                    } else {
+                        tracing::warn!(
+                            thread_id = %thread_id,
+                            "Skipped applying stale auto-compaction result"
+                        );
+                    }
+                }
             }
         }
         Ok(())

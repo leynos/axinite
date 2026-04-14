@@ -6,7 +6,7 @@
 
 use crate::agent::Agent;
 use crate::agent::submission::SubmissionResult;
-use crate::agent::thread_ops::UserTurnRequest;
+use crate::agent::thread_ops::{PrepareTurnResult, UserTurnRequest};
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::error::Error;
 
@@ -54,7 +54,10 @@ impl Agent {
             .await?;
 
         // Phase 6: Prepare turn
-        let (turn_messages, _effective_content) = self.prepare_turn(message, &req).await?;
+        let turn_messages = match self.prepare_turn(message, &req).await? {
+            PrepareTurnResult::Prepared { turn_messages } => turn_messages,
+            PrepareTurnResult::Rejected(result) => return Ok(result),
+        };
 
         // Phase 7: Send thinking status and run agentic loop
         let _ = self

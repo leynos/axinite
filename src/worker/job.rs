@@ -243,7 +243,17 @@ impl Worker {
             .context_manager()
             .update_context(self.job_id, |ctx| {
                 let previous = ctx.state;
-                let result = transition(ctx);
+                let result = if matches!(
+                    previous,
+                    JobState::Completed | JobState::Failed | JobState::Stuck
+                ) {
+                    Err(format!(
+                        "Cannot transition from terminal worker state {}",
+                        previous
+                    ))
+                } else {
+                    transition(ctx)
+                };
                 (previous, result)
             })
             .await?;
@@ -2070,7 +2080,7 @@ mod tests {
     /// Terminal transition rejection test for duplicate state changes.
     ///
     /// Verifies that after transitioning to a terminal state (Completed,
-    /// Failed, or Stuck), subsequent attempts to transition to the same
+    /// Failed, or Stuck), subsequent attempts to transition to any terminal
     /// state are rejected and persistence calls remain unchanged.
     ///
     /// This is a curated test covering the three terminal states; it does
@@ -2124,31 +2134,36 @@ mod tests {
             let status_count_before = store.calls().status_history.lock().await.len();
             let event_count_before = store.calls().event_history.lock().await.len();
 
-            // Test double transition rejection
-            let result = match method {
-                TerminalMethod::Completed => worker.mark_completed().await,
-                TerminalMethod::Failed(reason) => worker.mark_failed(reason).await,
-                TerminalMethod::Stuck(reason) => worker.mark_stuck(reason).await,
-            };
-            assert!(
-                result.is_err(),
-                "Double transition to {:?} should be rejected",
-                expected_state
-            );
+            for rejected in [
+                TerminalMethod::Completed,
+                TerminalMethod::Failed("cross-terminal failure"),
+                TerminalMethod::Stuck("cross-terminal stuck"),
+            ] {
+                let result = match rejected {
+                    TerminalMethod::Completed => worker.mark_completed().await,
+                    TerminalMethod::Failed(reason) => worker.mark_failed(reason).await,
+                    TerminalMethod::Stuck(reason) => worker.mark_stuck(reason).await,
+                };
+                assert!(
+                    result.is_err(),
+                    "Terminal transition {:?} after {:?} should be rejected",
+                    rejected,
+                    expected_state
+                );
 
-            // Verify no new persistence calls were made on rejected transition
-            let status_count_after = store.calls().status_history.lock().await.len();
-            let event_count_after = store.calls().event_history.lock().await.len();
-            assert_eq!(
-                status_count_after, status_count_before,
-                "Rejected transition to {:?} should not persist status",
-                expected_state
-            );
-            assert_eq!(
-                event_count_after, event_count_before,
-                "Rejected transition to {:?} should not persist event",
-                expected_state
-            );
+                let status_count_after = store.calls().status_history.lock().await.len();
+                let event_count_after = store.calls().event_history.lock().await.len();
+                assert_eq!(
+                    status_count_after, status_count_before,
+                    "Rejected transition {:?} after {:?} should not persist status",
+                    rejected, expected_state
+                );
+                assert_eq!(
+                    event_count_after, event_count_before,
+                    "Rejected transition {:?} after {:?} should not persist event",
+                    rejected, expected_state
+                );
+            }
         }
         Ok(())
     }

@@ -664,6 +664,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn default_finish_reason_is_stop() {
+        assert_eq!(FinishReason::default(), FinishReason::Stop);
+    }
+
+    #[test]
+    fn default_completion_response_matches_contract() {
+        let response = CompletionResponse::default();
+        assert_eq!(response.content, "");
+        assert_eq!(response.input_tokens, 0);
+        assert_eq!(response.output_tokens, 0);
+        assert_eq!(response.finish_reason, FinishReason::Stop);
+    }
+
+    #[test]
+    fn default_tool_completion_response_matches_contract() {
+        let response = ToolCompletionResponse::default();
+        assert_eq!(response.content, None);
+        assert!(response.tool_calls.is_empty());
+        assert_eq!(response.input_tokens, 0);
+        assert_eq!(response.output_tokens, 0);
+        assert_eq!(response.finish_reason, FinishReason::Stop);
+    }
+
+    #[test]
     fn test_sanitize_preserves_valid_pairs() {
         let tc = ToolCall {
             id: "call_1".to_string(),

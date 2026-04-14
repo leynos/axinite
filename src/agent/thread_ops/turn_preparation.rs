@@ -22,7 +22,29 @@ pub(crate) struct UserTurnRequest {
     pub content: String,
 }
 
+pub(crate) enum PrepareTurnResult {
+    Prepared {
+        turn_messages: Vec<crate::llm::ChatMessage>,
+    },
+    Rejected(SubmissionResult),
+}
+
 impl Agent {
+    fn thread_state_submission_result(&self, state: ThreadState) -> Option<SubmissionResult> {
+        match state {
+            ThreadState::Processing => Some(SubmissionResult::error(
+                "Turn in progress. Use /interrupt to cancel.",
+            )),
+            ThreadState::AwaitingApproval => Some(SubmissionResult::error(
+                "Waiting for approval. Use /interrupt to cancel.",
+            )),
+            ThreadState::Completed => Some(SubmissionResult::error(
+                "Thread completed. Use /thread new.",
+            )),
+            ThreadState::Idle | ThreadState::Interrupted => None,
+        }
+    }
+
     /// Check thread state and return error if not in a processable state.
     pub(super) async fn check_thread_state(
         &self,
@@ -46,38 +68,16 @@ impl Agent {
             "Checked thread state"
         );
 
-        match thread_state {
-            ThreadState::Processing => {
-                tracing::warn!(
-                    message_id = %message.id,
-                    thread_id = %thread_id,
-                    "Thread is processing, rejecting new input"
-                );
-                Ok(Some(SubmissionResult::error(
-                    "Turn in progress. Use /interrupt to cancel.",
-                )))
-            }
-            ThreadState::AwaitingApproval => {
-                tracing::warn!(
-                    message_id = %message.id,
-                    thread_id = %thread_id,
-                    "Thread awaiting approval, rejecting new input"
-                );
-                Ok(Some(SubmissionResult::error(
-                    "Waiting for approval. Use /interrupt to cancel.",
-                )))
-            }
-            ThreadState::Completed => {
-                tracing::warn!(
-                    message_id = %message.id,
-                    thread_id = %thread_id,
-                    "Thread completed, rejecting new input"
-                );
-                Ok(Some(SubmissionResult::error(
-                    "Thread completed. Use /thread new.",
-                )))
-            }
-            ThreadState::Idle | ThreadState::Interrupted => Ok(None),
+        if let Some(result) = self.thread_state_submission_result(thread_state) {
+            tracing::warn!(
+                message_id = %message.id,
+                thread_id = %thread_id,
+                thread_state = ?thread_state,
+                "Thread state blocks new input"
+            );
+            Ok(Some(result))
+        } else {
+            Ok(None)
         }
     }
 
@@ -126,7 +126,7 @@ impl Agent {
         &self,
         message: &IncomingMessage,
         req: &UserTurnRequest,
-    ) -> Result<(Vec<crate::llm::ChatMessage>, String), Error> {
+    ) -> Result<PrepareTurnResult, Error> {
         let content = req.content.as_str();
         let augmented =
             crate::agent::attachments::augment_with_attachments(content, &message.attachments);
@@ -135,11 +135,18 @@ impl Agent {
             None => (content, Vec::new()),
         };
 
+        if let Some(result) = self.validate_safety(message, effective_content) {
+            return Ok(PrepareTurnResult::Rejected(result));
+        }
+
         let turn_messages = {
             let mut sess = req.session.lock().await;
             let thread = sess.threads.get_mut(&req.thread_id).ok_or_else(|| {
                 Error::from(crate::error::JobError::NotFound { id: req.thread_id })
             })?;
+            if let Some(result) = self.thread_state_submission_result(thread.state) {
+                return Ok(PrepareTurnResult::Rejected(result));
+            }
             let turn = thread.start_turn(effective_content);
             turn.image_content_parts = image_parts;
             thread.messages()
@@ -159,6 +166,6 @@ impl Agent {
             "User message persisted, starting agentic loop"
         );
 
-        Ok((turn_messages, effective_content.to_string()))
+        Ok(PrepareTurnResult::Prepared { turn_messages })
     }
 }

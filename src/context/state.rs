@@ -304,9 +304,25 @@ impl JobContext {
             .transitions
             .iter()
             .rev()
-            .find(|transition| transition.to.is_terminal())
+            .find(|transition| {
+                matches!(
+                    transition.to,
+                    JobState::Completed
+                        | JobState::Submitted
+                        | JobState::Accepted
+                        | JobState::Failed
+                        | JobState::Cancelled
+                )
+            })
             .map(|transition| transition.timestamp);
-        if !self.state.is_terminal() {
+        if !matches!(
+            self.state,
+            JobState::Completed
+                | JobState::Submitted
+                | JobState::Accepted
+                | JobState::Failed
+                | JobState::Cancelled
+        ) {
             self.completed_at = None;
         }
     }

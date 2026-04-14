@@ -150,6 +150,13 @@ impl Agent {
                 let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
                     Error::from(crate::error::JobError::NotFound { id: thread_id })
                 })?;
+                if thread.updated_at != thread_snapshot.updated_at
+                    || thread.turns.len() != thread_snapshot.turns.len()
+                {
+                    return Ok(SubmissionResult::error(
+                        "Thread changed while compaction was running. Please retry.",
+                    ));
+                }
                 thread.turns = thread_snapshot.turns;
                 thread.updated_at = Utc::now();
 

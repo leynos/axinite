@@ -194,11 +194,19 @@ impl Store {
             &[&job_id, &event_type.as_str(), event_data],
         )
         .await?;
-        tx.execute(
+        let rows_affected = tx
+            .execute(
             "UPDATE agent_jobs SET status = $2, failure_reason = $3 WHERE id = $1 AND source = 'direct'",
             &[&job_id, &status_str, &failure_reason],
         )
         .await?;
+        if rows_affected != 1 {
+            tx.rollback().await?;
+            return Err(DatabaseError::NotFound {
+                entity: "agent_job".to_string(),
+                id: job_id.to_string(),
+            });
+        }
         tx.commit().await?;
         Ok(())
     }
@@ -305,9 +313,13 @@ mod tests {
     #[cfg(feature = "postgres")]
     use crate::context::StateTransition;
     #[cfg(feature = "postgres")]
+    use crate::db::TerminalJobPersistence;
+    #[cfg(feature = "postgres")]
     use crate::testing::postgres::try_test_pg_db;
     #[cfg(feature = "postgres")]
     use rstest::rstest;
+    #[cfg(feature = "postgres")]
+    use serde_json::json;
 
     /// Regression test: save_job must persist user-owned and context fields.
     /// Requires a running PostgreSQL instance (integration tier).
@@ -370,5 +382,84 @@ mod tests {
         assert_eq!(summary.completed, 16);
         assert_eq!(summary.failed, 12);
         assert_eq!(summary.stuck, 5);
+    }
+
+    #[cfg(feature = "postgres")]
+    #[rstest]
+    #[tokio::test]
+    async fn persist_terminal_result_and_status_rolls_back_unknown_job()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(backend) = try_test_pg_db().await? else {
+            return Ok(());
+        };
+        let store = Store::from_pool(backend.pool());
+        let job_id = Uuid::new_v4();
+
+        let result = store
+            .persist_terminal_result_and_status(TerminalJobPersistence {
+                job_id,
+                status: JobState::Completed,
+                failure_reason: None,
+                event_type: crate::db::SandboxEventType::from("result"),
+                event_data: &json!({"status": "completed"}),
+            })
+            .await;
+        assert!(result.is_err(), "unknown job ID should fail");
+
+        let conn = backend.pool().get().await?;
+        let count: i64 = conn
+            .query_one(
+                "SELECT COUNT(*) FROM job_events WHERE job_id = $1",
+                &[&job_id],
+            )
+            .await?
+            .get(0);
+        assert_eq!(count, 0, "rollback should remove inserted job_events rows");
+        Ok(())
+    }
+
+    #[cfg(feature = "postgres")]
+    #[rstest]
+    #[tokio::test]
+    async fn persist_terminal_result_and_status_rolls_back_non_direct_job()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let Some(backend) = try_test_pg_db().await? else {
+            return Ok(());
+        };
+        let store = Store::from_pool(backend.pool());
+        let ctx = JobContext::with_user("test-user", "sandbox-like job", "rollback check");
+        let job_id = ctx.job_id;
+        store.save_job(&ctx).await?;
+
+        let conn = backend.pool().get().await?;
+        conn.execute(
+            "UPDATE agent_jobs SET source = 'sandbox' WHERE id = $1",
+            &[&job_id],
+        )
+        .await?;
+
+        let result = store
+            .persist_terminal_result_and_status(TerminalJobPersistence {
+                job_id,
+                status: JobState::Failed,
+                failure_reason: Some("no direct source"),
+                event_type: crate::db::SandboxEventType::from("result"),
+                event_data: &json!({"status": "failed"}),
+            })
+            .await;
+        assert!(result.is_err(), "non-direct job ID should fail");
+
+        let count: i64 = conn
+            .query_one(
+                "SELECT COUNT(*) FROM job_events WHERE job_id = $1",
+                &[&job_id],
+            )
+            .await?
+            .get(0);
+        assert_eq!(count, 0, "rollback should remove inserted job_events rows");
+
+        conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&job_id])
+            .await?;
+        Ok(())
     }
 }

@@ -43,7 +43,7 @@ fn summarise_tool_call(
     });
     if let Some(ref result) = tc.result {
         obj["result_preview"] = serde_json::Value::String(value_to_preview(result, 500));
-        obj["result"] = serde_json::Value::String(value_to_preview(result, 1000));
+        obj["result"] = result.clone();
     }
     if let Some(ref error) = tc.error {
         obj["error"] = serde_json::Value::String(error.clone());

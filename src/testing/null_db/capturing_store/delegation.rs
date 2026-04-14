@@ -2,8 +2,9 @@
 //!
 //! This module contains all the `delegate!` macro invocations that forward
 //! trait implementations to the inner NullDatabase. The CapturingStore
-//! overrides only `update_job_status` and `save_job_event` to capture calls;
-//! all other methods are delegated unchanged.
+//! overrides `persist_terminal_result_and_status`, `update_job_status`, and
+//! `save_job_event` to capture calls; all other methods are delegated
+//! unchanged through the `delegate!` macro invocations below.
 
 use delegate::delegate;
 use uuid::Uuid;

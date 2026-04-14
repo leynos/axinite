@@ -51,16 +51,18 @@ status updates and events for later inspection. It implements the `Database`
 trait and can be used anywhere a database is required.
 
 ```rust
+use std::sync::Arc;
+
 use ironclaw::testing::CapturingStore;
 
 #[tokio::test]
 async fn captures_calls() {
-    let store = CapturingStore::new();
-    // Pass store.clone() to components that need a Database
+    let store = Arc::new(CapturingStore::new());
+    // Pass Arc::clone(&store) to components that need a Database
     // ... exercise the system under test ...
 
     // Later, inspect captured calls:
-    let status = store.calls().last_status.lock().await.clone();
+    let _status = store.calls().last_status.lock().await.clone();
 }
 ```
 
@@ -79,15 +81,19 @@ manually-constructed components, not the full harness.
 
 Located in: `crate::testing::NullDatabase`
 
-`NullDatabase` is a no-op database implementation that returns empty defaults
-for all operations. It serves as a baseline for test doubles that need to
-override only specific methods.
+`NullDatabase` is a no-op database implementation that mostly returns empty
+defaults (`Ok(None)`, `Ok(vec![])`, and similar) and serves as a baseline for
+test doubles that need to override only specific methods. There are important
+exceptions: `NullWorkspaceStore` document reads return
+`WorkspaceError::doc_not_found(...)`, and chunk insertion synthesizes stable
+UUIDs instead of returning a trivial default.
 
 ```rust
 use ironclaw::testing::NullDatabase;
 
 let db = NullDatabase::new();
-// All operations return Ok(default_value)
+// Most operations return empty defaults, but workspace reads return
+// WorkspaceError::doc_not_found(...) and insert_chunk synthesizes IDs.
 ```
 
 **When to use:** Use `NullDatabase` as a base for custom mocks when you need
@@ -109,11 +115,8 @@ tests, including:
 async fn test_terminal_completed() -> anyhow::Result<()> {
     use ironclaw::testing::worker_harness::{make_worker, TerminalMethod};
 
-    let worker = make_worker(vec![]).await.expect("build worker");
-    TerminalMethod::Completed
-        .apply_transition(&worker)
-        .await
-        .expect("apply transition");
+    let worker = make_worker(vec![]).await?;
+    TerminalMethod::Completed.apply_transition(&worker).await?;
     Ok(())
 }
 ```

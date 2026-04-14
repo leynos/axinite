@@ -29,7 +29,7 @@ mod turn_preparation;
 mod turn_result_finalisation;
 
 pub(super) use persistence::TurnPersistContext;
-pub(super) use turn_preparation::UserTurnRequest;
+pub(super) use turn_preparation::{PrepareTurnResult, UserTurnRequest};
 
 use std::sync::Arc;
 

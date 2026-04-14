@@ -2896,8 +2896,14 @@ mod tests {
             );
             // The ceiling should only fire if force_text somehow didn't break
             assert!(
-                hit_ceiling || hard_ceiling <= max_iter + 1,
-                "ceiling logic inconsistent for max_iter={max_iter}"
+                hard_ceiling == max_iter + 1,
+                "hard_ceiling ({hard_ceiling}) must equal max_iter + 1 ({})",
+                max_iter + 1
+            );
+            assert!(
+                !hit_force_text || hit_ceiling,
+                "force_text_at ({force_text_at}) and hard_ceiling ({hard_ceiling}) diverged: \
+                 hit_force_text={hit_force_text}, hit_ceiling={hit_ceiling}"
             );
         }
     }

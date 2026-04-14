@@ -145,12 +145,22 @@ impl LibSqlBackend {
         )
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
-        tx.execute(
+        let rows_affected = tx
+            .execute(
             "UPDATE agent_jobs SET status = ?2, failure_reason = ?3 WHERE id = ?1 AND source = 'direct'",
             params![job_id.to_string(), status.to_string(), opt_text(failure_reason)],
         )
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        if rows_affected == 0 {
+            tx.rollback()
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?;
+            return Err(DatabaseError::NotFound {
+                entity: "agent_job".to_string(),
+                id: job_id.to_string(),
+            });
+        }
         tx.commit()
             .await
             .map_err(|e| DatabaseError::Query(e.to_string()))?;
@@ -359,5 +369,37 @@ impl NativeJobStore for LibSqlBackend {
         params: EstimationActualsParams,
     ) -> Result<(), DatabaseError> {
         jobs_history::update_estimation_actuals(self, params).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::NativeDatabase;
+    use crate::db::SandboxEventType;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn persist_terminal_result_and_status_rejects_unknown_job_ids() {
+        let backend = LibSqlBackend::new_memory()
+            .await
+            .expect("new_memory should succeed");
+        backend
+            .run_migrations()
+            .await
+            .expect("migrations should succeed");
+
+        let job_id = Uuid::new_v4();
+        let result = backend
+            .persist_terminal_result_and_status(TerminalJobPersistence {
+                job_id,
+                status: JobState::Completed,
+                failure_reason: None,
+                event_type: SandboxEventType::from("result"),
+                event_data: &json!({"status": "completed"}),
+            })
+            .await;
+
+        assert!(result.is_err(), "unknown job ID should fail");
     }
 }
