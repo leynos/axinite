@@ -884,3 +884,61 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runtime_side_effects_new_all_none_does_not_panic() {
+        let _ = RuntimeSideEffects::new(None, None, None, false);
+    }
+
+    #[tokio::test]
+    async fn runtime_side_effects_start_no_ops_when_nothing_configured() {
+        let se = RuntimeSideEffects::new(None, None, None, false);
+        // start() returns () — the test passes if it does not panic.
+        se.start();
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn build_components_returns_without_activating_side_effects() -> anyhow::Result<()> {
+        use crate::config::Config;
+        use crate::db::Database;
+        use crate::db::libsql::LibSqlBackend;
+        use crate::llm::SessionConfig;
+        use crate::testing::StubLlm;
+
+        let temp_dir = tempfile::tempdir()?;
+        let db_path = temp_dir.path().join("app-builder-test.db");
+        let backend = LibSqlBackend::new_local(&db_path).await?;
+        backend.run_migrations().await?;
+        let db: Arc<dyn Database> = Arc::new(backend);
+
+        let skills_dir = temp_dir.path().join("skills");
+        let installed_skills_dir = temp_dir.path().join("installed_skills");
+        tokio::fs::create_dir_all(&skills_dir).await?;
+        tokio::fs::create_dir_all(&installed_skills_dir).await?;
+
+        let config = Config::for_testing(db_path, skills_dir, installed_skills_dir).await?;
+        let session = Arc::new(SessionManager::new(SessionConfig::default()));
+        let log_broadcaster = Arc::new(LogBroadcaster::new());
+        let llm: Arc<dyn LlmProvider> = Arc::new(StubLlm::new("ok"));
+
+        let mut builder = AppBuilder::new(
+            config,
+            AppBuilderFlags::default(),
+            None,
+            session,
+            log_broadcaster,
+        );
+        builder.with_database(db);
+        builder.with_llm(llm);
+
+        let (components, _side_effects) = builder.build_components().await?;
+        assert!(components.tools.count() > 0);
+
+        Ok(())
+    }
+}
