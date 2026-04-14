@@ -663,6 +663,20 @@ pub fn strip_unsupported_tool_params(
 mod tests {
     use super::*;
 
+    fn assert_is_default_completion_response(r: &CompletionResponse) {
+        assert!(
+            r.content.is_empty()
+                && r.input_tokens == 0
+                && r.output_tokens == 0
+                && r.finish_reason == FinishReason::Stop,
+            "default CompletionResponse mismatch: content={:?}, input_tokens={}, output_tokens={}, finish_reason={:?}",
+            r.content,
+            r.input_tokens,
+            r.output_tokens,
+            r.finish_reason
+        );
+    }
+
     #[test]
     fn default_finish_reason_is_stop() {
         assert_eq!(FinishReason::default(), FinishReason::Stop);
@@ -671,10 +685,7 @@ mod tests {
     #[test]
     fn default_completion_response_matches_contract() {
         let response = CompletionResponse::default();
-        assert_eq!(response.content, "");
-        assert_eq!(response.input_tokens, 0);
-        assert_eq!(response.output_tokens, 0);
-        assert_eq!(response.finish_reason, FinishReason::Stop);
+        assert_is_default_completion_response(&response);
     }
 
     #[test]
