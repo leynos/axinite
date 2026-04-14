@@ -20,6 +20,16 @@ pub(super) enum VectorSearchOutcome {
     IndexUnavailable,
 }
 
+/// Scoped query parameters shared by vector-search helpers.
+///
+/// Bundles the user/agent scope with the query embedding so callers
+/// pass a single cohesive object rather than three separate arguments.
+pub(super) struct VectorSearchQuery<'a> {
+    pub(super) user_id: &'a str,
+    pub(super) agent_id: Option<Uuid>,
+    pub(super) embedding: &'a [f32],
+}
+
 fn is_missing_vector_index_error(error: &libsql::Error) -> bool {
     let sqlite_message = match error {
         libsql::Error::SqliteFailure(_, message)
@@ -158,9 +168,7 @@ impl LibSqlBackend {
     /// available (post-V9 migration).
     pub(super) async fn brute_force_vector_search(
         &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
-        embedding: &[f32],
+        query: VectorSearchQuery<'_>,
         limit: usize,
     ) -> Result<Vec<RankedResult>, WorkspaceError> {
         let conn = self
@@ -169,7 +177,7 @@ impl LibSqlBackend {
             .map_err(|e| WorkspaceError::SearchFailed {
                 reason: e.to_string(),
             })?;
-        let agent_id_str = agent_id.map(|id| id.to_string());
+        let agent_id_str = query.agent_id.map(|id| id.to_string());
         let mut rows = conn
             .query(
                 r#"
@@ -179,14 +187,14 @@ impl LibSqlBackend {
                 WHERE d.user_id = ?1 AND d.agent_id IS ?2
                   AND c.embedding IS NOT NULL
                 "#,
-                params![user_id, agent_id_str.as_deref()],
+                params![query.user_id, agent_id_str.as_deref()],
             )
             .await
             .map_err(|e| WorkspaceError::SearchFailed {
                 reason: format!("Query failed: {}", e),
             })?;
 
-        let candidates = self.collect_candidates(&mut rows, embedding).await?;
+        let candidates = self.collect_candidates(&mut rows, query.embedding).await?;
         Ok(rank_candidates(candidates, limit))
     }
 }
@@ -245,12 +253,11 @@ async fn collect_vector_index_rows(
 /// the expected state after the V9 flexible-dimension migration.
 pub(super) async fn vector_ranked_results(
     conn: &libsql::Connection,
-    user_id: &str,
-    agent_id: Option<&str>,
-    embedding: &[f32],
+    query: VectorSearchQuery<'_>,
     limit: i64,
 ) -> Result<VectorSearchOutcome, WorkspaceError> {
-    let vector_json = embedding_to_vector_json(embedding);
+    let agent_id_str = query.agent_id.map(|id| id.to_string());
+    let vector_json = embedding_to_vector_json(query.embedding);
 
     match conn
         .query(
@@ -261,7 +268,7 @@ pub(super) async fn vector_ranked_results(
             JOIN memory_documents d ON d.id = c.document_id
             WHERE d.user_id = ?3 AND d.agent_id IS ?4
             "#,
-            params![vector_json, limit, user_id, agent_id],
+            params![vector_json, limit, query.user_id, agent_id_str.as_deref()],
         )
         .await
     {

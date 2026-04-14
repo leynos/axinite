@@ -1,7 +1,9 @@
 //! Tests for the libSQL workspace-store module split.
 
 use super::super::LibSqlBackend;
-use super::vector_search::{VectorSearchOutcome, deserialize_embedding, vector_ranked_results};
+use super::vector_search::{
+    VectorSearchOutcome, VectorSearchQuery, deserialize_embedding, vector_ranked_results,
+};
 use crate::db::{HybridSearchParams, InsertChunkParams, NativeDatabase, NativeWorkspaceStore};
 use crate::workspace::SearchConfig;
 
@@ -86,9 +88,17 @@ async fn hybrid_search_uses_brute_force_when_vector_index_is_unavailable() {
         .connect()
         .await
         .expect("failed to open libsql connection for vector precondition");
-    let vector_outcome = vector_ranked_results(&conn, "default", None, &[1.0, 0.0, 0.0], 5)
-        .await
-        .expect("failed to run vector search precondition");
+    let vector_outcome = vector_ranked_results(
+        &conn,
+        VectorSearchQuery {
+            user_id: "default",
+            agent_id: None,
+            embedding: &[1.0, 0.0, 0.0],
+        },
+        5,
+    )
+    .await
+    .expect("failed to run vector search precondition");
     assert!(
         matches!(vector_outcome, VectorSearchOutcome::IndexUnavailable),
         "Test requires the vector-index-unavailable path before hybrid fallback assertions"
@@ -150,7 +160,14 @@ async fn brute_force_vector_search_skips_mismatched_embedding_dimensions() {
         .expect("failed to insert different-dimension chunk");
 
     let results = backend
-        .brute_force_vector_search("default", None, &[1.0, 0.0, 0.0], 10)
+        .brute_force_vector_search(
+            VectorSearchQuery {
+                user_id: "default",
+                agent_id: None,
+                embedding: &[1.0, 0.0, 0.0],
+            },
+            10,
+        )
         .await
         .expect("failed to run brute-force vector search");
 

@@ -24,7 +24,7 @@ use document_ops::{
     update_document,
 };
 use fts::{FtsSearchParams, fts_ranked_results};
-use vector_search::{VectorSearchOutcome, vector_ranked_results};
+use vector_search::{VectorSearchOutcome, VectorSearchQuery, vector_ranked_results};
 
 impl NativeWorkspaceStore for LibSqlBackend {
     async fn get_document_by_path(
@@ -155,18 +155,33 @@ impl NativeWorkspaceStore for LibSqlBackend {
 
         let vector_results = if config.use_vector {
             if let Some(emb) = embedding {
-                match vector_ranked_results(&conn, user_id, agent_id_str.as_deref(), emb, pre_limit)
-                    .await?
+                match vector_ranked_results(
+                    &conn,
+                    VectorSearchQuery {
+                        user_id,
+                        agent_id,
+                        embedding: emb,
+                    },
+                    pre_limit,
+                )
+                .await?
                 {
                     VectorSearchOutcome::Indexed(results) => results,
                     VectorSearchOutcome::IndexUnavailable => {
                         tracing::info!("Using brute-force vector search (no vector index)");
-                        self.brute_force_vector_search(user_id, agent_id, emb, pre_limit as usize)
-                            .await
-                            .map_err(|e| {
-                                tracing::warn!("Brute-force vector search failed: {e}");
-                                e
-                            })?
+                        self.brute_force_vector_search(
+                            VectorSearchQuery {
+                                user_id,
+                                agent_id,
+                                embedding: emb,
+                            },
+                            pre_limit as usize,
+                        )
+                        .await
+                        .map_err(|e| {
+                            tracing::warn!("Brute-force vector search failed: {e}");
+                            e
+                        })?
                     }
                 }
             } else {
