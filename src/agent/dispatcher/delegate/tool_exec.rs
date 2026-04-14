@@ -396,6 +396,22 @@ async fn tool_requires_approval(
     }
 }
 
+async fn approval_required_tool(
+    delegate: &ChatDelegate<'_>,
+    tool_opt: Option<std::sync::Arc<dyn crate::tools::Tool>>,
+    tc: &crate::llm::ToolCall,
+) -> Option<std::sync::Arc<dyn crate::tools::Tool>> {
+    if delegate.agent.config.auto_approve_tools {
+        return None;
+    }
+    let tool = tool_opt?;
+    if tool_requires_approval(delegate, &tool, tc).await {
+        Some(tool)
+    } else {
+        None
+    }
+}
+
 /// The outcome of pre-flight classification for a single tool call.
 enum ToolCallOutcome {
     /// The before-hook rejected this call with a message.
@@ -424,10 +440,7 @@ async fn classify_tool_call(
         return ToolCallOutcome::Rejected(rejection_msg);
     }
 
-    if !delegate.agent.config.auto_approve_tools
-        && let Some(tool) = tool_opt
-        && tool_requires_approval(delegate, &tool, tc).await
-    {
+    if let Some(tool) = approval_required_tool(delegate, tool_opt, tc).await {
         return ToolCallOutcome::NeedsApproval(ApprovalCandidate {
             idx,
             tool_call: tc.clone(),
