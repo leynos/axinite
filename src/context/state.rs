@@ -292,11 +292,14 @@ impl JobContext {
     /// Intended for rollback paths where the in-memory context must be
     /// restored to a previous state after a persistence failure, bypassing
     /// [`Self::transition_to`] validation.
+    fn last_transition_matches_rollback(&self, previous: JobState) -> bool {
+        self.transitions
+            .last()
+            .is_some_and(|t| t.from == previous && t.to == self.state)
+    }
+
     pub fn set_state_rollback(&mut self, previous: JobState) {
-        if let Some(last_transition) = self.transitions.last()
-            && last_transition.from == previous
-            && last_transition.to == self.state
-        {
+        if self.last_transition_matches_rollback(previous) {
             self.transitions.pop();
         }
         self.state = previous;
