@@ -1,0 +1,7 @@
+---
+source: src/tools/wasm/wrapper.rs
+expression: hint
+---
+Retry using the advertised tool schema for `github`.
+Guest description: GitHub integration for managing repositories, issues, pull requests, and workflows. Supports reading repo info, listing/creating issues, reviewing PRs, and triggering GitHub Actions. Authentication is handled via the 'github_token' secret injected by the host.
+Advertised schema excerpt: {"additionalProperties":false,"properties":{"operation":{"type":"string"}},"required":["operation"],"type":"object"}

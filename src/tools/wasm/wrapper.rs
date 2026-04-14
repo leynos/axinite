@@ -1250,6 +1250,7 @@ fn coerce_params_to_schema(
 mod tests {
     use std::sync::Arc;
 
+    use insta::assert_snapshot;
     use rstest::{fixture, rstest};
 
     use crate::testing::credentials::{
@@ -1740,17 +1741,21 @@ mod tests {
                     !message.trim().is_empty(),
                     "tool error should preserve a parameter failure message"
                 );
-                let message = message.to_lowercase();
+                let message_lower = message.to_lowercase();
                 assert!(
-                    message.contains("parameter")
-                        || message.contains("invalid")
-                        || message.contains("validation"),
-                    "tool error should signal parameter validation failure: {message}"
+                    message_lower.contains("parameter")
+                        || message_lower.contains("invalid")
+                        || message_lower.contains("validation"),
+                    "tool error should signal parameter validation failure: {message_lower}"
                 );
                 assert!(hint.contains("Retry using the advertised tool schema"));
                 assert!(hint.contains("`github`"));
                 assert!(hint.contains("Advertised schema excerpt"));
                 assert!(!hint.contains("Tool usage hint"));
+                assert_snapshot!(
+                    "malformed_first_call_tool_returned_error",
+                    format!("message: {message}\n\nhint:\n{hint}")
+                );
             }
             other => panic!("expected ToolReturnedError, got {other:?}"),
         }
@@ -1777,9 +1782,10 @@ mod tests {
 
         match error {
             WasmError::ToolReturnedError { hint, .. } => {
-                assert!(hint.contains("Advertised schema excerpt"));
+                assert!(hint.contains("`github`"));
                 assert!(hint.contains("\"operation\""));
                 assert!(!hint.contains("\"action\""));
+                assert_snapshot!("malformed_first_call_wrapper_advertised_schema_hint", hint);
             }
             other => panic!("expected ToolReturnedError, got {other:?}"),
         }
