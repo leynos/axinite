@@ -142,6 +142,9 @@
   - [Demote schema-bearing retry hints to fallback diagnostics](execplans/1-2-3-demote-schema-bearing-retry-hints.md)
     plans roadmap item `1.2.3` for making WebAssembly (WASM) retry hints
     supplemental diagnostics rather than the primary tool contract.
+  - [Add end-to-end tests for first-call WASM schema exposure](execplans/1-2-4-end-to-end-tests-for-first-call-wasm-schema-exposure.md)
+    plans roadmap item `1.2.4` for proving that proactive WebAssembly (WASM)
+    schema publication reaches the first hosted and non-hosted requests.
 
 ## RFCs
 
