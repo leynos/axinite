@@ -91,3 +91,28 @@ These notices are advisory. A success message means the runtime moved the job
 back into its normal retry path. A permanent failure or manual-intervention
 message means the runtime could not finish recovery automatically, and the
 operator should inspect the job or tool state before retrying work.
+
+
+## Workspace memory search
+
+When workspace memory is enabled, the search backend differs by database:
+
+- **PostgreSQL** — performs pgvector cosine-distance queries directly.
+- **libSQL / Turso** — attempts an indexed `vector_top_k(...)` query when a
+  compatible fixed-dimension vector index exists. After the V9 migration
+  (which removed the fixed-dimension index in favour of flexible-dimension
+  BLOB storage), the backend automatically falls back to brute-force cosine
+  similarity computed in Rust. Results from both paths feed into the same
+  Reciprocal Rank Fusion (RRF) pipeline, so hybrid FTS + vector retrieval is
+  preserved.
+
+To determine which search mode is active for a workspace, run:
+
+```text
+ironclaw doctor
+ironclaw status
+```
+
+Both commands report whether indexed or brute-force vector retrieval is
+currently in use. See `docs/database-integrations.md` for backend trade-offs
+and performance considerations.
