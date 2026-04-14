@@ -13,7 +13,7 @@ use super::LibSqlBackend;
 use crate::db::{HybridSearchParams, InsertChunkParams, NativeWorkspaceStore};
 use crate::error::WorkspaceError;
 use crate::workspace::{
-    MemoryChunk, MemoryDocument, SearchResult, WorkspaceEntry, reciprocal_rank_fusion,
+    MemoryChunk, MemoryDocument, RankedResult, SearchResult, WorkspaceEntry, reciprocal_rank_fusion,
 };
 use chunk_ops::{
     delete_chunks, get_chunks_without_embeddings, insert_chunk, update_chunk_embedding,
@@ -27,6 +27,58 @@ use fts::{FtsSearchParams, fts_ranked_results};
 use vector_search::{
     VectorIndexQuery, VectorSearchOutcome, VectorSearchQuery, vector_ranked_results,
 };
+
+/// Execute full-text search and log the result count.
+///
+/// Delegates to [`fts_ranked_results`] and emits a `DEBUG` trace with the
+/// pre-fusion limit for observability.
+async fn fetch_fts_results(
+    conn: &libsql::Connection,
+    params: FtsSearchParams<'_>,
+) -> Result<Vec<RankedResult>, WorkspaceError> {
+    let limit = params.limit;
+    let results = fts_ranked_results(conn, params).await?;
+    tracing::debug!(
+        "FTS search returned {} results (pre-fusion limit: {})",
+        results.len(),
+        limit,
+    );
+    Ok(results)
+}
+
+impl LibSqlBackend {
+    /// Execute vector similarity search, falling back to brute-force cosine
+    /// similarity when the fixed-dimension vector index is unavailable.
+    async fn fetch_vector_results(
+        &self,
+        conn: &libsql::Connection,
+        index_query: VectorIndexQuery<'_>,
+        agent_id: Option<Uuid>,
+    ) -> Result<Vec<RankedResult>, WorkspaceError> {
+        let brute_limit = index_query.limit as usize;
+        let user_id = index_query.user_id;
+        let embedding = index_query.embedding;
+        match vector_ranked_results(conn, &index_query).await? {
+            VectorSearchOutcome::Indexed(results) => Ok(results),
+            VectorSearchOutcome::IndexUnavailable => {
+                tracing::info!("Using brute-force vector search (no vector index)");
+                self.brute_force_vector_search(
+                    VectorSearchQuery {
+                        user_id,
+                        agent_id,
+                        embedding,
+                    },
+                    brute_limit,
+                )
+                .await
+                .map_err(|e| {
+                    tracing::warn!("Brute-force vector search failed: {e}");
+                    e
+                })
+            }
+        }
+    }
+}
 
 impl NativeWorkspaceStore for LibSqlBackend {
     async fn get_document_by_path(
@@ -135,7 +187,7 @@ impl NativeWorkspaceStore for LibSqlBackend {
         let pre_limit = config.pre_fusion_limit as i64;
 
         let fts_results = if config.use_fts {
-            let results = fts_ranked_results(
+            fetch_fts_results(
                 &conn,
                 FtsSearchParams {
                     user_id,
@@ -144,48 +196,24 @@ impl NativeWorkspaceStore for LibSqlBackend {
                     limit: pre_limit,
                 },
             )
-            .await?;
-            tracing::debug!(
-                "FTS search returned {} results (pre-fusion limit: {})",
-                results.len(),
-                pre_limit
-            );
-            results
+            .await?
         } else {
             Vec::new()
         };
 
         let vector_results = if config.use_vector {
             if let Some(emb) = embedding {
-                match vector_ranked_results(
+                self.fetch_vector_results(
                     &conn,
-                    &VectorIndexQuery {
+                    VectorIndexQuery {
                         user_id,
                         agent_id: agent_id_str.as_deref(),
                         embedding: emb,
                         limit: pre_limit,
                     },
+                    agent_id,
                 )
                 .await?
-                {
-                    VectorSearchOutcome::Indexed(results) => results,
-                    VectorSearchOutcome::IndexUnavailable => {
-                        tracing::info!("Using brute-force vector search (no vector index)");
-                        self.brute_force_vector_search(
-                            VectorSearchQuery {
-                                user_id,
-                                agent_id,
-                                embedding: emb,
-                            },
-                            pre_limit as usize,
-                        )
-                        .await
-                        .map_err(|e| {
-                            tracing::warn!("Brute-force vector search failed: {e}");
-                            e
-                        })?
-                    }
-                }
             } else {
                 Vec::new()
             }
