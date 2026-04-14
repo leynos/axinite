@@ -303,26 +303,26 @@ impl JobContext {
             self.transitions.pop();
         }
         self.state = previous;
-        self.completed_at = self
-            .transitions
-            .iter()
-            .rev()
-            .find(|transition| {
-                matches!(
-                    transition.to,
-                    JobState::Completed
-                        | JobState::Accepted
-                        | JobState::Failed
-                        | JobState::Cancelled
-                )
-            })
-            .map(|transition| transition.timestamp);
-        if !matches!(
+        self.completed_at = if matches!(
             self.state,
             JobState::Completed | JobState::Accepted | JobState::Failed | JobState::Cancelled
         ) {
-            self.completed_at = None;
-        }
+            self.transitions
+                .iter()
+                .rev()
+                .find(|transition| {
+                    matches!(
+                        transition.to,
+                        JobState::Completed
+                            | JobState::Accepted
+                            | JobState::Failed
+                            | JobState::Cancelled
+                    )
+                })
+                .map(|transition| transition.timestamp)
+        } else {
+            None
+        };
     }
 
     /// Add to the actual cost.
