@@ -1,33 +1,36 @@
 //! Error formatting and text stripping tests.
 
+use insta::assert_snapshot;
+use rstest::rstest;
+
 use super::super::types::strip_internal_tool_call_text;
 
-#[test]
-fn test_strip_internal_tool_call_text_removes_markers() {
-    let input = "[Called tool search({\"query\": \"test\"})]\nHere is the answer.";
+#[rstest]
+#[case::called_marker(
+    "[Called tool search({\"query\": \"test\"})]\nHere is the answer.",
+    "Here is the answer."
+)]
+#[case::returned_marker(
+    "[Tool search returned: some result]\nSummary of findings.",
+    "Summary of findings."
+)]
+#[case::normal_text(
+    "This is a normal response with [brackets] inside.",
+    "This is a normal response with [brackets] inside."
+)]
+fn test_strip_internal_tool_call_text_cases(#[case] input: &str, #[case] expected: &str) {
     let result = strip_internal_tool_call_text(input);
-    assert_eq!(result, "Here is the answer.");
+    assert_eq!(result, expected);
 }
 
 #[test]
-fn test_strip_internal_tool_call_text_removes_returned_markers() {
-    let input = "[Tool search returned: some result]\nSummary of findings.";
-    let result = strip_internal_tool_call_text(input);
-    assert_eq!(result, "Summary of findings.");
-}
-
-#[test]
-fn test_strip_internal_tool_call_text_all_markers_yields_fallback() {
+fn test_strip_internal_tool_call_text_all_markers_yields_fallback_snapshot() {
     let input = "[Called tool search({\"query\": \"test\"})]\n[Tool search returned: error]";
     let result = strip_internal_tool_call_text(input);
-    assert!(result.contains("wasn't able to complete"));
-}
-
-#[test]
-fn test_strip_internal_tool_call_text_preserves_normal_text() {
-    let input = "This is a normal response with [brackets] inside.";
-    let result = strip_internal_tool_call_text(input);
-    assert_eq!(result, input);
+    assert_snapshot!(
+        result,
+        @"I wasn't able to complete that request. Could you try rephrasing or providing more details?"
+    );
 }
 
 #[test]

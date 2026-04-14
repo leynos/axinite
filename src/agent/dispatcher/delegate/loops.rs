@@ -64,13 +64,16 @@ impl<'a> ChatDelegate<'a> {
     /// Run the runnable subset of the batch, choosing inline vs. parallel dispatch.
     async fn dispatch_tool_batch(
         &self,
-        runnable: &[(usize, crate::llm::ToolCall)],
+        preflight: &[(crate::llm::ToolCall, PreflightOutcome)],
+        runnable: &[usize],
         exec_results: &mut [Option<Result<String, Error>>],
     ) {
         if runnable.len() <= 1 {
-            self.run_tool_batch_inline(runnable, exec_results).await;
+            self.run_tool_batch_inline(preflight, runnable, exec_results)
+                .await;
         } else {
-            self.run_tool_batch_parallel(runnable, exec_results).await;
+            self.run_tool_batch_parallel(preflight, runnable, exec_results)
+                .await;
         }
     }
 
@@ -327,7 +330,8 @@ impl<'a> NativeLoopDelegate for ChatDelegate<'a> {
         // === Phase 2: Parallel execution ===
         let mut exec_results: Vec<Option<Result<String, Error>>> =
             (0..preflight.len()).map(|_| None).collect();
-        self.dispatch_tool_batch(&runnable, &mut exec_results).await;
+        self.dispatch_tool_batch(&preflight, &runnable, &mut exec_results)
+            .await;
 
         // === Phase 3: Post-flight (sequential, in original order) ===
         if let Some(instructions) = self

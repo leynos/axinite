@@ -80,7 +80,7 @@ pub(super) enum PreflightOutcome {
 /// Result of grouping tool calls into batches.
 pub(super) struct ToolBatch {
     pub(super) preflight: Vec<(crate::llm::ToolCall, PreflightOutcome)>,
-    pub(super) runnable: Vec<(usize, crate::llm::ToolCall)>,
+    pub(super) runnable: Vec<usize>,
 }
 
 /// Describes the tool call that requires user authorisation, together with

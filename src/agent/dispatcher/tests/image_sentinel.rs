@@ -7,6 +7,8 @@
 
 use std::sync::Arc;
 
+use rstest::{fixture, rstest};
+
 use crate::channels::StatusUpdate;
 use crate::context::JobContext;
 use crate::testing::StubChannel;
@@ -146,14 +148,41 @@ fn sentinel_json(data: Option<&str>, path: Option<&str>) -> String {
     serde_json::Value::Object(sentinel).to_string()
 }
 
-#[tokio::test]
-async fn delegate_emits_image_generated_for_valid_data_url() {
+struct ImageSentinelHarness {
+    agent: Agent,
+    session: Arc<Mutex<Session>>,
+    message: IncomingMessage,
+    statuses: Arc<std::sync::Mutex<Vec<StatusUpdate>>>,
+}
+
+impl ImageSentinelHarness {
+    fn delegate(&self) -> super::super::delegate::ChatDelegate<'_> {
+        make_delegate(&self.agent, Arc::clone(&self.session), &self.message)
+    }
+}
+
+#[fixture]
+async fn image_sentinel_harness() -> ImageSentinelHarness {
     let (channels, statuses) = new_stubbed_channels("test-chan").await;
     let agent = build_agent_with_stub_channel(channels);
     let session = Arc::new(Mutex::new(Session::new("test-user")));
     let message = IncomingMessage::new("test-chan", "test-user", "generate an image");
 
-    let delegate = make_delegate(&agent, session, &message);
+    ImageSentinelHarness {
+        agent,
+        session,
+        message,
+        statuses,
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn delegate_emits_image_generated_for_valid_data_url(
+    #[future] image_sentinel_harness: ImageSentinelHarness,
+) {
+    let harness = image_sentinel_harness.await;
+    let delegate = harness.delegate();
 
     let output = sentinel_json(Some("data:image/png;base64,abc123"), Some("/tmp/image.png"));
 
@@ -166,7 +195,7 @@ async fn delegate_emits_image_generated_for_valid_data_url() {
         "should return true for image_generate with valid sentinel"
     );
 
-    let captured = statuses.lock().expect("statuses lock poisoned");
+    let captured = harness.statuses.lock().expect("statuses lock poisoned");
     assert_eq!(captured.len(), 1, "should have emitted exactly one status");
     match &captured[0] {
         StatusUpdate::ImageGenerated { data_url, path } => {
@@ -177,14 +206,13 @@ async fn delegate_emits_image_generated_for_valid_data_url() {
     }
 }
 
+#[rstest]
 #[tokio::test]
-async fn delegate_skips_broadcast_when_data_url_is_empty() {
-    let (channels, statuses) = new_stubbed_channels("test-chan").await;
-    let agent = build_agent_with_stub_channel(channels);
-    let session = Arc::new(Mutex::new(Session::new("test-user")));
-    let message = IncomingMessage::new("test-chan", "test-user", "generate an image");
-
-    let delegate = make_delegate(&agent, session, &message);
+async fn delegate_skips_broadcast_when_data_url_is_empty(
+    #[future] image_sentinel_harness: ImageSentinelHarness,
+) {
+    let harness = image_sentinel_harness.await;
+    let delegate = harness.delegate();
 
     // Missing "data" field — empty data URL
     let output = sentinel_json(None, Some("/tmp/image.png"));
@@ -198,21 +226,20 @@ async fn delegate_skips_broadcast_when_data_url_is_empty() {
         "should return true (sentinel detected) even when data is empty"
     );
 
-    let captured = statuses.lock().expect("statuses lock poisoned");
+    let captured = harness.statuses.lock().expect("statuses lock poisoned");
     assert!(
         captured.is_empty(),
         "should NOT emit any status when data URL is empty"
     );
 }
 
+#[rstest]
 #[tokio::test]
-async fn delegate_skips_broadcast_when_data_url_is_not_a_data_url() {
-    let (channels, statuses) = new_stubbed_channels("test-chan").await;
-    let agent = build_agent_with_stub_channel(channels);
-    let session = Arc::new(Mutex::new(Session::new("test-user")));
-    let message = IncomingMessage::new("test-chan", "test-user", "generate an image");
-
-    let delegate = make_delegate(&agent, session, &message);
+async fn delegate_skips_broadcast_when_data_url_is_not_a_data_url(
+    #[future] image_sentinel_harness: ImageSentinelHarness,
+) {
+    let harness = image_sentinel_harness.await;
+    let delegate = harness.delegate();
 
     let output = sentinel_json(
         Some("https://example.test/image.png"),
@@ -228,21 +255,20 @@ async fn delegate_skips_broadcast_when_data_url_is_not_a_data_url() {
         "should return true (sentinel detected) even when data URL is invalid"
     );
 
-    let captured = statuses.lock().expect("statuses lock poisoned");
+    let captured = harness.statuses.lock().expect("statuses lock poisoned");
     assert!(
         captured.is_empty(),
         "should NOT emit any status when data URL is not a data URL"
     );
 }
 
+#[rstest]
 #[tokio::test]
-async fn delegate_returns_false_for_non_image_tool() {
-    let (channels, statuses) = new_stubbed_channels("test-chan").await;
-    let agent = build_agent_with_stub_channel(channels);
-    let session = Arc::new(Mutex::new(Session::new("test-user")));
-    let message = IncomingMessage::new("test-chan", "test-user", "do something");
-
-    let delegate = make_delegate(&agent, session, &message);
+async fn delegate_returns_false_for_non_image_tool(
+    #[future] image_sentinel_harness: ImageSentinelHarness,
+) {
+    let harness = image_sentinel_harness.await;
+    let delegate = harness.delegate();
 
     let output = sentinel_json(Some("data:image/png;base64,abc123"), None);
 
@@ -250,7 +276,7 @@ async fn delegate_returns_false_for_non_image_tool() {
 
     assert!(!result, "should return false for non-image tool");
 
-    let captured = statuses.lock().expect("statuses lock poisoned");
+    let captured = harness.statuses.lock().expect("statuses lock poisoned");
     assert!(
         captured.is_empty(),
         "should NOT emit any status for non-image tool"

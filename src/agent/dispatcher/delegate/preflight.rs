@@ -195,7 +195,7 @@ impl<'a> ChatDelegate<'a> {
         Error,
     > {
         let mut preflight: Vec<(crate::llm::ToolCall, PreflightOutcome)> = Vec::new();
-        let mut runnable: Vec<(usize, crate::llm::ToolCall)> = Vec::new();
+        let mut runnable: Vec<usize> = Vec::new();
         let mut approval_needed: Option<(
             usize,
             crate::llm::ToolCall,
@@ -213,8 +213,8 @@ impl<'a> ChatDelegate<'a> {
                 }
                 ToolPreflightResult::Runnable(tc) => {
                     let preflight_idx = preflight.len();
-                    preflight.push((tc.clone(), PreflightOutcome::Runnable));
-                    runnable.push((preflight_idx, tc));
+                    preflight.push((tc, PreflightOutcome::Runnable));
+                    runnable.push(preflight_idx);
                 }
             }
         }
