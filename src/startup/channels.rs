@@ -267,21 +267,9 @@ pub(crate) async fn setup_gateway_channel(
             gw = gw.with_prompt_queue(Arc::clone(ctx.prompt_queue));
 
             if let Some(tx) = ctx.job_event_tx {
-                let mut rx = tx.subscribe();
+                let rx = tx.subscribe();
                 let gw_state = Arc::clone(gw.state());
-                tokio::spawn(async move {
-                    loop {
-                        match rx.recv().await {
-                            Ok((_job_id, event)) => {
-                                gw_state.sse.broadcast(event);
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                                tracing::warn!(skipped, "Gateway job-event stream lagged");
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                        }
-                    }
-                });
+                tokio::spawn(forward_job_events_to_gateway(rx, gw_state));
             }
         }
 
@@ -307,6 +295,26 @@ pub(crate) async fn setup_gateway_channel(
         gateway_url,
         sse_sender,
         routine_engine_slot,
+    }
+}
+
+async fn forward_job_events_to_gateway(
+    mut rx: tokio::sync::broadcast::Receiver<(
+        uuid::Uuid,
+        ironclaw::channels::web::types::SseEvent,
+    )>,
+    gw_state: Arc<ironclaw::channels::web::server::GatewayState>,
+) {
+    loop {
+        match rx.recv().await {
+            Ok((_job_id, event)) => {
+                gw_state.sse.broadcast(event);
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                tracing::warn!(skipped, "Gateway job-event stream lagged");
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+        }
     }
 }
 
