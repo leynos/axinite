@@ -664,9 +664,15 @@ mod tests {
     use super::*;
     mod default_contracts;
 
-    fn assert_preserved_tool_result(message: &ChatMessage, call_id: &str, content: &str) {
+    fn assert_preserved_tool_result(
+        message: &ChatMessage,
+        call_id: &str,
+        tool_name: &str,
+        content: &str,
+    ) {
         assert_eq!(message.role, Role::Tool);
         assert_eq!(message.tool_call_id, Some(call_id.to_string()));
+        assert_eq!(message.name, Some(tool_name.to_string()));
         assert_eq!(message.content, content);
     }
 
@@ -699,8 +705,7 @@ mod tests {
             ChatMessage::tool_result("call_1", "echo", "result"),
         ];
         sanitize_tool_messages(&mut messages);
-        assert_eq!(messages[2].role, Role::Tool);
-        assert_eq!(messages[2].tool_call_id, Some("call_1".to_string()));
+        assert_preserved_tool_result(&messages[2], "call_1", "echo", "result");
     }
 
     #[test]
@@ -775,8 +780,8 @@ mod tests {
         sanitize_tool_messages(&mut messages);
 
         // All tool_results must keep Role::Tool -- none should be rewritten.
-        assert_preserved_tool_result(&messages[2], "call_sel_1", "found 3 results");
-        assert_preserved_tool_result(&messages[3], "call_sel_2", "200 OK");
+        assert_preserved_tool_result(&messages[2], "call_sel_1", "search", "found 3 results");
+        assert_preserved_tool_result(&messages[3], "call_sel_2", "http", "200 OK");
     }
 
     /// Regression: the OLD buggy worker code pushed tool_result messages
