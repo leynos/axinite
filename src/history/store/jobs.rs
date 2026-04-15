@@ -429,8 +429,7 @@ mod tests {
             return Ok(());
         };
         let store = Store::from_pool(backend.pool());
-        let (job_id, saved_ctx) =
-            prepare_job_for_rollback(&backend, &store, scenario).await?;
+        let (job_id, saved_ctx) = prepare_job_for_rollback(&backend, &store, scenario).await?;
 
         let result = store
             .persist_terminal_result_and_status(TerminalJobPersistence {
