@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: DRAFT
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -417,14 +417,21 @@ command before the final commit.
 
 ## Progress
 
-- [ ] 2026-04-14: Draft ExecPlan written and indexed in `docs/contents.md`.
-- [ ] Confirm non-hosted first-call capture seam and exact test location.
-- [ ] Confirm hosted first-call capture seam and exact test location.
-- [ ] Add non-hosted unit and behavioural regression coverage.
-- [ ] Add hosted first-call forwarding regression coverage.
-- [ ] Evaluate `rstest-bdd` proportionality and record the decision.
-- [ ] Synchronize roadmap, RFC, user-facing, and internal documentation.
-- [ ] Run validation gates, collect evidence, and commit.
+- [x] 2026-04-14: Draft ExecPlan written and indexed in `docs/contents.md`.
+- [x] 2026-04-15T17:57:00+02:00: Confirm non-hosted first-call capture seam
+  and exact test location.
+- [x] 2026-04-15T17:57:00+02:00: Confirm hosted first-call capture seam and
+  exact test location.
+- [x] 2026-04-15T18:10:00+02:00: Add non-hosted unit and behavioural
+  regression coverage.
+- [x] 2026-04-15T18:10:00+02:00: Add hosted first-call forwarding regression
+  coverage.
+- [x] 2026-04-15T18:10:00+02:00: Evaluate `rstest-bdd` proportionality and
+  record the decision.
+- [x] 2026-04-15T18:15:00+02:00: Synchronize roadmap, RFC, user-facing, and
+  internal documentation.
+- [x] 2026-04-15T18:19:14+02:00: Run validation gates, collect evidence, and
+  prepare the commit.
 
 ## Surprises & Discoveries
 
@@ -438,6 +445,30 @@ command before the final commit.
 - 2026-04-14: `docs/roadmap.md` marks `1.2.2` complete, but the corresponding
   ExecPlan file still says `IN PROGRESS`. Treat adjacent documentation status
   carefully when closing `1.2.4`.
+- 2026-04-15T17:57:00+02:00: `TraceLlm` currently captures only
+  `ToolCompletionRequest.messages`, not the `tools` vector. A truthful
+  first-call assertion therefore requires either widening that capture or
+  using a narrow purpose-built capturing LLM in the behavioural test.
+- 2026-04-15T17:57:00+02:00: The hosted path already has an exact first-call
+  observation seam: `WorkerRuntime` uses `ProxyLlmProvider`, which forwards the
+  worker's first `ToolCompletionRequest` into
+  `WorkerHttpClient::llm_complete_with_tools()` and the shared
+  `ProxyToolCompletionRequest` transport type.
+- 2026-04-15T17:57:00+02:00: The repository currently has no `rstest-bdd`
+  scenarios under `src/` or `tests/`, so adding one here would introduce a new
+  feature-file and step-definition family rather than reusing an existing BDD
+  harness.
+- 2026-04-15T18:10:00+02:00: The smallest truthful non-hosted seam was a
+  purpose-built capturing LLM wired through `TestRigBuilder::with_llm(...)`.
+  That still exercises the real agent loop, real `Reasoning::respond_with_tools`
+  path, and real GitHub WASM registration helper while recording the first
+  `ToolCompletionRequest.tools` payload directly.
+- 2026-04-15T18:10:00+02:00: The smallest truthful hosted seam was an Axum
+  test server that served the remote-tool catalogue and captured the worker's
+  first proxied `POST /worker/{job_id}/llm/complete_with_tools` payload.
+- 2026-04-15T18:15:00+02:00: `FEATURE_PARITY.md` was reviewed during
+  documentation sync. No parity row described this WASM-schema contract
+  precisely enough to require an update.
 
 ## Decision Log
 
@@ -451,21 +482,76 @@ command before the final commit.
   end-to-end request-capture test, not merely a reasoning-context assertion.
   Rationale: RFC 0002 explicitly requires proof that the first request includes
   the schema, and the trace rig can observe that request directly.
+- 2026-04-15T17:57:00+02:00: Implement the non-hosted first-call proof with a
+  narrow capturing LLM provider wired through `TestRigBuilder::with_llm(...)`
+  while still exercising the real agent loop and real GitHub WASM registration
+  helper.
+  Rationale: this keeps the behavioural test end to end, avoids widening
+  shared trace support beyond what this slice needs, and records the actual
+  `ToolCompletionRequest.tools` payload that RFC 0002 cares about.
 
 - 2026-04-14: Prefer a narrow hosted request-capture seam around
   `llm_complete_with_tools` instead of inventing a new hosted test framework.
   Rationale: this keeps the existing worker-orchestrator transport as the only
   contract boundary and follows the repository's dependency-injection testing
   guidance.
+- 2026-04-15T17:57:00+02:00: Drive the hosted proof through
+  `Reasoning::respond_with_tools(...)` plus `WorkerRuntime`'s existing proxied
+  LLM field, backed by an Axum test server that captures the first
+  `ProxyToolCompletionRequest`.
+  Rationale: this observes the real first hosted request without introducing a
+  second transport seam or reaching directly into intermediate worker state.
 
 - 2026-04-14: `rstest-bdd` remains conditional rather than mandatory for this
   slice.
   Rationale: the repository already has strong `rstest` and trace-backed
   harnesses, and a BDD scenario is only justified if it adds new observable
   value without disproportionate scaffolding.
+- 2026-04-15T17:57:00+02:00: Do not add `rstest-bdd` coverage for this slice.
+  Rationale: there is no existing BDD harness to extend, the contract is more
+  directly observable through `rstest`-driven captured request payloads, and
+  adding feature files plus step definitions would exceed the proportionality
+  bar set in Milestone 5.
+- 2026-04-15T18:10:00+02:00: Keep the non-hosted first-call capture local to
+  the new behavioural test instead of widening shared trace-support APIs.
+  Rationale: only one roadmap item currently needs direct inspection of
+  `ToolCompletionRequest.tools`, and a local capturing provider preserved a
+  smaller blast radius than changing shared support used by many unrelated
+  trace tests.
 
 ## Outcomes & Retrospective
 
-Not yet implemented. Update this section after delivery with the final test
-matrix, documentation changes, validation evidence, and any lessons about
-capturing first-call tool contracts across in-process and hosted flows.
+Delivered the roadmap item with one new non-hosted end-to-end behavioural test,
+one new hosted first-call forwarding test, and one transport round-trip test
+for the shared proxied tool-completion request. The non-hosted proof uses the
+real agent loop plus the real GitHub WASM registration helper and records the
+first `ToolCompletionRequest.tools` payload before any tool executes. The
+hosted proof uses the real worker proxy LLM path and records the first
+`ProxyToolCompletionRequest` sent across the worker-orchestrator boundary.
+
+Validation evidence:
+
+- `cargo test first_llm_request_includes_advertised_schema_for_active_wasm_tool`
+  passed and wrote `/tmp/test-axinite-feat-plan-wasm-schema-e2e-first-call.out`.
+- `cargo test hosted_worker_first_llm_request_forwards_wasm_schema_on_first_call`
+  passed and wrote
+  `/tmp/test-axinite-feat-plan-wasm-schema-e2e-hosted-first-call.out`.
+- `cargo test worker_tool_completion_request_round_trips_through_shared_types`
+  passed and wrote
+  `/tmp/test-axinite-feat-plan-wasm-schema-e2e-transport-parity.out`.
+- `cargo test malformed_first_call_returns_fallback_guidance` passed and wrote
+  `/tmp/test-axinite-feat-plan-wasm-schema-e2e-fallback-guidance.out`.
+- `make all` passed and wrote
+  `/tmp/make-all-axinite-feat-plan-wasm-schema-e2e.out`.
+- `bunx markdownlint-cli2 ...` passed and wrote
+  `/tmp/markdownlint-axinite-feat-plan-wasm-schema-e2e.out`.
+- `git diff --check` passed and wrote
+  `/tmp/diff-check-axinite-feat-plan-wasm-schema-e2e.out`.
+
+Key lesson: the most reliable way to prove "first call already has the schema"
+is to capture the actual tool-capable request object at the LLM boundary, not
+to infer behaviour from registry state or reasoning-context assembly alone. In
+this repository that meant using two different narrow seams: a custom
+capturing provider for the in-process agent loop and an Axum capture stub for
+the hosted worker boundary. That kept the change proportional while still
+producing end-to-end evidence.

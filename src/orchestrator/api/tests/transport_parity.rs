@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use super::super::remote_tools::hosted_remote_tool_catalog;
 use super::fixtures::remote_tool_mocks::complex_tool_stub;
+use crate::llm::ChatMessage;
 use crate::tools::ToolRegistry;
 
 #[tokio::test]
@@ -71,4 +72,43 @@ async fn orchestrator_execution_response_round_trips_through_worker_shared_types
         deserialized, execution_response,
         "execution response must round-trip without field loss"
     );
+}
+
+#[tokio::test]
+async fn worker_tool_completion_request_round_trips_through_shared_types() {
+    let registry = Arc::new(ToolRegistry::new());
+    registry.register(Arc::new(complex_tool_stub())).await;
+    let (tools, _instructions, _version) = hosted_remote_tool_catalog(&registry).await;
+
+    let completion_request = crate::worker::api::ProxyToolCompletionRequest {
+        messages: vec![
+            ChatMessage::system("Inspect the available tools."),
+            ChatMessage::user("What can you do with the remote WASM tool?"),
+        ],
+        tools,
+        model: Some("test-model".to_string()),
+        max_tokens: Some(512),
+        temperature: Some(0.1),
+        tool_choice: Some("auto".to_string()),
+    };
+
+    let serialized = serde_json::to_string(&completion_request)
+        .expect("serialize worker-built tool completion request");
+    let deserialized: crate::worker::api::ProxyToolCompletionRequest =
+        serde_json::from_str(&serialized)
+            .expect("worker tool request must deserialize into shared type");
+
+    assert_eq!(
+        deserialized.messages.len(),
+        completion_request.messages.len(),
+        "tool completion request must preserve message count"
+    );
+    assert_eq!(
+        deserialized.tools, completion_request.tools,
+        "tool completion request must preserve the full advertised tool definitions"
+    );
+    assert_eq!(deserialized.model, completion_request.model);
+    assert_eq!(deserialized.max_tokens, completion_request.max_tokens);
+    assert_eq!(deserialized.temperature, completion_request.temperature);
+    assert_eq!(deserialized.tool_choice, completion_request.tool_choice);
 }

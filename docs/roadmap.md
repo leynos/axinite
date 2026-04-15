@@ -132,7 +132,7 @@ by tightening the contract around active WASM tools.
   - Success: wrapper comments and behaviour describe retry hints as supplemental
     help rather than the primary contract, while parse and validation failures
     still surface actionable recovery guidance.
-- [ ] 1.2.4. Add end-to-end tests for first-call WASM schema exposure. Requires
+- [x] 1.2.4. Add end-to-end tests for first-call WASM schema exposure. Requires
       1.2.2 and 1.2.3.
   - See [RFC 0002 §Goals](./rfcs/0002-expose-wasm-tool-definitions.md#goals) and
     [RFC 0002 §Migration Plan](./rfcs/0002-expose-wasm-tool-definitions.md#migration-plan).
