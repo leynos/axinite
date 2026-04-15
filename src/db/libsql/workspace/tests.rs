@@ -1,5 +1,7 @@
 //! Tests for the libSQL workspace-store module split.
 
+use libsql::params;
+
 use super::super::LibSqlBackend;
 use super::vector_search::{
     VectorIndexQuery, VectorSearchOutcome, VectorSearchQuery, deserialize_embedding,
@@ -57,6 +59,133 @@ fn test_deserialize_embedding_negative_values() {
     assert!((result[2] - 2.75).abs() < 0.001);
 }
 
+#[tokio::test]
+async fn get_chunks_without_embeddings_skips_invalid_chunk_id_uuid() {
+    let backend = LibSqlBackend::new_memory()
+        .await
+        .expect("failed to create in-memory backend");
+    backend
+        .run_migrations()
+        .await
+        .expect("failed to run migrations");
+
+    let document = backend
+        .get_or_create_document_by_path("default", None, "notes/bad-chunk-uuid.md")
+        .await
+        .expect("failed to create document");
+
+    let conn = backend.connect().await.expect("failed to connect");
+    conn.execute(
+        "INSERT INTO memory_chunks (id, document_id, chunk_index, content, created_at) \
+         VALUES ('not-a-uuid', ?1, 0, 'bad chunk', datetime('now'))",
+        params![document.id.to_string()],
+    )
+    .await
+    .expect("failed to insert bad-chunk-id row");
+
+    backend
+        .insert_chunk(InsertChunkParams {
+            document_id: document.id,
+            chunk_index: 1,
+            content: "valid chunk",
+            embedding: None,
+        })
+        .await
+        .expect("failed to insert valid chunk");
+
+    let chunks = backend
+        .get_chunks_without_embeddings("default", None, 10)
+        .await
+        .expect("get_chunks_without_embeddings must not fail on invalid UUIDs");
+
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0].content, "valid chunk");
+}
+
+#[tokio::test]
+async fn get_chunks_without_embeddings_errors_on_negative_chunk_index() {
+    let backend = LibSqlBackend::new_memory()
+        .await
+        .expect("failed to create in-memory backend");
+    backend
+        .run_migrations()
+        .await
+        .expect("failed to run migrations");
+
+    let document = backend
+        .get_or_create_document_by_path("default", None, "notes/neg-idx.md")
+        .await
+        .expect("failed to create document");
+
+    let conn = backend.connect().await.expect("failed to connect");
+    conn.execute(
+        "INSERT INTO memory_chunks (id, document_id, chunk_index, content, created_at) \
+         VALUES (?1, ?2, -1, 'negative index', datetime('now'))",
+        params![uuid::Uuid::new_v4().to_string(), document.id.to_string()],
+    )
+    .await
+    .expect("failed to insert negative-index row");
+
+    let result = backend
+        .get_chunks_without_embeddings("default", None, 10)
+        .await;
+
+    assert!(
+        result.is_err(),
+        "get_chunks_without_embeddings must return Err for negative chunk_index"
+    );
+}
+
+#[tokio::test]
+async fn get_document_by_path_returns_not_found_for_missing_document() {
+    let backend = LibSqlBackend::new_memory()
+        .await
+        .expect("failed to create in-memory backend");
+    backend
+        .run_migrations()
+        .await
+        .expect("failed to run migrations");
+
+    let result = backend
+        .get_document_by_path("default", None, "does/not/exist.md")
+        .await;
+
+    assert!(
+        matches!(
+            result,
+            Err(crate::error::WorkspaceError::DocumentNotFound { .. })
+        ),
+        "expected DocumentNotFound, got {:?}",
+        result
+    );
+}
+
+#[tokio::test]
+async fn get_document_by_id_returns_not_found_for_unknown_id() {
+    let backend = LibSqlBackend::new_memory()
+        .await
+        .expect("failed to create in-memory backend");
+    backend
+        .run_migrations()
+        .await
+        .expect("failed to run migrations");
+
+    let result = backend.get_document_by_id(uuid::Uuid::new_v4()).await;
+
+    assert!(
+        matches!(
+            result,
+            Err(crate::error::WorkspaceError::DocumentNotFound { .. })
+        ),
+        "expected DocumentNotFound, got {:?}",
+        result
+    );
+}
+
+// This test also validates the `collect_vector_index_rows` →
+// IndexUnavailable path: the pre-condition assertion confirms
+// vector_ranked_results returns IndexUnavailable before the brute-force
+// fallback assertions begin.
 #[tokio::test]
 async fn hybrid_search_uses_brute_force_when_vector_index_is_unavailable() {
     let backend = LibSqlBackend::new_memory()
