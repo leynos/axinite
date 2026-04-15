@@ -8,6 +8,7 @@ use clap::Parser;
 use ironclaw::{
     agent::{Agent, AgentDeps},
     app::{AppBuilder, AppBuilderFlags},
+    boot_screen::BootData,
     channels::{
         ChannelManager, GatewayChannel, HttpChannel, ReplChannel, SignalChannel, WebhookServer,
         WebhookServerConfig,
@@ -913,55 +914,11 @@ fn spawn_sighup_handler(
     });
 }
 
-/// Runtime-computed values used to populate the startup boot screen.
-struct BootData<'a> {
-    llm_model: String,
-    cheap_model: Option<String>,
-    tool_count: usize,
-    gateway_url: Option<String>,
-    docker_status: ironclaw::sandbox::DockerStatus,
-    channel_names: Vec<String>,
-    active_tunnel: &'a Option<Box<dyn ironclaw::tunnel::Tunnel>>,
-}
-
 fn print_startup_info(config: &Config, cli: &Cli, data: &BootData<'_>) {
     if !config.channels.cli.enabled || cli.message.is_some() {
         return;
     }
-    let boot_info = ironclaw::boot_screen::BootInfo {
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        agent_name: config.agent.name.clone(),
-        llm_backend: config.llm.backend.to_string(),
-        llm_model: data.llm_model.clone(),
-        cheap_model: data.cheap_model.clone(),
-        db_backend: if cli.no_db {
-            "none".to_string()
-        } else {
-            config.database.backend.to_string()
-        },
-        db_connected: !cli.no_db,
-        tool_count: data.tool_count,
-        gateway_url: data.gateway_url.clone(),
-        embeddings_enabled: config.embeddings.enabled,
-        embeddings_provider: config
-            .embeddings
-            .enabled
-            .then(|| config.embeddings.provider.clone()),
-        heartbeat_enabled: config.heartbeat.enabled,
-        heartbeat_interval_secs: config.heartbeat.interval_secs,
-        sandbox_enabled: config.sandbox.enabled,
-        docker_status: data.docker_status,
-        claude_code_enabled: config.claude_code.enabled,
-        routines_enabled: config.routines.enabled,
-        skills_enabled: config.skills.enabled,
-        channels: data.channel_names.clone(),
-        tunnel_url: data
-            .active_tunnel
-            .as_ref()
-            .and_then(|t| t.public_url())
-            .or_else(|| config.tunnel.public_url.clone()),
-        tunnel_provider: data.active_tunnel.as_ref().map(|t| t.name().to_string()),
-    };
+    let boot_info = ironclaw::boot_screen::BootInfo::from_config_and_data(config, cli, data);
     ironclaw::boot_screen::print_boot_screen(&boot_info);
 }
 
@@ -1142,13 +1099,11 @@ struct GatewaySetup {
 #[cfg(test)]
 mod tests {
     use ironclaw::{
-        boot_screen::{BootInfo, render_boot_screen},
+        boot_screen::{BootData, BootInfo, render_boot_screen},
         config::Config,
         sandbox::DockerStatus,
         tunnel::{NativeTunnel, Tunnel},
     };
-
-    use super::BootData;
 
     struct TestTunnel {
         public_url: Option<String>,
@@ -1241,40 +1196,7 @@ mod tests {
             active_tunnel: &active_tunnel,
         };
 
-        let boot_info = BootInfo {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            agent_name: config.agent.name.clone(),
-            llm_backend: config.llm.backend.to_string(),
-            llm_model: data.llm_model.clone(),
-            cheap_model: data.cheap_model.clone(),
-            db_backend: if cli.no_db {
-                "none".to_string()
-            } else {
-                config.database.backend.to_string()
-            },
-            db_connected: !cli.no_db,
-            tool_count: data.tool_count,
-            gateway_url: data.gateway_url.clone(),
-            embeddings_enabled: config.embeddings.enabled,
-            embeddings_provider: config
-                .embeddings
-                .enabled
-                .then(|| config.embeddings.provider.clone()),
-            heartbeat_enabled: config.heartbeat.enabled,
-            heartbeat_interval_secs: config.heartbeat.interval_secs,
-            sandbox_enabled: config.sandbox.enabled,
-            docker_status: data.docker_status,
-            claude_code_enabled: config.claude_code.enabled,
-            routines_enabled: config.routines.enabled,
-            skills_enabled: config.skills.enabled,
-            channels: data.channel_names.clone(),
-            tunnel_url: data
-                .active_tunnel
-                .as_ref()
-                .and_then(|t| t.public_url())
-                .or_else(|| config.tunnel.public_url.clone()),
-            tunnel_provider: data.active_tunnel.as_ref().map(|t| t.name().to_string()),
-        };
+        let boot_info = BootInfo::from_config_and_data(&config, &cli, &data);
 
         let output = render_boot_screen(&boot_info);
         assert_eq!(output, startup_snapshot_body());

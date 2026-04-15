@@ -4,7 +4,21 @@
 //! state: model, database, tool count, enabled features, active channels,
 //! and the gateway URL.
 
+use crate::cli::Cli;
+use crate::config::Config;
 use crate::sandbox::detect::DockerStatus;
+use crate::tunnel::Tunnel;
+
+/// Runtime-computed values used to populate the startup boot screen.
+pub struct BootData<'a> {
+    pub llm_model: String,
+    pub cheap_model: Option<String>,
+    pub tool_count: usize,
+    pub gateway_url: Option<String>,
+    pub docker_status: crate::sandbox::detect::DockerStatus,
+    pub channel_names: Vec<String>,
+    pub active_tunnel: &'a Option<Box<dyn Tunnel>>,
+}
 
 /// All displayable fields for the boot screen.
 pub struct BootInfo {
@@ -31,6 +45,46 @@ pub struct BootInfo {
     pub tunnel_url: Option<String>,
     /// Provider name for the managed tunnel (e.g., "ngrok").
     pub tunnel_provider: Option<String>,
+}
+
+impl BootInfo {
+    /// Build a boot-screen view model from config and runtime startup data.
+    pub fn from_config_and_data(config: &Config, cli: &Cli, data: &BootData<'_>) -> Self {
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            agent_name: config.agent.name.clone(),
+            llm_backend: config.llm.backend.to_string(),
+            llm_model: data.llm_model.clone(),
+            cheap_model: data.cheap_model.clone(),
+            db_backend: if cli.no_db {
+                "none".to_string()
+            } else {
+                config.database.backend.to_string()
+            },
+            db_connected: !cli.no_db,
+            tool_count: data.tool_count,
+            gateway_url: data.gateway_url.clone(),
+            embeddings_enabled: config.embeddings.enabled,
+            embeddings_provider: config
+                .embeddings
+                .enabled
+                .then(|| config.embeddings.provider.clone()),
+            heartbeat_enabled: config.heartbeat.enabled,
+            heartbeat_interval_secs: config.heartbeat.interval_secs,
+            sandbox_enabled: config.sandbox.enabled,
+            docker_status: data.docker_status,
+            claude_code_enabled: config.claude_code.enabled,
+            routines_enabled: config.routines.enabled,
+            skills_enabled: config.skills.enabled,
+            channels: data.channel_names.clone(),
+            tunnel_url: data
+                .active_tunnel
+                .as_ref()
+                .and_then(|t| t.public_url())
+                .or_else(|| config.tunnel.public_url.clone()),
+            tunnel_provider: data.active_tunnel.as_ref().map(|t| t.name().to_string()),
+        }
+    }
 }
 
 struct Palette<'a> {
