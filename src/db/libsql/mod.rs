@@ -21,6 +21,22 @@ mod settings;
 mod tool_failures;
 mod workspace;
 
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use crate::db::NativeDatabase;
+use crate::error::DatabaseError;
+use libsql::{Connection, Database as RawLibSqlDatabase};
+use uuid::Uuid;
+
+use crate::db::libsql_migrations;
+pub(crate) use helpers::{
+    fmt_opt_ts, fmt_ts, get_i64, get_json, get_opt_bool, get_opt_text, get_opt_ts, get_text,
+    get_ts, opt_text, opt_text_owned, parse_job_state,
+};
+pub(crate) use row_conversion::row_to_memory_document;
+
 /// Shared libSQL database handle.
 ///
 /// Wraps the underlying [`RawLibSqlDatabase`] plus optional temp-file metadata
@@ -38,11 +54,61 @@ pub struct LibSqlDatabase {
     /// [`Drop`].
     temp_path: Option<PathBuf>,
 }
-pub(crate) use helpers::{
-    fmt_opt_ts, fmt_ts, get_i64, get_json, get_opt_bool, get_opt_text, get_opt_ts, get_text,
-    get_ts, opt_text, opt_text_owned, parse_job_state,
-};
-pub(crate) use row_conversion::row_to_memory_document;
+
+impl LibSqlDatabase {
+    fn new(db: RawLibSqlDatabase, temp_path: Option<PathBuf>) -> Self {
+        Self { db, temp_path }
+    }
+
+    #[cfg(test)]
+    pub fn temp_path(&self) -> Option<PathBuf> {
+        self.temp_path.clone()
+    }
+
+    /// Create a fresh libSQL connection from the shared database handle.
+    ///
+    /// Applies the same retry and `busy_timeout` setup used by
+    /// [`LibSqlBackend::connect`] so all shared-handle consumers behave
+    /// consistently.
+    pub async fn connect(&self) -> Result<Connection, DatabaseError> {
+        let mut last_err = None;
+        for attempt in 0..3u32 {
+            match self.db.connect() {
+                Ok(conn) => {
+                    conn.query("PRAGMA busy_timeout = 5000", ())
+                        .await
+                        .map_err(|e| {
+                            DatabaseError::Pool(format!("Failed to set busy_timeout: {}", e))
+                        })?;
+                    return Ok(conn);
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    if attempt < 2 {
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            50 * 2u64.pow(attempt),
+                        ))
+                        .await;
+                    }
+                }
+            }
+        }
+        Err(DatabaseError::Pool(format!(
+            "Failed to create connection after 3 attempts: {}",
+            last_err.map(|e| e.to_string()).unwrap_or_default()
+        )))
+    }
+}
+
+impl Drop for LibSqlDatabase {
+    fn drop(&mut self) {
+        if let Some(path) = &self.temp_path {
+            let _ = std::fs::remove_file(path);
+            let _ = std::fs::remove_file(path.with_extension("db-wal"));
+            let _ = std::fs::remove_file(path.with_extension("db-shm"));
+        }
+    }
+}
 
 /// libSQL/Turso backend implementation of [`NativeDatabase`].
 ///
@@ -62,6 +128,7 @@ impl LibSqlBackend {
                 DatabaseError::Pool(format!("Failed to create database directory: {}", e))
             })?;
         }
+
         Ok(())
     }
 
@@ -144,24 +211,8 @@ impl LibSqlBackend {
     pub async fn connect(&self) -> Result<Connection, DatabaseError> {
         self.db.connect().await
     }
+}
 
-    /// Wraps a built `libsql::Database` in `Self` with no temp-file path.
-    fn from_db(db: libsql::Database) -> Self {
-        Self {
-            db: Arc::new(db),
-            temp_path: None,
-        }
-    }
-}
-impl Drop for LibSqlDatabase {
-    fn drop(&mut self) {
-        if let Some(path) = &self.temp_path {
-            let _ = std::fs::remove_file(path);
-            let _ = std::fs::remove_file(path.with_extension("db-wal"));
-            let _ = std::fs::remove_file(path.with_extension("db-shm"));
-        }
-    }
-}
 impl NativeDatabase for LibSqlBackend {
     async fn persist_terminal_result_and_status(
         &self,
@@ -433,60 +484,5 @@ mod tests {
                 result.err()
             );
         }
-    }
-}
-
-impl Drop for LibSqlDatabase {
-    fn drop(&mut self) {
-        if let Some(path) = &self.temp_path {
-            let _ = std::fs::remove_file(path);
-            let _ = std::fs::remove_file(path.with_extension("db-wal"));
-            let _ = std::fs::remove_file(path.with_extension("db-shm"));
-        }
-    }
-}
-
-impl LibSqlDatabase {
-    fn new(db: RawLibSqlDatabase, temp_path: Option<PathBuf>) -> Self {
-        Self { db, temp_path }
-    }
-
-    #[cfg(test)]
-    pub fn temp_path(&self) -> Option<PathBuf> {
-        self.temp_path.clone()
-    }
-
-    /// Create a fresh libSQL connection from the shared database handle.
-    ///
-    /// Applies the same retry and `busy_timeout` setup used by
-    /// [`LibSqlBackend::connect`] so all shared-handle consumers behave
-    /// consistently.
-    pub async fn connect(&self) -> Result<Connection, DatabaseError> {
-        let mut last_err = None;
-        for attempt in 0..3u32 {
-            match self.db.connect() {
-                Ok(conn) => {
-                    conn.query("PRAGMA busy_timeout = 5000", ())
-                        .await
-                        .map_err(|e| {
-                            DatabaseError::Pool(format!("Failed to set busy_timeout: {}", e))
-                        })?;
-                    return Ok(conn);
-                }
-                Err(e) => {
-                    last_err = Some(e);
-                    if attempt < 2 {
-                        tokio::time::sleep(std::time::Duration::from_millis(
-                            50 * 2u64.pow(attempt),
-                        ))
-                        .await;
-                    }
-                }
-            }
-        }
-        Err(DatabaseError::Pool(format!(
-            "Failed to create connection after 3 attempts: {}",
-            last_err.map(|e| e.to_string()).unwrap_or_default()
-        )))
     }
 }
