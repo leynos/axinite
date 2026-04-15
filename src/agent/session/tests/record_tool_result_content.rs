@@ -1,4 +1,4 @@
-//! Tests for `Turn::record_tool_result_content` parsing behaviour.
+//! Tests for `Turn::record_tool_result_content` JSON-aware parsing behaviour.
 
 use rstest::rstest;
 
