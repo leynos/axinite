@@ -8,10 +8,19 @@ use crate::channels::StatusUpdate;
 use crate::error::Error;
 use crate::llm::{ChatMessage, ReasoningContext};
 
+use super::execution::is_auth_barrier_tool;
 use super::recording::record_tool_outcome;
 
 /// Parsed auth result fields for emitting StatusUpdate::AuthRequired.
 pub(crate) struct ParsedAuthData {
+    pub(crate) auth_url: Option<String>,
+    pub(crate) setup_url: Option<String>,
+}
+
+/// Parsed auth result fields for emitting StatusUpdate::AuthRequired.
+pub(crate) struct AuthBarrierData {
+    pub(crate) extension_name: String,
+    pub(crate) instructions: String,
     pub(crate) auth_url: Option<String>,
     pub(crate) setup_url: Option<String>,
 }
@@ -21,35 +30,12 @@ pub(super) struct ToolCtx<'a> {
     pub(super) tc: &'a crate::llm::ToolCall,
 }
 
-/// Extract auth_url and setup_url from a tool_auth result JSON string.
-pub(crate) fn parse_auth_result(result: &Result<String, Error>) -> ParsedAuthData {
-    let parsed = result
-        .as_ref()
-        .ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
-    ParsedAuthData {
-        auth_url: parsed
-            .as_ref()
-            .and_then(|v| v.get("auth_url"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
-        setup_url: parsed
-            .as_ref()
-            .and_then(|v| v.get("setup_url"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
-    }
-}
-
-/// Check if a tool_auth result indicates the extension is awaiting a token.
-///
-/// Returns `Some((extension_name, instructions))` if the tool result contains
-/// `awaiting_token: true`, meaning the thread should enter auth mode.
-pub(crate) fn check_auth_required(
+/// Parse auth-barrier details from a tool_auth/tool_activate result.
+pub(crate) fn parse_auth_barrier(
     tool_name: &str,
     result: &Result<String, Error>,
-) -> Option<(String, String)> {
-    if tool_name != "tool_auth" && tool_name != "tool_activate" {
+) -> Option<AuthBarrierData> {
+    if !is_auth_barrier_tool(tool_name) {
         return None;
     }
     let output = result.as_ref().ok()?;
@@ -57,13 +43,71 @@ pub(crate) fn check_auth_required(
     if parsed.get("awaiting_token") != Some(&serde_json::Value::Bool(true)) {
         return None;
     }
-    let name = parsed.get("name")?.as_str()?.to_string();
+    let extension_name = parsed.get("name")?.as_str()?.to_string();
     let instructions = parsed
         .get("instructions")
         .and_then(|v| v.as_str())
         .unwrap_or("Please provide your API token/key.")
         .to_string();
-    Some((name, instructions))
+    let auth_url = parsed
+        .get("auth_url")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let setup_url = parsed
+        .get("setup_url")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    Some(AuthBarrierData {
+        extension_name,
+        instructions,
+        auth_url,
+        setup_url,
+    })
+}
+
+pub(crate) fn parse_auth_result(result: &Result<String, Error>) -> ParsedAuthData {
+    let auth_barrier = parse_auth_barrier("tool_auth", result);
+    ParsedAuthData {
+        auth_url: auth_barrier.as_ref().and_then(|data| data.auth_url.clone()),
+        setup_url: auth_barrier.and_then(|data| data.setup_url),
+    }
+}
+
+pub(crate) fn check_auth_required(
+    tool_name: &str,
+    result: &Result<String, Error>,
+) -> Option<(String, String)> {
+    let auth_barrier = parse_auth_barrier(tool_name, result)?;
+    Some((auth_barrier.extension_name, auth_barrier.instructions))
+}
+
+async fn handle_auth_barrier(
+    delegate: &ChatDelegate<'_>,
+    tc: &crate::llm::ToolCall,
+    tool_result: &Result<String, Error>,
+) -> Option<String> {
+    let auth_barrier = parse_auth_barrier(&tc.name, tool_result)?;
+    {
+        let mut sess = delegate.session.lock().await;
+        if let Some(thread) = sess.threads.get_mut(&delegate.thread_id) {
+            thread.enter_auth_mode(auth_barrier.extension_name.clone());
+        }
+    }
+    let _ = delegate
+        .agent
+        .channels
+        .send_status(
+            &delegate.message.channel,
+            StatusUpdate::AuthRequired {
+                extension_name: auth_barrier.extension_name,
+                instructions: Some(auth_barrier.instructions.clone()),
+                auth_url: auth_barrier.auth_url,
+                setup_url: auth_barrier.setup_url,
+            },
+            &delegate.message.metadata,
+        )
+        .await;
+    Some(auth_barrier.instructions)
 }
 
 /// Phase 3: iterate preflight outcomes in original order, dispatching each
@@ -198,34 +242,9 @@ pub(super) async fn process_runnable_tool(
             .await;
     }
 
-    let auth_instructions =
-        if let Some((ext_name, instructions)) = check_auth_required(&tc.name, &tool_result) {
-            let auth_data = parse_auth_result(&tool_result);
-            {
-                let mut sess = delegate.session.lock().await;
-                if let Some(thread) = sess.threads.get_mut(&delegate.thread_id) {
-                    thread.enter_auth_mode(ext_name.clone());
-                }
-            }
-            let _ = delegate
-                .agent
-                .channels
-                .send_status(
-                    &delegate.message.channel,
-                    StatusUpdate::AuthRequired {
-                        extension_name: ext_name,
-                        instructions: Some(instructions.clone()),
-                        auth_url: auth_data.auth_url,
-                        setup_url: auth_data.setup_url,
-                    },
-                    &delegate.message.metadata,
-                )
-                .await;
-            Some(instructions)
-        } else {
-            None
-        };
+    let auth_instructions = handle_auth_barrier(delegate, tc, &tool_result).await;
 
+    // Stash raw `output` by `tc.id` for auditing/debugging while the LLM sees a separately sanitised form.
     delegate
         .job_ctx
         .tool_output_stash

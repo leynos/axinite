@@ -52,7 +52,7 @@ pub(super) async fn run_phase2(
     exec_results
 }
 
-fn is_auth_barrier_tool(tool_name: &str) -> bool {
+pub(super) fn is_auth_barrier_tool(tool_name: &str) -> bool {
     matches!(tool_name, "tool_auth" | "tool_activate")
 }
 
