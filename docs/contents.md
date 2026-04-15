@@ -41,6 +41,9 @@
   adoption.
 - [Chat model](chat-model.md) traces the chat pipeline from ingress through
   context assembly, tool execution, approvals, and outbound sinks.
+- [Tool-calling architecture](tool-calling-architecture.md) isolates the chat
+  tool-execution pipeline and diagrams how preflight, execution, post-flight
+  folding, approvals, and auth handling fit together.
 - [Database integrations](database-integrations.md) explains the PostgreSQL,
   `pgvector`, and libSQL persistence backends, their differences, error handling
   conventions, migration helpers, and job persistence patterns.
