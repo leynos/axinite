@@ -14,7 +14,7 @@ use crate::support::routines::{
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
 #[tokio::test]
-async fn routine_cooldown() {
+async fn routine_cooldown() -> anyhow::Result<()> {
     let (db, _tmp) = create_test_db().await.expect("create_test_db");
     let ws = create_workspace(&db);
 
@@ -54,11 +54,11 @@ async fn routine_cooldown() {
 
     // Wait for routine execution to complete using deterministic synchronization,
     // then verify the routine run was recorded in the database.
-    wait_for_idle(&engine, Duration::from_secs(5)).await;
+    wait_for_idle(&engine, Duration::from_secs(5)).await?;
 
     // Wait for routine run to be durably persisted in the database.
     // Snapshot run count before firing (zero for a freshly-created routine).
-    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await;
+    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await?;
 
     let persisted = db
         .get_routine(routine.id)
@@ -77,4 +77,6 @@ async fn routine_cooldown() {
     // Second fire should be blocked by cooldown.
     let fired2 = engine.check_event_triggers(&msg).await;
     assert_eq!(fired2, 0, "Second fire should be blocked by cooldown");
+
+    Ok(())
 }

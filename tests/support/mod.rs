@@ -416,7 +416,7 @@ fn routines_symbol_refs() {
     fn _wait_for_idle_sig<'a>(
         engine: &'a ironclaw::agent::routine_engine::RoutineEngine,
         timeout: std::time::Duration,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), anyhow::Error>> + 'a>> {
         Box::pin(routines::engine_sync::wait_for_idle(engine, timeout))
     }
 
@@ -425,7 +425,7 @@ fn routines_symbol_refs() {
         routine_id: uuid::Uuid,
         previous_run_count: usize,
         timeout: std::time::Duration,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), anyhow::Error>> + 'a>> {
         Box::pin(routines::engine_sync::wait_for_persisted_run(
             db,
             routine_id,

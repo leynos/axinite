@@ -184,6 +184,7 @@ pub mod engine_sync {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use anyhow::anyhow;
     use uuid::Uuid;
 
     use ironclaw::agent::routine_engine::RoutineEngine;
@@ -198,9 +199,10 @@ pub mod engine_sync {
     ///
     /// **Note:** Always combine with [`wait_for_persisted_run`] to ensure the
     /// database record is durably committed before asserting on stored state.
-    pub async fn wait_for_idle(engine: &RoutineEngine, timeout: Duration) {
+    pub async fn wait_for_idle(engine: &RoutineEngine, timeout: Duration) -> Result<(), anyhow::Error> {
         let _ = engine;
         tokio::time::sleep(timeout.min(Duration::from_millis(10))).await;
+        Ok(())
     }
 
     /// Polls until a new routine run is persisted in the database or the timeout expires.
@@ -219,7 +221,7 @@ pub mod engine_sync {
         routine_id: Uuid,
         previous_run_count: usize,
         timeout: Duration,
-    ) {
+    ) -> Result<(), anyhow::Error> {
         let start = std::time::Instant::now();
         let poll_interval = Duration::from_millis(10);
 
@@ -227,21 +229,21 @@ pub mod engine_sync {
             let runs = db
                 .list_routine_runs(routine_id, 10)
                 .await
-                .expect("list_routine_runs should not fail");
+                .map_err(|e| anyhow!(e))?;
 
             if runs.len() > previous_run_count {
-                return;
+                return Ok(());
             }
 
             if start.elapsed() >= timeout {
-                panic!(
+                return Err(anyhow!(
                     "Timeout waiting for routine run to be persisted (routine_id: {}, \
                      previous_count: {}, current_count: {}, elapsed: {:?})",
                     routine_id,
                     previous_run_count,
                     runs.len(),
                     start.elapsed()
-                );
+                ));
             }
 
             tokio::time::sleep(poll_interval).await;

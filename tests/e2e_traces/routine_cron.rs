@@ -16,7 +16,7 @@ use crate::support::routines::{
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
 #[tokio::test]
-async fn cron_routine_fires() {
+async fn cron_routine_fires() -> anyhow::Result<()> {
     let (db, _tmp) = create_test_db().await.expect("create_test_db");
     let ws = create_workspace(&db);
 
@@ -53,13 +53,15 @@ async fn cron_routine_fires() {
 
     // Wait for routine execution to complete using deterministic synchronization,
     // then verify the routine run was recorded.
-    wait_for_idle(&engine, Duration::from_secs(5)).await;
+    wait_for_idle(&engine, Duration::from_secs(5)).await?;
 
     // Wait for routine run to be durably persisted in the database.
     // Snapshot run count before firing (zero for a freshly-created routine).
-    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await;
+    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await?;
 
     // Notification may or may not be sent depending on config;
     // just verify no panic occurred. Drain the channel.
     let _ = notify_rx.try_recv();
+
+    Ok(())
 }
