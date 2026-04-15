@@ -175,3 +175,44 @@ async fn brute_force_vector_search_skips_mismatched_embedding_dimensions() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].content, "same-dimension chunk");
 }
+
+#[tokio::test]
+async fn hybrid_search_returns_fts_only_results_without_embedding() {
+    let backend = LibSqlBackend::new_memory()
+        .await
+        .expect("failed to create in-memory libsql backend");
+    backend
+        .run_migrations()
+        .await
+        .expect("failed to run libsql migrations");
+
+    let document = backend
+        .get_or_create_document_by_path("default", None, "notes/fts-only.md")
+        .await
+        .expect("failed to create FTS-only search document");
+    backend
+        .insert_chunk(InsertChunkParams {
+            document_id: document.id,
+            chunk_index: 0,
+            content: "keyword only workspace search",
+            embedding: None,
+        })
+        .await
+        .expect("failed to insert FTS-only chunk");
+
+    let results = backend
+        .hybrid_search(HybridSearchParams {
+            user_id: "default",
+            agent_id: None,
+            query: "keyword",
+            embedding: None,
+            config: &SearchConfig::default().with_limit(5),
+        })
+        .await
+        .expect("failed to execute FTS-only hybrid search");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].document_path, "notes/fts-only.md");
+    assert_eq!(results[0].fts_rank, Some(1));
+    assert_eq!(results[0].vector_rank, None);
+}

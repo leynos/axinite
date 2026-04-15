@@ -1,5 +1,9 @@
 //! Vector-search helpers for libSQL workspace retrieval.
 
+#[cfg(test)]
+#[path = "vector_search_tests.rs"]
+mod tests;
+
 use libsql::params;
 use uuid::Uuid;
 

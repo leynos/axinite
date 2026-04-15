@@ -1,5 +1,9 @@
 //! Full-text-search helpers for libSQL workspace retrieval.
 
+#[cfg(test)]
+#[path = "fts_tests.rs"]
+mod tests;
+
 use libsql::params;
 
 use super::super::get_text;

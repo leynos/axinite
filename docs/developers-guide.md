@@ -332,6 +332,24 @@ artefacts behind on disk.
 Do **not** use `new_local()` in unit tests; reserve it for integration tests
 or tests that specifically require filesystem-path behaviour.
 
+
+### LibSqlDatabase shared handles
+
+`LibSqlBackend` owns an `Arc<LibSqlDatabase>` rather than a raw libSQL
+database handle. That wrapper exists for two reasons:
+
+- satellite stores such as the secrets and WASM stores can call
+  `shared_db()` and open their own per-operation connections without
+  reopening a different database
+- temp-file-backed test databases created by `new_memory()` keep their
+  cleanup metadata on the shared handle, so the `.db`, `-wal`, and `-shm`
+  files live until the final shared owner is dropped
+
+If a constructor or store used to accept a backend directly and now accepts
+`Arc<LibSqlDatabase>`, that is usually a signal that it should share the same
+underlying file while creating its own connections via
+`LibSqlDatabase::connect()`.
+
 ## Dispatcher Architecture
 
 The dispatcher orchestrates interactive chat turns by preparing an LLM
@@ -752,6 +770,26 @@ port-allocation races:
 Tests should pre-bind via `TcpListener::bind("127.0.0.1:0")` and pass the
 result to these helpers instead of relying on `start()` /
 `restart_with_addr()` to pick a free port.
+
+
+### Workspace store module structure
+
+The libSQL workspace store is split by concern under
+`src/db/libsql/workspace/`:
+
+- `mod.rs` owns the `NativeWorkspaceStore` implementation and hybrid-search
+  orchestration
+- `document_ops.rs` owns document CRUD and directory-style listing helpers
+- `chunk_ops.rs` owns chunk insertion, embedding updates, and chunk polling
+- `fts.rs` owns FTS-only ranking queries
+- `vector_search.rs` owns vector-index and brute-force similarity helpers
+- `tests.rs` keeps cross-module integration coverage for the hybrid pipeline
+
+Prefer adding logic beside the feature it serves rather than growing
+`mod.rs`. Module-local tests should live with the module they exercise, while
+pipeline tests belong in `workspace/tests.rs`.
+
+
 ### Key APIs
 
 - `RunLoopCtx`: per-run container that carries the session handle,
@@ -788,3 +826,14 @@ export DATABASE_URL=postgres://localhost/ironclaw
 
 Adjust the connection string if the local PostgreSQL instance requires a
 different host, user, or password.
+
+### Parameter-object structs in store helpers
+
+The workspace helpers use small parameter structs such as `AgentScope`,
+`FtsSearchParams`, `VectorSearchQuery`, and `VectorIndexQuery` to keep helper
+arity below the repository limit and to make call sites describe intent.
+
+Use this pattern when a helper repeatedly threads the same related values
+through several internal calls. Keep these structs private or `pub(super)`
+unless a wider API boundary genuinely needs them, and prefer names that
+describe the query or scope they model instead of generic `Options` suffixes.

@@ -1,5 +1,9 @@
 //! Chunk-oriented workspace-store helpers for the libSQL backend.
 
+#[cfg(test)]
+#[path = "chunk_ops_tests.rs"]
+mod tests;
+
 use libsql::params;
 use uuid::Uuid;
 
