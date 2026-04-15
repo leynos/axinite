@@ -74,7 +74,7 @@ the build, an `if: always()` trimming step deletes
 `target/debug/incremental`, `target/debug/.fingerprint`, and `target/**/*.d`
 dependency files before the cache is written back to the action store.
 
-The `gag` crate appears as a `[dev-dependency]` in `Cargo.toml`. It provides
+The `gag` crate appears as a `[dev-dependencies]` entry in `Cargo.toml`. It provides
 `gag::BufferRedirect::stdout()` to capture standard output in tests that assert on
 printed startup or boot-screen content — for example, the
 `print_startup_info_matches_snapshot` test in `src/main.rs`. The crate is compiled
