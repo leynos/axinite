@@ -321,11 +321,23 @@ Default or rule:
 
 ## Dispatcher Architecture
 
-The dispatcher is the interactive chat-turn engine that sits between incoming
-channel messages and the shared agentic loop. Its job is to prepare reasoning
-context, compute loop thresholds that prevent tool-call livelocks, run the
-delegate-driven three-phase tool pipeline, and translate loop outcomes back
-into user-visible chat responses or approval prompts.
+The dispatcher orchestrates interactive chat turns by preparing an LLM
+`ReasoningContext`, running a tool-aware agentic loop, and converting
+loop outcomes into channel outputs. It is decomposed into three layers:
+
+- Core (`src/agent/dispatcher/core.rs`): builds `RunLoopCtx`, computes
+  iteration thresholds via `compute_loop_thresholds` (yields
+  `LoopThresholds { nudge_at, force_text_at, hard_ceiling }`), prepares
+  prompts and active skills, and instantiates the delegate.
+- Delegate (`src/agent/dispatcher/delegate/*`): per-iteration control
+  — prompt refresh; LLM call; three-phase tool pipeline (preflight →
+  execution → post-flight); status, auth, and image-sentinel handling.
+- Types (`src/agent/dispatcher/types.rs`): pure helpers and simple data
+  structures (preview truncation, auth parsing, message compaction,
+  etc.).
+
+
+### Control flow
 
 ```mermaid
 sequenceDiagram
@@ -336,7 +348,7 @@ sequenceDiagram
   participant Tools
 
   UI->>Agent: IncomingMessage
-  Agent->>Delegate: build + thresholds + prompts
+  Agent->>Delegate: Build + thresholds + prompts (RunLoopCtx)
   Delegate->>LLM: respond_with_tools(...)
   alt ToolCalls
     Delegate->>Tools: Preflight (hooks/approval)
@@ -348,37 +360,6 @@ sequenceDiagram
   end
   Agent-->>UI: Outbound message / NeedApproval
 ```
-
-Thresholds are derived from `max_tool_iterations` and steer the loop through
-three checkpoints: `nudge_at` adds a soft “prefer text” hint, `force_text_at`
-removes tools from the prompt so the model must answer directly, and
-`hard_ceiling` is the final safety net that guarantees termination even if the
-provider keeps trying to call tools.
-
-Auth detection lives in the post-flight phase. When `tool_auth` or
-`tool_activate` returns an `awaiting_token` payload, the dispatcher emits an
-auth-required status, records the extension name on the thread, and routes the
-next user message through the auth-mode intercept instead of the normal
-conversation pipeline.
-
-Image sentinel handling is also part of post-flight status emission. The
-dispatcher recognises `image_generate` and `image_edit` outputs whose JSON
-payloads declare `type = "image_generated"` and only broadcasts them when the
-`data` field is a valid `data:image/...` URL. That prevents arbitrary external
-URLs from being sent as image events.
-Required for PostgreSQL-backed work. For local development,
-`postgres://localhost/ironclaw` is a typical example; include the correct
-user, password, host, port, and database name when a local setup requires
-them.
-
-Example:
-
-```bash
-export DATABASE_URL=postgres://localhost/ironclaw
-```
-
-Adjust the connection string if the local PostgreSQL instance requires a
-different host, user, or password.
 
 ### Atomic terminal job persistence
 
@@ -742,3 +723,41 @@ artifacts and CI duplication.
 
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
+
+
+### Key APIs
+
+- `RunLoopCtx`: per-run container that carries the session handle,
+  `thread_id`, and the turn's initial messages.
+- `compute_loop_thresholds(max_tool_iterations) -> LoopThresholds`:
+  - `nudge_at`: inject a gentle “prefer text” hint before forcing text.
+  - `force_text_at`: disable tools and force the LLM to produce text.
+  - `hard_ceiling`: safety net that guarantees termination.
+- `ChatDelegate` (internal): implements preflight, execution
+  (inline/parallel), ordered post-flight folding, status broadcast, and
+  auth/image side-effects. Status-send failures are explicitly ignored
+  to keep UI updates non-blocking.
+
+
+### Invariants
+
+- Post-flight preserves the original tool-call order when folding
+  results.
+- Approval gates short-circuit execution and return a
+  `PendingApproval` with any subsequent calls captured as
+  `deferred_tool_calls`.
+- When `force_text_at` is reached, the delegate retries without tools
+  to guarantee termination.
+Required for PostgreSQL-backed work. For local development,
+`postgres://localhost/ironclaw` is a typical example; include the correct
+user, password, host, port, and database name when a local setup requires
+them.
+
+Example:
+
+```bash
+export DATABASE_URL=postgres://localhost/ironclaw
+```
+
+Adjust the connection string if the local PostgreSQL instance requires a
+different host, user, or password.
