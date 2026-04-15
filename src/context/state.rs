@@ -18,6 +18,9 @@ pub enum JobRecoveryError {
     /// Job is not in the Stuck state and cannot be recovered.
     #[error("Job is not stuck")]
     NotStuck,
+    /// An unexpected state-machine invariant was violated during recovery.
+    #[error("Recovery invariant violated: {0}")]
+    InvariantViolation(String),
 }
 
 /// State of a job.
@@ -387,7 +390,7 @@ impl JobContext {
         }
         self.repair_attempts += 1;
         self.transition_to(JobState::InProgress, Some("Recovery attempt".to_string()))
-            .map_err(|e| panic!("Failed to transition from Stuck to InProgress: {}", e))
+            .map_err(JobRecoveryError::InvariantViolation)
     }
 }
 
