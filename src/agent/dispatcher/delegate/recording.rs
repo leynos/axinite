@@ -80,10 +80,26 @@ impl<'a> ChatDelegate<'a> {
             Ok(output) => output,
             Err(e) => {
                 let error_msg = format!("Tool '{}' failed: {}", tc.name, e);
+                let (preview_text, wrapped_text) = self.sanitize_output(&tc.name, &error_msg);
+                let preview = truncate_for_preview(&preview_text, PREVIEW_MAX_CHARS);
+                if !preview.is_empty() {
+                    let _ = self
+                        .agent
+                        .channels
+                        .send_status(
+                            &self.message.channel,
+                            StatusUpdate::ToolResult {
+                                name: tc.name.clone(),
+                                preview,
+                            },
+                            &self.message.metadata,
+                        )
+                        .await;
+                }
                 self.fold_into_context(
                     tc,
                     ToolExecutionOutcome {
-                        content: error_msg,
+                        content: wrapped_text,
                         is_error: true,
                     },
                     reason_ctx,
