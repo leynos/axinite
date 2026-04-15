@@ -28,13 +28,13 @@ check-fmt:
 
 typecheck:
 	$(CARGO) check --all --benches --tests --examples $(TEST_FEATURES)
-	$(CARGO) check --all --benches --tests --examples --no-default-features --features libsql,test-helpers
+	$(CARGO) check --all --benches --tests --examples --no-default-features --features libsql-test-helpers
 	$(CARGO) check --all --benches --tests --examples --all-features $(TEST_FEATURES)
 	$(CARGO) check --manifest-path $(GITHUB_TOOL_MANIFEST) --tests
 
 lint:
 	$(CARGO) clippy --all --benches --tests --examples $(TEST_FEATURES) -- -D warnings
-	$(CARGO) clippy --all --benches --tests --examples --no-default-features --features libsql,test-helpers -- -D warnings
+	$(CARGO) clippy --all --benches --tests --examples --no-default-features --features libsql-test-helpers -- -D warnings
 	$(CARGO) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
 	$(CARGO) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
 
@@ -51,15 +51,15 @@ test-cargo:
 test-matrix:
 	$(MAKE) build-github-tool-wasm
 	$(NEXTEST) run --workspace $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
-	$(NEXTEST) run --workspace --no-default-features --features libsql,test-helpers --profile $(NEXTEST_PROFILE)
-	$(NEXTEST) run --workspace --features postgres,libsql,html-to-markdown,test-helpers --profile $(NEXTEST_PROFILE)
+	$(NEXTEST) run --workspace --no-default-features --features libsql-test-helpers --profile $(NEXTEST_PROFILE)
+	$(NEXTEST) run --workspace --features postgres,libsql-test-helpers,html-to-markdown --profile $(NEXTEST_PROFILE)
 	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
 
 test-matrix-cargo:
 	$(MAKE) build-github-tool-wasm
 	$(CARGO) test $(TEST_FEATURES) -- --nocapture
-	$(CARGO) test --no-default-features --features libsql,test-helpers -- --nocapture
-	$(CARGO) test --features postgres,libsql,html-to-markdown,test-helpers -- --nocapture
+	$(CARGO) test --no-default-features --features libsql-test-helpers -- --nocapture
+	$(CARGO) test --features postgres,libsql-test-helpers,html-to-markdown -- --nocapture
 	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
 
 clean:

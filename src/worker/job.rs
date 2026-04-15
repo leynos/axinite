@@ -1747,7 +1747,7 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_mark_completed_persists_result_before_returning()
     -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

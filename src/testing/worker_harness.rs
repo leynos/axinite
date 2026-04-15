@@ -112,7 +112,7 @@ pub async fn make_worker(tools: Vec<Arc<dyn Tool>>) -> anyhow::Result<Worker> {
 }
 
 /// Build a Worker with a real database store (libsql feature required).
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 pub async fn make_worker_with_store(
     tools: Vec<Arc<dyn Tool>>,
 ) -> anyhow::Result<(Worker, Arc<dyn Database>, tempfile::TempDir)> {

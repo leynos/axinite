@@ -3,7 +3,7 @@
 use super::*;
 use rstest::rstest;
 
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 #[tokio::test]
 async fn test_settings_crud() {
     let harness = TestHarnessBuilder::new().build().await;
@@ -66,7 +66,7 @@ async fn test_settings_crud() {
     assert!(!deleted);
 }
 
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 async fn run_settings_crud_flow(db: &Arc<dyn Database>, user_id: UserId, key: SettingKey) {
     let initial_value = serde_json::json!("dark");
     let updated_value = serde_json::json!("light");
@@ -114,7 +114,7 @@ async fn run_settings_crud_flow(db: &Arc<dyn Database>, user_id: UserId, key: Se
     );
 }
 
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 #[rstest]
 #[case(false)]
 #[case(true)]
@@ -135,7 +135,7 @@ async fn test_settings_crud_variants(#[case] use_owned_strings: bool) {
     run_settings_crud_flow(db, user_id, key).await;
 }
 
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 #[tokio::test]
 async fn test_settings_bulk_operations() {
     let harness = TestHarnessBuilder::new().build().await;

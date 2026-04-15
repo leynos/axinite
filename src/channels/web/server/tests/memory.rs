@@ -1,33 +1,33 @@
 //! Tests for the web gateway memory search and read routes.
 
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use axum::{Router, body::Body, routing::get, routing::post};
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use rstest::{fixture, rstest};
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use tempfile::TempDir;
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use tower::ServiceExt;
 
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use super::fixtures::{TestGatewayStateFactory, test_gateway_state};
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use crate::channels::web::handlers::memory::{
     memory_read_handler, memory_search_handler, memory_tree_handler,
 };
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use crate::workspace::Workspace;
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use axum::http::StatusCode;
 
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 type TestWorkspaceFixture = (std::sync::Arc<Workspace>, TempDir);
 
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 #[derive(Clone, Copy, Debug, Default)]
 struct TestWorkspaceFactory;
 
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 impl TestWorkspaceFactory {
     async fn build(self) -> TestWorkspaceFixture {
         let (db, temp_dir) = crate::testing::test_db().await;
@@ -38,13 +38,13 @@ impl TestWorkspaceFactory {
     }
 }
 
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 #[fixture]
 fn test_workspace() -> TestWorkspaceFactory {
     TestWorkspaceFactory
 }
 
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 #[rstest]
 #[tokio::test]
 async fn test_memory_search_results_round_trip_via_read_path(
@@ -109,7 +109,7 @@ async fn test_memory_search_results_round_trip_via_read_path(
     assert_eq!(read_json["content"], "alpha needle beta");
 }
 
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 #[rstest]
 #[tokio::test]
 async fn test_memory_tree_honours_depth_query(

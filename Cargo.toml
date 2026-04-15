@@ -222,7 +222,8 @@ postgres = [
     "dep:pgvector",
     "rust_decimal/db-tokio-postgres",
 ]
-libsql = ["dep:libsql", "test-helpers"]
+libsql = ["dep:libsql"]
+libsql-test-helpers = ["libsql", "test-helpers"]
 integration = []
 html-to-markdown = ["dep:html-to-markdown-rs", "dep:readabilityrs"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types"]
