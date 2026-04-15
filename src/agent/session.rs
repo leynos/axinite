@@ -581,29 +581,25 @@ impl Turn {
         }
     }
 
-    /// Record tool call result, parsing structured JSON where possible.
-    pub fn record_tool_result_content(&mut self, result_content: &str) {
+    fn parse_tool_result(result_content: &str) -> serde_json::Value {
         let trimmed = result_content.trim_start();
-        let result = if matches!(trimmed.as_bytes().first(), Some(b'{' | b'[')) {
+        if matches!(trimmed.as_bytes().first(), Some(b'{' | b'[')) {
             serde_json::from_str(result_content)
                 .unwrap_or_else(|_| serde_json::Value::String(result_content.to_string()))
         } else {
             serde_json::Value::String(result_content.to_string())
-        };
-        self.record_tool_result(result);
+        }
+    }
+
+    /// Record tool call result, parsing structured JSON where possible.
+    pub fn record_tool_result_content(&mut self, result_content: &str) {
+        self.record_tool_result(Self::parse_tool_result(result_content));
     }
 
     /// Record tool call result for a specific slot, parsing structured JSON
     /// where possible.
     pub fn record_tool_result_content_at(&mut self, idx: usize, result_content: &str) {
-        let trimmed = result_content.trim_start();
-        let result = if matches!(trimmed.as_bytes().first(), Some(b'{' | b'[')) {
-            serde_json::from_str(result_content)
-                .unwrap_or_else(|_| serde_json::Value::String(result_content.to_string()))
-        } else {
-            serde_json::Value::String(result_content.to_string())
-        };
-        self.record_tool_result_at(idx, result);
+        self.record_tool_result_at(idx, Self::parse_tool_result(result_content));
     }
 
     /// Record tool call error.

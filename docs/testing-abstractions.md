@@ -23,7 +23,7 @@ Table: Testing abstractions and recommended use cases
 | `CapturingStore` | Unit testing without database | Verifying interactions without a real database |
 | `NullDatabase` | Baseline test double | Creating baseline test doubles or custom mocks |
 
-## TestHarnessBuilder
+## Test harness builder (`TestHarnessBuilder`)
 
 Located in: `crate::testing::TestHarnessBuilder`
 
@@ -49,7 +49,7 @@ actual database persistence or when testing components that require a real
 **Do not mix with:** `CapturingStore`. The harness uses its own database
 internally; mixing it with `CapturingStore` will cause confusing behaviour.
 
-## CapturingStore
+## Capturing store (`CapturingStore`)
 
 Located in: `crate::testing::CapturingStore`
 
@@ -84,7 +84,7 @@ real database but need to verify that persistence calls were made correctly.
 **Do not mix with:** The full `TestHarnessBuilder`. Use `CapturingStore` with
 manually-constructed components, not the full harness.
 
-## NullDatabase
+## Null database (`NullDatabase`)
 
 Located in: `crate::testing::NullDatabase`
 

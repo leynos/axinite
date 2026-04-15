@@ -77,13 +77,16 @@ pub(super) async fn run_postflight(
                 handle_rejected_tool(delegate, pf_idx, &tc, &error_msg, reason_ctx).await;
             }
             super::preflight::PreflightOutcome::Runnable => {
-                let tool_result = exec_results[pf_idx].take().unwrap_or_else(|| {
-                    Err(crate::error::ToolError::ExecutionFailed {
-                        name: tc.name.clone(),
-                        reason: "No result available".to_string(),
-                    }
-                    .into())
-                });
+                let tool_result = exec_results
+                    .get_mut(pf_idx)
+                    .and_then(Option::take)
+                    .unwrap_or_else(|| {
+                        Err(crate::error::ToolError::ExecutionFailed {
+                            name: tc.name.clone(),
+                            reason: "No result available".to_string(),
+                        }
+                        .into())
+                    });
                 if let Some(instructions) =
                     process_runnable_tool(delegate, pf_idx, &tc, tool_result, reason_ctx).await
                 {
@@ -120,7 +123,7 @@ pub(super) async fn process_runnable_tool(
     tool_result: Result<String, Error>,
     reason_ctx: &mut ReasoningContext,
 ) -> Option<String> {
-    use crate::agent::dispatcher::{PREVIEW_MAX_CHARS, is_valid_json, truncate_for_preview};
+    use crate::agent::dispatcher::{PREVIEW_MAX_CHARS, truncate_for_preview};
 
     let is_tool_error = tool_result.is_err();
 
@@ -128,17 +131,33 @@ pub(super) async fn process_runnable_tool(
         Ok(output) => output,
         Err(e) => {
             let error_msg = format!("Tool '{}' failed: {}", tc.name, e);
+            let (preview_text, wrapped_text) = sanitize_output(delegate, &tc.name, &error_msg);
             fold_into_context(
                 delegate,
                 pf_idx,
                 tc,
                 ToolOutcome {
-                    result_content: error_msg,
+                    result_content: wrapped_text,
                     is_tool_error: true,
                 },
                 reason_ctx,
             )
             .await;
+            let preview = truncate_for_preview(&preview_text, PREVIEW_MAX_CHARS);
+            if !preview.is_empty() {
+                let _ = delegate
+                    .agent
+                    .channels
+                    .send_status(
+                        &delegate.message.channel,
+                        StatusUpdate::ToolResult {
+                            name: tc.name.clone(),
+                            preview,
+                        },
+                        &delegate.message.metadata,
+                    )
+                    .await;
+            }
             return None;
         }
     };
@@ -149,9 +168,6 @@ pub(super) async fn process_runnable_tool(
     let (result_content, preview) = if is_image_sentinel {
         let summary = image_sentinel_summary.unwrap_or_else(|| "[Image generated]".to_string());
         (summary.clone(), summary)
-    } else if is_valid_json(output) {
-        let preview = truncate_for_preview(output, PREVIEW_MAX_CHARS);
-        (output.clone(), preview)
     } else {
         let (preview_text, wrapped_text) = sanitize_output(delegate, &tc.name, output);
         let preview = truncate_for_preview(&preview_text, PREVIEW_MAX_CHARS);

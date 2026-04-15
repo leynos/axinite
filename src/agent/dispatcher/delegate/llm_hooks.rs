@@ -272,7 +272,21 @@ fn compact_around_user_message(messages: &[ChatMessage], user_idx: usize) -> Vec
 fn compact_without_user_message(messages: &[ChatMessage]) -> Vec<ChatMessage> {
     use crate::llm::Role;
     let mut compacted = collect_system_messages(messages);
-    compacted.extend(messages.iter().filter(|m| m.role != Role::System).cloned());
+    let non_system: Vec<_> = messages
+        .iter()
+        .filter(|message| message.role != Role::System)
+        .cloned()
+        .collect();
+    let keep = if non_system.len() >= 2 { 2 } else { 1 };
+    compacted.extend(
+        non_system
+            .into_iter()
+            .rev()
+            .take(keep)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev(),
+    );
     compacted
 }
 

@@ -1,3 +1,5 @@
+//! Verifies `Default` implementations for LLM response types used by the provider.
+
 use super::*;
 
 macro_rules! assert_llm_defaults {
