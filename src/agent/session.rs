@@ -780,6 +780,24 @@ mod tests {
     }
 
     #[test]
+    fn test_in_flight_auth_is_transient_across_serde() {
+        let mut thread = Thread::new(Uuid::new_v4());
+        thread.in_flight_auth = true;
+
+        let json = serde_json::to_string(&thread).expect("thread should serialise");
+        assert!(
+            !json.contains("in_flight_auth"),
+            "in_flight_auth must be omitted from serialised JSON"
+        );
+
+        let restored: Thread = serde_json::from_str(&json).expect("thread should deserialise");
+        assert!(
+            !restored.in_flight_auth,
+            "in_flight_auth must default to false after deserialisation"
+        );
+    }
+
+    #[test]
     fn test_thread_with_id() {
         let specific_id = Uuid::new_v4();
         let session_id = Uuid::new_v4();
