@@ -1,0 +1,5 @@
+---
+source: src/agent/dispatcher/tests/preview.rs
+expression: out
+---
+Line 1 Line 2 with spaces Line 3

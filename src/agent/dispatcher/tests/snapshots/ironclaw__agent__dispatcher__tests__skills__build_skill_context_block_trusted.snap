@@ -1,0 +1,7 @@
+---
+source: src/agent/dispatcher/tests/skills.rs
+expression: "result.expect(\"trusted skill should produce context\")"
+---
+<skill name="my-skill" version="1.2.3" trust="TRUSTED">
+Use <b>bold</b> & 'quotes' here
+</skill>

@@ -70,7 +70,14 @@ impl Agent {
             .await;
 
         let result = self
-            .run_agentic_loop(message, req.session.clone(), req.thread_id, turn_messages)
+            .run_agentic_loop(
+                message,
+                crate::agent::dispatcher::RunLoopCtx {
+                    session: req.session.clone(),
+                    thread_id: req.thread_id,
+                    initial_messages: turn_messages,
+                },
+            )
             .await;
 
         // Phase 8: Handle loop result

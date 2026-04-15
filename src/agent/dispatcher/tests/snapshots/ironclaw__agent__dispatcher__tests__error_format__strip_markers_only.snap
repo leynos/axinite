@@ -1,0 +1,5 @@
+---
+source: src/agent/dispatcher/tests/error_format.rs
+expression: out
+---
+I wasn't able to complete that request. Could you try rephrasing or providing more details?

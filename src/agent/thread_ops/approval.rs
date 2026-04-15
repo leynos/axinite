@@ -40,7 +40,7 @@ use uuid::Uuid;
 
 use crate::agent::Agent;
 use crate::agent::dispatcher::{
-    AgenticLoopResult, ToolCallSpec, check_auth_required, execute_chat_tool_standalone,
+    AgenticLoopResult, ChatToolRequest, check_auth_required, execute_chat_tool_standalone,
     parse_auth_result,
 };
 use crate::agent::session::{PendingApproval, Session, ThreadState};
@@ -167,8 +167,6 @@ struct AuthInterceptParams<'a> {
     env: &'a MsgEnv,
     /// Tool execution result (used to extract auth URLs).
     tool_result: &'a Result<String, Error>,
-    /// Tool name for auth-barrier result parsing.
-    tool_name: &'a str,
     /// Extension name requiring authentication.
     ext_name: String,
     /// Instructions to display to the user.
@@ -388,7 +386,6 @@ impl Agent {
                 thread_id: scope.thread_id,
                 env: &scope.env,
                 tool_result,
-                tool_name: &pending.tool_name,
                 ext_name,
                 instructions: instructions.clone(),
                 pending: Some(pending.clone()),
@@ -554,8 +551,8 @@ impl Agent {
                 let result = execute_chat_tool_standalone(
                     &tools,
                     &safety,
-                    &ToolCallSpec {
-                        name: &tc.name,
+                    &ChatToolRequest {
+                        tool_name: &tc.name,
                         params: &tc.arguments,
                     },
                     &job_ctx,
@@ -677,7 +674,6 @@ impl Agent {
                     thread_id: scope.thread_id,
                     env: &scope.env,
                     tool_result: &deferred_result,
-                    tool_name: &tc.name,
                     ext_name,
                     instructions: instructions.clone(),
                     pending: Some(fresh_pending),
@@ -863,9 +859,11 @@ impl Agent {
         let result = self
             .run_agentic_loop(
                 &message,
-                scope.session.clone(),
-                scope.thread_id,
-                context_messages,
+                crate::agent::dispatcher::RunLoopCtx {
+                    session: scope.session.clone(),
+                    thread_id: scope.thread_id,
+                    initial_messages: context_messages,
+                },
             )
             .await;
 
@@ -1109,7 +1107,7 @@ impl Agent {
     /// to preserve deferred tool calls and context messages, completes + persists
     /// the turn, and sends the AuthRequired status to the channel.
     async fn handle_auth_intercept(&self, params: AuthInterceptParams<'_>) {
-        let auth_data = parse_auth_result(params.tool_name, params.tool_result);
+        let auth_data = parse_auth_result(params.tool_result);
         {
             let mut sess = params.session.lock().await;
             if let Some(thread) = sess.threads.get_mut(&params.thread_id) {

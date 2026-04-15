@@ -317,19 +317,49 @@ Then set the database connection variable:
 Variable: `DATABASE_URL`
 Meaning: PostgreSQL connection URL used by the app.
 Default or rule:
-Required for PostgreSQL-backed work. For local development,
-`postgres://localhost/ironclaw` is a typical example; include the correct
-user, password, host, port, and database name when a local setup requires
-them.
 
-Example:
 
-```bash
-export DATABASE_URL=postgres://localhost/ironclaw
+## Dispatcher Architecture
+
+The dispatcher orchestrates interactive chat turns by preparing an LLM
+`ReasoningContext`, running a tool-aware agentic loop, and converting
+loop outcomes into channel outputs. It is decomposed into three layers:
+
+- Core (`src/agent/dispatcher/core.rs`): builds `RunLoopCtx`, computes
+  iteration thresholds via `compute_loop_thresholds` (yields
+  `LoopThresholds { nudge_at, force_text_at, hard_ceiling }`), prepares
+  prompts and active skills, and instantiates the delegate.
+- Delegate (`src/agent/dispatcher/delegate/*`): per-iteration control
+  — prompt refresh; LLM call; three-phase tool pipeline (preflight →
+  execution → post-flight); status, auth, and image-sentinel handling.
+- Types (`src/agent/dispatcher/types.rs`): pure helpers and simple data
+  structures (preview truncation, auth parsing, message compaction,
+  etc.).
+
+
+### Control flow
+
+```mermaid
+sequenceDiagram
+  participant UI as Channel/UI
+  participant Agent
+  participant Delegate
+  participant LLM
+  participant Tools
+
+  UI->>Agent: IncomingMessage
+  Agent->>Delegate: Build + thresholds + prompts (RunLoopCtx)
+  Delegate->>LLM: respond_with_tools(...)
+  alt ToolCalls
+    Delegate->>Tools: Preflight (hooks/approval)
+    Delegate->>Tools: Execute (inline/parallel)
+    Delegate->>Agent: Record + Status + Auth/Image
+    Delegate->>LLM: Fold tool_results + retry
+  else Text
+    Delegate-->>Agent: Response(text)
+  end
+  Agent-->>UI: Outbound message / NeedApproval
 ```
-
-Adjust the connection string if the local PostgreSQL instance requires a
-different host, user, or password.
 
 ### Atomic terminal job persistence
 
@@ -693,3 +723,41 @@ artifacts and CI duplication.
 
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
+
+
+### Key APIs
+
+- `RunLoopCtx`: per-run container that carries the session handle,
+  `thread_id`, and the turn's initial messages.
+- `compute_loop_thresholds(max_tool_iterations) -> LoopThresholds`:
+  - `nudge_at`: inject a gentle “prefer text” hint before forcing text.
+  - `force_text_at`: disable tools and force the LLM to produce text.
+  - `hard_ceiling`: safety net that guarantees termination.
+- `ChatDelegate` (internal): implements preflight, execution
+  (inline/parallel), ordered post-flight folding, status broadcast, and
+  auth/image side-effects. Status-send failures are explicitly ignored
+  to keep UI updates non-blocking.
+
+
+### Invariants
+
+- Post-flight preserves the original tool-call order when folding
+  results.
+- Approval gates short-circuit execution and return a
+  `PendingApproval` with any subsequent calls captured as
+  `deferred_tool_calls`.
+- When `force_text_at` is reached, the delegate retries without tools
+  to guarantee termination.
+Required for PostgreSQL-backed work. For local development,
+`postgres://localhost/ironclaw` is a typical example; include the correct
+user, password, host, port, and database name when a local setup requires
+them.
+
+Example:
+
+```bash
+export DATABASE_URL=postgres://localhost/ironclaw
+```
+
+Adjust the connection string if the local PostgreSQL instance requires a
+different host, user, or password.
