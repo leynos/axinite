@@ -181,7 +181,10 @@ impl Agent {
             .unwrap_or_default()
     }
 
-    fn build_skill_context_block(&self, active: &[crate::skills::LoadedSkill]) -> Option<String> {
+    pub(super) fn build_skill_context_block(
+        &self,
+        active: &[crate::skills::LoadedSkill],
+    ) -> Option<String> {
         if active.is_empty() {
             return None;
         }

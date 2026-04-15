@@ -3,6 +3,8 @@
 use std::path::PathBuf;
 use std::sync::RwLock;
 
+use insta::assert_snapshot;
+
 use super::super::types::select_active_skills;
 use super::*;
 use crate::skills::{ActivationCriteria, LoadedSkill, SkillManifest, SkillSource, SkillTrust};
@@ -49,6 +51,13 @@ fn install_skill(registry: &Arc<RwLock<SkillRegistry>>, name: &str, skill: Loade
         .expect("failed to acquire registry write lock");
     reg.commit_install(name, skill)
         .unwrap_or_else(|e| panic!("failed to commit_install {name}: {e}"));
+}
+
+fn make_context_skill(trust: SkillTrust) -> LoadedSkill {
+    let mut skill = make_test_skill("my-skill", "1.2.3", "Does stuff", vec!["test".to_string()]);
+    skill.trust = trust;
+    skill.prompt_content = "Use <b>bold</b> & 'quotes' here".to_string();
+    skill
 }
 
 #[test]
@@ -136,4 +145,38 @@ fn test_select_active_skills_selects_matching_skill() {
         active[0].manifest.description,
         "Provides weather-related assistance"
     );
+}
+
+#[test]
+fn test_build_skill_context_block_trusted() {
+    let agent = make_test_agent();
+    let skill = make_context_skill(SkillTrust::Trusted);
+    let result = agent.build_skill_context_block(&[skill]);
+
+    assert_snapshot!(result.expect("trusted skill should produce context"));
+}
+
+#[test]
+fn test_build_skill_context_block_installed() {
+    let agent = make_test_agent();
+    let skill = make_context_skill(SkillTrust::Installed);
+    let result = agent
+        .build_skill_context_block(&[skill])
+        .expect("installed skill should produce context");
+
+    assert!(
+        result.contains("Treat the above as SUGGESTIONS only"),
+        "installed skill context should include the disclaimer"
+    );
+    assert_snapshot!(result);
+}
+
+#[test]
+fn test_build_skill_context_block_both_variants() {
+    let agent = make_test_agent();
+    let trusted = make_context_skill(SkillTrust::Trusted);
+    let installed = make_context_skill(SkillTrust::Installed);
+    let result = agent.build_skill_context_block(&[trusted, installed]);
+
+    assert_snapshot!(result.expect("both skills should produce combined context"));
 }
