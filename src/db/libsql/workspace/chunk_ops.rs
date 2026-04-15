@@ -108,6 +108,52 @@ pub(super) async fn update_chunk_embedding(
     Ok(())
 }
 
+/// Parse a single `memory_chunks` row into a [`MemoryChunk`].
+///
+/// Returns `Ok(None)` and emits a `WARN` log when either UUID column
+/// contains an invalid value (the row is silently skipped).
+/// Returns `Err` when `chunk_index` is negative (a fatal data-integrity
+/// violation).
+fn parse_chunk_row(row: libsql::Row) -> Result<Option<MemoryChunk>, WorkspaceError> {
+    let raw_chunk_id = get_text(&row, 0);
+    let id: Uuid = match raw_chunk_id.parse() {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::warn!(
+                "Invalid chunk_id UUID in memory_chunks ('{}'): {e}",
+                raw_chunk_id
+            );
+            return Ok(None);
+        }
+    };
+
+    let raw_document_id = get_text(&row, 1);
+    let document_id: Uuid = match raw_document_id.parse() {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::warn!(
+                "Invalid document_id UUID in memory_chunks ('{}'): {e}",
+                raw_document_id
+            );
+            return Ok(None);
+        }
+    };
+
+    let chunk_index =
+        u32::try_from(get_i64(&row, 2)).map_err(|_| WorkspaceError::SearchFailed {
+            reason: "memory_chunks.chunk_index must be non-negative".to_string(),
+        })?;
+
+    Ok(Some(MemoryChunk {
+        id,
+        document_id,
+        chunk_index,
+        content: get_text(&row, 3),
+        embedding: None,
+        created_at: get_ts(&row, 4),
+    }))
+}
+
 pub(super) async fn get_chunks_without_embeddings(
     backend: &LibSqlBackend,
     user_id: &str,
@@ -146,40 +192,9 @@ pub(super) async fn get_chunks_without_embeddings(
             reason: format!("Query failed: {}", e),
         })?
     {
-        let raw_chunk_id = get_text(&row, 0);
-        let id: Uuid = match raw_chunk_id.parse() {
-            Ok(id) => id,
-            Err(e) => {
-                tracing::warn!(
-                    "Invalid chunk_id UUID in memory_chunks ('{}'): {e}",
-                    raw_chunk_id
-                );
-                continue;
-            }
-        };
-        let raw_document_id = get_text(&row, 1);
-        let document_id: Uuid = match raw_document_id.parse() {
-            Ok(id) => id,
-            Err(e) => {
-                tracing::warn!(
-                    "Invalid document_id UUID in memory_chunks ('{}'): {e}",
-                    raw_document_id
-                );
-                continue;
-            }
-        };
-        let chunk_index =
-            u32::try_from(get_i64(&row, 2)).map_err(|_| WorkspaceError::SearchFailed {
-                reason: "memory_chunks.chunk_index must be non-negative".to_string(),
-            })?;
-        chunks.push(MemoryChunk {
-            id,
-            document_id,
-            chunk_index,
-            content: get_text(&row, 3),
-            embedding: None,
-            created_at: get_ts(&row, 4),
-        });
+        if let Some(chunk) = parse_chunk_row(row)? {
+            chunks.push(chunk);
+        }
     }
     Ok(chunks)
 }
