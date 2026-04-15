@@ -43,6 +43,31 @@ fn assert_sole_search_result(
     assert_eq!(r.vector_rank, expected_vector_rank, "vector_rank mismatch");
 }
 
+/// Create a temp-file-backed [`LibSqlBackend`] with migrations applied,
+/// ready for use in unit tests.
+async fn setup_backend() -> LibSqlBackend {
+    let backend = LibSqlBackend::new_memory()
+        .await
+        .expect("failed to create in-memory libsql backend");
+    backend
+        .run_migrations()
+        .await
+        .expect("failed to run libsql migrations");
+    backend
+}
+
+/// Assert that `result` is the `DocumentNotFound` error variant.
+fn assert_document_not_found<T: std::fmt::Debug>(result: Result<T, crate::error::WorkspaceError>) {
+    assert!(
+        matches!(
+            result,
+            Err(crate::error::WorkspaceError::DocumentNotFound { .. })
+        ),
+        "expected DocumentNotFound, got {:?}",
+        result
+    );
+}
+
 #[test]
 fn test_deserialize_embedding_valid() {
     let floats = [1.0f32, 2.0, 3.0];
@@ -88,13 +113,7 @@ fn test_deserialize_embedding_negative_values() {
 
 #[tokio::test]
 async fn get_chunks_without_embeddings_skips_invalid_chunk_id_uuid() {
-    let backend = LibSqlBackend::new_memory()
-        .await
-        .expect("failed to create in-memory backend");
-    backend
-        .run_migrations()
-        .await
-        .expect("failed to run migrations");
+    let backend = setup_backend().await;
 
     let document = backend
         .get_or_create_document_by_path("default", None, "notes/bad-chunk-uuid.md")
@@ -131,13 +150,7 @@ async fn get_chunks_without_embeddings_skips_invalid_chunk_id_uuid() {
 
 #[tokio::test]
 async fn get_chunks_without_embeddings_errors_on_negative_chunk_index() {
-    let backend = LibSqlBackend::new_memory()
-        .await
-        .expect("failed to create in-memory backend");
-    backend
-        .run_migrations()
-        .await
-        .expect("failed to run migrations");
+    let backend = setup_backend().await;
 
     let document = backend
         .get_or_create_document_by_path("default", None, "notes/neg-idx.md")
@@ -165,48 +178,18 @@ async fn get_chunks_without_embeddings_errors_on_negative_chunk_index() {
 
 #[tokio::test]
 async fn get_document_by_path_returns_not_found_for_missing_document() {
-    let backend = LibSqlBackend::new_memory()
-        .await
-        .expect("failed to create in-memory backend");
-    backend
-        .run_migrations()
-        .await
-        .expect("failed to run migrations");
-
+    let backend = setup_backend().await;
     let result = backend
         .get_document_by_path("default", None, "does/not/exist.md")
         .await;
-
-    assert!(
-        matches!(
-            result,
-            Err(crate::error::WorkspaceError::DocumentNotFound { .. })
-        ),
-        "expected DocumentNotFound, got {:?}",
-        result
-    );
+    assert_document_not_found(result);
 }
 
 #[tokio::test]
 async fn get_document_by_id_returns_not_found_for_unknown_id() {
-    let backend = LibSqlBackend::new_memory()
-        .await
-        .expect("failed to create in-memory backend");
-    backend
-        .run_migrations()
-        .await
-        .expect("failed to run migrations");
-
+    let backend = setup_backend().await;
     let result = backend.get_document_by_id(uuid::Uuid::new_v4()).await;
-
-    assert!(
-        matches!(
-            result,
-            Err(crate::error::WorkspaceError::DocumentNotFound { .. })
-        ),
-        "expected DocumentNotFound, got {:?}",
-        result
-    );
+    assert_document_not_found(result);
 }
 
 // This test also validates the `collect_vector_index_rows` →
@@ -215,13 +198,7 @@ async fn get_document_by_id_returns_not_found_for_unknown_id() {
 // fallback assertions begin.
 #[tokio::test]
 async fn hybrid_search_uses_brute_force_when_vector_index_is_unavailable() {
-    let backend = LibSqlBackend::new_memory()
-        .await
-        .expect("failed to create in-memory libsql backend");
-    backend
-        .run_migrations()
-        .await
-        .expect("failed to run libsql migrations");
+    let backend = setup_backend().await;
 
     let document = backend
         .get_or_create_document_by_path("default", None, "notes/search.md")
@@ -281,13 +258,7 @@ async fn hybrid_search_uses_brute_force_when_vector_index_is_unavailable() {
 
 #[tokio::test]
 async fn brute_force_vector_search_skips_mismatched_embedding_dimensions() {
-    let backend = LibSqlBackend::new_memory()
-        .await
-        .expect("failed to create in-memory libsql backend");
-    backend
-        .run_migrations()
-        .await
-        .expect("failed to run libsql migrations");
+    let backend = setup_backend().await;
 
     let document = backend
         .get_or_create_document_by_path("default", None, "notes/mixed-dim.md")
@@ -334,13 +305,7 @@ async fn brute_force_vector_search_skips_mismatched_embedding_dimensions() {
 
 #[tokio::test]
 async fn hybrid_search_returns_fts_only_results_without_embedding() {
-    let backend = LibSqlBackend::new_memory()
-        .await
-        .expect("failed to create in-memory libsql backend");
-    backend
-        .run_migrations()
-        .await
-        .expect("failed to run libsql migrations");
+    let backend = setup_backend().await;
 
     let document = backend
         .get_or_create_document_by_path("default", None, "notes/fts-only.md")
