@@ -66,7 +66,10 @@ async fn heartbeat_findings() {
     }
 
     // No notification since we called check_heartbeat directly (not run).
-    let _ = rx.try_recv();
+    assert!(
+        rx.try_recv().is_err(),
+        "Expected no notification to be sent when calling check_heartbeat() directly"
+    );
 }
 
 #[tokio::test]
