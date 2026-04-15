@@ -21,53 +21,71 @@ pub(crate) async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<bool> {
         .map(|handled| handled.unwrap_or(false))
 }
 
-pub(crate) async fn dispatch_cli_tool_commands(cli: &Cli) -> anyhow::Result<Option<bool>> {
-    match &cli.command {
-        Some(Command::Tool(c)) => run_traced_async(|| async { run_tool_command(c.clone()).await })
-            .await
-            .map(Some),
-        Some(Command::Config(c)) => {
-            run_traced_async(|| async { ironclaw::cli::run_config_command(c.clone()).await })
-                .await
-                .map(Some)
+async fn dispatch_async_command(command: &Command) -> Option<anyhow::Result<bool>> {
+    match command {
+        Command::Tool(c) => {
+            Some(run_traced_async(|| async { run_tool_command(c.clone()).await }).await)
         }
-        Some(Command::Registry(c)) => {
+        Command::Config(c) => Some(
+            run_traced_async(|| async { ironclaw::cli::run_config_command(c.clone()).await }).await,
+        ),
+        Command::Registry(c) => Some(
             run_traced_async(|| async { ironclaw::cli::run_registry_command(c.clone()).await })
-                .await
-                .map(Some)
+                .await,
+        ),
+        Command::Mcp(c) => {
+            Some(run_traced_async(|| async { run_mcp_command(*c.clone()).await }).await)
         }
-        Some(Command::Mcp(c)) => run_traced_async(|| async { run_mcp_command(*c.clone()).await })
-            .await
-            .map(Some),
-        Some(Command::Memory(c)) => {
-            run_traced_async(|| async { ironclaw::cli::run_memory_command(c).await })
-                .await
-                .map(Some)
+        Command::Memory(c) => {
+            Some(run_traced_async(|| async { ironclaw::cli::run_memory_command(c).await }).await)
         }
-        Some(Command::Pairing(c)) => {
-            run_traced_sync(|| run_pairing_command(c.clone()).map_err(|e| anyhow::anyhow!("{e}")))
-                .map(Some)
+        Command::Doctor => {
+            Some(run_traced_async(|| async { ironclaw::cli::run_doctor_command().await }).await)
         }
-        Some(Command::Service(c)) => run_traced_sync(|| run_service_command(c)).map(Some),
-        Some(Command::Doctor) => {
-            run_traced_async(|| async { ironclaw::cli::run_doctor_command().await })
-                .await
-                .map(Some)
-        }
-        Some(Command::Status) => run_traced_async(|| async { run_status_command().await })
-            .await
-            .map(Some),
-        Some(Command::Completion(c)) => run_traced_sync(|| c.run()).map(Some),
+        Command::Status => Some(run_traced_async(|| async { run_status_command().await }).await),
         #[cfg(feature = "import")]
-        Some(Command::Import(c)) => run_traced_async(|| async { run_import_subcommand(c).await })
-            .await
-            .map(Some),
-        Some(Command::Worker { .. })
-        | Some(Command::ClaudeBridge { .. })
-        | Some(Command::Onboard { .. })
-        | None
-        | Some(Command::Run) => Ok(None),
+        Command::Import(c) => {
+            Some(run_traced_async(|| async { run_import_subcommand(c).await }).await)
+        }
+        _ => None,
     }
+}
+
+fn dispatch_sync_command(command: &Command) -> Option<anyhow::Result<bool>> {
+    match command {
+        Command::Pairing(c) => Some(run_traced_sync(|| {
+            run_pairing_command(c.clone()).map_err(|e| anyhow::anyhow!("{e}"))
+        })),
+        Command::Service(c) => Some(run_traced_sync(|| run_service_command(c))),
+        Command::Completion(c) => Some(run_traced_sync(|| c.run())),
+        _ => None,
+    }
+}
+
+pub(crate) async fn dispatch_cli_tool_commands(cli: &Cli) -> anyhow::Result<Option<bool>> {
+    let Some(command) = &cli.command else {
+        return Ok(None);
+    };
+
+    if matches!(
+        command,
+        Command::Worker { .. }
+            | Command::ClaudeBridge { .. }
+            | Command::Onboard { .. }
+            | Command::Run
+    ) {
+        return Ok(None);
+    }
+
+    if let Some(result) = dispatch_sync_command(command) {
+        return result.map(Some);
+    }
+
+    if let Some(result) = dispatch_async_command(command).await {
+        return result.map(Some);
+    }
+
+    Ok(None)
 }
 
 pub(crate) async fn dispatch_agent_commands(cli: &Cli) -> anyhow::Result<Option<bool>> {
