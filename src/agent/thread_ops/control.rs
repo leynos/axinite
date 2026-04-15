@@ -33,6 +33,12 @@ impl Agent {
         thread_id: Uuid,
         op: RewindOp,
     ) -> Result<SubmissionResult, Error> {
+        let mut sess = session.lock().await;
+        let thread = sess
+            .threads
+            .get_mut(&thread_id)
+            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+
         let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
         let mut mgr = undo_mgr.lock().await;
 
@@ -47,12 +53,6 @@ impl Agent {
             });
         }
 
-        let mut sess = session.lock().await;
-        let thread = sess
-            .threads
-            .get_mut(&thread_id)
-            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
-
         let current_messages = thread.messages();
         let current_turn = thread.turn_number();
 
@@ -64,6 +64,7 @@ impl Agent {
         if let Some(checkpoint) = checkpoint {
             let turn_number = checkpoint.turn_number;
             thread.restore_from_messages(checkpoint.messages);
+            thread.updated_at = Utc::now();
             Ok(match op {
                 RewindOp::Undo => SubmissionResult::ok_with_message(format!(
                     "Undone to turn {}. {} undo(s) remaining.",
@@ -265,6 +266,7 @@ impl Agent {
                 .get_mut(&thread_id)
                 .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
             thread.restore_from_messages(checkpoint.messages);
+            thread.updated_at = Utc::now();
             Ok(SubmissionResult::ok_with_message(format!(
                 "Resumed from checkpoint: {}",
                 checkpoint.description
