@@ -39,19 +39,19 @@ The design centres on four requirements that show up repeatedly in the source:
 
 Axinite starts as a single Rust binary. The synchronous `main()` function loads
 environment files before Tokio starts, then hands control to `async_main()`.
-`async_main()` divides startup into two broad phases. First, it handles
-standalone CLI subcommands such as `ironclaw tool`, `ironclaw mcp`,
-`ironclaw config`, `ironclaw memory`, and the hidden worker-oriented
-subcommands. Second, for the default `run` path, it builds the shared runtime,
-starts optional services, wires channels, and enters the long-running agent
-loop.
+`async_main()` is intentionally thin and delegates to binary-only helper
+modules. First, the dedicated CLI-dispatch helper handles standalone
+subcommands such as `ironclaw tool`, `ironclaw mcp`, `ironclaw config`,
+`ironclaw memory`, and the hidden worker-oriented subcommands. Second, the
+startup phases build the shared runtime, start optional services, wire
+channels, and enter the long-running agent loop for the default `run` path.
 
 Table 1. Major runtime layers and their responsibilities.
 
 <!-- markdownlint-disable MD013 MD060 -->
 | Layer | Responsibilities | Primary evidence |
 |------|------------------|------------------|
-| CLI and bootstrap | Parse commands, load early env files, guard single-process startup, and decide whether to run the agent | `src/main.rs`, `src/cli/mod.rs` |
+| CLI and bootstrap | Parse commands, load early env files, guard single-process startup, and decide whether to run the agent | `src/main.rs`, `src/main_cli.rs`, `src/startup/`, `src/cli/mod.rs` |
 | Application builder | Initialize database, secrets, language model providers, tools, workspace memory, and extension managers | `src/app.rs` |
 | Interaction surfaces | Provide REPL, HTTP, Signal, web gateway, webhook, and WASM-backed channel entry points | `src/channels/mod.rs`, `src/main.rs` |
 | Agent core | Route messages, schedule jobs, run tools safely, compact context, handle routines, and support self-repair | `src/agent/mod.rs` |
