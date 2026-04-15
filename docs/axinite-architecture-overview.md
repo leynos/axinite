@@ -134,9 +134,9 @@ before channels and background services start.
    point.
 6. `AppBuilder::build_components()` executes the mechanical initialization
    phases in a fixed order, returning `(AppComponents, RuntimeSideEffects)`.
-   In production `main.rs` calls `side_effects.start()` immediately
+   In production, `main.rs` calls `side_effects.start()` immediately
    afterwards to activate deferred background work (stale job cleanup,
-   workspace import/seeding, embedding backfill). In tests the
+   workspace import/seeding, embedding backfill). In tests, the
    `RuntimeSideEffects` value is discarded to avoid unnecessary I/O.
    A backward-compatible `build_all()` wrapper calls both in sequence for
    callers that do not need the separation.
@@ -171,7 +171,7 @@ Table 2. AppBuilder phases and the state they add.
 alongside `AppComponents`. `RuntimeSideEffects` encapsulates deferred
 background work that must not run during tests:
 
-Table: Runtime side-effect trigger conditions.
+Table: Runtime side effect trigger conditions.
 
 | Task | Trigger condition |
 | --- | --- |

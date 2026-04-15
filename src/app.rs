@@ -88,6 +88,12 @@ pub struct RuntimeSideEffects {
 /// Join handles for deferred runtime side effects.
 pub struct RuntimeSideEffectsHandle {
     workspace_bootstrap: Option<tokio::task::JoinHandle<()>>,
+    /// Intentionally detached cleanup work.
+    ///
+    /// The leading underscore marks that stale job cleanup is fire-and-forget:
+    /// `wait_until_bootstrapped()` only awaits `workspace_bootstrap`, because
+    /// callers need a fully initialized workspace before continuing but do not
+    /// need to block on background cleanup.
     _cleanup: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -752,6 +758,7 @@ mod tests {
         testing::StubLlm,
     };
     use anyhow::Context;
+    use rstest::{fixture, rstest};
 
     #[cfg(feature = "libsql")]
     use crate::db::libsql::LibSqlBackend;
@@ -788,6 +795,7 @@ mod tests {
     }
 
     #[cfg(feature = "libsql")]
+    #[fixture]
     async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)> {
         let temp_dir = tempfile::tempdir()?;
         let db_path = temp_dir.path().join("app-builder-test.db");
@@ -829,9 +837,12 @@ mod tests {
     }
 
     #[cfg(feature = "libsql")]
+    #[rstest]
     #[tokio::test]
-    async fn build_components_returns_without_activating_side_effects() -> anyhow::Result<()> {
-        let (builder, workspace_import_dir, _temp_dir) = two_phase_fixture().await?;
+    async fn build_components_returns_without_activating_side_effects(
+        #[future] two_phase_fixture: anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)>,
+    ) -> anyhow::Result<()> {
+        let (builder, workspace_import_dir, _temp_dir) = two_phase_fixture.await?;
         let (components, side_effects) = builder.build_components().await?;
         assert!(components.tools.count() > 0);
         let workspace = components
@@ -850,9 +861,12 @@ mod tests {
     }
 
     #[cfg(feature = "libsql")]
+    #[rstest]
     #[tokio::test]
-    async fn build_all_waits_for_workspace_bootstrap() -> anyhow::Result<()> {
-        let (builder, _workspace_import_dir, _temp_dir) = two_phase_fixture().await?;
+    async fn build_all_waits_for_workspace_bootstrap(
+        #[future] two_phase_fixture: anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)>,
+    ) -> anyhow::Result<()> {
+        let (builder, _workspace_import_dir, _temp_dir) = two_phase_fixture.await?;
         let components = builder.build_all().await?;
         let workspace = components
             .workspace

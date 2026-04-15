@@ -225,7 +225,7 @@ the shared `ToolRegistry`, and expose:
 Behaviour:
 
 - When `config.skills.enabled = false` it returns `(None, None)`.
-- When enabled it loads skills from `skills.local_dir` and
+- When enabled, it loads skills from `skills.local_dir` and
   `skills.installed_dir` (if present), logs loaded names at debug, and
   registers tool shims into the `ToolRegistry`.
 
