@@ -14,6 +14,7 @@ jobs:
     name: Tests (${{ matrix.name }})
     runs-on: ubuntu-latest
     env:
+      CARGO_INCREMENTAL: "0"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
@@ -28,12 +29,24 @@ jobs:
           - name: libsql-only
             flags: "--no-default-features --features libsql"
     steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
       - name: Checkout repository
         uses: actions/checkout@v6
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang
       - name: Install mold
         uses: rui314/setup-mold@v1
       - uses: Swatinem/rust-cache@v2
@@ -54,6 +67,13 @@ jobs:
           make test
           NEXTEST_PROFILE=ci
           TEST_FEATURES="${{ matrix.flags }} --features test-helpers"
+      - name: Trim build artefacts before cache save
+        if: always()
+        run: |
+          rm -rf target/debug/incremental
+          rm -rf target/debug/.fingerprint
+          cargo clean --doc 2>/dev/null || true
+          find target -name "*.d" -delete 2>/dev/null || true
 
   telegram-tests:
     name: Telegram Channel Tests

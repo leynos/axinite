@@ -6,6 +6,21 @@
 //! - Tests can construct a full `AppComponents` without wiring channels
 //! - Main stays focused on CLI dispatch and channel setup
 //! - Each init phase is independently testable
+//!
+//! ## Two-phase bootstrap pattern
+//!
+//! This module follows a hexagonal architecture principle: **keep assembly
+//! distinct from mechanism-heavy activation**. Construction of components
+//! (the `AppBuilder`) is separated from fire-and-forget runtime side effects
+//! (the `RuntimeSideEffects`).
+//!
+//! - Use `build_components()` when you need control over side-effect timing
+//!   (e.g., in tests where I/O and background tasks should be avoided).
+//! - Use `build_all()` as a convenience wrapper that constructs components,
+//!   starts side effects, and waits for workspace bootstrap to finish.
+//!
+//! The `RuntimeSideEffects::start()` method returns task handles so callers
+//! can choose whether to detach runtime work or await workspace bootstrap.
 
 use std::sync::Arc;
 
@@ -25,6 +40,7 @@ use crate::tools::wasm::SharedCredentialRegistry;
 use crate::tools::wasm::WasmToolRuntime;
 use crate::tools::{ImageToolsRegistration, ToolRegistry, VisionToolsRegistration};
 use crate::workspace::{EmbeddingProvider, Workspace};
+use anyhow::Context;
 
 /// Fully initialized application components, ready for channel wiring
 /// and agent construction.
@@ -55,10 +71,50 @@ pub struct AppComponents {
     pub dev_loaded_tool_names: Vec<String>,
 }
 
+/// Deferred runtime side effects that should be started after component
+/// construction is complete.
+///
+/// This struct encapsulates fire-and-forget background tasks (stale job cleanup,
+/// workspace import/seeding, embedding backfill) that are activated separately
+/// from pure construction. Following hexagonal architecture principles, this
+/// separates assembly from activation.
+pub struct RuntimeSideEffects {
+    db: Option<Arc<dyn Database>>,
+    workspace: Option<Arc<Workspace>>,
+    workspace_import_dir: Option<std::path::PathBuf>,
+    embeddings_available: bool,
+}
+
+/// Join handles for deferred runtime side effects.
+pub struct RuntimeSideEffectsHandle {
+    workspace_bootstrap: Option<tokio::task::JoinHandle<()>>,
+    /// Intentionally detached cleanup work.
+    ///
+    /// The leading underscore marks that stale job cleanup is fire-and-forget:
+    /// `wait_until_bootstrapped()` only awaits `workspace_bootstrap`, because
+    /// callers need a fully initialized workspace before continuing but do not
+    /// need to block on background cleanup.
+    _cleanup: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl RuntimeSideEffectsHandle {
+    /// Wait until workspace bootstrap work has finished.
+    pub async fn wait_until_bootstrapped(self) -> Result<(), anyhow::Error> {
+        if let Some(handle) = self.workspace_bootstrap {
+            handle
+                .await
+                .map_err(|e| anyhow::anyhow!("Workspace bootstrap task failed: {}", e))?;
+        }
+        Ok(())
+    }
+}
+
 /// Options that control optional init phases.
 #[derive(Default)]
 pub struct AppBuilderFlags {
     pub no_db: bool,
+    /// Workspace import directory (overrides WORKSPACE_IMPORT_DIR env var if set).
+    pub workspace_import_dir: Option<std::path::PathBuf>,
 }
 
 /// Builder that orchestrates the 5 mechanical init phases.
@@ -171,13 +227,8 @@ impl AppBuilder {
 
         self.session.attach_store(db.clone(), "default").await;
 
-        // Fire-and-forget housekeeping — no need to block startup.
-        let db_cleanup = db.clone();
-        tokio::spawn(async move {
-            if let Err(e) = db_cleanup.cleanup_stale_sandbox_jobs().await {
-                tracing::warn!("Failed to cleanup stale sandbox jobs: {}", e);
-            }
-        });
+        // Note: stale job cleanup is now handled by RuntimeSideEffects::start()
+        // to separate construction from activation side effects.
 
         self.db = Some(db);
         Ok(())
@@ -390,7 +441,34 @@ impl AppBuilder {
         Ok((safety, tools, embeddings, workspace))
     }
 
-    /// Phase 5: Load WASM tools, MCP servers, and create extension manager.
+    /// Phase 5: Initialize the skills system.
+    pub async fn init_skills(
+        &self,
+        tools: &Arc<ToolRegistry>,
+    ) -> Result<
+        (
+            Option<Arc<std::sync::RwLock<SkillRegistry>>>,
+            Option<Arc<SkillCatalog>>,
+        ),
+        anyhow::Error,
+    > {
+        if !self.config.skills.enabled {
+            return Ok((None, None));
+        }
+
+        let mut registry = SkillRegistry::new(self.config.skills.local_dir.clone())
+            .with_installed_dir(self.config.skills.installed_dir.clone());
+        let loaded = registry.discover_all().await;
+        if !loaded.is_empty() {
+            tracing::debug!("Loaded {} skill(s): {}", loaded.len(), loaded.join(", "));
+        }
+        let registry = Arc::new(std::sync::RwLock::new(registry));
+        let catalog = crate::skills::catalog::shared_catalog();
+        tools.register_skill_tools(Arc::clone(&registry), Arc::clone(&catalog));
+        Ok((Some(registry), Some(catalog)))
+    }
+
+    /// Phase 6: Load WASM tools, MCP servers, and create extension manager.
     pub async fn init_extensions(
         &self,
         tools: &Arc<ToolRegistry>,
@@ -418,14 +496,45 @@ impl AppBuilder {
         .await
     }
 
-    /// Run all init phases in order and return the assembled components.
-    pub async fn build_all(mut self) -> Result<AppComponents, anyhow::Error> {
-        self.init_database().await?;
-        self.init_secrets().await?;
+    /// Resolves the LLM provider: returns the injected override if present,
+    /// otherwise validates credentials and delegates to `init_llm()`.
+    async fn resolve_llm(
+        &mut self,
+    ) -> Result<
+        (
+            Arc<dyn LlmProvider>,
+            Option<Arc<dyn LlmProvider>>,
+            Option<Arc<RecordingLlm>>,
+        ),
+        anyhow::Error,
+    > {
+        if let Some(llm) = self.llm_override.take() {
+            return Ok((llm, None, None));
+        }
+        // Validate credentials only when not using an override.
+        self.validate_llm_config()?;
+        self.init_llm().await
+    }
 
-        // Post-init validation: if a non-nearai backend was selected but
-        // credentials were never resolved (deferred resolution found no keys),
-        // fail early with a clear error instead of a confusing runtime failure.
+    /// Phase 7: Initialize runtime metering (context manager and cost guard).
+    fn init_metering(
+        &self,
+    ) -> (
+        Arc<ContextManager>,
+        Arc<crate::agent::cost_guard::CostGuard>,
+    ) {
+        let context_manager = Arc::new(ContextManager::new(self.config.agent.max_parallel_jobs));
+        let cost_guard = Arc::new(crate::agent::cost_guard::CostGuard::new(
+            crate::agent::cost_guard::CostGuardConfig {
+                max_cost_per_day_cents: self.config.agent.max_cost_per_day_cents,
+                max_actions_per_hour: self.config.agent.max_actions_per_hour,
+            },
+        ));
+        (context_manager, cost_guard)
+    }
+
+    /// Validates that LLM credentials are configured for non-nearai backends.
+    fn validate_llm_config(&self) -> Result<(), anyhow::Error> {
         if self.config.llm.backend != "nearai" && self.config.llm.provider.is_none() {
             let backend = &self.config.llm.backend;
             anyhow::bail!(
@@ -433,12 +542,23 @@ impl AppBuilder {
                  Set the appropriate API key environment variable or run the setup wizard."
             );
         }
+        Ok(())
+    }
 
-        let (llm, cheap_llm, recording_handle) = if let Some(llm) = self.llm_override.take() {
-            (llm, None, None)
-        } else {
-            self.init_llm().await?
-        };
+    /// Run all init phases in order and return the assembled components
+    /// along with deferred runtime side effects.
+    ///
+    /// This method performs pure construction without activating background
+    /// tasks or I/O-heavy operations. Call `side_effects.start()` to
+    /// activate deferred work (workspace import, seeding, embedding backfill,
+    /// stale job cleanup).
+    pub async fn build_components(
+        mut self,
+    ) -> Result<(AppComponents, RuntimeSideEffects), anyhow::Error> {
+        self.init_database().await?;
+        self.init_secrets().await?;
+
+        let (llm, cheap_llm, recording_handle) = self.resolve_llm().await?;
         let (safety, tools, embeddings, workspace) = self.init_tools(&llm).await?;
 
         // Create hook registry early so runtime extension activation can register hooks.
@@ -453,95 +573,30 @@ impl AppBuilder {
             dev_loaded_tool_names,
         ) = self.init_extensions(&tools, &hooks).await?;
 
-        // Seed workspace and backfill embeddings
-        if let Some(ref ws) = workspace {
-            // Import workspace files from disk FIRST if WORKSPACE_IMPORT_DIR is set.
-            // This lets Docker images / deployment scripts ship customized
-            // workspace templates (e.g., AGENTS.md, TOOLS.md) that override
-            // the generic seeds. Only imports files that don't already exist
-            // in the database — never overwrites user edits.
-            //
-            // Runs before seed_if_empty() so that custom templates take priority
-            // over generic seeds. seed_if_empty() then fills any remaining gaps.
-            if let Ok(import_dir) = std::env::var("WORKSPACE_IMPORT_DIR") {
-                let import_path = std::path::Path::new(&import_dir);
-                match ws.import_from_directory(import_path).await {
-                    Ok(count) if count > 0 => {
-                        tracing::debug!("Imported {} workspace file(s) from {}", count, import_dir);
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to import workspace files from {}: {}",
-                            import_dir,
-                            e
-                        );
-                    }
-                }
-            }
-
-            match ws.seed_if_empty().await {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!("Failed to seed workspace: {}", e);
-                }
-            }
-
-            if embeddings.is_some() {
-                let ws_bg = Arc::clone(ws);
-                tokio::spawn(async move {
-                    match ws_bg.backfill_embeddings().await {
-                        Ok(count) if count > 0 => {
-                            tracing::debug!("Backfilled embeddings for {} chunks", count);
-                        }
-                        Ok(_) => {}
-                        Err(e) => {
-                            tracing::warn!("Failed to backfill embeddings: {}", e);
-                        }
-                    }
-                });
-            }
-        }
+        // Capture workspace import directory for deferred side effects.
+        let workspace_import_dir = self.flags.workspace_import_dir.clone();
 
         // Skills system
-        let (skill_registry, skill_catalog) = if self.config.skills.enabled {
-            let mut registry = SkillRegistry::new(self.config.skills.local_dir.clone())
-                .with_installed_dir(self.config.skills.installed_dir.clone());
-            let loaded = registry.discover_all().await;
-            if !loaded.is_empty() {
-                tracing::debug!("Loaded {} skill(s): {}", loaded.len(), loaded.join(", "));
-            }
-            let registry = Arc::new(std::sync::RwLock::new(registry));
-            let catalog = crate::skills::catalog::shared_catalog();
-            tools.register_skill_tools(Arc::clone(&registry), Arc::clone(&catalog));
-            (Some(registry), Some(catalog))
-        } else {
-            (None, None)
-        };
+        let (skill_registry, skill_catalog) = self.init_skills(&tools).await?;
 
-        let context_manager = Arc::new(ContextManager::new(self.config.agent.max_parallel_jobs));
-        let cost_guard = Arc::new(crate::agent::cost_guard::CostGuard::new(
-            crate::agent::cost_guard::CostGuardConfig {
-                max_cost_per_day_cents: self.config.agent.max_cost_per_day_cents,
-                max_actions_per_hour: self.config.agent.max_actions_per_hour,
-            },
-        ));
+        let (context_manager, cost_guard) = self.init_metering();
 
         tracing::debug!(
             "Tool registry initialized with {} total tools",
             tools.count()
         );
 
-        Ok(AppComponents {
+        let embeddings_available = embeddings.is_some();
+        let components = AppComponents {
             config: self.config,
-            db: self.db,
+            db: self.db.clone(),
             secrets_store: self.secrets_store,
             llm,
             cheap_llm,
             safety,
             tools,
             embeddings,
-            workspace,
+            workspace: workspace.clone(),
             extension_manager,
             mcp_session_manager,
             mcp_process_manager,
@@ -556,6 +611,276 @@ impl AppBuilder {
             session: self.session,
             catalog_entries,
             dev_loaded_tool_names,
+        };
+
+        let side_effects = RuntimeSideEffects::new(
+            self.db,
+            workspace,
+            workspace_import_dir,
+            embeddings_available,
+        );
+
+        Ok((components, side_effects))
+    }
+
+    /// Convenience wrapper that builds components and immediately starts
+    /// runtime side effects.
+    ///
+    /// This is equivalent to calling `build_components()`, then
+    /// `side_effects.start()`, then awaiting workspace bootstrap completion.
+    /// Use `build_components()` directly when you need control over
+    /// side-effect timing (e.g., in tests).
+    pub async fn build_all(self) -> Result<AppComponents, anyhow::Error> {
+        let (components, side_effects) = self.build_components().await?;
+        side_effects.start()?.wait_until_bootstrapped().await?;
+        Ok(components)
+    }
+}
+
+impl RuntimeSideEffects {
+    /// Create a new `RuntimeSideEffects` instance.
+    pub fn new(
+        db: Option<Arc<dyn Database>>,
+        workspace: Option<Arc<Workspace>>,
+        workspace_import_dir: Option<std::path::PathBuf>,
+        embeddings_available: bool,
+    ) -> Self {
+        Self {
+            db,
+            workspace,
+            workspace_import_dir,
+            embeddings_available,
+        }
+    }
+
+    /// Start all deferred runtime side effects.
+    ///
+    /// This method spawns background tasks and returns their handles. Callers
+    /// can drop the returned value to detach the work, or await
+    /// `wait_until_bootstrapped()` when ordering guarantees are required.
+    ///
+    /// Side effects include:
+    /// - Stale sandbox job cleanup (via database)
+    /// - Workspace import from disk (if `WORKSPACE_IMPORT_DIR` is set)
+    /// - Workspace seeding (if workspace is empty)
+    /// - Embedding backfill (spawns a background task)
+    pub fn start(self) -> Result<RuntimeSideEffectsHandle, anyhow::Error> {
+        // Spawn stale sandbox cleanup task if database is available.
+        let cleanup = if let Some(db) = self.db {
+            let handle = tokio::runtime::Handle::try_current()
+                .context("RuntimeSideEffects::start() requires a Tokio runtime")?;
+            Some(handle.spawn(async move {
+                if let Err(e) = db.cleanup_stale_sandbox_jobs().await {
+                    tracing::warn!("Failed to cleanup stale sandbox jobs: {}", e);
+                }
+            }))
+        } else {
+            None
+        };
+
+        // Spawn workspace import, seeding, and embedding backfill if workspace is available.
+        let workspace_bootstrap = if let Some(ws) = self.workspace {
+            let import_dir = self.workspace_import_dir;
+            let embeddings_available = self.embeddings_available;
+            let handle = tokio::runtime::Handle::try_current()
+                .context("RuntimeSideEffects::start() requires a Tokio runtime")?;
+
+            Some(handle.spawn(async move {
+                // Import workspace files from disk FIRST if WORKSPACE_IMPORT_DIR is set.
+                // This lets Docker images / deployment scripts ship customized workspace
+                // templates that override generic seeds. Only imports files that don't
+                // already exist in the database — never overwrites user edits.
+                if let Some(dir) = import_dir {
+                    match ws.import_from_directory(&dir).await {
+                        Ok(count) if count > 0 => {
+                            tracing::debug!(
+                                "Imported {} workspace file(s) from {}",
+                                count,
+                                dir.display()
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to import workspace files from {}: {}",
+                                dir.display(),
+                                e
+                            );
+                        }
+                    }
+                }
+
+                // Seed workspace with default content if empty.
+                match ws.seed_if_empty().await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::warn!("Failed to seed workspace: {}", e);
+                    }
+                }
+
+                // Backfill embeddings in background if embeddings are configured.
+                if embeddings_available {
+                    match ws.backfill_embeddings().await {
+                        Ok(count) if count > 0 => {
+                            tracing::debug!("Backfilled embeddings for {} chunks", count);
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::warn!("Failed to backfill embeddings: {}", e);
+                        }
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
+        Ok(RuntimeSideEffectsHandle {
+            workspace_bootstrap,
+            _cleanup: cleanup,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        path::{Path, PathBuf},
+        sync::Arc,
+    };
+
+    use crate::{
+        channels::web::log_layer::LogBroadcaster,
+        config::Config,
+        db::Database,
+        llm::{LlmProvider, SessionConfig, SessionManager},
+        testing::StubLlm,
+    };
+    use anyhow::Context;
+    use rstest::{fixture, rstest};
+
+    #[cfg(feature = "libsql")]
+    use crate::db::libsql::LibSqlBackend;
+
+    #[test]
+    fn runtime_side_effects_new_all_none_does_not_panic() {
+        let _ = RuntimeSideEffects::new(None, None, None, false);
+    }
+
+    #[tokio::test]
+    async fn runtime_side_effects_start_no_ops_when_nothing_configured() -> anyhow::Result<()> {
+        let se = RuntimeSideEffects::new(None, None, None, false);
+        se.start()?.wait_until_bootstrapped().await?;
+        Ok(())
+    }
+
+    async fn assert_no_activation(
+        workspace: &Arc<Workspace>,
+        import_dir: &Path,
+    ) -> anyhow::Result<()> {
+        assert!(
+            tokio::fs::try_exists(import_dir.join("MARKER.md")).await?,
+            "build_components() must not mutate the source import directory"
+        );
+        assert!(
+            !workspace.exists("MARKER.md").await?,
+            "build_components() must not run deferred workspace import"
+        );
+        assert!(
+            !workspace.exists(crate::workspace::paths::README).await?,
+            "build_components() must not run seed_if_empty()"
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "libsql")]
+    #[fixture]
+    async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)> {
+        let temp_dir = tempfile::tempdir()?;
+        let db_path = temp_dir.path().join("app-builder-test.db");
+        let backend = LibSqlBackend::new_local(&db_path).await?;
+        backend.run_migrations().await?;
+        let db: Arc<dyn Database> = Arc::new(backend);
+
+        let skills_dir = temp_dir.path().join("skills");
+        let installed_skills_dir = temp_dir.path().join("installed_skills");
+        let workspace_import_dir = temp_dir.path().join("workspace_import");
+        tokio::fs::create_dir_all(&skills_dir).await?;
+        tokio::fs::create_dir_all(&installed_skills_dir).await?;
+        tokio::fs::create_dir_all(&workspace_import_dir).await?;
+        tokio::fs::write(
+            workspace_import_dir.join("MARKER.md"),
+            "# Marker\n\nImported by RuntimeSideEffects::start().\n",
+        )
+        .await?;
+
+        let config = Config::for_testing(db_path, skills_dir, installed_skills_dir).await?;
+        let session = Arc::new(SessionManager::new(SessionConfig::default()));
+        let log_broadcaster = Arc::new(LogBroadcaster::new());
+        let llm: Arc<dyn LlmProvider> = Arc::new(StubLlm::new("ok"));
+
+        let mut builder = AppBuilder::new(
+            config,
+            AppBuilderFlags {
+                workspace_import_dir: Some(workspace_import_dir.clone()),
+                ..AppBuilderFlags::default()
+            },
+            None,
+            session,
+            log_broadcaster,
+        );
+        builder.with_database(db);
+        builder.with_llm(llm);
+
+        Ok((builder, workspace_import_dir, temp_dir))
+    }
+
+    #[cfg(feature = "libsql")]
+    #[rstest]
+    #[tokio::test]
+    async fn build_components_returns_without_activating_side_effects(
+        #[future] two_phase_fixture: anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)>,
+    ) -> anyhow::Result<()> {
+        let (builder, workspace_import_dir, _temp_dir) = two_phase_fixture.await?;
+        let (components, side_effects) = builder.build_components().await?;
+        assert!(components.tools.count() > 0);
+        let workspace = components
+            .workspace
+            .as_ref()
+            .context("workspace should be constructed during build_components()")?;
+        assert_no_activation(workspace, &workspace_import_dir).await?;
+        side_effects.start()?.wait_until_bootstrapped().await?;
+        let marker = workspace.read("MARKER.md").await?;
+        assert_eq!(
+            marker.content,
+            "# Marker\n\nImported by RuntimeSideEffects::start().\n"
+        );
+
+        Ok(())
+    }
+
+    #[cfg(feature = "libsql")]
+    #[rstest]
+    #[tokio::test]
+    async fn build_all_waits_for_workspace_bootstrap(
+        #[future] two_phase_fixture: anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)>,
+    ) -> anyhow::Result<()> {
+        let (builder, _workspace_import_dir, _temp_dir) = two_phase_fixture.await?;
+        let components = builder.build_all().await?;
+        let workspace = components
+            .workspace
+            .as_ref()
+            .context("workspace should be constructed during build_all()")?;
+        assert!(
+            workspace.exists(crate::workspace::paths::README).await?,
+            "build_all() must complete workspace seeding before returning"
+        );
+        let marker = workspace.read("MARKER.md").await?;
+        assert_eq!(
+            marker.content,
+            "# Marker\n\nImported by RuntimeSideEffects::start().\n"
+        );
+        Ok(())
     }
 }

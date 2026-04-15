@@ -184,6 +184,66 @@ For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
 tests independent of host machine secrets, keychains, and shell state.
 
+## AppBuilder
+
+`AppBuilder` owns the mechanical bootstrap sequence for host startup.
+It constructs `AppComponents` in phase order and keeps activation of
+runtime side effects separate from construction so tests can avoid
+background I/O.
+
+### Two-phase bootstrap
+
+`build_components()` separates construction from activation:
+
+```rust
+// Production usage (src/main.rs):
+let (components, side_effects) = AppBuilder::new(…).build_components().await?;
+side_effects.start();   // activates background tasks
+
+// Test usage (tests/support/test_rig/builder.rs):
+let (components, _side_effects) = builder.build_components().await?;
+// _side_effects is intentionally discarded — no background I/O during tests
+```
+
+The `build_all()` function provides a backward-compatible single-call
+form; it invokes `build_components()` and then
+`side_effects.start()`.
+
+- `init_skills()` runs during `build_components()` construction;
+  `RuntimeSideEffects::start()` does not load skills.
+
+#### init_skills()
+
+Phase: after tool registry initialization and before extensions.
+Purpose: discover local and installed skills, register their tools into
+the shared `ToolRegistry`, and expose:
+
+- `SkillRegistry` (`Arc<RwLock<...>>`) for mutation by the agent at
+  runtime.
+- `SkillCatalog` (`Arc<...>`) for lookups.
+
+Behaviour:
+
+- When `config.skills.enabled = false` it returns `(None, None)`.
+- When enabled, it loads skills from `skills.local_dir` and
+  `skills.installed_dir` (if present), logs loaded names at debug, and
+  registers tool shims into the `ToolRegistry`.
+
+Tests:
+
+- See `src/app.rs` `#[cfg(test)]` for smoke coverage.
+
+#### AppBuilderFlags
+
+`AppBuilderFlags` controls optional construction behaviour:
+
+Table: `AppBuilderFlags` fields and effects.
+
+| Field | Type | Effect |
+| --- | --- | --- |
+| `no_db` | `bool` | Skip database initialization |
+| `workspace_import_dir` | `Option<PathBuf>` | Directory to import into the workspace on activation; captured at construction so `RuntimeSideEffects::start()` does not re-read the environment |
+
 ## Fast local validation loop
 
 For quick host-side iteration on Linux or WSL with the current branch

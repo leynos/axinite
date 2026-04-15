@@ -40,7 +40,8 @@ use uuid::Uuid;
 
 use crate::agent::Agent;
 use crate::agent::dispatcher::{
-    AgenticLoopResult, check_auth_required, execute_chat_tool_standalone, parse_auth_result,
+    AgenticLoopResult, ChatToolRequest, check_auth_required, execute_chat_tool_standalone,
+    parse_auth_result,
 };
 use crate::agent::session::{PendingApproval, Session, ThreadState};
 use crate::agent::submission::SubmissionResult;
@@ -549,8 +550,10 @@ impl Agent {
                 let result = execute_chat_tool_standalone(
                     &tools,
                     &safety,
-                    &tc.name,
-                    &tc.arguments,
+                    &ChatToolRequest {
+                        tool_name: &tc.name,
+                        params: &tc.arguments,
+                    },
                     &job_ctx,
                 )
                 .await;

@@ -304,10 +304,14 @@ impl TestRigBuilder {
         );
         builder.with_database(db);
         builder.with_llm(llm);
-        builder
-            .build_all()
+        let (components, _side_effects) = builder
+            .build_components()
             .await
-            .context("AppBuilder::build_all() failed in test rig")
+            .context("AppBuilder::build_components() failed in test rig")?;
+        // Note: Intentionally discarding RuntimeSideEffects to avoid unnecessary
+        // background work (workspace import, embedding backfill, stale job cleanup)
+        // during composition tests. This keeps tests fast and isolated.
+        Ok(components)
     }
 
     fn build_agent_deps(

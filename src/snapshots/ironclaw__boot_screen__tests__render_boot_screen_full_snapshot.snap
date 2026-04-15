@@ -1,0 +1,22 @@
+---
+source: src/boot_screen.rs
+assertion_line: 260
+expression: "&output"
+---
+
+  [90m╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶[0m
+
+  [1mironclaw[0m v0.2.0
+
+  [90mmodel[0m     [36mclaude-3-5-sonnet-20241022[0m  [90mcheap[0m [36mgpt-4o-mini[0m  [90mvia nearai[0m
+  [90mdatabase[0m  [36mlibsql[0m [90m(connected)[0m
+  [90mtools[0m     [36m24[0m [90mregistered[0m
+  [90mfeatures[0m  [36membeddings (openai)  heartbeat (30m)  sandbox  routines  skills[0m
+  [90mchannels[0m  [36mrepl  gateway  telegram[0m
+
+  [90mgateway[0m   [33;4mhttp://127.0.0.1:3001/?token=abc123[0m
+  [90mtunnel[0m    [33;4mhttps://abc123.ngrok.io[0m [90m(ngrok)[0m
+
+  [90m╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶[0m
+
+  /help for commands, /quit to exit

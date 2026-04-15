@@ -41,6 +41,7 @@ jobs:
     name: Coverage (${{ matrix.name }})
     runs-on: ubuntu-latest
     env:
+      CARGO_INCREMENTAL: "0"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
@@ -72,6 +73,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
       - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
@@ -137,6 +148,14 @@ jobs:
           disable_search: true
           use_oidc: true
           fail_ci_if_error: true
+
+      - name: Trim build artefacts before cache save
+        if: always()
+        run: |
+          rm -rf target/debug/incremental
+          rm -rf target/debug/.fingerprint
+          cargo clean --doc 2>/dev/null || true
+          find target -name "*.d" -delete 2>/dev/null || true
 
   e2e-coverage:
     name: E2E Coverage
