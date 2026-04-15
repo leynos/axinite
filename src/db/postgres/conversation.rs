@@ -25,6 +25,7 @@ impl NativeConversationStore for PgBackend {
         async fn update_conversation_metadata_field(&self, id: Uuid, key: &str, value: &serde_json::Value) -> Result<(), DatabaseError>;
         async fn get_conversation_metadata(&self, id: Uuid) -> Result<Option<serde_json::Value>, DatabaseError>;
         async fn list_conversation_messages(&self, conversation_id: Uuid) -> Result<Vec<ConversationMessage>, DatabaseError>;
+        async fn list_conversation_messages_scoped(&self, conversation_id: Uuid, user_id: &str, channel: &str) -> Result<Vec<ConversationMessage>, DatabaseError>;
         async fn conversation_belongs_to_user(&self, conversation_id: Uuid, user_id: &str) -> Result<bool, DatabaseError>;
     }
 

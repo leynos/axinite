@@ -15,6 +15,7 @@ impl Agent {
         &self,
         message: &IncomingMessage,
         req: UserTurnRequest,
+
     ) -> Result<SubmissionResult, Error> {
         tracing::debug!(
             message_id = %message.id,
@@ -84,6 +85,43 @@ impl Agent {
         self.handle_loop_result(message, &req.session, req.thread_id, result)
             .await
     }
+
+    ) -> Option<SubmissionResult> {
+        let validation = self.safety().validate_input(content);
+        if !validation.is_valid {
+            let details = validation
+                .errors
+                .iter()
+                .map(|e| format!("{}: {}", e.field, e.message))
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Some(SubmissionResult::error(format!(
+                "Input rejected by safety validation: {}",
+                details
+            )));
+        }
+
+        let violations = self.safety().check_policy(content);
+        if violations
+            .iter()
+            .any(|rule| rule.action == crate::safety::PolicyAction::Block)
+        {
+            return Some(SubmissionResult::error("Input rejected by safety policy."));
+        }
+
+        // Scan inbound messages for secrets (API keys, tokens).
+        if let Some(warning) = self.safety().scan_inbound_for_secrets(content) {
+            tracing::warn!(
+                message_id = %message.id,
+                "Inbound message blocked: contains leaked secret"
+            );
+            return Some(SubmissionResult::error(warning));
+        }
+
+        None
+    }
+
+    /// Auto-compact context if needed before adding new turn.
 }
 
 mod tests {

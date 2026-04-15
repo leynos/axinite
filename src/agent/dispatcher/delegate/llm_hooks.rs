@@ -301,6 +301,14 @@ pub(crate) fn compact_messages_for_retry(messages: &[ChatMessage]) -> Vec<ChatMe
 /// from a response string. These markers are inserted by provider-level message
 /// flattening (e.g. NEAR AI) and can leak into the user-visible response when
 /// the LLM echoes them back.
+fn is_internal_tool_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    (trimmed.starts_with("[Called tool ") && trimmed.ends_with(']'))
+        || (trimmed.starts_with("[Tool ")
+            && trimmed.contains(" returned:")
+            && trimmed.ends_with(']'))
+        || (trimmed.starts_with("[TOOL_CALL:") && trimmed.ends_with(']'))
+}
 pub(crate) fn strip_internal_tool_call_text(text: &str) -> String {
     if text.is_empty() {
         return String::new();
@@ -311,14 +319,7 @@ pub(crate) fn strip_internal_tool_call_text(text: &str) -> String {
     // `[Tool <name> returned: ...]`, or `[TOOL_CALL:<name>]`.
     let result = text
         .lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            !((trimmed.starts_with("[Called tool ") && trimmed.ends_with(']'))
-                || (trimmed.starts_with("[Tool ")
-                    && trimmed.contains(" returned:")
-                    && trimmed.ends_with(']'))
-                || (trimmed.starts_with("[TOOL_CALL:") && trimmed.ends_with(']')))
-        })
+        .filter(|line| !is_internal_tool_line(line))
         .fold(String::new(), |mut acc, s| {
             if !acc.is_empty() {
                 acc.push('\n');

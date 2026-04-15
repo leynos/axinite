@@ -156,6 +156,15 @@ impl NativeConversationStore for LibSqlBackend {
         messages::list_conversation_messages(self, conversation_id).await
     }
 
+    async fn list_conversation_messages_scoped(
+        &self,
+        conversation_id: Uuid,
+        user_id: &str,
+        channel: &str,
+    ) -> Result<Vec<ConversationMessage>, DatabaseError> {
+        messages::list_conversation_messages_scoped(self, conversation_id, user_id, channel).await
+    }
+
     async fn conversation_belongs_to_user(
         &self,
         conversation_id: Uuid,

@@ -159,6 +159,35 @@ pub(super) async fn list_conversation_messages(
     Ok(messages)
 }
 
+pub(super) async fn list_conversation_messages_scoped(
+    backend: &LibSqlBackend,
+    conversation_id: Uuid,
+    user_id: &str,
+    channel: &str,
+) -> Result<Vec<ConversationMessage>, DatabaseError> {
+    let conn = backend.connect().await?;
+    let mut rows = conn
+        .query(
+            "SELECT 1 FROM conversations WHERE id = ?1 AND user_id = ?2 AND channel = ?3",
+            params![conversation_id.to_string(), user_id, channel],
+        )
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+    let found = rows
+        .next()
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+    if found.is_none() {
+        return Err(DatabaseError::NotFound {
+            entity: "conversation".to_string(),
+            id: conversation_id.to_string(),
+        });
+    }
+
+    list_conversation_messages(backend, conversation_id).await
+}
+
 #[cfg(test)]
 mod tests {
     use uuid::Uuid;

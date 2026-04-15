@@ -276,6 +276,31 @@ impl Store {
             })
             .collect())
     }
+
+    /// Load all messages for an owned conversation, ordered chronologically.
+    pub async fn list_conversation_messages_scoped(
+        &self,
+        conversation_id: Uuid,
+        user_id: &str,
+        channel: &str,
+    ) -> Result<Vec<ConversationMessage>, DatabaseError> {
+        let conn = self.conn().await?;
+        let row = conn
+            .query_opt(
+                "SELECT 1 FROM conversations WHERE id = $1 AND user_id = $2 AND channel = $3",
+                &[&conversation_id, &user_id, &channel],
+            )
+            .await?;
+
+        if row.is_none() {
+            return Err(DatabaseError::NotFound {
+                entity: "conversation".to_string(),
+                id: conversation_id.to_string(),
+            });
+        }
+
+        self.list_conversation_messages(conversation_id).await
+    }
 }
 
 #[cfg(test)]

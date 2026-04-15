@@ -81,6 +81,7 @@ impl_db_forwarders! {
         fn update_conversation_metadata_field(id: Uuid, key: &'a str, value: &'a serde_json::Value) -> Result<(), DatabaseError>;
         fn get_conversation_metadata(id: Uuid) -> Result<Option<serde_json::Value>, DatabaseError>;
         fn list_conversation_messages(conversation_id: Uuid) -> Result<Vec<ConversationMessage>, DatabaseError>;
+        fn list_conversation_messages_scoped(conversation_id: Uuid, user_id: &'a str, channel: &'a str) -> Result<Vec<ConversationMessage>, DatabaseError>;
         fn conversation_belongs_to_user(conversation_id: Uuid, user_id: &'a str) -> Result<bool, DatabaseError>;
     }
 }

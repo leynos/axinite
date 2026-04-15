@@ -12,6 +12,7 @@ use crate::agent::Agent;
 use crate::agent::session::Session;
 use crate::agent::thread_ops::message_rebuild::rebuild_chat_messages_from_db;
 use crate::channels::IncomingMessage;
+use crate::error::Error;
 use crate::llm::ChatMessage;
 
 impl Agent {
@@ -22,7 +23,7 @@ impl Agent {
     pub(super) async fn hydrate_and_resolve_session_thread(
         &self,
         message: &IncomingMessage,
-    ) -> Result<(Arc<Mutex<Session>>, Uuid), crate::error::Error> {
+    ) -> Result<(Arc<Mutex<Session>>, Uuid), Error> {
         // Hydrate thread from DB if it's a historical thread not in memory
         if let Some(ref external_thread_id) = message.thread_id {
             tracing::trace!(
@@ -68,7 +69,7 @@ impl Agent {
         &self,
         message: &IncomingMessage,
         external_thread_id: &str,
-    ) -> Result<(), crate::error::Error> {
+    ) -> Result<(), Error> {
         // Only hydrate UUID-shaped thread IDs (web gateway uses UUIDs)
         let thread_uuid = match Uuid::parse_str(external_thread_id) {
             Ok(id) => id,
@@ -92,7 +93,9 @@ impl Agent {
         let msg_count;
 
         if let Some(store) = self.store() {
-            let db_messages = store.list_conversation_messages(thread_uuid).await?;
+            let db_messages = store
+                .list_conversation_messages_scoped(thread_uuid, &message.user_id, &message.channel)
+                .await?;
             msg_count = db_messages.len();
             chat_messages = rebuild_chat_messages_from_db(&db_messages, self.safety());
         } else {
@@ -140,6 +143,7 @@ impl Agent {
     }
 }
 
+#[cfg(test)]
 mod tests {
     #[test]
     fn module_compiles() {
