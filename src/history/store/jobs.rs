@@ -324,20 +324,20 @@ mod tests {
     use serde_json::json;
 
     #[cfg(feature = "postgres")]
-    enum RollbackCase {
-        Unknown,
-        NonDirect,
+    enum RollbackScenario {
+        UnknownJob,
+        NonDirectJob,
     }
 
     #[cfg(feature = "postgres")]
     async fn prepare_job_for_rollback(
         backend: &PgBackend,
         store: &Store,
-        case: RollbackCase,
+        scenario: RollbackScenario,
     ) -> Result<(Uuid, Option<JobContext>), Box<dyn std::error::Error>> {
-        match case {
-            RollbackCase::Unknown => Ok((Uuid::new_v4(), None)),
-            RollbackCase::NonDirect => {
+        match scenario {
+            RollbackScenario::UnknownJob => Ok((Uuid::new_v4(), None)),
+            RollbackScenario::NonDirectJob => {
                 let ctx = JobContext::with_user("test-user", "sandbox-like job", "rollback check");
                 let job_id = ctx.job_id;
                 store.save_job(&ctx).await?;
@@ -419,33 +419,26 @@ mod tests {
 
     #[cfg(feature = "postgres")]
     #[rstest]
-    #[case(RollbackCase::Unknown, JobState::Completed, None, json!({"status": "completed"}))]
-    #[case(
-        RollbackCase::NonDirect,
-        JobState::Failed,
-        Some("no direct source"),
-        json!({"status": "failed"})
-    )]
+    #[case(RollbackScenario::UnknownJob)]
+    #[case(RollbackScenario::NonDirectJob)]
     #[tokio::test]
-    async fn persist_terminal_result_and_status_rolls_back_invalid_jobs(
-        #[case] case: RollbackCase,
-        #[case] status: JobState,
-        #[case] failure_reason: Option<&str>,
-        #[case] event_data: serde_json::Value,
+    async fn persist_terminal_result_and_status_rolls_back_on_invalid_job(
+        #[case] scenario: RollbackScenario,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let Some(backend) = try_test_pg_db().await? else {
             return Ok(());
         };
         let store = Store::from_pool(backend.pool());
-        let (job_id, saved_ctx) = prepare_job_for_rollback(&backend, &store, case).await?;
+        let (job_id, saved_ctx) =
+            prepare_job_for_rollback(&backend, &store, scenario).await?;
 
         let result = store
             .persist_terminal_result_and_status(TerminalJobPersistence {
                 job_id,
-                status,
-                failure_reason,
+                status: JobState::Failed,
+                failure_reason: Some("terminal rollback regression"),
                 event_type: crate::db::SandboxEventType::from("result"),
-                event_data: &event_data,
+                event_data: &json!({"status": "failed"}),
             })
             .await;
         assert!(result.is_err(), "invalid terminal job write should fail");
