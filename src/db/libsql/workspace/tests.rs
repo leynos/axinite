@@ -10,6 +10,39 @@ use super::vector_search::{
 use crate::db::{HybridSearchParams, InsertChunkParams, NativeDatabase, NativeWorkspaceStore};
 use crate::workspace::SearchConfig;
 
+/// Assert that `actual` has the same length as `expected` and that every
+/// element is within floating-point tolerance.
+fn assert_embedding_approx_eq(actual: &[f32], expected: &[f32]) {
+    assert_eq!(
+        actual.len(),
+        expected.len(),
+        "embedding length mismatch: got {}, expected {}",
+        actual.len(),
+        expected.len(),
+    );
+    for (i, (a, e)) in actual.iter().zip(expected.iter()).enumerate() {
+        assert!(
+            (a - e).abs() < 0.001,
+            "embedding[{i}]: got {a}, expected {e} (tolerance 0.001)",
+        );
+    }
+}
+
+/// Assert that `results` contains exactly one entry whose `document_path`,
+/// `fts_rank`, and `vector_rank` match the supplied values.
+fn assert_sole_search_result(
+    results: &[crate::workspace::SearchResult],
+    expected_path: &str,
+    expected_fts_rank: Option<u32>,
+    expected_vector_rank: Option<u32>,
+) {
+    assert_eq!(results.len(), 1, "expected exactly one search result");
+    let r = &results[0];
+    assert_eq!(r.document_path, expected_path, "document_path mismatch");
+    assert_eq!(r.fts_rank, expected_fts_rank, "fts_rank mismatch");
+    assert_eq!(r.vector_rank, expected_vector_rank, "vector_rank mismatch");
+}
+
 #[test]
 fn test_deserialize_embedding_valid() {
     let floats = [1.0f32, 2.0, 3.0];
@@ -17,10 +50,7 @@ fn test_deserialize_embedding_valid() {
 
     let result = deserialize_embedding(&bytes);
 
-    assert_eq!(result.len(), 3);
-    assert!((result[0] - 1.0).abs() < 0.001);
-    assert!((result[1] - 2.0).abs() < 0.001);
-    assert!((result[2] - 3.0).abs() < 0.001);
+    assert_embedding_approx_eq(&result, &[1.0, 2.0, 3.0]);
 }
 
 #[test]
@@ -53,10 +83,7 @@ fn test_deserialize_embedding_negative_values() {
 
     let result = deserialize_embedding(&bytes);
 
-    assert_eq!(result.len(), 3);
-    assert!((result[0] - (-1.5)).abs() < 0.001);
-    assert!((result[1] - 0.0).abs() < 0.001);
-    assert!((result[2] - 2.75).abs() < 0.001);
+    assert_embedding_approx_eq(&result, &[-1.5, 0.0, 2.75]);
 }
 
 #[tokio::test]
@@ -245,11 +272,11 @@ async fn hybrid_search_uses_brute_force_when_vector_index_is_unavailable() {
         .await
         .expect("failed to execute hybrid search");
 
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].document_path, "notes/search.md");
-    assert_eq!(results[0].fts_rank, Some(1));
-    assert_eq!(results[0].vector_rank, Some(1));
-    assert!(results[0].is_hybrid());
+    assert_sole_search_result(&results, "notes/search.md", Some(1), Some(1));
+    assert!(
+        results[0].is_hybrid(),
+        "brute-force result must be flagged as hybrid"
+    );
 }
 
 #[tokio::test]
@@ -340,8 +367,5 @@ async fn hybrid_search_returns_fts_only_results_without_embedding() {
         .await
         .expect("failed to execute FTS-only hybrid search");
 
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].document_path, "notes/fts-only.md");
-    assert_eq!(results[0].fts_rank, Some(1));
-    assert_eq!(results[0].vector_rank, None);
+    assert_sole_search_result(&results, "notes/fts-only.md", Some(1), None);
 }
