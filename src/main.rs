@@ -488,7 +488,17 @@ async fn run_shutdown_sequence(
 
 #[cfg(any(feature = "postgres", feature = "libsql"))]
 async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
-    let _ = cli;
+    if !cli.no_onboard
+        && let Some(reason) = ironclaw::setup::check_onboard_needed()
+    {
+        println!("Onboarding needed: {}", reason);
+        println!();
+        let mut wizard = SetupWizard::with_config(SetupConfig {
+            quick: true,
+            ..Default::default()
+        });
+        wizard.run().await?;
+    }
     Ok(())
 }
 
