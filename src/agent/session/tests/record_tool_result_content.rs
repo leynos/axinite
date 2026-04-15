@@ -24,3 +24,27 @@ fn record_tool_result_content_cases(
 
     assert_eq!(turn.tool_calls[0].result, Some(expected));
 }
+
+#[test]
+fn record_tool_result_at_returns_out_of_bounds_error() {
+    let mut turn = Turn::new(1, "input");
+    turn.record_tool_call("json", serde_json::json!({}));
+
+    let error = turn
+        .record_tool_result_at(1, serde_json::json!({"ok": true}))
+        .expect_err("out-of-bounds result write should fail");
+
+    assert_eq!(error, ToolCallIndexError::OutOfBounds { idx: 1, len: 1 });
+}
+
+#[test]
+fn record_tool_error_at_returns_out_of_bounds_error() {
+    let mut turn = Turn::new(1, "input");
+    turn.record_tool_call("json", serde_json::json!({}));
+
+    let error = turn
+        .record_tool_error_at(1, "boom")
+        .expect_err("out-of-bounds error write should fail");
+
+    assert_eq!(error, ToolCallIndexError::OutOfBounds { idx: 1, len: 1 });
+}

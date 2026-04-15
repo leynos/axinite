@@ -43,9 +43,9 @@ pub struct Session {
 }
 
 /// Errors for indexed tool-call mutations on a turn.
-#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum ToolCallIndexError {
-    #[error("tool call index {idx} is out of bounds for turn with {len} tool calls")]
+    #[error("tool call index {idx} out of bounds (len={len})")]
     OutOfBounds { idx: usize, len: usize },
 }
 
