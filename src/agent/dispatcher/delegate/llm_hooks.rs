@@ -5,6 +5,7 @@
 //! response sanitization.
 
 use crate::agent::agentic_loop::{LoopOutcome, LoopSignal, TextAction};
+use crate::agent::cost_guard::CostGuard;
 use crate::agent::dispatcher::delegate::ChatDelegate;
 use crate::agent::session::ThreadState;
 use crate::channels::StatusUpdate;
@@ -97,14 +98,14 @@ pub(crate) async fn call_llm(
     reason_ctx: &mut ReasoningContext,
     iteration: usize,
 ) -> Result<crate::llm::RespondOutput, Error> {
-    check_cost_guardrail(delegate).await?;
+    check_cost_guardrail(delegate.agent.cost_guard()).await?;
     let output = invoke_with_retry(delegate, reasoning, reason_ctx, iteration).await?;
     record_and_log_cost(delegate, &output).await;
     Ok(output)
 }
 
-async fn check_cost_guardrail(delegate: &ChatDelegate<'_>) -> Result<(), Error> {
-    if let Err(limit) = delegate.agent.cost_guard().check_allowed().await {
+async fn check_cost_guardrail(cost_guard: &CostGuard) -> Result<(), Error> {
+    if let Err(limit) = cost_guard.check_allowed().await {
         return Err(crate::error::LlmError::InvalidResponse {
             provider: "agent".to_string(),
             reason: limit.to_string(),
@@ -120,8 +121,8 @@ async fn invoke_with_retry(
     reason_ctx: &mut ReasoningContext,
     iteration: usize,
 ) -> Result<crate::llm::RespondOutput, Error> {
-    Ok(match reasoning.respond_with_tools(reason_ctx).await {
-        Ok(output) => output,
+    match reasoning.respond_with_tools(reason_ctx).await {
+        Ok(output) => Ok(output),
         Err(crate::error::LlmError::ContextLengthExceeded { used, limit }) => {
             tracing::warn!(
                 used,
@@ -129,42 +130,23 @@ async fn invoke_with_retry(
                 iteration,
                 "Context length exceeded, compacting messages and retrying"
             );
-
-            let used = u32::try_from(used).unwrap_or(u32::MAX);
-            record_partial_llm_call(delegate, used).await;
-
-            // Compact messages in place and retry
             reason_ctx.messages = compact_messages_for_retry(&reason_ctx.messages);
-
-            // When force_text, clear tools to further reduce token count
             if reason_ctx.force_text {
                 reason_ctx.available_tools.clear();
             }
-
-            check_cost_guardrail(delegate).await?;
-
-            match reasoning.respond_with_tools(reason_ctx).await {
-                Ok(output) => output,
-                Err(retry_err) => {
-                    if let crate::error::LlmError::ContextLengthExceeded {
-                        used: retry_used, ..
-                    } = &retry_err
-                    {
-                        let retry_used = u32::try_from(*retry_used).unwrap_or(u32::MAX);
-                        record_partial_llm_call(delegate, retry_used).await;
-                    }
-                    tracing::error!(
-                        original_used = used,
-                        original_limit = limit,
-                        retry_error = %retry_err,
-                        "Retry after auto-compaction also failed"
-                    );
-                    return Err(crate::error::Error::from(retry_err));
-                }
-            }
+            check_cost_guardrail(delegate.agent.cost_guard()).await?;
+            reasoning.respond_with_tools(reason_ctx).await.map_err(|retry_err| {
+                tracing::error!(
+                    original_used = used,
+                    original_limit = limit,
+                    retry_error = %retry_err,
+                    "Retry after auto-compaction also failed"
+                );
+                crate::error::Error::from(retry_err)
+            })
         }
-        Err(e) => return Err(e.into()),
-    })
+        Err(e) => Err(e.into()),
+    }
 }
 
 async fn record_and_log_cost(delegate: &ChatDelegate<'_>, output: &crate::llm::RespondOutput) {
