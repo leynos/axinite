@@ -207,6 +207,7 @@ trybuild = "1"
 proptest = "1.6.0"
 delegate = "0.13"
 gag = "1.0.0"
+scopeguard = "1.2.0"
 
 [features]
 default = ["postgres", "libsql", "html-to-markdown", "docker"]

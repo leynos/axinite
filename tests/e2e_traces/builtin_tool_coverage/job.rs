@@ -17,6 +17,7 @@ async fn job_create_status() -> anyhow::Result<()> {
         RigConfig::default(),
     )
     .await?;
+    let rig = scopeguard::guard(rig, |rig| rig.shutdown());
 
     // Both tools should have succeeded.
     let completed = rig.tool_calls_completed();
@@ -59,8 +60,6 @@ async fn job_create_status() -> anyhow::Result<()> {
         "job_status should return the job title: {:?}",
         status_result.1
     );
-
-    rig.shutdown();
     Ok(())
 }
 
@@ -79,6 +78,7 @@ async fn job_list_cancel() -> anyhow::Result<()> {
         RigConfig::default(),
     )
     .await?;
+    let rig = scopeguard::guard(rig, |rig| rig.shutdown());
 
     // All three tools should have succeeded.
     let completed = rig.tool_calls_completed();
@@ -94,7 +94,5 @@ async fn job_list_cancel() -> anyhow::Result<()> {
         completed.iter().any(|(n, ok)| n == "cancel_job" && *ok),
         "cancel_job should succeed: {completed:?}"
     );
-
-    rig.shutdown();
     Ok(())
 }
