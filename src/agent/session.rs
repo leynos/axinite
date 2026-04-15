@@ -209,11 +209,10 @@ pub struct Thread {
 }
 
 impl Thread {
-    /// Create a new thread.
-    pub fn new(session_id: Uuid) -> Self {
+    fn init(session_id: Uuid, thread_id: Uuid) -> Self {
         let now = Utc::now();
         Self {
-            id: Uuid::new_v4(),
+            id: thread_id,
             session_id,
             state: ThreadState::Idle,
             turns: Vec::new(),
@@ -226,21 +225,15 @@ impl Thread {
         }
     }
 
+    /// Create a new thread.
+    pub fn new(session_id: Uuid) -> Self {
+        let thread_id = Uuid::new_v4();
+        Self::init(session_id, thread_id)
+    }
+
     /// Create a thread with a specific ID (for DB hydration).
     pub fn with_id(id: Uuid, session_id: Uuid) -> Self {
-        let now = Utc::now();
-        Self {
-            id,
-            session_id,
-            state: ThreadState::Idle,
-            turns: Vec::new(),
-            created_at: now,
-            updated_at: now,
-            metadata: serde_json::Value::Null,
-            pending_approval: None,
-            pending_auth: None,
-            in_flight_auth: false,
-        }
+        Self::init(session_id, id)
     }
 
     /// Get the current turn number (1-indexed for display).
@@ -526,6 +519,22 @@ pub struct Turn {
 }
 
 impl Turn {
+    fn set_tool_outcome_at(
+        &mut self,
+        idx: usize,
+        result: Option<serde_json::Value>,
+        error: Option<String>,
+    ) -> Result<(), ToolCallIndexError> {
+        let len = self.tool_calls.len();
+        let tool_call = self
+            .tool_calls
+            .get_mut(idx)
+            .ok_or(ToolCallIndexError::OutOfBounds { idx, len })?;
+        tool_call.result = result;
+        tool_call.error = error;
+        Ok(())
+    }
+
     /// Create a new turn.
     pub fn new(turn_number: usize, user_input: impl Into<String>) -> Self {
         Self {
@@ -588,13 +597,7 @@ impl Turn {
         idx: usize,
         result: serde_json::Value,
     ) -> Result<(), ToolCallIndexError> {
-        let len = self.tool_calls.len();
-        let call = self
-            .tool_calls
-            .get_mut(idx)
-            .ok_or(ToolCallIndexError::OutOfBounds { idx, len })?;
-        call.result = Some(result);
-        Ok(())
+        self.set_tool_outcome_at(idx, Some(result), None)
     }
 
     fn parse_tool_result(result_content: &str) -> serde_json::Value {
@@ -635,13 +638,7 @@ impl Turn {
         idx: usize,
         error: impl Into<String>,
     ) -> Result<(), ToolCallIndexError> {
-        let len = self.tool_calls.len();
-        let call = self
-            .tool_calls
-            .get_mut(idx)
-            .ok_or(ToolCallIndexError::OutOfBounds { idx, len })?;
-        call.error = Some(error.into());
-        Ok(())
+        self.set_tool_outcome_at(idx, None, Some(error.into()))
     }
 }
 
