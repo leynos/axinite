@@ -744,26 +744,40 @@ impl RuntimeSideEffects {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::{
+        path::{Path, PathBuf},
+        sync::Arc,
+    };
+
+    use crate::{
+        channels::web::log_layer::LogBroadcaster,
+        config::Config,
+        db::Database,
+        llm::{LlmProvider, SessionConfig, SessionManager},
+        testing::StubLlm,
+    };
+    use anyhow::Context;
+    use rstest::{fixture, rstest};
+
+    #[cfg(feature = "libsql")]
     use crate::db::libsql::LibSqlBackend;
 
     #[test]
-
     fn runtime_side_effects_new_all_none_does_not_panic() {
         let _ = RuntimeSideEffects::new(None, None, None, false);
     }
 
     #[tokio::test]
-
-    async fn runtime_side_effects_start_no_ops_when_nothing_configured() {
+    async fn runtime_side_effects_start_no_ops_when_nothing_configured() -> anyhow::Result<()> {
         let se = RuntimeSideEffects::new(None, None, None, false);
-        // start() returns () — the test passes if it does not panic.
-        se.start();
+        se.start()?.wait_until_bootstrapped().await?;
+        Ok(())
     }
 
     async fn assert_no_activation(
         workspace: &Arc<Workspace>,
         import_dir: &Path,
-
     ) -> anyhow::Result<()> {
         assert!(
             tokio::fs::try_exists(import_dir.join("MARKER.md")).await?,
@@ -781,7 +795,7 @@ mod tests {
     }
 
     #[cfg(feature = "libsql")]
-
+    #[fixture]
     async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)> {
         let temp_dir = tempfile::tempdir()?;
         let db_path = temp_dir.path().join("app-builder-test.db");
@@ -823,133 +837,12 @@ mod tests {
     }
 
     #[cfg(feature = "libsql")]
+    #[rstest]
     #[tokio::test]
-
-    async fn build_components_returns_without_activating_side_effects() -> anyhow::Result<()> {
-        let (builder, workspace_import_dir, _temp_dir) = two_phase_fixture().await?;
-        let (components, side_effects) = builder.build_components().await?;
-        assert!(components.tools.count() > 0);
-        let workspace = components
-            .workspace
-            .as_ref()
-            .context("workspace should be constructed during build_components()")?;
-        assert_no_activation(workspace, &workspace_import_dir).await?;
-        side_effects.start();
-        wait_for_import_and_seed(workspace, 5).await?;
-        let marker = workspace.read("MARKER.md").await?;
-        assert_eq!(
-            marker.content,
-            "# Marker\n\nImported by RuntimeSideEffects::start().\n"
-        );
-
-        Ok(())
-    }
-
-    async fn build_all_waits_for_workspace_bootstrap() -> anyhow::Result<()> {
-        let (builder, _workspace_import_dir, _temp_dir) = two_phase_fixture().await?;
-        let components = builder.build_all().await?;
-        let workspace = components
-            .workspace
-            .as_ref()
-            .context("workspace should be constructed during build_all()")?;
-        assert!(
-            workspace.exists(crate::workspace::paths::README).await?,
-            "build_all() must complete workspace seeding before returning"
-        );
-        let marker = workspace.read("MARKER.md").await?;
-        assert_eq!(
-            marker.content,
-            "# Marker\n\nImported by RuntimeSideEffects::start().\n"
-        );
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::db::libsql::LibSqlBackend;
-
-    #[test]
-
-    fn runtime_side_effects_new_all_none_does_not_panic() {
-        let _ = RuntimeSideEffects::new(None, None, None, false);
-    }
-
-    #[tokio::test]
-
-    async fn runtime_side_effects_start_no_ops_when_nothing_configured() {
-        let se = RuntimeSideEffects::new(None, None, None, false);
-        // start() returns () — the test passes if it does not panic.
-        se.start();
-    }
-
-    async fn assert_no_activation(
-        workspace: &Arc<Workspace>,
-        import_dir: &Path,
-
+    async fn build_components_returns_without_activating_side_effects(
+        #[future] two_phase_fixture: anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)>,
     ) -> anyhow::Result<()> {
-        assert!(
-            tokio::fs::try_exists(import_dir.join("MARKER.md")).await?,
-            "build_components() must not mutate the source import directory"
-        );
-        assert!(
-            !workspace.exists("MARKER.md").await?,
-            "build_components() must not run deferred workspace import"
-        );
-        assert!(
-            !workspace.exists(crate::workspace::paths::README).await?,
-            "build_components() must not run seed_if_empty()"
-        );
-        Ok(())
-    }
-
-    #[cfg(feature = "libsql")]
-
-    async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)> {
-        let temp_dir = tempfile::tempdir()?;
-        let db_path = temp_dir.path().join("app-builder-test.db");
-        let backend = LibSqlBackend::new_local(&db_path).await?;
-        backend.run_migrations().await?;
-        let db: Arc<dyn Database> = Arc::new(backend);
-
-        let skills_dir = temp_dir.path().join("skills");
-        let installed_skills_dir = temp_dir.path().join("installed_skills");
-        let workspace_import_dir = temp_dir.path().join("workspace_import");
-        tokio::fs::create_dir_all(&skills_dir).await?;
-        tokio::fs::create_dir_all(&installed_skills_dir).await?;
-        tokio::fs::create_dir_all(&workspace_import_dir).await?;
-        tokio::fs::write(
-            workspace_import_dir.join("MARKER.md"),
-            "# Marker\n\nImported by RuntimeSideEffects::start().\n",
-        )
-        .await?;
-
-        let config = Config::for_testing(db_path, skills_dir, installed_skills_dir).await?;
-        let session = Arc::new(SessionManager::new(SessionConfig::default()));
-        let log_broadcaster = Arc::new(LogBroadcaster::new());
-        let llm: Arc<dyn LlmProvider> = Arc::new(StubLlm::new("ok"));
-
-        let mut builder = AppBuilder::new(
-            config,
-            AppBuilderFlags {
-                workspace_import_dir: Some(workspace_import_dir.clone()),
-                ..AppBuilderFlags::default()
-            },
-            None,
-            session,
-            log_broadcaster,
-        );
-        builder.with_database(db);
-        builder.with_llm(llm);
-
-        Ok((builder, workspace_import_dir, temp_dir))
-    }
-
-    #[cfg(feature = "libsql")]
-    #[tokio::test]
-
-    async fn build_components_returns_without_activating_side_effects() -> anyhow::Result<()> {
-        let (builder, workspace_import_dir, _temp_dir) = two_phase_fixture().await?;
+        let (builder, workspace_import_dir, _temp_dir) = two_phase_fixture.await?;
         let (components, side_effects) = builder.build_components().await?;
         assert!(components.tools.count() > 0);
         let workspace = components
@@ -957,8 +850,7 @@ mod tests {
             .as_ref()
             .context("workspace should be constructed during build_components()")?;
         assert_no_activation(workspace, &workspace_import_dir).await?;
-        side_effects.start();
-        wait_for_import_and_seed(workspace, 5).await?;
+        side_effects.start()?.wait_until_bootstrapped().await?;
         let marker = workspace.read("MARKER.md").await?;
         assert_eq!(
             marker.content,
@@ -968,8 +860,13 @@ mod tests {
         Ok(())
     }
 
-    async fn build_all_waits_for_workspace_bootstrap() -> anyhow::Result<()> {
-        let (builder, _workspace_import_dir, _temp_dir) = two_phase_fixture().await?;
+    #[cfg(feature = "libsql")]
+    #[rstest]
+    #[tokio::test]
+    async fn build_all_waits_for_workspace_bootstrap(
+        #[future] two_phase_fixture: anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)>,
+    ) -> anyhow::Result<()> {
+        let (builder, _workspace_import_dir, _temp_dir) = two_phase_fixture.await?;
         let components = builder.build_all().await?;
         let workspace = components
             .workspace
