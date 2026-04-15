@@ -254,19 +254,12 @@ impl Agent {
         thread_id: Uuid,
 
     ) -> Result<(), Error> {
-        let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
-        let sess = session.lock().await;
+        let mut sess = session.lock().await;
         let thread = sess
             .threads
-            .get(&thread_id)
+            .get_mut(&thread_id)
             .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
-
-        let mut mgr = undo_mgr.lock().await;
-        mgr.checkpoint(
-            thread.turn_number(),
-            thread.messages(),
-            format!("Before turn {}", thread.turn_number()),
-        );
+        thread.fail_turn(err.to_string());
         Ok(())
     }
 
@@ -324,4 +317,43 @@ impl Agent {
         session: Arc<Mutex<Session>>,
         thread_id: Uuid,
         initial_messages: Vec<ChatMessage>,
+
+    fn build_run_loop_ctx(
+        &self,
+        session: Arc<Mutex<Session>>,
+        thread_id: Uuid,
+        initial_messages: Vec<ChatMessage>,
+
+    ) -> crate::agent::dispatcher::RunLoopCtx {
+        crate::agent::dispatcher::RunLoopCtx {
+            session,
+            thread_id,
+            initial_messages,
+        }
+    }
+
+    async fn handle_loop_text_response(
+        &self,
+        message: &IncomingMessage,
+        session: &Arc<Mutex<Session>>,
+        thread_id: Uuid,
+        text: String,
+
+    async fn handle_loop_need_approval(
+        &self,
+        message: &IncomingMessage,
+        session: &Arc<Mutex<Session>>,
+        thread_id: Uuid,
+        pending: crate::agent::session::PendingApproval,
+
+    async fn handle_loop_error(
+        &self,
+        message: &IncomingMessage,
+        err: &Error,
+
+    async fn fail_turn_for_loop_error(
+        &self,
+        session: &Arc<Mutex<Session>>,
+        thread_id: Uuid,
+        err: &Error,
 }
