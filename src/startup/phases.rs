@@ -209,29 +209,20 @@ pub(crate) async fn phase_tunnel_and_orchestrator(
     }
 }
 
-pub(crate) async fn phase_init_channels_and_hooks(
-    cli: &Cli,
-    agent_ctx: AgentRunContext,
-) -> anyhow::Result<GatewayPhaseContext> {
-    let channels = ChannelManager::new();
-    let ChannelSetup {
-        webhook_server,
-        channel_names,
-        loaded_wasm_channel_names,
-        wasm_channel_runtime_state,
-        #[cfg(unix)]
-        http_channel_state,
-    } = setup_channels(cli, &agent_ctx.config, &agent_ctx.components, &channels).await?;
-
-    let active_tool_names = agent_ctx.components.tools.list().await;
+async fn bootstrap_and_log_hooks(
+    components: &AppComponents,
+    config: &Config,
+    loaded_wasm_channel_names: &[String],
+) {
+    let active_tool_names = components.tools.list().await;
     let hook_bootstrap = bootstrap_hooks(
-        &agent_ctx.components.hooks,
-        agent_ctx.components.workspace.as_ref(),
-        &agent_ctx.config.wasm.tools_dir,
-        &agent_ctx.config.channels.wasm_channels_dir,
+        &components.hooks,
+        components.workspace.as_ref(),
+        &config.wasm.tools_dir,
+        &config.channels.wasm_channels_dir,
         &active_tool_names,
-        &loaded_wasm_channel_names,
-        &agent_ctx.components.dev_loaded_tool_names,
+        loaded_wasm_channel_names,
+        &components.dev_loaded_tool_names,
     )
     .await;
     tracing::debug!(
@@ -242,7 +233,15 @@ pub(crate) async fn phase_init_channels_and_hooks(
         errors = hook_bootstrap.errors,
         "Lifecycle hooks initialized"
     );
+}
 
+fn create_session_and_register_tools(
+    agent_ctx: &AgentRunContext,
+    channels: &ChannelManager,
+) -> (
+    Arc<ironclaw::agent::SessionManager>,
+    ironclaw::tools::builtin::SchedulerSlot,
+) {
     let session_manager = Arc::new(
         ironclaw::agent::SessionManager::new().with_hooks(agent_ctx.components.hooks.clone()),
     );
@@ -266,6 +265,32 @@ pub(crate) async fn phase_init_channels_and_hooks(
             },
             secrets_store: agent_ctx.components.secrets_store.clone(),
         });
+
+    (session_manager, scheduler_slot)
+}
+
+pub(crate) async fn phase_init_channels_and_hooks(
+    cli: &Cli,
+    agent_ctx: AgentRunContext,
+) -> anyhow::Result<GatewayPhaseContext> {
+    let channels = ChannelManager::new();
+    let ChannelSetup {
+        webhook_server,
+        channel_names,
+        loaded_wasm_channel_names,
+        wasm_channel_runtime_state,
+        #[cfg(unix)]
+        http_channel_state,
+    } = setup_channels(cli, &agent_ctx.config, &agent_ctx.components, &channels).await?;
+
+    bootstrap_and_log_hooks(
+        &agent_ctx.components,
+        &agent_ctx.config,
+        &loaded_wasm_channel_names,
+    )
+    .await;
+    let (session_manager, scheduler_slot) =
+        create_session_and_register_tools(&agent_ctx, &channels);
 
     Ok(GatewayPhaseContext {
         config: agent_ctx.config,
