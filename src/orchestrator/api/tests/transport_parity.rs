@@ -101,8 +101,22 @@ async fn worker_tool_completion_request_round_trips_through_shared_types() {
     assert_eq!(
         deserialized.messages.len(),
         completion_request.messages.len(),
-        "tool completion request must preserve message count"
+        "deserialized.messages must preserve the same number of entries as completion_request.messages"
     );
+    for (index, (deserialized_message, original_message)) in deserialized
+        .messages
+        .iter()
+        .zip(completion_request.messages.iter())
+        .enumerate()
+    {
+        assert_eq!(
+            serde_json::to_value(deserialized_message)
+                .expect("serialize deserialized message for parity assertion"),
+            serde_json::to_value(original_message)
+                .expect("serialize original message for parity assertion"),
+            "deserialized.messages must preserve the full completion_request.messages payload at index {index}"
+        );
+    }
     assert_eq!(
         deserialized.tools, completion_request.tools,
         "tool completion request must preserve the full advertised tool definitions"

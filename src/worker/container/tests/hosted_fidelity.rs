@@ -48,10 +48,9 @@ fn complex_orchestrator_wasm_tool_definition() -> ToolDefinition {
 }
 
 async fn remote_tool_catalog_with_complex_tool(
-    State(state): State<HostedCatalogTestState>,
+    State(_): State<HostedCatalogTestState>,
     Path(_job_id): Path<Uuid>,
 ) -> Json<RemoteToolCatalogResponse> {
-    let _ = state;
     Json(RemoteToolCatalogResponse {
         tools: vec![complex_orchestrator_wasm_tool_definition()],
         toolset_instructions: vec![],

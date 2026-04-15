@@ -268,7 +268,7 @@ request assembly.
    tool list with the advertised `parameters` schema before any tool execution
    occurs.
 3. Prefer the real GitHub WASM fixture and existing helper functions used by
-   the WASM loader tests so the behavioural proof is tied to the actual guest
+   the WASM loader tests, so the behavioural proof is tied to the actual guest
    metadata path rather than a native-tool stand-in.
 4. Add one unhappy-path assertion showing that a malformed first call still
    yields fallback guidance that points back to the already advertised schema.
