@@ -85,3 +85,11 @@ impl Agent {
             .await
     }
 }
+
+mod tests {
+    #[test]
+    fn module_compiles() {
+        // TODO: Add integration-level coverage for turn orchestration using a
+        // dependency-injected Agent fixture and higher-level message flow tests.
+    }
+}

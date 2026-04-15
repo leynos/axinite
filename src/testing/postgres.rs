@@ -29,7 +29,7 @@ const UNAVAILABLE_PATTERNS: &[&str] = &[
 /// # Examples
 ///
 /// ```no_run
-/// use crate::testing::postgres::test_pg_db;
+/// use ironclaw::testing::postgres::test_pg_db;
 ///
 /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
 ///     let db = test_pg_db().await?;

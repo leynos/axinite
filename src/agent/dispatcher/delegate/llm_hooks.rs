@@ -302,8 +302,13 @@ pub(crate) fn compact_messages_for_retry(messages: &[ChatMessage]) -> Vec<ChatMe
 /// flattening (e.g. NEAR AI) and can leak into the user-visible response when
 /// the LLM echoes them back.
 pub(crate) fn strip_internal_tool_call_text(text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+
     // Remove lines that are purely internal tool-call markers.
-    // Pattern: lines matching `[Called tool <name>(...)]` or `[Tool <name> returned: ...]`
+    // Pattern: lines matching `[Called tool <name>(...)]`,
+    // `[Tool <name> returned: ...]`, or `[TOOL_CALL:<name>]`.
     let result = text
         .lines()
         .filter(|line| {
@@ -311,7 +316,8 @@ pub(crate) fn strip_internal_tool_call_text(text: &str) -> String {
             !((trimmed.starts_with("[Called tool ") && trimmed.ends_with(']'))
                 || (trimmed.starts_with("[Tool ")
                     && trimmed.contains(" returned:")
-                    && trimmed.ends_with(']')))
+                    && trimmed.ends_with(']'))
+                || (trimmed.starts_with("[TOOL_CALL:") && trimmed.ends_with(']')))
         })
         .fold(String::new(), |mut acc, s| {
             if !acc.is_empty() {
@@ -447,5 +453,81 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn compact_keeps_all_system_messages() {
+        let messages = vec![
+            ChatMessage::system("system one"),
+            ChatMessage::user("user"),
+            ChatMessage::assistant("assistant"),
+        ];
+
+        let compacted = compact_messages_for_retry(&messages);
+
+        assert!(
+            compacted
+                .iter()
+                .any(|message| message.role == Role::System && message.content == "system one")
+        );
+    }
+
+    #[test]
+    fn compact_retains_last_user_and_tail() {
+        let messages = vec![
+            ChatMessage::system("system"),
+            ChatMessage::user("first user"),
+            ChatMessage::assistant("assistant"),
+            ChatMessage::user("second user"),
+            ChatMessage::tool_result("call-1", "echo", "tool output"),
+        ];
+
+        let compacted = compact_messages_for_retry(&messages);
+
+        assert!(
+            compacted
+                .iter()
+                .any(|message| message.role == Role::User && message.content == "second user")
+        );
+        assert!(compacted.iter().any(|message| {
+            message.role == Role::Tool
+                && message.name.as_deref() == Some("echo")
+                && message.content == "tool output"
+        }));
+    }
+
+    #[test]
+    fn compact_without_user_message_preserves_system_first() {
+        let messages = vec![
+            ChatMessage::system("system"),
+            ChatMessage::assistant("assistant"),
+        ];
+
+        let compacted = compact_messages_for_retry(&messages);
+
+        assert_eq!(
+            compacted.first().map(|message| message.role),
+            Some(Role::System)
+        );
+    }
+
+    #[test]
+    fn strip_removes_bracketed_markers() {
+        let text = "before\n[TOOL_CALL:foo]\nafter";
+
+        let stripped = strip_internal_tool_call_text(text);
+
+        assert!(!stripped.contains("[TOOL_CALL:foo]"));
+    }
+
+    #[test]
+    fn strip_empty_string_returns_empty() {
+        assert_eq!(strip_internal_tool_call_text(""), "");
+    }
+
+    #[test]
+    fn strip_plain_text_unchanged() {
+        let text = "plain text without internal markers";
+        assert_eq!(strip_internal_tool_call_text(text), text);
     }
 }

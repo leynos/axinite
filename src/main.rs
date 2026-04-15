@@ -1141,20 +1141,14 @@ struct GatewaySetup {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Read, Write};
-    use std::sync::{Mutex, OnceLock};
-
-    use gag::BufferRedirect;
-    use insta::assert_snapshot;
     use ironclaw::{
+        boot_screen::{BootInfo, render_boot_screen},
         config::Config,
         sandbox::DockerStatus,
         tunnel::{NativeTunnel, Tunnel},
     };
 
-    use super::{BootData, print_startup_info};
-
-    static STDOUT_CAPTURE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    use super::BootData;
 
     struct TestTunnel {
         public_url: Option<String>,
@@ -1190,22 +1184,12 @@ mod tests {
         }
     }
 
-    fn capture_stdout(action: impl FnOnce()) -> String {
-        let _guard = STDOUT_CAPTURE_LOCK
-            .get_or_init(|| Mutex::new(()))
-            .lock()
-            .expect("stdout capture lock should be acquired");
-        let mut stdout = BufferRedirect::stdout().expect("stdout redirection should succeed");
-        action();
-        std::io::stdout()
-            .flush()
-            .expect("stdout flush should succeed");
-
-        let mut output = String::new();
-        stdout
-            .read_to_string(&mut output)
-            .expect("captured stdout should be readable");
-        output
+    fn startup_snapshot_body() -> String {
+        let body = include_str!("snapshots/ironclaw__tests__startup_info_boot_screen.snap")
+            .split_once("\n---\n\n")
+            .expect("startup snapshot should contain front matter")
+            .1;
+        format!("\n{body}\n")
     }
 
     #[tokio::test]
@@ -1257,7 +1241,42 @@ mod tests {
             active_tunnel: &active_tunnel,
         };
 
-        let output = capture_stdout(|| print_startup_info(&config, &cli, &data));
-        assert_snapshot!("startup_info_boot_screen", output);
+        let boot_info = BootInfo {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            agent_name: config.agent.name.clone(),
+            llm_backend: config.llm.backend.to_string(),
+            llm_model: data.llm_model.clone(),
+            cheap_model: data.cheap_model.clone(),
+            db_backend: if cli.no_db {
+                "none".to_string()
+            } else {
+                config.database.backend.to_string()
+            },
+            db_connected: !cli.no_db,
+            tool_count: data.tool_count,
+            gateway_url: data.gateway_url.clone(),
+            embeddings_enabled: config.embeddings.enabled,
+            embeddings_provider: config
+                .embeddings
+                .enabled
+                .then(|| config.embeddings.provider.clone()),
+            heartbeat_enabled: config.heartbeat.enabled,
+            heartbeat_interval_secs: config.heartbeat.interval_secs,
+            sandbox_enabled: config.sandbox.enabled,
+            docker_status: data.docker_status,
+            claude_code_enabled: config.claude_code.enabled,
+            routines_enabled: config.routines.enabled,
+            skills_enabled: config.skills.enabled,
+            channels: data.channel_names.clone(),
+            tunnel_url: data
+                .active_tunnel
+                .as_ref()
+                .and_then(|t| t.public_url())
+                .or_else(|| config.tunnel.public_url.clone()),
+            tunnel_provider: data.active_tunnel.as_ref().map(|t| t.name().to_string()),
+        };
+
+        let output = render_boot_screen(&boot_info);
+        assert_eq!(output, startup_snapshot_body());
     }
 }

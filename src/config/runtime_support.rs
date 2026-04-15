@@ -159,10 +159,10 @@ pub async fn inject_llm_keys_from_secrets(
 ///
 /// ```no_run
 /// # async fn example(
-/// #     secrets: &dyn crate::secrets::SecretsStore,
+/// #     secrets: &dyn ironclaw::secrets::SecretsStore,
 /// # ) {
-/// let mut ctx = crate::config::EnvContext::default();
-/// crate::config::inject_llm_keys_into_context(&mut ctx, secrets, "user-123").await;
+/// let mut ctx = ironclaw::config::EnvContext::default();
+/// ironclaw::config::inject_llm_keys_into_context(&mut ctx, secrets, "user-123").await;
 /// # }
 /// ```
 pub async fn inject_llm_keys_into_context(

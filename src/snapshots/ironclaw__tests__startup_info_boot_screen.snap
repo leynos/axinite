@@ -1,6 +1,6 @@
 ---
 source: src/main.rs
-assertion_line: 1174
+assertion_line: 1261
 expression: output
 ---
 

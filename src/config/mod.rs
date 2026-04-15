@@ -203,13 +203,13 @@ impl Config {
     /// # Examples
     ///
     /// ```no_run
-    /// # async fn example() -> Result<(), crate::error::ConfigError> {
-    /// let ctx = crate::config::EnvContext::default()
+    /// # async fn example() -> Result<(), ironclaw::error::ConfigError> {
+    /// let ctx = ironclaw::config::EnvContext::default()
     ///     .with_env("DATABASE_BACKEND", "libsql")
     ///     .with_env("DATABASE_URL", "unused://test")
     ///     .with_env("LLM_BACKEND", "nearai");
-    /// let settings = crate::settings::Settings::default();
-    /// let _config = crate::config::Config::from_context(&ctx, &settings).await?;
+    /// let settings = ironclaw::settings::Settings::default();
+    /// let _config = ironclaw::config::Config::from_context(&ctx, &settings).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -255,12 +255,13 @@ impl Config {
     /// # Examples
     ///
     /// ```no_run
-    /// # async fn example(path: &std::path::Path) -> Result<(), crate::error::ConfigError> {
-    /// let ctx = crate::config::EnvContext::default()
+    /// # async fn example(path: &std::path::Path) -> Result<(), ironclaw::error::ConfigError> {
+    /// let ctx = ironclaw::config::EnvContext::default()
     ///     .with_env("DATABASE_BACKEND", "libsql")
     ///     .with_env("DATABASE_URL", "unused://test");
-    /// let settings = crate::settings::Settings::default();
-    /// let _config = crate::config::Config::from_context_with_toml(&ctx, &settings, path).await?;
+    /// let settings = ironclaw::settings::Settings::default();
+    /// let _config =
+    ///     ironclaw::config::Config::from_context_with_toml(&ctx, &settings, path).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -312,13 +313,13 @@ impl Config {
     /// # Examples
     ///
     /// ```no_run
-    /// # async fn example() -> Result<(), crate::error::ConfigError> {
-    /// let settings = crate::settings::Settings::default();
-    /// let mut ctx = crate::config::EnvContext::default()
+    /// # async fn example() -> Result<(), ironclaw::error::ConfigError> {
+    /// let settings = ironclaw::settings::Settings::default();
+    /// let mut ctx = ironclaw::config::EnvContext::default()
     ///     .with_env("DATABASE_BACKEND", "libsql")
     ///     .with_env("DATABASE_URL", "unused://test")
     ///     .with_env("LLM_BACKEND", "anthropic");
-    /// let mut config = crate::config::Config::from_context(&ctx, &settings).await?;
+    /// let mut config = ironclaw::config::Config::from_context(&ctx, &settings).await?;
     /// ctx.inject_secret("ANTHROPIC_API_KEY", "secret");
     /// config.re_resolve_llm_from(&ctx, &settings)?;
     /// # Ok(())

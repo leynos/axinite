@@ -139,3 +139,11 @@ impl Agent {
         Ok(())
     }
 }
+
+mod tests {
+    #[test]
+    fn module_compiles() {
+        // TODO: Add higher-level hydration coverage with a stubbed backing
+        // store and session-manager integration fixture.
+    }
+}
