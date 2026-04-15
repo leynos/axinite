@@ -151,7 +151,7 @@ address-driven API without changing the server's route-ownership model.
 They exist for two concrete call patterns:
 
 - hot-reload flows that want to validate a replacement listener before the old
-  one is shut down; and
+  one is shut down, and
 - integration tests that need OS-selected ports or pre-bound sockets.
 
 The contract is:
