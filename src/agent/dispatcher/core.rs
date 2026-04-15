@@ -19,8 +19,8 @@ use super::delegate::ChatDelegate;
 use super::types::*;
 
 /// Per-run context passed to the dispatcher’s agentic loop.
-/// Carries session state, the active `thread_id`, and the turn’s initial
-/// messages.
+/// Carries shared session state, the active `thread_id`, and the turn’s
+/// initial chat messages as prepared by the caller of `run_agentic_loop`.
 pub(crate) struct RunLoopCtx {
     /// Shared handle to the live session state for this run.
     ///
@@ -64,8 +64,9 @@ struct ChatDelegateParams<'a> {
 }
 
 /// Iteration thresholds that steer the loop away from tool-call livelocks.
-/// `nudge_at` emits a gentle “prefer text” system hint; `force_text_at`
-/// disables tools; `hard_ceiling` is a safety net that guarantees termination.
+/// - `nudge_at`: inject a gentle hint to prefer text before forcing text.
+/// - `force_text_at`: disable tools and force a text answer.
+/// - `hard_ceiling`: a safety net that guarantees termination.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct LoopThresholds {
     /// Iteration at which the dispatcher injects the pre-force nudge.
@@ -82,11 +83,8 @@ pub(crate) struct LoopThresholds {
     pub(crate) hard_ceiling: usize,
 }
 
-/// Compute iteration thresholds from `max_tool_iterations`.
-/// Guarantees: `0 <= nudge_at < force_text_at < hard_ceiling`.
-///
-/// Inputs are clamped to an effective tool budget of at least `1`, so a
-/// configured budget of `0` behaves like a single-tool iteration budget.
+/// Compute loop-termination thresholds from `max_tool_iterations`.
+/// Guarantees: `0 < nudge_at ≤ force_text_at < hard_ceiling`.
 pub(crate) fn compute_loop_thresholds(max_tool_iterations: usize) -> LoopThresholds {
     let max_tool_iterations = max_tool_iterations.max(1);
     LoopThresholds {
