@@ -613,6 +613,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn find_stuck_contexts_returns_only_stuck_contexts() {
+        let manager = ContextManager::new(10);
+        let stuck_id = manager.create_job("stuck", "desc").await.unwrap();
+        let active_id = manager.create_job("active", "desc").await.unwrap();
+
+        manager
+            .update_context(stuck_id, |ctx| {
+                ctx.transition_to(crate::context::JobState::InProgress, None)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        manager
+            .update_context(stuck_id, |ctx| ctx.mark_stuck("timeout"))
+            .await
+            .unwrap()
+            .unwrap();
+
+        manager
+            .update_context(active_id, |ctx| {
+                ctx.transition_to(crate::context::JobState::InProgress, None)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        let stuck_contexts = manager.find_stuck_contexts().await;
+
+        assert_eq!(stuck_contexts.len(), 1);
+        assert_eq!(stuck_contexts[0].job_id, stuck_id);
+    }
+
+    #[tokio::test]
     async fn active_count_tracks_non_terminal_jobs() {
         let manager = ContextManager::new(10);
 
