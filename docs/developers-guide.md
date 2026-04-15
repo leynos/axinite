@@ -56,6 +56,30 @@ Install these extra tools for work on the compile-time reduction plan:
 branch because `make test` uses it for the root crate. The timing tool
 remains specific to the compile-time reduction work.
 
+
+## CI build environment
+
+CI jobs in this repository set `CARGO_INCREMENTAL="0"` at the job environment
+level for the `test`, `coverage`, and `mutation-testing` workflows. Incremental
+compilation writes per-crate fingerprint and dependency files into
+`target/debug/incremental` and `target/debug/.fingerprint`. Those artefacts grow
+quickly across builds and are rarely reused across cache boundaries in CI, so
+disabling them keeps the action cache compact and prevents "No space left on
+device" failures on hosted runners.
+
+Disk space is also managed explicitly before each build with the
+`jlumbroso/free-disk-space` action. That action removes large optional packages
+(Android SDK, .NET, and Haskell toolchains) before the compile step begins. After
+the build, an `if: always()` trimming step deletes
+`target/debug/incremental`, `target/debug/.fingerprint`, and `target/**/*.d`
+dependency files before the cache is written back to the action store.
+
+The `gag` crate appears as a `[dev-dependency]` in `Cargo.toml`. It provides
+`gag::BufferRedirect::stdout()` to capture standard output in tests that assert on
+printed startup or boot-screen content — for example, the
+`print_startup_info_matches_snapshot` test in `src/main.rs`. The crate is compiled
+only when running tests and has no effect on the production binary.
+
 ## Optional tools by workflow
 
 These tools are not required for every contributor, but they are needed
