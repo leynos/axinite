@@ -1259,6 +1259,7 @@ impl Agent {
                     let mut sess = scope.session.lock().await;
                     if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
                         thread.pending_auth = None;
+                        thread.clear_pending_approval();
                     }
                 }
                 tracing::info!(
