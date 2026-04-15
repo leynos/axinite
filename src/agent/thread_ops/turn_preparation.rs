@@ -111,8 +111,7 @@ impl Agent {
 
         if let Some(warning) = self.safety().scan_inbound_for_secrets(content) {
             tracing::warn!(
-                user = %message.user_id,
-                channel = %message.channel,
+                message_id = %message.id,
                 "Inbound message blocked: contains leaked secret"
             );
             return Some(SubmissionResult::error(warning));

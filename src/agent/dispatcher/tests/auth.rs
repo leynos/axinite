@@ -100,6 +100,21 @@ fn test_detect_auth_awaiting_default_instructions() {
 }
 
 #[test]
+fn test_detect_auth_awaiting_type_field_without_name() {
+    let result: Result<String, Error> = Ok(serde_json::json!({
+        "type": "awaiting_token",
+        "instructions": "Visit the auth flow."
+    })
+    .to_string());
+
+    let (name, instructions) = check_auth_required("tool_auth", &result)
+        .expect("expected auth detection to fire for type=awaiting_token");
+
+    assert_eq!(name, "tool_auth");
+    assert_eq!(instructions, "Visit the auth flow.");
+}
+
+#[test]
 fn test_detect_auth_awaiting_tool_activate() {
     assert_auth_detected(
         check_auth_json(

@@ -158,8 +158,17 @@ impl Agent {
                 })
             }
             Err(e) => {
-                thread.fail_turn(e.to_string());
-                Ok(SubmissionResult::error(e.to_string()))
+                let error_text = e.to_string();
+                drop(sess);
+                self.persist_assistant_response(thread_id, &message.user_id, &error_text)
+                    .await;
+
+                let mut sess = session.lock().await;
+                let thread = sess.threads.get_mut(&thread_id).ok_or_else(|| {
+                    Error::from(crate::error::JobError::NotFound { id: thread_id })
+                })?;
+                thread.fail_turn(error_text.clone());
+                Ok(SubmissionResult::error(error_text))
             }
         }
     }

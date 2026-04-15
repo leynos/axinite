@@ -40,17 +40,10 @@ pub(crate) fn parse_auth_barrier(
     }
     let output = result.as_ref().ok()?;
     let parsed: serde_json::Value = serde_json::from_str(output).ok()?;
-    let awaiting_token =
-        parsed.get("awaiting_token") == Some(&serde_json::Value::Bool(true))
-            || parsed.get("type").and_then(|value| value.as_str()) == Some("awaiting_token");
-    if !awaiting_token {
+    if parsed.get("awaiting_token") != Some(&serde_json::Value::Bool(true)) {
         return None;
     }
-    let extension_name = parsed
-        .get("name")
-        .and_then(|value| value.as_str())
-        .map(str::to_string)
-        .unwrap_or_else(|| tool_name.to_string());
+    let extension_name = parsed.get("name")?.as_str()?.to_string();
     let instructions = parsed
         .get("instructions")
         .and_then(|v| v.as_str())

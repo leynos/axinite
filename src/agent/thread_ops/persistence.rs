@@ -46,7 +46,7 @@ fn summarize_tool_call(
         obj["result"] = result.clone();
     }
     if let Some(ref error) = tc.error {
-        obj["error"] = serde_json::Value::String(truncate_preview(error, 1000));
+        obj["error"] = serde_json::Value::String(error.clone());
     }
     obj
 }
@@ -177,43 +177,5 @@ impl Agent {
         {
             tracing::warn!("Failed to persist tool calls: {}", e);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::agent::session::TurnToolCall;
-
-    #[test]
-    fn summarise_tool_call_truncates_long_error() {
-        let long_error: String = "X".repeat(3000);
-        let tc = TurnToolCall {
-            name: "shell".to_string(),
-            parameters: serde_json::json!({}),
-            result: None,
-            error: Some(long_error.clone()),
-        };
-        let summary = summarise_tool_call(1, 0, &tc);
-        let error_val = summary["error"].as_str().unwrap();
-        assert!(
-            error_val.len() <= 1003,
-            "error should be truncated to ~1000 chars + '...', got {}",
-            error_val.len()
-        );
-        assert!(error_val.ends_with("..."));
-        assert!(error_val.starts_with(&long_error[..100]));
-    }
-
-    #[test]
-    fn summarise_tool_call_preserves_short_error() {
-        let tc = TurnToolCall {
-            name: "echo".to_string(),
-            parameters: serde_json::json!({}),
-            result: None,
-            error: Some("short error".to_string()),
-        };
-        let summary = summarise_tool_call(1, 0, &tc);
-        assert_eq!(summary["error"].as_str().unwrap(), "short error");
     }
 }
