@@ -167,6 +167,8 @@ struct AuthInterceptParams<'a> {
     env: &'a MsgEnv,
     /// Tool execution result (used to extract auth URLs).
     tool_result: &'a Result<String, Error>,
+    /// Tool name for auth-barrier result parsing.
+    tool_name: &'a str,
     /// Extension name requiring authentication.
     ext_name: String,
     /// Instructions to display to the user.
@@ -386,6 +388,7 @@ impl Agent {
                 thread_id: scope.thread_id,
                 env: &scope.env,
                 tool_result,
+                tool_name: &pending.tool_name,
                 ext_name,
                 instructions: instructions.clone(),
                 pending: Some(pending.clone()),
@@ -674,6 +677,7 @@ impl Agent {
                     thread_id: scope.thread_id,
                     env: &scope.env,
                     tool_result: &deferred_result,
+                    tool_name: &tc.name,
                     ext_name,
                     instructions: instructions.clone(),
                     pending: Some(fresh_pending),
@@ -1105,7 +1109,7 @@ impl Agent {
     /// to preserve deferred tool calls and context messages, completes + persists
     /// the turn, and sends the AuthRequired status to the channel.
     async fn handle_auth_intercept(&self, params: AuthInterceptParams<'_>) {
-        let auth_data = parse_auth_result(params.tool_result);
+        let auth_data = parse_auth_result(params.tool_name, params.tool_result);
         {
             let mut sess = params.session.lock().await;
             if let Some(thread) = sess.threads.get_mut(&params.thread_id) {

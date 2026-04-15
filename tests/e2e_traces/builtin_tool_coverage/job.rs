@@ -46,7 +46,9 @@ async fn job_create_status() -> anyhow::Result<()> {
         "create_job should return a non-empty job_id: {parsed_create:?}"
     );
     assert_eq!(
-        parsed_create.get("status").and_then(serde_json::Value::as_str),
+        parsed_create
+            .get("status")
+            .and_then(serde_json::Value::as_str),
         Some("in_progress"),
         "create_job should dispatch through the scheduler, not stay pending: {parsed_create:?}"
     );
@@ -64,7 +66,9 @@ async fn job_create_status() -> anyhow::Result<()> {
     let parsed_status = serde_json::from_str::<serde_json::Value>(&status_result.1)
         .expect("job_status result should be valid JSON");
     assert_eq!(
-        parsed_status.get("title").and_then(serde_json::Value::as_str),
+        parsed_status
+            .get("title")
+            .and_then(serde_json::Value::as_str),
         Some("Test analysis job"),
         "job_status should return the job title: {parsed_status:?}"
     );

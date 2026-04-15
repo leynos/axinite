@@ -1,0 +1,5 @@
+---
+source: tests/e2e_traces/builtin_tool_coverage/time.rs
+expression: "time_results[0].1"
+---
+{ "iso": "2024-01-15T10:30:00+00:00", "unix": 1705314600, "unix_millis": 1705314600000 }

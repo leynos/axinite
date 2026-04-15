@@ -99,17 +99,14 @@ impl NullDatabase {
 
     /// Lock `cache` and return the UUID already stored under `key`,
     /// inserting a fresh synthetic UUID if the entry is absent.
-    ///
-    /// Recovers from poisoned mutex to avoid panicking in tests.
-    pub(super) fn get_or_create_in_cache<K: Eq + Hash>(
+    pub(super) fn get_or_create_in_cache<'a, K: Eq + Hash>(
         &self,
-        cache: &Mutex<HashMap<K, uuid::Uuid>>,
+        cache: &'a Mutex<HashMap<K, uuid::Uuid>>,
         key: K,
-    ) -> uuid::Uuid {
-        let mut map = cache
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *map.entry(key).or_insert_with(|| self.next_synthetic_uuid())
+    ) -> Result<uuid::Uuid, std::sync::PoisonError<std::sync::MutexGuard<'a, HashMap<K, uuid::Uuid>>>>
+    {
+        let mut map = cache.lock()?;
+        Ok(*map.entry(key).or_insert_with(|| self.next_synthetic_uuid()))
     }
 }
 
@@ -150,7 +147,9 @@ mod tests {
 
         for _ in 0..5 {
             for key in &keys {
-                let id = db.get_or_create_in_cache(&cache, key.clone());
+                let id = db
+                    .get_or_create_in_cache(&cache, key.clone())
+                    .expect("cache access should not fail");
                 if let Some(existing) = expected.get(key) {
                     assert_eq!(*existing, id, "cache entry for {key} changed");
                 } else {

@@ -24,15 +24,8 @@ use crate::error::Error;
 use crate::llm::{Reasoning, ReasoningContext};
 
 // Re-export items used by other modules in the crate.
-#[expect(
-    unused_imports,
-    reason = "re-exported for use by other modules (e.g., src/agent/dispatcher/mod.rs and src/agent/thread_ops/approval.rs)"
-)]
+#[cfg(test)]
 pub(crate) use llm_hooks::{compact_messages_for_retry, strip_internal_tool_call_text};
-#[expect(
-    unused_imports,
-    reason = "re-exported for use by other modules (e.g., src/agent/dispatcher/mod.rs and src/agent/thread_ops/approval.rs)"
-)]
 pub(crate) use tool_exec::{
     ToolCallSpec, check_auth_required, execute_chat_tool_standalone, parse_auth_result,
 };

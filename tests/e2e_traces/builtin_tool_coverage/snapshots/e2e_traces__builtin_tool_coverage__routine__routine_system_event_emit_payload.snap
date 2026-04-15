@@ -1,0 +1,10 @@
+---
+source: tests/e2e_traces/builtin_tool_coverage/routine.rs
+expression: emit_json
+---
+{
+  "event_source": "github",
+  "event_type": "issue.opened",
+  "fired_routines": 1,
+  "user_id": "test-user"
+}

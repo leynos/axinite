@@ -73,6 +73,7 @@ async fn routine_cooldown() -> anyhow::Result<()> {
         persisted.run_count >= 1,
         "Expected engine to persist run_count"
     );
+    engine.refresh_event_cache().await;
 
     // Second fire should be blocked by cooldown.
     let fired2 = engine.check_event_triggers(&msg).await;

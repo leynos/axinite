@@ -58,10 +58,17 @@ pub(super) async fn record_tool_outcome(
     if let Some(thread) = sess.threads.get_mut(&delegate.thread_id)
         && let Some(turn) = thread.last_turn_mut()
     {
-        if is_tool_error {
-            turn.record_tool_error_at(tool_call_idx, result_content.to_string());
+        let record_result = if is_tool_error {
+            turn.record_tool_error_at(tool_call_idx, result_content.to_string())
         } else {
-            turn.record_tool_result_content_at(tool_call_idx, result_content);
+            turn.record_tool_result_content_at(tool_call_idx, result_content)
+        };
+        if let Err(error) = record_result {
+            tracing::warn!(
+                tool_call_idx,
+                %error,
+                "Failed to record tool outcome in session turn"
+            );
         }
     }
 }

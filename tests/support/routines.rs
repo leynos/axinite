@@ -44,7 +44,8 @@ mod db {
     use super::*;
 
     /// Create a temp libSQL database with migrations applied.
-    pub async fn create_test_db() -> Result<(Arc<dyn Database>, TempDir), Box<dyn std::error::Error>> {
+    pub async fn create_test_db() -> Result<(Arc<dyn Database>, TempDir), Box<dyn std::error::Error>>
+    {
         use ironclaw::db::libsql::LibSqlBackend;
 
         let temp_dir = tempfile::tempdir()?;
@@ -145,8 +146,8 @@ mod engine {
 }
 
 mod registration {
-    use super::*;
     use super::builders::make_routine;
+    use super::*;
 
     /// Register a GitHub issue routine for system event tests.
     pub async fn register_github_issue_routine(
@@ -187,14 +188,14 @@ mod assertions {
     }
 }
 
+pub use assertions::assert_system_event_count;
+pub use builders::{make_routine, make_test_incoming_message};
 #[cfg(feature = "libsql")]
 pub use db::create_test_db;
 pub use db::create_workspace;
-pub use builders::{make_routine, make_test_incoming_message};
 pub use engine::make_minimal_engine;
 #[cfg(feature = "libsql")]
 pub use registration::register_github_issue_routine;
-pub use assertions::assert_system_event_count;
 
 /// Deterministic synchronization helpers for tests that drive [`RoutineEngine`].
 ///
@@ -220,7 +221,10 @@ pub mod engine_sync {
     ///
     /// **Note:** Always combine with [`wait_for_persisted_run`] to ensure the
     /// database record is durably committed before asserting on stored state.
-    pub async fn wait_for_idle(engine: &RoutineEngine, timeout: Duration) -> Result<(), anyhow::Error> {
+    pub async fn wait_for_idle(
+        engine: &RoutineEngine,
+        timeout: Duration,
+    ) -> Result<(), anyhow::Error> {
         let _ = engine;
         tokio::time::sleep(timeout.min(Duration::from_millis(10))).await;
         Ok(())

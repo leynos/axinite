@@ -67,14 +67,16 @@ impl crate::db::NativeConversationStore for NullDatabase {
             routine_id,
             user_id: user_id.to_string(),
         };
-        Ok(self.get_or_create_in_cache(&self.routine_conv_cache, key))
+        self.get_or_create_in_cache(&self.routine_conv_cache, key)
+            .map_err(|err| DatabaseError::Validation(format!("routine cache poisoned: {err}")))
     }
 
     async fn get_or_create_heartbeat_conversation(
         &self,
         user_id: &str,
     ) -> Result<Uuid, DatabaseError> {
-        Ok(self.get_or_create_in_cache(&self.heartbeat_conv_cache, user_id.to_string()))
+        self.get_or_create_in_cache(&self.heartbeat_conv_cache, user_id.to_string())
+            .map_err(|err| DatabaseError::Validation(format!("heartbeat cache poisoned: {err}")))
     }
 
     async fn get_or_create_assistant_conversation(
@@ -86,7 +88,8 @@ impl crate::db::NativeConversationStore for NullDatabase {
             user_id: user_id.to_string(),
             channel: channel.to_string(),
         };
-        Ok(self.get_or_create_in_cache(&self.assistant_conv_cache, key))
+        self.get_or_create_in_cache(&self.assistant_conv_cache, key)
+            .map_err(|err| DatabaseError::Validation(format!("assistant cache poisoned: {err}")))
     }
 
     async fn create_conversation_with_metadata(

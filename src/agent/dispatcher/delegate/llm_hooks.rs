@@ -130,20 +130,34 @@ async fn invoke_with_retry(
                 iteration,
                 "Context length exceeded, compacting messages and retrying"
             );
+            record_partial_llm_call(delegate, u32::try_from(used).unwrap_or(u32::MAX)).await;
             reason_ctx.messages = compact_messages_for_retry(&reason_ctx.messages);
             if reason_ctx.force_text {
                 reason_ctx.available_tools.clear();
             }
             check_cost_guardrail(delegate.agent.cost_guard()).await?;
-            reasoning.respond_with_tools(reason_ctx).await.map_err(|retry_err| {
-                tracing::error!(
-                    original_used = used,
-                    original_limit = limit,
-                    retry_error = %retry_err,
-                    "Retry after auto-compaction also failed"
-                );
-                crate::error::Error::from(retry_err)
-            })
+            match reasoning.respond_with_tools(reason_ctx).await {
+                Ok(output) => Ok(output),
+                Err(retry_err) => {
+                    if let crate::error::LlmError::ContextLengthExceeded {
+                        used: retry_used, ..
+                    } = retry_err
+                    {
+                        record_partial_llm_call(
+                            delegate,
+                            u32::try_from(retry_used).unwrap_or(u32::MAX),
+                        )
+                        .await;
+                    }
+                    tracing::error!(
+                        original_used = used,
+                        original_limit = limit,
+                        retry_error = %retry_err,
+                        "Retry after auto-compaction also failed"
+                    );
+                    Err(crate::error::Error::from(retry_err))
+                }
+            }
         }
         Err(e) => Err(e.into()),
     }
@@ -253,23 +267,20 @@ fn compact_around_user_message(messages: &[ChatMessage], user_idx: usize) -> Vec
 /// Compact messages when no User message exists (edge case).
 fn compact_without_user_message(messages: &[ChatMessage]) -> Vec<ChatMessage> {
     use crate::llm::Role;
-    let mut compacted = collect_system_messages(messages);
-    let non_system: Vec<_> = messages
+    let non_system_indices: Vec<_> = messages
         .iter()
-        .filter(|message| message.role != Role::System)
-        .cloned()
+        .enumerate()
+        .filter_map(|(idx, message)| (message.role != Role::System).then_some(idx))
         .collect();
-    let keep = if non_system.len() >= 2 { 2 } else { 1 };
-    compacted.extend(
-        non_system
-            .into_iter()
-            .rev()
-            .take(keep)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev(),
-    );
-    compacted
+    let keep = if non_system_indices.len() >= 2 { 2 } else { 1 };
+    let retained_non_system: std::collections::HashSet<_> =
+        non_system_indices.into_iter().rev().take(keep).collect();
+    messages
+        .iter()
+        .enumerate()
+        .filter(|(idx, message)| message.role == Role::System || retained_non_system.contains(idx))
+        .map(|(_, message)| message.clone())
+        .collect()
 }
 
 /// Compact messages for retry after a context-length-exceeded error.
@@ -315,5 +326,126 @@ pub(crate) fn strip_internal_tool_call_text(text: &str) -> String {
         "I wasn't able to complete that request. Could you try rephrasing or providing more details?".to_string()
     } else {
         result.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+    use crate::llm::Role;
+
+    const COMPACTION_NOTE: &str = concat!(
+        "[Note: Earlier conversation history was automatically compacted ",
+        "to fit within the context window. The most recent exchange is preserved below.]"
+    );
+
+    fn message(role: Role, content: String) -> ChatMessage {
+        ChatMessage {
+            role,
+            content,
+            content_parts: Vec::new(),
+            tool_call_id: None,
+            name: None,
+            tool_calls: None,
+        }
+    }
+
+    fn message_fingerprint(message: &ChatMessage) -> (Role, &str) {
+        (message.role, message.content.as_str())
+    }
+
+    fn generated_message_strategy() -> impl Strategy<Value = ChatMessage> {
+        (
+            prop_oneof![
+                Just(Role::System),
+                Just(Role::User),
+                Just(Role::Assistant),
+                Just(Role::Tool),
+            ],
+            any::<String>(),
+        )
+            .prop_map(|(role, content)| message(role, content))
+    }
+
+    proptest! {
+        #[test]
+        fn compact_messages_for_retry_preserves_compaction_invariants(
+            messages in prop::collection::vec(generated_message_strategy(), 0..32)
+        ) {
+            let compacted = compact_messages_for_retry(&messages);
+            let compacted_without_note: Vec<_> = compacted
+                .iter()
+                .filter(|message| message.role != Role::System || message.content != COMPACTION_NOTE)
+                .collect();
+
+            let mut next_idx = 0usize;
+            for compacted_message in &compacted_without_note {
+                let fingerprint = message_fingerprint(compacted_message);
+                let matched_idx = messages[next_idx..]
+                    .iter()
+                    .position(|original| message_fingerprint(original) == fingerprint)
+                    .map(|offset| next_idx + offset);
+                prop_assert!(
+                    matched_idx.is_some(),
+                    "compacted message {:?} should appear in original input after index {}",
+                    fingerprint,
+                    next_idx
+                );
+                next_idx = matched_idx.expect("position checked above") + 1;
+            }
+
+            if let Some(user_idx) = messages.iter().rposition(|message| message.role == Role::User) {
+                let expected_suffix: Vec<_> = messages[user_idx..]
+                    .iter()
+                    .map(message_fingerprint)
+                    .collect();
+                let actual_suffix: Vec<_> = compacted_without_note
+                    .iter()
+                    .rev()
+                    .take(expected_suffix.len())
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .map(message_fingerprint)
+                    .collect();
+                prop_assert_eq!(actual_suffix, expected_suffix);
+            }
+
+            for system_message in messages.iter().filter(|message| message.role == Role::System) {
+                let original_count = messages
+                    .iter()
+                    .filter(|message| message_fingerprint(message) == message_fingerprint(system_message))
+                    .count();
+                let compacted_count = compacted
+                    .iter()
+                    .filter(|message| message_fingerprint(message) == message_fingerprint(system_message))
+                    .count();
+                prop_assert!(
+                    compacted_count >= original_count,
+                    "expected all system messages to remain present: {:?}",
+                    message_fingerprint(system_message)
+                );
+            }
+
+            let note_count = compacted
+                .iter()
+                .filter(|message| message.role == Role::System && message.content == COMPACTION_NOTE)
+                .count();
+            let truncation_occurred = messages
+                .iter()
+                .rposition(|message| message.role == Role::User)
+                .is_some_and(|user_idx| user_idx > 0);
+
+            prop_assert!(note_count <= 1, "compaction note inserted more than once");
+            if note_count == 1 {
+                prop_assert!(
+                    truncation_occurred,
+                    "compaction note should only appear when history before the preserved suffix was truncated"
+                );
+            }
+        }
     }
 }

@@ -95,13 +95,10 @@ impl Agent {
                         None
                     } else {
                         thread.complete_turn(&response);
-                        Some(
-                            thread
-                                .turns
-                                .last()
-                                .map(|t| (t.turn_number, t.tool_calls.clone()))
-                                .unwrap_or_default(),
-                        )
+                        thread
+                            .turns
+                            .last()
+                            .map(|t| (t.turn_number, t.tool_calls.clone()))
                     }
                 };
 

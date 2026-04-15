@@ -1,0 +1,5 @@
+---
+source: tests/e2e_traces/builtin_tool_coverage/time.rs
+expression: "responses[0].content"
+---
+The timestamp 2024-01-15T10:30:00Z was parsed successfully. The difference between the two timestamps is 1 day, 4 hours, and 15 minutes (101700 seconds).

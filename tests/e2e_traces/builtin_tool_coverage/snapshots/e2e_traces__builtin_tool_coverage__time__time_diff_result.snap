@@ -1,0 +1,5 @@
+---
+source: tests/e2e_traces/builtin_tool_coverage/time.rs
+expression: "time_results[1].1"
+---
+{ "days": 1, "hours": 28, "minutes": 1695, "seconds": 101700 }

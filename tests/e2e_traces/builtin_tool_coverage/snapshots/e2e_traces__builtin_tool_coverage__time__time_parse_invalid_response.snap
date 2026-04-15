@@ -1,0 +1,5 @@
+---
+source: tests/e2e_traces/builtin_tool_coverage/time.rs
+expression: "responses[0].content"
+---
+The timestamp 'not-a-valid-timestamp' could not be parsed. Please provide a valid ISO 8601 timestamp like '2024-01-15T10:30:00Z'.

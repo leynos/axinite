@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use uuid::Uuid;
 
 use crate::channels::web::util::truncate_preview;
@@ -39,6 +40,13 @@ pub struct Session {
     /// Tools that have been auto-approved for this session ("always approve").
     #[serde(default)]
     pub auto_approved_tools: HashSet<String>,
+}
+
+/// Errors for indexed tool-call mutations on a turn.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum ToolCallIndexError {
+    #[error("tool call index {idx} is out of bounds for turn with {len} tool calls")]
+    OutOfBounds { idx: usize, len: usize },
 }
 
 impl Session {
@@ -575,10 +583,18 @@ impl Turn {
     }
 
     /// Record tool call result for a specific tool-call slot.
-    pub fn record_tool_result_at(&mut self, idx: usize, result: serde_json::Value) {
-        if let Some(call) = self.tool_calls.get_mut(idx) {
-            call.result = Some(result);
-        }
+    pub fn record_tool_result_at(
+        &mut self,
+        idx: usize,
+        result: serde_json::Value,
+    ) -> Result<(), ToolCallIndexError> {
+        let len = self.tool_calls.len();
+        let call = self
+            .tool_calls
+            .get_mut(idx)
+            .ok_or(ToolCallIndexError::OutOfBounds { idx, len })?;
+        call.result = Some(result);
+        Ok(())
     }
 
     fn parse_tool_result(result_content: &str) -> serde_json::Value {
@@ -598,8 +614,12 @@ impl Turn {
 
     /// Record tool call result for a specific slot, parsing structured JSON
     /// where possible.
-    pub fn record_tool_result_content_at(&mut self, idx: usize, result_content: &str) {
-        self.record_tool_result_at(idx, Self::parse_tool_result(result_content));
+    pub fn record_tool_result_content_at(
+        &mut self,
+        idx: usize,
+        result_content: &str,
+    ) -> Result<(), ToolCallIndexError> {
+        self.record_tool_result_at(idx, Self::parse_tool_result(result_content))
     }
 
     /// Record tool call error.
@@ -610,10 +630,18 @@ impl Turn {
     }
 
     /// Record tool call error for a specific tool-call slot.
-    pub fn record_tool_error_at(&mut self, idx: usize, error: impl Into<String>) {
-        if let Some(call) = self.tool_calls.get_mut(idx) {
-            call.error = Some(error.into());
-        }
+    pub fn record_tool_error_at(
+        &mut self,
+        idx: usize,
+        error: impl Into<String>,
+    ) -> Result<(), ToolCallIndexError> {
+        let len = self.tool_calls.len();
+        let call = self
+            .tool_calls
+            .get_mut(idx)
+            .ok_or(ToolCallIndexError::OutOfBounds { idx, len })?;
+        call.error = Some(error.into());
+        Ok(())
     }
 }
 

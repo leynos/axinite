@@ -331,6 +331,71 @@ export DATABASE_URL=postgres://localhost/ironclaw
 Adjust the connection string if the local PostgreSQL instance requires a
 different host, user, or password.
 
+### Atomic terminal job persistence
+
+Use `Database::persist_terminal_result_and_status(...)` with
+`TerminalJobPersistence` whenever a code path must persist a terminal
+`agent_jobs` status and its matching `job_events` row as one unit. This is the
+required path for worker completion, failure, and stuck transitions where
+split writes could leave the job row and event history out of sync.
+
+Prefer the atomic path instead of separate status and event writes when all of
+the following are true:
+
+- the status transition is terminal (`completed`, `failed`, or `stuck`)
+- the event payload is the canonical terminal result that history readers and
+  SSE consumers expect
+- the caller must roll back the terminal transition if either write fails
+
+The contract is:
+
+- the `agent_jobs` update and the `job_events` insert succeed together or are
+  both rolled back
+- the API returns an error when the job does not exist, the job is not a
+  direct agent job, or the backend cannot complete the transaction
+- callers remain responsible for restoring any in-memory state if the atomic
+  write fails after the local state machine has already advanced
+
+Backend expectations:
+
+- PostgreSQL executes both writes inside one database transaction and rolls
+  back both records on any failure
+- libSQL follows the same all-or-nothing contract for the writes it owns, but
+  callers should still treat transport or replication failures as failed
+  writes and retry or roll back their in-memory state accordingly
+- `NullDatabase` accepts the call for tests and does not persist anything
+
+Common failure modes include missing jobs, non-direct jobs, constraint
+violations, serialization errors, and pool or transport failures. Callers
+should surface the error, avoid assuming the terminal state was stored, and
+delegate retry or compensation to the workflow that owns the job.
+
+Example:
+
+```rust
+store
+    .persist_terminal_result_and_status(TerminalJobPersistence {
+        job_id,
+        status: JobState::Completed,
+        failure_reason: None,
+        event_type: SandboxEventType::from("result"),
+        event_data: &serde_json::json!({
+            "status": "completed",
+            "success": true,
+            "message": "Job completed successfully",
+        }),
+    })
+    .await?;
+```
+
+Migration guidance:
+
+- replace paired terminal `update_job_status(...)` and `save_job_event(...)`
+  calls with `persist_terminal_result_and_status(...)`
+- keep non-terminal progress updates on the older separate APIs
+- add rollback regression coverage for both supported backends before
+  releasing new terminal transitions
+
 ## End-to-end (E2E) prerequisites
 
 For browser-based tests:

@@ -42,9 +42,9 @@ async fn test_something() {
 }
 ```
 
-**When to use:** Choose `TestHarnessBuilder` when your test needs to verify
-actual database persistence or when testing components that require a real
-`Database` trait implementation.
+**When to use:** Choose `TestHarnessBuilder` to verify actual database
+persistence or to test components that require a real `Database` trait
+implementation.
 
 **Do not mix with:** `CapturingStore`. The harness uses its own database
 internally; mixing it with `CapturingStore` will cause confusing behaviour.
@@ -109,7 +109,7 @@ fn example() {
 }
 ```
 
-**When to use:** Use `NullDatabase` as a base for custom mocks when you need
+**When to use:** Use `NullDatabase` as a base for custom mocks that require
 fine-grained control over specific database operations.
 
 ## Worker harness

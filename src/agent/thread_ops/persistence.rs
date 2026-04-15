@@ -29,8 +29,8 @@ fn value_to_preview(v: &serde_json::Value, limit: usize) -> String {
     }
 }
 
-/// Summarise a single tool call into a JSON object.
-fn summarise_tool_call(
+/// Summarize a single tool call into a JSON object.
+fn summarize_tool_call(
     turn_number: usize,
     i: usize,
     tc: &crate::agent::session::TurnToolCall,
@@ -152,7 +152,7 @@ impl Agent {
         let summaries: Vec<serde_json::Value> = tool_calls
             .iter()
             .enumerate()
-            .map(|(i, tc)| summarise_tool_call(ctx.turn_number, i, tc))
+            .map(|(i, tc)| summarize_tool_call(ctx.turn_number, i, tc))
             .collect();
 
         let content = match serde_json::to_string(&summaries) {

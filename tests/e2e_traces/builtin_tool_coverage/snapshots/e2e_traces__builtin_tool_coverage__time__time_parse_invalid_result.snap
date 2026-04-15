@@ -1,0 +1,5 @@
+---
+source: tests/e2e_traces/builtin_tool_coverage/time.rs
+expression: "time_result_previews[0]"
+---
+Tool 'time' failed: Tool error: Tool time execution failed: Invalid parameters: invalid timestamp 'not-a-valid-timestamp': expected RFC 3339 or a naive timestamp with timezone/from_timezone

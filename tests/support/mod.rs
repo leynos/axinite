@@ -406,16 +406,19 @@ fn routines_symbol_refs() {
             tokio::sync::mpsc::Receiver<ironclaw::channels::OutgoingResponse>,
         );
     let _ = routines::make_routine
-        as fn(
-            &str,
-            ironclaw::agent::routine::Trigger,
-            &str,
-        ) -> ironclaw::agent::routine::Routine;
-    let _ = routines::make_test_incoming_message
-        as fn(&str) -> ironclaw::channels::IncomingMessage;
+        as fn(&str, ironclaw::agent::routine::Trigger, &str) -> ironclaw::agent::routine::Routine;
+    let _ = routines::make_test_incoming_message as fn(&str) -> ironclaw::channels::IncomingMessage;
     #[cfg(feature = "libsql")]
     let _ = routines::register_github_issue_routine;
     let _ = routines::assert_system_event_count;
+
+    fn _system_event_spec_new_sig<'a>(
+        source: &'a str,
+        event_type: &'a str,
+        payload: serde_json::Value,
+    ) -> routines::SystemEventSpec<'a> {
+        routines::SystemEventSpec::new(source, event_type, payload)
+    }
 
     fn _wait_for_idle_sig<'a>(
         engine: &'a ironclaw::agent::routine_engine::RoutineEngine,
@@ -437,5 +440,9 @@ fn routines_symbol_refs() {
             timeout,
         ))
     }
-    touch!(_wait_for_idle_sig, _wait_for_persisted_run_sig);
+    touch!(
+        _system_event_spec_new_sig,
+        _wait_for_idle_sig,
+        _wait_for_persisted_run_sig
+    );
 }

@@ -65,8 +65,8 @@ pub(crate) fn parse_auth_barrier(
     })
 }
 
-pub(crate) fn parse_auth_result(result: &Result<String, Error>) -> ParsedAuthData {
-    let auth_barrier = parse_auth_barrier("tool_auth", result);
+pub(crate) fn parse_auth_result(tool_name: &str, result: &Result<String, Error>) -> ParsedAuthData {
+    let auth_barrier = parse_auth_barrier(tool_name, result);
     ParsedAuthData {
         auth_url: auth_barrier.as_ref().and_then(|data| data.auth_url.clone()),
         setup_url: auth_barrier.and_then(|data| data.setup_url),
@@ -220,7 +220,9 @@ pub(super) async fn process_runnable_tool(
 
     let (result_content, preview) = if is_image_sentinel {
         let summary = image_sentinel_summary.unwrap_or_else(|| "[Image generated]".to_string());
-        (summary.clone(), summary)
+        let (preview_text, wrapped_text) = sanitize_output(delegate, &tc.name, &summary);
+        let preview = truncate_for_preview(&preview_text, PREVIEW_MAX_CHARS);
+        (wrapped_text, preview)
     } else {
         let (preview_text, wrapped_text) = sanitize_output(delegate, &tc.name, output);
         let preview = truncate_for_preview(&preview_text, PREVIEW_MAX_CHARS);

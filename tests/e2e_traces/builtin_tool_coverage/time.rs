@@ -19,7 +19,7 @@ async fn time_parse_and_diff() -> anyhow::Result<()> {
     )
     .await?;
 
-    let result: anyhow::Result<()> = (|| {
+    let result: anyhow::Result<()> = {
         // Time tool should have been called twice (parse + diff).
         let started = rig.tool_calls_started();
         let time_count = started.iter().filter(|n| n.as_str() == "time").count();
@@ -37,7 +37,7 @@ async fn time_parse_and_diff() -> anyhow::Result<()> {
         insta::assert_snapshot!("time_diff_result", time_results[1].1);
         insta::assert_snapshot!("time_parse_and_diff_response", responses[0].content);
         Ok(())
-    })();
+    };
     rig.shutdown();
     result
 }
@@ -59,7 +59,7 @@ async fn time_parse_invalid() -> anyhow::Result<()> {
     )
     .await?;
 
-    let result: anyhow::Result<()> = (|| {
+    let result: anyhow::Result<()> = {
         // The time tool call should have failed (invalid timestamp).
         let completed = rig.tool_calls_completed();
         let time_results: Vec<_> = completed
@@ -80,7 +80,7 @@ async fn time_parse_invalid() -> anyhow::Result<()> {
         insta::assert_snapshot!("time_parse_invalid_result", time_result_previews[0]);
         insta::assert_snapshot!("time_parse_invalid_response", responses[0].content);
         Ok(())
-    })();
+    };
     rig.shutdown();
     result
 }
