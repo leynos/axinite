@@ -36,29 +36,37 @@ async fn job_create_status() -> anyhow::Result<()> {
         .iter()
         .find(|(n, _)| n == "create_job")
         .expect("create_job result missing");
+    let parsed_create = serde_json::from_str::<serde_json::Value>(&create_result.1)
+        .expect("create_job result should be valid JSON");
     assert!(
-        create_result.1.contains("job_id"),
-        "create_job should return a job_id: {:?}",
-        create_result.1
+        parsed_create
+            .get("job_id")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|job_id| !job_id.is_empty()),
+        "create_job should return a non-empty job_id: {parsed_create:?}"
+    );
+    assert_eq!(
+        parsed_create.get("status").and_then(serde_json::Value::as_str),
+        Some("in_progress"),
+        "create_job should dispatch through the scheduler, not stay pending: {parsed_create:?}"
     );
     assert!(
-        create_result.1.contains("in_progress"),
-        "create_job should dispatch through the scheduler, not stay pending: {:?}",
-        create_result.1
-    );
-    assert!(
-        !create_result.1.contains("scheduler unavailable"),
-        "create_job should not fall back to the unscheduled path: {:?}",
-        create_result.1
+        !parsed_create
+            .get("error")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|error| error.contains("scheduler unavailable")),
+        "create_job should not fall back to the unscheduled path: {parsed_create:?}"
     );
     let status_result = results
         .iter()
         .find(|(n, _)| n == "job_status")
         .expect("job_status result missing");
-    assert!(
-        status_result.1.contains("Test analysis job"),
-        "job_status should return the job title: {:?}",
-        status_result.1
+    let parsed_status = serde_json::from_str::<serde_json::Value>(&status_result.1)
+        .expect("job_status result should be valid JSON");
+    assert_eq!(
+        parsed_status.get("title").and_then(serde_json::Value::as_str),
+        Some("Test analysis job"),
+        "job_status should return the job title: {parsed_status:?}"
     );
     Ok(())
 }
