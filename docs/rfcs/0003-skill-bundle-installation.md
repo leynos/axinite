@@ -15,8 +15,8 @@ cannot reliably ship bundled reference material, templates, or images.
 
 This RFC proposes a first-class multi-file skill bundle format:
 
-1. Introduce `.skill` files, which are ZIP archives with `SKILL.md` at the
-   archive root.
+1. Introduce `.skill` files, which are ZIP archives containing one root
+   directory named for the bundled skill.
 2. Allow optional `references/` and `assets/` directories inside the bundle.
 3. Support installation from either an uploaded `.skill` file or an HTTPS URL.
 4. Expose a dedicated read-only interface so the model can read bundled files
@@ -104,27 +104,31 @@ The new distributable format is a `.skill` file, implemented as a ZIP archive.
 
 Every bundle must contain:
 
-```text
-SKILL.md
+```plaintext
+<skill-name>/SKILL.md
 ```
+
+The archive root must contain exactly one directory. That directory name is the
+bundle's canonical on-disk skill name unless the installer normalizes it during
+conflict handling.
 
 ### Optional structure
 
 The bundle may also contain:
 
-```text
-references/<files...>
-assets/<files...>
+```plaintext
+<skill-name>/references/<files...>
+<skill-name>/assets/<files...>
 ```
 
 Examples:
 
-```text
-SKILL.md
-references/usage.md
-references/troubleshooting/api-errors.md
-assets/logo.png
-assets/prompt-template.txt
+```plaintext
+tech-design-doc/SKILL.md
+tech-design-doc/references/usage.md
+tech-design-doc/references/troubleshooting/api-errors.md
+tech-design-doc/assets/logo.png
+tech-design-doc/assets/prompt-template.txt
 ```
 
 ### Disallowed content in phase 1
@@ -134,7 +138,8 @@ The installer must reject bundles containing any of the following:
 1. `scripts/` or `bin/` directories.
 2. Symlinks, hard links, or archive entries with special file types.
 3. Absolute paths or traversal paths such as `../foo`.
-4. Files outside the allowed top-level locations.
+4. Files outside the single root skill directory or outside the allowed nested
+   locations within it.
 5. Executable files, including common script extensions such as `.sh`, `.py`,
    `.js`, `.ps1`, `.bat`, `.cmd`, `.rb`, and `.pl`.
 6. Duplicate normalized paths, including case-fold collisions on
@@ -234,12 +239,16 @@ must be the exact `skill` value exposed through `skill_read_file`.
 
 Before extraction, the installer should validate:
 
-1. the archive contains exactly one root `SKILL.md`
-2. every other entry is under `references/` or `assets/`
-3. no entry exceeds a per-file size cap
-4. the whole archive stays under a total size cap
-5. file count stays under a bounded limit
-6. all text files that must be parsed as text are valid UTF-8
+1. the archive contains exactly one root directory
+2. that root directory contains exactly one `SKILL.md`
+3. every other entry is under `references/` or `assets/` within that root
+   directory
+4. the root directory name is a valid candidate `skill-name` before any
+   normalization or conflict-resolution rules are applied
+5. no entry exceeds a per-file size cap
+6. the whole archive stays under a total size cap
+7. file count stays under a bounded limit
+8. all text files that must be parsed as text are valid UTF-8
 
 ### Extraction rules
 
