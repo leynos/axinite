@@ -390,29 +390,33 @@ const _: fn() = routines_symbol_refs;
 
 #[cfg(feature = "libsql")]
 fn routines_symbol_refs() {
-    // Compile-time type assertions for routines module helpers.
-    // These ensure the public API signatures remain stable.
-    const _: fn(
-        &std::sync::Arc<dyn ironclaw::db::Database>,
-    ) -> std::sync::Arc<ironclaw::workspace::Workspace> = routines::create_workspace;
-    const _: fn(
-        &str,
-        ironclaw::agent::routine::Trigger,
-        &str,
-    ) -> ironclaw::agent::routine::Routine = routines::make_routine;
-    const _: fn(&str) -> ironclaw::channels::IncomingMessage = routines::make_test_incoming_message;
-    #[allow(clippy::type_complexity)]
-    const _: fn(
-        trace_llm::LlmTrace,
-        std::sync::Arc<dyn ironclaw::db::Database>,
-        std::sync::Arc<ironclaw::workspace::Workspace>,
-    ) -> (
-        std::sync::Arc<ironclaw::agent::routine_engine::RoutineEngine>,
-        tokio::sync::mpsc::Receiver<ironclaw::channels::OutgoingResponse>,
-    ) = routines::make_minimal_engine;
+    #[cfg(feature = "libsql")]
+    let _ = routines::create_test_db;
+    let _ = routines::create_workspace
+        as fn(
+            &std::sync::Arc<dyn ironclaw::db::Database>,
+        ) -> std::sync::Arc<ironclaw::workspace::Workspace>;
+    let _ = routines::make_minimal_engine
+        as fn(
+            trace_llm::LlmTrace,
+            std::sync::Arc<dyn ironclaw::db::Database>,
+            std::sync::Arc<ironclaw::workspace::Workspace>,
+        ) -> (
+            std::sync::Arc<ironclaw::agent::routine_engine::RoutineEngine>,
+            tokio::sync::mpsc::Receiver<ironclaw::channels::OutgoingResponse>,
+        );
+    let _ = routines::make_routine
+        as fn(
+            &str,
+            ironclaw::agent::routine::Trigger,
+            &str,
+        ) -> ironclaw::agent::routine::Routine;
+    let _ = routines::make_test_incoming_message
+        as fn(&str) -> ironclaw::channels::IncomingMessage;
+    #[cfg(feature = "libsql")]
+    let _ = routines::register_github_issue_routine;
+    let _ = routines::assert_system_event_count;
 
-    // Compile-time type assertions for engine_sync helpers.
-    // Wrapper functions prove the async signatures are correct.
     fn _wait_for_idle_sig<'a>(
         engine: &'a ironclaw::agent::routine_engine::RoutineEngine,
         timeout: std::time::Duration,
