@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Mutex;
 
+use crate::error::DatabaseError;
 use crate::error::WorkspaceError;
 
 mod conversation_store;
@@ -79,13 +80,11 @@ impl NullDatabase {
     /// Each call increments the counter and returns a UUID with the counter
     /// value embedded in the UUID bytes. This provides reproducible IDs
     /// for tests that need stable values across multiple calls.
-    pub(super) fn next_synthetic_uuid(&self) -> uuid::Uuid {
-        // Recover from poisoned mutex to avoid panicking in tests.
-        // The counter value is still valid even if a previous holder panicked.
+    pub(super) fn next_synthetic_uuid(&self) -> Result<uuid::Uuid, DatabaseError> {
         let mut counter = self
             .uuid_counter
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .map_err(|_| DatabaseError::Query("lock poisoned".to_string()))?;
         *counter += 1;
         // Embed counter in UUID bytes for deterministic generation
         let bytes = counter.to_be_bytes();
@@ -94,7 +93,7 @@ impl NullDatabase {
             bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
             bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
         ]);
-        uuid::Uuid::from_bytes(uuid_bytes)
+        Ok(uuid::Uuid::from_bytes(uuid_bytes))
     }
 
     /// Lock `cache` and return the UUID already stored under `key`,
@@ -103,10 +102,16 @@ impl NullDatabase {
         &self,
         cache: &'a Mutex<HashMap<K, uuid::Uuid>>,
         key: K,
-    ) -> Result<uuid::Uuid, std::sync::PoisonError<std::sync::MutexGuard<'a, HashMap<K, uuid::Uuid>>>>
-    {
-        let mut map = cache.lock()?;
-        Ok(*map.entry(key).or_insert_with(|| self.next_synthetic_uuid()))
+    ) -> Result<uuid::Uuid, DatabaseError> {
+        let mut map = cache
+            .lock()
+            .map_err(|_| DatabaseError::Query("lock poisoned".to_string()))?;
+        if let Some(id) = map.get(&key) {
+            return Ok(*id);
+        }
+        let id = self.next_synthetic_uuid()?;
+        map.insert(key, id);
+        Ok(id)
     }
 }
 
@@ -133,7 +138,9 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
 
         for _ in 0..100 {
-            let id = db.next_synthetic_uuid();
+            let id = db
+                .next_synthetic_uuid()
+                .expect("synthetic UUID generation should not fail");
             assert!(seen.insert(id), "duplicate synthetic UUID: {id}");
         }
     }

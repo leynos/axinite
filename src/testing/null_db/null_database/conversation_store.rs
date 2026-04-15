@@ -17,7 +17,7 @@ impl crate::db::NativeConversationStore for NullDatabase {
         _user_id: &str,
         _thread_id: Option<&str>,
     ) -> Result<Uuid, DatabaseError> {
-        Ok(self.next_synthetic_uuid())
+        self.next_synthetic_uuid()
     }
 
     async fn touch_conversation(&self, _id: Uuid) -> Result<(), DatabaseError> {
@@ -30,7 +30,7 @@ impl crate::db::NativeConversationStore for NullDatabase {
         _role: &str,
         _content: &str,
     ) -> Result<Uuid, DatabaseError> {
-        Ok(self.next_synthetic_uuid())
+        self.next_synthetic_uuid()
     }
 
     async fn ensure_conversation(
@@ -68,7 +68,6 @@ impl crate::db::NativeConversationStore for NullDatabase {
             user_id: user_id.to_string(),
         };
         self.get_or_create_in_cache(&self.routine_conv_cache, key)
-            .map_err(|err| DatabaseError::Validation(format!("routine cache poisoned: {err}")))
     }
 
     async fn get_or_create_heartbeat_conversation(
@@ -76,7 +75,6 @@ impl crate::db::NativeConversationStore for NullDatabase {
         user_id: &str,
     ) -> Result<Uuid, DatabaseError> {
         self.get_or_create_in_cache(&self.heartbeat_conv_cache, user_id.to_string())
-            .map_err(|err| DatabaseError::Validation(format!("heartbeat cache poisoned: {err}")))
     }
 
     async fn get_or_create_assistant_conversation(
@@ -89,7 +87,6 @@ impl crate::db::NativeConversationStore for NullDatabase {
             channel: channel.to_string(),
         };
         self.get_or_create_in_cache(&self.assistant_conv_cache, key)
-            .map_err(|err| DatabaseError::Validation(format!("assistant cache poisoned: {err}")))
     }
 
     async fn create_conversation_with_metadata(
@@ -98,7 +95,7 @@ impl crate::db::NativeConversationStore for NullDatabase {
         _user_id: &str,
         _metadata: &serde_json::Value,
     ) -> Result<Uuid, DatabaseError> {
-        Ok(self.next_synthetic_uuid())
+        self.next_synthetic_uuid()
     }
 
     async fn update_conversation_metadata_field(

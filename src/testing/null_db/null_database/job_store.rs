@@ -63,14 +63,14 @@ impl crate::db::NativeJobStore for NullDatabase {
     }
 
     async fn record_llm_call(&self, _record: &LlmCallRecord<'_>) -> Result<Uuid, DatabaseError> {
-        Ok(self.next_synthetic_uuid())
+        self.next_synthetic_uuid()
     }
 
     async fn save_estimation_snapshot(
         &self,
         _params: EstimationSnapshotParams<'_>,
     ) -> Result<Uuid, DatabaseError> {
-        Ok(self.next_synthetic_uuid())
+        self.next_synthetic_uuid()
     }
 
     async fn update_estimation_actuals(
@@ -91,9 +91,15 @@ mod tests {
     fn test_synthetic_uuid_is_deterministic() {
         let db = NullDatabase::new();
 
-        let uuid1 = db.next_synthetic_uuid();
-        let uuid2 = db.next_synthetic_uuid();
-        let uuid3 = db.next_synthetic_uuid();
+        let uuid1 = db
+            .next_synthetic_uuid()
+            .expect("first synthetic UUID generation should succeed");
+        let uuid2 = db
+            .next_synthetic_uuid()
+            .expect("second synthetic UUID generation should succeed");
+        let uuid3 = db
+            .next_synthetic_uuid()
+            .expect("third synthetic UUID generation should succeed");
 
         // UUIDs should be sequential and unique
         assert_ne!(uuid1, uuid2);
