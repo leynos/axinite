@@ -6,16 +6,19 @@ use std::time::Duration;
 use ironclaw::{
     agent::{Agent, AgentDeps},
     app::AppComponents,
-    channels::{HttpChannelState, WebhookServer, web::types::SseEvent},
+    channels::{WebhookServer, web::types::SseEvent},
     config::Config,
     context::ContextManager,
     orchestrator::{ReaperConfig, SandboxReaper},
-    secrets::SecretsStore,
 };
 
-use crate::startup::{
-    channels::spawn_sighup_handler, phases::GatewayPhaseContext, wasm::wire_wasm_channel_runtime,
-};
+#[cfg(unix)]
+use ironclaw::{channels::HttpChannelState, secrets::SecretsStore};
+
+use crate::startup::{phases::GatewayPhaseContext, wasm::wire_wasm_channel_runtime};
+
+#[cfg(unix)]
+use crate::startup::channels::spawn_sighup_handler;
 
 pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
     let GatewayPhaseContext {
@@ -162,6 +165,7 @@ async fn prepare_agent(
     agent
 }
 
+#[cfg_attr(not(unix), allow(unused_variables))]
 fn setup_runtime_management(
     components: &AppComponents,
     config: &Config,
