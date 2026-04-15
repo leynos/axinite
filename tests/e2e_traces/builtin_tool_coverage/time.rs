@@ -19,16 +19,18 @@ async fn time_parse_and_diff() -> anyhow::Result<()> {
     )
     .await?;
 
-    // Time tool should have been called twice (parse + diff).
-    let started = rig.tool_calls_started();
-    let time_count = started.iter().filter(|n| n.as_str() == "time").count();
-    assert!(
-        time_count >= 2,
-        "Expected >= 2 time tool calls, got {time_count}"
-    );
-
+    let result: anyhow::Result<()> = (|| {
+        // Time tool should have been called twice (parse + diff).
+        let started = rig.tool_calls_started();
+        let time_count = started.iter().filter(|n| n.as_str() == "time").count();
+        assert!(
+            time_count >= 2,
+            "Expected >= 2 time tool calls, got {time_count}"
+        );
+        Ok(())
+    })();
     rig.shutdown();
-    Ok(())
+    result
 }
 
 #[tokio::test]
@@ -48,18 +50,20 @@ async fn time_parse_invalid() -> anyhow::Result<()> {
     )
     .await?;
 
-    // The time tool call should have failed (invalid timestamp).
-    let completed = rig.tool_calls_completed();
-    let time_results: Vec<_> = completed
-        .iter()
-        .filter(|(name, _)| name == "time")
-        .collect();
-    assert!(!time_results.is_empty(), "Expected time tool to be called");
-    assert!(
-        time_results.iter().any(|(_, ok)| !ok),
-        "Expected at least one failed time call: {time_results:?}"
-    );
-
+    let result: anyhow::Result<()> = (|| {
+        // The time tool call should have failed (invalid timestamp).
+        let completed = rig.tool_calls_completed();
+        let time_results: Vec<_> = completed
+            .iter()
+            .filter(|(name, _)| name == "time")
+            .collect();
+        assert!(!time_results.is_empty(), "Expected time tool to be called");
+        assert!(
+            time_results.iter().any(|(_, ok)| !ok),
+            "Expected at least one failed time call: {time_results:?}"
+        );
+        Ok(())
+    })();
     rig.shutdown();
-    Ok(())
+    result
 }
