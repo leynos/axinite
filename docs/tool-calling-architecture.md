@@ -3,7 +3,8 @@
 This document summarizes the chat tool-calling path centred on
 `ChatDelegate::execute_tool_calls`. It is intended as a compact reference for
 reviewers and maintainers who need to understand how preflight checks,
-execution, approvals, and post-flight folding interact.
+execution, approvals, and post-flight folding interact. It also captures the
+submission path used when a user answers an approval prompt.
 
 **Figure 1. Tool-calling sequence from `ChatDelegate` entry through preflight,
 execution, post-flight folding, and loop outcome selection. The flow records
@@ -118,4 +119,33 @@ sequenceDiagram
     else
         ToolExec-->>Delegate: None
     end
+```
+
+**Figure 2. Approval-submission sequence for both explicit approval requests
+and implicit approval responses. The flow enters through channel submission
+handling, routes through `dispatch_submission`, constructs a `TurnScope`, and
+then calls `process_approval`, with the only behavioural distinction being
+whether the submission carries an explicit `request_id`.**
+
+```mermaid
+sequenceDiagram
+    participant Channels as ChannelManager
+    participant Agent as Agent
+    participant Dispatch as dispatch_submission
+    participant Scope as TurnScope
+
+    Channels->>Agent: handle_submission(ctx, Submission::ExecApproval{request_id,approved,always})
+    Agent->>Dispatch: dispatch_submission(ctx, submission)
+    Dispatch->>Agent: dispatch_approval(&ctx, ApprovalParams{Some(request_id),approved,always})
+    Agent->>Scope: TurnScope::new(ctx.session.clone, ctx.thread_id, &ctx.message)
+    Agent->>Agent: process_approval(scope, params)
+    Agent-->>Dispatch: SubmissionResult
+
+    Note over Dispatch,Agent: ApprovalResponse path (no explicit request_id)
+    Channels->>Agent: handle_submission(ctx, Submission::ApprovalResponse{approved,always})
+    Agent->>Dispatch: dispatch_submission(ctx, submission)
+    Dispatch->>Agent: dispatch_approval(&ctx, ApprovalParams{None,approved,always})
+    Agent->>Scope: TurnScope::new(ctx.session.clone, ctx.thread_id, &ctx.message)
+    Agent->>Agent: process_approval(scope, params)
+    Agent-->>Dispatch: SubmissionResult
 ```
