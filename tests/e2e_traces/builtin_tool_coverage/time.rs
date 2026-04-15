@@ -8,7 +8,7 @@ async fn time_parse_and_diff() -> anyhow::Result<()> {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/time_parse_diff.json"
     );
-    let (rig, _trace, _responses) = run_trace_test(
+    let (rig, _trace, responses) = run_trace_test(
         fixture_path,
         "Parse a time and compute a diff",
         RigConfig {
@@ -27,6 +27,15 @@ async fn time_parse_and_diff() -> anyhow::Result<()> {
             time_count >= 2,
             "Expected >= 2 time tool calls, got {time_count}"
         );
+        let time_results: Vec<_> = rig
+            .tool_results()
+            .into_iter()
+            .filter(|(name, _)| name == "time")
+            .collect();
+        assert_eq!(time_results.len(), 2, "expected exactly 2 time results");
+        insta::assert_snapshot!("time_parse_result", time_results[0].1);
+        insta::assert_snapshot!("time_diff_result", time_results[1].1);
+        insta::assert_snapshot!("time_parse_and_diff_response", responses[0].content);
         Ok(())
     })();
     rig.shutdown();
@@ -39,7 +48,7 @@ async fn time_parse_invalid() -> anyhow::Result<()> {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/llm_traces/tools/time_parse_invalid.json"
     );
-    let (rig, _trace, _responses) = run_trace_test(
+    let (rig, _trace, responses) = run_trace_test(
         fixture_path,
         "Parse an invalid timestamp",
         RigConfig {
@@ -62,6 +71,14 @@ async fn time_parse_invalid() -> anyhow::Result<()> {
             time_results.iter().any(|(_, ok)| !ok),
             "Expected at least one failed time call: {time_results:?}"
         );
+        let time_result_previews: Vec<_> = rig
+            .tool_results()
+            .into_iter()
+            .filter(|(name, _)| name == "time")
+            .map(|(_, preview)| preview)
+            .collect();
+        insta::assert_snapshot!("time_parse_invalid_result", time_result_previews[0]);
+        insta::assert_snapshot!("time_parse_invalid_response", responses[0].content);
         Ok(())
     })();
     rig.shutdown();
