@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ironclaw::{
-    agent::{Agent, AgentDeps, SessionManager},
+    agent::{Agent, AgentDeps},
     app::AppComponents,
     channels::{HttpChannelState, WebhookServer, web::types::SseEvent},
     config::Config,
@@ -54,11 +54,13 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
     let agent = prepare_agent(
         &components,
         &config,
-        Arc::clone(&channels),
-        session_manager,
-        scheduler_slot,
-        sse_sender,
-        routine_engine_slot,
+        AgentSetupResources {
+            channels: Arc::clone(&channels),
+            session_manager,
+            scheduler_slot,
+            sse_sender,
+            routine_engine_slot,
+        },
     )
     .await;
 
@@ -120,22 +122,35 @@ async fn snapshot_workspace_memory(components: &AppComponents) {
     }
 }
 
+struct AgentSetupResources {
+    channels: Arc<ironclaw::channels::ChannelManager>,
+    session_manager: Arc<ironclaw::agent::SessionManager>,
+    scheduler_slot: ironclaw::tools::builtin::SchedulerSlot,
+    sse_sender: Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
+    routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
+}
+
 async fn prepare_agent(
     components: &AppComponents,
     config: &Config,
-    channels: Arc<ironclaw::channels::ChannelManager>,
-    session_manager: Arc<SessionManager>,
-    scheduler_slot: ironclaw::tools::builtin::SchedulerSlot,
-    sse_sender: Option<tokio::sync::broadcast::Sender<SseEvent>>,
-    routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
+    resources: AgentSetupResources,
 ) -> Agent {
+    let AgentSetupResources {
+        channels,
+        session_manager,
+        scheduler_slot,
+        sse_sender,
+        routine_engine_slot,
+    } = resources;
     let deps = build_agent_deps(components, config, sse_sender);
     let mut agent = build_agent(
         config,
         deps,
-        channels,
-        session_manager,
-        Arc::clone(&components.context_manager),
+        AgentConnections {
+            channels,
+            session_manager,
+            context_manager: Arc::clone(&components.context_manager),
+        },
     );
 
     *scheduler_slot.write().await = Some(agent.scheduler());
@@ -213,13 +228,18 @@ fn build_agent_deps(
     }
 }
 
-fn build_agent(
-    config: &Config,
-    deps: AgentDeps,
+struct AgentConnections {
     channels: Arc<ironclaw::channels::ChannelManager>,
-    session_manager: Arc<SessionManager>,
-    context_manager: Arc<ContextManager>,
-) -> Agent {
+    session_manager: Arc<ironclaw::agent::SessionManager>,
+    context_manager: Arc<ironclaw::context::ContextManager>,
+}
+
+fn build_agent(config: &Config, deps: AgentDeps, connections: AgentConnections) -> Agent {
+    let AgentConnections {
+        channels,
+        session_manager,
+        context_manager,
+    } = connections;
     Agent::new(
         config.agent.clone(),
         deps,
