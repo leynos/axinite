@@ -1048,36 +1048,20 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
     /// rollback step, but they should treat the terminal outcome as not
     /// durable.
     pub(crate) async fn mark_completed(&self) -> Result<(), Error> {
-        let previous = self
-            .transition_terminal_state(|ctx| {
+        self.apply_terminal_transition(
+            JobState::Completed,
+            Some("Job completed successfully"),
+            "completed",
+            "Job completed successfully".to_string(),
+            |ctx| {
                 ctx.transition_to(
                     JobState::Completed,
                     Some("Job completed successfully".to_string()),
                 )
-            })
-            .await?;
-
-        let event = serde_json::json!({
-            "status": "completed",
-            "success": true,
-            "message": "Job completed successfully",
-        });
-
-        if let Err(e) = self
-            .persist_terminal_result_and_status(
-                JobState::Completed,
-                Some("Job completed successfully"),
-                "result",
-                &event,
-            )
-            .await
-        {
-            self.rollback_context(Some(previous), "mark_completed")
-                .await;
-            return Err(e);
-        }
-
-        Ok(())
+            },
+            "mark_completed",
+        )
+        .await
     }
 
     /// Roll back the context to the previous state on persistence failure.
@@ -1109,6 +1093,34 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         }
     }
 
+    async fn apply_terminal_transition<F>(
+        &self,
+        status: JobState,
+        reason: Option<&str>,
+        status_str: &str,
+        message: String,
+        transition: F,
+        op_name: &'static str,
+    ) -> Result<(), Error>
+    where
+        F: FnOnce(&mut crate::context::JobContext) -> Result<(), String>,
+    {
+        let previous = self.transition_terminal_state(transition).await?;
+        let event = serde_json::json!({
+            "status": status_str,
+            "success": matches!(status, JobState::Completed),
+            "message": message,
+        });
+        if let Err(e) = self
+            .persist_terminal_result_and_status(status, reason, "result", &event)
+            .await
+        {
+            self.rollback_context(Some(previous), op_name).await;
+            return Err(e);
+        }
+        Ok(())
+    }
+
     /// Mark the job failed and durably persist the terminal failure.
     ///
     /// Internal scheduler paths and unit tests call this when execution has
@@ -1119,27 +1131,15 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
     /// persistence error; callers should not perform additional rollback, but
     /// must treat the failure as non-durable.
     pub(crate) async fn mark_failed(&self, reason: &str) -> Result<(), Error> {
-        let previous = self
-            .transition_terminal_state(|ctx| {
-                ctx.transition_to(JobState::Failed, Some(reason.to_string()))
-            })
-            .await?;
-
-        let event = serde_json::json!({
-            "status": "failed",
-            "success": false,
-            "message": format!("Execution failed: {}", reason),
-        });
-
-        if let Err(e) = self
-            .persist_terminal_result_and_status(JobState::Failed, Some(reason), "result", &event)
-            .await
-        {
-            self.rollback_context(Some(previous), "mark_failed").await;
-            return Err(e);
-        }
-
-        Ok(())
+        self.apply_terminal_transition(
+            JobState::Failed,
+            Some(reason),
+            "failed",
+            format!("Execution failed: {}", reason),
+            |ctx| ctx.transition_to(JobState::Failed, Some(reason.to_string())),
+            "mark_failed",
+        )
+        .await
     }
 
     /// Mark the job stuck and durably persist the terminal stuck result.
@@ -1152,25 +1152,15 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
     /// returning the error; callers do not need to clean up the context
     /// themselves, but the stuck outcome should be treated as non-durable.
     pub(crate) async fn mark_stuck(&self, reason: &str) -> Result<(), Error> {
-        let previous = self
-            .transition_terminal_state(|ctx| ctx.mark_stuck(reason))
-            .await?;
-
-        let event = serde_json::json!({
-            "status": "stuck",
-            "success": false,
-            "message": format!("Job stuck: {}", reason),
-        });
-
-        if let Err(e) = self
-            .persist_terminal_result_and_status(JobState::Stuck, Some(reason), "result", &event)
-            .await
-        {
-            self.rollback_context(Some(previous), "mark_stuck").await;
-            return Err(e);
-        }
-
-        Ok(())
+        self.apply_terminal_transition(
+            JobState::Stuck,
+            Some(reason),
+            "stuck",
+            format!("Job stuck: {}", reason),
+            |ctx| ctx.mark_stuck(reason),
+            "mark_stuck",
+        )
+        .await
     }
 }
 
