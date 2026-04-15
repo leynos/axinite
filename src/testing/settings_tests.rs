@@ -1,6 +1,8 @@
 //! libSQL settings-store regression tests for the shared test harness.
 
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use super::*;
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use rstest::rstest;
 
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]

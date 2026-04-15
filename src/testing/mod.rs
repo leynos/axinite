@@ -48,6 +48,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use rust_decimal::Decimal;
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 
@@ -58,7 +59,7 @@ use crate::channels::{
 use crate::db::Database;
 use crate::error::{ChannelError, LlmError};
 
-#[cfg(test)]
+#[cfg(all(test, feature = "libsql", feature = "test-helpers"))]
 use crate::db::{
     EnsureConversationParams, EstimationActualsParams, EstimationSnapshotParams,
     RoutineRunCompletion, RoutineRuntimeUpdate, SandboxJobStatusUpdate, SettingKey, UserId,
@@ -922,6 +923,7 @@ mod tests {
         assert!(channel.health_check().await.is_err());
     }
 
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_harness_with_channel() {
         let harness = TestHarnessBuilder::new().with_stub_channel().build().await;
