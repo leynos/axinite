@@ -102,5 +102,34 @@ async fn job_list_cancel() -> anyhow::Result<()> {
         completed.iter().any(|(n, ok)| n == "cancel_job" && *ok),
         "cancel_job should succeed: {completed:?}"
     );
+
+    let results = rig.tool_results();
+    let create_result = results
+        .iter()
+        .find(|(n, _)| n == "create_job")
+        .expect("create_job result missing");
+    assert!(
+        create_result.1.contains("job_id"),
+        "create_job should return a job_id: {:?}",
+        create_result.1
+    );
+    let list_result = results
+        .iter()
+        .find(|(n, _)| n == "list_jobs")
+        .expect("list_jobs result missing");
+    assert!(
+        !list_result.1.is_empty() && list_result.1.contains("job_id"),
+        "list_jobs should return at least one job entry: {:?}",
+        list_result.1
+    );
+    let cancel_result = results
+        .iter()
+        .find(|(n, _)| n == "cancel_job")
+        .expect("cancel_job result missing");
+    assert!(
+        cancel_result.1.contains("cancel") || cancel_result.1.contains("cancelled"),
+        "cancel_job should report a cancelled outcome: {:?}",
+        cancel_result.1
+    );
     Ok(())
 }
