@@ -98,9 +98,9 @@ impl NullDatabase {
 
     /// Lock `cache` and return the UUID already stored under `key`,
     /// inserting a fresh synthetic UUID if the entry is absent.
-    pub(super) fn get_or_create_in_cache<'a, K: Eq + Hash>(
+    pub(super) fn get_or_create_in_cache<K: Eq + Hash>(
         &self,
-        cache: &'a Mutex<HashMap<K, uuid::Uuid>>,
+        cache: &Mutex<HashMap<K, uuid::Uuid>>,
         key: K,
     ) -> Result<uuid::Uuid, DatabaseError> {
         let mut map = cache
