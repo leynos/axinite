@@ -94,11 +94,15 @@ mod loops;
 
 pub(in crate::agent::dispatcher) mod preflight;
 
-//! Chat delegate implementation for the agentic loop.
+//! Delegate layer split into phases: preflight (hooks/approval), execution
+//! (inline/parallel), recording (context/thread), status (SSE/image sentinels),
+//! and loop control (nudge/force-text).
 
 mod execution;
 
-//! Chat delegate implementation for the agentic loop.
+//! Delegate layer split into phases: preflight (hooks/approval), execution
+//! (inline/parallel), recording (context/thread), status (SSE/image sentinels),
+//! and loop control (nudge/force-text).
 
 mod execution;
 

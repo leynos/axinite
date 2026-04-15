@@ -256,5 +256,6 @@ mod error_format;
 mod image_sentinel;
 mod loop_guard;
 mod pending_approval;
+mod pipeline;
 mod preview;
 mod skills;

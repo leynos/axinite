@@ -1,4 +1,6 @@
-//! Types and constants for the dispatcher module.
+//! Shared dispatcher types and utilities: text preview, skill selection,
+//! auth parsing, message compaction and error-text sanitisation, plus simple
+//! execution helpers.
 
 use std::sync::Arc;
 

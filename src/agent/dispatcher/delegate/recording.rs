@@ -1,6 +1,6 @@
-//! Thread recording and post-flight processing for `ChatDelegate`: outcome
-//! recording, context folding, rejection handling, and the main
-//! `process_runnable_tool` orchestrator.
+//! Recording and post-flight phase for `ChatDelegate`.
+//! Persists tool outcomes to the active thread, emits sanitised previews, and
+//! folds ordered tool results back into reasoning context without panicking.
 
 use crate::channels::StatusUpdate;
 use crate::error::Error;

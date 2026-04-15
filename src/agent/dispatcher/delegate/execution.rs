@@ -1,5 +1,6 @@
-//! Tool execution helpers: inline and parallel batch runners for
-//! `ChatDelegate`.
+//! Tool execution phase for dispatcher batches.
+//! Runs either inline or in parallel after preflight has approved the runnable
+//! subset, and preserves per-call result slots for ordered post-flight folding.
 
 use crate::channels::StatusUpdate;
 use crate::error::Error;

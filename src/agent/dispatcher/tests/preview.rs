@@ -1,5 +1,7 @@
 //! Preview/truncation tests.
 
+use insta::assert_snapshot;
+
 use super::super::types::truncate_for_preview;
 
 #[test]
@@ -72,4 +74,18 @@ fn test_truncate_large_whitespace_run_truncates_correctly() {
     let input = format!("A{}B{}C", "\n".repeat(100), "\n".repeat(100));
     let result = truncate_for_preview(&input, 3);
     assert_eq!(result, "A B...");
+}
+
+#[test]
+fn truncate_for_preview_snapshot_normalisation() {
+    let input = "Line 1\n\n   Line   2\t\twith  spaces\n\nLine 3";
+    let out = crate::agent::dispatcher::types::truncate_for_preview(input, 32);
+    assert_snapshot!("truncate_normalise_32", out);
+}
+
+#[test]
+fn truncate_for_preview_snapshot_cjk_emoji() {
+    let input = "你好世界🙂🙂🙂 — mixed 文本 and emoji!";
+    let out = crate::agent::dispatcher::types::truncate_for_preview(input, 16);
+    assert_snapshot!("truncate_cjk_emoji_16", out);
 }

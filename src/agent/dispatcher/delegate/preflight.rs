@@ -1,5 +1,7 @@
-//! Tool-call preflight: hook evaluation, approval resolution, and batch
-//! grouping for `ChatDelegate`.
+//! Tool-call preflight for dispatcher execution.
+//! Evaluates hooks, restores redacted parameters when hooks rewrite arguments,
+//! resolves approval gates, and groups runnable calls without disturbing the
+//! original tool-call order.
 
 use std::sync::Arc;
 

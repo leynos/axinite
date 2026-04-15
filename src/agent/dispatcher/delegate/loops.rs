@@ -1,4 +1,7 @@
-//! NativeLoopDelegate implementation for ChatDelegate.
+//! Loop-control phase for `ChatDelegate`.
+//! Refreshes prompts and tool availability per iteration, dispatches the
+//! three-phase tool pipeline, and preserves the stop/max-iteration semantics
+//! expected by the shared agentic loop.
 
 use crate::agent::agentic_loop::{LoopOutcome, LoopSignal, NativeLoopDelegate, TextAction};
 use crate::agent::session::ThreadState;

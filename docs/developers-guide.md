@@ -317,6 +317,55 @@ Then set the database connection variable:
 Variable: `DATABASE_URL`
 Meaning: PostgreSQL connection URL used by the app.
 Default or rule:
+
+
+## Dispatcher Architecture
+
+The dispatcher is the interactive chat-turn engine that sits between incoming
+channel messages and the shared agentic loop. Its job is to prepare reasoning
+context, compute loop thresholds that prevent tool-call livelocks, run the
+delegate-driven three-phase tool pipeline, and translate loop outcomes back
+into user-visible chat responses or approval prompts.
+
+```mermaid
+sequenceDiagram
+  participant UI as Channel/UI
+  participant Agent
+  participant Delegate
+  participant LLM
+  participant Tools
+
+  UI->>Agent: IncomingMessage
+  Agent->>Delegate: build + thresholds + prompts
+  Delegate->>LLM: respond_with_tools(...)
+  alt ToolCalls
+    Delegate->>Tools: Preflight (hooks/approval)
+    Delegate->>Tools: Execute (inline/parallel)
+    Delegate->>Agent: Record + Status + Auth/Image
+    Delegate->>LLM: Fold tool_results + retry
+  else Text
+    Delegate-->>Agent: Response(text)
+  end
+  Agent-->>UI: Outbound message / NeedApproval
+```
+
+Thresholds are derived from `max_tool_iterations` and steer the loop through
+three checkpoints: `nudge_at` adds a soft “prefer text” hint, `force_text_at`
+removes tools from the prompt so the model must answer directly, and
+`hard_ceiling` is the final safety net that guarantees termination even if the
+provider keeps trying to call tools.
+
+Auth detection lives in the post-flight phase. When `tool_auth` or
+`tool_activate` returns an `awaiting_token` payload, the dispatcher emits an
+auth-required status, records the extension name on the thread, and routes the
+next user message through the auth-mode intercept instead of the normal
+conversation pipeline.
+
+Image sentinel handling is also part of post-flight status emission. The
+dispatcher recognises `image_generate` and `image_edit` outputs whose JSON
+payloads declare `type = "image_generated"` and only broadcasts them when the
+`data` field is a valid `data:image/...` URL. That prevents arbitrary external
+URLs from being sent as image events.
 Required for PostgreSQL-backed work. For local development,
 `postgres://localhost/ironclaw` is a typical example; include the correct
 user, password, host, port, and database name when a local setup requires

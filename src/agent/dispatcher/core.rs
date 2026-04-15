@@ -1,4 +1,6 @@
-//! Core orchestration entry points for the agentic loop.
+//! Core dispatcher orchestration for interactive chat turns.
+//! Prepares `ReasoningContext`, computes loop thresholds, builds
+//! `ChatDelegate`, and maps loop outcomes.
 
 use std::sync::Arc;
 
@@ -16,10 +18,9 @@ use crate::skills::LoadedSkill;
 use super::delegate::ChatDelegate;
 use super::types::*;
 
-/// Owned inputs captured for a single agentic loop run.
-///
-/// This crate-visible context is re-exported for dispatcher callers, so its
-/// ownership and thread-safety contracts are part of the internal API.
+/// Per-run context passed to the dispatcher’s agentic loop.
+/// Carries session state, the active `thread_id`, and the turn’s initial
+/// messages.
 pub(crate) struct RunLoopCtx {
     /// Shared handle to the live session state for this run.
     ///
@@ -62,11 +63,9 @@ struct ChatDelegateParams<'a> {
     user_tz: chrono_tz::Tz,
 }
 
-/// Iteration thresholds derived from the configured tool-call budget.
-///
-/// The dispatcher uses these values to decide when to nudge the model back
-/// toward a text answer, when to force that text fallback, and when to stop
-/// the loop entirely.
+/// Iteration thresholds that steer the loop away from tool-call livelocks.
+/// `nudge_at` emits a gentle “prefer text” system hint; `force_text_at`
+/// disables tools; `hard_ceiling` is a safety net that guarantees termination.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct LoopThresholds {
     /// Iteration at which the dispatcher injects the pre-force nudge.
@@ -83,17 +82,11 @@ pub(crate) struct LoopThresholds {
     pub(crate) hard_ceiling: usize,
 }
 
-/// Compute the dispatcher loop thresholds for a configured tool-call budget.
+/// Compute iteration thresholds from `max_tool_iterations`.
+/// Guarantees: `0 <= nudge_at < force_text_at < hard_ceiling`.
 ///
-/// The input budget is clamped to at least `1` before any thresholds are
-/// derived, so callers that pass `0` get the same thresholds as a one-iteration
-/// budget. With that effective budget, the returned values obey the invariant
-/// `nudge_at < force_text_at < hard_ceiling`.
-///
-/// More precisely:
-/// - `nudge_at == effective_max_tool_iterations.saturating_sub(1)`
-/// - `force_text_at == effective_max_tool_iterations`
-/// - `hard_ceiling == effective_max_tool_iterations.saturating_add(1)`
+/// Inputs are clamped to an effective tool budget of at least `1`, so a
+/// configured budget of `0` behaves like a single-tool iteration budget.
 pub(crate) fn compute_loop_thresholds(max_tool_iterations: usize) -> LoopThresholds {
     let max_tool_iterations = max_tool_iterations.max(1);
     LoopThresholds {
