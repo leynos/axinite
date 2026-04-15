@@ -21,11 +21,8 @@ pub(crate) async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<bool> {
         .map(|handled| handled.unwrap_or(false))
 }
 
-async fn dispatch_async_command(command: &Command) -> Option<anyhow::Result<bool>> {
+async fn dispatch_ironclaw_cli_command(command: &Command) -> Option<anyhow::Result<bool>> {
     match command {
-        Command::Tool(c) => {
-            Some(run_traced_async(|| async { run_tool_command(c.clone()).await }).await)
-        }
         Command::Config(c) => Some(
             run_traced_async(|| async { ironclaw::cli::run_config_command(c.clone()).await }).await,
         ),
@@ -33,14 +30,23 @@ async fn dispatch_async_command(command: &Command) -> Option<anyhow::Result<bool
             run_traced_async(|| async { ironclaw::cli::run_registry_command(c.clone()).await })
                 .await,
         ),
-        Command::Mcp(c) => {
-            Some(run_traced_async(|| async { run_mcp_command(*c.clone()).await }).await)
-        }
         Command::Memory(c) => {
             Some(run_traced_async(|| async { ironclaw::cli::run_memory_command(c).await }).await)
         }
         Command::Doctor => {
             Some(run_traced_async(|| async { ironclaw::cli::run_doctor_command().await }).await)
+        }
+        _ => None,
+    }
+}
+
+async fn dispatch_local_async_command(command: &Command) -> Option<anyhow::Result<bool>> {
+    match command {
+        Command::Tool(c) => {
+            Some(run_traced_async(|| async { run_tool_command(c.clone()).await }).await)
+        }
+        Command::Mcp(c) => {
+            Some(run_traced_async(|| async { run_mcp_command(*c.clone()).await }).await)
         }
         Command::Status => Some(run_traced_async(|| async { run_status_command().await }).await),
         #[cfg(feature = "import")]
@@ -49,6 +55,13 @@ async fn dispatch_async_command(command: &Command) -> Option<anyhow::Result<bool
         }
         _ => None,
     }
+}
+
+async fn dispatch_async_command(command: &Command) -> Option<anyhow::Result<bool>> {
+    if let Some(result) = dispatch_ironclaw_cli_command(command).await {
+        return Some(result);
+    }
+    dispatch_local_async_command(command).await
 }
 
 fn dispatch_sync_command(command: &Command) -> Option<anyhow::Result<bool>> {
