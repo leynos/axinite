@@ -80,19 +80,9 @@ async fn routine_system_event_emit() -> anyhow::Result<()> {
         .iter()
         .find(|(n, _)| n == "event_emit")
         .expect("event_emit result missing");
-    assert!(
-        emit_result.1.contains("fired_routines"),
-        "event_emit should report fired routine count: {:?}",
-        emit_result.1
-    );
-    // Verify at least one routine actually fired (not just that the key exists).
     let emit_json: serde_json::Value =
         serde_json::from_str(&emit_result.1).expect("event_emit result should be valid JSON");
-    assert!(
-        emit_json["fired_routines"].as_u64().unwrap_or(0) > 0,
-        "event_emit should have fired at least one routine: {:?}",
-        emit_result.1
-    );
+    insta::assert_json_snapshot!("routine_system_event_emit_payload", emit_json);
 
     rig.shutdown();
     Ok(())
@@ -135,19 +125,15 @@ async fn skill_install_routine_webhook_sim() -> anyhow::Result<()> {
         .expect("event_emit result missing");
     let emit_payload: serde_json::Value =
         serde_json::from_str(&emit_result.1).expect("event_emit result should be valid JSON");
-    let fired_routines = emit_payload
-        .get("fired_routines")
-        .and_then(serde_json::Value::as_u64)
-        .expect("event_emit result should include integer fired_routines");
-    assert!(
-        fired_routines > 0,
-        "event_emit should report fired routines > 0: {emit_payload:?}"
-    );
+    insta::assert_json_snapshot!("skill_install_emit_payload", emit_payload);
 
-    let _history_result = results
+    let history_result = results
         .iter()
         .find(|(n, _)| n == "routine_history")
         .expect("routine_history result missing");
+    let history_json: serde_json::Value = serde_json::from_str(&history_result.1)
+        .expect("routine_history result should be valid JSON");
+    insta::assert_json_snapshot!("skill_install_routine_history_payload", history_json);
 
     rig.shutdown();
     Ok(())
