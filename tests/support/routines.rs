@@ -227,7 +227,7 @@ pub mod engine_sync {
 
         loop {
             let runs = db
-                .list_routine_runs(routine_id, 10)
+                .list_routine_runs(routine_id, (previous_run_count + 1) as i64)
                 .await
                 .map_err(|e| anyhow!(e))?;
 
