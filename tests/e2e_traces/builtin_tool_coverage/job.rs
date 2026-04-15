@@ -17,6 +17,7 @@ async fn job_create_status() -> anyhow::Result<()> {
         RigConfig::default(),
     )
     .await?;
+    let rig = scopeguard::guard(rig, |rig| rig.shutdown());
 
     // Both tools should have succeeded.
     let completed = rig.tool_calls_completed();
@@ -35,32 +36,42 @@ async fn job_create_status() -> anyhow::Result<()> {
         .iter()
         .find(|(n, _)| n == "create_job")
         .expect("create_job result missing");
+    let parsed_create = serde_json::from_str::<serde_json::Value>(&create_result.1)
+        .expect("create_job result should be valid JSON");
     assert!(
-        create_result.1.contains("job_id"),
-        "create_job should return a job_id: {:?}",
-        create_result.1
+        parsed_create
+            .get("job_id")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|job_id| !job_id.is_empty()),
+        "create_job should return a non-empty job_id: {parsed_create:?}"
+    );
+    assert_eq!(
+        parsed_create
+            .get("status")
+            .and_then(serde_json::Value::as_str),
+        Some("in_progress"),
+        "create_job should dispatch through the scheduler, not stay pending: {parsed_create:?}"
     );
     assert!(
-        create_result.1.contains("in_progress"),
-        "create_job should dispatch through the scheduler, not stay pending: {:?}",
-        create_result.1
-    );
-    assert!(
-        !create_result.1.contains("scheduler unavailable"),
-        "create_job should not fall back to the unscheduled path: {:?}",
-        create_result.1
+        !parsed_create
+            .get("error")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|error| error.contains("scheduler unavailable")),
+        "create_job should not fall back to the unscheduled path: {parsed_create:?}"
     );
     let status_result = results
         .iter()
         .find(|(n, _)| n == "job_status")
         .expect("job_status result missing");
-    assert!(
-        status_result.1.contains("Test analysis job"),
-        "job_status should return the job title: {:?}",
-        status_result.1
+    let parsed_status = serde_json::from_str::<serde_json::Value>(&status_result.1)
+        .expect("job_status result should be valid JSON");
+    assert_eq!(
+        parsed_status
+            .get("title")
+            .and_then(serde_json::Value::as_str),
+        Some("Test analysis job"),
+        "job_status should return the job title: {parsed_status:?}"
     );
-
-    rig.shutdown();
     Ok(())
 }
 
@@ -79,6 +90,7 @@ async fn job_list_cancel() -> anyhow::Result<()> {
         RigConfig::default(),
     )
     .await?;
+    let rig = scopeguard::guard(rig, |rig| rig.shutdown());
 
     // All three tools should have succeeded.
     let completed = rig.tool_calls_completed();
@@ -95,6 +107,33 @@ async fn job_list_cancel() -> anyhow::Result<()> {
         "cancel_job should succeed: {completed:?}"
     );
 
-    rig.shutdown();
+    let results = rig.tool_results();
+    let create_result = results
+        .iter()
+        .find(|(n, _)| n == "create_job")
+        .expect("create_job result missing");
+    assert!(
+        create_result.1.contains("job_id"),
+        "create_job should return a job_id: {:?}",
+        create_result.1
+    );
+    let list_result = results
+        .iter()
+        .find(|(n, _)| n == "list_jobs")
+        .expect("list_jobs result missing");
+    assert!(
+        !list_result.1.is_empty() && list_result.1.contains("job_id"),
+        "list_jobs should return at least one job entry: {:?}",
+        list_result.1
+    );
+    let cancel_result = results
+        .iter()
+        .find(|(n, _)| n == "cancel_job")
+        .expect("cancel_job result missing");
+    assert!(
+        cancel_result.1.contains("cancel") || cancel_result.1.contains("cancelled"),
+        "cancel_job should report a cancelled outcome: {:?}",
+        cancel_result.1
+    );
     Ok(())
 }

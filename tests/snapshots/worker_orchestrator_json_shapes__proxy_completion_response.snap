@@ -1,0 +1,13 @@
+---
+source: tests/worker_orchestrator_json_shapes.rs
+assertion_line: 92
+expression: "&parsed"
+---
+{
+  "content": "Hello",
+  "input_tokens": 100,
+  "output_tokens": 50,
+  "finish_reason": "stop",
+  "cache_read_input_tokens": 10,
+  "cache_creation_input_tokens": 5
+}

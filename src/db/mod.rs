@@ -32,8 +32,8 @@ mod traits;
 pub use traits::{
     ConversationStore, Database, JobStore, NativeConversationStore, NativeDatabase, NativeJobStore,
     NativeRoutineStore, NativeSandboxStore, NativeSettingsStore, NativeToolFailureStore,
-    NativeWorkspaceStore, RoutineStore, SandboxStore, SettingsStore, ToolFailureStore,
-    WorkspaceStore,
+    NativeWorkspaceStore, RoutineStore, SandboxStore, SettingsStore, TerminalJobPersistence,
+    ToolFailureStore, WorkspaceStore,
 };
 
 mod types;

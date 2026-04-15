@@ -18,6 +18,9 @@ pub enum JobRecoveryError {
     /// Job is not in the Stuck state and cannot be recovered.
     #[error("Job is not stuck")]
     NotStuck,
+    /// An unexpected state-machine invariant was violated during recovery.
+    #[error("Recovery invariant violated: {0}")]
+    InvariantViolation(String),
 }
 
 /// State of a job.
@@ -287,6 +290,47 @@ impl JobContext {
         Ok(())
     }
 
+    /// Check whether the newest recorded transition matches a rollback from
+    /// `previous` back to the current in-memory state.
+    fn last_transition_matches_rollback(&self, previous: JobState) -> bool {
+        self.transitions
+            .last()
+            .is_some_and(|t| t.from == previous && t.to == self.state)
+    }
+
+    /// Directly set the state without transition validation.
+    ///
+    /// Intended for rollback paths where the in-memory context must be
+    /// restored to a previous state after a persistence failure, bypassing
+    /// [`Self::transition_to`] validation.
+    pub(crate) fn set_state_rollback(&mut self, previous: JobState) {
+        if !self.last_transition_matches_rollback(previous) {
+            return;
+        }
+        self.transitions.pop();
+        self.state = previous;
+        self.completed_at = if matches!(
+            self.state,
+            JobState::Completed | JobState::Accepted | JobState::Failed | JobState::Cancelled
+        ) {
+            self.transitions
+                .iter()
+                .rev()
+                .find(|t| {
+                    matches!(
+                        t.to,
+                        JobState::Completed
+                            | JobState::Accepted
+                            | JobState::Failed
+                            | JobState::Cancelled
+                    )
+                })
+                .map(|t| t.timestamp)
+        } else {
+            None
+        };
+    }
+
     /// Add to the actual cost.
     pub fn add_cost(&mut self, cost: Decimal) {
         self.actual_cost += cost;
@@ -345,7 +389,7 @@ impl JobContext {
         }
         self.repair_attempts += 1;
         self.transition_to(JobState::InProgress, Some("Recovery attempt".to_string()))
-            .map_err(|e| panic!("Failed to transition from Stuck to InProgress: {}", e))
+            .map_err(JobRecoveryError::InvariantViolation)
     }
 }
 
@@ -358,3 +402,7 @@ impl Default for JobContext {
 #[cfg(test)]
 #[path = "state_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "rollback_tests.rs"]
+mod rollback_tests;

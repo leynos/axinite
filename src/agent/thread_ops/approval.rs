@@ -40,11 +40,12 @@ use uuid::Uuid;
 
 use crate::agent::Agent;
 use crate::agent::dispatcher::{
-    AgenticLoopResult, ChatToolRequest, check_auth_required, execute_chat_tool_standalone,
+    AgenticLoopResult, ToolCallSpec, check_auth_required, execute_chat_tool_standalone,
     parse_auth_result,
 };
 use crate::agent::session::{PendingApproval, Session, ThreadState};
 use crate::agent::submission::SubmissionResult;
+use crate::agent::thread_ops::TurnPersistContext;
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::context::JobContext;
 use crate::error::Error;
@@ -166,6 +167,8 @@ struct AuthInterceptParams<'a> {
     env: &'a MsgEnv,
     /// Tool execution result (used to extract auth URLs).
     tool_result: &'a Result<String, Error>,
+    /// Tool name for auth-barrier result parsing.
+    tool_name: &'a str,
     /// Extension name requiring authentication.
     ext_name: String,
     /// Instructions to display to the user.
@@ -363,7 +366,7 @@ impl Agent {
                 if is_tool_error {
                     turn.record_tool_error(result_content.clone());
                 } else {
-                    turn.record_tool_result(serde_json::json!(result_content));
+                    turn.record_tool_result_content(&result_content);
                 }
             }
         }
@@ -385,6 +388,7 @@ impl Agent {
                 thread_id: scope.thread_id,
                 env: &scope.env,
                 tool_result,
+                tool_name: &pending.tool_name,
                 ext_name,
                 instructions: instructions.clone(),
                 pending: Some(pending.clone()),
@@ -550,8 +554,8 @@ impl Agent {
                 let result = execute_chat_tool_standalone(
                     &tools,
                     &safety,
-                    &ChatToolRequest {
-                        tool_name: &tc.name,
+                    &ToolCallSpec {
+                        name: &tc.name,
                         params: &tc.arguments,
                     },
                     &job_ctx,
@@ -643,7 +647,7 @@ impl Agent {
                     if is_deferred_error {
                         turn.record_tool_error(deferred_content.clone());
                     } else {
-                        turn.record_tool_result(serde_json::json!(deferred_content));
+                        turn.record_tool_result_content(&deferred_content);
                     }
                 }
             }
@@ -673,6 +677,7 @@ impl Agent {
                     thread_id: scope.thread_id,
                     env: &scope.env,
                     tool_result: &deferred_result,
+                    tool_name: &tc.name,
                     ext_name,
                     instructions: instructions.clone(),
                     pending: Some(fresh_pending),
@@ -773,13 +778,12 @@ impl Agent {
         };
 
         // User message already persisted at turn start; save tool calls then assistant response
-        self.persist_tool_calls(
-            scope.thread_id,
-            &scope.env.user_id,
+        let persist_ctx = TurnPersistContext {
+            thread_id: scope.thread_id,
+            user_id: &scope.env.user_id,
             turn_number,
-            &tool_calls,
-        )
-        .await;
+        };
+        self.persist_tool_calls(&persist_ctx, &tool_calls).await;
         self.persist_assistant_response(scope.thread_id, &scope.env.user_id, response)
             .await;
         let _ = self
@@ -1105,7 +1109,7 @@ impl Agent {
     /// to preserve deferred tool calls and context messages, completes + persists
     /// the turn, and sends the AuthRequired status to the channel.
     async fn handle_auth_intercept(&self, params: AuthInterceptParams<'_>) {
-        let auth_data = parse_auth_result(params.tool_result);
+        let auth_data = parse_auth_result(params.tool_name, params.tool_result);
         {
             let mut sess = params.session.lock().await;
             if let Some(thread) = sess.threads.get_mut(&params.thread_id) {
@@ -1259,6 +1263,7 @@ impl Agent {
                     let mut sess = scope.session.lock().await;
                     if let Some(thread) = sess.threads.get_mut(&scope.thread_id) {
                         thread.pending_auth = None;
+                        thread.clear_pending_approval();
                     }
                 }
                 tracing::info!(

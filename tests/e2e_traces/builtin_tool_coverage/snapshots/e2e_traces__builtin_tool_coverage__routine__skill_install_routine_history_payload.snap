@@ -1,0 +1,9 @@
+---
+source: tests/e2e_traces/builtin_tool_coverage/routine.rs
+expression: history_json
+---
+{
+  "routine": "wf-webhook-sim-trace",
+  "runs": [],
+  "total_runs": 0
+}

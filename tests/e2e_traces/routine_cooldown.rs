@@ -5,10 +5,7 @@
 
 use std::time::Duration;
 
-use chrono::Utc;
-
 use ironclaw::agent::routine::Trigger;
-use ironclaw::db::RoutineRuntimeUpdate;
 
 use crate::support::routines::engine_sync::{wait_for_idle, wait_for_persisted_run};
 use crate::support::routines::{
@@ -17,7 +14,7 @@ use crate::support::routines::{
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
 #[tokio::test]
-async fn routine_cooldown() {
+async fn routine_cooldown() -> anyhow::Result<()> {
     let (db, _tmp) = create_test_db().await.expect("create_test_db");
     let ws = create_workspace(&db);
 
@@ -56,29 +53,31 @@ async fn routine_cooldown() {
     assert!(fired1 >= 1, "First fire should work");
 
     // Wait for routine execution to complete using deterministic synchronization,
-    // then verify the routine run was recorded before updating last_run_at.
-    wait_for_idle(&engine, Duration::from_secs(5)).await;
+    // then verify the routine run was recorded in the database.
+    wait_for_idle(&engine, Duration::from_secs(5)).await?;
 
     // Wait for routine run to be durably persisted in the database.
     // Snapshot run count before firing (zero for a freshly-created routine).
-    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await;
+    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await?;
 
-    // Update the routine's last_run_at to now (simulating it just ran).
-    db.update_routine_runtime(RoutineRuntimeUpdate {
-        id: routine.id,
-        last_run_at: Utc::now(),
-        next_fire_at: None,
-        run_count: 1,
-        consecutive_failures: 0,
-        state: &serde_json::json!({}),
-    })
-    .await
-    .expect("update_routine_runtime");
-
-    // Refresh cache to pick up updated last_run_at.
+    let persisted = db
+        .get_routine(routine.id)
+        .await
+        .expect("get_routine")
+        .expect("routine present");
+    assert!(
+        persisted.last_run_at.is_some(),
+        "Expected engine to persist last_run_at"
+    );
+    assert!(
+        persisted.run_count >= 1,
+        "Expected engine to persist run_count"
+    );
     engine.refresh_event_cache().await;
 
     // Second fire should be blocked by cooldown.
     let fired2 = engine.check_event_triggers(&msg).await;
     assert_eq!(fired2, 0, "Second fire should be blocked by cooldown");
+
+    Ok(())
 }

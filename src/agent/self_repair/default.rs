@@ -168,6 +168,11 @@ impl NativeSelfRepair for DefaultSelfRepair {
                     message: format!("Job {} already recovered", job.job_id),
                 })
             }
+            Ok(Err(JobRecoveryError::InvariantViolation(reason))) => Err(RepairError::Failed {
+                target_type: "job".to_string(),
+                target_id: job.job_id,
+                reason,
+            }),
             Err(e) => Err(RepairError::Failed {
                 target_type: "job".to_string(),
                 target_id: job.job_id,

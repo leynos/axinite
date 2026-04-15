@@ -16,6 +16,7 @@ pub mod test_rig;
 pub mod trace_llm;
 mod trace_provider;
 pub mod trace_types;
+pub mod webhook_helpers;
 
 #[cfg(feature = "libsql")]
 #[expect(
@@ -51,6 +52,16 @@ type AsyncTraceMetrics<'a> =
     std::pin::Pin<Box<dyn std::future::Future<Output = metrics::TraceMetrics> + 'a>>;
 type AsyncTraceRun<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Vec<Vec<ironclaw::channels::OutgoingResponse>>> + 'a>,
+>;
+type AsyncStartedWebhookServer = std::pin::Pin<
+    Box<
+        dyn std::future::Future<
+                Output = Result<
+                    webhook_helpers::StartedWebhookServer,
+                    Box<dyn std::error::Error + Send + Sync>,
+                >,
+            > + Send,
+    >,
 >;
 #[cfg(feature = "libsql")]
 type AsyncBuildRig =
@@ -349,8 +360,26 @@ fn test_rig_symbol_refs() {
     touch_test_rig_symbols();
 }
 
+fn webhook_helpers_symbol_refs() {
+    const _: fn() -> axum::Router = webhook_helpers::health_routes;
+    const _: fn() -> Result<reqwest::Client, reqwest::Error> = webhook_helpers::test_http_client;
+    const _: fn() -> std::mem::MaybeUninit<webhook_helpers::StartedWebhookServer> =
+        std::mem::MaybeUninit::<webhook_helpers::StartedWebhookServer>::uninit;
+    const _: fn(&webhook_helpers::StartedWebhookServer) = _touch_started_webhook_server_fields;
+    const _: fn() -> AsyncStartedWebhookServer = _start_health_server_sig;
+}
+
+fn _start_health_server_sig() -> AsyncStartedWebhookServer {
+    Box::pin(webhook_helpers::start_health_server())
+}
+
+fn _touch_started_webhook_server_fields(server: &webhook_helpers::StartedWebhookServer) {
+    let _ = (&server.server, &server.addr, &server.client);
+}
+
 const _: fn() = trace_support_symbol_refs;
 const _: fn() = test_rig_symbol_refs;
+const _: fn() = webhook_helpers_symbol_refs;
 
 // =============================================================================
 // Routines module compile-time assertions
@@ -361,33 +390,40 @@ const _: fn() = routines_symbol_refs;
 
 #[cfg(feature = "libsql")]
 fn routines_symbol_refs() {
-    // Compile-time type assertions for routines module helpers.
-    // These ensure the public API signatures remain stable.
-    const _: fn(
-        &std::sync::Arc<dyn ironclaw::db::Database>,
-    ) -> std::sync::Arc<ironclaw::workspace::Workspace> = routines::create_workspace;
-    const _: fn(
-        &str,
-        ironclaw::agent::routine::Trigger,
-        &str,
-    ) -> ironclaw::agent::routine::Routine = routines::make_routine;
-    const _: fn(&str) -> ironclaw::channels::IncomingMessage = routines::make_test_incoming_message;
-    #[allow(clippy::type_complexity)]
-    const _: fn(
-        trace_llm::LlmTrace,
-        std::sync::Arc<dyn ironclaw::db::Database>,
-        std::sync::Arc<ironclaw::workspace::Workspace>,
-    ) -> (
-        std::sync::Arc<ironclaw::agent::routine_engine::RoutineEngine>,
-        tokio::sync::mpsc::Receiver<ironclaw::channels::OutgoingResponse>,
-    ) = routines::make_minimal_engine;
+    #[cfg(feature = "libsql")]
+    let _ = routines::create_test_db;
+    let _ = routines::create_workspace
+        as fn(
+            &std::sync::Arc<dyn ironclaw::db::Database>,
+        ) -> std::sync::Arc<ironclaw::workspace::Workspace>;
+    let _ = routines::make_minimal_engine
+        as fn(
+            trace_llm::LlmTrace,
+            std::sync::Arc<dyn ironclaw::db::Database>,
+            std::sync::Arc<ironclaw::workspace::Workspace>,
+        ) -> (
+            std::sync::Arc<ironclaw::agent::routine_engine::RoutineEngine>,
+            tokio::sync::mpsc::Receiver<ironclaw::channels::OutgoingResponse>,
+        );
+    let _ = routines::make_routine
+        as fn(&str, ironclaw::agent::routine::Trigger, &str) -> ironclaw::agent::routine::Routine;
+    let _ = routines::make_test_incoming_message as fn(&str) -> ironclaw::channels::IncomingMessage;
+    #[cfg(feature = "libsql")]
+    let _ = routines::register_github_issue_routine;
+    let _ = routines::assert_system_event_count;
 
-    // Compile-time type assertions for engine_sync helpers.
-    // Wrapper functions prove the async signatures are correct.
+    fn _system_event_spec_new_sig<'a>(
+        source: &'a str,
+        event_type: &'a str,
+        payload: serde_json::Value,
+    ) -> routines::SystemEventSpec<'a> {
+        routines::SystemEventSpec::new(source, event_type, payload)
+    }
+
     fn _wait_for_idle_sig<'a>(
         engine: &'a ironclaw::agent::routine_engine::RoutineEngine,
         timeout: std::time::Duration,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), anyhow::Error>> + 'a>> {
         Box::pin(routines::engine_sync::wait_for_idle(engine, timeout))
     }
 
@@ -396,7 +432,7 @@ fn routines_symbol_refs() {
         routine_id: uuid::Uuid,
         previous_run_count: usize,
         timeout: std::time::Duration,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), anyhow::Error>> + 'a>> {
         Box::pin(routines::engine_sync::wait_for_persisted_run(
             db,
             routine_id,
@@ -404,5 +440,9 @@ fn routines_symbol_refs() {
             timeout,
         ))
     }
-    touch!(_wait_for_idle_sig, _wait_for_persisted_run_sig);
+    touch!(
+        _system_event_spec_new_sig,
+        _wait_for_idle_sig,
+        _wait_for_persisted_run_sig
+    );
 }

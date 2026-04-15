@@ -195,7 +195,7 @@ impl CompletionRequest {
 }
 
 /// Response from a chat completion.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CompletionResponse {
     pub content: String,
     pub input_tokens: u32,
@@ -210,8 +210,9 @@ pub struct CompletionResponse {
 }
 
 /// Why the completion finished.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FinishReason {
+    #[default]
     Stop,
     Length,
     ToolUse,
@@ -299,7 +300,7 @@ impl ToolCompletionRequest {
 }
 
 /// Response from a completion with potential tool calls.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ToolCompletionResponse {
     /// Text content (may be empty if tool calls are present).
     pub content: Option<String>,
@@ -661,6 +662,7 @@ pub fn strip_unsupported_tool_params(
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod default_contracts;
 
     #[test]
     fn test_sanitize_preserves_valid_pairs() {

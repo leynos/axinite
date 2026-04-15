@@ -1,0 +1,20 @@
+---
+source: tests/worker_orchestrator_json_shapes.rs
+assertion_line: 130
+expression: "&parsed"
+---
+{
+  "tools": [
+    {
+      "name": "t",
+      "description": "d",
+      "parameters": {
+        "type": "object"
+      }
+    }
+  ],
+  "toolset_instructions": [
+    "Use bash carefully"
+  ],
+  "catalog_version": 7
+}

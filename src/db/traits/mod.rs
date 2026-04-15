@@ -14,7 +14,7 @@ pub mod tool_failure;
 pub mod workspace;
 
 pub use conversation::{ConversationStore, NativeConversationStore};
-pub use database::{Database, NativeDatabase};
+pub use database::{Database, NativeDatabase, TerminalJobPersistence};
 pub use job::{JobStore, NativeJobStore};
 pub use routine::{NativeRoutineStore, RoutineStore};
 pub use sandbox::{NativeSandboxStore, SandboxStore};

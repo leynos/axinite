@@ -331,6 +331,71 @@ export DATABASE_URL=postgres://localhost/ironclaw
 Adjust the connection string if the local PostgreSQL instance requires a
 different host, user, or password.
 
+### Atomic terminal job persistence
+
+Use `Database::persist_terminal_result_and_status(...)` with
+`TerminalJobPersistence` whenever a code path must persist a terminal
+`agent_jobs` status and its matching `job_events` row as one unit. This is the
+required path for worker completion, failure, and stuck transitions where
+split writes could leave the job row and event history out of sync.
+
+Prefer the atomic path instead of separate status and event writes when all of
+the following are true:
+
+- the status transition is terminal (`completed`, `failed`, or `stuck`)
+- the event payload is the canonical terminal result that history readers and
+  SSE consumers expect
+- the caller must roll back the terminal transition if either write fails
+
+The contract is:
+
+- the `agent_jobs` update and the `job_events` insert succeed together or are
+  both rolled back
+- the API returns an error when the job does not exist, the job is not a
+  direct agent job, or the backend cannot complete the transaction
+- callers remain responsible for restoring any in-memory state if the atomic
+  write fails after the local state machine has already advanced
+
+Backend expectations:
+
+- PostgreSQL executes both writes inside one database transaction and rolls
+  back both records on any failure
+- libSQL follows the same all-or-nothing contract for the writes it owns, but
+  callers should still treat transport or replication failures as failed
+  writes and retry or roll back their in-memory state accordingly
+- `NullDatabase` accepts the call for tests and does not persist anything
+
+Common failure modes include missing jobs, non-direct jobs, constraint
+violations, serialization errors, and pool or transport failures. Callers
+should surface the error, avoid assuming the terminal state was stored, and
+delegate retry or compensation to the workflow that owns the job.
+
+Example:
+
+```rust
+store
+    .persist_terminal_result_and_status(TerminalJobPersistence {
+        job_id,
+        status: JobState::Completed,
+        failure_reason: None,
+        event_type: SandboxEventType::from("result"),
+        event_data: &serde_json::json!({
+            "status": "completed",
+            "success": true,
+            "message": "Job completed successfully",
+        }),
+    })
+    .await?;
+```
+
+Migration guidance:
+
+- replace paired terminal `update_job_status(...)` and `save_job_event(...)`
+  calls with `persist_terminal_result_and_status(...)`
+- keep non-terminal progress updates on the older separate APIs
+- add rollback regression coverage for both supported backends before
+  releasing new terminal transitions
+
 ## End-to-end (E2E) prerequisites
 
 For browser-based tests:
@@ -516,6 +581,40 @@ reload sequence:
 
 The manager is created via `create_hot_reload_manager()` which wires
 together the default implementations based on available stores.
+
+### Webhook server lifecycle / listener-based API
+
+`WebhookServer::start_with_listener()` and
+`WebhookServer::restart_with_listener()` are the listener-oriented variants of
+the older bind-by-address lifecycle. They accept a pre-bound
+`tokio::net::TcpListener`, which means the caller owns listener acquisition and
+bind failure timing before handing the socket to the webhook server.
+
+The contract differs from `start()` and `restart_with_addr()` in three
+important ways:
+
+- the caller passes an already-bound listener instead of asking
+  `WebhookServer` to bind one internally;
+- `config.addr` is updated from `listener.local_addr()` so the stored runtime
+  address reflects the real bound socket; and
+- the server still merges any queued route fragments into one router on first
+  start and saves that router in `merged_router` for later listener restarts.
+
+Use the listener-based API for hot-reload and integration-test flows that need
+OS-selected ports, externally managed socket setup, or socket handoff between
+components. In both methods, route ownership remains with the server once the
+listener has been accepted; callers should finish route registration before the
+first start, just as they would with `start()`.
+
+Migration notes for maintainers:
+
+- pre-bind the listener and pass ownership into the method;
+- expect the methods to remain async because the serving task is still spawned,
+  and graceful shutdown wiring still happens inside `WebhookServer`;
+- handle bind and startup failures through `ChannelError::StartupFailed`, which
+  now covers listener-derived startup errors as well as internal bind errors;
+- prefer `restart_with_listener()` in reload paths when the caller needs to
+  validate a replacement listener before the old one is torn down.
 
 ### Extension guidance
 

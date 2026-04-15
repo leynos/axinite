@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::agent::Agent;
 use crate::agent::session::Session;
 use crate::agent::submission::{Submission, SubmissionParser, SubmissionResult};
+use crate::agent::thread_ops::UserTurnRequest;
 use crate::agent::thread_ops::approval::{ApprovalParams, TurnScope};
 use crate::channels::{IncomingMessage, StatusUpdate};
 use crate::error::Error;
@@ -111,16 +112,41 @@ impl Agent {
         }
     }
 
+    /// Route an approval decision to `process_approval`.
+    ///
+    /// Called by both `ExecApproval` (which carries an explicit `request_id`) and
+    /// `ApprovalResponse` (which relies on the session's pending approval slot).
+    async fn dispatch_approval(
+        &self,
+        ctx: &DispatchCtx,
+        params: ApprovalParams,
+    ) -> Result<SubmissionResult, Error> {
+        let scope = TurnScope::new(ctx.session.clone(), ctx.thread_id, &ctx.message);
+        self.process_approval(scope, params).await
+    }
+
+    /// Build a [`UserTurnRequest`] from the dispatch context and delegate to
+    /// [`Agent::process_user_input`].
+    async fn dispatch_user_input(
+        &self,
+        ctx: DispatchCtx,
+        content: String,
+    ) -> Result<SubmissionResult, Error> {
+        let req = UserTurnRequest {
+            session: ctx.session,
+            thread_id: ctx.thread_id,
+            content,
+        };
+        self.process_user_input(&ctx.message, req).await
+    }
+
     pub(super) async fn dispatch_submission(
         &self,
         ctx: DispatchCtx,
         submission: Submission,
     ) -> Result<SubmissionResult, Error> {
         match submission {
-            Submission::UserInput { content } => {
-                self.process_user_input(&ctx.message, ctx.session, ctx.thread_id, &content)
-                    .await
-            }
+            Submission::UserInput { content } => self.dispatch_user_input(ctx, content).await,
             Submission::SystemCommand { command, args } => {
                 tracing::debug!(
                     "[agent_loop] SystemCommand: command={}, channel={}",
@@ -159,22 +185,26 @@ impl Agent {
                 approved,
                 always,
             } => {
-                let scope = TurnScope::new(ctx.session.clone(), ctx.thread_id, &ctx.message);
-                let params = ApprovalParams {
-                    request_id: Some(request_id),
-                    approved,
-                    always,
-                };
-                self.process_approval(scope, params).await
+                self.dispatch_approval(
+                    &ctx,
+                    ApprovalParams {
+                        request_id: Some(request_id),
+                        approved,
+                        always,
+                    },
+                )
+                .await
             }
             Submission::ApprovalResponse { approved, always } => {
-                let scope = TurnScope::new(ctx.session.clone(), ctx.thread_id, &ctx.message);
-                let params = ApprovalParams {
-                    request_id: None,
-                    approved,
-                    always,
-                };
-                self.process_approval(scope, params).await
+                self.dispatch_approval(
+                    &ctx,
+                    ApprovalParams {
+                        request_id: None,
+                        approved,
+                        always,
+                    },
+                )
+                .await
             }
         }
     }

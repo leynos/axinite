@@ -19,7 +19,7 @@ use crate::agent::scheduler::WorkerMessage;
 use crate::agent::task::TaskOutput;
 use crate::channels::web::types::SseEvent;
 use crate::context::{ContextManager, JobState};
-use crate::db::Database;
+use crate::db::{Database, TerminalJobPersistence};
 use crate::error::Error;
 use crate::hooks::HookRegistry;
 use crate::llm::{
@@ -56,8 +56,16 @@ pub struct WorkerDeps {
 }
 
 /// Worker that executes a single job.
+///
+/// The scheduler and worker-oriented unit tests own this type. It coordinates
+/// in-memory job state, tool execution, and terminal persistence for one job.
 pub struct Worker {
-    job_id: Uuid,
+    /// Stable job identifier exposed to internal callers and unit tests.
+    ///
+    /// Callers use this to correlate scheduler state, context-manager lookups,
+    /// and persistence assertions. Reading this field has no side effects and
+    /// does not itself make any state durable.
+    pub(crate) job_id: Uuid,
     deps: WorkerDeps,
 }
 
@@ -79,7 +87,13 @@ impl Worker {
     }
 
     // Convenience accessors to avoid deps.field everywhere
-    fn context_manager(&self) -> &Arc<ContextManager> {
+    /// Return the shared context manager for this worker's job.
+    ///
+    /// Internal crates and unit tests use this accessor to inspect or prepare
+    /// the in-memory job state before driving the worker. This is a pure
+    /// accessor: it does not persist anything and requires no rollback by the
+    /// caller.
+    pub(crate) fn context_manager(&self) -> &Arc<ContextManager> {
         &self.deps.context_manager
     }
 
@@ -106,21 +120,6 @@ impl Worker {
 
     fn use_planning(&self) -> bool {
         self.deps.use_planning
-    }
-
-    /// Persist a terminal job status before returning to the caller.
-    async fn persist_status(&self, status: JobState, reason: Option<String>) -> Result<(), Error> {
-        if let Some(store) = self.store() {
-            let job_id = self.job_id;
-            store
-                .update_job_status(job_id, status, reason.as_deref())
-                .await
-                .map_err(|e| crate::error::JobError::PersistenceError {
-                    id: job_id,
-                    reason: e.to_string(),
-                })?;
-        }
-        Ok(())
     }
 
     /// Fire-and-forget persistence and SSE broadcast for non-terminal job
@@ -150,16 +149,24 @@ impl Worker {
         self.broadcast_event(event_type, &data);
     }
 
-    /// Persist a terminal result event before returning to the caller.
-    async fn log_terminal_result_event(
+    /// Persist the terminal event and terminal status in one durable write.
+    async fn persist_terminal_result_and_status(
         &self,
+        status: JobState,
+        failure_reason: Option<&str>,
         event_type: &str,
-        data: serde_json::Value,
+        data: &serde_json::Value,
     ) -> Result<(), Error> {
         let job_id = self.job_id;
         if let Some(store) = self.store() {
             store
-                .save_job_event(job_id, crate::db::SandboxEventType::from(event_type), &data)
+                .persist_terminal_result_and_status(TerminalJobPersistence {
+                    job_id,
+                    status,
+                    failure_reason,
+                    event_type: crate::db::SandboxEventType::from(event_type),
+                    event_data: data,
+                })
                 .await
                 .map_err(|e| crate::error::JobError::PersistenceError {
                     id: job_id,
@@ -167,7 +174,7 @@ impl Worker {
                 })?;
         }
 
-        self.broadcast_event(event_type, &data);
+        self.broadcast_event(event_type, data);
         Ok(())
     }
 
@@ -240,6 +247,38 @@ impl Worker {
                 let _ = tx.send(event);
             }
         }
+    }
+
+    async fn transition_terminal_state<F>(&self, transition: F) -> Result<JobState, Error>
+    where
+        F: FnOnce(&mut crate::context::JobContext) -> Result<(), String>,
+    {
+        let previous = self
+            .context_manager()
+            .update_context(self.job_id, |ctx| {
+                let previous = ctx.state;
+                let result = if matches!(
+                    previous,
+                    JobState::Completed | JobState::Failed | JobState::Stuck | JobState::Cancelled
+                ) {
+                    Err(format!(
+                        "Cannot transition from terminal worker state {}",
+                        previous
+                    ))
+                } else {
+                    transition(ctx)
+                };
+                (previous, result)
+            })
+            .await?;
+
+        let (previous_state, transition_result) = previous;
+        transition_result.map_err(|reason| crate::error::JobError::ContextError {
+            id: self.job_id,
+            reason,
+        })?;
+
+        Ok(previous_state)
     }
 
     /// Run the worker until the job is complete or stopped.
@@ -998,83 +1037,130 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         Self::execute_tool_inner(&self.deps, self.job_id, tool_name, params).await
     }
 
-    async fn mark_completed(&self) -> Result<(), Error> {
-        self.context_manager()
-            .update_context(self.job_id, |ctx| {
+    /// Mark the job completed and durably persist that terminal outcome.
+    ///
+    /// Internal scheduler paths and worker unit tests call this once the job's
+    /// successful result is known. The method first moves the in-memory
+    /// [`JobContext`] to `Completed`, then attempts an atomic terminal
+    /// persistence write for the result event and job status. If persistence
+    /// fails, it performs a best-effort rollback to the previous in-memory
+    /// state before returning the error; callers do not need to issue an extra
+    /// rollback step, but they should treat the terminal outcome as not
+    /// durable.
+    pub(crate) async fn mark_completed(&self) -> Result<(), Error> {
+        self.apply_terminal_transition(
+            JobState::Completed,
+            Some("Job completed successfully"),
+            "completed",
+            "Job completed successfully".to_string(),
+            |ctx| {
                 ctx.transition_to(
                     JobState::Completed,
                     Some("Job completed successfully".to_string()),
                 )
-            })
-            .await?
-            .map_err(|s| crate::error::JobError::ContextError {
-                id: self.job_id,
-                reason: s,
-            })?;
+            },
+            "mark_completed",
+        )
+        .await
+    }
 
-        self.log_terminal_result_event(
-            "result",
-            serde_json::json!({
-                "status": "completed",
-                "success": true,
-                "message": "Job completed successfully",
-            }),
-        )
-        .await?;
-        self.persist_status(
-            JobState::Completed,
-            Some("Job completed successfully".to_string()),
-        )
-        .await?;
+    /// Roll back the context to the previous state on persistence failure.
+    async fn rollback_context(&self, previous: Option<JobState>, operation: &str) {
+        if let Some(state) = previous {
+            match self
+                .context_manager()
+                .update_context(self.job_id, |ctx| {
+                    ctx.set_state_rollback(state);
+                })
+                .await
+            {
+                Ok(()) => {
+                    tracing::error!(
+                        job_id = %self.job_id,
+                        operation,
+                        "Rolled back context state after persistence failure"
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(
+                        job_id = %self.job_id,
+                        operation,
+                        error = %e,
+                        "Failed to roll back context state after persistence failure"
+                    );
+                }
+            }
+        }
+    }
+
+    async fn apply_terminal_transition<F>(
+        &self,
+        status: JobState,
+        reason: Option<&str>,
+        status_str: &str,
+        message: String,
+        transition: F,
+        op_name: &'static str,
+    ) -> Result<(), Error>
+    where
+        F: FnOnce(&mut crate::context::JobContext) -> Result<(), String>,
+    {
+        let previous = self.transition_terminal_state(transition).await?;
+        let event = serde_json::json!({
+            "status": status_str,
+            "success": matches!(status, JobState::Completed),
+            "message": message,
+        });
+        if let Err(e) = self
+            .persist_terminal_result_and_status(status, reason, "result", &event)
+            .await
+        {
+            self.rollback_context(Some(previous), op_name).await;
+            return Err(e);
+        }
         Ok(())
     }
 
-    async fn mark_failed(&self, reason: &str) -> Result<(), Error> {
-        self.context_manager()
-            .update_context(self.job_id, |ctx| {
-                ctx.transition_to(JobState::Failed, Some(reason.to_string()))
-            })
-            .await?
-            .map_err(|s| crate::error::JobError::ContextError {
-                id: self.job_id,
-                reason: s,
-            })?;
-
-        self.log_terminal_result_event(
-            "result",
-            serde_json::json!({
-                "status": "failed",
-                "success": false,
-                "message": format!("Execution failed: {}", reason),
-            }),
+    /// Mark the job failed and durably persist the terminal failure.
+    ///
+    /// Internal scheduler paths and unit tests call this when execution has
+    /// reached a terminal error. The method updates the in-memory
+    /// [`JobContext`] to `Failed`, then attempts one atomic persistence write
+    /// for the terminal event and status. If that write fails, it best-effort
+    /// rolls the context back to the previous state before returning the
+    /// persistence error; callers should not perform additional rollback, but
+    /// must treat the failure as non-durable.
+    pub(crate) async fn mark_failed(&self, reason: &str) -> Result<(), Error> {
+        self.apply_terminal_transition(
+            JobState::Failed,
+            Some(reason),
+            "failed",
+            format!("Execution failed: {}", reason),
+            |ctx| ctx.transition_to(JobState::Failed, Some(reason.to_string())),
+            "mark_failed",
         )
-        .await?;
-        self.persist_status(JobState::Failed, Some(reason.to_string()))
-            .await?;
-        Ok(())
+        .await
     }
 
-    async fn mark_stuck(&self, reason: &str) -> Result<(), Error> {
-        self.context_manager()
-            .update_context(self.job_id, |ctx| ctx.mark_stuck(reason))
-            .await?
-            .map_err(|s| crate::error::JobError::ContextError {
-                id: self.job_id,
-                reason: s,
-            })?;
-
-        self.log_terminal_result_event(
-            "result",
-            serde_json::json!({
-                "status": "stuck",
-                "success": false,
-                "message": format!("Job stuck: {}", reason),
-            }),
+    /// Mark the job stuck and durably persist the terminal stuck result.
+    ///
+    /// Internal scheduler timeout handling and unit tests call this when the
+    /// worker cannot make further progress. The method transitions the
+    /// in-memory [`JobContext`] to `Stuck`, then attempts one atomic terminal
+    /// persistence write for the result event and status. If persistence
+    /// fails, it best-effort rolls the context back to the prior state before
+    /// returning the error; callers do not need to clean up the context
+    /// themselves, but the stuck outcome should be treated as non-durable.
+    pub(crate) async fn mark_stuck(&self, reason: &str) -> Result<(), Error> {
+        self.apply_terminal_transition(
+            JobState::Stuck,
+            Some(reason),
+            "stuck",
+            format!("Job stuck: {}", reason),
+            |ctx| ctx.mark_stuck(reason),
+            "mark_stuck",
         )
-        .await?;
-        self.persist_status(JobState::Stuck, Some(reason.to_string()))
-            .await?;
-        Ok(())
+        .await
     }
 }
 
@@ -1426,13 +1512,10 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
-    use crate::config::SafetyConfig;
     use crate::context::JobContext;
     use crate::llm::ToolSelection;
-    use crate::llm::{
-        CompletionRequest, CompletionResponse, ToolCompletionRequest, ToolCompletionResponse,
-    };
-    use crate::safety::SafetyLayer;
+    use crate::testing::CapturingStore;
+    use crate::testing::worker_harness::*;
     use crate::tools::{NativeTool, Tool, ToolError as ToolExecError, ToolOutput};
 
     /// A test tool that sleeps for a configurable duration before returning.
@@ -1473,110 +1556,6 @@ mod tests {
         }
     }
 
-    /// Stub LLM provider (never called in these tests).
-    struct StubLlm;
-
-    impl crate::llm::NativeLlmProvider for StubLlm {
-        fn model_name(&self) -> &str {
-            "stub"
-        }
-        fn cost_per_token(&self) -> (rust_decimal::Decimal, rust_decimal::Decimal) {
-            (rust_decimal::Decimal::ZERO, rust_decimal::Decimal::ZERO)
-        }
-        async fn complete(
-            &self,
-            _req: CompletionRequest,
-        ) -> Result<CompletionResponse, crate::error::LlmError> {
-            unimplemented!("stub")
-        }
-        async fn complete_with_tools(
-            &self,
-            _req: ToolCompletionRequest,
-        ) -> Result<ToolCompletionResponse, crate::error::LlmError> {
-            unimplemented!("stub")
-        }
-    }
-
-    /// Build a Worker wired to a ToolRegistry containing the given tools.
-    async fn make_worker(tools: Vec<Arc<dyn Tool>>) -> Worker {
-        let registry = ToolRegistry::new();
-        for t in tools {
-            registry.register(t).await;
-        }
-
-        let cm = Arc::new(crate::context::ContextManager::new(5));
-        let job_id = cm.create_job("test", "test job").await.unwrap();
-
-        let deps = WorkerDeps {
-            context_manager: cm,
-            llm: Arc::new(StubLlm),
-            safety: Arc::new(SafetyLayer::new(&SafetyConfig {
-                max_output_length: 100_000,
-                injection_check_enabled: false,
-            })),
-            tools: Arc::new(registry),
-            store: None,
-            hooks: Arc::new(crate::hooks::HookRegistry::new()),
-            timeout: Duration::from_secs(30),
-            use_planning: false,
-            sse_tx: None,
-            approval_context: None,
-            http_interceptor: None,
-        };
-
-        Worker::new(job_id, deps)
-    }
-
-    #[cfg(feature = "libsql")]
-    async fn make_worker_with_store(
-        tools: Vec<Arc<dyn Tool>>,
-    ) -> (Worker, Arc<dyn Database>, tempfile::TempDir) {
-        use crate::db::libsql::LibSqlBackend;
-        use tempfile::tempdir;
-
-        let registry = ToolRegistry::new();
-        for t in tools {
-            registry.register(t).await;
-        }
-
-        let cm = Arc::new(crate::context::ContextManager::new(5));
-        let job_id = cm
-            .create_job("test", "test job")
-            .await
-            .expect("failed to create job");
-        let dir = tempdir().expect("failed to create tempdir");
-        let path = dir.path().join("worker-test.db");
-        let backend = LibSqlBackend::new_local(&path)
-            .await
-            .expect("failed to open libsql backend");
-        backend
-            .run_migrations()
-            .await
-            .expect("failed to run migrations");
-        let store: Arc<dyn Database> = Arc::new(backend);
-        let ctx = cm.get_context(job_id).await.expect("failed to get context");
-        store.save_job(&ctx).await.expect("failed to save job");
-
-        let deps = WorkerDeps {
-            context_manager: cm,
-            llm: Arc::new(StubLlm),
-            safety: Arc::new(SafetyLayer::new(&SafetyConfig {
-                max_output_length: 100_000,
-                injection_check_enabled: false,
-            })),
-            tools: Arc::new(registry),
-            store: Some(store.clone()),
-            hooks: Arc::new(crate::hooks::HookRegistry::new()),
-            timeout: Duration::from_secs(30),
-            use_planning: false,
-            sse_tx: None,
-            approval_context: None,
-            http_interceptor: None,
-        };
-
-        (Worker::new(job_id, deps), store, dir)
-    }
-
     #[test]
     fn test_tool_selection_preserves_call_id() {
         let selection = ToolSelection {
@@ -1598,7 +1577,7 @@ mod tests {
     // See: test_completion_signals, test_completion_negative, etc.
 
     #[tokio::test]
-    async fn test_parallel_speedup() {
+    async fn test_parallel_speedup() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let current_active = Arc::new(AtomicUsize::new(0));
         let max_active = Arc::new(AtomicUsize::new(0));
         let tools: Vec<Arc<dyn Tool>> = (0..3)
@@ -1612,7 +1591,7 @@ mod tests {
             })
             .collect();
 
-        let worker = make_worker(tools).await;
+        let worker = make_worker(tools).await?;
 
         let selections: Vec<ToolSelection> = (0..3)
             .map(|i| ToolSelection {
@@ -1635,69 +1614,77 @@ mod tests {
             "Expected parallel tool execution to overlap, but max concurrency was {}",
             max_active.load(Ordering::SeqCst)
         );
+        Ok(())
+    }
+
+    fn slow_tool(
+        name: &str,
+        delay_ms: u64,
+        current: &Arc<AtomicUsize>,
+        max: &Arc<AtomicUsize>,
+    ) -> Arc<dyn Tool> {
+        Arc::new(SlowTool {
+            tool_name: name.into(),
+            delay: Duration::from_millis(delay_ms),
+            current_active: Arc::clone(current),
+            max_active: Arc::clone(max),
+        })
+    }
+
+    fn tool_selection(name: &str, call_id: &str) -> ToolSelection {
+        ToolSelection {
+            tool_name: name.into(),
+            parameters: serde_json::json!({}),
+            reasoning: String::new(),
+            alternatives: vec![],
+            tool_call_id: call_id.into(),
+        }
     }
 
     #[tokio::test]
-    async fn test_result_ordering_preserved() {
+    async fn test_result_ordering_preserved() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    {
         let current_active = Arc::new(AtomicUsize::new(0));
         let max_active = Arc::new(AtomicUsize::new(0));
+
         let tools: Vec<Arc<dyn Tool>> = vec![
-            Arc::new(SlowTool {
-                tool_name: "tool_a".into(),
-                delay: Duration::from_millis(300),
-                current_active: Arc::clone(&current_active),
-                max_active: Arc::clone(&max_active),
-            }),
-            Arc::new(SlowTool {
-                tool_name: "tool_b".into(),
-                delay: Duration::from_millis(100),
-                current_active: Arc::clone(&current_active),
-                max_active: Arc::clone(&max_active),
-            }),
-            Arc::new(SlowTool {
-                tool_name: "tool_c".into(),
-                delay: Duration::from_millis(200),
-                current_active: Arc::clone(&current_active),
-                max_active: Arc::clone(&max_active),
-            }),
+            slow_tool("tool_a", 300, &current_active, &max_active),
+            slow_tool("tool_b", 100, &current_active, &max_active),
+            slow_tool("tool_c", 200, &current_active, &max_active),
         ];
 
-        let worker = make_worker(tools).await;
+        let worker = make_worker(tools).await?;
 
         let selections = vec![
-            ToolSelection {
-                tool_name: "tool_a".into(),
-                parameters: serde_json::json!({}),
-                reasoning: String::new(),
-                alternatives: vec![],
-                tool_call_id: "call_a".into(),
-            },
-            ToolSelection {
-                tool_name: "tool_b".into(),
-                parameters: serde_json::json!({}),
-                reasoning: String::new(),
-                alternatives: vec![],
-                tool_call_id: "call_b".into(),
-            },
-            ToolSelection {
-                tool_name: "tool_c".into(),
-                parameters: serde_json::json!({}),
-                reasoning: String::new(),
-                alternatives: vec![],
-                tool_call_id: "call_c".into(),
-            },
+            tool_selection("tool_a", "call_a"),
+            tool_selection("tool_b", "call_b"),
+            tool_selection("tool_c", "call_c"),
         ];
 
         let results = worker.execute_tools_parallel(&selections).await;
 
-        assert!(results[0].result.as_ref().unwrap().contains("done_tool_a"));
-        assert!(results[1].result.as_ref().unwrap().contains("done_tool_b"));
-        assert!(results[2].result.as_ref().unwrap().contains("done_tool_c"));
+        for (i, (result, expected)) in results
+            .iter()
+            .zip(["done_tool_a", "done_tool_b", "done_tool_c"])
+            .enumerate()
+        {
+            let result_str = result
+                .result
+                .as_ref()
+                .unwrap_or_else(|_| panic!("tool {i} should return a captured result"))
+                .clone();
+            assert!(
+                result_str.contains(expected),
+                "result[{i}] should contain '{expected}'",
+            );
+        }
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_missing_tool_produces_error_not_panic() {
-        let worker = make_worker(vec![]).await;
+    async fn test_missing_tool_produces_error_not_panic()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let worker = make_worker(vec![]).await?;
 
         let selections = vec![ToolSelection {
             tool_name: "nonexistent_tool".into(),
@@ -1713,11 +1700,13 @@ mod tests {
             results[0].result.is_err(),
             "Missing tool should produce an error, not a panic"
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_mark_completed_twice_returns_error() {
-        let worker = make_worker(vec![]).await;
+    async fn test_mark_completed_twice_returns_error()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let worker = make_worker(vec![]).await?;
 
         worker
             .context_manager()
@@ -1725,16 +1714,19 @@ mod tests {
                 ctx.transition_to(JobState::InProgress, None)
             })
             .await
-            .unwrap()
-            .unwrap();
+            .expect("failed to update context before completion test")
+            .expect("failed to transition job to in-progress before completion test");
 
-        worker.mark_completed().await.unwrap();
+        worker
+            .mark_completed()
+            .await
+            .expect("failed to mark job completed in duplicate-completion test");
 
         let ctx = worker
             .context_manager()
             .get_context(worker.job_id)
             .await
-            .unwrap();
+            .expect("failed to reload job context after first completion");
         assert_eq!(ctx.state, JobState::Completed);
 
         let result = worker.mark_completed().await;
@@ -1742,12 +1734,14 @@ mod tests {
             result.is_err(),
             "Completed → Completed transition should be rejected by state machine"
         );
+        Ok(())
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
-    async fn test_mark_completed_persists_result_before_returning() {
-        let (worker, store, _dir) = make_worker_with_store(vec![]).await;
+    async fn test_mark_completed_persists_result_before_returning()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let (worker, store, _dir) = make_worker_with_store(vec![]).await?;
 
         worker
             .context_manager()
@@ -1777,39 +1771,80 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event_type, "result");
         assert_eq!(events[0].data["status"], "completed");
+        Ok(())
+    }
+
+    #[cfg(feature = "libsql")]
+    async fn make_worker_with_unpersisted_store(
+        tools: Vec<Arc<dyn Tool>>,
+    ) -> anyhow::Result<(Worker, tempfile::TempDir)> {
+        use crate::db::libsql::LibSqlBackend;
+        use tempfile::tempdir;
+
+        let registry = Arc::new(build_registry(tools).await);
+        let cm = Arc::new(ContextManager::new(5));
+        let job_id = cm.create_job("test", "test job").await?;
+        let dir = tempdir()?;
+        let path = dir.path().join("worker-test.db");
+        let backend = LibSqlBackend::new_local(&path).await?;
+        backend.run_migrations().await?;
+        let store: Arc<dyn Database> = Arc::new(backend);
+        let deps = base_deps(cm, registry, Some(store), None);
+
+        Ok((Worker::new(job_id, deps), dir))
+    }
+
+    #[cfg(feature = "libsql")]
+    async fn assert_terminal_persistence_failure_rolls_back(
+        transition: TerminalMethod,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let (worker, _dir) = make_worker_with_unpersisted_store(vec![]).await?;
+        transition_to_in_progress(&worker).await?;
+
+        let result = transition.apply_transition(&worker).await;
+        assert!(result.is_err(), "terminal persistence should fail");
+
+        let ctx = worker.context_manager().get_context(worker.job_id).await?;
+        assert_eq!(
+            ctx.state,
+            JobState::InProgress,
+            "persistence failure should roll context back to InProgress"
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_mark_completed_rolls_back_context_when_persistence_fails()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        assert_terminal_persistence_failure_rolls_back(TerminalMethod::Completed).await
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_mark_failed_rolls_back_context_when_persistence_fails()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        assert_terminal_persistence_failure_rolls_back(TerminalMethod::Failed("test failure")).await
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn test_mark_stuck_rolls_back_context_when_persistence_fails()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        assert_terminal_persistence_failure_rolls_back(TerminalMethod::Stuck("test stuck")).await
     }
 
     /// Build a Worker with the given approval context.
     async fn make_worker_with_approval(
         tools: Vec<Arc<dyn Tool>>,
         approval_context: Option<crate::tools::ApprovalContext>,
-    ) -> Worker {
-        let registry = ToolRegistry::new();
-        for t in tools {
-            registry.register(t).await;
-        }
-
+    ) -> Result<Worker, Box<dyn std::error::Error + Send + Sync>> {
+        let registry = Arc::new(build_registry(tools).await);
         let cm = Arc::new(crate::context::ContextManager::new(5));
-        let job_id = cm.create_job("test", "test job").await.unwrap();
+        let job_id = cm.create_job("test", "test job").await?;
+        let deps = base_deps(cm, registry, None, approval_context);
 
-        let deps = WorkerDeps {
-            context_manager: cm,
-            llm: Arc::new(StubLlm),
-            safety: Arc::new(SafetyLayer::new(&SafetyConfig {
-                max_output_length: 100_000,
-                injection_check_enabled: false,
-            })),
-            tools: Arc::new(registry),
-            store: None,
-            hooks: Arc::new(crate::hooks::HookRegistry::new()),
-            timeout: Duration::from_secs(30),
-            use_planning: false,
-            sse_tx: None,
-            approval_context,
-            http_interceptor: None,
-        };
-
-        Worker::new(job_id, deps)
+        Ok(Worker::new(job_id, deps))
     }
 
     /// A tool that requires approval (UnlessAutoApproved).
@@ -1881,8 +1916,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_approval_context_unblocks_unless_auto_approved() {
-        let worker_blocked = make_worker_with_approval(vec![Arc::new(ApprovalTool)], None).await;
+    async fn test_approval_context_unblocks_unless_auto_approved()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let worker_blocked = make_worker_with_approval(vec![Arc::new(ApprovalTool)], None).await?;
         let result = worker_blocked
             .execute_tool("needs_approval", &serde_json::json!({}))
             .await;
@@ -1895,20 +1931,22 @@ mod tests {
             vec![Arc::new(ApprovalTool)],
             Some(crate::tools::ApprovalContext::autonomous()),
         )
-        .await;
+        .await?;
         let result = worker_allowed
             .execute_tool("needs_approval", &serde_json::json!({}))
             .await;
         assert!(result.is_ok(), "Should be allowed with autonomous context");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_approval_context_blocks_always_unless_permitted() {
+    async fn test_approval_context_blocks_always_unless_permitted()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let worker_blocked = make_worker_with_approval(
             vec![Arc::new(AlwaysApprovalTool)],
             Some(crate::tools::ApprovalContext::autonomous()),
         )
-        .await;
+        .await?;
         let result = worker_blocked
             .execute_tool("always_approval", &serde_json::json!({}))
             .await;
@@ -1923,7 +1961,7 @@ mod tests {
                 "always_approval".to_string(),
             ])),
         )
-        .await;
+        .await?;
         let result = worker_allowed
             .execute_tool("always_approval", &serde_json::json!({}))
             .await;
@@ -1931,11 +1969,13 @@ mod tests {
             result.is_ok(),
             "Always tool should be allowed with permission"
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_token_budget_exceeded_fails_job() {
-        let worker = make_worker(vec![]).await;
+    async fn test_token_budget_exceeded_fails_job()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let worker = make_worker(vec![]).await?;
 
         // Transition to InProgress (required for mark_failed)
         worker
@@ -1944,8 +1984,8 @@ mod tests {
                 ctx.transition_to(JobState::InProgress, None)
             })
             .await
-            .unwrap()
-            .unwrap();
+            .expect("failed to update context before token-budget failure test")
+            .expect("failed to transition job to in-progress before token-budget failure test");
 
         // Set a token budget
         worker
@@ -1954,14 +1994,14 @@ mod tests {
                 ctx.max_tokens = 100;
             })
             .await
-            .unwrap();
+            .expect("failed to set max token budget for token-budget failure test");
 
         // Simulate adding tokens that exceed the budget
         let budget_result = worker
             .context_manager()
             .update_context(worker.job_id, |ctx| ctx.add_tokens(200))
             .await
-            .unwrap();
+            .expect("failed to apply token usage for token-budget failure test");
 
         assert!(
             budget_result.is_err(),
@@ -1972,18 +2012,20 @@ mod tests {
         worker
             .mark_failed(&budget_result.unwrap_err())
             .await
-            .unwrap();
+            .expect("failed to mark job failed after token budget exceeded");
         let ctx = worker
             .context_manager()
             .get_context(worker.job_id)
             .await
-            .unwrap();
+            .expect("failed to reload job context after token-budget failure");
         assert_eq!(ctx.state, JobState::Failed);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_iteration_cap_marks_failed_not_stuck() {
-        let worker = make_worker(vec![]).await;
+    async fn test_iteration_cap_marks_failed_not_stuck()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let worker = make_worker(vec![]).await?;
 
         // Transition to InProgress (required for mark_failed)
         worker
@@ -1992,24 +2034,249 @@ mod tests {
                 ctx.transition_to(JobState::InProgress, None)
             })
             .await
-            .unwrap()
-            .unwrap();
+            .expect("failed to update context before iteration-cap failure test")
+            .expect("failed to transition job to in-progress before iteration-cap failure test");
 
         // Simulate what the execution loop does when max_iterations is exceeded
         worker
             .mark_failed("Maximum iterations exceeded: job hit the iteration cap")
             .await
-            .unwrap();
+            .expect("failed to mark job failed after hitting the iteration cap");
 
         let ctx = worker
             .context_manager()
             .get_context(worker.job_id)
             .await
-            .unwrap();
+            .expect("failed to reload job context after iteration-cap failure");
         assert_eq!(
             ctx.state,
             JobState::Failed,
             "Iteration cap should transition to Failed, not Stuck"
         );
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // Terminal job-state persistence characterisation tests
+    // -----------------------------------------------------------------------
+
+    #[rstest::rstest]
+    #[case::completed(
+        TerminalTestCase {
+            method: TerminalMethod::Completed,
+            expected_state: JobState::Completed,
+            expected_status: "completed",
+            expected_reason: Some("Job completed successfully"),
+        }
+    )]
+    #[case::failed(
+        TerminalTestCase {
+            method: TerminalMethod::Failed("budget exceeded"),
+            expected_state: JobState::Failed,
+            expected_status: "failed",
+            expected_reason: Some("budget exceeded"),
+        }
+    )]
+    #[case::stuck(
+        TerminalTestCase {
+            method: TerminalMethod::Stuck("timeout"),
+            expected_state: JobState::Stuck,
+            expected_status: "stuck",
+            expected_reason: Some("timeout"),
+        }
+    )]
+    #[tokio::test]
+    async fn test_terminal_state_characterises_persistence(
+        #[case] case: TerminalTestCase,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
+
+        // Transition to InProgress first
+        transition_to_in_progress(&worker).await?;
+
+        // Execute the terminal state transition
+        case.method.apply_transition(&worker).await?;
+
+        // Verify state in ContextManager
+        let ctx = worker
+            .context_manager()
+            .get_context(worker.job_id)
+            .await
+            .expect("failed to get context after terminal transition");
+        assert_eq!(ctx.state, case.expected_state);
+
+        assert_terminal_persistence_with_snapshot(
+            &store,
+            case.expected_state,
+            case.expected_status,
+            case.expected_reason,
+        )
+        .await;
+        Ok(())
+    }
+
+    /// Test case structure for parameterised terminal state tests.
+    struct TerminalTestCase {
+        method: TerminalMethod,
+        expected_state: JobState,
+        expected_status: &'static str,
+        expected_reason: Option<&'static str>,
+    }
+
+    async fn get_call_counts(store: &CapturingStore) -> (usize, usize) {
+        let calls = store.calls();
+        let status_count = calls.status_history.lock().await.len();
+        let event_count = calls.event_history.lock().await.len();
+        (status_count, event_count)
+    }
+
+    async fn assert_rejected_does_not_persist(
+        worker: &Worker,
+        store: &CapturingStore,
+        rejected: TerminalMethod,
+        expected_state: JobState,
+        before: (usize, usize),
+    ) {
+        let result = match rejected {
+            TerminalMethod::Completed => worker.mark_completed().await,
+            TerminalMethod::Failed(reason) => worker.mark_failed(reason).await,
+            TerminalMethod::Stuck(reason) => worker.mark_stuck(reason).await,
+        };
+        assert!(
+            result.is_err(),
+            "Terminal transition {:?} after {:?} should be rejected",
+            rejected,
+            expected_state
+        );
+
+        let after = get_call_counts(store).await;
+        assert_eq!(
+            after.0, before.0,
+            "Rejected transition {:?} after {:?} should not persist status",
+            rejected, expected_state
+        );
+        assert_eq!(
+            after.1, before.1,
+            "Rejected transition {:?} after {:?} should not persist event",
+            rejected, expected_state
+        );
+    }
+
+    async fn run_single_terminal_case(
+        method: TerminalMethod,
+        expected_state: JobState,
+        expected_status: &str,
+        expected_reason: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
+        transition_to_in_progress(&worker).await?;
+
+        method.apply_transition(&worker).await?;
+
+        let ctx = worker.context_manager().get_context(worker.job_id).await?;
+        assert_eq!(
+            ctx.state, expected_state,
+            "State should match expected terminal state"
+        );
+
+        assert_terminal_persistence(&store, expected_state, expected_status, expected_reason).await;
+        let before = get_call_counts(&store).await;
+
+        for rejected in [
+            TerminalMethod::Completed,
+            TerminalMethod::Failed("cross-terminal failure"),
+            TerminalMethod::Stuck("cross-terminal stuck"),
+        ] {
+            assert_rejected_does_not_persist(&worker, &store, rejected, expected_state, before)
+                .await;
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_double_completed_transition_rejected()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
+
+        // Transition to InProgress first
+        transition_to_in_progress(&worker).await?;
+
+        // First call succeeds
+        worker
+            .mark_completed()
+            .await
+            .expect("first mark_completed should succeed");
+
+        // Record call counts before attempting duplicate transition
+        let status_count_before = store.calls().status_history.lock().await.len();
+        let event_count_before = store.calls().event_history.lock().await.len();
+
+        // Second call should fail
+        let result = worker.mark_completed().await;
+        assert!(
+            result.is_err(),
+            "Double transition to Completed should be rejected"
+        );
+
+        // Verify no new persistence calls were made on rejected transition
+        let status_count_after = store.calls().status_history.lock().await.len();
+        let event_count_after = store.calls().event_history.lock().await.len();
+        assert_eq!(
+            status_count_after, status_count_before,
+            "Rejected transition should not persist status"
+        );
+        assert_eq!(
+            event_count_after, event_count_before,
+            "Rejected transition should not persist event"
+        );
+
+        assert_terminal_persistence_with_snapshot(
+            &store,
+            JobState::Completed,
+            "completed",
+            Some("Job completed successfully"),
+        )
+        .await;
+        Ok(())
+    }
+
+    /// Terminal transition rejection test for duplicate state changes.
+    ///
+    /// Verifies that after transitioning to a terminal state (Completed,
+    /// Failed, or Stuck), subsequent attempts to transition to any terminal
+    /// state are rejected and persistence calls remain unchanged.
+    ///
+    /// This is a curated test covering the three terminal states; it does
+    /// not generate arbitrary sequences or property-based inputs.
+    #[tokio::test]
+    async fn test_terminal_transition_rejects_duplicates()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let test_cases = [
+            (
+                TerminalMethod::Completed,
+                JobState::Completed,
+                "completed",
+                Some("Job completed successfully"),
+            ),
+            (
+                TerminalMethod::Failed("test failure"),
+                JobState::Failed,
+                "failed",
+                Some("test failure"),
+            ),
+            (
+                TerminalMethod::Stuck("test stuck"),
+                JobState::Stuck,
+                "stuck",
+                Some("test stuck"),
+            ),
+        ];
+
+        for (method, expected_state, expected_status, expected_reason) in test_cases {
+            run_single_terminal_case(method, expected_state, expected_status, expected_reason)
+                .await?;
+        }
+        Ok(())
     }
 }

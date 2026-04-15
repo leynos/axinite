@@ -5,6 +5,10 @@
 
 use core::future::Future;
 
+use uuid::Uuid;
+
+use crate::context::JobState;
+use crate::db::SandboxEventType;
 use crate::db::params::DbFuture;
 use crate::error::DatabaseError;
 
@@ -31,6 +35,12 @@ pub trait Database:
     + Send
     + Sync
 {
+    /// Parameters for atomically persisting a terminal job event and status.
+    fn persist_terminal_result_and_status<'a>(
+        &'a self,
+        params: TerminalJobPersistence<'a>,
+    ) -> DbFuture<'a, Result<(), DatabaseError>>;
+
     /// Apply all pending schema migrations before the backend is used.
     ///
     /// Implementations must be idempotent, so callers may safely invoke this
@@ -57,6 +67,12 @@ pub trait NativeDatabase:
     + Send
     + Sync
 {
+    /// Native async form of [`Database::persist_terminal_result_and_status`].
+    fn persist_terminal_result_and_status<'a>(
+        &'a self,
+        params: TerminalJobPersistence<'a>,
+    ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
+
     /// Apply all pending schema migrations before the backend is used.
     ///
     /// Implementations must be idempotent, so callers may safely invoke this
@@ -70,4 +86,18 @@ pub trait NativeDatabase:
     /// for the backend instance, which should not be used afterwards. Typical
     /// call sites run this once immediately after backend construction.
     fn run_migrations<'a>(&'a self) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
+}
+
+/// Parameters for atomically persisting a terminal event and terminal status.
+pub struct TerminalJobPersistence<'a> {
+    /// Direct agent job UUID being updated.
+    pub job_id: Uuid,
+    /// Terminal job status to persist.
+    pub status: JobState,
+    /// Optional failure or completion reason to persist on the job row.
+    pub failure_reason: Option<&'a str>,
+    /// Event type written to `job_events`.
+    pub event_type: SandboxEventType,
+    /// Structured event payload written alongside the status transition.
+    pub event_data: &'a serde_json::Value,
 }

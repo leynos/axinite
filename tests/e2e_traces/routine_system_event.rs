@@ -13,7 +13,7 @@ use crate::support::routines::{
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
 #[tokio::test]
-async fn system_event_trigger_matches_and_filters() {
+async fn system_event_trigger_matches_and_filters() -> anyhow::Result<()> {
     let (db, _tmp) = create_test_db().await.expect("create_test_db");
     let ws = create_workspace(&db);
     let trace = LlmTrace::single_turn(
@@ -30,7 +30,7 @@ async fn system_event_trigger_matches_and_filters() {
         }],
     );
     let (engine, _notify_rx) = make_minimal_engine(trace, db.clone(), ws);
-    let routine = register_github_issue_routine(&db, &engine).await;
+    let routine = register_github_issue_routine(&db, &engine).await?;
 
     // Matching event should fire and be recorded in run history.
     assert_system_event_count(
@@ -47,11 +47,11 @@ async fn system_event_trigger_matches_and_filters() {
 
     // Wait for routine execution to complete using deterministic synchronization,
     // then verify the routine run was recorded.
-    wait_for_idle(&engine, Duration::from_secs(5)).await;
+    wait_for_idle(&engine, Duration::from_secs(5)).await?;
 
     // Wait for routine run to be durably persisted in the database.
     // Snapshot run count before firing (zero for a freshly-created routine).
-    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await;
+    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await?;
 
     // Table-driven checks for non-matching and case-insensitive scenarios.
     #[rustfmt::skip]
@@ -68,4 +68,6 @@ async fn system_event_trigger_matches_and_filters() {
     for (spec, expected, msg) in scenarios {
         assert_system_event_count(&engine, spec, expected, msg).await;
     }
+
+    Ok(())
 }

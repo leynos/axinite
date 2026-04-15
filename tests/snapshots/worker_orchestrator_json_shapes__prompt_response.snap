@@ -1,0 +1,9 @@
+---
+source: tests/worker_orchestrator_json_shapes.rs
+assertion_line: 151
+expression: "&parsed"
+---
+{
+  "content": "Continue?",
+  "done": false
+}

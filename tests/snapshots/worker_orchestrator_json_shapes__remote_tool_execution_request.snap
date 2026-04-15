@@ -1,0 +1,11 @@
+---
+source: tests/worker_orchestrator_json_shapes.rs
+assertion_line: 60
+expression: "&original"
+---
+{
+  "tool_name": "my_tool",
+  "params": {
+    "key": "value"
+  }
+}

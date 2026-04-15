@@ -142,7 +142,35 @@ This behaviour is directly exercised by the current tests in
   restart leaves the old listener serving traffic and restores the previous
   address in server state.
 
-## 6. Relationship to hot reload
+## 6. Listener-based lifecycle API
+
+The listener-based lifecycle methods,
+`start_with_listener()` and `restart_with_listener()`, extend the original
+address-driven API without changing the server's route-ownership model.
+
+They exist for two concrete call patterns:
+
+- hot-reload flows that want to validate a replacement listener before the old
+  one is shut down, and
+- integration tests that need OS-selected ports or pre-bound sockets.
+
+The contract is:
+
+- the caller pre-binds a `tokio::net::TcpListener` and transfers ownership
+  into `WebhookServer`;
+- the server updates `config.addr` from `listener.local_addr()` so subsequent
+  status and restart logic sees the real active bind address;
+- first start still merges queued routes and stores the result in
+  `merged_router`; and
+- subsequent listener-based restarts reuse `merged_router` rather than asking
+  channels to rebuild their route fragments.
+
+That makes the listener-based API an internal lifecycle extension, not a new
+route-registration model. Callers should still finish route setup before the
+first start and should still expect async startup and
+`ChannelError::StartupFailed` on listener or server boot failures.
+
+## 7. Relationship to hot reload
 
 The webhook server and the SIGHUP handler in `src/main.rs` have different
 responsibilities and should be understood separately.
@@ -175,7 +203,7 @@ That distinction matters when debugging incidents:
 - if the question is “why did the runtime try to restart at all?”, the answer
   lives in `main.rs`.
 
-## 7. Current trade-offs
+## 8. Current trade-offs
 
 The present design is pragmatic, but it comes with trade-offs.
 
@@ -192,7 +220,7 @@ The present design is pragmatic, but it comes with trade-offs.
 None of those trade-offs are inherently wrong for the current system. They are
 simply the shape maintainers need to preserve or revise deliberately.
 
-## 8. Maintainer guidance
+## 9. Maintainer guidance
 
 When changing webhook behaviour, treat these as the current invariants:
 
@@ -210,7 +238,11 @@ for:
 - failed rebind with old-listener rollback; and
 - clean shutdown after the server has been restarted.
 
-## 9. References
+Internal API note: reload paths that can pre-bind a replacement socket should
+prefer `restart_with_listener()` over `restart_with_addr()` so bind failures
+surface before the old listener is torn down.
+
+## 10. References
 
 - `src/channels/webhook_server.rs`
 - `src/main.rs`

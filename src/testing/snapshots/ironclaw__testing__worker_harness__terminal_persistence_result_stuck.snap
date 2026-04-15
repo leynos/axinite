@@ -1,0 +1,10 @@
+---
+source: src/worker/job.rs
+assertion_line: 2077
+expression: "&event_call.data"
+---
+{
+  "message": "Job stuck: timeout",
+  "status": "stuck",
+  "success": false
+}

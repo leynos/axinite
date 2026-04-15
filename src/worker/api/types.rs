@@ -211,7 +211,7 @@ pub struct JobEventPayload {
 }
 
 /// Response from the prompt polling endpoint.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PromptResponse {
     pub content: String,
     #[serde(default)]

@@ -1,10 +1,17 @@
-//! Test harness for constructing `AgentDeps` with sensible defaults.
+//! Test harnesses, doubles, and helpers for crate-level tests.
 //!
-//! Provides:
-//! - [`StubLlm`]: A configurable LLM provider that returns a fixed response
-//! - [`StubChannel`]: A configurable channel stub with message injection and response capture
-//! - [`TestHarnessBuilder`]: Builder for wiring `AgentDeps` with defaults
-//! - [`TestHarness`]: The assembled components ready for use in tests
+//! The public surface here supports both full integration-style tests and
+//! targeted unit tests. Use [`TestHarnessBuilder`] and [`TestHarness`] when a
+//! test needs fully wired `AgentDeps` with sensible defaults, [`null_db`] when
+//! the test needs null persistence or captured persistence calls, and
+//! [`worker_harness`] when the focus is `Worker` setup and terminal-state
+//! behaviour.
+//!
+//! The [`null_db`] exports cover both null persistence and call verification:
+//! [`NullDatabase`] is the baseline no-op database, [`CapturingStore`] records
+//! persistence interactions, and [`Calls`], [`EventCall`],
+//! [`EventCallWithId`], [`StatusCall`], and [`StatusCallWithId`] expose the
+//! captured status and event payloads for assertions.
 //!
 //! # Usage
 //!
@@ -26,12 +33,22 @@ pub mod postgres;
 mod settings_tests;
 pub mod test_utils;
 
+#[cfg(test)]
+pub mod null_db;
+#[cfg(test)]
+pub use null_db::{
+    Calls, CapturingStore, EventCall, EventCallWithId, NullDatabase, StatusCall, StatusCallWithId,
+};
+#[cfg(test)]
+pub mod worker_harness;
+
+use anyhow::Result;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use anyhow::Result;
 use rust_decimal::Decimal;
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 
@@ -42,7 +59,7 @@ use crate::channels::{
 use crate::db::Database;
 use crate::error::{ChannelError, LlmError};
 
-#[cfg(test)]
+#[cfg(all(test, feature = "libsql", feature = "test-helpers"))]
 use crate::db::{
     EnsureConversationParams, EstimationActualsParams, EstimationSnapshotParams,
     RoutineRunCompletion, RoutineRuntimeUpdate, SandboxJobStatusUpdate, SettingKey, UserId,
@@ -60,7 +77,7 @@ use crate::tools::wasm::{Capabilities, WasmToolWrapper};
 ///
 /// Returns the database and a `TempDir` guard — the database file is
 /// deleted when the guard is dropped.
-#[cfg(feature = "libsql")]
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 pub async fn test_db() -> (Arc<dyn Database>, TempDir) {
     use crate::db::libsql::LibSqlBackend;
     use tempfile::tempdir;
@@ -374,7 +391,7 @@ pub struct TestHarness {
     pub channel: Option<(mpsc::Sender<IncomingMessage>, ChannelManager)>,
     /// Temp directory guard — keeps the test database alive. Dropped
     /// automatically when the harness goes out of scope.
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     _temp_dir: TempDir,
 }
 
@@ -433,7 +450,7 @@ impl TestHarnessBuilder {
     }
 
     /// Build the harness with defaults applied.
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     pub async fn build(self) -> TestHarness {
         use crate::agent::cost_guard::{CostGuard, CostGuardConfig};
         use crate::config::{SafetyConfig, SkillsConfig};
@@ -516,7 +533,7 @@ impl Default for TestHarnessBuilder {
 mod tests {
     use super::*;
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_harness_builds_with_defaults() {
         let harness = TestHarnessBuilder::new().build().await;
@@ -524,7 +541,7 @@ mod tests {
         assert_eq!(harness.deps.llm.model_name(), "stub-model");
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_harness_custom_llm() {
         let custom_llm = Arc::new(StubLlm::new("custom response").with_model_name("my-model"));
@@ -532,7 +549,7 @@ mod tests {
         assert_eq!(harness.deps.llm.model_name(), "my-model");
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_harness_db_works() {
         let harness = TestHarnessBuilder::new().build().await;
@@ -547,7 +564,7 @@ mod tests {
 
     // === QA Plan P1 - 2.2: Turn persistence round-trip tests ===
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_conversation_message_round_trip() {
         let harness = TestHarnessBuilder::new().build().await;
@@ -594,7 +611,7 @@ mod tests {
         assert!(msgs[1].created_at <= msgs[2].created_at);
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_conversation_metadata_persistence() {
         let harness = TestHarnessBuilder::new().build().await;
@@ -646,7 +663,7 @@ mod tests {
         assert_eq!(meta["model"], "gpt-4");
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_conversation_belongs_to_user() {
         let harness = TestHarnessBuilder::new().build().await;
@@ -672,7 +689,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_ensure_conversation_idempotent() {
         let harness = TestHarnessBuilder::new().build().await;
@@ -716,7 +733,7 @@ mod tests {
         assert_eq!(msgs[0].content, "test message");
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_paginated_messages() {
         let harness = TestHarnessBuilder::new().build().await;
@@ -758,7 +775,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_conversations_with_preview() {
         let harness = TestHarnessBuilder::new().build().await;
@@ -794,7 +811,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_job_action_persistence() {
         use crate::context::{ActionRecord, JobContext, JobState};
@@ -906,6 +923,7 @@ mod tests {
         assert!(channel.health_check().await.is_err());
     }
 
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_harness_with_channel() {
         let harness = TestHarnessBuilder::new().with_stub_channel().build().await;
@@ -924,7 +942,7 @@ mod tests {
         assert!(names.contains(&"stub".to_string()));
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_tool_failure_tracking() {
         let harness = TestHarnessBuilder::new().build().await;
@@ -953,7 +971,7 @@ mod tests {
             .expect("mark repaired");
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     async fn create_routine_fixture(db: &Arc<dyn Database>) -> uuid::Uuid {
         use crate::agent::routine::{
             NotifyConfig, Routine, RoutineAction, RoutineGuardrails, Trigger,
@@ -1040,7 +1058,7 @@ mod tests {
         routine_id
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     async fn start_routine_run(db: &Arc<dyn Database>, routine_id: uuid::Uuid) -> uuid::Uuid {
         use crate::agent::routine::{RoutineRun, RunStatus};
 
@@ -1071,7 +1089,7 @@ mod tests {
         run_id
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     async fn complete_routine_run_ok(db: &Arc<dyn Database>, run_id: uuid::Uuid) {
         use crate::agent::routine::RunStatus;
 
@@ -1085,7 +1103,7 @@ mod tests {
         .expect("complete run");
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     async fn assert_history_len(db: &Arc<dyn Database>, routine_id: uuid::Uuid, expected: usize) {
         use crate::agent::routine::RunStatus;
 
@@ -1099,7 +1117,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     async fn delete_routine_and_assert_absent(db: &Arc<dyn Database>, routine_id: uuid::Uuid) {
         let deleted = db.delete_routine(routine_id).await.expect("delete");
         assert!(deleted);
@@ -1109,7 +1127,7 @@ mod tests {
         assert!(!deleted);
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_routine_crud() {
         let harness = TestHarnessBuilder::new().build().await;
@@ -1122,7 +1140,7 @@ mod tests {
         delete_routine_and_assert_absent(db, routine_id).await;
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_routine_runtime_update() {
         use crate::agent::routine::{
@@ -1193,7 +1211,7 @@ mod tests {
         db.delete_routine(routine_id).await.expect("delete");
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_llm_call_recording() {
         use crate::history::LlmCallRecord;
@@ -1216,7 +1234,7 @@ mod tests {
         assert!(!call_id.is_nil());
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_sandbox_job_lifecycle() {
         use crate::history::SandboxJobRecord;
@@ -1311,7 +1329,7 @@ mod tests {
         assert!(!not_belongs);
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_sandbox_job_mode() {
         use crate::history::SandboxJobRecord;
@@ -1352,7 +1370,7 @@ mod tests {
         assert_eq!(mode, crate::db::SandboxMode::ClaudeCode);
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_job_events() {
         use crate::history::SandboxJobRecord;
@@ -1425,7 +1443,7 @@ mod tests {
         assert_eq!(events[0].event_type, "tool_call");
     }
 
-    #[cfg(feature = "libsql")]
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_estimation_snapshot_round_trip() {
         let harness = TestHarnessBuilder::new().build().await;

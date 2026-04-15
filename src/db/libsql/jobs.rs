@@ -14,7 +14,9 @@ use super::{
     opt_text, opt_text_owned,
 };
 use crate::context::{ActionRecord, JobContext, JobState};
-use crate::db::{EstimationActualsParams, EstimationSnapshotParams, NativeJobStore};
+use crate::db::{
+    EstimationActualsParams, EstimationSnapshotParams, NativeJobStore, TerminalJobPersistence,
+};
 use crate::error::DatabaseError;
 use crate::history::{AgentJobRecord, AgentJobSummary, LlmCallRecord};
 
@@ -114,6 +116,54 @@ impl LibSqlBackend {
         )
         .await
         .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        Ok(())
+    }
+
+    pub(crate) async fn persist_terminal_result_and_status(
+        &self,
+        params: TerminalJobPersistence<'_>,
+    ) -> Result<(), DatabaseError> {
+        let TerminalJobPersistence {
+            job_id,
+            status,
+            failure_reason,
+            event_type,
+            event_data,
+        } = params;
+        let conn = self.connect().await?;
+        let tx = conn
+            .transaction()
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        tx.execute(
+            "INSERT INTO job_events (job_id, event_type, data) VALUES (?1, ?2, ?3)",
+            params![
+                job_id.to_string(),
+                event_type.as_str().to_string(),
+                event_data.to_string()
+            ],
+        )
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        let rows_affected = tx
+            .execute(
+            "UPDATE agent_jobs SET status = ?2, failure_reason = ?3 WHERE id = ?1 AND source = 'direct'",
+            params![job_id.to_string(), status.to_string(), opt_text(failure_reason)],
+        )
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        if rows_affected == 0 {
+            tx.rollback()
+                .await
+                .map_err(|e| DatabaseError::Query(e.to_string()))?;
+            return Err(DatabaseError::NotFound {
+                entity: "agent_job".to_string(),
+                id: job_id.to_string(),
+            });
+        }
+        tx.commit()
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
         Ok(())
     }
 }
@@ -319,5 +369,107 @@ impl NativeJobStore for LibSqlBackend {
         params: EstimationActualsParams,
     ) -> Result<(), DatabaseError> {
         jobs_history::update_estimation_actuals(self, params).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::NativeDatabase;
+    use crate::db::SandboxEventType;
+    use chrono::Utc;
+    use serde_json::json;
+
+    async fn count_job_events(backend: &LibSqlBackend, job_id: Uuid) -> i64 {
+        let conn = backend.connect().await.expect("connection should succeed");
+        let mut rows = conn
+            .query(
+                "SELECT COUNT(*) FROM job_events WHERE job_id = ?1",
+                params![job_id.to_string()],
+            )
+            .await
+            .expect("count query should succeed");
+        let row = rows
+            .next()
+            .await
+            .expect("count row should load")
+            .expect("count row should exist");
+        row.get::<i64>(0).expect("count column should decode")
+    }
+
+    async fn seed_non_direct_job(backend: &LibSqlBackend, job_id: Uuid) {
+        let conn = backend.connect().await.expect("connection should succeed");
+        conn.execute(
+            r#"
+            INSERT INTO agent_jobs (
+                id, title, description, status, source, user_id, project_dir, created_at
+            ) VALUES (?1, ?2, ?3, ?4, 'sandbox', ?5, ?6, ?7)
+            "#,
+            params![
+                job_id.to_string(),
+                "Sandbox test job",
+                "{}",
+                "creating",
+                "test-user",
+                "/tmp/test-project",
+                Utc::now().to_rfc3339(),
+            ],
+        )
+        .await
+        .expect("sandbox job should seed");
+    }
+
+    #[tokio::test]
+    async fn persist_terminal_result_and_status_rejects_unknown_job_ids() {
+        let dir = tempfile::tempdir().expect("tempdir should succeed");
+        let db_path = dir.path().join("jobs.sqlite");
+        let backend = LibSqlBackend::new_local(&db_path)
+            .await
+            .expect("new_local should succeed");
+        backend
+            .run_migrations()
+            .await
+            .expect("migrations should succeed");
+
+        let job_id = Uuid::new_v4();
+        let result = backend
+            .persist_terminal_result_and_status(TerminalJobPersistence {
+                job_id,
+                status: JobState::Completed,
+                failure_reason: None,
+                event_type: SandboxEventType::from("result"),
+                event_data: &json!({"status": "completed"}),
+            })
+            .await;
+
+        assert!(result.is_err(), "unknown job ID should fail");
+        assert_eq!(
+            count_job_events(&backend, job_id).await,
+            0,
+            "unknown job ID should not leave a terminal event behind"
+        );
+
+        let sandbox_job_id = Uuid::new_v4();
+        seed_non_direct_job(&backend, sandbox_job_id).await;
+
+        let sandbox_result = backend
+            .persist_terminal_result_and_status(TerminalJobPersistence {
+                job_id: sandbox_job_id,
+                status: JobState::Completed,
+                failure_reason: None,
+                event_type: SandboxEventType::from("result"),
+                event_data: &json!({"status": "completed"}),
+            })
+            .await;
+
+        assert!(
+            sandbox_result.is_err(),
+            "non-direct job ID should fail terminal persistence"
+        );
+        assert_eq!(
+            count_job_events(&backend, sandbox_job_id).await,
+            0,
+            "non-direct job ID should not leave a terminal event behind"
+        );
     }
 }

@@ -109,13 +109,13 @@ management.
   - `make typecheck`
     - `cargo check --all --benches --tests --examples`
     - `cargo check --all --benches --tests --examples`
-      `--no-default-features --features libsql`
+      `--no-default-features --features libsql-test-helpers`
     - `cargo check --all --benches --tests --examples --all-features`
     - `cargo check --manifest-path tools-src/github/Cargo.toml --tests`
   - `make lint`
     - `cargo clippy --all --benches --tests --examples -- -D warnings`
     - `cargo clippy --all --benches --tests --examples`
-      `--no-default-features --features libsql -- -D warnings`
+      `--no-default-features --features libsql-test-helpers -- -D warnings`
     - `cargo clippy --all --benches --tests --examples --all-features -- -D warnings`
     - `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`
   - `make test`

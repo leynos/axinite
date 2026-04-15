@@ -14,7 +14,7 @@ use crate::support::routines::{
 use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
 
 #[tokio::test]
-async fn event_trigger_matches() {
+async fn event_trigger_matches() -> anyhow::Result<()> {
     let (db, _tmp) = create_test_db().await.expect("create_test_db");
     let ws = create_workspace(&db);
 
@@ -57,14 +57,16 @@ async fn event_trigger_matches() {
 
     // Wait for routine execution to complete using deterministic synchronization,
     // then verify the routine run was recorded.
-    wait_for_idle(&engine, Duration::from_secs(5)).await;
+    wait_for_idle(&engine, Duration::from_secs(5)).await?;
 
     // Wait for routine run to be durably persisted in the database.
     // Snapshot run count before firing (zero for a freshly-created routine).
-    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await;
+    wait_for_persisted_run(&db, routine.id, 0, Duration::from_secs(5)).await?;
 
     // Negative match: message that doesn't match.
     let non_matching_msg = make_test_incoming_message("check the staging environment");
     let fired_neg = engine.check_event_triggers(&non_matching_msg).await;
     assert_eq!(fired_neg, 0, "Expected 0 routines fired on non-match");
+
+    Ok(())
 }

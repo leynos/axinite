@@ -22,6 +22,7 @@ use std::sync::Arc;
 use crate::db::NativeDatabase;
 use crate::error::DatabaseError;
 use libsql::{Connection, Database as LibSqlDatabase};
+use tokio::fs;
 
 use crate::db::libsql_migrations;
 pub(crate) use helpers::{
@@ -40,20 +41,24 @@ pub struct LibSqlBackend {
 }
 
 impl LibSqlBackend {
-    /// Create a new local embedded database.
-    pub async fn new_local(path: &Path) -> Result<Self, DatabaseError> {
-        // Ensure parent directory exists
+    /// Ensure the parent directory of `path` exists, creating it and all
+    /// ancestors if necessary.
+    async fn ensure_parent_dir(path: &Path) -> Result<(), DatabaseError> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                DatabaseError::Pool(format!("Failed to create database directory: {}", e))
+            fs::create_dir_all(parent).await.map_err(|e| {
+                DatabaseError::Pool(format!("Failed to create database directory: {e}"))
             })?;
         }
+        Ok(())
+    }
 
+    /// Create a new local embedded database.
+    pub async fn new_local(path: &Path) -> Result<Self, DatabaseError> {
+        Self::ensure_parent_dir(path).await?;
         let db = libsql::Builder::new_local(path)
             .build()
             .await
-            .map_err(|e| DatabaseError::Pool(format!("Failed to open libSQL database: {}", e)))?;
-
+            .map_err(|e| DatabaseError::Pool(format!("Failed to open libSQL database: {e}")))?;
         Ok(Self { db: Arc::new(db) })
     }
 
@@ -75,17 +80,11 @@ impl LibSqlBackend {
         url: &str,
         auth_token: &str,
     ) -> Result<Self, DatabaseError> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                DatabaseError::Pool(format!("Failed to create database directory: {}", e))
-            })?;
-        }
-
+        Self::ensure_parent_dir(path).await?;
         let db = libsql::Builder::new_remote_replica(path, url.to_string(), auth_token.to_string())
             .build()
             .await
-            .map_err(|e| DatabaseError::Pool(format!("Failed to open remote replica: {}", e)))?;
-
+            .map_err(|e| DatabaseError::Pool(format!("Failed to open remote replica: {e}")))?;
         Ok(Self { db: Arc::new(db) })
     }
 
@@ -137,6 +136,13 @@ impl LibSqlBackend {
 }
 
 impl NativeDatabase for LibSqlBackend {
+    async fn persist_terminal_result_and_status(
+        &self,
+        params: crate::db::TerminalJobPersistence<'_>,
+    ) -> Result<(), DatabaseError> {
+        LibSqlBackend::persist_terminal_result_and_status(self, params).await
+    }
+
     async fn run_migrations(&self) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         // WAL mode persists in the database file: all future connections benefit.

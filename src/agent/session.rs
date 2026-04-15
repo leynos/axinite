@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use uuid::Uuid;
 
 use crate::channels::web::util::truncate_preview;
@@ -39,6 +40,13 @@ pub struct Session {
     /// Tools that have been auto-approved for this session ("always approve").
     #[serde(default)]
     pub auto_approved_tools: HashSet<String>,
+}
+
+/// Errors for indexed tool-call mutations on a turn.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ToolCallIndexError {
+    #[error("tool call index {idx} out of bounds (len={len})")]
+    OutOfBounds { idx: usize, len: usize },
 }
 
 impl Session {
@@ -201,11 +209,10 @@ pub struct Thread {
 }
 
 impl Thread {
-    /// Create a new thread.
-    pub fn new(session_id: Uuid) -> Self {
+    fn init(session_id: Uuid, thread_id: Uuid) -> Self {
         let now = Utc::now();
         Self {
-            id: Uuid::new_v4(),
+            id: thread_id,
             session_id,
             state: ThreadState::Idle,
             turns: Vec::new(),
@@ -218,21 +225,15 @@ impl Thread {
         }
     }
 
+    /// Create a new thread.
+    pub fn new(session_id: Uuid) -> Self {
+        let thread_id = Uuid::new_v4();
+        Self::init(session_id, thread_id)
+    }
+
     /// Create a thread with a specific ID (for DB hydration).
     pub fn with_id(id: Uuid, session_id: Uuid) -> Self {
-        let now = Utc::now();
-        Self {
-            id,
-            session_id,
-            state: ThreadState::Idle,
-            turns: Vec::new(),
-            created_at: now,
-            updated_at: now,
-            metadata: serde_json::Value::Null,
-            pending_approval: None,
-            pending_auth: None,
-            in_flight_auth: false,
-        }
+        Self::init(session_id, id)
     }
 
     /// Get the current turn number (1-indexed for display).
@@ -518,6 +519,22 @@ pub struct Turn {
 }
 
 impl Turn {
+    fn set_tool_outcome_at(
+        &mut self,
+        idx: usize,
+        result: Option<serde_json::Value>,
+        error: Option<String>,
+    ) -> Result<(), ToolCallIndexError> {
+        let len = self.tool_calls.len();
+        let tool_call = self
+            .tool_calls
+            .get_mut(idx)
+            .ok_or(ToolCallIndexError::OutOfBounds { idx, len })?;
+        tool_call.result = result;
+        tool_call.error = error;
+        Ok(())
+    }
+
     /// Create a new turn.
     pub fn new(turn_number: usize, user_input: impl Into<String>) -> Self {
         Self {
@@ -574,11 +591,54 @@ impl Turn {
         }
     }
 
+    /// Record tool call result for a specific tool-call slot.
+    pub fn record_tool_result_at(
+        &mut self,
+        idx: usize,
+        result: serde_json::Value,
+    ) -> Result<(), ToolCallIndexError> {
+        self.set_tool_outcome_at(idx, Some(result), None)
+    }
+
+    fn parse_tool_result(result_content: &str) -> serde_json::Value {
+        let trimmed = result_content.trim_start();
+        if matches!(trimmed.as_bytes().first(), Some(b'{' | b'[')) {
+            serde_json::from_str(result_content)
+                .unwrap_or_else(|_| serde_json::Value::String(result_content.to_string()))
+        } else {
+            serde_json::Value::String(result_content.to_string())
+        }
+    }
+
+    /// Record tool call result, parsing structured JSON where possible.
+    pub fn record_tool_result_content(&mut self, result_content: &str) {
+        self.record_tool_result(Self::parse_tool_result(result_content));
+    }
+
+    /// Record tool call result for a specific slot, parsing structured JSON
+    /// where possible.
+    pub fn record_tool_result_content_at(
+        &mut self,
+        idx: usize,
+        result_content: &str,
+    ) -> Result<(), ToolCallIndexError> {
+        self.record_tool_result_at(idx, Self::parse_tool_result(result_content))
+    }
+
     /// Record tool call error.
     pub fn record_tool_error(&mut self, error: impl Into<String>) {
         if let Some(call) = self.tool_calls.last_mut() {
             call.error = Some(error.into());
         }
+    }
+
+    /// Record tool call error for a specific tool-call slot.
+    pub fn record_tool_error_at(
+        &mut self,
+        idx: usize,
+        error: impl Into<String>,
+    ) -> Result<(), ToolCallIndexError> {
+        self.set_tool_outcome_at(idx, None, Some(error.into()))
     }
 }
 
@@ -598,6 +658,8 @@ pub struct TurnToolCall {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod record_tool_result_content;
 
     #[test]
     fn test_session_creation() {
@@ -740,6 +802,24 @@ mod tests {
         let json = json.replace(",\"pending_auth\":null", "");
         let restored: Thread = serde_json::from_str(&json).expect("should deserialize");
         assert!(restored.pending_auth.is_none());
+    }
+
+    #[test]
+    fn test_in_flight_auth_is_transient_across_serde() {
+        let mut thread = Thread::new(Uuid::new_v4());
+        thread.in_flight_auth = true;
+
+        let json = serde_json::to_string(&thread).expect("thread should serialise");
+        assert!(
+            !json.contains("in_flight_auth"),
+            "in_flight_auth must be omitted from serialised JSON"
+        );
+
+        let restored: Thread = serde_json::from_str(&json).expect("thread should deserialise");
+        assert!(
+            !restored.in_flight_auth,
+            "in_flight_auth must default to false after deserialisation"
+        );
     }
 
     #[test]

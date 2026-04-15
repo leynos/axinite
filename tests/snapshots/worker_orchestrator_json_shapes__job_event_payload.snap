@@ -1,0 +1,11 @@
+---
+source: tests/worker_orchestrator_json_shapes.rs
+assertion_line: 32
+expression: "&original"
+---
+{
+  "event_type": "tool_use",
+  "data": {
+    "tool": "bash"
+  }
+}

@@ -211,6 +211,7 @@ impl_db_forwarders! {
     dyn = Database,
     native = NativeDatabase,
     methods = {
+        fn persist_terminal_result_and_status(params: TerminalJobPersistence<'a>) -> Result<(), DatabaseError>;
         fn run_migrations() -> Result<(), DatabaseError>;
     }
 }

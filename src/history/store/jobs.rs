@@ -14,6 +14,8 @@ use super::Store;
 #[cfg(feature = "postgres")]
 use crate::context::{JobContext, JobState};
 #[cfg(feature = "postgres")]
+use crate::db::TerminalJobPersistence;
+#[cfg(feature = "postgres")]
 use crate::error::DatabaseError;
 
 #[cfg(feature = "postgres")]
@@ -168,6 +170,47 @@ impl Store {
         Ok(())
     }
 
+    /// Persist a terminal result event and terminal status in one transaction.
+    pub async fn persist_terminal_result_and_status(
+        &self,
+        params: TerminalJobPersistence<'_>,
+    ) -> Result<(), DatabaseError> {
+        let TerminalJobPersistence {
+            job_id,
+            status,
+            failure_reason,
+            event_type,
+            event_data,
+        } = params;
+        let mut conn = self.conn().await?;
+        let tx = conn.transaction().await?;
+        let status_str = status.to_string();
+
+        tx.execute(
+            r#"
+            INSERT INTO job_events (job_id, event_type, data)
+            VALUES ($1, $2, $3)
+            "#,
+            &[&job_id, &event_type.as_str(), event_data],
+        )
+        .await?;
+        let rows_affected = tx
+            .execute(
+            "UPDATE agent_jobs SET status = $2, failure_reason = $3 WHERE id = $1 AND source = 'direct'",
+            &[&job_id, &status_str, &failure_reason],
+        )
+        .await?;
+        if rows_affected != 1 {
+            tx.rollback().await?;
+            return Err(DatabaseError::NotFound {
+                entity: "agent_job".to_string(),
+                id: job_id.to_string(),
+            });
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// Mark job as stuck.
     pub async fn mark_job_stuck(&self, id: Uuid) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;
@@ -270,9 +313,46 @@ mod tests {
     #[cfg(feature = "postgres")]
     use crate::context::StateTransition;
     #[cfg(feature = "postgres")]
+    use crate::db::TerminalJobPersistence;
+    #[cfg(feature = "postgres")]
+    use crate::db::postgres::PgBackend;
+    #[cfg(feature = "postgres")]
     use crate::testing::postgres::try_test_pg_db;
     #[cfg(feature = "postgres")]
     use rstest::rstest;
+    #[cfg(feature = "postgres")]
+    use serde_json::json;
+
+    #[cfg(feature = "postgres")]
+    enum RollbackScenario {
+        UnknownJob,
+        NonDirectJob,
+    }
+
+    #[cfg(feature = "postgres")]
+    async fn prepare_job_for_rollback(
+        backend: &PgBackend,
+        store: &Store,
+        scenario: RollbackScenario,
+    ) -> Result<(Uuid, Option<JobContext>), Box<dyn std::error::Error>> {
+        match scenario {
+            RollbackScenario::UnknownJob => Ok((Uuid::new_v4(), None)),
+            RollbackScenario::NonDirectJob => {
+                let ctx = JobContext::with_user("test-user", "sandbox-like job", "rollback check");
+                let job_id = ctx.job_id;
+                store.save_job(&ctx).await?;
+
+                let conn = backend.pool().get().await?;
+                conn.execute(
+                    "UPDATE agent_jobs SET source = 'sandbox' WHERE id = $1",
+                    &[&job_id],
+                )
+                .await?;
+
+                Ok((job_id, Some(ctx)))
+            }
+        }
+    }
 
     /// Regression test: save_job must persist user-owned and context fields.
     /// Requires a running PostgreSQL instance (integration tier).
@@ -335,5 +415,46 @@ mod tests {
         assert_eq!(summary.completed, 16);
         assert_eq!(summary.failed, 12);
         assert_eq!(summary.stuck, 5);
+    }
+
+    #[cfg(feature = "postgres")]
+    #[rstest]
+    #[case(RollbackScenario::UnknownJob)]
+    #[case(RollbackScenario::NonDirectJob)]
+    #[tokio::test]
+    async fn persist_terminal_result_and_status_rolls_back_on_invalid_job(
+        #[case] scenario: RollbackScenario,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let Some(backend) = try_test_pg_db().await? else {
+            return Ok(());
+        };
+        let store = Store::from_pool(backend.pool());
+        let (job_id, saved_ctx) = prepare_job_for_rollback(&backend, &store, scenario).await?;
+
+        let result = store
+            .persist_terminal_result_and_status(TerminalJobPersistence {
+                job_id,
+                status: JobState::Failed,
+                failure_reason: Some("terminal rollback regression"),
+                event_type: crate::db::SandboxEventType::from("result"),
+                event_data: &json!({"status": "failed"}),
+            })
+            .await;
+        assert!(result.is_err(), "invalid terminal job write should fail");
+
+        let conn = backend.pool().get().await?;
+        let count: i64 = conn
+            .query_one(
+                "SELECT COUNT(*) FROM job_events WHERE job_id = $1",
+                &[&job_id],
+            )
+            .await?
+            .get(0);
+        assert_eq!(count, 0, "rollback should remove inserted job_events rows");
+        if let Some(ctx) = saved_ctx {
+            conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&ctx.job_id])
+                .await?;
+        }
+        Ok(())
     }
 }

@@ -1,170 +1,210 @@
-//! Integration test for SIGHUP hot-reload of HTTP webhook configuration.
+//! Integration tests for SIGHUP hot-reload of HTTP webhook configuration.
 //!
-//! This test verifies that:
-//! 1. SIGHUP triggers config reload from DB/environment
-//! 2. Address changes cause listener restart
-//! 3. Secret changes take effect immediately (zero-downtime)
-//! 4. Old listener is shut down after successful restart
+//! Exercises the reload path end-to-end by driving `WebhookServer` and
+//! `HttpChannel` directly — no live binary spawning.
 
-#![cfg(unix)]
-
+use std::net::{SocketAddr, TcpListener as StdTcpListener};
 use std::time::Duration;
 
-#[tokio::test]
-#[ignore] // Requires full ironclaw binary and database setup
-async fn test_sighup_config_reload_address_change() {
-    // This is a placeholder integration test structure.
-    // It demonstrates the test approach and can be run against a live ironclaw instance.
-    //
-    // To run this test manually:
-    // 1. Start ironclaw with HTTP_PORT=19000 HTTP_WEBHOOK_SECRET=initial-secret
-    // 2. Run: cargo test --test sighup_reload_integration -- --ignored --nocapture
-    //
-    // The test will:
-    // - Verify initial webhook responds on port 19000 with "initial-secret"
-    // - Update environment/DB to use port 19001 and "new-secret"
-    // - Send SIGHUP to ironclaw
-    // - Verify old port 19000 stops responding
-    // - Verify new port 19001 responds with "new-secret"
+use axum::http::StatusCode;
+use reqwest::Client;
+use secrecy::SecretString;
+use serde_json::json;
 
-    let initial_port = 19000u16;
-    let _new_port = 19001u16;
-    let initial_secret = "initial-secret";
-    let _new_secret = "new-secret";
+use ironclaw::channels::{HttpChannel, NativeChannel, WebhookServer, WebhookServerConfig};
+use ironclaw::config::HttpConfig;
+use rstest::{fixture, rstest};
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-        .expect("Failed to build HTTP client");
+use crate::support::webhook_helpers;
 
-    // Verify initial webhook is listening
-    let initial_addr = format!("http://127.0.0.1:{}/webhook", initial_port);
-    let response = client
-        .post(&initial_addr)
-        .json(&serde_json::json!({
-            "content": "test",
-            "secret": initial_secret
-        }))
+/// Build a minimal health-check server using the given already-bound listener.
+/// Returns the started server and the bound address.
+async fn health_server(
+    listener: tokio::net::TcpListener,
+) -> Result<(WebhookServer, SocketAddr), Box<dyn std::error::Error>> {
+    let addr = listener.local_addr()?;
+    let config = WebhookServerConfig { addr };
+    let mut server = WebhookServer::new(config);
+    server.add_routes(webhook_helpers::health_routes());
+    server.start_with_listener(listener).await?;
+    Ok((server, addr))
+}
+
+/// POST a webhook payload and return the HTTP status.
+async fn post_webhook(
+    client: &Client,
+    addr: SocketAddr,
+    secret: &str,
+) -> Result<reqwest::StatusCode, reqwest::Error> {
+    Ok(client
+        .post(format!("http://{}/webhook", addr))
+        .json(&json!({"content": "hello", "secret": secret}))
         .send()
+        .await?
+        .status())
+}
+
+#[fixture]
+fn http_client() -> Result<Client, reqwest::Error> {
+    webhook_helpers::test_http_client()
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_sighup_config_reload_address_change(
+    http_client: Result<Client, reqwest::Error>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let http_client = http_client?;
+    let listener1 = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let (mut server, addr1) = health_server(listener1).await?;
+
+    // Confirm first address responds.
+    let resp = http_client
+        .get(format!("http://{}/health", addr1))
+        .send()
+        .await
+        .expect("health check");
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Restart on a second ephemeral port.
+    let listener2 = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr2 = listener2.local_addr()?;
+    server
+        .restart_with_listener(listener2)
+        .await
+        .expect("restart");
+
+    // New address should respond.
+    let resp = http_client
+        .get(format!("http://{}/health", addr2))
+        .send()
+        .await
+        .expect("health check on new address");
+    assert_eq!(resp.status(), StatusCode::OK, "new address should respond");
+
+    // Old address should refuse connections.
+    let old_result = tokio::time::timeout(
+        Duration::from_millis(200),
+        http_client.get(format!("http://{}/health", addr1)).send(),
+    )
+    .await;
+
+    match old_result {
+        // Timeout expired — the old address no longer accepts connections.
+        Err(_) => {}
+        // Request reached the client stack but the old listener was gone.
+        Ok(Err(_)) => {}
+        Ok(Ok(resp)) => {
+            panic!(
+                "old address should not respond after restart, got status {}",
+                resp.status()
+            );
+        }
+    }
+
+    server.shutdown().await;
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_sighup_secret_update_zero_downtime(
+    http_client: Result<Client, reqwest::Error>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let http_client = http_client?;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+
+    let channel = HttpChannel::new(HttpConfig {
+        host: "127.0.0.1".to_string(),
+        port: addr.port(),
+        webhook_secret: Some(SecretString::from("old-secret".to_string())),
+        user_id: "test-user".to_string(),
+    });
+
+    // Start the channel so the internal sender is populated.
+    // `_stream` is intentionally kept to hold the returned `MessageStream` alive,
+    // ensuring the `HttpChannel`'s internal sender/registration is not dropped
+    // and the channel lifecycle remains active for the duration of the test.
+    let _stream = channel.start().await.expect("start channel");
+
+    let mut server = WebhookServer::new(WebhookServerConfig { addr });
+    server.add_routes(channel.routes());
+    server.start_with_listener(listener).await?;
+
+    // Old secret should be accepted.
+    let status = post_webhook(&http_client, addr, "old-secret").await?;
+    assert_eq!(status, StatusCode::OK, "old secret should work initially");
+
+    // Hot-swap secret via the public API.
+    channel
+        .update_secret(Some(SecretString::from("new-secret".to_string())))
         .await;
 
-    assert!(
-        response.is_ok(),
-        "Initial webhook should be listening on port {}",
-        initial_port
-    );
+    // Old secret should now be rejected.
+    let status = post_webhook(&http_client, addr, "old-secret").await?;
     assert_eq!(
-        response.unwrap().status(),
-        200,
-        "Request with correct secret should succeed"
+        status,
+        StatusCode::UNAUTHORIZED,
+        "old secret should fail after swap"
     );
 
-    // In a real test, we would:
-    // 1. Update the database or environment variables for the new config
-    // 2. Send SIGHUP to the ironclaw process
-    // 3. Wait for reload to complete
-    // 4. Verify new listener is active and old one is inactive
-    // 5. Verify secret change took effect
+    // New secret should be accepted.
+    let status = post_webhook(&http_client, addr, "new-secret").await?;
+    assert_eq!(status, StatusCode::OK, "new secret should work after swap");
 
-    println!("SIGHUP reload test structure is in place.");
-    println!("This test requires a running ironclaw instance to verify actual behavior.");
+    server.shutdown().await;
+    Ok(())
 }
 
+#[rstest]
 #[tokio::test]
-#[ignore] // Requires full ironclaw binary
-async fn test_sighup_secret_update_zero_downtime() {
-    // Test that secret changes take effect immediately without restarting the listener.
-    //
-    // Setup:
-    // - Start ironclaw with HTTP_PORT=19002 HTTP_WEBHOOK_SECRET=original-secret
-    //
-    // Test flow:
-    // 1. Make request with "original-secret" → 200 OK
-    // 2. Update DB secret to "updated-secret"
-    // 3. Send SIGHUP
-    // 4. Make request with "original-secret" → 401 Unauthorized
-    // 5. Make request with "updated-secret" → 200 OK
-    // 6. Verify listener is still on same port (no restart)
+async fn test_sighup_rollback_on_address_bind_failure(
+    http_client: Result<Client, reqwest::Error>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let http_client = http_client?;
+    let listener1 = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let (mut server, addr1) = health_server(listener1).await?;
 
-    let port = 19002u16;
-    let original_secret = "original-secret";
-    let _updated_secret = "updated-secret";
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-        .expect("Failed to build HTTP client");
-
-    let webhook_url = format!("http://127.0.0.1:{}/webhook", port);
-
-    // Verify original secret works
-    let response = client
-        .post(&webhook_url)
-        .json(&serde_json::json!({
-            "content": "test",
-            "secret": original_secret
-        }))
+    // Confirm initial address works.
+    let resp = http_client
+        .get(format!("http://{}/health", addr1))
         .send()
-        .await;
-
-    assert!(
-        response.is_ok(),
-        "Initial request with correct secret should succeed"
+        .await
+        .expect("health check");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "initial address should respond"
     );
-    assert_eq!(response.unwrap().status(), 200);
 
-    // After SIGHUP with updated secret:
-    // - Original secret should fail
-    // - Updated secret should succeed
-    // (This is verified by the hot-swap unit test; integration test
-    // structure is in place for end-to-end verification)
+    // Occupy a second ephemeral port so bind deterministically fails.
+    let occupied = StdTcpListener::bind("127.0.0.1:0").expect("bind conflict port");
+    let conflict_addr = occupied.local_addr().expect("conflict local_addr");
 
-    println!("Zero-downtime secret update test structure is in place.");
-}
+    let result = server.restart_with_addr(conflict_addr).await;
+    assert!(result.is_err(), "restart to occupied port should fail");
 
-#[tokio::test]
-#[ignore] // Requires manual setup
-async fn test_sighup_rollback_on_address_bind_failure() {
-    // Test that if restart_with_addr fails, the old listener remains active
-    // and state is restored.
-    //
-    // Setup:
-    // - Start ironclaw with HTTP_PORT=19003 HTTP_WEBHOOK_SECRET=test-secret
-    //
-    // Test flow:
-    // 1. Make request to port 19003 → 200 OK
-    // 2. Update DB to use invalid address (e.g., port 1, which requires root)
-    // 3. Send SIGHUP
-    // 4. Verify old listener on port 19003 is still responding
-    // 5. Verify state was restored (config still shows port 19003)
+    drop(occupied);
 
-    let original_port = 19003u16;
-    let secret = "test-secret";
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-        .expect("Failed to build HTTP client");
-
-    let webhook_url = format!("http://127.0.0.1:{}/webhook", original_port);
-
-    // Verify original listener is working
-    let response = client
-        .post(&webhook_url)
-        .json(&serde_json::json!({
-            "content": "test",
-            "secret": secret
-        }))
+    // Original listener must still respond.
+    let resp = http_client
+        .get(format!("http://{}/health", addr1))
         .send()
-        .await;
+        .await
+        .expect("health check after failed restart");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "original address should still respond after failed restart"
+    );
 
-    assert!(response.is_ok(), "Original listener should be responding");
-    assert_eq!(response.unwrap().status(), 200);
+    assert_eq!(
+        server.current_addr(),
+        addr1,
+        "server address should be restored after failed restart"
+    );
 
-    // After SIGHUP with invalid address:
-    // - Original listener should still respond
-    // - No downtime should have occurred
-    // (Verified by webhook_server unit test; integration structure in place)
-
-    println!("SIGHUP rollback test structure is in place.");
+    server.shutdown().await;
+    Ok(())
 }
