@@ -66,11 +66,11 @@ async fn routine_cooldown() {
         .expect("get_routine")
         .expect("routine present");
     assert!(
-        persisted.runtime.last_run_at.is_some(),
+        persisted.last_run_at.is_some(),
         "Expected engine to persist last_run_at"
     );
     assert!(
-        persisted.runtime.run_count >= 1,
+        persisted.run_count >= 1,
         "Expected engine to persist run_count"
     );
 
