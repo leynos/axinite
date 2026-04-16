@@ -1,12 +1,13 @@
 //! Tests for boot-screen rendering, snapshots, and `BootInfo` derivation.
 
 use insta::assert_snapshot;
+use mockall::mock;
 use rstest::rstest;
 
 use super::*;
 use crate::cli::Cli;
 use crate::config::Config;
-use crate::tunnel::{NativeTunnel, Tunnel};
+use crate::tunnel::{Tunnel, TunnelFuture};
 
 fn assert_boot_snapshot(snapshot_name: &str, output: &str) {
     let mut settings = insta::Settings::clone_current();
@@ -14,38 +15,51 @@ fn assert_boot_snapshot(snapshot_name: &str, output: &str) {
     settings.bind(|| assert_snapshot!(snapshot_name, output));
 }
 
-struct TestTunnel {
-    name: &'static str,
-    public_url: Option<String>,
+mock! {
+    TunnelMetadata {}
+
+    impl TunnelMetadata for TunnelMetadata {
+        fn name(&self) -> &str;
+        fn public_url(&self) -> Option<String>;
+    }
 }
 
-impl NativeTunnel for TestTunnel {
+trait TunnelMetadata: Send + Sync {
+    fn name(&self) -> &str;
+    fn public_url(&self) -> Option<String>;
+}
+
+struct MockTunnelAdapter {
+    metadata: MockTunnelMetadata,
+}
+
+impl Tunnel for MockTunnelAdapter {
     fn name(&self) -> &str {
-        self.name
+        self.metadata.name()
     }
 
     fn start<'a>(
         &'a self,
         _local_host: &'a str,
         _local_port: u16,
-    ) -> impl std::future::Future<Output = anyhow::Result<String>> + Send + 'a {
-        let url = self
-            .public_url
-            .clone()
-            .expect("test tunnel should have a public URL");
-        async move { Ok(url) }
+    ) -> TunnelFuture<'a, anyhow::Result<String>> {
+        Box::pin(async {
+            Err(anyhow::anyhow!(
+                "boot screen tests should not call tunnel.start()"
+            ))
+        })
     }
 
-    async fn stop(&self) -> anyhow::Result<()> {
-        Ok(())
+    fn stop(&self) -> TunnelFuture<'_, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
     }
 
-    async fn health_check(&self) -> bool {
-        true
+    fn health_check(&self) -> TunnelFuture<'_, bool> {
+        Box::pin(async { true })
     }
 
     fn public_url(&self) -> Option<String> {
-        self.public_url.clone()
+        self.metadata.public_url()
     }
 }
 
@@ -170,45 +184,13 @@ fn test_data<'a>(active_tunnel: &'a Option<Box<dyn Tunnel>>) -> BootData<'a> {
     }
 }
 
-async fn assert_tunnel_resolution_case(
-    case_name: &str,
-    active_tunnel_name: &'static str,
-    active_public_url: Option<&str>,
-    fallback_public_url: Option<&str>,
-    expected_url: &str,
-    expected_provider: Option<&str>,
-) {
-    let mut config = test_config().await;
-    config.tunnel.public_url = fallback_public_url.map(ToString::to_string);
-    let cli = test_cli(false);
-    let active_tunnel: Option<Box<dyn Tunnel>> = Some(Box::new(TestTunnel {
-        name: active_tunnel_name,
-        public_url: active_public_url.map(ToString::to_string),
-    }));
-    let data = BootData {
-        llm_model: format!("{case_name}-model"),
-        cheap_model: Some(format!("{case_name}-cheap-model")),
-        tool_count: 0,
-        gateway_url: None,
-        docker_status: DockerStatus::NotInstalled,
-        channel_names: vec![],
-        active_tunnel: &active_tunnel,
-    };
-
-    let info = BootInfo::from_config_and_data(&config, &cli, &data);
-
-    assert_eq!(info.db_backend, config.database.backend.to_string());
-    assert!(info.db_connected, "{case_name}: db should remain connected");
-    assert_eq!(
-        info.tunnel_url.as_deref(),
-        Some(expected_url),
-        "{case_name}: unexpected tunnel URL"
-    );
-    assert_eq!(
-        info.tunnel_provider.as_deref(),
-        expected_provider,
-        "{case_name}: unexpected tunnel provider"
-    );
+fn make_mock_tunnel(name: &'static str, public_url: Option<&str>) -> Box<dyn Tunnel> {
+    let mut metadata = MockTunnelMetadata::new();
+    metadata.expect_name().return_const(name.to_string());
+    metadata
+        .expect_public_url()
+        .return_const(public_url.map(ToString::to_string));
+    Box::new(MockTunnelAdapter { metadata })
 }
 
 #[rstest]
@@ -236,45 +218,65 @@ fn test_render_boot_screen_docker_not_running() {
     assert_boot_snapshot("render_boot_screen_docker_not_running", &output);
 }
 
+#[rstest]
+#[case::no_db_override(true, "none", false)]
 #[tokio::test]
-async fn boot_info_from_config_and_data_handles_no_db_and_fallback_tunnel() {
+async fn boot_info_from_config_and_data_applies_db_override(
+    #[case] no_db: bool,
+    #[case] expected_backend: &str,
+    #[case] expected_connected: bool,
+) {
     let config = test_config().await;
-    let cli = test_cli(true);
+    let cli = test_cli(no_db);
     let active_tunnel: Option<Box<dyn Tunnel>> = None;
-
     let info = BootInfo::from_config_and_data(&config, &cli, &test_data(&active_tunnel));
 
-    assert_eq!(info.db_backend, "none");
-    assert!(!info.db_connected);
-    assert_eq!(
-        info.tunnel_url.as_deref(),
-        Some("https://fallback.example.test")
-    );
-    assert_eq!(info.tunnel_provider, None);
+    assert_eq!(info.db_backend, expected_backend);
+    assert_eq!(info.db_connected, expected_connected);
 }
 
+#[rstest]
+#[case::no_active_tunnel(
+    false,
+    None,
+    Some("https://fallback.example"),
+    Some("https://fallback.example"),
+    None
+)]
+#[case::active_tunnel_without_public_url(
+    true,
+    None,
+    Some("https://fallback.example"),
+    Some("https://fallback.example"),
+    Some("ngrok")
+)]
+#[case::active_tunnel_with_public_url(
+    true,
+    Some("https://live.ngrok.io"),
+    Some("https://fallback.example"),
+    Some("https://live.ngrok.io"),
+    Some("ngrok")
+)]
 #[tokio::test]
-async fn boot_info_from_config_and_data_uses_fallback_url_when_tunnel_has_no_public_url() {
-    assert_tunnel_resolution_case(
-        "fallback_url_when_tunnel_has_no_public_url",
-        "ngrok",
-        None,
-        Some("https://fallback.example.test"),
-        "https://fallback.example.test",
-        Some("ngrok"),
-    )
-    .await;
-}
+async fn boot_info_from_config_and_data_resolves_tunnel_fields(
+    #[case] has_active_tunnel: bool,
+    #[case] active_public_url: Option<&str>,
+    #[case] fallback_public_url: Option<&str>,
+    #[case] expected_url: Option<&str>,
+    #[case] expected_provider: Option<&str>,
+) {
+    let mut config = test_config().await;
+    config.tunnel.public_url = fallback_public_url.map(ToString::to_string);
+    let cli = test_cli(false);
+    let active_tunnel = if has_active_tunnel {
+        Some(make_mock_tunnel("ngrok", active_public_url))
+    } else {
+        None
+    };
+    let data = test_data(&active_tunnel);
 
-#[tokio::test]
-async fn boot_info_from_config_and_data_prefers_runtime_tunnel_url() {
-    assert_tunnel_resolution_case(
-        "prefers_runtime_tunnel_url",
-        "ngrok",
-        Some("https://runtime.ngrok.app"),
-        Some("https://fallback.example.test"),
-        "https://runtime.ngrok.app",
-        Some("ngrok"),
-    )
-    .await;
+    let info = BootInfo::from_config_and_data(&config, &cli, &data);
+
+    assert_eq!(info.tunnel_url.as_deref(), expected_url);
+    assert_eq!(info.tunnel_provider.as_deref(), expected_provider);
 }
