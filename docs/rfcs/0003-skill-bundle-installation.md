@@ -210,9 +210,11 @@ Name derivation must be deterministic per input mode:
    the top-level `title`.
 2. URL installs derive the name from `SKILL.md` metadata when present, and
    otherwise fall back to a sanitized filename stem from the fetched resource.
-3. Uploaded archives derive the name from the archive root folder when one is
-   present, and otherwise fall back to `SKILL.md` metadata using the same
-   `id` then `title` precedence.
+3. Uploaded `.skill` archives derive the candidate `skill-name` only from the
+   shared top-level path prefix in the archive. If the archive does not resolve
+   to exactly one top-level prefix with `SKILL.md` at `<root>/SKILL.md`, the
+   installer must reject it rather than falling back to archive metadata,
+   `SKILL.md` metadata, or the uploaded filename.
 
 After derivation, the installer must normalize the name:
 
@@ -251,8 +253,9 @@ Before extraction, the installer should validate:
 3. no nested subdirectory contains another file named `SKILL.md`, and every
    other entry under `<root>/` is under `<root>/references/` or
    `<root>/assets/`
-4. the shared top-level prefix is a valid candidate `skill-name` before any
-   normalization or conflict-resolution rules are applied
+4. the shared top-level prefix is the sole source of the candidate
+   `skill-name` before any normalization or conflict-resolution rules are
+   applied
 5. no entry exceeds a per-file size cap
 6. the whole archive stays under a total size cap
 7. file count stays under a bounded limit
