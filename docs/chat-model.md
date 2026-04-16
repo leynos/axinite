@@ -505,7 +505,7 @@ and simply re-encodes each `SseEvent` into a WebSocket frame.
 
 ### 4.11 Module structure and parameter objects
 
-The dispatcher and thread-operations layers are organised as submodule trees
+The dispatcher and thread-operations layers are organized as submodule trees
 rather than single files. The key structural units are:
 
 Dispatcher delegate: `src/agent/dispatcher/delegate/`

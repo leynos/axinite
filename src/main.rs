@@ -1098,6 +1098,7 @@ struct GatewaySetup {
 
 #[cfg(test)]
 mod tests {
+    use insta::assert_snapshot;
     use ironclaw::{
         boot_screen::{BootData, BootInfo, render_boot_screen},
         config::Config,
@@ -1137,14 +1138,6 @@ mod tests {
         fn public_url(&self) -> Option<String> {
             self.public_url.clone()
         }
-    }
-
-    fn startup_snapshot_body() -> String {
-        let body = include_str!("snapshots/ironclaw__tests__startup_info_boot_screen.snap")
-            .split_once("\n---\n\n")
-            .expect("startup snapshot should contain front matter")
-            .1;
-        format!("\n{body}\n")
     }
 
     #[tokio::test]
@@ -1199,6 +1192,6 @@ mod tests {
         let boot_info = BootInfo::from_config_and_data(&config, &cli, &data);
 
         let output = render_boot_screen(&boot_info);
-        assert_eq!(output, startup_snapshot_body());
+        assert_snapshot!("startup_info_boot_screen", output);
     }
 }

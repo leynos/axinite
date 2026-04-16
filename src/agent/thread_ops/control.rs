@@ -277,13 +277,14 @@ impl Agent {
         thread_id: Uuid,
         checkpoint_id: Uuid,
     ) -> Result<SubmissionResult, Error> {
-        {
+        let (original_updated_at, original_turns_len) = {
             let sess = session.lock().await;
-            let _thread = sess
+            let thread = sess
                 .threads
                 .get(&thread_id)
                 .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
-        }
+            (thread.updated_at, thread.turns.len())
+        };
 
         let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
         let mut mgr = undo_mgr.lock().await;
@@ -300,6 +301,11 @@ impl Agent {
             .threads
             .get_mut(&thread_id)
             .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+        if thread.updated_at != original_updated_at || thread.turns.len() != original_turns_len {
+            return Ok(SubmissionResult::error(
+                "Thread changed while resume was running. Please retry.",
+            ));
+        }
         thread.restore_from_messages(messages);
         thread.updated_at = Utc::now();
 

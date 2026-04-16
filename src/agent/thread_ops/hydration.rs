@@ -143,11 +143,193 @@ impl Agent {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "libsql", feature = "test-helpers"))]
 mod tests {
-    #[test]
-    fn module_compiles() {
-        // TODO: Add higher-level hydration coverage with a stubbed backing
-        // store and session-manager integration fixture.
+    use std::sync::Arc;
+
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::agent::{AgentDeps, SessionManager};
+    use crate::channels::ChannelManager;
+    use crate::config::{AgentConfig, SafetyConfig, SkillsConfig};
+    use crate::db::libsql::LibSqlBackend;
+    use crate::db::{Database, EnsureConversationParams, NativeConversationStore, NativeDatabase};
+    use crate::error::DatabaseError;
+    use crate::hooks::HookRegistry;
+    use crate::safety::SafetyLayer;
+    use crate::testing::StubLlm;
+    use crate::tools::ToolRegistry;
+
+    async fn local_backend() -> (Arc<LibSqlBackend>, tempfile::TempDir) {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let db_path = tempdir.path().join("hydration-test.db");
+        let backend = LibSqlBackend::new_local(&db_path)
+            .await
+            .expect("local backend creation should succeed");
+        NativeDatabase::run_migrations(&backend)
+            .await
+            .expect("migrations should succeed");
+        (Arc::new(backend), tempdir)
+    }
+
+    fn make_agent(store: Option<Arc<dyn Database>>, session_manager: Arc<SessionManager>) -> Agent {
+        let deps = AgentDeps {
+            store,
+            llm: Arc::new(StubLlm::new("ok")),
+            cheap_llm: None,
+            safety: Arc::new(SafetyLayer::new(&SafetyConfig {
+                max_output_length: 100_000,
+                injection_check_enabled: false,
+            })),
+            tools: Arc::new(ToolRegistry::new()),
+            workspace: None,
+            extension_manager: None,
+            skill_registry: None,
+            skill_catalog: None,
+            skills_config: SkillsConfig::default(),
+            hooks: Arc::new(HookRegistry::new()),
+            cost_guard: Arc::new(crate::agent::cost_guard::CostGuard::new(
+                crate::agent::cost_guard::CostGuardConfig::default(),
+            )),
+            sse_tx: None,
+            http_interceptor: None,
+            transcription: None,
+            document_extraction: None,
+        };
+
+        Agent::new(
+            AgentConfig::for_testing(),
+            deps,
+            Arc::new(ChannelManager::new()),
+            None,
+            None,
+            None,
+            None,
+            Some(session_manager),
+        )
+    }
+
+    fn test_message(thread_id: impl Into<String>) -> IncomingMessage {
+        IncomingMessage::new("web", "user-1", "hello").with_thread(thread_id)
+    }
+
+    #[tokio::test]
+    async fn maybe_hydrate_thread_skips_non_uuid_thread_ids() {
+        let (backend, _tempdir) = local_backend().await;
+        let session_manager = Arc::new(SessionManager::new());
+        let agent = make_agent(
+            Some(Arc::clone(&backend) as Arc<dyn Database>),
+            Arc::clone(&session_manager),
+        );
+
+        let result = agent
+            .maybe_hydrate_thread(&test_message("not-a-uuid"), "not-a-uuid")
+            .await;
+
+        assert!(result.is_ok(), "non-UUID thread IDs should be ignored");
+    }
+
+    #[tokio::test]
+    async fn maybe_hydrate_thread_skips_existing_in_memory_threads() {
+        let (backend, _tempdir) = local_backend().await;
+        let session_manager = Arc::new(SessionManager::new());
+        let agent = make_agent(
+            Some(Arc::clone(&backend) as Arc<dyn Database>),
+            Arc::clone(&session_manager),
+        );
+        let thread_id = Uuid::new_v4();
+        let session = session_manager.get_or_create_session("user-1").await;
+
+        {
+            let mut sess = session.lock().await;
+            let thread = crate::agent::session::Thread::with_id(thread_id, sess.id);
+            sess.threads.insert(thread_id, thread);
+        }
+
+        let result = agent
+            .maybe_hydrate_thread(&test_message(thread_id.to_string()), &thread_id.to_string())
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "existing in-memory threads should not hit scoped DB hydration"
+        );
+    }
+
+    #[tokio::test]
+    async fn maybe_hydrate_thread_loads_messages_and_registers_thread() {
+        let (backend, _tempdir) = local_backend().await;
+        let session_manager = Arc::new(SessionManager::new());
+        let agent = make_agent(
+            Some(Arc::clone(&backend) as Arc<dyn Database>),
+            Arc::clone(&session_manager),
+        );
+        let thread_id = Uuid::new_v4();
+
+        backend
+            .ensure_conversation(EnsureConversationParams {
+                id: thread_id,
+                channel: "web",
+                user_id: "user-1",
+                thread_id: Some(&thread_id.to_string()),
+            })
+            .await
+            .expect("conversation should be ensured");
+        backend
+            .add_conversation_message(thread_id, "user", "hello")
+            .await
+            .expect("user message should be added");
+        backend
+            .add_conversation_message(thread_id, "assistant", "world")
+            .await
+            .expect("assistant message should be added");
+
+        agent
+            .maybe_hydrate_thread(&test_message(thread_id.to_string()), &thread_id.to_string())
+            .await
+            .expect("hydration should succeed");
+
+        let session = session_manager.get_or_create_session("user-1").await;
+        let sess = session.lock().await;
+        let thread = sess
+            .threads
+            .get(&thread_id)
+            .expect("hydrated thread should be present");
+        let messages = thread.messages();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].content, "hello");
+        assert_eq!(messages[1].content, "world");
+        drop(sess);
+
+        let (_resolved_session, resolved_thread_id) = session_manager
+            .resolve_thread("user-1", "web", Some(&thread_id.to_string()))
+            .await;
+        assert_eq!(resolved_thread_id, thread_id);
+    }
+
+    #[tokio::test]
+    async fn maybe_hydrate_thread_propagates_scoped_not_found() {
+        let (backend, _tempdir) = local_backend().await;
+        let session_manager = Arc::new(SessionManager::new());
+        let agent = make_agent(
+            Some(Arc::clone(&backend) as Arc<dyn Database>),
+            Arc::clone(&session_manager),
+        );
+        let thread_id = Uuid::new_v4();
+
+        let err = agent
+            .maybe_hydrate_thread(&test_message(thread_id.to_string()), &thread_id.to_string())
+            .await
+            .expect_err("missing scoped conversation should propagate");
+
+        assert!(
+            matches!(
+                err,
+                Error::Database(DatabaseError::NotFound { ref entity, ref id })
+                    if entity == "conversation" && id == &thread_id.to_string()
+            ),
+            "expected scoped NotFound error, got: {err:?}"
+        );
     }
 }

@@ -190,23 +190,26 @@ pub(super) async fn list_conversation_messages_scoped(
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use uuid::Uuid;
 
-    use crate::db::Database;
     use crate::db::libsql::LibSqlBackend;
+    use crate::db::{Database, NativeConversationStore};
     use crate::error::DatabaseError;
 
-    async fn in_memory_backend() -> LibSqlBackend {
-        let backend = LibSqlBackend::new_memory()
+    async fn local_backend() -> (LibSqlBackend, tempfile::TempDir) {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let db_path = tempdir.path().join("messages-test.db");
+        let backend = LibSqlBackend::new_local(&db_path)
             .await
-            .expect("in-memory backend creation");
+            .expect("local backend creation");
         backend.run_migrations().await.expect("migrations");
-        backend
+        (backend, tempdir)
     }
 
     #[tokio::test]
     async fn test_zero_limit_rejected() {
-        let backend = in_memory_backend().await;
+        let (backend, _tempdir) = local_backend().await;
         let err = super::list_conversation_messages_paginated(&backend, Uuid::new_v4(), None, 0)
             .await
             .expect_err("zero limit should be rejected");
@@ -219,7 +222,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_usize_max_limit_rejected() {
-        let backend = in_memory_backend().await;
+        let (backend, _tempdir) = local_backend().await;
         let err =
             super::list_conversation_messages_paginated(&backend, Uuid::new_v4(), None, usize::MAX)
                 .await
@@ -233,7 +236,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_limit_exceeding_i64_range_rejected() {
-        let backend = in_memory_backend().await;
+        let (backend, _tempdir) = local_backend().await;
         // i64::MAX as usize: passes checked_add(1) on 64-bit but fails
         // i64::try_from because the result exceeds i64::MAX.
         let limit = i64::MAX as usize;
@@ -245,6 +248,89 @@ mod tests {
         assert!(
             matches!(err, DatabaseError::Validation(ref msg) if msg.contains("overflow")),
             "expected overflow Validation error, got: {err:?}"
+        );
+    }
+
+    async fn seed_conversation(
+        backend: &LibSqlBackend,
+        user_id: &str,
+        channel: &str,
+    ) -> (Uuid, Vec<super::ConversationMessage>) {
+        let conversation_id = backend
+            .create_conversation(channel, user_id, None)
+            .await
+            .expect("conversation should be created");
+        backend
+            .add_conversation_message(conversation_id, "user", "hello")
+            .await
+            .expect("user message should be added");
+        backend
+            .add_conversation_message(conversation_id, "assistant", "world")
+            .await
+            .expect("assistant message should be added");
+
+        let expected = super::list_conversation_messages(backend, conversation_id)
+            .await
+            .expect("conversation messages should load");
+        (conversation_id, expected)
+    }
+
+    #[tokio::test]
+    async fn test_list_conversation_messages_scoped_returns_expected_messages() {
+        let (backend, _tempdir) = local_backend().await;
+        let (conversation_id, expected) = seed_conversation(&backend, "user-1", "web").await;
+
+        let actual =
+            super::list_conversation_messages_scoped(&backend, conversation_id, "user-1", "web")
+                .await
+                .expect("scoped message list should succeed");
+
+        assert_eq!(actual.len(), expected.len());
+        for (actual_message, expected_message) in actual.iter().zip(expected.iter()) {
+            assert_eq!(actual_message.id, expected_message.id);
+            assert_eq!(actual_message.role, expected_message.role);
+            assert_eq!(actual_message.content, expected_message.content);
+            assert_eq!(actual_message.created_at, expected_message.created_at);
+        }
+    }
+
+    #[rstest]
+    #[case::wrong_user("user-2", "web")]
+    #[case::wrong_channel("user-1", "slack")]
+    #[tokio::test]
+    async fn test_list_conversation_messages_scoped_rejects_wrong_scope(
+        #[case] user_id: &str,
+        #[case] channel: &str,
+    ) {
+        let (backend, _tempdir) = local_backend().await;
+        let (conversation_id, _) = seed_conversation(&backend, "user-1", "web").await;
+
+        let err =
+            super::list_conversation_messages_scoped(&backend, conversation_id, user_id, channel)
+                .await
+                .expect_err("foreign scope should be rejected");
+
+        assert!(
+            matches!(err, DatabaseError::NotFound { ref entity, ref id }
+                if entity == "conversation" && id == &conversation_id.to_string()),
+            "expected NotFound for mismatched scope, got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_conversation_messages_scoped_rejects_missing_conversation() {
+        let (backend, _tempdir) = local_backend().await;
+        let conversation_id = Uuid::new_v4();
+
+        let err =
+            super::list_conversation_messages_scoped(&backend, conversation_id, "user-1", "web")
+                .await
+                .expect_err("missing conversation should be rejected");
+
+        assert!(
+            matches!(err, DatabaseError::NotFound { ref entity, ref id }
+                if entity == "conversation" && id == &conversation_id.to_string()),
+            "expected NotFound for missing conversation, got: {err:?}"
         );
     }
 }

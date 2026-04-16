@@ -1,17 +1,19 @@
 # Tool-calling architecture
 
-This document summarizes the chat tool-calling path centred on
-`ChatDelegate::execute_tool_calls`. It is intended as a compact reference for
-reviewers and maintainers who need to understand how preflight checks,
-execution, approvals, and post-flight folding interact. It also captures the
-submission path used when a user answers an approval prompt.
+This document summarizes the chat tool-calling path centred on the module-level
+function `tool_exec::execute_tool_calls`, which takes `&ChatDelegate` as its
+first parameter. It is intended as a compact reference for reviewers and
+maintainers who need to understand how preflight checks, execution, approvals,
+and post-flight folding interact. It also captures the submission path used
+when a user answers an approval prompt.
 
-**Figure 1. Tool-calling sequence from `ChatDelegate` entry through preflight,
-execution, post-flight folding, and loop outcome selection. The flow records
-redacted tool calls on the active turn, checks hooks and approvals before
-execution, runs tools inline or in parallel depending on batch size, sanitizes
-and records outputs, and may return either a deferred auth response, a pending
-approval, or no special loop outcome.**
+**Figure 1. Tool-calling sequence from the module-level
+`tool_exec::execute_tool_calls` entry through preflight, execution, post-flight
+folding, and loop-outcome selection. The flow records redacted tool calls on
+the active turn, checks hooks and approvals before execution, runs tools inline
+or in parallel depending on batch size, sanitizes and records outputs, and may
+return either a deferred auth response, a pending approval, or no special loop
+outcome.**
 
 ```mermaid
 sequenceDiagram
@@ -27,7 +29,7 @@ sequenceDiagram
     participant Agent as Agent
     participant reason_ctx as reason_ctx
 
-    Note over Delegate,ToolExec: Entry: NativeLoopDelegate.execute_tool_calls
+    Note over Delegate,ToolExec: Entry: tool_exec::execute_tool_calls
     Delegate->>ToolExec: execute_tool_calls(delegate, tool_calls, content, reason_ctx)
     ToolExec->>reason_ctx: messages.push(assistant_with_tool_calls)
     ToolExec->>Channels: send_status(Thinking("Executing N tool(s)..."))
@@ -120,6 +122,14 @@ sequenceDiagram
         ToolExec-->>Delegate: None
     end
 ```
+
+In Figure 1, `Rejected` refers to `PreflightOutcome::Rejected`, not to a
+distinct `LoopOutcome` variant. `LoopOutcome`, from
+`src/agent/agentic_loop.rs`, contains only `Response`, `Stopped`,
+`MaxIterations`, and `NeedApproval`. Hook rejections are pushed into the
+preflight list, then handled during post-flight by recording and folding them
+into the context as tool-result errors. They are not returned as a separate
+loop outcome.
 
 **Figure 2. Approval-submission sequence for both explicit approval requests
 and implicit approval responses. The flow enters through channel submission
