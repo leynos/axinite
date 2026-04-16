@@ -59,6 +59,48 @@ fn handled_agent_command(_: &Command) -> anyhow::Result<Option<bool>> {
     Ok(Some(true))
 }
 
+fn worker_command() -> Command {
+    Command::Worker {
+        job_id: uuid::Uuid::new_v4(),
+        orchestrator_url: "http://localhost".into(),
+        max_iterations: 10,
+    }
+}
+
+fn claude_bridge_command() -> Command {
+    Command::ClaudeBridge {
+        job_id: uuid::Uuid::new_v4(),
+        orchestrator_url: "http://localhost".into(),
+        max_turns: 5,
+        model: "claude-3".into(),
+    }
+}
+
+fn pairing_list_command() -> Command {
+    Command::Pairing(PairingCommand::List {
+        channel: "telegram".to_string(),
+        json: false,
+    })
+}
+
+fn onboard_command() -> Command {
+    Command::Onboard {
+        skip_auth: false,
+        channels_only: false,
+        provider_only: false,
+        quick: false,
+    }
+}
+
+/// Asserts that `dispatch_subcommand` returns `true` for the given command.
+async fn assert_subcommand_short_circuits(command: Command) {
+    let cli = cli_with(Some(command));
+    let dispatched = dispatch_subcommand(&cli)
+        .await
+        .expect("dispatch should succeed");
+    assert!(dispatched);
+}
+
 #[tokio::test]
 async fn tool_commands_returns_none_for_no_command() {
     let cli = cli_with(None);
@@ -74,38 +116,17 @@ async fn tool_commands_returns_none_for_run() {
 }
 
 #[rstest]
-#[case(Command::Worker {
-    job_id: uuid::Uuid::new_v4(),
-    orchestrator_url: "http://localhost".into(),
-    max_iterations: 10,
-})]
-#[case(Command::ClaudeBridge {
-    job_id: uuid::Uuid::new_v4(),
-    orchestrator_url: "http://localhost".into(),
-    max_turns: 5,
-    model: "claude-3".into(),
-})]
-#[case(Command::Onboard {
-    skip_auth: false,
-    channels_only: false,
-    provider_only: false,
-    quick: false,
-})]
+#[case(worker_command())]
+#[case(claude_bridge_command())]
+#[case(onboard_command())]
 #[tokio::test]
 async fn tool_commands_returns_none_for_agent_passthrough_variants(#[case] command: Command) {
-    let cli = cli_with(Some(command));
-    let result = dispatch_cli_tool_commands(&cli)
-        .await
-        .expect("dispatch should succeed");
-    assert!(result.is_none());
+    assert_tool_commands_passthrough(command).await;
 }
 
 #[tokio::test]
 async fn tool_commands_returns_some_for_pairing_list() {
-    let cli = cli_with(Some(Command::Pairing(PairingCommand::List {
-        channel: "telegram".to_string(),
-        json: false,
-    })));
+    let cli = cli_with(Some(pairing_list_command()));
     let result = dispatch_cli_tool_commands(&cli)
         .await
         .expect("dispatch should succeed");
@@ -134,28 +155,14 @@ async fn agent_commands_returns_none_for_no_command() {
 #[test]
 fn is_agent_subcommand_identifies_agent_only_variants() {
     assert!(is_agent_subcommand(&Command::Run));
-    assert!(is_agent_subcommand(&Command::Onboard {
-        skip_auth: false,
-        channels_only: false,
-        provider_only: false,
-        quick: false,
-    }));
-    assert!(!is_agent_subcommand(&Command::Pairing(
-        PairingCommand::List {
-            channel: "telegram".to_string(),
-            json: false,
-        }
-    )));
+    assert!(is_agent_subcommand(&onboard_command()));
+    assert!(!is_agent_subcommand(&pairing_list_command()));
 }
 
 #[tokio::test]
 async fn agent_commands_returns_some_for_handled_worker_command() {
     let _hook = AgentDispatchHookGuard::install(handled_agent_command);
-    let cli = cli_with(Some(Command::Worker {
-        job_id: uuid::Uuid::new_v4(),
-        orchestrator_url: "http://localhost".into(),
-        max_iterations: 10,
-    }));
+    let cli = cli_with(Some(worker_command()));
 
     let result = dispatch_agent_commands(&cli)
         .await
@@ -166,30 +173,11 @@ async fn agent_commands_returns_some_for_handled_worker_command() {
 
 #[tokio::test]
 async fn dispatch_subcommand_short_circuits_for_pairing_command() {
-    let cli = cli_with(Some(Command::Pairing(PairingCommand::List {
-        channel: "telegram".to_string(),
-        json: false,
-    })));
-
-    let dispatched = dispatch_subcommand(&cli)
-        .await
-        .expect("dispatch should succeed");
-
-    assert!(dispatched);
+    assert_subcommand_short_circuits(pairing_list_command()).await;
 }
 
 #[tokio::test]
 async fn dispatch_subcommand_short_circuits_for_handled_worker_command() {
     let _hook = AgentDispatchHookGuard::install(handled_agent_command);
-    let cli = cli_with(Some(Command::Worker {
-        job_id: uuid::Uuid::new_v4(),
-        orchestrator_url: "http://localhost".into(),
-        max_iterations: 10,
-    }));
-
-    let dispatched = dispatch_subcommand(&cli)
-        .await
-        .expect("dispatch should succeed");
-
-    assert!(dispatched);
+    assert_subcommand_short_circuits(worker_command()).await;
 }
