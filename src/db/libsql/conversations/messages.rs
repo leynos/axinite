@@ -207,47 +207,22 @@ mod tests {
         (backend, tempdir)
     }
 
+    #[rstest]
+    #[case::zero(0usize, "must be > 0")]
+    #[case::usize_max(usize::MAX, "overflow")]
+    #[case::i64_overflow(i64::MAX as usize, "overflow")]
     #[tokio::test]
-    async fn test_zero_limit_rejected() {
+    async fn test_invalid_limits_rejected(#[case] limit: usize, #[case] expected_fragment: &str) {
         let (backend, _tempdir) = local_backend().await;
-        let err = super::list_conversation_messages_paginated(&backend, Uuid::new_v4(), None, 0)
-            .await
-            .expect_err("zero limit should be rejected");
 
-        assert!(
-            matches!(err, DatabaseError::Validation(ref msg) if msg.contains("must be > 0")),
-            "expected Validation error for zero limit, got: {err:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_usize_max_limit_rejected() {
-        let (backend, _tempdir) = local_backend().await;
-        let err =
-            super::list_conversation_messages_paginated(&backend, Uuid::new_v4(), None, usize::MAX)
-                .await
-                .expect_err("usize::MAX limit should be rejected");
-
-        assert!(
-            matches!(err, DatabaseError::Validation(ref msg) if msg.contains("overflow")),
-            "expected overflow Validation error, got: {err:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_limit_exceeding_i64_range_rejected() {
-        let (backend, _tempdir) = local_backend().await;
-        // i64::MAX as usize: passes checked_add(1) on 64-bit but fails
-        // i64::try_from because the result exceeds i64::MAX.
-        let limit = i64::MAX as usize;
         let err =
             super::list_conversation_messages_paginated(&backend, Uuid::new_v4(), None, limit)
                 .await
-                .expect_err("limit exceeding i64 range should be rejected");
+                .expect_err("invalid limit should be rejected");
 
         assert!(
-            matches!(err, DatabaseError::Validation(ref msg) if msg.contains("overflow")),
-            "expected overflow Validation error, got: {err:?}"
+            matches!(err, DatabaseError::Validation(ref msg) if msg.contains(expected_fragment)),
+            "expected Validation error containing '{expected_fragment}', got: {err:?}"
         );
     }
 
