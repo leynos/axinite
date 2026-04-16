@@ -150,17 +150,18 @@ async fn setup_http_channel(
 
 async fn build_webhook_server(
     addr: Option<std::net::SocketAddr>,
+    http_bind_was_explicit: bool,
     webhook_routes: Vec<axum::Router>,
 ) -> anyhow::Result<Option<Arc<tokio::sync::Mutex<WebhookServer>>>> {
     if webhook_routes.is_empty() {
         return Ok(None);
     }
-    let addr = addr.unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], 8080)));
+    let addr = addr.unwrap_or_else(|| std::net::SocketAddr::from(([127, 0, 0, 1], 8080)));
     if addr.ip().is_unspecified() {
-        tracing::warn!(
-            "Webhook server is binding to {} — it will be reachable from all network \
-             interfaces. Set HTTP_HOST=127.0.0.1 to restrict to localhost.",
-            addr.ip()
+        anyhow::ensure!(
+            http_bind_was_explicit,
+            "Refusing to bind webhook server to {addr}. Configure an explicit HTTP bind address \
+             or use a loopback-only address such as 127.0.0.1:8080."
         );
     }
     let mut server = WebhookServer::new(WebhookServerConfig { addr });
@@ -179,30 +180,33 @@ pub(crate) async fn setup_channels(
 ) -> anyhow::Result<ChannelSetup> {
     let mut channel_names: Vec<String> = Vec::new();
     let mut webhook_routes: Vec<axum::Router> = Vec::new();
-    let mut reg = ChannelRegistrar {
-        channels,
-        channel_names: &mut channel_names,
-        webhook_routes: &mut webhook_routes,
+    let (loaded_wasm_channel_names, wasm_channel_runtime_state, http) = {
+        let mut reg = ChannelRegistrar {
+            channels,
+            channel_names: &mut channel_names,
+            webhook_routes: &mut webhook_routes,
+        };
+
+        setup_repl_channel(cli, config, &mut reg).await;
+
+        let WasmChannelsInit {
+            loaded_wasm_channel_names,
+            runtime_state: wasm_channel_runtime_state,
+        } = init_wasm_channels(config, components, &mut reg).await;
+
+        setup_signal_channel(cli, config, &mut reg).await?;
+
+        let http = setup_http_channel(cli, config, &mut reg).await?;
+
+        (loaded_wasm_channel_names, wasm_channel_runtime_state, http)
     };
 
-    setup_repl_channel(cli, config, &mut reg).await;
-
-    let WasmChannelsInit {
-        loaded_wasm_channel_names,
-        runtime_state: wasm_channel_runtime_state,
-    } = init_wasm_channels(config, components, &mut reg).await;
-
-    setup_signal_channel(cli, config, &mut reg).await?;
-
-    let http = setup_http_channel(cli, config, &mut reg).await?;
-
-    #[expect(
-        clippy::drop_non_drop,
-        reason = "Explicit drop to release mutable borrows"
-    )]
-    drop(reg);
-
-    let webhook_server = build_webhook_server(http.webhook_server_addr, webhook_routes).await?;
+    let webhook_server = build_webhook_server(
+        http.webhook_server_addr,
+        config.channels.http.is_some(),
+        webhook_routes,
+    )
+    .await?;
 
     Ok(ChannelSetup {
         webhook_server,

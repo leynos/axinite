@@ -30,7 +30,17 @@ pub(crate) async fn init_wasm_channels(
     components: &AppComponents,
     reg: &mut ChannelRegistrar<'_>,
 ) -> WasmChannelsInit {
-    if !config.channels.wasm_channels_enabled || !config.channels.wasm_channels_dir.exists() {
+    if !config.channels.wasm_channels_enabled {
+        return WasmChannelsInit {
+            loaded_wasm_channel_names: vec![],
+            runtime_state: None,
+        };
+    }
+    if !config.channels.wasm_channels_dir.exists() {
+        tracing::warn!(
+            path = %config.channels.wasm_channels_dir.display(),
+            "WASM channels are enabled, but the channel directory does not exist"
+        );
         return WasmChannelsInit {
             loaded_wasm_channel_names: vec![],
             runtime_state: None,

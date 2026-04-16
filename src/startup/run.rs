@@ -15,7 +15,7 @@ use ironclaw::{
 #[cfg(unix)]
 use ironclaw::{channels::HttpChannelState, secrets::SecretsStore};
 
-use crate::startup::{phases::GatewayPhaseContext, wasm::wire_wasm_channel_runtime};
+use crate::startup::{CoreAgentContext, GatewayPhaseContext, wasm::wire_wasm_channel_runtime};
 
 #[cfg(unix)]
 use crate::startup::channels::spawn_sighup_handler;
@@ -35,7 +35,7 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
         routine_engine_slot,
         ..
     } = ctx;
-    let crate::startup::phases::CoreAgentContext {
+    let CoreAgentContext {
         config,
         components,
         side_effects,
