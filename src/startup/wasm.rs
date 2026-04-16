@@ -96,6 +96,36 @@ pub(crate) async fn init_wasm_channels(
     }
 }
 
+/// Auto-activates any persisted WASM channels that were not active at startup
+/// and are not relay channels.
+async fn auto_activate_persisted_channels(
+    ext_mgr: &ironclaw::extensions::ExtensionManager,
+    active_at_startup: &std::collections::HashSet<String>,
+    persisted: &[String],
+) {
+    for name in persisted {
+        if active_at_startup.contains(name) || ext_mgr.is_relay_channel(name).await {
+            continue;
+        }
+        match ext_mgr.activate(name).await {
+            Ok(result) => {
+                tracing::debug!(
+                    channel = %name,
+                    message = %result.message,
+                    "Auto-activated persisted WASM channel"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    channel = %name,
+                    error = %e,
+                    "Failed to auto-activate persisted WASM channel"
+                );
+            }
+        }
+    }
+}
+
 /// Transfers ownership of the WASM runtime state into the extension manager and
 /// activates any channels that were not already active at startup.
 ///
@@ -126,27 +156,7 @@ pub(crate) async fn wire_wasm_channel_runtime(
         tracing::debug!("Channel runtime wired into extension manager for hot-activation");
 
         let persisted = ext_mgr.load_persisted_active_channels().await;
-        for name in &persisted {
-            if active_at_startup.contains(name) || ext_mgr.is_relay_channel(name).await {
-                continue;
-            }
-            match ext_mgr.activate(name).await {
-                Ok(result) => {
-                    tracing::debug!(
-                        channel = %name,
-                        message = %result.message,
-                        "Auto-activated persisted WASM channel"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        channel = %name,
-                        error = %e,
-                        "Failed to auto-activate persisted WASM channel"
-                    );
-                }
-            }
-        }
+        auto_activate_persisted_channels(ext_mgr, &active_at_startup, &persisted).await;
     }
 
     if let Some(ext_mgr) = wiring.extension_manager {
