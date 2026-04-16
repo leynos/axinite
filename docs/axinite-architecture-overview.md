@@ -209,6 +209,15 @@ host process. `docs/webhook-server-design.md` documents that unified webhook
 architecture in more detail, including the current rollback-focused
 `WebhookServer` restart behaviour.
 
+The initial startup display is rendered by `src/boot_screen.rs`, which assembles
+an ANSI-formatted summary of the active model, database, tool count, enabled
+features, channel names, and gateway or tunnel URLs. `print_boot_screen` delegates
+to `render_boot_screen`, which returns the assembled string; this separation allows
+snapshot tests to verify the rendered output without capturing standard output.
+The visual format of the boot screen has not changed from the user's perspective;
+the refactoring is purely internal (helper extraction and snapshot test coverage)
+and is confirmed by the snapshot files in `src/snapshots/`.
+
 ## 4. Core runtime subsystems
 
 ### 4.1 Interaction surfaces
