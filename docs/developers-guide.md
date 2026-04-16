@@ -1196,7 +1196,7 @@ pipeline runs. `dispatch_subcommand` is called first; it returns `true`
 when a subcommand was matched so `async_main` can exit without entering
 the startup pipeline.
 
-```text
+```plaintext
 async_main()
   └─ dispatch_subcommand()       ← main_cli.rs
        ├─ dispatch_cli_tool_commands()
