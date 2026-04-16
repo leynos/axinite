@@ -1,17 +1,21 @@
 # Workspace & Memory System
 
-Inspired by [OpenClaw](https://github.com/openclaw/openclaw), the workspace provides persistent memory for agents with a flexible filesystem-like structure.
+Inspired by [OpenClaw](https://github.com/openclaw/openclaw), the workspace
+provides persistent memory for agents with a flexible filesystem-like
+structure.
 
 ## Key Principles
 
-1. **"Memory is database, not RAM"** - If you want to remember something, write it explicitly
+1. **"Memory is database, not RAM"** - If you want to remember something,
+   write it explicitly
 2. **Flexible structure** - Create any directory/file hierarchy you need
 3. **Self-documenting** - Use README.md files to describe directory structure
-4. **Hybrid search** - Combines FTS (keyword) + vector (semantic) via Reciprocal Rank Fusion
+4. **Hybrid search** - Combines FTS (keyword) + vector (semantic) via
+   Reciprocal Rank Fusion
 
 ## Filesystem Structure
 
-```
+```text
 workspace/
 ├── README.md              <- Root runbook/index
 ├── MEMORY.md              <- Long-term curated memory
@@ -67,24 +71,31 @@ let prompt = workspace.system_prompt().await?;
 
 Four tools for LLM use:
 
-- **`memory_search`** - Hybrid search, MUST be called before answering questions about prior work
+- **`memory_search`** - Hybrid search, MUST be called before answering
+  questions about prior work
 - **`memory_write`** - Write to any path (memory, daily_log, or custom paths)
 - **`memory_read`** - Read any file by path
-- **`memory_tree`** - View workspace structure as a tree (depth parameter, default 1)
+- **`memory_tree`** - View workspace structure as a tree (depth parameter,
+  default 1)
 
 ## Hybrid Search (RRF)
 
 Combines full-text search and vector similarity using Reciprocal Rank Fusion:
 
-```
+```text
 score(d) = Σ 1/(k + rank(d)) for each method where d appears
 ```
 
-Default k=60. Results from both methods are combined, with documents appearing in both getting boosted scores.
+Default k=60. Results from both methods are combined, with documents
+appearing in both getting boosted scores.
 
 **Backend differences:**
-- **PostgreSQL:** `ts_rank_cd` for FTS, pgvector cosine distance for vectors, full RRF
-- **libSQL:** FTS5 for keyword search only (vector search via `libsql_vector_idx` not yet wired)
+
+- **PostgreSQL:** `ts_rank_cd` for FTS, pgvector cosine distance for vectors,
+  full RRF
+- **libSQL:** FTS5 plus vector search; uses `vector_top_k(...)` when a
+  compatible fixed-dimension index exists, otherwise brute-force cosine
+  similarity in Rust
 
 ## Heartbeat System
 
@@ -108,6 +119,7 @@ spawn_heartbeat(config, workspace, llm, response_tx);
 ## Chunking Strategy
 
 Documents are chunked for search indexing:
+
 - Default: 800 words per chunk (roughly 800 tokens for English)
 - 15% overlap between chunks for context preservation
 - Minimum chunk size: 50 words (tiny trailing chunks merge with previous)

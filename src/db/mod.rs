@@ -88,7 +88,7 @@ pub struct DatabaseHandles {
     #[cfg(feature = "postgres")]
     pub pg_pool: Option<deadpool_postgres::Pool>,
     #[cfg(feature = "libsql")]
-    pub libsql_db: Option<Arc<::libsql::Database>>,
+    pub libsql_db: Option<Arc<crate::db::libsql::LibSqlDatabase>>,
 }
 
 /// Connect to the database, run migrations, and return both the generic

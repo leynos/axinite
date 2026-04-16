@@ -88,7 +88,7 @@ The `Database` supertrait is composed of seven sub-traits. Leaf consumers can de
 | Numeric/Decimal | `NUMERIC` | `TEXT` (preserves `rust_decimal` precision) |
 | Arrays | `TEXT[]` | `TEXT` (JSON-encoded array) |
 | Booleans | `BOOLEAN` | `INTEGER` (0/1) |
-| Vector embeddings | `VECTOR` (any dim, V9 removed fixed 1536) | `F32_BLOB(1536)` via `libsql_vector_idx` |
+| Vector embeddings | `VECTOR` (any dim, V9 removed fixed 1536) | `BLOB`; V9 dropped `libsql_vector_idx`, so `vector_top_k(...)` falls back to brute-force cosine similarity in Rust when unavailable |
 | Full-text search | `tsvector` + `ts_rank_cd` | FTS5 virtual table + sync triggers |
 | JSON path update | `jsonb_set(col, '{key}', val)` | `json_patch(col, '{"key": val}')` |
 | PL/pgSQL | Functions | Triggers (no stored procs in SQLite) |
@@ -103,7 +103,7 @@ The `Database` supertrait is composed of seven sub-traits. Leaf consumers can de
 
 **Timestamp write format:** Always write timestamps with `fmt_ts(dt)` (RFC 3339, millisecond precision). Read with `get_ts()` / `get_opt_ts()` which handle legacy naive formats too.
 
-**Vector dimension:** PostgreSQL V9 migration changed the column to unbounded `vector` (removing the HNSW index). libSQL still uses `F32_BLOB(1536)` — if you use a different-dimension embedding model, the libSQL schema needs updating too.
+**Vector dimension:** PostgreSQL V9 migration changed the column to unbounded `vector` (removing the HNSW index). libSQL V9 likewise moved `memory_chunks.embedding` to a plain `BLOB`, dropped the fixed-dimension vector index, and now falls back to brute-force cosine similarity in Rust when `vector_top_k(...)` is unavailable.
 
 **Connection per operation:** `LibSqlBackend::connect()` creates a fresh connection for every operation, sets `PRAGMA busy_timeout = 5000`, and closes it when the `Connection` is dropped. This is intentional — the libSQL SDK does not offer a pool. Avoid holding connections open across `await` points.
 
@@ -122,7 +122,9 @@ The `Database` supertrait is composed of seven sub-traits. Leaf consumers can de
 
 **Workspace/Memory:**
 - `memory_documents` — flexible path-based files
-- `memory_chunks` — chunked content with FTS + vector indexes
+- `memory_chunks` — chunked content with FTS; embeddings are stored as plain
+  BLOBs after V9, so `vector_top_k(...)` may fall back to brute-force cosine
+  similarity when the fixed-dimension vector index is unavailable
 - `memory_chunks_fts` — FTS5 virtual table (libSQL) / `tsvector` column (PostgreSQL)
 - `heartbeat_state` — periodic execution tracking
 
@@ -147,7 +149,7 @@ The `Database` supertrait is composed of seven sub-traits. Leaf consumers can de
 - **Settings reload** — `Config::from_db` skipped (requires `Store`)
 - **No incremental migrations** — schema is idempotent CREATE IF NOT EXISTS; no ALTER TABLE support; column additions require a new versioned approach
 - **No encryption at rest** — only secrets (API tokens) are AES-256-GCM encrypted; all other data is plaintext SQLite
-- **Hybrid search** — both FTS5 and vector search (`libsql_vector_idx`) are implemented; however, the vector index is fixed at `F32_BLOB(1536)` while PostgreSQL switched to unbounded `vector` in V9
+- **Hybrid search cost** — libSQL still provides hybrid search after V9, but semantic retrieval may use a brute-force cosine scan over candidate embeddings when no compatible vector index exists
 - **Write serialization** — WAL mode allows concurrent readers but only one writer at a time; busy timeout is 5 s, which may cause timeouts under high write concurrency
 
 ## Running Locally with libSQL
@@ -159,13 +161,17 @@ DATABASE_BACKEND=libsql LIBSQL_PATH=~/.ironclaw/test.db cargo run
 # Use Turso cloud (embedded replica syncs local file to cloud)
 DATABASE_BACKEND=libsql LIBSQL_URL=libsql://xxx.turso.io LIBSQL_AUTH_TOKEN=xxx cargo run
 
-# In-memory (tests only — data is lost when the process exits)
+# Temp-file-backed test database (data is lost when the last shared handle drops)
 # Use LibSqlBackend::new_memory() directly in test code
 ```
 
 ## Testing the libSQL Backend
 
-Use `LibSqlBackend::new_memory()` in unit tests — no files, no cleanup required:
+Use `LibSqlBackend::new_memory()` in unit tests when fresh connections need to
+share state. Despite the name, it creates a temp-file-backed database and
+stores the `temp_path` on the shared database handle so the file persists until
+the final `Arc` clone is dropped. Tests do not need manual cleanup, but they
+should assume a temp file exists for the lifetime of the shared handle:
 
 ```rust
 #[tokio::test]
@@ -176,7 +182,10 @@ async fn test_my_feature() {
 }
 ```
 
-For concurrency tests that require multiple connections sharing state, use `LibSqlBackend::new_local(&tmp_path)` with a `tempfile::tempdir()`. In-memory databases do not share state between connections.
+`LibSqlBackend::new_memory()` is appropriate for multi-connection tests because
+all fresh connections share the same temp-file-backed state. Use
+`LibSqlBackend::new_local(&tmp_path)` with a `tempfile::tempdir()` when a test
+needs an explicit on-disk path it can inspect or control directly.
 
 ## Sharing the libSQL Database Handle
 

@@ -268,6 +268,13 @@ Table 18. Database and secrets environment variables.
 | `LIBSQL_AUTH_TOKEN` | Auth token for `LIBSQL_URL`. | Required when `LIBSQL_URL` is set. |
 | `SECRETS_MASTER_KEY` | Master key for encrypted secrets storage. | Optional, but must be at least 32 bytes when set. If omitted, axinite falls back to the operating-system keychain when available. |
 
+When workspace memory search is enabled, backend choice affects how semantic
+retrieval runs. PostgreSQL uses pgvector cosine-distance queries. libSQL uses
+indexed `vector_top_k(...)` only when a compatible fixed-dimension vector
+index exists; otherwise it falls back to brute-force cosine similarity in
+Rust. `ironclaw doctor` and `ironclaw status` surface the active search mode.
+See [database integrations](database-integrations.md) for the backend trade-offs.
+
 ### 4.3 Agent runtime, safety, routines, heartbeat, hygiene, skills, and builder mode
 
 Table 19. Core runtime behaviour variables.

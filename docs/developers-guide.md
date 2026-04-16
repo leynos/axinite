@@ -343,6 +343,68 @@ Meaning: PostgreSQL connection URL used by the app.
 Default or rule:
 
 
+### libSQL test databases
+
+Unit tests that exercise the libSQL backend call
+`LibSqlBackend::new_memory()` rather than `new_local()`. `new_memory()`
+creates a UUID-named file in the OS temp directory so that multiple
+connections within a single test share state, matching production semantics.
+The shared database handle removes that file and its `-wal`/`-shm` sidecars
+automatically when the final clone is dropped, so tests should not leave
+artefacts behind on disk.
+
+Do **not** use `new_local()` in unit tests; reserve it for integration tests
+or tests that specifically require filesystem-path behaviour.
+
+
+### LibSqlDatabase shared handles
+
+`LibSqlBackend` owns an `Arc<LibSqlDatabase>` rather than a raw libSQL
+database handle. That wrapper exists for two reasons:
+
+- satellite stores such as the secrets and WASM stores can call
+  `shared_db()` and open their own per-operation connections without
+  reopening a different database
+- temp-file-backed test databases created by `new_memory()` keep their
+  cleanup metadata on the shared handle, so the `.db`, `-wal`, and `-shm`
+  files live until the final shared owner is dropped
+
+If a constructor or store used to accept a backend directly and now accepts
+`Arc<LibSqlDatabase>`, that is usually a signal that it should share the same
+underlying file while creating its own connections via
+`LibSqlDatabase::connect()`.
+
+### Type-change propagation through store constructors
+
+The `Arc<libsql::Database>` → `Arc<LibSqlDatabase>` change propagates to
+every store that previously held a raw `Arc<libsql::Database>`. Each
+affected constructor now accepts `Arc<LibSqlDatabase>`:
+
+| Store | Field | Constructor parameter |
+| --- | --- | --- |
+| `LibSqlSecretsStore` | `db: Arc<LibSqlDatabase>` | `new(db: Arc<LibSqlDatabase>, …)` |
+| `LibSqlWasmChannelStore` | `db: Arc<LibSqlDatabase>` | `new(db: Arc<LibSqlDatabase>)` |
+| `LibSqlWasmToolStore` | `db: Arc<LibSqlDatabase>` | `new(db: Arc<LibSqlDatabase>)` |
+
+The shared handle is obtained at startup via `LibSqlBackend::shared_db()`,
+which now returns `Arc<LibSqlDatabase>` instead of
+`Arc<libsql::Database>`:
+
+```rust
+// Obtaining the shared handle (unchanged call site):
+let db: Arc<LibSqlDatabase> = backend.shared_db();
+
+// Constructing a store with the shared handle:
+let secrets_store = LibSqlSecretsStore::new(Arc::clone(&db), crypto);
+let channel_store = LibSqlWasmChannelStore::new(Arc::clone(&db));
+let tool_store    = LibSqlWasmToolStore::new(Arc::clone(&db));
+```
+
+The `busy_timeout` PRAGMA that each store previously ran after connecting
+is now applied once inside `LibSqlDatabase::connect()`, so it is no longer
+necessary — and must not be duplicated — in individual store
+`connect()` methods.
+
 ## Dispatcher Architecture
 
 The dispatcher orchestrates interactive chat turns by preparing an LLM
@@ -749,6 +811,40 @@ When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
 
 
+### WebhookServer test helpers
+
+`WebhookServer` exposes two `#[cfg(test)]`-only methods to eliminate
+port-allocation races:
+
+- `start_with_listener(listener: TcpListener)` — accepts a pre-bound
+  listener, merges queued route fragments, resolves the live listener
+  address, and spawns the server.
+- `restart_with_listener(listener: TcpListener)` — shuts the current server
+  down, resolves the new listener's address, and spawns a fresh server.
+
+Tests should pre-bind via `TcpListener::bind("127.0.0.1:0")` and pass the
+result to these helpers instead of relying on `start()` /
+`restart_with_addr()` to pick a free port.
+
+
+### Workspace store module structure
+
+The libSQL workspace store is split by concern under
+`src/db/libsql/workspace/`:
+
+- `mod.rs` owns the `NativeWorkspaceStore` implementation and hybrid-search
+  orchestration
+- `document_ops.rs` owns document CRUD and directory-style listing helpers
+- `chunk_ops.rs` owns chunk insertion, embedding updates, and chunk polling
+- `fts.rs` owns FTS-only ranking queries
+- `vector_search.rs` owns vector-index and brute-force similarity helpers
+- `tests.rs` keeps cross-module integration coverage for the hybrid pipeline
+
+Prefer adding logic beside the feature it serves rather than growing
+`mod.rs`. Module-local tests should live with the module they exercise, while
+pipeline tests belong in `workspace/tests.rs`.
+
+
 ### Key APIs
 
 - `RunLoopCtx`: per-run container that carries the session handle,
@@ -785,3 +881,14 @@ export DATABASE_URL=postgres://localhost/ironclaw
 
 Adjust the connection string if the local PostgreSQL instance requires a
 different host, user, or password.
+
+### Parameter-object structs in store helpers
+
+The workspace helpers use small parameter structs such as `AgentScope`,
+`FtsSearchParams`, `VectorSearchQuery`, and `VectorIndexQuery` to keep helper
+arity below the repository limit and to make call sites describe intent.
+
+Use this pattern when a helper repeatedly threads the same related values
+through several internal calls. Keep these structs private or `pub(super)`
+unless a wider API boundary genuinely needs them, and prefer names that
+describe the query or scope they model instead of generic `Options` suffixes.

@@ -855,7 +855,7 @@ addressed in a subsequent pass (see progress checklist above).
 - `src/orchestrator/api/tests/fixtures/remote_tool_mocks.rs`: added
   `complex_tool_definition()` and `complex_tool_stub()` fixtures for testing
   full payload fidelity with nested JSON Schema and special characters.
-- `src/orchestrator/api/tests/remote_tools.rs`: added three new tests:
+- `src/orchestrator/api/tests/catalogue_fidelity.rs`: added three new tests:
   `remote_tool_catalog_preserves_full_tool_definition_payload`,
   `remote_tool_catalog_version_is_deterministic_and_sensitive_to_content`, and
   `orchestrator_responses_deserialize_into_worker_shared_types`.
@@ -903,9 +903,11 @@ The implementation added 9 new test functions covering:
    (milestone 4).
 
 All tests use in-process mock servers and fixtures, avoiding external
-dependencies. All tests follow existing `rstest` patterns and naming conventions.
-The format check (`make check-fmt`) passed after running `cargo fmt --all`. All
-validation gates have been run and passed successfully.
+dependencies. All tests follow existing `rstest` patterns and naming
+conventions. The format check (`make check-fmt`) passed after running
+`cargo fmt --all`. The format check, git whitespace check, and full test suite
+passed successfully. Markdown linting remained partially blocked by
+pre-existing issues in `docs/roadmap.md`.
 
 ### Validation evidence
 
@@ -928,10 +930,10 @@ Full test suite passed: 3076 tests passed; 0 failed; 2 ignored (webhook server
 test fixed to use already-bound address instead of privileged port; worker API
 types test split into three focused tests per code review).
 
-Markdown linting revealed pre-existing issues in `docs/roadmap.md` unrelated to
-this implementation (multiple consecutive blank lines at lines 1342, 1408, 1450,
-1489, 1512). The ExecPlan, RFC 0001, and `docs/contents.md` changes introduced
-no new Markdown issues.
+Markdown linting was only partially green because `docs/roadmap.md` still had
+pre-existing issues unrelated to this implementation (multiple consecutive
+blank lines at lines 1342, 1408, 1450, 1489, 1512). The ExecPlan, RFC 0001,
+and `docs/contents.md` changes introduced no new Markdown issues.
 
 ### Retrospective observations
 

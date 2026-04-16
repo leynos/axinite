@@ -4,7 +4,12 @@
 //! Supports three modes:
 //! - Local embedded (file-based, no server needed)
 //! - Turso cloud with embedded replica (sync to cloud)
-//! - In-memory (for testing)
+//! - Temp-file-backed (for testing) — creates a UUID-named `.db` file in the
+//!   OS temp directory; fresh connections share state via the file; the file
+//!   and its WAL/SHM sidecars are deleted automatically when the final shared
+//!   [`LibSqlDatabase`] handle is dropped. Clones returned by `shared_db()`
+//!   can outlive the [`LibSqlBackend`], so cleanup follows the last shared
+//!   handle rather than the backend wrapper.
 
 mod conversations;
 pub(crate) mod helpers;
@@ -17,12 +22,13 @@ mod tool_failures;
 mod workspace;
 
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::db::NativeDatabase;
 use crate::error::DatabaseError;
-use libsql::{Connection, Database as LibSqlDatabase};
-use tokio::fs;
+use libsql::{Connection, Database as RawLibSqlDatabase};
+use uuid::Uuid;
 
 use crate::db::libsql_migrations;
 pub(crate) use helpers::{
@@ -31,80 +37,39 @@ pub(crate) use helpers::{
 };
 pub(crate) use row_conversion::row_to_memory_document;
 
-/// libSQL/Turso database backend.
+/// Shared libSQL database handle.
 ///
-/// Stores the `Database` handle in an `Arc` so that the same underlying
-/// database can be shared with stores (SecretsStore, WasmToolStore) that
-/// create their own connections per-operation.
-pub struct LibSqlBackend {
-    db: Arc<LibSqlDatabase>,
+/// Wraps the underlying [`RawLibSqlDatabase`] plus optional temp-file metadata
+/// used by test-only temp-file-backed databases. Stores such as
+/// `LibSqlSecretsStore`, `LibSqlWasmChannelStore`, and `LibSqlWasmToolStore`
+/// share this handle via `Arc` so they all create connections against the same
+/// underlying database and so temp-file cleanup runs when the last shared owner
+/// is dropped.
+pub struct LibSqlDatabase {
+    db: RawLibSqlDatabase,
+    /// Path to the ephemeral database file created by
+    /// [`LibSqlBackend::new_memory`].
+    /// `None` for persistent (`new_local` / `new_remote_replica`) backends.
+    /// When `Some`, the file and its `-wal`/`-shm` sidecars are removed in
+    /// [`Drop`].
+    temp_path: Option<PathBuf>,
 }
 
-impl LibSqlBackend {
-    /// Ensure the parent directory of `path` exists, creating it and all
-    /// ancestors if necessary.
-    async fn ensure_parent_dir(path: &Path) -> Result<(), DatabaseError> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).await.map_err(|e| {
-                DatabaseError::Pool(format!("Failed to create database directory: {e}"))
-            })?;
-        }
-        Ok(())
+impl LibSqlDatabase {
+    fn new(db: RawLibSqlDatabase, temp_path: Option<PathBuf>) -> Self {
+        Self { db, temp_path }
     }
 
-    /// Create a new local embedded database.
-    pub async fn new_local(path: &Path) -> Result<Self, DatabaseError> {
-        Self::ensure_parent_dir(path).await?;
-        let db = libsql::Builder::new_local(path)
-            .build()
-            .await
-            .map_err(|e| DatabaseError::Pool(format!("Failed to open libSQL database: {e}")))?;
-        Ok(Self { db: Arc::new(db) })
+    #[cfg(test)]
+    pub fn temp_path(&self) -> Option<PathBuf> {
+        self.temp_path.clone()
     }
 
-    /// Create a new in-memory database (for testing).
-    pub async fn new_memory() -> Result<Self, DatabaseError> {
-        let db = libsql::Builder::new_local(":memory:")
-            .build()
-            .await
-            .map_err(|e| {
-                DatabaseError::Pool(format!("Failed to create in-memory database: {}", e))
-            })?;
-
-        Ok(Self { db: Arc::new(db) })
-    }
-
-    /// Create with Turso cloud sync (embedded replica).
-    pub async fn new_remote_replica(
-        path: &Path,
-        url: &str,
-        auth_token: &str,
-    ) -> Result<Self, DatabaseError> {
-        Self::ensure_parent_dir(path).await?;
-        let db = libsql::Builder::new_remote_replica(path, url.to_string(), auth_token.to_string())
-            .build()
-            .await
-            .map_err(|e| DatabaseError::Pool(format!("Failed to open remote replica: {e}")))?;
-        Ok(Self { db: Arc::new(db) })
-    }
-
-    /// Get a shared reference to the underlying database handle.
+    /// Create a fresh libSQL connection from the shared database handle.
     ///
-    /// Use this to pass the database to stores (SecretsStore, WasmToolStore)
-    /// that need to create their own connections per-operation.
-    pub fn shared_db(&self) -> Arc<LibSqlDatabase> {
-        Arc::clone(&self.db)
-    }
-
-    /// Create a new connection to the database.
-    ///
-    /// Sets `PRAGMA busy_timeout = 5000` on every connection so concurrent
-    /// writers wait up to 5 seconds instead of failing instantly with
-    /// "database is locked".
-    ///
-    /// Retries up to 3 times with exponential backoff to handle transient
-    /// "unable to open database file" errors from concurrent connection
-    /// creation (e.g. cron ticker vs main thread).
+    /// Applies the same retry and `busy_timeout` setup used by
+    /// [`LibSqlBackend::connect`] so all shared-handle consumers behave
+    /// consistently.
     pub async fn connect(&self) -> Result<Connection, DatabaseError> {
         let mut last_err = None;
         for attempt in 0..3u32 {
@@ -132,6 +97,119 @@ impl LibSqlBackend {
             "Failed to create connection after 3 attempts: {}",
             last_err.map(|e| e.to_string()).unwrap_or_default()
         )))
+    }
+}
+
+impl Drop for LibSqlDatabase {
+    fn drop(&mut self) {
+        if let Some(path) = &self.temp_path {
+            let _ = std::fs::remove_file(path);
+            let _ = std::fs::remove_file(path.with_extension("db-wal"));
+            let _ = std::fs::remove_file(path.with_extension("db-shm"));
+        }
+    }
+}
+
+/// libSQL/Turso backend implementation of [`NativeDatabase`].
+///
+/// Owns one shared [`LibSqlDatabase`] handle and exposes constructors for the
+/// local, remote-replica, and temp-file-backed test modes. Callers that need
+/// backend-specific sharing can clone the underlying handle with
+/// [`LibSqlBackend::shared_db`], while normal database operations go through
+/// [`LibSqlBackend::connect`] and the trait implementations on this type.
+pub struct LibSqlBackend {
+    db: Arc<LibSqlDatabase>,
+}
+
+impl LibSqlBackend {
+    fn ensure_parent_dir(path: &Path) -> Result<(), DatabaseError> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                DatabaseError::Pool(format!("Failed to create database directory: {}", e))
+            })?;
+        }
+
+        Ok(())
+    }
+
+    /// Wraps a built `libsql::Database` in `Self` with no temp-file path.
+    fn from_db(db: RawLibSqlDatabase) -> Self {
+        Self {
+            db: Arc::new(LibSqlDatabase::new(db, None)),
+        }
+    }
+
+    /// Create a new local embedded database.
+    pub async fn new_local(path: &Path) -> Result<Self, DatabaseError> {
+        Self::ensure_parent_dir(path)?;
+
+        let db = libsql::Builder::new_local(path)
+            .build()
+            .await
+            .map_err(|e| DatabaseError::Pool(format!("Failed to open libSQL database: {}", e)))?;
+
+        Ok(Self::from_db(db))
+    }
+
+    /// Create a temp-file-backed database for testing.
+    ///
+    /// Creates a UUID-named `.db` file in [`std::env::temp_dir`]. Multiple
+    /// calls to [`Self::connect`] share state through that file, matching the
+    /// behaviour of the production `new_local` path without requiring a
+    /// caller-supplied path.
+    ///
+    /// The file and its `-wal`/`-shm` sidecars are removed automatically when
+    /// the final shared database handle created for this backend is dropped.
+    pub async fn new_memory() -> Result<Self, DatabaseError> {
+        let temp_path =
+            std::env::temp_dir().join(format!("axinite-libsql-memory-{}.db", Uuid::new_v4()));
+        let db = libsql::Builder::new_local(&temp_path)
+            .build()
+            .await
+            .map_err(|e| {
+                DatabaseError::Pool(format!("Failed to create temp-file-backed database: {}", e))
+            })?;
+
+        Ok(Self {
+            db: Arc::new(LibSqlDatabase::new(db, Some(temp_path))),
+        })
+    }
+
+    /// Create with Turso cloud sync (embedded replica).
+    pub async fn new_remote_replica(
+        path: &Path,
+        url: &str,
+        auth_token: &str,
+    ) -> Result<Self, DatabaseError> {
+        Self::ensure_parent_dir(path)?;
+
+        let db = libsql::Builder::new_remote_replica(path, url.to_string(), auth_token.to_string())
+            .build()
+            .await
+            .map_err(|e| DatabaseError::Pool(format!("Failed to open remote replica: {}", e)))?;
+
+        Ok(Self::from_db(db))
+    }
+
+    /// Get a shared reference to the underlying database handle.
+    ///
+    /// Use this to pass the database to stores (SecretsStore, WasmToolStore)
+    /// that need to create their own connections per-operation.
+    pub fn shared_db(&self) -> Arc<LibSqlDatabase> {
+        Arc::clone(&self.db)
+    }
+
+    /// Create a new connection to the database.
+    ///
+    /// Sets `PRAGMA busy_timeout = 5000` on every connection so concurrent
+    /// writers wait up to 5 seconds instead of failing instantly with
+    /// "database is locked".
+    ///
+    /// Retries up to 3 times with exponential backoff to handle transient
+    /// "unable to open database file" errors from concurrent connection
+    /// creation (e.g. cron ticker vs main thread).
+    pub async fn connect(&self) -> Result<Connection, DatabaseError> {
+        self.db.connect().await
     }
 }
 
@@ -173,6 +251,8 @@ impl NativeDatabase for LibSqlBackend {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use chrono::{TimeZone, Utc};
 
     use crate::db::Database;
@@ -225,13 +305,8 @@ mod tests {
         let mut rows = conn.query("PRAGMA journal_mode", ()).await.unwrap();
         let row = rows.next().await.unwrap().unwrap();
         let mode: String = row.get(0).unwrap();
-        // In-memory databases use "memory" journal mode (WAL doesn't apply to :memory:),
-        // but the PRAGMA still executes without error. For file-based databases it returns "wal".
-        assert!(
-            mode == "wal" || mode == "memory",
-            "expected wal or memory, got: {}",
-            mode,
-        );
+        // The temp-file-backed test database should still enable WAL mode.
+        assert!(mode == "wal", "expected wal, got: {}", mode,);
     }
 
     #[tokio::test]
@@ -244,6 +319,48 @@ mod tests {
         let row = rows.next().await.unwrap().unwrap();
         let timeout: i64 = row.get(0).unwrap();
         assert_eq!(timeout, 5000);
+    }
+
+    #[test]
+    fn shared_libsql_database_drop_removes_temp_files() {
+        let runtime = tokio::runtime::Runtime::new().expect("create runtime for libsql test");
+        let backend = runtime
+            .block_on(LibSqlBackend::new_memory())
+            .expect("failed to create temp-file-backed backend");
+        let shared_db = backend.shared_db();
+
+        let path = shared_db
+            .temp_path()
+            .expect("new_memory must set temp_path");
+        let wal = path.with_extension("db-wal");
+        let shm = path.with_extension("db-shm");
+
+        // Touch the database and sidecar files so the drop handler has
+        // something concrete to delete.
+        std::fs::write(&path, b"").expect("failed to create temp db file");
+        std::fs::write(&wal, b"").expect("failed to create sidecar file");
+        std::fs::write(&shm, b"").expect("failed to create sidecar file");
+
+        assert!(path.exists(), "temp db file must exist before drop");
+        assert!(wal.exists(), "WAL sidecar must exist before drop");
+        assert!(shm.exists(), "SHM sidecar must exist before drop");
+
+        drop(backend);
+        assert!(
+            path.exists(),
+            "shared handle should keep temp db file alive after backend drop"
+        );
+
+        let shared_db = match Arc::try_unwrap(shared_db) {
+            Ok(shared_db) => shared_db,
+            Err(_) => panic!("test should hold the final shared libsql database handle"),
+        };
+
+        drop(shared_db);
+
+        assert!(!path.exists(), "temp db file must be removed after drop");
+        assert!(!wal.exists(), "WAL sidecar must be removed after drop");
+        assert!(!shm.exists(), "SHM sidecar must be removed after drop");
     }
 
     /// Regression test: save_job must persist user_id and get_job must return it.

@@ -282,6 +282,38 @@ async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_firs
 }
 
 #[tokio::test]
+async fn maybe_restart_listener_skips_restart_for_ephemeral_bind_on_same_host()
+-> Result<(), Box<dyn std::error::Error>> {
+    let current_addr: SocketAddr = "127.0.0.1:43123".parse().expect("valid socket address");
+    let controller = Arc::new(StubListenerController::new(current_addr));
+    let controller_clone = Arc::clone(&controller);
+
+    let http_cfg = http_config("127.0.0.1", 0, None);
+
+    let (_temp_dir, config) = test_config_with_http(None).await?;
+    let loader = Arc::new(StubConfigLoader::new_success(config));
+
+    let manager = HotReloadManager::new(
+        loader as Arc<dyn ConfigLoader>,
+        Some(controller as Arc<dyn ListenerController>),
+        None,
+        Vec::new(),
+    );
+
+    manager
+        .maybe_restart_listener(&http_cfg)
+        .await
+        .expect("ephemeral binds on the same host should not force a restart");
+
+    assert_eq!(
+        controller_clone.restart_calls().await.len(),
+        0,
+        "listener should not restart when config still requests the same host on port 0"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn maybe_restart_listener_retries_multiple_candidates_until_success()
 -> Result<(), Box<dyn std::error::Error>> {
     let current_addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid socket address");

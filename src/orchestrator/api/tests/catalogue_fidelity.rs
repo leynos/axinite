@@ -76,7 +76,9 @@ async fn remote_tool_catalog_version_is_deterministic_and_sensitive_to_content()
 
     let registry_c = Arc::new(ToolRegistry::new());
     registry_c
-        .register(build_tool_fixture(ToolFixture::CatalogBeta))
+        .register(build_tool_fixture(
+            ToolFixture::CatalogAlphaWithDifferentPayload,
+        ))
         .await;
 
     let (_tools_a, _instructions_a, version_a) = hosted_remote_tool_catalog(&registry_a).await;
@@ -89,7 +91,7 @@ async fn remote_tool_catalog_version_is_deterministic_and_sensitive_to_content()
     );
     assert_ne!(
         version_a, version_c,
-        "different tool sets must produce different catalog versions"
+        "different catalogue payloads must produce different catalog versions"
     );
 }
 
