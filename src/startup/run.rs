@@ -6,14 +6,17 @@ use std::time::Duration;
 use ironclaw::{
     agent::{Agent, AgentDeps},
     app::AppComponents,
-    channels::{WebhookServer, web::types::SseEvent},
+    channels::web::types::SseEvent,
     config::Config,
     context::ContextManager,
     orchestrator::{ReaperConfig, SandboxReaper},
 };
 
 #[cfg(unix)]
-use ironclaw::{channels::HttpChannelState, secrets::SecretsStore};
+use ironclaw::{
+    channels::{HttpChannelState, WebhookServer},
+    secrets::SecretsStore,
+};
 
 use crate::startup::wasm::WasmWiringContext;
 use crate::startup::{CoreAgentContext, GatewayPhaseContext, wasm::wire_wasm_channel_runtime};
