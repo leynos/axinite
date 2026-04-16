@@ -530,7 +530,8 @@ before the guest-export recovery logic can run.
 The `e2e_traces` integration test target includes first-call WASM schema
 regression tests introduced in roadmap item `1.2.4`. These tests live in
 `tests/e2e_traces/wasm_schema_exposure.rs` and require the `test-helpers`
-feature because they import `ironclaw::testing::github_wasm_wrapper`.
+feature because they import the GitHub test helper
+`ironclaw::testing::github_wasm_wrapper`.
 
 `Cargo.toml` declares `required-features = ["test-helpers"]` for the
 `e2e_traces` target, so Cargo skips it gracefully when the feature is
@@ -562,7 +563,6 @@ struct CapturingToolLlm {
     requests: tokio::sync::Mutex<Vec<ToolCompletionRequest>>,
 }
 
-#[async_trait]
 impl NativeLlmProvider for CapturingToolLlm {
     async fn complete_with_tools(
         &self,
