@@ -24,6 +24,18 @@ use crate::startup::{CoreAgentContext, GatewayPhaseContext, wasm::wire_wasm_chan
 #[cfg(unix)]
 use crate::startup::channels::spawn_sighup_handler;
 
+/// Starts runtime side effects and enters the agent run loop.
+///
+/// Propagates any `side_effects.start()` error before the loop begins,
+/// then maps the agent's own error type into `anyhow::Error` on exit.
+async fn run_with_side_effects(
+    side_effects: ironclaw::app::RuntimeSideEffects,
+    agent: Agent,
+) -> anyhow::Result<()> {
+    side_effects.start()?;
+    agent.run().await.map_err(anyhow::Error::from)
+}
+
 /// Runs the agent loop and performs the coordinated shutdown sequence on exit.
 ///
 /// Wires WASM channel runtime, snapshots workspace memory if a recording handle
@@ -92,11 +104,7 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
         &http_channel_state,
     );
 
-    let run_result: anyhow::Result<()> = async {
-        side_effects.start()?;
-        agent.run().await.map_err(anyhow::Error::from)
-    }
-    .await;
+    let run_result = run_with_side_effects(side_effects, agent).await;
 
     run_shutdown_sequence(
         &shutdown_tx,
