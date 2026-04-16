@@ -25,7 +25,7 @@ pub(crate) async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<bool> {
         .map(|handled| handled.unwrap_or(false))
 }
 
-async fn dispatch_async_command(command: &Command) -> Option<anyhow::Result<bool>> {
+async fn dispatch_ironclaw_cli_command(command: &Command) -> Option<anyhow::Result<bool>> {
     match command {
         Command::Config(c) => Some(
             run_traced_async(|| async { ironclaw::cli::run_config_command(c.clone()).await }).await,
@@ -40,6 +40,12 @@ async fn dispatch_async_command(command: &Command) -> Option<anyhow::Result<bool
         Command::Doctor => {
             Some(run_traced_async(|| async { ironclaw::cli::run_doctor_command().await }).await)
         }
+        _ => None,
+    }
+}
+
+async fn dispatch_local_async_command(command: &Command) -> Option<anyhow::Result<bool>> {
+    match command {
         Command::Tool(c) => {
             Some(run_traced_async(|| async { run_tool_command(c.clone()).await }).await)
         }
@@ -51,14 +57,15 @@ async fn dispatch_async_command(command: &Command) -> Option<anyhow::Result<bool
         Command::Import(c) => {
             Some(run_traced_async(|| async { run_import_subcommand(c).await }).await)
         }
-        Command::Run
-        | Command::Onboard { .. }
-        | Command::Pairing(_)
-        | Command::Service(_)
-        | Command::Completion(_)
-        | Command::Worker { .. }
-        | Command::ClaudeBridge { .. } => None,
+        _ => None,
     }
+}
+
+async fn dispatch_async_command(command: &Command) -> Option<anyhow::Result<bool>> {
+    if let Some(result) = dispatch_ironclaw_cli_command(command).await {
+        return Some(result);
+    }
+    dispatch_local_async_command(command).await
 }
 
 fn dispatch_sync_command(command: &Command) -> Option<anyhow::Result<bool>> {
