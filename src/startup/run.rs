@@ -82,6 +82,7 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
         &components,
         &config,
         &container_job_manager,
+        #[cfg(unix)]
         &webhook_server,
         #[cfg(unix)]
         &http_channel_state,
@@ -179,12 +180,11 @@ async fn prepare_agent(
     agent
 }
 
-#[cfg_attr(not(unix), allow(unused_variables))]
 fn setup_runtime_management(
     components: &AppComponents,
     config: &Config,
     container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
-    webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
+    #[cfg(unix)] webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     #[cfg(unix)] http_channel_state: &Option<Arc<HttpChannelState>>,
 ) -> tokio::sync::broadcast::Sender<()> {
     let reaper_context_manager = Arc::clone(&components.context_manager);
@@ -193,22 +193,30 @@ fn setup_runtime_management(
     let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
     #[cfg(unix)]
-    {
-        let sighup_settings_store: Option<Arc<dyn ironclaw::db::SettingsStore>> = components
-            .db
-            .as_ref()
-            .map(|db| Arc::clone(db) as Arc<dyn ironclaw::db::SettingsStore>);
-
-        setup_sighup_reload(
-            sighup_settings_store,
-            webhook_server,
-            components.secrets_store.clone(),
-            http_channel_state,
-            &shutdown_tx,
-        );
-    }
+    setup_runtime_management_unix(components, webhook_server, http_channel_state, &shutdown_tx);
 
     shutdown_tx
+}
+
+#[cfg(unix)]
+fn setup_runtime_management_unix(
+    components: &AppComponents,
+    webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
+    http_channel_state: &Option<Arc<HttpChannelState>>,
+    shutdown_tx: &tokio::sync::broadcast::Sender<()>,
+) {
+    let sighup_settings_store: Option<Arc<dyn ironclaw::db::SettingsStore>> = components
+        .db
+        .as_ref()
+        .map(|db| Arc::clone(db) as Arc<dyn ironclaw::db::SettingsStore>);
+
+    setup_sighup_reload(
+        sighup_settings_store,
+        webhook_server,
+        components.secrets_store.clone(),
+        http_channel_state,
+        shutdown_tx,
+    );
 }
 
 fn build_agent_deps(
