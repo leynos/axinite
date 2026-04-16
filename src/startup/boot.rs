@@ -152,6 +152,9 @@ fn should_redact_query_key(key: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
+
+    use gag::BufferRedirect;
     use insta::assert_snapshot;
     use ironclaw::{
         config::Config,
@@ -159,7 +162,7 @@ mod tests {
         tunnel::{NativeTunnel, Tunnel},
     };
 
-    use super::{BootScreenContext, build_boot_info, sanitize_display_url};
+    use super::{BootScreenContext, print_startup_info, sanitize_display_url};
 
     struct TestTunnel {
         public_url: Option<String>,
@@ -244,10 +247,56 @@ mod tests {
             active_tunnel: &active_tunnel,
         };
 
-        let boot_info =
-            build_boot_info(&config, &cli, &data).expect("boot info should be generated");
-        let output = ironclaw::boot_screen::render_boot_screen(&boot_info);
+        let capture = BufferRedirect::stdout().expect("stdout capture should be available");
+        print_startup_info(&config, &cli, &data);
+        let mut output = String::new();
+        capture
+            .into_inner()
+            .read_to_string(&mut output)
+            .expect("captured stdout should be readable");
         assert_snapshot!("startup_info_boot_screen", output);
+    }
+
+    #[tokio::test]
+    async fn print_startup_info_skips_when_message_flag_present() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let mut config = Config::for_testing(
+            tempdir.path().join("test.db"),
+            tempdir.path().join("skills"),
+            tempdir.path().join("installed-skills"),
+        )
+        .await
+        .expect("test config should be built");
+        config.channels.cli.enabled = true;
+
+        let cli = ironclaw::cli::Cli {
+            command: None,
+            cli_only: false,
+            no_db: false,
+            message: Some("hello".to_string()),
+            config: None,
+            no_onboard: false,
+        };
+
+        let active_tunnel: Option<Box<dyn Tunnel>> = None;
+        let data = BootScreenContext {
+            llm_model: "gpt-4.1".to_string(),
+            cheap_model: None,
+            tool_count: 1,
+            gateway_url: Some("http://127.0.0.1:4040/".to_string()),
+            docker_status: DockerStatus::NotRunning,
+            channel_names: vec!["repl".to_string()],
+            active_tunnel: &active_tunnel,
+        };
+
+        let capture = BufferRedirect::stdout().expect("stdout capture should be available");
+        print_startup_info(&config, &cli, &data);
+        let mut output = String::new();
+        capture
+            .into_inner()
+            .read_to_string(&mut output)
+            .expect("captured stdout should be readable");
+        assert!(output.is_empty());
     }
 
     #[test]

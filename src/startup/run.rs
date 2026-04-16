@@ -12,17 +12,8 @@ use ironclaw::{
     orchestrator::{ReaperConfig, SandboxReaper},
 };
 
-#[cfg(unix)]
-use ironclaw::{
-    channels::{HttpChannelState, WebhookServer},
-    secrets::SecretsStore,
-};
-
 use crate::startup::wasm::WasmWiringContext;
 use crate::startup::{CoreAgentContext, GatewayPhaseContext, wasm::wire_wasm_channel_runtime};
-
-#[cfg(unix)]
-use crate::startup::channels::spawn_sighup_handler;
 
 /// Starts runtime side effects and enters the agent run loop.
 ///
@@ -239,8 +230,10 @@ fn setup_runtime_management(
     components: &AppComponents,
     config: &Config,
     container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
-    #[cfg(unix)] webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
-    #[cfg(unix)] http_channel_state: &Option<Arc<HttpChannelState>>,
+    #[cfg(unix)] webhook_server: &Option<
+        Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>,
+    >,
+    #[cfg(unix)] http_channel_state: &Option<Arc<ironclaw::channels::HttpChannelState>>,
 ) -> tokio::sync::broadcast::Sender<()> {
     let reaper_context_manager = Arc::clone(&components.context_manager);
     maybe_spawn_sandbox_reaper(container_job_manager, reaper_context_manager, config);
@@ -248,35 +241,14 @@ fn setup_runtime_management(
     let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
     #[cfg(unix)]
-    setup_runtime_management_unix(components, webhook_server, http_channel_state, &shutdown_tx);
+    crate::startup::unix_runtime::setup_runtime_management_unix(
+        components,
+        webhook_server,
+        http_channel_state,
+        &shutdown_tx,
+    );
 
     shutdown_tx
-}
-
-#[cfg(unix)]
-/// Configures Unix-only runtime-management hooks such as SIGHUP-triggered
-/// hot reload.
-///
-/// The shutdown sender must outlive the spawned signal handler so reload
-/// listeners can exit cleanly during teardown.
-fn setup_runtime_management_unix(
-    components: &AppComponents,
-    webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
-    http_channel_state: &Option<Arc<HttpChannelState>>,
-    shutdown_tx: &tokio::sync::broadcast::Sender<()>,
-) {
-    let sighup_settings_store: Option<Arc<dyn ironclaw::db::SettingsStore>> = components
-        .db
-        .as_ref()
-        .map(|db| Arc::clone(db) as Arc<dyn ironclaw::db::SettingsStore>);
-
-    setup_sighup_reload(
-        sighup_settings_store,
-        webhook_server,
-        components.secrets_store.clone(),
-        http_channel_state,
-        shutdown_tx,
-    );
 }
 
 /// Derives the `AgentDeps` bundle from the built application components and
@@ -376,33 +348,6 @@ fn maybe_spawn_sandbox_reaper(
             }
         });
     }
-}
-
-#[cfg(unix)]
-/// Creates the Unix SIGHUP hot-reload handler and registers any channel secret
-/// updaters that need refresh support.
-///
-/// The spawned handler listens until the shared shutdown broadcast fires.
-fn setup_sighup_reload(
-    sighup_settings_store: Option<Arc<dyn ironclaw::db::SettingsStore>>,
-    webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
-    secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
-    http_channel_state: &Option<Arc<HttpChannelState>>,
-    shutdown_tx: &tokio::sync::broadcast::Sender<()>,
-) {
-    use ironclaw::channels::ChannelSecretUpdater;
-
-    let mut secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>> = Vec::new();
-    if let Some(state) = http_channel_state {
-        secret_updaters.push(Arc::clone(state) as Arc<dyn ChannelSecretUpdater>);
-    }
-    let reload_manager = Arc::new(ironclaw::reload::create_hot_reload_manager(
-        sighup_settings_store.clone(),
-        webhook_server.clone(),
-        secrets_store,
-        secret_updaters,
-    ));
-    spawn_sighup_handler(reload_manager, shutdown_tx);
 }
 
 /// Performs the ordered shutdown sequence for background runtime pieces after

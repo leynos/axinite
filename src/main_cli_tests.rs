@@ -92,6 +92,10 @@ fn onboard_command() -> Command {
     }
 }
 
+fn status_command() -> Command {
+    Command::Status
+}
+
 /// Asserts that `dispatch_subcommand` returns `true` for the given command.
 async fn assert_subcommand_short_circuits(command: Command) {
     let cli = cli_with(Some(command));
@@ -127,6 +131,16 @@ async fn tool_commands_returns_none_for_agent_passthrough_variants(#[case] comma
 #[tokio::test]
 async fn tool_commands_returns_some_for_pairing_list() {
     let cli = cli_with(Some(pairing_list_command()));
+    let result = dispatch_cli_tool_commands(&cli)
+        .await
+        .expect("dispatch should succeed");
+
+    assert_eq!(result, Some(true));
+}
+
+#[tokio::test]
+async fn tool_commands_returns_some_for_status_async() {
+    let cli = cli_with(Some(status_command()));
     let result = dispatch_cli_tool_commands(&cli)
         .await
         .expect("dispatch should succeed");

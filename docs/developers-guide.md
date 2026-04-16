@@ -220,9 +220,9 @@ background I/O.
 `build_components()` separates construction from activation:
 
 ```rust
-// Production usage (src/startup/run.rs):
+// Production usage (src/startup/phases.rs::phase_build_components):
 let (components, side_effects) = AppBuilder::new(…).build_components().await?;
-side_effects.start();   // activates background tasks
+side_effects.start();   // activates background tasks after construction
 
 // Test usage (tests/support/test_rig/builder.rs):
 let (components, _side_effects) = builder.build_components().await?;
@@ -231,7 +231,8 @@ let (components, _side_effects) = builder.build_components().await?;
 
 The `build_all()` function provides a backward-compatible single-call
 form; it invokes `build_components()` and then
-`side_effects.start()`.
+`side_effects.start()`. The build logic itself lives in
+`phase_build_components`; the assembled runtime is consumed later.
 
 - `init_skills()` runs during `build_components()` construction;
   `RuntimeSideEffects::start()` does not load skills.
