@@ -202,20 +202,17 @@ fn test_render_boot_screen_snapshot(#[case] snapshot_name: &str, #[case] info: B
     assert_boot_snapshot(snapshot_name, &output);
 }
 
-#[test]
-fn test_render_boot_screen_docker_not_installed() {
+#[rstest]
+#[case(DockerStatus::NotInstalled, "render_boot_screen_docker_not_installed")]
+#[case(DockerStatus::NotRunning, "render_boot_screen_docker_not_running")]
+fn test_render_boot_screen_docker_status_variants(
+    #[case] docker_status: DockerStatus,
+    #[case] snapshot_name: &str,
+) {
     let mut info = full_boot_info();
-    info.docker_status = DockerStatus::NotInstalled;
+    info.docker_status = docker_status;
     let output = render_boot_screen(&info);
-    assert_boot_snapshot("render_boot_screen_docker_not_installed", &output);
-}
-
-#[test]
-fn test_render_boot_screen_docker_not_running() {
-    let mut info = full_boot_info();
-    info.docker_status = DockerStatus::NotRunning;
-    let output = render_boot_screen(&info);
-    assert_boot_snapshot("render_boot_screen_docker_not_running", &output);
+    assert_boot_snapshot(snapshot_name, &output);
 }
 
 #[rstest]
