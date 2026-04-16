@@ -204,7 +204,7 @@ impl LibSqlBackend {
     }
 }
 
-fn embedding_to_vector_json(embedding: &[f32]) -> String {
+pub(super) fn embedding_to_vector_json(embedding: &[f32]) -> String {
     format!(
         "[{}]",
         embedding

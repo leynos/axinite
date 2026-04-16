@@ -123,6 +123,31 @@ fn test_deserialize_embedding_negative_values() {
     assert_embedding_approx_eq(&result, &[-1.5, 0.0, 2.75]);
 }
 
+#[test]
+fn test_embedding_to_vector_json_formats_floats_as_json_array() {
+    use super::vector_search::embedding_to_vector_json;
+
+    let result = embedding_to_vector_json(&[1.0, -2.5, 0.0]);
+
+    assert!(
+        result.starts_with('['),
+        "JSON array must start with '[', got: {result}"
+    );
+    assert!(
+        result.ends_with(']'),
+        "JSON array must end with ']', got: {result}"
+    );
+    // The negative float must be preserved faithfully.
+    assert!(
+        result.contains("-2.5") || result.contains("-2."),
+        "must serialise the negative float, got: {result}"
+    );
+
+    // An empty slice must produce "[]".
+    let empty = embedding_to_vector_json(&[]);
+    assert_eq!(empty, "[]", "empty embedding must serialise as '[]'");
+}
+
 #[tokio::test]
 async fn get_chunks_without_embeddings_skips_invalid_chunk_id_uuid() {
     let backend = setup_backend().await;
