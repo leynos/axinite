@@ -73,33 +73,6 @@ pub(crate) enum AgenticLoopResult {
     },
 }
 
-/// Outcome of preflight check for a single tool call.
-pub(super) enum PreflightOutcome {
-    Rejected(String),
-    Runnable,
-}
-
-/// Result of grouping tool calls into batches.
-pub(super) struct ToolBatch {
-    pub(super) preflight: Vec<(crate::llm::ToolCall, PreflightOutcome)>,
-    pub(super) runnable: Vec<usize>,
-}
-
-/// Describes the tool call that requires user authorisation, together with
-/// any subsequent calls that must be deferred until approval is granted.
-pub(super) struct ApprovalTarget<'a> {
-    pub(super) tc: &'a crate::llm::ToolCall,
-    pub(super) tool: &'a dyn crate::tools::Tool,
-    /// Tool calls that follow the approval-gated call in the original batch.
-    pub(super) deferred_calls: &'a [crate::llm::ToolCall],
-}
-
-/// The sanitised result of a single tool execution, bundled for context folding.
-pub(super) struct ToolExecutionOutcome {
-    pub(super) content: String,
-    pub(super) is_error: bool,
-}
-
 /// Parsed auth result fields for emitting StatusUpdate::AuthRequired.
 pub(crate) struct ParsedAuthData {
     pub(crate) auth_url: Option<String>,

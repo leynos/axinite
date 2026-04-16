@@ -1,6 +1,5 @@
-//! Delegate layer split into phases: preflight (hooks/approval), execution
-//! (inline/parallel), recording (context/thread), status (SSE/image
-//! sentinels), and loop control (nudge/force-text).
+//! Delegate layer split into loop control, approval helpers, and the active
+//! tool-execution pipeline.
 
 use std::sync::Arc;
 
@@ -41,10 +40,55 @@ pub(super) struct ChatDelegate<'a> {
 
 mod loops;
 
+#[cfg(test)]
 pub(in crate::agent::dispatcher) mod preflight;
 
-mod execution;
+mod tool_exec;
 
-mod status;
+#[cfg(test)]
+impl<'a> ChatDelegate<'a> {
+    pub(in crate::agent::dispatcher) async fn maybe_emit_image_sentinel(
+        &self,
+        tool_name: &str,
+        output: &str,
+    ) -> bool {
+        if !matches!(tool_name, "image_generate" | "image_edit") {
+            return false;
+        }
 
-mod recording;
+        let Ok(sentinel) = serde_json::from_str::<serde_json::Value>(output) else {
+            return false;
+        };
+        if sentinel.get("type").and_then(|value| value.as_str()) != Some("image_generated") {
+            return false;
+        }
+
+        let raw_data_url = sentinel.get("data").and_then(|value| value.as_str());
+        let data_url = raw_data_url
+            .filter(|value| value.starts_with("data:image/"))
+            .map(ToString::to_string);
+        let path = sentinel
+            .get("path")
+            .and_then(|value| value.as_str())
+            .map(ToString::to_string);
+
+        if let Some(data_url) = data_url {
+            let _ = self
+                .agent
+                .channels
+                .send_status(
+                    &self.message.channel,
+                    crate::channels::StatusUpdate::ImageGenerated { data_url, path },
+                    &self.message.metadata,
+                )
+                .await;
+        } else {
+            tracing::warn!(
+                has_data = raw_data_url.is_some(),
+                "Image generation sentinel has invalid or empty data URL, skipping broadcast"
+            );
+        }
+
+        true
+    }
+}

@@ -12,12 +12,6 @@ use super::execution::is_auth_barrier_tool;
 use super::recording::record_tool_outcome;
 
 /// Parsed auth result fields for emitting StatusUpdate::AuthRequired.
-pub(crate) struct ParsedAuthData {
-    pub(crate) auth_url: Option<String>,
-    pub(crate) setup_url: Option<String>,
-}
-
-/// Parsed auth result fields for emitting StatusUpdate::AuthRequired.
 pub(crate) struct AuthBarrierData {
     pub(crate) extension_name: String,
     pub(crate) instructions: String,
@@ -63,14 +57,6 @@ pub(crate) fn parse_auth_barrier(
         auth_url,
         setup_url,
     })
-}
-
-pub(crate) fn parse_auth_result(tool_name: &str, result: &Result<String, Error>) -> ParsedAuthData {
-    let auth_barrier = parse_auth_barrier(tool_name, result);
-    ParsedAuthData {
-        auth_url: auth_barrier.as_ref().and_then(|data| data.auth_url.clone()),
-        setup_url: auth_barrier.and_then(|data| data.setup_url),
-    }
 }
 
 pub(crate) fn check_auth_required(
@@ -269,7 +255,7 @@ pub(super) async fn process_runnable_tool(
 }
 
 /// Emit image sentinel status update if applicable.
-async fn maybe_emit_image_sentinel(
+pub(in crate::agent::dispatcher::delegate) async fn maybe_emit_image_sentinel(
     delegate: &ChatDelegate<'_>,
     tool_name: &str,
     output: &str,
