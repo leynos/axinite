@@ -350,6 +350,37 @@ If a constructor or store used to accept a backend directly and now accepts
 underlying file while creating its own connections via
 `LibSqlDatabase::connect()`.
 
+### Type-change propagation through store constructors
+
+The `Arc<libsql::Database>` → `Arc<LibSqlDatabase>` change propagates to
+every store that previously held a raw `Arc<libsql::Database>`. Each
+affected constructor now accepts `Arc<LibSqlDatabase>`:
+
+| Store | Field | Constructor parameter |
+| --- | --- | --- |
+| `LibSqlSecretsStore` | `db: Arc<LibSqlDatabase>` | `new(db: Arc<LibSqlDatabase>, …)` |
+| `LibSqlWasmChannelStore` | `db: Arc<LibSqlDatabase>` | `new(db: Arc<LibSqlDatabase>)` |
+| `LibSqlWasmToolStore` | `db: Arc<LibSqlDatabase>` | `new(db: Arc<LibSqlDatabase>)` |
+
+The shared handle is obtained at startup via `LibSqlBackend::shared_db()`,
+which now returns `Arc<LibSqlDatabase>` instead of
+`Arc<libsql::Database>`:
+
+```rust
+// Obtaining the shared handle (unchanged call site):
+let db: Arc<LibSqlDatabase> = backend.shared_db();
+
+// Constructing a store with the shared handle:
+let secrets_store = LibSqlSecretsStore::new(Arc::clone(&db), crypto);
+let channel_store = LibSqlWasmChannelStore::new(Arc::clone(&db));
+let tool_store    = LibSqlWasmToolStore::new(Arc::clone(&db));
+```
+
+The `busy_timeout` PRAGMA that each store previously ran after connecting
+is now applied once inside `LibSqlDatabase::connect()`, so it is no longer
+necessary — and must not be duplicated — in individual store
+`connect()` methods.
+
 ## Dispatcher Architecture
 
 The dispatcher orchestrates interactive chat turns by preparing an LLM
