@@ -15,8 +15,8 @@ cannot reliably ship bundled reference material, templates, or images.
 
 This RFC proposes a first-class multi-file skill bundle format:
 
-1. Introduce `.skill` files, which are ZIP archives with `SKILL.md` at the
-   archive root.
+1. Introduce `.skill` files, which are ZIP archives containing one root
+   directory named for the bundled skill.
 2. Allow optional `references/` and `assets/` directories inside the bundle.
 3. Support installation from either an uploaded `.skill` file or an HTTPS URL.
 4. Expose a dedicated read-only interface so the model can read bundled files
@@ -104,27 +104,36 @@ The new distributable format is a `.skill` file, implemented as a ZIP archive.
 
 Every bundle must contain:
 
-```text
-SKILL.md
+```plaintext
+<skill-name>/SKILL.md
 ```
+
+Every archive entry must begin with the same top-level path component. That
+shared prefix is the bundle's candidate `skill-name`, and it becomes the
+canonical on-disk skill name after the normalization and collision-resolution
+rules in
+[Canonical skill names and conflict handling](#4-canonical-skill-names-and-conflict-handling)
+are applied. This is a path-prefix invariant rather than a requirement for an
+explicit directory record, so ZIP archives that omit root directory entries are
+still valid as long as all file paths share the same top-level prefix.
 
 ### Optional structure
 
 The bundle may also contain:
 
-```text
-references/<files...>
-assets/<files...>
+```plaintext
+<skill-name>/references/<files...>
+<skill-name>/assets/<files...>
 ```
 
 Examples:
 
-```text
-SKILL.md
-references/usage.md
-references/troubleshooting/api-errors.md
-assets/logo.png
-assets/prompt-template.txt
+```plaintext
+tech-design-doc/SKILL.md
+tech-design-doc/references/usage.md
+tech-design-doc/references/troubleshooting/api-errors.md
+tech-design-doc/assets/logo.png
+tech-design-doc/assets/prompt-template.txt
 ```
 
 ### Disallowed content in phase 1
@@ -134,7 +143,8 @@ The installer must reject bundles containing any of the following:
 1. `scripts/` or `bin/` directories.
 2. Symlinks, hard links, or archive entries with special file types.
 3. Absolute paths or traversal paths such as `../foo`.
-4. Files outside the allowed top-level locations.
+4. Files outside the single root skill directory or outside the allowed nested
+   locations within it.
 5. Executable files, including common script extensions such as `.sh`, `.py`,
    `.js`, `.ps1`, `.bat`, `.cmd`, `.rb`, and `.pl`.
 6. Duplicate normalized paths, including case-fold collisions on
@@ -200,14 +210,16 @@ Name derivation must be deterministic per input mode:
    the top-level `title`.
 2. URL installs derive the name from `SKILL.md` metadata when present, and
    otherwise fall back to a sanitized filename stem from the fetched resource.
-3. Uploaded archives derive the name from the archive root folder when one is
-   present, and otherwise fall back to `SKILL.md` metadata using the same
-   `id` then `title` precedence.
+3. Uploaded `.skill` archives derive the candidate `skill-name` only from the
+   shared top-level path prefix in the archive. If the archive does not resolve
+   to exactly one top-level prefix with `SKILL.md` at `<root>/SKILL.md`, the
+   installer must reject it rather than falling back to archive metadata,
+   `SKILL.md` metadata, or the uploaded filename.
 
 After derivation, the installer must normalize the name:
 
 1. lowercase ASCII
-2. only `[a-z0-9_-]`
+2. only `[a-z0-9._-]`
 3. consecutive separators collapsed
 4. no leading or trailing separators
 5. maximum length 64 bytes after normalization
@@ -234,12 +246,45 @@ must be the exact `skill` value exposed through `skill_read_file`.
 
 Before extraction, the installer should validate:
 
-1. the archive contains exactly one root `SKILL.md`
-2. every other entry is under `references/` or `assets/`
-3. no entry exceeds a per-file size cap
-4. the whole archive stays under a total size cap
-5. file count stays under a bounded limit
-6. all text files that must be parsed as text are valid UTF-8
+1. every archive entry begins with the same top-level path component, even if
+   the ZIP does not contain an explicit directory record for that prefix
+2. the shared top-level prefix contains exactly one `SKILL.md` located at
+   `<root>/SKILL.md`
+3. no nested subdirectory contains another file named `SKILL.md`, and every
+   other entry under `<root>/` is under `<root>/references/` or
+   `<root>/assets/`
+4. the shared top-level prefix is the sole source of the candidate
+   `skill-name` before any normalization or conflict-resolution rules are
+   applied
+5. no entry exceeds a per-file size cap
+6. the whole archive stays under a total size cap
+7. file count stays under a bounded limit
+8. all text files that must be parsed as text are valid UTF-8
+
+A valid candidate `skill-name` at archive-validation time must:
+
+- be a single path segment from the archive root, not an empty string and not a
+  nested path
+- contain only ASCII letters, ASCII digits, `.`, `_`, and `-` before
+  normalization
+- be no longer than 64 bytes
+
+Compatibility note: current `skill-name` validation in the runtime accepts
+dotted names such as `skill.v2`. Archive validation for `.skill` uploads must
+continue to accept dots in the shared top-level prefix so existing skill names
+that are installed or catalogued do not become invalid implicitly. Phase 1
+does not introduce a migration away from dotted names; any future restriction
+would need an explicit compatibility plan and a separate RFC.
+
+If the archive violates the single top-level path-prefix rule, the installer
+must reject it with a typed validation error rather than trying to guess the
+intended root. The error should clearly state that `.skill` archives must
+resolve to one top-level skill prefix and a root entrypoint at
+`<root>/SKILL.md`, for example:
+
+```plaintext
+invalid_skill_bundle: expected one top-level path prefix with SKILL.md at <root>/SKILL.md
+```
 
 ### Extraction rules
 
