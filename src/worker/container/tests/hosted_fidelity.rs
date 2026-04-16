@@ -35,7 +35,7 @@ pub struct HostedCatalogHarness {
 }
 
 /// Builds the canonical orchestrator-owned WASM tool definition used by
-/// fidelity and first-call assertion tests.
+/// fidelity and first-call schema assertion tests.
 fn complex_orchestrator_wasm_tool_definition() -> ToolDefinition {
     crate::test_support::build_complex_tool_definition(
         "complex_orchestrator_wasm_fidelity_fixture",
@@ -49,8 +49,9 @@ fn complex_orchestrator_wasm_tool_definition() -> ToolDefinition {
     )
 }
 
-/// Axum handler that returns a catalog containing [`complex_orchestrator_wasm_tool_definition`]
-/// for the remote-tool catalog route.
+/// Axum handler that returns a catalogue containing
+/// [`complex_orchestrator_wasm_tool_definition`] for the remote-tool
+/// catalogue route.
 async fn remote_tool_catalog_with_complex_tool(
     State(_): State<HostedCatalogTestState>,
     Path(_job_id): Path<Uuid>,
@@ -62,15 +63,15 @@ async fn remote_tool_catalog_with_complex_tool(
     })
 }
 
-/// Shared state for the hosted-catalog test server, holding the buffer of
-/// captured proxied LLM tool-completion requests.
+/// Shared Axum state holding the buffer of captured proxied LLM
+/// tool-completion requests.
 #[derive(Clone, Default)]
 struct HostedCatalogTestState {
     captured_requests: Arc<Mutex<Vec<ProxyToolCompletionRequest>>>,
 }
 
 /// Axum handler that records each incoming [`ProxyToolCompletionRequest`]
-/// and returns a deterministic stub completion response.
+/// into shared state and returns a deterministic stub completion response.
 async fn capture_llm_complete_with_tools(
     State(state): State<HostedCatalogTestState>,
     Path(_job_id): Path<Uuid>,
@@ -89,7 +90,7 @@ async fn capture_llm_complete_with_tools(
     })
 }
 
-/// Spawns a local Axum server that serves the complex tool catalog and
+/// Spawns a local Axum server that serves the complex tool catalogue and
 /// captures proxied LLM tool-completion requests.
 ///
 /// Returns the base URL, a handle to the captured-requests buffer, and the
@@ -125,8 +126,8 @@ async fn spawn_hosted_catalog_server() -> Result<
     Ok((format!("http://{addr}"), captured_requests, server))
 }
 
-/// rstest fixture that starts a [`spawn_hosted_catalog_server`] instance and
-/// builds a [`HostedCatalogHarness`] wired to it.
+/// rstest fixture that starts a [`spawn_hosted_catalog_server`] instance
+/// and builds a [`HostedCatalogHarness`] wired to it.
 #[fixture]
 async fn hosted_catalog_harness() -> Result<HostedCatalogHarness, Box<dyn std::error::Error>> {
     let (base_url, captured_requests, server) = spawn_hosted_catalog_server().await?;
