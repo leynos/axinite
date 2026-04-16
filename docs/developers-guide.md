@@ -1026,6 +1026,9 @@ artifacts and CI duplication.
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
 
+
+## Phased startup pipeline
+
 ### WebhookServer test helpers
 
 `WebhookServer` exposes two `#[cfg(test)]`-only methods to eliminate
@@ -1094,6 +1097,16 @@ export DATABASE_URL=postgres://localhost/ironclaw
 Adjust the connection string if the local PostgreSQL instance requires a
 different host, user, or password.
 
+
+### AppBuilder integration
+
+`phase_build_components` feeds `AppBuilderFlags` derived from `&Cli` to
+`AppBuilder` and awaits the completed `AppComponents`. Extend
+`AppBuilderFlags` (in the `ironclaw` library crate) when a new component
+must be conditionally included at startup, then consume the component in
+the appropriate phase context struct.
+
+
 ### Parameter-object structs in store helpers
 
 The workspace helpers use small parameter structs such as `AgentScope`,
@@ -1104,6 +1117,14 @@ Use this pattern when a helper repeatedly threads the same related values
 through several internal calls. Keep these structs private or `pub(super)`
 unless a wider API boundary genuinely needs them, and prefer names that
 describe the query or scope they model instead of generic `Options` suffixes.
+
+
+### Overview
+
+`src/main.rs` is a thin coordinator. All startup work is delegated to
+`src/startup/` submodules and to the binary-only CLI-dispatch helper
+`src/main_cli.rs`.
+
 
 #### Parameter objects
 
@@ -1143,3 +1164,77 @@ project's four-argument limit:
 | `hydration.rs` | Lazy thread hydration from the backing store when a known external thread ID is first referenced |
 | `persistence.rs` | Durable write helpers for user messages, assistant responses, and tool-call summaries |
 | `approval.rs` | Resume-from-approval flow after user consent is received |
+
+
+### Submodule responsibilities
+
+| Module | File | Responsibility |
+| -------- | ------ | --------------- |
+| `phases` | `src/startup/phases.rs` | Defines context structs and orchestrates each phase function |
+| `channels` | `src/startup/channels.rs` | Wires REPL/signal/HTTP/WASM channels; configures the gateway channel |
+| `wasm` | `src/startup/wasm.rs` | Bootstraps WASM channel runtime; hot-wires it into the extension manager |
+| `boot` | `src/startup/boot.rs` | Builds and prints the startup boot screen |
+| `run` | `src/startup/run.rs` | Runs the agent loop and performs the coordinated shutdown sequence |
+
+
+### Adding a new startup phase
+
+1. Define a new `pub(crate) struct MyPhaseContext { … }` in
+   `src/startup/phases.rs`.
+2. Implement `pub(crate) async fn phase_my_step(prev: PreviousContext) -> anyhow::Result<MyPhaseContext>`.
+3. Insert the call between the appropriate phases in `async_main()` in
+   `src/main.rs`.
+4. Update this table and the architecture overview in
+   `docs/axinite-architecture-overview.md`.
+
+### Context structs
+
+Each context struct is defined in `src/startup/phases.rs` and carries
+only the values needed by its downstream phase.
+
+| Struct | Produced by | Key fields |
+| -------- | ------------- | ------------ |
+| `LoadedConfigContext` | `phase_load_config_and_tracing` | `config`, `session`, `log_broadcaster` |
+| `BuiltComponentsContext` | `phase_build_components` | `components`, `side_effects` |
+| `AgentRunContext` | `phase_tunnel_and_orchestrator` | `components`, `config`, `active_tunnel`, `container_job_manager`, `prompt_queue` |
+| `GatewayPhaseContext` | `phase_init_channels_and_hooks` | all of the above plus `channels`, `session_manager`, `scheduler_slot`, `gateway_url`, `sse_sender` |
+
+
+### CLI dispatch
+
+`src/main_cli.rs` handles all non-agent subcommands before the startup
+pipeline runs. `dispatch_subcommand` is called first; it returns `true`
+when a subcommand was matched so `async_main` can exit without entering
+the startup pipeline.
+
+```text
+async_main()
+  └─ dispatch_subcommand()       ← main_cli.rs
+       ├─ dispatch_cli_tool_commands()
+       │    ├─ dispatch_sync_command()
+       │    └─ dispatch_async_command()
+       │         ├─ dispatch_ironclaw_cli_command()
+       │         └─ dispatch_local_async_command()
+       └─ dispatch_agent_commands()
+```
+
+
+### Phase sequence
+
+`async_main()` calls the following phase functions in order. Each phase
+consumes the context struct produced by the previous one.
+
+| # | Function | Input | Output |
+| --- | ---------- | ------- | -------- |
+| 1 | `phase_pid_and_onboard` | `&Cli` | `Option<PidLock>` |
+| 2 | `phase_load_config_and_tracing` | `&Cli` | `LoadedConfigContext` |
+| 3 | `phase_build_components` | `&Cli`, `LoadedConfigContext` | `BuiltComponentsContext` |
+| 4 | `phase_tunnel_and_orchestrator` | `BuiltComponentsContext` | `AgentRunContext` |
+| 5 | `phase_init_channels_and_hooks` | `&Cli`, `AgentRunContext` | `GatewayPhaseContext` |
+| 6 | `phase_setup_gateway` | `&mut GatewayPhaseContext` | *(mutates in place)* |
+| 7 | `phase_print_boot_screen` | `&Cli`, `&GatewayPhaseContext` | *(side effect)* |
+| 8 | `phase_run_agent` | `GatewayPhaseContext` | `anyhow::Result<()>` |
+
+Phases 1–4 are infallible or propagate configuration errors early so
+subsequent phases can assume a fully valid environment.
+
