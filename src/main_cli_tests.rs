@@ -1,3 +1,9 @@
+//! Unit tests for CLI dispatch routing in [`super`].
+//! Exercises the dispatcher functions that route CLI commands to either
+//! synchronous tool handlers, asynchronous local handlers, or
+//! agent-specific executors, verifying passthrough and short-circuit
+//! behaviour.
+
 use std::sync::Mutex;
 
 use ironclaw::cli::{Cli, Command, PairingCommand};
@@ -8,6 +14,7 @@ use super::{
     test_support,
 };
 
+/// Constructs a `Cli` instance with the given command and default flags.
 fn cli_with(command: Option<Command>) -> Cli {
     Cli {
         command,
@@ -29,11 +36,13 @@ async fn assert_tool_commands_passthrough(command: Command) {
     assert!(result.is_none());
 }
 
+/// RAII guard installing an agent dispatch hook for the duration of the test.
 struct AgentDispatchHookGuard {
     _guard: std::sync::MutexGuard<'static, ()>,
 }
 
 impl AgentDispatchHookGuard {
+    /// Installs the hook and returns a guard that clears it on drop.
     fn install(hook: test_support::AgentDispatchHook) -> Self {
         let guard = test_support::AGENT_DISPATCH_LOCK
             .lock()
@@ -55,10 +64,12 @@ impl Drop for AgentDispatchHookGuard {
     }
 }
 
+/// Test hook that immediately returns `Ok(Some(true)).`
 fn handled_agent_command(_: &Command) -> anyhow::Result<Option<bool>> {
     Ok(Some(true))
 }
 
+/// Constructs a `Command::Worker` with placeholder values.
 fn worker_command() -> Command {
     Command::Worker {
         job_id: uuid::Uuid::new_v4(),
@@ -67,6 +78,7 @@ fn worker_command() -> Command {
     }
 }
 
+/// Constructs a `Command::ClaudeBridge` with placeholder values.
 fn claude_bridge_command() -> Command {
     Command::ClaudeBridge {
         job_id: uuid::Uuid::new_v4(),
@@ -76,6 +88,7 @@ fn claude_bridge_command() -> Command {
     }
 }
 
+/// Constructs a `Command::Pairing(PairingCommand::List)`.
 fn pairing_list_command() -> Command {
     Command::Pairing(PairingCommand::List {
         channel: "telegram".to_string(),
@@ -83,6 +96,7 @@ fn pairing_list_command() -> Command {
     })
 }
 
+/// Constructs a `Command::Onboard` with default flags.
 fn onboard_command() -> Command {
     Command::Onboard {
         skip_auth: false,
@@ -92,6 +106,7 @@ fn onboard_command() -> Command {
     }
 }
 
+/// Constructs a `Command::Status`.
 fn status_command() -> Command {
     Command::Status
 }

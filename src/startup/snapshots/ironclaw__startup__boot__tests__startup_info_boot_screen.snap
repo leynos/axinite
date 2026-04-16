@@ -1,6 +1,6 @@
 ---
 source: src/startup/boot.rs
-assertion_line: 200
+assertion_line: 289
 expression: output
 ---
 
@@ -15,7 +15,7 @@ expression: output
   [90mchannels[0m  [36mrepl  gateway  signal[0m
 
   [90mgateway[0m   [33;4mhttp://127.0.0.1:4040/?token=%5BREDACTED%5D[0m
-  [90mtunnel[0m    [33;4mhttps://runtime.ngrok.app[0m [90m(ngrok)[0m
+  [90mtunnel[0m    [33;4mhttps://runtime.ngrok.app/[0m [90m(ngrok)[0m
 
   [90m╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶[0m
 

@@ -1164,6 +1164,7 @@ Caption: Responsibilities of startup submodules.
 | `wasm` | `src/startup/wasm.rs` | Bootstraps WASM channel runtime; hot-wires it into the extension manager |
 | `boot` | `src/startup/boot.rs` | Builds and prints the startup boot screen |
 | `run` | `src/startup/run.rs` | Runs the agent loop and performs the coordinated shutdown sequence |
+| `unix_runtime` | `src/startup/unix_runtime.rs` | Owns Unix-only runtime wiring such as SIGHUP hot-reload setup |
 ### Adding a new startup phase
 
 1. Define a new `pub(crate) struct MyPhaseContext { … }` in
@@ -1187,7 +1188,8 @@ Caption: Shared startup context structs.
 | -------- | ------------- | ------------ |
 | `LoadedConfigContext` | `phase_load_config_and_tracing` | `config`, `session`, `log_broadcaster` |
 | `BuiltComponentsContext` | `phase_build_components` | `components`, `side_effects` |
-| `AgentRunContext` | `phase_tunnel_and_orchestrator` | `components`, `config`, `active_tunnel`, `container_job_manager`, `prompt_queue` |
+| `CoreAgentContext` | `phase_tunnel_and_orchestrator` | `components`, `config`, `active_tunnel`, `container_job_manager`, `prompt_queue` |
+| `AgentRunContext` | `phase_tunnel_and_orchestrator` | `core` |
 | `GatewayPhaseContext` | `phase_init_channels_and_hooks` | all of the above plus `channels`, `session_manager`, `scheduler_slot`, `gateway_url`, `sse_sender` |
 
 ### CLI dispatch

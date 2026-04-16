@@ -65,7 +65,9 @@ fn build_boot_info(
             .active_tunnel
             .as_ref()
             .and_then(|t| t.public_url())
-            .or_else(|| config.tunnel.public_url.clone()),
+            .or_else(|| config.tunnel.public_url.clone())
+            .as_deref()
+            .map(sanitize_display_url),
         tunnel_provider: data.active_tunnel.as_ref().map(|t| t.name().to_string()),
     })
 }
@@ -74,6 +76,9 @@ fn sanitize_display_url(url: &str) -> String {
     let Ok(mut parsed) = Url::parse(url) else {
         return sanitize_relative_display_url(url);
     };
+
+    let _ = parsed.set_username("");
+    let _ = parsed.set_password(None);
 
     let had_query = parsed.query().is_some();
     let sanitized_pairs = sanitize_query_pairs(parsed.query_pairs());
@@ -92,18 +97,45 @@ fn sanitize_display_url(url: &str) -> String {
 }
 
 fn sanitize_relative_display_url(url: &str) -> String {
-    let Some((prefix, suffix)) = url.split_once('?') else {
-        return url.to_string();
+    let (prefix, fragment) = match url.split_once('#') {
+        Some((prefix, fragment)) => (prefix, Some(fragment)),
+        None => (url, None),
     };
-    let (query, fragment) = match suffix.split_once('#') {
-        Some((query, fragment)) => (query, Some(fragment)),
-        None => (suffix, None),
+    let (prefix, query) = match prefix.split_once('?') {
+        Some((prefix, query)) => (prefix, Some(query)),
+        None => (prefix, None),
+    };
+    let sanitized_prefix = strip_authority_credentials(prefix);
+    let Some(query) = query else {
+        return match fragment {
+            Some(fragment) => format!("{sanitized_prefix}#{fragment}"),
+            None => sanitized_prefix,
+        };
     };
     let sanitized_query = sanitize_query_string(query);
     match fragment {
-        Some(fragment) => format!("{prefix}?{sanitized_query}#{fragment}"),
-        None => format!("{prefix}?{sanitized_query}"),
+        Some(fragment) => format!("{sanitized_prefix}?{sanitized_query}#{fragment}"),
+        None => format!("{sanitized_prefix}?{sanitized_query}"),
     }
+}
+
+fn strip_authority_credentials(url: &str) -> String {
+    if let Some((scheme, rest)) = url.split_once("://") {
+        return format!("{scheme}://{}", strip_credentials_from_authority(rest));
+    }
+    if let Some(rest) = url.strip_prefix("//") {
+        return format!("//{}", strip_credentials_from_authority(rest));
+    }
+    url.to_string()
+}
+
+fn strip_credentials_from_authority(rest: &str) -> String {
+    let authority_end = rest.find('/').unwrap_or(rest.len());
+    let (authority, suffix) = rest.split_at(authority_end);
+    let redacted_authority = authority
+        .rsplit_once('@')
+        .map_or_else(|| authority.to_string(), |(_, host)| host.to_string());
+    format!("{redacted_authority}{suffix}")
 }
 
 fn sanitize_query_string(query: &str) -> String {
@@ -314,5 +346,13 @@ mod tests {
         let sanitized = sanitize_display_url("/gateway?token=secret&mode=1");
 
         assert_eq!(sanitized, "/gateway?token=%5BREDACTED%5D&mode=1");
+    }
+
+    #[test]
+    fn sanitize_display_url_redacts_authority_credentials() {
+        let sanitized =
+            sanitize_display_url("https://user:secret@example.test/path?token=startup-token");
+
+        assert_eq!(sanitized, "https://example.test/path?token=%5BREDACTED%5D");
     }
 }
