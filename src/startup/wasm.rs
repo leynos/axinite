@@ -155,3 +155,68 @@ pub(crate) async fn wire_wasm_channel_runtime(
         ext_mgr.set_sse_sender(sender.clone()).await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use ironclaw::{
+        app::{AppBuilder, AppBuilderFlags, AppComponents},
+        channels::web::log_layer::LogBroadcaster,
+        config::Config,
+        llm::create_session_manager,
+    };
+
+    use crate::startup::channels::ChannelRegistrar;
+
+    use super::init_wasm_channels;
+
+    async fn build_test_components(config: Config) -> AppComponents {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let session = create_session_manager(config.llm.session.clone()).await;
+        let log_broadcaster = Arc::new(LogBroadcaster::new());
+        let (components, _side_effects) = AppBuilder::new(
+            config,
+            AppBuilderFlags {
+                no_db: true,
+                ..Default::default()
+            },
+            Some(tempdir.path().join("test.toml")),
+            session,
+            log_broadcaster,
+        )
+        .build_components()
+        .await
+        .expect("test components should build");
+        components
+    }
+
+    #[tokio::test]
+    async fn init_wasm_channels_skips_when_disabled() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let mut config = Config::for_testing(
+            tempdir.path().join("test.db"),
+            tempdir.path().join("skills"),
+            tempdir.path().join("installed-skills"),
+        )
+        .await
+        .expect("test config should be built");
+        config.channels.wasm_channels_enabled = false;
+
+        let components = build_test_components(config.clone()).await;
+
+        let mut channel_names: Vec<String> = Vec::new();
+        let mut webhook_routes: Vec<axum::Router> = Vec::new();
+        let channels = ironclaw::channels::ChannelManager::new();
+        let mut reg = ChannelRegistrar {
+            channels: &channels,
+            channel_names: &mut channel_names,
+            webhook_routes: &mut webhook_routes,
+        };
+
+        let result = init_wasm_channels(&config, &components, &mut reg).await;
+
+        assert!(result.loaded_wasm_channel_names.is_empty());
+        assert!(result.runtime_state.is_none());
+    }
+}

@@ -200,3 +200,84 @@ async fn dispatch_worker_subcommand(
     init_worker_tracing();
     ironclaw::worker::run_worker(job_id, orchestrator_url, max_iterations).await
 }
+
+#[cfg(test)]
+mod tests {
+    use ironclaw::cli::{Cli, Command};
+
+    use super::{dispatch_agent_commands, dispatch_cli_tool_commands};
+
+    fn cli_with(command: Option<Command>) -> Cli {
+        Cli {
+            command,
+            cli_only: false,
+            no_db: false,
+            message: None,
+            config: None,
+            no_onboard: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn tool_commands_returns_none_for_no_command() {
+        let cli = cli_with(None);
+        let result = dispatch_cli_tool_commands(&cli).await.expect("dispatch should succeed");
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn tool_commands_returns_none_for_run() {
+        let cli = cli_with(Some(Command::Run));
+        let result = dispatch_cli_tool_commands(&cli).await.expect("dispatch should succeed");
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn tool_commands_returns_none_for_worker() {
+        let cli = cli_with(Some(Command::Worker {
+            job_id: uuid::Uuid::new_v4(),
+            orchestrator_url: "http://localhost".into(),
+            max_iterations: 10,
+        }));
+        let result = dispatch_cli_tool_commands(&cli).await.expect("dispatch should succeed");
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn tool_commands_returns_none_for_claude_bridge() {
+        let cli = cli_with(Some(Command::ClaudeBridge {
+            job_id: uuid::Uuid::new_v4(),
+            orchestrator_url: "http://localhost".into(),
+            max_turns: 5,
+            model: "claude-3".into(),
+        }));
+        let result = dispatch_cli_tool_commands(&cli).await.expect("dispatch should succeed");
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn tool_commands_returns_none_for_onboard() {
+        let cli = cli_with(Some(Command::Onboard {
+            skip_auth: false,
+            channels_only: false,
+            provider_only: false,
+            quick: false,
+        }));
+        let result = dispatch_cli_tool_commands(&cli).await.expect("dispatch should succeed");
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn agent_commands_returns_none_for_run() {
+        let cli = cli_with(Some(Command::Run));
+        let result = dispatch_agent_commands(&cli).await.expect("dispatch should succeed");
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn agent_commands_returns_none_for_no_command() {
+        let cli = cli_with(None);
+        let result = dispatch_agent_commands(&cli).await.expect("dispatch should succeed");
+        assert!(result.is_none());
+    }
+}
