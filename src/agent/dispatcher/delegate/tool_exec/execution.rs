@@ -78,6 +78,7 @@ pub(super) async fn run_tool_batch_parallel(
 
     for (pf_idx, tc) in runnable {
         let pf_idx = *pf_idx;
+        // Clone all data the spawned task needs — it cannot borrow from `delegate`.
         let tools = delegate.agent.tools().clone();
         let safety = delegate.agent.safety().clone();
         let channels = delegate.agent.channels.clone();
