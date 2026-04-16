@@ -13,6 +13,11 @@ pub(crate) struct BootScreenContext<'a> {
     pub(crate) active_tunnel: &'a Option<Box<dyn ironclaw::tunnel::Tunnel>>,
 }
 
+/// Renders and prints the startup boot screen to stdout.
+///
+/// Returns immediately when CLI channels are disabled or when a one-shot
+/// `--message` flag is present on `cli`, since neither scenario presents an
+/// interactive session.
 pub(crate) fn print_startup_info(config: &Config, cli: &Cli, data: &BootScreenContext<'_>) {
     let Some(boot_info) = build_boot_info(config, cli, data) else {
         return;

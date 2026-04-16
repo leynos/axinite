@@ -14,6 +14,8 @@ use ironclaw::{
 
 use crate::startup::wasm::{WasmChannelRuntimeState, WasmChannelsInit, init_wasm_channels};
 
+/// Aggregated results returned after all process-startup channel wiring has
+/// completed.
 pub(crate) struct ChannelSetup {
     pub(crate) webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     pub(crate) channel_names: Vec<String>,
@@ -58,6 +60,8 @@ pub(crate) struct GatewayContext<'a> {
     pub(crate) channel_names: &'a mut Vec<String>,
 }
 
+/// Values produced by [`setup_gateway_channel`] and later threaded into
+/// [`GatewayPhaseContext`].
 pub(crate) struct GatewaySetup {
     pub(crate) gateway_url: Option<String>,
     pub(crate) sse_sender:
@@ -172,6 +176,11 @@ async fn build_webhook_server(
     Ok(Some(Arc::new(tokio::sync::Mutex::new(server))))
 }
 
+/// Initialises all configured channels (REPL, signal, HTTP, and WASM) and
+/// starts the webhook server when any channel has registered HTTP routes.
+///
+/// Returns a [`ChannelSetup`] bundle that carries the started webhook server,
+/// the list of enabled channel names, and the optional WASM runtime state.
 pub(crate) async fn setup_channels(
     cli: &Cli,
     config: &Config,
@@ -253,6 +262,14 @@ fn configure_gateway_builder(
     gw.with_cost_guard(Arc::clone(&components.cost_guard))
 }
 
+/// Configures and registers the gateway web-UI channel.
+///
+/// When sandbox mode is enabled the function additionally wires a forwarding
+/// task that relays job-event SSE frames from the broadcast channel into the
+/// gateway's SSE manager.
+///
+/// Returns a [`GatewaySetup`] containing the computed web-UI URL, the SSE
+/// sender, and the routine-engine slot.
 pub(crate) async fn setup_gateway_channel(
     config: &Config,
     components: &AppComponents,
@@ -322,6 +339,10 @@ async fn forward_job_events_to_gateway(
     }
 }
 
+/// Spawns a Tokio task that listens for `SIGHUP` and triggers a hot-reload.
+///
+/// The task exits cleanly when the shutdown broadcast fires. Only compiled on
+/// Unix targets.
 #[cfg(unix)]
 pub(crate) fn spawn_sighup_handler(
     reload_manager: Arc<ironclaw::reload::HotReloadManager>,

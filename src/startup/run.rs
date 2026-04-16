@@ -20,6 +20,13 @@ use crate::startup::{CoreAgentContext, GatewayPhaseContext, wasm::wire_wasm_chan
 #[cfg(unix)]
 use crate::startup::channels::spawn_sighup_handler;
 
+/// Runs the agent loop and performs the coordinated shutdown sequence on exit.
+///
+/// Wires WASM channel runtime, snapshots workspace memory if a recording handle
+/// is present, spawns the optional sandbox reaper, registers the SIGHUP
+/// hot-reload handler on Unix, then calls `agent.run().await`. After the agent
+/// exits the function broadcasts shutdown, flushes traces, stops the webhook
+/// server, and tears down any active tunnel.
 pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
     let GatewayPhaseContext {
         core,

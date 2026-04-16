@@ -10,6 +10,7 @@ use ironclaw::{
 
 use crate::startup::wasm::WasmChannelRuntimeState;
 
+/// Intermediate startup context produced by [`phase_load_config_and_tracing`].
 pub(crate) struct LoadedConfigContext {
     pub(crate) config: Config,
     pub(crate) toml_path: Option<std::path::PathBuf>,
@@ -18,6 +19,7 @@ pub(crate) struct LoadedConfigContext {
     pub(crate) log_level_handle: Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
 }
 
+/// Intermediate startup context produced by [`phase_build_components`].
 pub(crate) struct BuiltComponentsContext {
     pub(crate) components: AppComponents,
     pub(crate) side_effects: RuntimeSideEffects,
@@ -25,6 +27,7 @@ pub(crate) struct BuiltComponentsContext {
     pub(crate) log_level_handle: Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
 }
 
+/// Orchestrator state prepared during startup before channel setup begins.
 pub(crate) struct OrchestratorContext {
     pub(crate) container_job_manager: Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
     pub(crate) job_event_tx: Option<
@@ -41,6 +44,7 @@ pub(crate) struct OrchestratorContext {
     pub(crate) docker_status: ironclaw::sandbox::DockerStatus,
 }
 
+/// Runtime components shared across the later startup phases.
 pub(crate) struct CoreAgentContext {
     pub(crate) config: Config,
     pub(crate) components: AppComponents,
@@ -63,10 +67,14 @@ pub(crate) struct CoreAgentContext {
     pub(crate) log_level_handle: Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
 }
 
+/// Intermediate startup context produced by [`phase_tunnel_and_orchestrator`].
+/// Carries all runtime components and orchestrator state prior to channel setup.
 pub(crate) struct AgentRunContext {
     pub(crate) core: CoreAgentContext,
 }
 
+/// Fully initialised startup context passed through the gateway and agent-run
+/// phases. This is the last context struct in the startup pipeline.
 pub(crate) struct GatewayPhaseContext {
     pub(crate) core: CoreAgentContext,
     pub(crate) channels: ChannelManager,

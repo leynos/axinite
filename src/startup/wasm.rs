@@ -14,17 +14,25 @@ use ironclaw::{
 
 use crate::startup::channels::ChannelRegistrar;
 
+/// Shared runtime components for the loaded WASM channel subsystem.
 pub(crate) type WasmChannelRuntimeState = (
     Arc<WasmChannelRuntime>,
     Arc<PairingStore>,
     Arc<WasmChannelRouter>,
 );
 
+/// Result of [`init_wasm_channels`]: the list of loaded channel names and the
+/// optional runtime state that must later be wired via
+/// [`wire_wasm_channel_runtime`].
 pub(crate) struct WasmChannelsInit {
     pub(crate) loaded_wasm_channel_names: Vec<String>,
     pub(crate) runtime_state: Option<WasmChannelRuntimeState>,
 }
 
+/// Initialises WASM channels from the configured directory.
+///
+/// Returns an empty [`WasmChannelsInit`] (with `runtime_state: None`) when WASM
+/// channels are disabled or the configured directory does not exist.
 pub(crate) async fn init_wasm_channels(
     config: &Config,
     components: &AppComponents,
@@ -78,6 +86,11 @@ pub(crate) async fn init_wasm_channels(
     }
 }
 
+/// Transfers ownership of the WASM runtime state into the extension manager and
+/// activates any channels that were not already active at startup.
+///
+/// Also configures relay-channel management and registers the SSE sender with
+/// the extension manager when one is provided.
 pub(crate) async fn wire_wasm_channel_runtime(
     extension_manager: &Option<Arc<ironclaw::extensions::ExtensionManager>>,
     wasm_channel_runtime_state: &mut Option<WasmChannelRuntimeState>,

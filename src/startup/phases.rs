@@ -19,6 +19,9 @@ use crate::startup::channels::{
 };
 use crate::startup::{boot, context::*, run};
 
+/// Acquires the optional PID lock and runs first-run onboarding when requested.
+///
+/// Returns `None` when no PID lock is configured, `Some(lock)` otherwise.
 pub(crate) async fn phase_pid_and_onboard(
     cli: &Cli,
 ) -> anyhow::Result<Option<ironclaw::bootstrap::PidLock>> {
@@ -42,6 +45,8 @@ pub(crate) async fn phase_pid_and_onboard(
     Ok(pid_lock)
 }
 
+/// Loads configuration from environment and TOML, creates the LLM session
+/// manager, and initialises structured tracing.
 pub(crate) async fn phase_load_config_and_tracing(
     cli: &Cli,
 ) -> anyhow::Result<LoadedConfigContext> {
@@ -66,6 +71,8 @@ pub(crate) async fn phase_load_config_and_tracing(
     })
 }
 
+/// Constructs all application components and runtime side-effects via
+/// [`AppBuilder`].
 pub(crate) async fn phase_build_components(
     cli: &Cli,
     loaded: LoadedConfigContext,
@@ -94,6 +101,8 @@ pub(crate) async fn phase_build_components(
     })
 }
 
+/// Starts the managed tunnel (if configured) and sets up the orchestrator
+/// context, including the container job manager, prompt queue, and SSE sender.
 pub(crate) async fn phase_tunnel_and_orchestrator(
     built: BuiltComponentsContext,
 ) -> AgentRunContext {
@@ -184,6 +193,9 @@ fn create_session_and_register_tools(
     (session_manager, scheduler_slot)
 }
 
+/// Registers all channels, bootstraps lifecycle hooks, and wires job tools.
+///
+/// Returns a [`GatewayPhaseContext`] ready for gateway setup.
 pub(crate) async fn phase_init_channels_and_hooks(
     cli: &Cli,
     agent_ctx: AgentRunContext,
@@ -230,6 +242,8 @@ pub(crate) async fn phase_init_channels_and_hooks(
     })
 }
 
+/// Configures the gateway channel and populates the gateway URL, SSE sender,
+/// and routine-engine slot on `ctx`.
 pub(crate) async fn phase_setup_gateway(ctx: &mut GatewayPhaseContext) {
     let GatewaySetup {
         gateway_url,
@@ -257,6 +271,7 @@ pub(crate) async fn phase_setup_gateway(ctx: &mut GatewayPhaseContext) {
     ctx.routine_engine_slot = routine_engine_slot;
 }
 
+/// Renders and prints the startup boot screen using the current gateway context.
 pub(crate) fn phase_print_boot_screen(cli: &Cli, ctx: &GatewayPhaseContext) {
     let boot_screen = boot::BootScreenContext {
         llm_model: ctx.core.components.llm.model_name().to_string(),
@@ -276,6 +291,8 @@ pub(crate) fn phase_print_boot_screen(cli: &Cli, ctx: &GatewayPhaseContext) {
     boot::print_startup_info(&ctx.core.config, cli, &boot_screen);
 }
 
+/// Delegates execution to [`run::run_agent`], consuming the gateway context and
+/// running the agent loop until shutdown.
 pub(crate) async fn phase_run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
     run::run_agent(ctx).await
 }

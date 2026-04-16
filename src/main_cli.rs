@@ -11,6 +11,10 @@ use ironclaw::{
 #[cfg(any(feature = "postgres", feature = "libsql"))]
 use ironclaw::setup::{SetupConfig, SetupWizard};
 
+/// Routes a parsed [`Cli`] to the appropriate subcommand handler.
+///
+/// Returns `true` when a subcommand was matched and executed, `false` when the
+/// default agent-run path should be taken instead.
 pub(crate) async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<bool> {
     if let Some(dispatched) = dispatch_cli_tool_commands(cli).await? {
         return Ok(dispatched);
@@ -62,6 +66,11 @@ fn dispatch_sync_command(command: &Command) -> Option<anyhow::Result<bool>> {
     }
 }
 
+/// Attempts to dispatch CLI tool and service subcommands.
+///
+/// Returns `Ok(Some(bool))` when a command was matched and executed,
+/// `Ok(None)` when the command should be handled by the agent-run path,
+/// and `Err(_)` on execution failure.
 pub(crate) async fn dispatch_cli_tool_commands(cli: &Cli) -> anyhow::Result<Option<bool>> {
     let Some(command) = &cli.command else {
         return Ok(None);
@@ -88,6 +97,10 @@ pub(crate) async fn dispatch_cli_tool_commands(cli: &Cli) -> anyhow::Result<Opti
     Ok(None)
 }
 
+/// Handles worker-oriented subcommands: `Worker`, `ClaudeBridge`, and `Onboard`.
+///
+/// Returns `Ok(Some(true))` when a subcommand was matched and executed,
+/// `Ok(None)` when the command is not a worker subcommand.
 pub(crate) async fn dispatch_agent_commands(cli: &Cli) -> anyhow::Result<Option<bool>> {
     match &cli.command {
         Some(Command::Worker {
