@@ -15,10 +15,8 @@ pub use ironclaw::llm::recording::{
 /// Recursively patch string values in a JSON value, replacing `from` with `to`.
 pub(super) fn patch_json_value(value: &mut serde_json::Value, from: &str, to: &str) {
     match value {
-        serde_json::Value::String(s) => {
-            if s.contains(from) {
-                *s = s.replace(from, to);
-            }
+        serde_json::Value::String(s) if s.contains(from) => {
+            *s = s.replace(from, to);
         }
         serde_json::Value::Array(arr) => {
             for item in arr {
