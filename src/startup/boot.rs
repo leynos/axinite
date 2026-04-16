@@ -136,7 +136,17 @@ where
 fn should_redact_query_key(key: &str) -> bool {
     matches!(
         key.to_ascii_lowercase().as_str(),
-        "token" | "access_token" | "authorization"
+        "token"
+            | "access_token"
+            | "authorization"
+            | "api_key"
+            | "apikey"
+            | "secret"
+            | "password"
+            | "pass"
+            | "key"
+            | "client_secret"
+            | "auth"
     )
 }
 

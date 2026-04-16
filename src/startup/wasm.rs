@@ -150,17 +150,31 @@ pub(crate) async fn wire_wasm_channel_runtime(
     }
 
     if let Some(ext_mgr) = wiring.extension_manager {
-        ext_mgr
-            .set_relay_channel_manager(Arc::clone(wiring.channels))
-            .await;
-        ext_mgr.restore_relay_channels().await;
+        wire_relay_channels(ext_mgr, wiring.channels).await;
     }
 
     if let Some(ext_mgr) = wiring.extension_manager
         && let Some(sender) = wiring.sse_sender
     {
-        ext_mgr.set_sse_sender(sender.clone()).await;
+        register_sse_sender(ext_mgr, sender).await;
     }
+}
+
+async fn wire_relay_channels(
+    ext_mgr: &ironclaw::extensions::ExtensionManager,
+    channels: &Arc<ChannelManager>,
+) {
+    ext_mgr
+        .set_relay_channel_manager(Arc::clone(channels))
+        .await;
+    ext_mgr.restore_relay_channels().await;
+}
+
+async fn register_sse_sender(
+    ext_mgr: &ironclaw::extensions::ExtensionManager,
+    sender: &tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
+) {
+    ext_mgr.set_sse_sender(sender.clone()).await;
 }
 
 #[cfg(test)]
