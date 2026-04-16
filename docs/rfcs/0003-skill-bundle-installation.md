@@ -109,8 +109,10 @@ Every bundle must contain:
 ```
 
 The archive root must contain exactly one directory. That directory name is the
-bundle's canonical on-disk skill name unless the installer normalizes it during
-conflict handling.
+bundle's candidate `skill-name`, and it becomes the canonical on-disk skill
+name after the normalization and collision-resolution rules in
+[Canonical skill names and conflict handling](#4-canonical-skill-names-and-conflict-handling)
+are applied.
 
 ### Optional structure
 
@@ -249,6 +251,22 @@ Before extraction, the installer should validate:
 6. the whole archive stays under a total size cap
 7. file count stays under a bounded limit
 8. all text files that must be parsed as text are valid UTF-8
+
+A valid candidate `skill-name` at archive-validation time must:
+
+- be a single path segment from the archive root, not an empty string and not a
+  nested path
+- contain only ASCII letters, ASCII digits, `_`, and `-` before normalization
+- be no longer than 64 bytes
+
+If the archive violates the "exactly one root directory" rule, the installer
+must reject it with a typed validation error rather than trying to guess the
+intended root. The error should clearly state that `.skill` archives must
+contain one top-level skill directory, for example:
+
+```plaintext
+invalid_skill_bundle: expected exactly one root directory in .skill archive
+```
 
 ### Extraction rules
 
