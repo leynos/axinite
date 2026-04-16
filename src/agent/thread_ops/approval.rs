@@ -1108,7 +1108,7 @@ impl Agent {
     /// the turn, and sends the AuthRequired status to the channel.
     async fn handle_auth_intercept(&self, params: AuthInterceptParams<'_>) {
         let auth_data = parse_auth_result(params.tool_result);
-        {
+        let (turn_number, tool_calls) = {
             let mut sess = params.session.lock().await;
             if let Some(thread) = sess.threads.get_mut(&params.thread_id) {
                 // Complete turn first (resets state to Idle)
@@ -1120,8 +1120,25 @@ impl Agent {
                 }
                 // Set pending auth (state unchanged)
                 thread.enter_auth_mode(params.ext_name.clone());
+                thread
+                    .turns
+                    .last()
+                    .map(|turn| (turn.turn_number, turn.tool_calls.clone()))
+                    .unwrap_or((0, Vec::new()))
+            } else {
+                (0, Vec::new())
             }
+        };
+
+        if turn_number != 0 {
+            let persist_ctx = TurnPersistContext {
+                thread_id: params.thread_id,
+                user_id: &params.env.user_id,
+                turn_number,
+            };
+            self.persist_tool_calls(&persist_ctx, &tool_calls).await;
         }
+
         // User message already persisted at turn start; save auth instructions
         self.persist_assistant_response(
             params.thread_id,
