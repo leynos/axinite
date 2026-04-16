@@ -133,10 +133,8 @@ pub fn select_many(prompt: &str, options: &[(&str, bool)]) -> io::Result<Vec<usi
                     KeyCode::Up => {
                         cursor_pos = cursor_pos.saturating_sub(1);
                     }
-                    KeyCode::Down => {
-                        if cursor_pos < options.len() - 1 {
-                            cursor_pos += 1;
-                        }
+                    KeyCode::Down if cursor_pos < options.len() - 1 => {
+                        cursor_pos += 1;
                     }
                     KeyCode::Char(' ') => {
                         selected[cursor_pos] = !selected[cursor_pos];
