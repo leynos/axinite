@@ -87,8 +87,11 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
         &http_channel_state,
     );
 
-    side_effects.start()?;
-    let run_result = agent.run().await;
+    let run_result: anyhow::Result<()> = async {
+        side_effects.start()?;
+        agent.run().await.map_err(anyhow::Error::from)
+    }
+    .await;
 
     run_shutdown_sequence(
         &shutdown_tx,

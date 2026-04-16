@@ -51,7 +51,13 @@ async fn dispatch_async_command(command: &Command) -> Option<anyhow::Result<bool
         Command::Import(c) => {
             Some(run_traced_async(|| async { run_import_subcommand(c).await }).await)
         }
-        _ => None,
+        Command::Run
+        | Command::Onboard { .. }
+        | Command::Pairing(_)
+        | Command::Service(_)
+        | Command::Completion(_)
+        | Command::Worker { .. }
+        | Command::ClaudeBridge { .. } => None,
     }
 }
 
@@ -62,7 +68,19 @@ fn dispatch_sync_command(command: &Command) -> Option<anyhow::Result<bool>> {
         })),
         Command::Service(c) => Some(run_traced_sync(|| run_service_command(c))),
         Command::Completion(c) => Some(run_traced_sync(|| c.run())),
-        _ => None,
+        Command::Run
+        | Command::Onboard { .. }
+        | Command::Config(_)
+        | Command::Tool(_)
+        | Command::Registry(_)
+        | Command::Mcp(_)
+        | Command::Memory(_)
+        | Command::Doctor
+        | Command::Status
+        | Command::Worker { .. }
+        | Command::ClaudeBridge { .. } => None,
+        #[cfg(feature = "import")]
+        Command::Import(_) => None,
     }
 }
 
@@ -221,14 +239,18 @@ mod tests {
     #[tokio::test]
     async fn tool_commands_returns_none_for_no_command() {
         let cli = cli_with(None);
-        let result = dispatch_cli_tool_commands(&cli).await.expect("dispatch should succeed");
+        let result = dispatch_cli_tool_commands(&cli)
+            .await
+            .expect("dispatch should succeed");
         assert!(result.is_none());
     }
 
     #[tokio::test]
     async fn tool_commands_returns_none_for_run() {
         let cli = cli_with(Some(Command::Run));
-        let result = dispatch_cli_tool_commands(&cli).await.expect("dispatch should succeed");
+        let result = dispatch_cli_tool_commands(&cli)
+            .await
+            .expect("dispatch should succeed");
         assert!(result.is_none());
     }
 
@@ -239,7 +261,9 @@ mod tests {
             orchestrator_url: "http://localhost".into(),
             max_iterations: 10,
         }));
-        let result = dispatch_cli_tool_commands(&cli).await.expect("dispatch should succeed");
+        let result = dispatch_cli_tool_commands(&cli)
+            .await
+            .expect("dispatch should succeed");
         assert!(result.is_none());
     }
 
@@ -251,7 +275,9 @@ mod tests {
             max_turns: 5,
             model: "claude-3".into(),
         }));
-        let result = dispatch_cli_tool_commands(&cli).await.expect("dispatch should succeed");
+        let result = dispatch_cli_tool_commands(&cli)
+            .await
+            .expect("dispatch should succeed");
         assert!(result.is_none());
     }
 
@@ -263,21 +289,27 @@ mod tests {
             provider_only: false,
             quick: false,
         }));
-        let result = dispatch_cli_tool_commands(&cli).await.expect("dispatch should succeed");
+        let result = dispatch_cli_tool_commands(&cli)
+            .await
+            .expect("dispatch should succeed");
         assert!(result.is_none());
     }
 
     #[tokio::test]
     async fn agent_commands_returns_none_for_run() {
         let cli = cli_with(Some(Command::Run));
-        let result = dispatch_agent_commands(&cli).await.expect("dispatch should succeed");
+        let result = dispatch_agent_commands(&cli)
+            .await
+            .expect("dispatch should succeed");
         assert!(result.is_none());
     }
 
     #[tokio::test]
     async fn agent_commands_returns_none_for_no_command() {
         let cli = cli_with(None);
-        let result = dispatch_agent_commands(&cli).await.expect("dispatch should succeed");
+        let result = dispatch_agent_commands(&cli)
+            .await
+            .expect("dispatch should succeed");
         assert!(result.is_none());
     }
 }

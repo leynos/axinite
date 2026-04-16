@@ -1,6 +1,9 @@
 //! Channel, gateway, and WASM runtime wiring for process startup.
 
-use std::sync::Arc;
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
 
 use ironclaw::{
     app::AppComponents,
@@ -132,12 +135,7 @@ async fn setup_http_channel(
     let http_channel_state = Some(http_channel.shared_state());
     reg.webhook_routes.push(http_channel.routes());
     let (host, port) = http_channel.addr();
-    let addr_str = format!("{host}:{port}");
-    let webhook_server_addr = Some(
-        addr_str
-            .parse()
-            .map_err(|e| anyhow::anyhow!("Invalid HTTP host:port '{addr_str}': {e}"))?,
-    );
+    let webhook_server_addr = Some(parse_socket_addr(host, port, "HTTP")?);
     reg.channel_names.push("http".to_string());
     reg.channels.add(Box::new(http_channel)).await;
     tracing::debug!(
@@ -176,7 +174,7 @@ async fn build_webhook_server(
     Ok(Some(Arc::new(tokio::sync::Mutex::new(server))))
 }
 
-/// Initialises all configured channels (REPL, signal, HTTP, and WASM) and
+/// Initializes all configured channels (REPL, signal, HTTP, and WASM) and
 /// starts the webhook server when any channel has registered HTTP routes.
 ///
 /// Returns a [`ChannelSetup`] bundle that carries the started webhook server,
@@ -294,14 +292,14 @@ pub(crate) async fn setup_gateway_channel(
             }
         }
 
+        let gateway_addr = render_socket_addr(&gw_config.host, gw_config.port);
         gateway_url = Some(format!(
-            "http://{}:{}/?token={}",
-            gw_config.host,
-            gw_config.port,
+            "http://{}/?token={}",
+            gateway_addr,
             gw.auth_token()
         ));
 
-        tracing::debug!("Web UI: http://{}:{}/", gw_config.host, gw_config.port);
+        tracing::debug!("Web UI: http://{gateway_addr}/");
 
         // IMPORTANT: capture these after all `with_*` calls because `rebuild_state`
         // swaps in a fresh `SseManager`.
@@ -317,6 +315,19 @@ pub(crate) async fn setup_gateway_channel(
         sse_sender,
         routine_engine_slot,
     }
+}
+
+fn parse_socket_addr(host: &str, port: u16, channel_name: &str) -> anyhow::Result<SocketAddr> {
+    let host: IpAddr = host
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid {channel_name} host '{host}': {e}"))?;
+    Ok(SocketAddr::new(host, port))
+}
+
+fn render_socket_addr(host: &str, port: u16) -> String {
+    host.parse::<IpAddr>()
+        .map(|ip| SocketAddr::new(ip, port).to_string())
+        .unwrap_or_else(|_| format!("{host}:{port}"))
 }
 
 async fn forward_job_events_to_gateway(

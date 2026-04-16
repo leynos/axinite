@@ -1170,27 +1170,27 @@ project's four-argument limit:
 
 | Module | File | Responsibility |
 | -------- | ------ | --------------- |
-| `phases` | `src/startup/phases.rs` | Defines context structs and orchestrates each phase function |
+| `context` | `src/startup/context.rs` | Defines the startup hand-off structs and shared core runtime context |
+| `phases` | `src/startup/phases.rs` | Orchestrates each startup phase function |
 | `channels` | `src/startup/channels.rs` | Wires REPL/signal/HTTP/WASM channels; configures the gateway channel |
 | `wasm` | `src/startup/wasm.rs` | Bootstraps WASM channel runtime; hot-wires it into the extension manager |
 | `boot` | `src/startup/boot.rs` | Builds and prints the startup boot screen |
 | `run` | `src/startup/run.rs` | Runs the agent loop and performs the coordinated shutdown sequence |
-
-
 ### Adding a new startup phase
 
 1. Define a new `pub(crate) struct MyPhaseContext { … }` in
-   `src/startup/phases.rs`.
+   `src/startup/context.rs`, or modify the existing hand-off structs
+   there when the new phase reuses an existing context boundary.
 2. Implement `pub(crate) async fn phase_my_step(prev: PreviousContext) -> anyhow::Result<MyPhaseContext>`.
 3. Insert the call between the appropriate phases in `async_main()` in
    `src/main.rs`.
-4. Update this table and the architecture overview in
+4. Update this table, the submodule map above, and the architecture overview in
    `docs/axinite-architecture-overview.md`.
-
 ### Context structs
 
-Each context struct is defined in `src/startup/phases.rs` and carries
-only the values needed by its downstream phase.
+Each context struct is defined in `src/startup/context.rs`, re-exported
+by `src/startup/mod.rs`, and carries only the values needed by its
+downstream phase.
 
 | Struct | Produced by | Key fields |
 | -------- | ------------- | ------------ |
@@ -1198,7 +1198,6 @@ only the values needed by its downstream phase.
 | `BuiltComponentsContext` | `phase_build_components` | `components`, `side_effects` |
 | `AgentRunContext` | `phase_tunnel_and_orchestrator` | `components`, `config`, `active_tunnel`, `container_job_manager`, `prompt_queue` |
 | `GatewayPhaseContext` | `phase_init_channels_and_hooks` | all of the above plus `channels`, `session_manager`, `scheduler_slot`, `gateway_url`, `sse_sender` |
-
 
 ### CLI dispatch
 
@@ -1237,4 +1236,3 @@ consumes the context struct produced by the previous one.
 
 Phases 1–4 are infallible or propagate configuration errors early so
 subsequent phases can assume a fully valid environment.
-

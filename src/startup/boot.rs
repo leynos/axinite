@@ -1,6 +1,7 @@
 //! Startup boot-screen rendering and tests.
 
 use ironclaw::{cli::Cli, config::Config};
+use url::Url;
 
 /// Runtime-computed values used to populate the startup boot screen.
 pub(crate) struct BootScreenContext<'a> {
@@ -46,7 +47,7 @@ fn build_boot_info(
         },
         db_connected: !cli.no_db,
         tool_count: data.tool_count,
-        gateway_url: data.gateway_url.clone(),
+        gateway_url: data.gateway_url.as_deref().map(sanitize_display_url),
         embeddings_enabled: config.embeddings.enabled,
         embeddings_provider: config
             .embeddings
@@ -69,6 +70,36 @@ fn build_boot_info(
     })
 }
 
+fn sanitize_display_url(url: &str) -> String {
+    let Ok(mut parsed) = Url::parse(url) else {
+        return url.to_string();
+    };
+
+    let had_query = parsed.query().is_some();
+    let sanitized_pairs: Vec<(String, String)> = parsed
+        .query_pairs()
+        .map(|(key, value)| {
+            if key == "token" {
+                (key.into_owned(), "[REDACTED]".to_string())
+            } else {
+                (key.into_owned(), value.into_owned())
+            }
+        })
+        .collect();
+
+    parsed.set_query(None);
+    if had_query && !sanitized_pairs.is_empty() {
+        let mut query = parsed.query_pairs_mut();
+        query.extend_pairs(
+            sanitized_pairs
+                .iter()
+                .map(|(key, value)| (&**key, &**value)),
+        );
+    }
+
+    parsed.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
@@ -78,7 +109,7 @@ mod tests {
         tunnel::{NativeTunnel, Tunnel},
     };
 
-    use super::{BootScreenContext, build_boot_info};
+    use super::{BootScreenContext, build_boot_info, sanitize_display_url};
 
     struct TestTunnel {
         public_url: Option<String>,
@@ -167,5 +198,15 @@ mod tests {
             build_boot_info(&config, &cli, &data).expect("boot info should be generated");
         let output = ironclaw::boot_screen::render_boot_screen(&boot_info);
         assert_snapshot!("startup_info_boot_screen", output);
+    }
+
+    #[test]
+    fn sanitize_display_url_redacts_tokens() {
+        let sanitized = sanitize_display_url("http://127.0.0.1:4040/?token=startup-token&mode=1");
+
+        assert_eq!(
+            sanitized,
+            "http://127.0.0.1:4040/?token=%5BREDACTED%5D&mode=1"
+        );
     }
 }
