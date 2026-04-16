@@ -219,7 +219,7 @@ Name derivation must be deterministic per input mode:
 After derivation, the installer must normalize the name:
 
 1. lowercase ASCII
-2. only `[a-z0-9_-]`
+2. only `[a-z0-9._-]`
 3. consecutive separators collapsed
 4. no leading or trailing separators
 5. maximum length 64 bytes after normalization
@@ -265,8 +265,16 @@ A valid candidate `skill-name` at archive-validation time must:
 
 - be a single path segment from the archive root, not an empty string and not a
   nested path
-- contain only ASCII letters, ASCII digits, `_`, and `-` before normalization
+- contain only ASCII letters, ASCII digits, `.`, `_`, and `-` before
+  normalization
 - be no longer than 64 bytes
+
+Compatibility note: current `skill-name` validation in the runtime accepts
+dotted names such as `skill.v2`. Archive validation for `.skill` uploads must
+continue to accept dots in the shared top-level prefix so existing installed or
+catalogued skill names do not become invalid implicitly. Phase 1 does not
+introduce a migration away from dotted names; any future restriction would need
+an explicit compatibility plan and a separate RFC.
 
 If the archive violates the single top-level path-prefix rule, the installer
 must reject it with a typed validation error rather than trying to guess the
