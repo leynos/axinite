@@ -1,5 +1,6 @@
 //! Chat thread-listing and thread-creation handlers.
 
+use std::cmp::Reverse;
 use std::sync::Arc;
 
 use crate::db::EnsureConversationParams;
@@ -85,7 +86,7 @@ pub async fn chat_threads_handler(
     }
 
     let mut sorted_threads: Vec<_> = sess.threads.values().collect();
-    sorted_threads.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
+    sorted_threads.sort_by_key(|thread| Reverse(thread.updated_at));
     let threads = sorted_threads
         .into_iter()
         .map(|thread| ThreadInfo {

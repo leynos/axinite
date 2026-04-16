@@ -251,6 +251,7 @@ pub(super) fn read_hidden_input() -> anyhow::Result<String> {
                     print!("\x08 \x08");
                     std::io::stdout().flush()?;
                 }
+                KeyCode::Backspace => {}
                 KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Err(anyhow::anyhow!("Interrupted"));
                 }
