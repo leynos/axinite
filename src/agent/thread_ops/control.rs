@@ -225,6 +225,9 @@ impl Agent {
         thread.turns.clear();
         thread.state = ThreadState::Idle;
         thread.updated_at = Utc::now();
+        thread.pending_approval = None;
+        thread.pending_auth = None;
+        thread.in_flight_auth = false;
         drop(sess);
 
         let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
