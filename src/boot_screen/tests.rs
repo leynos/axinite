@@ -170,6 +170,47 @@ fn test_data<'a>(active_tunnel: &'a Option<Box<dyn Tunnel>>) -> BootData<'a> {
     }
 }
 
+async fn assert_tunnel_resolution_case(
+    case_name: &str,
+    active_tunnel_name: &'static str,
+    active_public_url: Option<&str>,
+    fallback_public_url: Option<&str>,
+    expected_url: &str,
+    expected_provider: Option<&str>,
+) {
+    let mut config = test_config().await;
+    config.tunnel.public_url = fallback_public_url.map(ToString::to_string);
+    let cli = test_cli(false);
+    let active_tunnel: Option<Box<dyn Tunnel>> = Some(Box::new(TestTunnel {
+        name: active_tunnel_name,
+        public_url: active_public_url.map(ToString::to_string),
+    }));
+    let data = BootData {
+        llm_model: format!("{case_name}-model"),
+        cheap_model: Some(format!("{case_name}-cheap-model")),
+        tool_count: 0,
+        gateway_url: None,
+        docker_status: DockerStatus::NotInstalled,
+        channel_names: vec![],
+        active_tunnel: &active_tunnel,
+    };
+
+    let info = BootInfo::from_config_and_data(&config, &cli, &data);
+
+    assert_eq!(info.db_backend, config.database.backend.to_string());
+    assert!(info.db_connected, "{case_name}: db should remain connected");
+    assert_eq!(
+        info.tunnel_url.as_deref(),
+        Some(expected_url),
+        "{case_name}: unexpected tunnel URL"
+    );
+    assert_eq!(
+        info.tunnel_provider.as_deref(),
+        expected_provider,
+        "{case_name}: unexpected tunnel provider"
+    );
+}
+
 #[rstest]
 #[case::full("render_boot_screen_full_snapshot", full_boot_info())]
 #[case::minimal("render_boot_screen_minimal_snapshot", minimal_boot_info())]
@@ -214,40 +255,26 @@ async fn boot_info_from_config_and_data_handles_no_db_and_fallback_tunnel() {
 
 #[tokio::test]
 async fn boot_info_from_config_and_data_uses_fallback_url_when_tunnel_has_no_public_url() {
-    let config = test_config().await;
-    let cli = test_cli(false);
-    let active_tunnel: Option<Box<dyn Tunnel>> = Some(Box::new(TestTunnel {
-        name: "ngrok",
-        public_url: None,
-    }));
-
-    let info = BootInfo::from_config_and_data(&config, &cli, &test_data(&active_tunnel));
-
-    assert_eq!(info.db_backend, config.database.backend.to_string());
-    assert!(info.db_connected);
-    assert_eq!(
-        info.tunnel_url.as_deref(),
-        Some("https://fallback.example.test")
-    );
-    assert_eq!(info.tunnel_provider.as_deref(), Some("ngrok"));
+    assert_tunnel_resolution_case(
+        "fallback_url_when_tunnel_has_no_public_url",
+        "ngrok",
+        None,
+        Some("https://fallback.example.test"),
+        "https://fallback.example.test",
+        Some("ngrok"),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn boot_info_from_config_and_data_prefers_runtime_tunnel_url() {
-    let config = test_config().await;
-    let cli = test_cli(false);
-    let active_tunnel: Option<Box<dyn Tunnel>> = Some(Box::new(TestTunnel {
-        name: "ngrok",
-        public_url: Some("https://runtime.ngrok.app".to_string()),
-    }));
-
-    let info = BootInfo::from_config_and_data(&config, &cli, &test_data(&active_tunnel));
-
-    assert_eq!(info.db_backend, config.database.backend.to_string());
-    assert!(info.db_connected);
-    assert_eq!(
-        info.tunnel_url.as_deref(),
-        Some("https://runtime.ngrok.app")
-    );
-    assert_eq!(info.tunnel_provider.as_deref(), Some("ngrok"));
+    assert_tunnel_resolution_case(
+        "prefers_runtime_tunnel_url",
+        "ngrok",
+        Some("https://runtime.ngrok.app"),
+        Some("https://fallback.example.test"),
+        "https://runtime.ngrok.app",
+        Some("ngrok"),
+    )
+    .await;
 }
