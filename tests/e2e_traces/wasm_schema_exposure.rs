@@ -18,18 +18,23 @@ use ironclaw::llm::{
 use ironclaw::testing::github_wasm_wrapper;
 use ironclaw::tools::Tool;
 
+/// A pre-built GitHub WASM tool and its registration-time [`ToolDefinition`],
+/// shared across schema-exposure assertions.
 #[derive(Clone)]
 struct GithubWasmFixture {
     tool: Arc<dyn Tool>,
     definition: ToolDefinition,
 }
 
+/// A test-only [`NativeLlmProvider`] that records every [`ToolCompletionRequest`]
+/// it receives and returns a deterministic no-op response.
 #[derive(Default)]
 struct CapturingToolLlm {
     requests: tokio::sync::Mutex<Vec<ToolCompletionRequest>>,
 }
 
 impl CapturingToolLlm {
+    /// Returns a snapshot of all [`ToolCompletionRequest`]s recorded so far.
     async fn captured_requests(&self) -> Vec<ToolCompletionRequest> {
         self.requests.lock().await.clone()
     }
@@ -72,6 +77,8 @@ impl ironclaw::llm::NativeLlmProvider for CapturingToolLlm {
     }
 }
 
+/// rstest fixture that builds and returns a [`GithubWasmFixture`] backed by
+/// the shared GitHub WASM test artifact.
 #[fixture]
 async fn github_wasm_fixture() -> anyhow::Result<GithubWasmFixture> {
     let wrapper = github_wasm_wrapper()
@@ -89,6 +96,8 @@ async fn github_wasm_fixture() -> anyhow::Result<GithubWasmFixture> {
     })
 }
 
+/// rstest fixture that returns a fresh [`CapturingToolLlm`] wrapped in an
+/// [`Arc`].
 #[fixture]
 fn capturing_llm() -> Arc<CapturingToolLlm> {
     Arc::new(CapturingToolLlm::default())
