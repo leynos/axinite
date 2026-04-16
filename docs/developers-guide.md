@@ -381,121 +381,6 @@ labels, truncation rules, or input set needs to change. Do not use it as
 a primary schema-transport mechanism: the canonical schema remains the
 advertised `ToolDefinition.parameters` value.
 
-### End-to-end WASM schema regression tests
-
-The `e2e_traces` integration test target includes first-call WASM schema
-regression tests introduced in roadmap item `1.2.4`. These tests live in
-`tests/e2e_traces/wasm_schema_exposure.rs` and require the `test-helpers`
-feature because they import `ironclaw::testing::github_wasm_wrapper`.
-
-#### Running the e2e_traces tests
-
-```bash
-# Compile and run the full e2e_traces suite (test-helpers required):
-cargo nextest run --test e2e_traces --features test-helpers
-
-# Run only the WASM schema exposure tests:
-cargo nextest run --test e2e_traces --features test-helpers \
-  -E 'test(wasm_schema)'
-
-# Verify the target is skipped cleanly without the feature:
-cargo check --all --benches --tests --examples
-```
-
-`Cargo.toml` declares `required-features = ["test-helpers"]` for the
-`e2e_traces` test target, so Cargo skips it gracefully when the feature is
-absent rather than emitting a compile error.
-
-#### CapturingToolLlm — non-hosted schema verification
-
-For in-process (non-hosted) schema assertions, implement
-`ironclaw::llm::NativeLlmProvider` as a capturing stub that records every
-`ToolCompletionRequest` before returning a deterministic response:
-
-```rust
-use ironclaw::llm::{NativeLlmProvider, ToolCompletionRequest};
-
-#[derive(Default)]
-struct CapturingToolLlm {
-    requests: tokio::sync::Mutex<Vec<ToolCompletionRequest>>,
-}
-
-impl NativeLlmProvider for CapturingToolLlm {
-    // … implement model_name, cost_per_token, complete …
-
-    async fn complete_with_tools(
-        &self,
-        request: ToolCompletionRequest,
-    ) -> Result<ToolCompletionResponse, LlmError> {
-        self.requests.lock().await.push(request);
-        // Return a stub response — no tool calls, no side effects.
-        Ok(ToolCompletionResponse { … })
-    }
-}
-```
-
-Pass the capturing LLM into `TestRigBuilder::with_llm(…)` and inspect
-`requests` after the first response to assert schema fidelity before any tool
-execution occurs.
-
-#### HostedCatalogHarness — hosted schema verification
-
-For the hosted (worker-proxied) path, `HostedCatalogHarness` in
-`src/worker/container/tests/hosted_fidelity.rs` spins up a real Axum server
-that:
-
-- serves a controlled `RemoteToolCatalogResponse` at the catalogue route,
-- captures every `ProxyToolCompletionRequest` posted to
-  `LLM_COMPLETE_WITH_TOOLS_ROUTE`.
-
-Obtain it via the `hosted_catalog_harness` rstest fixture:
-
-```rust
-#[rstest]
-#[tokio::test]
-async fn my_schema_test(
-    #[future] hosted_catalog_harness: Result<HostedCatalogHarness, Box<dyn std::error::Error>>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let HostedCatalogHarness { runtime, server, captured_requests } =
-        hosted_catalog_harness.await?;
-
-    runtime.register_remote_tools().await?;
-    // … drive the worker …
-
-    let requests = captured_requests.lock().await;
-    let first = requests.first().expect("expected a proxied request");
-    // Assert schema fidelity on first.tools …
-
-    server.abort();
-    let _ = server.await;
-    Ok(())
-}
-```
-
-Always abort and await the server join handle at the end of the test to avoid
-port leaks between test runs.
-
-#### Schema verification pattern
-
-Both harnesses use the same assertion idiom to confirm that the first
-tool-capable request carries the registered schema rather than the placeholder:
-
-```rust
-assert_ne!(
-    tool.parameters,
-    serde_json::json!({
-        "type": "object",
-        "properties": {},
-        "additionalProperties": true
-    }),
-    "first request must not fall back to the placeholder WASM schema"
-);
-assert_eq!(
-    tool, &expected_definition,
-    "the first LLM request must carry the schema advertised at registration time"
-);
-```
-
 ## When to use cargo test versus cargo-nextest
 
 Today:
@@ -639,6 +524,116 @@ its own exported metadata.
 The storage path is the one that exercises schema normalization, because
 backends may persist placeholder or null schemas that must be stripped
 before the guest-export recovery logic can run.
+
+## End-to-end WASM schema regression tests
+
+The `e2e_traces` integration test target includes first-call WASM schema
+regression tests introduced in roadmap item `1.2.4`. These tests live in
+`tests/e2e_traces/wasm_schema_exposure.rs` and require the `test-helpers`
+feature because they import `ironclaw::testing::github_wasm_wrapper`.
+
+`Cargo.toml` declares `required-features = ["test-helpers"]` for the
+`e2e_traces` target, so Cargo skips it gracefully when the feature is
+absent rather than emitting a compile error.
+
+### Running the tests
+
+```bash
+# Compile and run the full e2e_traces suite:
+cargo nextest run --test e2e_traces --features test-helpers
+
+# Run only the WASM schema exposure tests:
+cargo nextest run --test e2e_traces --features test-helpers \
+  -E 'test(wasm_schema)'
+
+# Verify the target is skipped cleanly without the feature:
+cargo check --all --benches --tests --examples
+```
+
+### CapturingToolLlm — non-hosted schema verification
+
+For in-process (non-hosted) schema assertions, implement
+`ironclaw::llm::NativeLlmProvider` as a capturing stub that records every
+`ToolCompletionRequest` before returning a deterministic response:
+
+```rust
+#[derive(Default)]
+struct CapturingToolLlm {
+    requests: tokio::sync::Mutex<Vec<ToolCompletionRequest>>,
+}
+
+#[async_trait]
+impl NativeLlmProvider for CapturingToolLlm {
+    async fn complete_with_tools(
+        &self,
+        request: ToolCompletionRequest,
+    ) -> Result<ToolCompletionResponse, LlmError> {
+        self.requests.lock().await.push(request);
+        Ok(ToolCompletionResponse { /* deterministic stub */ })
+    }
+    // … remaining required methods …
+}
+```
+
+Pass the capturing LLM into `TestRigBuilder::with_llm(…)` and inspect
+`requests` after the first response to assert schema fidelity before any
+tool execution occurs.
+
+### HostedCatalogHarness — hosted schema verification
+
+For the hosted (worker-proxied) path, `HostedCatalogHarness` in
+`src/worker/container/tests/hosted_fidelity.rs` spins up a real Axum
+server that:
+
+- serves a controlled `RemoteToolCatalogResponse` at the catalogue route,
+- captures every `ProxyToolCompletionRequest` posted to
+  `LLM_COMPLETE_WITH_TOOLS_ROUTE`.
+
+Obtain it via the `hosted_catalog_harness` rstest fixture:
+
+```rust
+#[rstest]
+#[tokio::test]
+async fn my_schema_test(
+    #[future] hosted_catalog_harness: Result<HostedCatalogHarness, Box<dyn Error>>,
+) -> Result<(), Box<dyn Error>> {
+    let harness = hosted_catalog_harness.await?;
+
+    harness.runtime.register_remote_tools().await?;
+    // … drive the worker …
+
+    let requests = harness.captured_requests.lock().await;
+    let first = requests.first().expect("expected a proxied request");
+    // Assert schema fidelity on first.tools …
+
+    harness.server.abort();
+    let _ = harness.server.await;
+    Ok(())
+}
+```
+
+Always abort and await the server join handle at the end of the test to
+avoid port leaks between test runs.
+
+### Schema verification pattern
+
+Both harnesses use the same assertion idiom:
+
+```rust
+assert_ne!(
+    tool.parameters,
+    serde_json::json!({
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+    }),
+    "first request must not fall back to the placeholder WASM schema"
+);
+assert_eq!(
+    tool, &expected_definition,
+    "the first LLM request must carry the schema advertised at registration time"
+);
+```
 
 ## Expected follow-up changes
 
