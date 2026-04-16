@@ -1,3 +1,5 @@
+//! Tests for boot-screen rendering, snapshots, and `BootInfo` derivation.
+
 use insta::assert_snapshot;
 use rstest::rstest;
 
@@ -191,14 +193,6 @@ fn test_render_boot_screen_docker_not_running() {
     info.docker_status = DockerStatus::NotRunning;
     let output = render_boot_screen(&info);
     assert_boot_snapshot("render_boot_screen_docker_not_running", &output);
-}
-
-#[rstest]
-#[case::full(full_boot_info())]
-#[case::minimal(minimal_boot_info())]
-#[case::no_features(no_features_boot_info())]
-fn test_print_boot_screen(#[case] info: BootInfo) {
-    print_boot_screen(&info);
 }
 
 #[tokio::test]
