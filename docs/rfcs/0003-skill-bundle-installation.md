@@ -108,11 +108,14 @@ Every bundle must contain:
 <skill-name>/SKILL.md
 ```
 
-The archive root must contain exactly one directory. That directory name is the
-bundle's candidate `skill-name`, and it becomes the canonical on-disk skill
-name after the normalization and collision-resolution rules in
+Every archive entry must begin with the same top-level path component. That
+shared prefix is the bundle's candidate `skill-name`, and it becomes the
+canonical on-disk skill name after the normalization and collision-resolution
+rules in
 [Canonical skill names and conflict handling](#4-canonical-skill-names-and-conflict-handling)
-are applied.
+are applied. This is a path-prefix invariant rather than a requirement for an
+explicit directory record, so ZIP archives that omit root directory entries are
+still valid as long as all file paths share the same top-level prefix.
 
 ### Optional structure
 
@@ -241,11 +244,14 @@ must be the exact `skill` value exposed through `skill_read_file`.
 
 Before extraction, the installer should validate:
 
-1. the archive contains exactly one root directory
-2. that root directory contains exactly one `SKILL.md`
-3. every other entry is under `references/` or `assets/` within that root
-   directory
-4. the root directory name is a valid candidate `skill-name` before any
+1. every archive entry begins with the same top-level path component, even if
+   the ZIP does not contain an explicit directory record for that prefix
+2. the shared top-level prefix contains exactly one `SKILL.md` located at
+   `<root>/SKILL.md`
+3. no nested subdirectory contains another file named `SKILL.md`, and every
+   other entry under `<root>/` is under `<root>/references/` or
+   `<root>/assets/`
+4. the shared top-level prefix is a valid candidate `skill-name` before any
    normalization or conflict-resolution rules are applied
 5. no entry exceeds a per-file size cap
 6. the whole archive stays under a total size cap
@@ -259,13 +265,14 @@ A valid candidate `skill-name` at archive-validation time must:
 - contain only ASCII letters, ASCII digits, `_`, and `-` before normalization
 - be no longer than 64 bytes
 
-If the archive violates the "exactly one root directory" rule, the installer
+If the archive violates the single top-level path-prefix rule, the installer
 must reject it with a typed validation error rather than trying to guess the
 intended root. The error should clearly state that `.skill` archives must
-contain one top-level skill directory, for example:
+resolve to one top-level skill prefix and a root entrypoint at
+`<root>/SKILL.md`, for example:
 
 ```plaintext
-invalid_skill_bundle: expected exactly one root directory in .skill archive
+invalid_skill_bundle: expected one top-level path prefix with SKILL.md at <root>/SKILL.md
 ```
 
 ### Extraction rules
