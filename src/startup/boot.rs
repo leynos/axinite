@@ -1,7 +1,7 @@
 //! Startup boot-screen rendering and tests.
 
 use ironclaw::{cli::Cli, config::Config};
-use url::Url;
+use url::{Url, form_urlencoded};
 
 /// Runtime-computed values used to populate the startup boot screen.
 pub(crate) struct BootScreenContext<'a> {
@@ -72,20 +72,11 @@ fn build_boot_info(
 
 fn sanitize_display_url(url: &str) -> String {
     let Ok(mut parsed) = Url::parse(url) else {
-        return url.to_string();
+        return sanitize_relative_display_url(url);
     };
 
     let had_query = parsed.query().is_some();
-    let sanitized_pairs: Vec<(String, String)> = parsed
-        .query_pairs()
-        .map(|(key, value)| {
-            if key == "token" {
-                (key.into_owned(), "[REDACTED]".to_string())
-            } else {
-                (key.into_owned(), value.into_owned())
-            }
-        })
-        .collect();
+    let sanitized_pairs = sanitize_query_pairs(parsed.query_pairs());
 
     parsed.set_query(None);
     if had_query && !sanitized_pairs.is_empty() {
@@ -98,6 +89,55 @@ fn sanitize_display_url(url: &str) -> String {
     }
 
     parsed.to_string()
+}
+
+fn sanitize_relative_display_url(url: &str) -> String {
+    let Some((prefix, suffix)) = url.split_once('?') else {
+        return url.to_string();
+    };
+    let (query, fragment) = match suffix.split_once('#') {
+        Some((query, fragment)) => (query, Some(fragment)),
+        None => (suffix, None),
+    };
+    let sanitized_query = sanitize_query_string(query);
+    match fragment {
+        Some(fragment) => format!("{prefix}?{sanitized_query}#{fragment}"),
+        None => format!("{prefix}?{sanitized_query}"),
+    }
+}
+
+fn sanitize_query_string(query: &str) -> String {
+    let sanitized_pairs = sanitize_query_pairs(form_urlencoded::parse(query.as_bytes()));
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
+    serializer.extend_pairs(
+        sanitized_pairs
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str())),
+    );
+    serializer.finish()
+}
+
+fn sanitize_query_pairs<'a, I>(pairs: I) -> Vec<(String, String)>
+where
+    I: IntoIterator<Item = (std::borrow::Cow<'a, str>, std::borrow::Cow<'a, str>)>,
+{
+    pairs
+        .into_iter()
+        .map(|(key, value)| {
+            if should_redact_query_key(&key) {
+                (key.into_owned(), "[REDACTED]".to_string())
+            } else {
+                (key.into_owned(), value.into_owned())
+            }
+        })
+        .collect()
+}
+
+fn should_redact_query_key(key: &str) -> bool {
+    matches!(
+        key.to_ascii_lowercase().as_str(),
+        "token" | "access_token" | "authorization"
+    )
 }
 
 #[cfg(test)]
@@ -208,5 +248,12 @@ mod tests {
             sanitized,
             "http://127.0.0.1:4040/?token=%5BREDACTED%5D&mode=1"
         );
+    }
+
+    #[test]
+    fn sanitize_display_url_handles_relative_urls() {
+        let sanitized = sanitize_display_url("/gateway?token=secret&mode=1");
+
+        assert_eq!(sanitized, "/gateway?token=%5BREDACTED%5D&mode=1");
     }
 }

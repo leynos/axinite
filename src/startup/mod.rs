@@ -7,4 +7,4 @@ pub(crate) mod phases;
 pub(crate) mod run;
 pub(crate) mod wasm;
 
-pub(crate) use context::*;
+pub(crate) use context::{CoreAgentContext, GatewayPhaseContext};

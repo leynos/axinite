@@ -21,6 +21,16 @@ pub(crate) type WasmChannelRuntimeState = (
     Arc<WasmChannelRouter>,
 );
 
+/// Shared dependencies needed to wire the loaded WASM runtime back into the
+/// extension manager and live channel registry.
+pub(crate) struct WasmWiringContext<'a> {
+    pub(crate) extension_manager: &'a Option<Arc<ironclaw::extensions::ExtensionManager>>,
+    pub(crate) channels: &'a Arc<ChannelManager>,
+    pub(crate) sse_sender:
+        &'a Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
+    pub(crate) wasm_channel_owner_ids: &'a std::collections::HashMap<String, i64>,
+}
+
 /// Result of [`init_wasm_channels`]: the list of loaded channel names and the
 /// optional runtime state that must later be wired via
 /// [`wire_wasm_channel_runtime`].
@@ -92,14 +102,11 @@ pub(crate) async fn init_wasm_channels(
 /// Also configures relay-channel management and registers the SSE sender with
 /// the extension manager when one is provided.
 pub(crate) async fn wire_wasm_channel_runtime(
-    extension_manager: &Option<Arc<ironclaw::extensions::ExtensionManager>>,
+    wiring: &WasmWiringContext<'_>,
     wasm_channel_runtime_state: &mut Option<WasmChannelRuntimeState>,
     loaded_wasm_channel_names: &mut [String],
-    channels: &Arc<ChannelManager>,
-    sse_sender: &Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
-    wasm_channel_owner_ids: &std::collections::HashMap<String, i64>,
 ) {
-    if let Some(ext_mgr) = extension_manager
+    if let Some(ext_mgr) = wiring.extension_manager
         && let Some((rt, ps, router)) = wasm_channel_runtime_state.take()
     {
         let active_at_startup: std::collections::HashSet<String> =
@@ -109,11 +116,11 @@ pub(crate) async fn wire_wasm_channel_runtime(
             .await;
         ext_mgr
             .set_channel_runtime(
-                Arc::clone(channels),
+                Arc::clone(wiring.channels),
                 rt,
                 ps,
                 router,
-                wasm_channel_owner_ids.clone(),
+                wiring.wasm_channel_owner_ids.clone(),
             )
             .await;
         tracing::debug!("Channel runtime wired into extension manager for hot-activation");
@@ -142,15 +149,15 @@ pub(crate) async fn wire_wasm_channel_runtime(
         }
     }
 
-    if let Some(ext_mgr) = extension_manager {
+    if let Some(ext_mgr) = wiring.extension_manager {
         ext_mgr
-            .set_relay_channel_manager(Arc::clone(channels))
+            .set_relay_channel_manager(Arc::clone(wiring.channels))
             .await;
         ext_mgr.restore_relay_channels().await;
     }
 
-    if let Some(ext_mgr) = extension_manager
-        && let Some(sender) = sse_sender
+    if let Some(ext_mgr) = wiring.extension_manager
+        && let Some(sender) = wiring.sse_sender
     {
         ext_mgr.set_sse_sender(sender.clone()).await;
     }
@@ -166,6 +173,7 @@ mod tests {
         config::Config,
         llm::create_session_manager,
     };
+    use tracing_test::traced_test;
 
     use crate::startup::channels::ChannelRegistrar;
 
@@ -218,5 +226,39 @@ mod tests {
 
         assert!(result.loaded_wasm_channel_names.is_empty());
         assert!(result.runtime_state.is_none());
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn init_wasm_channels_warns_when_directory_missing() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let mut config = Config::for_testing(
+            tempdir.path().join("test.db"),
+            tempdir.path().join("skills"),
+            tempdir.path().join("installed-skills"),
+        )
+        .await
+        .expect("test config should be built");
+        config.channels.wasm_channels_enabled = true;
+        config.channels.wasm_channels_dir = tempdir.path().join("nonexistent");
+
+        let components = build_test_components(config.clone()).await;
+
+        let mut channel_names: Vec<String> = Vec::new();
+        let mut webhook_routes: Vec<axum::Router> = Vec::new();
+        let channels = ironclaw::channels::ChannelManager::new();
+        let mut reg = ChannelRegistrar {
+            channels: &channels,
+            channel_names: &mut channel_names,
+            webhook_routes: &mut webhook_routes,
+        };
+
+        let result = init_wasm_channels(&config, &components, &mut reg).await;
+
+        assert!(result.loaded_wasm_channel_names.is_empty());
+        assert!(result.runtime_state.is_none());
+        assert!(logs_contain(
+            "WASM channels are enabled, but the channel directory does not exist"
+        ));
     }
 }

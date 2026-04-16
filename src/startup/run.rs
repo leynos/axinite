@@ -15,6 +15,7 @@ use ironclaw::{
 #[cfg(unix)]
 use ironclaw::{channels::HttpChannelState, secrets::SecretsStore};
 
+use crate::startup::wasm::WasmWiringContext;
 use crate::startup::{CoreAgentContext, GatewayPhaseContext, wasm::wire_wasm_channel_runtime};
 
 #[cfg(unix)]
@@ -133,12 +134,14 @@ async fn prepare_channels(preparation: ChannelPreparation<'_>) {
         .await;
 
     wire_wasm_channel_runtime(
-        extension_manager,
+        &WasmWiringContext {
+            extension_manager,
+            channels,
+            sse_sender,
+            wasm_channel_owner_ids,
+        },
         wasm_channel_runtime_state,
         loaded_wasm_channel_names,
-        channels,
-        sse_sender,
-        wasm_channel_owner_ids,
     )
     .await;
 }

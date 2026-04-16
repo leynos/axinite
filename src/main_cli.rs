@@ -35,6 +35,11 @@ fn is_agent_subcommand(command: &Command) -> bool {
     )
 }
 
+// `dispatch_ironclaw_cli_command` intentionally uses a wildcard arm and
+// delegates exhaustive compile-time coverage to `dispatch_sync_command`, which
+// is the canonical exhaustive matcher over `Command`. When adding new command
+// variants, update both `dispatch_ironclaw_cli_command` and
+// `dispatch_sync_command` so async and sync routing stay aligned.
 async fn dispatch_ironclaw_cli_command(command: &Command) -> Option<anyhow::Result<bool>> {
     match command {
         Command::Config(c) => Some(

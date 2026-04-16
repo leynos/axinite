@@ -76,9 +76,9 @@ dependency files before the cache is written back to the action store.
 The `gag` crate appears as a `[dev-dependencies]` entry in `Cargo.toml`.
 It provides `gag::BufferRedirect::stdout()` to capture standard output
 in tests that assert on printed startup or boot-screen content — for
-example, the `print_startup_info_matches_snapshot` test in
-`src/main.rs`. The crate is compiled only when running tests and has no
-effect on the production binary.
+example, the
+`print_startup_info_matches_snapshot` test in `src/startup/boot.rs`. The crate
+is compiled only when running tests and has no effect on the production binary.
 
 ## Optional tools by workflow
 
@@ -220,7 +220,7 @@ background I/O.
 `build_components()` separates construction from activation:
 
 ```rust
-// Production usage (src/main.rs):
+// Production usage (src/startup/run.rs):
 let (components, side_effects) = AppBuilder::new(…).build_components().await?;
 side_effects.start();   // activates background tasks
 
@@ -363,6 +363,18 @@ Then set the database connection variable:
 Variable: `DATABASE_URL`
 Meaning: PostgreSQL connection URL used by the app.
 Default or rule:
+Required for PostgreSQL-backed work. For local development,
+`postgres://localhost/ironclaw` is a typical example; include the correct user,
+password, host, port, and database name when a local setup requires them.
+
+Example:
+
+```bash
+export DATABASE_URL=postgres://localhost/ironclaw
+```
+
+Adjust the connection string if the local PostgreSQL instance requires a
+different host, user, or password.
 
 ### libSQL test databases
 
@@ -441,6 +453,19 @@ loop outcomes into channel outputs. It is decomposed into three layers:
 - Types (`src/agent/dispatcher/types.rs`): pure helpers and simple data
   structures (preview truncation, auth parsing, message compaction,
   etc.).
+
+Key dispatcher APIs:
+
+- `RunLoopCtx`: per-run container that carries the session handle,
+  `thread_id`, and the turn's initial messages.
+- `compute_loop_thresholds(max_tool_iterations) -> LoopThresholds`:
+  - `nudge_at`: inject a gentle “prefer text” hint before forcing text.
+  - `force_text_at`: disable tools and force the LLM to produce text.
+  - `hard_ceiling`: safety net that guarantees termination.
+- `ChatDelegate` (internal): implements preflight, execution
+  (inline/parallel), ordered post-flight folding, status broadcast, and
+  auth/image side-effects. Status-send failures are explicitly ignored
+  to keep UI updates non-blocking.
 
 ### Dispatcher and Thread-Operations Module Structure
 
@@ -1026,7 +1051,6 @@ artifacts and CI duplication.
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
 
-
 ## Phased startup pipeline
 
 ### WebhookServer test helpers
@@ -1061,43 +1085,6 @@ Prefer adding logic beside the feature it serves rather than growing
 `mod.rs`. Module-local tests should live with the module they exercise, while
 pipeline tests belong in `workspace/tests.rs`.
 
-### Key APIs
-
-- `RunLoopCtx`: per-run container that carries the session handle,
-  `thread_id`, and the turn's initial messages.
-- `compute_loop_thresholds(max_tool_iterations) -> LoopThresholds`:
-  - `nudge_at`: inject a gentle “prefer text” hint before forcing text.
-  - `force_text_at`: disable tools and force the LLM to produce text.
-  - `hard_ceiling`: safety net that guarantees termination.
-- `ChatDelegate` (internal): implements preflight, execution
-  (inline/parallel), ordered post-flight folding, status broadcast, and
-  auth/image side-effects. Status-send failures are explicitly ignored
-  to keep UI updates non-blocking.
-
-### Invariants
-
-- Post-flight preserves the original tool-call order when folding
-  results.
-- Approval gates short-circuit execution and return a
-  `PendingApproval` with any subsequent calls captured as
-  `deferred_tool_calls`.
-- When `force_text_at` is reached, the delegate retries without tools
-  to guarantee termination.
-Required for PostgreSQL-backed work. For local development,
-`postgres://localhost/ironclaw` is a typical example; include the correct
-user, password, host, port, and database name when a local setup requires
-them.
-
-Example:
-
-```bash
-export DATABASE_URL=postgres://localhost/ironclaw
-```
-
-Adjust the connection string if the local PostgreSQL instance requires a
-different host, user, or password.
-
-
 ### AppBuilder integration
 
 `phase_build_components` feeds `AppBuilderFlags` derived from `&Cli` to
@@ -1105,7 +1092,6 @@ different host, user, or password.
 `AppBuilderFlags` (in the `ironclaw` library crate) when a new component
 must be conditionally included at startup, then consume the component in
 the appropriate phase context struct.
-
 
 ### Parameter-object structs in store helpers
 
@@ -1124,7 +1110,6 @@ describe the query or scope they model instead of generic `Options` suffixes.
 `src/main.rs` is a thin coordinator. All startup work is delegated to
 `src/startup/` submodules and to the binary-only CLI-dispatch helper
 `src/main_cli.rs`.
-
 
 #### Parameter objects
 
@@ -1168,6 +1153,8 @@ project's four-argument limit:
 
 ### Submodule responsibilities
 
+Caption: Responsibilities of startup submodules.
+
 | Module | File | Responsibility |
 | -------- | ------ | --------------- |
 | `context` | `src/startup/context.rs` | Defines the startup hand-off structs and shared core runtime context |
@@ -1181,16 +1168,19 @@ project's four-argument limit:
 1. Define a new `pub(crate) struct MyPhaseContext { … }` in
    `src/startup/context.rs`, or modify the existing hand-off structs
    there when the new phase reuses an existing context boundary.
-2. Implement `pub(crate) async fn phase_my_step(prev: PreviousContext) -> anyhow::Result<MyPhaseContext>`.
+2. Implement
+   `pub(crate) async fn phase_my_step(prev: PreviousContext) -> anyhow::Result<MyPhaseContext>`.
 3. Insert the call between the appropriate phases in `async_main()` in
    `src/main.rs`.
-4. Update this table, the submodule map above, and the architecture overview in
-   `docs/axinite-architecture-overview.md`.
+4. Update this table, the submodule map above, and the architecture
+   overview in `docs/axinite-architecture-overview.md`.
 ### Context structs
 
 Each context struct is defined in `src/startup/context.rs`, re-exported
 by `src/startup/mod.rs`, and carries only the values needed by its
 downstream phase.
+
+Caption: Shared startup context structs.
 
 | Struct | Produced by | Key fields |
 | -------- | ------------- | ------------ |
@@ -1217,11 +1207,12 @@ async_main()
        └─ dispatch_agent_commands()
 ```
 
-
 ### Phase sequence
 
 `async_main()` calls the following phase functions in order. Each phase
 consumes the context struct produced by the previous one.
+
+Caption: Startup phase sequence.
 
 | # | Function | Input | Output |
 | --- | ---------- | ------- | -------- |
