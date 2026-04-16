@@ -176,6 +176,7 @@ impl Agent {
 mod tests {
     use std::sync::Arc;
 
+    use anyhow::Result;
     use rstest::rstest;
     use tokio::sync::Mutex;
     use uuid::Uuid;
@@ -199,12 +200,12 @@ mod tests {
 
     async fn make_persisting_agent(
         session_manager: Arc<SessionManager>,
-    ) -> (Agent, Arc<dyn Database>, tempfile::TempDir) {
-        let (backend, tempdir) = local_backend().await;
+    ) -> Result<(Agent, Arc<dyn Database>, tempfile::TempDir)> {
+        let (backend, tempdir) = local_backend().await?;
         let store: Arc<dyn Database> = backend;
         let llm: Arc<dyn LlmProvider> = Arc::new(StubLlm::new("ok"));
         let agent = make_agent(Some(Arc::clone(&store)), llm, session_manager);
-        (agent, store, tempdir)
+        Ok((agent, store, tempdir))
     }
 
     fn pending_approval_fixture() -> PendingApproval {
@@ -226,8 +227,8 @@ mod tests {
     async fn handle_loop_result_response_persists_assistant_reply(
         incoming_message: IncomingMessage,
         session_manager: Arc<SessionManager>,
-    ) {
-        let (agent, store, _tempdir) = make_persisting_agent(session_manager).await;
+    ) -> Result<()> {
+        let (agent, store, _tempdir) = make_persisting_agent(session_manager).await?;
         let (session, thread_id) = make_session_with_started_turn().await;
 
         let result = agent
@@ -255,6 +256,7 @@ mod tests {
                 .any(|message| message.role == "assistant" && message.content == "done"),
             "expected persisted assistant response"
         );
+        Ok(())
     }
 
     #[rstest]
@@ -262,8 +264,8 @@ mod tests {
     async fn handle_loop_result_need_approval_returns_submission_result(
         incoming_message: IncomingMessage,
         session_manager: Arc<SessionManager>,
-    ) {
-        let (agent, _store, _tempdir) = make_persisting_agent(session_manager).await;
+    ) -> Result<()> {
+        let (agent, _store, _tempdir) = make_persisting_agent(session_manager).await?;
         let (session, thread_id) = make_session_with_started_turn().await;
         let pending = pending_approval_fixture();
         let request_id = pending.request_id;
@@ -307,6 +309,7 @@ mod tests {
             thread.pending_approval.is_some(),
             "pending approval should be stored on the thread"
         );
+        Ok(())
     }
 
     #[rstest]
@@ -314,8 +317,8 @@ mod tests {
     async fn handle_loop_result_error_persists_failure_and_marks_thread_failed(
         incoming_message: IncomingMessage,
         session_manager: Arc<SessionManager>,
-    ) {
-        let (agent, store, _tempdir) = make_persisting_agent(session_manager).await;
+    ) -> Result<()> {
+        let (agent, store, _tempdir) = make_persisting_agent(session_manager).await?;
         let (session, thread_id) = make_session_with_started_turn().await;
         let inner_error = "boom".to_string();
         let expected_error_text = format!("Database error: Query failed: {inner_error}");
@@ -363,5 +366,6 @@ mod tests {
             }),
             "expected persisted assistant error message"
         );
+        Ok(())
     }
 }

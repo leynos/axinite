@@ -287,4 +287,25 @@ mod tests {
 
         assert!(result.is_none(), "clean input should pass safety checks");
     }
+
+    #[rstest]
+    fn validate_safety_rejects_leaked_secret_input(
+        bare_agent: Agent,
+        incoming_message: IncomingMessage,
+    ) {
+        let leaked_secret = "My production AWS key is AKIAIOSFODNN7EXAMPLE.";
+
+        let result = bare_agent
+            .validate_safety(&incoming_message, leaked_secret)
+            .expect("secret-like input should be rejected before reaching sinks");
+
+        assert!(
+            matches!(
+                result,
+                SubmissionResult::Error { ref message }
+                    if message.contains("appears to contain a secret")
+            ),
+            "expected leaked-secret rejection warning"
+        );
+    }
 }

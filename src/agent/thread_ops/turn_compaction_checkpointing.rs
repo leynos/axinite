@@ -195,4 +195,52 @@ mod tests {
             "empty thread fixture should checkpoint an empty message list"
         );
     }
+
+    #[rstest]
+    #[tokio::test]
+    async fn apply_compaction_if_fresh_skips_stale_snapshot(
+        bare_agent: Agent,
+        fresh_session_thread: (Arc<Mutex<Session>>, Uuid),
+    ) {
+        let (session, thread_id) = fresh_session_thread;
+        let snapshot = {
+            let sess = session.lock().await;
+            sess.threads
+                .get(&thread_id)
+                .expect("thread should exist in fixture session")
+                .clone()
+        };
+
+        {
+            let mut sess = session.lock().await;
+            let thread = sess
+                .threads
+                .get_mut(&thread_id)
+                .expect("thread should still exist before applying stale snapshot");
+            thread.start_turn("mutated after snapshot");
+        }
+
+        bare_agent
+            .apply_compaction_if_fresh(&session, thread_id, snapshot)
+            .await;
+
+        let sess = session.lock().await;
+        let thread = sess
+            .threads
+            .get(&thread_id)
+            .expect("thread should exist after stale snapshot check");
+        assert_eq!(
+            thread.turns.len(),
+            1,
+            "stale snapshot should not replace the mutated live thread"
+        );
+        assert_eq!(thread.state, crate::agent::session::ThreadState::Processing);
+        assert_eq!(
+            thread
+                .last_turn()
+                .expect("mutated thread should have a live turn")
+                .user_input,
+            "mutated after snapshot"
+        );
+    }
 }

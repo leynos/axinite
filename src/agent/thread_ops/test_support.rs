@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Result;
 use rstest::fixture;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -91,14 +92,10 @@ pub(crate) fn bare_agent(session_manager: Arc<SessionManager>) -> Agent {
 }
 
 #[cfg(feature = "libsql")]
-pub(crate) async fn local_backend() -> (Arc<LibSqlBackend>, tempfile::TempDir) {
-    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+pub(crate) async fn local_backend() -> Result<(Arc<LibSqlBackend>, tempfile::TempDir)> {
+    let tempdir = tempfile::tempdir()?;
     let db_path = tempdir.path().join("thread-ops-test.db");
-    let backend = LibSqlBackend::new_local(&db_path)
-        .await
-        .expect("local backend creation should succeed");
-    NativeDatabase::run_migrations(&backend)
-        .await
-        .expect("migrations should succeed");
-    (Arc::new(backend), tempdir)
+    let backend = LibSqlBackend::new_local(&db_path).await?;
+    NativeDatabase::run_migrations(&backend).await?;
+    Ok((Arc::new(backend), tempdir))
 }

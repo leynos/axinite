@@ -207,4 +207,73 @@ mod tests {
         );
         assert_eq!(thread.state, ThreadState::Idle);
     }
+
+    #[rstest]
+    #[tokio::test]
+    async fn process_user_input_happy_path_starts_turn_and_records_checkpoint(
+        incoming_message: IncomingMessage,
+        session_manager: Arc<crate::agent::SessionManager>,
+        idle_session: (Arc<Mutex<Session>>, uuid::Uuid),
+    ) {
+        let llm = Arc::new(StubLlm::new("stub response"));
+        let agent = make_agent(
+            None,
+            Arc::clone(&llm) as Arc<dyn LlmProvider>,
+            Arc::clone(&session_manager),
+        );
+        let (session, thread_id) = idle_session;
+        let req = UserTurnRequest {
+            session: Arc::clone(&session),
+            thread_id,
+            content: incoming_message.content.clone(),
+        };
+
+        let result = agent
+            .process_user_input(&incoming_message, req)
+            .await
+            .expect("happy-path turn processing should succeed");
+
+        assert!(
+            matches!(
+                result,
+                SubmissionResult::Response { ref content } if content == "stub response"
+            ),
+            "expected successful response submission result"
+        );
+        assert!(llm.calls() > 0, "LLM should be invoked for the happy path");
+
+        let undo_mgr = session_manager.get_undo_manager(thread_id).await;
+        let checkpoints = {
+            let mgr = undo_mgr.lock().await;
+            mgr.list_checkpoints()
+                .into_iter()
+                .map(|checkpoint| checkpoint.description.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            checkpoints,
+            vec!["Before turn 1".to_string()],
+            "process_user_input should record a pre-turn checkpoint"
+        );
+
+        let sess = session.lock().await;
+        let thread = sess
+            .threads
+            .get(&thread_id)
+            .expect("thread should still exist after successful processing");
+        assert_eq!(thread.turns.len(), 1, "one turn should be started");
+        assert_eq!(
+            thread
+                .last_turn()
+                .expect("successful thread should contain the new turn")
+                .response
+                .as_deref(),
+            Some("stub response")
+        );
+        assert_eq!(
+            thread.state,
+            ThreadState::Idle,
+            "successful processing should finalise the thread back to idle"
+        );
+    }
 }
