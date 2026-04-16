@@ -1089,10 +1089,16 @@ pipeline tests belong in `workspace/tests.rs`.
 ### AppBuilder integration
 
 `phase_build_components` feeds `AppBuilderFlags` derived from `&Cli` to
-`AppBuilder` and awaits the completed `AppComponents`. Extend
-`AppBuilderFlags` (in the `ironclaw` library crate) when a new component
-must be conditionally included at startup, then consume the component in
-the appropriate phase context struct.
+`AppBuilder` and returns a `BuiltComponentsContext` containing both the
+completed `AppComponents` and deferred `RuntimeSideEffects`. Downstream
+startup phases pass that context forward intact: they consume
+`AppComponents` while assembling the long-running runtime, and the
+default run path crosses the `side_effects.start()` boundary only
+immediately before the agent loop begins. Extend `AppBuilderFlags` (in
+the `ironclaw` library crate) when a new component must be
+conditionally included at startup, then thread the resulting
+`AppComponents` and `RuntimeSideEffects` through the appropriate startup
+context.
 
 ### Parameter-object structs in store helpers
 
@@ -1111,6 +1117,15 @@ describe the query or scope they model instead of generic `Options` suffixes.
 `src/main.rs` is a thin coordinator. All startup work is delegated to
 `src/startup/` submodules and to the binary-only CLI-dispatch helper
 `src/main_cli.rs`.
+
+Ownership boundary:
+
+- `src/main_cli.rs` owns standalone subcommand routing for one-shot CLI
+  flows such as `ironclaw tool`, `ironclaw mcp`, `ironclaw config`,
+  `ironclaw memory`, and the hidden worker-oriented commands.
+- `src/startup/` owns the default `run` path. Its phase modules build
+  the shared runtime, start optional services, wire channels, and then
+  enter the long-running agent loop.
 
 #### Parameter objects
 

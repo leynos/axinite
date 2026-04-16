@@ -99,6 +99,22 @@ pub struct SignalChannel {
 }
 
 impl SignalChannel {
+    fn pairing_store() -> PairingStore {
+        #[cfg(test)]
+        {
+            if let Some(base_dir) = SIGNAL_PAIRING_STORE_OVERRIDE
+                .get_or_init(|| std::sync::Mutex::new(None))
+                .lock()
+                .expect("signal pairing store override mutex should not be poisoned")
+                .clone()
+            {
+                return PairingStore::with_base_dir(base_dir);
+            }
+        }
+
+        PairingStore::new()
+    }
+
     /// Create a new Signal channel with normalized config and fresh client/cache.
     pub fn new(config: SignalConfig) -> Result<Self, ChannelError> {
         let mut config = config;
@@ -178,7 +194,7 @@ impl SignalChannel {
         if self.is_sender_allowed(sender) {
             return true;
         }
-        let store = PairingStore::new();
+        let store = Self::pairing_store();
         if let Ok(allowed) = store.read_allow_from("signal") {
             return allowed.iter().any(|entry| entry == "*" || entry == sender);
         }
@@ -189,7 +205,7 @@ impl SignalChannel {
     /// Returns Ok(true) if message should be allowed (was already paired),
     /// Ok(false) if message was blocked but pairing request was processed.
     fn handle_pairing_request(&self, sender: &str, source_name: Option<&str>) -> Result<bool, ()> {
-        let store = PairingStore::new();
+        let store = Self::pairing_store();
         let meta = serde_json::json!({
             "sender": sender,
             "name": source_name,
@@ -1359,8 +1375,51 @@ async fn sse_listener(
 }
 
 #[cfg(test)]
+static SIGNAL_PAIRING_STORE_OVERRIDE: std::sync::OnceLock<
+    std::sync::Mutex<Option<std::path::PathBuf>>,
+> = std::sync::OnceLock::new();
+
+#[cfg(test)]
 mod tests {
+    use std::sync::{LazyLock, Mutex, MutexGuard};
+
+    use tempfile::TempDir;
+
     use super::*;
+
+    static SIGNAL_PAIRING_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    struct SignalPairingStoreGuard {
+        _guard: MutexGuard<'static, ()>,
+        _temp_dir: TempDir,
+    }
+
+    impl SignalPairingStoreGuard {
+        fn install() -> Self {
+            let guard = SIGNAL_PAIRING_TEST_LOCK
+                .lock()
+                .expect("signal pairing test lock should not be poisoned");
+            let temp_dir = tempfile::tempdir().expect("temporary pairing dir should be created");
+            *SIGNAL_PAIRING_STORE_OVERRIDE
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .expect("signal pairing store override mutex should not be poisoned") =
+                Some(temp_dir.path().to_path_buf());
+            Self {
+                _guard: guard,
+                _temp_dir: temp_dir,
+            }
+        }
+    }
+
+    impl Drop for SignalPairingStoreGuard {
+        fn drop(&mut self) {
+            *SIGNAL_PAIRING_STORE_OVERRIDE
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .expect("signal pairing store override mutex should not be poisoned") = None;
+        }
+    }
 
     fn make_config() -> SignalConfig {
         SignalConfig {
@@ -1808,11 +1867,50 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn process_envelope_pairing_accepts_already_paired_sender() -> Result<(), ChannelError> {
+        let _pairing_guard = SignalPairingStoreGuard::install();
+        let mut config = make_config();
+        config.allow_from = vec![];
+        config.dm_policy = "pairing".to_string();
+        let ch = SignalChannel::new(config)?;
+
+        let sender = "+9999999998";
+        let store = SignalChannel::pairing_store();
+        let request = store.upsert_request("signal", sender, None).unwrap();
+        store.approve("signal", &request.code).unwrap();
+
+        let env = make_envelope(Some(sender), Some("Hello!"));
+        assert!(ch.process_envelope(&env).is_some());
+        Ok(())
+    }
+
     #[test]
     fn process_envelope_denied_sender() -> Result<(), ChannelError> {
         let ch = make_channel()?;
         let env = make_envelope(Some("+9999999999"), Some("Hello!"));
         assert!(ch.process_envelope(&env).is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_envelope_pairing_creates_request_for_unpaired_sender()
+    -> Result<(), ChannelError> {
+        let _pairing_guard = SignalPairingStoreGuard::install();
+        let mut config = make_config();
+        config.allow_from = vec![];
+        config.dm_policy = "pairing".to_string();
+        let ch = SignalChannel::new(config)?;
+
+        let sender = "+9999999997";
+        let env = make_envelope(Some(sender), Some("Hello!"));
+        assert!(ch.process_envelope(&env).is_none());
+
+        let pending = SignalChannel::pairing_store()
+            .list_pending("signal")
+            .unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].id, sender);
         Ok(())
     }
 

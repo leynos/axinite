@@ -18,6 +18,7 @@ use crossterm::{
 };
 use secrecy::SecretString;
 
+#[derive(Debug, PartialEq, Eq)]
 /// Display a numbered menu and get user selection.
 ///
 /// Returns the index (0-based) of the selected option.
@@ -214,25 +215,20 @@ fn read_secret_line() -> io::Result<SecretString> {
             code, modifiers, ..
         }) = event::read()?
         {
-            match code {
-                KeyCode::Enter => {
+            let (next_input, effect) = apply_secret_key_event(&input, code, modifiers);
+            match effect {
+                SecretInputEffect::Submit => {
+                    input = next_input;
                     break;
                 }
-                KeyCode::Backspace if !input.is_empty() => {
-                    input.pop();
-                    execute!(stdout, Print("\x08 \x08"))?;
-                    stdout.flush()?;
-                }
-                KeyCode::Backspace => {}
-                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                SecretInputEffect::Interrupt => {
                     return Err(io::Error::new(io::ErrorKind::Interrupted, "Ctrl-C"));
                 }
-                KeyCode::Char(c) => {
-                    input.push(c);
-                    execute!(stdout, Print('*'))?;
-                    stdout.flush()?;
+                SecretInputEffect::None => {}
+                SecretInputEffect::Backspace | SecretInputEffect::MaskChar => {
+                    input = next_input;
+                    apply_secret_input_effect(&mut stdout, &effect)?;
                 }
-                _ => {}
             }
         }
     }
@@ -373,6 +369,11 @@ pub fn optional_input(prompt: &str, hint: Option<&str>) -> io::Result<Option<Str
 #[cfg(test)]
 mod tests {
     // Interactive tests are difficult to unit test, but we can test the non-interactive parts.
+    use std::io;
+
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    use super::{SecretInputEffect, apply_secret_input_effect, apply_secret_key_event};
 
     #[test]
     fn test_header_length_calculation() {
@@ -397,5 +398,91 @@ mod tests {
         super::print_success("");
         super::print_error("");
         super::print_info("");
+    }
+
+    #[test]
+    fn test_apply_secret_key_event_keeps_empty_input_on_backspace() {
+        let (next_input, effect) =
+            apply_secret_key_event("", KeyCode::Backspace, KeyModifiers::empty());
+        assert_eq!(next_input, "");
+        assert_eq!(effect, SecretInputEffect::None);
+    }
+
+    #[test]
+    fn test_apply_secret_key_event_removes_one_character_on_backspace() {
+        let (next_input, effect) =
+            apply_secret_key_event("abc", KeyCode::Backspace, KeyModifiers::empty());
+        assert_eq!(next_input, "ab");
+        assert_eq!(effect, SecretInputEffect::Backspace);
+    }
+
+    #[test]
+    fn test_apply_secret_key_event_interrupts_on_ctrl_c() {
+        let (next_input, effect) =
+            apply_secret_key_event("abc", KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert_eq!(next_input, "abc");
+        assert_eq!(effect, SecretInputEffect::Interrupt);
+    }
+
+    #[test]
+    fn test_apply_secret_input_effect_emits_backspace_sequence() -> io::Result<()> {
+        let mut stdout = Vec::new();
+        apply_secret_input_effect(&mut stdout, &SecretInputEffect::Backspace)?;
+        assert_eq!(stdout, b"\x08 \x08");
+        Ok(())
+    }
+
+    #[test]
+    fn test_apply_secret_input_effect_emits_mask_character() -> io::Result<()> {
+        let mut stdout = Vec::new();
+        apply_secret_input_effect(&mut stdout, &SecretInputEffect::MaskChar)?;
+        assert_eq!(stdout, b"*");
+        Ok(())
+    }
+}
+
+enum SecretInputEffect {
+    None,
+    Backspace,
+    MaskChar,
+    Submit,
+    Interrupt,
+}
+
+fn apply_secret_input_effect<W: Write>(
+    stdout: &mut W,
+    effect: &SecretInputEffect,
+) -> io::Result<()> {
+    match effect {
+        SecretInputEffect::Backspace => {
+            execute!(stdout, Print("\x08 \x08"))?;
+            stdout.flush()?;
+        }
+        SecretInputEffect::MaskChar => {
+            execute!(stdout, Print('*'))?;
+            stdout.flush()?;
+        }
+        SecretInputEffect::None | SecretInputEffect::Submit | SecretInputEffect::Interrupt => {}
+    }
+    Ok(())
+}
+
+fn apply_secret_key_event(
+    input: &str,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> (String, SecretInputEffect) {
+    match code {
+        KeyCode::Enter => (input.to_string(), SecretInputEffect::Submit),
+        KeyCode::Backspace if !input.is_empty() => {
+            let mut next_input = input.to_string();
+            next_input.pop();
+            (next_input, SecretInputEffect::Backspace)
+        }
+        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+            (input.to_string(), SecretInputEffect::Interrupt)
+        }
+        KeyCode::Char(c) => (format!("{input}{c}"), SecretInputEffect::MaskChar),
+        _ => (input.to_string(), SecretInputEffect::None),
     }
 }
