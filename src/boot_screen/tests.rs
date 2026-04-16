@@ -216,6 +216,7 @@ fn test_render_boot_screen_docker_status_variants(
 }
 
 #[rstest]
+#[case::db_passthrough(false, "libsql", true)]
 #[case::no_db_override(true, "none", false)]
 #[tokio::test]
 async fn boot_info_from_config_and_data_applies_db_override(
