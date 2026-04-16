@@ -34,6 +34,19 @@ pub(super) struct ApprovalCandidate {
     pub tool: Arc<dyn crate::tools::Tool>,
 }
 
+struct BeforeToolCallCtx<'a> {
+    delegate: &'a ChatDelegate<'a>,
+    original_tc: &'a crate::llm::ToolCall,
+    sensitive: &'a [&'a str],
+}
+
+struct BeforeToolCallAgentCtx<'a> {
+    agent: &'a Agent,
+    user_id: &'a str,
+    original_tc: &'a crate::llm::ToolCall,
+    sensitive: &'a [&'a str],
+}
+
 /// Restore original values for sensitive fields into a mutable JSON object.
 ///
 /// After a hook modifies tool parameters, any sensitive key that was
@@ -76,21 +89,18 @@ fn apply_hook_param_modification(
 }
 
 /// Apply the BeforeToolCall hook and return rejection message if any.
-pub(crate) async fn run_before_tool_call_hook(
-    agent: &Agent,
-    user_id: &str,
-    original_tc: &crate::llm::ToolCall,
+async fn run_before_tool_call_hook(
+    ctx: &BeforeToolCallCtx<'_>,
     tc: &mut crate::llm::ToolCall,
-    sensitive: &[&str],
 ) -> Option<String> {
-    let hook_params = redact_params(&tc.arguments, sensitive);
+    let hook_params = redact_params(&tc.arguments, ctx.sensitive);
     let event = crate::hooks::HookEvent::ToolCall {
         tool_name: tc.name.clone(),
         parameters: hook_params,
-        user_id: user_id.to_string(),
+        user_id: ctx.delegate.message.user_id.clone(),
         context: "chat".to_string(),
     };
-    match agent.hooks().run(&event).await {
+    match ctx.delegate.agent.hooks().run(&event).await {
         Err(crate::hooks::HookError::Rejected { reason }) => {
             Some(format!("Tool call rejected by hook: {}", reason))
         }
@@ -98,7 +108,33 @@ pub(crate) async fn run_before_tool_call_hook(
         Ok(crate::hooks::HookOutcome::Continue {
             modified: Some(new_params),
         }) => {
-            apply_hook_param_modification(tc, original_tc, sensitive, &new_params);
+            apply_hook_param_modification(tc, ctx.original_tc, ctx.sensitive, &new_params);
+            None
+        }
+        _ => None,
+    }
+}
+
+async fn run_before_tool_call_hook_for_agent(
+    ctx: &BeforeToolCallAgentCtx<'_>,
+    tc: &mut crate::llm::ToolCall,
+) -> Option<String> {
+    let hook_params = redact_params(&tc.arguments, ctx.sensitive);
+    let event = crate::hooks::HookEvent::ToolCall {
+        tool_name: tc.name.clone(),
+        parameters: hook_params,
+        user_id: ctx.user_id.to_string(),
+        context: "chat".to_string(),
+    };
+    match ctx.agent.hooks().run(&event).await {
+        Err(crate::hooks::HookError::Rejected { reason }) => {
+            Some(format!("Tool call rejected by hook: {}", reason))
+        }
+        Err(err) => Some(format!("Tool call blocked by hook policy: {}", err)),
+        Ok(crate::hooks::HookOutcome::Continue {
+            modified: Some(new_params),
+        }) => {
+            apply_hook_param_modification(tc, ctx.original_tc, ctx.sensitive, &new_params);
             None
         }
         _ => None,
@@ -106,20 +142,20 @@ pub(crate) async fn run_before_tool_call_hook(
 }
 
 /// Apply the BeforeToolCall hook and return rejection message if any.
-pub(super) async fn apply_before_tool_call_hook(
-    delegate: &ChatDelegate<'_>,
+pub(crate) async fn apply_before_tool_call_hook_for_agent(
+    agent: &Agent,
+    user_id: &str,
     original_tc: &crate::llm::ToolCall,
     tc: &mut crate::llm::ToolCall,
     sensitive: &[&str],
 ) -> Option<String> {
-    run_before_tool_call_hook(
-        delegate.agent,
-        &delegate.message.user_id,
+    let ctx = BeforeToolCallAgentCtx {
+        agent,
+        user_id,
         original_tc,
-        tc,
         sensitive,
-    )
-    .await
+    };
+    run_before_tool_call_hook_for_agent(&ctx, tc).await
 }
 
 /// Check if a tool requires approval based on its configuration and auto-approve settings.
@@ -176,10 +212,13 @@ async fn classify_tool_call(
         .as_ref()
         .map(|t| t.sensitive_params())
         .unwrap_or(&[]);
+    let hook_ctx = BeforeToolCallCtx {
+        delegate,
+        original_tc,
+        sensitive,
+    };
 
-    if let Some(rejection_msg) =
-        apply_before_tool_call_hook(delegate, original_tc, tc, sensitive).await
-    {
+    if let Some(rejection_msg) = run_before_tool_call_hook(&hook_ctx, tc).await {
         return ToolCallOutcome::Rejected(rejection_msg);
     }
 

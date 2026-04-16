@@ -437,7 +437,7 @@ impl Agent {
                 .unwrap_or(&[]);
 
             if let Some(rejection_msg) =
-                crate::agent::dispatcher::delegate::run_before_tool_call_hook(
+                crate::agent::dispatcher::delegate::apply_before_tool_call_hook_for_agent(
                     self,
                     &scope.env.user_id,
                     original_tc,
