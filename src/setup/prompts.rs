@@ -219,12 +219,10 @@ fn read_secret_line() -> io::Result<SecretString> {
                 KeyCode::Enter => {
                     break;
                 }
-                KeyCode::Backspace => {
-                    if !input.is_empty() {
-                        input.pop();
-                        execute!(stdout, Print("\x08 \x08"))?;
-                        stdout.flush()?;
-                    }
+                KeyCode::Backspace if !input.is_empty() => {
+                    input.pop();
+                    execute!(stdout, Print("\x08 \x08"))?;
+                    stdout.flush()?;
                 }
                 KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                     return Err(io::Error::new(io::ErrorKind::Interrupted, "Ctrl-C"));
