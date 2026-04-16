@@ -39,6 +39,7 @@ mod trace_error_path;
 mod trace_file_tools;
 #[path = "e2e_traces/trace_memory.rs"]
 mod trace_memory;
+#[cfg(feature = "test-helpers")]
 #[path = "e2e_traces/wasm_schema_exposure.rs"]
 mod wasm_schema_exposure;
 #[path = "e2e_traces/worker_coverage.rs"]
