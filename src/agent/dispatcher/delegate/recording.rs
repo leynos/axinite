@@ -9,6 +9,22 @@ use crate::llm::{ChatMessage, ReasoningContext};
 use super::ChatDelegate;
 use crate::agent::dispatcher::types::*;
 
+fn extract_wrapped_tool_output_content(result_content: &str) -> Option<&str> {
+    let start = result_content.find(">\n")?;
+    let end = result_content.rfind("\n</tool_output>")?;
+    Some(&result_content[start + 2..end])
+}
+
+fn parse_recorded_tool_result(result_content: &str) -> serde_json::Value {
+    serde_json::from_str::<serde_json::Value>(result_content)
+        .ok()
+        .or_else(|| {
+            extract_wrapped_tool_output_content(result_content)
+                .and_then(|inner| serde_json::from_str::<serde_json::Value>(inner).ok())
+        })
+        .unwrap_or_else(|| serde_json::json!(result_content))
+}
+
 impl<'a> ChatDelegate<'a> {
     /// Record tool outcome in the thread.
     pub(super) async fn record_tool_outcome(
@@ -24,7 +40,7 @@ impl<'a> ChatDelegate<'a> {
             if is_tool_error {
                 turn.record_tool_error(result_content.to_string());
             } else {
-                turn.record_tool_result(serde_json::json!(result_content));
+                turn.record_tool_result(parse_recorded_tool_result(result_content));
             }
         }
     }
@@ -183,3 +199,7 @@ impl<'a> ChatDelegate<'a> {
         auth_instructions
     }
 }
+
+#[cfg(test)]
+#[path = "recording_tests.rs"]
+mod tests;
