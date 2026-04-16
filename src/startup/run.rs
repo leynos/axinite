@@ -33,7 +33,15 @@ use crate::startup::channels::spawn_sighup_handler;
 /// server, and tears down any active tunnel.
 pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
     let GatewayPhaseContext {
-        core,
+        core:
+            CoreAgentContext {
+                config,
+                components,
+                side_effects,
+                active_tunnel,
+                container_job_manager,
+                ..
+            },
         channels,
         webhook_server,
         mut loaded_wasm_channel_names,
@@ -46,14 +54,6 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
         routine_engine_slot,
         ..
     } = ctx;
-    let CoreAgentContext {
-        config,
-        components,
-        side_effects,
-        active_tunnel,
-        container_job_manager,
-        ..
-    } = core;
 
     let channels = Arc::new(channels);
     prepare_channels(ChannelPreparation {
