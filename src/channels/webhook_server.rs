@@ -165,7 +165,6 @@ impl WebhookServer {
     /// test port allocation and the server bind. That makes it suitable for
     /// tests that reserve ephemeral ports before handing ownership to the
     /// server.
-    #[cfg(any(test, feature = "test-helpers"))]
     pub async fn start_with_listener(
         &mut self,
         listener: tokio::net::TcpListener,
@@ -224,7 +223,6 @@ impl WebhookServer {
     /// old listener before calling [`Self::spawn_with_listener`], so there is
     /// no rollback path if spawning were to fail. That trade-off is acceptable
     /// in tests because [`Self::spawn_with_listener`] is infallible.
-    #[cfg(any(test, feature = "test-helpers"))]
     pub async fn restart_with_listener(
         &mut self,
         listener: tokio::net::TcpListener,
