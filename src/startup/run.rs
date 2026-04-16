@@ -22,11 +22,7 @@ use crate::startup::channels::spawn_sighup_handler;
 
 pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
     let GatewayPhaseContext {
-        config,
-        components,
-        side_effects,
-        active_tunnel,
-        container_job_manager,
+        core,
         channels,
         webhook_server,
         mut loaded_wasm_channel_names,
@@ -39,6 +35,14 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
         routine_engine_slot,
         ..
     } = ctx;
+    let crate::startup::phases::CoreAgentContext {
+        config,
+        components,
+        side_effects,
+        active_tunnel,
+        container_job_manager,
+        ..
+    } = core;
 
     let channels = Arc::new(channels);
     prepare_channels(

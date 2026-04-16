@@ -50,7 +50,7 @@ struct OrchestratorContext {
     docker_status: ironclaw::sandbox::DockerStatus,
 }
 
-pub(crate) struct AgentRunContext {
+pub(crate) struct CoreAgentContext {
     pub(crate) config: Config,
     pub(crate) components: AppComponents,
     pub(crate) side_effects: RuntimeSideEffects,
@@ -72,26 +72,12 @@ pub(crate) struct AgentRunContext {
     pub(crate) log_level_handle: Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
 }
 
+pub(crate) struct AgentRunContext {
+    pub(crate) core: CoreAgentContext,
+}
+
 pub(crate) struct GatewayPhaseContext {
-    pub(crate) config: Config,
-    pub(crate) components: AppComponents,
-    pub(crate) side_effects: RuntimeSideEffects,
-    pub(crate) active_tunnel: Option<Box<dyn ironclaw::tunnel::Tunnel>>,
-    pub(crate) container_job_manager: Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
-    pub(crate) prompt_queue: Arc<
-        tokio::sync::Mutex<
-            std::collections::HashMap<
-                uuid::Uuid,
-                std::collections::VecDeque<ironclaw::orchestrator::api::PendingPrompt>,
-            >,
-        >,
-    >,
-    pub(crate) docker_status: ironclaw::sandbox::DockerStatus,
-    pub(crate) log_broadcaster: Arc<LogBroadcaster>,
-    pub(crate) log_level_handle: Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
-    pub(crate) job_event_tx: Option<
-        tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
-    >,
+    pub(crate) core: CoreAgentContext,
     pub(crate) channels: ChannelManager,
     pub(crate) webhook_server: Option<Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>>,
     pub(crate) channel_names: Vec<String>,
@@ -196,16 +182,18 @@ pub(crate) async fn phase_tunnel_and_orchestrator(
     } = setup_orchestrator_context(&config, &built.components).await;
 
     AgentRunContext {
-        config,
-        components: built.components,
-        side_effects: built.side_effects,
-        active_tunnel,
-        container_job_manager,
-        job_event_tx,
-        prompt_queue,
-        docker_status,
-        log_broadcaster: built.log_broadcaster,
-        log_level_handle: built.log_level_handle,
+        core: CoreAgentContext {
+            config,
+            components: built.components,
+            side_effects: built.side_effects,
+            active_tunnel,
+            container_job_manager,
+            job_event_tx,
+            prompt_queue,
+            docker_status,
+            log_broadcaster: built.log_broadcaster,
+            log_level_handle: built.log_level_handle,
+        },
     }
 }
 
@@ -243,27 +231,28 @@ fn create_session_and_register_tools(
     ironclaw::tools::builtin::SchedulerSlot,
 ) {
     let session_manager = Arc::new(
-        ironclaw::agent::SessionManager::new().with_hooks(agent_ctx.components.hooks.clone()),
+        ironclaw::agent::SessionManager::new().with_hooks(agent_ctx.core.components.hooks.clone()),
     );
     let scheduler_slot: ironclaw::tools::builtin::SchedulerSlot =
         Arc::new(tokio::sync::RwLock::new(None));
 
     agent_ctx
+        .core
         .components
         .tools
         .register_job_tools(ironclaw::tools::RegisterJobToolsOptions {
-            context_manager: Arc::clone(&agent_ctx.components.context_manager),
+            context_manager: Arc::clone(&agent_ctx.core.components.context_manager),
             scheduler_slot: Some(scheduler_slot.clone()),
-            job_manager: agent_ctx.container_job_manager.clone(),
-            store: agent_ctx.components.db.clone(),
-            job_event_tx: agent_ctx.job_event_tx.clone(),
+            job_manager: agent_ctx.core.container_job_manager.clone(),
+            store: agent_ctx.core.components.db.clone(),
+            job_event_tx: agent_ctx.core.job_event_tx.clone(),
             inject_tx: Some(channels.inject_sender()),
-            prompt_queue: if agent_ctx.config.sandbox.enabled {
-                Some(Arc::clone(&agent_ctx.prompt_queue))
+            prompt_queue: if agent_ctx.core.config.sandbox.enabled {
+                Some(Arc::clone(&agent_ctx.core.prompt_queue))
             } else {
                 None
             },
-            secrets_store: agent_ctx.components.secrets_store.clone(),
+            secrets_store: agent_ctx.core.components.secrets_store.clone(),
         });
 
     (session_manager, scheduler_slot)
@@ -281,11 +270,17 @@ pub(crate) async fn phase_init_channels_and_hooks(
         wasm_channel_runtime_state,
         #[cfg(unix)]
         http_channel_state,
-    } = setup_channels(cli, &agent_ctx.config, &agent_ctx.components, &channels).await?;
+    } = setup_channels(
+        cli,
+        &agent_ctx.core.config,
+        &agent_ctx.core.components,
+        &channels,
+    )
+    .await?;
 
     bootstrap_and_log_hooks(
-        &agent_ctx.components,
-        &agent_ctx.config,
+        &agent_ctx.core.components,
+        &agent_ctx.core.config,
         &loaded_wasm_channel_names,
     )
     .await;
@@ -293,16 +288,7 @@ pub(crate) async fn phase_init_channels_and_hooks(
         create_session_and_register_tools(&agent_ctx, &channels);
 
     Ok(GatewayPhaseContext {
-        config: agent_ctx.config,
-        components: agent_ctx.components,
-        side_effects: agent_ctx.side_effects,
-        active_tunnel: agent_ctx.active_tunnel,
-        container_job_manager: agent_ctx.container_job_manager,
-        prompt_queue: agent_ctx.prompt_queue,
-        docker_status: agent_ctx.docker_status,
-        log_broadcaster: agent_ctx.log_broadcaster,
-        log_level_handle: agent_ctx.log_level_handle,
-        job_event_tx: agent_ctx.job_event_tx,
+        core: agent_ctx.core,
         channels,
         webhook_server,
         channel_names,
@@ -324,16 +310,16 @@ pub(crate) async fn phase_setup_gateway(ctx: &mut GatewayPhaseContext) {
         sse_sender,
         routine_engine_slot,
     } = setup_gateway_channel(
-        &ctx.config,
-        &ctx.components,
+        &ctx.core.config,
+        &ctx.core.components,
         &mut GatewayContext {
-            container_job_manager: &ctx.container_job_manager,
+            container_job_manager: &ctx.core.container_job_manager,
             session_manager: &ctx.session_manager,
-            log_broadcaster: &ctx.log_broadcaster,
-            log_level_handle: &ctx.log_level_handle,
-            prompt_queue: &ctx.prompt_queue,
+            log_broadcaster: &ctx.core.log_broadcaster,
+            log_level_handle: &ctx.core.log_level_handle,
+            prompt_queue: &ctx.core.prompt_queue,
             scheduler_slot: &ctx.scheduler_slot,
-            job_event_tx: &ctx.job_event_tx,
+            job_event_tx: &ctx.core.job_event_tx,
             channels: &ctx.channels,
             channel_names: &mut ctx.channel_names,
         },
@@ -347,20 +333,21 @@ pub(crate) async fn phase_setup_gateway(ctx: &mut GatewayPhaseContext) {
 
 pub(crate) fn phase_print_boot_screen(cli: &Cli, ctx: &GatewayPhaseContext) {
     let boot_screen = boot::BootScreenContext {
-        llm_model: ctx.components.llm.model_name().to_string(),
+        llm_model: ctx.core.components.llm.model_name().to_string(),
         cheap_model: ctx
+            .core
             .components
             .cheap_llm
             .as_ref()
             .map(|c| c.model_name().to_string()),
-        tool_count: ctx.components.tools.count(),
+        tool_count: ctx.core.components.tools.count(),
         gateway_url: ctx.gateway_url.clone(),
-        docker_status: ctx.docker_status,
+        docker_status: ctx.core.docker_status,
         channel_names: ctx.channel_names.clone(),
-        active_tunnel: &ctx.active_tunnel,
+        active_tunnel: &ctx.core.active_tunnel,
     };
 
-    boot::print_startup_info(&ctx.config, cli, &boot_screen);
+    boot::print_startup_info(&ctx.core.config, cli, &boot_screen);
 }
 
 pub(crate) async fn phase_run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
