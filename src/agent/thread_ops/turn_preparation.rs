@@ -168,3 +168,123 @@ impl Agent {
         Ok(PrepareTurnResult::Prepared { turn_messages })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::agent::submission::SubmissionResult;
+    use crate::agent::thread_ops::test_support::{
+        bare_agent, fresh_session_thread, incoming_message,
+    };
+
+    #[rstest]
+    #[case(ThreadState::Processing, "Turn in progress. Use /interrupt to cancel.")]
+    #[case(
+        ThreadState::AwaitingApproval,
+        "Waiting for approval. Use /interrupt to cancel."
+    )]
+    #[case(ThreadState::Completed, "Thread completed. Use /thread new.")]
+    #[tokio::test]
+    async fn check_thread_state_rejects_blocking_states(
+        #[case] state: ThreadState,
+        #[case] expected_message: &str,
+        bare_agent: Agent,
+        incoming_message: IncomingMessage,
+        fresh_session_thread: (Arc<Mutex<Session>>, Uuid),
+    ) {
+        let (session, thread_id) = fresh_session_thread;
+        {
+            let mut sess = session.lock().await;
+            let thread = sess
+                .threads
+                .get_mut(&thread_id)
+                .expect("thread should exist in fixture session");
+            thread.state = state;
+        }
+
+        let result = bare_agent
+            .check_thread_state(&incoming_message, &session, thread_id)
+            .await
+            .expect("thread state lookup should succeed");
+
+        assert!(
+            matches!(
+                result,
+                Some(SubmissionResult::Error { ref message }) if message == expected_message
+            ),
+            "expected blocking thread-state submission result"
+        );
+    }
+
+    #[rstest]
+    #[case(ThreadState::Idle)]
+    #[case(ThreadState::Interrupted)]
+    #[tokio::test]
+    async fn check_thread_state_allows_processable_states(
+        #[case] state: ThreadState,
+        bare_agent: Agent,
+        incoming_message: IncomingMessage,
+        fresh_session_thread: (Arc<Mutex<Session>>, Uuid),
+    ) {
+        let (session, thread_id) = fresh_session_thread;
+        {
+            let mut sess = session.lock().await;
+            let thread = sess
+                .threads
+                .get_mut(&thread_id)
+                .expect("thread should exist in fixture session");
+            thread.state = state;
+        }
+
+        let result = bare_agent
+            .check_thread_state(&incoming_message, &session, thread_id)
+            .await
+            .expect("thread state lookup should succeed");
+
+        assert!(result.is_none(), "processable thread states should pass");
+    }
+
+    #[rstest]
+    fn validate_safety_rejects_invalid_input(bare_agent: Agent, incoming_message: IncomingMessage) {
+        let result = bare_agent
+            .validate_safety(&incoming_message, "")
+            .expect("empty input should be rejected");
+
+        assert!(
+            matches!(
+                result,
+                SubmissionResult::Error { ref message }
+                    if message.contains("Input rejected by safety validation")
+            ),
+            "expected validation error result"
+        );
+    }
+
+    #[rstest]
+    fn validate_safety_rejects_blocked_policy_input(
+        bare_agent: Agent,
+        incoming_message: IncomingMessage,
+    ) {
+        let result = bare_agent
+            .validate_safety(&incoming_message, "Please run this: ; rm -rf /")
+            .expect("blocked policy input should be rejected");
+
+        assert!(
+            matches!(
+                result,
+                SubmissionResult::Error { ref message }
+                    if message == "Input rejected by safety policy."
+            ),
+            "expected policy rejection result"
+        );
+    }
+
+    #[rstest]
+    fn validate_safety_allows_clean_input(bare_agent: Agent, incoming_message: IncomingMessage) {
+        let result = bare_agent.validate_safety(&incoming_message, "hello world");
+
+        assert!(result.is_none(), "clean input should pass safety checks");
+    }
+}

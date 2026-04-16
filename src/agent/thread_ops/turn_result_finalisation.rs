@@ -171,3 +171,197 @@ impl Agent {
         }
     }
 }
+
+#[cfg(all(test, feature = "libsql"))]
+mod tests {
+    use std::sync::Arc;
+
+    use rstest::rstest;
+    use tokio::sync::Mutex;
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::agent::thread_ops::test_support::{
+        incoming_message, local_backend, make_agent, session_manager,
+    };
+    use crate::agent::{PendingApproval, SessionManager};
+    use crate::db::Database;
+    use crate::llm::{ChatMessage, LlmProvider};
+    use crate::testing::StubLlm;
+
+    async fn make_session_with_started_turn() -> (Arc<Mutex<Session>>, Uuid) {
+        let mut session = Session::new("user-1");
+        let thread = session.create_thread();
+        let thread_id = thread.id;
+        thread.start_turn("hello");
+        (Arc::new(Mutex::new(session)), thread_id)
+    }
+
+    async fn make_persisting_agent(
+        session_manager: Arc<SessionManager>,
+    ) -> (Agent, Arc<dyn Database>, tempfile::TempDir) {
+        let (backend, tempdir) = local_backend().await;
+        let store: Arc<dyn Database> = backend;
+        let llm: Arc<dyn LlmProvider> = Arc::new(StubLlm::new("ok"));
+        let agent = make_agent(Some(Arc::clone(&store)), llm, session_manager);
+        (agent, store, tempdir)
+    }
+
+    fn pending_approval_fixture() -> PendingApproval {
+        PendingApproval {
+            request_id: Uuid::new_v4(),
+            tool_name: "dangerous_tool".to_string(),
+            parameters: serde_json::json!({ "path": "/tmp/file" }),
+            display_parameters: serde_json::json!({ "path": "/tmp/file" }),
+            description: "Modify a file".to_string(),
+            tool_call_id: "call-1".to_string(),
+            context_messages: vec![ChatMessage::user("hello")],
+            deferred_tool_calls: Vec::new(),
+            user_timezone: None,
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn handle_loop_result_response_persists_assistant_reply(
+        incoming_message: IncomingMessage,
+        session_manager: Arc<SessionManager>,
+    ) {
+        let (agent, store, _tempdir) = make_persisting_agent(session_manager).await;
+        let (session, thread_id) = make_session_with_started_turn().await;
+
+        let result = agent
+            .handle_loop_result(
+                &incoming_message,
+                &session,
+                thread_id,
+                Ok(AgenticLoopResult::Response("done".to_string())),
+            )
+            .await
+            .expect("response finalisation should succeed");
+
+        assert!(
+            matches!(result, SubmissionResult::Response { ref content } if content == "done"),
+            "expected response submission result"
+        );
+
+        let messages = store
+            .list_conversation_messages(thread_id)
+            .await
+            .expect("assistant response should be persisted");
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.role == "assistant" && message.content == "done"),
+            "expected persisted assistant response"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn handle_loop_result_need_approval_returns_submission_result(
+        incoming_message: IncomingMessage,
+        session_manager: Arc<SessionManager>,
+    ) {
+        let (agent, _store, _tempdir) = make_persisting_agent(session_manager).await;
+        let (session, thread_id) = make_session_with_started_turn().await;
+        let pending = pending_approval_fixture();
+        let request_id = pending.request_id;
+        let expected_description = pending.description.clone();
+        let expected_tool_name = pending.tool_name.clone();
+        let expected_parameters = pending.display_parameters.clone();
+
+        let result = agent
+            .handle_loop_result(
+                &incoming_message,
+                &session,
+                thread_id,
+                Ok(AgenticLoopResult::NeedApproval { pending }),
+            )
+            .await
+            .expect("approval finalisation should succeed");
+
+        assert!(
+            matches!(
+                result,
+                SubmissionResult::NeedApproval {
+                    request_id: actual_request_id,
+                    tool_name: ref actual_tool_name,
+                    description: ref actual_description,
+                    parameters: ref actual_parameters
+                } if actual_request_id == request_id
+                    && actual_tool_name == &expected_tool_name
+                    && actual_description == &expected_description
+                    && actual_parameters == &expected_parameters
+            ),
+            "expected need-approval submission result"
+        );
+
+        let sess = session.lock().await;
+        let thread = sess
+            .threads
+            .get(&thread_id)
+            .expect("thread should still exist after approval finalisation");
+        assert_eq!(thread.state, ThreadState::AwaitingApproval);
+        assert!(
+            thread.pending_approval.is_some(),
+            "pending approval should be stored on the thread"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn handle_loop_result_error_persists_failure_and_marks_thread_failed(
+        incoming_message: IncomingMessage,
+        session_manager: Arc<SessionManager>,
+    ) {
+        let (agent, store, _tempdir) = make_persisting_agent(session_manager).await;
+        let (session, thread_id) = make_session_with_started_turn().await;
+        let inner_error = "boom".to_string();
+        let expected_error_text = format!("Database error: Query failed: {inner_error}");
+
+        let result = agent
+            .handle_loop_result(
+                &incoming_message,
+                &session,
+                thread_id,
+                Err(Error::from(crate::error::DatabaseError::Query(inner_error))),
+            )
+            .await
+            .expect("error finalisation should succeed");
+
+        assert!(
+            matches!(
+                result,
+                SubmissionResult::Error { ref message } if message == &expected_error_text
+            ),
+            "expected error submission result"
+        );
+
+        let sess = session.lock().await;
+        let thread = sess
+            .threads
+            .get(&thread_id)
+            .expect("thread should still exist after error finalisation");
+        assert_eq!(thread.state, ThreadState::Idle);
+        assert!(
+            thread
+                .last_turn()
+                .and_then(|turn| turn.error.as_ref())
+                .is_some_and(|error| error == &expected_error_text),
+            "expected thread.fail_turn to record the error"
+        );
+        drop(sess);
+
+        let messages = store
+            .list_conversation_messages(thread_id)
+            .await
+            .expect("assistant error reply should be persisted");
+        assert!(
+            messages.iter().any(|message| {
+                message.role == "assistant" && message.content == expected_error_text
+            }),
+            "expected persisted assistant error message"
+        );
+    }
+}
