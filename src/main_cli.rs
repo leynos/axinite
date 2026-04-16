@@ -25,6 +25,16 @@ pub(crate) async fn dispatch_subcommand(cli: &Cli) -> anyhow::Result<bool> {
         .map(|handled| handled.unwrap_or(false))
 }
 
+fn is_agent_subcommand(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Worker { .. }
+            | Command::ClaudeBridge { .. }
+            | Command::Onboard { .. }
+            | Command::Run
+    )
+}
+
 async fn dispatch_ironclaw_cli_command(command: &Command) -> Option<anyhow::Result<bool>> {
     match command {
         Command::Config(c) => Some(
@@ -101,13 +111,7 @@ pub(crate) async fn dispatch_cli_tool_commands(cli: &Cli) -> anyhow::Result<Opti
         return Ok(None);
     };
 
-    if matches!(
-        command,
-        Command::Worker { .. }
-            | Command::ClaudeBridge { .. }
-            | Command::Onboard { .. }
-            | Command::Run
-    ) {
+    if is_agent_subcommand(command) {
         return Ok(None);
     }
 
@@ -127,34 +131,59 @@ pub(crate) async fn dispatch_cli_tool_commands(cli: &Cli) -> anyhow::Result<Opti
 /// Returns `Ok(Some(true))` when a subcommand was matched and executed,
 /// `Ok(None)` when the command is not a worker subcommand.
 pub(crate) async fn dispatch_agent_commands(cli: &Cli) -> anyhow::Result<Option<bool>> {
-    match &cli.command {
-        Some(Command::Worker {
+    let Some(command) = &cli.command else {
+        return Ok(None);
+    };
+
+    #[cfg(test)]
+    if let Some(result) = test_support::try_dispatch_agent_command(command) {
+        return result;
+    }
+
+    if !is_agent_subcommand(command) {
+        return Ok(None);
+    }
+
+    match command {
+        Command::Worker {
             job_id,
             orchestrator_url,
             max_iterations,
-        }) => {
+        } => {
             dispatch_worker_subcommand(*job_id, orchestrator_url, *max_iterations).await?;
             Ok(Some(true))
         }
-        Some(Command::ClaudeBridge {
+        Command::ClaudeBridge {
             job_id,
             orchestrator_url,
             max_turns,
             model,
-        }) => {
+        } => {
             dispatch_claude_bridge_subcommand(*job_id, orchestrator_url, *max_turns, model).await?;
             Ok(Some(true))
         }
-        Some(Command::Onboard {
+        Command::Onboard {
             skip_auth,
             channels_only,
             provider_only,
             quick,
-        }) => {
+        } => {
             run_onboard_subcommand(*skip_auth, *channels_only, *provider_only, *quick).await?;
             Ok(Some(true))
         }
-        _ => Ok(None),
+        Command::Run => Ok(None),
+        Command::Config(_)
+        | Command::Tool(_)
+        | Command::Registry(_)
+        | Command::Mcp(_)
+        | Command::Memory(_)
+        | Command::Pairing(_)
+        | Command::Service(_)
+        | Command::Doctor
+        | Command::Status
+        | Command::Completion(_) => Ok(None),
+        #[cfg(feature = "import")]
+        Command::Import(_) => Ok(None),
     }
 }
 
@@ -227,10 +256,38 @@ async fn dispatch_worker_subcommand(
 }
 
 #[cfg(test)]
-mod tests {
-    use ironclaw::cli::{Cli, Command};
+mod test_support {
+    use std::sync::{Mutex, OnceLock};
 
-    use super::{dispatch_agent_commands, dispatch_cli_tool_commands};
+    use ironclaw::cli::Command;
+
+    pub(super) type AgentDispatchHook = fn(&Command) -> anyhow::Result<Option<bool>>;
+    pub(super) static AGENT_DISPATCH_HOOK: OnceLock<Mutex<Option<AgentDispatchHook>>> =
+        OnceLock::new();
+    pub(super) static AGENT_DISPATCH_LOCK: Mutex<()> = Mutex::new(());
+
+    pub(super) fn try_dispatch_agent_command(
+        command: &Command,
+    ) -> Option<anyhow::Result<Option<bool>>> {
+        AGENT_DISPATCH_HOOK
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+            .expect("agent dispatch hook mutex should not be poisoned")
+            .as_ref()
+            .map(|hook| hook(command))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use ironclaw::cli::{Cli, Command, PairingCommand};
+
+    use super::{
+        dispatch_agent_commands, dispatch_cli_tool_commands, dispatch_subcommand,
+        is_agent_subcommand, test_support,
+    };
 
     fn cli_with(command: Option<Command>) -> Cli {
         Cli {
@@ -241,6 +298,36 @@ mod tests {
             config: None,
             no_onboard: false,
         }
+    }
+
+    struct AgentDispatchHookGuard {
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl AgentDispatchHookGuard {
+        fn install(hook: test_support::AgentDispatchHook) -> Self {
+            let guard = test_support::AGENT_DISPATCH_LOCK
+                .lock()
+                .expect("agent dispatch lock should not be poisoned");
+            *test_support::AGENT_DISPATCH_HOOK
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .expect("agent dispatch hook mutex should not be poisoned") = Some(hook);
+            Self { _guard: guard }
+        }
+    }
+
+    impl Drop for AgentDispatchHookGuard {
+        fn drop(&mut self) {
+            *test_support::AGENT_DISPATCH_HOOK
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .expect("agent dispatch hook mutex should not be poisoned") = None;
+        }
+    }
+
+    fn handled_agent_command(_: &Command) -> anyhow::Result<Option<bool>> {
+        Ok(Some(true))
     }
 
     #[tokio::test]
@@ -303,6 +390,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tool_commands_returns_some_for_pairing_list() {
+        let cli = cli_with(Some(Command::Pairing(PairingCommand::List {
+            channel: "telegram".to_string(),
+            json: false,
+        })));
+        let result = dispatch_cli_tool_commands(&cli)
+            .await
+            .expect("dispatch should succeed");
+
+        assert_eq!(result, Some(true));
+    }
+
+    #[tokio::test]
     async fn agent_commands_returns_none_for_run() {
         let cli = cli_with(Some(Command::Run));
         let result = dispatch_agent_commands(&cli)
@@ -318,5 +418,68 @@ mod tests {
             .await
             .expect("dispatch should succeed");
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn is_agent_subcommand_identifies_agent_only_variants() {
+        assert!(is_agent_subcommand(&Command::Run));
+        assert!(is_agent_subcommand(&Command::Onboard {
+            skip_auth: false,
+            channels_only: false,
+            provider_only: false,
+            quick: false,
+        }));
+        assert!(!is_agent_subcommand(&Command::Pairing(
+            PairingCommand::List {
+                channel: "telegram".to_string(),
+                json: false,
+            }
+        )));
+    }
+
+    #[tokio::test]
+    async fn agent_commands_returns_some_for_handled_worker_command() {
+        let _hook = AgentDispatchHookGuard::install(handled_agent_command);
+        let cli = cli_with(Some(Command::Worker {
+            job_id: uuid::Uuid::new_v4(),
+            orchestrator_url: "http://localhost".into(),
+            max_iterations: 10,
+        }));
+
+        let result = dispatch_agent_commands(&cli)
+            .await
+            .expect("dispatch should succeed");
+
+        assert_eq!(result, Some(true));
+    }
+
+    #[tokio::test]
+    async fn dispatch_subcommand_short_circuits_for_pairing_command() {
+        let cli = cli_with(Some(Command::Pairing(PairingCommand::List {
+            channel: "telegram".to_string(),
+            json: false,
+        })));
+
+        let dispatched = dispatch_subcommand(&cli)
+            .await
+            .expect("dispatch should succeed");
+
+        assert!(dispatched);
+    }
+
+    #[tokio::test]
+    async fn dispatch_subcommand_short_circuits_for_handled_worker_command() {
+        let _hook = AgentDispatchHookGuard::install(handled_agent_command);
+        let cli = cli_with(Some(Command::Worker {
+            job_id: uuid::Uuid::new_v4(),
+            orchestrator_url: "http://localhost".into(),
+            max_iterations: 10,
+        }));
+
+        let dispatched = dispatch_subcommand(&cli)
+            .await
+            .expect("dispatch should succeed");
+
+        assert!(dispatched);
     }
 }

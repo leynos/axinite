@@ -23,11 +23,12 @@ use crate::startup::wasm::WasmChannelRuntimeState;
 /// They must remain alive until shutdown so that log streaming and dynamic log
 /// level changes keep working once the gateway starts.
 pub(crate) struct LoadedConfigContext {
-    pub(crate) config: Config,
-    pub(crate) toml_path: Option<std::path::PathBuf>,
-    pub(crate) session: Arc<ironclaw::llm::session::SessionManager>,
-    pub(crate) log_broadcaster: Arc<LogBroadcaster>,
-    pub(crate) log_level_handle: Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    pub(in crate::startup) config: Config,
+    pub(in crate::startup) toml_path: Option<std::path::PathBuf>,
+    pub(in crate::startup) session: Arc<ironclaw::llm::session::SessionManager>,
+    pub(in crate::startup) log_broadcaster: Arc<LogBroadcaster>,
+    pub(in crate::startup) log_level_handle:
+        Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
 }
 
 /// Fully built application components handed from `AppBuilder` to the runtime
@@ -43,19 +44,21 @@ pub(crate) struct LoadedConfigContext {
 /// initialized by the time this context exists and must outlive the gateway and
 /// agent phases.
 pub(crate) struct BuiltComponentsContext {
-    pub(crate) components: AppComponents,
-    pub(crate) side_effects: RuntimeSideEffects,
-    pub(crate) log_broadcaster: Arc<LogBroadcaster>,
-    pub(crate) log_level_handle: Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    pub(in crate::startup) components: AppComponents,
+    pub(in crate::startup) side_effects: RuntimeSideEffects,
+    pub(in crate::startup) log_broadcaster: Arc<LogBroadcaster>,
+    pub(in crate::startup) log_level_handle:
+        Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
 }
 
 /// Orchestrator state prepared during startup before channel setup begins.
 pub(crate) struct OrchestratorContext {
-    pub(crate) container_job_manager: Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
-    pub(crate) job_event_tx: Option<
+    pub(in crate::startup) container_job_manager:
+        Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+    pub(in crate::startup) job_event_tx: Option<
         tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
     >,
-    pub(crate) prompt_queue: Arc<
+    pub(in crate::startup) prompt_queue: Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<
                 uuid::Uuid,
@@ -63,7 +66,7 @@ pub(crate) struct OrchestratorContext {
             >,
         >,
     >,
-    pub(crate) docker_status: ironclaw::sandbox::DockerStatus,
+    pub(in crate::startup) docker_status: ironclaw::sandbox::DockerStatus,
 }
 
 /// Shared runtime state carried through the late startup phases after the
@@ -86,15 +89,16 @@ pub(crate) struct OrchestratorContext {
 /// remain alive until shutdown so streaming logs and runtime log-level changes
 /// continue to function.
 pub(crate) struct CoreAgentContext {
-    pub(crate) config: Config,
-    pub(crate) components: AppComponents,
-    pub(crate) side_effects: RuntimeSideEffects,
-    pub(crate) active_tunnel: Option<Box<dyn ironclaw::tunnel::Tunnel>>,
-    pub(crate) container_job_manager: Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
-    pub(crate) job_event_tx: Option<
+    pub(in crate::startup) config: Config,
+    pub(in crate::startup) components: AppComponents,
+    pub(in crate::startup) side_effects: RuntimeSideEffects,
+    pub(in crate::startup) active_tunnel: Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+    pub(in crate::startup) container_job_manager:
+        Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+    pub(in crate::startup) job_event_tx: Option<
         tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
     >,
-    pub(crate) prompt_queue: Arc<
+    pub(in crate::startup) prompt_queue: Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<
                 uuid::Uuid,
@@ -102,9 +106,10 @@ pub(crate) struct CoreAgentContext {
             >,
         >,
     >,
-    pub(crate) docker_status: ironclaw::sandbox::DockerStatus,
-    pub(crate) log_broadcaster: Arc<LogBroadcaster>,
-    pub(crate) log_level_handle: Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    pub(in crate::startup) docker_status: ironclaw::sandbox::DockerStatus,
+    pub(in crate::startup) log_broadcaster: Arc<LogBroadcaster>,
+    pub(in crate::startup) log_level_handle:
+        Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
 }
 
 /// Runtime hand-off from orchestrator setup into channel and hook
@@ -120,7 +125,7 @@ pub(crate) struct CoreAgentContext {
 /// types, but the context itself represents a single-use ownership transfer in
 /// the startup pipeline.
 pub(crate) struct AgentRunContext {
-    pub(crate) core: CoreAgentContext,
+    pub(in crate::startup) core: CoreAgentContext,
 }
 
 /// Final startup hand-off consumed by the gateway setup, boot screen, and agent
@@ -143,18 +148,20 @@ pub(crate) struct AgentRunContext {
 /// `core.log_broadcaster` and `core.log_level_handle` nested inside `core` must
 /// remain alive for the full runtime so gateway log streaming stays available.
 pub(crate) struct GatewayPhaseContext {
-    pub(crate) core: CoreAgentContext,
-    pub(crate) channels: ChannelManager,
-    pub(crate) webhook_server: Option<Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>>,
-    pub(crate) channel_names: Vec<String>,
-    pub(crate) loaded_wasm_channel_names: Vec<String>,
-    pub(crate) wasm_channel_runtime_state: Option<WasmChannelRuntimeState>,
+    pub(in crate::startup) core: CoreAgentContext,
+    pub(in crate::startup) channels: ChannelManager,
+    pub(in crate::startup) webhook_server:
+        Option<Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>>,
+    pub(in crate::startup) channel_names: Vec<String>,
+    pub(in crate::startup) loaded_wasm_channel_names: Vec<String>,
+    pub(in crate::startup) wasm_channel_runtime_state: Option<WasmChannelRuntimeState>,
     #[cfg(unix)]
-    pub(crate) http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
-    pub(crate) session_manager: Arc<ironclaw::agent::SessionManager>,
-    pub(crate) scheduler_slot: ironclaw::tools::builtin::SchedulerSlot,
-    pub(crate) gateway_url: Option<String>,
-    pub(crate) sse_sender:
+    pub(in crate::startup) http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
+    pub(in crate::startup) session_manager: Arc<ironclaw::agent::SessionManager>,
+    pub(in crate::startup) scheduler_slot: ironclaw::tools::builtin::SchedulerSlot,
+    pub(in crate::startup) gateway_url: Option<String>,
+    pub(in crate::startup) sse_sender:
         Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
-    pub(crate) routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
+    pub(in crate::startup) routine_engine_slot:
+        Option<ironclaw::channels::web::server::RoutineEngineSlot>,
 }

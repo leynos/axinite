@@ -52,15 +52,15 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
     } = core;
 
     let channels = Arc::new(channels);
-    prepare_channels(
-        &components,
-        &components.extension_manager,
-        &mut wasm_channel_runtime_state,
-        &mut loaded_wasm_channel_names[..],
-        &channels,
-        &sse_sender,
-        &config.channels.wasm_channel_owner_ids,
-    )
+    prepare_channels(ChannelPreparation {
+        components: &components,
+        extension_manager: &components.extension_manager,
+        wasm_channel_runtime_state: &mut wasm_channel_runtime_state,
+        loaded_wasm_channel_names: &mut loaded_wasm_channel_names[..],
+        channels: &channels,
+        sse_sender: &sse_sender,
+        wasm_channel_owner_ids: &config.channels.wasm_channel_owner_ids,
+    })
     .await;
 
     snapshot_workspace_memory(&components).await;
@@ -107,15 +107,26 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn prepare_channels(
-    components: &AppComponents,
-    extension_manager: &Option<Arc<ironclaw::extensions::ExtensionManager>>,
-    wasm_channel_runtime_state: &mut Option<crate::startup::wasm::WasmChannelRuntimeState>,
-    loaded_wasm_channel_names: &mut [String],
-    channels: &Arc<ironclaw::channels::ChannelManager>,
-    sse_sender: &Option<tokio::sync::broadcast::Sender<SseEvent>>,
-    wasm_channel_owner_ids: &std::collections::HashMap<String, i64>,
-) {
+struct ChannelPreparation<'a> {
+    components: &'a AppComponents,
+    extension_manager: &'a Option<Arc<ironclaw::extensions::ExtensionManager>>,
+    wasm_channel_runtime_state: &'a mut Option<crate::startup::wasm::WasmChannelRuntimeState>,
+    loaded_wasm_channel_names: &'a mut [String],
+    channels: &'a Arc<ironclaw::channels::ChannelManager>,
+    sse_sender: &'a Option<tokio::sync::broadcast::Sender<SseEvent>>,
+    wasm_channel_owner_ids: &'a std::collections::HashMap<String, i64>,
+}
+
+async fn prepare_channels(preparation: ChannelPreparation<'_>) {
+    let ChannelPreparation {
+        components,
+        extension_manager,
+        wasm_channel_runtime_state,
+        loaded_wasm_channel_names,
+        channels,
+        sse_sender,
+        wasm_channel_owner_ids,
+    } = preparation;
     components
         .tools
         .register_message_tools(Arc::clone(channels))
