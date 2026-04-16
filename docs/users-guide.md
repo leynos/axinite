@@ -21,7 +21,10 @@ execution still happens in the orchestrator process.
 If one of those hosted-visible WASM tools later fails, any retry guidance is
 supplemental recovery help only. The worker and orchestrator still treat the
 advertised `ToolDefinition.parameters` schema as the primary contract for the
-first call.
+first call. The same proactive first-call contract now applies in both the
+local in-process path and the hosted worker path: the first tool-capable model
+request already carries the advertised WASM schema before any execution
+attempt.
 
 The worker now computes one registry-backed tool surface for reasoning. That
 merged view is used both when the initial reasoning context is built and when

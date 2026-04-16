@@ -166,5 +166,11 @@ payload is the canonical contract. Any later execution failure hint is a
 supplemental fallback diagnostic and must not become a second schema transport
 path across the worker boundary.
 
+That rule is observable at the first hosted LLM boundary. The worker's initial
+tool-capable request to `POST /worker/{job_id}/llm/complete_with_tools`
+forwards the same advertised WASM `ToolDefinition` values that came from the
+hosted catalogue, rather than relying on a failed first call to teach the
+schema.
+
 The shared route constants and transport types are what keep that hosted tool
 surface consistent across the sandbox boundary.

@@ -246,12 +246,10 @@ pub(super) fn read_hidden_input() -> anyhow::Result<String> {
         if let Event::Key(key_event) = event::read()? {
             match key_event.code {
                 KeyCode::Enter => break,
-                KeyCode::Backspace => {
-                    if !input.is_empty() {
-                        input.pop();
-                        print!("\x08 \x08");
-                        std::io::stdout().flush()?;
-                    }
+                KeyCode::Backspace if !input.is_empty() => {
+                    input.pop();
+                    print!("\x08 \x08");
+                    std::io::stdout().flush()?;
                 }
                 KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Err(anyhow::anyhow!("Interrupted"));

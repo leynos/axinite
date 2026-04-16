@@ -236,6 +236,10 @@ docker = ["dep:bollard"]
 name = "html_to_markdown"
 required-features = ["html-to-markdown"]
 
+[[test]]
+name = "e2e_traces"
+required-features = ["test-helpers"]
+
 [profile.dev.package."*"]
 debug = "line-tables-only"    # Faster linking; full info via CARGO_PROFILE_DEV_DEBUG=2
 split-debuginfo = "unpacked"  # Avoid bundling debug info into binaries

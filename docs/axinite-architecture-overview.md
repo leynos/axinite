@@ -408,8 +408,10 @@ Other edges are more muddled and currently create avoidable maintenance cost.
   discovery, MCP, WASM runtime, channel activation, secrets, database-backed
   state, and gateway callback machinery.
 - The worker-orchestrator seam now shares its hosted remote-tool contract and
-  canonical catalogue filter, but later roadmap work still needs to extend that
-  filter to WASM tools and add refresh behaviour.
+  canonical catalogue filter, and the first hosted
+  `complete_with_tools` request now preserves advertised MCP and WASM schemas
+  before execution. Later roadmap work still focuses on richer refresh
+  behaviour.
 - Job lifecycle semantics are split between in-memory context transitions and
   best-effort persistence paths, which makes cancellation and terminal status
   handling harder to reason about under failure.

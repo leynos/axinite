@@ -5,16 +5,18 @@
 - **RFC number:** 0002
 - **Status:** Proposed
 - **Created:** 2026-03-11
-- **Implementation status:** Roadmap items `1.2.1`, `1.2.2`, and `1.2.3` are
-  complete.
+- **Implementation status:** Roadmap items `1.2.1`, `1.2.2`, `1.2.3`, and
+  `1.2.4` are complete.
   Active WASM registration paths now recover guest-exported metadata before
   publication, warn when registration falls back to a placeholder schema, and
   are covered by regression tests for file-loaded, storage-backed, and
   dev-build paths. Hosted workers now receive hosted-visible
   orchestrator-owned WASM definitions through the shared remote-tool catalogue.
   WASM execution failures now label retry hints as fallback diagnostics that
-  point back to the already advertised contract. Roadmap item `1.2.4` remains
-  open.
+  point back to the already advertised contract. End-to-end regression tests
+  now prove that the first non-hosted provider request and the first hosted
+  proxied `complete_with_tools` request both include the advertised WASM
+  schema before any tool execution attempt.
 
 ## Summary
 
