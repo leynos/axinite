@@ -271,10 +271,10 @@ A valid candidate `skill-name` at archive-validation time must:
 
 Compatibility note: current `skill-name` validation in the runtime accepts
 dotted names such as `skill.v2`. Archive validation for `.skill` uploads must
-continue to accept dots in the shared top-level prefix so existing installed or
-catalogued skill names do not become invalid implicitly. Phase 1 does not
-introduce a migration away from dotted names; any future restriction would need
-an explicit compatibility plan and a separate RFC.
+continue to accept dots in the shared top-level prefix so existing skill names
+that are installed or catalogued do not become invalid implicitly. Phase 1
+does not introduce a migration away from dotted names; any future restriction
+would need an explicit compatibility plan and a separate RFC.
 
 If the archive violates the single top-level path-prefix rule, the installer
 must reject it with a typed validation error rather than trying to guess the
