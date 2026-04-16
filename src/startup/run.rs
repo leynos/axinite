@@ -111,6 +111,11 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Groups the runtime pieces needed to register message tools and wire the
+/// loaded WASM channel runtime back into the live channel registry.
+///
+/// The borrowed fields all come from `run_agent`'s startup context and must
+/// stay valid for the duration of `prepare_channels`.
 struct ChannelPreparation<'a> {
     components: &'a AppComponents,
     extension_manager: &'a Option<Arc<ironclaw::extensions::ExtensionManager>>,
@@ -121,6 +126,11 @@ struct ChannelPreparation<'a> {
     wasm_channel_owner_ids: &'a std::collections::HashMap<String, i64>,
 }
 
+/// Registers channel-backed tools and hands the loaded WASM runtime state back
+/// to the extension manager.
+///
+/// This must run before the agent starts so startup-only channel state is fully
+/// available to message tools.
 async fn prepare_channels(preparation: ChannelPreparation<'_>) {
     let ChannelPreparation {
         components,
@@ -149,6 +159,11 @@ async fn prepare_channels(preparation: ChannelPreparation<'_>) {
     .await;
 }
 
+/// Persists an initial workspace-memory snapshot when both the recorder and
+/// workspace are available.
+///
+/// The snapshot happens before the agent loop so recordings capture the
+/// pre-run workspace state.
 async fn snapshot_workspace_memory(components: &AppComponents) {
     if let Some(ref recorder) = components.recording_handle
         && let Some(ref ws) = components.workspace
@@ -157,6 +172,11 @@ async fn snapshot_workspace_memory(components: &AppComponents) {
     }
 }
 
+/// Bundles the runtime-owned resources needed to finish agent construction
+/// after channel preparation.
+///
+/// The contained scheduler and routine-engine slots are populated during
+/// `prepare_agent` and then handed back to the wider startup pipeline.
 struct AgentSetupResources {
     channels: Arc<ironclaw::channels::ChannelManager>,
     session_manager: Arc<ironclaw::agent::SessionManager>,
@@ -165,6 +185,11 @@ struct AgentSetupResources {
     routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
 }
 
+/// Builds the agent, publishes its scheduler handle, and wires any routine
+/// engine slot before the run loop starts.
+///
+/// This function consumes the setup resources because the agent takes
+/// ownership of the runtime connections they contain.
 async fn prepare_agent(
     components: &AppComponents,
     config: &Config,
@@ -197,6 +222,11 @@ async fn prepare_agent(
     agent
 }
 
+/// Starts background runtime-management tasks and returns the shared shutdown
+/// broadcaster used during teardown.
+///
+/// Common setup runs on every platform, while Unix-specific hot-reload wiring
+/// is delegated to `setup_runtime_management_unix`.
 fn setup_runtime_management(
     components: &AppComponents,
     config: &Config,
@@ -216,6 +246,11 @@ fn setup_runtime_management(
 }
 
 #[cfg(unix)]
+/// Configures Unix-only runtime-management hooks such as SIGHUP-triggered
+/// hot reload.
+///
+/// The shutdown sender must outlive the spawned signal handler so reload
+/// listeners can exit cleanly during teardown.
 fn setup_runtime_management_unix(
     components: &AppComponents,
     webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
@@ -236,6 +271,11 @@ fn setup_runtime_management_unix(
     );
 }
 
+/// Derives the `AgentDeps` bundle from the built application components and
+/// current runtime configuration.
+///
+/// Middleware instances are created here so the agent receives a fully wired
+/// dependency graph before construction.
 fn build_agent_deps(
     components: &AppComponents,
     config: &Config,
@@ -271,12 +311,21 @@ fn build_agent_deps(
     }
 }
 
+/// Collects the long-lived runtime connections that `Agent::new` consumes.
+///
+/// These handles must already be initialized by earlier startup phases and are
+/// moved into the final agent during `build_agent`.
 struct AgentConnections {
     channels: Arc<ironclaw::channels::ChannelManager>,
     session_manager: Arc<ironclaw::agent::SessionManager>,
     context_manager: Arc<ironclaw::context::ContextManager>,
 }
 
+/// Constructs the final `Agent` from the prepared dependency bundle and live
+/// runtime connections.
+///
+/// The returned agent is ready to enter the run loop once startup side effects
+/// have been started.
 fn build_agent(config: &Config, deps: AgentDeps, connections: AgentConnections) -> Agent {
     let AgentConnections {
         channels,
@@ -295,6 +344,10 @@ fn build_agent(config: &Config, deps: AgentDeps, connections: AgentConnections) 
     )
 }
 
+/// Spawns the sandbox reaper task when container-job management is enabled.
+///
+/// The reaper runs independently on the Tokio runtime and logs initialization
+/// failures rather than aborting startup.
 fn maybe_spawn_sandbox_reaper(
     container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
     reaper_context_manager: Arc<ContextManager>,
@@ -318,6 +371,10 @@ fn maybe_spawn_sandbox_reaper(
 }
 
 #[cfg(unix)]
+/// Creates the Unix SIGHUP hot-reload handler and registers any channel secret
+/// updaters that need refresh support.
+///
+/// The spawned handler listens until the shared shutdown broadcast fires.
 fn setup_sighup_reload(
     sighup_settings_store: Option<Arc<dyn ironclaw::db::SettingsStore>>,
     webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
@@ -340,6 +397,11 @@ fn setup_sighup_reload(
     spawn_sighup_handler(reload_manager, shutdown_tx);
 }
 
+/// Performs the ordered shutdown sequence for background runtime pieces after
+/// the agent loop exits.
+///
+/// Shutdown broadcasting happens first so listeners can stop before traces,
+/// webhook state, and tunnels are flushed or torn down.
 async fn run_shutdown_sequence(
     shutdown_tx: &tokio::sync::broadcast::Sender<()>,
     mcp_process_manager: &ironclaw::tools::mcp::McpProcessManager,
