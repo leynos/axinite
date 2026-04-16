@@ -159,6 +159,17 @@ pub(super) async fn list_conversation_messages(
     Ok(messages)
 }
 
+/// List conversation messages only after verifying the caller owns the thread.
+///
+/// This helper first checks that `conversation_id` belongs to the exact
+/// `(user_id, channel)` tuple before delegating to `list_conversation_messages`.
+/// If the tuple does not match, it returns `DatabaseError::NotFound` rather
+/// than exposing whether the conversation exists under a different owner.
+///
+/// This security invariant ensures callers never receive messages for
+/// conversations they do not own. The explicit ownership lookup against the
+/// `conversations` table is therefore intentional and must remain in place
+/// before reading the message rows.
 pub(super) async fn list_conversation_messages_scoped(
     backend: &LibSqlBackend,
     conversation_id: Uuid,
