@@ -334,6 +334,7 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
+    use crate::llm::ChatMessage;
     use crate::llm::Role;
 
     const COMPACTION_NOTE: &str = concat!(
@@ -447,5 +448,81 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn compact_keeps_all_system_messages() {
+        let messages = vec![
+            ChatMessage::system("sys prompt"),
+            ChatMessage::user("hello"),
+            ChatMessage::assistant("hi"),
+        ];
+
+        let compacted = compact_messages_for_retry(&messages);
+        let system_count = compacted
+            .iter()
+            .filter(|message| message.role == Role::System)
+            .count();
+
+        assert_eq!(system_count, 1);
+    }
+
+    #[test]
+    fn compact_retains_last_user_and_tail() {
+        let messages = vec![
+            ChatMessage::system("sys"),
+            ChatMessage::user("first"),
+            ChatMessage::assistant("reply"),
+            ChatMessage::user("second"),
+            ChatMessage::tool_result("id", "tool", "result"),
+        ];
+
+        let compacted = compact_messages_for_retry(&messages);
+
+        assert!(compacted.iter().any(|message| {
+            message.role == Role::User && message.content.contains("second")
+        }));
+        assert!(compacted.iter().any(|message| {
+            message.role == Role::Tool && message.content.contains("result")
+        }));
+    }
+
+    #[test]
+    fn compact_without_user_message_preserves_system_first() {
+        let messages = vec![ChatMessage::system("sys"), ChatMessage::assistant("reply")];
+
+        let compacted = compact_messages_for_retry(&messages);
+
+        assert_eq!(compacted[0].role, Role::System);
+    }
+
+    #[test]
+    fn strip_removes_bracketed_markers() {
+        let input = concat!(
+            "[Called tool foo({\"arg\":\"value\"})]\n",
+            "Hello there.\n",
+            "[Tool foo returned: ok]"
+        );
+
+        let stripped = strip_internal_tool_call_text(input);
+
+        assert!(!stripped.contains("[Called tool "));
+        assert!(!stripped.contains("[Tool foo returned:"));
+        assert_eq!(stripped, "Hello there.");
+    }
+
+    #[test]
+    fn strip_empty_string_returns_fallback_message() {
+        assert_eq!(
+            strip_internal_tool_call_text(""),
+            "I wasn't able to complete that request. Could you try rephrasing or providing more details?"
+        );
+    }
+
+    #[test]
+    fn strip_plain_text_unchanged() {
+        let input = "Hello, world!";
+
+        assert_eq!(strip_internal_tool_call_text(input), input);
     }
 }
