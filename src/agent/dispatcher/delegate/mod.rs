@@ -45,8 +45,6 @@ pub(in crate::agent::dispatcher) mod preflight;
 
 mod tool_exec;
 
-pub(crate) use tool_exec::preflight::apply_before_tool_call_hook_for_agent;
-
 #[cfg(test)]
 impl<'a> ChatDelegate<'a> {
     pub(in crate::agent::dispatcher) async fn maybe_emit_image_sentinel(

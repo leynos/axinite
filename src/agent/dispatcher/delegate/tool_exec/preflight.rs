@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use crate::agent::Agent;
 use crate::agent::dispatcher::delegate::ChatDelegate;
 use crate::error::Error;
 use crate::tools::redact_params;
@@ -36,13 +35,6 @@ pub(super) struct ApprovalCandidate {
 
 struct BeforeToolCallCtx<'a> {
     delegate: &'a ChatDelegate<'a>,
-    original_tc: &'a crate::llm::ToolCall,
-    sensitive: &'a [&'a str],
-}
-
-struct BeforeToolCallAgentCtx<'a> {
-    agent: &'a Agent,
-    user_id: &'a str,
     original_tc: &'a crate::llm::ToolCall,
     sensitive: &'a [&'a str],
 }
@@ -113,49 +105,6 @@ async fn run_before_tool_call_hook(
         }
         _ => None,
     }
-}
-
-async fn run_before_tool_call_hook_for_agent(
-    ctx: &BeforeToolCallAgentCtx<'_>,
-    tc: &mut crate::llm::ToolCall,
-) -> Option<String> {
-    let hook_params = redact_params(&tc.arguments, ctx.sensitive);
-    let event = crate::hooks::HookEvent::ToolCall {
-        tool_name: tc.name.clone(),
-        parameters: hook_params,
-        user_id: ctx.user_id.to_string(),
-        context: "chat".to_string(),
-    };
-    match ctx.agent.hooks().run(&event).await {
-        Err(crate::hooks::HookError::Rejected { reason }) => {
-            Some(format!("Tool call rejected by hook: {}", reason))
-        }
-        Err(err) => Some(format!("Tool call blocked by hook policy: {}", err)),
-        Ok(crate::hooks::HookOutcome::Continue {
-            modified: Some(new_params),
-        }) => {
-            apply_hook_param_modification(tc, ctx.original_tc, ctx.sensitive, &new_params);
-            None
-        }
-        _ => None,
-    }
-}
-
-/// Apply the BeforeToolCall hook and return rejection message if any.
-pub(crate) async fn apply_before_tool_call_hook_for_agent(
-    agent: &Agent,
-    user_id: &str,
-    original_tc: &crate::llm::ToolCall,
-    tc: &mut crate::llm::ToolCall,
-    sensitive: &[&str],
-) -> Option<String> {
-    let ctx = BeforeToolCallAgentCtx {
-        agent,
-        user_id,
-        original_tc,
-        sensitive,
-    };
-    run_before_tool_call_hook_for_agent(&ctx, tc).await
 }
 
 /// Check if a tool requires approval based on its configuration and auto-approve settings.
