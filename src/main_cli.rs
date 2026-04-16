@@ -305,6 +305,16 @@ mod tests {
         }
     }
 
+    /// Asserts that `dispatch_cli_tool_commands` returns `Ok(None)` for the
+    /// given passthrough command variant.
+    async fn assert_tool_commands_passthrough(command: Command) {
+        let cli = cli_with(Some(command));
+        let result = dispatch_cli_tool_commands(&cli)
+            .await
+            .expect("dispatch should succeed");
+        assert!(result.is_none());
+    }
+
     struct AgentDispatchHookGuard {
         _guard: std::sync::MutexGuard<'static, ()>,
     }
@@ -346,52 +356,39 @@ mod tests {
 
     #[tokio::test]
     async fn tool_commands_returns_none_for_run() {
-        let cli = cli_with(Some(Command::Run));
-        let result = dispatch_cli_tool_commands(&cli)
-            .await
-            .expect("dispatch should succeed");
-        assert!(result.is_none());
+        assert_tool_commands_passthrough(Command::Run).await;
     }
 
     #[tokio::test]
     async fn tool_commands_returns_none_for_worker() {
-        let cli = cli_with(Some(Command::Worker {
+        assert_tool_commands_passthrough(Command::Worker {
             job_id: uuid::Uuid::new_v4(),
             orchestrator_url: "http://localhost".into(),
             max_iterations: 10,
-        }));
-        let result = dispatch_cli_tool_commands(&cli)
-            .await
-            .expect("dispatch should succeed");
-        assert!(result.is_none());
+        })
+        .await;
     }
 
     #[tokio::test]
     async fn tool_commands_returns_none_for_claude_bridge() {
-        let cli = cli_with(Some(Command::ClaudeBridge {
+        assert_tool_commands_passthrough(Command::ClaudeBridge {
             job_id: uuid::Uuid::new_v4(),
             orchestrator_url: "http://localhost".into(),
             max_turns: 5,
             model: "claude-3".into(),
-        }));
-        let result = dispatch_cli_tool_commands(&cli)
-            .await
-            .expect("dispatch should succeed");
-        assert!(result.is_none());
+        })
+        .await;
     }
 
     #[tokio::test]
     async fn tool_commands_returns_none_for_onboard() {
-        let cli = cli_with(Some(Command::Onboard {
+        assert_tool_commands_passthrough(Command::Onboard {
             skip_auth: false,
             channels_only: false,
             provider_only: false,
             quick: false,
-        }));
-        let result = dispatch_cli_tool_commands(&cli)
-            .await
-            .expect("dispatch should succeed");
-        assert!(result.is_none());
+        })
+        .await;
     }
 
     #[tokio::test]
