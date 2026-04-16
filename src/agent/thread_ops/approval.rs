@@ -157,6 +157,14 @@ struct DeferredFlow<'a> {
     deferred_tool_calls: Vec<crate::llm::ToolCall>,
 }
 
+/// Preflight outcome for a deferred tool call.
+enum DeferredPreflightOutcome {
+    /// Hook rejected the call before execution.
+    Rejected(String),
+    /// The call is ready to execute.
+    Runnable,
+}
+
 /// Parameters for auth intercept handling.
 struct AuthInterceptParams<'a> {
     /// Session containing the thread.
@@ -399,18 +407,20 @@ impl Agent {
     /// Preflight deferred tools: collect runnable and find first needing approval.
     async fn preflight_deferred_tools(
         &self,
-        session: &Arc<Mutex<Session>>,
+        scope: &TurnScope,
         deferred: &[crate::llm::ToolCall],
     ) -> (
+        Vec<(crate::llm::ToolCall, DeferredPreflightOutcome)>,
         Vec<crate::llm::ToolCall>,
         Option<(usize, crate::llm::ToolCall, Arc<dyn crate::tools::Tool>)>,
     ) {
         // Precompute auto-approved tools to avoid repeated locking
         let auto_approved: std::collections::HashSet<String> = {
-            let sess = session.lock().await;
+            let sess = scope.session.lock().await;
             sess.auto_approved_tools.iter().cloned().collect()
         };
 
+        let mut preflight: Vec<(crate::llm::ToolCall, DeferredPreflightOutcome)> = Vec::new();
         let mut runnable: Vec<crate::llm::ToolCall> = Vec::new();
         let mut approval_needed: Option<(
             usize,
@@ -418,8 +428,29 @@ impl Agent {
             Arc<dyn crate::tools::Tool>,
         )> = None;
 
-        for (idx, tc) in deferred.iter().enumerate() {
-            if let Some(tool) = self.tools().get(&tc.name).await {
+        for (idx, original_tc) in deferred.iter().enumerate() {
+            let mut tc = original_tc.clone();
+            let tool_opt = self.tools().get(&tc.name).await;
+            let sensitive = tool_opt
+                .as_ref()
+                .map(|tool| tool.sensitive_params())
+                .unwrap_or(&[]);
+
+            if let Some(rejection_msg) =
+                crate::agent::dispatcher::delegate::run_before_tool_call_hook(
+                    self,
+                    &scope.env.user_id,
+                    original_tc,
+                    &mut tc,
+                    sensitive,
+                )
+                .await
+            {
+                preflight.push((tc, DeferredPreflightOutcome::Rejected(rejection_msg)));
+                continue;
+            }
+
+            if let Some(tool) = tool_opt {
                 use crate::tools::ApprovalRequirement;
                 let needs_approval = match tool.requires_approval(&tc.arguments) {
                     ApprovalRequirement::Never => false,
@@ -433,10 +464,11 @@ impl Agent {
                 }
             }
 
+            preflight.push((tc.clone(), DeferredPreflightOutcome::Runnable));
             runnable.push(tc.clone());
         }
 
-        (runnable, approval_needed)
+        (preflight, runnable, approval_needed)
     }
 
     /// Run deferred tools inline (single or empty).
@@ -600,13 +632,45 @@ impl Agent {
     async fn postflight_record_and_maybe_deferred_auth(
         &self,
         scope: &TurnScope,
+        preflight: Vec<(crate::llm::ToolCall, DeferredPreflightOutcome)>,
         exec_results: Vec<(crate::llm::ToolCall, Result<String, Error>)>,
         context_messages: &mut Vec<ChatMessage>,
         pending: &PendingApproval,
     ) -> Option<String> {
+        let mut exec_results = std::collections::VecDeque::from(exec_results);
         let mut deferred_auth: Option<String> = None;
 
-        for (tc, deferred_result) in exec_results {
+        for (tc, outcome) in preflight {
+            let Some(deferred_result) = (match outcome {
+                DeferredPreflightOutcome::Rejected(error_msg) => {
+                    {
+                        let mut sess = scope.session.lock().await;
+                        if let Some(thread) = sess.threads.get_mut(&scope.thread_id)
+                            && let Some(turn) = thread.last_turn_mut()
+                        {
+                            turn.record_tool_error(error_msg.clone());
+                        }
+                    }
+
+                    context_messages.push(ChatMessage::tool_result(&tc.id, &tc.name, error_msg));
+                    None
+                }
+                DeferredPreflightOutcome::Runnable => Some(
+                    exec_results
+                        .pop_front()
+                        .map(|(_executed_tc, result)| result)
+                        .unwrap_or_else(|| {
+                            Err(crate::error::ToolError::ExecutionFailed {
+                                name: tc.name.clone(),
+                                reason: "No result available".to_string(),
+                            }
+                            .into())
+                        }),
+                ),
+            }) else {
+                continue;
+            };
+
             // Sanitize first before any use of the output
             let is_deferred_error = deferred_result.is_err();
             let (deferred_content, _) = crate::tools::execute::process_tool_result(
@@ -982,8 +1046,8 @@ impl Agent {
         mut flow: DeferredFlow<'a>,
     ) -> Result<(Vec<ChatMessage>, Option<SubmissionResult>), Error> {
         // Preflight deferred tools
-        let (runnable, approval_needed) = self
-            .preflight_deferred_tools(&flow.scope.session, &flow.deferred_tool_calls)
+        let (preflight, runnable, approval_needed) = self
+            .preflight_deferred_tools(flow.scope, &flow.deferred_tool_calls)
             .await;
 
         // Execute runnable deferred tools
@@ -997,6 +1061,7 @@ impl Agent {
         if let Some(instructions) = self
             .postflight_record_and_maybe_deferred_auth(
                 flow.scope,
+                preflight,
                 exec_results,
                 &mut flow.context_messages,
                 flow.pending,
@@ -1333,3 +1398,7 @@ impl Agent {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "approval_tests.rs"]
+mod tests;

@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use crate::agent::Agent;
 use crate::agent::dispatcher::delegate::ChatDelegate;
 use crate::error::Error;
 use crate::tools::redact_params;
@@ -75,8 +76,9 @@ fn apply_hook_param_modification(
 }
 
 /// Apply the BeforeToolCall hook and return rejection message if any.
-pub(super) async fn apply_before_tool_call_hook(
-    delegate: &ChatDelegate<'_>,
+pub(crate) async fn run_before_tool_call_hook(
+    agent: &Agent,
+    user_id: &str,
     original_tc: &crate::llm::ToolCall,
     tc: &mut crate::llm::ToolCall,
     sensitive: &[&str],
@@ -85,10 +87,10 @@ pub(super) async fn apply_before_tool_call_hook(
     let event = crate::hooks::HookEvent::ToolCall {
         tool_name: tc.name.clone(),
         parameters: hook_params,
-        user_id: delegate.message.user_id.clone(),
+        user_id: user_id.to_string(),
         context: "chat".to_string(),
     };
-    match delegate.agent.hooks().run(&event).await {
+    match agent.hooks().run(&event).await {
         Err(crate::hooks::HookError::Rejected { reason }) => {
             Some(format!("Tool call rejected by hook: {}", reason))
         }
@@ -101,6 +103,23 @@ pub(super) async fn apply_before_tool_call_hook(
         }
         _ => None,
     }
+}
+
+/// Apply the BeforeToolCall hook and return rejection message if any.
+pub(super) async fn apply_before_tool_call_hook(
+    delegate: &ChatDelegate<'_>,
+    original_tc: &crate::llm::ToolCall,
+    tc: &mut crate::llm::ToolCall,
+    sensitive: &[&str],
+) -> Option<String> {
+    run_before_tool_call_hook(
+        delegate.agent,
+        &delegate.message.user_id,
+        original_tc,
+        tc,
+        sensitive,
+    )
+    .await
 }
 
 /// Check if a tool requires approval based on its configuration and auto-approve settings.
