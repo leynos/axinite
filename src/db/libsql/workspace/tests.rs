@@ -56,6 +56,18 @@ async fn setup_backend() -> LibSqlBackend {
     backend
 }
 
+/// Create a document at `path` for the default user scope, ready for use in
+/// unit tests.
+async fn create_test_document(
+    backend: &LibSqlBackend,
+    path: &str,
+) -> crate::workspace::MemoryDocument {
+    backend
+        .get_or_create_document_by_path("default", None, path)
+        .await
+        .unwrap_or_else(|e| panic!("failed to create test document at '{path}': {e}"))
+}
+
 /// Assert that `result` is the `DocumentNotFound` error variant.
 fn assert_document_not_found<T: std::fmt::Debug>(result: Result<T, crate::error::WorkspaceError>) {
     assert!(
@@ -339,10 +351,7 @@ async fn hybrid_search_returns_fts_only_results_without_embedding() {
 async fn insert_chunk_and_delete_chunks_round_trip() {
     let backend = setup_backend().await;
 
-    let document = backend
-        .get_or_create_document_by_path("default", None, "notes/chunks.md")
-        .await
-        .expect("failed to create document");
+    let document = create_test_document(&backend, "notes/chunks.md").await;
 
     let chunk_id = backend
         .insert_chunk(InsertChunkParams {
@@ -382,10 +391,7 @@ async fn insert_chunk_and_delete_chunks_round_trip() {
 async fn update_chunk_embedding_is_reflected_in_chunks_list() {
     let backend = setup_backend().await;
 
-    let document = backend
-        .get_or_create_document_by_path("default", None, "notes/embed-update.md")
-        .await
-        .expect("failed to create document");
+    let document = create_test_document(&backend, "notes/embed-update.md").await;
 
     let chunk_id = backend
         .insert_chunk(InsertChunkParams {
@@ -502,10 +508,7 @@ async fn delete_document_by_path_removes_document_and_chunks() {
 async fn list_all_paths_returns_inserted_document_path() {
     let backend = setup_backend().await;
 
-    backend
-        .get_or_create_document_by_path("default", None, "notes/listed.md")
-        .await
-        .expect("failed to create document");
+    create_test_document(&backend, "notes/listed.md").await;
 
     let paths = backend
         .list_all_paths("default", None)
@@ -522,10 +525,7 @@ async fn list_all_paths_returns_inserted_document_path() {
 async fn list_documents_returns_inserted_document() {
     let backend = setup_backend().await;
 
-    let document = backend
-        .get_or_create_document_by_path("default", None, "notes/listed-doc.md")
-        .await
-        .expect("failed to create document");
+    let document = create_test_document(&backend, "notes/listed-doc.md").await;
 
     let docs = backend
         .list_documents("default", None)
