@@ -365,8 +365,6 @@ pub fn optional_input(prompt: &str, hint: Option<&str>) -> io::Result<Option<Str
         Ok(Some(input.to_string()))
     }
 }
-
-#[cfg(test)]
 mod tests {
     // Interactive tests are difficult to unit test, but we can test the non-interactive parts.
     use std::io;
@@ -440,7 +438,6 @@ mod tests {
         Ok(())
     }
 }
-
 enum SecretInputEffect {
     None,
     Backspace,
@@ -448,7 +445,6 @@ enum SecretInputEffect {
     Submit,
     Interrupt,
 }
-
 fn apply_secret_input_effect<W: Write>(
     stdout: &mut W,
     effect: &SecretInputEffect,
