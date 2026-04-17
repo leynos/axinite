@@ -384,3 +384,7 @@ async fn run_shutdown_sequence(
 
     tracing::debug!("Agent shutdown complete");
 }
+
+#[cfg(test)]
+#[path = "run_tests.rs"]
+mod tests;
