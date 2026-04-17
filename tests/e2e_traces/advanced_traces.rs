@@ -119,6 +119,22 @@ async fn tool_error_recovery() {
         "expected 2 write_file calls (bad + good), got {write_count}"
     );
 
+    // Wait for the successful recovery write to be recorded before reading.
+    let completed = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let completed = rig.tool_calls_completed();
+            if completed
+                .iter()
+                .any(|(name, success)| name == "write_file" && *success)
+            {
+                break completed;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("timed out waiting for successful recovery write");
+
     // The second write should have succeeded on disk.
     let content = tokio::fs::read_to_string("/tmp/ironclaw_recovery_test.txt")
         .await
@@ -126,7 +142,6 @@ async fn tool_error_recovery() {
     assert_eq!(content, "recovered successfully");
 
     // At least one write should have completed with success=true.
-    let completed = rig.tool_calls_completed();
     let any_success = completed
         .iter()
         .any(|(name, success)| name == "write_file" && *success);

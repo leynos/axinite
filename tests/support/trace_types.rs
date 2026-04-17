@@ -260,3 +260,15 @@ impl LlmTrace {
         patched
     }
 }
+
+/// Load a trace from JSON, applying a structured mutation before deserializing.
+pub async fn load_trace_with_mutation<F>(path: impl AsRef<Path>, mutate: F) -> Result<LlmTrace>
+where
+    F: FnOnce(&mut serde_json::Value),
+{
+    let contents = tokio::fs::read_to_string(path).await?;
+    let mut value: serde_json::Value = serde_json::from_str(&contents)?;
+    mutate(&mut value);
+    let trace = serde_json::from_value(value)?;
+    Ok(trace)
+}

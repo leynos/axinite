@@ -152,6 +152,7 @@ fn trace_support_symbol_refs() {
     assert_trace_llm_from_file_async(trace_llm::TraceLlm::from_file_async);
     let _: fn(String) -> _ = trace_llm::LlmTrace::from_file_async;
     assert_trace_from_file_async(trace_llm::LlmTrace::from_file_async);
+    let _: fn(String, fn(&mut serde_json::Value)) -> _ = trace_llm::load_trace_with_mutation;
 }
 
 #[cfg(feature = "libsql")]

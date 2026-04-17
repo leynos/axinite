@@ -14,7 +14,7 @@ use ironclaw::context::JobContext;
 use ironclaw::tools::{NativeTool, Tool, ToolError, ToolOutput};
 
 use crate::support::test_rig::{TestRig, TestRigBuilder};
-use crate::support::trace_llm::LlmTrace;
+use crate::support::trace_llm::{LlmTrace, load_trace_with_mutation};
 
 // -- Stub tools for rate-limit and timeout tests --------------------------
 
@@ -146,20 +146,23 @@ async fn tool_error_feedback() {
     let test_dir = tmp.path().to_str().expect("tempdir path");
 
     // Load and patch the fixture's recovery path to use our tempdir.
-    let mut trace = LlmTrace::from_file_async(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/worker/tool_error_feedback.json"
-    ))
+    let trace = load_trace_with_mutation(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/llm_traces/worker/tool_error_feedback.json"
+        ),
+        |value| {
+            let recovery_path =
+                &mut value["steps"][1]["response"]["tool_calls"][0]["arguments"]["path"];
+            assert!(
+                recovery_path.is_string(),
+                "expected worker/tool_error_feedback.json recovery path to be a string"
+            );
+            *recovery_path = serde_json::Value::String(format!("{test_dir}/recovered.txt"));
+        },
+    )
     .await
     .expect("failed to load worker/tool_error_feedback.json");
-    let patch_count = trace.patch_path(
-        "/tmp/ironclaw_error_feedback_test/recovered.txt",
-        &format!("{test_dir}/recovered.txt"),
-    );
-    assert!(
-        patch_count > 0,
-        "expected to patch recovery path in worker/tool_error_feedback.json"
-    );
 
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
