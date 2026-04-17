@@ -4,7 +4,7 @@
 //! agent-specific executors, verifying passthrough and short-circuit
 //! behaviour.
 
-use std::sync::Mutex;
+use std::sync::Arc;
 
 use ironclaw::cli::{Cli, Command, PairingCommand};
 use rstest::rstest;
@@ -38,29 +38,36 @@ async fn assert_tool_commands_passthrough(command: Command) {
 
 /// RAII guard installing an agent dispatch hook for the duration of the test.
 struct AgentDispatchHookGuard {
-    _guard: std::sync::MutexGuard<'static, ()>,
+    _guard: tokio::sync::OwnedMutexGuard<Option<test_support::AgentDispatchHook>>,
 }
 
 impl AgentDispatchHookGuard {
     /// Installs the hook and returns a guard that clears it on drop.
-    fn install(hook: test_support::AgentDispatchHook) -> Self {
-        let guard = test_support::AGENT_DISPATCH_LOCK
-            .lock()
-            .expect("agent dispatch lock should not be poisoned");
-        *test_support::AGENT_DISPATCH_HOOK
-            .get_or_init(|| Mutex::new(None))
-            .lock()
-            .expect("agent dispatch hook mutex should not be poisoned") = Some(hook);
+    async fn install(hook: test_support::AgentDispatchHook) -> Self {
+        let mut guard = Arc::clone(test_support::agent_dispatch_hook())
+            .lock_owned()
+            .await;
+        *guard = Some(hook);
+        test_support::set_thread_local_agent_dispatch_hook(Some(hook));
+        Self { _guard: guard }
+    }
+
+    /// Acquires the shared dispatch guard for the duration of the test without
+    /// installing a hook.
+    async fn hold() -> Self {
+        let mut guard = Arc::clone(test_support::agent_dispatch_hook())
+            .lock_owned()
+            .await;
+        *guard = None;
+        test_support::set_thread_local_agent_dispatch_hook(None);
         Self { _guard: guard }
     }
 }
 
 impl Drop for AgentDispatchHookGuard {
     fn drop(&mut self) {
-        *test_support::AGENT_DISPATCH_HOOK
-            .get_or_init(|| Mutex::new(None))
-            .lock()
-            .expect("agent dispatch hook mutex should not be poisoned") = None;
+        *self._guard = None;
+        test_support::clear_thread_local_agent_dispatch_hook();
     }
 }
 
@@ -165,6 +172,7 @@ async fn tool_commands_returns_some_for_status_async() {
 
 #[tokio::test]
 async fn agent_commands_returns_none_for_run() {
+    let _guard = AgentDispatchHookGuard::hold().await;
     let cli = cli_with(Some(Command::Run));
     let result = dispatch_agent_commands(&cli)
         .await
@@ -174,6 +182,7 @@ async fn agent_commands_returns_none_for_run() {
 
 #[tokio::test]
 async fn agent_commands_returns_none_for_no_command() {
+    let _guard = AgentDispatchHookGuard::hold().await;
     let cli = cli_with(None);
     let result = dispatch_agent_commands(&cli)
         .await
@@ -190,7 +199,7 @@ fn is_agent_subcommand_identifies_agent_only_variants() {
 
 #[tokio::test]
 async fn agent_commands_returns_some_for_handled_worker_command() {
-    let _hook = AgentDispatchHookGuard::install(handled_agent_command);
+    let _hook = AgentDispatchHookGuard::install(handled_agent_command).await;
     let cli = cli_with(Some(worker_command()));
 
     let result = dispatch_agent_commands(&cli)
@@ -202,11 +211,12 @@ async fn agent_commands_returns_some_for_handled_worker_command() {
 
 #[tokio::test]
 async fn dispatch_subcommand_short_circuits_for_pairing_command() {
+    let _guard = AgentDispatchHookGuard::hold().await;
     assert_subcommand_short_circuits(pairing_list_command()).await;
 }
 
 #[tokio::test]
 async fn dispatch_subcommand_short_circuits_for_handled_worker_command() {
-    let _hook = AgentDispatchHookGuard::install(handled_agent_command);
+    let _hook = AgentDispatchHookGuard::install(handled_agent_command).await;
     assert_subcommand_short_circuits(worker_command()).await;
 }

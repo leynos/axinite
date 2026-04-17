@@ -140,8 +140,12 @@ pub(crate) async fn dispatch_agent_commands(cli: &Cli) -> anyhow::Result<Option<
         return Ok(None);
     };
 
+    if matches!(command, Command::Run) {
+        return Ok(None);
+    }
+
     #[cfg(test)]
-    if let Some(result) = test_support::try_dispatch_agent_command(command) {
+    if let Some(result) = test_support::try_dispatch_agent_command(command).await {
         return result;
     }
 
@@ -262,24 +266,58 @@ async fn dispatch_worker_subcommand(
 
 #[cfg(test)]
 mod test_support {
-    use std::sync::{Mutex, OnceLock};
+    use std::cell::{Cell, RefCell};
+    use std::sync::{Arc, OnceLock};
 
     use ironclaw::cli::Command;
 
     pub(super) type AgentDispatchHook = fn(&Command) -> anyhow::Result<Option<bool>>;
-    pub(super) static AGENT_DISPATCH_HOOK: OnceLock<Mutex<Option<AgentDispatchHook>>> =
-        OnceLock::new();
-    pub(super) static AGENT_DISPATCH_LOCK: Mutex<()> = Mutex::new(());
+    pub(super) static AGENT_DISPATCH_HOOK: OnceLock<
+        Arc<tokio::sync::Mutex<Option<AgentDispatchHook>>>,
+    > = OnceLock::new();
 
-    pub(super) fn try_dispatch_agent_command(
+    thread_local! {
+        // Tests hold the Tokio mutex for their full lifetime to serialize
+        // hook-using and non-hook tests. Mirror the installed hook in
+        // thread-local storage so dispatch can observe it without deadlocking
+        // on a re-entrant lock attempt from the same test thread.
+        static TEST_AGENT_DISPATCH_GUARD_HELD: Cell<bool> = const { Cell::new(false) };
+        static TEST_AGENT_DISPATCH_HOOK: RefCell<Option<AgentDispatchHook>> = const { RefCell::new(None) };
+    }
+
+    pub(super) fn agent_dispatch_hook()
+    -> &'static Arc<tokio::sync::Mutex<Option<AgentDispatchHook>>> {
+        AGENT_DISPATCH_HOOK.get_or_init(|| Arc::new(tokio::sync::Mutex::new(None)))
+    }
+
+    pub(super) fn set_thread_local_agent_dispatch_hook(hook: Option<AgentDispatchHook>) {
+        TEST_AGENT_DISPATCH_GUARD_HELD.with(|held| held.set(true));
+        TEST_AGENT_DISPATCH_HOOK.with(|slot| {
+            *slot.borrow_mut() = hook;
+        });
+    }
+
+    pub(super) fn clear_thread_local_agent_dispatch_hook() {
+        TEST_AGENT_DISPATCH_HOOK.with(|slot| {
+            *slot.borrow_mut() = None;
+        });
+        TEST_AGENT_DISPATCH_GUARD_HELD.with(|held| held.set(false));
+    }
+
+    pub(super) async fn try_dispatch_agent_command(
         command: &Command,
     ) -> Option<anyhow::Result<Option<bool>>> {
-        AGENT_DISPATCH_HOOK
-            .get_or_init(|| Mutex::new(None))
-            .lock()
-            .expect("agent dispatch hook mutex should not be poisoned")
-            .as_ref()
-            .map(|hook| hook(command))
+        if TEST_AGENT_DISPATCH_GUARD_HELD.with(Cell::get) {
+            return TEST_AGENT_DISPATCH_HOOK
+                .with(|slot| slot.borrow().as_ref().copied().map(|hook| hook(command)));
+        }
+
+        let hook = {
+            let guard = agent_dispatch_hook().lock().await;
+            *guard
+        };
+
+        hook.map(|installed_hook| installed_hook(command))
     }
 }
 
