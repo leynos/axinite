@@ -85,28 +85,16 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
         &http_channel_state,
     );
 
-    let run_result = run_with_side_effects(side_effects, agent, || async {
-        run_shutdown_sequence(
-            &shutdown_tx,
-            &components.mcp_process_manager,
-            &components.recording_handle,
-            &webhook_server,
-            &active_tunnel,
-        )
-        .await;
-    })
-    .await;
+    let run_result = run_with_side_effects(side_effects, agent, || async {}).await;
 
-    if run_result.is_ok() {
-        run_shutdown_sequence(
-            &shutdown_tx,
-            &components.mcp_process_manager,
-            &components.recording_handle,
-            &webhook_server,
-            &active_tunnel,
-        )
-        .await;
-    }
+    run_shutdown_sequence(
+        &shutdown_tx,
+        &components.mcp_process_manager,
+        &components.recording_handle,
+        &webhook_server,
+        &active_tunnel,
+    )
+    .await;
 
     run_result?;
     Ok(())
