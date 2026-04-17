@@ -305,8 +305,7 @@ async fn classify_deferred_tool_call(
         sensitive,
     };
 
-    if let Some(msg) = run_before_tool_call_hook_for_deferred(&hook_ctx, &mut tc).await
-    {
+    if let Some(msg) = run_before_tool_call_hook_for_deferred(&hook_ctx, &mut tc).await {
         return DeferredPreflight::Rejected { tc, msg };
     }
 
@@ -787,13 +786,8 @@ impl Agent {
         for (tc, outcome) in preflight {
             let Some(deferred_result) = (match outcome {
                 DeferredPreflightOutcome::Rejected(error_msg) => {
-                    record_tool_error_and_push(
-                        &turn_write_ctx,
-                        context_messages,
-                        &tc,
-                        error_msg,
-                    )
-                    .await;
+                    record_tool_error_and_push(&turn_write_ctx, context_messages, &tc, error_msg)
+                        .await;
                     None
                 }
                 DeferredPreflightOutcome::Runnable => Some(
