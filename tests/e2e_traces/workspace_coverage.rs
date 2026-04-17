@@ -5,31 +5,9 @@
 
 use std::time::Duration;
 
+use crate::support::assertions::assert_tool_result_contains;
 use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_llm::LlmTrace;
-
-/// Asserts that at least one result for `tool_name` has a preview
-/// containing any of `expected_substrings`.
-fn assert_tool_result_contains(
-    results: &[(String, String)],
-    tool_name: &str,
-    expected_substrings: &[&str],
-) {
-    let matched: Vec<_> = results
-        .iter()
-        .filter(|(name, _)| name == tool_name)
-        .collect();
-    assert!(
-        !matched.is_empty(),
-        "Expected at least one result for tool '{tool_name}'"
-    );
-    assert!(
-        matched
-            .iter()
-            .any(|(_, preview)| expected_substrings.iter().any(|s| preview.contains(s))),
-        "No result for '{tool_name}' contained any of {expected_substrings:?}: {matched:?}"
-    );
-}
 
 // -----------------------------------------------------------------------
 // Test 1: write_chunk_search

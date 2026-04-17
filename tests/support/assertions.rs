@@ -82,6 +82,28 @@ pub fn assert_tool_succeeded(completed: &[(String, bool)], tool_name: &str) {
     );
 }
 
+/// Assert that at least one result for `tool_name` contains an expected substring.
+pub fn assert_tool_result_contains(
+    results: &[(String, String)],
+    tool_name: &str,
+    expected_substrings: &[&str],
+) {
+    let matched: Vec<_> = results
+        .iter()
+        .filter(|(name, _)| name == tool_name)
+        .collect();
+    assert!(
+        !matched.is_empty(),
+        "Expected at least one result for tool '{tool_name}'"
+    );
+    assert!(
+        matched
+            .iter()
+            .any(|(_, preview)| expected_substrings.iter().any(|s| preview.contains(s))),
+        "No result for '{tool_name}' contained any of {expected_substrings:?}: {matched:?}"
+    );
+}
+
 /// Assert the response does NOT contain any of `forbidden` (case-insensitive).
 pub fn assert_response_not_contains(response: &str, forbidden: &[&str]) {
     let lower = response.to_lowercase();
@@ -204,7 +226,9 @@ pub fn verify_expects(
             found.is_some(),
             "[{label}] tool_results_contain: no result for tool \"{tool_name}\", got: {results:?}"
         );
-        let (_, preview) = found.unwrap();
+        let (_, preview) = found.expect(
+            "tool result must be present after asserting tool_results_contain lookup succeeded",
+        );
         assert!(
             preview.to_lowercase().contains(&substring.to_lowercase()),
             "[{label}] tool_results_contain: tool \"{tool_name}\" result does not contain \"{substring}\", got: \"{preview}\""
