@@ -23,6 +23,8 @@ mod document_store;
 mod hydration;
 mod message_rebuild;
 mod persistence;
+#[cfg(test)]
+mod test_support;
 mod turn_compaction_checkpointing;
 mod turn_execution;
 mod turn_preparation;

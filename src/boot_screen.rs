@@ -4,7 +4,21 @@
 //! state: model, database, tool count, enabled features, active channels,
 //! and the gateway URL.
 
+use crate::cli::Cli;
+use crate::config::Config;
 use crate::sandbox::detect::DockerStatus;
+use crate::tunnel::Tunnel;
+
+/// Runtime-computed values used to populate the startup boot screen.
+pub struct BootData<'a> {
+    pub llm_model: String,
+    pub cheap_model: Option<String>,
+    pub tool_count: usize,
+    pub gateway_url: Option<String>,
+    pub docker_status: crate::sandbox::detect::DockerStatus,
+    pub channel_names: Vec<String>,
+    pub active_tunnel: &'a Option<Box<dyn Tunnel>>,
+}
 
 /// All displayable fields for the boot screen.
 pub struct BootInfo {
@@ -31,6 +45,46 @@ pub struct BootInfo {
     pub tunnel_url: Option<String>,
     /// Provider name for the managed tunnel (e.g., "ngrok").
     pub tunnel_provider: Option<String>,
+}
+
+impl BootInfo {
+    /// Build a boot-screen view model from config and runtime startup data.
+    pub fn from_config_and_data(config: &Config, cli: &Cli, data: &BootData<'_>) -> Self {
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            agent_name: config.agent.name.clone(),
+            llm_backend: config.llm.backend.to_string(),
+            llm_model: data.llm_model.clone(),
+            cheap_model: data.cheap_model.clone(),
+            db_backend: if cli.no_db {
+                "none".to_string()
+            } else {
+                config.database.backend.to_string()
+            },
+            db_connected: !cli.no_db,
+            tool_count: data.tool_count,
+            gateway_url: data.gateway_url.clone(),
+            embeddings_enabled: config.embeddings.enabled,
+            embeddings_provider: config
+                .embeddings
+                .enabled
+                .then(|| config.embeddings.provider.clone()),
+            heartbeat_enabled: config.heartbeat.enabled,
+            heartbeat_interval_secs: config.heartbeat.interval_secs,
+            sandbox_enabled: config.sandbox.enabled,
+            docker_status: data.docker_status,
+            claude_code_enabled: config.claude_code.enabled,
+            routines_enabled: config.routines.enabled,
+            skills_enabled: config.skills.enabled,
+            channels: data.channel_names.clone(),
+            tunnel_url: data
+                .active_tunnel
+                .as_ref()
+                .and_then(|t| t.public_url())
+                .or_else(|| config.tunnel.public_url.clone()),
+            tunnel_provider: data.active_tunnel.as_ref().map(|t| t.name().to_string()),
+        }
+    }
 }
 
 struct Palette<'a> {
@@ -198,127 +252,4 @@ pub fn print_boot_screen(info: &BootInfo) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use insta::assert_snapshot;
-    use rstest::rstest;
-
-    fn full_boot_info() -> BootInfo {
-        BootInfo {
-            version: "0.2.0".to_string(),
-            agent_name: "ironclaw".to_string(),
-            llm_backend: "nearai".to_string(),
-            llm_model: "claude-3-5-sonnet-20241022".to_string(),
-            cheap_model: Some("gpt-4o-mini".to_string()),
-            db_backend: "libsql".to_string(),
-            db_connected: true,
-            tool_count: 24,
-            gateway_url: Some("http://127.0.0.1:3001/?token=abc123".to_string()),
-            embeddings_enabled: true,
-            embeddings_provider: Some("openai".to_string()),
-            heartbeat_enabled: true,
-            heartbeat_interval_secs: 1800,
-            sandbox_enabled: true,
-            docker_status: DockerStatus::Available,
-            claude_code_enabled: false,
-            routines_enabled: true,
-            skills_enabled: true,
-            channels: vec![
-                "repl".to_string(),
-                "gateway".to_string(),
-                "telegram".to_string(),
-            ],
-            tunnel_url: Some("https://abc123.ngrok.io".to_string()),
-            tunnel_provider: Some("ngrok".to_string()),
-        }
-    }
-
-    /// Provides a BootInfo with all optional feature fields set to their
-    /// "disabled / none" state. Individual test helpers override only the
-    /// fields relevant to their scenario.
-    fn base_disabled_boot_info() -> BootInfo {
-        BootInfo {
-            version: String::new(),
-            agent_name: String::new(),
-            llm_backend: String::new(),
-            llm_model: String::new(),
-            cheap_model: None,
-            db_backend: String::new(),
-            db_connected: false,
-            tool_count: 0,
-            gateway_url: None,
-            embeddings_enabled: false,
-            embeddings_provider: None,
-            heartbeat_enabled: false,
-            heartbeat_interval_secs: 0,
-            sandbox_enabled: false,
-            docker_status: DockerStatus::Disabled,
-            claude_code_enabled: false,
-            routines_enabled: false,
-            skills_enabled: false,
-            channels: vec![],
-            tunnel_url: None,
-            tunnel_provider: None,
-        }
-    }
-
-    fn minimal_boot_info() -> BootInfo {
-        BootInfo {
-            version: "0.2.0".to_string(),
-            agent_name: "ironclaw".to_string(),
-            llm_backend: "nearai".to_string(),
-            llm_model: "gpt-4o".to_string(),
-            db_backend: "none".to_string(),
-            tool_count: 5,
-            ..base_disabled_boot_info()
-        }
-    }
-
-    fn no_features_boot_info() -> BootInfo {
-        BootInfo {
-            version: "0.1.0".to_string(),
-            agent_name: "test".to_string(),
-            llm_backend: "openai".to_string(),
-            llm_model: "gpt-4o".to_string(),
-            db_backend: "postgres".to_string(),
-            db_connected: true,
-            tool_count: 10,
-            channels: vec!["repl".to_string()],
-            ..base_disabled_boot_info()
-        }
-    }
-
-    #[rstest]
-    #[case::full("render_boot_screen_full_snapshot", full_boot_info())]
-    #[case::minimal("render_boot_screen_minimal_snapshot", minimal_boot_info())]
-    #[case::no_features("render_boot_screen_no_features_snapshot", no_features_boot_info())]
-    fn test_render_boot_screen_snapshot(#[case] snapshot_name: &str, #[case] info: BootInfo) {
-        let output = render_boot_screen(&info);
-        assert_snapshot!(snapshot_name, &output);
-    }
-
-    #[test]
-    fn test_render_boot_screen_docker_not_installed() {
-        let mut info = full_boot_info();
-        info.docker_status = DockerStatus::NotInstalled;
-        let output = render_boot_screen(&info);
-        assert_snapshot!(&output);
-    }
-
-    #[test]
-    fn test_render_boot_screen_docker_not_running() {
-        let mut info = full_boot_info();
-        info.docker_status = DockerStatus::NotRunning;
-        let output = render_boot_screen(&info);
-        assert_snapshot!(&output);
-    }
-
-    #[rstest]
-    #[case::full(full_boot_info())]
-    #[case::minimal(minimal_boot_info())]
-    #[case::no_features(no_features_boot_info())]
-    fn test_print_boot_screen(#[case] info: BootInfo) {
-        // Should not panic
-        print_boot_screen(&info);
-    }
-}
+mod tests;

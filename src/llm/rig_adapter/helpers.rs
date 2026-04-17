@@ -54,6 +54,7 @@ pub(super) fn extract_response(
             AssistantContent::Text(t) if !t.text.is_empty() => {
                 text_parts.push(t.text.clone());
             }
+            AssistantContent::Text(_) => {}
             AssistantContent::ToolCall(tc) => {
                 tool_calls.push(IronToolCall {
                     id: tc.id.clone(),

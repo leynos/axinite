@@ -220,6 +220,12 @@ impl crate::db::NativeConversationStore for CapturingStore {
                 &self,
                 conversation_id: Uuid
             ) -> Result<Vec<ConversationMessage>, DatabaseError>;
+            async fn list_conversation_messages_scoped(
+                &self,
+                conversation_id: Uuid,
+                user_id: &str,
+                channel: &str
+            ) -> Result<Vec<ConversationMessage>, DatabaseError>;
             async fn list_conversation_messages_paginated(
                 &self,
                 conversation_id: Uuid,

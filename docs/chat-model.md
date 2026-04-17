@@ -49,8 +49,8 @@ Table 1. Applicability of chat-model topics in this document.
 | Area | Applies | Evidence | Notes |
 | ------ | --------- | ---------- | ------- |
 | Browser gateway chat | Yes | `src/channels/web/handlers/chat.rs`, `src/channels/web/ws.rs`, `src/channels/web/mod.rs` | This is the canonical end-to-end chat surface. |
-| Session-backed agent loop | Yes | `src/agent/agent_loop.rs`, `src/agent/thread_ops.rs`, `src/agent/dispatcher.rs` | This is the core chat execution engine. |
-| Conversation persistence | Yes | `src/agent/thread_ops.rs`, `src/history/store.rs`, `src/channels/web/util.rs` | Persistence is durable, but less expressive than the in-memory turn model. |
+| Session-backed agent loop | Yes | `src/agent/agent_loop.rs`, `src/agent/thread_ops/`, `src/agent/dispatcher/` | This is the core chat execution engine. |
+| Conversation persistence | Yes | `src/agent/thread_ops/`, `src/history/store.rs`, `src/channels/web/util.rs` | Persistence is durable, but less expressive than the in-memory turn model. |
 | Non-web channels | Partly | `src/channels/channel.rs`, `src/channels/manager.rs` | They share the same normalized message contract, but not the same browser-specific sinks. |
 | OpenAI-compatible proxy | Partly | `src/channels/web/openai_compat.rs` | It lives beside chat, but does not use sessions, approvals, or thread persistence. |
 | Background jobs and routines | Partly | `src/channels/manager.rs`, `src/context/memory.rs` | They can inject messages or emit events, but they are not the primary user-chat path. |
@@ -88,7 +88,7 @@ Table 3. Session-backed chat structures.
 | `Session` | `user_id`, `active_thread`, `threads`, `auto_approved_tools` | Owns all threads for one user and remembers per-session approval decisions. | `src/agent/session.rs` |
 | `Thread` | `id`, `state`, `turns`, `metadata`, `pending_approval`, `pending_auth` | Represents one conversation timeline and the current interruption mode. | `src/agent/session.rs` |
 | `Turn` | `user_input`, `response`, `tool_calls`, `state`, timestamps, `image_content_parts` | Preserves the model-visible user input and the assistant-side work for one turn. | `src/agent/session.rs` |
-| `PendingApproval` | tool name, original parameters, redacted display parameters, `context_messages`, deferred tool calls, timezone | Suspends the loop at a tool boundary and lets the user resume it later. | `src/agent/session.rs`, `src/agent/thread_ops.rs` |
+| `PendingApproval` | tool name, original parameters, redacted display parameters, `context_messages`, deferred tool calls, timezone | Suspends the loop at a tool boundary and lets the user resume it later. | `src/agent/session.rs`, `src/agent/thread_ops/approval.rs` |
 | `PendingAuth` | `extension_name` | Puts the thread into auth mode so the next user message is routed directly to credential handling. | `src/agent/session.rs`, `src/agent/agent_loop.rs` |
 
 The important design choice is that `Thread::messages()` rebuilds the model
@@ -113,7 +113,7 @@ Table 4. Durable conversation record.
 | -------- | --------------- | ------- | ---------- |
 | `ConversationSummary` | conversation metadata and timestamps | Used to enumerate stored conversations. | `src/history/store.rs` |
 | `ConversationMessage` | `id`, `role`, `content`, `created_at` | The durable history format is a flat role-tagged message stream. | `src/history/store.rs` |
-| Roles in practice | `user`, `tool_calls`, `assistant` | Tool results are not stored as full transcript messages; tool calls are summarized into one JSON record. | `src/agent/thread_ops.rs`, `src/channels/web/util.rs` |
+| Roles in practice | `user`, `tool_calls`, `assistant` | Tool results are not stored as full transcript messages; tool calls are summarized into one JSON record. | `src/agent/thread_ops/persistence.rs`, `src/channels/web/util.rs` |
 
 This means persisted history is strong enough for browser history and thread
 hydration, but not identical to the full reasoning transcript held in memory.
@@ -240,6 +240,10 @@ means the inbound secret scan only covers the original `content` string.
 Attachment-derived transcripts and extracted document text are appended later,
 after that specific gate has already run.
 
+The retry-specific message cleanup helpers `compact_messages_for_retry()` and
+`strip_internal_tool_call_text()` now live in
+`src/agent/dispatcher/delegate/llm_hooks.rs`.
+
 ### 4.4 Session resolution and thread hydration
 
 Axinite separates external thread identifiers from internal thread ownership.
@@ -251,6 +255,8 @@ UUID-shaped. Before resolution, `maybe_hydrate_thread()` checks whether the
 requested thread exists only in the database. If it does, the agent rebuilds
 `ChatMessage` history from durable records, restores an in-memory `Thread` with
 the exact same UUID, and registers that mapping with `SessionManager`.
+
+That thread-hydration path now lives under `src/agent/thread_ops/hydration.rs`.
 
 That hydration step matters because otherwise a browser reload or thread switch
 would create a fresh in-memory thread and split one logical conversation across
@@ -335,6 +341,9 @@ LLM sees anything, it:
 Only after those steps does axinite start a new turn, attach image content
 parts, and persist the user message to the conversation store.
 
+That per-turn orchestration now lives in
+`src/agent/thread_ops/turn_execution.rs`.
+
 ### 4.6 Model context assembly
 
 The model transcript is assembled in `run_agentic_loop()`. The inputs are not
@@ -345,13 +354,13 @@ Table 6. Inputs injected into `ReasoningContext` before or during the loop.
 
 | Input | Source | Trust level | How it enters | Evidence |
 | ------ | -------- | ------------- | --------------- | ---------- |
-| Workspace system prompt | workspace identity files such as `AGENTS.md` and `SOUL.md` | Trusted host instruction | Loaded by `system_prompt_for_context_tz()` and inserted as the system prompt | `src/agent/dispatcher.rs` |
-| Skill context | selected installed or trusted skills | Mixed; installed skills are explicitly downgraded to suggestions | Wrapped in `<skill>` blocks and injected into the prompt | `src/agent/dispatcher.rs` |
-| Channel conversation context | channel-specific metadata projection | Trusted host-side adapter data | Added through `Reasoning::with_conversation_data()` | `src/agent/dispatcher.rs` |
+| Workspace system prompt | workspace identity files such as `AGENTS.md` and `SOUL.md` | Trusted host instruction | Loaded by `system_prompt_for_context_tz()` and inserted as the system prompt | `src/agent/dispatcher/mod.rs` |
+| Skill context | selected installed or trusted skills | Mixed; installed skills are explicitly downgraded to suggestions | Wrapped in `<skill>` blocks and injected into the prompt | `src/agent/dispatcher/mod.rs` |
+| Channel conversation context | channel-specific metadata projection | Trusted host-side adapter data | Added through `Reasoning::with_conversation_data()` | `src/agent/dispatcher/mod.rs` |
 | Prior turns | thread state | Mixed user and assistant history | Rebuilt from `Thread::messages()` | `src/agent/session.rs` |
-| Tool schemas | tool registry, optionally attenuated by active skills | Trusted host instruction | Inserted into `ReasoningContext.available_tools` | `src/agent/dispatcher.rs` |
-| Thread metadata | thread ID | Trusted host metadata | Stored in `ReasoningContext.metadata` | `src/agent/dispatcher.rs` |
-| Tool-result messages | executed tool outputs after sanitization | Untrusted external content after host wrapping | Added as `ChatMessage::tool_result` | `src/agent/dispatcher.rs`, `src/tools/execute.rs` |
+| Tool schemas | tool registry, optionally attenuated by active skills | Trusted host instruction | Inserted into `ReasoningContext.available_tools` | `src/agent/dispatcher/mod.rs` |
+| Thread metadata | thread ID | Trusted host metadata | Stored in `ReasoningContext.metadata` | `src/agent/dispatcher/mod.rs` |
+| Tool-result messages | executed tool outputs after sanitization | Untrusted external content after host wrapping | Added as `ChatMessage::tool_result` | `src/agent/dispatcher/delegate/tool_exec.rs`, `src/tools/execute.rs` |
 
 The dispatcher builds two cached prompt variants:
 
@@ -367,7 +376,10 @@ the limit it removes tools from the prompt entirely.
 
 The shared agentic loop returns either assistant text, a tool-call batch, a
 stop signal, or a need-approval outcome. When a tool-call batch arrives,
-`ChatDelegate::execute_tool_calls()` handles it in three stages.
+`ChatDelegate::execute_tool_calls()` handles it in three stages. The thin
+`ChatDelegate` wrapper lives in `src/agent/dispatcher/delegate/mod.rs`, while
+the tool-execution implementation lives in
+`src/agent/dispatcher/delegate/tool_exec.rs`.
 
 1. It appends an `assistant_with_tool_calls` message to the transcript and
    records redacted tool-call parameters in the current turn.
@@ -414,6 +426,10 @@ If a tool requires approval, the dispatcher captures:
 That becomes `PendingApproval` on the thread, and the agent emits
 `StatusUpdate::ApprovalNeeded`. The turn does not receive a normal assistant
 text response at that point.
+
+The approval gating and auth detection logic live in
+`src/agent/dispatcher/delegate/tool_exec.rs`, while the resume-from-approval
+flow lives in `src/agent/thread_ops/approval.rs`.
 
 When the user approves or denies the request, the browser sends a serialized
 `ExecApproval` message back into the same gateway message pipeline. The agent
@@ -463,6 +479,8 @@ That reconstruction is intentionally heuristic. It handles:
 - `user` alone, which the browser renders as a failed or incomplete turn
 - standalone `assistant` messages, such as routine output
 
+These persistence helpers live in `src/agent/thread_ops/persistence.rs`.
+
 ### 4.10 Response and status sinks
 
 The browser-facing chat model has two distinct egress classes.
@@ -484,6 +502,39 @@ events. That live stream carries:
 The WebSocket transport does not have its own independent event producer. It
 subscribes to the same underlying broadcast source as Server-Sent Events (SSE)
 and simply re-encodes each `SseEvent` into a WebSocket frame.
+
+### 4.11 Module structure and parameter objects
+
+The dispatcher and thread-operations layers are organized as submodule trees
+rather than single files. The key structural units are:
+
+Dispatcher delegate: `src/agent/dispatcher/delegate/`
+
+| File | Responsibility |
+| --- | --- |
+| `mod.rs` | `ChatDelegate<'a>` struct; thin `NativeLoopDelegate` impl delegating to submodules |
+| `llm_hooks.rs` | Signal checking, pre-LLM call preparation, LLM invocation, text-response handling, message compaction |
+| `tool_exec.rs` | Tool preflight classification, parallel execution, post-flight result folding, approval and auth detection |
+
+Thread operations: `src/agent/thread_ops/`
+
+| File | Responsibility |
+| --- | --- |
+| `dispatch.rs` | Top-level `dispatch_submission` router |
+| `turn_execution.rs` | Per-turn orchestration: state guard, safety, compaction, loop, result handling |
+| `control.rs` | Undo, redo, interrupt, compact, clear, new-thread, switch-thread, resume |
+| `hydration.rs` | Thread hydration from the backing store on first reference |
+| `persistence.rs` | Durable write helpers for user messages, assistant responses, and tool-call summaries |
+| `approval.rs` | Resume-from-approval flow |
+
+Parameter objects introduced to reduce function arity:
+
+| Struct | Fields | Purpose |
+| --- | --- | --- |
+| `UserTurnRequest` | `session`, `thread_id`, `content` | Groups per-turn scope for `process_user_input` |
+| `TurnPersistContext<'a>` | `thread_id`, `user_id`, `turn_number` | Groups identity data for persistence helpers |
+| `ToolCallSpec<'a>` | `name`, `params` | Identifies a tool invocation for standalone execution |
+| `ApprovalCandidate` | `idx`, `tool_call`, `tool` | Captures the first approval-gated call and its registry entry |
 
 ## 5. Sources, sinks, and content-injection boundaries
 
@@ -559,12 +610,12 @@ Table 9. High-value actions in the chat path.
 | Action | Input | Output | Evidence |
 | -------- | ------- | -------- | ---------- |
 | Send chat message | `SendMessageRequest` or `WsClientMessage::Message` | `IncomingMessage` | `src/channels/web/handlers/chat.rs`, `src/channels/web/ws.rs` |
-| Start turn | normalized message plus resolved thread | in-memory turn plus durable user record | `src/agent/thread_ops.rs` |
-| Run model iteration | `ReasoningContext` | assistant text or tool-call batch | `src/agent/dispatcher.rs` |
-| Execute tool batch | tool calls | status events plus `tool_result` messages | `src/agent/dispatcher.rs`, `src/tools/execute.rs` |
-| Suspend for approval | approval-required tool call | `PendingApproval` plus SSE event | `src/agent/dispatcher.rs`, `src/agent/thread_ops.rs` |
+| Start turn | normalized message plus resolved thread | in-memory turn plus durable user record | `src/agent/thread_ops/turn_execution.rs` |
+| Run model iteration | `ReasoningContext` | assistant text or tool-call batch | `src/agent/dispatcher/mod.rs` |
+| Execute tool batch | tool calls | status events plus `tool_result` messages | `src/agent/dispatcher/delegate/tool_exec.rs`, `src/tools/execute.rs` |
+| Suspend for approval | approval-required tool call | `PendingApproval` plus SSE event | `src/agent/dispatcher/delegate/tool_exec.rs`, `src/agent/thread_ops/approval.rs` |
 | Submit approval | approval REST or WebSocket message | resumed suspended context | `src/channels/web/handlers/chat_auth.rs`, `src/channels/web/ws.rs` |
-| Enter auth mode | auth-required tool result | `PendingAuth` plus auth event | `src/agent/dispatcher.rs`, `src/agent/session.rs` |
+| Enter auth mode | auth-required tool result | `PendingAuth` plus auth event | `src/agent/dispatcher/delegate/tool_exec.rs`, `src/agent/session.rs` |
 | Submit auth token | auth REST or WebSocket request | extension activation attempt and auth broadcast | `src/channels/web/handlers/chat_auth.rs`, `src/channels/web/ws.rs` |
 | Load history | thread query | `HistoryResponse` | `src/channels/web/handlers/chat_history.rs` |
 
@@ -614,10 +665,15 @@ chat loop.
 - `src/channels/web/ws.rs`
 - `src/agent/agent_loop.rs`
 - `src/agent/attachments.rs`
-- `src/agent/dispatcher.rs`
+- `src/agent/dispatcher/mod.rs`
+- `src/agent/dispatcher/delegate/mod.rs`
+- `src/agent/dispatcher/delegate/llm_hooks.rs`
+- `src/agent/dispatcher/delegate/tool_exec.rs`
 - `src/agent/session.rs`
 - `src/agent/session_manager.rs`
-- `src/agent/thread_ops.rs`
+- `src/agent/thread_ops/`
+  - `hydration.rs`, `turn_execution.rs`, `control.rs`,
+    `persistence.rs`, `dispatch.rs`, `approval.rs`
 - `src/document_extraction/mod.rs`
 - `src/history/store.rs`
 - `src/safety/mod.rs`

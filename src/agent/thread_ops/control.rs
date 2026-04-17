@@ -85,13 +85,6 @@ impl Agent {
         thread_id: Uuid,
         op: RewindOp,
     ) -> Result<SubmissionResult, Error> {
-        let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
-        let mut mgr = undo_mgr.lock().await;
-
-        if let Some(msg) = Self::availability_message(&mgr, op) {
-            return Ok(SubmissionResult::ok_with_message(msg.to_string()));
-        }
-
         let (turn, messages) = {
             let sess = session.lock().await;
             let thread = sess
@@ -101,11 +94,19 @@ impl Agent {
             (thread.turn_number(), thread.messages())
         };
 
+        let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
+        let mut mgr = undo_mgr.lock().await;
+
+        if let Some(msg) = Self::availability_message(&mgr, op) {
+            return Ok(SubmissionResult::ok_with_message(msg.to_string()));
+        }
+
         let Some(cp) = Self::perform_rewind(&mut mgr, op, turn, messages) else {
             return Ok(SubmissionResult::error(Self::failure_msg(op)));
         };
 
         let msg = Self::success_msg(op, cp.turn_number, mgr.undo_count());
+        drop(mgr);
         Self::restore_thread_from_checkpoint(&session, thread_id, cp.messages).await?;
         Ok(SubmissionResult::ok_with_message(msg))
     }
@@ -216,9 +217,6 @@ impl Agent {
         session: Arc<Mutex<Session>>,
         thread_id: Uuid,
     ) -> Result<SubmissionResult, Error> {
-        let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
-        undo_mgr.lock().await.clear();
-
         let mut sess = session.lock().await;
         let thread = sess
             .threads
@@ -227,6 +225,13 @@ impl Agent {
         thread.turns.clear();
         thread.state = ThreadState::Idle;
         thread.updated_at = Utc::now();
+        thread.pending_approval = None;
+        thread.pending_auth = None;
+        thread.in_flight_auth = false;
+        drop(sess);
+
+        let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
+        undo_mgr.lock().await.clear();
 
         Ok(SubmissionResult::ok_with_message("Thread cleared."))
     }
@@ -275,31 +280,45 @@ impl Agent {
         thread_id: Uuid,
         checkpoint_id: Uuid,
     ) -> Result<SubmissionResult, Error> {
-        {
+        let (original_updated_at, original_turns_len) = {
             let sess = session.lock().await;
-            let _thread = sess
+            let thread = sess
                 .threads
                 .get(&thread_id)
                 .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
-        }
+            (thread.updated_at, thread.turns.len())
+        };
 
         let undo_mgr = self.session_manager.get_undo_manager(thread_id).await;
         let mut mgr = undo_mgr.lock().await;
 
-        if let Some(checkpoint) = mgr.restore(checkpoint_id) {
-            let mut sess = session.lock().await;
-            let thread = sess
-                .threads
-                .get_mut(&thread_id)
-                .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
-            thread.restore_from_messages(checkpoint.messages);
-            thread.updated_at = Utc::now();
-            Ok(SubmissionResult::ok_with_message(format!(
-                "Resumed from checkpoint: {}",
-                checkpoint.description
-            )))
-        } else {
-            Ok(SubmissionResult::error("Checkpoint not found."))
+        let Some(checkpoint) = mgr.restore(checkpoint_id) else {
+            return Ok(SubmissionResult::error("Checkpoint not found."));
+        };
+        let description = checkpoint.description.clone();
+        let messages = checkpoint.messages;
+        drop(mgr);
+
+        let mut sess = session.lock().await;
+        let thread = sess
+            .threads
+            .get_mut(&thread_id)
+            .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
+        if thread.updated_at != original_updated_at || thread.turns.len() != original_turns_len {
+            return Ok(SubmissionResult::error(
+                "Thread changed while resume was running. Please retry.",
+            ));
         }
+        thread.restore_from_messages(messages);
+        thread.updated_at = Utc::now();
+
+        Ok(SubmissionResult::ok_with_message(format!(
+            "Resumed from checkpoint: {}",
+            description
+        )))
     }
 }
+
+#[cfg(test)]
+#[path = "control_tests.rs"]
+mod tests;

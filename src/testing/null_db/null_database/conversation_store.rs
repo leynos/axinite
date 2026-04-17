@@ -121,6 +121,15 @@ impl crate::db::NativeConversationStore for NullDatabase {
         Ok(vec![])
     }
 
+    async fn list_conversation_messages_scoped(
+        &self,
+        _conversation_id: Uuid,
+        _user_id: &str,
+        _channel: &str,
+    ) -> Result<Vec<ConversationMessage>, DatabaseError> {
+        Ok(vec![])
+    }
+
     async fn list_conversation_messages_paginated(
         &self,
         _conversation_id: Uuid,

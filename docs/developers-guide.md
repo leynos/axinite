@@ -342,7 +342,6 @@ Variable: `DATABASE_URL`
 Meaning: PostgreSQL connection URL used by the app.
 Default or rule:
 
-
 ### libSQL test databases
 
 Unit tests that exercise the libSQL backend call
@@ -422,6 +421,14 @@ loop outcomes into channel outputs. It is decomposed into three layers:
   structures (preview truncation, auth parsing, message compaction,
   etc.).
 
+
+### Dispatcher and Thread-Operations Module Structure
+
+PR `#122` decomposed two previously monolithic source files into
+cohesive submodule trees. Developers extending or debugging the chat
+agent should navigate to the modules described below rather than to the
+old monolithic dispatcher and thread-operations files, which have since
+been split into focused units.
 
 ### Control flow
 
@@ -920,7 +927,6 @@ artifacts and CI duplication.
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
 
-
 ### WebhookServer test helpers
 
 `WebhookServer` exposes two `#[cfg(test)]`-only methods to eliminate
@@ -968,7 +974,6 @@ pipeline tests belong in `workspace/tests.rs`.
   auth/image side-effects. Status-send failures are explicitly ignored
   to keep UI updates non-blocking.
 
-
 ### Invariants
 
 - Post-flight preserves the original tool-call order when folding
@@ -1002,3 +1007,45 @@ Use this pattern when a helper repeatedly threads the same related values
 through several internal calls. Keep these structs private or `pub(super)`
 unless a wider API boundary genuinely needs them, and prefer names that
 describe the query or scope they model instead of generic `Options` suffixes.
+
+
+#### Parameter objects
+
+The following structs were introduced to keep function arity within the
+project's four-argument limit:
+
+| Struct | Fields | Used by |
+| --- | --- | --- |
+| `UserTurnRequest` | `session`, `thread_id`, `content` | `process_user_input` |
+| `TurnPersistContext<'a>` | `thread_id`, `user_id`, `turn_number` | `persist_tool_calls` |
+| `ToolCallSpec<'a>` | `name`, `params` | `execute_chat_tool_standalone` |
+| `ApprovalCandidate` | `idx`, `tool_call`, `tool` | `build_pending_approval` |
+
+
+#### Dispatcher delegate (`src/agent/dispatcher/delegate/`)
+
+| File | Responsibility |
+| --- | --- |
+| `mod.rs` | `ChatDelegate<'a>` struct plus thin `NativeLoopDelegate` wiring for the stage helpers |
+| `llm_hooks.rs` | Signal checking, pre-LLM call preparation, LLM invocation with context-length retry, text-response sanitisation, and message compaction |
+| `loops.rs` | Shared agentic-loop orchestration glue that hands each stage off to the focused helpers |
+| `tool_exec/mod.rs` | Tool preflight classification, parallel or sequential execution, post-flight result folding, approval detection, and auth handling |
+| `tool_exec/preflight.rs` | Hook dispatch, approval gating, and runnable-batch construction |
+| `tool_exec/execution.rs` | Inline and parallel tool execution plus standalone tool-call execution helpers |
+| `tool_exec/postflight.rs` | Result folding, auth-barrier handling, preview generation, and image-sentinel emission |
+| `tool_exec/recording.rs` | Redacted tool-call recording and indexed thread-history updates |
+
+#### Thread operations (`src/agent/thread_ops/`)
+
+| File | Responsibility |
+| --- | --- |
+| `dispatch.rs` | Top-level `dispatch_submission` router that maps each `Submission` variant to a handler |
+| `turn_execution.rs` | Per-turn orchestration shell that sequences state checks, safety, compaction, checkpointing, preparation, agentic-loop execution, and result handling |
+| `turn_preparation.rs` | Thread-state guard, safety validation, turn creation, and durable user-message persistence |
+| `turn_compaction_checkpointing.rs` | Automatic compaction and undo-checkpoint helpers run before each turn |
+| `turn_result_finalisation.rs` | Loop-result handling, response-transform hooks, assistant-response persistence, and failure finalisation |
+| `control.rs` | Thread lifecycle commands: undo, redo, interrupt, compact, clear, new-thread, switch-thread, and resume |
+| `hydration.rs` | Lazy thread hydration from the backing store when a known external thread ID is first referenced |
+| `persistence.rs` | Durable write helpers for user messages, assistant responses, and tool-call summaries |
+| `approval.rs` | Resume-from-approval flow after user consent is received |
+

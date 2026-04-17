@@ -157,6 +157,48 @@ struct DeferredFlow<'a> {
     deferred_tool_calls: Vec<crate::llm::ToolCall>,
 }
 
+/// Preflight outcome for a deferred tool call.
+enum DeferredPreflightOutcome {
+    /// Hook rejected the call before execution.
+    Rejected(String),
+    /// The call is ready to execute.
+    Runnable,
+}
+
+enum DeferredPreflight {
+    Rejected {
+        tc: crate::llm::ToolCall,
+        msg: String,
+    },
+    NeedsApproval {
+        idx: usize,
+        tc: crate::llm::ToolCall,
+        tool: Arc<dyn crate::tools::Tool>,
+    },
+    Runnable {
+        tc: crate::llm::ToolCall,
+    },
+}
+
+struct DeferredToolCallCtx<'a> {
+    agent: &'a Agent,
+    auto_approved: &'a std::collections::HashSet<String>,
+    message: &'a IncomingMessage,
+    idx: usize,
+}
+
+struct DeferredHookCtx<'a> {
+    agent: &'a Agent,
+    message: &'a IncomingMessage,
+    original_tc: &'a crate::llm::ToolCall,
+    sensitive: &'a [&'a str],
+}
+
+struct TurnWriteCtx<'a> {
+    session: &'a Arc<Mutex<Session>>,
+    thread_id: Uuid,
+}
+
 /// Parameters for auth intercept handling.
 struct AuthInterceptParams<'a> {
     /// Session containing the thread.
@@ -173,6 +215,127 @@ struct AuthInterceptParams<'a> {
     instructions: String,
     /// Pending approval to preserve for continuation after auth.
     pending: Option<PendingApproval>,
+}
+
+fn restore_sensitive_fields(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    original_args: &serde_json::Value,
+    sensitive: &[&str],
+) {
+    for key in sensitive {
+        if let Some(orig_val) = original_args.get(*key) {
+            obj.insert((*key).to_string(), orig_val.clone());
+        }
+    }
+}
+
+async fn run_before_tool_call_hook_for_deferred(
+    ctx: &DeferredHookCtx<'_>,
+    tc: &mut crate::llm::ToolCall,
+) -> Option<String> {
+    let hook_params = redact_params(&tc.arguments, ctx.sensitive);
+    let event = crate::hooks::HookEvent::ToolCall {
+        tool_name: tc.name.clone(),
+        parameters: hook_params,
+        user_id: ctx.message.user_id.clone(),
+        context: "chat".to_string(),
+    };
+
+    match ctx.agent.hooks().run(&event).await {
+        Err(crate::hooks::HookError::Rejected { reason }) => {
+            Some(format!("Tool call rejected by hook: {}", reason))
+        }
+        Err(err) => Some(format!("Tool call blocked by hook policy: {}", err)),
+        Ok(crate::hooks::HookOutcome::Continue {
+            modified: Some(new_params),
+        }) => {
+            match serde_json::from_str::<serde_json::Value>(&new_params) {
+                Ok(mut parsed) => {
+                    if let Some(obj) = parsed.as_object_mut() {
+                        restore_sensitive_fields(obj, &ctx.original_tc.arguments, ctx.sensitive);
+                    }
+                    tc.arguments = parsed;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        tool = %tc.name,
+                        "Hook returned non-JSON modification for ToolCall, ignoring: {}",
+                        e
+                    );
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+async fn approval_required_deferred_tool(
+    agent: &Agent,
+    auto_approved: &std::collections::HashSet<String>,
+    tc: &crate::llm::ToolCall,
+) -> Option<Arc<dyn crate::tools::Tool>> {
+    let tool = agent.tools().get(&tc.name).await?;
+    use crate::tools::ApprovalRequirement;
+
+    let needs_approval = match tool.requires_approval(&tc.arguments) {
+        ApprovalRequirement::Never => false,
+        ApprovalRequirement::UnlessAutoApproved => !auto_approved.contains(&tc.name),
+        ApprovalRequirement::Always => true,
+    };
+
+    if needs_approval { Some(tool) } else { None }
+}
+
+async fn classify_deferred_tool_call(
+    ctx: &DeferredToolCallCtx<'_>,
+    original_tc: &crate::llm::ToolCall,
+) -> DeferredPreflight {
+    let mut tc = original_tc.clone();
+    let tool_opt = ctx.agent.tools().get(&tc.name).await;
+    let sensitive = tool_opt
+        .as_ref()
+        .map(|tool| tool.sensitive_params())
+        .unwrap_or(&[]);
+
+    let hook_ctx = DeferredHookCtx {
+        agent: ctx.agent,
+        message: ctx.message,
+        original_tc,
+        sensitive,
+    };
+
+    if let Some(msg) = run_before_tool_call_hook_for_deferred(&hook_ctx, &mut tc).await {
+        return DeferredPreflight::Rejected { tc, msg };
+    }
+
+    if let Some(tool) = approval_required_deferred_tool(ctx.agent, ctx.auto_approved, &tc).await {
+        return DeferredPreflight::NeedsApproval {
+            idx: ctx.idx,
+            tc,
+            tool,
+        };
+    }
+
+    DeferredPreflight::Runnable { tc }
+}
+
+async fn record_tool_error_and_push(
+    ctx: &TurnWriteCtx<'_>,
+    reason_ctx: &mut Vec<ChatMessage>,
+    tc: &crate::llm::ToolCall,
+    error_msg: String,
+) {
+    {
+        let mut sess = ctx.session.lock().await;
+        if let Some(thread) = sess.threads.get_mut(&ctx.thread_id)
+            && let Some(turn) = thread.last_turn_mut()
+        {
+            turn.record_tool_error(error_msg.clone());
+        }
+    }
+
+    reason_ctx.push(ChatMessage::tool_result(&tc.id, &tc.name, error_msg));
 }
 
 impl Agent {
@@ -399,44 +562,52 @@ impl Agent {
     /// Preflight deferred tools: collect runnable and find first needing approval.
     async fn preflight_deferred_tools(
         &self,
-        session: &Arc<Mutex<Session>>,
+        scope: &TurnScope,
         deferred: &[crate::llm::ToolCall],
     ) -> (
+        Vec<(crate::llm::ToolCall, DeferredPreflightOutcome)>,
         Vec<crate::llm::ToolCall>,
         Option<(usize, crate::llm::ToolCall, Arc<dyn crate::tools::Tool>)>,
     ) {
         // Precompute auto-approved tools to avoid repeated locking
         let auto_approved: std::collections::HashSet<String> = {
-            let sess = session.lock().await;
+            let sess = scope.session.lock().await;
             sess.auto_approved_tools.iter().cloned().collect()
         };
 
+        let mut preflight: Vec<(crate::llm::ToolCall, DeferredPreflightOutcome)> = Vec::new();
         let mut runnable: Vec<crate::llm::ToolCall> = Vec::new();
         let mut approval_needed: Option<(
             usize,
             crate::llm::ToolCall,
             Arc<dyn crate::tools::Tool>,
         )> = None;
+        let message = scope.to_message();
 
-        for (idx, tc) in deferred.iter().enumerate() {
-            if let Some(tool) = self.tools().get(&tc.name).await {
-                use crate::tools::ApprovalRequirement;
-                let needs_approval = match tool.requires_approval(&tc.arguments) {
-                    ApprovalRequirement::Never => false,
-                    ApprovalRequirement::UnlessAutoApproved => !auto_approved.contains(&tc.name),
-                    ApprovalRequirement::Always => true,
-                };
+        for (idx, original_tc) in deferred.iter().enumerate() {
+            let classify_ctx = DeferredToolCallCtx {
+                agent: self,
+                auto_approved: &auto_approved,
+                message: &message,
+                idx,
+            };
 
-                if needs_approval {
-                    approval_needed = Some((idx, tc.clone(), tool));
-                    break; // remaining tools stay deferred
+            match classify_deferred_tool_call(&classify_ctx, original_tc).await {
+                DeferredPreflight::Rejected { tc, msg } => {
+                    preflight.push((tc, DeferredPreflightOutcome::Rejected(msg)));
+                }
+                DeferredPreflight::NeedsApproval { idx, tc, tool } => {
+                    approval_needed = Some((idx, tc, tool));
+                    break;
+                }
+                DeferredPreflight::Runnable { tc } => {
+                    preflight.push((tc.clone(), DeferredPreflightOutcome::Runnable));
+                    runnable.push(tc);
                 }
             }
-
-            runnable.push(tc.clone());
         }
 
-        (runnable, approval_needed)
+        (preflight, runnable, approval_needed)
     }
 
     /// Run deferred tools inline (single or empty).
@@ -600,13 +771,41 @@ impl Agent {
     async fn postflight_record_and_maybe_deferred_auth(
         &self,
         scope: &TurnScope,
+        preflight: Vec<(crate::llm::ToolCall, DeferredPreflightOutcome)>,
         exec_results: Vec<(crate::llm::ToolCall, Result<String, Error>)>,
         context_messages: &mut Vec<ChatMessage>,
         pending: &PendingApproval,
     ) -> Option<String> {
+        let mut exec_results = std::collections::VecDeque::from(exec_results);
         let mut deferred_auth: Option<String> = None;
+        let turn_write_ctx = TurnWriteCtx {
+            session: &scope.session,
+            thread_id: scope.thread_id,
+        };
 
-        for (tc, deferred_result) in exec_results {
+        for (tc, outcome) in preflight {
+            let Some(deferred_result) = (match outcome {
+                DeferredPreflightOutcome::Rejected(error_msg) => {
+                    record_tool_error_and_push(&turn_write_ctx, context_messages, &tc, error_msg)
+                        .await;
+                    None
+                }
+                DeferredPreflightOutcome::Runnable => Some(
+                    exec_results
+                        .pop_front()
+                        .map(|(_executed_tc, result)| result)
+                        .unwrap_or_else(|| {
+                            Err(crate::error::ToolError::ExecutionFailed {
+                                name: tc.name.clone(),
+                                reason: "No result available".to_string(),
+                            }
+                            .into())
+                        }),
+                ),
+            }) else {
+                continue;
+            };
+
             // Sanitize first before any use of the output
             let is_deferred_error = deferred_result.is_err();
             let (deferred_content, _) = crate::tools::execute::process_tool_result(
@@ -982,8 +1181,8 @@ impl Agent {
         mut flow: DeferredFlow<'a>,
     ) -> Result<(Vec<ChatMessage>, Option<SubmissionResult>), Error> {
         // Preflight deferred tools
-        let (runnable, approval_needed) = self
-            .preflight_deferred_tools(&flow.scope.session, &flow.deferred_tool_calls)
+        let (preflight, runnable, approval_needed) = self
+            .preflight_deferred_tools(flow.scope, &flow.deferred_tool_calls)
             .await;
 
         // Execute runnable deferred tools
@@ -997,6 +1196,7 @@ impl Agent {
         if let Some(instructions) = self
             .postflight_record_and_maybe_deferred_auth(
                 flow.scope,
+                preflight,
                 exec_results,
                 &mut flow.context_messages,
                 flow.pending,
@@ -1108,7 +1308,7 @@ impl Agent {
     /// the turn, and sends the AuthRequired status to the channel.
     async fn handle_auth_intercept(&self, params: AuthInterceptParams<'_>) {
         let auth_data = parse_auth_result(params.tool_result);
-        {
+        let (turn_number, tool_calls) = {
             let mut sess = params.session.lock().await;
             if let Some(thread) = sess.threads.get_mut(&params.thread_id) {
                 // Complete turn first (resets state to Idle)
@@ -1120,8 +1320,25 @@ impl Agent {
                 }
                 // Set pending auth (state unchanged)
                 thread.enter_auth_mode(params.ext_name.clone());
+                thread
+                    .turns
+                    .last()
+                    .map(|turn| (turn.turn_number, turn.tool_calls.clone()))
+                    .unwrap_or((0, Vec::new()))
+            } else {
+                (0, Vec::new())
             }
+        };
+
+        if turn_number != 0 {
+            let persist_ctx = TurnPersistContext {
+                thread_id: params.thread_id,
+                user_id: &params.env.user_id,
+                turn_number,
+            };
+            self.persist_tool_calls(&persist_ctx, &tool_calls).await;
         }
+
         // User message already persisted at turn start; save auth instructions
         self.persist_assistant_response(
             params.thread_id,
@@ -1316,3 +1533,7 @@ impl Agent {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "approval_tests.rs"]
+mod tests;

@@ -73,33 +73,6 @@ pub(crate) enum AgenticLoopResult {
     },
 }
 
-/// Outcome of preflight check for a single tool call.
-pub(super) enum PreflightOutcome {
-    Rejected(String),
-    Runnable,
-}
-
-/// Result of grouping tool calls into batches.
-pub(super) struct ToolBatch {
-    pub(super) preflight: Vec<(crate::llm::ToolCall, PreflightOutcome)>,
-    pub(super) runnable: Vec<usize>,
-}
-
-/// Describes the tool call that requires user authorisation, together with
-/// any subsequent calls that must be deferred until approval is granted.
-pub(super) struct ApprovalTarget<'a> {
-    pub(super) tc: &'a crate::llm::ToolCall,
-    pub(super) tool: &'a dyn crate::tools::Tool,
-    /// Tool calls that follow the approval-gated call in the original batch.
-    pub(super) deferred_calls: &'a [crate::llm::ToolCall],
-}
-
-/// The sanitised result of a single tool execution, bundled for context folding.
-pub(super) struct ToolExecutionOutcome {
-    pub(super) content: String,
-    pub(super) is_error: bool,
-}
-
 /// Parsed auth result fields for emitting StatusUpdate::AuthRequired.
 pub(crate) struct ParsedAuthData {
     pub(crate) auth_url: Option<String>,
@@ -139,10 +112,16 @@ pub(crate) fn check_auth_required(
     }
     let output = result.as_ref().ok()?;
     let parsed: serde_json::Value = serde_json::from_str(output).ok()?;
-    if parsed.get("awaiting_token") != Some(&serde_json::Value::Bool(true)) {
+    let awaiting_token = parsed.get("awaiting_token") == Some(&serde_json::Value::Bool(true))
+        || parsed.get("type").and_then(|value| value.as_str()) == Some("awaiting_token");
+    if !awaiting_token {
         return None;
     }
-    let name = parsed.get("name")?.as_str()?.to_string();
+    let name = parsed
+        .get("name")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| tool_name.to_string());
     let instructions = parsed
         .get("instructions")
         .and_then(|v| v.as_str())

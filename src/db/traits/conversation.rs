@@ -158,6 +158,16 @@ pub trait ConversationStore: Send + Sync {
         &'a self,
         conversation_id: Uuid,
     ) -> DbFuture<'a, Result<Vec<ConversationMessage>, DatabaseError>>;
+    /// List all messages for a conversation after verifying user/channel ownership.
+    ///
+    /// Returns `DatabaseError::NotFound` when the conversation does not exist
+    /// for the supplied owner and channel.
+    fn list_conversation_messages_scoped<'a>(
+        &'a self,
+        conversation_id: Uuid,
+        user_id: &'a str,
+        channel: &'a str,
+    ) -> DbFuture<'a, Result<Vec<ConversationMessage>, DatabaseError>>;
     /// Check whether the conversation is owned by `user_id`.
     ///
     /// Returns `Ok(false)` for missing or foreign rows.
@@ -255,6 +265,13 @@ pub trait NativeConversationStore: Send + Sync {
     fn list_conversation_messages<'a>(
         &'a self,
         conversation_id: Uuid,
+    ) -> impl Future<Output = Result<Vec<ConversationMessage>, DatabaseError>> + Send + 'a;
+    /// List all messages for a conversation after verifying user/channel ownership.
+    fn list_conversation_messages_scoped<'a>(
+        &'a self,
+        conversation_id: Uuid,
+        user_id: &'a str,
+        channel: &'a str,
     ) -> impl Future<Output = Result<Vec<ConversationMessage>, DatabaseError>> + Send + 'a;
     /// Check whether the conversation is owned by `user_id`.
     fn conversation_belongs_to_user<'a>(
