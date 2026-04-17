@@ -13,19 +13,10 @@ use ironclaw::{
 };
 
 use crate::startup::wasm::WasmWiringContext;
-use crate::startup::{CoreAgentContext, GatewayPhaseContext, wasm::wire_wasm_channel_runtime};
-
-/// Starts runtime side effects and enters the agent run loop.
-///
-/// Propagates any `side_effects.start()` error before the loop begins,
-/// then maps the agent's own error type into `anyhow::Error` on exit.
-async fn run_with_side_effects(
-    side_effects: ironclaw::app::RuntimeSideEffects,
-    agent: Agent,
-) -> anyhow::Result<()> {
-    side_effects.start()?;
-    agent.run().await.map_err(anyhow::Error::from)
-}
+use crate::startup::{
+    CoreAgentContext, GatewayPhaseContext, run_flow::run_with_side_effects,
+    wasm::wire_wasm_channel_runtime,
+};
 
 /// Runs the agent loop and performs the coordinated shutdown sequence on exit.
 ///
@@ -95,16 +86,28 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
         &http_channel_state,
     );
 
-    let run_result = run_with_side_effects(side_effects, agent).await;
-
-    run_shutdown_sequence(
-        &shutdown_tx,
-        &components.mcp_process_manager,
-        &components.recording_handle,
-        &webhook_server,
-        &active_tunnel,
-    )
+    let run_result = run_with_side_effects(side_effects, agent, || async {
+        run_shutdown_sequence(
+            &shutdown_tx,
+            &components.mcp_process_manager,
+            &components.recording_handle,
+            &webhook_server,
+            &active_tunnel,
+        )
+        .await;
+    })
     .await;
+
+    if run_result.is_ok() {
+        run_shutdown_sequence(
+            &shutdown_tx,
+            &components.mcp_process_manager,
+            &components.recording_handle,
+            &webhook_server,
+            &active_tunnel,
+        )
+        .await;
+    }
 
     run_result?;
     Ok(())
@@ -226,7 +229,7 @@ async fn prepare_agent(
 ///
 /// Common setup runs on every platform, while Unix-specific hot-reload wiring
 /// is delegated to `setup_runtime_management_unix`.
-fn setup_runtime_management(
+pub(crate) fn setup_runtime_management(
     components: &AppComponents,
     config: &Config,
     container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
@@ -328,7 +331,7 @@ fn build_agent(config: &Config, deps: AgentDeps, connections: AgentConnections) 
 ///
 /// The reaper runs independently on the Tokio runtime and logs initialization
 /// failures rather than aborting startup.
-fn maybe_spawn_sandbox_reaper(
+pub(crate) fn maybe_spawn_sandbox_reaper(
     container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
     reaper_context_manager: Arc<ContextManager>,
     config: &Config,

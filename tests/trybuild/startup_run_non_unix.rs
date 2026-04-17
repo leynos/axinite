@@ -1,62 +1,101 @@
-//! Compile contract for the non-Unix `setup_runtime_management` surface.
+//! Compile contract for the real startup run module surface.
 
-use std::{sync::Arc, time::Duration};
+#[path = "../../src/startup/run.rs"]
+mod run_contract;
 
-use ironclaw::{
-    app::AppComponents,
-    config::Config,
-    context::ContextManager,
-    orchestrator::{ReaperConfig, SandboxReaper},
-};
+mod startup {
+    pub(crate) mod run_flow;
 
-fn setup_runtime_management(
-    components: &AppComponents,
-    config: &Config,
-    container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
-) -> tokio::sync::broadcast::Sender<()> {
-    let reaper_context_manager = Arc::clone(&components.context_manager);
-    maybe_spawn_sandbox_reaper(container_job_manager, reaper_context_manager, config);
+    pub(crate) mod wasm {
+        use std::{collections::HashMap, sync::Arc};
 
-    let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
-
-    shutdown_tx
-}
-
-fn maybe_spawn_sandbox_reaper(
-    container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
-    reaper_context_manager: Arc<ContextManager>,
-    config: &Config,
-) {
-    if let Some(jm) = container_job_manager {
-        let reaper_jm = Arc::clone(jm);
-        let reaper_config = ReaperConfig {
-            scan_interval: Duration::from_secs(config.sandbox.reaper_interval_secs),
-            orphan_threshold: Duration::from_secs(config.sandbox.orphan_threshold_secs),
-            ..ReaperConfig::default()
+        use ironclaw::{
+            channels::{ChannelManager, web::types::SseEvent},
+            extensions::ExtensionManager,
         };
-        let reaper_ctx = Arc::clone(&reaper_context_manager);
-        tokio::spawn(async move {
-            match SandboxReaper::new(reaper_jm, reaper_ctx, reaper_config).await {
-                Ok(reaper) => reaper.run().await,
-                Err(e) => tracing::error!("Sandbox reaper failed to initialize: {e}"),
-            }
-        });
+
+        pub(crate) type WasmChannelRuntimeState = ();
+
+        pub(crate) struct WasmWiringContext<'a> {
+            pub(crate) extension_manager: &'a Option<Arc<ExtensionManager>>,
+            pub(crate) channels: &'a Arc<ChannelManager>,
+            pub(crate) sse_sender: &'a Option<tokio::sync::broadcast::Sender<SseEvent>>,
+            pub(crate) wasm_channel_owner_ids: &'a HashMap<String, i64>,
+        }
+
+        pub(crate) async fn wire_wasm_channel_runtime(
+            _wiring: &WasmWiringContext<'_>,
+            _wasm_channel_runtime_state: &mut Option<WasmChannelRuntimeState>,
+            _loaded_wasm_channel_names: &mut [String],
+        ) {
+        }
+    }
+
+    pub(crate) struct CoreAgentContext {
+        pub(crate) config: ironclaw::config::Config,
+        pub(crate) components: ironclaw::app::AppComponents,
+        pub(crate) side_effects: ironclaw::app::RuntimeSideEffects,
+        pub(crate) active_tunnel: Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+        pub(crate) container_job_manager:
+            Option<std::sync::Arc<ironclaw::orchestrator::ContainerJobManager>>,
+    }
+
+    pub(crate) struct GatewayPhaseContext {
+        pub(crate) core: CoreAgentContext,
+        pub(crate) channels: ironclaw::channels::ChannelManager,
+        pub(crate) webhook_server: Option<
+            std::sync::Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>,
+        >,
+        pub(crate) loaded_wasm_channel_names: Vec<String>,
+        pub(crate) wasm_channel_runtime_state: Option<wasm::WasmChannelRuntimeState>,
+        #[cfg(unix)]
+        pub(crate) http_channel_state:
+            Option<std::sync::Arc<ironclaw::channels::HttpChannelState>>,
+        pub(crate) session_manager: std::sync::Arc<ironclaw::agent::SessionManager>,
+        pub(crate) scheduler_slot: ironclaw::tools::builtin::SchedulerSlot,
+        pub(crate) sse_sender:
+            Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
+        pub(crate) routine_engine_slot:
+            Option<ironclaw::channels::web::server::RoutineEngineSlot>,
+    }
+
+    #[cfg(unix)]
+    pub(crate) mod unix_runtime {
+        pub(crate) fn setup_runtime_management_unix(
+            _components: &ironclaw::app::AppComponents,
+            _webhook_server: &Option<
+                std::sync::Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>,
+            >,
+            _http_channel_state: &Option<std::sync::Arc<ironclaw::channels::HttpChannelState>>,
+            _shutdown_tx: &tokio::sync::broadcast::Sender<()>,
+        ) {
+        }
     }
 }
 
-fn assert_non_unix_surface(
-    components: &AppComponents,
-    config: &Config,
-    container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
-) {
-    let _ = setup_runtime_management(components, config, container_job_manager);
-}
-
 fn main() {
-    let _ = assert_non_unix_surface
+    let _ = run_contract::maybe_spawn_sandbox_reaper
         as fn(
-            &AppComponents,
-            &Config,
-            &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+            &Option<std::sync::Arc<ironclaw::orchestrator::ContainerJobManager>>,
+            std::sync::Arc<ironclaw::context::ContextManager>,
+            &ironclaw::config::Config,
         );
+
+    #[cfg(not(unix))]
+    let _ = run_contract::setup_runtime_management
+        as fn(
+            &ironclaw::app::AppComponents,
+            &ironclaw::config::Config,
+            &Option<std::sync::Arc<ironclaw::orchestrator::ContainerJobManager>>,
+        ) -> tokio::sync::broadcast::Sender<()>;
+
+    #[cfg(unix)]
+    let _ = run_contract::setup_runtime_management
+        as fn(
+            &ironclaw::app::AppComponents,
+            &ironclaw::config::Config,
+            &Option<std::sync::Arc<ironclaw::orchestrator::ContainerJobManager>>,
+            &Option<std::sync::Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>>,
+            &Option<std::sync::Arc<ironclaw::channels::HttpChannelState>>,
+        ) -> tokio::sync::broadcast::Sender<()>;
 }

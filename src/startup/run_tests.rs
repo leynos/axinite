@@ -1,5 +1,7 @@
 //! Regression tests for startup run and shutdown sequencing.
 
+use crate::startup::run_flow::coordinate_start_run_shutdown;
+
 use super::run_shutdown_sequence;
 
 #[tokio::test]
@@ -28,17 +30,40 @@ async fn shutdown_runs_after_side_effects_failure() {
     let mcp_process_manager = ironclaw::tools::mcp::McpProcessManager::new();
     let side_effects = FailingSideEffects;
 
-    let run_result: anyhow::Result<()> = async {
-        side_effects.start()?;
-        Ok(())
-    }
+    let run_result = coordinate_start_run_shutdown(
+        || side_effects.start(),
+        || async { Ok(()) },
+        || async {
+            run_shutdown_sequence(&shutdown_tx, &mcp_process_manager, &None, &None, &None).await
+        },
+    )
     .await;
-
-    run_shutdown_sequence(&shutdown_tx, &mcp_process_manager, &None, &None, &None).await;
 
     assert!(
         rx.try_recv().is_ok(),
         "shutdown must be broadcast even after start failure"
+    );
+    assert!(run_result.is_err());
+}
+
+#[tokio::test]
+async fn shutdown_runs_after_agent_failure() {
+    let shutdown_tx = tokio::sync::broadcast::channel::<()>(1).0;
+    let mut rx = shutdown_tx.subscribe();
+    let mcp_process_manager = ironclaw::tools::mcp::McpProcessManager::new();
+
+    let run_result = coordinate_start_run_shutdown(
+        || Ok(()),
+        || async { anyhow::bail!("injected agent failure") },
+        || async {
+            run_shutdown_sequence(&shutdown_tx, &mcp_process_manager, &None, &None, &None).await
+        },
+    )
+    .await;
+
+    assert!(
+        rx.try_recv().is_ok(),
+        "shutdown must be broadcast even after agent failure"
     );
     assert!(run_result.is_err());
 }
