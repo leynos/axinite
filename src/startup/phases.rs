@@ -46,7 +46,7 @@ pub(crate) async fn phase_pid_and_onboard(
 }
 
 /// Loads configuration from environment and TOML, creates the LLM session
-/// manager, and initialises structured tracing.
+/// manager, and initializes structured tracing.
 pub(crate) async fn phase_load_config_and_tracing(
     cli: &Cli,
 ) -> anyhow::Result<LoadedConfigContext> {
@@ -318,7 +318,7 @@ async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
 }
 
 #[cfg(not(any(feature = "postgres", feature = "libsql")))]
-/// Runs first-run onboarding when the required database feature is enabled.
+/// No-op onboarding stub used when neither database feature is compiled in.
 async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
     let _ = cli;
     Ok(())
@@ -341,7 +341,7 @@ async fn load_initial_config(toml_path: Option<&std::path::Path>) -> anyhow::Res
     }
 }
 
-/// Initialises the container job manager, job-event sender, prompt queue, and
+/// Initializes the container job manager, job-event sender, prompt queue, and
 /// Docker status.
 async fn setup_orchestrator_context(
     config: &Config,

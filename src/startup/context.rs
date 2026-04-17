@@ -51,7 +51,19 @@ pub(crate) struct BuiltComponentsContext {
         Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
 }
 
-/// Orchestrator state prepared during startup before channel setup begins.
+/// Orchestrator state created during startup before channel setup begins.
+///
+/// Built during the startup orchestration phase immediately before channel
+/// setup, then folded into `CoreAgentContext` for the later phases.
+/// `container_job_manager` and `job_event_tx` are `None` until the sandbox-job
+/// subsystems are initialized, which signals that later phases must skip
+/// container orchestration and gateway job-event streaming.
+///
+/// `prompt_queue` is an
+/// `Arc<tokio::sync::Mutex<HashMap<Uuid, VecDeque<PendingPrompt>>>>`,
+/// intentionally shared for multi-task use with access synchronized through
+/// the Tokio mutex. `docker_status` carries the current sandbox availability
+/// snapshot used by later startup status reporting.
 pub(crate) struct OrchestratorContext {
     pub(in crate::startup) container_job_manager:
         Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,

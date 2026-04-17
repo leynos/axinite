@@ -4,7 +4,7 @@
 //! `async_main` in `src/main.rs` delegates all startup work to the phase
 //! functions in `phases`, the channel setup in `channels`, and the agent run
 //! loop in `run`. Use this module tree as the primary reference for
-//! understanding the host binary's initialisation sequence.
+//! understanding the host binary's initialization sequence.
 
 /// Boot-screen rendering for the startup banner.
 pub(crate) mod boot;
@@ -19,7 +19,7 @@ pub(crate) mod run;
 /// Unix-only runtime management (SIGHUP hot-reload).
 #[cfg(unix)]
 pub(crate) mod unix_runtime;
-/// WASM channel initialisation and runtime wiring.
+/// WASM channel initialization and runtime wiring.
 pub(crate) mod wasm;
 
 pub(crate) use context::{CoreAgentContext, GatewayPhaseContext};

@@ -35,11 +35,11 @@ pub fn init_cli_tracing() {
 
 /// Initialize tracing for worker/bridge processes (info level).
 pub fn init_worker_tracing() {
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("ironclaw=info")),
         )
-        .init();
+        .try_init();
 }
 
 /// Maximum bytes per tracing event written to the terminal.

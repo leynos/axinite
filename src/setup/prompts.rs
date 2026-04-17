@@ -370,6 +370,7 @@ mod tests {
     use std::io;
 
     use crossterm::event::{KeyCode, KeyModifiers};
+    use rstest::rstest;
 
     use super::{SecretInputEffect, apply_secret_input_effect, apply_secret_key_event};
 
@@ -398,28 +399,38 @@ mod tests {
         super::print_info("");
     }
 
-    #[test]
-    fn test_apply_secret_key_event_keeps_empty_input_on_backspace() {
-        let (next_input, effect) =
-            apply_secret_key_event("", KeyCode::Backspace, KeyModifiers::empty());
-        assert_eq!(next_input, "");
-        assert_eq!(effect, SecretInputEffect::None);
-    }
-
-    #[test]
-    fn test_apply_secret_key_event_removes_one_character_on_backspace() {
-        let (next_input, effect) =
-            apply_secret_key_event("abc", KeyCode::Backspace, KeyModifiers::empty());
-        assert_eq!(next_input, "ab");
-        assert_eq!(effect, SecretInputEffect::Backspace);
-    }
-
-    #[test]
-    fn test_apply_secret_key_event_interrupts_on_ctrl_c() {
-        let (next_input, effect) =
-            apply_secret_key_event("abc", KeyCode::Char('c'), KeyModifiers::CONTROL);
-        assert_eq!(next_input, "abc");
-        assert_eq!(effect, SecretInputEffect::Interrupt);
+    #[rstest]
+    #[case(
+        "",
+        KeyCode::Backspace,
+        KeyModifiers::empty(),
+        "",
+        SecretInputEffect::None
+    )]
+    #[case(
+        "abc",
+        KeyCode::Backspace,
+        KeyModifiers::empty(),
+        "ab",
+        SecretInputEffect::Backspace
+    )]
+    #[case(
+        "abc",
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+        "abc",
+        SecretInputEffect::Interrupt
+    )]
+    fn test_apply_secret_key_event(
+        #[case] input: &str,
+        #[case] code: KeyCode,
+        #[case] modifiers: KeyModifiers,
+        #[case] expected_input: &str,
+        #[case] expected_effect: SecretInputEffect,
+    ) {
+        let (next_input, effect) = apply_secret_key_event(input, code, modifiers);
+        assert_eq!(next_input, expected_input);
+        assert_eq!(effect, expected_effect);
     }
 
     #[test]

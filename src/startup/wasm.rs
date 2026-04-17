@@ -214,8 +214,8 @@ mod tests {
 
     use super::init_wasm_channels;
 
-    async fn build_test_components(config: Config) -> AppComponents {
-        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    async fn build_test_components(config: Config) -> anyhow::Result<AppComponents> {
+        let tempdir = tempfile::tempdir()?;
         let session = create_session_manager(config.llm.session.clone()).await;
         let log_broadcaster = Arc::new(LogBroadcaster::new());
         let (components, _side_effects) = AppBuilder::new(
@@ -229,13 +229,12 @@ mod tests {
             log_broadcaster,
         )
         .build_components()
-        .await
-        .expect("test components should build");
-        components
+        .await?;
+        Ok(components)
     }
 
     #[tokio::test]
-    async fn init_wasm_channels_skips_when_disabled() {
+    async fn init_wasm_channels_skips_when_disabled() -> anyhow::Result<()> {
         let tempdir = tempfile::tempdir().expect("tempdir should be created");
         let mut config = Config::for_testing(
             tempdir.path().join("test.db"),
@@ -246,7 +245,7 @@ mod tests {
         .expect("test config should be built");
         config.channels.wasm_channels_enabled = false;
 
-        let components = build_test_components(config.clone()).await;
+        let components = build_test_components(config.clone()).await?;
 
         let mut channel_names: Vec<String> = Vec::new();
         let mut webhook_routes: Vec<axum::Router> = Vec::new();
@@ -261,11 +260,12 @@ mod tests {
 
         assert!(result.loaded_wasm_channel_names.is_empty());
         assert!(result.runtime_state.is_none());
+        Ok(())
     }
 
     #[tokio::test]
     #[traced_test]
-    async fn init_wasm_channels_warns_when_directory_missing() {
+    async fn init_wasm_channels_warns_when_directory_missing() -> anyhow::Result<()> {
         let tempdir = tempfile::tempdir().expect("tempdir should be created");
         let mut config = Config::for_testing(
             tempdir.path().join("test.db"),
@@ -277,7 +277,7 @@ mod tests {
         config.channels.wasm_channels_enabled = true;
         config.channels.wasm_channels_dir = tempdir.path().join("nonexistent");
 
-        let components = build_test_components(config.clone()).await;
+        let components = build_test_components(config.clone()).await?;
 
         let mut channel_names: Vec<String> = Vec::new();
         let mut webhook_routes: Vec<axum::Router> = Vec::new();
@@ -295,5 +295,6 @@ mod tests {
         assert!(logs_contain(
             "WASM channels are enabled, but the channel directory does not exist"
         ));
+        Ok(())
     }
 }
