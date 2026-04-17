@@ -132,6 +132,7 @@ pub(crate) async fn phase_tunnel_and_orchestrator(
     }
 }
 
+/// Bootstraps lifecycle hooks and logs summary counts.
 async fn bootstrap_and_log_hooks(
     components: &AppComponents,
     config: &Config,
@@ -158,6 +159,8 @@ async fn bootstrap_and_log_hooks(
     );
 }
 
+/// Creates the session manager and registers job tools, returning both for
+/// downstream use.
 fn create_session_and_register_tools(
     agent_ctx: &AgentRunContext,
     channels: &ChannelManager,
@@ -298,6 +301,7 @@ pub(crate) async fn phase_run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<
 }
 
 #[cfg(any(feature = "postgres", feature = "libsql"))]
+/// Runs first-run onboarding when the required database feature is enabled.
 async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
     if !cli.no_onboard
         && let Some(reason) = ironclaw::setup::check_onboard_needed()
@@ -314,11 +318,14 @@ async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
 }
 
 #[cfg(not(any(feature = "postgres", feature = "libsql")))]
+/// Runs first-run onboarding when the required database feature is enabled.
 async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
     let _ = cli;
     Ok(())
 }
 
+/// Loads resolved `Config` from environment variables and an optional TOML file
+/// path.
 async fn load_initial_config(toml_path: Option<&std::path::Path>) -> anyhow::Result<Config> {
     match Config::from_env_with_toml(toml_path).await {
         Ok(c) => Ok(c),
@@ -334,6 +341,8 @@ async fn load_initial_config(toml_path: Option<&std::path::Path>) -> anyhow::Res
     }
 }
 
+/// Initialises the container job manager, job-event sender, prompt queue, and
+/// Docker status.
 async fn setup_orchestrator_context(
     config: &Config,
     components: &AppComponents,

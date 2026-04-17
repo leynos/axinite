@@ -20,10 +20,18 @@ use crate::startup::wasm::{WasmChannelRuntimeState, WasmChannelsInit, init_wasm_
 /// Aggregated results returned after all process-startup channel wiring has
 /// completed.
 pub(crate) struct ChannelSetup {
+    /// Optional started webhook server; `None` when no channel registered HTTP
+    /// routes.
     pub(crate) webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
+    /// Names of every enabled channel, collected during setup.
     pub(crate) channel_names: Vec<String>,
+    /// Names of successfully loaded WASM channels.
     pub(crate) loaded_wasm_channel_names: Vec<String>,
+    /// Optional WASM channel runtime state to be wired in later; `None` when
+    /// WASM is disabled.
     pub(crate) wasm_channel_runtime_state: Option<WasmChannelRuntimeState>,
+    /// (Unix only) Optional shared HTTP channel state for secret-updater
+    /// wiring.
     #[cfg(unix)]
     pub(crate) http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
 }
@@ -36,17 +44,25 @@ struct HttpChannelResult {
 
 /// Registration sinks shared across channel-setup helpers.
 pub(crate) struct ChannelRegistrar<'a> {
+    /// Shared channel manager used to register new channels.
     pub(crate) channels: &'a ChannelManager,
+    /// Accumulates the name of every registered channel.
     pub(crate) channel_names: &'a mut Vec<String>,
+    /// Accumulates Axum routers contributed by channels with webhook endpoints.
     pub(crate) webhook_routes: &'a mut Vec<axum::Router>,
 }
 
 /// Runtime-service dependencies required to configure the gateway channel.
 pub(crate) struct GatewayContext<'a> {
+    /// Container job manager exposed to the gateway for sandbox operations.
     pub(crate) container_job_manager: &'a Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+    /// Session manager used by gateway sessions.
     pub(crate) session_manager: &'a Arc<ironclaw::agent::SessionManager>,
+    /// Log broadcaster backing live gateway log streaming.
     pub(crate) log_broadcaster: &'a Arc<LogBroadcaster>,
+    /// Shared log-level handle used by the gateway UI.
     pub(crate) log_level_handle: &'a Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    /// Prompt queue shared with sandbox-backed job interactions.
     pub(crate) prompt_queue: &'a Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<
@@ -55,23 +71,32 @@ pub(crate) struct GatewayContext<'a> {
             >,
         >,
     >,
+    /// Scheduler slot injected into the gateway after startup.
     pub(crate) scheduler_slot: &'a ironclaw::tools::builtin::SchedulerSlot,
+    /// Broadcast sender for relaying job events into the gateway.
     pub(crate) job_event_tx: &'a Option<
         tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
     >,
+    /// Live channel manager used to register the gateway channel.
     pub(crate) channels: &'a ChannelManager,
+    /// Mutable list of enabled channel names displayed on the boot screen.
     pub(crate) channel_names: &'a mut Vec<String>,
 }
 
 /// Values produced by [`setup_gateway_channel`] and later threaded into
 /// [`GatewayPhaseContext`].
 pub(crate) struct GatewaySetup {
+    /// Computed web-UI URL including auth token; `None` when the gateway is not
+    /// configured.
     pub(crate) gateway_url: Option<String>,
+    /// Gateway SSE broadcast sender for pushing events to connected clients.
     pub(crate) sse_sender:
         Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
+    /// Slot for injecting a routine engine into the gateway after startup.
     pub(crate) routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
 }
 
+/// Registers the interactive REPL channel when CLI mode is enabled.
 async fn setup_repl_channel(cli: &Cli, config: &Config, reg: &mut ChannelRegistrar<'_>) {
     let repl_channel = if let Some(ref msg) = cli.message {
         Some(ReplChannel::with_message(msg.clone()))
@@ -92,6 +117,7 @@ async fn setup_repl_channel(cli: &Cli, config: &Config, reg: &mut ChannelRegistr
     }
 }
 
+/// Registers the Signal channel and validates its allowlist configuration.
 async fn setup_signal_channel(
     cli: &Cli,
     config: &Config,
@@ -114,6 +140,8 @@ async fn setup_signal_channel(
     Ok(())
 }
 
+/// Registers the HTTP channel and returns any shared webhook server state it
+/// exposes.
 async fn setup_http_channel(
     cli: &Cli,
     config: &Config,
@@ -150,6 +178,7 @@ async fn setup_http_channel(
     })
 }
 
+/// Starts the shared webhook server when any channel has registered routes.
 async fn build_webhook_server(
     addr: Option<std::net::SocketAddr>,
     http_bind_was_explicit: bool,
@@ -317,6 +346,7 @@ pub(crate) async fn setup_gateway_channel(
     }
 }
 
+/// Parses a validated socket address from a host and port pair.
 fn parse_socket_addr(host: &str, port: u16, channel_name: &str) -> anyhow::Result<SocketAddr> {
     let host: IpAddr = host
         .parse()
@@ -324,12 +354,15 @@ fn parse_socket_addr(host: &str, port: u16, channel_name: &str) -> anyhow::Resul
     Ok(SocketAddr::new(host, port))
 }
 
+/// Renders a host and port as a display-safe socket address string.
 fn render_socket_addr(host: &str, port: u16) -> String {
     host.parse::<IpAddr>()
         .map(|ip| SocketAddr::new(ip, port).to_string())
         .unwrap_or_else(|_| format!("{host}:{port}"))
 }
 
+/// Forwards sandbox job events from the broadcast stream into the gateway SSE
+/// manager.
 async fn forward_job_events_to_gateway(
     mut rx: tokio::sync::broadcast::Receiver<(
         uuid::Uuid,

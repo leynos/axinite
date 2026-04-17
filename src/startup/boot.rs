@@ -4,12 +4,20 @@ use ironclaw::{cli::Cli, config::Config};
 
 /// Runtime-computed values used to populate the startup boot screen.
 pub(crate) struct BootScreenContext<'a> {
+    /// Primary LLM model identifier shown on the boot screen.
     pub(crate) llm_model: String,
+    /// Optional cheaper/faster LLM model, shown when configured.
     pub(crate) cheap_model: Option<String>,
+    /// Total number of registered tools available to the agent.
     pub(crate) tool_count: usize,
+    /// Optional gateway web-UI URL, shown when the gateway channel is active.
     pub(crate) gateway_url: Option<String>,
+    /// Current Docker/sandbox availability status.
     pub(crate) docker_status: ironclaw::sandbox::DockerStatus,
+    /// Names of all enabled channels, displayed in the boot banner.
     pub(crate) channel_names: Vec<String>,
+    /// Active tunnel handle used to prefer a public tunnel URL over the
+    /// configured static one.
     pub(crate) active_tunnel: &'a Option<Box<dyn ironclaw::tunnel::Tunnel>>,
 }
 
@@ -25,6 +33,8 @@ pub(crate) fn print_startup_info(config: &Config, cli: &Cli, data: &BootScreenCo
     ironclaw::boot_screen::print_boot_screen(&boot_info);
 }
 
+/// Constructs the `BootInfo` value passed to
+/// `ironclaw::boot_screen::print_boot_screen`.
 fn build_boot_info(
     config: &Config,
     cli: &Cli,
@@ -77,6 +87,8 @@ fn build_boot_info(
 mod url_sanitize {
     use url::{Url, form_urlencoded};
 
+    /// Removes credentials and redacts sensitive query parameters from a URL
+    /// string for safe display.
     pub(super) fn sanitize_display_url(url: &str) -> String {
         let Ok(mut parsed) = Url::parse(url) else {
             return sanitize_relative_display_url(url);
@@ -101,6 +113,7 @@ mod url_sanitize {
         parsed.to_string()
     }
 
+    /// Sanitises a relative or protocol-relative URL string for display.
     fn sanitize_relative_display_url(url: &str) -> String {
         let (prefix, fragment) = match url.split_once('#') {
             Some((prefix, fragment)) => (prefix, Some(fragment)),
@@ -124,6 +137,7 @@ mod url_sanitize {
         }
     }
 
+    /// Strips `user:password@` from the authority component of a URL string.
     fn strip_authority_credentials(url: &str) -> String {
         if let Some((scheme, rest)) = url.split_once("://") {
             return format!("{scheme}://{}", strip_credentials_from_authority(rest));
@@ -134,6 +148,7 @@ mod url_sanitize {
         url.to_string()
     }
 
+    /// Removes `user:pass@` from a bare authority string (no scheme prefix).
     fn strip_credentials_from_authority(rest: &str) -> String {
         let authority_end = rest.find('/').unwrap_or(rest.len());
         let (authority, suffix) = rest.split_at(authority_end);
@@ -143,6 +158,7 @@ mod url_sanitize {
         format!("{redacted_authority}{suffix}")
     }
 
+    /// Redacts values of sensitive query keys in a raw query string.
     fn sanitize_query_string(query: &str) -> String {
         let sanitized_pairs = sanitize_query_pairs(form_urlencoded::parse(query.as_bytes()));
         let mut serializer = form_urlencoded::Serializer::new(String::new());
@@ -154,6 +170,8 @@ mod url_sanitize {
         serializer.finish()
     }
 
+    /// Redacts values of sensitive keys from an iterator of query key-value
+    /// pairs.
     fn sanitize_query_pairs<'a, I>(pairs: I) -> Vec<(String, String)>
     where
         I: IntoIterator<Item = (std::borrow::Cow<'a, str>, std::borrow::Cow<'a, str>)>,
@@ -170,6 +188,8 @@ mod url_sanitize {
             .collect()
     }
 
+    /// Returns `true` when the given query key name is considered sensitive
+    /// (e.g. `token`, `api_key`, `authorization`).
     fn should_redact_query_key(key: &str) -> bool {
         matches!(
             key.to_ascii_lowercase().as_str(),

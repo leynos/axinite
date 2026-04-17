@@ -24,10 +24,14 @@ pub(crate) type WasmChannelRuntimeState = (
 /// Shared dependencies needed to wire the loaded WASM runtime back into the
 /// extension manager and live channel registry.
 pub(crate) struct WasmWiringContext<'a> {
+    /// Extension manager used to inject the WASM channel runtime.
     pub(crate) extension_manager: &'a Option<Arc<ironclaw::extensions::ExtensionManager>>,
+    /// Live channel manager for relay-channel and runtime wiring.
     pub(crate) channels: &'a Arc<ChannelManager>,
+    /// Optional SSE sender registered with the extension manager after wiring.
     pub(crate) sse_sender:
         &'a Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
+    /// Map from WASM channel name to its owner account ID.
     pub(crate) wasm_channel_owner_ids: &'a std::collections::HashMap<String, i64>,
 }
 
@@ -35,7 +39,10 @@ pub(crate) struct WasmWiringContext<'a> {
 /// optional runtime state that must later be wired via
 /// [`wire_wasm_channel_runtime`].
 pub(crate) struct WasmChannelsInit {
+    /// Names of WASM channels that were successfully loaded.
     pub(crate) loaded_wasm_channel_names: Vec<String>,
+    /// Runtime state to be wired into the extension manager; `None` when no
+    /// channels loaded.
     pub(crate) runtime_state: Option<WasmChannelRuntimeState>,
 }
 
@@ -126,6 +133,27 @@ async fn auto_activate_persisted_channels(
     }
 }
 
+/// Reconnects the extension manager to the live relay-channel registry and
+/// restores persisted relay channels.
+async fn wire_relay_channels(
+    ext_mgr: &ironclaw::extensions::ExtensionManager,
+    channels: &Arc<ChannelManager>,
+) {
+    ext_mgr
+        .set_relay_channel_manager(Arc::clone(channels))
+        .await;
+    ext_mgr.restore_relay_channels().await;
+}
+
+/// Registers the gateway SSE sender with the extension manager after runtime
+/// wiring.
+async fn register_sse_sender(
+    ext_mgr: &ironclaw::extensions::ExtensionManager,
+    sender: &tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
+) {
+    ext_mgr.set_sse_sender(sender.clone()).await;
+}
+
 /// Transfers ownership of the WASM runtime state into the extension manager and
 /// activates any channels that were not already active at startup.
 ///
@@ -168,23 +196,6 @@ pub(crate) async fn wire_wasm_channel_runtime(
     {
         register_sse_sender(ext_mgr, sender).await;
     }
-}
-
-async fn wire_relay_channels(
-    ext_mgr: &ironclaw::extensions::ExtensionManager,
-    channels: &Arc<ChannelManager>,
-) {
-    ext_mgr
-        .set_relay_channel_manager(Arc::clone(channels))
-        .await;
-    ext_mgr.restore_relay_channels().await;
-}
-
-async fn register_sse_sender(
-    ext_mgr: &ironclaw::extensions::ExtensionManager,
-    sender: &tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
-) {
-    ext_mgr.set_sse_sender(sender.clone()).await;
 }
 
 #[cfg(test)]
