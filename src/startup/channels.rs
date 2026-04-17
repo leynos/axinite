@@ -408,11 +408,12 @@ pub(crate) fn spawn_sighup_handler(
                     tracing::debug!("SIGHUP handler shutting down");
                     break;
                 }
-                _ = sighup.recv() => {}
-            }
-            tracing::info!("SIGHUP received — reloading HTTP webhook config");
-            if let Err(e) = reload_manager.perform_reload().await {
-                tracing::error!("Hot-reload failed: {e}");
+                _ = sighup.recv() => {
+                    tracing::info!("SIGHUP received — reloading HTTP webhook config");
+                    if let Err(e) = reload_manager.perform_reload().await {
+                        tracing::error!("Hot-reload failed: {e}");
+                    }
+                }
             }
         }
     });
