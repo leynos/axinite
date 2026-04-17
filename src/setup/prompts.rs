@@ -18,7 +18,6 @@ use crossterm::{
 };
 use secrecy::SecretString;
 
-#[derive(Debug, PartialEq, Eq)]
 /// Display a numbered menu and get user selection.
 ///
 /// Returns the index (0-based) of the selected option.
@@ -365,6 +364,8 @@ pub fn optional_input(prompt: &str, hint: Option<&str>) -> io::Result<Option<Str
         Ok(Some(input.to_string()))
     }
 }
+
+#[cfg(test)]
 mod tests {
     // Interactive tests are difficult to unit test, but we can test the non-interactive parts.
     use std::io;
@@ -503,6 +504,8 @@ mod tests {
         Ok(())
     }
 }
+
+#[derive(Debug, PartialEq, Eq)]
 enum SecretInputEffect {
     None,
     Backspace,
@@ -510,6 +513,7 @@ enum SecretInputEffect {
     Submit,
     Interrupt,
 }
+
 fn apply_secret_input_effect<W: Write>(
     stdout: &mut W,
     effect: &SecretInputEffect,

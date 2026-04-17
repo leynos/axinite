@@ -18,11 +18,11 @@ pub(crate) mod phases;
 pub(crate) mod run;
 /// Shared start/run sequencing helpers for the agent loop.
 pub(crate) mod run_flow;
-/// URL sanitisation helpers for safe display of startup URLs.
-pub(crate) mod url_sanitize;
 /// Unix-only runtime management (SIGHUP hot-reload).
 #[cfg(unix)]
 pub(crate) mod unix_runtime;
+/// URL sanitisation helpers for safe display of startup URLs.
+pub(crate) mod url_sanitize;
 /// WASM channel initialization and runtime wiring.
 pub(crate) mod wasm;
 
