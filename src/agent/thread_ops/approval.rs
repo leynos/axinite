@@ -187,6 +187,18 @@ struct DeferredToolCallCtx<'a> {
     idx: usize,
 }
 
+struct DeferredHookCtx<'a> {
+    agent: &'a Agent,
+    message: &'a IncomingMessage,
+    original_tc: &'a crate::llm::ToolCall,
+    sensitive: &'a [&'a str],
+}
+
+struct TurnWriteCtx<'a> {
+    session: &'a Arc<Mutex<Session>>,
+    thread_id: Uuid,
+}
+
 /// Parameters for auth intercept handling.
 struct AuthInterceptParams<'a> {
     /// Session containing the thread.
@@ -218,21 +230,18 @@ fn restore_sensitive_fields(
 }
 
 async fn run_before_tool_call_hook_for_deferred(
-    agent: &Agent,
-    message: &IncomingMessage,
-    original_tc: &crate::llm::ToolCall,
+    ctx: &DeferredHookCtx<'_>,
     tc: &mut crate::llm::ToolCall,
-    sensitive: &[&str],
 ) -> Option<String> {
-    let hook_params = redact_params(&tc.arguments, sensitive);
+    let hook_params = redact_params(&tc.arguments, ctx.sensitive);
     let event = crate::hooks::HookEvent::ToolCall {
         tool_name: tc.name.clone(),
         parameters: hook_params,
-        user_id: message.user_id.clone(),
+        user_id: ctx.message.user_id.clone(),
         context: "chat".to_string(),
     };
 
-    match agent.hooks().run(&event).await {
+    match ctx.agent.hooks().run(&event).await {
         Err(crate::hooks::HookError::Rejected { reason }) => {
             Some(format!("Tool call rejected by hook: {}", reason))
         }
@@ -243,7 +252,7 @@ async fn run_before_tool_call_hook_for_deferred(
             match serde_json::from_str::<serde_json::Value>(&new_params) {
                 Ok(mut parsed) => {
                     if let Some(obj) = parsed.as_object_mut() {
-                        restore_sensitive_fields(obj, &original_tc.arguments, sensitive);
+                        restore_sensitive_fields(obj, &ctx.original_tc.arguments, ctx.sensitive);
                     }
                     tc.arguments = parsed;
                 }
@@ -289,14 +298,14 @@ async fn classify_deferred_tool_call(
         .map(|tool| tool.sensitive_params())
         .unwrap_or(&[]);
 
-    if let Some(msg) = run_before_tool_call_hook_for_deferred(
-        ctx.agent,
-        ctx.message,
+    let hook_ctx = DeferredHookCtx {
+        agent: ctx.agent,
+        message: ctx.message,
         original_tc,
-        &mut tc,
         sensitive,
-    )
-    .await
+    };
+
+    if let Some(msg) = run_before_tool_call_hook_for_deferred(&hook_ctx, &mut tc).await
     {
         return DeferredPreflight::Rejected { tc, msg };
     }
@@ -313,15 +322,14 @@ async fn classify_deferred_tool_call(
 }
 
 async fn record_tool_error_and_push(
-    session: &Arc<Mutex<Session>>,
-    thread_id: Uuid,
+    ctx: &TurnWriteCtx<'_>,
     reason_ctx: &mut Vec<ChatMessage>,
     tc: &crate::llm::ToolCall,
     error_msg: String,
 ) {
     {
-        let mut sess = session.lock().await;
-        if let Some(thread) = sess.threads.get_mut(&thread_id)
+        let mut sess = ctx.session.lock().await;
+        if let Some(thread) = sess.threads.get_mut(&ctx.thread_id)
             && let Some(turn) = thread.last_turn_mut()
         {
             turn.record_tool_error(error_msg.clone());
@@ -771,13 +779,16 @@ impl Agent {
     ) -> Option<String> {
         let mut exec_results = std::collections::VecDeque::from(exec_results);
         let mut deferred_auth: Option<String> = None;
+        let turn_write_ctx = TurnWriteCtx {
+            session: &scope.session,
+            thread_id: scope.thread_id,
+        };
 
         for (tc, outcome) in preflight {
             let Some(deferred_result) = (match outcome {
                 DeferredPreflightOutcome::Rejected(error_msg) => {
                     record_tool_error_and_push(
-                        &scope.session,
-                        scope.thread_id,
+                        &turn_write_ctx,
                         context_messages,
                         &tc,
                         error_msg,
