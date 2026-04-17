@@ -1,6 +1,6 @@
 ---
 source: src/startup/boot.rs
-assertion_line: 289
+assertion_line: 192
 expression: output
 ---
 
