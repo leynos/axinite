@@ -191,14 +191,11 @@ mod tests {
         Arc::new(DummySettingsStore)
     }
 
-    fn test_secrets_store() -> Arc<dyn SecretsStore + Send + Sync> {
-        let crypto = Arc::new(
-            SecretsCrypto::new(SecretString::from(
-                "0123456789abcdef0123456789abcdef".to_string(),
-            ))
-            .expect("valid key"),
-        );
-        Arc::new(InMemorySecretsStore::new(crypto))
+    fn test_secrets_store() -> anyhow::Result<Arc<dyn SecretsStore + Send + Sync>> {
+        let crypto = Arc::new(SecretsCrypto::new(SecretString::from(
+            "0123456789abcdef0123456789abcdef".to_string(),
+        ))?);
+        Ok(Arc::new(InMemorySecretsStore::new(crypto)))
     }
 
     #[rstest]
@@ -216,7 +213,7 @@ mod tests {
         #[case] has_secrets_store: bool,
         #[case] has_http_channel_state: bool,
         #[case] expected_updaters: usize,
-    ) {
+    ) -> anyhow::Result<()> {
         let settings_store = has_settings_store.then(test_settings_store);
         let webhook_server = has_webhook_server.then(|| {
             Arc::new(tokio::sync::Mutex::new(WebhookServer::new(
@@ -225,7 +222,11 @@ mod tests {
                 },
             )))
         });
-        let secrets_store = has_secrets_store.then(test_secrets_store);
+        let secrets_store = if has_secrets_store {
+            Some(test_secrets_store()?)
+        } else {
+            None
+        };
         let http_channel_state = has_http_channel_state.then(test_http_channel_state);
 
         let ReloadManagerArgs {
@@ -244,5 +245,6 @@ mod tests {
         assert_eq!(webhook_server_out.is_some(), has_webhook_server);
         assert_eq!(secrets_store_out.is_some(), has_secrets_store);
         assert_eq!(secret_updaters.len(), expected_updaters);
+        Ok(())
     }
 }

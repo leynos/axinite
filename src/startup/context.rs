@@ -161,7 +161,7 @@ pub(crate) struct AgentRunContext {
 /// remain alive for the full runtime so gateway log streaming stays available.
 pub(crate) struct GatewayPhaseContext {
     pub(in crate::startup) core: CoreAgentContext,
-    pub(in crate::startup) channels: ChannelManager,
+    pub(in crate::startup) channels: Arc<ChannelManager>,
     pub(in crate::startup) webhook_server:
         Option<Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>>,
     pub(in crate::startup) channel_names: Vec<String>,

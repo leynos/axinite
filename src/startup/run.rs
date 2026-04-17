@@ -49,7 +49,6 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
         ..
     } = ctx;
 
-    let channels = Arc::new(channels);
     prepare_channels(ChannelPreparation {
         components: &components,
         extension_manager: &components.extension_manager,

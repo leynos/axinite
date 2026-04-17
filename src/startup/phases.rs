@@ -108,18 +108,20 @@ pub(crate) async fn phase_tunnel_and_orchestrator(
 ) -> AgentRunContext {
     let config = built.components.config.clone();
     let (config, active_tunnel) = ironclaw::tunnel::start_managed_tunnel(config).await;
+    let mut components = built.components;
+    components.config = config.clone();
 
     let OrchestratorContext {
         container_job_manager,
         job_event_tx,
         prompt_queue,
         docker_status,
-    } = setup_orchestrator_context(&config, &built.components).await;
+    } = setup_orchestrator_context(&config, &components).await;
 
     AgentRunContext {
         core: CoreAgentContext {
             config,
-            components: built.components,
+            components,
             side_effects: built.side_effects,
             active_tunnel,
             container_job_manager,
@@ -203,7 +205,7 @@ pub(crate) async fn phase_init_channels_and_hooks(
     cli: &Cli,
     agent_ctx: AgentRunContext,
 ) -> anyhow::Result<GatewayPhaseContext> {
-    let channels = ChannelManager::new();
+    let channels = Arc::new(ChannelManager::new());
     let ChannelSetup {
         webhook_server,
         channel_names,
@@ -215,7 +217,7 @@ pub(crate) async fn phase_init_channels_and_hooks(
         cli,
         &agent_ctx.core.config,
         &agent_ctx.core.components,
-        &channels,
+        channels.as_ref(),
     )
     .await?;
 
@@ -226,7 +228,7 @@ pub(crate) async fn phase_init_channels_and_hooks(
     )
     .await;
     let (session_manager, scheduler_slot) =
-        create_session_and_register_tools(&agent_ctx, &channels);
+        create_session_and_register_tools(&agent_ctx, channels.as_ref());
 
     Ok(GatewayPhaseContext {
         core: agent_ctx.core,

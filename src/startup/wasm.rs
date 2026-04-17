@@ -23,9 +23,12 @@ pub(crate) type WasmChannelRuntimeState = (
 
 /// Shared dependencies needed to wire the loaded WASM runtime back into the
 /// extension manager and live channel registry.
-pub(crate) struct WasmWiringContext<'a> {
+pub(crate) struct WasmWiringContext<'a, Manager = ironclaw::extensions::ExtensionManager>
+where
+    Manager: WasmRuntimeWiringPort + ?Sized,
+{
     /// Extension manager used to inject the WASM channel runtime.
-    pub(crate) extension_manager: &'a Option<Arc<ironclaw::extensions::ExtensionManager>>,
+    pub(crate) extension_manager: &'a Option<Arc<Manager>>,
     /// Live channel manager for relay-channel and runtime wiring.
     pub(crate) channels: &'a Arc<ChannelManager>,
     /// Optional SSE sender registered with the extension manager after wiring.
@@ -33,6 +36,85 @@ pub(crate) struct WasmWiringContext<'a> {
         &'a Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
     /// Map from WASM channel name to its owner account ID.
     pub(crate) wasm_channel_owner_ids: &'a std::collections::HashMap<String, i64>,
+}
+
+/// Minimal runtime-wiring surface used during startup.
+pub(crate) trait WasmRuntimeWiringPort: Send + Sync {
+    async fn set_active_channels(&self, names: Vec<String>);
+    async fn set_channel_runtime(
+        &self,
+        channel_manager: Arc<ChannelManager>,
+        wasm_channel_runtime: Arc<WasmChannelRuntime>,
+        pairing_store: Arc<PairingStore>,
+        wasm_channel_router: Arc<WasmChannelRouter>,
+        wasm_channel_owner_ids: std::collections::HashMap<String, i64>,
+    );
+    async fn load_persisted_active_channels(&self) -> Vec<String>;
+    async fn is_relay_channel(&self, name: &str) -> bool;
+    async fn activate(
+        &self,
+        name: &str,
+    ) -> Result<ironclaw::extensions::ActivateResult, ironclaw::extensions::ExtensionError>;
+    async fn set_relay_channel_manager(&self, channel_manager: Arc<ChannelManager>);
+    async fn restore_relay_channels(&self);
+    async fn set_sse_sender(
+        &self,
+        sender: tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
+    );
+}
+
+impl WasmRuntimeWiringPort for ironclaw::extensions::ExtensionManager {
+    async fn set_active_channels(&self, names: Vec<String>) {
+        self.set_active_channels(names).await;
+    }
+
+    async fn set_channel_runtime(
+        &self,
+        channel_manager: Arc<ChannelManager>,
+        wasm_channel_runtime: Arc<WasmChannelRuntime>,
+        pairing_store: Arc<PairingStore>,
+        wasm_channel_router: Arc<WasmChannelRouter>,
+        wasm_channel_owner_ids: std::collections::HashMap<String, i64>,
+    ) {
+        self.set_channel_runtime(
+            channel_manager,
+            wasm_channel_runtime,
+            pairing_store,
+            wasm_channel_router,
+            wasm_channel_owner_ids,
+        )
+        .await;
+    }
+
+    async fn load_persisted_active_channels(&self) -> Vec<String> {
+        self.load_persisted_active_channels().await
+    }
+
+    async fn is_relay_channel(&self, name: &str) -> bool {
+        self.is_relay_channel(name).await
+    }
+
+    async fn activate(
+        &self,
+        name: &str,
+    ) -> Result<ironclaw::extensions::ActivateResult, ironclaw::extensions::ExtensionError> {
+        self.activate(name).await
+    }
+
+    async fn set_relay_channel_manager(&self, channel_manager: Arc<ChannelManager>) {
+        self.set_relay_channel_manager(channel_manager).await;
+    }
+
+    async fn restore_relay_channels(&self) {
+        self.restore_relay_channels().await;
+    }
+
+    async fn set_sse_sender(
+        &self,
+        sender: tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
+    ) {
+        self.set_sse_sender(sender).await;
+    }
 }
 
 /// Result of [`init_wasm_channels`]: the list of loaded channel names and the
@@ -105,8 +187,8 @@ pub(crate) async fn init_wasm_channels(
 
 /// Auto-activates any persisted WASM channels that were not active at startup
 /// and are not relay channels.
-async fn auto_activate_persisted_channels(
-    ext_mgr: &ironclaw::extensions::ExtensionManager,
+async fn auto_activate_persisted_channels<Manager: WasmRuntimeWiringPort + ?Sized>(
+    ext_mgr: &Manager,
     active_at_startup: &std::collections::HashSet<String>,
     persisted: &[String],
 ) {
@@ -135,8 +217,8 @@ async fn auto_activate_persisted_channels(
 
 /// Reconnects the extension manager to the live relay-channel registry and
 /// restores persisted relay channels.
-async fn wire_relay_channels(
-    ext_mgr: &ironclaw::extensions::ExtensionManager,
+async fn wire_relay_channels<Manager: WasmRuntimeWiringPort + ?Sized>(
+    ext_mgr: &Manager,
     channels: &Arc<ChannelManager>,
 ) {
     ext_mgr
@@ -147,8 +229,8 @@ async fn wire_relay_channels(
 
 /// Registers the gateway SSE sender with the extension manager after runtime
 /// wiring.
-async fn register_sse_sender(
-    ext_mgr: &ironclaw::extensions::ExtensionManager,
+async fn register_sse_sender<Manager: WasmRuntimeWiringPort + ?Sized>(
+    ext_mgr: &Manager,
     sender: &tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
 ) {
     ext_mgr.set_sse_sender(sender.clone()).await;
@@ -159,8 +241,8 @@ async fn register_sse_sender(
 ///
 /// Also configures relay-channel management and registers the SSE sender with
 /// the extension manager when one is provided.
-pub(crate) async fn wire_wasm_channel_runtime(
-    wiring: &WasmWiringContext<'_>,
+pub(crate) async fn wire_wasm_channel_runtime<Manager: WasmRuntimeWiringPort + ?Sized>(
+    wiring: &WasmWiringContext<'_, Manager>,
     wasm_channel_runtime_state: &mut Option<WasmChannelRuntimeState>,
     loaded_wasm_channel_names: &mut [String],
 ) {
@@ -184,44 +266,56 @@ pub(crate) async fn wire_wasm_channel_runtime(
         tracing::debug!("Channel runtime wired into extension manager for hot-activation");
 
         let persisted = ext_mgr.load_persisted_active_channels().await;
-        auto_activate_persisted_channels(ext_mgr, &active_at_startup, &persisted).await;
+        auto_activate_persisted_channels(ext_mgr.as_ref(), &active_at_startup, &persisted).await;
     }
 
     if let Some(ext_mgr) = wiring.extension_manager {
-        wire_relay_channels(ext_mgr, wiring.channels).await;
+        wire_relay_channels(ext_mgr.as_ref(), wiring.channels).await;
     }
 
     if let Some(ext_mgr) = wiring.extension_manager
         && let Some(sender) = wiring.sse_sender
     {
-        register_sse_sender(ext_mgr, sender).await;
+        register_sse_sender(ext_mgr.as_ref(), sender).await;
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::sync::Arc;
 
     use ironclaw::{
         app::{AppBuilder, AppBuilderFlags, AppComponents},
         channels::web::log_layer::LogBroadcaster,
+        channels::{
+            ChannelManager,
+            wasm::{WasmChannelRouter, WasmChannelRuntime, WasmChannelRuntimeConfig},
+            web::types::SseEvent,
+        },
         config::Config,
+        extensions::{ActivateResult, ExtensionError, ExtensionKind},
         llm::create_session_manager,
+        pairing::PairingStore,
     };
+    use tokio::sync::Mutex;
     use tracing_test::traced_test;
 
     use crate::startup::channels::ChannelRegistrar;
 
-    use super::init_wasm_channels;
+    use super::{
+        WasmChannelRuntimeState, WasmRuntimeWiringPort, WasmWiringContext, init_wasm_channels,
+        wire_wasm_channel_runtime,
+    };
 
-    async fn build_test_components(config: Config) -> anyhow::Result<AppComponents> {
+    async fn build_test_components(config: Config, no_db: bool) -> anyhow::Result<AppComponents> {
         let tempdir = tempfile::tempdir()?;
         let session = create_session_manager(config.llm.session.clone()).await;
         let log_broadcaster = Arc::new(LogBroadcaster::new());
         let (components, _side_effects) = AppBuilder::new(
             config,
             AppBuilderFlags {
-                no_db: true,
+                no_db,
                 ..Default::default()
             },
             Some(tempdir.path().join("test.toml")),
@@ -231,6 +325,105 @@ mod tests {
         .build_components()
         .await?;
         Ok(components)
+    }
+
+    #[derive(Default)]
+    struct FakeRuntimeManager {
+        active_channels: Mutex<Vec<String>>,
+        runtime_wire_count: Mutex<usize>,
+        persisted_channels: Mutex<Vec<String>>,
+        relay_channels: Mutex<HashSet<String>>,
+        activation_failures: Mutex<HashSet<String>>,
+        wasm_activation_calls: Mutex<Vec<String>>,
+        relay_manager_wire_count: Mutex<usize>,
+        restore_relay_calls: Mutex<usize>,
+        sse_sender: Mutex<Option<tokio::sync::broadcast::Sender<SseEvent>>>,
+    }
+
+    impl FakeRuntimeManager {
+        async fn with_persisted_channels(names: &[&str]) -> Arc<Self> {
+            let manager = Arc::new(Self::default());
+            *manager.persisted_channels.lock().await =
+                names.iter().map(|name| (*name).to_string()).collect();
+            manager
+        }
+    }
+
+    impl WasmRuntimeWiringPort for FakeRuntimeManager {
+        async fn set_active_channels(&self, names: Vec<String>) {
+            *self.active_channels.lock().await = names;
+        }
+
+        async fn set_channel_runtime(
+            &self,
+            _channel_manager: Arc<ChannelManager>,
+            _wasm_channel_runtime: Arc<WasmChannelRuntime>,
+            _pairing_store: Arc<PairingStore>,
+            _wasm_channel_router: Arc<WasmChannelRouter>,
+            _wasm_channel_owner_ids: std::collections::HashMap<String, i64>,
+        ) {
+            *self.runtime_wire_count.lock().await += 1;
+        }
+
+        async fn load_persisted_active_channels(&self) -> Vec<String> {
+            self.persisted_channels.lock().await.clone()
+        }
+
+        async fn is_relay_channel(&self, name: &str) -> bool {
+            self.relay_channels.lock().await.contains(name)
+        }
+
+        async fn activate(&self, name: &str) -> Result<ActivateResult, ExtensionError> {
+            self.wasm_activation_calls
+                .lock()
+                .await
+                .push(name.to_string());
+            if self.activation_failures.lock().await.contains(name) {
+                return Err(ExtensionError::ActivationFailed(format!(
+                    "injected activation failure for {name}"
+                )));
+            }
+
+            Ok(ActivateResult {
+                name: name.to_string(),
+                kind: ExtensionKind::WasmChannel,
+                tools_loaded: Vec::new(),
+                message: format!("activated {name}"),
+            })
+        }
+
+        async fn set_relay_channel_manager(&self, _channel_manager: Arc<ChannelManager>) {
+            *self.relay_manager_wire_count.lock().await += 1;
+        }
+
+        async fn restore_relay_channels(&self) {
+            *self.restore_relay_calls.lock().await += 1;
+        }
+
+        async fn set_sse_sender(&self, sender: tokio::sync::broadcast::Sender<SseEvent>) {
+            *self.sse_sender.lock().await = Some(sender);
+        }
+    }
+
+    fn test_runtime_state() -> anyhow::Result<WasmChannelRuntimeState> {
+        let tempdir = tempfile::tempdir()?;
+        Ok((
+            Arc::new(WasmChannelRuntime::new(
+                WasmChannelRuntimeConfig::for_testing(),
+            )?),
+            Arc::new(PairingStore::with_base_dir(
+                tempdir.path().join("pairing-store"),
+            )),
+            Arc::new(WasmChannelRouter::new()),
+        ))
+    }
+
+    fn test_channels() -> Arc<ChannelManager> {
+        Arc::new(ChannelManager::new())
+    }
+
+    fn empty_wasm_channel_owner_ids() -> std::collections::HashMap<String, i64> {
+        std::collections::HashMap::new()
     }
 
     #[tokio::test]
@@ -245,7 +438,7 @@ mod tests {
         .expect("test config should be built");
         config.channels.wasm_channels_enabled = false;
 
-        let components = build_test_components(config.clone()).await?;
+        let components = build_test_components(config.clone(), true).await?;
 
         let mut channel_names: Vec<String> = Vec::new();
         let mut webhook_routes: Vec<axum::Router> = Vec::new();
@@ -277,7 +470,7 @@ mod tests {
         config.channels.wasm_channels_enabled = true;
         config.channels.wasm_channels_dir = tempdir.path().join("nonexistent");
 
-        let components = build_test_components(config.clone()).await?;
+        let components = build_test_components(config.clone(), true).await?;
 
         let mut channel_names: Vec<String> = Vec::new();
         let mut webhook_routes: Vec<axum::Router> = Vec::new();
@@ -295,6 +488,159 @@ mod tests {
         assert!(logs_contain(
             "WASM channels are enabled, but the channel directory does not exist"
         ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn wire_wasm_channel_runtime_leaves_state_untouched_without_manager() -> anyhow::Result<()>
+    {
+        let extension_manager: Option<Arc<FakeRuntimeManager>> = None;
+        let channels = test_channels();
+        let sse_sender = None;
+        let wasm_channel_owner_ids = empty_wasm_channel_owner_ids();
+        let wiring = WasmWiringContext {
+            extension_manager: &extension_manager,
+            channels: &channels,
+            sse_sender: &sse_sender,
+            wasm_channel_owner_ids: &wasm_channel_owner_ids,
+        };
+        let mut runtime_state = Some(test_runtime_state()?);
+        let mut loaded_wasm_channel_names = Vec::new();
+
+        wire_wasm_channel_runtime(&wiring, &mut runtime_state, &mut loaded_wasm_channel_names)
+            .await;
+
+        assert!(runtime_state.is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn wire_wasm_channel_runtime_skips_relay_channels() -> anyhow::Result<()> {
+        let extension_manager = Some(FakeRuntimeManager::with_persisted_channels(&["relay"]).await);
+        extension_manager
+            .as_ref()
+            .expect("manager present")
+            .relay_channels
+            .lock()
+            .await
+            .insert("relay".to_string());
+        let channels = test_channels();
+        let sse_sender = None;
+        let wasm_channel_owner_ids = empty_wasm_channel_owner_ids();
+        let wiring = WasmWiringContext {
+            extension_manager: &extension_manager,
+            channels: &channels,
+            sse_sender: &sse_sender,
+            wasm_channel_owner_ids: &wasm_channel_owner_ids,
+        };
+        let mut runtime_state = Some(test_runtime_state()?);
+        let mut loaded_wasm_channel_names = Vec::new();
+
+        wire_wasm_channel_runtime(&wiring, &mut runtime_state, &mut loaded_wasm_channel_names)
+            .await;
+
+        let manager = extension_manager.as_ref().expect("manager present");
+        assert!(runtime_state.is_none());
+        assert!(manager.wasm_activation_calls.lock().await.is_empty());
+        assert_eq!(*manager.runtime_wire_count.lock().await, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn wire_wasm_channel_runtime_skips_channels_that_started_active() -> anyhow::Result<()> {
+        let extension_manager =
+            Some(FakeRuntimeManager::with_persisted_channels(&["already-active"]).await);
+        let channels = test_channels();
+        let sse_sender = None;
+        let wasm_channel_owner_ids = empty_wasm_channel_owner_ids();
+        let wiring = WasmWiringContext {
+            extension_manager: &extension_manager,
+            channels: &channels,
+            sse_sender: &sse_sender,
+            wasm_channel_owner_ids: &wasm_channel_owner_ids,
+        };
+        let mut runtime_state = Some(test_runtime_state()?);
+        let mut loaded_wasm_channel_names = vec!["already-active".to_string()];
+
+        wire_wasm_channel_runtime(&wiring, &mut runtime_state, &mut loaded_wasm_channel_names)
+            .await;
+
+        let manager = extension_manager.as_ref().expect("manager present");
+        assert!(runtime_state.is_none());
+        assert!(manager.wasm_activation_calls.lock().await.is_empty());
+        assert_eq!(
+            manager.active_channels.lock().await.as_slice(),
+            ["already-active"]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn wire_wasm_channel_runtime_logs_activation_failures() -> anyhow::Result<()> {
+        let extension_manager =
+            Some(FakeRuntimeManager::with_persisted_channels(&["new-channel"]).await);
+        extension_manager
+            .as_ref()
+            .expect("manager present")
+            .activation_failures
+            .lock()
+            .await
+            .insert("new-channel".to_string());
+        let channels = test_channels();
+        let sse_sender = None;
+        let wasm_channel_owner_ids = empty_wasm_channel_owner_ids();
+        let wiring = WasmWiringContext {
+            extension_manager: &extension_manager,
+            channels: &channels,
+            sse_sender: &sse_sender,
+            wasm_channel_owner_ids: &wasm_channel_owner_ids,
+        };
+        let mut runtime_state = Some(test_runtime_state()?);
+        let mut loaded_wasm_channel_names = Vec::new();
+
+        wire_wasm_channel_runtime(&wiring, &mut runtime_state, &mut loaded_wasm_channel_names)
+            .await;
+
+        let manager = extension_manager.as_ref().expect("manager present");
+        assert_eq!(
+            manager.wasm_activation_calls.lock().await.as_slice(),
+            ["new-channel"]
+        );
+        assert!(logs_contain(
+            "Failed to auto-activate persisted WASM channel"
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn wire_wasm_channel_runtime_registers_sse_sender() -> anyhow::Result<()> {
+        let extension_manager = Some(FakeRuntimeManager::with_persisted_channels(&[]).await);
+        let channels = test_channels();
+        let (sender, _) = tokio::sync::broadcast::channel::<SseEvent>(4);
+        let sse_sender = Some(sender);
+        let wasm_channel_owner_ids = empty_wasm_channel_owner_ids();
+        let wiring = WasmWiringContext {
+            extension_manager: &extension_manager,
+            channels: &channels,
+            sse_sender: &sse_sender,
+            wasm_channel_owner_ids: &wasm_channel_owner_ids,
+        };
+        let mut runtime_state = None;
+        let mut loaded_wasm_channel_names = Vec::new();
+
+        wire_wasm_channel_runtime(&wiring, &mut runtime_state, &mut loaded_wasm_channel_names)
+            .await;
+
+        assert!(
+            extension_manager
+                .as_ref()
+                .expect("manager present")
+                .sse_sender
+                .lock()
+                .await
+                .is_some()
+        );
         Ok(())
     }
 }
