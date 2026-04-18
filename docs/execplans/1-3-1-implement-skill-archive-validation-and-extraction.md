@@ -190,10 +190,10 @@ The files below are the key orientation points for this roadmap item.
   failed extraction with one focused staging refactor, stop and document
   the hidden filesystem coupling before continuing.
 
-- BDD proportionality: if adding `rstest-bdd` would require more than one
-  feature file, more than one new scenario-support module, or a new
-  end-to-end harness, record the non-applicability and keep behavioural
-  proof in `rstest`.
+- Behaviour-driven development (BDD) proportionality: if adding
+  `rstest-bdd` would require more than one feature file, more than one
+  new scenario-support module, or a new end-to-end harness, record the
+  non-applicability and keep behavioural proof in `rstest`.
 
 - Ambiguity: if the existing code leaves it unclear whether a case belongs
   in `1.3.1` or a later bundle task, stop and record the overlap rather
@@ -455,18 +455,17 @@ record the decisive evidence in this plan before committing.
    make all | tee /tmp/make-all-axinite-${BRANCH_SLUG}.out
    ```
 
-4. Run Markdown validation for every changed document.
+4. Run Markdown validation for every changed document rather than a
+   hardcoded path list.
 
    ```plaintext
    BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
-   bunx markdownlint-cli2 \
-     docs/execplans/1-3-1-implement-skill-archive-validation-and-extraction.md \
-     docs/roadmap.md \
-     docs/users-guide.md \
-     docs/agent-skills-support.md \
-     docs/axinite-architecture-overview.md \
-     docs/contents.md \
-     | tee /tmp/markdownlint-axinite-${BRANCH_SLUG}.out
+   CHANGED_DOCS=$(git diff --name-only HEAD -- '*.md')
+   if [ -n "${CHANGED_DOCS}" ]; then
+     printf '%s\n' "${CHANGED_DOCS}" \
+       | xargs bunx markdownlint-cli2 \
+       | tee /tmp/markdownlint-axinite-${BRANCH_SLUG}.out
+   fi
    ```
 
 5. Run the diff sanity check.
