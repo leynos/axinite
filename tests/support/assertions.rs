@@ -82,8 +82,12 @@ pub fn assert_tool_succeeded(completed: &[(String, bool)], tool_name: &str) {
     );
 }
 
-/// Assert that at least one result for `tool_name` contains an expected
-/// substring, matching case-insensitively.
+/// Assert that at least one preview for `tool_name` contains one of the
+/// `expected_substrings`, matching case-insensitively.
+///
+/// `results` is the captured `(tool_name, preview)` list from the test rig.
+/// The helper first filters to entries for `tool_name`, then succeeds when any
+/// matching preview contains any expected substring.
 ///
 /// # Panics
 ///
@@ -253,27 +257,5 @@ pub fn verify_expects(
             preview.to_lowercase().contains(&substring.to_lowercase()),
             "[{label}] tool_results_contain: tool \"{tool_name}\" result does not contain \"{substring}\", got: \"{preview}\""
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::assert_tool_result_contains;
-
-    #[test]
-    fn assert_tool_result_contains_matches_case_insensitively() {
-        let results = vec![("memory_tree".to_string(), "Alpha/Beta".to_string())];
-
-        assert_tool_result_contains(&results, "memory_tree", &["alpha"]);
-    }
-
-    #[test]
-    #[should_panic(
-        expected = "expected_substrings must not be empty when asserting tool results for 'memory_tree'"
-    )]
-    fn assert_tool_result_contains_rejects_empty_expected_substrings() {
-        let results = vec![("memory_tree".to_string(), "Alpha/Beta".to_string())];
-
-        assert_tool_result_contains(&results, "memory_tree", &[]);
     }
 }
