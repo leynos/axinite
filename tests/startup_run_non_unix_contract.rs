@@ -1,4 +1,5 @@
 #![cfg(not(unix))]
+#![allow(dead_code)]
 
 //! Non-Unix startup compile contract wired into `cargo check --tests`.
 //!
