@@ -178,31 +178,24 @@ fn tool_result_contains_rejects_invalid_expected_substrings(
     );
 }
 
-#[test]
-fn verify_expects_reports_missing_tool_result_with_label() {
+#[rstest]
+#[case("verify_expects_reports_missing_tool_result_with_label", vec![])]
+#[case(
+    "verify_expects_reports_missing_substring_with_preview",
+    vec![("memory_tree".to_string(), "Gamma/Delta".to_string())]
+)]
+fn verify_expects_reports_tool_result_failure(
+    #[case] snapshot_name: &str,
+    #[case] results: Vec<(String, String)>,
+) {
     let expects = TraceExpects {
         tool_results_contain: HashMap::from([("memory_tree".to_string(), "alpha".to_string())]),
         ..TraceExpects::default()
     };
-
-    let message = capture_panic_message(AssertUnwindSafe(|| {
-        verify_expects(&expects, &[], &[], &[], &[], "turn 0");
-    }));
-
-    assert_snapshot!(message);
-}
-
-#[test]
-fn verify_expects_reports_missing_substring_with_preview() {
-    let expects = TraceExpects {
-        tool_results_contain: HashMap::from([("memory_tree".to_string(), "alpha".to_string())]),
-        ..TraceExpects::default()
-    };
-    let results = vec![("memory_tree".to_string(), "Gamma/Delta".to_string())];
 
     let message = capture_panic_message(AssertUnwindSafe(|| {
         verify_expects(&expects, &[], &[], &[], &results, "turn 0");
     }));
 
-    assert_snapshot!(message);
+    assert_snapshot!(snapshot_name, message);
 }
