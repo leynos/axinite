@@ -24,6 +24,14 @@ fn panic_message(payload: Box<dyn Any + Send>) -> String {
     }
 }
 
+fn assert_panics_with_message<F>(f: F, expected_message: &str)
+where
+    F: FnOnce() + std::panic::UnwindSafe,
+{
+    let payload = catch_unwind(f).expect_err("expected a panic but none occurred");
+    assert_eq!(panic_message(payload), expected_message);
+}
+
 fn capture_panic_message<F>(f: F) -> String
 where
     F: FnOnce() + UnwindSafe,
@@ -136,24 +144,23 @@ fn tool_result_contains_ignores_other_tools_when_matching() {
 fn tool_result_contains_panics_when_tool_is_missing() {
     let results = vec![("memory_search".to_string(), "Alpha/Beta".to_string())];
 
-    let panic = capture_panic_message(|| {
-        assert_tool_result_contains(&results, "memory_tree", &["alpha"]);
-    });
-
-    assert_eq!(panic, "Expected at least one result for tool 'memory_tree'");
+    assert_panics_with_message(
+        AssertUnwindSafe(|| {
+            assert_tool_result_contains(&results, "memory_tree", &["alpha"]);
+        }),
+        "Expected at least one result for tool 'memory_tree'",
+    );
 }
 
 #[test]
 fn tool_result_contains_rejects_empty_expected_substrings() {
     let results = vec![("memory_tree".to_string(), "Alpha/Beta".to_string())];
 
-    let panic = capture_panic_message(|| {
-        assert_tool_result_contains(&results, "memory_tree", &[]);
-    });
-
-    assert_eq!(
-        panic,
-        "expected_substrings must not be empty when asserting tool results for 'memory_tree'"
+    assert_panics_with_message(
+        AssertUnwindSafe(|| {
+            assert_tool_result_contains(&results, "memory_tree", &[]);
+        }),
+        "expected_substrings must not be empty when asserting tool results for 'memory_tree'",
     );
 }
 
@@ -178,13 +185,11 @@ fn verify_expects_reports_missing_tool_result_with_label() {
         ..TraceExpects::default()
     };
 
-    let panic = capture_panic_message(|| {
-        verify_expects(&expects, &[], &[], &[], &[], "turn 0");
-    });
-
-    assert_eq!(
-        panic,
-        "[turn 0] tool_results_contain: no result for tool \"memory_tree\", got: []"
+    assert_panics_with_message(
+        AssertUnwindSafe(|| {
+            verify_expects(&expects, &[], &[], &[], &[], "turn 0");
+        }),
+        "[turn 0] tool_results_contain: no result for tool \"memory_tree\", got: []",
     );
 }
 
@@ -196,12 +201,10 @@ fn verify_expects_reports_missing_substring_with_preview() {
     };
     let results = vec![("memory_tree".to_string(), "Gamma/Delta".to_string())];
 
-    let panic = capture_panic_message(|| {
-        verify_expects(&expects, &[], &[], &[], &results, "turn 0");
-    });
-
-    assert_eq!(
-        panic,
-        "[turn 0] tool_results_contain: tool \"memory_tree\" result does not contain \"alpha\", got: \"Gamma/Delta\""
+    assert_panics_with_message(
+        AssertUnwindSafe(|| {
+            verify_expects(&expects, &[], &[], &[], &results, "turn 0");
+        }),
+        "[turn 0] tool_results_contain: tool \"memory_tree\" result does not contain \"alpha\", got: \"Gamma/Delta\"",
     );
 }
