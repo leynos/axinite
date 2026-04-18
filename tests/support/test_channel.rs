@@ -152,51 +152,49 @@ impl TestChannel {
         self.status_events.lock().await.clone()
     }
 
+    fn filter_status_events<T>(
+        events: &[StatusUpdate],
+        f: impl Fn(&StatusUpdate) -> Option<T>,
+    ) -> Vec<T> {
+        events.iter().filter_map(f).collect()
+    }
+
     /// Return the names of all `ToolStarted` events captured so far.
     pub fn tool_calls_started(&self) -> Vec<String> {
-        self.captured_status_events()
-            .iter()
-            .filter_map(|s| match s {
-                StatusUpdate::ToolStarted { name } => Some(name.clone()),
-                _ => None,
-            })
-            .collect()
+        let events = self.captured_status_events();
+        Self::filter_status_events(&events, |status| match status {
+            StatusUpdate::ToolStarted { name } => Some(name.clone()),
+            _ => None,
+        })
     }
 
     /// Return `(name, success)` for all `ToolCompleted` events captured so far.
     pub fn tool_calls_completed(&self) -> Vec<(String, bool)> {
-        self.captured_status_events()
-            .iter()
-            .filter_map(|s| match s {
-                StatusUpdate::ToolCompleted { name, success, .. } => Some((name.clone(), *success)),
-                _ => None,
-            })
-            .collect()
+        let events = self.captured_status_events();
+        Self::filter_status_events(&events, |status| match status {
+            StatusUpdate::ToolCompleted { name, success, .. } => Some((name.clone(), *success)),
+            _ => None,
+        })
     }
 
     /// Return `(name, success)` for all `ToolCompleted` events captured so far.
     ///
     /// Prefer this accessor while status events may still be arriving.
     pub async fn tool_calls_completed_async(&self) -> Vec<(String, bool)> {
-        self.captured_status_events_async()
-            .await
-            .iter()
-            .filter_map(|s| match s {
-                StatusUpdate::ToolCompleted { name, success, .. } => Some((name.clone(), *success)),
-                _ => None,
-            })
-            .collect()
+        let events = self.captured_status_events_async().await;
+        Self::filter_status_events(&events, |status| match status {
+            StatusUpdate::ToolCompleted { name, success, .. } => Some((name.clone(), *success)),
+            _ => None,
+        })
     }
 
     /// Return `(name, preview)` for all `ToolResult` events captured so far.
     pub fn tool_results(&self) -> Vec<(String, String)> {
-        self.captured_status_events()
-            .iter()
-            .filter_map(|s| match s {
-                StatusUpdate::ToolResult { name, preview } => Some((name.clone(), preview.clone())),
-                _ => None,
-            })
-            .collect()
+        let events = self.captured_status_events();
+        Self::filter_status_events(&events, |status| match status {
+            StatusUpdate::ToolResult { name, preview } => Some((name.clone(), preview.clone())),
+            _ => None,
+        })
     }
 
     /// Return `(name, duration_ms)` for all completed tools with timing data.
