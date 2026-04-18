@@ -93,6 +93,7 @@ pub fn assert_tool_succeeded(completed: &[(String, bool)], tool_name: &str) {
 ///
 /// Panics if:
 /// - `expected_substrings` is empty,
+/// - `expected_substrings` contains a blank or whitespace-only entry,
 /// - there are no results for `tool_name`, or
 /// - none of the matching results contain any of the expected substrings.
 pub fn assert_tool_result_contains(
@@ -103,6 +104,12 @@ pub fn assert_tool_result_contains(
     assert!(
         !expected_substrings.is_empty(),
         "expected_substrings must not be empty when asserting tool results for '{tool_name}'"
+    );
+    assert!(
+        expected_substrings
+            .iter()
+            .all(|substring| !substring.trim().is_empty()),
+        "expected_substrings entries must be non-empty when asserting tool results for '{tool_name}'"
     );
 
     let lower_expected: Vec<String> = expected_substrings
