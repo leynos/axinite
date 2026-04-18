@@ -11,6 +11,8 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, UnwindSafe, catch_unwind};
 
+use rstest::rstest;
+
 use crate::support::assertions::*;
 use crate::support::trace_llm::TraceExpects;
 
@@ -152,29 +154,26 @@ fn tool_result_contains_panics_when_tool_is_missing() {
     );
 }
 
-#[test]
-fn tool_result_contains_rejects_empty_expected_substrings() {
+#[rstest]
+#[case(
+    &[],
+    "expected_substrings must not be empty when asserting tool results for 'memory_tree'"
+)]
+#[case(
+    &["   "],
+    "expected_substrings entries must be non-empty when asserting tool results for 'memory_tree'"
+)]
+fn tool_result_contains_rejects_invalid_expected_substrings(
+    #[case] expected_substrings: &'static [&'static str],
+    #[case] expected_message: &str,
+) {
     let results = vec![("memory_tree".to_string(), "Alpha/Beta".to_string())];
 
     assert_panics_with_message(
         AssertUnwindSafe(|| {
-            assert_tool_result_contains(&results, "memory_tree", &[]);
+            assert_tool_result_contains(&results, "memory_tree", expected_substrings);
         }),
-        "expected_substrings must not be empty when asserting tool results for 'memory_tree'",
-    );
-}
-
-#[test]
-fn tool_result_contains_rejects_whitespace_only_expected_substrings() {
-    let results = vec![("memory_tree".to_string(), "Alpha/Beta".to_string())];
-
-    let panic = capture_panic_message(|| {
-        assert_tool_result_contains(&results, "memory_tree", &["   "]);
-    });
-
-    assert_eq!(
-        panic,
-        "expected_substrings entries must be non-empty when asserting tool results for 'memory_tree'"
+        expected_message,
     );
 }
 
