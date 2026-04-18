@@ -479,19 +479,43 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn init_wasm_channels_skips_when_disabled() -> anyhow::Result<()> {
-        let tempdir = tempfile::tempdir().expect("tempdir should be created");
-        let mut config = Config::for_testing(
+    async fn new_test_config() -> anyhow::Result<(tempfile::TempDir, Config)> {
+        let tempdir = tempfile::tempdir()?;
+        let config = Config::for_testing(
             tempdir.path().join("test.db"),
             tempdir.path().join("skills"),
             tempdir.path().join("installed-skills"),
         )
-        .await
-        .expect("test config should be built");
+        .await?;
+        Ok((tempdir, config))
+    }
+
+    async fn build_components_for(config: &Config) -> anyhow::Result<AppComponents> {
+        build_test_components(config.clone(), true).await
+    }
+
+    async fn wire_with(
+        manager: Arc<FakeRuntimeManager>,
+        loaded: &[&str],
+    ) -> anyhow::Result<(WasmWiringFixture, Option<WasmChannelRuntimeState>)> {
+        let fixture = WasmWiringFixture::new(Some(manager));
+        let mut runtime_state = Some(test_runtime_state()?);
+        let mut loaded_wasm_channel_names = loaded
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect::<Vec<_>>();
+        fixture
+            .wire(&mut runtime_state, &mut loaded_wasm_channel_names)
+            .await;
+        Ok((fixture, runtime_state))
+    }
+
+    #[tokio::test]
+    async fn init_wasm_channels_skips_when_disabled() -> anyhow::Result<()> {
+        let (_tempdir, mut config) = new_test_config().await?;
         config.channels.wasm_channels_enabled = false;
 
-        let components = build_test_components(config.clone(), true).await?;
+        let components = build_components_for(&config).await?;
         let result = run_init_wasm_channels(&config, &components).await;
 
         assert!(result.loaded_wasm_channel_names.is_empty());
@@ -502,18 +526,11 @@ mod tests {
     #[tokio::test]
     #[traced_test]
     async fn init_wasm_channels_warns_when_directory_missing() -> anyhow::Result<()> {
-        let tempdir = tempfile::tempdir().expect("tempdir should be created");
-        let mut config = Config::for_testing(
-            tempdir.path().join("test.db"),
-            tempdir.path().join("skills"),
-            tempdir.path().join("installed-skills"),
-        )
-        .await
-        .expect("test config should be built");
+        let (tempdir, mut config) = new_test_config().await?;
         config.channels.wasm_channels_enabled = true;
         config.channels.wasm_channels_dir = tempdir.path().join("nonexistent");
 
-        let components = build_test_components(config.clone(), true).await?;
+        let components = build_components_for(&config).await?;
         let result = run_init_wasm_channels(&config, &components).await;
 
         assert!(result.loaded_wasm_channel_names.is_empty());
@@ -544,10 +561,7 @@ mod tests {
             .lock()
             .await
             .insert("relay".to_string());
-        let fixture = WasmWiringFixture::new(Some(manager));
-        let mut runtime_state = Some(test_runtime_state()?);
-        let mut loaded = Vec::new();
-        fixture.wire(&mut runtime_state, &mut loaded).await;
+        let (fixture, runtime_state) = wire_with(manager, &[]).await?;
 
         let manager = fixture.manager();
         assert!(runtime_state.is_none());
@@ -584,10 +598,7 @@ mod tests {
             .lock()
             .await
             .insert("new-channel".to_string());
-        let fixture = WasmWiringFixture::new(Some(manager));
-        let mut runtime_state = Some(test_runtime_state()?);
-        let mut loaded = Vec::new();
-        fixture.wire(&mut runtime_state, &mut loaded).await;
+        let (fixture, _runtime_state) = wire_with(manager, &[]).await?;
 
         let manager = fixture.manager();
         assert_eq!(
