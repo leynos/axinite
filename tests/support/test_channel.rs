@@ -147,6 +147,11 @@ impl TestChannel {
             .clone()
     }
 
+    /// Return a snapshot of all captured status events without panicking on contention.
+    pub async fn captured_status_events_async(&self) -> Vec<StatusUpdate> {
+        self.status_events.lock().await.clone()
+    }
+
     /// Return the names of all `ToolStarted` events captured so far.
     pub fn tool_calls_started(&self) -> Vec<String> {
         self.captured_status_events()
@@ -161,6 +166,20 @@ impl TestChannel {
     /// Return `(name, success)` for all `ToolCompleted` events captured so far.
     pub fn tool_calls_completed(&self) -> Vec<(String, bool)> {
         self.captured_status_events()
+            .iter()
+            .filter_map(|s| match s {
+                StatusUpdate::ToolCompleted { name, success, .. } => Some((name.clone(), *success)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Return `(name, success)` for all `ToolCompleted` events captured so far.
+    ///
+    /// Prefer this accessor while status events may still be arriving.
+    pub async fn tool_calls_completed_async(&self) -> Vec<(String, bool)> {
+        self.captured_status_events_async()
+            .await
             .iter()
             .filter_map(|s| match s {
                 StatusUpdate::ToolCompleted { name, success, .. } => Some((name.clone(), *success)),

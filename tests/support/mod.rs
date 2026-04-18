@@ -50,6 +50,11 @@ type AsyncOutgoingResponses<'a> = std::pin::Pin<
 >;
 type AsyncTraceMetrics<'a> =
     std::pin::Pin<Box<dyn std::future::Future<Output = metrics::TraceMetrics> + 'a>>;
+type AsyncCompletedToolCalls<'a> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Vec<(String, bool)>> + 'a>>;
+type AsyncStatusEvents<'a> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Vec<ironclaw::channels::StatusUpdate>> + 'a>,
+>;
 type AsyncTraceRun<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Vec<Vec<ironclaw::channels::OutgoingResponse>>> + 'a>,
 >;
@@ -188,6 +193,16 @@ fn _collect_metrics_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncTraceMetrics<'a>
 }
 
 #[cfg(feature = "libsql")]
+fn _tool_calls_completed_async_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncCompletedToolCalls<'a> {
+    Box::pin(test_rig::TestRig::tool_calls_completed_async(rig))
+}
+
+#[cfg(feature = "libsql")]
+fn _captured_status_events_async_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncStatusEvents<'a> {
+    Box::pin(test_rig::TestRig::captured_status_events_async(rig))
+}
+
+#[cfg(feature = "libsql")]
 fn _run_trace_sig<'a>(
     rig: &'a test_rig::TestRig,
     trace: &'a trace_llm::LlmTrace,
@@ -311,6 +326,14 @@ fn touch_test_rig_async_sigs() {
     );
     touch_const!(for<'a> fn(&'a test_rig::TestRig) -> AsyncUnit<'a> = _clear_sig);
     touch_const!(for<'a> fn(&'a test_rig::TestRig) -> AsyncTraceMetrics<'a> = _collect_metrics_sig);
+    touch_const!(
+        for<'a> fn(&'a test_rig::TestRig) -> AsyncCompletedToolCalls<'a> =
+            _tool_calls_completed_async_sig
+    );
+    touch_const!(
+        for<'a> fn(&'a test_rig::TestRig) -> AsyncStatusEvents<'a> =
+            _captured_status_events_async_sig
+    );
     touch_const!(
         for<'a> fn(
             &'a test_rig::TestRig,

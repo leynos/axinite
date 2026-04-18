@@ -122,7 +122,7 @@ async fn tool_error_recovery() {
     // Wait for the successful recovery write to be recorded before reading.
     let completed = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            let completed = rig.tool_calls_completed();
+            let completed = rig.tool_calls_completed_async().await;
             if completed
                 .iter()
                 .any(|(name, success)| name == "write_file" && *success)

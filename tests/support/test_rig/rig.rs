@@ -76,6 +76,13 @@ impl TestRig {
         self.channel.tool_calls_completed()
     }
 
+    /// Return `(name, success)` for all `ToolCompleted` events captured so far.
+    ///
+    /// Prefer this accessor while the agent may still be emitting status events.
+    pub async fn tool_calls_completed_async(&self) -> Vec<(String, bool)> {
+        self.channel.tool_calls_completed_async().await
+    }
+
     /// Return `(name, preview)` for all `ToolResult` events captured so far.
     pub fn tool_results(&self) -> Vec<(String, String)> {
         self.channel.tool_results()
@@ -89,6 +96,11 @@ impl TestRig {
     /// Return a snapshot of all captured status events.
     pub fn captured_status_events(&self) -> Vec<StatusUpdate> {
         self.channel.captured_status_events()
+    }
+
+    /// Return a snapshot of all captured status events without panicking on contention.
+    pub async fn captured_status_events_async(&self) -> Vec<StatusUpdate> {
+        self.channel.captured_status_events_async().await
     }
 
     /// Clear all captured responses and status events.
