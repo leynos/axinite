@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: DRAFT
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -498,12 +498,27 @@ tests, full gates, documentation linting, and clean diffs.
 - [x] 2026-04-17T20:45:00+02:00: Drafted the ExecPlan for roadmap item
   `1.3.1` and captured the current installer, archive, test, and
   documentation seams.
-- [ ] Implement the shared bundle-validation model and typed errors.
-- [ ] Refactor staged extraction and atomic install commit.
-- [ ] Rewire install adapters to the shared bundle-preparation path.
-- [ ] Add `rstest` coverage and evaluate `rstest-bdd` proportionality.
-- [ ] Synchronize documentation and mark roadmap item `1.3.1` done after
-  validation passes.
+- [x] 2026-04-18T11:40:00+02:00: Added `src/skills/bundle/` as the
+  shared `.skill` policy boundary with typed bundle-validation errors,
+  bounded archive rules, and `rstest` unit coverage for happy and unhappy
+  paths.
+- [x] 2026-04-18T12:05:00+02:00: Refactored `SkillRegistry` installs into a
+  staged transaction that prepares a temporary install tree, round-trips the
+  staged `SKILL.md` through the existing parser, and atomically renames the
+  staged directory into place during commit.
+- [x] 2026-04-18T12:20:00+02:00: Rewired the tool and web install adapters to
+  fetch raw bytes, delegate archive policy to the shared registry path, and
+  clean up failed staged installs.
+- [x] 2026-04-18T12:35:00+02:00: Added focused `rstest` coverage for bundle
+  validation, registry bundle installs, staged cleanup, and install-tool
+  regressions.
+- [x] 2026-04-18T12:50:00+02:00: Synchronized the roadmap, user's guide,
+  skills architecture document, and high-level architecture overview with the
+  implemented bundle-validation contract.
+- [x] 2026-04-18T13:35:00+02:00: Final validation passed. Targeted bundle,
+  registry, install-tool, and fetch tests were green; `make all`,
+  `bunx markdownlint-cli2` over changed docs, and `git diff --check`
+  all passed with retained `/tmp` logs.
 
 ## Surprises & Discoveries
 
@@ -519,6 +534,20 @@ tests, full gates, documentation linting, and clean diffs.
 - 2026-04-17T20:24:00+02:00: No existing skill-focused `rstest-bdd`
   scenario harness was found in `src/` or `tests/`, so BDD coverage must
   be evaluated for proportionality rather than assumed.
+- 2026-04-18T11:55:00+02:00: The cleanest atomic-install seam was to stage a
+  full skill tree under the install root and keep the registry write lock only
+  around the final same-filesystem rename plus the in-memory insert. That kept
+  async filesystem work outside the lock without introducing a broader
+  reservation protocol.
+- 2026-04-18T12:12:00+02:00: The current runtime model still keys loaded
+  skills by the parsed `SKILL.md` manifest name. This slice therefore preserves
+  bundled `references/` and `assets/` on disk but intentionally leaves
+  canonical bundle-root metadata and lazy file access to roadmap items `1.3.3`
+  and `1.3.4`.
+- 2026-04-18T13:18:00+02:00: The repository-wide gate remained the correct
+  final proof even though this change is tightly scoped. `make all`
+  flushed a formatting miss and then validated that the staged install
+  seam did not regress broader tooling or channel behaviour.
 
 ## Decision Log
 
@@ -541,6 +570,45 @@ tests, full gates, documentation linting, and clean diffs.
   and later bundle inputs will need the same policy without depending on
   HTTP download code.
 
+- 2026-04-18T12:28:00+02:00: Do not add `rstest-bdd` coverage for this slice.
+  Rationale: the repository still has no reusable skills-focused BDD harness,
+  and the new bundle validator plus staged-registry tests already exercise the
+  behaviour in-process without needing a new feature-file or scenario-support
+  family.
+
+- 2026-04-18T12:48:00+02:00: Preserve the existing `LoadedSkill` runtime shape
+  and record only on-disk bundle preservation in this slice.
+  Rationale: adding bundle-root metadata to loaded skills would broaden the
+  runtime contract into roadmap item `1.3.3`, while the roadmap only requires
+  validated extraction here.
+
+- 2026-04-18T13:32:00+02:00: Leave `FEATURE_PARITY.md` unchanged after review.
+  Rationale: the file does not currently track this installer-contract slice at
+  a granularity that changed from `❌` to `🚧` or `✅`, so updating it here
+  would add noise rather than clarify shipped parity.
+
 ## Outcomes & Retrospective
 
-Pending implementation approval.
+Implemented the shared `.skill` bundle contract for roadmap item `1.3.1`.
+axinite now validates passive ZIP-based skill bundles in `src/skills/bundle/`,
+stages accepted bundles into a temporary tree, reuses the existing
+`SKILL.md` parser and gating path against the staged entrypoint, and commits
+the install with an atomic rename. The fetch helper was narrowed to SSRF-safe
+byte retrieval, the old single-file ZIP shortcut was retired, and both install
+adapters now share the same registry-driven preparation path.
+
+The authoritative regression proof is in `rstest`, not `rstest-bdd`, because
+this subsystem still lacks a proportional BDD harness. Validation evidence was
+retained in:
+
+- `/tmp/test-skill-bundle-axinite-feat-skill-bundle-execplan.out`
+- `/tmp/test-skill-registry-axinite-feat-skill-bundle-execplan.out`
+- `/tmp/test-skill-install-axinite-feat-skill-bundle-execplan.out`
+- `/tmp/test-skill-fetch-axinite-feat-skill-bundle-execplan.out`
+- `/tmp/make-all-axinite-feat-skill-bundle-execplan.out`
+- `/tmp/markdownlint-axinite-feat-skill-bundle-execplan.out`
+- `/tmp/git-diff-check-axinite-feat-skill-bundle-execplan.out`
+
+Follow-on roadmap items remain necessary for bundle uploads, explicit
+`.skill` URL affordances, canonical bundle-root metadata in loaded skills, and
+lazy file reads from installed bundles.

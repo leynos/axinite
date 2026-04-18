@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use crate::context::JobContext;
 use crate::skills::catalog::SkillCatalog;
-use crate::skills::registry::SkillRegistry;
-use crate::tools::builtin::skill_fetch::fetch_skill_content;
+use crate::skills::registry::{PreparedSkillInstall, SkillInstallPayload, SkillRegistry};
+use crate::tools::builtin::skill_fetch::fetch_skill_bytes;
 use crate::tools::tool::{
     ApprovalRequirement, HostedToolEligibility, NativeTool, ToolError, ToolOutput, require_str,
 };
@@ -87,66 +87,44 @@ impl NativeTool for SkillInstallTool {
         let start = std::time::Instant::now();
         let name = require_str(&params, "name")?;
 
-        let content = if let Some(raw) = params.get("content").and_then(|value| value.as_str()) {
-            raw.to_string()
+        let payload = if let Some(raw) = params.get("content").and_then(|value| value.as_str()) {
+            SkillInstallPayload::Markdown(raw.to_string())
         } else if let Some(url) = params.get("url").and_then(|value| value.as_str()) {
-            fetch_skill_content(url).await?
+            SkillInstallPayload::DownloadedBytes(fetch_skill_bytes(url).await?)
         } else {
             let slug = self.resolve_catalog_slug(name).await;
             let download_url =
                 crate::skills::catalog::skill_download_url(self.catalog.registry_url(), &slug);
-            fetch_skill_content(&download_url).await?
+            SkillInstallPayload::DownloadedBytes(fetch_skill_bytes(&download_url).await?)
         };
 
-        let (user_dir, skill_name_from_parse) = {
+        let install_root = {
             let guard = self
                 .registry
                 .read()
                 .map_err(|e| ToolError::ExecutionFailed(format!("Lock poisoned: {}", e)))?;
-
-            let normalized = crate::skills::normalize_line_endings(&content);
-            let parsed = crate::skills::parser::parse_skill_md(&normalized)
-                .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-            let skill_name = parsed.manifest.name.clone();
-
-            if guard.has(&skill_name) {
-                return Err(ToolError::ExecutionFailed(format!(
-                    "Skill '{}' already exists",
-                    skill_name
-                )));
-            }
-
-            (guard.install_target_dir().to_path_buf(), skill_name)
+            guard.install_target_dir().to_path_buf()
         };
 
-        let (skill_name, loaded_skill) =
-            crate::skills::registry::SkillRegistry::prepare_install_to_disk(
-                &user_dir,
-                &skill_name_from_parse,
-                &crate::skills::normalize_line_endings(&content),
-            )
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        let prepared =
+            crate::skills::registry::SkillRegistry::prepare_install_to_disk(&install_root, payload)
+                .await
+                .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
-        let installed_name = {
+        let commit_result = {
             let mut guard = self
                 .registry
                 .write()
                 .map_err(|e| ToolError::ExecutionFailed(format!("Lock poisoned: {}", e)))?;
-            // Re-check under the write lock to close the TOCTOU window between
-            // the earlier read-side `has()` check and this commit.
-            if guard.has(&skill_name) {
-                return Err(ToolError::ExecutionFailed(format!(
-                    "Skill '{}' already exists",
-                    skill_name
-                )));
-            }
-            guard
-                .commit_install(&skill_name, loaded_skill)
-                .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-            skill_name
+            guard.commit_install(&prepared)
         };
 
+        if let Err(error) = commit_result {
+            cleanup_prepared_install(&prepared).await?;
+            return Err(ToolError::ExecutionFailed(error.to_string()));
+        }
+
+        let installed_name = prepared.name().to_string();
         let output = serde_json::json!({
             "name": installed_name,
             "status": "installed",
@@ -167,4 +145,11 @@ impl NativeTool for SkillInstallTool {
     fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
         HostedToolEligibility::ApprovalGated
     }
+}
+
+async fn cleanup_prepared_install(prepared: &PreparedSkillInstall) -> Result<(), ToolError> {
+    SkillRegistry::cleanup_prepared_install(prepared)
+        .await
+        .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+    Ok(())
 }

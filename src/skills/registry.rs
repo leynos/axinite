@@ -12,7 +12,11 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
 
+use crate::skills::bundle::{
+    SkillBundleError, ValidatedSkillBundle, looks_like_skill_archive, validate_skill_archive,
+};
 use crate::skills::gating;
 use crate::skills::parser::{SkillParseError, parse_skill_md};
 use crate::skills::{
@@ -66,6 +70,30 @@ pub enum SkillRegistryError {
 
     #[error("Failed to write skill file {path}: {reason}")]
     WriteError { path: String, reason: String },
+
+    #[error("{0}")]
+    InvalidBundle(#[from] SkillBundleError),
+
+    #[error("Invalid skill content: {reason}")]
+    InvalidContent { reason: String },
+}
+
+pub enum SkillInstallPayload {
+    Markdown(String),
+    DownloadedBytes(Vec<u8>),
+}
+
+pub struct PreparedSkillInstall {
+    name: String,
+    staged_dir: PathBuf,
+    final_dir: PathBuf,
+    loaded_skill: LoadedSkill,
+}
+
+impl PreparedSkillInstall {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 /// Registry of available skills.
@@ -319,49 +347,92 @@ impl SkillRegistry {
     /// This is a static method so it doesn't borrow `&self`, allowing callers
     /// to drop their registry lock before awaiting.
     pub async fn prepare_install_to_disk(
-        user_dir: &Path,
-        skill_name: &str,
-        normalized_content: &str,
-    ) -> Result<(String, LoadedSkill), SkillRegistryError> {
-        let skill_dir = user_dir.join(skill_name);
-        tokio::fs::create_dir_all(&skill_dir).await.map_err(|e| {
+        install_root: &Path,
+        payload: SkillInstallPayload,
+    ) -> Result<PreparedSkillInstall, SkillRegistryError> {
+        tokio::fs::create_dir_all(install_root).await.map_err(|e| {
             SkillRegistryError::WriteError {
-                path: skill_dir.display().to_string(),
+                path: install_root.display().to_string(),
                 reason: e.to_string(),
             }
         })?;
 
-        let skill_path = skill_dir.join("SKILL.md");
-        tokio::fs::write(&skill_path, normalized_content)
-            .await
-            .map_err(|e| SkillRegistryError::WriteError {
-                path: skill_path.display().to_string(),
+        let install_artifact = materialize_install_artifact(payload)?;
+        let staged_dir = install_root.join(format!(".skill-install-{}", Uuid::new_v4()));
+        tokio::fs::create_dir_all(&staged_dir).await.map_err(|e| {
+            SkillRegistryError::WriteError {
+                path: staged_dir.display().to_string(),
                 reason: e.to_string(),
-            })?;
+            }
+        })?;
 
-        // Load by re-reading from disk (validates round-trip)
-        let source = SkillSource::User(skill_dir);
-        load_and_validate_skill(&skill_path, SkillTrust::Installed, source).await
+        let final_dir = install_root.join(&install_artifact.install_dir_name);
+        write_install_artifact(&staged_dir, &install_artifact).await?;
+
+        let skill_path = staged_dir.join("SKILL.md");
+        let source = SkillSource::User(final_dir.clone());
+        let (name, loaded_skill) =
+            load_and_validate_skill(&skill_path, SkillTrust::Installed, source).await?;
+
+        Ok(PreparedSkillInstall {
+            name,
+            staged_dir,
+            final_dir,
+            loaded_skill,
+        })
     }
 
     /// Commit a prepared skill into the in-memory registry.
     ///
-    /// This is a fast, synchronous operation that only adds to the Vec.
-    /// Call after `prepare_install` completes.
+    /// This keeps the registry lock held only for duplicate checks, the final
+    /// same-filesystem rename, and the in-memory insert.
     pub fn commit_install(
+        &mut self,
+        prepared: &PreparedSkillInstall,
+    ) -> Result<(), SkillRegistryError> {
+        if self.has(prepared.name()) || prepared.final_dir.exists() {
+            return Err(SkillRegistryError::AlreadyExists {
+                name: prepared.name().to_string(),
+            });
+        }
+
+        std::fs::rename(&prepared.staged_dir, &prepared.final_dir).map_err(|e| {
+            SkillRegistryError::WriteError {
+                path: prepared.final_dir.display().to_string(),
+                reason: e.to_string(),
+            }
+        })?;
+
+        self.commit_loaded_skill(prepared.name(), prepared.loaded_skill.clone())
+    }
+
+    pub fn commit_loaded_skill(
         &mut self,
         name: &str,
         skill: LoadedSkill,
     ) -> Result<(), SkillRegistryError> {
-        // Re-check for duplicates (another thread may have installed between prepare and commit)
         if self.has(name) {
             return Err(SkillRegistryError::AlreadyExists {
                 name: name.to_string(),
             });
         }
+
         self.skills.push(skill);
         tracing::info!("Installed skill: {}", name);
         Ok(())
+    }
+
+    pub async fn cleanup_prepared_install(
+        prepared: &PreparedSkillInstall,
+    ) -> Result<(), SkillRegistryError> {
+        match tokio::fs::remove_dir_all(&prepared.staged_dir).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(SkillRegistryError::WriteError {
+                path: prepared.staged_dir.display().to_string(),
+                reason: e.to_string(),
+            }),
+        }
     }
 
     /// Install a skill at runtime from SKILL.md content.
@@ -371,26 +442,18 @@ impl SkillRegistry {
     /// `prepare_install_to_disk` + `commit_install` separately to minimize lock
     /// hold time.
     pub async fn install_skill(&mut self, content: &str) -> Result<String, SkillRegistryError> {
-        let normalized = normalize_line_endings(content);
-        let parsed = parse_skill_md(&normalized).map_err(|e: SkillParseError| match e {
-            SkillParseError::InvalidName { ref name } => SkillRegistryError::ParseError {
-                name: name.clone(),
-                reason: e.to_string(),
-            },
-            _ => SkillRegistryError::ParseError {
-                name: "(install)".to_string(),
-                reason: e.to_string(),
-            },
-        })?;
-        let skill_name = parsed.manifest.name.clone();
-        if self.has(&skill_name) {
-            return Err(SkillRegistryError::AlreadyExists { name: skill_name });
-        }
         let user_dir = self.user_dir.clone();
-        let (name, skill) =
-            Self::prepare_install_to_disk(&user_dir, &skill_name, &normalized).await?;
-        self.commit_install(&name, skill)?;
-        Ok(name)
+        let prepared =
+            Self::prepare_install_to_disk(&user_dir, SkillInstallPayload::Markdown(content.into()))
+                .await?;
+
+        match self.commit_install(&prepared) {
+            Ok(()) => Ok(prepared.name().to_string()),
+            Err(error) => {
+                Self::cleanup_prepared_install(&prepared).await?;
+                Err(error)
+            }
+        }
     }
 
     /// Validate that a skill can be removed and return its filesystem path.
@@ -614,6 +677,94 @@ pub fn compute_hash(content: &str) -> String {
     format!("sha256:{:x}", result)
 }
 
+struct InstallArtifact {
+    install_dir_name: String,
+    files: Vec<(PathBuf, Vec<u8>)>,
+}
+
+fn materialize_install_artifact(
+    payload: SkillInstallPayload,
+) -> Result<InstallArtifact, SkillRegistryError> {
+    match payload {
+        SkillInstallPayload::Markdown(content) => build_markdown_artifact(content),
+        SkillInstallPayload::DownloadedBytes(bytes) => {
+            if looks_like_skill_archive(&bytes) {
+                Ok(build_bundle_artifact(validate_skill_archive(&bytes)?))
+            } else {
+                let content = String::from_utf8(bytes).map_err(|error| {
+                    SkillRegistryError::InvalidContent {
+                        reason: format!("downloaded skill content is not valid UTF-8: {error}"),
+                    }
+                })?;
+                build_markdown_artifact(content)
+            }
+        }
+    }
+}
+
+fn build_markdown_artifact(content: String) -> Result<InstallArtifact, SkillRegistryError> {
+    let normalized_content = normalize_line_endings(&content);
+    let parsed = parse_skill_md(&normalized_content).map_err(|e: SkillParseError| match e {
+        SkillParseError::InvalidName { ref name } => SkillRegistryError::ParseError {
+            name: name.clone(),
+            reason: e.to_string(),
+        },
+        _ => SkillRegistryError::ParseError {
+            name: "(install)".to_string(),
+            reason: e.to_string(),
+        },
+    })?;
+
+    Ok(InstallArtifact {
+        install_dir_name: parsed.manifest.name,
+        files: vec![(PathBuf::from("SKILL.md"), normalized_content.into_bytes())],
+    })
+}
+
+fn build_bundle_artifact(bundle: ValidatedSkillBundle) -> InstallArtifact {
+    let files = bundle
+        .entries()
+        .iter()
+        .map(|entry| {
+            (
+                entry.relative_path().to_path_buf(),
+                entry.contents().to_vec(),
+            )
+        })
+        .collect();
+
+    InstallArtifact {
+        install_dir_name: bundle.skill_name().to_string(),
+        files,
+    }
+}
+
+async fn write_install_artifact(
+    staged_dir: &Path,
+    artifact: &InstallArtifact,
+) -> Result<(), SkillRegistryError> {
+    for (relative_path, contents) in &artifact.files {
+        let file_path = staged_dir.join(relative_path);
+        if let Some(parent) = file_path.parent() {
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                SkillRegistryError::WriteError {
+                    path: parent.display().to_string(),
+                    reason: e.to_string(),
+                }
+            })?;
+        }
+
+        tokio::fs::write(&file_path, contents).await.map_err(|e| {
+            SkillRegistryError::WriteError {
+                path: file_path.display().to_string(),
+                reason: e.to_string(),
+            }
+        })?;
+    }
+
+    Ok(())
+}
+
 /// Helper to check gating for a `GatingRequirements`. Useful for callers that
 /// don't have the full skill loaded yet.
 pub async fn check_gating(
@@ -626,6 +777,32 @@ pub async fn check_gating(
 mod tests {
     use super::*;
     use std::fs;
+    use std::io::Write;
+
+    fn skill_markdown(name: &str) -> String {
+        format!("---\nname: {name}\n---\n\n# {name}\n")
+    }
+
+    fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let cursor = std::io::Cursor::new(Vec::new());
+        let mut writer = zip::ZipWriter::new(cursor);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        for (name, contents) in entries {
+            writer
+                .start_file(*name, options)
+                .expect("test archive should start file");
+            writer
+                .write_all(contents)
+                .expect("test archive should write file contents");
+        }
+
+        writer
+            .finish()
+            .expect("test archive should finish")
+            .into_inner()
+    }
 
     #[tokio::test]
     async fn test_discover_empty_dir() {
@@ -841,6 +1018,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_install_bundle_from_downloaded_bytes_preserves_files() {
+        let user_dir = tempfile::tempdir().unwrap();
+        let installed_dir = tempfile::tempdir().unwrap();
+        let mut registry = SkillRegistry::new(user_dir.path().to_path_buf())
+            .with_installed_dir(installed_dir.path().to_path_buf());
+
+        let archive = build_bundle_archive(&[
+            (
+                "deploy-docs/SKILL.md",
+                skill_markdown("deploy-docs").as_bytes(),
+            ),
+            ("deploy-docs/references/usage.md", b"# Usage\n"),
+            ("deploy-docs/assets/logo.txt", b"logo"),
+        ]);
+
+        let prepared = SkillRegistry::prepare_install_to_disk(
+            registry.install_target_dir(),
+            SkillInstallPayload::DownloadedBytes(archive),
+        )
+        .await
+        .expect("bundle install should prepare successfully");
+
+        registry
+            .commit_install(&prepared)
+            .expect("prepared bundle should commit successfully");
+
+        let installed_root = installed_dir.path().join("deploy-docs");
+        assert!(installed_root.join("SKILL.md").exists());
+        assert!(installed_root.join("references/usage.md").exists());
+        assert!(installed_root.join("assets/logo.txt").exists());
+        assert!(registry.has("deploy-docs"));
+    }
+
+    #[tokio::test]
     async fn test_install_duplicate_rejected() {
         let dir = tempfile::tempdir().unwrap();
         let mut registry = SkillRegistry::new(dir.path().to_path_buf());
@@ -853,6 +1064,54 @@ mod tests {
             result,
             Err(SkillRegistryError::AlreadyExists { .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_prepared_install_removes_staged_bundle_on_commit_failure() {
+        let user_dir = tempfile::tempdir().unwrap();
+        let installed_dir = tempfile::tempdir().unwrap();
+        let mut registry = SkillRegistry::new(user_dir.path().to_path_buf())
+            .with_installed_dir(installed_dir.path().to_path_buf());
+
+        let archive = build_bundle_archive(&[(
+            "deploy-docs/SKILL.md",
+            skill_markdown("deploy-docs").as_bytes(),
+        )]);
+
+        let first = SkillRegistry::prepare_install_to_disk(
+            registry.install_target_dir(),
+            SkillInstallPayload::DownloadedBytes(archive.clone()),
+        )
+        .await
+        .expect("first bundle should prepare");
+        registry
+            .commit_install(&first)
+            .expect("first bundle should commit");
+
+        let second = SkillRegistry::prepare_install_to_disk(
+            registry.install_target_dir(),
+            SkillInstallPayload::DownloadedBytes(archive),
+        )
+        .await
+        .expect("second bundle should still stage");
+
+        let staged_dir = second.staged_dir.clone();
+        let error = registry
+            .commit_install(&second)
+            .expect_err("duplicate bundle should fail commit");
+        assert!(matches!(error, SkillRegistryError::AlreadyExists { .. }));
+        assert!(
+            staged_dir.exists(),
+            "failed commit should leave staged files for cleanup"
+        );
+
+        SkillRegistry::cleanup_prepared_install(&second)
+            .await
+            .expect("cleanup should remove staged directory");
+        assert!(
+            !staged_dir.exists(),
+            "cleanup should remove staged directory"
+        );
     }
 
     #[tokio::test]

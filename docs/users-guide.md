@@ -3,6 +3,32 @@
 This guide captures operator-visible behaviour for the current Axinite
 runtime.
 
+## Skill bundle installs
+
+Axinite now validates passive multi-file skill bundles when a skill is
+installed from an HTTPS URL or catalogue download that resolves to a `.skill`
+ZIP archive.
+
+A valid bundle must contain exactly one shared top-level path prefix with
+`SKILL.md` at `<root>/SKILL.md`. The installer also accepts optional
+`references/` and `assets/` subdirectories under that same root.
+
+The installer rejects bundles that contain unsupported top-level content,
+nested `SKILL.md` files, `scripts/` or `bin/` directories, traversal paths,
+absolute paths, special-file entries, duplicate normalized paths, oversized
+entries, oversized archives, excessive file counts, invalid UTF-8 in
+`SKILL.md` or `references/`, or executable payloads such as `.sh`, `.py`,
+`.js`, `.ps1`, `.bat`, `.cmd`, `.rb`, or `.pl`.
+
+Accepted bundles are extracted through a staged install path and only committed
+into the installed-skills directory once validation and on-disk staging both
+succeed. A failed bundle install should therefore leave no partial installed
+skill tree behind.
+
+This slice does not yet add local `.skill` uploads or runtime file reads from
+bundled references and assets. When a bundled skill is active, the runtime
+still injects only the selected `SKILL.md` body into the prompt.
+
 ## Hosted workers and remote tools
 
 Hosted workers now advertise two tool families to the model:
@@ -94,7 +120,6 @@ These notices are advisory. A success message means the runtime moved the job
 back into its normal retry path. A permanent failure or manual-intervention
 message means the runtime could not finish recovery automatically, and the
 operator should inspect the job or tool state before retrying work.
-
 
 ## Workspace memory search
 

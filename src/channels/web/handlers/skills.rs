@@ -11,6 +11,7 @@ use axum::{
 
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
+use crate::skills::registry::{SkillInstallPayload, SkillRegistryError};
 
 pub fn routes() -> Router<Arc<GatewayState>> {
     Router::new()
@@ -149,12 +150,13 @@ pub async fn skills_install_handler(
         "Skills system not enabled".to_string(),
     ))?;
 
-    let content = if let Some(ref raw) = req.content {
-        raw.clone()
+    let payload = if let Some(ref raw) = req.content {
+        SkillInstallPayload::Markdown(raw.clone())
     } else if let Some(ref url) = req.url {
         // Fetch from explicit URL (with SSRF protection)
-        crate::tools::builtin::skill_fetch::fetch_skill_content(url)
+        crate::tools::builtin::skill_fetch::fetch_skill_bytes(url)
             .await
+            .map(SkillInstallPayload::DownloadedBytes)
             .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
     } else if let Some(ref catalog) = state.skill_catalog {
         // Prefer slug (e.g. "owner/skill-name") over display name for the
@@ -165,8 +167,9 @@ pub async fn skills_install_handler(
             .filter(|s| !s.is_empty())
             .unwrap_or(&req.name);
         let url = crate::skills::catalog::skill_download_url(catalog.registry_url(), download_key);
-        crate::tools::builtin::skill_fetch::fetch_skill_content(&url)
+        crate::tools::builtin::skill_fetch::fetch_skill_bytes(&url)
             .await
+            .map(SkillInstallPayload::DownloadedBytes)
             .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?
     } else {
         return Ok(Json(ActionResponse::fail(
@@ -174,55 +177,50 @@ pub async fn skills_install_handler(
         )));
     };
 
-    // Parse, check duplicates, and get install_dir under a brief read lock.
-    let (user_dir, skill_name_from_parse) = {
+    let install_root = {
         let guard = registry.read().map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Skill registry lock poisoned: {}", e),
             )
         })?;
-
-        let normalized = crate::skills::normalize_line_endings(&content);
-        let parsed = crate::skills::parser::parse_skill_md(&normalized)
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-        let skill_name = parsed.manifest.name.clone();
-
-        if guard.has(&skill_name) {
-            return Ok(Json(ActionResponse::fail(format!(
-                "Skill '{}' already exists",
-                skill_name
-            ))));
-        }
-
-        (guard.install_target_dir().to_path_buf(), skill_name)
+        guard.install_target_dir().to_path_buf()
     };
 
-    // Perform async I/O (write to disk, load) with no lock held.
-    let normalized = crate::skills::normalize_line_endings(&content);
-    let (skill_name, loaded_skill) =
-        crate::skills::registry::SkillRegistry::prepare_install_to_disk(
-            &user_dir,
-            &skill_name_from_parse,
-            &normalized,
-        )
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let prepared =
+        crate::skills::registry::SkillRegistry::prepare_install_to_disk(&install_root, payload)
+            .await
+            .map_err(map_skill_install_error)?;
 
-    // Commit: brief write lock for in-memory addition
-    let mut guard = registry.write().map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Skill registry lock poisoned: {}", e),
-        )
-    })?;
+    let commit_result = {
+        let mut guard = registry.write().map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Skill registry lock poisoned: {}", e),
+            )
+        })?;
+        guard.commit_install(&prepared)
+    };
 
-    match guard.commit_install(&skill_name, loaded_skill) {
+    match commit_result {
         Ok(()) => Ok(Json(ActionResponse::ok(format!(
             "Skill '{}' installed",
-            skill_name
+            prepared.name()
         )))),
-        Err(e) => Ok(Json(ActionResponse::fail(e.to_string()))),
+        Err(error) => {
+            crate::skills::registry::SkillRegistry::cleanup_prepared_install(&prepared)
+                .await
+                .map_err(map_skill_install_error)?;
+            Ok(Json(ActionResponse::fail(error.to_string())))
+        }
+    }
+}
+
+fn map_skill_install_error(error: SkillRegistryError) -> (StatusCode, String) {
+    if matches!(error, SkillRegistryError::WriteError { .. }) {
+        (StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+    } else {
+        (StatusCode::BAD_REQUEST, error.to_string())
     }
 }
 

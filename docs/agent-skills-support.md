@@ -246,20 +246,28 @@ Table 4. Current approval semantics for skill tools.
 
 `skill_search` queries both the local registry and the remote catalog.
 `skill_install` can install from raw `SKILL.md` content, an explicit HTTPS URL,
-or a ClawHub download by name or slug. `skill_remove` permanently deletes the
-on-disk skill and removes it from the in-memory registry.
+or a ClawHub download by name or slug. Remote downloads are fetched as raw
+bytes and then handed to the shared registry install path, which now accepts
+either:
+
+- plain UTF-8 `SKILL.md` content
+- validated passive `.skill` archives with one shared top-level prefix,
+  `SKILL.md` at `<root>/SKILL.md`, and optional `references/` or `assets/`
+
+`skill_remove` permanently deletes the on-disk skill and removes it from the
+in-memory registry.
 
 Two details matter operationally:
 
 - install and remove both use brief registry locks and do their disk I/O
   outside the lock
 - remote fetches use explicit SSRF defenses, HTTPS-only validation, DNS
-  resolution checks, response-size limits, and limited ZIP extraction for
-  archives that contain `SKILL.md`
-
-The ZIP path is intentionally narrow today. The installer accepts archive
-downloads, but it extracts only `SKILL.md` and discards sibling files in the
-archive.
+  resolution checks, and response-size limits before the registry validates the
+  fetched payload as either raw `SKILL.md` or a passive skill bundle
+- staged installs now write into a temporary directory under the install root,
+  round-trip the staged `SKILL.md` through the existing parser and gating
+  logic, and then atomically rename the staged tree into place before the
+  in-memory registry commit
 
 ### 5.2 Chat command surface
 
@@ -513,8 +521,9 @@ The current implementation has several important constraints:
 - `skill_install` supports `content` and `url`, but its tool schema still marks
   `name` as required even when installation does not need it as the source of
   truth.
-- ZIP installs still collapse to a single extracted `SKILL.md`; ancillary files
-  in the archive are ignored.
+- validated `.skill` installs now preserve bundled `references/` and `assets/`
+  on disk, but the runtime still injects only `SKILL.md` and does not yet
+  expose a skill-scoped file-reading interface.
 - registry search against ClawHub is best effort and cached in memory only; it
   does not persist catalog state across restarts.
 - the registry computes `content_hash`, but the current selection and injection

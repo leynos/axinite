@@ -152,13 +152,15 @@ Dependencies: independent of 1.1 and 1.2 at the transport layer, but should land
 before 2.2 so codemode and later automation can rely on richer skill content
 packaging.
 
-- [ ] 1.3.1. Implement `.skill` archive validation and extraction.
+- [x] 1.3.1. Implement `.skill` archive validation and extraction.
   - See
     [RFC 0003 §Proposed Bundle Format](./rfcs/0003-skill-bundle-installation.md#proposed-bundle-format)
     and
     [RFC 0003 §Rollout Plan](./rfcs/0003-skill-bundle-installation.md#rollout-plan).
-  - Success: the installer accepts only bundles with `SKILL.md` at the archive
-    root and rejects unsupported top-level content or executable payloads.
+  - Success: the installer accepts only bundles with one shared top-level path
+    prefix and `SKILL.md` at `<root>/SKILL.md`, preserves allowed
+    `references/` and `assets/` entries, and rejects unsupported content or
+    executable payloads.
 - [ ] 1.3.2. Extend skill installation flows for uploaded bundles and `.skill`
       URLs. Requires 1.3.1.
   - See [RFC 0003 §Summary](./rfcs/0003-skill-bundle-installation.md#summary)
