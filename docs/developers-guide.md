@@ -257,7 +257,7 @@ Tests:
 
 - See `src/app.rs` `#[cfg(test)]` for smoke coverage.
 
-### Shared test assertions
+#### Shared test assertions
 
 `tests/support/assertions.rs` is the shared assertion module for trace-driven
 tests. Prefer these helpers when checking captured responses, tool usage, and
