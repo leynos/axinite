@@ -16,11 +16,8 @@ where
     Shutdown: FnOnce() -> ShutdownFuture,
     ShutdownFuture: std::future::Future<Output = ()>,
 {
-    let run_result = async {
-        start()?;
-        run().await
-    }
-    .await;
+    start()?;
+    let run_result = run().await;
     if run_result.is_err() {
         shutdown().await;
     }
@@ -46,4 +43,56 @@ where
         shutdown,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use super::coordinate_start_run_shutdown;
+
+    #[tokio::test]
+    async fn coordinate_returns_err_and_does_not_shutdown_when_start_fails() {
+        let shutdown_calls = Arc::new(AtomicUsize::new(0));
+        let s = shutdown_calls.clone();
+        let start = || -> anyhow::Result<()> { anyhow::bail!("fail-start") };
+        let run = || async { Ok(()) };
+        let shutdown = || async {
+            s.fetch_add(1, Ordering::SeqCst);
+        };
+        let res = coordinate_start_run_shutdown(start, run, shutdown).await;
+        assert!(res.is_err());
+        assert_eq!(shutdown_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn coordinate_runs_and_does_not_shutdown_on_success() {
+        let shutdown_calls = Arc::new(AtomicUsize::new(0));
+        let s = shutdown_calls.clone();
+        let start = || -> anyhow::Result<()> { Ok(()) };
+        let run = || async { Ok(()) };
+        let shutdown = || async {
+            s.fetch_add(1, Ordering::SeqCst);
+        };
+        let res = coordinate_start_run_shutdown(start, run, shutdown).await;
+        assert!(res.is_ok());
+        assert_eq!(shutdown_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn coordinate_runs_and_shutdowns_on_failure() {
+        let shutdown_calls = Arc::new(AtomicUsize::new(0));
+        let s = shutdown_calls.clone();
+        let start = || -> anyhow::Result<()> { Ok(()) };
+        let run = || async { anyhow::Result::<()>::Err(anyhow::anyhow!("fail-run")) };
+        let shutdown = || async {
+            s.fetch_add(1, Ordering::SeqCst);
+        };
+        let res = coordinate_start_run_shutdown(start, run, shutdown).await;
+        assert!(res.is_err());
+        assert_eq!(shutdown_calls.load(Ordering::SeqCst), 1);
+    }
 }

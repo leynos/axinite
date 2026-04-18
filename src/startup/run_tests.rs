@@ -93,9 +93,18 @@ async fn shutdown_runs_after_failures(
         }
     };
 
-    assert!(
-        shutdown_harness.rx.try_recv().is_ok(),
-        "shutdown must be broadcast even after failure"
-    );
+    match failure_case {
+        FailureCase::SideEffects => assert!(
+            matches!(
+                shutdown_harness.rx.try_recv(),
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+            ),
+            "shutdown must not be broadcast when startup fails"
+        ),
+        FailureCase::Agent => assert!(
+            shutdown_harness.rx.try_recv().is_ok(),
+            "shutdown must be broadcast after agent failure"
+        ),
+    }
     assert!(run_result.is_err());
 }
