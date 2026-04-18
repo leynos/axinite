@@ -128,6 +128,44 @@ pub(crate) struct WasmChannelsInit {
     pub(crate) runtime_state: Option<WasmChannelRuntimeState>,
 }
 
+fn empty_wasm_channels_init() -> WasmChannelsInit {
+    WasmChannelsInit {
+        loaded_wasm_channel_names: vec![],
+        runtime_state: None,
+    }
+}
+
+async fn validate_wasm_channels_dir(config: &Config) -> bool {
+    let metadata = match tokio::fs::metadata(&config.channels.wasm_channels_dir).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            tracing::warn!(
+                path = %config.channels.wasm_channels_dir.display(),
+                "WASM channels are enabled, but the channel directory does not exist"
+            );
+            return false;
+        }
+        Err(error) => {
+            tracing::error!(
+                path = %config.channels.wasm_channels_dir.display(),
+                error = %error,
+                "Failed to inspect WASM channel directory"
+            );
+            return false;
+        }
+    };
+
+    if !metadata.is_dir() {
+        tracing::warn!(
+            path = %config.channels.wasm_channels_dir.display(),
+            "WASM channels are enabled, but the channel directory path is not a directory"
+        );
+        return false;
+    }
+
+    true
+}
+
 /// Initialises WASM channels from the configured directory.
 ///
 /// Returns an empty [`WasmChannelsInit`] (with `runtime_state: None`) when WASM
@@ -137,46 +175,10 @@ pub(crate) async fn init_wasm_channels(
     components: &AppComponents,
     reg: &mut ChannelRegistrar<'_>,
 ) -> WasmChannelsInit {
-    if !config.channels.wasm_channels_enabled {
-        return WasmChannelsInit {
-            loaded_wasm_channel_names: vec![],
-            runtime_state: None,
-        };
+    if !config.channels.wasm_channels_enabled || !validate_wasm_channels_dir(config).await {
+        return empty_wasm_channels_init();
     }
-    let metadata = match tokio::fs::metadata(&config.channels.wasm_channels_dir).await {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            tracing::warn!(
-                path = %config.channels.wasm_channels_dir.display(),
-                "WASM channels are enabled, but the channel directory does not exist"
-            );
-            return WasmChannelsInit {
-                loaded_wasm_channel_names: vec![],
-                runtime_state: None,
-            };
-        }
-        Err(error) => {
-            tracing::error!(
-                path = %config.channels.wasm_channels_dir.display(),
-                error = %error,
-                "Failed to inspect WASM channel directory"
-            );
-            return WasmChannelsInit {
-                loaded_wasm_channel_names: vec![],
-                runtime_state: None,
-            };
-        }
-    };
-    if !metadata.is_dir() {
-        tracing::warn!(
-            path = %config.channels.wasm_channels_dir.display(),
-            "WASM channels are enabled, but the channel directory path is not a directory"
-        );
-        return WasmChannelsInit {
-            loaded_wasm_channel_names: vec![],
-            runtime_state: None,
-        };
-    }
+
     let Some(result) = ironclaw::channels::wasm::setup_wasm_channels(
         config,
         &components.secrets_store,
@@ -185,19 +187,13 @@ pub(crate) async fn init_wasm_channels(
     )
     .await
     else {
-        return WasmChannelsInit {
-            loaded_wasm_channel_names: vec![],
-            runtime_state: None,
-        };
+        return empty_wasm_channels_init();
     };
     let loaded_wasm_channel_names = result.channel_names;
-    let runtime_state = Some((
-        result.wasm_channel_runtime,
-        result.pairing_store,
-        result.wasm_channel_router,
-    ));
+    let runtime_state =
+        Some((result.wasm_channel_runtime, result.pairing_store, result.wasm_channel_router));
     for (name, channel) in result.channels {
-        reg.channel_names.push(name.clone());
+        reg.channel_names.push(name);
         reg.channels.add(channel).await;
     }
     if let Some(routes) = result.webhook_routes {
