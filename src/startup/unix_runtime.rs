@@ -8,8 +8,6 @@ use ironclaw::{
     secrets::SecretsStore,
 };
 
-use crate::startup::channels::spawn_sighup_handler;
-
 /// Configures Unix-only runtime-management hooks such as SIGHUP-triggered
 /// hot reload.
 ///
@@ -92,6 +90,42 @@ fn setup_sighup_reload(
         secret_updaters.to_vec(),
     ));
     spawn_sighup_handler(reload_manager, shutdown_tx);
+}
+
+/// Spawns a Tokio task that listens for `SIGHUP` and triggers a hot-reload.
+///
+/// The task exits cleanly when the shutdown broadcast fires. Only compiled on
+/// Unix targets.
+#[cfg(unix)]
+pub(crate) fn spawn_sighup_handler(
+    reload_manager: Arc<ironclaw::reload::HotReloadManager>,
+    shutdown_tx: &tokio::sync::broadcast::Sender<()>,
+) {
+    let mut shutdown_rx = shutdown_tx.subscribe();
+    tokio::spawn(async move {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut sighup = match signal(SignalKind::hangup()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("Failed to register SIGHUP handler: {e}");
+                return;
+            }
+        };
+        loop {
+            tokio::select! {
+                _ = shutdown_rx.recv() => {
+                    tracing::debug!("SIGHUP handler shutting down");
+                    break;
+                }
+                _ = sighup.recv() => {
+                    tracing::info!("SIGHUP received — reloading HTTP webhook config");
+                    if let Err(e) = reload_manager.perform_reload().await {
+                        tracing::error!("Hot-reload failed: {e}");
+                    }
+                }
+            }
+        }
+    });
 }
 
 #[cfg(test)]

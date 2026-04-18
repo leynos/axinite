@@ -12,8 +12,14 @@ use rstest::rstest;
 #[cfg_attr(feature = "postgres", case("tests/trybuild/db_forwarders_postgres.rs"))]
 #[cfg_attr(feature = "libsql", case("tests/trybuild/db_forwarders_libsql.rs"))]
 #[case("tests/trybuild/settings_compat.rs")]
-#[cfg_attr(not(unix), case("tests/trybuild/startup_run_non_unix.rs"))]
 fn db_surface_compile_contracts(#[case] fixture: &str) {
     let cases = trybuild::TestCases::new();
     cases.pass(fixture);
+}
+
+#[cfg(not(unix))]
+#[test]
+fn startup_compile_contracts() {
+    let cases = trybuild::TestCases::new();
+    cases.pass("tests/trybuild/startup_run_non_unix.rs");
 }

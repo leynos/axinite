@@ -1111,7 +1111,6 @@ through several internal calls. Keep these structs private or `pub(super)`
 unless a wider API boundary genuinely needs them, and prefer names that
 describe the query or scope they model instead of generic `Options` suffixes.
 
-
 ### Overview
 
 `src/main.rs` is a thin coordinator. All startup work is delegated to
@@ -1180,6 +1179,7 @@ Caption: Responsibilities of startup submodules.
 | `boot` | `src/startup/boot.rs` | Builds and prints the startup boot screen |
 | `run` | `src/startup/run.rs` | Runs the agent loop and performs the coordinated shutdown sequence |
 | `unix_runtime` | `src/startup/unix_runtime.rs` | Owns Unix-only runtime wiring such as SIGHUP hot-reload setup |
+
 ### Adding a new startup phase
 
 1. Define a new `pub(crate) struct MyPhaseContext { … }` in

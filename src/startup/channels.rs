@@ -17,21 +17,17 @@ use ironclaw::{
 
 use crate::startup::wasm::{WasmChannelRuntimeState, WasmChannelsInit, init_wasm_channels};
 
-/// Aggregated results returned after all process-startup channel wiring has
-/// completed.
+/// Aggregated results returned after process-startup channel wiring completes.
 pub(crate) struct ChannelSetup {
-    /// Optional started webhook server; `None` when no channel registered HTTP
-    /// routes.
+    /// Optional started webhook server; `None` when no channel registered HTTP routes.
     pub(crate) webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     /// Names of every enabled channel, collected during setup.
     pub(crate) channel_names: Vec<String>,
     /// Names of successfully loaded WASM channels.
     pub(crate) loaded_wasm_channel_names: Vec<String>,
-    /// Optional WASM channel runtime state to be wired in later; `None` when
-    /// WASM is disabled.
+    /// Optional WASM channel runtime state to be wired in later; `None` when WASM is disabled.
     pub(crate) wasm_channel_runtime_state: Option<WasmChannelRuntimeState>,
-    /// (Unix only) Optional shared HTTP channel state for secret-updater
-    /// wiring.
+    /// (Unix only) Optional shared HTTP channel state for secret-updater wiring.
     #[cfg(unix)]
     pub(crate) http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
 }
@@ -203,8 +199,8 @@ async fn build_webhook_server(
     Ok(Some(Arc::new(tokio::sync::Mutex::new(server))))
 }
 
-/// Initializes all configured channels (REPL, signal, HTTP, and WASM) and
-/// starts the webhook server when any channel has registered HTTP routes.
+/// Initializes all configured channels (REPL, signal, HTTP, and WASM) and starts
+/// the webhook server when any channel has registered HTTP routes.
 ///
 /// Returns a [`ChannelSetup`] bundle that carries the started webhook server,
 /// the list of enabled channel names, and the optional WASM runtime state.
@@ -216,7 +212,7 @@ pub(crate) async fn setup_channels(
 ) -> anyhow::Result<ChannelSetup> {
     let mut channel_names: Vec<String> = Vec::new();
     let mut webhook_routes: Vec<axum::Router> = Vec::new();
-    let (loaded_wasm_channel_names, wasm_channel_runtime_state, http) = {
+    let (loaded_wasm_channel_names, wasm_channel_runtime_state, http, webhook_routes) = {
         let mut reg = ChannelRegistrar {
             channels,
             channel_names: &mut channel_names,
@@ -228,21 +224,37 @@ pub(crate) async fn setup_channels(
         let WasmChannelsInit {
             loaded_wasm_channel_names,
             runtime_state: wasm_channel_runtime_state,
-        } = init_wasm_channels(config, components, &mut reg).await;
+        } = if cli.cli_only {
+            WasmChannelsInit {
+                loaded_wasm_channel_names: vec![],
+                runtime_state: None,
+            }
+        } else {
+            init_wasm_channels(config, components, &mut reg).await
+        };
 
         setup_signal_channel(cli, config, &mut reg).await?;
 
         let http = setup_http_channel(cli, config, &mut reg).await?;
 
-        (loaded_wasm_channel_names, wasm_channel_runtime_state, http)
+        (
+            loaded_wasm_channel_names,
+            wasm_channel_runtime_state,
+            http,
+            webhook_routes,
+        )
     };
 
-    let webhook_server = build_webhook_server(
-        http.webhook_server_addr,
-        config.channels.http.is_some(),
-        webhook_routes,
-    )
-    .await?;
+    let webhook_server = if cli.cli_only || webhook_routes.is_empty() {
+        None
+    } else {
+        build_webhook_server(
+            http.webhook_server_addr,
+            config.channels.http.is_some(),
+            webhook_routes,
+        )
+        .await?
+    };
 
     Ok(ChannelSetup {
         webhook_server,
@@ -383,38 +395,5 @@ async fn forward_job_events_to_gateway(
     }
 }
 
-/// Spawns a Tokio task that listens for `SIGHUP` and triggers a hot-reload.
-///
-/// The task exits cleanly when the shutdown broadcast fires. Only compiled on
-/// Unix targets.
-#[cfg(unix)]
-pub(crate) fn spawn_sighup_handler(
-    reload_manager: Arc<ironclaw::reload::HotReloadManager>,
-    shutdown_tx: &tokio::sync::broadcast::Sender<()>,
-) {
-    let mut shutdown_rx = shutdown_tx.subscribe();
-    tokio::spawn(async move {
-        use tokio::signal::unix::{SignalKind, signal};
-        let mut sighup = match signal(SignalKind::hangup()) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::warn!("Failed to register SIGHUP handler: {e}");
-                return;
-            }
-        };
-        loop {
-            tokio::select! {
-                _ = shutdown_rx.recv() => {
-                    tracing::debug!("SIGHUP handler shutting down");
-                    break;
-                }
-                _ = sighup.recv() => {
-                    tracing::info!("SIGHUP received — reloading HTTP webhook config");
-                    if let Err(e) = reload_manager.perform_reload().await {
-                        tracing::error!("Hot-reload failed: {e}");
-                    }
-                }
-            }
-        }
-    });
-}
+#[cfg(test)]
+mod tests;

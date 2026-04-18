@@ -3,9 +3,13 @@
 #[path = "../../src/startup/run.rs"]
 mod run_contract;
 
+/// Startup wiring fixture shim that provides the minimal `crate::startup`
+/// surface expected by `src/startup/run.rs` during compile-contract checks.
 mod startup {
     pub(crate) mod run_flow;
 
+    /// Minimal WASM runtime shim that stubs `WasmWiringContext`,
+    /// `WasmChannelRuntimeState`, and `wire_wasm_channel_runtime`.
     pub(crate) mod wasm {
         use std::{collections::HashMap, sync::Arc};
 
@@ -26,7 +30,7 @@ mod startup {
         pub(crate) async fn wire_wasm_channel_runtime(
             _wiring: &WasmWiringContext<'_>,
             _wasm_channel_runtime_state: &mut Option<WasmChannelRuntimeState>,
-            _loaded_wasm_channel_names: &mut [String],
+            _loaded_wasm_channel_names: &[String],
         ) {
         }
     }
@@ -56,6 +60,8 @@ mod startup {
         pub(crate) routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
     }
 
+    /// Unix-only runtime-management shim exposing
+    /// `setup_runtime_management_unix` with the startup contract signature.
     #[cfg(unix)]
     pub(crate) mod unix_runtime {
         pub(crate) fn setup_runtime_management_unix(

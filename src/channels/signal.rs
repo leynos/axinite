@@ -1877,8 +1877,12 @@ mod tests {
 
         let sender = "+9999999998";
         let store = SignalChannel::pairing_store();
-        let request = store.upsert_request("signal", sender, None).unwrap();
-        store.approve("signal", &request.code).unwrap();
+        let request = store
+            .upsert_request("signal", sender, None)
+            .expect("failed to create upsert_request for signal");
+        store
+            .approve("signal", &request.code)
+            .expect("failed to approve signal request");
 
         let env = make_envelope(Some(sender), Some("Hello!"));
         assert!(ch.process_envelope(&env).is_some());
@@ -1908,7 +1912,7 @@ mod tests {
 
         let pending = SignalChannel::pairing_store()
             .list_pending("signal")
-            .unwrap();
+            .expect("failed to retrieve pending signal requests");
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].id, sender);
         Ok(())

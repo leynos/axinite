@@ -8,7 +8,7 @@
 
 /// Boot-screen rendering for the startup banner.
 pub(crate) mod boot;
-/// Channel wiring, gateway setup, and SIGHUP handling.
+/// Channel wiring and gateway setup.
 pub(crate) mod channels;
 /// Startup context structs shared across phase functions.
 pub(crate) mod context;
@@ -21,7 +21,7 @@ pub(crate) mod run_flow;
 /// Unix-only runtime management (SIGHUP hot-reload).
 #[cfg(unix)]
 pub(crate) mod unix_runtime;
-/// URL sanitisation helpers for safe display of startup URLs.
+/// URL sanitization helpers for safe display of startup URLs.
 pub(crate) mod url_sanitize;
 /// WASM channel initialization and runtime wiring.
 pub(crate) mod wasm;

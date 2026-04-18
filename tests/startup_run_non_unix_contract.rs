@@ -15,7 +15,7 @@ mod startup {
         use std::{collections::HashMap, sync::Arc};
 
         use ironclaw::{
-            channels::{web::types::SseEvent, ChannelManager},
+            channels::{ChannelManager, web::types::SseEvent},
             extensions::ExtensionManager,
         };
 
@@ -31,7 +31,7 @@ mod startup {
         pub(crate) async fn wire_wasm_channel_runtime(
             _wiring: &WasmWiringContext<'_>,
             _wasm_channel_runtime_state: &mut Option<WasmChannelRuntimeState>,
-            _loaded_wasm_channel_names: &mut [String],
+            _loaded_wasm_channel_names: &[String],
         ) {
         }
     }
@@ -53,14 +53,12 @@ mod startup {
         pub(crate) loaded_wasm_channel_names: Vec<String>,
         pub(crate) wasm_channel_runtime_state: Option<wasm::WasmChannelRuntimeState>,
         #[cfg(unix)]
-        pub(crate) http_channel_state:
-            Option<std::sync::Arc<ironclaw::channels::HttpChannelState>>,
+        pub(crate) http_channel_state: Option<std::sync::Arc<ironclaw::channels::HttpChannelState>>,
         pub(crate) session_manager: std::sync::Arc<ironclaw::agent::SessionManager>,
         pub(crate) scheduler_slot: ironclaw::tools::builtin::SchedulerSlot,
         pub(crate) sse_sender:
             Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
-        pub(crate) routine_engine_slot:
-            Option<ironclaw::channels::web::server::RoutineEngineSlot>,
+        pub(crate) routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
     }
 
     #[cfg(unix)]

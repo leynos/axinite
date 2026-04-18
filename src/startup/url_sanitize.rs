@@ -1,4 +1,4 @@
-//! URL sanitisation helpers for safe display of URLs in startup output.
+//! URL sanitization helpers for safe display of URLs in startup output.
 
 use url::{Url, form_urlencoded};
 
@@ -16,7 +16,9 @@ pub(crate) fn sanitize_display_url(url: &str) -> String {
     let sanitized_pairs = sanitize_query_pairs(parsed.query_pairs());
 
     parsed.set_query(None);
-    if had_query && !sanitized_pairs.is_empty() {
+    if had_query && sanitized_pairs.is_empty() {
+        parsed.set_query(Some(""));
+    } else if had_query && !sanitized_pairs.is_empty() {
         let mut query = parsed.query_pairs_mut();
         query.extend_pairs(
             sanitized_pairs
@@ -28,7 +30,7 @@ pub(crate) fn sanitize_display_url(url: &str) -> String {
     parsed.to_string()
 }
 
-/// Sanitises a relative or protocol-relative URL string for display.
+/// Sanitizes a relative or protocol-relative URL string for display.
 fn sanitize_relative_display_url(url: &str) -> String {
     let (prefix, fragment) = match url.split_once('#') {
         Some((prefix, fragment)) => (prefix, Some(fragment)),

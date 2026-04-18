@@ -113,11 +113,10 @@ mod tests {
             _local_host: &'a str,
             _local_port: u16,
         ) -> impl std::future::Future<Output = anyhow::Result<String>> + Send + 'a {
-            let url = self
-                .public_url
-                .clone()
-                .expect("test tunnel should have a public URL");
-            async move { Ok(url) }
+            let public_url = self.public_url.clone();
+            async move {
+                public_url.ok_or_else(|| anyhow::anyhow!("test tunnel should have a public URL"))
+            }
         }
 
         async fn stop(&self) -> anyhow::Result<()> {
@@ -257,5 +256,12 @@ mod tests {
             sanitize_display_url("https://user:secret@example.test/path?token=startup-token");
 
         assert_eq!(sanitized, "https://example.test/path?token=%5BREDACTED%5D");
+    }
+
+    #[test]
+    fn sanitize_display_url_preserves_empty_query_marker() {
+        let sanitized = sanitize_display_url("https://example.test/path?");
+
+        assert_eq!(sanitized, "https://example.test/path?");
     }
 }
