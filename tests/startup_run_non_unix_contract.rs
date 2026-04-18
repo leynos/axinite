@@ -8,7 +8,7 @@
 //! as part of this test.
 
 mod startup {
-    #[path = "trybuild/startup/run_flow.rs"]
+    #[path = "../trybuild/startup/run_flow.rs"]
     pub(crate) mod run_flow;
 
     pub(crate) mod wasm {
