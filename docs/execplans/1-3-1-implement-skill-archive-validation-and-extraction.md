@@ -24,6 +24,21 @@ executable payloads, path traversal, special-file entries, duplicate
 normalized paths, and size or count overflows. Extraction must be staged
 and atomic so a failed install never leaves a partial skill tree behind.
 
+For the avoidance of doubt, a valid bundle tree should look like this
+before it is zipped into `deploy-docs.skill`:
+
+```plaintext
+deploy-docs/
+├── SKILL.md
+├── references/
+│   ├── usage.md
+│   └── troubleshooting/
+│       └── api-errors.md
+└── assets/
+    ├── logo.png
+    └── prompt-template.txt
+```
+
 Success is observable in five ways. First, bundle validation returns
 typed, user-facing errors that explain why an invalid archive was
 rejected. Second, a valid archive installs to
