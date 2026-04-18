@@ -123,3 +123,200 @@ fn should_redact_query_key(key: &str) -> bool {
             | "auth"
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use std::borrow::Cow;
+
+    use proptest::{prelude::*, strategy::Strategy};
+
+    use super::*;
+
+    const SENSITIVE_KEYS: &[&str] = &[
+        "token",
+        "access_token",
+        "authorization",
+        "api_key",
+        "apikey",
+        "secret",
+        "password",
+        "pass",
+        "key",
+        "client_secret",
+        "auth",
+    ];
+
+    fn casing_variant(base: &'static str) -> impl Strategy<Value = String> {
+        proptest::collection::vec(any::<bool>(), base.len()).prop_map(move |uppercase| {
+            base.chars()
+                .zip(uppercase)
+                .map(|(ch, should_uppercase)| {
+                    if ch.is_ascii_alphabetic() && should_uppercase {
+                        ch.to_ascii_uppercase()
+                    } else {
+                        ch.to_ascii_lowercase()
+                    }
+                })
+                .collect()
+        })
+    }
+
+    fn sensitive_key_strategy() -> impl Strategy<Value = String> {
+        prop_oneof![
+            casing_variant("token"),
+            casing_variant("access_token"),
+            casing_variant("authorization"),
+            casing_variant("api_key"),
+            casing_variant("apikey"),
+            casing_variant("secret"),
+            casing_variant("password"),
+            casing_variant("pass"),
+            casing_variant("key"),
+            casing_variant("client_secret"),
+            casing_variant("auth"),
+        ]
+    }
+
+    fn safe_value_strategy() -> impl Strategy<Value = String> {
+        prop::string::string_regex("[A-Za-z0-9._~-]{1,16}")
+            .expect("value regex should compile")
+    }
+
+    fn optional_safe_value_strategy() -> impl Strategy<Value = Option<String>> {
+        prop_oneof![Just(None), safe_value_strategy().prop_map(Some),]
+    }
+
+    fn host_strategy() -> impl Strategy<Value = String> {
+        prop::string::string_regex("[a-z]{1,10}(?:-[a-z]{1,10})?\\.example\\.test")
+            .expect("host regex should compile")
+    }
+
+    fn noise_pairs_strategy() -> impl Strategy<Value = Vec<(Cow<'static, str>, Cow<'static, str>)>> {
+        proptest::collection::vec(
+            (
+                prop::sample::select(vec!["mode", "page", "lang", "view"]),
+                safe_value_strategy(),
+            ),
+            0..3,
+        )
+        .prop_map(|pairs| {
+            pairs
+                .into_iter()
+                .map(|(key, value)| (Cow::Borrowed(key), Cow::Owned(value)))
+                .collect()
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn sanitize_query_pairs_never_leaks_a_sensitive_value(
+            sensitive_key in sensitive_key_strategy(),
+            sensitive_value in safe_value_strategy(),
+            noise_pairs in noise_pairs_strategy(),
+        ) {
+            let mut pairs = vec![(Cow::Owned(sensitive_key.clone()), Cow::Owned(sensitive_value))];
+            pairs.extend(noise_pairs);
+
+            let sanitized = sanitize_query_pairs(pairs.into_iter());
+
+            for (key, value) in sanitized {
+                if SENSITIVE_KEYS.contains(&key.to_ascii_lowercase().as_str()) {
+                    prop_assert_eq!(value, "[REDACTED]");
+                }
+            }
+        }
+
+        #[test]
+        fn should_redact_query_key_is_case_insensitive(
+            sensitive_key in sensitive_key_strategy(),
+        ) {
+            prop_assert!(should_redact_query_key(&sensitive_key));
+        }
+
+        #[test]
+        fn sanitize_query_string_never_leaks_sensitive_values(
+            sensitive_key in sensitive_key_strategy(),
+            sensitive_value in safe_value_strategy(),
+        ) {
+            let mut serializer = form_urlencoded::Serializer::new(String::new());
+            serializer.append_pair(&sensitive_key, &sensitive_value);
+            let query = serializer.finish();
+
+            let sanitized = sanitize_query_string(&query);
+            let sanitized_pairs: Vec<(String, String)> =
+                form_urlencoded::parse(sanitized.as_bytes()).into_owned().collect();
+            let all_sensitive_values_redacted = sanitized_pairs.into_iter().all(|(key, value)| {
+                !key.eq_ignore_ascii_case(&sensitive_key) || value == "[REDACTED]"
+            });
+
+            prop_assume!(should_redact_query_key(&sensitive_key));
+            prop_assert!(all_sensitive_values_redacted);
+        }
+
+        #[test]
+        fn sanitize_display_url_absolute_never_leaks_credentials_or_sensitive_query_values(
+            host in host_strategy(),
+            user in optional_safe_value_strategy(),
+            password in optional_safe_value_strategy(),
+            sensitive_key in sensitive_key_strategy(),
+            sensitive_value in safe_value_strategy(),
+        ) {
+            let auth = match (&user, &password) {
+                (Some(user), Some(password)) => format!("{user}:{password}@"),
+                (Some(user), None) => format!("{user}@"),
+                (None, _) => String::new(),
+            };
+            let mut serializer = form_urlencoded::Serializer::new(String::new());
+            serializer.append_pair(&sensitive_key, &sensitive_value);
+            let url = format!("https://{auth}{host}/?{}", serializer.finish());
+
+            let sanitized = sanitize_display_url(&url);
+            let parsed = Url::parse(&sanitized).expect("sanitized URL should remain absolute");
+            let all_sensitive_values_redacted = parsed.query_pairs().all(|(key, value)| {
+                !key.eq_ignore_ascii_case(&sensitive_key) || value == "[REDACTED]"
+            });
+
+            if let (Some(user), Some(password)) = (&user, &password) {
+                let credential_fragment = format!("{user}:{password}@");
+                prop_assert!(!sanitized.contains(&credential_fragment));
+            }
+            prop_assert_eq!(parsed.password(), None);
+            prop_assert!(all_sensitive_values_redacted);
+        }
+
+        #[test]
+        fn sanitize_relative_display_url_never_leaks_credentials_or_sensitive_query_values(
+            host in host_strategy(),
+            user in optional_safe_value_strategy(),
+            password in optional_safe_value_strategy(),
+            sensitive_key in sensitive_key_strategy(),
+            sensitive_value in safe_value_strategy(),
+        ) {
+            let auth = match (&user, &password) {
+                (Some(user), Some(password)) => format!("{user}:{password}@"),
+                (Some(user), None) => format!("{user}@"),
+                (None, _) => String::new(),
+            };
+            let mut serializer = form_urlencoded::Serializer::new(String::new());
+            serializer.append_pair(&sensitive_key, &sensitive_value);
+            let url = format!("//{auth}{host}/?{}", serializer.finish());
+
+            let sanitized = sanitize_relative_display_url(&url);
+            let query = sanitized
+                .split_once('?')
+                .map(|(_, query)| query)
+                .unwrap_or_default();
+            let sanitized_pairs: Vec<(String, String)> =
+                form_urlencoded::parse(query.as_bytes()).into_owned().collect();
+            let all_sensitive_values_redacted = sanitized_pairs.into_iter().all(|(key, value)| {
+                !key.eq_ignore_ascii_case(&sensitive_key) || value == "[REDACTED]"
+            });
+
+            if let (Some(user), Some(password)) = (&user, &password) {
+                let credential_fragment = format!("{user}:{password}@");
+                prop_assert!(!sanitized.contains(&credential_fragment));
+            }
+            prop_assert!(all_sensitive_values_redacted);
+        }
+    }
+}
