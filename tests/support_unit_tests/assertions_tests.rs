@@ -1,4 +1,11 @@
-//! Assertions helper tests.
+//! Unit tests for the shared assertion helpers in
+//! [`crate::support::assertions`].
+//!
+//! These tests cover case-insensitive substring matching, per-tool result
+//! filtering, and panic-message diagnostics captured with `catch_unwind`.
+//! They also exercise edge-case guards such as empty
+//! `expected_substrings` inputs and the `TraceExpects`-driven checks in
+//! `verify_expects`.
 
 use std::any::Any;
 use std::collections::HashMap;
