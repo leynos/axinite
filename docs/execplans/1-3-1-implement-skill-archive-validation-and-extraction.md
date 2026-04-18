@@ -100,7 +100,8 @@ The files below are the key orientation points for this roadmap item.
 - `src/skills/parser.rs` owns `SKILL.md` parsing and remains the
   authority for the prompt-body contract after a bundle's root entrypoint
   has been validated and staged.
-- `src/tools/builtin/skill_fetch/http.rs` owns the SSRF-safe download
+- `src/tools/builtin/skill_fetch/http.rs` owns the Server-Side Request
+  Forgery (SSRF)-safe download
   path for remote skill installs.
 - `src/tools/builtin/skill_fetch/zip_extract.rs` owns the current
   archive shortcut. It currently returns only the first root `SKILL.md`
@@ -435,7 +436,7 @@ record the decisive evidence in this plan before committing.
    by the branch name.
 
    ```plaintext
-   BRANCH_SLUG=$(git branch --show | tr '/' '-')
+   BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
    cargo test skill_fetch \
      | tee /tmp/test-skill-fetch-axinite-${BRANCH_SLUG}.out
    cargo test skill_install \
@@ -449,14 +450,14 @@ record the decisive evidence in this plan before committing.
 3. Run the repository gate.
 
    ```plaintext
-   BRANCH_SLUG=$(git branch --show | tr '/' '-')
+   BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
    make all | tee /tmp/make-all-axinite-${BRANCH_SLUG}.out
    ```
 
 4. Run Markdown validation for every changed document.
 
    ```plaintext
-   BRANCH_SLUG=$(git branch --show | tr '/' '-')
+   BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
    bunx markdownlint-cli2 \
      docs/execplans/1-3-1-implement-skill-archive-validation-and-extraction.md \
      docs/roadmap.md \
@@ -470,7 +471,7 @@ record the decisive evidence in this plan before committing.
 5. Run the diff sanity check.
 
    ```plaintext
-   BRANCH_SLUG=$(git branch --show | tr '/' '-')
+   BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
    git diff --check | tee /tmp/git-diff-check-axinite-${BRANCH_SLUG}.out
    ```
 
