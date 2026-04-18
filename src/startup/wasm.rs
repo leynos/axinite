@@ -190,8 +190,11 @@ pub(crate) async fn init_wasm_channels(
         return empty_wasm_channels_init();
     };
     let loaded_wasm_channel_names = result.channel_names;
-    let runtime_state =
-        Some((result.wasm_channel_runtime, result.pairing_store, result.wasm_channel_router));
+    let runtime_state = Some((
+        result.wasm_channel_runtime,
+        result.pairing_store,
+        result.wasm_channel_router,
+    ));
     for (name, channel) in result.channels {
         reg.channel_names.push(name);
         reg.channels.add(channel).await;
