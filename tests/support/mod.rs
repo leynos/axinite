@@ -311,7 +311,7 @@ fn touch_test_rig_observers() {
 }
 
 #[cfg(feature = "libsql")]
-fn touch_test_rig_async_sigs() {
+fn touch_test_rig_async_message_sigs() {
     touch_const!(for<'a> fn(&'a test_rig::TestRig, &'a str) -> AsyncUnit<'a> = _send_message_sig);
     touch_const!(
         for<'a> fn(&'a test_rig::TestRig, ironclaw::channels::IncomingMessage) -> AsyncUnit<'a> =
@@ -325,6 +325,10 @@ fn touch_test_rig_async_sigs() {
         ) -> AsyncOutgoingResponses<'a> = _wait_for_responses_sig
     );
     touch_const!(for<'a> fn(&'a test_rig::TestRig) -> AsyncUnit<'a> = _clear_sig);
+}
+
+#[cfg(feature = "libsql")]
+fn touch_test_rig_async_observation_sigs() {
     touch_const!(for<'a> fn(&'a test_rig::TestRig) -> AsyncTraceMetrics<'a> = _collect_metrics_sig);
     touch_const!(
         for<'a> fn(&'a test_rig::TestRig) -> AsyncCompletedToolCalls<'a> =
@@ -334,6 +338,10 @@ fn touch_test_rig_async_sigs() {
         for<'a> fn(&'a test_rig::TestRig) -> AsyncStatusEvents<'a> =
             _captured_status_events_async_sig
     );
+}
+
+#[cfg(feature = "libsql")]
+fn touch_test_rig_async_trace_sigs() {
     touch_const!(
         for<'a> fn(
             &'a test_rig::TestRig,
@@ -348,6 +356,13 @@ fn touch_test_rig_async_sigs() {
             std::time::Duration,
         ) -> AsyncTraceRun<'a> = _run_and_verify_trace_sig
     );
+}
+
+#[cfg(feature = "libsql")]
+fn touch_test_rig_async_sigs() {
+    touch_test_rig_async_message_sigs();
+    touch_test_rig_async_observation_sigs();
+    touch_test_rig_async_trace_sigs();
 }
 
 #[cfg(feature = "libsql")]
