@@ -82,12 +82,29 @@ pub fn assert_tool_succeeded(completed: &[(String, bool)], tool_name: &str) {
     );
 }
 
-/// Assert that at least one result for `tool_name` contains an expected substring.
+/// Assert that at least one result for `tool_name` contains an expected
+/// substring, matching case-insensitively.
+///
+/// # Panics
+///
+/// Panics if:
+/// - `expected_substrings` is empty,
+/// - there are no results for `tool_name`, or
+/// - none of the matching results contain any of the expected substrings.
 pub fn assert_tool_result_contains(
     results: &[(String, String)],
     tool_name: &str,
     expected_substrings: &[&str],
 ) {
+    assert!(
+        !expected_substrings.is_empty(),
+        "expected_substrings must not be empty when asserting tool results for '{tool_name}'"
+    );
+
+    let lower_expected: Vec<String> = expected_substrings
+        .iter()
+        .map(|substring| substring.to_lowercase())
+        .collect();
     let matched: Vec<_> = results
         .iter()
         .filter(|(name, _)| name == tool_name)
@@ -97,9 +114,12 @@ pub fn assert_tool_result_contains(
         "Expected at least one result for tool '{tool_name}'"
     );
     assert!(
-        matched
-            .iter()
-            .any(|(_, preview)| expected_substrings.iter().any(|s| preview.contains(s))),
+        matched.iter().any(|(_, preview)| {
+            let lower_preview = preview.to_lowercase();
+            lower_expected
+                .iter()
+                .any(|substring| lower_preview.contains(substring))
+        }),
         "No result for '{tool_name}' contained any of {expected_substrings:?}: {matched:?}"
     );
 }
@@ -233,5 +253,27 @@ pub fn verify_expects(
             preview.to_lowercase().contains(&substring.to_lowercase()),
             "[{label}] tool_results_contain: tool \"{tool_name}\" result does not contain \"{substring}\", got: \"{preview}\""
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::assert_tool_result_contains;
+
+    #[test]
+    fn assert_tool_result_contains_matches_case_insensitively() {
+        let results = vec![("memory_tree".to_string(), "Alpha/Beta".to_string())];
+
+        assert_tool_result_contains(&results, "memory_tree", &["alpha"]);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "expected_substrings must not be empty when asserting tool results for 'memory_tree'"
+    )]
+    fn assert_tool_result_contains_rejects_empty_expected_substrings() {
+        let results = vec![("memory_tree".to_string(), "Alpha/Beta".to_string())];
+
+        assert_tool_result_contains(&results, "memory_tree", &[]);
     }
 }
