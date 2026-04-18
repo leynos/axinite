@@ -17,12 +17,12 @@ RFC 0003. That is too weak for later multi-file skill work, and it risks
 accepting archive contents that the runtime should never install.
 
 After this work, the installer must accept only passive `.skill` bundles
-whose archive root is one skill directory containing `SKILL.md`, plus
-optional `references/` and `assets/` content. It must reject unsupported
-top-level content, nested `SKILL.md` files, executable payloads, path
-traversal, special-file entries, duplicate normalized paths, and size or
-count overflows. Extraction must be staged and atomic so a failed
-install never leaves a partial skill tree behind.
+whose entries all share one top-level `skill-name` prefix with `SKILL.md`
+at `<root>/SKILL.md`, plus optional `references/` and `assets/` content.
+It must reject unsupported top-level content, nested `SKILL.md` files,
+executable payloads, path traversal, special-file entries, duplicate
+normalized paths, and size or count overflows. Extraction must be staged
+and atomic so a failed install never leaves a partial skill tree behind.
 
 Success is observable in five ways. First, bundle validation returns
 typed, user-facing errors that explain why an invalid archive was
@@ -77,8 +77,8 @@ pattern transplant across the whole application.
 The files below are the key orientation points for this roadmap item.
 
 - `docs/roadmap.md` defines `1.3.1`, its dependency position before
-  `2.2`, and the success rule that only bundles with `SKILL.md` at the
-  archive root are accepted.
+  `2.2`, and the success rule that only bundles with one shared
+  top-level prefix and `SKILL.md` at `<root>/SKILL.md` are accepted.
 - `docs/rfcs/0003-skill-bundle-installation.md` is the design authority.
   The most important sections are `Proposed Bundle Format`,
   `Validation And Extraction`, and `Rollout Plan`.
@@ -282,11 +282,12 @@ bundle rules rather than scattering them across adapters.
    `SkillBundleError` enum that can be wrapped into `SkillRegistryError`
    and tool/web-facing errors.
 3. Encode the RFC rules in one place:
-   one top-level prefix, root `SKILL.md`, only `references/` and
-   `assets/`, no nested `SKILL.md`, no `scripts/` or `bin/`, no
-   executables, no absolute or traversal paths, no special file types, no
-   duplicate normalized paths, bounded file sizes, bounded total size,
-   bounded file count, and UTF-8 for text that must be parsed as text.
+   one top-level prefix with `SKILL.md` at `<root>/SKILL.md`, only
+   `references/` and `assets/`, no nested `SKILL.md`, no `scripts/` or
+   `bin/`, no executables, no absolute or traversal paths, no special
+   file types, no duplicate normalized paths, bounded file sizes,
+   bounded total size, bounded file count, and UTF-8 for text that must
+   be parsed as text.
 4. Keep root-name validation aligned with RFC 0003, including dotted
    names and the 64-byte maximum before normalization.
 5. Ensure the validator returns enough structured information for later
@@ -349,7 +350,7 @@ done.
 1. Add focused unit tests for the new bundle validator using `rstest`
    cases. Cover at least:
    valid bundle with `references/` and `assets/`,
-   missing root `SKILL.md`,
+   missing `<root>/SKILL.md` under the shared prefix,
    multiple top-level prefixes,
    unexpected top-level content,
    nested `SKILL.md`,
