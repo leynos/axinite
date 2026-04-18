@@ -253,13 +253,11 @@ pub fn verify_expects(
     // tool_results_contain
     for (tool_name, substring) in &expects.tool_results_contain {
         let found = results.iter().find(|(name, _)| name == tool_name);
-        assert!(
-            found.is_some(),
-            "[{label}] tool_results_contain: no result for tool \"{tool_name}\", got: {results:?}"
-        );
-        let (_, preview) = found.expect(
-            "tool result must be present after asserting tool_results_contain lookup succeeded",
-        );
+        let Some((_, preview)) = found else {
+            panic!(
+                "[{label}] tool_results_contain: no result for tool \"{tool_name}\", got: {results:?}"
+            );
+        };
         assert!(
             preview.to_lowercase().contains(&substring.to_lowercase()),
             "[{label}] tool_results_contain: tool \"{tool_name}\" result does not contain \"{substring}\", got: \"{preview}\""
