@@ -1,0 +1,6 @@
+---
+source: tests/support_unit_tests/assertions_tests.rs
+assertion_line: 192
+expression: message
+---
+[turn 0] tool_results_contain: no result for tool "memory_tree", got: []

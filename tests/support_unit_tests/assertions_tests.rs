@@ -11,6 +11,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, UnwindSafe, catch_unwind};
 
+use insta::assert_snapshot;
 use rstest::rstest;
 
 use crate::support::assertions::*;
@@ -184,12 +185,11 @@ fn verify_expects_reports_missing_tool_result_with_label() {
         ..TraceExpects::default()
     };
 
-    assert_panics_with_message(
-        AssertUnwindSafe(|| {
-            verify_expects(&expects, &[], &[], &[], &[], "turn 0");
-        }),
-        "[turn 0] tool_results_contain: no result for tool \"memory_tree\", got: []",
-    );
+    let message = capture_panic_message(AssertUnwindSafe(|| {
+        verify_expects(&expects, &[], &[], &[], &[], "turn 0");
+    }));
+
+    assert_snapshot!(message);
 }
 
 #[test]
@@ -200,10 +200,9 @@ fn verify_expects_reports_missing_substring_with_preview() {
     };
     let results = vec![("memory_tree".to_string(), "Gamma/Delta".to_string())];
 
-    assert_panics_with_message(
-        AssertUnwindSafe(|| {
-            verify_expects(&expects, &[], &[], &[], &results, "turn 0");
-        }),
-        "[turn 0] tool_results_contain: tool \"memory_tree\" result does not contain \"alpha\", got: \"Gamma/Delta\"",
-    );
+    let message = capture_panic_message(AssertUnwindSafe(|| {
+        verify_expects(&expects, &[], &[], &[], &results, "turn 0");
+    }));
+
+    assert_snapshot!(message);
 }
