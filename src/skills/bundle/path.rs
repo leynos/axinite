@@ -1,3 +1,12 @@
+//! ZIP-entry path parsing for `.skill` bundle validation.
+//!
+//! This parser normalizes archive entry names into bundle-root and relative
+//! path components while enforcing the RFC 0003 phase-1 shape constraints.
+//! It rejects malformed or platform-specific paths early, including Windows
+//! separators, absolute paths, empty segments, and traversal markers, so the
+//! bundle validator can reason over a narrow, normalized path surface before
+//! any archive contents are staged to disk.
+
 use std::path::PathBuf;
 
 use super::SkillBundleError;
@@ -106,7 +115,7 @@ fn validate_relative_segments(
             path: raw_name.to_string(),
         }),
         ["references"] | ["assets"] if is_dir => Ok(()),
-        ["references", ..] | ["assets", ..] => Ok(()),
+        ["references", _, ..] | ["assets", _, ..] => Ok(()),
         _ => Err(SkillBundleError::UnexpectedPath {
             path: raw_name.to_string(),
         }),

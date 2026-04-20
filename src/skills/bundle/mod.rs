@@ -86,7 +86,7 @@ pub enum SkillBundleError {
     #[error("invalid_skill_bundle: nested SKILL.md is not allowed at '{path}'")]
     NestedEntrypoint { path: String },
 
-    #[error("invalid_skill_bundle: entries under directory '{path}' are not allowed in phase 1")]
+    #[error("invalid_skill_bundle: entry '{path}' is not allowed in phase 1")]
     DisallowedDirectory { path: String },
 
     #[error("invalid_skill_bundle: executable payloads are not allowed: '{path}'")]

@@ -441,6 +441,44 @@ async fn test_remove_user_skill() {
 }
 
 #[tokio::test]
+async fn test_remove_flat_layout_skill_preserves_siblings() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("SKILL.md"),
+        "---\nname: flat-skill\n---\n\nFlat prompt.\n",
+    )
+    .unwrap();
+
+    let nested_dir = dir.path().join("nested-skill");
+    fs::create_dir(&nested_dir).unwrap();
+    fs::write(
+        nested_dir.join("SKILL.md"),
+        "---\nname: nested-skill\n---\n\nNested prompt.\n",
+    )
+    .unwrap();
+
+    let mut registry = SkillRegistry::new(dir.path().to_path_buf());
+    let loaded = registry.discover_all().await;
+    assert_eq!(loaded.len(), 2, "fixture should load both sibling skills");
+
+    registry
+        .remove_skill("flat-skill")
+        .await
+        .expect("flat-layout skill should be removable");
+
+    assert!(
+        !dir.path().join("SKILL.md").exists(),
+        "flat-layout SKILL.md should be removed"
+    );
+    assert!(
+        nested_dir.join("SKILL.md").exists(),
+        "removing a flat-layout skill must not delete sibling skill directories"
+    );
+    assert!(registry.has("nested-skill"));
+    assert!(!registry.has("flat-skill"));
+}
+
+#[tokio::test]
 async fn test_remove_workspace_skill_rejected() {
     let user_dir = tempfile::tempdir().unwrap();
     let ws_dir = tempfile::tempdir().unwrap();

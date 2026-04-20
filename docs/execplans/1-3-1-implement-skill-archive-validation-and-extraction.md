@@ -540,6 +540,13 @@ tests, full gates, documentation linting, and clean diffs.
   and removed two redundant tempdir-existence assertions while preserving the
   staged-install and bundle-materialisation behavior behind the existing public
   registry API.
+- [x] 2026-04-20T18:15:00+02:00: Tightened bundle-path parsing so bare
+  `references` and `assets` files are rejected unless they are directory
+  entries, clarified the phase-1 disallowed-entry error wording, fixed
+  flat-layout skill removal so it deletes only the specific `SKILL.md` file,
+  and hardened staged-install rollback so failed materialisation cleans up
+  `.skill-install-*` directories after write errors as well as validation
+  errors.
 
 ## Surprises & Discoveries
 

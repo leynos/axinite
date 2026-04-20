@@ -29,7 +29,24 @@ pub(super) fn validate_remove(
 }
 
 pub(super) async fn delete_skill_files(path: &Path) -> Result<(), SkillRegistryError> {
-    match tokio::fs::remove_dir_all(path).await {
+    let metadata = match tokio::fs::symlink_metadata(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(SkillRegistryError::WriteError {
+                path: path.display().to_string(),
+                reason: error.to_string(),
+            });
+        }
+    };
+
+    let delete_result = if metadata.is_file() {
+        tokio::fs::remove_file(path).await
+    } else {
+        tokio::fs::remove_dir_all(path).await
+    };
+
+    match delete_result {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(SkillRegistryError::WriteError {

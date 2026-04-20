@@ -235,8 +235,10 @@ impl SkillRegistry {
     /// left in place so the caller can decide whether to inspect it or roll it
     /// back with [`SkillRegistry::cleanup_prepared_install`].
     ///
-    /// This keeps the registry lock held only for duplicate checks, the final
-    /// rename, and the in-memory insert.
+    /// The function borrows `prepared` rather than consuming it, so callers are
+    /// still responsible for cleanup on failure. This keeps the registry lock
+    /// held only for duplicate checks, the final rename, and the in-memory
+    /// insert.
     pub fn commit_install(
         &mut self,
         prepared: &PreparedSkillInstall,
@@ -272,7 +274,9 @@ impl SkillRegistry {
     ///
     /// This does not touch `prepared.final_dir` or mutate the in-memory
     /// registry. Callers should continue to return or log their original
-    /// install failure if cleanup itself also errors.
+    /// install failure if cleanup itself also errors, and should call this
+    /// after `prepare_install_to_disk` whenever `commit_install` is not going
+    /// to succeed.
     pub async fn cleanup_prepared_install(
         prepared: &PreparedSkillInstall,
     ) -> Result<(), SkillRegistryError> {

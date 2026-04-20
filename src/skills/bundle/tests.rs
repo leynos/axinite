@@ -88,7 +88,7 @@ fn validates_bundle_with_references_and_assets() {
         file_entry("deploy-docs/SKILL.md", skill_markdown("deploy-docs").as_bytes()),
         file_entry("deploy-docs/scripts/install.sh", b"echo nope"),
     ]),
-    "entries under directory 'deploy-docs/scripts/install.sh' are not allowed"
+    "entry 'deploy-docs/scripts/install.sh' is not allowed"
 )]
 #[case::executable_extension(
     build_bundle_archive(&[
@@ -188,6 +188,26 @@ fn directory_entries_under_references_and_assets_are_accepted() {
 
     validate_skill_archive(&archive)
         .expect("directory-only references/ and assets/ entries should be accepted");
+}
+
+#[test]
+fn bare_references_and_assets_files_are_rejected() {
+    for path in ["deploy-docs/references", "deploy-docs/assets"] {
+        let archive = build_bundle_archive(&[
+            file_entry(
+                "deploy-docs/SKILL.md",
+                skill_markdown("deploy-docs").as_bytes(),
+            ),
+            file_entry(path, b"not a directory"),
+        ]);
+
+        let error =
+            validate_skill_archive(&archive).expect_err("bare file entry should be rejected");
+        assert!(
+            matches!(error, SkillBundleError::UnexpectedPath { path: ref rejected_path } if rejected_path == path),
+            "expected UnexpectedPath for bare file entry, got {error:?}"
+        );
+    }
 }
 
 #[test]

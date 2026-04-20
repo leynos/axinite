@@ -82,7 +82,7 @@ where
             && file_name == "SKILL.md"
         {
             count += 1;
-            let source = make_source(dir.to_path_buf());
+            let source = make_source(path.clone());
             match load_and_validate_skill(&path, trust, source).await {
                 Ok((name, skill)) => {
                     tracing::info!("Loaded skill: {}", name);
