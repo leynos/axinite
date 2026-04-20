@@ -29,24 +29,37 @@ pub(super) fn validate_remove(
 }
 
 pub(super) async fn delete_skill_files(path: &Path) -> Result<(), SkillRegistryError> {
-    let metadata = match tokio::fs::symlink_metadata(path).await {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(SkillRegistryError::WriteError {
-                path: path.display().to_string(),
-                reason: error.to_string(),
-            });
-        }
+    let Some(metadata) = check_path_metadata(path).await? else {
+        return Ok(());
     };
+    perform_delete(path, &metadata).await
+}
 
-    let delete_result = if metadata.is_file() {
+async fn check_path_metadata(path: &Path) -> Result<Option<std::fs::Metadata>, SkillRegistryError> {
+    match tokio::fs::symlink_metadata(path).await {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(SkillRegistryError::WriteError {
+            path: path.display().to_string(),
+            reason: error.to_string(),
+        }),
+    }
+}
+
+async fn perform_delete(
+    path: &Path,
+    metadata: &std::fs::Metadata,
+) -> Result<(), SkillRegistryError> {
+    let result = if metadata.is_file() {
         tokio::fs::remove_file(path).await
     } else {
         tokio::fs::remove_dir_all(path).await
     };
+    map_delete_result(path, result)
+}
 
-    match delete_result {
+fn map_delete_result(path: &Path, result: std::io::Result<()>) -> Result<(), SkillRegistryError> {
+    match result {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(SkillRegistryError::WriteError {
