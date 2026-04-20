@@ -78,11 +78,34 @@ pub enum SkillRegistryError {
     InvalidContent { reason: String },
 }
 
+/// Input payload for a staged skill install.
+///
+/// `SkillRegistry::prepare_install_to_disk` accepts one of these payloads,
+/// materializes it into a staged install tree, and validates the staged
+/// `SKILL.md` before returning a [`PreparedSkillInstall`].
+///
+/// Use [`Self::Markdown`] when the caller already has raw `SKILL.md` text for
+/// a single-file skill install. Use [`Self::DownloadedBytes`] when the payload
+/// came from a download and may represent either plain `SKILL.md` content or a
+/// validated `.skill` bundle archive.
 pub enum SkillInstallPayload {
+    /// Install from literal `SKILL.md` text.
     Markdown(String),
+    /// Install from downloaded bytes, which may be markdown or a `.skill`
+    /// archive.
     DownloadedBytes(Vec<u8>),
 }
 
+/// Prepared, validated install state that has not yet been committed.
+///
+/// A value of this type means the install payload has already been written into
+/// `staged_dir` and the staged `SKILL.md` has passed parsing, gating, and
+/// runtime validation. The install is not visible to normal skill discovery
+/// until [`SkillRegistry::commit_install`] renames `staged_dir` into
+/// `final_dir` and inserts `loaded_skill` into the in-memory registry.
+///
+/// Callers that abort after preparation must use
+/// [`SkillRegistry::cleanup_prepared_install`] to remove the staged tree.
 pub struct PreparedSkillInstall {
     name: String,
     staged_dir: PathBuf,
@@ -91,6 +114,10 @@ pub struct PreparedSkillInstall {
 }
 
 impl PreparedSkillInstall {
+    /// Return the validated skill name that will be installed on commit.
+    ///
+    /// This matches the parsed manifest name and the final install directory
+    /// name under the registry install root.
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -396,10 +423,20 @@ impl SkillRegistry {
         })
     }
 
-    /// Commit a prepared skill into the in-memory registry.
+    /// Finalize a previously prepared install.
+    ///
+    /// This moves the prepared install from `prepared.staged_dir` to
+    /// `prepared.final_dir` with a same-filesystem rename, then inserts the
+    /// prevalidated `prepared.loaded_skill` into the in-memory registry.
+    ///
+    /// Call this only after [`SkillRegistry::prepare_install_to_disk`] has
+    /// returned successfully. On success, the caller must treat
+    /// `prepared.staged_dir` as consumed. On failure, the staged directory is
+    /// left in place so the caller can decide whether to inspect it or roll it
+    /// back with [`SkillRegistry::cleanup_prepared_install`].
     ///
     /// This keeps the registry lock held only for duplicate checks, the final
-    /// same-filesystem rename, and the in-memory insert.
+    /// rename, and the in-memory insert.
     pub fn commit_install(
         &mut self,
         prepared: &PreparedSkillInstall,
@@ -419,7 +456,12 @@ impl SkillRegistry {
 
         self.commit_loaded_skill(prepared.name(), prepared.loaded_skill.clone())
     }
-
+    /// Insert an already loaded skill into the registry without filesystem I/O.
+    ///
+    /// This is the lower-level helper used by [`Self::commit_install`] after
+    /// the staged directory has been renamed into place. Callers are
+    /// responsible for ensuring any on-disk lifecycle work has already
+    /// completed before using this helper.
     pub fn commit_loaded_skill(
         &mut self,
         name: &str,
@@ -435,7 +477,15 @@ impl SkillRegistry {
         tracing::info!("Installed skill: {}", name);
         Ok(())
     }
-
+    /// Remove the staged directory for a prepared install.
+    ///
+    /// Use this to roll back a [`PreparedSkillInstall`] that will not be
+    /// committed. The function is idempotent with respect to missing
+    /// directories: if `prepared.staged_dir` is already gone, cleanup succeeds.
+    ///
+    /// This does not touch `prepared.final_dir` or mutate the in-memory
+    /// registry. Callers should continue to return or log their original
+    /// install failure if cleanup itself also errors.
     pub async fn cleanup_prepared_install(
         prepared: &PreparedSkillInstall,
     ) -> Result<(), SkillRegistryError> {
