@@ -243,11 +243,13 @@ fn unsupported_unix_file_types_are_rejected() {
     ));
 }
 
-fn skill_frontmatter(name: &str) -> String {
+fn skill_frontmatter(name: impl AsRef<str>) -> String {
+    let name = name.as_ref();
     format!("---\nname: {name}\n---")
 }
 
-fn skill_markdown(name: &str) -> String {
+fn skill_markdown(name: impl AsRef<str>) -> String {
+    let name = name.as_ref();
     format!("{}\n\n# {name}\n", skill_frontmatter(name))
 }
 
@@ -258,17 +260,17 @@ struct EntrySpec {
     unix_mode: Option<u32>,
 }
 
-fn file_entry(name: &str, data: &[u8]) -> EntrySpec {
+fn file_entry(name: impl AsRef<str>, data: &[u8]) -> EntrySpec {
     EntrySpec {
-        name: name.to_string(),
+        name: name.as_ref().to_string(),
         data: data.to_vec(),
         unix_mode: None,
     }
 }
 
-fn file_entry_with_mode(name: &str, data: &[u8], unix_mode: u32) -> EntrySpec {
+fn file_entry_with_mode(name: impl AsRef<str>, data: &[u8], unix_mode: u32) -> EntrySpec {
     EntrySpec {
-        name: name.to_string(),
+        name: name.as_ref().to_string(),
         data: data.to_vec(),
         unix_mode: Some(unix_mode),
     }
@@ -299,12 +301,16 @@ fn build_bundle_archive(entries: &[EntrySpec]) -> Vec<u8> {
         .into_inner()
 }
 
-fn build_bundle_archive_with_symlink(name: &str, target: &str) -> Vec<u8> {
+fn build_bundle_archive_with_symlink(name: impl AsRef<str>, target: impl AsRef<str>) -> Vec<u8> {
     let cursor = std::io::Cursor::new(Vec::new());
     let mut writer = zip::ZipWriter::new(cursor);
 
     writer
-        .add_symlink(name, target, zip::write::SimpleFileOptions::default())
+        .add_symlink(
+            name.as_ref(),
+            target.as_ref(),
+            zip::write::SimpleFileOptions::default(),
+        )
         .expect("test archive should add symlink entry");
 
     writer
@@ -321,7 +327,7 @@ fn build_many_file_archive(file_count: usize) -> Vec<u8> {
 
     for index in 0..file_count.saturating_sub(1) {
         entries.push(file_entry(
-            &format!("deploy-docs/references/file-{index}.md"),
+            format!("deploy-docs/references/file-{index}.md"),
             b"# Ref\n",
         ));
     }
