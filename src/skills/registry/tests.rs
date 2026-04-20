@@ -13,7 +13,7 @@ use fixtures::{
 
 #[tokio::test]
 async fn test_discover_empty_dir() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create tempdir for test_discover_empty_dir");
     let mut registry = SkillRegistry::new(dir.path().to_path_buf());
     let loaded = registry.discover_all().await;
     assert!(loaded.is_empty());

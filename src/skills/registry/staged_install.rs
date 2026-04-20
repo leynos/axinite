@@ -4,10 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::loading::load_and_validate_skill;
 use super::materialize::{materialize_install_artifact, write_install_artifact};
-use super::{
-    CommitPreparedInstallError, LoadedSkill, SkillRegistry, SkillRegistryError, SkillSource,
-    SkillTrust,
-};
+use super::{LoadedSkill, SkillRegistry, SkillRegistryError, SkillSource, SkillTrust};
 use uuid::Uuid;
 
 /// Input payload for a staged skill install.
@@ -28,6 +25,50 @@ pub enum SkillInstallPayload {
     /// Install from downloaded bytes, which may be markdown or a `.skill`
     /// archive.
     DownloadedBytes(Vec<u8>),
+}
+
+/// A failed staged install commit that preserves the prepared filesystem
+/// state.
+///
+/// [`SkillRegistry::commit_install`] returns this when the final duplicate
+/// check or rename step fails after preparation has already produced a
+/// [`PreparedSkillInstall`]. The original [`SkillRegistryError`] is preserved
+/// in `error`, and `prepared` is returned so callers can inspect or roll back
+/// the staged directory with [`SkillRegistry::cleanup_prepared_install`]
+/// without reconstructing install state.
+#[derive(Debug)]
+pub struct CommitPreparedInstallError {
+    pub(super) error: SkillRegistryError,
+    pub(super) prepared: Box<PreparedSkillInstall>,
+}
+
+impl CommitPreparedInstallError {
+    /// Borrow the original registry error that caused the commit to fail.
+    pub fn error(&self) -> &SkillRegistryError {
+        &self.error
+    }
+
+    /// Borrow the prepared install state that remained staged after failure.
+    pub fn prepared(&self) -> &PreparedSkillInstall {
+        &self.prepared
+    }
+
+    /// Split the failure into its original error and prepared install state.
+    pub fn into_parts(self) -> (SkillRegistryError, PreparedSkillInstall) {
+        (self.error, *self.prepared)
+    }
+}
+
+impl std::fmt::Display for CommitPreparedInstallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(f)
+    }
+}
+
+impl std::error::Error for CommitPreparedInstallError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
 }
 
 /// Prepared, validated install state that has not yet been committed.
