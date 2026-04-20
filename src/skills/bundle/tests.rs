@@ -152,6 +152,37 @@ fn dotted_root_names_remain_valid() {
 }
 
 #[test]
+fn malformed_paths_are_rejected() {
+    let malformed_paths = ["\\windows\\style\\path.txt", "/absolute/path.txt"];
+
+    for path in malformed_paths {
+        let archive = build_bundle_archive(&[file_entry(path, b"malformed path")]);
+
+        let error =
+            validate_skill_archive(&archive).expect_err("malformed raw path should be rejected");
+        assert!(
+            matches!(error, SkillBundleError::InvalidTopLevelPrefix),
+            "expected InvalidTopLevelPrefix for path {path:?}, got {error:?}"
+        );
+    }
+}
+
+#[test]
+fn directory_entries_under_references_and_assets_are_accepted() {
+    let archive = build_bundle_archive(&[
+        file_entry(
+            "deploy-docs/SKILL.md",
+            skill_markdown("deploy-docs").as_bytes(),
+        ),
+        file_entry("deploy-docs/references/", &[]),
+        file_entry("deploy-docs/assets/", &[]),
+    ]);
+
+    validate_skill_archive(&archive)
+        .expect("directory-only references/ and assets/ entries should be accepted");
+}
+
+#[test]
 fn unix_executable_bits_are_rejected() {
     let archive = build_bundle_archive(&[
         file_entry(
@@ -169,6 +200,18 @@ fn unix_executable_bits_are_rejected() {
     assert!(matches!(
         error,
         SkillBundleError::ExecutablePayload { ref path } if path == "deploy-docs/assets/helper.txt"
+    ));
+}
+
+#[test]
+fn unsupported_unix_file_types_are_rejected() {
+    let archive = build_bundle_archive_with_symlink("deploy-docs/SKILL.md", "../outside-target");
+
+    let error =
+        validate_skill_archive(&archive).expect_err("unsupported Unix file type should fail");
+    assert!(matches!(
+        error,
+        SkillBundleError::UnsupportedFileType { ref path } if path == "deploy-docs/SKILL.md"
     ));
 }
 
@@ -221,6 +264,20 @@ fn build_bundle_archive(entries: &[EntrySpec]) -> Vec<u8> {
             .write_all(&entry.data)
             .expect("test archive should accept file data");
     }
+
+    writer
+        .finish()
+        .expect("test archive should finish")
+        .into_inner()
+}
+
+fn build_bundle_archive_with_symlink(name: &str, target: &str) -> Vec<u8> {
+    let cursor = std::io::Cursor::new(Vec::new());
+    let mut writer = zip::ZipWriter::new(cursor);
+
+    writer
+        .add_symlink(name, target, zip::write::SimpleFileOptions::default())
+        .expect("test archive should add symlink entry");
 
     writer
         .finish()

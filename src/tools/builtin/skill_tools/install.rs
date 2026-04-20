@@ -120,7 +120,13 @@ impl NativeTool for SkillInstallTool {
         };
 
         if let Err(error) = commit_result {
-            cleanup_prepared_install(&prepared).await?;
+            if let Err(cleanup_error) = cleanup_prepared_install(&prepared).await {
+                tracing::warn!(
+                    "failed to cleanup prepared skill install '{}': {}",
+                    prepared.name(),
+                    cleanup_error
+                );
+            }
             return Err(ToolError::ExecutionFailed(error.to_string()));
         }
 

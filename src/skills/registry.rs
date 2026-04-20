@@ -449,9 +449,16 @@ impl SkillRegistry {
 
         match self.commit_install(&prepared) {
             Ok(()) => Ok(prepared.name().to_string()),
-            Err(error) => {
-                Self::cleanup_prepared_install(&prepared).await?;
-                Err(error)
+            Err(commit_error) => {
+                if let Err(cleanup_error) = Self::cleanup_prepared_install(&prepared).await {
+                    tracing::warn!(
+                        "failed to cleanup prepared skill install '{}': {}",
+                        prepared.name(),
+                        cleanup_error
+                    );
+                }
+
+                Err(commit_error)
             }
         }
     }
@@ -776,8 +783,15 @@ pub async fn check_gating(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::{fixture, rstest};
     use std::fs;
     use std::io::Write;
+
+    struct BundleInstallFixture {
+        user_dir: tempfile::TempDir,
+        installed_dir: tempfile::TempDir,
+        registry: SkillRegistry,
+    }
 
     fn skill_markdown(name: &str) -> String {
         format!("---\nname: {name}\n---\n\n# {name}\n")
@@ -802,6 +816,21 @@ mod tests {
             .finish()
             .expect("test archive should finish")
             .into_inner()
+    }
+
+    #[fixture]
+    fn bundle_install_fixture() -> BundleInstallFixture {
+        let user_dir = tempfile::tempdir().expect("user tempdir should be created for test");
+        let installed_dir =
+            tempfile::tempdir().expect("installed tempdir should be created for test");
+        let registry = SkillRegistry::new(user_dir.path().to_path_buf())
+            .with_installed_dir(installed_dir.path().to_path_buf());
+
+        BundleInstallFixture {
+            user_dir,
+            installed_dir,
+            registry,
+        }
     }
 
     #[tokio::test]
@@ -1017,12 +1046,16 @@ mod tests {
         assert!(skill_path.exists());
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_install_bundle_from_downloaded_bytes_preserves_files() {
-        let user_dir = tempfile::tempdir().unwrap();
-        let installed_dir = tempfile::tempdir().unwrap();
-        let mut registry = SkillRegistry::new(user_dir.path().to_path_buf())
-            .with_installed_dir(installed_dir.path().to_path_buf());
+    async fn test_install_bundle_from_downloaded_bytes_preserves_files(
+        bundle_install_fixture: BundleInstallFixture,
+    ) {
+        let BundleInstallFixture {
+            user_dir,
+            installed_dir,
+            mut registry,
+        } = bundle_install_fixture;
 
         let archive = build_bundle_archive(&[
             (
@@ -1049,6 +1082,10 @@ mod tests {
         assert!(installed_root.join("references/usage.md").exists());
         assert!(installed_root.join("assets/logo.txt").exists());
         assert!(registry.has("deploy-docs"));
+        assert!(
+            user_dir.path().exists(),
+            "user tempdir should remain available for the duration of the test"
+        );
     }
 
     #[tokio::test]
@@ -1066,12 +1103,16 @@ mod tests {
         ));
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_cleanup_prepared_install_removes_staged_bundle_on_commit_failure() {
-        let user_dir = tempfile::tempdir().unwrap();
-        let installed_dir = tempfile::tempdir().unwrap();
-        let mut registry = SkillRegistry::new(user_dir.path().to_path_buf())
-            .with_installed_dir(installed_dir.path().to_path_buf());
+    async fn test_cleanup_prepared_install_removes_staged_bundle_on_commit_failure(
+        bundle_install_fixture: BundleInstallFixture,
+    ) {
+        let BundleInstallFixture {
+            user_dir,
+            installed_dir,
+            mut registry,
+        } = bundle_install_fixture;
 
         let archive = build_bundle_archive(&[(
             "deploy-docs/SKILL.md",
@@ -1111,6 +1152,10 @@ mod tests {
         assert!(
             !staged_dir.exists(),
             "cleanup should remove staged directory"
+        );
+        assert!(
+            user_dir.path().exists() && installed_dir.path().exists(),
+            "fixture tempdirs should remain available for the duration of the test"
         );
     }
 

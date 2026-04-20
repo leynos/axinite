@@ -10,7 +10,7 @@ Status: COMPLETE
 ## Purpose / big picture
 
 Roadmap item `1.3.1` exists to replace the current best-effort ZIP
-shortcut with a real skill-bundle contract. Today axinite can download
+shortcut with a real skill-bundle contract. Today Axinite can download
 an archive and pull out a single root `SKILL.md`, but it discards
 everything else and does not enforce the narrow bundle shape described in
 RFC 0003. That is too weak for later multi-file skill work, and it risks

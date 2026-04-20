@@ -208,9 +208,15 @@ pub async fn skills_install_handler(
             prepared.name()
         )))),
         Err(error) => {
-            crate::skills::registry::SkillRegistry::cleanup_prepared_install(&prepared)
-                .await
-                .map_err(map_skill_install_error)?;
+            if let Err(cleanup_error) =
+                crate::skills::registry::SkillRegistry::cleanup_prepared_install(&prepared).await
+            {
+                tracing::warn!(
+                    "failed to cleanup prepared skill install '{}': {}",
+                    prepared.name(),
+                    cleanup_error
+                );
+            }
             Ok(Json(ActionResponse::fail(error.to_string())))
         }
     }
