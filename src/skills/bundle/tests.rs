@@ -1,3 +1,11 @@
+//! Bundle validation tests for passive `.skill` archives.
+//!
+//! These tests cover archive sniffing via `looks_like_skill_archive`,
+//! structural and content validation through `validate_skill_archive`, and the
+//! enforced bundle limits governed by `MAX_BUNDLE_FILE_BYTES`,
+//! `MAX_BUNDLE_FILE_COUNT`, `MAX_BUNDLE_TOTAL_BYTES`, and
+//! `MAX_PROMPT_FILE_SIZE`.
+
 use std::io::Write;
 
 use rstest::rstest;
@@ -80,7 +88,7 @@ fn validates_bundle_with_references_and_assets() {
         file_entry("deploy-docs/SKILL.md", skill_markdown("deploy-docs").as_bytes()),
         file_entry("deploy-docs/scripts/install.sh", b"echo nope"),
     ]),
-    "directory 'deploy-docs/scripts/install.sh' is not allowed"
+    "entries under directory 'deploy-docs/scripts/install.sh' are not allowed"
 )]
 #[case::executable_extension(
     build_bundle_archive(&[

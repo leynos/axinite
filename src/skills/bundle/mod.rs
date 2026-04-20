@@ -13,8 +13,12 @@ use zip::read::ZipArchive;
 
 use crate::skills::MAX_PROMPT_FILE_SIZE;
 
+mod path;
+
 #[cfg(test)]
 mod tests;
+
+use self::path::ParsedBundlePath;
 
 const ZIP_LOCAL_FILE_HEADER: &[u8; 4] = b"PK\x03\x04";
 const ZIP_EMPTY_ARCHIVE: &[u8; 4] = b"PK\x05\x06";
@@ -82,7 +86,7 @@ pub enum SkillBundleError {
     #[error("invalid_skill_bundle: nested SKILL.md is not allowed at '{path}'")]
     NestedEntrypoint { path: String },
 
-    #[error("invalid_skill_bundle: directory '{path}' is not allowed in phase 1")]
+    #[error("invalid_skill_bundle: entries under directory '{path}' are not allowed in phase 1")]
     DisallowedDirectory { path: String },
 
     #[error("invalid_skill_bundle: executable payloads are not allowed: '{path}'")]
@@ -241,7 +245,10 @@ fn read_and_validate_contents(
     relative_path: &Path,
     size: u64,
 ) -> Result<(Vec<u8>, bool), SkillBundleError> {
-    let mut contents = Vec::with_capacity(size as usize);
+    let safe_capacity = usize::try_from(size)
+        .unwrap_or(usize::MAX)
+        .min(MAX_BUNDLE_FILE_BYTES as usize);
+    let mut contents = Vec::with_capacity(safe_capacity);
     file.read_to_end(&mut contents)
         .map_err(|error| SkillBundleError::ReadFailure {
             path: raw_name.to_string(),
@@ -301,123 +308,8 @@ fn has_executable_extension(path: &str) -> bool {
 
 /// Returns `true` when `raw_name` cannot possibly be a well-formed ZIP entry
 /// path: it is empty, uses a Windows path separator, or is absolute.
-fn is_malformed_raw_path(raw_name: &str) -> bool {
-    raw_name.is_empty() || raw_name.contains('\\') || raw_name.starts_with('/')
-}
-
 fn is_reference_file(path: &Path) -> bool {
     path.components()
         .next()
         .is_some_and(|component| component.as_os_str() == "references")
-}
-
-#[derive(Debug)]
-struct ParsedBundlePath {
-    root_name: String,
-    relative_path: PathBuf,
-    is_dir: bool,
-}
-
-impl ParsedBundlePath {
-    fn parse(raw_name: &str) -> Result<Self, SkillBundleError> {
-        if is_malformed_raw_path(raw_name) {
-            return Err(SkillBundleError::InvalidTopLevelPrefix);
-        }
-
-        let is_dir = raw_name.ends_with('/');
-        let trimmed = raw_name.trim_end_matches('/');
-        if trimmed.is_empty() {
-            return Err(SkillBundleError::InvalidTopLevelPrefix);
-        }
-
-        let segments: Vec<&str> = trimmed.split('/').collect();
-        if segments.iter().any(|segment| segment.is_empty()) {
-            return Err(SkillBundleError::InvalidTopLevelPrefix);
-        }
-
-        let root_name = segments[0].to_string();
-        validate_root_name(&root_name)?;
-
-        if segments.len() == 1 {
-            if !is_dir {
-                return Err(SkillBundleError::InvalidTopLevelPrefix);
-            }
-            return Ok(Self {
-                root_name,
-                relative_path: PathBuf::new(),
-                is_dir,
-            });
-        }
-
-        let relative_segments = &segments[1..];
-        validate_relative_segments(raw_name, relative_segments, is_dir)?;
-
-        Ok(Self {
-            root_name,
-            relative_path: relative_segments.iter().collect(),
-            is_dir,
-        })
-    }
-
-    fn root_name(&self) -> &str {
-        &self.root_name
-    }
-
-    fn relative_path(&self) -> PathBuf {
-        self.relative_path.clone()
-    }
-
-    fn is_dir(&self) -> bool {
-        self.is_dir
-    }
-}
-
-fn validate_root_name(root_name: &str) -> Result<(), SkillBundleError> {
-    let is_valid = !root_name.is_empty()
-        && root_name.len() <= 64
-        && root_name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'));
-
-    if is_valid {
-        Ok(())
-    } else {
-        Err(SkillBundleError::InvalidRootName {
-            name: root_name.to_string(),
-        })
-    }
-}
-
-fn validate_relative_segments(
-    raw_name: &str,
-    segments: &[&str],
-    is_dir: bool,
-) -> Result<(), SkillBundleError> {
-    if segments
-        .iter()
-        .any(|segment| matches!(*segment, "." | ".."))
-    {
-        return Err(SkillBundleError::InvalidTopLevelPrefix);
-    }
-
-    match segments {
-        ["SKILL.md"] => Ok(()),
-        _ if segments
-            .iter()
-            .skip(1)
-            .any(|segment| *segment == "SKILL.md") =>
-        {
-            Err(SkillBundleError::NestedEntrypoint {
-                path: raw_name.to_string(),
-            })
-        }
-        ["scripts", ..] | ["bin", ..] => Err(SkillBundleError::DisallowedDirectory {
-            path: raw_name.to_string(),
-        }),
-        ["references"] | ["assets"] if is_dir => Ok(()),
-        ["references", ..] | ["assets", ..] => Ok(()),
-        _ => Err(SkillBundleError::UnexpectedPath {
-            path: raw_name.to_string(),
-        }),
-    }
 }

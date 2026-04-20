@@ -456,10 +456,12 @@ impl SkillRegistry {
     /// `prepare_install_to_disk` + `commit_install` separately to minimize lock
     /// hold time.
     pub async fn install_skill(&mut self, content: &str) -> Result<String, SkillRegistryError> {
-        let user_dir = self.user_dir.clone();
-        let prepared =
-            Self::prepare_install_to_disk(&user_dir, SkillInstallPayload::Markdown(content.into()))
-                .await?;
+        let install_dir = self.install_target_dir().to_path_buf();
+        let prepared = Self::prepare_install_to_disk(
+            &install_dir,
+            SkillInstallPayload::Markdown(content.into()),
+        )
+        .await?;
 
         match self.commit_install(&prepared) {
             Ok(()) => Ok(prepared.name().to_string()),

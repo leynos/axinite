@@ -453,6 +453,8 @@ record the decisive evidence in this plan before committing.
 
    ```plaintext
    BRANCH_SLUG=$(git branch --show-current | tr '/' '-')
+   cargo test skills::bundle \
+     | tee /tmp/test-skill-bundle-axinite-${BRANCH_SLUG}.out
    cargo test skill_fetch \
      | tee /tmp/test-skill-fetch-axinite-${BRANCH_SLUG}.out
    cargo test skill_install \
@@ -527,6 +529,11 @@ tests, full gates, documentation linting, and clean diffs.
   `prepare_install_to_disk` now removes its temporary `.skill-install-*`
   directory before returning parse or gating errors, with a regression test
   proving invalid staged bundles do not leak install-root scratch dirs.
+- [x] 2026-04-20T16:35:00+02:00: Reconciled the remaining review drift by
+  adding the missing bundle-validator evidence command to this plan, routing
+  `install_skill` through `install_target_dir()`, splitting bundle path logic
+  into a private submodule, tightening archive buffer preallocation, and
+  refreshing targeted test/documentation wording.
 
 ## Surprises & Discoveries
 
@@ -565,6 +572,11 @@ tests, full gates, documentation linting, and clean diffs.
   writing the temporary tree, so parse or gating failures must clean up inside
   `prepare_install_to_disk` because callers never receive a prepared handle on
   that path.
+- 2026-04-20T16:28:00+02:00: The post-implementation review surfaced two
+  remaining contract-shape drifts: `install_skill` still targeted `user_dir`
+  instead of the configured install root, and the retained-evidence recipe
+  documented registry and adapter tests but omitted the bundle-validator run
+  that produced `/tmp/test-skill-bundle-...`.
 
 ## Decision Log
 

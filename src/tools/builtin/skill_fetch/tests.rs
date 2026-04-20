@@ -130,32 +130,22 @@ fn test_redact_url_strips_userinfo_and_query() {
 }
 
 #[rstest]
-#[case(IpAddrRepr::V4("10.0.0.1"), true)]
-#[case(IpAddrRepr::V4("10.255.255.255"), true)]
-#[case(IpAddrRepr::V4("172.16.0.1"), true)]
-#[case(IpAddrRepr::V4("172.31.255.255"), true)]
-#[case(IpAddrRepr::V4("192.168.0.0"), true)]
-#[case(IpAddrRepr::V4("172.15.255.255"), false)]
-#[case(IpAddrRepr::V4("172.32.0.0"), false)]
-#[case(IpAddrRepr::V4("192.167.255.255"), false)]
-#[case(IpAddrRepr::V4("192.169.0.0"), false)]
-#[case(IpAddrRepr::V4("169.254.0.1"), false)]
-#[case(IpAddrRepr::V4("8.8.8.8"), false)]
-#[case(IpAddrRepr::V6("::1"), false)]
-#[case(IpAddrRepr::V6("2001:4860:4860::8888"), false)]
-fn test_is_private_ip_cases(#[case] ip_repr: IpAddrRepr, #[case] expected: bool) {
-    assert_eq!(is_private_ip(&ip_repr.parse()), expected);
-}
-
-enum IpAddrRepr<'a> {
-    V4(&'a str),
-    V6(&'a str),
-}
-
-impl IpAddrRepr<'_> {
-    fn parse(&self) -> std::net::IpAddr {
-        match self {
-            Self::V4(value) | Self::V6(value) => value.parse().expect("IP fixture should parse"),
-        }
-    }
+#[case("10.0.0.1", true)]
+#[case("10.255.255.255", true)]
+#[case("172.16.0.1", true)]
+#[case("172.31.255.255", true)]
+#[case("192.168.0.0", true)]
+#[case("172.15.255.255", false)]
+#[case("172.32.0.0", false)]
+#[case("192.167.255.255", false)]
+#[case("192.169.0.0", false)]
+#[case("169.254.0.1", false)]
+#[case("8.8.8.8", false)]
+#[case("::1", false)]
+#[case("2001:4860:4860::8888", false)]
+fn test_is_private_ip_cases(#[case] ip_repr: &str, #[case] expected: bool) {
+    assert_eq!(
+        is_private_ip(&ip_repr.parse().expect("IP fixture should parse")),
+        expected
+    );
 }
