@@ -191,6 +191,7 @@ pub async fn skills_install_handler(
         crate::skills::registry::SkillRegistry::prepare_install_to_disk(&install_root, payload)
             .await
             .map_err(map_skill_install_error)?;
+    let installed_name = prepared.name().to_string();
 
     let commit_result = {
         let mut guard = registry.write().map_err(|e| {
@@ -199,15 +200,16 @@ pub async fn skills_install_handler(
                 format!("Skill registry lock poisoned: {}", e),
             )
         })?;
-        guard.commit_install(&prepared)
+        guard.commit_install(prepared)
     };
 
     match commit_result {
         Ok(()) => Ok(Json(ActionResponse::ok(format!(
             "Skill '{}' installed",
-            prepared.name()
+            installed_name
         )))),
-        Err(error) => {
+        Err(commit_failure) => {
+            let (error, prepared) = commit_failure.into_parts();
             if let Err(cleanup_error) =
                 crate::skills::registry::SkillRegistry::cleanup_prepared_install(&prepared).await
             {

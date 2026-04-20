@@ -250,7 +250,7 @@ async fn test_install_bundle_from_downloaded_bytes_preserves_files(
     .expect("bundle install should prepare successfully");
 
     registry
-        .commit_install(&prepared)
+        .commit_install(prepared)
         .expect("prepared bundle should commit successfully");
 
     let installed_root = installed_dir.path().join("deploy-docs");
@@ -298,7 +298,7 @@ async fn test_cleanup_prepared_install_removes_staged_bundle_on_commit_failure(
     .await
     .expect("first bundle should prepare");
     registry
-        .commit_install(&first)
+        .commit_install(first)
         .expect("first bundle should commit");
 
     let second = SkillRegistry::prepare_install_to_disk(
@@ -309,16 +309,17 @@ async fn test_cleanup_prepared_install_removes_staged_bundle_on_commit_failure(
     .expect("second bundle should still stage");
 
     let staged_dir = second.staged_dir.clone();
-    let error = registry
-        .commit_install(&second)
+    let commit_failure = registry
+        .commit_install(second)
         .expect_err("duplicate bundle should fail commit");
+    let (error, prepared) = commit_failure.into_parts();
     assert!(matches!(error, SkillRegistryError::AlreadyExists { .. }));
     assert!(
         staged_dir.exists(),
         "failed commit should leave staged files for cleanup"
     );
 
-    SkillRegistry::cleanup_prepared_install(&second)
+    SkillRegistry::cleanup_prepared_install(&prepared)
         .await
         .expect("cleanup should remove staged directory");
     assert!(
@@ -352,7 +353,7 @@ async fn test_remove_bundle_skill_allows_reinstall(bundle_install_fixture: Bundl
     .await
     .expect("bundle install should prepare successfully");
     registry
-        .commit_install(&prepared)
+        .commit_install(prepared)
         .expect("prepared bundle should commit successfully");
 
     let installed_root = installed_dir.path().join("deploy-docs");
@@ -377,7 +378,7 @@ async fn test_remove_bundle_skill_allows_reinstall(bundle_install_fixture: Bundl
     .await
     .expect("bundle reinstall should prepare successfully");
     registry
-        .commit_install(&prepared)
+        .commit_install(prepared)
         .expect("bundle reinstall should commit successfully");
 
     assert!(installed_root.join("SKILL.md").exists());

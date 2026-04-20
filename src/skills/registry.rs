@@ -79,6 +79,49 @@ pub enum SkillRegistryError {
     InvalidContent { reason: String },
 }
 
+/// A failed staged install commit that preserves the prepared filesystem state.
+///
+/// [`SkillRegistry::commit_install`] returns this when the final duplicate
+/// check or rename step fails after preparation has already produced a
+/// [`PreparedSkillInstall`]. The original [`SkillRegistryError`] is preserved
+/// in `error`, and `prepared` is returned so callers can inspect or roll back
+/// the staged directory with [`SkillRegistry::cleanup_prepared_install`]
+/// without reconstructing install state.
+#[derive(Debug)]
+pub struct CommitPreparedInstallError {
+    error: SkillRegistryError,
+    prepared: Box<PreparedSkillInstall>,
+}
+
+impl CommitPreparedInstallError {
+    /// Borrow the original registry error that caused the commit to fail.
+    pub fn error(&self) -> &SkillRegistryError {
+        &self.error
+    }
+
+    /// Borrow the prepared install state that remained staged after failure.
+    pub fn prepared(&self) -> &PreparedSkillInstall {
+        &self.prepared
+    }
+
+    /// Split the failure into its original error and prepared install state.
+    pub fn into_parts(self) -> (SkillRegistryError, PreparedSkillInstall) {
+        (self.error, *self.prepared)
+    }
+}
+
+impl std::fmt::Display for CommitPreparedInstallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(f)
+    }
+}
+
+impl std::error::Error for CommitPreparedInstallError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
+}
+
 /// Registry of available skills.
 pub struct SkillRegistry {
     /// All loaded skills.
@@ -230,19 +273,15 @@ impl SkillRegistry {
     /// prevalidated `prepared.loaded_skill` into the in-memory registry.
     ///
     /// Call this only after [`SkillRegistry::prepare_install_to_disk`] has
-    /// returned successfully. On success, the caller must treat
-    /// `prepared.staged_dir` as consumed. On failure, the staged directory is
-    /// left in place so the caller can decide whether to inspect it or roll it
-    /// back with [`SkillRegistry::cleanup_prepared_install`].
-    ///
-    /// The function borrows `prepared` rather than consuming it, so callers are
-    /// still responsible for cleanup on failure. This keeps the registry lock
-    /// held only for duplicate checks, the final rename, and the in-memory
-    /// insert.
+    /// returned successfully. On success, the prepared state is consumed. On
+    /// failure, the returned [`CommitPreparedInstallError`] includes both the
+    /// original [`SkillRegistryError`] and the still-staged
+    /// [`PreparedSkillInstall`] so callers can roll it back with
+    /// [`SkillRegistry::cleanup_prepared_install`].
     pub fn commit_install(
         &mut self,
-        prepared: &PreparedSkillInstall,
-    ) -> Result<(), SkillRegistryError> {
+        prepared: PreparedSkillInstall,
+    ) -> Result<(), CommitPreparedInstallError> {
         staged_install::commit_install(self, prepared)
     }
     /// Insert an already loaded skill into the registry without filesystem I/O.
@@ -251,7 +290,8 @@ impl SkillRegistry {
     /// the staged directory has been renamed into place. Callers are
     /// responsible for ensuring any on-disk lifecycle work has already
     /// completed before using this helper.
-    pub fn commit_loaded_skill(
+    #[cfg(test)]
+    pub(crate) fn commit_loaded_skill(
         &mut self,
         name: &str,
         skill: LoadedSkill,
@@ -296,10 +336,12 @@ impl SkillRegistry {
             SkillInstallPayload::Markdown(content.into()),
         )
         .await?;
+        let installed_name = prepared.name().to_string();
 
-        match self.commit_install(&prepared) {
-            Ok(()) => Ok(prepared.name().to_string()),
-            Err(commit_error) => {
+        match self.commit_install(prepared) {
+            Ok(()) => Ok(installed_name),
+            Err(commit_failure) => {
+                let (commit_error, prepared) = commit_failure.into_parts();
                 if let Err(cleanup_error) = Self::cleanup_prepared_install(&prepared).await {
                     tracing::warn!(
                         "failed to cleanup prepared skill install '{}': {}",

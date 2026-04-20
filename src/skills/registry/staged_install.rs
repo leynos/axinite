@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 
 use super::loading::load_and_validate_skill;
 use super::materialize::{materialize_install_artifact, write_install_artifact};
-use super::{LoadedSkill, SkillRegistry, SkillRegistryError, SkillSource, SkillTrust};
+use super::{
+    CommitPreparedInstallError, LoadedSkill, SkillRegistry, SkillRegistryError, SkillSource,
+    SkillTrust,
+};
 use uuid::Uuid;
 
 /// Input payload for a staged skill install.
@@ -43,6 +46,7 @@ pub enum SkillInstallPayload {
 /// lifecycle is `prepare_install_to_disk` followed by either
 /// [`SkillRegistry::commit_install`] on success or
 /// [`SkillRegistry::cleanup_prepared_install`] on failure.
+#[derive(Debug)]
 pub struct PreparedSkillInstall {
     pub(super) name: String,
     pub(super) staged_dir: PathBuf,
@@ -122,22 +126,42 @@ pub(super) async fn prepare_install_to_disk(
 
 pub(super) fn commit_install(
     registry: &mut SkillRegistry,
-    prepared: &PreparedSkillInstall,
-) -> Result<(), SkillRegistryError> {
+    prepared: PreparedSkillInstall,
+) -> Result<(), CommitPreparedInstallError> {
     if registry.has(prepared.name()) || prepared.final_dir.exists() {
-        return Err(SkillRegistryError::AlreadyExists {
-            name: prepared.name().to_string(),
+        return Err(CommitPreparedInstallError {
+            error: SkillRegistryError::AlreadyExists {
+                name: prepared.name().to_string(),
+            },
+            prepared: Box::new(prepared),
         });
     }
 
-    std::fs::rename(&prepared.staged_dir, &prepared.final_dir).map_err(|e| {
-        SkillRegistryError::WriteError {
-            path: prepared.final_dir.display().to_string(),
-            reason: e.to_string(),
-        }
-    })?;
+    let PreparedSkillInstall {
+        name,
+        staged_dir,
+        final_dir,
+        loaded_skill,
+    } = prepared;
 
-    registry.commit_loaded_skill(prepared.name(), prepared.loaded_skill.clone())
+    if let Err(error) = std::fs::rename(&staged_dir, &final_dir) {
+        return Err(CommitPreparedInstallError {
+            error: SkillRegistryError::WriteError {
+                path: final_dir.display().to_string(),
+                reason: error.to_string(),
+            },
+            prepared: Box::new(PreparedSkillInstall {
+                name,
+                staged_dir,
+                final_dir,
+                loaded_skill,
+            }),
+        });
+    }
+
+    registry.skills.push(loaded_skill);
+    tracing::info!("Installed skill: {}", name);
+    Ok(())
 }
 
 pub(super) async fn cleanup_prepared_install(

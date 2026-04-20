@@ -110,16 +110,18 @@ impl NativeTool for SkillInstallTool {
             crate::skills::registry::SkillRegistry::prepare_install_to_disk(&install_root, payload)
                 .await
                 .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        let installed_name = prepared.name().to_string();
 
         let commit_result = {
             let mut guard = self
                 .registry
                 .write()
                 .map_err(|e| ToolError::ExecutionFailed(format!("Lock poisoned: {}", e)))?;
-            guard.commit_install(&prepared)
+            guard.commit_install(prepared)
         };
 
-        if let Err(error) = commit_result {
+        if let Err(commit_failure) = commit_result {
+            let (error, prepared) = commit_failure.into_parts();
             if let Err(cleanup_error) = cleanup_prepared_install(&prepared).await {
                 tracing::warn!(
                     "failed to cleanup prepared skill install '{}': {}",
@@ -130,7 +132,6 @@ impl NativeTool for SkillInstallTool {
             return Err(ToolError::ExecutionFailed(error.to_string()));
         }
 
-        let installed_name = prepared.name().to_string();
         let output = serde_json::json!({
             "name": installed_name,
             "status": "installed",

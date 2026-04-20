@@ -547,6 +547,10 @@ tests, full gates, documentation linting, and clean diffs.
   and hardened staged-install rollback so failed materialisation cleans up
   `.skill-install-*` directories after write errors as well as validation
   errors.
+- [x] 2026-04-20T19:10:00+02:00: Tightened the staged-install ownership model
+  so `commit_install` now consumes `PreparedSkillInstall`, returns the staged
+  handle only on commit failure, and removes the last cloned `LoadedSkill`
+  from the registry install path.
 
 ## Surprises & Discoveries
 
@@ -646,6 +650,13 @@ tests, full gates, documentation linting, and clean diffs.
   preparation step owns that temporary filesystem state until it returns a
   `PreparedSkillInstall`; failure before that handoff must not leak scratch
   directories or depend on caller cleanup that cannot happen.
+
+- 2026-04-20T19:12:00+02:00: Make `commit_install` the owning handoff for
+  prepared installs and demote `commit_loaded_skill` to a test-only helper.
+  Rationale: the borrowed prepared state was the only reason the runtime path
+  still cloned `LoadedSkill`; returning the staged handle only on failure keeps
+  cleanup explicit for web, tool, and runtime callers while removing the
+  second public commit seam.
 
 ## Outcomes & Retrospective
 
