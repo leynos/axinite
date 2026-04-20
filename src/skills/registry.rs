@@ -372,7 +372,21 @@ impl SkillRegistry {
         let skill_path = staged_dir.join("SKILL.md");
         let source = SkillSource::User(final_dir.clone());
         let (name, loaded_skill) =
-            load_and_validate_skill(&skill_path, SkillTrust::Installed, source).await?;
+            match load_and_validate_skill(&skill_path, SkillTrust::Installed, source).await {
+                Ok(result) => result,
+                Err(error) => {
+                    if let Err(cleanup_error) = tokio::fs::remove_dir_all(&staged_dir).await
+                        && cleanup_error.kind() != std::io::ErrorKind::NotFound
+                    {
+                        tracing::warn!(
+                            "failed to cleanup invalid staged skill install '{}': {}",
+                            staged_dir.display(),
+                            cleanup_error
+                        );
+                    }
+                    return Err(error);
+                }
+            };
 
         Ok(PreparedSkillInstall {
             name,
@@ -1213,6 +1227,48 @@ mod tests {
         assert!(installed_root.join("SKILL.md").exists());
         assert!(installed_root.join("references/usage.md").exists());
         assert!(installed_root.join("assets/logo.txt").exists());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_prepare_install_cleans_staged_dir_when_validation_fails(
+        bundle_install_fixture: BundleInstallFixture,
+    ) {
+        let BundleInstallFixture {
+            installed_dir,
+            registry,
+            ..
+        } = bundle_install_fixture;
+
+        let archive =
+            build_bundle_archive(&[("deploy-docs/SKILL.md", b"not valid skill markdown")]);
+
+        let prepare_result = SkillRegistry::prepare_install_to_disk(
+            registry.install_target_dir(),
+            SkillInstallPayload::DownloadedBytes(archive),
+        )
+        .await;
+        let error = match prepare_result {
+            Ok(_) => panic!("invalid staged skill should fail validation"),
+            Err(error) => error,
+        };
+        assert!(
+            matches!(error, SkillRegistryError::ParseError { .. }),
+            "expected parse error for invalid staged skill, got {error:?}"
+        );
+
+        let install_root_entries = std::fs::read_dir(installed_dir.path())
+            .expect("installed dir should remain readable after failed prepare");
+        let leaked_staged_dirs = install_root_entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .filter(|name| name.starts_with(".skill-install-"))
+            .collect::<Vec<_>>();
+        assert!(
+            leaked_staged_dirs.is_empty(),
+            "failed staged validation should not leak temp dirs: {leaked_staged_dirs:?}"
+        );
     }
 
     #[tokio::test]

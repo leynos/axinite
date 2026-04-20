@@ -523,6 +523,10 @@ tests, full gates, documentation linting, and clean diffs.
   removes the full installed tree rather than only `SKILL.md`, and added a
   regression test proving remove-then-reinstall succeeds for valid bundles
   with ancillary `references/` and `assets/` files.
+- [x] 2026-04-20T15:45:00+02:00: Fixed the staged-validation failure path so
+  `prepare_install_to_disk` now removes its temporary `.skill-install-*`
+  directory before returning parse or gating errors, with a regression test
+  proving invalid staged bundles do not leak install-root scratch dirs.
 
 ## Surprises & Discoveries
 
@@ -556,6 +560,11 @@ tests, full gates, documentation linting, and clean diffs.
   uninstall invariant as well: once installs materialize `references/` and
   `assets/`, removal must treat the skill directory as an owned tree instead
   of a single-file container or reinstall will fail on the leftover path.
+- 2026-04-20T15:38:00+02:00: The staged install transaction had a second
+  lifecycle edge after the recursive uninstall fix. Validation happens after
+  writing the temporary tree, so parse or gating failures must clean up inside
+  `prepare_install_to_disk` because callers never receive a prepared handle on
+  that path.
 
 ## Decision Log
 
@@ -601,6 +610,13 @@ tests, full gates, documentation linting, and clean diffs.
   delete semantics must remove the whole owned tree in one place rather than
   teaching callers which bundle files to clean up individually.
 
+- 2026-04-20T15:40:00+02:00: Make `prepare_install_to_disk` responsible for
+  cleaning up staged directories when post-write validation fails.
+  Rationale: once validation moves behind staged disk materialization, the
+  preparation step owns that temporary filesystem state until it returns a
+  `PreparedSkillInstall`; failure before that handoff must not leak scratch
+  directories or depend on caller cleanup that cannot happen.
+
 ## Outcomes & Retrospective
 
 Implemented the shared `.skill` bundle contract for roadmap item `1.3.1`.
@@ -630,3 +646,8 @@ lazy file reads from installed bundles.
 The post-implementation follow-up on 2026-04-20 corrected one missed lifecycle
 edge: bundled skill removal now deletes the entire installed tree so valid
 remove-then-reinstall flows work after ancillary bundle files are introduced.
+
+The later 2026-04-20 follow-up closed the remaining staged-install leak:
+invalid bundles that fail parsing or gating after writeout now clean up their
+temporary `.skill-install-*` directories before surfacing the original
+validation error.
