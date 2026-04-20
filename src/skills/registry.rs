@@ -494,18 +494,14 @@ impl SkillRegistry {
     ///
     /// Call after `validate_remove` and before `commit_remove`.
     pub async fn delete_skill_files(path: &Path) -> Result<(), SkillRegistryError> {
-        let skill_md = path.join("SKILL.md");
-        if tokio::fs::try_exists(&skill_md).await.unwrap_or(false) {
-            tokio::fs::remove_file(&skill_md).await.map_err(|e| {
-                SkillRegistryError::WriteError {
-                    path: skill_md.display().to_string(),
-                    reason: e.to_string(),
-                }
-            })?;
-            // Remove the directory if empty
-            let _ = tokio::fs::remove_dir(path).await;
+        match tokio::fs::remove_dir_all(path).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(SkillRegistryError::WriteError {
+                path: path.display().to_string(),
+                reason: error.to_string(),
+            }),
         }
-        Ok(())
     }
 
     /// Remove a skill from the in-memory registry.
@@ -1157,6 +1153,66 @@ mod tests {
             user_dir.path().exists() && installed_dir.path().exists(),
             "fixture tempdirs should remain available for the duration of the test"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_remove_bundle_skill_allows_reinstall(
+        bundle_install_fixture: BundleInstallFixture,
+    ) {
+        let BundleInstallFixture {
+            installed_dir,
+            mut registry,
+            ..
+        } = bundle_install_fixture;
+
+        let archive = build_bundle_archive(&[
+            (
+                "deploy-docs/SKILL.md",
+                skill_markdown("deploy-docs").as_bytes(),
+            ),
+            ("deploy-docs/references/usage.md", b"# Usage\n"),
+            ("deploy-docs/assets/logo.txt", b"logo"),
+        ]);
+
+        let prepared = SkillRegistry::prepare_install_to_disk(
+            registry.install_target_dir(),
+            SkillInstallPayload::DownloadedBytes(archive.clone()),
+        )
+        .await
+        .expect("bundle install should prepare successfully");
+        registry
+            .commit_install(&prepared)
+            .expect("prepared bundle should commit successfully");
+
+        let installed_root = installed_dir.path().join("deploy-docs");
+        assert!(
+            installed_root.join("references/usage.md").exists(),
+            "bundle install should materialize ancillary files"
+        );
+
+        registry
+            .remove_skill("deploy-docs")
+            .await
+            .expect("bundle install should be removable");
+        assert!(
+            !installed_root.exists(),
+            "bundle uninstall should remove the full installed tree"
+        );
+
+        let prepared = SkillRegistry::prepare_install_to_disk(
+            registry.install_target_dir(),
+            SkillInstallPayload::DownloadedBytes(archive),
+        )
+        .await
+        .expect("bundle reinstall should prepare successfully");
+        registry
+            .commit_install(&prepared)
+            .expect("bundle reinstall should commit successfully");
+
+        assert!(installed_root.join("SKILL.md").exists());
+        assert!(installed_root.join("references/usage.md").exists());
+        assert!(installed_root.join("assets/logo.txt").exists());
     }
 
     #[tokio::test]

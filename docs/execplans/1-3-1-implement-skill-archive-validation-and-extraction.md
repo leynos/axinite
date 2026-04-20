@@ -519,6 +519,10 @@ tests, full gates, documentation linting, and clean diffs.
   registry, install-tool, and fetch tests were green; `make all`,
   `bunx markdownlint-cli2` over changed docs, and `git diff --check`
   all passed with retained `/tmp` logs.
+- [x] 2026-04-20T15:15:00+02:00: Fixed the bundled-skill uninstall path so it
+  removes the full installed tree rather than only `SKILL.md`, and added a
+  regression test proving remove-then-reinstall succeeds for valid bundles
+  with ancillary `references/` and `assets/` files.
 
 ## Surprises & Discoveries
 
@@ -548,6 +552,10 @@ tests, full gates, documentation linting, and clean diffs.
   final proof even though this change is tightly scoped. `make all`
   flushed a formatting miss and then validated that the staged install
   seam did not regress broader tooling or channel behaviour.
+- 2026-04-20T15:10:00+02:00: The multi-file install slice changed the
+  uninstall invariant as well: once installs materialize `references/` and
+  `assets/`, removal must treat the skill directory as an owned tree instead
+  of a single-file container or reinstall will fail on the leftover path.
 
 ## Decision Log
 
@@ -587,6 +595,12 @@ tests, full gates, documentation linting, and clean diffs.
   a granularity that changed from `❌` to `🚧` or `✅`, so updating it here
   would add noise rather than clarify shipped parity.
 
+- 2026-04-20T15:12:00+02:00: Make bundled-skill uninstall recursive at the
+  registry boundary.
+  Rationale: `1.3.1` now defines the installed skill as a directory tree, so
+  delete semantics must remove the whole owned tree in one place rather than
+  teaching callers which bundle files to clean up individually.
+
 ## Outcomes & Retrospective
 
 Implemented the shared `.skill` bundle contract for roadmap item `1.3.1`.
@@ -612,3 +626,7 @@ retained in:
 Follow-on roadmap items remain necessary for bundle uploads, explicit
 `.skill` URL affordances, canonical bundle-root metadata in loaded skills, and
 lazy file reads from installed bundles.
+
+The post-implementation follow-up on 2026-04-20 corrected one missed lifecycle
+edge: bundled skill removal now deletes the entire installed tree so valid
+remove-then-reinstall flows work after ancillary bundle files are introduced.
