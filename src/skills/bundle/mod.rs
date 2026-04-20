@@ -264,22 +264,25 @@ fn validate_file_type(
     is_dir: bool,
 ) -> Result<(), SkillBundleError> {
     if let Some(mode) = unix_mode {
-        let file_type = mode & 0o170000;
-        let is_regular = file_type == 0 || file_type == 0o100000;
-        let is_directory = file_type == 0o040000;
-        if !(is_regular || is_directory) {
-            return Err(SkillBundleError::UnsupportedFileType {
-                path: path.to_string(),
-            });
-        }
-        if !is_dir && mode & 0o111 != 0 {
-            return Err(SkillBundleError::ExecutablePayload {
-                path: path.to_string(),
-            });
-        }
+        validate_unix_mode_bits(path, mode, is_dir)?;
     }
 
     if !is_dir && has_executable_extension(path) {
+        return Err(SkillBundleError::ExecutablePayload {
+            path: path.to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+fn validate_unix_mode_bits(path: &str, mode: u32, is_dir: bool) -> Result<(), SkillBundleError> {
+    if !matches!(mode & 0o170000, 0 | 0o100000 | 0o040000) {
+        return Err(SkillBundleError::UnsupportedFileType {
+            path: path.to_string(),
+        });
+    }
+    if !is_dir && mode & 0o111 != 0 {
         return Err(SkillBundleError::ExecutablePayload {
             path: path.to_string(),
         });
