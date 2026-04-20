@@ -22,6 +22,53 @@ pub(super) async fn load_and_validate_skill(
     trust: SkillTrust,
     source: SkillSource,
 ) -> Result<(String, LoadedSkill), SkillRegistryError> {
+    let raw_bytes = read_skill_bytes(path).await?;
+
+    let raw_content = String::from_utf8(raw_bytes).map_err(|e| SkillRegistryError::ReadError {
+        path: path.display().to_string(),
+        reason: format!("Invalid UTF-8: {e}"),
+    })?;
+
+    let normalized_content = normalize_line_endings(&raw_content);
+    let parsed = parse_skill_md(&normalized_content).map_err(|e| map_parse_error(e, path))?;
+
+    let manifest = parsed.manifest;
+    let prompt_content = parsed.prompt_content;
+
+    let openclaw_requires = manifest
+        .metadata
+        .as_ref()
+        .and_then(|meta| meta.openclaw.as_ref())
+        .map(|oc| &oc.requires);
+    check_openclaw_gating(&manifest.name, openclaw_requires).await?;
+
+    let approx_tokens = (prompt_content.len() as f64 * 0.25) as usize;
+    let declared = manifest.activation.max_context_tokens;
+    check_token_budget(&manifest.name, approx_tokens, declared)?;
+
+    let content_hash = compute_hash(&prompt_content);
+    let compiled_patterns = LoadedSkill::compile_patterns(&manifest.activation.patterns);
+    let lowercased_keywords = to_lowercase_vec(&manifest.activation.keywords);
+    let lowercased_exclude_keywords = to_lowercase_vec(&manifest.activation.exclude_keywords);
+    let lowercased_tags = to_lowercase_vec(&manifest.activation.tags);
+
+    let name = manifest.name.clone();
+    let skill = LoadedSkill {
+        manifest,
+        prompt_content,
+        trust,
+        source,
+        content_hash,
+        compiled_patterns,
+        lowercased_keywords,
+        lowercased_exclude_keywords,
+        lowercased_tags,
+    };
+
+    Ok((name, skill))
+}
+
+async fn read_skill_bytes(path: &Path) -> Result<Vec<u8>, SkillRegistryError> {
     let file_meta =
         tokio::fs::symlink_metadata(path)
             .await
@@ -51,13 +98,11 @@ pub(super) async fn load_and_validate_skill(
         });
     }
 
-    let raw_content = String::from_utf8(raw_bytes).map_err(|e| SkillRegistryError::ReadError {
-        path: path.display().to_string(),
-        reason: format!("Invalid UTF-8: {e}"),
-    })?;
+    Ok(raw_bytes)
+}
 
-    let normalized_content = normalize_line_endings(&raw_content);
-    let parsed = parse_skill_md(&normalized_content).map_err(|e: SkillParseError| match e {
+fn map_parse_error(e: SkillParseError, path: &Path) -> SkillRegistryError {
+    match e {
         SkillParseError::InvalidName { ref name } => SkillRegistryError::ParseError {
             name: name.clone(),
             reason: e.to_string(),
@@ -66,53 +111,38 @@ pub(super) async fn load_and_validate_skill(
             name: path.display().to_string(),
             reason: e.to_string(),
         },
-    })?;
+    }
+}
 
-    let manifest = parsed.manifest;
-    let prompt_content = parsed.prompt_content;
-
-    if let Some(ref meta) = manifest.metadata
-        && let Some(ref openclaw) = meta.openclaw
-    {
-        let result = gating::check_requirements(&openclaw.requires).await;
+async fn check_openclaw_gating(
+    name: &str,
+    openclaw_requires: Option<&GatingRequirements>,
+) -> Result<(), SkillRegistryError> {
+    if let Some(requires) = openclaw_requires {
+        let result = gating::check_requirements(requires).await;
         if !result.passed {
             return Err(SkillRegistryError::GatingFailed {
-                name: manifest.name.clone(),
+                name: name.to_string(),
                 reason: result.failures.join("; "),
             });
         }
     }
+    Ok(())
+}
 
-    let approx_tokens = (prompt_content.len() as f64 * 0.25) as usize;
-    let declared = manifest.activation.max_context_tokens;
+fn check_token_budget(
+    name: &str,
+    approx_tokens: usize,
+    declared: usize,
+) -> Result<(), SkillRegistryError> {
     if declared > 0 && approx_tokens > declared * 2 {
         return Err(SkillRegistryError::TokenBudgetExceeded {
-            name: manifest.name.clone(),
+            name: name.to_string(),
             approx_tokens,
             declared,
         });
     }
-
-    let content_hash = compute_hash(&prompt_content);
-    let compiled_patterns = LoadedSkill::compile_patterns(&manifest.activation.patterns);
-    let lowercased_keywords = to_lowercase_vec(&manifest.activation.keywords);
-    let lowercased_exclude_keywords = to_lowercase_vec(&manifest.activation.exclude_keywords);
-    let lowercased_tags = to_lowercase_vec(&manifest.activation.tags);
-
-    let name = manifest.name.clone();
-    let skill = LoadedSkill {
-        manifest,
-        prompt_content,
-        trust,
-        source,
-        content_hash,
-        compiled_patterns,
-        lowercased_keywords,
-        lowercased_exclude_keywords,
-        lowercased_tags,
-    };
-
-    Ok((name, skill))
+    Ok(())
 }
 
 /// Compute SHA-256 hash of content in the format "sha256:hex...".
