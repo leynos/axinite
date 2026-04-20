@@ -534,6 +534,12 @@ tests, full gates, documentation linting, and clean diffs.
   `install_skill` through `install_target_dir()`, splitting bundle path logic
   into a private submodule, tightening archive buffer preallocation, and
   refreshing targeted test/documentation wording.
+- [x] 2026-04-20T17:30:00+02:00: Split `src/skills/registry.rs` into focused
+  `discovery`, `loading`, `materialize`, `removal`, and `staged_install`
+  submodules, moved registry fixtures/tests under `src/skills/registry/tests/`,
+  and removed two redundant tempdir-existence assertions while preserving the
+  staged-install and bundle-materialisation behavior behind the existing public
+  registry API.
 
 ## Surprises & Discoveries
 
@@ -577,6 +583,11 @@ tests, full gates, documentation linting, and clean diffs.
   instead of the configured install root, and the retained-evidence recipe
   documented registry and adapter tests but omitted the bundle-validator run
   that produced `/tmp/test-skill-bundle-...`.
+- 2026-04-20T17:20:00+02:00: The repository's 400-line file ceiling was still
+  being violated after the bundle and staged-install fixes landed. The cleanest
+  follow-up was to keep `SkillRegistry` as the public façade while moving
+  install and discovery internals into private sibling modules so downstream
+  call sites and review context stayed stable.
 
 ## Decision Log
 
