@@ -142,13 +142,7 @@ pub(crate) fn validate_skill_archive(
         let raw_name = file.name().to_string();
         let entry = ParsedBundlePath::parse(&raw_name)?;
 
-        match &root_name {
-            Some(expected) if expected != entry.root_name() => {
-                return Err(SkillBundleError::InvalidTopLevelPrefix);
-            }
-            None => root_name = Some(entry.root_name().to_string()),
-            Some(_) => {}
-        }
+        resolve_root_name(&mut root_name, &entry)?;
 
         validate_file_type(&raw_name, file.unix_mode(), entry.is_dir())?;
         if entry.is_dir() {
@@ -156,13 +150,6 @@ pub(crate) fn validate_skill_archive(
         }
 
         file_count += 1;
-        if file_count > MAX_BUNDLE_FILE_COUNT {
-            return Err(SkillBundleError::TooManyFiles {
-                count: file_count,
-                max: MAX_BUNDLE_FILE_COUNT,
-            });
-        }
-
         let relative_path = entry.relative_path();
         let normalized_path = relative_path.to_string_lossy().to_lowercase();
         if !seen_paths.insert(normalized_path) {
@@ -171,45 +158,12 @@ pub(crate) fn validate_skill_archive(
             });
         }
 
-        let max_size = if relative_path == Path::new("SKILL.md") {
-            MAX_PROMPT_FILE_SIZE
-        } else {
-            MAX_BUNDLE_FILE_BYTES
-        };
         let size = file.size();
-        if size > max_size {
-            return Err(SkillBundleError::EntryTooLarge {
-                path: relative_path.display().to_string(),
-                size,
-                max: max_size,
-            });
-        }
+        total_bytes = check_entry_limits(file_count, total_bytes, size, &relative_path)?;
 
-        total_bytes = total_bytes.saturating_add(size);
-        if total_bytes > MAX_BUNDLE_TOTAL_BYTES {
-            return Err(SkillBundleError::ArchiveTooLarge {
-                size: total_bytes,
-                max: MAX_BUNDLE_TOTAL_BYTES,
-            });
-        }
-
-        let mut contents = Vec::with_capacity(size as usize);
-        file.read_to_end(&mut contents)
-            .map_err(|error| SkillBundleError::ReadFailure {
-                path: raw_name.clone(),
-                reason: error.to_string(),
-            })?;
-
-        if relative_path == Path::new("SKILL.md") {
-            found_skill_md = true;
-            std::str::from_utf8(&contents).map_err(|_| SkillBundleError::InvalidUtf8Text {
-                path: raw_name.clone(),
-            })?;
-        } else if is_reference_file(&relative_path) {
-            std::str::from_utf8(&contents).map_err(|_| SkillBundleError::InvalidUtf8Text {
-                path: raw_name.clone(),
-            })?;
-        }
+        let (contents, is_skill_md) =
+            read_and_validate_contents(&mut file, &raw_name, &relative_path, size)?;
+        found_skill_md |= is_skill_md;
 
         entries.push(ValidatedBundleEntry {
             relative_path,
@@ -226,6 +180,82 @@ pub(crate) fn validate_skill_archive(
         skill_name,
         entries,
     })
+}
+
+fn resolve_root_name(
+    root_name: &mut Option<String>,
+    entry: &ParsedBundlePath,
+) -> Result<(), SkillBundleError> {
+    match root_name {
+        Some(expected) if expected.as_str() != entry.root_name() => {
+            Err(SkillBundleError::InvalidTopLevelPrefix)
+        }
+        None => {
+            *root_name = Some(entry.root_name().to_string());
+            Ok(())
+        }
+        Some(_) => Ok(()),
+    }
+}
+
+fn check_entry_limits(
+    file_count: usize,
+    total_bytes: u64,
+    size: u64,
+    relative_path: &Path,
+) -> Result<u64, SkillBundleError> {
+    if file_count > MAX_BUNDLE_FILE_COUNT {
+        return Err(SkillBundleError::TooManyFiles {
+            count: file_count,
+            max: MAX_BUNDLE_FILE_COUNT,
+        });
+    }
+
+    let max_size = if relative_path == Path::new("SKILL.md") {
+        MAX_PROMPT_FILE_SIZE
+    } else {
+        MAX_BUNDLE_FILE_BYTES
+    };
+    if size > max_size {
+        return Err(SkillBundleError::EntryTooLarge {
+            path: relative_path.display().to_string(),
+            size,
+            max: max_size,
+        });
+    }
+
+    let new_total = total_bytes.saturating_add(size);
+    if new_total > MAX_BUNDLE_TOTAL_BYTES {
+        return Err(SkillBundleError::ArchiveTooLarge {
+            size: new_total,
+            max: MAX_BUNDLE_TOTAL_BYTES,
+        });
+    }
+
+    Ok(new_total)
+}
+
+fn read_and_validate_contents(
+    file: &mut impl Read,
+    raw_name: &str,
+    relative_path: &Path,
+    size: u64,
+) -> Result<(Vec<u8>, bool), SkillBundleError> {
+    let mut contents = Vec::with_capacity(size as usize);
+    file.read_to_end(&mut contents)
+        .map_err(|error| SkillBundleError::ReadFailure {
+            path: raw_name.to_string(),
+            reason: error.to_string(),
+        })?;
+
+    let is_skill_md = relative_path == Path::new("SKILL.md");
+    if is_skill_md || is_reference_file(relative_path) {
+        std::str::from_utf8(&contents).map_err(|_| SkillBundleError::InvalidUtf8Text {
+            path: raw_name.to_string(),
+        })?;
+    }
+
+    Ok((contents, is_skill_md))
 }
 
 fn validate_file_type(
