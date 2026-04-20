@@ -299,6 +299,12 @@ fn has_executable_extension(path: &str) -> bool {
         .is_some_and(|ext| EXECUTABLE_EXTENSIONS.contains(&ext))
 }
 
+/// Returns `true` when `raw_name` cannot possibly be a well-formed ZIP entry
+/// path: it is empty, uses a Windows path separator, or is absolute.
+fn is_malformed_raw_path(raw_name: &str) -> bool {
+    raw_name.is_empty() || raw_name.contains('\\') || raw_name.starts_with('/')
+}
+
 fn is_reference_file(path: &Path) -> bool {
     path.components()
         .next()
@@ -314,7 +320,7 @@ struct ParsedBundlePath {
 
 impl ParsedBundlePath {
     fn parse(raw_name: &str) -> Result<Self, SkillBundleError> {
-        if raw_name.is_empty() || raw_name.contains('\\') || raw_name.starts_with('/') {
+        if is_malformed_raw_path(raw_name) {
             return Err(SkillBundleError::InvalidTopLevelPrefix);
         }
 
