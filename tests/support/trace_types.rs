@@ -272,3 +272,64 @@ where
     let trace = serde_json::from_value(value)?;
     Ok(trace)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    use tempfile::NamedTempFile;
+
+    fn write_tmp_trace(json: &str) -> NamedTempFile {
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(json.as_bytes()).unwrap();
+        file
+    }
+
+    /// Mutation closure is applied before deserialization.
+    #[tokio::test]
+    async fn mutation_is_applied() {
+        let json = serde_json::json!({"model_name": "test-model", "steps": []}).to_string();
+        let tmp = write_tmp_trace(&json);
+        let mut called = false;
+
+        let trace = load_trace_with_mutation(tmp.path(), |_value| {
+            called = true;
+        })
+        .await
+        .expect("should deserialize");
+
+        assert!(called, "mutation closure must be invoked");
+        assert_eq!(trace.model_name, "test-model");
+    }
+
+    /// Mutation can alter a field in the JSON before the struct is built.
+    #[tokio::test]
+    async fn mutation_modifies_value() {
+        let json = serde_json::json!({"model_name": "original", "steps": []}).to_string();
+        let tmp = write_tmp_trace(&json);
+
+        let trace = load_trace_with_mutation(tmp.path(), |value| {
+            value["model_name"] = serde_json::json!("mutated");
+        })
+        .await
+        .expect("should deserialize");
+
+        assert_eq!(trace.model_name, "mutated");
+    }
+
+    /// A missing file must surface as an error, not a panic.
+    #[tokio::test]
+    async fn missing_file_returns_error() {
+        let result = load_trace_with_mutation("/nonexistent/path/trace.json", |_value| {}).await;
+        assert!(result.is_err(), "missing file must return Err");
+    }
+
+    /// Invalid JSON must surface as an error, not a panic.
+    #[tokio::test]
+    async fn invalid_json_returns_error() {
+        let tmp = write_tmp_trace("not valid json {{");
+        let result = load_trace_with_mutation(tmp.path(), |_value| {}).await;
+        assert!(result.is_err(), "invalid JSON must return Err");
+    }
+}
