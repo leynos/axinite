@@ -1,3 +1,18 @@
+//! `TestRig` — the central test harness for end-to-end agent tests.
+//!
+//! A `TestRig` wires together an in-process `TestChannel`, an
+//! `InstrumentedLlm`, and (when the `libsql` feature is enabled) a
+//! database and workspace handle. Tests obtain a `TestRig` via
+//! `TestRigBuilder` and drive the agent by calling `send_message`,
+//! `wait_for_responses`, or the trace-replay helpers.
+//!
+//! Synchronous status-event accessors (`tool_calls_completed`,
+//! `captured_status_events`) use `try_lock` and are appropriate when
+//! the agent has already settled. The async variants
+//! (`tool_calls_completed_async`, `captured_status_events_async`) await
+//! the mutex and should be preferred inside polling loops where events
+//! may still be arriving.
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
