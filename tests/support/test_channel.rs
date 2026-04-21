@@ -147,37 +147,54 @@ impl TestChannel {
             .clone()
     }
 
+    /// Return a snapshot of all captured status events without panicking on contention.
+    pub async fn captured_status_events_async(&self) -> Vec<StatusUpdate> {
+        self.status_events.lock().await.clone()
+    }
+
+    fn filter_status_events<T>(
+        events: &[StatusUpdate],
+        f: impl Fn(&StatusUpdate) -> Option<T>,
+    ) -> Vec<T> {
+        events.iter().filter_map(f).collect()
+    }
+
     /// Return the names of all `ToolStarted` events captured so far.
     pub fn tool_calls_started(&self) -> Vec<String> {
-        self.captured_status_events()
-            .iter()
-            .filter_map(|s| match s {
-                StatusUpdate::ToolStarted { name } => Some(name.clone()),
-                _ => None,
-            })
-            .collect()
+        let events = self.captured_status_events();
+        Self::filter_status_events(&events, |status| match status {
+            StatusUpdate::ToolStarted { name } => Some(name.clone()),
+            _ => None,
+        })
     }
 
     /// Return `(name, success)` for all `ToolCompleted` events captured so far.
     pub fn tool_calls_completed(&self) -> Vec<(String, bool)> {
-        self.captured_status_events()
-            .iter()
-            .filter_map(|s| match s {
-                StatusUpdate::ToolCompleted { name, success, .. } => Some((name.clone(), *success)),
-                _ => None,
-            })
-            .collect()
+        let events = self.captured_status_events();
+        Self::filter_status_events(&events, |status| match status {
+            StatusUpdate::ToolCompleted { name, success, .. } => Some((name.clone(), *success)),
+            _ => None,
+        })
+    }
+
+    /// Return `(name, success)` for all `ToolCompleted` events captured so far.
+    ///
+    /// Prefer this accessor while status events may still be arriving.
+    pub async fn tool_calls_completed_async(&self) -> Vec<(String, bool)> {
+        let events = self.captured_status_events_async().await;
+        Self::filter_status_events(&events, |status| match status {
+            StatusUpdate::ToolCompleted { name, success, .. } => Some((name.clone(), *success)),
+            _ => None,
+        })
     }
 
     /// Return `(name, preview)` for all `ToolResult` events captured so far.
     pub fn tool_results(&self) -> Vec<(String, String)> {
-        self.captured_status_events()
-            .iter()
-            .filter_map(|s| match s {
-                StatusUpdate::ToolResult { name, preview } => Some((name.clone(), preview.clone())),
-                _ => None,
-            })
-            .collect()
+        let events = self.captured_status_events();
+        Self::filter_status_events(&events, |status| match status {
+            StatusUpdate::ToolResult { name, preview } => Some((name.clone(), preview.clone())),
+            _ => None,
+        })
     }
 
     /// Return `(name, duration_ms)` for all completed tools with timing data.
@@ -284,5 +301,62 @@ impl NativeChannel for TestChannel {
 
     fn conversation_context(&self, _metadata: &serde_json::Value) -> HashMap<String, String> {
         HashMap::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_channel() -> TestChannel {
+        TestChannel::new()
+    }
+
+    /// An empty channel returns an empty snapshot.
+    #[tokio::test]
+    async fn captured_status_events_async_empty() {
+        let channel = make_channel();
+        let events = channel.captured_status_events_async().await;
+        assert!(events.is_empty());
+    }
+
+    /// completed_async returns only ToolCompleted entries.
+    #[tokio::test]
+    async fn tool_calls_completed_async_filters_correctly() {
+        let channel = make_channel();
+
+        channel
+            .send_status(
+                StatusUpdate::ToolStarted {
+                    name: "a".to_string(),
+                },
+                &serde_json::Value::Null,
+            )
+            .await
+            .expect("tool started event should record");
+        channel
+            .send_status(
+                StatusUpdate::ToolCompleted {
+                    name: "b".to_string(),
+                    success: true,
+                    error: None,
+                    parameters: None,
+                },
+                &serde_json::Value::Null,
+            )
+            .await
+            .expect("tool completed event should record");
+
+        let completed = channel.tool_calls_completed_async().await;
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0], ("b".to_string(), true));
+    }
+
+    /// completed_async on an empty channel returns an empty vec.
+    #[tokio::test]
+    async fn tool_calls_completed_async_empty() {
+        let channel = make_channel();
+        let completed = channel.tool_calls_completed_async().await;
+        assert!(completed.is_empty());
     }
 }

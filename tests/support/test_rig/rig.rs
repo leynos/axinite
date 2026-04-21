@@ -1,3 +1,18 @@
+//! `TestRig` — the central test harness for end-to-end agent tests.
+//!
+//! A `TestRig` wires together an in-process `TestChannel`, an
+//! `InstrumentedLlm`, and (when the `libsql` feature is enabled) a
+//! database and workspace handle. Tests obtain a `TestRig` via
+//! `TestRigBuilder` and drive the agent by calling `send_message`,
+//! `wait_for_responses`, or the trace-replay helpers.
+//!
+//! Synchronous status-event accessors (`tool_calls_completed`,
+//! `captured_status_events`) use `try_lock` and are appropriate when
+//! the agent has already settled. The async variants
+//! (`tool_calls_completed_async`, `captured_status_events_async`) await
+//! the mutex and should be preferred inside polling loops where events
+//! may still be arriving.
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -76,6 +91,13 @@ impl TestRig {
         self.channel.tool_calls_completed()
     }
 
+    /// Return `(name, success)` for all `ToolCompleted` events captured so far.
+    ///
+    /// Prefer this accessor while the agent may still be emitting status events.
+    pub async fn tool_calls_completed_async(&self) -> Vec<(String, bool)> {
+        self.channel.tool_calls_completed_async().await
+    }
+
     /// Return `(name, preview)` for all `ToolResult` events captured so far.
     pub fn tool_results(&self) -> Vec<(String, String)> {
         self.channel.tool_results()
@@ -89,6 +111,11 @@ impl TestRig {
     /// Return a snapshot of all captured status events.
     pub fn captured_status_events(&self) -> Vec<StatusUpdate> {
         self.channel.captured_status_events()
+    }
+
+    /// Return a snapshot of all captured status events without panicking on contention.
+    pub async fn captured_status_events_async(&self) -> Vec<StatusUpdate> {
+        self.channel.captured_status_events_async().await
     }
 
     /// Clear all captured responses and status events.

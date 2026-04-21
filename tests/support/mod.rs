@@ -50,6 +50,11 @@ type AsyncOutgoingResponses<'a> = std::pin::Pin<
 >;
 type AsyncTraceMetrics<'a> =
     std::pin::Pin<Box<dyn std::future::Future<Output = metrics::TraceMetrics> + 'a>>;
+type AsyncCompletedToolCalls<'a> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Vec<(String, bool)>> + 'a>>;
+type AsyncStatusEvents<'a> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Vec<ironclaw::channels::StatusUpdate>> + 'a>,
+>;
 type AsyncTraceRun<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Vec<Vec<ironclaw::channels::OutgoingResponse>>> + 'a>,
 >;
@@ -152,6 +157,7 @@ fn trace_support_symbol_refs() {
     assert_trace_llm_from_file_async(trace_llm::TraceLlm::from_file_async);
     let _: fn(String) -> _ = trace_llm::LlmTrace::from_file_async;
     assert_trace_from_file_async(trace_llm::LlmTrace::from_file_async);
+    let _: fn(String, fn(&mut serde_json::Value)) -> _ = trace_llm::load_trace_with_mutation;
 }
 
 #[cfg(feature = "libsql")]
@@ -184,6 +190,16 @@ fn _clear_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncUnit<'a> {
 #[cfg(feature = "libsql")]
 fn _collect_metrics_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncTraceMetrics<'a> {
     Box::pin(test_rig::TestRig::collect_metrics(rig))
+}
+
+#[cfg(feature = "libsql")]
+fn _tool_calls_completed_async_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncCompletedToolCalls<'a> {
+    Box::pin(test_rig::TestRig::tool_calls_completed_async(rig))
+}
+
+#[cfg(feature = "libsql")]
+fn _captured_status_events_async_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncStatusEvents<'a> {
+    Box::pin(test_rig::TestRig::captured_status_events_async(rig))
 }
 
 #[cfg(feature = "libsql")]
@@ -295,7 +311,7 @@ fn touch_test_rig_observers() {
 }
 
 #[cfg(feature = "libsql")]
-fn touch_test_rig_async_sigs() {
+fn touch_test_rig_async_message_sigs() {
     touch_const!(for<'a> fn(&'a test_rig::TestRig, &'a str) -> AsyncUnit<'a> = _send_message_sig);
     touch_const!(
         for<'a> fn(&'a test_rig::TestRig, ironclaw::channels::IncomingMessage) -> AsyncUnit<'a> =
@@ -309,7 +325,23 @@ fn touch_test_rig_async_sigs() {
         ) -> AsyncOutgoingResponses<'a> = _wait_for_responses_sig
     );
     touch_const!(for<'a> fn(&'a test_rig::TestRig) -> AsyncUnit<'a> = _clear_sig);
+}
+
+#[cfg(feature = "libsql")]
+fn touch_test_rig_async_observation_sigs() {
     touch_const!(for<'a> fn(&'a test_rig::TestRig) -> AsyncTraceMetrics<'a> = _collect_metrics_sig);
+    touch_const!(
+        for<'a> fn(&'a test_rig::TestRig) -> AsyncCompletedToolCalls<'a> =
+            _tool_calls_completed_async_sig
+    );
+    touch_const!(
+        for<'a> fn(&'a test_rig::TestRig) -> AsyncStatusEvents<'a> =
+            _captured_status_events_async_sig
+    );
+}
+
+#[cfg(feature = "libsql")]
+fn touch_test_rig_async_trace_sigs() {
     touch_const!(
         for<'a> fn(
             &'a test_rig::TestRig,
@@ -324,6 +356,13 @@ fn touch_test_rig_async_sigs() {
             std::time::Duration,
         ) -> AsyncTraceRun<'a> = _run_and_verify_trace_sig
     );
+}
+
+#[cfg(feature = "libsql")]
+fn touch_test_rig_async_sigs() {
+    touch_test_rig_async_message_sigs();
+    touch_test_rig_async_observation_sigs();
+    touch_test_rig_async_trace_sigs();
 }
 
 #[cfg(feature = "libsql")]
