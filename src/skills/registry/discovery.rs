@@ -38,7 +38,16 @@ where
     };
 
     let mut count = 0usize;
-    while let Ok(Some(entry)) = entries.next_entry().await {
+    loop {
+        let entry = match entries.next_entry().await {
+            Ok(Some(entry)) => entry,
+            Ok(None) => break,
+            Err(error) => {
+                tracing::warn!("Error iterating skills directory {:?}: {}", dir, error);
+                break;
+            }
+        };
+
         if count >= MAX_DISCOVERED_SKILLS {
             tracing::warn!(
                 "Skill discovery cap reached ({} skills), skipping remaining",
