@@ -82,6 +82,59 @@ pub fn assert_tool_succeeded(completed: &[(String, bool)], tool_name: &str) {
     );
 }
 
+/// Assert that at least one preview for `tool_name` contains one of the
+/// `expected_substrings`, matching case-insensitively.
+///
+/// `results` is the captured `(tool_name, preview)` list from the test rig.
+/// The helper first filters to entries for `tool_name`, then succeeds when any
+/// matching preview contains any expected substring.
+///
+/// # Panics
+///
+/// Panics if:
+/// - `expected_substrings` is empty,
+/// - `expected_substrings` contains a blank or whitespace-only entry,
+/// - there are no results for `tool_name`, or
+/// - none of the matching results contain any of the expected substrings.
+pub fn assert_tool_result_contains(
+    results: &[(String, String)],
+    tool_name: &str,
+    expected_substrings: &[&str],
+) {
+    assert!(
+        !expected_substrings.is_empty(),
+        "expected_substrings must not be empty when asserting tool results for '{tool_name}'"
+    );
+    assert!(
+        expected_substrings
+            .iter()
+            .all(|substring| !substring.trim().is_empty()),
+        "expected_substrings entries must be non-empty when asserting tool results for '{tool_name}'"
+    );
+
+    let lower_expected: Vec<String> = expected_substrings
+        .iter()
+        .map(|substring| substring.to_lowercase())
+        .collect();
+    let matched: Vec<_> = results
+        .iter()
+        .filter(|(name, _)| name == tool_name)
+        .collect();
+    assert!(
+        !matched.is_empty(),
+        "Expected at least one result for tool '{tool_name}'"
+    );
+    assert!(
+        matched.iter().any(|(_, preview)| {
+            let lower_preview = preview.to_lowercase();
+            lower_expected
+                .iter()
+                .any(|substring| lower_preview.contains(substring))
+        }),
+        "No result for '{tool_name}' contained any of {expected_substrings:?}: {matched:?}"
+    );
+}
+
 /// Assert the response does NOT contain any of `forbidden` (case-insensitive).
 pub fn assert_response_not_contains(response: &str, forbidden: &[&str]) {
     let lower = response.to_lowercase();
@@ -200,11 +253,11 @@ pub fn verify_expects(
     // tool_results_contain
     for (tool_name, substring) in &expects.tool_results_contain {
         let found = results.iter().find(|(name, _)| name == tool_name);
-        assert!(
-            found.is_some(),
-            "[{label}] tool_results_contain: no result for tool \"{tool_name}\", got: {results:?}"
-        );
-        let (_, preview) = found.unwrap();
+        let Some((_, preview)) = found else {
+            panic!(
+                "[{label}] tool_results_contain: no result for tool \"{tool_name}\", got: {results:?}"
+            );
+        };
         assert!(
             preview.to_lowercase().contains(&substring.to_lowercase()),
             "[{label}] tool_results_contain: tool \"{tool_name}\" result does not contain \"{substring}\", got: \"{preview}\""

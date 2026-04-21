@@ -56,7 +56,6 @@ Install these extra tools for work on the compile-time reduction plan:
 branch because `make test` uses it for the root crate. The timing tool
 remains specific to the compile-time reduction work.
 
-
 ## CI build environment
 
 CI jobs in this repository set `CARGO_INCREMENTAL="0"` at the job environment
@@ -74,11 +73,12 @@ the build, an `if: always()` trimming step deletes
 `target/debug/incremental`, `target/debug/.fingerprint`, and `target/**/*.d`
 dependency files before the cache is written back to the action store.
 
-The `gag` crate appears as a `[dev-dependencies]` entry in `Cargo.toml`. It provides
-`gag::BufferRedirect::stdout()` to capture standard output in tests that assert on
-printed startup or boot-screen content — for example, the
-`print_startup_info_matches_snapshot` test in `src/main.rs`. The crate is compiled
-only when running tests and has no effect on the production binary.
+The `gag` crate appears as a `[dev-dependencies]` entry in `Cargo.toml`.
+It provides `gag::BufferRedirect::stdout()` to capture standard output
+in tests that assert on printed startup or boot-screen content — for
+example, the `print_startup_info_matches_snapshot` test in
+`src/main.rs`. The crate is compiled only when running tests and has no
+effect on the production binary.
 
 ## Optional tools by workflow
 
@@ -257,6 +257,28 @@ Tests:
 
 - See `src/app.rs` `#[cfg(test)]` for smoke coverage.
 
+#### Shared test assertions
+
+`tests/support/assertions.rs` is the shared assertion module for trace-driven
+tests. Prefer these helpers when checking captured responses, tool usage, and
+tool result previews instead of open-coding assertion logic in each test file.
+
+Common helpers include:
+
+- `assert_response_contains` and `assert_response_not_contains` for
+  case-insensitive response text checks
+- `assert_tools_used`, `assert_tools_not_used`, `assert_tool_order`, and
+  `assert_max_tool_calls` for tool-call sequencing assertions
+- `assert_all_tools_succeeded` and `assert_tool_succeeded` for completed-tool
+  status checks
+- `assert_tool_result_contains` for case-insensitive preview matching against
+  the captured `(tool_name, preview)` results emitted by the test rig
+- `verify_expects` for applying `TraceExpects` fixtures to a captured test run
+
+Keep broad behavioural coverage in the E2E trace fixtures, and place focused
+helper regression tests in `tests/support_unit_tests/assertions_tests.rs` so
+they run once instead of being duplicated across every E2E binary.
+
 #### AppBuilderFlags
 
 `AppBuilderFlags` controls optional construction behaviour:
@@ -355,7 +377,6 @@ artefacts behind on disk.
 Do **not** use `new_local()` in unit tests; reserve it for integration tests
 or tests that specifically require filesystem-path behaviour.
 
-
 ### LibSqlDatabase shared handles
 
 `LibSqlBackend` owns an `Arc<LibSqlDatabase>` rather than a raw libSQL
@@ -420,7 +441,6 @@ loop outcomes into channel outputs. It is decomposed into three layers:
 - Types (`src/agent/dispatcher/types.rs`): pure helpers and simple data
   structures (preview truncation, auth parsing, message compaction,
   etc.).
-
 
 ### Dispatcher and Thread-Operations Module Structure
 
@@ -1021,7 +1041,6 @@ Tests should pre-bind via `TcpListener::bind("127.0.0.1:0")` and pass the
 result to these helpers instead of relying on `start()` /
 `restart_with_addr()` to pick a free port.
 
-
 ### Workspace store module structure
 
 The libSQL workspace store is split by concern under
@@ -1038,7 +1057,6 @@ The libSQL workspace store is split by concern under
 Prefer adding logic beside the feature it serves rather than growing
 `mod.rs`. Module-local tests should live with the module they exercise, while
 pipeline tests belong in `workspace/tests.rs`.
-
 
 ### Key APIs
 
@@ -1087,7 +1105,6 @@ through several internal calls. Keep these structs private or `pub(super)`
 unless a wider API boundary genuinely needs them, and prefer names that
 describe the query or scope they model instead of generic `Options` suffixes.
 
-
 #### Parameter objects
 
 The following structs were introduced to keep function arity within the
@@ -1099,7 +1116,6 @@ project's four-argument limit:
 | `TurnPersistContext<'a>` | `thread_id`, `user_id`, `turn_number` | `persist_tool_calls` |
 | `ToolCallSpec<'a>` | `name`, `params` | `execute_chat_tool_standalone` |
 | `ApprovalCandidate` | `idx`, `tool_call`, `tool` | `build_pending_approval` |
-
 
 #### Dispatcher delegate (`src/agent/dispatcher/delegate/`)
 
