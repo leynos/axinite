@@ -178,8 +178,7 @@ mod tests {
     }
 
     fn safe_value_strategy() -> impl Strategy<Value = String> {
-        prop::string::string_regex("[A-Za-z0-9._~-]{1,16}")
-            .expect("value regex should compile")
+        prop::string::string_regex("[A-Za-z0-9._~-]{1,16}").expect("value regex should compile")
     }
 
     fn optional_safe_value_strategy() -> impl Strategy<Value = Option<String>> {
@@ -191,7 +190,8 @@ mod tests {
             .expect("host regex should compile")
     }
 
-    fn noise_pairs_strategy() -> impl Strategy<Value = Vec<(Cow<'static, str>, Cow<'static, str>)>> {
+    fn noise_pairs_strategy() -> impl Strategy<Value = Vec<(Cow<'static, str>, Cow<'static, str>)>>
+    {
         proptest::collection::vec(
             (
                 prop::sample::select(vec!["mode", "page", "lang", "view"]),
