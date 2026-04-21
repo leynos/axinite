@@ -10,7 +10,7 @@ use ironclaw::{
     llm::create_session_manager,
 };
 
-use super::setup_channels;
+use super::{GatewaySetup, setup_channels};
 
 async fn build_test_components(config: Config) -> anyhow::Result<AppComponents> {
     let tempdir = tempfile::tempdir()?;
@@ -64,4 +64,17 @@ async fn setup_channels_skips_wasm_and_webhooks_in_cli_only_mode() -> anyhow::Re
     assert!(setup.wasm_channel_runtime_state.is_none());
     assert!(setup.webhook_server.is_none());
     Ok(())
+}
+
+#[test]
+fn gateway_setup_defaults_to_none() {
+    let setup = GatewaySetup {
+        gateway_url: None,
+        sse_sender: None,
+        routine_engine_slot: None,
+    };
+
+    assert!(setup.gateway_url.is_none());
+    assert!(setup.sse_sender.is_none());
+    assert!(setup.routine_engine_slot.is_none());
 }
