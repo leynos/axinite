@@ -27,6 +27,14 @@ fn panic_message(payload: Box<dyn Any + Send>) -> String {
     }
 }
 
+#[test]
+fn panic_message_reports_non_string_payloads() {
+    let payload = catch_unwind(|| std::panic::panic_any(42_u32))
+        .expect_err("panic_any should produce a panic payload");
+
+    assert_eq!(panic_message(payload), "non-string panic payload");
+}
+
 fn assert_panics_with_message<F>(f: F, expected_message: &str)
 where
     F: FnOnce() + std::panic::UnwindSafe,
