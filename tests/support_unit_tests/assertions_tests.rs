@@ -137,10 +137,7 @@ fn tool_result_contains_ignores_other_tools_when_matching() {
         assert_tool_result_contains(&results, "memory_tree", &["alpha"]);
     });
 
-    assert!(
-        panic.contains("No result for 'memory_tree' contained any of [\"alpha\"]"),
-        "unexpected panic message"
-    );
+    assert_snapshot!(panic);
 }
 
 #[test]
