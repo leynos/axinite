@@ -18,6 +18,8 @@ use crossterm::{
 };
 use secrecy::SecretString;
 
+mod render;
+
 /// Display a numbered menu and get user selection.
 ///
 /// Returns the index (0-based) of the selected option.
@@ -263,37 +265,12 @@ pub fn confirm(prompt: &str, default: bool) -> io::Result<bool> {
     })
 }
 
-/// Print a styled header box.
-///
-/// # Example
-///
-/// ```ignore
-/// print_header("IronClaw Setup Wizard");
-/// ```
 pub fn print_header(text: &str) {
-    let width = text.len() + 4;
-    let border = "─".repeat(width);
-
-    println!();
-    println!("╭{}╮", border);
-    println!("│  {}  │", text);
-    println!("╰{}╯", border);
-    println!();
+    render::print_header(text);
 }
 
-/// Print a step indicator.
-///
-/// # Example
-///
-/// ```ignore
-/// print_step(1, 3, "NEAR AI Authentication");
-/// // Output: Step 1/3: NEAR AI Authentication
-/// //         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-/// ```
 pub fn print_step(current: usize, total: usize, name: &str) {
-    println!("Step {}/{}: {}", current, total, name);
-    println!("{}", "━".repeat(32));
-    println!();
+    render::print_step(current, total, name);
 }
 
 /// Print a success message with green checkmark.
