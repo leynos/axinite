@@ -71,6 +71,17 @@ where
     results
 }
 
+/// Returns the file name as `&str` when `path` is a regular file
+/// named exactly `SKILL.md`.
+fn flat_skill_md_name<'a>(meta: &std::fs::Metadata, path: &'a Path) -> Option<&'a str> {
+    if !meta.is_file() {
+        return None;
+    }
+    path.file_name()
+        .and_then(|f| f.to_str())
+        .filter(|&name| name == "SKILL.md")
+}
+
 async fn classify_entry<F>(
     entry: &tokio::fs::DirEntry,
     _dir: &Path,
@@ -101,10 +112,7 @@ where
         return try_load_from_subdir(&path, trust, make_source).await;
     }
 
-    if meta.is_file()
-        && let Some(file_name) = path.file_name().and_then(|f| f.to_str())
-        && file_name == "SKILL.md"
-    {
+    if let Some(file_name) = flat_skill_md_name(&meta, &path) {
         return try_load_flat_skill(&path, file_name, trust, make_source(path.clone())).await;
     }
 
