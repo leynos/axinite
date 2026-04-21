@@ -535,6 +535,85 @@ fans test slices out from that artifact. That is the closest existing
 example of the faster compile-once, fan-out pattern the compile-time
 reduction effort should reuse elsewhere.
 
+## Trace and channel test helpers
+
+Three test-support helpers were added in PR `#161` to make replay-based
+and worker-coverage tests more reliable.
+
+### `load_trace_with_mutation`
+
+Declared in `tests/support/trace_types.rs`, re-exported from
+`tests/support/trace_llm.rs`.
+
+Signature:
+
+```rust
+pub async fn load_trace_with_mutation<F>(
+    path: impl AsRef<Path>,
+    mutate: F,
+) -> anyhow::Result<LlmTrace>
+where
+    F: FnOnce(&mut serde_json::Value),
+```
+
+Reads a JSON trace fixture, deserialises it into a `serde_json::Value`,
+applies the caller-supplied `mutate` closure, then re-deserialises the
+result into `LlmTrace`. Use this instead of `LlmTrace::from_file_async`
+whenever a fixture field must be patched at test time, for example,
+rewriting a hard-coded temp path to the actual test directory:
+
+```rust
+let trace = load_trace_with_mutation("fixtures/trace.json", |v| {
+    v["steps"][0]["tool_calls"][0]["arguments"]["path"] =
+        serde_json::json!(test_dir.path().to_str().unwrap());
+})
+.await?;
+```
+
+### `tool_calls_completed_async`
+
+Declared on `TestChannel` and forwarded by `TestRig`
+(`tests/support/test_rig/rig.rs`).
+
+Signature:
+
+```rust
+pub async fn tool_calls_completed_async(&self) -> Vec<(String, bool)>
+```
+
+Returns the same data as the synchronous `tool_calls_completed` but
+acquires the status-event mutex with `.await` instead of `try_lock`.
+Use the async variant inside polling loops where status events may still
+be arriving when the assertion runs:
+
+```rust
+let completed = tokio::time::timeout(Duration::from_secs(5), async {
+    loop {
+        let c = rig.tool_calls_completed_async().await;
+        if c.iter().any(|(n, ok)| n == "write_file" && *ok) {
+            break c;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+})
+.await
+.expect("timed out waiting for write_file completion");
+```
+
+### `captured_status_events_async`
+
+Declared on `TestChannel` and forwarded by `TestRig`.
+
+Signature:
+
+```rust
+pub async fn captured_status_events_async(&self) -> Vec<StatusUpdate>
+```
+
+Returns a snapshot of all captured `StatusUpdate` values using an
+awaited mutex lock. Use this when contention on the status-event lock
+would cause `captured_status_events` to panic.
+
 ## WASM-specific notes
 
 The repository contains standalone WASM tool and channel crates. Normal
@@ -1048,4 +1127,3 @@ project's four-argument limit:
 | `hydration.rs` | Lazy thread hydration from the backing store when a known external thread ID is first referenced |
 | `persistence.rs` | Durable write helpers for user messages, assistant responses, and tool-call summaries |
 | `approval.rs` | Resume-from-approval flow after user consent is received |
-
