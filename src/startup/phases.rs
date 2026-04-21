@@ -394,7 +394,10 @@ mod tests {
     impl EnvVarsGuard {
         fn new(keys: &[&'static str]) -> Self {
             let lock = PHASES_ENV_MUTEX.lock().expect("env mutex poisoned");
-            let originals = keys.iter().map(|key| (*key, std::env::var(key).ok())).collect();
+            let originals = keys
+                .iter()
+                .map(|key| (*key, std::env::var(key).ok()))
+                .collect();
             Self {
                 _lock: lock,
                 originals,
@@ -402,7 +405,9 @@ mod tests {
         }
 
         fn set(&mut self, key: &'static str, value: &str) {
-            self.originals.entry(key).or_insert_with(|| std::env::var(key).ok());
+            self.originals
+                .entry(key)
+                .or_insert_with(|| std::env::var(key).ok());
             // SAFETY: EnvVarsGuard holds PHASES_ENV_MUTEX for its entire lifetime.
             unsafe { std::env::set_var(key, value) };
         }
