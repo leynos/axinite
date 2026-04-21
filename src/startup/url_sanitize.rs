@@ -319,4 +319,14 @@ mod tests {
             prop_assert!(all_sensitive_values_redacted);
         }
     }
+
+    #[test]
+    fn snapshot_absolute_url() {
+        use super::sanitize_display_url;
+
+        insta::assert_snapshot!(
+            sanitize_display_url("http://user:pass@h/x?token=abc"),
+            @"http://h/x?token=%5BREDACTED%5D"
+        );
+    }
 }
