@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::Path;
 
 use rstest::fixture;
 
@@ -7,6 +8,11 @@ use crate::skills::registry::SkillRegistry;
 pub(super) struct BundleInstallFixture {
     pub(super) user_dir: tempfile::TempDir,
     pub(super) installed_dir: tempfile::TempDir,
+    pub(super) registry: SkillRegistry,
+}
+
+pub(super) struct FreshRegistryFixture {
+    pub(super) dir: tempfile::TempDir,
     pub(super) registry: SkillRegistry,
 }
 
@@ -47,4 +53,25 @@ pub(super) fn bundle_install_fixture() -> BundleInstallFixture {
         installed_dir,
         registry,
     }
+}
+
+#[fixture]
+pub(super) fn fresh_registry_fixture() -> FreshRegistryFixture {
+    let dir = tempfile::tempdir().expect("temp dir should be created for test");
+    let registry = SkillRegistry::new(dir.path().to_path_buf());
+    FreshRegistryFixture { dir, registry }
+}
+
+/// Writes `content` to `<root>/<skill_name>/SKILL.md`, creating the subdirectory.
+pub(super) fn write_skill_subdir(root: &Path, skill_name: &str, content: &str) {
+    let skill_dir = root.join(skill_name);
+    std::fs::create_dir(&skill_dir).expect("skill subdirectory should be created for test");
+    std::fs::write(skill_dir.join("SKILL.md"), content)
+        .expect("SKILL.md should be written for test");
+}
+
+/// Writes `content` to `<root>/SKILL.md` (flat layout).
+pub(super) fn write_skill_flat(root: &Path, content: &str) {
+    std::fs::write(root.join("SKILL.md"), content)
+        .expect("flat SKILL.md should be written for test");
 }
