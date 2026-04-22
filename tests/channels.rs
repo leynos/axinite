@@ -1,6 +1,7 @@
 //! Integration tests for channel implementations covering OpenAI
 //! compatibility, relay, Telegram auth, WASM channels, and WebSocket gateway.
 
+#[path = "support/channels.rs"]
 mod support;
 
 #[path = "channels/openai_compat.rs"]

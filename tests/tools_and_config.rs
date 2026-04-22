@@ -1,6 +1,7 @@
 //! Tests for configuration round-trip, trace format, tool schema validation,
 //! and WIT compatibility.
 
+#[path = "support/tools_and_config.rs"]
 mod support;
 
 #[path = "tools_and_config/config_round_trip.rs"]

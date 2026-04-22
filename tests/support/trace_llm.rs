@@ -1,7 +1,7 @@
 //! Thin re-export surface for trace-based test LLM helpers.
 
 pub use super::trace_provider::TraceLlm;
-pub use super::trace_types::{LlmTrace, TraceExpects, load_trace_with_mutation};
+pub use super::trace_types::{LlmTrace, TraceExpects};
 
 #[expect(
     unused_imports,

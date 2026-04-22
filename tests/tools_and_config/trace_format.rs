@@ -4,7 +4,18 @@
 //! trace format. They do NOT require a rig, database, or the `libsql` feature.
 
 use crate::support::trace_llm::{LlmTrace, TraceExpects};
-use crate::support::trace_types::TraceTurn;
+use crate::support::trace_types::{TraceTurn, load_trace_with_mutation};
+use ironclaw::llm::recording::{TraceResponse, TraceStep};
+use tempfile::NamedTempFile;
+
+fn write_tmp_trace(json: &str) -> NamedTempFile {
+    use std::io::Write;
+
+    let mut file = NamedTempFile::new().expect("create temporary trace file");
+    file.write_all(json.as_bytes())
+        .expect("write temporary trace JSON");
+    file
+}
 
 /// Bundles the expected values checked against a [`TraceExpects`] instance.
 struct CoreExpectsSpec<'a> {
@@ -31,6 +42,109 @@ fn assert_empty_trace_defaults(trace: &LlmTrace) {
 /// Parse a JSON string into an [`LlmTrace`], panicking on failure.
 fn parse_trace(json: &str) -> LlmTrace {
     serde_json::from_str(json).expect("failed to parse LlmTrace from JSON")
+}
+
+#[tokio::test]
+async fn trace_helpers_load_and_mutate_files() {
+    let tmp = write_tmp_trace(
+        r#"{
+            "model_name": "trace-helper",
+            "steps": [
+                {
+                    "response": {
+                        "type": "tool_calls",
+                        "tool_calls": [{
+                            "id": "call_1",
+                            "name": "write_file",
+                            "arguments": {"path": "__ROOT__/artifact"}
+                        }],
+                        "input_tokens": 1,
+                        "output_tokens": 1
+                    }
+                }
+            ]
+        }"#,
+    );
+
+    let mut trace = LlmTrace::from_file_async(tmp.path())
+        .await
+        .expect("load trace from temporary file");
+    assert_eq!(trace.model_name, "trace-helper");
+    assert!(
+        trace.patch_path("__ROOT__", "/tmp") >= 1,
+        "expected patch_path to rewrite at least one tool-call argument"
+    );
+
+    let mutated = load_trace_with_mutation(tmp.path(), |value| {
+        value["model_name"] = serde_json::json!("mutated-helper");
+    })
+    .await
+    .expect("load trace with mutation");
+    assert_eq!(mutated.model_name, "mutated-helper");
+}
+
+#[test]
+fn trace_new_builds_turns() {
+    let trace = LlmTrace::new(
+        "trace-helper",
+        vec![TraceTurn {
+            user_input: "hello".to_string(),
+            steps: vec![TraceStep {
+                request_hint: None,
+                response: TraceResponse::Text {
+                    content: "world".to_string(),
+                    input_tokens: 1,
+                    output_tokens: 1,
+                },
+                expected_tool_results: Vec::new(),
+            }],
+            expects: TraceExpects::default(),
+        }],
+    );
+
+    assert_two_turn_trace(
+        &LlmTrace::new(
+            "trace-helper",
+            vec![
+                TraceTurn {
+                    user_input: "hello".to_string(),
+                    steps: trace.turns[0].steps.clone(),
+                    expects: TraceExpects::default(),
+                },
+                TraceTurn {
+                    user_input: "again".to_string(),
+                    steps: vec![TraceStep {
+                        request_hint: None,
+                        response: TraceResponse::Text {
+                            content: "there".to_string(),
+                            input_tokens: 2,
+                            output_tokens: 1,
+                        },
+                        expected_tool_results: Vec::new(),
+                    }],
+                    expects: TraceExpects::default(),
+                },
+            ],
+        ),
+        ("hello", 1),
+        ("again", 1),
+    );
+
+    let single_turn = LlmTrace::single_turn(
+        "trace-helper",
+        "one-shot",
+        vec![TraceStep {
+            request_hint: None,
+            response: TraceResponse::Text {
+                content: "done".to_string(),
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+            expected_tool_results: Vec::new(),
+        }],
+    );
+    assert_eq!(single_turn.turns.len(), 1);
+    assert_eq!(single_turn.turns[0].user_input, "one-shot");
 }
 
 /// Assert that a trace has exactly two turns with the given inputs and step counts.
