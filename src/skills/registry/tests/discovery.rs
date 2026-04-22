@@ -8,6 +8,19 @@ use super::fixtures::{
     FreshRegistryFixture, fresh_registry_fixture, write_skill_flat, write_skill_subdir,
 };
 
+async fn assert_single_skill_loaded(
+    registry: &mut SkillRegistry,
+    expected_name: &str,
+    expected_content_fragment: &str,
+) {
+    let loaded = registry.discover_all().await;
+    assert_eq!(loaded, vec![expected_name]);
+    assert_eq!(registry.count(), 1);
+    let skill = &registry.skills()[0];
+    assert_eq!(skill.trust, SkillTrust::Trusted);
+    assert!(skill.prompt_content.contains(expected_content_fragment));
+}
+
 #[tokio::test]
 async fn test_discover_empty_dir() {
     let dir = tempfile::tempdir().expect("create tempdir for test_discover_empty_dir");
@@ -32,14 +45,7 @@ async fn test_load_subdirectory_layout(fresh_registry_fixture: FreshRegistryFixt
         "test-skill",
         "---\nname: test-skill\ndescription: A test skill\nactivation:\n  keywords: [\"test\"]\n---\n\nYou are a helpful test assistant.\n",
     );
-    let loaded = registry.discover_all().await;
-
-    assert_eq!(loaded, vec!["test-skill"]);
-    assert_eq!(registry.count(), 1);
-
-    let skill = &registry.skills()[0];
-    assert_eq!(skill.trust, SkillTrust::Trusted);
-    assert!(skill.prompt_content.contains("helpful test assistant"));
+    assert_single_skill_loaded(&mut registry, "test-skill", "helpful test assistant").await;
 }
 
 #[tokio::test]
@@ -167,14 +173,7 @@ async fn test_load_flat_layout(fresh_registry_fixture: FreshRegistryFixture) {
         dir.path(),
         "---\nname: flat-skill\ndescription: A flat layout skill\nactivation:\n  keywords: [\"flat\"]\n---\n\nYou are a flat layout test skill.\n",
     );
-    let loaded = registry.discover_all().await;
-
-    assert_eq!(loaded, vec!["flat-skill"]);
-    assert_eq!(registry.count(), 1);
-
-    let skill = &registry.skills()[0];
-    assert_eq!(skill.trust, SkillTrust::Trusted);
-    assert!(skill.prompt_content.contains("flat layout test skill"));
+    assert_single_skill_loaded(&mut registry, "flat-skill", "flat layout test skill").await;
 }
 
 #[tokio::test]
