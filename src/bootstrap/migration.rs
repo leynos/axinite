@@ -64,7 +64,7 @@ pub(crate) fn migrate_bootstrap_json_to_env(env_path: &Path) {
     if upsert_env_pairs(env_path, &pairs).is_err() {
         return;
     }
-    let _ = rename_bootstrap_to_migrated(&bootstrap_path);
+    let _ = rename_to_migrated(&bootstrap_path);
     eprintln!(
         "Migrated DATABASE_URL from bootstrap.json to {}",
         env_path.display()
@@ -150,19 +150,6 @@ fn upsert_env_pairs(env_path: &Path, pairs: &[EnvPair<'_>]) -> io::Result<()> {
     Ok(())
 }
 
-fn rename_bootstrap_to_migrated(path: &Path) -> io::Result<()> {
-    let mut migrated = path.as_os_str().to_owned();
-    migrated.push(".migrated");
-    std::fs::rename(path, &migrated).map_err(|error| {
-        tracing::warn!(
-            "Failed to rename {} to .migrated: {}",
-            path.display(),
-            error
-        );
-        error
-    })
-}
-
 /// Errors that can occur during disk-to-DB migration.
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
@@ -212,7 +199,7 @@ async fn migrate_json_sidecar(
         .map_err(|error| MigrationError::Database(format!("{}: {}", spec.db_error_msg, error)))?;
 
     tracing::info!("{}", spec.success_msg);
-    rename_to_migrated(spec.path);
+    let _ = rename_to_migrated(spec.path);
 
     Ok(())
 }
@@ -220,7 +207,7 @@ async fn migrate_json_sidecar(
 fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
     let old_bootstrap = ironclaw_dir.join("bootstrap.json");
     if old_bootstrap.exists() {
-        rename_to_migrated(&old_bootstrap);
+        let _ = rename_to_migrated(&old_bootstrap);
         tracing::info!("Renamed old bootstrap.json to .migrated");
     }
 }
@@ -304,7 +291,7 @@ async fn apply_migration_to_db(
 }
 
 fn mark_legacy_migrated(path: &Path) -> Result<(), MigrationError> {
-    rename_to_migrated(path);
+    let _ = rename_to_migrated(path);
     Ok(())
 }
 
@@ -331,14 +318,15 @@ pub async fn migrate_disk_to_db(
 }
 
 /// Rename a file to `<name>.migrated` as a safety net.
-fn rename_to_migrated(path: &Path) {
+fn rename_to_migrated(path: &Path) -> io::Result<()> {
     let mut migrated = path.as_os_str().to_owned();
     migrated.push(".migrated");
-    if let Err(error) = std::fs::rename(path, &migrated) {
+    std::fs::rename(path, &migrated).map_err(|error| {
         tracing::warn!(
             "Failed to rename {} to .migrated: {}",
             path.display(),
             error
         );
-    }
+        error
+    })
 }
