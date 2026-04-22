@@ -3,7 +3,9 @@
 use std::time::Duration;
 
 use crate::support::test_rig::TestRigBuilder;
-use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
+use ironclaw::llm::recording::{TraceResponse, TraceStep};
+
+use crate::support::trace_types::LlmTrace;
 
 #[tokio::test]
 async fn rig_builds_and_runs() {
@@ -42,6 +44,26 @@ async fn rig_builds_and_runs() {
         found,
         "Expected a response containing the trace text, got: {:?}",
         responses.iter().map(|r| &r.content).collect::<Vec<_>>()
+    );
+
+    let status_events = rig.captured_status_events_async().await;
+    assert!(
+        !rig.has_safety_warnings(),
+        "simple trace should not emit safety warnings: {status_events:?}"
+    );
+    assert!(
+        rig.estimated_cost_usd() >= 0.0,
+        "estimated cost should be non-negative"
+    );
+
+    rig.clear().await;
+    assert!(
+        rig.captured_status_events().is_empty(),
+        "clear should remove captured status events"
+    );
+    assert!(
+        rig.tool_calls_started().is_empty(),
+        "clear should remove captured tool events"
     );
 
     rig.shutdown();

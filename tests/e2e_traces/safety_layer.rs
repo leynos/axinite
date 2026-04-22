@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::Result;
 
 use crate::support::test_rig::TestRigBuilder;
-use crate::support::trace_llm::LlmTrace;
+use crate::support::trace_types::LlmTrace;
 
 async fn build_injection_rig(
     injection_check: bool,

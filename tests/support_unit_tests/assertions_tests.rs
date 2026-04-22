@@ -15,7 +15,7 @@ use insta::assert_snapshot;
 use rstest::rstest;
 
 use crate::support::assertions::*;
-use crate::support::trace_llm::TraceExpects;
+use crate::support::trace_types::TraceExpects;
 
 fn panic_message(payload: Box<dyn Any + Send>) -> String {
     match payload.downcast::<String>() {

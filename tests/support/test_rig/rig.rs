@@ -24,7 +24,8 @@ use crate::support::assertions::verify_expects;
 use crate::support::instrumented_llm::InstrumentedLlm;
 use crate::support::metrics::{ToolInvocation, TraceMetrics};
 use crate::support::test_channel::TestChannel;
-use crate::support::trace_llm::{LlmTrace, TraceLlm};
+use crate::support::trace_provider::TraceLlm;
+use crate::support::trace_types::LlmTrace;
 
 /// A running test agent with methods to inject messages and inspect results.
 pub struct TestRig {

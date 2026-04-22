@@ -7,7 +7,7 @@
 
 use regex::Regex;
 
-use crate::support::trace_llm::TraceExpects;
+use crate::support::trace_types::TraceExpects;
 
 /// Assert the response contains all `needles` (case-insensitive).
 pub fn assert_response_contains(response: &str, needles: &[&str]) {

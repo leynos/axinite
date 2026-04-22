@@ -10,7 +10,7 @@ use ironclaw::channels::OutgoingResponse;
 
 use crate::support::cleanup::{CleanupGuard, setup_test_dir_with_suffix};
 use crate::support::test_rig::{TestRig, TestRigBuilder};
-use crate::support::trace_llm::LlmTrace;
+use crate::support::trace_types::LlmTrace;
 
 fn test_dir_base() -> std::path::PathBuf {
     std::env::temp_dir().join("ironclaw_coverage_test")

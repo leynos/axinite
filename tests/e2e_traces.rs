@@ -1,10 +1,12 @@
 //! End-to-end trace tests covering agent behaviors, tools, memory,
 //! scheduling, and error paths.
 
+// hint: Logic and cosmetic changes overlap. Resolve logic first, then reformat.
 // Keep fixture helpers local to this harness so unrelated integration
 // binaries do not compile them through the shared `support` facade.
 #[path = "support/fixtures.rs"]
 mod fixtures;
+#[path = "support/e2e.rs"]
 mod support;
 
 #[path = "e2e_traces/advanced_traces.rs"]
@@ -33,7 +35,8 @@ mod safety_layer;
 mod spot_checks;
 #[path = "e2e_traces/status_events.rs"]
 mod status_events;
-#[path = "e2e_traces/thread_scheduling.rs"]
+
+mod test_rig_tests;
 mod thread_scheduling;
 #[path = "e2e_traces/tool_coverage.rs"]
 mod tool_coverage;

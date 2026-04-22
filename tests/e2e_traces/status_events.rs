@@ -9,7 +9,7 @@ use std::time::Duration;
 use ironclaw::channels::StatusUpdate;
 
 use crate::support::test_rig::TestRigBuilder;
-use crate::support::trace_llm::LlmTrace;
+use crate::support::trace_types::LlmTrace;
 
 /// Collect ToolStarted and ToolCompleted names from an ordered event slice,
 /// preserving event order. Returns `(starts, completions)`.

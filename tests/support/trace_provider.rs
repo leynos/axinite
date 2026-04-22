@@ -1,6 +1,5 @@
 //! Replay-based LLM provider for E2E traces.
 
-use std::path::Path;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -24,16 +23,16 @@ use super::trace_types::LlmTrace;
 /// Mutable replay state is held behind one mutex so request capture and step
 /// advancement stay in lockstep even if a test drives the provider from more
 /// than one task.
-struct TraceLlmState {
-    index: usize,
+pub(super) struct TraceLlmState {
+    pub(super) index: usize,
     captured_requests: Vec<Vec<ChatMessage>>,
 }
 
 pub struct TraceLlm {
     model_name: String,
     steps: Vec<TraceStep>,
-    inner: Mutex<TraceLlmState>,
-    hint_mismatches: AtomicUsize,
+    pub(super) inner: Mutex<TraceLlmState>,
+    pub(super) hint_mismatches: AtomicUsize,
 }
 
 impl TraceLlm {
@@ -53,27 +52,6 @@ impl TraceLlm {
             }),
             hint_mismatches: AtomicUsize::new(0),
         }
-    }
-
-    /// Load from a JSON file and create the provider.
-    pub async fn from_file_async(
-        path: impl AsRef<Path>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let trace = LlmTrace::from_file_async(path).await?;
-        Ok(Self::from_trace(trace))
-    }
-
-    /// Number of calls made so far.
-    pub fn calls(&self) -> usize {
-        self.inner
-            .lock()
-            .map(|inner| inner.index)
-            .unwrap_or_else(|poisoned| poisoned.into_inner().index)
-    }
-
-    /// Number of request-hint mismatches observed (warnings only).
-    pub fn hint_mismatches(&self) -> usize {
-        self.hint_mismatches.load(Ordering::Relaxed)
     }
 
     /// Clone of all captured request message lists.

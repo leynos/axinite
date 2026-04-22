@@ -5,7 +5,7 @@
 
 use crate::fixtures::{DEFAULT_TIMEOUT, fixture_path};
 use crate::support::test_rig::{TestRig, TestRigBuilder};
-use crate::support::trace_llm::LlmTrace;
+use crate::support::trace_types::LlmTrace;
 
 use ironclaw::channels::{AttachmentKind, IncomingAttachment, IncomingMessage};
 use ironclaw::llm::ContentPart;

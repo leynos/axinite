@@ -11,7 +11,9 @@ use crate::support::routines::engine_sync::{wait_for_idle, wait_for_persisted_ru
 use crate::support::routines::{
     create_test_db, create_workspace, make_minimal_engine, make_routine, make_test_incoming_message,
 };
-use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
+use ironclaw::llm::recording::{TraceResponse, TraceStep};
+
+use crate::support::trace_types::LlmTrace;
 
 #[tokio::test]
 async fn routine_cooldown() -> anyhow::Result<()> {

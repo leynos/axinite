@@ -1,7 +1,8 @@
 //! Trace LLM helper tests.
 
-use crate::support::trace_llm::*;
-use crate::support::trace_types::TraceTurn;
+use crate::support::trace_provider::TraceLlm;
+use crate::support::trace_types::{LlmTrace, TraceExpects, TraceTurn};
+use ironclaw::llm::recording::{TraceResponse, TraceStep, TraceToolCall};
 use ironclaw::llm::{
     ChatMessage, CompletionRequest, FinishReason, LlmProvider, Role, ToolCall,
     ToolCompletionRequest,
