@@ -18,6 +18,8 @@ use crossterm::{
 };
 use secrecy::SecretString;
 
+mod render;
+
 /// Display a numbered menu and get user selection.
 ///
 /// Returns the index (0-based) of the selected option.
@@ -214,25 +216,20 @@ fn read_secret_line() -> io::Result<SecretString> {
             code, modifiers, ..
         }) = event::read()?
         {
-            match code {
-                KeyCode::Enter => {
+            let (next_input, effect) = apply_secret_key_event(&input, code, modifiers);
+            match effect {
+                SecretInputEffect::Submit => {
+                    input = next_input;
                     break;
                 }
-                KeyCode::Backspace if !input.is_empty() => {
-                    input.pop();
-                    execute!(stdout, Print("\x08 \x08"))?;
-                    stdout.flush()?;
-                }
-                KeyCode::Backspace => {}
-                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                SecretInputEffect::Interrupt => {
                     return Err(io::Error::new(io::ErrorKind::Interrupted, "Ctrl-C"));
                 }
-                KeyCode::Char(c) => {
-                    input.push(c);
-                    execute!(stdout, Print('*'))?;
-                    stdout.flush()?;
+                SecretInputEffect::None => {}
+                SecretInputEffect::Backspace | SecretInputEffect::MaskChar => {
+                    input = next_input;
+                    apply_secret_input_effect(&mut stdout, &effect)?;
                 }
-                _ => {}
             }
         }
     }
@@ -268,37 +265,12 @@ pub fn confirm(prompt: &str, default: bool) -> io::Result<bool> {
     })
 }
 
-/// Print a styled header box.
-///
-/// # Example
-///
-/// ```ignore
-/// print_header("IronClaw Setup Wizard");
-/// ```
 pub fn print_header(text: &str) {
-    let width = text.len() + 4;
-    let border = "─".repeat(width);
-
-    println!();
-    println!("╭{}╮", border);
-    println!("│  {}  │", text);
-    println!("╰{}╯", border);
-    println!();
+    render::print_header(text);
 }
 
-/// Print a step indicator.
-///
-/// # Example
-///
-/// ```ignore
-/// print_step(1, 3, "NEAR AI Authentication");
-/// // Output: Step 1/3: NEAR AI Authentication
-/// //         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-/// ```
 pub fn print_step(current: usize, total: usize, name: &str) {
-    println!("Step {}/{}: {}", current, total, name);
-    println!("{}", "━".repeat(32));
-    println!();
+    render::print_step(current, total, name);
 }
 
 /// Print a success message with green checkmark.
@@ -371,31 +343,51 @@ pub fn optional_input(prompt: &str, hint: Option<&str>) -> io::Result<Option<Str
 }
 
 #[cfg(test)]
-mod tests {
-    // Interactive tests are difficult to unit test, but we can test the non-interactive parts.
+mod tests;
 
-    #[test]
-    fn test_header_length_calculation() {
-        // Just verify it doesn't panic with various inputs
-        super::print_header("Test");
-        super::print_header("A longer header text");
-        super::print_header("");
+#[derive(Debug, PartialEq, Eq)]
+enum SecretInputEffect {
+    None,
+    Backspace,
+    MaskChar,
+    Submit,
+    Interrupt,
+}
+
+fn apply_secret_input_effect<W: Write>(
+    stdout: &mut W,
+    effect: &SecretInputEffect,
+) -> io::Result<()> {
+    match effect {
+        SecretInputEffect::Backspace => {
+            execute!(stdout, Print("\x08 \x08"))?;
+            stdout.flush()?;
+        }
+        SecretInputEffect::MaskChar => {
+            execute!(stdout, Print('*'))?;
+            stdout.flush()?;
+        }
+        SecretInputEffect::None | SecretInputEffect::Submit | SecretInputEffect::Interrupt => {}
     }
+    Ok(())
+}
 
-    #[test]
-    fn test_step_indicator() {
-        super::print_step(1, 3, "Test Step");
-        super::print_step(3, 3, "Final Step");
-    }
-
-    #[test]
-    fn test_print_functions_do_not_panic() {
-        super::print_success("operation completed");
-        super::print_error("something went wrong");
-        super::print_info("here is some information");
-        // Also test with empty strings
-        super::print_success("");
-        super::print_error("");
-        super::print_info("");
+fn apply_secret_key_event(
+    input: &str,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> (String, SecretInputEffect) {
+    match code {
+        KeyCode::Enter => (input.to_string(), SecretInputEffect::Submit),
+        KeyCode::Backspace if !input.is_empty() => {
+            let mut next_input = input.to_string();
+            next_input.pop();
+            (next_input, SecretInputEffect::Backspace)
+        }
+        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+            (input.to_string(), SecretInputEffect::Interrupt)
+        }
+        KeyCode::Char(c) => (format!("{input}{c}"), SecretInputEffect::MaskChar),
+        _ => (input.to_string(), SecretInputEffect::None),
     }
 }

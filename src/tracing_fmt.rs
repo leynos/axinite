@@ -26,20 +26,20 @@ use tracing_subscriber::fmt::MakeWriter;
 
 /// Initialize tracing for simple CLI commands (warn level, no fancy layers).
 pub fn init_cli_tracing() {
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")),
         )
-        .init();
+        .try_init();
 }
 
 /// Initialize tracing for worker/bridge processes (info level).
 pub fn init_worker_tracing() {
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("ironclaw=info")),
         )
-        .init();
+        .try_init();
 }
 
 /// Maximum bytes per tracing event written to the terminal.

@@ -39,21 +39,21 @@ The design centres on four requirements that show up repeatedly in the source:
 
 Axinite starts as a single Rust binary. The synchronous `main()` function loads
 environment files before Tokio starts, then hands control to `async_main()`.
-`async_main()` divides startup into two broad phases. First, it handles
-standalone CLI subcommands such as `ironclaw tool`, `ironclaw mcp`,
-`ironclaw config`, `ironclaw memory`, and the hidden worker-oriented
-subcommands. Second, for the default `run` path, it builds the shared runtime,
-starts optional services, wires channels, and enters the long-running agent
-loop.
+`async_main()` is intentionally thin and delegates to binary-only helper
+modules. First, the dedicated CLI-dispatch helper handles standalone
+subcommands such as `ironclaw tool`, `ironclaw mcp`, `ironclaw config`,
+`ironclaw memory`, and the hidden worker-oriented subcommands. Second, the
+startup phases build the shared runtime, start optional services, wire
+channels, and enter the long-running agent loop for the default `run` path.
 
 Table 1. Major runtime layers and their responsibilities.
 
 <!-- markdownlint-disable MD013 MD060 -->
 | Layer | Responsibilities | Primary evidence |
 |------|------------------|------------------|
-| CLI and bootstrap | Parse commands, load early env files, guard single-process startup, and decide whether to run the agent | `src/main.rs`, `src/cli/mod.rs` |
+| CLI and bootstrap | Parse commands, load early env files, route standalone subcommands, and coordinate the phased startup path | `src/main.rs`, `src/main_cli.rs`, `src/startup/`, `src/cli/mod.rs` |
 | Application builder | Initialize database, secrets, language model providers, tools, workspace memory, and extension managers | `src/app.rs` |
-| Interaction surfaces | Provide REPL, HTTP, Signal, web gateway, webhook, and WASM-backed channel entry points | `src/channels/mod.rs`, `src/main.rs` |
+| Interaction surfaces | Provide REPL, HTTP, Signal, web gateway, webhook, and WASM-backed channel entry points | `src/channels/mod.rs`, `src/startup/` |
 | Agent core | Route messages, schedule jobs, run tools safely, compact context, handle routines, and support self-repair | `src/agent/mod.rs` |
 | Persistence and memory | Provide backend-agnostic storage, settings, conversation history, job records, and searchable workspace memory | `src/db/mod.rs`, `src/workspace/mod.rs`, `src/config/mod.rs` |
 | Extension runtime | Discover, install, authenticate, and activate WASM tools, WASM channels, MCP servers, and relay-backed integrations | `src/extensions/mod.rs`, `src/registry/mod.rs`, `src/app.rs` |
@@ -134,12 +134,13 @@ before channels and background services start.
    point.
 6. `AppBuilder::build_components()` executes the mechanical initialization
    phases in a fixed order, returning `(AppComponents, RuntimeSideEffects)`.
-   In production, `main.rs` calls `side_effects.start()` immediately
-   afterwards to activate deferred background work (stale job cleanup,
-   workspace import/seeding, embedding backfill). In tests, the
-   `RuntimeSideEffects` value is discarded to avoid unnecessary I/O.
-   A backward-compatible `build_all()` wrapper calls both in sequence for
-   callers that do not need the separation.
+   In production, the late startup run path calls `side_effects.start()`
+   immediately before entering the long-running agent loop so deferred
+   background work (stale job cleanup, workspace import or seeding, embedding
+   backfill) begins only after the runtime is fully assembled. In tests, the
+   `RuntimeSideEffects` value is discarded to avoid unnecessary I/O. A
+   backward-compatible `build_all()` wrapper calls both in sequence for callers
+   that do not need the separation.
 7. After core components exist, `async_main()` starts optional tunnel support,
    configures the sandbox orchestrator, wires interaction channels, registers
    hooks, and creates the agent.
@@ -180,8 +181,8 @@ Table: Runtime side effect trigger conditions.
 | Workspace seeding | `workspace` is present (`seed_if_empty()`) |
 | Embedding backfill | `workspace` is present and `embeddings_available` is true |
 
-Call `side_effects.start()` once in `main.rs` after construction is
-complete. Tests discard the value to keep the test environment isolated.
+Call `side_effects.start()` once the late startup run path is ready to enter
+the agent loop. Tests discard the value to keep the test environment isolated.
 
 `AppBuilderFlags` has a `workspace_import_dir: Option<PathBuf>` field
 that captures the import directory at construction time (from the
@@ -209,14 +210,14 @@ host process. `docs/webhook-server-design.md` documents that unified webhook
 architecture in more detail, including the current rollback-focused
 `WebhookServer` restart behaviour.
 
-The initial startup display is rendered by `src/boot_screen.rs`, which assembles
-an ANSI-formatted summary of the active model, database, tool count, enabled
-features, channel names, and gateway or tunnel URLs. `print_boot_screen` delegates
-to `render_boot_screen`, which returns the assembled string; this separation allows
-snapshot tests to verify the rendered output without capturing standard output.
-The visual format of the boot screen has not changed from the user's perspective;
-the refactoring is purely internal (helper extraction and snapshot test coverage)
-and is confirmed by the snapshot files in `src/snapshots/`.
+The initial startup display is assembled by `src/startup/boot.rs`, which builds
+the runtime summary passed into the shared boot-screen renderer. That summary
+still contains the active model, database, tool count, enabled features,
+channel names, and gateway or tunnel URLs. The renderer separation allows
+snapshot tests to verify the output without capturing standard output. The
+visual format of the boot screen has not changed from the user's perspective;
+the refactoring is internal to the startup helper layer and is confirmed by the
+snapshot files in `src/startup/snapshots/`.
 
 ## 4. Core runtime subsystems
 
@@ -384,7 +385,8 @@ duplicating its full inventory.
 The current codebase has a practical layered shape even though it does not use
 formal hexagonal vocabulary throughout.
 
-- bootstrap and configuration in `src/bootstrap.rs` and `src/config/`
+- bootstrap and configuration in `src/main_cli.rs`, `src/startup/`, and
+  `src/config/`
 - composition roots in `src/main.rs` and `src/app.rs`
 - runtime services in `src/agent/`, `src/channels/`, `src/extensions/`,
   `src/worker/`, and `src/orchestrator/`
@@ -397,13 +399,14 @@ Some dependency directions are healthy and worth preserving.
 - `AppBuilder` is a reasonable composition root for the mechanical bootstrap
   phases.
 - `WebhookServer` isolates listener restart mechanics better than the
-  higher-level hot-reload caller in `src/main.rs` that decides when and why a
-  restart should happen.
+  higher-level startup and reload helpers in `src/startup/` that decide when
+  and why a restart should happen.
 
 Other edges are more muddled and currently create avoidable maintenance cost.
 
-- `src/main.rs` reaches deep into config reload, secret injection, transport
-  restart, and lifecycle mutation during the SIGHUP hot-reload path.
+- the startup helper layer in `src/startup/` still reaches deep into config
+  reload, secret injection, transport restart, and lifecycle mutation during
+  the SIGHUP hot-reload path.
 - `ExtensionManager` points outward to many adapters at once, including
   discovery, MCP, WASM runtime, channel activation, secrets, database-backed
   state, and gateway callback machinery.
@@ -453,8 +456,9 @@ should understand before reshaping the system.
   `ironclaw`.
 - The main process owns many responsibilities at once: CLI routing, service
   hosting, channel wiring, worker orchestration, and lifecycle management. This
-  reduces deployment complexity for a single-user installation, but increases
-  the breadth of startup and shutdown logic in `src/main.rs`.
+  reduces deployment complexity for a single-user installation, but the startup
+  and shutdown logic now spans `src/main_cli.rs` and the phased helpers in
+  `src/startup/`.
 - Configuration resolution is intentionally multi-pass. That keeps env bootstraps,
   persisted settings, and encrypted secrets compatible, but it makes the
   configuration story harder to explain than a single immutable config load.

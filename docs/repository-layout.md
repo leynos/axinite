@@ -75,7 +75,9 @@ Table 2. Key `src/` paths and why they matter.
 <!-- markdownlint-disable MD013 MD060 -->
 | Path | Purpose |
 |------|---------|
-| `src/main.rs` | Process entry point, CLI dispatch, service bootstrap, channel wiring, and agent startup |
+| `src/main.rs` | Thin process entry point and top-level startup coordinator |
+| `src/main_cli.rs` | Binary-only CLI and worker subcommand dispatch for the host executable |
+| `src/startup/` | Startup phases, channel wiring, gateway bootstrap, and agent run orchestration |
 | `src/app.rs` | Mechanical bootstrap through `AppBuilder`, including database, secrets, LLM, tools, workspace, and extension initialization |
 | `src/agent/` | Core agent runtime, scheduling, routines, heartbeats, session state, compaction, and self-repair |
 | `src/channels/` | REPL, HTTP, Signal, web gateway, relay, webhook, and WASM-backed channel integrations |

@@ -1,6 +1,6 @@
 ---
-source: src/main.rs
-assertion_line: 1261
+source: src/startup/boot.rs
+assertion_line: 192
 expression: output
 ---
 
@@ -14,8 +14,8 @@ expression: output
   [90mfeatures[0m  [36membeddings (openai)  heartbeat (30m)  [33msandbox (docker not running)[0m  claude-code  routines  skills[0m
   [90mchannels[0m  [36mrepl  gateway  signal[0m
 
-  [90mgateway[0m   [33;4mhttp://127.0.0.1:4040/?token=startup-token[0m
-  [90mtunnel[0m    [33;4mhttps://runtime.ngrok.app[0m [90m(ngrok)[0m
+  [90mgateway[0m   [33;4mhttp://127.0.0.1:4040/?token=%5BREDACTED%5D[0m
+  [90mtunnel[0m    [33;4mhttps://runtime.ngrok.app/[0m [90m(ngrok)[0m
 
   [90m╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶[0m
 
