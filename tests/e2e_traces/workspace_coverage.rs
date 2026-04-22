@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use crate::support::assertions::assert_tool_result_contains;
 use crate::support::test_rig::TestRigBuilder;
-use crate::support::trace_llm::LlmTrace;
+use crate::support::trace_types::LlmTrace;
 
 // -----------------------------------------------------------------------
 // Test 1: write_chunk_search

@@ -21,7 +21,8 @@ use ironclaw::safety::SafetyLayer;
 use ironclaw::tools::ToolRegistry;
 use ironclaw::workspace::Workspace;
 
-use crate::support::trace_llm::{LlmTrace, TraceLlm};
+use crate::support::trace_provider::TraceLlm;
+use crate::support::trace_types::LlmTrace;
 
 /// Describes a system event to be emitted in tests.
 pub struct SystemEventSpec<'a> {

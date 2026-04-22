@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use crate::fixtures::{DEFAULT_TIMEOUT, fixture_path};
 use crate::support::cleanup::CleanupGuard;
 use crate::support::test_rig::TestRigBuilder;
-use crate::support::trace_llm::LlmTrace;
+use crate::support::trace_types::LlmTrace;
 
 async fn run_spot_test(fixture_file: &str, message: &str) -> Result<()> {
     let trace = LlmTrace::from_file_async(fixture_path("spot", fixture_file))

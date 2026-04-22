@@ -8,7 +8,7 @@ use rstest::{fixture, rstest};
 #[path = "support/webhook.rs"]
 mod support;
 
-use support::webhook_helpers::{self, StartedWebhookServer};
+use support::webhook_server_helpers::{StartedWebhookServer, start_health_server};
 
 /// Binds an ephemeral port, creates a [`WebhookServer`] with a `/health`
 /// route, starts the server on the already-bound listener, and returns the
@@ -16,7 +16,7 @@ use support::webhook_helpers::{self, StartedWebhookServer};
 #[fixture]
 async fn started_webhook_server()
 -> Result<StartedWebhookServer, Box<dyn std::error::Error + Send + Sync>> {
-    webhook_helpers::start_health_server().await
+    start_health_server().await
 }
 
 #[rstest]

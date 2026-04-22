@@ -38,3 +38,34 @@ fn cleanup_guard_file_does_not_remove_dir() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn setup_test_dir_creates_missing_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("nested");
+    let target_str = target.to_string_lossy().into_owned();
+
+    crate::support::cleanup::setup_test_dir(&target_str).unwrap();
+
+    assert!(
+        target.is_dir(),
+        "setup_test_dir should create the directory"
+    );
+}
+
+#[test]
+fn setup_test_dir_with_suffix_creates_unique_directory() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let created =
+        crate::support::cleanup::setup_test_dir_with_suffix(dir.path(), "cleanup-tests").unwrap();
+
+    assert!(
+        std::path::Path::new(&created).is_dir(),
+        "setup_test_dir_with_suffix should create the directory"
+    );
+    assert!(
+        created.contains("cleanup-tests"),
+        "created path should include the requested suffix"
+    );
+}
