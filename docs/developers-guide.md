@@ -174,6 +174,50 @@ The current `Makefile` also includes:
 - `make clean` to remove Cargo build outputs for the root crate and the
   GitHub tool crate.
 
+## Integration test fixture wiring
+
+Integration test harnesses should load fixture-only helpers at the
+harness boundary instead of routing them through the shared
+`tests/support` facade.
+
+For example, `tests/e2e_traces.rs` wires fixture helpers like this:
+
+```rust
+#[path = "support/fixtures.rs"]
+mod fixtures;
+```
+
+Use `#[path]` when a helper module belongs to one integration harness,
+or to a small subset of harnesses, and including it through
+`tests/support/mod.rs` would cause unrelated test binaries to compile
+dead code. This keeps the compiled module graph honest and avoids
+reintroducing lint-suppression scaffolding for selectively used helper
+items.
+
+Follow these rules when wiring fixtures into integration tests:
+
+- Place harness-specific fixture helpers under `tests/support/` so they
+  stay near the rest of the shared test support code, even when a
+  single harness owns the module.
+- Declare the `#[path = "support/<file>.rs"] mod <name>;` include in the
+  top-level harness file such as `tests/e2e_traces.rs`, not in nested
+  test modules.
+- Import those helpers through `crate::<name>` inside the harness's
+  submodules so the harness boundary remains the only place that wires
+  the file into the test binary.
+- Keep visibility narrow. Expose only the constants and functions the
+  harness submodules actually consume, and prefer private internal
+  constants when a value exists only to support a helper function.
+- Leave a short comment near the `#[path]` declaration when the reason
+  is non-obvious, especially when the module could otherwise be mistaken
+  for a candidate for the shared `support` facade.
+
+Maintenance note: if multiple integration harnesses genuinely need the
+same fixture helper, first confirm that the helper is shared in real
+use, then move it into `tests/support/mod.rs`. Do not promote
+harness-local fixture modules into the shared facade merely to make the
+import path look more uniform.
+
 ## Configuration snapshots with EnvContext
 
 The configuration system now supports an explicit snapshot model through
@@ -1165,7 +1209,6 @@ project's four-argument limit:
 | `persistence.rs` | Durable write helpers for user messages, assistant responses, and tool-call summaries |
 | `approval.rs` | Resume-from-approval flow after user consent is received |
 
-
 ### Submodule responsibilities
 
 Caption: Responsibilities of startup submodules.
@@ -1191,6 +1234,7 @@ Caption: Responsibilities of startup submodules.
    `src/main.rs`.
 4. Update this table, the submodule map above, and the architecture
    overview in `docs/axinite-architecture-overview.md`.
+
 ### Context structs
 
 Each context struct is defined in `src/startup/context.rs`, re-exported
