@@ -3,7 +3,7 @@
 //! Verifies that attachments on incoming messages are augmented into the user
 //! text and (for images) passed as multimodal content parts to the LLM.
 
-use crate::support::fixtures::{DEFAULT_TIMEOUT, fixture_path};
+use crate::fixtures::{DEFAULT_TIMEOUT, fixture_path};
 use crate::support::test_rig::{TestRig, TestRigBuilder};
 use crate::support::trace_llm::LlmTrace;
 

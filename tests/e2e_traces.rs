@@ -1,6 +1,8 @@
 //! End-to-end trace tests covering agent behaviors, tools, memory,
 //! scheduling, and error paths.
 
+#[path = "support/fixtures.rs"]
+mod fixtures;
 mod support;
 
 #[path = "e2e_traces/advanced_traces.rs"]
