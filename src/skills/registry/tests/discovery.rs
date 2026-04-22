@@ -36,6 +36,37 @@ async fn test_discover_nonexistent_dir() {
     assert!(loaded.is_empty());
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn test_discover_unreadable_dir_returns_empty() {
+    use std::os::unix::fs::PermissionsExt;
+
+    struct PermissionsGuard<'a> {
+        path: &'a std::path::Path,
+    }
+
+    impl Drop for PermissionsGuard<'_> {
+        fn drop(&mut self) {
+            std::fs::set_permissions(self.path, std::fs::Permissions::from_mode(0o755))
+                .expect("permissions should be restored after test");
+        }
+    }
+
+    let dir = tempfile::tempdir().expect("temp dir should be created for test");
+    // Make the directory unreadable so read_dir will fail.
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o000))
+        .expect("permissions should be set for test");
+    let _permissions_guard = PermissionsGuard { path: dir.path() };
+
+    let mut registry = SkillRegistry::new(dir.path().to_path_buf());
+    let loaded = registry.discover_all().await;
+
+    assert!(
+        loaded.is_empty(),
+        "an unreadable skills directory should yield no skills, not a panic"
+    );
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_load_subdirectory_layout(fresh_registry_fixture: FreshRegistryFixture) {

@@ -1,3 +1,17 @@
+//! Shared test fixtures and write helpers for the [`SkillRegistry`] test suite.
+//!
+//! Provides:
+//! - [`BundleInstallFixture`] — registry pre-configured with both a user
+//!   directory and an installed directory, used for bundle install tests.
+//! - [`FreshRegistryFixture`] — lightweight registry backed by a single temp
+//!   directory, used for discovery and lookup tests.
+//! - [`bundle_install_fixture`] / [`fresh_registry_fixture`] — `rstest`
+//!   `#[fixture]` constructors for the above.
+//! - [`skill_markdown`] — generates minimal valid `SKILL.md` content.
+//! - [`build_bundle_archive`] — constructs an in-memory ZIP archive from
+//!   named byte entries.
+//! - [`write_skill_subdir`] / [`write_skill_flat`] — write `SKILL.md` into
+//!   a temp directory in subdirectory or flat layout respectively.
 use std::io::Write;
 use std::path::Path;
 
