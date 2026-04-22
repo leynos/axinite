@@ -5,6 +5,7 @@ use std::net::TcpListener as StdTcpListener;
 
 use rstest::{fixture, rstest};
 
+#[path = "support/webhook.rs"]
 mod support;
 
 use support::webhook_helpers::{self, StartedWebhookServer};
