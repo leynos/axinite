@@ -177,7 +177,7 @@ The current `Makefile` also includes:
 ## 10. Integration test fixture wiring
 
 Integration test harnesses should load fixture-only helpers at the
-harness boundary instead of routing them through the shared
+harness boundary, instead of routing them through the shared
 `tests/support` facade.
 
 For example, `tests/e2e_traces.rs` wires fixture helpers like this:
@@ -203,7 +203,7 @@ Follow these rules when wiring fixtures into integration tests:
   top-level harness file such as `tests/e2e_traces.rs`, not in nested
   test modules.
 - Import those helpers through `crate::<name>` inside the harness's
-  submodules so the harness boundary remains the only place that wires
+  submodules, so the harness boundary remains the only place that wires
   the file into the test binary.
 - Keep visibility narrow. Expose only the constants and functions the
   harness submodules actually consume, and prefer private internal
