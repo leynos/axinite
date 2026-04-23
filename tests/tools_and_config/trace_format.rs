@@ -36,7 +36,7 @@ fn parse_trace(json: &str) -> LlmTrace {
 }
 
 #[tokio::test]
-async fn trace_helpers_load_and_mutate_files() {
+async fn trace_helpers_load_and_mutate_files() -> anyhow::Result<()> {
     let tmp = write_tmp_trace(
         r#"{
             "model_name": "trace-helper",
@@ -55,11 +55,9 @@ async fn trace_helpers_load_and_mutate_files() {
                 }
             ]
         }"#,
-    );
+    )?;
 
-    let mut trace = LlmTrace::from_file_async(tmp.path())
-        .await
-        .expect("load trace from temporary file");
+    let mut trace = LlmTrace::from_file_async(tmp.path()).await?;
     assert_eq!(trace.model_name, "trace-helper");
     let replacement_root = tempfile::tempdir().expect("create replacement root");
     let replacement_root = replacement_root.path().to_string_lossy();
@@ -71,9 +69,10 @@ async fn trace_helpers_load_and_mutate_files() {
     let mutated = load_trace_with_mutation(tmp.path(), |value| {
         value["model_name"] = serde_json::json!("mutated-helper");
     })
-    .await
-    .expect("load trace with mutation");
+    .await?;
     assert_eq!(mutated.model_name, "mutated-helper");
+
+    Ok(())
 }
 
 #[test]

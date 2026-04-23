@@ -1,8 +1,9 @@
 //! Shared helpers for WebhookServer integration tests.
 //!
-//! Provides reusable server setup and client construction so that
-//! `tests/webhook_server.rs` and `tests/infrastructure/sighup_reload.rs`
-//! share the same configuration.
+//! Provides reusable server setup and client construction for
+//! `tests/webhook_server.rs`.
+//!
+//! Shared webhook primitives now live in `webhook_common`.
 
 use std::net::SocketAddr;
 
