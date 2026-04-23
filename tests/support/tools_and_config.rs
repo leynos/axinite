@@ -2,6 +2,8 @@
 
 #[path = "trace_types.rs"]
 mod trace_model;
+#[path = "trace_test_files.rs"]
+pub mod trace_test_files;
 
 pub mod trace_llm {
     pub use super::trace_model::{LlmTrace, TraceExpects};

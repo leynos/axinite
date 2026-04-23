@@ -1,16 +1,7 @@
 //! Trace-type helper tests.
 
-use std::io::Write;
-
+use crate::support::trace_test_files::write_tmp_trace;
 use crate::support::trace_types::load_trace_with_mutation;
-use tempfile::NamedTempFile;
-
-fn write_tmp_trace(json: &str) -> NamedTempFile {
-    let mut file = NamedTempFile::new().expect("create temporary trace file");
-    file.write_all(json.as_bytes())
-        .expect("write temporary trace JSON");
-    file
-}
 
 #[tokio::test]
 async fn mutation_is_applied() {

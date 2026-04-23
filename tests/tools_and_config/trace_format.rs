@@ -4,18 +4,9 @@
 //! trace format. They do NOT require a rig, database, or the `libsql` feature.
 
 use crate::support::trace_llm::{LlmTrace, TraceExpects};
+use crate::support::trace_test_files::write_tmp_trace;
 use crate::support::trace_types::{TraceTurn, load_trace_with_mutation};
 use ironclaw::llm::recording::{TraceResponse, TraceStep};
-use tempfile::NamedTempFile;
-
-fn write_tmp_trace(json: &str) -> NamedTempFile {
-    use std::io::Write;
-
-    let mut file = NamedTempFile::new().expect("create temporary trace file");
-    file.write_all(json.as_bytes())
-        .expect("write temporary trace JSON");
-    file
-}
 
 /// Bundles the expected values checked against a [`TraceExpects`] instance.
 struct CoreExpectsSpec<'a> {
@@ -70,8 +61,10 @@ async fn trace_helpers_load_and_mutate_files() {
         .await
         .expect("load trace from temporary file");
     assert_eq!(trace.model_name, "trace-helper");
+    let replacement_root = tempfile::tempdir().expect("create replacement root");
+    let replacement_root = replacement_root.path().to_string_lossy();
     assert!(
-        trace.patch_path("__ROOT__", "/tmp") >= 1,
+        trace.patch_path("__ROOT__", &replacement_root) >= 1,
         "expected patch_path to rewrite at least one tool-call argument"
     );
 
