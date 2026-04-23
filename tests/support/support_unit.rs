@@ -16,6 +16,8 @@ pub mod test_rig;
 pub mod trace_llm;
 #[path = "trace_provider.rs"]
 mod trace_provider;
+#[path = "trace_test_files.rs"]
+pub mod trace_test_files;
 #[path = "trace_types.rs"]
 pub mod trace_types;
 
