@@ -290,9 +290,8 @@ async fn apply_migration_to_db(
     Ok(())
 }
 
-fn mark_legacy_migrated(path: &Path) -> Result<(), MigrationError> {
+fn mark_legacy_migrated(path: &Path) {
     let _ = rename_to_migrated(path);
-    Ok(())
 }
 
 /// One-time migration of legacy `~/.ironclaw/settings.json` into the database.
@@ -313,7 +312,7 @@ pub async fn migrate_disk_to_db(
         return Ok(());
     };
     apply_migration_to_db(store, user_id, &legacy, &legacy_settings_path).await?;
-    mark_legacy_migrated(&legacy_settings_path)?;
+    mark_legacy_migrated(&legacy_settings_path);
     Ok(())
 }
 
