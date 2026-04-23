@@ -8,9 +8,9 @@ mod fixtures;
 #[path = "support/e2e_traces.rs"]
 mod support;
 
-const _: &str = fixtures::FIXTURE_ROOT;
-const _: std::time::Duration = fixtures::DEFAULT_TIMEOUT;
-const _: std::time::Duration = fixtures::LONG_TIMEOUT;
+const _: fn(&str, &str) -> String = fixtures::fixture_path;
+const _: fn(&str, &str) -> String = fixtures::fixture_path;
+const _: fn(&str, &str) -> String = fixtures::fixture_path;
 const _: fn(&str, &str) -> String = fixtures::fixture_path;
 
 #[path = "e2e_traces/advanced_traces.rs"]
