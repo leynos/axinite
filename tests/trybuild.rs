@@ -24,14 +24,10 @@ fn startup_compile_contracts() {
     cases.pass("tests/trybuild/startup_run_non_unix.rs");
 }
 
-#[test]
-fn infrastructure_harness_compile_contracts() {
+#[rstest]
+#[case("tests/trybuild/infrastructure.rs")]
+#[case("tests/trybuild/support_unit.rs")]
+fn harness_compile_contracts(#[case] fixture: &str) {
     let cases = trybuild::TestCases::new();
-    cases.pass("tests/trybuild/infrastructure.rs");
-}
-
-#[test]
-fn support_unit_harness_compile_contracts() {
-    let cases = trybuild::TestCases::new();
-    cases.pass("tests/trybuild/support_unit.rs");
+    cases.pass(fixture);
 }

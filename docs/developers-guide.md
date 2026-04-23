@@ -6,6 +6,7 @@ reproducing the build and test workflows on this branch.
 For the current system architecture and subsystem boundaries, see
 [`docs/axinite-architecture-overview.md`](axinite-architecture-overview.md).
 
+
 ## 1. Purpose
 
 Linux continuous integration (CI) on this branch now uses `mold` to
@@ -25,6 +26,33 @@ because the current branch already uses `mold` in Linux CI.
 
 For compile-time or CI changes, prefer Linux or WSL so local results
 line up with the current CI setup.
+
+
+## Tools-and-config harness support
+
+`tests/support/tools_and_config.rs` is a harness-specific support root
+for the `tools_and_config` integration binary. Keeping that entrypoint
+separate from the broader `tests/support/` graph means the harness only
+compiles the helpers it actually needs, which keeps the support surface
+honest and avoids dead-code lint suppression.
+
+The `trace_llm` façade in that module provides a narrowed one-import
+surface for LLM trace helpers. It re-exports
+`trace_json_patch::patch_json_value` together with
+`trace_types::{LlmTrace, TraceExpects}` so tests can create trace
+fixtures, patch recorded JSON payloads, and assert on trace contents
+without reaching into the underlying support-module layout.
+
+The same support root also re-exports three `testing_wasm` helpers used
+by the tools-and-config harness:
+
+- `github_tool_source_dir` resolves the GitHub tool source tree used by
+  schema and metadata tests.
+- `github_wasm_artifact` exposes the built WASM artifact for tool-loading
+  and compatibility checks.
+- `metadata_test_runtime` constructs runtime metadata needed when tests
+  exercise the tools-and-config harness against that artifact.
+
 
 ## 3. Required tools
 
@@ -46,6 +74,7 @@ repository also includes standalone WebAssembly (WASM) tool and channel
 crates, so WASM tooling is required for more than release-only
 workflows.
 
+
 ## 4. Extra tools for the compile-time reduction effort
 
 Install these extra tools for work on the compile-time reduction plan:
@@ -55,6 +84,7 @@ Install these extra tools for work on the compile-time reduction plan:
 `cargo-nextest` is now part of the standard local test path on this
 branch because `make test` uses it for the root crate. The timing tool
 remains specific to the compile-time reduction work.
+
 
 ## 5. CI build environment
 
@@ -80,6 +110,7 @@ example, the
 `print_startup_info_matches_snapshot` test in `src/startup/boot.rs`. The crate
 is compiled only when running tests and has no effect on the production binary.
 
+
 ## 6. Optional tools by workflow
 
 These tools are not required for every contributor, but they are needed
@@ -93,6 +124,7 @@ for specific work:
 - Python 3.12 plus Playwright for work on `tests/e2e` or the end-to-end
   (E2E) coverage workflow.
 - `cargo-llvm-cov` for local coverage work.
+
 
 ## 7. Linux and WSL setup
 
@@ -125,6 +157,7 @@ For local coverage support:
 cargo install cargo-llvm-cov --locked
 ```
 
+
 ## 8. Local mold configuration
 
 The repository now checks in Linux linker settings in
@@ -148,6 +181,7 @@ A quick verification command is:
 ```bash
 sed -n '1,40p' .cargo/config.toml
 ```
+
 
 ## 9. Repository bootstrap
 
@@ -173,6 +207,7 @@ The current `Makefile` also includes:
   registered channels into the shared `target/wasm-extensions/` cache.
 - `make clean` to remove Cargo build outputs for the root crate and the
   GitHub tool crate.
+
 
 ## 10. Integration test fixture wiring
 
@@ -251,6 +286,7 @@ them to do the capture work:
 For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
 tests independent of host machine secrets, keychains, and shell state.
+
 
 ## 12. AppBuilder
 
@@ -345,6 +381,7 @@ Table: `AppBuilderFlags` fields and effects.
 | `no_db` | `bool` | Skip database initialization |
 | `workspace_import_dir` | `Option<PathBuf>` | Directory to import into the workspace on activation; captured at construction so `RuntimeSideEffects::start()` does not re-read the environment |
 
+
 ## 13. Fast local validation loop
 
 For quick host-side iteration on Linux or WSL with the current branch
@@ -403,6 +440,7 @@ When modifying this path, keep three invariants in mind:
   [Jobs and Routines](./jobs-and-routines.md) and the
   [User's Guide](./users-guide.md).
 
+
 ## 15. Database-backed work
 
 For work on the default feature set or PostgreSQL-backed tests, prepare
@@ -430,7 +468,6 @@ export DATABASE_URL=postgres://localhost/ironclaw
 
 Adjust the connection string if the local PostgreSQL instance requires a
 different host, user, or password.
-
 ### libSQL test databases
 
 Unit tests that exercise the libSQL backend call
@@ -491,6 +528,7 @@ The `busy_timeout` PRAGMA that each store previously ran after connecting
 is now applied once inside `LibSqlDatabase::connect()`, so it is no longer
 necessary — and must not be duplicated — in individual store
 `connect()` methods.
+
 
 ## 16. Dispatcher architecture
 
@@ -619,6 +657,7 @@ Migration guidance:
 - add rollback regression coverage for both supported backends before
   releasing new terminal transitions
 
+
 ## 17. End-to-end (E2E) prerequisites
 
 For browser-based tests:
@@ -639,6 +678,7 @@ reduction effort should reuse elsewhere.
 
 Three test-support helpers were added in PR `#161` to make replay-based
 and worker-coverage tests more reliable.
+
 
 ### `load_trace_with_mutation`
 
@@ -713,6 +753,7 @@ pub async fn captured_status_events_async(&self) -> Vec<StatusUpdate>
 Returns a snapshot of all captured `StatusUpdate` values using an
 awaited mutex lock. Use this when contention on the status-event lock
 would cause `captured_status_events` to panic.
+
 
 ## 19. WASM-specific notes
 
@@ -808,6 +849,7 @@ labels, truncation rules, or input set needs to change. Do not use it as
 a primary schema-transport mechanism: the canonical schema remains the
 advertised `ToolDefinition.parameters` value.
 
+
 ## 20. When to use cargo test versus cargo-nextest
 
 Today:
@@ -842,11 +884,13 @@ For the compile-time reduction effort:
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
 
+
 ## 22. Hot-reload architecture
 
 The `src/reload/` module provides hot-reload capabilities for configuration,
 HTTP listeners, and secrets without restarting the application. This is
 triggered by the Unix hangup signal (SIGHUP) in production environments.
+
 
 ### Core traits
 
@@ -948,6 +992,7 @@ testing:
 Use these in unit tests to verify manager behaviour without real I/O.
 Example usage is in `src/reload/manager/tests.rs`.
 
+
 ## 23. WASM tool schema normalization
 
 WASM tools carry a parameter schema that describes their inputs to the
@@ -985,6 +1030,7 @@ its own exported metadata.
 The storage path is the one that exercises schema normalization, because
 backends may persist placeholder or null schemas that must be stripped
 before the guest-export recovery logic can run.
+
 
 ## 24. End-to-end WASM schema regression tests
 
@@ -1096,6 +1142,7 @@ assert_eq!(
 );
 ```
 
+
 ## 25. Expected follow-up changes
 
 This guide documents the environment as of the current branch. The
@@ -1107,6 +1154,7 @@ When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
 
 ## 26. Phased startup pipeline
+
 
 ### WebhookServer test helpers
 
