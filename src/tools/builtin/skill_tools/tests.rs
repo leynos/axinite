@@ -5,10 +5,11 @@ use std::sync::Arc;
 
 use rstest::{fixture, rstest};
 
+use crate::context::JobContext;
 use crate::skills::catalog::SkillCatalog;
 use crate::skills::registry::SkillRegistry;
 use crate::skills::{ActivationCriteria, LoadedSkill, SkillManifest, SkillSource, SkillTrust};
-use crate::tools::tool::{ApprovalRequirement, Tool};
+use crate::tools::tool::{ApprovalRequirement, NativeTool, Tool};
 
 use super::{SkillInstallTool, SkillListTool, SkillRemoveTool, SkillSearchTool};
 
@@ -30,6 +31,10 @@ fn test_registry() -> TestRegistryHandle {
 #[fixture]
 fn test_catalog() -> Arc<SkillCatalog> {
     Arc::new(SkillCatalog::with_url("http://127.0.0.1:1"))
+}
+
+fn skill_markdown(name: &str) -> String {
+    format!("---\nname: {name}\n---\n\n# {name}\n")
 }
 
 /// Assert the common contract of a skill tool's static metadata.
@@ -120,7 +125,10 @@ fn skill_remove_always_requires_approval_regardless_of_params(
     #[case] params: serde_json::Value,
 ) {
     let tool = SkillRemoveTool::new(Arc::clone(&test_registry.registry));
-    assert_eq!(tool.requires_approval(&params), ApprovalRequirement::Always,);
+    assert_eq!(
+        NativeTool::requires_approval(&tool, &params),
+        ApprovalRequirement::Always,
+    );
 }
 
 #[test]
@@ -164,4 +172,49 @@ fn skill_search_matches_query_checks_name_description_and_keywords(
     };
 
     assert_eq!(SkillSearchTool::matches_query(&skill, query), expected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn skill_install_tool_installs_inline_content(test_registry: TestRegistryHandle) {
+    let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
+    let output = NativeTool::execute(
+        &tool,
+        serde_json::json!({
+            "name": "deploy-docs",
+            "content": skill_markdown("deploy-docs"),
+        }),
+        &JobContext::default(),
+    )
+    .await
+    .expect("inline skill install should succeed");
+
+    assert_eq!(output.result["name"], "deploy-docs");
+    assert!(
+        test_registry
+            .registry
+            .read()
+            .expect("registry lock should be readable")
+            .has("deploy-docs")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn skill_install_tool_rejects_duplicate_inline_install(test_registry: TestRegistryHandle) {
+    let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
+    let params = serde_json::json!({
+        "name": "deploy-docs",
+        "content": skill_markdown("deploy-docs"),
+    });
+
+    NativeTool::execute(&tool, params.clone(), &JobContext::default())
+        .await
+        .expect("first inline install should succeed");
+
+    let error = NativeTool::execute(&tool, params, &JobContext::default())
+        .await
+        .expect_err("duplicate inline install should fail");
+
+    assert!(error.to_string().contains("already exists"));
 }

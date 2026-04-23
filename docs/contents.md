@@ -148,6 +148,10 @@
   - [Add end-to-end tests for first-call WASM schema exposure](execplans/1-2-4-end-to-end-tests-for-first-call-wasm-schema-exposure.md)
     plans roadmap item `1.2.4` for proving that proactive WebAssembly (WASM)
     schema publication reaches the first hosted and non-hosted requests.
+  - [Implement `.skill` archive validation and extraction](execplans/1-3-1-implement-skill-archive-validation-and-extraction.md)
+    plans roadmap item `1.3.1` for validated multi-file skill bundles,
+    staged extraction, proportional test coverage, and synchronized
+    documentation.
 
 ## RFCs
 

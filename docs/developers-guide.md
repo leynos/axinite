@@ -258,6 +258,16 @@ Tests:
 
 - See `src/app.rs` `#[cfg(test)]` for smoke coverage.
 
+
+#### Skills sub-system internals (`src/skills/`)
+
+The skills sub-system is split into two top-level modules:
+
+| Module | Purpose |
+| --- | --- |
+| `src/skills/bundle/` | ZIP archive sniffing, path parsing, and passive bundle validation |
+| `src/skills/registry/` | In-memory registry; discovery, loading, staged install, removal |
+
 #### Shared test assertions
 
 `tests/support/assertions.rs` is the shared assertion module for trace-driven
@@ -1245,3 +1255,56 @@ Caption: Startup phase sequence.
 
 Phases 1–4 are infallible or propagate configuration errors early so
 subsequent phases can assume a fully valid environment.
+
+##### `src/skills/bundle/`
+
+| File | Responsibility |
+| --- | --- |
+| `mod.rs` | `validate_skill_archive` — validates a raw `&[u8]` ZIP payload and returns a `ValidatedSkillBundle`; `looks_like_skill_archive` — fast ZIP magic-byte probe |
+| `path.rs` | `ParsedBundlePath::parse` — normalises a raw ZIP entry name into `(root_name, relative_path, is_dir)` while enforcing RFC 0003 shape constraints |
+
+`ValidatedSkillBundle` carries `skill_name: String` and a
+`Vec<ValidatedBundleEntry>`, where each entry exposes
+`relative_path() -> &Path` and `contents() -> &[u8]`.
+
+`SkillBundleError` enumerates all rejection reasons
+(`InvalidArchive`, `InvalidTopLevelPrefix`, `MissingEntrypoint`,
+`ExecutablePayload`, `UnsupportedFileType`, `DuplicatePath`,
+`EntryTooLarge`, `ArchiveTooLarge`, `TooManyFiles`, `InvalidUtf8Text`,
+`ReadFailure`, and others).
+
+
+##### `src/skills/registry/`
+
+| File | Responsibility |
+| --- | --- |
+| `mod.rs` | `SkillRegistry` struct; public surface: `new`, `with_workspace_dir`, `with_installed_dir`, `discover_all`, `install_skill`, `prepare_install_to_disk`, `commit_install`, `commit_loaded_skill`, `cleanup_prepared_install`, `remove_skill`, `reload`, `has`, `find_by_name`, `count`, `skills`, `install_target_dir` |
+| `discovery.rs` | `discover_from_dir` — async directory scan with symlink rejection, cap enforcement, and load-failure tolerance |
+| `loading.rs` | `load_and_validate_skill` — reads, validates, normalises, gates, and constructs a `LoadedSkill`; also exports `compute_hash` and `check_gating` |
+| `materialize.rs` | `materialize_install_artifact` — converts a `SkillInstallPayload` into an `InstallArtifact` (list of `(relative_path, bytes)` pairs); `write_install_artifact` — writes the artifact into a staging directory |
+| `staged_install.rs` | `prepare_install_to_disk` — creates a hidden staging directory, writes and validates the artifact, returns `PreparedSkillInstall`; `commit_install` — duplicate check then atomic rename; `cleanup_prepared_install` — removes the staging directory |
+| `removal.rs` | `validate_remove`, `delete_skill_files`, `commit_remove` |
+
+
+##### Staged install lifecycle
+
+```text
+SkillInstallPayload          (Markdown | DownloadedBytes)
+        │
+        ▼
+prepare_install_to_disk()   creates .<uuid>/ under install_root,
+        │                   writes artifact, validates SKILL.md
+        ▼
+PreparedSkillInstall        holds staged_dir, final_dir, name, LoadedSkill
+        │
+  ┌─────┴────────────────────────────┐
+  ▼                                  ▼
+commit_install()             cleanup_prepared_install()
+  duplicate check              removes staged_dir (best-effort)
+  atomic rename staged→final
+  in-memory registry insert
+```
+
+On commit failure, callers must call `cleanup_prepared_install` as a
+best-effort cleanup and log any cleanup errors with `tracing::warn!` before
+returning the original commit error.

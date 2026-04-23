@@ -5,7 +5,6 @@ use futures::StreamExt;
 use super::url_policy::{
     HttpsUrl, NormalizedDomain, redact_url, validate_fetch_url, validate_resolved_addrs,
 };
-use super::zip_extract::extract_skill_from_zip;
 use crate::tools::tool::ToolError;
 
 const USER_AGENT: &str = concat!("ironclaw/", env!("CARGO_PKG_VERSION"));
@@ -64,8 +63,8 @@ async fn build_safe_fetch_client(parsed: &reqwest::Url) -> Result<reqwest::Clien
     }
 }
 
-/// Fetch SKILL.md content from a URL with SSRF protection.
-pub(crate) async fn fetch_skill_content(url: &str) -> Result<String, ToolError> {
+/// Fetch raw skill bytes from a URL with SSRF protection.
+pub(crate) async fn fetch_skill_bytes(url: &str) -> Result<Vec<u8>, ToolError> {
     let https = HttpsUrl::try_from(url)?;
     let parsed = validate_fetch_url(&https)?;
     let client = build_safe_fetch_client(&parsed).await?;
@@ -99,10 +98,5 @@ pub(crate) async fn fetch_skill_content(url: &str) -> Result<String, ToolError> 
         bytes.extend_from_slice(&chunk);
     }
 
-    if bytes.starts_with(b"PK\x03\x04") {
-        extract_skill_from_zip(&bytes)
-    } else {
-        String::from_utf8(bytes)
-            .map_err(|e| ToolError::ExecutionFailed(format!("Response is not valid UTF-8: {}", e)))
-    }
+    Ok(bytes)
 }

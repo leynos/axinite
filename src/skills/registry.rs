@@ -8,17 +8,22 @@
 //! layouts are supported. Earlier locations win on name collision (workspace
 //! overrides user). Uses async I/O throughout to avoid blocking the tokio runtime.
 
+mod discovery;
+mod loading;
+mod materialize;
+mod removal;
+mod staged_install;
+#[cfg(test)]
+mod tests;
+
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use sha2::{Digest, Sha256};
+pub use loading::{check_gating, compute_hash};
+pub use staged_install::{CommitPreparedInstallError, PreparedSkillInstall, SkillInstallPayload};
 
-use crate::skills::gating;
-use crate::skills::parser::{SkillParseError, parse_skill_md};
-use crate::skills::{
-    GatingRequirements, LoadedSkill, MAX_PROMPT_FILE_SIZE, SkillSource, SkillTrust,
-    normalize_line_endings,
-};
+use crate::skills::bundle::SkillBundleError;
+use crate::skills::{LoadedSkill, SkillSource, SkillTrust};
 
 /// Maximum number of skills that can be discovered from a single directory.
 /// Prevents resource exhaustion from a directory with thousands of entries.
@@ -66,6 +71,12 @@ pub enum SkillRegistryError {
 
     #[error("Failed to write skill file {path}: {reason}")]
     WriteError { path: String, reason: String },
+
+    #[error("{0}")]
+    InvalidBundle(#[from] SkillBundleError),
+
+    #[error("Invalid skill content: {reason}")]
+    InvalidContent { reason: String },
 }
 
 /// Registry of available skills.
@@ -120,9 +131,9 @@ impl SkillRegistry {
 
         // 1. Workspace skills (highest priority)
         if let Some(ws_dir) = self.workspace_dir.clone() {
-            let ws_skills = self
-                .discover_from_dir(&ws_dir, SkillTrust::Trusted, SkillSource::Workspace)
-                .await;
+            let ws_skills =
+                discovery::discover_from_dir(&ws_dir, SkillTrust::Trusted, SkillSource::Workspace)
+                    .await;
             for (name, skill) in ws_skills {
                 if seen.contains(&name) {
                     continue;
@@ -135,9 +146,8 @@ impl SkillRegistry {
 
         // 2. User skills
         let user_dir = self.user_dir.clone();
-        let user_skills = self
-            .discover_from_dir(&user_dir, SkillTrust::Trusted, SkillSource::User)
-            .await;
+        let user_skills =
+            discovery::discover_from_dir(&user_dir, SkillTrust::Trusted, SkillSource::User).await;
         for (name, skill) in user_skills {
             if seen.contains(&name) {
                 tracing::debug!("Skipping user skill '{}' (overridden by workspace)", name);
@@ -150,9 +160,9 @@ impl SkillRegistry {
 
         // 3. Installed skills (registry-installed, lowest priority)
         if let Some(inst_dir) = self.installed_dir.clone() {
-            let inst_skills = self
-                .discover_from_dir(&inst_dir, SkillTrust::Installed, SkillSource::User)
-                .await;
+            let inst_skills =
+                discovery::discover_from_dir(&inst_dir, SkillTrust::Installed, SkillSource::User)
+                    .await;
             for (name, skill) in inst_skills {
                 if seen.contains(&name) {
                     tracing::debug!(
@@ -168,118 +178,6 @@ impl SkillRegistry {
         }
 
         loaded_names
-    }
-
-    /// Discover skills from a single directory.
-    ///
-    /// Supports both layouts:
-    /// - Flat: `dir/SKILL.md` (skill name derived from parent dir or file stem)
-    /// - Subdirectory: `dir/<name>/SKILL.md`
-    async fn discover_from_dir<F>(
-        &self,
-        dir: &Path,
-        trust: SkillTrust,
-        make_source: F,
-    ) -> Vec<(String, LoadedSkill)>
-    where
-        F: Fn(PathBuf) -> SkillSource,
-    {
-        let mut results = Vec::new();
-
-        if !tokio::fs::try_exists(dir).await.unwrap_or(false) {
-            tracing::debug!("Skills directory does not exist: {:?}", dir);
-            return results;
-        }
-
-        let mut entries = match tokio::fs::read_dir(dir).await {
-            Ok(entries) => entries,
-            Err(e) => {
-                tracing::warn!("Failed to read skills directory {:?}: {}", dir, e);
-                return results;
-            }
-        };
-
-        let mut count = 0usize;
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            if count >= MAX_DISCOVERED_SKILLS {
-                tracing::warn!(
-                    "Skill discovery cap reached ({} skills), skipping remaining",
-                    MAX_DISCOVERED_SKILLS
-                );
-                break;
-            }
-
-            let path = entry.path();
-            let meta = match tokio::fs::symlink_metadata(&path).await {
-                Ok(m) => m,
-                Err(e) => {
-                    tracing::debug!("Failed to stat {:?}: {}", path, e);
-                    continue;
-                }
-            };
-
-            // Reject symlinks
-            if meta.is_symlink() {
-                tracing::warn!(
-                    "Skipping symlink in skills directory: {:?}",
-                    path.file_name().unwrap_or_default()
-                );
-                continue;
-            }
-
-            // Case 1: Subdirectory containing SKILL.md
-            if meta.is_dir() {
-                let skill_md = path.join("SKILL.md");
-                if tokio::fs::try_exists(&skill_md).await.unwrap_or(false) {
-                    count += 1;
-                    let source = make_source(path.clone());
-                    match self.load_skill_md(&skill_md, trust, source).await {
-                        Ok((name, skill)) => {
-                            tracing::debug!("Loaded skill: {}", name);
-                            results.push((name, skill));
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to load skill from {:?}: {}",
-                                path.file_name().unwrap_or_default(),
-                                e
-                            );
-                        }
-                    }
-                }
-                continue;
-            }
-
-            // Case 2: Flat SKILL.md directly in the directory
-            if meta.is_file()
-                && let Some(fname) = path.file_name().and_then(|f| f.to_str())
-                && fname == "SKILL.md"
-            {
-                count += 1;
-                let source = make_source(dir.to_path_buf());
-                match self.load_skill_md(&path, trust, source).await {
-                    Ok((name, skill)) => {
-                        tracing::info!("Loaded skill: {}", name);
-                        results.push((name, skill));
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to load skill from {:?}: {}", fname, e);
-                    }
-                }
-            }
-        }
-
-        results
-    }
-
-    /// Load a single SKILL.md file.
-    async fn load_skill_md(
-        &self,
-        path: &Path,
-        trust: SkillTrust,
-        source: SkillSource,
-    ) -> Result<(String, LoadedSkill), SkillRegistryError> {
-        load_and_validate_skill(path, trust, source).await
     }
 
     /// Get all loaded skills.
@@ -319,49 +217,67 @@ impl SkillRegistry {
     /// This is a static method so it doesn't borrow `&self`, allowing callers
     /// to drop their registry lock before awaiting.
     pub async fn prepare_install_to_disk(
-        user_dir: &Path,
-        skill_name: &str,
-        normalized_content: &str,
-    ) -> Result<(String, LoadedSkill), SkillRegistryError> {
-        let skill_dir = user_dir.join(skill_name);
-        tokio::fs::create_dir_all(&skill_dir).await.map_err(|e| {
-            SkillRegistryError::WriteError {
-                path: skill_dir.display().to_string(),
-                reason: e.to_string(),
-            }
-        })?;
-
-        let skill_path = skill_dir.join("SKILL.md");
-        tokio::fs::write(&skill_path, normalized_content)
-            .await
-            .map_err(|e| SkillRegistryError::WriteError {
-                path: skill_path.display().to_string(),
-                reason: e.to_string(),
-            })?;
-
-        // Load by re-reading from disk (validates round-trip)
-        let source = SkillSource::User(skill_dir);
-        load_and_validate_skill(&skill_path, SkillTrust::Installed, source).await
+        install_root: &Path,
+        payload: SkillInstallPayload,
+    ) -> Result<PreparedSkillInstall, SkillRegistryError> {
+        staged_install::prepare_install_to_disk(install_root, payload).await
     }
 
-    /// Commit a prepared skill into the in-memory registry.
+    /// Finalize a previously prepared install.
     ///
-    /// This is a fast, synchronous operation that only adds to the Vec.
-    /// Call after `prepare_install` completes.
+    /// This moves the prepared install from `prepared.staged_dir` to
+    /// `prepared.final_dir` with a same-filesystem rename, then inserts the
+    /// prevalidated `prepared.loaded_skill` into the in-memory registry.
+    ///
+    /// Call this only after [`SkillRegistry::prepare_install_to_disk`] has
+    /// returned successfully. On success, the prepared state is consumed. On
+    /// failure, the returned [`CommitPreparedInstallError`] includes both the
+    /// original [`SkillRegistryError`] and the still-staged
+    /// [`PreparedSkillInstall`] so callers can roll it back with
+    /// [`SkillRegistry::cleanup_prepared_install`].
     pub fn commit_install(
+        &mut self,
+        prepared: PreparedSkillInstall,
+    ) -> Result<(), CommitPreparedInstallError> {
+        staged_install::commit_install(self, prepared)
+    }
+    /// Insert an already loaded skill into the registry without filesystem I/O.
+    ///
+    /// This is the lower-level helper used by [`Self::commit_install`] after
+    /// the staged directory has been renamed into place. Callers are
+    /// responsible for ensuring any on-disk lifecycle work has already
+    /// completed before using this helper.
+    #[cfg(test)]
+    pub(crate) fn commit_loaded_skill(
         &mut self,
         name: &str,
         skill: LoadedSkill,
     ) -> Result<(), SkillRegistryError> {
-        // Re-check for duplicates (another thread may have installed between prepare and commit)
         if self.has(name) {
             return Err(SkillRegistryError::AlreadyExists {
                 name: name.to_string(),
             });
         }
+
         self.skills.push(skill);
         tracing::info!("Installed skill: {}", name);
         Ok(())
+    }
+    /// Remove the staged directory for a prepared install.
+    ///
+    /// Use this to roll back a [`PreparedSkillInstall`] that will not be
+    /// committed. The function is idempotent with respect to missing
+    /// directories: if `prepared.staged_dir` is already gone, cleanup succeeds.
+    ///
+    /// This does not touch `prepared.final_dir` or mutate the in-memory
+    /// registry. Callers should continue to return or log their original
+    /// install failure if cleanup itself also errors, and should call this
+    /// after `prepare_install_to_disk` whenever `commit_install` is not going
+    /// to succeed.
+    pub async fn cleanup_prepared_install(
+        prepared: &PreparedSkillInstall,
+    ) -> Result<(), SkillRegistryError> {
+        staged_install::cleanup_prepared_install(prepared).await
     }
 
     /// Install a skill at runtime from SKILL.md content.
@@ -371,26 +287,29 @@ impl SkillRegistry {
     /// `prepare_install_to_disk` + `commit_install` separately to minimize lock
     /// hold time.
     pub async fn install_skill(&mut self, content: &str) -> Result<String, SkillRegistryError> {
-        let normalized = normalize_line_endings(content);
-        let parsed = parse_skill_md(&normalized).map_err(|e: SkillParseError| match e {
-            SkillParseError::InvalidName { ref name } => SkillRegistryError::ParseError {
-                name: name.clone(),
-                reason: e.to_string(),
-            },
-            _ => SkillRegistryError::ParseError {
-                name: "(install)".to_string(),
-                reason: e.to_string(),
-            },
-        })?;
-        let skill_name = parsed.manifest.name.clone();
-        if self.has(&skill_name) {
-            return Err(SkillRegistryError::AlreadyExists { name: skill_name });
+        let install_dir = self.install_target_dir().to_path_buf();
+        let prepared = Self::prepare_install_to_disk(
+            &install_dir,
+            SkillInstallPayload::Markdown(content.into()),
+        )
+        .await?;
+        let installed_name = prepared.name().to_string();
+
+        match self.commit_install(prepared) {
+            Ok(()) => Ok(installed_name),
+            Err(commit_failure) => {
+                let (commit_error, prepared) = commit_failure.into_parts();
+                if let Err(cleanup_error) = Self::cleanup_prepared_install(&prepared).await {
+                    tracing::warn!(
+                        "failed to cleanup prepared skill install '{}': {}",
+                        prepared.name(),
+                        cleanup_error
+                    );
+                }
+
+                Err(commit_error)
+            }
         }
-        let user_dir = self.user_dir.clone();
-        let (name, skill) =
-            Self::prepare_install_to_disk(&user_dir, &skill_name, &normalized).await?;
-        self.commit_install(&name, skill)?;
-        Ok(name)
     }
 
     /// Validate that a skill can be removed and return its filesystem path.
@@ -399,58 +318,21 @@ impl SkillRegistry {
     /// filesystem cleanup without holding the registry lock, and call
     /// `commit_remove` afterward.
     pub fn validate_remove(&self, name: &str) -> Result<PathBuf, SkillRegistryError> {
-        let idx = self
-            .skills
-            .iter()
-            .position(|s| s.manifest.name == name)
-            .ok_or_else(|| SkillRegistryError::NotFound(name.to_string()))?;
-
-        let skill = &self.skills[idx];
-
-        match &skill.source {
-            SkillSource::User(path) => Ok(path.clone()),
-            SkillSource::Workspace(_) => Err(SkillRegistryError::CannotRemove {
-                name: name.to_string(),
-                reason: "workspace skills cannot be removed via this interface".to_string(),
-            }),
-            SkillSource::Bundled(_) => Err(SkillRegistryError::CannotRemove {
-                name: name.to_string(),
-                reason: "bundled skills cannot be removed".to_string(),
-            }),
-        }
+        removal::validate_remove(self, name)
     }
 
     /// Remove a skill's files from disk (async I/O).
     ///
     /// Call after `validate_remove` and before `commit_remove`.
     pub async fn delete_skill_files(path: &Path) -> Result<(), SkillRegistryError> {
-        let skill_md = path.join("SKILL.md");
-        if tokio::fs::try_exists(&skill_md).await.unwrap_or(false) {
-            tokio::fs::remove_file(&skill_md).await.map_err(|e| {
-                SkillRegistryError::WriteError {
-                    path: skill_md.display().to_string(),
-                    reason: e.to_string(),
-                }
-            })?;
-            // Remove the directory if empty
-            let _ = tokio::fs::remove_dir(path).await;
-        }
-        Ok(())
+        removal::delete_skill_files(path).await
     }
 
     /// Remove a skill from the in-memory registry.
     ///
     /// Fast synchronous operation. Call after filesystem cleanup.
     pub fn commit_remove(&mut self, name: &str) -> Result<(), SkillRegistryError> {
-        let idx = self
-            .skills
-            .iter()
-            .position(|s| s.manifest.name == name)
-            .ok_or_else(|| SkillRegistryError::NotFound(name.to_string()))?;
-
-        self.skills.remove(idx);
-        tracing::info!("Removed skill: {}", name);
-        Ok(())
+        removal::commit_remove(self, name)
     }
 
     /// Remove a skill by name.
@@ -487,608 +369,5 @@ impl SkillRegistry {
     /// the app is running; the fallback exists for test registries.
     pub fn install_target_dir(&self) -> &Path {
         self.installed_dir.as_deref().unwrap_or(&self.user_dir)
-    }
-}
-
-/// Load and validate a single SKILL.md file from disk.
-///
-/// Shared implementation used by both `SkillRegistry::load_skill_md` (discovery)
-/// and `SkillRegistry::prepare_install_to_disk` (installation). This avoids
-/// duplicating the read/parse/validate/hash pipeline.
-async fn load_and_validate_skill(
-    path: &Path,
-    trust: SkillTrust,
-    source: SkillSource,
-) -> Result<(String, LoadedSkill), SkillRegistryError> {
-    // Check for symlink at the file level
-    let file_meta =
-        tokio::fs::symlink_metadata(path)
-            .await
-            .map_err(|e| SkillRegistryError::ReadError {
-                path: path.display().to_string(),
-                reason: e.to_string(),
-            })?;
-
-    if file_meta.is_symlink() {
-        return Err(SkillRegistryError::SymlinkDetected {
-            path: path.display().to_string(),
-        });
-    }
-
-    // Read and check size
-    let raw_bytes = tokio::fs::read(path)
-        .await
-        .map_err(|e| SkillRegistryError::ReadError {
-            path: path.display().to_string(),
-            reason: e.to_string(),
-        })?;
-
-    if raw_bytes.len() as u64 > MAX_PROMPT_FILE_SIZE {
-        return Err(SkillRegistryError::FileTooLarge {
-            name: path.display().to_string(),
-            size: raw_bytes.len() as u64,
-            max: MAX_PROMPT_FILE_SIZE,
-        });
-    }
-
-    let raw_content = String::from_utf8(raw_bytes).map_err(|e| SkillRegistryError::ReadError {
-        path: path.display().to_string(),
-        reason: format!("Invalid UTF-8: {}", e),
-    })?;
-
-    // Normalize line endings before parsing to handle CRLF
-    let normalized_content = normalize_line_endings(&raw_content);
-
-    // Parse SKILL.md
-    let parsed = parse_skill_md(&normalized_content).map_err(|e: SkillParseError| match e {
-        SkillParseError::InvalidName { ref name } => SkillRegistryError::ParseError {
-            name: name.clone(),
-            reason: e.to_string(),
-        },
-        _ => SkillRegistryError::ParseError {
-            name: path.display().to_string(),
-            reason: e.to_string(),
-        },
-    })?;
-
-    let manifest = parsed.manifest;
-    let prompt_content = parsed.prompt_content;
-
-    // Check gating requirements
-    if let Some(ref meta) = manifest.metadata
-        && let Some(ref openclaw) = meta.openclaw
-    {
-        let result = gating::check_requirements(&openclaw.requires).await;
-        if !result.passed {
-            return Err(SkillRegistryError::GatingFailed {
-                name: manifest.name.clone(),
-                reason: result.failures.join("; "),
-            });
-        }
-    }
-
-    // Check token budget (reject if prompt is > 2x declared budget)
-    // ~4 bytes per token for English prose = ~0.25 tokens per byte
-    let approx_tokens = (prompt_content.len() as f64 * 0.25) as usize;
-    let declared = manifest.activation.max_context_tokens;
-    if declared > 0 && approx_tokens > declared * 2 {
-        return Err(SkillRegistryError::TokenBudgetExceeded {
-            name: manifest.name.clone(),
-            approx_tokens,
-            declared,
-        });
-    }
-
-    // Compute content hash
-    let content_hash = compute_hash(&prompt_content);
-
-    // Compile regex patterns
-    let compiled_patterns = LoadedSkill::compile_patterns(&manifest.activation.patterns);
-
-    // Pre-compute lowercased keywords and tags for efficient scoring
-    let lowercased_keywords = to_lowercase_vec(&manifest.activation.keywords);
-    let lowercased_exclude_keywords = to_lowercase_vec(&manifest.activation.exclude_keywords);
-    let lowercased_tags = to_lowercase_vec(&manifest.activation.tags);
-
-    let name = manifest.name.clone();
-    let skill = LoadedSkill {
-        manifest,
-        prompt_content,
-        trust,
-        source,
-        content_hash,
-        compiled_patterns,
-        lowercased_keywords,
-        lowercased_exclude_keywords,
-        lowercased_tags,
-    };
-
-    Ok((name, skill))
-}
-
-/// Compute SHA-256 hash of content in the format "sha256:hex...".
-pub fn compute_hash(content: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(content.as_bytes());
-    let result = hasher.finalize();
-    format!("sha256:{:x}", result)
-}
-
-/// Helper to check gating for a `GatingRequirements`. Useful for callers that
-/// don't have the full skill loaded yet.
-pub async fn check_gating(
-    requirements: &GatingRequirements,
-) -> crate::skills::gating::GatingResult {
-    gating::check_requirements(requirements).await
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[tokio::test]
-    async fn test_discover_empty_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        let loaded = registry.discover_all().await;
-        assert!(loaded.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_discover_nonexistent_dir() {
-        let mut registry = SkillRegistry::new(PathBuf::from("/nonexistent/skills"));
-        let loaded = registry.discover_all().await;
-        assert!(loaded.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_load_subdirectory_layout() {
-        let dir = tempfile::tempdir().unwrap();
-        let skill_dir = dir.path().join("test-skill");
-        fs::create_dir(&skill_dir).unwrap();
-
-        fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\nname: test-skill\ndescription: A test skill\nactivation:\n  keywords: [\"test\"]\n---\n\nYou are a helpful test assistant.\n",
-        ).unwrap();
-
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        let loaded = registry.discover_all().await;
-
-        assert_eq!(loaded, vec!["test-skill"]);
-        assert_eq!(registry.count(), 1);
-
-        let skill = &registry.skills()[0];
-        assert_eq!(skill.trust, SkillTrust::Trusted);
-        assert!(skill.prompt_content.contains("helpful test assistant"));
-    }
-
-    #[tokio::test]
-    async fn test_workspace_overrides_user() {
-        let user_dir = tempfile::tempdir().unwrap();
-        let ws_dir = tempfile::tempdir().unwrap();
-
-        // Create skill in user dir
-        let user_skill = user_dir.path().join("my-skill");
-        fs::create_dir(&user_skill).unwrap();
-        fs::write(
-            user_skill.join("SKILL.md"),
-            "---\nname: my-skill\n---\n\nUser version.\n",
-        )
-        .unwrap();
-
-        // Create same-named skill in workspace dir
-        let ws_skill = ws_dir.path().join("my-skill");
-        fs::create_dir(&ws_skill).unwrap();
-        fs::write(
-            ws_skill.join("SKILL.md"),
-            "---\nname: my-skill\n---\n\nWorkspace version.\n",
-        )
-        .unwrap();
-
-        let mut registry = SkillRegistry::new(user_dir.path().to_path_buf())
-            .with_workspace_dir(ws_dir.path().to_path_buf());
-        let loaded = registry.discover_all().await;
-
-        assert_eq!(loaded, vec!["my-skill"]);
-        assert_eq!(registry.count(), 1);
-        assert!(registry.skills()[0].prompt_content.contains("Workspace"));
-    }
-
-    #[tokio::test]
-    async fn test_gating_failure_skips_skill() {
-        let dir = tempfile::tempdir().unwrap();
-        let skill_dir = dir.path().join("gated-skill");
-        fs::create_dir(&skill_dir).unwrap();
-
-        fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\nname: gated-skill\nmetadata:\n  openclaw:\n    requires:\n      bins: [\"__nonexistent_bin__\"]\n---\n\nGated prompt.\n",
-        ).unwrap();
-
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        let loaded = registry.discover_all().await;
-        assert!(loaded.is_empty());
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn test_symlink_rejected() {
-        let dir = tempfile::tempdir().unwrap();
-        let real_dir = dir.path().join("real-skill");
-        fs::create_dir(&real_dir).unwrap();
-        fs::write(
-            real_dir.join("SKILL.md"),
-            "---\nname: real-skill\n---\n\nTest.\n",
-        )
-        .unwrap();
-
-        let skills_dir = dir.path().join("skills");
-        fs::create_dir(&skills_dir).unwrap();
-        std::os::unix::fs::symlink(&real_dir, skills_dir.join("linked-skill")).unwrap();
-
-        let mut registry = SkillRegistry::new(skills_dir);
-        let loaded = registry.discover_all().await;
-        assert!(loaded.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_file_size_limit() {
-        let dir = tempfile::tempdir().unwrap();
-        let skill_dir = dir.path().join("big-skill");
-        fs::create_dir(&skill_dir).unwrap();
-
-        let big_content = format!(
-            "---\nname: big-skill\n---\n\n{}",
-            "x".repeat((MAX_PROMPT_FILE_SIZE + 1) as usize)
-        );
-        fs::write(skill_dir.join("SKILL.md"), &big_content).unwrap();
-
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        let loaded = registry.discover_all().await;
-        assert!(loaded.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_invalid_skill_md_skipped() {
-        let dir = tempfile::tempdir().unwrap();
-        let skill_dir = dir.path().join("bad-skill");
-        fs::create_dir(&skill_dir).unwrap();
-
-        // Missing frontmatter
-        fs::write(skill_dir.join("SKILL.md"), "Just plain text").unwrap();
-
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        let loaded = registry.discover_all().await;
-        assert!(loaded.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_line_ending_normalization() {
-        let dir = tempfile::tempdir().unwrap();
-        let skill_dir = dir.path().join("crlf-skill");
-        fs::create_dir(&skill_dir).unwrap();
-
-        fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\r\nname: crlf-skill\r\n---\r\n\r\nline1\r\nline2\r\n",
-        )
-        .unwrap();
-
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        registry.discover_all().await;
-
-        assert_eq!(registry.count(), 1);
-        let skill = &registry.skills()[0];
-        assert_eq!(skill.prompt_content, "line1\nline2\n");
-    }
-
-    #[tokio::test]
-    async fn test_token_budget_rejection() {
-        let dir = tempfile::tempdir().unwrap();
-        let skill_dir = dir.path().join("big-prompt");
-        fs::create_dir(&skill_dir).unwrap();
-
-        let big_prompt = "word ".repeat(4000);
-        let content = format!(
-            "---\nname: big-prompt\nactivation:\n  max_context_tokens: 100\n---\n\n{}",
-            big_prompt
-        );
-        fs::write(skill_dir.join("SKILL.md"), &content).unwrap();
-
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        let loaded = registry.discover_all().await;
-        assert!(loaded.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_has_and_find_by_name() {
-        let dir = tempfile::tempdir().unwrap();
-        let skill_dir = dir.path().join("my-skill");
-        fs::create_dir(&skill_dir).unwrap();
-        fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\nname: my-skill\n---\n\nPrompt.\n",
-        )
-        .unwrap();
-
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        registry.discover_all().await;
-
-        assert!(registry.has("my-skill"));
-        assert!(!registry.has("nonexistent"));
-        assert!(registry.find_by_name("my-skill").is_some());
-        assert!(registry.find_by_name("nonexistent").is_none());
-    }
-
-    #[tokio::test]
-    async fn test_install_skill_from_content() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-
-        let content =
-            "---\nname: test-install\ndescription: Installed skill\n---\n\nInstalled prompt.\n";
-        let name = registry.install_skill(content).await.unwrap();
-
-        assert_eq!(name, "test-install");
-        assert!(registry.has("test-install"));
-        assert_eq!(registry.count(), 1);
-
-        // Verify file was written to disk
-        let skill_path = dir.path().join("test-install").join("SKILL.md");
-        assert!(skill_path.exists());
-    }
-
-    #[tokio::test]
-    async fn test_install_duplicate_rejected() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-
-        let content = "---\nname: dup-skill\n---\n\nPrompt.\n";
-        registry.install_skill(content).await.unwrap();
-
-        let result = registry.install_skill(content).await;
-        assert!(matches!(
-            result,
-            Err(SkillRegistryError::AlreadyExists { .. })
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_remove_user_skill() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-
-        let content = "---\nname: removable\n---\n\nPrompt.\n";
-        registry.install_skill(content).await.unwrap();
-        assert!(registry.has("removable"));
-
-        registry.remove_skill("removable").await.unwrap();
-        assert!(!registry.has("removable"));
-        assert_eq!(registry.count(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_remove_workspace_skill_rejected() {
-        let user_dir = tempfile::tempdir().unwrap();
-        let ws_dir = tempfile::tempdir().unwrap();
-
-        let ws_skill = ws_dir.path().join("ws-skill");
-        fs::create_dir(&ws_skill).unwrap();
-        fs::write(
-            ws_skill.join("SKILL.md"),
-            "---\nname: ws-skill\n---\n\nWorkspace prompt.\n",
-        )
-        .unwrap();
-
-        let mut registry = SkillRegistry::new(user_dir.path().to_path_buf())
-            .with_workspace_dir(ws_dir.path().to_path_buf());
-        registry.discover_all().await;
-
-        let result = registry.remove_skill("ws-skill").await;
-        assert!(matches!(
-            result,
-            Err(SkillRegistryError::CannotRemove { .. })
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_remove_nonexistent_fails() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-
-        let result = registry.remove_skill("nonexistent").await;
-        assert!(matches!(result, Err(SkillRegistryError::NotFound(_))));
-    }
-
-    #[tokio::test]
-    async fn test_reload_clears_and_rediscovers() {
-        let dir = tempfile::tempdir().unwrap();
-        let skill_dir = dir.path().join("persist-skill");
-        fs::create_dir(&skill_dir).unwrap();
-        fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\nname: persist-skill\n---\n\nPrompt.\n",
-        )
-        .unwrap();
-
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        registry.discover_all().await;
-        assert_eq!(registry.count(), 1);
-
-        let loaded = registry.reload().await;
-        assert_eq!(loaded, vec!["persist-skill"]);
-        assert_eq!(registry.count(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_load_flat_layout() {
-        let dir = tempfile::tempdir().unwrap();
-
-        // Place a SKILL.md directly in the skills directory (flat layout)
-        fs::write(
-            dir.path().join("SKILL.md"),
-            "---\nname: flat-skill\ndescription: A flat layout skill\nactivation:\n  keywords: [\"flat\"]\n---\n\nYou are a flat layout test skill.\n",
-        ).unwrap();
-
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        let loaded = registry.discover_all().await;
-
-        assert_eq!(loaded, vec!["flat-skill"]);
-        assert_eq!(registry.count(), 1);
-
-        let skill = &registry.skills()[0];
-        assert_eq!(skill.trust, SkillTrust::Trusted);
-        assert!(skill.prompt_content.contains("flat layout test skill"));
-    }
-
-    #[tokio::test]
-    async fn test_mixed_flat_and_subdirectory_layout() {
-        let dir = tempfile::tempdir().unwrap();
-
-        // Flat layout: SKILL.md directly in the skills directory
-        fs::write(
-            dir.path().join("SKILL.md"),
-            "---\nname: flat-skill\n---\n\nFlat prompt.\n",
-        )
-        .unwrap();
-
-        // Subdirectory layout: <name>/SKILL.md
-        let sub_dir = dir.path().join("sub-skill");
-        fs::create_dir(&sub_dir).unwrap();
-        fs::write(
-            sub_dir.join("SKILL.md"),
-            "---\nname: sub-skill\n---\n\nSub prompt.\n",
-        )
-        .unwrap();
-
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        let loaded = registry.discover_all().await;
-
-        assert_eq!(registry.count(), 2);
-        assert!(loaded.contains(&"flat-skill".to_string()));
-        assert!(loaded.contains(&"sub-skill".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_lowercased_fields_populated() {
-        let dir = tempfile::tempdir().unwrap();
-        let skill_dir = dir.path().join("case-skill");
-        fs::create_dir(&skill_dir).unwrap();
-
-        fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\nname: case-skill\nactivation:\n  keywords: [\"Write\", \"EDIT\"]\n  tags: [\"Email\", \"PROSE\"]\n---\n\nTest prompt.\n",
-        ).unwrap();
-
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        registry.discover_all().await;
-
-        let skill = registry.find_by_name("case-skill").unwrap();
-        assert_eq!(skill.lowercased_keywords, vec!["write", "edit"]);
-        assert_eq!(skill.lowercased_tags, vec!["email", "prose"]);
-    }
-
-    #[tokio::test]
-    async fn test_retain_only_empty_is_noop() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("SKILL.md"),
-            "---\nname: keep-me\ndescription: test\nactivation:\n  keywords: [\"test\"]\n---\n\nKeep this skill.\n",
-        )
-        .unwrap();
-
-        let mut registry = SkillRegistry::new(dir.path().to_path_buf());
-        registry.discover_all().await;
-        assert_eq!(registry.count(), 1);
-
-        registry.retain_only(&[]);
-        assert_eq!(
-            registry.count(),
-            1,
-            "empty retain_only should keep all skills"
-        );
-    }
-
-    #[test]
-    fn test_compute_hash_deterministic() {
-        let h1 = compute_hash("hello world");
-        let h2 = compute_hash("hello world");
-        assert_eq!(h1, h2);
-        assert!(h1.starts_with("sha256:"));
-    }
-
-    #[test]
-    fn test_compute_hash_different_content() {
-        let h1 = compute_hash("hello");
-        let h2 = compute_hash("world");
-        assert_ne!(h1, h2);
-    }
-
-    /// Skills in the installed_dir are discovered with SkillTrust::Installed,
-    /// not Trusted. This ensures registry-installed skills do not gain full
-    /// tool access after an agent restart.
-    #[tokio::test]
-    async fn test_installed_dir_uses_installed_trust() {
-        let user_dir = tempfile::tempdir().unwrap();
-        let inst_dir = tempfile::tempdir().unwrap();
-
-        // Place a skill in the installed dir
-        let skill_dir = inst_dir.path().join("registry-skill");
-        fs::create_dir(&skill_dir).unwrap();
-        fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\nname: registry-skill\nversion: \"1.2.3\"\n---\n\nInstalled prompt.\n",
-        )
-        .unwrap();
-
-        let mut registry = SkillRegistry::new(user_dir.path().to_path_buf())
-            .with_installed_dir(inst_dir.path().to_path_buf());
-        let loaded = registry.discover_all().await;
-
-        assert_eq!(loaded, vec!["registry-skill"]);
-        let skill = registry.find_by_name("registry-skill").unwrap();
-        assert_eq!(
-            skill.trust,
-            SkillTrust::Installed,
-            "installed_dir skills must be Installed"
-        );
-        assert_eq!(skill.manifest.version, "1.2.3");
-    }
-
-    /// install_target_dir() returns installed_dir when set, user_dir otherwise.
-    #[test]
-    fn test_install_target_dir_prefers_installed_dir() {
-        let user_dir = PathBuf::from("/tmp/user-skills");
-        let inst_dir = PathBuf::from("/tmp/installed-skills");
-
-        let registry = SkillRegistry::new(user_dir.clone()).with_installed_dir(inst_dir.clone());
-        assert_eq!(registry.install_target_dir(), inst_dir.as_path());
-
-        let registry_no_inst = SkillRegistry::new(user_dir.clone());
-        assert_eq!(registry_no_inst.install_target_dir(), user_dir.as_path());
-    }
-
-    /// User skills (user_dir) remain Trusted even when installed_dir is set.
-    #[tokio::test]
-    async fn test_user_dir_stays_trusted_with_installed_dir() {
-        let user_dir = tempfile::tempdir().unwrap();
-        let inst_dir = tempfile::tempdir().unwrap();
-
-        let skill_dir = user_dir.path().join("my-skill");
-        fs::create_dir(&skill_dir).unwrap();
-        fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\nname: my-skill\n---\n\nUser prompt.\n",
-        )
-        .unwrap();
-
-        let mut registry = SkillRegistry::new(user_dir.path().to_path_buf())
-            .with_installed_dir(inst_dir.path().to_path_buf());
-        registry.discover_all().await;
-
-        let skill = registry.find_by_name("my-skill").unwrap();
-        assert_eq!(skill.trust, SkillTrust::Trusted);
     }
 }

@@ -49,8 +49,8 @@ fn install_skill(registry: &Arc<RwLock<SkillRegistry>>, name: &str, skill: Loade
     let mut reg = registry
         .write()
         .expect("failed to acquire registry write lock");
-    reg.commit_install(name, skill)
-        .unwrap_or_else(|e| panic!("failed to commit_install {name}: {e}"));
+    reg.commit_loaded_skill(name, skill)
+        .unwrap_or_else(|e| panic!("failed to commit_loaded_skill {name}: {e}"));
 }
 
 fn make_context_skill(trust: SkillTrust) -> LoadedSkill {
