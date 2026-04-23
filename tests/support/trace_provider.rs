@@ -14,6 +14,22 @@ use ironclaw::llm::{
 
 use super::trace_types::LlmTrace;
 
+pub(super) struct TraceLlmState {
+    /// Current replay cursor, visible only to sibling support modules that
+    /// assert replay diagnostics.
+    ///
+    /// The value is a `usize` replay cursor. It is monotonic, must not wrap,
+    /// and should be mutated only while holding `TraceLlm::inner`. In normal
+    /// operation it stays in `0..=steps.len()`, but `TraceLlm::next_step` may
+    /// briefly increment it to `steps.len() + 1` before exhaustion is detected.
+    /// Test-scale traces should never approach `usize::MAX`; treat overflow as
+    /// invalid trace data rather than recovering with saturation or wraparound.
+    pub(super) index: usize,
+    /// Captured request messages, owned with the cursor so request recording
+    /// and replay advancement remain one critical section.
+    captured_requests: Vec<Vec<ChatMessage>>,
+}
+
 /// An `LlmProvider` that replays canned responses from a trace.
 ///
 /// Steps from all turns are flattened into a single sequence at construction
@@ -23,23 +39,6 @@ use super::trace_types::LlmTrace;
 /// Mutable replay state is held behind one mutex so request capture and step
 /// advancement stay in lockstep even if a test drives the provider from more
 /// than one task.
-pub(super) struct TraceLlmState {
-    /// Current replay cursor, visible only to sibling support modules that
-    /// assert replay diagnostics.
-    ///
-    /// The value is a `usize` in `0..=steps.len()`: it starts at zero, may
-    /// equal `steps.len()` after the final recorded step has been consumed, and
-    /// must not be advanced beyond the next `TraceLlm::next_step` call. Mutate
-    /// it only while holding `TraceLlm::inner`, advance it monotonically, and
-    /// avoid wrapping arithmetic. Test-scale traces should never approach
-    /// `usize::MAX`; treat overflow as a test-data bug rather than recovering
-    /// with saturation or wraparound.
-    pub(super) index: usize,
-    /// Captured request messages, owned with the cursor so request recording
-    /// and replay advancement remain one critical section.
-    captured_requests: Vec<Vec<ChatMessage>>,
-}
-
 pub struct TraceLlm {
     model_name: String,
     steps: Vec<TraceStep>,
