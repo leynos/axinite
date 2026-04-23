@@ -3,8 +3,6 @@
 //! Extracted from `e2e_spot_checks.rs` so they can be reused across all E2E
 //! test files. Mirrors the assertion types from `nearai/benchmarks` SpotSuite.
 
-#![allow(dead_code)]
-
 use regex::Regex;
 
 use crate::support::trace_types::TraceExpects;
@@ -68,17 +66,6 @@ pub fn assert_all_tools_succeeded(completed: &[(String, bool)]) {
     assert!(
         failed.is_empty(),
         "Expected all tools to succeed, but these failed: {failed:?}. All: {completed:?}"
-    );
-}
-
-/// Assert a specific tool completed successfully at least once.
-pub fn assert_tool_succeeded(completed: &[(String, bool)], tool_name: &str) {
-    let found = completed
-        .iter()
-        .any(|(name, success)| name == tool_name && *success);
-    assert!(
-        found,
-        "Expected '{tool_name}' to complete successfully, got: {completed:?}"
     );
 }
 
