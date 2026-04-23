@@ -7,5 +7,8 @@ pub mod trace_provider;
 mod trace_provider_diagnostics;
 pub mod trace_types;
 mod trace_types_builders;
+mod trace_types_patch;
 mod trace_types_recorded;
 mod trace_types_runtime;
+mod webhook_helpers;
+pub mod webhook_server_helpers;
