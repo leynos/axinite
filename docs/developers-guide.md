@@ -482,7 +482,7 @@ is now applied once inside `LibSqlDatabase::connect()`, so it is no longer
 necessary — and must not be duplicated — in individual store
 `connect()` methods.
 
-## 16. Dispatcher Architecture
+## 16. Dispatcher architecture
 
 The dispatcher orchestrates interactive chat turns by preparing an LLM
 `ReasoningContext`, running a tool-aware agentic loop, and converting
