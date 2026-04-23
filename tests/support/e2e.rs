@@ -2,7 +2,6 @@
 
 pub mod assertions;
 pub mod cleanup;
-pub mod fixtures;
 pub mod instrumented_llm;
 pub mod metrics;
 #[cfg(feature = "libsql")]

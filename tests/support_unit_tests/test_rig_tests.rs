@@ -46,24 +46,21 @@ async fn rig_builds_and_runs() {
         responses.iter().map(|r| &r.content).collect::<Vec<_>>()
     );
 
-    let status_events = rig.captured_status_events_async().await;
+    let status_events = rig.captured_status_events();
     assert!(
-        !rig.has_safety_warnings(),
+        !status_events.iter().any(|status| matches!(
+            status,
+            ironclaw::channels::StatusUpdate::Status(message)
+                if message.contains("sanitiz")
+                    || message.contains("inject")
+                    || message.contains("warning")
+        )),
         "simple trace should not emit safety warnings: {status_events:?}"
     );
+    let metrics = rig.collect_metrics().await;
     assert!(
-        rig.estimated_cost_usd() >= 0.0,
+        metrics.estimated_cost_usd >= 0.0,
         "estimated cost should be non-negative"
-    );
-
-    rig.clear().await;
-    assert!(
-        rig.captured_status_events().is_empty(),
-        "clear should remove captured status events"
-    );
-    assert!(
-        rig.tool_calls_started().is_empty(),
-        "clear should remove captured tool events"
     );
 
     rig.shutdown();

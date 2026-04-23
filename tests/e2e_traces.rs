@@ -35,8 +35,7 @@ mod safety_layer;
 mod spot_checks;
 #[path = "e2e_traces/status_events.rs"]
 mod status_events;
-
-mod test_rig_tests;
+#[path = "e2e_traces/thread_scheduling.rs"]
 mod thread_scheduling;
 #[path = "e2e_traces/tool_coverage.rs"]
 mod tool_coverage;
