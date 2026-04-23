@@ -7,13 +7,14 @@ enum PathKind {
 }
 
 /// Removes listed paths when dropped, ensuring cleanup even on panic.
+#[derive(Default)]
 pub struct CleanupGuard {
     paths: Vec<(String, PathKind)>,
 }
 
 impl CleanupGuard {
     pub fn new() -> Self {
-        Self { paths: Vec::new() }
+        Self::default()
     }
 
     /// Register a file path for cleanup on drop.

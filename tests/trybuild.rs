@@ -23,3 +23,9 @@ fn startup_compile_contracts() {
     let cases = trybuild::TestCases::new();
     cases.pass("tests/trybuild/startup_run_non_unix.rs");
 }
+
+#[test]
+fn infrastructure_harness_compile_contracts() {
+    let cases = trybuild::TestCases::new();
+    cases.pass("tests/trybuild/infrastructure.rs");
+}
