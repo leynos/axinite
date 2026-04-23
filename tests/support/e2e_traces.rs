@@ -4,8 +4,6 @@
 pub mod assertions;
 #[path = "cleanup.rs"]
 pub mod cleanup;
-#[path = "fixtures.rs"]
-pub mod fixtures;
 #[path = "instrumented_llm.rs"]
 pub mod instrumented_llm;
 #[path = "metrics.rs"]
