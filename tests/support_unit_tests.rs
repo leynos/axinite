@@ -17,5 +17,6 @@ mod test_channel_tests;
 mod trace_llm_contract_tests;
 #[path = "support_unit_tests/trace_llm_tests.rs"]
 mod trace_llm_tests;
+mod trace_support_module_tests;
 #[path = "support_unit_tests/trace_types_tests.rs"]
 mod trace_types_tests;
