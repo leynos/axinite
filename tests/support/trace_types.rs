@@ -167,9 +167,6 @@ impl<'de> Deserialize<'de> for LlmTrace {
         })
     }
 }
-
-impl LlmTrace {}
-
 /// Load a trace from JSON, applying a structured mutation before deserializing.
 pub async fn load_trace_with_mutation<F>(
     path: impl AsRef<std::path::Path>,

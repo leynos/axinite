@@ -41,11 +41,11 @@ fn cleanup_guard_file_does_not_remove_dir() {
 
 #[test]
 fn setup_test_dir_creates_missing_directory() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("failed to create tempdir");
     let target = dir.path().join("nested");
     let target_str = target.to_string_lossy().into_owned();
 
-    crate::support::cleanup::setup_test_dir(&target_str).unwrap();
+    crate::support::cleanup::setup_test_dir(&target_str).expect("setup_test_dir failed");
 
     assert!(
         target.is_dir(),
@@ -55,10 +55,10 @@ fn setup_test_dir_creates_missing_directory() {
 
 #[test]
 fn setup_test_dir_with_suffix_creates_unique_directory() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("failed to create tempdir");
 
-    let created =
-        crate::support::cleanup::setup_test_dir_with_suffix(dir.path(), "cleanup-tests").unwrap();
+    let created = crate::support::cleanup::setup_test_dir_with_suffix(dir.path(), "cleanup-tests")
+        .expect("setup_test_dir_with_suffix failed");
 
     assert!(
         std::path::Path::new(&created).is_dir(),

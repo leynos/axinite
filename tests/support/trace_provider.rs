@@ -24,14 +24,42 @@ use super::trace_types::LlmTrace;
 /// advancement stay in lockstep even if a test drives the provider from more
 /// than one task.
 pub(super) struct TraceLlmState {
+    /// Current replay cursor, visible only to sibling support modules that
+    /// assert replay diagnostics.
+    ///
+    /// The value is a `usize` in `0..=steps.len()`: it starts at zero, may
+    /// equal `steps.len()` after the final recorded step has been consumed, and
+    /// must not be advanced beyond the next `TraceLlm::next_step` call. Mutate
+    /// it only while holding `TraceLlm::inner`, advance it monotonically, and
+    /// avoid wrapping arithmetic. Test-scale traces should never approach
+    /// `usize::MAX`; treat overflow as a test-data bug rather than recovering
+    /// with saturation or wraparound.
     pub(super) index: usize,
+    /// Captured request messages, owned with the cursor so request recording
+    /// and replay advancement remain one critical section.
     captured_requests: Vec<Vec<ChatMessage>>,
 }
 
 pub struct TraceLlm {
     model_name: String,
     steps: Vec<TraceStep>,
+    /// Protects `TraceLlmState::index` and `captured_requests`.
+    ///
+    /// Sibling modules may read this for diagnostics, but replay code should
+    /// use `next_step` for read-modify-write access so cursor advancement,
+    /// request capture, and exhaustion errors stay consistent. See
+    /// `tests/support_unit_tests/trace_llm_tests.rs` for replay behaviour
+    /// examples and `tests/support_unit_tests/trace_llm_contract_tests.rs` for
+    /// the diagnostics contract.
     pub(super) inner: Mutex<TraceLlmState>,
+    /// Count of request-hint mismatches observed during replay.
+    ///
+    /// This counter is separate from `inner` because hint validation only needs
+    /// lock-free increments. Writers should use `fetch_add` with relaxed
+    /// ordering for best-effort diagnostics; readers should use the
+    /// diagnostics helper in `trace_provider_diagnostics.rs`. The count is
+    /// expected to stay small in tests, so overflow indicates runaway replay or
+    /// invalid trace data rather than a recoverable condition.
     pub(super) hint_mismatches: AtomicUsize,
 }
 
