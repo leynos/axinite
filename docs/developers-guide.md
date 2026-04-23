@@ -2540,6 +2540,37 @@ Today that means `tests/support/support_unit.rs` opts in so
 `tests/support_unit_tests.rs` can exercise the diagnostic surface without
 forcing unrelated harnesses to compile it.
 
+The same split also defines the internal `pub(super)` field boundary in
+`tests/support/trace_provider.rs`. Only the sibling diagnostics module in
+`tests/support/trace_provider_diagnostics.rs` may read those fields directly;
+external harness code and unrelated support modules should go through the
+public helpers instead. The exposed fields are `TraceLlmState::index`, which
+is the replay cursor, `TraceLlm::inner`, which is the
+`Mutex<TraceLlmState>` protecting replay state, and
+`TraceLlm::hint_mismatches`, which is an `AtomicUsize` tracking hint
+validation mismatches.
+
+`TraceLlmState::index` is a monotonically increasing `usize` replay cursor. It
+must be mutated only while holding `TraceLlm::inner`, and replay code should
+use `TraceLlm::next_step(...)` rather than open-coding its own
+read-modify-write sequence. In normal operation the cursor stays in the range
+`0..=steps.len()`. Any overflow indicates runaway replay or invalid trace data,
+not a recoverable condition.
+
+`captured_requests` is owned by `TraceLlmState` and protected by
+`inner: Mutex<TraceLlmState>`, so request capture and cursor movement remain in
+one critical section. `hint_mismatches` is separate from that mutex because
+hint validation only needs lock-free accounting. Reads happen through
+`TraceLlm::hint_mismatches()`, which uses relaxed ordering, and writes use a
+checked relaxed `fetch_update(...)` increment so overflow fails fast instead
+of wrapping silently. Read-only diagnostic access should therefore stay behind
+`TraceLlm::calls()` and `TraceLlm::hint_mismatches()`, and new direct field
+access should not be added outside `trace_provider_diagnostics.rs`.
+
+See `tests/support_unit_tests/trace_llm_tests.rs` for replay and call-count
+examples, and `tests/support_unit_tests/trace_llm_contract_tests.rs` for the
+request-hint mismatch contract in practice.
+
 
 ###### Harness-specific support roots
 
@@ -3391,4 +3422,3 @@ sed -n '1,40p' .cargo/config.toml
 
 Three test-support helpers were added in PR `#161` to make replay-based
 and worker-coverage tests more reliable.
-
