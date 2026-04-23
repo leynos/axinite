@@ -54,8 +54,8 @@ pub struct TraceLlm {
     /// Count of request-hint mismatches observed during replay.
     ///
     /// This counter is separate from `inner` because hint validation only needs
-    /// lock-free increments. Writers should use `fetch_add` with relaxed
-    /// ordering for best-effort diagnostics; readers should use the
+    /// lock-free increments. Writers should use checked increments via
+    /// `fetch_update`; readers should use the
     /// diagnostics helper in `trace_provider_diagnostics.rs`. The count is
     /// expected to stay small in tests, so overflow indicates runaway replay or
     /// invalid trace data rather than a recoverable condition.
@@ -154,7 +154,7 @@ impl TraceLlm {
                 .map(|message| message.content.to_lowercase().contains(&expected_substr_lc))
                 .unwrap_or(false);
             if !matched {
-                self.hint_mismatches.fetch_add(1, Ordering::Relaxed);
+                self.increment_hint_mismatches();
                 eprintln!(
                     "[TraceLlm WARN] Request hint mismatch: expected last user message to contain {:?}, \
                      got {:?}",
@@ -167,13 +167,21 @@ impl TraceLlm {
         if let Some(min_count) = hint.min_message_count
             && messages.len() < min_count
         {
-            self.hint_mismatches.fetch_add(1, Ordering::Relaxed);
+            self.increment_hint_mismatches();
             eprintln!(
                 "[TraceLlm WARN] Request hint mismatch: expected >= {} messages, got {}",
                 min_count,
                 messages.len(),
             );
         }
+    }
+
+    fn increment_hint_mismatches(&self) {
+        self.hint_mismatches
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.checked_add(1)
+            })
+            .unwrap_or_else(|_| panic!("hint_mismatches overflowed"));
     }
 
     #[inline]

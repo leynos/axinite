@@ -59,6 +59,7 @@ fn setup_test_dir_with_suffix_creates_unique_directory() {
 
     let created = crate::support::cleanup::setup_test_dir_with_suffix(dir.path(), "cleanup-tests")
         .expect("setup_test_dir_with_suffix should succeed");
+    let _guard = CleanupGuard::new().dir(created.clone());
 
     assert!(
         std::path::Path::new(&created).is_dir(),
@@ -68,5 +69,4 @@ fn setup_test_dir_with_suffix_creates_unique_directory() {
         created.contains("cleanup-tests"),
         "created path should include the requested suffix"
     );
-    let _ = std::fs::remove_dir_all(&created);
 }
