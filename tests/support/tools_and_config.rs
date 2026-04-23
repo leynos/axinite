@@ -7,6 +7,13 @@ pub mod trace_test_files;
 #[path = "trace_types.rs"]
 pub mod trace_types;
 
+/// Narrowed trace-test façade for harness helpers.
+///
+/// Re-exports `LlmTrace` and `TraceExpects` from `trace_types` together with
+/// `patch_json_value` from `trace_json_patch` so test helpers can import one
+/// module when building or asserting recorded LLM traces and applying JSON
+/// patch rewrites. This keeps the helper surface convenient while encapsulating
+/// the underlying support-module layout.
 pub mod trace_llm {
     pub(crate) use super::trace_json_patch::patch_json_value;
     pub use super::trace_types::{LlmTrace, TraceExpects};

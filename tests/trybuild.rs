@@ -29,3 +29,9 @@ fn infrastructure_harness_compile_contracts() {
     let cases = trybuild::TestCases::new();
     cases.pass("tests/trybuild/infrastructure.rs");
 }
+
+#[test]
+fn support_unit_harness_compile_contracts() {
+    let cases = trybuild::TestCases::new();
+    cases.pass("tests/trybuild/support_unit.rs");
+}
