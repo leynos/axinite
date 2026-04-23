@@ -68,4 +68,5 @@ fn setup_test_dir_with_suffix_creates_unique_directory() {
         created.contains("cleanup-tests"),
         "created path should include the requested suffix"
     );
+    let _ = std::fs::remove_dir_all(&created);
 }

@@ -35,84 +35,6 @@ fn panic_message_reports_non_string_payloads() {
     assert_eq!(panic_message(payload), "non-string panic payload");
 }
 
-#[test]
-fn response_contains_matches_case_insensitively() {
-    assert_response_contains("The agent found Alpha and Beta.", &["alpha", "BETA"]);
-}
-
-#[test]
-#[should_panic(expected = "response_contains")]
-fn response_contains_panics_when_text_is_missing() {
-    assert_response_contains("The agent found Alpha.", &["gamma"]);
-}
-
-#[test]
-fn response_matches_accepts_regex_patterns() {
-    assert_response_matches("job-123 completed", r"job-\d+ completed");
-}
-
-#[test]
-#[should_panic(expected = "response_matches")]
-fn response_matches_panics_when_pattern_does_not_match() {
-    assert_response_matches("job pending", r"job-\d+ completed");
-}
-
-#[test]
-fn response_not_contains_rejects_forbidden_text_case_insensitively() {
-    assert_response_not_contains("The request succeeded.", &["failed", "ERROR"]);
-}
-
-#[test]
-#[should_panic(expected = "response_not_contains")]
-fn response_not_contains_panics_when_forbidden_text_is_present() {
-    assert_response_not_contains("The request failed.", &["FAILED"]);
-}
-
-#[test]
-fn tools_used_accepts_expected_tools() {
-    let started = vec!["read_file".to_string(), "write_file".to_string()];
-
-    assert_tools_used(&started, &["read_file", "write_file"]);
-}
-
-#[test]
-#[should_panic(expected = "tools_used")]
-fn tools_used_panics_when_tool_is_missing() {
-    let started = vec!["read_file".to_string()];
-
-    assert_tools_used(&started, &["write_file"]);
-}
-
-#[test]
-fn tools_not_used_accepts_absent_tools() {
-    let started = vec!["read_file".to_string()];
-
-    assert_tools_not_used(&started, &["delete_file"]);
-}
-
-#[test]
-#[should_panic(expected = "tools_not_used")]
-fn tools_not_used_panics_when_forbidden_tool_is_present() {
-    let started = vec!["delete_file".to_string()];
-
-    assert_tools_not_used(&started, &["delete_file"]);
-}
-
-#[test]
-fn max_tool_calls_accepts_counts_at_limit() {
-    let started = vec!["read_file".to_string(), "write_file".to_string()];
-
-    assert_max_tool_calls(&started, 2);
-}
-
-#[test]
-#[should_panic(expected = "max_tool_calls")]
-fn max_tool_calls_panics_when_limit_is_exceeded() {
-    let started = vec!["read_file".to_string(), "write_file".to_string()];
-
-    assert_max_tool_calls(&started, 1);
-}
-
 fn assert_panics_with_message<F>(f: F, expected_message: &str)
 where
     F: FnOnce() + std::panic::UnwindSafe,
@@ -127,6 +49,149 @@ where
 {
     let panic = catch_unwind(AssertUnwindSafe(f)).expect_err("helper should panic");
     panic_message(panic)
+}
+
+#[rstest]
+#[case(
+    "The agent found Alpha and Beta.",
+    &["alpha", "BETA"],
+    None
+)]
+#[case(
+    "The agent found Alpha.",
+    &["gamma"],
+    Some("response_contains")
+)]
+fn response_contains_cases(
+    #[case] input: &str,
+    #[case] patterns: &'static [&'static str],
+    #[case] expected_panic: Option<&str>,
+) {
+    match expected_panic {
+        Some(expected_panic) => {
+            let message = capture_panic_message(|| assert_response_contains(input, patterns));
+            assert!(
+                message.contains(expected_panic),
+                "expected panic containing {expected_panic:?}, got {message:?}"
+            );
+        }
+        None => assert_response_contains(input, patterns),
+    }
+}
+
+#[rstest]
+#[case("job-123 completed", r"job-\d+ completed", false)]
+#[case("job pending", r"job-\d+ completed", true)]
+fn response_matches_cases(#[case] input: &str, #[case] pattern: &str, #[case] expect_panic: bool) {
+    if expect_panic {
+        let message = capture_panic_message(|| assert_response_matches(input, pattern));
+        assert!(
+            message.contains("response_matches"),
+            "expected response_matches panic, got {message:?}"
+        );
+    } else {
+        assert_response_matches(input, pattern);
+    }
+}
+
+#[rstest]
+#[case(
+    "The request succeeded.",
+    &["failed", "ERROR"],
+    None
+)]
+#[case(
+    "The request failed.",
+    &["FAILED"],
+    Some("response_not_contains")
+)]
+fn response_not_contains_cases(
+    #[case] input: &str,
+    #[case] patterns: &'static [&'static str],
+    #[case] expected_panic: Option<&str>,
+) {
+    match expected_panic {
+        Some(expected_panic) => {
+            let message = capture_panic_message(|| assert_response_not_contains(input, patterns));
+            assert!(
+                message.contains(expected_panic),
+                "expected panic containing {expected_panic:?}, got {message:?}"
+            );
+        }
+        None => assert_response_not_contains(input, patterns),
+    }
+}
+
+#[rstest]
+#[case(
+    vec!["read_file".to_string(), "write_file".to_string()],
+    &["read_file", "write_file"],
+    None
+)]
+#[case(
+    vec!["read_file".to_string()],
+    &["write_file"],
+    Some("tools_used")
+)]
+fn tools_used_cases(
+    #[case] started: Vec<String>,
+    #[case] expected: &'static [&'static str],
+    #[case] expected_panic: Option<&str>,
+) {
+    match expected_panic {
+        Some(expected_panic) => {
+            let message = capture_panic_message(|| assert_tools_used(&started, expected));
+            assert!(
+                message.contains(expected_panic),
+                "expected panic containing {expected_panic:?}, got {message:?}"
+            );
+        }
+        None => assert_tools_used(&started, expected),
+    }
+}
+
+#[rstest]
+#[case(vec!["read_file".to_string()], &["delete_file"], None)]
+#[case(vec!["delete_file".to_string()], &["delete_file"], Some("tools_not_used"))]
+fn tools_not_used_cases(
+    #[case] started: Vec<String>,
+    #[case] forbidden: &'static [&'static str],
+    #[case] expected_panic: Option<&str>,
+) {
+    match expected_panic {
+        Some(expected_panic) => {
+            let message = capture_panic_message(|| assert_tools_not_used(&started, forbidden));
+            assert!(
+                message.contains(expected_panic),
+                "expected panic containing {expected_panic:?}, got {message:?}"
+            );
+        }
+        None => assert_tools_not_used(&started, forbidden),
+    }
+}
+
+#[rstest]
+#[case(vec!["read_file".to_string(), "write_file".to_string()], 2, None)]
+#[case(
+    vec!["read_file".to_string(), "write_file".to_string()],
+    1,
+    Some("max_tool_calls")
+)]
+fn max_tool_calls_cases(
+    #[case] started: Vec<String>,
+    #[case] limit: usize,
+    #[case] expected_panic: Option<&str>,
+) {
+    match expected_panic {
+        Some(expected_panic) => {
+            let message = capture_panic_message(|| assert_max_tool_calls(&started, limit));
+            assert!(
+                message.contains(expected_panic),
+                "expected panic containing {expected_panic:?}, got {message:?}"
+            );
+        }
+        None => assert_max_tool_calls(&started, limit),
+    }
 }
 
 #[test]
