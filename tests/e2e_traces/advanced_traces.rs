@@ -4,8 +4,8 @@
 
 use std::time::Duration;
 
+use crate::fixtures::{LONG_TIMEOUT, fixture_path};
 use crate::support::cleanup::{CleanupGuard, setup_test_dir};
-use crate::support::fixtures::{LONG_TIMEOUT, fixture_path};
 use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_llm::LlmTrace;
 

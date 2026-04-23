@@ -7,7 +7,7 @@ use anyhow::Context as _;
 use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 
-use crate::support::fixtures::DEFAULT_TIMEOUT;
+use crate::fixtures::DEFAULT_TIMEOUT;
 use crate::support::test_rig::TestRigBuilder;
 
 use ironclaw::error::LlmError;

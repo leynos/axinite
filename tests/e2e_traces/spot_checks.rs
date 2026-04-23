@@ -6,8 +6,8 @@
 
 use anyhow::{Context, Result};
 
+use crate::fixtures::{DEFAULT_TIMEOUT, fixture_path};
 use crate::support::cleanup::CleanupGuard;
-use crate::support::fixtures::{DEFAULT_TIMEOUT, fixture_path};
 use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_llm::LlmTrace;
 

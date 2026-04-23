@@ -1,6 +1,10 @@
 //! End-to-end trace tests covering agent behaviors, tools, memory,
 //! scheduling, and error paths.
 
+// Keep fixture helpers local to this harness so unrelated integration
+// binaries do not compile them through the shared `support` facade.
+#[path = "support/fixtures.rs"]
+mod fixtures;
 mod support;
 
 #[path = "e2e_traces/advanced_traces.rs"]

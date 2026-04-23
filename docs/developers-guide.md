@@ -6,7 +6,7 @@ reproducing the build and test workflows on this branch.
 For the current system architecture and subsystem boundaries, see
 [`docs/axinite-architecture-overview.md`](axinite-architecture-overview.md).
 
-## Purpose
+## 1. Purpose
 
 Linux continuous integration (CI) on this branch now uses `mold` to
 reduce linker time. The
@@ -17,7 +17,7 @@ This guide documents the required and optional tools for common
 workflows so contributors do not discover missing prerequisites halfway
 through a build.
 
-## Supported environments
+## 2. Supported environments
 
 The repository builds on Linux, macOS, Windows, and Windows Subsystem
 for Linux (WSL). The fastest documented path today is Linux or WSL
@@ -26,7 +26,7 @@ because the current branch already uses `mold` in Linux CI.
 For compile-time or CI changes, prefer Linux or WSL so local results
 line up with the current CI setup.
 
-## Required tools
+## 3. Required tools
 
 Install these tools before running the standard repository commands:
 
@@ -46,7 +46,7 @@ repository also includes standalone WebAssembly (WASM) tool and channel
 crates, so WASM tooling is required for more than release-only
 workflows.
 
-## Extra tools for the compile-time reduction effort
+## 4. Extra tools for the compile-time reduction effort
 
 Install these extra tools for work on the compile-time reduction plan:
 
@@ -56,7 +56,7 @@ Install these extra tools for work on the compile-time reduction plan:
 branch because `make test` uses it for the root crate. The timing tool
 remains specific to the compile-time reduction work.
 
-## CI build environment
+## 5. CI build environment
 
 CI jobs in this repository set `CARGO_INCREMENTAL="0"` at the job environment
 level for the `test`, `coverage`, and `mutation-testing` workflows. Incremental
@@ -80,7 +80,7 @@ example, the
 `print_startup_info_matches_snapshot` test in `src/startup/boot.rs`. The crate
 is compiled only when running tests and has no effect on the production binary.
 
-## Optional tools by workflow
+## 6. Optional tools by workflow
 
 These tools are not required for every contributor, but they are needed
 for specific work:
@@ -94,7 +94,7 @@ for specific work:
   (E2E) coverage workflow.
 - `cargo-llvm-cov` for local coverage work.
 
-## Linux and WSL setup
+## 7. Linux and WSL setup
 
 On Linux or WSL, install the required system packages first. The exact
 package manager varies by distribution, but the important pieces are:
@@ -125,7 +125,7 @@ For local coverage support:
 cargo install cargo-llvm-cov --locked
 ```
 
-## Local mold configuration
+## 8. Local mold configuration
 
 The repository now checks in Linux linker settings in
 `.cargo/config.toml`:
@@ -149,7 +149,7 @@ A quick verification command is:
 sed -n '1,40p' .cargo/config.toml
 ```
 
-## Repository bootstrap
+## 9. Repository bootstrap
 
 From the repository root:
 
@@ -174,7 +174,51 @@ The current `Makefile` also includes:
 - `make clean` to remove Cargo build outputs for the root crate and the
   GitHub tool crate.
 
-## Configuration snapshots with EnvContext
+## 10. Integration test fixture wiring
+
+Integration test harnesses should load fixture-only helpers at the
+harness boundary, instead of routing them through the shared
+`tests/support` facade.
+
+For example, `tests/e2e_traces.rs` wires fixture helpers like this:
+
+```rust
+#[path = "support/fixtures.rs"]
+mod fixtures;
+```
+
+Use `#[path]` when a helper module belongs to one integration harness,
+or to a small subset of harnesses, and including it through
+`tests/support/mod.rs` would cause unrelated test binaries to compile
+dead code. This keeps the compiled module graph honest and avoids
+reintroducing lint-suppression scaffolding for selectively used helper
+items.
+
+Follow these rules when wiring fixtures into integration tests:
+
+- Place harness-specific fixture helpers under `tests/support/` so they
+  stay near the rest of the shared test support code, even when a
+  single harness owns the module.
+- Declare the `#[path = "support/<file>.rs"] mod <name>;` include in the
+  top-level harness file such as `tests/e2e_traces.rs`, not in nested
+  test modules.
+- Import those helpers through `crate::<name>` inside the harness's
+  submodules, so the harness boundary remains the only place that wires
+  the file into the test binary.
+- Keep visibility narrow. Expose only the constants and functions the
+  harness submodules actually consume, and prefer private internal
+  constants when a value exists only to support a helper function.
+- Leave a short comment near the `#[path]` declaration when the reason
+  is non-obvious, especially when the module could otherwise be mistaken
+  for a candidate for the shared `support` facade.
+
+Maintenance note: if multiple integration harnesses genuinely need the
+same fixture helper, first confirm that the helper is shared in real
+use, then move it into `tests/support/mod.rs`. Do not promote
+harness-local fixture modules into the shared facade merely to make the
+import path look more uniform.
+
+## 11. Configuration snapshots with EnvContext
 
 The configuration system now supports an explicit snapshot model through
 `crate::config::EnvContext`. Use it whenever a caller already knows the
@@ -208,7 +252,7 @@ For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
 tests independent of host machine secrets, keychains, and shell state.
 
-## AppBuilder
+## 12. AppBuilder
 
 `AppBuilder` owns the mechanical bootstrap sequence for host startup.
 It constructs `AppComponents` in phase order and keeps activation of
@@ -301,7 +345,7 @@ Table: `AppBuilderFlags` fields and effects.
 | `no_db` | `bool` | Skip database initialization |
 | `workspace_import_dir` | `Option<PathBuf>` | Directory to import into the workspace on activation; captured at construction so `RuntimeSideEffects::start()` does not re-read the environment |
 
-## Fast local validation loop
+## 13. Fast local validation loop
 
 For quick host-side iteration on Linux or WSL with the current branch
 assumptions:
@@ -324,7 +368,7 @@ cargo nextest run --workspace --no-default-features --features libsql \
 To compare behaviour against the legacy harness, use `make test-cargo`
 or `make test-matrix-cargo`.
 
-## Self-repair internals
+## 14. Self-repair internals
 
 The agent loop starts the self-repair subsystem in
 `src/agent/agent_loop.rs` as two cooperating background tasks:
@@ -359,7 +403,7 @@ When modifying this path, keep three invariants in mind:
   [Jobs and Routines](./jobs-and-routines.md) and the
   [User's Guide](./users-guide.md).
 
-## Database-backed work
+## 15. Database-backed work
 
 For work on the default feature set or PostgreSQL-backed tests, prepare
 a local database with `pgvector` enabled:
@@ -448,7 +492,7 @@ is now applied once inside `LibSqlDatabase::connect()`, so it is no longer
 necessary — and must not be duplicated — in individual store
 `connect()` methods.
 
-## Dispatcher Architecture
+## 16. Dispatcher architecture
 
 The dispatcher orchestrates interactive chat turns by preparing an LLM
 `ReasoningContext`, running a tool-aware agentic loop, and converting
@@ -575,7 +619,7 @@ Migration guidance:
 - add rollback regression coverage for both supported backends before
   releasing new terminal transitions
 
-## End-to-end (E2E) prerequisites
+## 17. End-to-end (E2E) prerequisites
 
 For browser-based tests:
 
@@ -591,7 +635,7 @@ fans test slices out from that artifact. That is the closest existing
 example of the faster compile-once, fan-out pattern the compile-time
 reduction effort should reuse elsewhere.
 
-## Trace and channel test helpers
+## 18. Trace and channel test helpers
 
 Three test-support helpers were added in PR `#161` to make replay-based
 and worker-coverage tests more reliable.
@@ -670,7 +714,7 @@ Returns a snapshot of all captured `StatusUpdate` values using an
 awaited mutex lock. Use this when contention on the status-event lock
 would cause `captured_status_events` to panic.
 
-## WASM-specific notes
+## 19. WASM-specific notes
 
 The repository contains standalone WASM tool and channel crates. Normal
 host commands such as `cargo check`, `make typecheck`, and `make test`
@@ -764,7 +808,7 @@ labels, truncation rules, or input set needs to change. Do not use it as
 a primary schema-transport mechanism: the canonical schema remains the
 advertised `ToolDefinition.parameters` value.
 
-## When to use cargo test versus cargo-nextest
+## 20. When to use cargo test versus cargo-nextest
 
 Today:
 
@@ -783,7 +827,7 @@ For the compile-time reduction effort:
 - do not assume standalone WASM crates or every focused test path has
   migrated away from `cargo test`.
 
-## Troubleshooting
+## 21. Troubleshooting
 
 - If `cargo` says `wasm32-wasip2` is missing, rerun
   `rustup target add wasm32-wasip2`.
@@ -798,7 +842,7 @@ For the compile-time reduction effort:
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
 
-## Hot-reload architecture
+## 22. Hot-reload architecture
 
 The `src/reload/` module provides hot-reload capabilities for configuration,
 HTTP listeners, and secrets without restarting the application. This is
@@ -904,7 +948,7 @@ testing:
 Use these in unit tests to verify manager behaviour without real I/O.
 Example usage is in `src/reload/manager/tests.rs`.
 
-## WASM tool schema normalization
+## 23. WASM tool schema normalization
 
 WASM tools carry a parameter schema that describes their inputs to the
 language model (LLM). The canonical normalization logic lives in
@@ -942,7 +986,7 @@ The storage path is the one that exercises schema normalization, because
 backends may persist placeholder or null schemas that must be stripped
 before the guest-export recovery logic can run.
 
-## End-to-end WASM schema regression tests
+## 24. End-to-end WASM schema regression tests
 
 The `e2e_traces` integration test target includes first-call WASM schema
 regression tests introduced in roadmap item `1.2.4`. These tests live in
@@ -1052,7 +1096,7 @@ assert_eq!(
 );
 ```
 
-## Expected follow-up changes
+## 25. Expected follow-up changes
 
 This guide documents the environment as of the current branch. The
 compile-time reduction plan is still expected to change some of the
@@ -1062,7 +1106,7 @@ artifacts and CI duplication.
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
 
-## Phased startup pipeline
+## 26. Phased startup pipeline
 
 ### WebhookServer test helpers
 
@@ -1175,7 +1219,6 @@ project's four-argument limit:
 | `persistence.rs` | Durable write helpers for user messages, assistant responses, and tool-call summaries |
 | `approval.rs` | Resume-from-approval flow after user consent is received |
 
-
 ### Submodule responsibilities
 
 Caption: Responsibilities of startup submodules.
@@ -1201,6 +1244,7 @@ Caption: Responsibilities of startup submodules.
    `src/main.rs`.
 4. Update this table, the submodule map above, and the architecture
    overview in `docs/axinite-architecture-overview.md`.
+
 ### Context structs
 
 Each context struct is defined in `src/startup/context.rs`, re-exported
