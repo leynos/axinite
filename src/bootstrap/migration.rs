@@ -204,10 +204,9 @@ async fn migrate_json_sidecar(
     Ok(())
 }
 
-fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
+pub(super) fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
     let old_bootstrap = ironclaw_dir.join("bootstrap.json");
-    if old_bootstrap.exists() {
-        let _ = rename_to_migrated(&old_bootstrap);
+    if old_bootstrap.exists() && rename_to_migrated(&old_bootstrap).is_ok() {
         tracing::info!("Renamed old bootstrap.json to .migrated");
     }
 }
@@ -290,10 +289,6 @@ async fn apply_migration_to_db(
     Ok(())
 }
 
-fn mark_legacy_migrated(path: &Path) {
-    let _ = rename_to_migrated(path);
-}
-
 /// One-time migration of legacy `~/.ironclaw/settings.json` into the database.
 ///
 /// Only runs when a `settings.json` exists on disk AND the DB has no settings
@@ -312,12 +307,12 @@ pub async fn migrate_disk_to_db(
         return Ok(());
     };
     apply_migration_to_db(store, user_id, &legacy, &legacy_settings_path).await?;
-    mark_legacy_migrated(&legacy_settings_path);
+    let _ = rename_to_migrated(&legacy_settings_path);
     Ok(())
 }
 
 /// Rename a file to `<name>.migrated` as a safety net.
-fn rename_to_migrated(path: &Path) -> io::Result<()> {
+pub(super) fn rename_to_migrated(path: &Path) -> io::Result<()> {
     let mut migrated = path.as_os_str().to_owned();
     migrated.push(".migrated");
     std::fs::rename(path, &migrated).map_err(|error| {

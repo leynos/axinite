@@ -1,6 +1,11 @@
 //! Tests for bootstrap migration and upsert helpers.
 
+use std::io::ErrorKind;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 use tempfile::tempdir;
+use tracing_test::traced_test;
 
 use crate::testing::test_utils::EnvVarsGuard;
 
@@ -129,4 +134,76 @@ fn upsert_bootstrap_vars_creates_file_if_missing() {
         parsed[0],
         ("DATABASE_BACKEND".to_string(), "libsql".to_string())
     );
+}
+
+#[test]
+fn rename_to_migrated_success() {
+    let dir = tempdir().expect("create temp dir for rename success");
+    let path = dir.path().join("settings.json");
+    std::fs::write(&path, "{}").expect("write legacy settings file");
+
+    super::super::migration::rename_to_migrated(&path).expect("rename legacy settings");
+
+    assert!(!path.exists());
+    assert!(dir.path().join("settings.json.migrated").exists());
+}
+
+#[test]
+#[traced_test]
+fn rename_to_migrated_missing_source() {
+    let dir = tempdir().expect("create temp dir for missing-file rename");
+    let path = dir.path().join("missing.json");
+
+    let error = super::super::migration::rename_to_migrated(&path)
+        .expect_err("missing source should fail to rename");
+
+    assert_eq!(error.kind(), ErrorKind::NotFound);
+    assert!(logs_contain("Failed to rename"));
+}
+
+#[cfg(unix)]
+#[test]
+#[traced_test]
+fn rename_to_migrated_permission_denied() {
+    let dir = tempdir().expect("create temp dir for permission-denied rename");
+    let path = dir.path().join("settings.json");
+    std::fs::write(&path, "{}").expect("write legacy settings file");
+
+    let original_dir_perms = std::fs::metadata(dir.path())
+        .expect("read directory metadata")
+        .permissions();
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555))
+        .expect("make directory read-only");
+
+    let error = super::super::migration::rename_to_migrated(&path)
+        .expect_err("read-only directory should block rename");
+
+    std::fs::set_permissions(dir.path(), original_dir_perms)
+        .expect("restore temp directory permissions");
+
+    assert_eq!(error.kind(), ErrorKind::PermissionDenied);
+    assert!(logs_contain("Failed to rename"));
+}
+
+#[cfg(unix)]
+#[test]
+#[traced_test]
+fn rename_legacy_bootstrap_logs_success_only_on_ok() {
+    let dir = tempdir().expect("create temp dir for bootstrap rename logging");
+    let bootstrap_path = dir.path().join("bootstrap.json");
+    std::fs::write(&bootstrap_path, "{}").expect("write bootstrap file");
+
+    let original_dir_perms = std::fs::metadata(dir.path())
+        .expect("read directory metadata")
+        .permissions();
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555))
+        .expect("make directory read-only");
+
+    super::super::migration::rename_legacy_bootstrap(dir.path());
+
+    std::fs::set_permissions(dir.path(), original_dir_perms)
+        .expect("restore temp directory permissions");
+
+    assert!(logs_contain("Failed to rename"));
+    assert!(!logs_contain("Renamed old bootstrap.json to .migrated"));
 }
