@@ -1,10 +1,87 @@
 //! Tests for bootstrap migration and upsert helpers.
 
-use tempfile::tempdir;
+use std::io::ErrorKind;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
+use rstest::{fixture, rstest};
+use tempfile::{TempDir, tempdir};
+use tracing_test::traced_test;
 
 use crate::testing::test_utils::EnvVarsGuard;
 
 use super::super::*;
+
+#[derive(Clone, Copy)]
+enum RenameSetup {
+    ExistingFile,
+    MissingFile,
+    ReadOnlyDirectory,
+}
+
+struct RenameFixture {
+    dir: TempDir,
+    path: std::path::PathBuf,
+    #[cfg(unix)]
+    original_dir_permissions: Option<std::fs::Permissions>,
+}
+
+impl RenameFixture {
+    fn prepare(&mut self, setup: RenameSetup) {
+        match setup {
+            RenameSetup::ExistingFile => self.write_legacy_file(),
+            RenameSetup::MissingFile => {}
+            RenameSetup::ReadOnlyDirectory => {
+                self.write_legacy_file();
+                self.make_dir_read_only();
+            }
+        }
+    }
+
+    fn write_legacy_file(&self) {
+        std::fs::write(&self.path, "{}").expect("write legacy settings file");
+    }
+
+    #[cfg(unix)]
+    fn make_dir_read_only(&mut self) {
+        self.original_dir_permissions = Some(
+            std::fs::metadata(self.dir.path())
+                .expect("read directory metadata")
+                .permissions(),
+        );
+        std::fs::set_permissions(self.dir.path(), std::fs::Permissions::from_mode(0o555))
+            .expect("make directory read-only");
+    }
+
+    #[cfg(not(unix))]
+    fn make_dir_read_only(&mut self) {}
+
+    fn migrated_path(&self) -> std::path::PathBuf {
+        self.dir.path().join("settings.json.migrated")
+    }
+}
+
+#[cfg(unix)]
+impl Drop for RenameFixture {
+    fn drop(&mut self) {
+        if let Some(permissions) = self.original_dir_permissions.take() {
+            std::fs::set_permissions(self.dir.path(), permissions)
+                .expect("restore temp directory permissions");
+        }
+    }
+}
+
+#[fixture]
+fn rename_fixture() -> RenameFixture {
+    let dir = tempdir().expect("create temp dir for rename test");
+    let path = dir.path().join("settings.json");
+    RenameFixture {
+        dir,
+        path,
+        #[cfg(unix)]
+        original_dir_permissions: None,
+    }
+}
 
 #[test]
 fn test_migrate_bootstrap_json_to_env() {
@@ -128,5 +205,69 @@ fn upsert_bootstrap_vars_creates_file_if_missing() {
     assert_eq!(
         parsed[0],
         ("DATABASE_BACKEND".to_string(), "libsql".to_string())
+    );
+}
+
+#[traced_test]
+#[rstest]
+#[case::success(RenameSetup::ExistingFile, None)]
+#[case::missing_source(RenameSetup::MissingFile, Some(ErrorKind::NotFound))]
+#[cfg_attr(
+    unix,
+    case::permission_denied(RenameSetup::ReadOnlyDirectory, Some(ErrorKind::PermissionDenied))
+)]
+fn rename_to_migrated_cases(
+    mut rename_fixture: RenameFixture,
+    #[case] setup: RenameSetup,
+    #[case] expected_error_kind: Option<ErrorKind>,
+) {
+    rename_fixture.prepare(setup);
+
+    let result = super::super::migration::rename_to_migrated(&rename_fixture.path);
+
+    match expected_error_kind {
+        Some(kind) => {
+            let error = result.expect_err("rename should fail for this case");
+            assert_eq!(error.kind(), kind);
+            assert!(logs_contain("Failed to rename"));
+        }
+        None => {
+            result.expect("rename legacy settings");
+            assert!(!rename_fixture.path.exists());
+            assert!(rename_fixture.migrated_path().exists());
+            assert!(!logs_contain("Failed to rename"));
+        }
+    }
+}
+
+#[cfg(unix)]
+#[traced_test]
+#[rstest]
+#[case::success(RenameSetup::ExistingFile, false, true)]
+#[case::permission_denied(RenameSetup::ReadOnlyDirectory, true, false)]
+fn rename_legacy_bootstrap_logging_cases(
+    mut rename_fixture: RenameFixture,
+    #[case] setup: RenameSetup,
+    #[case] expected_warn_log: bool,
+    #[case] expected_info_log: bool,
+) {
+    rename_fixture.path = rename_fixture.dir.path().join("bootstrap.json");
+    rename_fixture.prepare(setup);
+
+    super::super::migration::rename_legacy_bootstrap(rename_fixture.dir.path());
+
+    if matches!(setup, RenameSetup::ExistingFile) {
+        assert!(
+            rename_fixture
+                .dir
+                .path()
+                .join("bootstrap.json.migrated")
+                .exists()
+        );
+    }
+    assert_eq!(logs_contain("Failed to rename"), expected_warn_log);
+    assert_eq!(
+        logs_contain("Renamed old bootstrap.json to .migrated"),
+        expected_info_log
     );
 }

@@ -64,7 +64,7 @@ pub(crate) fn migrate_bootstrap_json_to_env(env_path: &Path) {
     if upsert_env_pairs(env_path, &pairs).is_err() {
         return;
     }
-    let _ = rename_bootstrap_to_migrated(&bootstrap_path);
+    let _ = rename_to_migrated(&bootstrap_path);
     eprintln!(
         "Migrated DATABASE_URL from bootstrap.json to {}",
         env_path.display()
@@ -150,19 +150,6 @@ fn upsert_env_pairs(env_path: &Path, pairs: &[EnvPair<'_>]) -> io::Result<()> {
     Ok(())
 }
 
-fn rename_bootstrap_to_migrated(path: &Path) -> io::Result<()> {
-    let mut migrated = path.as_os_str().to_owned();
-    migrated.push(".migrated");
-    std::fs::rename(path, &migrated).map_err(|error| {
-        tracing::warn!(
-            "Failed to rename {} to .migrated: {}",
-            path.display(),
-            error
-        );
-        error
-    })
-}
-
 /// Errors that can occur during disk-to-DB migration.
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
@@ -212,15 +199,21 @@ async fn migrate_json_sidecar(
         .map_err(|error| MigrationError::Database(format!("{}: {}", spec.db_error_msg, error)))?;
 
     tracing::info!("{}", spec.success_msg);
-    rename_to_migrated(spec.path);
+    let _ = rename_to_migrated(spec.path);
 
     Ok(())
 }
 
-fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
+/// Renames `bootstrap.json` inside `ironclaw_dir` to `bootstrap.json.migrated`
+/// if it exists.
+///
+/// Logs an `INFO` message when the rename succeeds. On failure,
+/// [`rename_to_migrated`] emits a `WARN` log and the error is silently
+/// discarded, preserving the existing warn-and-continue behaviour at all
+/// bootstrap rename call sites.
+pub(super) fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
     let old_bootstrap = ironclaw_dir.join("bootstrap.json");
-    if old_bootstrap.exists() {
-        rename_to_migrated(&old_bootstrap);
+    if old_bootstrap.exists() && rename_to_migrated(&old_bootstrap).is_ok() {
         tracing::info!("Renamed old bootstrap.json to .migrated");
     }
 }
@@ -303,11 +296,6 @@ async fn apply_migration_to_db(
     Ok(())
 }
 
-fn mark_legacy_migrated(path: &Path) -> Result<(), MigrationError> {
-    rename_to_migrated(path);
-    Ok(())
-}
-
 /// One-time migration of legacy `~/.ironclaw/settings.json` into the database.
 ///
 /// Only runs when a `settings.json` exists on disk AND the DB has no settings
@@ -326,19 +314,25 @@ pub async fn migrate_disk_to_db(
         return Ok(());
     };
     apply_migration_to_db(store, user_id, &legacy, &legacy_settings_path).await?;
-    mark_legacy_migrated(&legacy_settings_path)?;
+    let _ = rename_to_migrated(&legacy_settings_path);
     Ok(())
 }
 
-/// Rename a file to `<name>.migrated` as a safety net.
-fn rename_to_migrated(path: &Path) {
+/// Renames `path` to `<path>.migrated` as a safety-net marker indicating
+/// the file has been processed by a migration pass.
+///
+/// Returns `Ok(())` on success. On failure the filesystem error is logged
+/// at `WARN` level and returned to the caller; call sites that treat the
+/// rename as non-fatal should discard the result with `let _ = …`.
+pub(super) fn rename_to_migrated(path: &Path) -> io::Result<()> {
     let mut migrated = path.as_os_str().to_owned();
     migrated.push(".migrated");
-    if let Err(error) = std::fs::rename(path, &migrated) {
+    std::fs::rename(path, &migrated).map_err(|error| {
         tracing::warn!(
             "Failed to rename {} to .migrated: {}",
             path.display(),
             error
         );
-    }
+        error
+    })
 }
