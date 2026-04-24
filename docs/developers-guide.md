@@ -228,14 +228,15 @@ compiles the helpers it actually needs, which keeps the support surface
 honest and avoids dead-code lint suppression.
 
 The `trace_llm` facade in that module provides a narrowed one-import
-surface for LLM trace helpers. It re-exports `LlmTrace` and
-`TraceExpects` from `trace_types` with full `pub` visibility, while
-`trace_json_patch::patch_json_value` is re-exported as `pub(crate)` so
-only this test crate can apply JSON patch rewrites without reaching into
-the underlying support-module layout.
+surface for LLM trace helpers. It exports
+`trace_types::{LlmTrace, TraceExpects}` publicly for test consumers,
+while `trace_json_patch::patch_json_value` is exposed as crate-local
+`pub(crate)` for integration-test fixture helpers. The patch helper is
+not part of the public API, so JSON patch rewrites stay limited to the
+test crate modules that actually use them.
 
-The same support root also re-exports three `testing_wasm` helpers used
-by the tools-and-config harness:
+The same support root also exposes three `testing_wasm` helpers with
+restricted `pub(crate)` visibility for harness-internal use:
 
 - `github_tool_source_dir` resolves the GitHub tool source tree used by
   schema and metadata tests.
@@ -243,6 +244,10 @@ by the tools-and-config harness:
   and compatibility checks.
 - `metadata_test_runtime` constructs runtime metadata needed when tests
   exercise the tools-and-config harness against that artifact.
+
+These helpers are not exported for external crates. Their narrow
+visibility keeps integration-test fixture helpers limited to the harness
+submodules that actually use them.
 
 ## 12. Configuration snapshots with EnvContext
 
@@ -1681,7 +1686,7 @@ semantics as JSON requests so whitespace-only `content`, `url`, `name`, and
 
 #### Staged install lifecycle
 
-```text
+```plaintext
 SkillInstallPayload          (Markdown | DownloadedBytes | ArchiveBytes)
         │
         ▼

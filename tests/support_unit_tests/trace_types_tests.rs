@@ -7,14 +7,14 @@ use crate::support::trace_types::load_trace_with_mutation;
 async fn mutation_is_applied() -> anyhow::Result<()> {
     let json = serde_json::json!({"model_name": "test-model", "steps": []}).to_string();
     let tmp = write_tmp_trace(&json)?;
-    let mut called = false;
+    let mut was_called = false;
 
     let trace = load_trace_with_mutation(tmp.path(), |_value| {
-        called = true;
+        was_called = true;
     })
     .await?;
 
-    assert!(called, "mutation closure must be invoked");
+    assert!(was_called, "mutation closure must be invoked");
     assert_eq!(trace.model_name, "test-model");
     assert!(trace.steps.is_empty());
     Ok(())
