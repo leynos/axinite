@@ -131,6 +131,7 @@ async fn llm_trace_from_file_async_reads_fixture() {
 #[rstest]
 #[case("/tmp/original", "/tmp/rewritten", 1, "/tmp/rewritten")] // non-empty pattern rewrites
 #[case("", "/tmp/rewritten", 0, "/tmp/original")] // empty pattern is a no-op
+#[case("/tmp/original", "/tmp/original", 0, "/tmp/original")] // no-op replacement is a no-op
 fn llm_trace_patch_path_with_tool_calls(
     #[case] from: &str,
     #[case] to: &str,
@@ -163,21 +164,6 @@ fn llm_trace_patch_path_returns_zero_without_tool_calls() {
     let patched = trace.patch_path("/tmp/original", "/tmp/rewritten");
 
     assert_eq!(patched, 0);
-}
-
-#[test]
-fn llm_trace_patch_path_ignores_no_op_replacement() {
-    let original = "/tmp/original";
-    let mut trace =
-        LlmTrace::single_turn("patch-model", "patch file", vec![tool_call_step(original)]);
-
-    let patched = trace.patch_path(original, original);
-
-    assert_eq!(patched, 0);
-    let TraceResponse::ToolCalls { tool_calls, .. } = &trace.turns[0].steps[0].response else {
-        panic!("expected tool call step after no-op patch");
-    };
-    assert_eq!(tool_calls[0].arguments["path"], serde_json::json!(original));
 }
 
 #[test]

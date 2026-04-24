@@ -28,11 +28,12 @@ pub(super) fn extract_tool_result_vars(messages: &[ChatMessage]) -> HashMap<Stri
         let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
             continue;
         };
-        let Some(obj) = json.as_object() else {
-            continue;
-        };
-        for (key, value) in obj {
-            flatten_json_vars(&format!("{call_id}.{key}"), value, &mut vars);
+        if let Some(obj) = json.as_object() {
+            for (key, value) in obj {
+                flatten_json_vars(&format!("{call_id}.{key}"), value, &mut vars);
+            }
+        } else {
+            flatten_json_vars(call_id, &json, &mut vars);
         }
     }
     vars
@@ -85,17 +86,17 @@ pub(super) fn substitute_templates(value: &mut serde_json::Value, vars: &HashMap
             }
 
             let mut result = s.clone();
-            let mut visited_keys = HashSet::new();
+            let mut visited_results = HashSet::new();
             while let Some(start) = result.find("{{") {
+                if !visited_results.insert(result.clone()) {
+                    break;
+                }
+
                 if let Some(end) = result[start..].find("}}") {
                     let end = start + end + 2;
-                    let key = result[start + 2..end - 2].trim().to_string();
+                    let key = result[start + 2..end - 2].trim();
 
-                    if !visited_keys.insert(key.clone()) {
-                        break;
-                    }
-
-                    if let Some(resolved) = vars.get(&key) {
+                    if let Some(resolved) = vars.get(key) {
                         result = format!("{}{}{}", &result[..start], resolved, &result[end..]);
                     } else {
                         break;
@@ -135,5 +136,32 @@ mod tests {
         substitute_templates(&mut value, &vars);
 
         assert_eq!(value, serde_json::json!("path {{first}}"));
+    }
+
+    #[test]
+    fn substitute_templates_allows_repeated_non_cyclic_keys() {
+        let vars = HashMap::from([("name".to_string(), "Ada".to_string())]);
+        let mut value = serde_json::json!("{{name}} meets {{name}}");
+
+        substitute_templates(&mut value, &vars);
+
+        assert_eq!(value, serde_json::json!("Ada meets Ada"));
+    }
+
+    #[test]
+    fn extract_tool_result_vars_flattens_non_object_roots() {
+        let messages = [ChatMessage {
+            role: Role::Tool,
+            content: serde_json::json!(["alpha", true]).to_string(),
+            content_parts: Vec::new(),
+            tool_call_id: Some("call_array".to_string()),
+            name: None,
+            tool_calls: None,
+        }];
+
+        let vars = extract_tool_result_vars(&messages);
+
+        assert_eq!(vars.get("call_array.0"), Some(&"alpha".to_string()));
+        assert_eq!(vars.get("call_array.1"), Some(&"true".to_string()));
     }
 }
