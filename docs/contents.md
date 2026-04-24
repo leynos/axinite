@@ -152,6 +152,10 @@
     plans roadmap item `1.3.1` for validated multi-file skill bundles,
     staged extraction, proportional test coverage, and synchronized
     documentation.
+  - [Extend skill installation flows for uploaded bundles and `.skill` URLs](execplans/1-3-2-extend-skill-installation-flows-bundles.md)
+    plans roadmap item `1.3.2` for browser upload support, `.skill` URL
+    install behaviour, shared staged installation, test coverage, and
+    synchronized documentation.
 
 ## RFCs
 
