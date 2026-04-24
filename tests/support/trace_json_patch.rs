@@ -12,8 +12,8 @@ pub(crate) fn patch_json_value(value: &mut serde_json::Value, from: &str, to: &s
             }
         }
         serde_json::Value::Object(obj) => {
-            for (_, v) in obj {
-                patch_json_value(v, from, to);
+            for value in obj.values_mut() {
+                patch_json_value(value, from, to);
             }
         }
         _ => {}

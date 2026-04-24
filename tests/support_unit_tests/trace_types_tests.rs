@@ -35,9 +35,13 @@ async fn mutation_modifies_value() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn missing_file_returns_error() {
-    let result = load_trace_with_mutation("/nonexistent/path/trace.json", |_value| {}).await;
+async fn missing_file_returns_error() -> anyhow::Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let missing_trace = temp_dir.path().join("trace.json");
+
+    let result = load_trace_with_mutation(&missing_trace, |_value| {}).await;
     assert!(result.is_err(), "missing file must return Err");
+    Ok(())
 }
 
 #[tokio::test]
