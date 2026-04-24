@@ -17,7 +17,9 @@ mod trace_json_patch;
 #[path = "trace_llm.rs"]
 pub mod trace_llm;
 #[path = "trace_provider.rs"]
-mod trace_provider;
+pub mod trace_provider;
+mod trace_provider_diagnostics;
+mod trace_template_utils;
 #[path = "trace_test_files.rs"]
 pub mod trace_test_files;
 #[path = "trace_types.rs"]
