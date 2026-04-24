@@ -2,6 +2,10 @@
 
 /// Recursively patch string values in a JSON value, replacing `from` with `to`.
 pub(crate) fn patch_json_value(value: &mut serde_json::Value, from: &str, to: &str) {
+    if from.is_empty() {
+        return;
+    }
+
     match value {
         serde_json::Value::String(s) if s.contains(from) => {
             *s = s.replace(from, to);

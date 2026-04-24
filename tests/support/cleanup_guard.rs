@@ -6,6 +6,15 @@ enum PathKind {
     Dir,
 }
 
+impl PathKind {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::Dir => "directory",
+        }
+    }
+}
+
 /// Removes listed paths when dropped, ensuring cleanup even on panic.
 #[derive(Default)]
 pub struct CleanupGuard {
@@ -34,13 +43,20 @@ impl CleanupGuard {
 impl Drop for CleanupGuard {
     fn drop(&mut self) {
         for (path, kind) in &self.paths {
-            match kind {
-                PathKind::File => {
-                    let _ = std::fs::remove_file(path);
-                }
-                PathKind::Dir => {
-                    let _ = std::fs::remove_dir_all(path);
-                }
+            let result = match kind {
+                PathKind::File => std::fs::remove_file(path),
+                PathKind::Dir => std::fs::remove_dir_all(path),
+            };
+
+            if let Err(error) = result
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                eprintln!(
+                    "failed to clean up test {} '{}': {}",
+                    kind.label(),
+                    path,
+                    error
+                );
             }
         }
     }
