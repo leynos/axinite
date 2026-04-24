@@ -3,6 +3,7 @@
 use std::io::Write;
 
 use ironclaw::llm::recording::{TraceResponse, TraceStep, TraceToolCall};
+use rstest::rstest;
 
 use crate::support::trace_provider::TraceLlm;
 use crate::support::trace_types::{LlmTrace, TraceExpects, TraceTurn};
@@ -127,19 +128,32 @@ async fn llm_trace_from_file_async_reads_fixture() {
     assert_eq!(trace.turns[0].steps.len(), 1);
 }
 
-#[test]
-fn llm_trace_patch_path_rewrites_tool_call_arguments() {
-    let from = "/tmp/original";
-    let to = "/tmp/rewritten";
-    let mut trace = LlmTrace::single_turn("patch-model", "patch file", vec![tool_call_step(from)]);
+#[rstest]
+#[case("/tmp/original", "/tmp/rewritten", 1, "/tmp/rewritten")] // non-empty pattern rewrites
+#[case("", "/tmp/rewritten", 0, "/tmp/original")] // empty pattern is a no-op
+fn llm_trace_patch_path_with_tool_calls(
+    #[case] from: &str,
+    #[case] to: &str,
+    #[case] expected_count: usize,
+    #[case] expected_path: &str,
+) {
+    let initial_path = "/tmp/original";
+    let mut trace = LlmTrace::single_turn(
+        "patch-model",
+        "patch file",
+        vec![tool_call_step(initial_path)],
+    );
 
     let patched = trace.patch_path(from, to);
 
-    assert_eq!(patched, 1);
+    assert_eq!(patched, expected_count);
     let TraceResponse::ToolCalls { tool_calls, .. } = &trace.turns[0].steps[0].response else {
-        panic!("expected tool call step after patch");
+        panic!("expected tool call step");
     };
-    assert_eq!(tool_calls[0].arguments["path"], serde_json::json!(to));
+    assert_eq!(
+        tool_calls[0].arguments["path"],
+        serde_json::json!(expected_path)
+    );
 }
 
 #[test]
@@ -149,21 +163,6 @@ fn llm_trace_patch_path_returns_zero_without_tool_calls() {
     let patched = trace.patch_path("/tmp/original", "/tmp/rewritten");
 
     assert_eq!(patched, 0);
-}
-
-#[test]
-fn llm_trace_patch_path_ignores_empty_from_pattern() {
-    let original = "/tmp/original";
-    let mut trace =
-        LlmTrace::single_turn("patch-model", "patch file", vec![tool_call_step(original)]);
-
-    let patched = trace.patch_path("", "/tmp/rewritten");
-
-    assert_eq!(patched, 0);
-    let TraceResponse::ToolCalls { tool_calls, .. } = &trace.turns[0].steps[0].response else {
-        panic!("expected tool call step after empty patch");
-    };
-    assert_eq!(tool_calls[0].arguments["path"], serde_json::json!(original));
 }
 
 #[test]
