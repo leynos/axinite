@@ -46,6 +46,18 @@ mod db {
     use super::*;
 
     /// Create a temp libSQL database with migrations applied.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Result::Err` with a context-wrapped error when:
+    ///
+    /// - `tempfile::tempdir` fails to create the temp directory:
+    ///   `"failed to create routine test tempdir"`.
+    /// - `LibSqlBackend::new_local` fails to initialise the backend:
+    ///   `"failed to create routine test database at {db_path:?}"`, with the
+    ///   formatted database path.
+    /// - `backend.run_migrations` fails to apply migrations:
+    ///   `"failed to run routine test database migrations"`.
     pub async fn create_test_db() -> Result<(Arc<dyn Database>, TempDir)> {
         use ironclaw::db::libsql::LibSqlBackend;
 

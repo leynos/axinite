@@ -1,7 +1,7 @@
 //! Template substitution helpers for replayed trace tool-call arguments.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use ironclaw::llm::{ChatMessage, Role};
 
@@ -85,12 +85,17 @@ pub(super) fn substitute_templates(value: &mut serde_json::Value, vars: &HashMap
             }
 
             let mut result = s.clone();
+            let mut visited_keys = HashSet::new();
             while let Some(start) = result.find("{{") {
                 if let Some(end) = result[start..].find("}}") {
                     let end = start + end + 2;
-                    let key = result[start + 2..end - 2].trim();
+                    let key = result[start + 2..end - 2].trim().to_string();
 
-                    if let Some(resolved) = vars.get(key) {
+                    if !visited_keys.insert(key.clone()) {
+                        break;
+                    }
+
+                    if let Some(resolved) = vars.get(&key) {
                         result = format!("{}{}{}", &result[..start], resolved, &result[end..]);
                     } else {
                         break;
@@ -112,5 +117,23 @@ pub(super) fn substitute_templates(value: &mut serde_json::Value, vars: &HashMap
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn substitute_templates_stops_on_cyclic_references() {
+        let vars = HashMap::from([
+            ("first".to_string(), "{{second}}".to_string()),
+            ("second".to_string(), "{{first}}".to_string()),
+        ]);
+        let mut value = serde_json::json!("path {{first}}");
+
+        substitute_templates(&mut value, &vars);
+
+        assert_eq!(value, serde_json::json!("path {{first}}"));
     }
 }

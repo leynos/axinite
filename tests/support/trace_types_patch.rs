@@ -40,7 +40,7 @@ impl LlmTrace {
     /// assert!(patched > 0);
     /// ```
     pub fn patch_path(&mut self, from: &str, to: &str) -> usize {
-        if from.is_empty() {
+        if from.is_empty() || from == to {
             return 0;
         }
 
