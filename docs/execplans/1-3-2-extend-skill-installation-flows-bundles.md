@@ -202,10 +202,11 @@ If multipart uploads require increasing the global gateway body limit above
 the RFC bundle cap, stop and decide whether a route-local limit is possible.
 The implementation should not silently widen all browser request limits.
 
-If tool-call upload support appears to require base64 archives in the LLM tool
-schema, stop and ask for confirmation. Roadmap item `1.3.2` requires uploaded
-bundles for the web flow and `.skill` URLs; adding base64 archives to
-`skill_install` may be a separate model-facing contract change.
+If tool-call upload support appears to require base64 archives in the Large
+Language Model (LLM) tool schema, stop and ask for confirmation. Roadmap item
+`1.3.2` requires uploaded bundles for the web flow and `.skill` URLs; adding
+base64 archives to `skill_install` may be a separate model-facing contract
+change.
 
 If exact-one-source validation would break an existing catalogue or inline
 install workflow, stop and document the compatibility conflict before
@@ -290,6 +291,18 @@ Rust test code without a new app-level server harness.
   without whitespace findings.
 - [x] 2026-04-24: Feature committed as
   `a8d63a1a Support skill bundle upload installs`.
+- [x] 2026-04-24: Code-review feedback addressed. The web and tool adapters now
+  share source blankness helpers, multipart source fields use the same
+  whitespace semantics as JSON installs, body size failures distinguish
+  Axum's length-limit error from other body read errors, and regression tests
+  cover invalid multipart uploads, mixed multipart sources, JSON size limits,
+  additional ambiguous tool-source combinations, and downloaded raw Markdown.
+- [x] 2026-04-24: Review-fix validation passed. The targeted skill test run
+  `cargo test -p ironclaw skill` wrote
+  `/tmp/test-review-skill-comments-axinite-1-3-2-extend-skill-installation-flows-bundles.out`
+  and passed. The full gate
+  `make all 2>&1 | tee /tmp/make-all-review-comments-axinite-1-3-2-extend-skill-installation-flows-bundles.out`
+  also passed.
 
 ## Surprises & Discoveries
 
@@ -331,6 +344,11 @@ validation enforces exactly one of `content`, `url`, or `name`.
 implicit catalogue-name requirement, so the fixture was updated to send only
 `content` for an inline install.
 
+2026-04-24: Axum's `to_bytes` error wraps `http_body_util::LengthLimitError`
+as the source error when the configured body cap is exceeded. Matching that
+source preserves the intended `413 Payload Too Large` response without
+misclassifying unrelated body read failures.
+
 ## Decision Log
 
 2026-04-24: Treat `1.3.2` as an install-adapter and user-interface slice over
@@ -361,6 +379,11 @@ would express source alternatives in JSON Schema. The local schema validator
 for model-facing tools forbids that keyword at the top level, so the compatible
 contract is an object with optional source properties plus explicit runtime
 validation.
+
+2026-04-24: Keep source-selection control flow local to each adapter, but share
+the small string-normalisation helpers in `src/skills/install_source.rs`. This
+avoids a larger enum abstraction while keeping web, multipart, and tool
+definitions of blank source fields aligned.
 
 ## Implementation plan
 

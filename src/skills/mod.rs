@@ -18,6 +18,7 @@ pub mod attenuation;
 pub mod bundle;
 pub mod catalog;
 pub mod gating;
+pub mod install_source;
 pub mod parser;
 pub mod registry;
 pub mod selector;

@@ -255,6 +255,15 @@ async fn skill_install_tool_rejects_duplicate_inline_install(test_registry: Test
     "url": "https://example.com/deploy-docs.skill",
     "content": skill_markdown("deploy-docs"),
 }))]
+#[case::url_and_name(serde_json::json!({
+    "url": "https://example.com/deploy-docs.skill",
+    "name": "deploy-docs",
+}))]
+#[case::content_url_and_name(serde_json::json!({
+    "content": skill_markdown("deploy-docs"),
+    "url": "https://example.com/deploy-docs.skill",
+    "name": "deploy-docs",
+}))]
 #[tokio::test]
 async fn skill_install_tool_rejects_ambiguous_sources(
     test_registry: TestRegistryHandle,

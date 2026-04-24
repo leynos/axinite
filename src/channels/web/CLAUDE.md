@@ -1,7 +1,8 @@
 # Web Gateway Module
 
-Browser-facing HTTP API and SSE/WebSocket real-time streaming. The gateway is
-Axum-based, single-user, and protected by bearer-token auth.
+Browser-facing HTTP API and Server-Sent Events (SSE) / WebSocket real-time
+streaming. The gateway is Axum-based, single-user, and protected by
+bearer-token auth.
 
 ## File Map
 
@@ -50,7 +51,7 @@ Axum-based, single-user, and protected by bearer-token auth.
 | GET | `/api/memory/list` | List files at a path. |
 | GET | `/api/memory/read` | Read a workspace file. |
 | POST | `/api/memory/write` | Write a workspace file. |
-| POST | `/api/memory/search` | Hybrid FTS and vector search. |
+| POST | `/api/memory/search` | Hybrid full-text search (FTS) and vector search. |
 
 ### Jobs
 
@@ -125,7 +126,7 @@ require `X-Confirm-Action: true`.
 | GET | `/api/pairing/{channel}` | List pending pairing requests. |
 | POST | `/api/pairing/{channel}/approve` | Approve a pairing request. |
 | GET | `/api/gateway/status` | Server uptime, clients, and config. |
-| POST | `/v1/chat/completions` | OpenAI-compatible LLM proxy. |
+| POST | `/v1/chat/completions` | OpenAI-compatible Large Language Model (LLM) proxy. |
 | GET | `/v1/models` | OpenAI-compatible model list. |
 
 ### Static And Project Files
@@ -161,7 +162,7 @@ The SSE contract is `#[serde(tag = "type")]` in `types.rs`.
 | `approval_needed` | Tool requires user approval. |
 | `auth_required` | Extension needs auth credentials. |
 | `auth_completed` | Extension auth flow finished. |
-| `extension_status` | WASM channel activation status changed. |
+| `extension_status` | WebAssembly (WASM) channel activation status changed. |
 | `error` | Error from the agent or gateway. |
 | `heartbeat` | SSE keepalive. |
 
@@ -193,9 +194,9 @@ the browser, these endpoints also accept `?token=...`:
 - `/api/logs/events`
 - `/api/chat/ws`
 
-All other endpoints reject query-string tokens. If you add a new SSE or
-WebSocket endpoint, register its path in `allows_query_token_auth()` in
-`auth.rs`.
+All other endpoints reject query-string tokens. When a new SSE or WebSocket
+endpoint is added, its path must be registered in `allows_query_token_auth()`
+in `auth.rs`.
 
 If no `GATEWAY_AUTH_TOKEN` is configured, a random 32-character alphanumeric
 token is generated at startup and printed to the console.
@@ -214,7 +215,7 @@ Key fields:
 - `msg_tx`: sends messages to the agent loop after `Channel::start()`.
 - `sse`: broadcast hub for handler-originated events.
 - `ws_tracker`: tracks WebSocket connection count separately from SSE.
-- `chat_rate_limiter`: 30 request per 60 second sliding window.
+- `chat_rate_limiter`: 30 requests per 60-second sliding window.
 - `scheduler`: injects follow-up messages into running agent jobs.
 - `cost_guard`: exposes token usage and cost totals.
 - `startup_time`: used to compute gateway uptime.
@@ -239,9 +240,10 @@ Both SSE and WebSocket share the same `SseManager` broadcast channel.
 
 ## CORS And Security Headers
 
-CORS is restricted to the gateway's own origin, including the same IP and port
-and `localhost` on the same port. Allowed methods are GET, POST, PUT, and
-DELETE. Allowed headers are `Content-Type` and `Authorization`. Credentials are
+Cross-Origin Resource Sharing (CORS) is restricted to the gateway's own origin,
+including the same IP and port and `localhost` on the same port. Allowed
+methods are GET, POST, PUT, and DELETE. Allowed headers are `Content-Type` and
+`Authorization`. Credentials are
 allowed.
 
 All responses include:
@@ -266,7 +268,7 @@ Server restart clears all pending approvals. The `pending_approval` field in
 2. Implement the handler in the appropriate `handlers/*.rs` file.
 3. Register the route in that module's route helper, then merge it from
    `start_server()` in `server.rs`.
-4. If it is an SSE or WebSocket endpoint, add its path to
+4. For an SSE or WebSocket endpoint, add its path to
    `allows_query_token_auth()` in `auth.rs`.
 5. If it requires a new `GatewayState` field, add it to the struct and to
    `GatewayChannel::new()` and `rebuild_state()` in `mod.rs`, then add a

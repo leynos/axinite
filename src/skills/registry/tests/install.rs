@@ -91,6 +91,30 @@ async fn test_uploaded_archive_bytes_reject_plain_markdown(
     );
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_downloaded_bytes_accept_plain_markdown(bundle_install_fixture: BundleInstallFixture) {
+    let BundleInstallFixture {
+        installed_dir,
+        mut registry,
+        ..
+    } = bundle_install_fixture;
+
+    let prepared = SkillRegistry::prepare_install_to_disk(
+        registry.install_target_dir(),
+        SkillInstallPayload::DownloadedBytes(skill_markdown("deploy-docs").into_bytes()),
+    )
+    .await
+    .expect("downloaded markdown should prepare successfully");
+
+    registry
+        .commit_install(prepared)
+        .expect("downloaded markdown should commit successfully");
+
+    assert!(installed_dir.path().join("deploy-docs/SKILL.md").exists());
+    assert!(registry.has("deploy-docs"));
+}
+
 #[tokio::test]
 async fn test_install_duplicate_rejected() {
     let dir = tempfile::tempdir().unwrap();

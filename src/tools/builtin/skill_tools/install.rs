@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::context::JobContext;
 use crate::skills::catalog::SkillCatalog;
+use crate::skills::install_source::{non_blank_raw, trimmed_non_empty};
 use crate::skills::registry::{PreparedSkillInstall, SkillInstallPayload, SkillRegistry};
 use crate::tools::builtin::skill_fetch::fetch_skill_bytes;
 use crate::tools::tool::{
@@ -48,46 +49,31 @@ impl SkillInstallTool {
             .unwrap_or_else(|| name_or_slug.to_string())
     }
 
-    fn parse_install_source(params: &serde_json::Value) -> Result<InstallSource<'_>, ToolError> {
-        let content = non_blank_str(params, "content");
-        let url = trimmed_non_empty_str(params, "url");
-        let name = trimmed_non_empty_str(params, "name");
+    fn select_install_source<'a>(
+        params: &'a serde_json::Value,
+    ) -> Result<(&'a str, &'static str), ToolError> {
+        let content = non_blank_raw(params.get("content").and_then(|value| value.as_str()));
+        let url = trimmed_non_empty(params.get("url").and_then(|value| value.as_str()));
+        let name = trimmed_non_empty(params.get("name").and_then(|value| value.as_str()));
 
-        let sources = [content.is_some(), url.is_some(), name.is_some()]
-            .into_iter()
-            .filter(|has_source| *has_source)
-            .count();
-
-        match (sources, content, url, name) {
-            (1, Some(content), None, None) => Ok(InstallSource::Content(content)),
-            (1, None, Some(url), None) => Ok(InstallSource::Url(url)),
-            (1, None, None, Some(name)) => Ok(InstallSource::Catalog(name)),
-            _ => Err(ToolError::InvalidParameters(
-                "provide exactly one of 'content', 'url', or 'name'".to_string(),
-            )),
+        let mut chosen: Option<(&'a str, &'static str)> = None;
+        for (value, kind) in [(content, "content"), (url, "url"), (name, "name")] {
+            if let Some(value) = value {
+                if chosen.is_some() {
+                    return Err(Self::exactly_one_source_error());
+                }
+                chosen = Some((value, kind));
+            }
         }
+
+        chosen.ok_or_else(Self::exactly_one_source_error)
     }
-}
 
-enum InstallSource<'a> {
-    Content(&'a str),
-    Url(&'a str),
-    Catalog(&'a str),
-}
-
-fn non_blank_str<'a>(params: &'a serde_json::Value, key: &str) -> Option<&'a str> {
-    params
-        .get(key)
-        .and_then(|value| value.as_str())
-        .filter(|value| !value.trim().is_empty())
-}
-
-fn trimmed_non_empty_str<'a>(params: &'a serde_json::Value, key: &str) -> Option<&'a str> {
-    params
-        .get(key)
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+    fn exactly_one_source_error() -> ToolError {
+        ToolError::InvalidParameters(
+            "provide exactly one of 'content', 'url', or 'name'".to_string(),
+        )
+    }
 }
 
 impl NativeTool for SkillInstallTool {
@@ -126,17 +112,17 @@ impl NativeTool for SkillInstallTool {
         _ctx: &JobContext,
     ) -> Result<ToolOutput, ToolError> {
         let start = std::time::Instant::now();
-        let source = Self::parse_install_source(&params)?;
+        let (value, kind) = Self::select_install_source(&params)?;
 
-        let payload = match source {
-            InstallSource::Content(raw) => SkillInstallPayload::Markdown(raw.to_string()),
-            InstallSource::Url(url) => SkillInstallPayload::DownloadedBytes(
-                fetch_skill_bytes(url)
+        let payload = match kind {
+            "content" => SkillInstallPayload::Markdown(value.to_string()),
+            "url" => SkillInstallPayload::DownloadedBytes(
+                fetch_skill_bytes(value)
                     .await
                     .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?,
             ),
-            InstallSource::Catalog(name) => {
-                let slug = self.resolve_catalog_slug(name).await;
+            "name" => {
+                let slug = self.resolve_catalog_slug(value).await;
                 let download_url =
                     crate::skills::catalog::skill_download_url(self.catalog.registry_url(), &slug);
                 SkillInstallPayload::DownloadedBytes(
@@ -145,6 +131,7 @@ impl NativeTool for SkillInstallTool {
                         .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?,
                 )
             }
+            _ => unreachable!("source kind is constrained by select_install_source"),
         };
 
         let install_root = {
