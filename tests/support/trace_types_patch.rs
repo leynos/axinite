@@ -10,7 +10,40 @@ impl LlmTrace {
     /// Walks through all turns and steps, patching any string values in tool call
     /// arguments that contain the `from` path. Useful for adapting recorded traces
     /// to use test-specific temporary directories.
+    ///
+    /// ```rust
+    /// # fn load_trace_fixture() -> crate::support::trace_types::LlmTrace {
+    /// #     use ironclaw::llm::recording::{TraceResponse, TraceStep, TraceToolCall};
+    /// #     crate::support::trace_types::LlmTrace::single_turn(
+    /// #         "example-model",
+    /// #         "patch the path",
+    /// #         vec![TraceStep {
+    /// #             request_hint: None,
+    /// #             response: TraceResponse::ToolCalls {
+    /// #                 tool_calls: vec![TraceToolCall {
+    /// #                     id: "call-1".to_string(),
+    /// #                     name: "write_file".to_string(),
+    /// #                     arguments: serde_json::json!({
+    /// #                         "path": "/tmp/run-123/output.txt"
+    /// #                     }),
+    /// #                 }],
+    /// #                 input_tokens: 1,
+    /// #                 output_tokens: 1,
+    /// #             },
+    /// #             expected_tool_results: Vec::new(),
+    /// #         }],
+    /// #     )
+    /// # }
+    /// let mut trace = load_trace_fixture();
+    /// let patched = trace.patch_path("/tmp/run-123", "/tmp/test-run");
+    ///
+    /// assert!(patched > 0);
+    /// ```
     pub fn patch_path(&mut self, from: &str, to: &str) -> usize {
+        if from.is_empty() {
+            return 0;
+        }
+
         let mut patched = 0;
         for turn in &mut self.turns {
             patched += patch_steps(&mut turn.steps, from, to);
