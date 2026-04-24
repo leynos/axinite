@@ -389,6 +389,153 @@ they run once instead of being duplicated across every E2E binary.
 
 ##### Test-support module architecture
 
+###### Harness-specific support roots
+
+Each top-level Rust file under `tests/` is a separate integration-test crate.
+The crate declares its own support boundary with a `#[path = "support/*.rs"]`
+module instead of importing a single global `tests/support/mod.rs`. That keeps
+trace replay, channel helpers, webhook helpers, and unit-only support code out
+of harnesses that do not need them.
+
+Current support-root mapping:
+
+Table: Support root mapping for test harnesses
+
+| Harness entrypoint | Support root | Intended ownership |
+| --- | --- | --- |
+| `tests/channels.rs` | `tests/support/channels.rs` | Channel-focused helpers, currently `telegram` |
+| `tests/e2e_traces.rs` | `tests/support/e2e.rs` | Trace-driven E2E helpers, `TestRig`, assertions, metrics, and routine helpers |
+| `tests/infrastructure.rs` | `tests/support/infrastructure.rs` | Infrastructure helpers such as `webhook_helpers` |
+| `tests/support_unit_tests.rs` | `tests/support/support_unit.rs` | Tests for support modules and trace-helper internals |
+| `tests/tools_and_config.rs` | `tests/support/tools_and_config.rs` | Trace-format and WASM schema helper imports |
+| `tests/webhook_server.rs` | `tests/support/webhook.rs` | Webhook-server helper modules |
+
+For example, `tests/infrastructure.rs` owns this boundary:
+
+```rust
+#[path = "support/infrastructure.rs"]
+mod support;
+```
+
+The support root in `tests/support/infrastructure.rs` then decides which
+sibling support files are visible to that harness:
+
+```rust
+pub mod webhook_helpers;
+```
+
+An infrastructure test imports through its harness-local root:
+
+```rust
+use crate::support::webhook_helpers;
+```
+
+Channel-focused tests follow the same model. `tests/channels.rs` declares
+`#[path = "support/channels.rs"] mod support;`, and
+`tests/support/channels.rs` exposes channel helper modules. The canonical
+channel helper is conceptually `tests::support::channels::telegram`; inside the
+integration-test crate, import it via the harness-local path:
+
+```rust
+use crate::support::telegram::{
+    create_test_runtime,
+    load_telegram_module,
+    telegram_wasm_path,
+};
+```
+
+Add new channel-specific helpers as public submodules of
+`tests/support/channels.rs` using the channel name as the module name. Keep
+shared helpers private unless another harness root deliberately exposes them.
+
+Trace helpers now live under the support root that needs them. E2E trace tests
+use `tests/support/e2e.rs`, which exposes `trace_types`, `trace_provider`, and
+`test_rig`. Support-module unit tests use `tests/support/support_unit.rs`,
+which exposes the trace modules plus private diagnostic, builder, recorded, and
+runtime extension modules. Tools/config tests use
+`tests/support/tools_and_config.rs`, which exposes only `trace_types` and the
+recorded-trace deserialization extension needed for trace-format tests.
+
+When migrating or adding tests:
+
+- declare `#[path = "support/<domain>.rs"] mod support;` in the harness
+  entrypoint;
+- add helper modules to the narrowest support root that owns the behaviour;
+- import from the real owner, for example `crate::support::trace_types::LlmTrace`
+  or `crate::support::trace_provider::TraceLlm`;
+- import recording data types directly from `ironclaw::llm::recording`;
+- do not recreate a global `tests/support/mod.rs` or a broad re-export facade.
+
+###### Import ownership boundaries
+
+`LlmTrace` now keeps its core data shape in `tests/support/trace_types.rs`, but
+its helper methods are defined in narrower `impl` files:
+
+- `tests/support/trace_types_builders.rs` for constructor-style builders such
+  as `LlmTrace::new(...)`
+- `tests/support/trace_types_runtime.rs` for runtime helpers such as
+  `LlmTrace::single_turn(...)` and `LlmTrace::from_file_async(...)`
+- `tests/support/trace_types_patch.rs` for trace-fixture patching via
+  `LlmTrace::patch_path(...)`
+- `tests/support/trace_types_recorded.rs` for recorded-trace inspection such
+  as `LlmTrace::playable_steps()`
+
+Consumers should import `LlmTrace` from the harness support root that exposes
+it, for example `crate::support::trace_types::LlmTrace`, and let the support
+root decide which helper impl files compile into that test binary. Do not add a
+new re-export shim for these methods.
+
+###### `TraceLlm` diagnostics
+
+`TraceLlm::from_file_async(...)`, `TraceLlm::calls()`, and
+`TraceLlm::hint_mismatches()` live in
+`tests/support/trace_provider_diagnostics.rs` as a separate `impl TraceLlm`
+block. Only support roots that include that file compile those diagnostics.
+Today that means `tests/support/support_unit.rs` opts in so
+`tests/support_unit_tests.rs` can exercise the diagnostic surface without
+forcing unrelated harnesses to compile it.
+
+The same split also defines the internal `pub(super)` field boundary in
+`tests/support/trace_provider.rs`. Only the sibling diagnostics module in
+`tests/support/trace_provider_diagnostics.rs` may read those fields directly;
+external harness code and unrelated support modules should go through the
+public helpers instead. The exposed fields are `TraceLlmState::index`, which
+is the replay cursor, `TraceLlm::inner`, which is the
+`Mutex<TraceLlmState>` protecting replay state, and
+`TraceLlm::hint_mismatches`, which is an `AtomicUsize` tracking hint
+validation mismatches.
+
+`TraceLlmState::index` is a monotonically increasing `usize` replay cursor. It
+must be mutated only while holding `TraceLlm::inner`, and replay code should
+use `TraceLlm::next_step(...)` rather than open-coding its own
+read-modify-write sequence. In normal operation the cursor stays in the range
+`0..=steps.len()`. Any overflow indicates runaway replay or invalid trace data,
+not a recoverable condition.
+
+`captured_requests` is owned by `TraceLlmState` and protected by
+`inner: Mutex<TraceLlmState>`, so request capture and cursor movement remain in
+one critical section. `hint_mismatches` is separate from that mutex because
+hint validation only needs lock-free accounting. Reads happen through
+`TraceLlm::hint_mismatches()`, which uses relaxed ordering, and writes use a
+checked relaxed `fetch_update(...)` increment so overflow fails fast instead
+of wrapping silently. Read-only diagnostic access should therefore stay behind
+`TraceLlm::calls()` and `TraceLlm::hint_mismatches()`, and new direct field
+access should not be added outside `trace_provider_diagnostics.rs`.
+
+See `tests/support_unit_tests/trace_llm_tests.rs` for replay and call-count
+examples, and `tests/support_unit_tests/trace_llm_contract_tests.rs` for the
+request-hint mismatch contract in practice.
+
+###### Rationale
+
+The old `tests/support/mod.rs` compiled into every integration-test harness,
+including binaries that only needed a small subset of the shared helpers. That
+forced broad `#[allow(dead_code)]` and `#[allow(unused_imports)]` suppressions,
+plus touch-style references to keep trace support reachable. The current
+support-root model makes each harness opt in to only the helpers it actually
+uses, which removes those global suppressions and keeps dead-code feedback
+local to the owning harness.
+
 #### AppBuilderFlags
 
 `AppBuilderFlags` controls optional construction behaviour:
@@ -2529,126 +2676,6 @@ tests independent of host machine secrets, keychains, and shell state.
 
 ## 26. Phased startup pipeline
 
-
-### `TraceLlm` diagnostics
-
-`TraceLlm::from_file_async(...)`, `TraceLlm::calls()`, and
-`TraceLlm::hint_mismatches()` live in
-`tests/support/trace_provider_diagnostics.rs` as a separate `impl TraceLlm`
-block. Only support roots that include that file compile those diagnostics.
-Today that means `tests/support/support_unit.rs` opts in so
-`tests/support_unit_tests.rs` can exercise the diagnostic surface without
-forcing unrelated harnesses to compile it.
-
-The same split also defines the internal `pub(super)` field boundary in
-`tests/support/trace_provider.rs`. Only the sibling diagnostics module in
-`tests/support/trace_provider_diagnostics.rs` may read those fields directly;
-external harness code and unrelated support modules should go through the
-public helpers instead. The exposed fields are `TraceLlmState::index`, which
-is the replay cursor, `TraceLlm::inner`, which is the
-`Mutex<TraceLlmState>` protecting replay state, and
-`TraceLlm::hint_mismatches`, which is an `AtomicUsize` tracking hint
-validation mismatches.
-
-`TraceLlmState::index` is a monotonically increasing `usize` replay cursor. It
-must be mutated only while holding `TraceLlm::inner`, and replay code should
-use `TraceLlm::next_step(...)` rather than open-coding its own
-read-modify-write sequence. In normal operation the cursor stays in the range
-`0..=steps.len()`. Any overflow indicates runaway replay or invalid trace data,
-not a recoverable condition.
-
-`captured_requests` is owned by `TraceLlmState` and protected by
-`inner: Mutex<TraceLlmState>`, so request capture and cursor movement remain in
-one critical section. `hint_mismatches` is separate from that mutex because
-hint validation only needs lock-free accounting. Reads happen through
-`TraceLlm::hint_mismatches()`, which uses relaxed ordering, and writes use a
-checked relaxed `fetch_update(...)` increment so overflow fails fast instead
-of wrapping silently. Read-only diagnostic access should therefore stay behind
-`TraceLlm::calls()` and `TraceLlm::hint_mismatches()`, and new direct field
-access should not be added outside `trace_provider_diagnostics.rs`.
-
-See `tests/support_unit_tests/trace_llm_tests.rs` for replay and call-count
-examples, and `tests/support_unit_tests/trace_llm_contract_tests.rs` for the
-request-hint mismatch contract in practice.
-
-
-###### Harness-specific support roots
-
-Each top-level Rust file under `tests/` is a separate integration-test crate.
-The crate declares its own support boundary with a `#[path = "support/*.rs"]`
-module instead of importing a single global `tests/support/mod.rs`. That keeps
-trace replay, channel helpers, webhook helpers, and unit-only support code out
-of harnesses that do not need them.
-
-Current support-root mapping:
-
-Table: Support root mapping for test harnesses
-
-| Harness entrypoint | Support root | Intended ownership |
-| --- | --- | --- |
-| `tests/channels.rs` | `tests/support/channels.rs` | Channel-focused helpers, currently `telegram` |
-| `tests/e2e_traces.rs` | `tests/support/e2e.rs` | Trace-driven E2E helpers, `TestRig`, assertions, metrics, and routine helpers |
-| `tests/infrastructure.rs` | `tests/support/infrastructure.rs` | Infrastructure helpers such as `webhook_helpers` |
-| `tests/support_unit_tests.rs` | `tests/support/support_unit.rs` | Tests for support modules and trace-helper internals |
-| `tests/tools_and_config.rs` | `tests/support/tools_and_config.rs` | Trace-format and WASM schema helper imports |
-| `tests/webhook_server.rs` | `tests/support/webhook.rs` | Webhook-server helper modules |
-
-For example, `tests/infrastructure.rs` owns this boundary:
-
-```rust
-#[path = "support/infrastructure.rs"]
-mod support;
-```
-
-The support root in `tests/support/infrastructure.rs` then decides which
-sibling support files are visible to that harness:
-
-```rust
-pub mod webhook_helpers;
-```
-
-An infrastructure test imports through its harness-local root:
-
-```rust
-use crate::support::webhook_helpers;
-```
-
-Channel-focused tests follow the same model. `tests/channels.rs` declares
-`#[path = "support/channels.rs"] mod support;`, and
-`tests/support/channels.rs` exposes channel helper modules. The canonical
-channel helper is conceptually `tests::support::channels::telegram`; inside the
-integration-test crate, import it via the harness-local path:
-
-```rust
-use crate::support::telegram::{
-    create_test_runtime,
-    load_telegram_module,
-    telegram_wasm_path,
-};
-```
-
-Add new channel-specific helpers as public submodules of
-`tests/support/channels.rs` using the channel name as the module name. Keep
-shared helpers private unless another harness root deliberately exposes them.
-
-Trace helpers now live under the support root that needs them. E2E trace tests
-use `tests/support/e2e.rs`, which exposes `trace_types`, `trace_provider`, and
-`test_rig`. Support-module unit tests use `tests/support/support_unit.rs`,
-which exposes the trace modules plus private diagnostic, builder, recorded, and
-runtime extension modules. Tools/config tests use
-`tests/support/tools_and_config.rs`, which exposes only `trace_types` and the
-recorded-trace deserialization extension needed for trace-format tests.
-
-When migrating or adding tests:
-
-- declare `#[path = "support/<domain>.rs"] mod support;` in the harness
-  entrypoint;
-- add helper modules to the narrowest support root that owns the behaviour;
-- import from the real owner, for example `crate::support::trace_types::LlmTrace`
-  or `crate::support::trace_provider::TraceLlm`;
-- import recording data types directly from `ironclaw::llm::recording`;
-- do not recreate a global `tests/support/mod.rs` or a broad re-export facade.
-
 ## 9. Repository bootstrap
 
 From the repository root:
@@ -2721,17 +2748,6 @@ cargo install cargo-llvm-cov --locked
   ready.
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
-
-
-### Rationale
-
-The old `tests/support/mod.rs` compiled into every integration-test harness,
-including binaries that only needed a small subset of the shared helpers. That
-forced broad `#[allow(dead_code)]` and `#[allow(unused_imports)]` suppressions,
-plus touch-style references to keep trace support reachable. The current
-support-root model makes each harness opt in to only the helpers it actually
-uses, which removes those global suppressions and keeps dead-code feedback
-local to the owning harness.
 
 
 ## 14. Self-repair internals
@@ -2810,25 +2826,6 @@ sed -n '1,40p' .cargo/config.toml
 Three test-support helpers were added in PR `#161` to make replay-based
 and worker-coverage tests more reliable.
 
-
-### Import ownership boundaries
-
-`LlmTrace` now keeps its core data shape in `tests/support/trace_types.rs`, but
-its helper methods are defined in narrower `impl` files:
-
-- `tests/support/trace_types_builders.rs` for constructor-style builders such
-  as `LlmTrace::new(...)`
-- `tests/support/trace_types_runtime.rs` for runtime helpers such as
-  `LlmTrace::single_turn(...)` and `LlmTrace::from_file_async(...)`
-- `tests/support/trace_types_patch.rs` for trace-fixture patching via
-  `LlmTrace::patch_path(...)`
-- `tests/support/trace_types_recorded.rs` for recorded-trace inspection such
-  as `LlmTrace::playable_steps()`
-
-Consumers should import `LlmTrace` from the harness support root that exposes
-it, for example `crate::support::trace_types::LlmTrace`, and let the support
-root decide which helper impl files compile into that test binary. Do not add a
-new re-export shim for these methods.
 
 ## 8. Local mold configuration
 

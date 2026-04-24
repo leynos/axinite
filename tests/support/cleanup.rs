@@ -2,6 +2,9 @@
 //! files.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_UNIQUE_DIR: AtomicU64 = AtomicU64::new(0);
 
 /// The kind of path registered for cleanup.
 enum PathKind {
@@ -65,7 +68,17 @@ pub fn setup_test_dir_with_suffix(base: &Path, suffix: &str) -> std::io::Result<
     let base = base
         .to_str()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "non-UTF-8 path"))?;
-    let dir = format!("{base}_{suffix}");
+    let unique = NEXT_UNIQUE_DIR
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+            current.checked_add(1)
+        })
+        .map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "test directory uniqueness counter overflowed",
+            )
+        })?;
+    let dir = format!("{base}_{suffix}_{}_{}", std::process::id(), unique);
     setup_test_dir(&dir)?;
     Ok(dir)
 }
