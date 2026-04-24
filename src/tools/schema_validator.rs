@@ -5,6 +5,11 @@
 //! This module provides a comprehensive validation function and a test that
 //! exercises every built-in tool's `parameters_schema()` to ensure compatibility
 //! with the OpenAI function calling API strict mode.
+//! Recursive locations use [`SchemaPath`](crate::tools::tool::SchemaPath) so
+//! helper functions distinguish tool identifiers from schema paths while
+//! preserving the existing error text.
+
+use crate::tools::tool::SchemaPath;
 
 /// Strict CI-time validation of a JSON schema against OpenAI strict-mode rules.
 ///
@@ -33,8 +38,9 @@
 /// 9. Top-level schemas must not use `oneOf`/`anyOf`/`allOf`/`enum`/`not`
 pub fn validate_strict_schema(
     schema: &serde_json::Value,
-    tool_name: &str,
+    tool_name: impl AsRef<str>,
 ) -> Result<(), Vec<String>> {
+    let tool_name = tool_name.as_ref();
     let mut errors = Vec::new();
     for forbidden in ["oneOf", "anyOf", "allOf", "enum", "not"] {
         if schema.get(forbidden).is_some() {
@@ -43,7 +49,7 @@ pub fn validate_strict_schema(
             ));
         }
     }
-    errors.extend(check_object_schema(schema, tool_name));
+    errors.extend(check_object_schema(schema, SchemaPath::from(tool_name)));
     if errors.is_empty() {
         Ok(())
     } else {
@@ -52,7 +58,12 @@ pub fn validate_strict_schema(
 }
 
 /// Recursively validate an object-typed schema node.
-fn check_object_schema(schema: &serde_json::Value, path: &str) -> Vec<String> {
+fn check_object_schema(schema: &serde_json::Value, path: impl Into<SchemaPath>) -> Vec<String> {
+    let path = path.into();
+    check_object_schema_at(schema, &path)
+}
+
+fn check_object_schema_at(schema: &serde_json::Value, path: &SchemaPath) -> Vec<String> {
     let mut errors = Vec::new();
 
     // Rule 1: must have "type": "object"
@@ -92,7 +103,7 @@ fn check_object_schema(schema: &serde_json::Value, path: &str) -> Vec<String> {
 
     // Rule 4: every property should have a "type" field
     for (key, prop) in properties {
-        let prop_path = format!("{path}.{key}");
+        let prop_path = path.child(key);
 
         if prop.get("type").is_none() {
             // Freeform properties (no type) are intentionally allowed in some tools
@@ -142,7 +153,7 @@ fn check_object_schema(schema: &serde_json::Value, path: &str) -> Vec<String> {
                 // This is a map type (e.g. {"type": "object", "additionalProperties": {"type": "string"}})
                 // Valid pattern, skip recursive object validation.
             } else {
-                errors.extend(check_object_schema(prop, &prop_path));
+                errors.extend(check_object_schema_at(prop, &prop_path));
             }
         }
 
@@ -153,7 +164,8 @@ fn check_object_schema(schema: &serde_json::Value, path: &str) -> Vec<String> {
             } else if let Some(items) = prop.get("items") {
                 // Recurse into items if they are objects
                 if items.get("type").and_then(|t| t.as_str()) == Some("object") {
-                    errors.extend(check_object_schema(items, &format!("{prop_path}.items")));
+                    let items_path = prop_path.child("items");
+                    errors.extend(check_object_schema_at(items, &items_path));
                 }
             }
         }

@@ -1,6 +1,7 @@
 //! Tests for `validate_strict_schema`, including complex fixture-backed tool schemas.
 
 use super::*;
+use crate::tools::tool::{SchemaPath, ToolName};
 
 mod fixture_groups;
 
@@ -14,6 +15,43 @@ fn test_valid_schema_passes() {
         "required": ["name"]
     });
     assert!(validate_strict_schema(&schema, "test").is_ok());
+}
+
+#[test]
+fn test_strict_schema_accepts_tool_name_newtype() {
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" }
+        }
+    });
+
+    assert!(validate_strict_schema(&schema, ToolName::from("test")).is_ok());
+}
+
+#[test]
+fn test_object_schema_accepts_schema_path_newtype() {
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "headers": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" }
+                    },
+                    "required": ["name", "missing"]
+                }
+            }
+        }
+    });
+
+    let err = check_object_schema(&schema, SchemaPath::from("test"));
+    assert!(
+        err.iter()
+            .any(|e| e.contains("test.headers.items") && e.contains("\"missing\""))
+    );
 }
 
 #[test]

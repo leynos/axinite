@@ -103,10 +103,29 @@ fn test_require_str_present() {
 }
 
 #[test]
+fn test_require_str_accepts_param_name() {
+    let params = serde_json::json!({"name": "alice"});
+    assert_eq!(
+        require_str(&params, ParamName::from("name")).unwrap(),
+        "alice"
+    );
+}
+
+#[test]
+fn test_param_name_preserves_display_value() {
+    let name = ParamName::from("name");
+    assert_eq!(name.as_ref(), "name");
+    assert_eq!(name.to_string(), "name");
+}
+
+#[test]
 fn test_require_str_missing() {
     let params = serde_json::json!({});
     let err = require_str(&params, "name").unwrap_err();
-    assert!(err.to_string().contains("missing 'name'"));
+    assert_eq!(
+        err.to_string(),
+        "Invalid parameters: missing 'name' parameter"
+    );
 }
 
 #[test]
@@ -129,7 +148,41 @@ fn test_require_param_present() {
 fn test_require_param_missing() {
     let params = serde_json::json!({});
     let err = require_param(&params, "data").unwrap_err();
-    assert!(err.to_string().contains("missing 'data'"));
+    assert_eq!(
+        err.to_string(),
+        "Invalid parameters: missing 'data' parameter"
+    );
+}
+
+#[test]
+fn test_require_param_accepts_param_name_with_unchanged_error() {
+    let params = serde_json::json!({});
+    let err = require_param(&params, ParamName::from("data")).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Invalid parameters: missing 'data' parameter"
+    );
+}
+
+#[test]
+fn test_schema_path_preserves_display_value() {
+    let path = SchemaPath::from("test.headers.items");
+    assert_eq!(path.as_ref(), "test.headers.items");
+    assert_eq!(path.to_string(), "test.headers.items");
+}
+
+#[test]
+fn test_schema_path_child_preserves_dot_path_format() {
+    let path = SchemaPath::from("test.headers").child("items");
+    assert_eq!(path.as_ref(), "test.headers.items");
+    assert_eq!(path.to_string(), "test.headers.items");
+}
+
+#[test]
+fn test_tool_name_preserves_display_value() {
+    let tool_name = ToolName::from("github");
+    assert_eq!(tool_name.as_ref(), "github");
+    assert_eq!(tool_name.to_string(), "github");
 }
 
 #[test]
