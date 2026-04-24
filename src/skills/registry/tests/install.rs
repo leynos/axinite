@@ -60,6 +60,64 @@ async fn test_install_bundle_from_downloaded_bytes_preserves_files(
     assert!(registry.has("deploy-docs"));
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_install_uploaded_archive_bytes_preserves_files(
+    bundle_install_fixture: BundleInstallFixture,
+) {
+    let BundleInstallFixture {
+        user_dir: _user_dir,
+        installed_dir,
+        mut registry,
+    } = bundle_install_fixture;
+
+    let archive = build_bundle_archive(&[
+        (
+            "deploy-docs/SKILL.md",
+            skill_markdown("deploy-docs").as_bytes(),
+        ),
+        ("deploy-docs/references/usage.md", b"# Usage\n"),
+        ("deploy-docs/assets/logo.txt", b"logo"),
+    ]);
+
+    let prepared = SkillRegistry::prepare_install_to_disk(
+        registry.install_target_dir(),
+        SkillInstallPayload::ArchiveBytes(archive),
+    )
+    .await
+    .expect("uploaded archive install should prepare successfully");
+
+    registry
+        .commit_install(prepared)
+        .expect("prepared uploaded archive should commit successfully");
+
+    let installed_root = installed_dir.path().join("deploy-docs");
+    assert!(installed_root.join("SKILL.md").exists());
+    assert!(installed_root.join("references/usage.md").exists());
+    assert!(installed_root.join("assets/logo.txt").exists());
+    assert!(registry.has("deploy-docs"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_uploaded_archive_bytes_reject_plain_markdown(
+    bundle_install_fixture: BundleInstallFixture,
+) {
+    let BundleInstallFixture { registry, .. } = bundle_install_fixture;
+
+    let error = SkillRegistry::prepare_install_to_disk(
+        registry.install_target_dir(),
+        SkillInstallPayload::ArchiveBytes(skill_markdown("deploy-docs").into_bytes()),
+    )
+    .await
+    .expect_err("uploaded archive bytes should not fall back to plain markdown");
+
+    assert!(
+        error.to_string().contains("invalid_skill_bundle"),
+        "expected explicit bundle error, got {error}"
+    );
+}
+
 #[tokio::test]
 async fn test_install_duplicate_rejected() {
     let dir = tempfile::tempdir().unwrap();

@@ -304,11 +304,15 @@
           </div>
         </div>
         <div class="extensions-section">
-          <h3>Install Skill by URL</h3>
+          <h3>Install Skill</h3>
           <div class="ext-install-form">
             <input type="text" id="skill-install-name" placeholder="Skill name or slug">
-            <input type="text" id="skill-install-url" placeholder="HTTPS URL to SKILL.md (optional)">
+            <input type="text" id="skill-install-url" placeholder="HTTPS URL to SKILL.md or .skill">
             <button onclick="installSkillFromForm()">Install</button>
+          </div>
+          <div class="ext-install-form">
+            <input type="file" id="skill-bundle-file" accept=".skill">
+            <button onclick="installSkillBundleFromForm()">Upload</button>
           </div>
         </div>
       </div>

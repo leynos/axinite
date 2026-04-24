@@ -4,14 +4,17 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
-    http::StatusCode,
+    body::{Body, Bytes, to_bytes},
+    extract::{FromRequest, Multipart, Path, Request, State},
+    http::{StatusCode, header},
     routing::{delete, get, post},
 };
 
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
 use crate::skills::registry::{SkillInstallPayload, SkillRegistryError};
+
+const MAX_SKILL_INSTALL_REQUEST_BYTES: usize = 10 * 1024 * 1024;
 
 pub fn routes() -> Router<Arc<GatewayState>> {
     Router::new()
@@ -129,9 +132,10 @@ pub async fn skills_search_handler(
 
 pub async fn skills_install_handler(
     State(state): State<Arc<GatewayState>>,
-    headers: axum::http::HeaderMap,
-    Json(req): Json<SkillInstallRequest>,
+    request: Request,
 ) -> Result<Json<ActionResponse>, (StatusCode, String)> {
+    let headers = request.headers().clone();
+
     // Require explicit confirmation header to prevent accidental installs.
     // Chat tools have requires_approval(); this is the equivalent for the web API.
     if headers
@@ -145,37 +149,48 @@ pub async fn skills_install_handler(
         ));
     }
 
+    let payload = if is_multipart_request(&headers) {
+        payload_from_multipart(request, &state).await?
+    } else {
+        let req = parse_json_install_request(request).await?;
+        payload_from_json_request(&req, &state).await?
+    };
+
+    install_skill_payload(&state, payload).await
+}
+
+async fn payload_from_json_request(
+    req: &SkillInstallRequest,
+    state: &GatewayState,
+) -> Result<SkillInstallPayload, (StatusCode, String)> {
+    match select_json_install_source(req)? {
+        JsonInstallSource::Content(raw) => Ok(SkillInstallPayload::Markdown(raw.to_string())),
+        JsonInstallSource::Url(url) => crate::tools::builtin::skill_fetch::fetch_skill_bytes(url)
+            .await
+            .map(SkillInstallPayload::DownloadedBytes)
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string())),
+        JsonInstallSource::Catalog(key) => {
+            let catalog = state.skill_catalog.as_ref().ok_or((
+                StatusCode::NOT_IMPLEMENTED,
+                "Skill catalog not available".to_string(),
+            ))?;
+            let url = crate::skills::catalog::skill_download_url(catalog.registry_url(), key);
+            crate::tools::builtin::skill_fetch::fetch_skill_bytes(&url)
+                .await
+                .map(SkillInstallPayload::DownloadedBytes)
+                .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))
+        }
+    }
+}
+
+async fn install_skill_payload(
+    state: &GatewayState,
+    payload: SkillInstallPayload,
+) -> Result<Json<ActionResponse>, (StatusCode, String)> {
     let registry = state.skill_registry.as_ref().ok_or((
         StatusCode::NOT_IMPLEMENTED,
         "Skills system not enabled".to_string(),
     ))?;
-
-    let payload = if let Some(ref raw) = req.content {
-        SkillInstallPayload::Markdown(raw.clone())
-    } else if let Some(ref url) = req.url {
-        // Fetch from explicit URL (with SSRF protection)
-        crate::tools::builtin::skill_fetch::fetch_skill_bytes(url)
-            .await
-            .map(SkillInstallPayload::DownloadedBytes)
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
-    } else if let Some(ref catalog) = state.skill_catalog {
-        // Prefer slug (e.g. "owner/skill-name") over display name for the
-        // download URL, since the registry endpoint expects a slug.
-        let download_key = req
-            .slug
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .unwrap_or(&req.name);
-        let url = crate::skills::catalog::skill_download_url(catalog.registry_url(), download_key);
-        crate::tools::builtin::skill_fetch::fetch_skill_bytes(&url)
-            .await
-            .map(SkillInstallPayload::DownloadedBytes)
-            .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?
-    } else {
-        return Ok(Json(ActionResponse::fail(
-            "Provide 'content' or 'url' to install a skill".to_string(),
-        )));
-    };
 
     let install_root = {
         let guard = registry.read().map_err(|e| {
@@ -221,6 +236,126 @@ pub async fn skills_install_handler(
             }
             Ok(Json(ActionResponse::fail(error.to_string())))
         }
+    }
+}
+
+enum JsonInstallSource<'a> {
+    Content(&'a str),
+    Url(&'a str),
+    Catalog(&'a str),
+}
+
+fn select_json_install_source(
+    req: &SkillInstallRequest,
+) -> Result<JsonInstallSource<'_>, (StatusCode, String)> {
+    let content = non_blank(req.content.as_deref());
+    let url = trimmed_non_empty(req.url.as_deref());
+    let catalog =
+        trimmed_non_empty(req.slug.as_deref()).or_else(|| trimmed_non_empty(req.name.as_deref()));
+
+    let sources = [content.is_some(), url.is_some(), catalog.is_some()]
+        .into_iter()
+        .filter(|has_source| *has_source)
+        .count();
+
+    match (sources, content, url, catalog) {
+        (1, Some(raw), None, None) => Ok(JsonInstallSource::Content(raw)),
+        (1, None, Some(url), None) => Ok(JsonInstallSource::Url(url)),
+        (1, None, None, Some(key)) => Ok(JsonInstallSource::Catalog(key)),
+        _ => Err((
+            StatusCode::BAD_REQUEST,
+            "Provide exactly one of 'content', 'url', 'name'/'slug', or a .skill upload"
+                .to_string(),
+        )),
+    }
+}
+
+fn non_blank(value: Option<&str>) -> Option<&str> {
+    value.filter(|value| !value.trim().is_empty())
+}
+
+fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn is_multipart_request(headers: &axum::http::HeaderMap) -> bool {
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("multipart/form-data"))
+}
+
+async fn parse_json_install_request(
+    request: Request,
+) -> Result<SkillInstallRequest, (StatusCode, String)> {
+    let body = body_bytes(request.into_body()).await?;
+    serde_json::from_slice(&body).map_err(|error| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Invalid JSON body: {error}"),
+        )
+    })
+}
+
+async fn body_bytes(body: Body) -> Result<Bytes, (StatusCode, String)> {
+    to_bytes(body, MAX_SKILL_INSTALL_REQUEST_BYTES)
+        .await
+        .map_err(|error| (StatusCode::PAYLOAD_TOO_LARGE, error.to_string()))
+}
+
+async fn payload_from_multipart(
+    request: Request,
+    state: &Arc<GatewayState>,
+) -> Result<SkillInstallPayload, (StatusCode, String)> {
+    let mut multipart = Multipart::from_request(request, state)
+        .await
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+    let mut upload: Option<Vec<u8>> = None;
+    let mut non_file_sources = 0usize;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?
+    {
+        let name = field.name().unwrap_or_default().to_string();
+        let file_name = field.file_name().map(str::to_string);
+        let contents = field
+            .bytes()
+            .await
+            .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
+
+        if name == "bundle" {
+            if upload.is_some() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "Provide exactly one .skill upload".to_string(),
+                ));
+            }
+            if file_name
+                .as_deref()
+                .is_some_and(|name| !name.ends_with(".skill"))
+            {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "Uploaded skill bundle filename must end with .skill".to_string(),
+                ));
+            }
+            upload = Some(contents.to_vec());
+        } else if matches!(name.as_str(), "content" | "url" | "name" | "slug")
+            && !contents.is_empty()
+        {
+            non_file_sources += 1;
+        }
+    }
+
+    match (upload, non_file_sources) {
+        (Some(bytes), 0) => Ok(SkillInstallPayload::ArchiveBytes(bytes)),
+        _ => Err((
+            StatusCode::BAD_REQUEST,
+            "Provide exactly one of 'content', 'url', 'name'/'slug', or a .skill upload"
+                .to_string(),
+        )),
     }
 }
 
@@ -288,3 +423,6 @@ pub async fn skills_remove_handler(
         Err(e) => Ok(Json(ActionResponse::fail(e.to_string()))),
     }
 }
+
+#[cfg(test)]
+mod tests;

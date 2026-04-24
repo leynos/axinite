@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -267,10 +267,27 @@ Rust test code without a new app-level server harness.
 - [x] 2026-04-24: Implementation started. The first implementation action is
   to pin existing install contracts and add failing coverage for browser
   `.skill` upload support before changing handler behaviour.
-- [ ] Upload and `.skill` URL install behaviour implemented.
-- [ ] Unit and behavioural tests added.
-- [ ] Documentation and roadmap updated.
-- [ ] Full validation passed.
+- [x] 2026-04-24: Upload and `.skill` URL install behaviour implemented.
+  The web install handler now accepts JSON or multipart input, enforces one
+  install source before fetching or staging, and sends uploaded bundle bytes
+  through an archive-only registry payload.
+- [x] 2026-04-24: Unit and behavioural tests added with `rstest`. Coverage
+  includes archive-only upload bytes, multipart upload preservation of
+  `references/` and `assets/`, explicit archive-shape failures, inline JSON
+  regression coverage, and exact-one-source failures for web and tool inputs.
+- [x] 2026-04-24: Documentation and roadmap updated.
+  `docs/users-guide.md`, `docs/agent-skills-support.md`,
+  `docs/front-end-architecture.md`, `src/channels/web/CLAUDE.md`, and
+  `docs/roadmap.md` now describe uploaded bundles, `.skill` URL installs,
+  exact-one-source validation, and the remaining runtime-file-read limitation.
+- [x] 2026-04-24: Full validation passed. The final full gate was
+  `make all 2>&1 | tee /tmp/make-all-axinite-session-5cef00e2.out`, which
+  completed formatting, linting, the default nextest workspace run, and the
+  GitHub tool tests successfully.
+- [x] 2026-04-24: Documentation gates passed. The final Markdown lint command
+  wrote `/tmp/markdownlint-axinite-session-5cef00e2.out` with zero errors, and
+  `git diff --check` wrote `/tmp/diff-check-axinite-session-5cef00e2.out`
+  without whitespace findings.
 - [ ] Feature committed.
 
 ## Surprises & Discoveries
@@ -293,6 +310,26 @@ be updated in the same feature branch.
 `SKILL.md` and has no dedicated bundled-file read tool. That limitation should
 remain true after `1.3.2`.
 
+2026-04-24T11:30:38Z: Enabling Axum's existing `multipart` feature pulled
+`multer` and `spin` into `Cargo.lock`; no direct new crate dependency was added
+to `Cargo.toml`.
+
+2026-04-24T11:30:38Z: No existing skill-focused `rstest-bdd` harness is wired
+into this repository. The proportional behavioural proof for this slice is the
+in-process Axum handler coverage in `src/channels/web/handlers/skills/tests.rs`
+using `rstest`, rather than adding the first BDD harness around the same
+request/response behaviour.
+
+2026-04-24: `make all` found that top-level `oneOf` is forbidden in the
+repository's OpenAI tool-schema subset. The install tool therefore advertises
+no globally required field and documents each source property, while runtime
+validation enforces exactly one of `content`, `url`, or `name`.
+
+2026-04-24: `make all` also found one recorded tool trace that still called
+`skill_install` with both `name` and `content`. That trace represented the old
+implicit catalogue-name requirement, so the fixture was updated to send only
+`content` for an inline install.
+
 ## Decision Log
 
 2026-04-24: Treat `1.3.2` as an install-adapter and user-interface slice over
@@ -312,6 +349,17 @@ guidance without forcing a broad directory restructure.
 2026-04-24: Prefer a multipart upload path for the browser Skills page rather
 than base64 in the JSON `SkillInstallRequest`. Multipart matches RFC 0003's
 recommended upload shape and avoids inflating archives inside JSON.
+
+2026-04-24T11:30:38Z: Add `SkillInstallPayload::ArchiveBytes` for uploaded
+`.skill` files instead of reusing downloaded bytes. URL downloads must continue
+to accept either raw `SKILL.md` or `.skill` archives, but browser upload is an
+archive-only contract and should not silently install a renamed markdown file.
+
+2026-04-24: Do not use top-level `oneOf` in `skill_install` even though it
+would express source alternatives in JSON Schema. The local schema validator
+for model-facing tools forbids that keyword at the top level, so the compatible
+contract is an object with optional source properties plus explicit runtime
+validation.
 
 ## Implementation plan
 
@@ -348,9 +396,10 @@ Milestone 4 adds the web upload adapter. Extend
 either the existing JSON body or multipart form data with one `.skill` file
 part. Preserve `X-Confirm-Action: true`. Read the uploaded file into bounded
 bytes, reject missing or multiple source fields, and pass the bytes to the
-shared staged install path as `SkillInstallPayload::DownloadedBytes`. Ensure an
-invalid archive root returns the existing `invalid_skill_bundle: expected one
-top-level path prefix with SKILL.md at <root>/SKILL.md` style message.
+shared staged install path as `SkillInstallPayload::ArchiveBytes`, preserving
+the archive-only upload contract. Ensure an invalid archive root returns the
+existing `invalid_skill_bundle: expected one top-level path prefix with
+SKILL.md at <root>/SKILL.md` style message.
 
 Milestone 5 updates the browser Skills tab. In
 `src/channels/web/static/index.html`, add a file picker for `.skill` archives
@@ -394,7 +443,9 @@ bunx markdownlint-cli2 \
   docs/execplans/1-3-2-extend-skill-installation-flows-bundles.md \
   docs/users-guide.md \
   docs/agent-skills-support.md \
+  docs/front-end-architecture.md \
   docs/roadmap.md \
+  src/channels/web/CLAUDE.md \
   2>&1 | tee /tmp/markdownlint-axinite-${BRANCH_FOR_LOGS}.out
 git diff --check 2>&1 | tee /tmp/diff-check-axinite-${BRANCH_FOR_LOGS}.out
 ```
@@ -447,4 +498,25 @@ fails with an explicit `invalid_skill_bundle` message.
 
 ## Outcomes & Retrospective
 
-No implementation has been performed yet. This plan is awaiting approval.
+The implementation extends the existing staged skill installer rather than
+duplicating bundle policy in the web adapter. HTTPS URL installs continue to
+use the existing fetch and downloaded-bytes path, so raw `SKILL.md` URLs and
+`.skill` archive URLs remain supported by the same SSRF-protected transport.
+Browser uploads use a new archive-only payload variant, which means a renamed
+Markdown file cannot accidentally be accepted as an uploaded bundle.
+
+The web endpoint now accepts the existing JSON request shape or multipart form
+data with a single `bundle` file field. Both the web adapter and the
+model-facing `skill_install` tool reject missing or ambiguous source
+combinations before install side effects. The tool schema cannot express this
+with top-level `oneOf` because the repository's OpenAI-compatible schema
+validator rejects that keyword, so the explicit contract is enforced at
+runtime and documented.
+
+Focused `rstest` coverage proved the relevant happy and unhappy paths:
+uploaded bundles preserve `references/` and `assets/`, malformed uploads
+return explicit archive-shape errors, inline JSON installs still work, and
+ambiguous source combinations fail. No proportional `rstest-bdd` harness
+already existed for skill install flows, so this slice used in-process Axum
+behaviour tests rather than adding a new BDD layer for the same request and
+response proof.

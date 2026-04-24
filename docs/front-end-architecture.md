@@ -150,7 +150,9 @@ model:
 - Responses carry `X-Content-Type-Options: nosniff` and `X-Frame-Options:
   DENY`.
 - Request bodies are limited to 10 MB at the server level, which is large
-  enough for browser image uploads.
+  enough for browser image uploads and `.skill` bundle uploads. Bundle archive
+  contents are still constrained by the stricter skill-bundle validator after
+  request extraction.
 - The browser-side image uploader adds a stricter client-side limit of 5 MB per
   image and a maximum of five staged images.
 - If `GATEWAY_AUTH_TOKEN` is absent, the gateway generates a random token at
@@ -504,7 +506,8 @@ already part of the host application:
   SSE events such as `auth_required`, `auth_completed`, and
   `extension_status`;
 - the skills UI talks to the skill registry and skill catalogue, including
-  install and removal flows that require explicit confirmation headers to avoid
+  catalogue install, HTTPS `SKILL.md` or `.skill` URL install, local `.skill`
+  upload, and removal flows that require explicit confirmation headers to avoid
   accidental mutating actions.
 
 These tabs are effectively operational front ends for existing backend

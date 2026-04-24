@@ -66,6 +66,21 @@ fn assert_tool_schema(
     );
 }
 
+fn assert_schema_required_fields(tool: &dyn Tool, expected_required: &[&str]) {
+    let schema = tool.parameters_schema();
+    let actual = schema
+        .get("required")
+        .and_then(serde_json::Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    assert_eq!(actual, expected_required);
+}
+
 #[rstest]
 fn test_skill_list_schema(test_registry: TestRegistryHandle) {
     let tool = SkillListTool::new(Arc::clone(&test_registry.registry));
@@ -112,6 +127,19 @@ fn test_skill_tool_schema(
 ) {
     let tool = make_tool(&test_registry, Arc::clone(&test_catalog));
     assert_tool_schema(&*tool, expected_name, expected_approval, expected_keys);
+}
+
+#[rstest]
+fn skill_install_schema_does_not_require_catalogue_name(test_registry: TestRegistryHandle) {
+    let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
+
+    assert_schema_required_fields(&tool, &[]);
+    assert!(
+        NativeTool::parameters_schema(&tool)["properties"]["url"]["description"]
+            .as_str()
+            .is_some_and(|description| description.contains(".skill archive")),
+        "install schema should describe .skill URL support"
+    );
 }
 
 #[rstest]
@@ -181,7 +209,6 @@ async fn skill_install_tool_installs_inline_content(test_registry: TestRegistryH
     let output = NativeTool::execute(
         &tool,
         serde_json::json!({
-            "name": "deploy-docs",
             "content": skill_markdown("deploy-docs"),
         }),
         &JobContext::default(),
@@ -204,7 +231,6 @@ async fn skill_install_tool_installs_inline_content(test_registry: TestRegistryH
 async fn skill_install_tool_rejects_duplicate_inline_install(test_registry: TestRegistryHandle) {
     let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
     let params = serde_json::json!({
-        "name": "deploy-docs",
         "content": skill_markdown("deploy-docs"),
     });
 
@@ -217,4 +243,33 @@ async fn skill_install_tool_rejects_duplicate_inline_install(test_registry: Test
         .expect_err("duplicate inline install should fail");
 
     assert!(error.to_string().contains("already exists"));
+}
+
+#[rstest]
+#[case::no_source(serde_json::json!({}))]
+#[case::name_and_content(serde_json::json!({
+    "name": "deploy-docs",
+    "content": skill_markdown("deploy-docs"),
+}))]
+#[case::url_and_content(serde_json::json!({
+    "url": "https://example.com/deploy-docs.skill",
+    "content": skill_markdown("deploy-docs"),
+}))]
+#[tokio::test]
+async fn skill_install_tool_rejects_ambiguous_sources(
+    test_registry: TestRegistryHandle,
+    #[case] params: serde_json::Value,
+) {
+    let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
+
+    let error = NativeTool::execute(&tool, params, &JobContext::default())
+        .await
+        .expect_err("ambiguous install source should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("provide exactly one of 'content', 'url', or 'name'"),
+        "unexpected error: {error}"
+    );
 }
