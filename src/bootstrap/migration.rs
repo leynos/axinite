@@ -204,11 +204,13 @@ async fn migrate_json_sidecar(
     Ok(())
 }
 
-/// Rename legacy `bootstrap.json` to `bootstrap.json.migrated` if present.
+/// Renames `bootstrap.json` inside `ironclaw_dir` to `bootstrap.json.migrated`
+/// if it exists.
 ///
-/// This is a best-effort cleanup path. It emits an info log only when the
-/// rename succeeds; failures are warned by `rename_to_migrated` and are
-/// intentionally ignored here so migration can continue.
+/// Logs an `INFO` message when the rename succeeds. On failure,
+/// [`rename_to_migrated`] emits a `WARN` log and the error is silently
+/// discarded, preserving the existing warn-and-continue behaviour at all
+/// bootstrap rename call sites.
 pub(super) fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
     let old_bootstrap = ironclaw_dir.join("bootstrap.json");
     if old_bootstrap.exists() && rename_to_migrated(&old_bootstrap).is_ok() {
@@ -316,7 +318,12 @@ pub async fn migrate_disk_to_db(
     Ok(())
 }
 
-/// Rename a file to `<name>.migrated` as a safety net.
+/// Renames `path` to `<path>.migrated` as a safety-net marker indicating
+/// the file has been processed by a migration pass.
+///
+/// Returns `Ok(())` on success. On failure the filesystem error is logged
+/// at `WARN` level and returned to the caller; call sites that treat the
+/// rename as non-fatal should discard the result with `let _ = …`.
 pub(super) fn rename_to_migrated(path: &Path) -> io::Result<()> {
     let mut migrated = path.as_os_str().to_owned();
     migrated.push(".migrated");
