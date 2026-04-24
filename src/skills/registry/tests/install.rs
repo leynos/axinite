@@ -5,12 +5,6 @@ use super::fixtures::{
     BundleInstallFixture, build_bundle_archive, bundle_install_fixture, skill_markdown,
 };
 
-fn assert_deploy_docs_bundle_files_present(installed_root: &std::path::Path) {
-    assert!(installed_root.join("SKILL.md").exists());
-    assert!(installed_root.join("references/usage.md").exists());
-    assert!(installed_root.join("assets/logo.txt").exists());
-}
-
 #[tokio::test]
 async fn test_install_skill_from_content() {
     let dir = tempfile::tempdir().unwrap();
@@ -29,12 +23,22 @@ async fn test_install_skill_from_content() {
 }
 
 #[rstest]
-#[case::downloaded_bytes(|b| SkillInstallPayload::DownloadedBytes(b))]
-#[case::archive_bytes(|b| SkillInstallPayload::ArchiveBytes(b))]
+#[case::downloaded_bytes(
+    |b| SkillInstallPayload::DownloadedBytes(b),
+    "downloaded bytes install should prepare successfully",
+    "prepared downloaded bytes should commit successfully",
+)]
+#[case::archive_bytes(
+    |b| SkillInstallPayload::ArchiveBytes(b),
+    "uploaded archive install should prepare successfully",
+    "prepared uploaded archive should commit successfully",
+)]
 #[tokio::test]
-async fn test_install_archive_preserves_files(
+async fn test_archive_payload_preserves_files(
     bundle_install_fixture: BundleInstallFixture,
-    #[case] make_payload: fn(Vec<u8>) -> SkillInstallPayload,
+    #[case] make_payload: impl FnOnce(Vec<u8>) -> SkillInstallPayload,
+    #[case] prepare_msg: &'static str,
+    #[case] commit_msg: &'static str,
 ) {
     let BundleInstallFixture {
         user_dir: _user_dir,
@@ -56,14 +60,14 @@ async fn test_install_archive_preserves_files(
         make_payload(archive),
     )
     .await
-    .expect("archive install should prepare successfully");
+    .expect(prepare_msg);
 
-    registry
-        .commit_install(prepared)
-        .expect("prepared archive should commit successfully");
+    registry.commit_install(prepared).expect(commit_msg);
 
     let installed_root = installed_dir.path().join("deploy-docs");
-    assert_deploy_docs_bundle_files_present(&installed_root);
+    assert!(installed_root.join("SKILL.md").exists());
+    assert!(installed_root.join("references/usage.md").exists());
+    assert!(installed_root.join("assets/logo.txt").exists());
     assert!(registry.has("deploy-docs"));
 }
 
@@ -208,7 +212,9 @@ async fn test_remove_bundle_skill_allows_reinstall(bundle_install_fixture: Bundl
         .commit_install(prepared)
         .expect("bundle reinstall should commit successfully");
 
-    assert_deploy_docs_bundle_files_present(&installed_root);
+    assert!(installed_root.join("SKILL.md").exists());
+    assert!(installed_root.join("references/usage.md").exists());
+    assert!(installed_root.join("assets/logo.txt").exists());
 }
 
 #[rstest]
