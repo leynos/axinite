@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: DRAFT
+Status: IN PROGRESS
 
 ## Purpose / big picture
 
@@ -263,8 +263,10 @@ Rust test code without a new app-level server harness.
 - [x] 2026-04-24: Used a Wyvern agent for a parallel planning brief covering
   likely files, boundaries, docs, tests, and risks.
 - [x] 2026-04-24: Drafted this approval-gated ExecPlan.
-- [ ] Plan approved by the user.
-- [ ] Implementation started.
+- [x] 2026-04-24: Plan approved by the user for implementation.
+- [x] 2026-04-24: Implementation started. The first implementation action is
+  to pin existing install contracts and add failing coverage for browser
+  `.skill` upload support before changing handler behaviour.
 - [ ] Upload and `.skill` URL install behaviour implemented.
 - [ ] Unit and behavioural tests added.
 - [ ] Documentation and roadmap updated.
