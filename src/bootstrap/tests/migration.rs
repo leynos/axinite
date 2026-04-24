@@ -243,6 +243,7 @@ fn rename_to_migrated_cases(
 #[cfg(unix)]
 #[traced_test]
 #[rstest]
+#[case::success(RenameSetup::ExistingFile, false, true)]
 #[case::permission_denied(RenameSetup::ReadOnlyDirectory, true, false)]
 fn rename_legacy_bootstrap_logging_cases(
     mut rename_fixture: RenameFixture,
@@ -255,6 +256,15 @@ fn rename_legacy_bootstrap_logging_cases(
 
     super::super::migration::rename_legacy_bootstrap(rename_fixture.dir.path());
 
+    if matches!(setup, RenameSetup::ExistingFile) {
+        assert!(
+            rename_fixture
+                .dir
+                .path()
+                .join("bootstrap.json.migrated")
+                .exists()
+        );
+    }
     assert_eq!(logs_contain("Failed to rename"), expected_warn_log);
     assert_eq!(
         logs_contain("Renamed old bootstrap.json to .migrated"),
