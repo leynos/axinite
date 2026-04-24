@@ -228,11 +228,11 @@ compiles the helpers it actually needs, which keeps the support surface
 honest and avoids dead-code lint suppression.
 
 The `trace_llm` facade in that module provides a narrowed one-import
-surface for LLM trace helpers. It re-exports
-`trace_json_patch::patch_json_value` together with
-`trace_types::{LlmTrace, TraceExpects}` so tests can create trace
-fixtures, patch recorded JSON payloads, and assert on trace contents
-without reaching into the underlying support-module layout.
+surface for LLM trace helpers. It re-exports `LlmTrace` and
+`TraceExpects` from `trace_types` with full `pub` visibility, while
+`trace_json_patch::patch_json_value` is re-exported as `pub(crate)` so
+only this test crate can apply JSON patch rewrites without reaching into
+the underlying support-module layout.
 
 The same support root also re-exports three `testing_wasm` helpers used
 by the tools-and-config harness:
@@ -243,7 +243,6 @@ by the tools-and-config harness:
   and compatibility checks.
 - `metadata_test_runtime` constructs runtime metadata needed when tests
   exercise the tools-and-config harness against that artifact.
-
 
 ## 12. Configuration snapshots with EnvContext
 
@@ -278,7 +277,6 @@ them to do the capture work:
 For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
 tests independent of host machine secrets, keychains, and shell state.
-
 
 ## 13. AppBuilder
 
@@ -438,7 +436,6 @@ cargo nextest run --workspace --no-default-features --features libsql \
 To compare behaviour against the legacy harness, use `make test-cargo`
 or `make test-matrix-cargo`.
 
-
 ## 15. Self-repair internals
 
 The agent loop starts the self-repair subsystem in
@@ -473,7 +470,6 @@ When modifying this path, keep three invariants in mind:
 - User-facing behaviour changes in self-repair should update both
   [Jobs and Routines](./jobs-and-routines.md) and the
   [User's Guide](./users-guide.md).
-
 
 ## 16. Database-backed work
 
@@ -825,7 +821,6 @@ fans test slices out from that artifact. That is the closest existing
 example of the faster compile-once, fan-out pattern the compile-time
 reduction effort should reuse elsewhere.
 
-
 ## 19. Trace and channel test helpers
 
 Three test-support helpers were added in PR `#161` to make replay-based
@@ -1092,7 +1087,6 @@ For the compile-time reduction effort:
 - do not assume standalone WASM crates or every focused test path has
   migrated away from `cargo test`.
 
-
 ## 22. Troubleshooting
 
 - If `cargo` says `wasm32-wasip2` is missing, rerun
@@ -1107,7 +1101,6 @@ For the compile-time reduction effort:
   ready.
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
-
 
 ## 23. Hot-reload architecture
 
