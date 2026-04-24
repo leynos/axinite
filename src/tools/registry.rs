@@ -7,6 +7,7 @@ mod names;
 mod schema;
 #[cfg(test)]
 mod tests;
+mod wasm_preparation;
 #[cfg(test)]
 mod wasm_registration_tests;
 
