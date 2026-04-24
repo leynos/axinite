@@ -22,6 +22,12 @@ use super::types::{BrokenTool, RepairResult, StuckJob};
 /// and avoids the need for a clippy type_complexity suppression.
 pub(crate) type BuilderAndDb<'a> = (&'a Arc<dyn SoftwareBuilder>, &'a Arc<dyn Database>);
 
+/// Bundles a broken-tool reference with its database store for repair operations.
+struct ToolRepairContext<'a> {
+    tool: &'a BrokenTool,
+    store: &'a dyn Database,
+}
+
 /// Default self-repair implementation.
 pub struct DefaultSelfRepair {
     context_manager: Arc<ContextManager>,
@@ -123,9 +129,10 @@ impl DefaultSelfRepair {
     async fn handle_build_result(
         &self,
         result: BuildResult,
-        tool: &BrokenTool,
-        store: &dyn Database,
+        ctx: &ToolRepairContext<'_>,
     ) -> Result<RepairResult, RepairError> {
+        let (tool, store) = (ctx.tool, ctx.store);
+
         if result.success {
             tracing::info!(
                 "Successfully rebuilt tool '{}' after {} iterations",
@@ -174,15 +181,14 @@ impl DefaultSelfRepair {
 
     async fn attempt_repair_build(
         &self,
-        tool: &BrokenTool,
+        ctx: &ToolRepairContext<'_>,
         builder: &dyn SoftwareBuilder,
-        store: &dyn Database,
         requirement: &BuildRequirement,
     ) -> Result<RepairResult, RepairError> {
         match builder.build(requirement).await {
-            Ok(result) => self.handle_build_result(result, tool, store).await,
+            Ok(result) => self.handle_build_result(result, ctx).await,
             Err(e) => {
-                tracing::error!("Repair build for '{}' errored: {}", tool.name, e);
+                tracing::error!("Repair build for '{}' errored: {}", ctx.tool.name, e);
                 Ok(RepairResult::Retry {
                     message: format!("Repair build error: {}", e),
                 })
@@ -336,7 +342,11 @@ impl NativeSelfRepair for DefaultSelfRepair {
                 ),
             })?;
 
-        self.attempt_repair_build(tool, builder.as_ref(), store.as_ref(), &requirement)
+        let ctx = ToolRepairContext {
+            tool,
+            store: store.as_ref(),
+        };
+        self.attempt_repair_build(&ctx, builder.as_ref(), &requirement)
             .await
     }
 }
