@@ -18,15 +18,18 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::llm::ToolDefinition;
-use crate::secrets::SecretsStore;
+use crate::secrets::{CredentialMapping, SecretsStore};
 use crate::tools::rate_limiter::RateLimiter;
 use crate::tools::tool::Tool;
 use crate::tools::wasm::{
     Capabilities, OAuthRefreshConfig, ResourceLimits, SharedCredentialRegistry, ToolKey, WasmError,
-    WasmStorageError, WasmToolRuntime, WasmToolStore, WasmToolWrapper,
+    WasmStorageError, WasmToolRuntime, WasmToolStore,
 };
 
-use super::{PROTECTED_TOOL_NAMES, is_protected_tool_name, schema::normalized_schema};
+use super::{
+    PROTECTED_TOOL_NAMES, is_protected_tool_name, schema::normalized_schema,
+    wasm_preparation::prepare_wasm_tool,
+};
 
 pub struct WasmFromStorageRegistration<'a> {
     pub store: &'a dyn WasmToolStore,
@@ -227,40 +230,22 @@ impl ToolRegistry {
     /// }).await?;
     /// ```
     pub async fn register_wasm(&self, reg: WasmToolRegistration<'_>) -> Result<(), WasmError> {
-        let prepared = reg
-            .runtime
-            .prepare(reg.name, reg.wasm_bytes, reg.limits)
-            .await?;
-
-        let credential_mappings: Vec<crate::secrets::CredentialMapping> = reg
-            .capabilities
-            .http
-            .as_ref()
-            .map(|http| http.credentials.values().cloned().collect())
-            .unwrap_or_default();
-
         let name = reg.name;
-        let hints = WasmMetadataHints {
-            name: reg.name,
-            description: reg.description,
-            schema: reg.schema,
-        };
-        let runtime_config = WasmRuntimeConfig {
-            secrets_store: reg.secrets_store,
-            oauth_refresh: reg.oauth_refresh,
-        };
+        let prepared = prepare_wasm_tool(reg).await?;
 
-        let wrapper = WasmToolWrapper::new(Arc::clone(reg.runtime), prepared, reg.capabilities);
-        let wrapper = recover_guest_metadata(wrapper, &hints);
-        let wrapper = apply_wasm_overrides(wrapper, hints, runtime_config);
-
-        let registered = self.register(Arc::new(wrapper)).await;
+        let registered = self.register(Arc::new(prepared.wrapper)).await;
         if !registered {
             return Err(WasmError::ConfigError(
                 "tool registration rejected".to_string(),
             ));
         }
 
+        self.persist_credential_mappings(name, prepared.credential_mappings);
+        tracing::debug!(name, "Registered WASM tool");
+        Ok(())
+    }
+
+    fn persist_credential_mappings(&self, name: &str, credential_mappings: Vec<CredentialMapping>) {
         if let Some(cr) = &self.credential_registry
             && !credential_mappings.is_empty()
         {
@@ -272,9 +257,6 @@ impl ToolRegistry {
                 "Added credential mappings from WASM tool"
             );
         }
-
-        tracing::debug!(name, "Registered WASM tool");
-        Ok(())
     }
 
     /// Register a WASM tool from database storage.
@@ -392,75 +374,6 @@ impl std::fmt::Debug for ToolRegistry {
             .field("count", &self.count())
             .finish()
     }
-}
-
-/// Descriptive metadata hints for WASM tool registration.
-struct WasmMetadataHints<'a> {
-    name: &'a str,
-    description: Option<&'a str>,
-    schema: Option<serde_json::Value>,
-}
-
-/// Runtime configuration for WASM tool registration.
-struct WasmRuntimeConfig {
-    secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
-    oauth_refresh: Option<OAuthRefreshConfig>,
-}
-
-fn recover_guest_metadata(
-    mut wrapper: WasmToolWrapper,
-    hints: &WasmMetadataHints<'_>,
-) -> WasmToolWrapper {
-    if hints.description.is_some() && hints.schema.is_some() {
-        return wrapper;
-    }
-    match wrapper.exported_metadata() {
-        Ok((description, schema)) => {
-            if hints.description.is_none() {
-                wrapper = wrapper.with_description(description);
-            }
-            if hints.schema.is_none() {
-                wrapper = wrapper.with_schema(schema);
-            }
-        }
-        Err(error) => {
-            if hints.schema.is_none() {
-                tracing::warn!(
-                    name = hints.name,
-                    %error,
-                    "Failed to recover exported WASM metadata; tool will be advertised \
-                     with placeholder schema until a valid override is provided"
-                );
-            } else {
-                tracing::debug!(
-                    name = hints.name,
-                    %error,
-                    "Failed to recover exported WASM description; using placeholder or override"
-                );
-            }
-        }
-    }
-    wrapper
-}
-
-fn apply_wasm_overrides(
-    mut wrapper: WasmToolWrapper,
-    hints: WasmMetadataHints<'_>,
-    runtime_config: WasmRuntimeConfig,
-) -> WasmToolWrapper {
-    if let Some(desc) = hints.description {
-        wrapper = wrapper.with_description(desc);
-    }
-    if let Some(s) = hints.schema {
-        wrapper = wrapper.with_schema(s);
-    }
-    if let Some(store) = runtime_config.secrets_store {
-        wrapper = wrapper.with_secrets_store(store);
-    }
-    if let Some(oauth) = runtime_config.oauth_refresh {
-        wrapper = wrapper.with_oauth_refresh(oauth);
-    }
-    wrapper
 }
 
 fn normalized_description(description: &str) -> Option<&str> {
