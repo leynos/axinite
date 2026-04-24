@@ -13,6 +13,7 @@ pub struct CleanupGuard {
 }
 
 impl CleanupGuard {
+    /// Create a default guard that removes registered paths when dropped.
     pub fn new() -> Self {
         Self::default()
     }
