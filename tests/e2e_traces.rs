@@ -1,7 +1,6 @@
 //! End-to-end trace tests covering agent behaviors, tools, memory,
 //! scheduling, and error paths.
 
-// hint: Logic and cosmetic changes overlap. Resolve logic first, then reformat.
 // Keep fixture helpers local to this harness so unrelated integration
 // binaries do not compile them through the shared `support` facade.
 #[path = "support/fixtures.rs"]

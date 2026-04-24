@@ -1,4 +1,5 @@
-//! Webhook-server lifecycle helpers used only by `tests/webhook_server.rs`.
+//! Webhook-server lifecycle helpers used by `tests/webhook_server.rs` and
+//! `tests/support_unit_tests/trace_support_module_tests.rs`.
 
 use std::net::SocketAddr;
 

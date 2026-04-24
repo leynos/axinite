@@ -7,9 +7,7 @@ use super::{trace_provider::TraceLlm, trace_types::LlmTrace};
 
 impl TraceLlm {
     /// Load from a JSON file and create the provider.
-    pub async fn from_file_async(
-        path: impl AsRef<Path>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn from_file_async(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let trace = LlmTrace::from_file_async(path).await?;
         Ok(Self::from_trace(trace))
     }

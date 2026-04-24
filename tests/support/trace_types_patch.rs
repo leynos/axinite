@@ -35,30 +35,33 @@ fn patch_tool_calls_in_step(step: &mut TraceStep, from: &str, to: &str) -> usize
 
     let mut patched = 0;
     for call in tool_calls {
-        let before = call.arguments.clone();
-        patch_json_value(&mut call.arguments, from, to);
-        if call.arguments != before {
+        if patch_json_value(&mut call.arguments, from, to) {
             patched += 1;
         }
     }
     patched
 }
 
-fn patch_json_value(value: &mut serde_json::Value, from: &str, to: &str) {
+fn patch_json_value(value: &mut serde_json::Value, from: &str, to: &str) -> bool {
     match value {
         serde_json::Value::String(s) if s.contains(from) => {
             *s = s.replace(from, to);
+            true
         }
         serde_json::Value::Array(items) => {
+            let mut mutated = false;
             for item in items {
-                patch_json_value(item, from, to);
+                mutated |= patch_json_value(item, from, to);
             }
+            mutated
         }
         serde_json::Value::Object(map) => {
+            let mut mutated = false;
             for child in map.values_mut() {
-                patch_json_value(child, from, to);
+                mutated |= patch_json_value(child, from, to);
             }
+            mutated
         }
-        _ => {}
+        _ => false,
     }
 }
