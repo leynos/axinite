@@ -204,6 +204,11 @@ async fn migrate_json_sidecar(
     Ok(())
 }
 
+/// Rename legacy `bootstrap.json` to `bootstrap.json.migrated` if present.
+///
+/// This is a best-effort cleanup path. It emits an info log only when the
+/// rename succeeds; failures are warned by `rename_to_migrated` and are
+/// intentionally ignored here so migration can continue.
 pub(super) fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
     let old_bootstrap = ironclaw_dir.join("bootstrap.json");
     if old_bootstrap.exists() && rename_to_migrated(&old_bootstrap).is_ok() {
