@@ -224,7 +224,7 @@ import path look more uniform.
 `tests/support/tools_and_config.rs` is a harness-specific support root
 for the `tools_and_config` integration binary. Keeping that entrypoint
 separate from the broader `tests/support/` graph means the harness only
-compiles the helpers it actually needs, which keeps the support surface
+compiles the helpers it requires, which keeps the support surface
 honest and avoids dead-code lint suppression.
 
 The `trace_llm` facade in that module provides a narrowed one-import
@@ -240,10 +240,10 @@ restricted `pub(crate)` visibility for harness-internal use:
 
 - `github_tool_source_dir` resolves the GitHub tool source tree used by
   schema and metadata tests.
-- `github_wasm_artifact` exposes the built WASM artifact for tool-loading
+- `github_wasm_artifact` exposes the built WASM artefact for tool-loading
   and compatibility checks.
 - `metadata_test_runtime` constructs runtime metadata needed when tests
-  exercise the tools-and-config harness against that artifact.
+  exercise the tools-and-config harness against that artefact.
 
 These helpers are not exported for external crates. Their narrow
 visibility keeps integration-test fixture helpers limited to the harness

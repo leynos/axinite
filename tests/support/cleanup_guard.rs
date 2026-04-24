@@ -1,5 +1,7 @@
 //! RAII cleanup guard for test directories and files.
 
+use std::path::PathBuf;
+
 /// The kind of path registered for cleanup.
 enum PathKind {
     File,
@@ -18,7 +20,7 @@ impl PathKind {
 /// Removes listed paths when dropped, ensuring cleanup even on panic.
 #[derive(Default)]
 pub struct CleanupGuard {
-    paths: Vec<(String, PathKind)>,
+    paths: Vec<(PathBuf, PathKind)>,
 }
 
 impl CleanupGuard {
@@ -28,13 +30,13 @@ impl CleanupGuard {
     }
 
     /// Register a file path for cleanup on drop.
-    pub fn file(mut self, path: impl Into<String>) -> Self {
+    pub fn file(mut self, path: impl Into<PathBuf>) -> Self {
         self.paths.push((path.into(), PathKind::File));
         self
     }
 
     /// Register a directory path for cleanup on drop.
-    pub fn dir(mut self, path: impl Into<String>) -> Self {
+    pub fn dir(mut self, path: impl Into<PathBuf>) -> Self {
         self.paths.push((path.into(), PathKind::Dir));
         self
     }
@@ -54,7 +56,7 @@ impl Drop for CleanupGuard {
                 eprintln!(
                     "failed to clean up test {} '{}': {}",
                     kind.label(),
-                    path,
+                    path.display(),
                     error
                 );
             }
