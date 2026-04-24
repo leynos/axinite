@@ -22,12 +22,6 @@ use super::types::{BrokenTool, RepairResult, StuckJob};
 /// and avoids the need for a clippy type_complexity suppression.
 pub(crate) type BuilderAndDb<'a> = (&'a Arc<dyn SoftwareBuilder>, &'a Arc<dyn Database>);
 
-/// Bundles a broken-tool reference with its database store for repair operations.
-struct ToolRepairContext<'a> {
-    tool: &'a BrokenTool,
-    store: &'a dyn Database,
-}
-
 /// Default self-repair implementation.
 pub struct DefaultSelfRepair {
     context_manager: Arc<ContextManager>,
@@ -94,7 +88,7 @@ impl DefaultSelfRepair {
     }
 
     /// Creates a BuildRequirement from a BrokenTool, validating the tool name.
-    fn build_repair_requirement(&self, tool: &BrokenTool) -> Result<BuildRequirement, RepairError> {
+    fn build_repair_requirement(tool: &BrokenTool) -> Result<BuildRequirement, RepairError> {
         let project_name = ProjectName::new(&tool.name).map_err(|error| RepairError::Failed {
             target_type: "tool".to_string(),
             target_id: Uuid::nil(),
@@ -127,12 +121,10 @@ impl DefaultSelfRepair {
 
     /// Handles the build result, marking the tool as repaired if successful.
     async fn handle_build_result(
-        &self,
         result: BuildResult,
-        ctx: &ToolRepairContext<'_>,
+        tool: &BrokenTool,
+        store: &dyn Database,
     ) -> Result<RepairResult, RepairError> {
-        let (tool, store) = (ctx.tool, ctx.store);
-
         if result.success {
             tracing::info!(
                 "Successfully rebuilt tool '{}' after {} iterations",
@@ -180,15 +172,15 @@ impl DefaultSelfRepair {
     }
 
     async fn attempt_repair_build(
-        &self,
-        ctx: &ToolRepairContext<'_>,
+        tool: &BrokenTool,
+        store: &dyn Database,
         builder: &dyn SoftwareBuilder,
         requirement: &BuildRequirement,
     ) -> Result<RepairResult, RepairError> {
         match builder.build(requirement).await {
-            Ok(result) => self.handle_build_result(result, ctx).await,
+            Ok(result) => Self::handle_build_result(result, tool, store).await,
             Err(e) => {
-                tracing::error!("Repair build for '{}' errored: {}", ctx.tool.name, e);
+                tracing::error!("Repair build for '{}' errored: {}", tool.name, e);
                 Ok(RepairResult::Retry {
                     message: format!("Repair build error: {}", e),
                 })
@@ -321,7 +313,7 @@ impl NativeSelfRepair for DefaultSelfRepair {
         };
 
         // Create build requirement (validates tool name)
-        let requirement = self.build_repair_requirement(tool)?;
+        let requirement = Self::build_repair_requirement(tool)?;
 
         tracing::info!(
             "Attempting to repair tool '{}' (attempt {})",
@@ -342,12 +334,7 @@ impl NativeSelfRepair for DefaultSelfRepair {
                 ),
             })?;
 
-        let ctx = ToolRepairContext {
-            tool,
-            store: store.as_ref(),
-        };
-        self.attempt_repair_build(&ctx, builder.as_ref(), &requirement)
-            .await
+        Self::attempt_repair_build(tool, store.as_ref(), builder.as_ref(), &requirement).await
     }
 }
 
