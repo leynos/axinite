@@ -98,9 +98,13 @@ impl TraceLlm {
     fn next_step(&self, messages: &[ChatMessage]) -> Result<TraceStep, LlmError> {
         let idx = {
             let mut inner = self.lock_inner()?;
-            inner.captured_requests.push(messages.to_vec());
             let idx = inner.index;
-            inner.index += 1;
+            let next_index = idx.checked_add(1).ok_or_else(|| LlmError::RequestFailed {
+                provider: self.model_name.clone(),
+                reason: "TraceLlm replay cursor overflowed".to_string(),
+            })?;
+            inner.captured_requests.push(messages.to_vec());
+            inner.index = next_index;
             idx
         };
 
