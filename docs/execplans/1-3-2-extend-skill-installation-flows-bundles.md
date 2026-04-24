@@ -288,7 +288,8 @@ Rust test code without a new app-level server harness.
   wrote `/tmp/markdownlint-axinite-session-5cef00e2.out` with zero errors, and
   `git diff --check` wrote `/tmp/diff-check-axinite-session-5cef00e2.out`
   without whitespace findings.
-- [ ] Feature committed.
+- [x] 2026-04-24: Feature committed as
+  `a8d63a1a Support skill bundle upload installs`.
 
 ## Surprises & Discoveries
 
