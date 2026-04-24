@@ -6,11 +6,9 @@
 
 mod builder;
 mod channel_handle;
-mod helpers;
+pub(crate) mod helpers;
 mod rig;
 
 pub use builder::TestRigBuilder;
 pub use channel_handle::TestChannelHandle;
-#[cfg(feature = "libsql")]
-pub use helpers::run_recorded_trace;
 pub use rig::TestRig;

@@ -218,7 +218,37 @@ use, then move it into `tests/support/mod.rs`. Do not promote
 harness-local fixture modules into the shared facade merely to make the
 import path look more uniform.
 
-## 11. Configuration snapshots with EnvContext
+## 11. Tools-and-config harness support
+
+`tests/support/tools_and_config.rs` is a harness-specific support root
+for the `tools_and_config` integration binary. Keeping that entrypoint
+separate from the broader `tests/support/` graph means the harness only
+compiles the helpers it requires, which keeps the support surface
+honest and avoids dead-code lint suppression.
+
+The `trace_llm` facade in that module provides a narrowed one-import
+surface for LLM trace helpers. It exports
+`trace_types::{LlmTrace, TraceExpects}` publicly for test consumers,
+while `trace_json_patch::patch_json_value` is exposed as crate-local
+`pub(crate)` for integration-test fixture helpers. The patch helper is
+not part of the public API, so JSON patch rewrites stay limited to the
+test crate modules that actually use them.
+
+The same support root also exposes three `testing_wasm` helpers with
+restricted `pub(crate)` visibility for harness-internal use:
+
+- `github_tool_source_dir` resolves the GitHub tool source tree used by
+  schema and metadata tests.
+- `github_wasm_artifact` exposes the built WASM artefact for tool-loading
+  and compatibility checks.
+- `metadata_test_runtime` constructs runtime metadata needed when tests
+  exercise the tools-and-config harness against that artefact.
+
+These helpers are not exported for external crates. Their narrow
+visibility keeps integration-test fixture helpers limited to the harness
+submodules that actually use them.
+
+## 12. Configuration snapshots with EnvContext
 
 The configuration system now supports an explicit snapshot model through
 `crate::config::EnvContext`. Use it whenever a caller already knows the
@@ -252,7 +282,7 @@ For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
 tests independent of host machine secrets, keychains, and shell state.
 
-## 12. AppBuilder
+## 13. AppBuilder
 
 `AppBuilder` owns the mechanical bootstrap sequence for host startup.
 It constructs `AppComponents` in phase order and keeps activation of
@@ -302,7 +332,6 @@ Tests:
 
 - See `src/app.rs` `#[cfg(test)]` for smoke coverage.
 
-
 #### Skills sub-system internals (`src/skills/`)
 
 The skills sub-system is split into two top-level modules:
@@ -345,7 +374,7 @@ Table: `AppBuilderFlags` fields and effects.
 | `no_db` | `bool` | Skip database initialization |
 | `workspace_import_dir` | `Option<PathBuf>` | Directory to import into the workspace on activation; captured at construction so `RuntimeSideEffects::start()` does not re-read the environment |
 
-## 13. Fast local validation loop
+## 14. Fast local validation loop
 
 For quick host-side iteration on Linux or WSL with the current branch
 assumptions:
@@ -368,7 +397,7 @@ cargo nextest run --workspace --no-default-features --features libsql \
 To compare behaviour against the legacy harness, use `make test-cargo`
 or `make test-matrix-cargo`.
 
-## 14. Self-repair internals
+## 15. Self-repair internals
 
 The agent loop starts the self-repair subsystem in
 `src/agent/agent_loop.rs` as two cooperating background tasks:
@@ -403,7 +432,7 @@ When modifying this path, keep three invariants in mind:
   [Jobs and Routines](./jobs-and-routines.md) and the
   [User's Guide](./users-guide.md).
 
-## 15. Database-backed work
+## 16. Database-backed work
 
 For work on the default feature set or PostgreSQL-backed tests, prepare
 a local database with `pgvector` enabled:
@@ -492,7 +521,7 @@ is now applied once inside `LibSqlDatabase::connect()`, so it is no longer
 necessary — and must not be duplicated — in individual store
 `connect()` methods.
 
-## 16. Dispatcher architecture
+## 17. Dispatcher architecture
 
 The dispatcher orchestrates interactive chat turns by preparing an LLM
 `ReasoningContext`, running a tool-aware agentic loop, and converting
@@ -619,7 +648,7 @@ Migration guidance:
 - add rollback regression coverage for both supported backends before
   releasing new terminal transitions
 
-## 17. End-to-end (E2E) prerequisites
+## 18. End-to-end (E2E) prerequisites
 
 For browser-based tests:
 
@@ -635,7 +664,7 @@ fans test slices out from that artifact. That is the closest existing
 example of the faster compile-once, fan-out pattern the compile-time
 reduction effort should reuse elsewhere.
 
-## 18. Trace and channel test helpers
+## 19. Trace and channel test helpers
 
 Three test-support helpers were added in PR `#161` to make replay-based
 and worker-coverage tests more reliable.
@@ -714,7 +743,7 @@ Returns a snapshot of all captured `StatusUpdate` values using an
 awaited mutex lock. Use this when contention on the status-event lock
 would cause `captured_status_events` to panic.
 
-## 19. WASM-specific notes
+## 20. WASM-specific notes
 
 The repository contains standalone WASM tool and channel crates. Normal
 host commands such as `cargo check`, `make typecheck`, and `make test`
@@ -808,7 +837,7 @@ labels, truncation rules, or input set needs to change. Do not use it as
 a primary schema-transport mechanism: the canonical schema remains the
 advertised `ToolDefinition.parameters` value.
 
-## 20. When to use cargo test versus cargo-nextest
+## 21. When to use cargo test versus cargo-nextest
 
 Today:
 
@@ -827,7 +856,7 @@ For the compile-time reduction effort:
 - do not assume standalone WASM crates or every focused test path has
   migrated away from `cargo test`.
 
-## 21. Troubleshooting
+## 22. Troubleshooting
 
 - If `cargo` says `wasm32-wasip2` is missing, rerun
   `rustup target add wasm32-wasip2`.
@@ -842,7 +871,7 @@ For the compile-time reduction effort:
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
 
-## 22. Hot-reload architecture
+## 23. Hot-reload architecture
 
 The `src/reload/` module provides hot-reload capabilities for configuration,
 HTTP listeners, and secrets without restarting the application. This is
@@ -948,7 +977,7 @@ testing:
 Use these in unit tests to verify manager behaviour without real I/O.
 Example usage is in `src/reload/manager/tests.rs`.
 
-## 23. WASM tool schema normalization
+## 24. WASM tool schema normalization
 
 WASM tools carry a parameter schema that describes their inputs to the
 language model (LLM). The canonical normalization logic lives in
@@ -986,7 +1015,7 @@ The storage path is the one that exercises schema normalization, because
 backends may persist placeholder or null schemas that must be stripped
 before the guest-export recovery logic can run.
 
-## 24. End-to-end WASM schema regression tests
+## 25. End-to-end WASM schema regression tests
 
 The `e2e_traces` integration test target includes first-call WASM schema
 regression tests introduced in roadmap item `1.2.4`. These tests live in
@@ -1096,7 +1125,7 @@ assert_eq!(
 );
 ```
 
-## 25. Expected follow-up changes
+## 26. Expected follow-up changes
 
 This guide documents the environment as of the current branch. The
 compile-time reduction plan is still expected to change some of the
@@ -1106,7 +1135,7 @@ artifacts and CI duplication.
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
 
-## 26. Phased startup pipeline
+## 27. Phased startup pipeline
 
 ### WebhookServer test helpers
 
@@ -1300,7 +1329,7 @@ Caption: Startup phase sequence.
 Phases 1–4 are infallible or propagate configuration errors early so
 subsequent phases can assume a fully valid environment.
 
-##### `src/skills/bundle/`
+#### `src/skills/bundle/`
 
 | File | Responsibility |
 | --- | --- |
@@ -1317,8 +1346,7 @@ subsequent phases can assume a fully valid environment.
 `EntryTooLarge`, `ArchiveTooLarge`, `TooManyFiles`, `InvalidUtf8Text`,
 `ReadFailure`, and others).
 
-
-##### `src/skills/registry/`
+#### `src/skills/registry/`
 
 | File | Responsibility |
 | --- | --- |
@@ -1329,10 +1357,9 @@ subsequent phases can assume a fully valid environment.
 | `staged_install.rs` | `prepare_install_to_disk` — creates a hidden staging directory, writes and validates the artifact, returns `PreparedSkillInstall`; `commit_install` — duplicate check then atomic rename; `cleanup_prepared_install` — removes the staging directory |
 | `removal.rs` | `validate_remove`, `delete_skill_files`, `commit_remove` |
 
+#### Staged install lifecycle
 
-##### Staged install lifecycle
-
-```text
+```plaintext
 SkillInstallPayload          (Markdown | DownloadedBytes)
         │
         ▼

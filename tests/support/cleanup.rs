@@ -3,49 +3,10 @@
 
 use std::path::Path;
 
-/// The kind of path registered for cleanup.
-enum PathKind {
-    File,
-    Dir,
-}
+#[path = "cleanup_guard.rs"]
+mod cleanup_guard;
 
-/// Removes listed paths when dropped, ensuring cleanup even on panic.
-pub struct CleanupGuard {
-    paths: Vec<(String, PathKind)>,
-}
-
-impl CleanupGuard {
-    pub fn new() -> Self {
-        Self { paths: Vec::new() }
-    }
-
-    /// Register a file path for cleanup on drop.
-    pub fn file(mut self, path: impl Into<String>) -> Self {
-        self.paths.push((path.into(), PathKind::File));
-        self
-    }
-
-    /// Register a directory path for cleanup on drop.
-    pub fn dir(mut self, path: impl Into<String>) -> Self {
-        self.paths.push((path.into(), PathKind::Dir));
-        self
-    }
-}
-
-impl Drop for CleanupGuard {
-    fn drop(&mut self) {
-        for (path, kind) in &self.paths {
-            match kind {
-                PathKind::File => {
-                    let _ = std::fs::remove_file(path);
-                }
-                PathKind::Dir => {
-                    let _ = std::fs::remove_dir_all(path);
-                }
-            }
-        }
-    }
-}
+pub use cleanup_guard::CleanupGuard;
 
 /// Remove and recreate a test directory, ensuring a clean slate.
 pub fn setup_test_dir(path: &str) -> std::io::Result<()> {
