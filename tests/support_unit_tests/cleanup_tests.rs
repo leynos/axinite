@@ -1,6 +1,12 @@
 //! Cleanup helper tests.
 
 use crate::support::cleanup::CleanupGuard;
+use rstest::{fixture, rstest};
+
+#[fixture]
+fn tmp_dir_fixture() -> tempfile::TempDir {
+    tempfile::tempdir().expect("should create temp dir")
+}
 
 #[test]
 fn cleanup_guard_removes_file() {
@@ -14,9 +20,9 @@ fn cleanup_guard_removes_file() {
     assert!(!std::path::Path::new(&path).exists());
 }
 
-#[test]
-fn cleanup_guard_removes_dir() {
-    let dir = tempfile::tempdir().expect("should create temp dir");
+#[rstest]
+fn cleanup_guard_removes_dir(tmp_dir_fixture: tempfile::TempDir) {
+    let dir = tmp_dir_fixture;
     let path = dir.path().to_string_lossy().into_owned();
     std::fs::write(dir.path().join("file.txt"), "test").expect("should write file in test dir");
     {
@@ -26,9 +32,9 @@ fn cleanup_guard_removes_dir() {
     assert!(!std::path::Path::new(&path).exists());
 }
 
-#[test]
-fn cleanup_guard_file_does_not_remove_dir() {
-    let dir = tempfile::tempdir().expect("should create temp dir");
+#[rstest]
+fn cleanup_guard_file_does_not_remove_dir(tmp_dir_fixture: tempfile::TempDir) {
+    let dir = tmp_dir_fixture;
     let path = dir.path().to_string_lossy().into_owned();
     {
         let _guard = CleanupGuard::new().file(path.clone());
@@ -39,9 +45,9 @@ fn cleanup_guard_file_does_not_remove_dir() {
     );
 }
 
-#[test]
-fn setup_test_dir_creates_missing_directory() {
-    let dir = tempfile::tempdir().expect("should create temp dir");
+#[rstest]
+fn setup_test_dir_creates_missing_directory(tmp_dir_fixture: tempfile::TempDir) {
+    let dir = tmp_dir_fixture;
     let target = dir.path().join("nested");
     let target_str = target.to_string_lossy().into_owned();
 
@@ -53,9 +59,9 @@ fn setup_test_dir_creates_missing_directory() {
     );
 }
 
-#[test]
-fn setup_test_dir_with_suffix_creates_unique_directory() {
-    let dir = tempfile::tempdir().expect("should create temp dir");
+#[rstest]
+fn setup_test_dir_with_suffix_creates_unique_directory(tmp_dir_fixture: tempfile::TempDir) {
+    let dir = tmp_dir_fixture;
 
     let created = crate::support::cleanup::setup_test_dir_with_suffix(dir.path(), "cleanup-tests")
         .expect("setup_test_dir_with_suffix should succeed");

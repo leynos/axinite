@@ -12,6 +12,7 @@ use ironclaw::llm::{
     ToolCompletionRequest, ToolCompletionResponse,
 };
 
+use super::trace_template_utils::{extract_tool_result_vars, substitute_templates};
 use super::trace_types::LlmTrace;
 
 pub(super) struct TraceLlmState {
@@ -20,8 +21,9 @@ pub(super) struct TraceLlmState {
     ///
     /// The value is a `usize` replay cursor. It is monotonic, must not wrap,
     /// and should be mutated only while holding `TraceLlm::inner`. In normal
-    /// operation it stays in `0..=steps.len()`, but `TraceLlm::next_step` may
-    /// briefly increment it to `steps.len() + 1` before exhaustion is detected.
+    /// operation it stays in `0..=steps.len()`. After exhaustion, repeated
+    /// calls continue incrementing the cursor beyond `steps.len()` until
+    /// overflow protection rejects further advancement.
     /// Test-scale traces should never approach `usize::MAX`; treat overflow as
     /// invalid trace data rather than recovering with saturation or wraparound.
     pub(super) index: usize,
@@ -129,10 +131,10 @@ impl TraceLlm {
             ref mut tool_calls, ..
         } = step.response
         {
-            let vars = Self::extract_tool_result_vars(messages);
+            let vars = extract_tool_result_vars(messages);
             if !vars.is_empty() {
                 for tool_call in tool_calls.iter_mut() {
-                    Self::substitute_templates(&mut tool_call.arguments, &vars);
+                    substitute_templates(&mut tool_call.arguments, &vars);
                 }
             }
         }
@@ -186,125 +188,6 @@ impl TraceLlm {
                 current.checked_add(1)
             })
             .unwrap_or_else(|_| panic!("hint_mismatches overflowed"));
-    }
-
-    #[inline]
-    fn json_scalar_to_string(value: &serde_json::Value) -> Option<String> {
-        match value {
-            serde_json::Value::String(s) => Some(s.clone()),
-            serde_json::Value::Number(n) => Some(n.to_string()),
-            serde_json::Value::Bool(b) => Some(b.to_string()),
-            _ => None,
-        }
-    }
-
-    fn extract_tool_result_vars(
-        messages: &[ChatMessage],
-    ) -> std::collections::HashMap<String, String> {
-        let mut vars = std::collections::HashMap::new();
-        for message in messages {
-            if message.role != Role::Tool {
-                continue;
-            }
-            let Some(call_id) = message.tool_call_id.as_deref() else {
-                continue;
-            };
-            let content = Self::unwrap_tool_output(&message.content);
-            let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
-                continue;
-            };
-            let Some(obj) = json.as_object() else {
-                continue;
-            };
-            for (key, value) in obj {
-                Self::flatten_json_vars(&format!("{call_id}.{key}"), value, &mut vars);
-            }
-        }
-        vars
-    }
-
-    fn flatten_json_vars(
-        path: &str,
-        value: &serde_json::Value,
-        vars: &mut std::collections::HashMap<String, String>,
-    ) {
-        if let Some(string_value) = Self::json_scalar_to_string(value) {
-            vars.insert(path.to_string(), string_value);
-            return;
-        }
-
-        match value {
-            serde_json::Value::Object(map) => {
-                for (key, child) in map {
-                    Self::flatten_json_vars(&format!("{path}.{key}"), child, vars);
-                }
-            }
-            serde_json::Value::Array(items) => {
-                for (index, child) in items.iter().enumerate() {
-                    Self::flatten_json_vars(&format!("{path}.{index}"), child, vars);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn unwrap_tool_output(content: &str) -> std::borrow::Cow<'_, str> {
-        let trimmed = content.trim();
-        if let Some(rest) = trimmed.strip_prefix("<tool_output")
-            && let Some(tag_end) = rest.find('>')
-        {
-            let inner = &rest[tag_end + 1..];
-            if let Some(close) = inner.rfind("</tool_output>") {
-                let body = inner[..close].trim();
-                return std::borrow::Cow::Borrowed(body);
-            }
-        }
-        std::borrow::Cow::Borrowed(content)
-    }
-
-    fn substitute_templates(
-        value: &mut serde_json::Value,
-        vars: &std::collections::HashMap<String, String>,
-    ) {
-        match value {
-            serde_json::Value::String(s) => {
-                if s.starts_with("{{") && s.ends_with("}}") && s.matches("{{").count() == 1 {
-                    let key = s[2..s.len() - 2].trim();
-                    if let Some(resolved) = vars.get(key) {
-                        *s = resolved.clone();
-                        return;
-                    }
-                }
-
-                let mut result = s.clone();
-                while let Some(start) = result.find("{{") {
-                    if let Some(end) = result[start..].find("}}") {
-                        let end = start + end + 2;
-                        let key = result[start + 2..end - 2].trim();
-
-                        if let Some(resolved) = vars.get(key) {
-                            result = format!("{}{}{}", &result[..start], resolved, &result[end..]);
-                        } else {
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                *s = result;
-            }
-            serde_json::Value::Object(map) => {
-                for value in map.values_mut() {
-                    Self::substitute_templates(value, vars);
-                }
-            }
-            serde_json::Value::Array(array) => {
-                for value in array.iter_mut() {
-                    Self::substitute_templates(value, vars);
-                }
-            }
-            _ => {}
-        }
     }
 }
 
