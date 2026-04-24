@@ -14,19 +14,15 @@ use support::webhook_server_helpers::{StartedWebhookServer, start_health_server}
 /// route, starts the server on the already-bound listener, and returns the
 /// address and a client.
 #[fixture]
-async fn started_webhook_server()
--> Result<StartedWebhookServer, Box<dyn std::error::Error + Send + Sync>> {
+async fn started_webhook_server() -> anyhow::Result<StartedWebhookServer> {
     start_health_server().await
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_restart_with_addr_rebinds_listener(
-    #[future] started_webhook_server: Result<
-        StartedWebhookServer,
-        Box<dyn std::error::Error + Send + Sync>,
-    >,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    #[future] started_webhook_server: anyhow::Result<StartedWebhookServer>,
+) -> anyhow::Result<()> {
     let StartedWebhookServer {
         mut server,
         addr: addr1,
@@ -109,11 +105,8 @@ async fn test_restart_with_addr_rebinds_listener(
 #[rstest]
 #[tokio::test]
 async fn test_restart_with_addr_rollback_on_bind_failure(
-    #[future] started_webhook_server: Result<
-        StartedWebhookServer,
-        Box<dyn std::error::Error + Send + Sync>,
-    >,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    #[future] started_webhook_server: anyhow::Result<StartedWebhookServer>,
+) -> anyhow::Result<()> {
     let StartedWebhookServer {
         mut server,
         addr: addr1,

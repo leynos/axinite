@@ -152,6 +152,21 @@ fn llm_trace_patch_path_returns_zero_without_tool_calls() {
 }
 
 #[test]
+fn llm_trace_patch_path_ignores_empty_from_pattern() {
+    let original = "/tmp/original";
+    let mut trace =
+        LlmTrace::single_turn("patch-model", "patch file", vec![tool_call_step(original)]);
+
+    let patched = trace.patch_path("", "/tmp/rewritten");
+
+    assert_eq!(patched, 0);
+    let TraceResponse::ToolCalls { tool_calls, .. } = &trace.turns[0].steps[0].response else {
+        panic!("expected tool call step after empty patch");
+    };
+    assert_eq!(tool_calls[0].arguments["path"], serde_json::json!(original));
+}
+
+#[test]
 fn playable_steps_skips_user_input_markers() {
     let playable = text_step("play me");
     let trace = LlmTrace {
