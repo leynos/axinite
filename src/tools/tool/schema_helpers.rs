@@ -1,17 +1,66 @@
 //! Shared helpers for parameter extraction, redaction, and schema validation.
 //!
-//! Lightweight borrowed newtypes keep schema helper signatures explicit without
-//! changing the string values used in validation errors:
+//! Lightweight newtypes keep schema helper signatures explicit without changing
+//! the string values used in validation errors:
 //!
 //! - [`ParamName`] identifies a JSON parameter key.
 //! - [`SchemaPath`] identifies a dot-separated location in a JSON schema.
 //! - [`ToolName`] identifies the root tool name used as a schema path in
 //!   strict validation.
-//! - `PropertyName` identifies an object property while walking schemas.
 
 use super::traits::ToolError;
 use serde_json::{Map, Value};
 use std::fmt;
+
+macro_rules! impl_borrowed_name_traits {
+    ($type_name:ident) => {
+        impl fmt::Display for $type_name<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(self.0)
+            }
+        }
+
+        impl AsRef<str> for $type_name<'_> {
+            fn as_ref(&self) -> &str {
+                self.0
+            }
+        }
+
+        impl<'a> From<&'a str> for $type_name<'a> {
+            fn from(value: &'a str) -> Self {
+                Self(value)
+            }
+        }
+
+        impl<'a> From<&'a String> for $type_name<'a> {
+            fn from(value: &'a String) -> Self {
+                Self(value.as_str())
+            }
+        }
+    };
+}
+
+macro_rules! impl_owned_path_conversions {
+    ($type_name:ident) => {
+        impl From<&str> for $type_name {
+            fn from(value: &str) -> Self {
+                Self::new(value)
+            }
+        }
+
+        impl From<&String> for $type_name {
+            fn from(value: &String) -> Self {
+                Self::new(value)
+            }
+        }
+
+        impl From<String> for $type_name {
+            fn from(value: String) -> Self {
+                Self::new(value)
+            }
+        }
+    };
+}
 
 /// A JSON parameter key expected in tool input.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -24,68 +73,42 @@ impl<'a> ParamName<'a> {
     }
 }
 
-impl fmt::Display for ParamName<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
-    }
-}
-
-impl AsRef<str> for ParamName<'_> {
-    fn as_ref(&self) -> &str {
-        self.0
-    }
-}
-
-impl<'a> From<&'a str> for ParamName<'a> {
-    fn from(value: &'a str) -> Self {
-        Self(value)
-    }
-}
-
-impl<'a> From<&'a String> for ParamName<'a> {
-    fn from(value: &'a String) -> Self {
-        Self(value.as_str())
-    }
-}
+impl_borrowed_name_traits!(ParamName);
 
 /// A dot-separated location in a JSON schema.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct SchemaPath<'a>(&'a str);
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SchemaPath(String);
 
-impl<'a> SchemaPath<'a> {
+impl SchemaPath {
+    /// Create a schema path from a root path.
+    pub fn new(root: impl Into<String>) -> Self {
+        Self(root.into())
+    }
+
     /// Return the underlying schema path.
-    pub const fn as_str(self) -> &'a str {
-        self.0
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 
-    fn child(self, segment: impl AsRef<str>) -> String {
-        format!("{}.{segment}", self.0, segment = segment.as_ref())
+    /// Return a child path with `segment` appended after a dot.
+    pub fn child(&self, segment: impl AsRef<str>) -> Self {
+        Self(format!("{}.{segment}", self.0, segment = segment.as_ref()))
     }
 }
 
-impl fmt::Display for SchemaPath<'_> {
+impl fmt::Display for SchemaPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
+        f.write_str(&self.0)
     }
 }
 
-impl AsRef<str> for SchemaPath<'_> {
+impl AsRef<str> for SchemaPath {
     fn as_ref(&self) -> &str {
-        self.0
+        &self.0
     }
 }
 
-impl<'a> From<&'a str> for SchemaPath<'a> {
-    fn from(value: &'a str) -> Self {
-        Self(value)
-    }
-}
-
-impl<'a> From<&'a String> for SchemaPath<'a> {
-    fn from(value: &'a String) -> Self {
-        Self(value.as_str())
-    }
-}
+impl_owned_path_conversions!(SchemaPath);
 
 /// A registered tool identifier used as the root strict-schema path.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -98,67 +121,21 @@ impl<'a> ToolName<'a> {
     }
 }
 
-impl fmt::Display for ToolName<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
-    }
-}
+impl_borrowed_name_traits!(ToolName);
 
-impl AsRef<str> for ToolName<'_> {
-    fn as_ref(&self) -> &str {
-        self.0
-    }
-}
-
-impl<'a> From<&'a str> for ToolName<'a> {
-    fn from(value: &'a str) -> Self {
-        Self(value)
-    }
-}
-
-impl<'a> From<&'a String> for ToolName<'a> {
-    fn from(value: &'a String) -> Self {
-        Self(value.as_str())
-    }
-}
-
-impl<'a> From<ToolName<'a>> for SchemaPath<'a> {
+impl<'a> From<ToolName<'a>> for SchemaPath {
     fn from(value: ToolName<'a>) -> Self {
-        Self(value.as_str())
-    }
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-struct PropertyName<'a>(&'a str);
-
-impl AsRef<str> for PropertyName<'_> {
-    fn as_ref(&self) -> &str {
-        self.0
-    }
-}
-
-impl fmt::Display for PropertyName<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
-    }
-}
-
-impl<'a> From<&'a str> for PropertyName<'a> {
-    fn from(value: &'a str) -> Self {
-        Self(value)
+        Self::new(value.as_str())
     }
 }
 
 /// Extract a required string parameter from a JSON object.
 ///
 /// Returns `ToolError::InvalidParameters` if the key is missing or not a string.
-pub fn require_str<'a, 'name>(
-    params: &'a serde_json::Value,
-    name: impl Into<ParamName<'name>>,
-) -> Result<&'a str, ToolError> {
-    let name = name.into();
+pub fn require_str(params: &serde_json::Value, name: impl AsRef<str>) -> Result<&str, ToolError> {
+    let name = name.as_ref();
     params
-        .get(name.as_str())
+        .get(name)
         .and_then(|v| v.as_str())
         .ok_or_else(|| ToolError::InvalidParameters(format!("missing '{}' parameter", name)))
 }
@@ -166,13 +143,13 @@ pub fn require_str<'a, 'name>(
 /// Extract a required parameter of any type from a JSON object.
 ///
 /// Returns `ToolError::InvalidParameters` if the key is missing.
-pub fn require_param<'a, 'name>(
-    params: &'a serde_json::Value,
-    name: impl Into<ParamName<'name>>,
-) -> Result<&'a serde_json::Value, ToolError> {
-    let name = name.into();
+pub fn require_param(
+    params: &serde_json::Value,
+    name: impl AsRef<str>,
+) -> Result<&serde_json::Value, ToolError> {
+    let name = name.as_ref();
     params
-        .get(name.as_str())
+        .get(name)
         .ok_or_else(|| ToolError::InvalidParameters(format!("missing '{}' parameter", name)))
 }
 
@@ -218,7 +195,7 @@ fn required_array(schema: &Value) -> Option<&Vec<Value>> {
 fn validate_required_array(
     required: &[Value],
     properties: &Map<String, Value>,
-    path: SchemaPath<'_>,
+    path: &SchemaPath,
     out: &mut Vec<String>,
 ) {
     for req in required {
@@ -233,20 +210,20 @@ fn validate_required_array(
 }
 
 fn validate_property_schema(
-    name: PropertyName<'_>,
+    name: impl AsRef<str>,
     prop: &Value,
-    path: SchemaPath<'_>,
+    path: &SchemaPath,
     out: &mut Vec<String>,
 ) {
     let prop_path = path.child(name);
     if let Some(prop_type) = prop.get("type").and_then(|t| t.as_str()) {
         match prop_type {
-            "object" => out.extend(validate_tool_schema(prop, prop_path.as_str())),
+            "object" => out.extend(validate_tool_schema_at(prop, &prop_path)),
             "array" => {
                 if let Some(items) = prop.get("items") {
                     if items.get("type").and_then(|t| t.as_str()) == Some("object") {
-                        let items_path = SchemaPath::from(prop_path.as_str()).child("items");
-                        out.extend(validate_tool_schema(items, items_path.as_str()));
+                        let items_path = prop_path.child("items");
+                        out.extend(validate_tool_schema_at(items, &items_path));
                     }
                 } else {
                     out.push(format!("{prop_path}: array property missing \"items\""));
@@ -281,11 +258,15 @@ fn validate_property_schema(
 /// Properties without a `"type"` field are allowed (freeform/any-type).
 /// This is an intentional pattern used by tools like `json` and `http` for
 /// OpenAI compatibility, since union types with arrays require `items`.
-pub fn validate_tool_schema<'path>(
+pub fn validate_tool_schema(
     schema: &serde_json::Value,
-    path: impl Into<SchemaPath<'path>>,
+    path: impl Into<SchemaPath>,
 ) -> Vec<String> {
     let path = path.into();
+    validate_tool_schema_at(schema, &path)
+}
+
+fn validate_tool_schema_at(schema: &serde_json::Value, path: &SchemaPath) -> Vec<String> {
     let mut errors = Vec::new();
 
     if !is_object_type(schema) {
@@ -313,7 +294,7 @@ pub fn validate_tool_schema<'path>(
     }
 
     for (key, prop) in properties {
-        validate_property_schema(PropertyName::from(key.as_str()), prop, path, &mut errors);
+        validate_property_schema(key, prop, path, &mut errors);
     }
 
     errors
