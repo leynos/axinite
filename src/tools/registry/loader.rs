@@ -18,7 +18,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::llm::ToolDefinition;
-use crate::secrets::SecretsStore;
+use crate::secrets::{CredentialMapping, SecretsStore};
 use crate::tools::rate_limiter::RateLimiter;
 use crate::tools::tool::Tool;
 use crate::tools::wasm::{
@@ -227,40 +227,22 @@ impl ToolRegistry {
     /// }).await?;
     /// ```
     pub async fn register_wasm(&self, reg: WasmToolRegistration<'_>) -> Result<(), WasmError> {
-        let prepared = reg
-            .runtime
-            .prepare(reg.name, reg.wasm_bytes, reg.limits)
-            .await?;
-
-        let credential_mappings: Vec<crate::secrets::CredentialMapping> = reg
-            .capabilities
-            .http
-            .as_ref()
-            .map(|http| http.credentials.values().cloned().collect())
-            .unwrap_or_default();
-
         let name = reg.name;
-        let hints = WasmMetadataHints {
-            name: reg.name,
-            description: reg.description,
-            schema: reg.schema,
-        };
-        let runtime_config = WasmRuntimeConfig {
-            secrets_store: reg.secrets_store,
-            oauth_refresh: reg.oauth_refresh,
-        };
+        let prepared = prepare_wasm_tool(reg).await?;
 
-        let wrapper = WasmToolWrapper::new(Arc::clone(reg.runtime), prepared, reg.capabilities);
-        let wrapper = recover_guest_metadata(wrapper, &hints);
-        let wrapper = apply_wasm_overrides(wrapper, hints, runtime_config);
-
-        let registered = self.register(Arc::new(wrapper)).await;
+        let registered = self.register(Arc::new(prepared.wrapper)).await;
         if !registered {
             return Err(WasmError::ConfigError(
                 "tool registration rejected".to_string(),
             ));
         }
 
+        self.persist_credential_mappings(name, prepared.credential_mappings);
+        tracing::debug!(name, "Registered WASM tool");
+        Ok(())
+    }
+
+    fn persist_credential_mappings(&self, name: &str, credential_mappings: Vec<CredentialMapping>) {
         if let Some(cr) = &self.credential_registry
             && !credential_mappings.is_empty()
         {
@@ -272,9 +254,6 @@ impl ToolRegistry {
                 "Added credential mappings from WASM tool"
             );
         }
-
-        tracing::debug!(name, "Registered WASM tool");
-        Ok(())
     }
 
     /// Register a WASM tool from database storage.
@@ -405,6 +384,46 @@ struct WasmMetadataHints<'a> {
 struct WasmRuntimeConfig {
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     oauth_refresh: Option<OAuthRefreshConfig>,
+}
+
+struct PreparedWasmTool {
+    wrapper: WasmToolWrapper,
+    credential_mappings: Vec<CredentialMapping>,
+}
+
+async fn prepare_wasm_tool(reg: WasmToolRegistration<'_>) -> Result<PreparedWasmTool, WasmError> {
+    let prepared = reg
+        .runtime
+        .prepare(reg.name, reg.wasm_bytes, reg.limits)
+        .await?;
+
+    let credential_mappings = credential_mappings_from_capabilities(&reg.capabilities);
+    let hints = WasmMetadataHints {
+        name: reg.name,
+        description: reg.description,
+        schema: reg.schema,
+    };
+    let runtime_config = WasmRuntimeConfig {
+        secrets_store: reg.secrets_store,
+        oauth_refresh: reg.oauth_refresh,
+    };
+
+    let wrapper = WasmToolWrapper::new(Arc::clone(reg.runtime), prepared, reg.capabilities);
+    let wrapper = recover_guest_metadata(wrapper, &hints);
+    let wrapper = apply_wasm_overrides(wrapper, hints, runtime_config);
+
+    Ok(PreparedWasmTool {
+        wrapper,
+        credential_mappings,
+    })
+}
+
+fn credential_mappings_from_capabilities(capabilities: &Capabilities) -> Vec<CredentialMapping> {
+    capabilities
+        .http
+        .as_ref()
+        .map(|http| http.credentials.values().cloned().collect())
+        .unwrap_or_default()
 }
 
 fn recover_guest_metadata(
