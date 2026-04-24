@@ -227,11 +227,11 @@ compiles the helpers it actually needs, which keeps the support surface
 honest and avoids dead-code lint suppression.
 
 The `trace_llm` facade in that module provides a narrowed one-import
-surface for LLM trace helpers. It re-exports
-`trace_json_patch::patch_json_value` together with
-`trace_types::{LlmTrace, TraceExpects}` so tests can create trace
-fixtures, patch recorded JSON payloads, and assert on trace contents
-without reaching into the underlying support-module layout.
+surface for LLM trace helpers. It re-exports `LlmTrace` and
+`TraceExpects` from `trace_types` with full `pub` visibility, while
+`trace_json_patch::patch_json_value` is re-exported as `pub(crate)` so
+only this test crate can apply JSON patch rewrites without reaching into
+the underlying support-module layout.
 
 The same support root also re-exports three `testing_wasm` helpers used
 by the tools-and-config harness:
