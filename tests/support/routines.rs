@@ -53,7 +53,7 @@ mod db {
     ///
     /// - `tempfile::tempdir` fails to create the temp directory:
     ///   `"failed to create routine test tempdir"`.
-    /// - `LibSqlBackend::new_local` fails to initialise the backend:
+    /// - `LibSqlBackend::new_local` fails to initialize the backend:
     ///   `"failed to create routine test database at {db_path:?}"`, with the
     ///   formatted database path.
     /// - `backend.run_migrations` fails to apply migrations:
