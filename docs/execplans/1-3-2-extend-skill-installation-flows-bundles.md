@@ -303,6 +303,17 @@ Rust test code without a new app-level server harness.
   and passed. The full gate
   `make all 2>&1 | tee /tmp/make-all-review-comments-axinite-1-3-2-extend-skill-installation-flows-bundles.out`
   also passed.
+- [x] 2026-04-26: Follow-up CI warnings addressed. Added focused
+  `install_source` unit tests, a Node `node:test` suite for the browser bundle
+  upload helpers, a full gateway multipart upload integration test, JSDoc for
+  `installSkillBundleFromForm()`, module export documentation for
+  `install_source`, and developer-guide notes for `ArchiveBytes`,
+  `install_source`, `TestGatewayBuilder`, and the request-based web handler.
+- [x] 2026-04-26: Follow-up validation passed. Targeted checks
+  `cargo test -p ironclaw skill` and
+  `node --test tests/web_static_app.test.mjs` passed, and the full gate
+  `make all 2>&1 | tee /tmp/make-all-ci-warnings-axinite-1-3-2-extend-skill-installation-flows-bundles.out`
+  passed with 3,989 nextest tests and the GitHub tool tests.
 
 ## Surprises & Discoveries
 
@@ -349,6 +360,11 @@ as the source error when the configured body cap is exceeded. Matching that
 source preserves the intended `413 Payload Too Large` response without
 misclassifying unrelated body read failures.
 
+2026-04-26: The static web app has no existing package manifest or frontend
+test runner. The follow-up frontend coverage therefore uses Node's built-in
+`node:test` runner and evaluates only the pure helper block from `app.js`,
+avoiding a new JavaScript dependency chain.
+
 ## Decision Log
 
 2026-04-24: Treat `1.3.2` as an install-adapter and user-interface slice over
@@ -384,6 +400,11 @@ validation.
 the small string-normalisation helpers in `src/skills/install_source.rs`. This
 avoids a larger enum abstraction while keeping web, multipart, and tool
 definitions of blank source fields aligned.
+
+2026-04-26: Use `TestGatewayBuilder::start()` for multipart upload integration
+coverage. Handler-level Axum tests still provide detailed unhappy-path
+coverage, while the integration test proves the complete authenticated HTTP
+upload path writes the expected bundle files.
 
 ## Implementation plan
 

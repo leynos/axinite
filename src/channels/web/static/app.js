@@ -4064,24 +4064,44 @@ function installSkillFromForm() {
   document.getElementById('skill-install-url').value = '';
 }
 
+function selectedSkillBundleFile(input) {
+  return input && input.files && input.files[0] ? input.files[0] : null;
+}
+
+function isSkillBundleFilename(fileName) {
+  return typeof fileName === 'string' && fileName.endsWith('.skill');
+}
+
+function buildSkillBundleInstallRequest(file) {
+  var body = new FormData();
+  body.append('bundle', file);
+  return {
+    method: 'POST',
+    headers: { 'X-Confirm-Action': 'true' },
+    body: body,
+  };
+}
+
+/**
+ * Install the `.skill` bundle selected in the Skills tab upload control.
+ *
+ * @returns {void} Shows a toast and returns early when no file is selected,
+ *   when the selected filename does not end with `.skill`, or when the
+ *   confirmation dialog is cancelled. Otherwise posts a multipart request to
+ *   `/api/skills/install`, refreshes the skill list, and clears the file input
+ *   after a successful install.
+ */
 function installSkillBundleFromForm() {
   var input = document.getElementById('skill-bundle-file');
-  var file = input.files && input.files[0];
+  var file = selectedSkillBundleFile(input);
   if (!file) { showToast('Choose a .skill file', 'error'); return; }
-  if (!file.name.endsWith('.skill')) {
+  if (!isSkillBundleFilename(file.name)) {
     showToast('Bundle filename must end with .skill', 'error');
     return;
   }
   if (!confirm('Install skill bundle "' + file.name + '"?')) return;
 
-  var body = new FormData();
-  body.append('bundle', file);
-
-  apiFetch('/api/skills/install', {
-    method: 'POST',
-    headers: { 'X-Confirm-Action': 'true' },
-    body: body,
-  }).then(function(res) {
+  apiFetch('/api/skills/install', buildSkillBundleInstallRequest(file)).then(function(res) {
     if (res.success) {
       showToast('Installed skill bundle "' + file.name + '"', 'success');
       input.value = '';
