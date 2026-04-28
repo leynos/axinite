@@ -30,13 +30,13 @@
 /// 6. Nested objects follow the same rules recursively
 /// 7. `"enum"` values must match the declared type
 /// 8. Array properties must have an `"items"` definition
-/// 9. Top-level schemas must not use `oneOf`/`anyOf`/`allOf`/`enum`/`not`
+/// 9. Top-level schemas must not use `anyOf`/`allOf`/`enum`/`not`
 pub fn validate_strict_schema(
     schema: &serde_json::Value,
     tool_name: &str,
 ) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
-    for forbidden in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+    for forbidden in ["anyOf", "allOf", "enum", "not"] {
         if schema.get(forbidden).is_some() {
             errors.push(format!(
                 "{tool_name}: top-level \"{forbidden}\" is not allowed in OpenAI tool schemas"

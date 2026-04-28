@@ -8,6 +8,7 @@ pub mod chat_history;
 pub mod chat_threads;
 pub(crate) mod common;
 pub mod extensions;
+pub(crate) mod install_helpers;
 pub mod job_control;
 pub mod job_files;
 pub mod jobs;

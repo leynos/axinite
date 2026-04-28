@@ -99,7 +99,7 @@ the API adapter lives in `src/channels/web/handlers/skills.rs`.
 `src/skills/bundle/mod.rs`, `src/skills/bundle/path.rs`,
 `src/skills/registry/materialize.rs`, and
 `src/skills/registry/staged_install.rs` are the completed `1.3.1` core. They
-own archive validation, policy errors, materialisation, staging, and atomic
+own archive validation, policy errors, materialization, staging, and atomic
 commit preparation. Do not duplicate those rules in web or tool adapters.
 
 `src/tools/builtin/skill_fetch/http.rs` and

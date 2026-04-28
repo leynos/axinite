@@ -9,12 +9,14 @@ use axum::{Router, routing::post};
 use rstest::{fixture, rstest};
 use tower::ServiceExt;
 
-use super::{MAX_SKILL_INSTALL_REQUEST_BYTES, skills_install_handler};
+use super::skills_install_handler;
+use crate::channels::web::handlers::install_helpers::MAX_SKILL_INSTALL_REQUEST_BYTES;
 use crate::channels::web::test_helpers::TestGatewayBuilder;
 use crate::skills::registry::SkillRegistry;
 
 struct SkillsApiFixture {
     _installed_dir: tempfile::TempDir,
+    _user_dir: tempfile::TempDir,
     state: Arc<crate::channels::web::server::GatewayState>,
     installed_root: std::path::PathBuf,
 }
@@ -31,6 +33,7 @@ fn skills_api_fixture() -> SkillsApiFixture {
 
     SkillsApiFixture {
         _installed_dir: installed_dir,
+        _user_dir: user_dir,
         state,
         installed_root,
     }
@@ -73,6 +76,10 @@ enum MultipartPart<'a> {
         file_name: &'a str,
         bytes: &'a [u8],
     },
+    FileWithoutFilename {
+        field_name: &'a str,
+        bytes: &'a [u8],
+    },
     Text {
         field_name: &'a str,
         value: &'a str,
@@ -101,6 +108,14 @@ fn multipart_body(parts: &[MultipartPart<'_>]) -> (String, Vec<u8>) {
                 write!(
                     body,
                     "--{boundary}\r\nContent-Disposition: form-data; name=\"{field_name}\"; filename=\"{file_name}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+                )
+                .expect("multipart file header should write");
+                body.extend_from_slice(bytes);
+            }
+            MultipartPart::FileWithoutFilename { field_name, bytes } => {
+                write!(
+                    body,
+                    "--{boundary}\r\nContent-Disposition: form-data; name=\"{field_name}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
                 )
                 .expect("multipart file header should write");
                 body.extend_from_slice(bytes);
@@ -197,6 +212,39 @@ async fn upload_skill_bundle_accepts_case_insensitive_content_type(
 
 #[rstest]
 #[tokio::test]
+async fn upload_skill_bundle_rejects_missing_filename(skills_api_fixture: SkillsApiFixture) {
+    let archive = build_bundle_archive(&[(
+        "deploy-docs/SKILL.md",
+        skill_markdown("deploy-docs").as_bytes(),
+    )]);
+    let (content_type, body) = multipart_body(&[MultipartPart::FileWithoutFilename {
+        field_name: "bundle",
+        bytes: &archive,
+    }]);
+
+    let response = skills_router(Arc::clone(&skills_api_fixture.state))
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/skills/install")
+                .header("x-confirm-action", "true")
+                .header("content-type", content_type)
+                .body(Body::from(body))
+                .expect("request should build"),
+        )
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response_text(response).await;
+    assert!(
+        body.contains("Uploaded skill bundle must include a filename ending with .skill"),
+        "body was: {body}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn upload_skill_bundle_rejects_non_skill_filename(skills_api_fixture: SkillsApiFixture) {
     let archive = build_bundle_archive(&[(
         "deploy-docs/SKILL.md",
@@ -220,7 +268,7 @@ async fn upload_skill_bundle_rejects_non_skill_filename(skills_api_fixture: Skil
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body = response_text(response).await;
     assert!(
-        body.contains("Uploaded skill bundle filename must end with .skill"),
+        body.contains("Uploaded skill bundle must include a filename ending with .skill"),
         "body was: {body}"
     );
 }

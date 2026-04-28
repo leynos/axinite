@@ -1,22 +1,21 @@
 //! Skills management API handlers.
 
-use std::{error::Error as StdError, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    body::{Body, Bytes, to_bytes},
-    extract::{FromRequest, Multipart, Path, Request, State},
-    http::{StatusCode, header},
+    extract::{Path, Request, State},
+    http::StatusCode,
     routing::{delete, get, post},
 };
-use http_body_util::LengthLimitError;
 
+use crate::channels::web::handlers::install_helpers::{
+    is_multipart_request, map_skill_install_error, parse_json_install_request,
+    payload_from_multipart, select_json_install_source,
+};
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
-use crate::skills::install_source::{non_blank_raw, trimmed_non_empty};
-use crate::skills::registry::{SkillInstallPayload, SkillRegistryError};
-
-const MAX_SKILL_INSTALL_REQUEST_BYTES: usize = 10 * 1024 * 1024;
+use crate::skills::registry::SkillInstallPayload;
 
 pub fn routes() -> Router<Arc<GatewayState>> {
     Router::new()
@@ -155,57 +154,10 @@ pub async fn skills_install_handler(
         payload_from_multipart(request, &state).await?
     } else {
         let req = parse_json_install_request(request).await?;
-        payload_from_json_request(&req, &state).await?
+        select_json_install_source(&req, &state).await?
     };
 
     install_skill_payload(&state, payload).await
-}
-
-async fn payload_from_json_request(
-    req: &SkillInstallRequest,
-    state: &GatewayState,
-) -> Result<SkillInstallPayload, (StatusCode, String)> {
-    let content = non_blank_raw(req.content.as_deref());
-    let url = trimmed_non_empty(req.url.as_deref());
-    let catalog_key =
-        trimmed_non_empty(req.slug.as_deref()).or_else(|| trimmed_non_empty(req.name.as_deref()));
-
-    let mut selected = 0;
-    if content.is_some() {
-        selected += 1;
-    }
-    if url.is_some() {
-        selected += 1;
-    }
-    if catalog_key.is_some() {
-        selected += 1;
-    }
-
-    if selected != 1 {
-        return Err(exactly_one_install_source_error());
-    }
-
-    if let Some(raw) = content {
-        return Ok(SkillInstallPayload::Markdown(raw.to_string()));
-    }
-
-    if let Some(url) = url {
-        return crate::tools::builtin::skill_fetch::fetch_skill_bytes(url)
-            .await
-            .map(SkillInstallPayload::DownloadedBytes)
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()));
-    }
-
-    let catalog_key = catalog_key.ok_or_else(exactly_one_install_source_error)?;
-    let catalog = state.skill_catalog.as_ref().ok_or((
-        StatusCode::NOT_IMPLEMENTED,
-        "Skill catalog not available".to_string(),
-    ))?;
-    let url = crate::skills::catalog::skill_download_url(catalog.registry_url(), catalog_key);
-    crate::tools::builtin::skill_fetch::fetch_skill_bytes(&url)
-        .await
-        .map(SkillInstallPayload::DownloadedBytes)
-        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))
 }
 
 async fn install_skill_payload(
@@ -261,130 +213,6 @@ async fn install_skill_payload(
             }
             Ok(Json(ActionResponse::fail(error.to_string())))
         }
-    }
-}
-
-fn exactly_one_install_source_error() -> (StatusCode, String) {
-    (
-        StatusCode::BAD_REQUEST,
-        "Provide exactly one of 'content', 'url', 'name'/'slug', or a .skill upload".to_string(),
-    )
-}
-
-fn is_multipart_request(headers: &axum::http::HeaderMap) -> bool {
-    headers
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| {
-            value
-                .split(';')
-                .next()
-                .is_some_and(|media_type| media_type.eq_ignore_ascii_case("multipart/form-data"))
-        })
-}
-
-async fn parse_json_install_request(
-    request: Request,
-) -> Result<SkillInstallRequest, (StatusCode, String)> {
-    let body = body_bytes(request.into_body()).await?;
-    serde_json::from_slice(&body).map_err(|error| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("Invalid JSON body: {error}"),
-        )
-    })
-}
-
-async fn body_bytes(body: Body) -> Result<Bytes, (StatusCode, String)> {
-    to_bytes(body, MAX_SKILL_INSTALL_REQUEST_BYTES)
-        .await
-        .map_err(map_body_read_error)
-}
-
-fn map_body_read_error(error: axum::Error) -> (StatusCode, String) {
-    if StdError::source(&error).is_some_and(|source| source.is::<LengthLimitError>()) {
-        (
-            StatusCode::PAYLOAD_TOO_LARGE,
-            format!(
-                "Request body exceeds maximum size of {} bytes",
-                MAX_SKILL_INSTALL_REQUEST_BYTES
-            ),
-        )
-    } else {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("Failed to read request body: {error}"),
-        )
-    }
-}
-
-async fn payload_from_multipart(
-    request: Request,
-    state: &Arc<GatewayState>,
-) -> Result<SkillInstallPayload, (StatusCode, String)> {
-    let mut multipart = Multipart::from_request(request, state)
-        .await
-        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
-    let mut upload: Option<Vec<u8>> = None;
-
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?
-    {
-        let name = field.name().unwrap_or_default().to_string();
-        let file_name = field.file_name().map(str::to_string);
-        let contents = field
-            .bytes()
-            .await
-            .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
-
-        if name == "bundle" {
-            if upload.is_some() {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    "Provide exactly one .skill upload".to_string(),
-                ));
-            }
-            if file_name
-                .as_deref()
-                .is_some_and(|name| !name.ends_with(".skill"))
-            {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    "Uploaded skill bundle filename must end with .skill".to_string(),
-                ));
-            }
-            upload = Some(contents.to_vec());
-        } else if multipart_source_field_has_value(&name, &contents) {
-            return Err(exactly_one_install_source_error());
-        }
-    }
-
-    if let Some(bytes) = upload {
-        Ok(SkillInstallPayload::ArchiveBytes(bytes))
-    } else {
-        Err(exactly_one_install_source_error())
-    }
-}
-
-fn multipart_source_field_has_value(name: &str, contents: &[u8]) -> bool {
-    let Ok(text) = std::str::from_utf8(contents) else {
-        return matches!(name, "content" | "url" | "name" | "slug") && !contents.is_empty();
-    };
-
-    match name {
-        "content" => non_blank_raw(Some(text)).is_some(),
-        "url" | "name" | "slug" => trimmed_non_empty(Some(text)).is_some(),
-        _ => false,
-    }
-}
-
-fn map_skill_install_error(error: SkillRegistryError) -> (StatusCode, String) {
-    if matches!(error, SkillRegistryError::WriteError { .. }) {
-        (StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
-    } else {
-        (StatusCode::BAD_REQUEST, error.to_string())
     }
 }
 

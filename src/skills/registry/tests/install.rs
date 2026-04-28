@@ -1,9 +1,17 @@
+use std::path::Path;
+
 use rstest::rstest;
 
 use super::super::*;
 use super::fixtures::{
     BundleInstallFixture, build_bundle_archive, bundle_install_fixture, skill_markdown,
 };
+
+fn assert_deploy_docs_bundle_files_present(path: &Path) {
+    assert!(path.join("SKILL.md").exists());
+    assert!(path.join("references/usage.md").exists());
+    assert!(path.join("assets/logo.txt").exists());
+}
 
 #[tokio::test]
 async fn test_install_skill_from_content() {
@@ -65,9 +73,7 @@ async fn test_archive_payload_preserves_files(
     registry.commit_install(prepared).expect(commit_msg);
 
     let installed_root = installed_dir.path().join("deploy-docs");
-    assert!(installed_root.join("SKILL.md").exists());
-    assert!(installed_root.join("references/usage.md").exists());
-    assert!(installed_root.join("assets/logo.txt").exists());
+    assert_deploy_docs_bundle_files_present(&installed_root);
     assert!(registry.has("deploy-docs"));
 }
 
@@ -212,10 +218,7 @@ async fn test_remove_bundle_skill_allows_reinstall(bundle_install_fixture: Bundl
         .expect("prepared bundle should commit successfully");
 
     let installed_root = installed_dir.path().join("deploy-docs");
-    assert!(
-        installed_root.join("references/usage.md").exists(),
-        "bundle install should materialize ancillary files"
-    );
+    assert_deploy_docs_bundle_files_present(&installed_root);
 
     registry
         .remove_skill("deploy-docs")
@@ -236,9 +239,7 @@ async fn test_remove_bundle_skill_allows_reinstall(bundle_install_fixture: Bundl
         .commit_install(prepared)
         .expect("bundle reinstall should commit successfully");
 
-    assert!(installed_root.join("SKILL.md").exists());
-    assert!(installed_root.join("references/usage.md").exists());
-    assert!(installed_root.join("assets/logo.txt").exists());
+    assert_deploy_docs_bundle_files_present(&installed_root);
 }
 
 #[rstest]

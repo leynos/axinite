@@ -505,10 +505,20 @@ already part of the host application:
 - setup and auth flows call extension-manager operations and react to gateway
   SSE events such as `auth_required`, `auth_completed`, and
   `extension_status`;
-- the skills UI talks to the skill registry and skill catalogue, including
-  catalogue install, HTTPS `SKILL.md` or `.skill` URL install, local `.skill`
-  upload, and removal flows that require explicit confirmation headers to avoid
-  accidental mutating actions.
+- the skills UI talks to the skill registry and skill catalogue through
+  `POST /api/skills/install`, which accepts either JSON or
+  `multipart/form-data`. Each install request must include exactly one source:
+  one catalogue `name` or `slug`, one HTTPS `SKILL.md` or `.skill` URL, raw
+  `SKILL.md` content from an API client, or one uploaded `.skill` file. JSON
+  clients send one of `{"name":"..."}`, `{"slug":"..."}`, `{"url":"..."}`, or
+  `{"content":"..."}`. Multipart clients send one file field named `bundle`;
+  source fields such as `name`, `slug`, `url`, and `content` must not accompany
+  the upload unless they are blank. The Browser Skills tab follows this
+  exact-one-source rule. The server rejects requests with zero sources or more
+  than one source with a clear validation error, and mutating install and
+  removal flows require `X-Confirm-Action: true` before they proceed. Clients
+  should surface those validation errors directly rather than retrying with
+  additional sources.
 
 These tabs are effectively operational front ends for existing backend
 subsystems rather than separate front-end business logic domains.

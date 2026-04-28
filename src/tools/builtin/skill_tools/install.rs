@@ -102,7 +102,11 @@ impl NativeTool for SkillInstallTool {
                     "description": "Raw SKILL.md content to install directly"
                 }
             },
-            "required": []
+            "oneOf": [
+                { "required": ["name"] },
+                { "required": ["url"] },
+                { "required": ["content"] }
+            ]
         })
     }
 

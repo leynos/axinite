@@ -4010,7 +4010,7 @@ function formatTimeAgo(epochMs) {
 }
 
 function installSkill(nameOrSlug, url, btn) {
-  var body = url ? { url: url } : { name: nameOrSlug, slug: nameOrSlug };
+  var body = url ? { url: url } : { name: nameOrSlug };
   var label = url || nameOrSlug;
 
   apiFetch('/api/skills/install', {
