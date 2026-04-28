@@ -1,4 +1,12 @@
-CARGO ?= $(shell command -v cargo 2>/dev/null || printf '%s' "$$HOME/.cargo/bin/cargo")
+CARGO ?= $(shell \
+	if command -v cargo >/dev/null 2>&1; then \
+		command -v cargo; \
+	elif [ -x "$(HOME)/.cargo/bin/cargo" ]; then \
+		echo "$(HOME)/.cargo/bin/cargo"; \
+	else \
+		echo cargo; \
+	fi \
+)
 NEXTEST ?= $(CARGO) nextest
 BUNX ?= $(shell command -v bunx 2>/dev/null || printf '%s' "$$HOME/.bun/bin/bunx")
 TEST_FEATURES ?= --features test-helpers
