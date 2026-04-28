@@ -1144,10 +1144,38 @@ its own exported metadata.
 
 ### Two-phase registration flow
 
+WASM tool registration is split between preparation and registry
+insertion. The preparation helpers live in
+`src/tools/registry/wasm_preparation.rs`, and the public registration
+entry points live in `src/tools/registry/loader.rs`.
+
+`prepare_wasm_tool` compiles the component, gathers credential
+mappings, builds the metadata hints and runtime configuration, recovers
+guest metadata when needed, applies overrides, and returns a
+`PreparedWasmTool`.
+
+- `PreparedWasmTool` carries the prepared wrapper and the credential
+  mappings that must be persisted after successful registration.
+- `WasmMetadataHints` bundles the tool name with optional description
+  and schema overrides.
+- `WasmRuntimeConfig` carries the secrets store and OAuth refresh
+  configuration used while applying wrapper overrides.
+- `recover_guest_metadata` asks the compiled wrapper for exported
+  metadata when the caller did not provide both description and schema.
+- `apply_wasm_overrides` applies explicit description and schema
+  overrides, then attaches runtime-scoped secrets and OAuth
+  configuration.
+- `persist_credential_mappings` stores HTTP credential mappings after
+  registration succeeds.
+
+See [ADR 010](adr-010-extract-register-wasm-helpers-to-reduce-cyclomatic-complexity.md)
+for the helper extraction rationale.
+
 1. **`register_wasm`** — the lower-level entry point. Accepts raw WASM
    bytes, a pre-compiled runtime, and optional description/schema
-   overrides. Compiles the component, recovers guest metadata when
-   overrides are absent, and registers the tool.
+   overrides. It calls `prepare_wasm_tool`, registers the prepared
+   wrapper, and persists credential mappings only after successful
+   registration.
 
 2. **`register_wasm_from_storage`** — the database-driven entry point.
    Loads the stored tool record and binary with integrity verification,
