@@ -22,6 +22,8 @@ use crate::channels::web::ws::WsConnectionTracker;
 pub struct TestGatewayBuilder {
     msg_tx: Option<mpsc::Sender<IncomingMessage>>,
     llm_provider: Option<Arc<dyn crate::llm::LlmProvider>>,
+    skill_registry: Option<Arc<std::sync::RwLock<crate::skills::SkillRegistry>>>,
+    skill_catalog: Option<Arc<crate::skills::catalog::SkillCatalog>>,
     user_id: String,
 }
 
@@ -30,6 +32,8 @@ impl Default for TestGatewayBuilder {
         Self {
             msg_tx: None,
             llm_provider: None,
+            skill_registry: None,
+            skill_catalog: None,
             user_id: "test-user".to_string(),
         }
     }
@@ -51,6 +55,21 @@ impl TestGatewayBuilder {
     /// Set the LLM provider (needed for OpenAI-compatible API tests).
     pub fn llm_provider(mut self, provider: Arc<dyn crate::llm::LlmProvider>) -> Self {
         self.llm_provider = Some(provider);
+        self
+    }
+
+    /// Set the skill registry used by Skills API tests.
+    pub fn skill_registry(
+        mut self,
+        registry: Arc<std::sync::RwLock<crate::skills::SkillRegistry>>,
+    ) -> Self {
+        self.skill_registry = Some(registry);
+        self
+    }
+
+    /// Set the skill catalog used by Skills API tests.
+    pub fn skill_catalog(mut self, catalog: Arc<crate::skills::catalog::SkillCatalog>) -> Self {
+        self.skill_catalog = Some(catalog);
         self
     }
 
@@ -78,8 +97,8 @@ impl TestGatewayBuilder {
             shutdown_tx: tokio::sync::RwLock::new(None),
             ws_tracker: Some(Arc::new(WsConnectionTracker::new())),
             llm_provider: self.llm_provider,
-            skill_registry: None,
-            skill_catalog: None,
+            skill_registry: self.skill_registry,
+            skill_catalog: self.skill_catalog,
             scheduler: None,
             chat_rate_limiter: RateLimiter::new(30, 60),
             oauth_rate_limiter: RateLimiter::new(10, 60),

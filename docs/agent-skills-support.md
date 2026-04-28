@@ -245,10 +245,10 @@ Table 4. Current approval semantics for skill tools.
 | `skill_remove` | `Always` |
 
 `skill_search` queries both the local registry and the remote catalog.
-`skill_install` can install from raw `SKILL.md` content, an explicit HTTPS URL,
-or a ClawHub download by name or slug. Remote downloads are fetched as raw
-bytes and then handed to the shared registry install path, which now accepts
-either:
+`skill_install` can install from exactly one source: raw `SKILL.md` content,
+an explicit HTTPS URL, or a ClawHub download by name or slug. Remote downloads
+are fetched as raw bytes and then handed to the shared registry install path,
+which accepts either:
 
 - plain UTF-8 `SKILL.md` content
 - validated passive `.skill` archives with one shared top-level prefix,
@@ -292,6 +292,13 @@ The web gateway exposes:
 
 The web install and remove routes require `X-Confirm-Action: true`, which is
 the web-side equivalent of tool approval for destructive or mutating actions.
+`POST /api/skills/install` accepts the existing JSON request for catalogue,
+URL, or inline-content installs, and also accepts `multipart/form-data` with
+one uploaded file field named `bundle`. Multipart uploads are archive-only:
+the handler sends uploaded bytes to the registry as `.skill` archive bytes, so
+plain markdown cannot be smuggled through the bundle upload path. JSON and
+multipart requests both enforce the exact-one-source contract before download
+or staging begins.
 
 Search combines:
 
@@ -518,9 +525,10 @@ The current implementation has several important constraints:
 - there is no dedicated skill-scoped file-reading tool in the live runtime.
 - the read-only allowlist for installed skills is hard-coded, so expanding the
   skill-safe tool surface requires code changes.
-- `skill_install` supports `content` and `url`, but its tool schema still marks
-  `name` as required even when installation does not need it as the source of
-  truth.
+- `skill_install` supports exactly one of `content`, `url`, or `name`, and its
+  tool schema no longer always requires `name`. The exact-one-source rule is
+  enforced at runtime because the OpenAI-compatible schema subset used by this
+  project forbids top-level `oneOf`.
 - validated `.skill` installs now preserve bundled `references/` and `assets/`
   on disk, but the runtime still injects only `SKILL.md` and does not yet
   expose a skill-scoped file-reading interface.

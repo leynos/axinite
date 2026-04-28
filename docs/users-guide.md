@@ -7,7 +7,8 @@ runtime.
 
 Axinite now validates passive multi-file skill bundles when a skill is
 installed from an HTTPS URL or catalogue download that resolves to a `.skill`
-ZIP archive.
+ZIP archive, or when a local `.skill` file is uploaded through the browser
+Skills tab.
 
 A valid bundle must contain exactly one shared top-level path prefix with
 `SKILL.md` at `<root>/SKILL.md`. The installer also accepts optional
@@ -25,9 +26,16 @@ into the installed-skills directory once validation and on-disk staging both
 succeed. A failed bundle install should therefore leave no partial installed
 skill tree behind.
 
-This slice does not yet add local `.skill` uploads or runtime file reads from
-bundled references and assets. When a bundled skill is active, the runtime
-still injects only the selected `SKILL.md` body into the prompt.
+The browser Skills tab accepts exactly one install source at a time: a
+catalogue name or slug, an HTTPS `SKILL.md` or `.skill` URL, raw `SKILL.md`
+content from an API client, or one uploaded `.skill` file. Ambiguous requests,
+such as sending both a name and a URL, fail before any download or install
+attempt. Malformed archives report explicit `invalid_skill_bundle: ...` errors
+that describe the archive-shape problem.
+
+This slice does not yet add runtime file reads from bundled references and
+assets. When a bundled skill is active, the runtime still injects only the
+selected `SKILL.md` body into the prompt.
 
 ## Hosted workers and remote tools
 

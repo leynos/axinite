@@ -19,12 +19,16 @@ use uuid::Uuid;
 /// validated `.skill` bundle archive. The enum owns the staged payload bytes:
 /// [`Self::Markdown`] stores the source text as an owned `String`, while
 /// [`Self::DownloadedBytes`] stores the fetched bytes in an owned `Vec<u8>`.
+/// Use [`Self::ArchiveBytes`] when the transport has already committed to the
+/// `.skill` bundle contract and plain markdown fallback would be misleading.
 pub enum SkillInstallPayload {
     /// Install from literal `SKILL.md` text.
     Markdown(String),
     /// Install from downloaded bytes, which may be markdown or a `.skill`
     /// archive.
     DownloadedBytes(Vec<u8>),
+    /// Install from bytes that must be a validated `.skill` archive.
+    ArchiveBytes(Vec<u8>),
 }
 
 /// A failed staged install commit that preserves the prepared filesystem

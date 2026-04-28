@@ -302,7 +302,6 @@ Tests:
 
 - See `src/app.rs` `#[cfg(test)]` for smoke coverage.
 
-
 #### Skills sub-system internals (`src/skills/`)
 
 The skills sub-system is split into two top-level modules:
@@ -310,6 +309,7 @@ The skills sub-system is split into two top-level modules:
 | Module | Purpose |
 | --- | --- |
 | `src/skills/bundle/` | ZIP archive sniffing, path parsing, and passive bundle validation |
+| `src/skills/install_source.rs` | Shared blankness and trimming helpers used by install adapters before they choose a source mode |
 | `src/skills/registry/` | In-memory registry; discovery, loading, staged install, removal |
 
 #### Shared test assertions
@@ -1300,7 +1300,7 @@ Caption: Startup phase sequence.
 Phases 1–4 are infallible or propagate configuration errors early so
 subsequent phases can assume a fully valid environment.
 
-##### `src/skills/bundle/`
+#### `src/skills/bundle/`
 
 | File | Responsibility |
 | --- | --- |
@@ -1317,8 +1317,7 @@ subsequent phases can assume a fully valid environment.
 `EntryTooLarge`, `ArchiveTooLarge`, `TooManyFiles`, `InvalidUtf8Text`,
 `ReadFailure`, and others).
 
-
-##### `src/skills/registry/`
+#### `src/skills/registry/`
 
 | File | Responsibility |
 | --- | --- |
@@ -1329,11 +1328,28 @@ subsequent phases can assume a fully valid environment.
 | `staged_install.rs` | `prepare_install_to_disk` — creates a hidden staging directory, writes and validates the artifact, returns `PreparedSkillInstall`; `commit_install` — duplicate check then atomic rename; `cleanup_prepared_install` — removes the staging directory |
 | `removal.rs` | `validate_remove`, `delete_skill_files`, `commit_remove` |
 
+`SkillInstallPayload` is the staged-install input contract:
 
-##### Staged install lifecycle
+- `Markdown(String)` is for already decoded inline `SKILL.md` text.
+- `DownloadedBytes(Vec<u8>)` is for bytes fetched from HTTPS URLs and may
+  materialise as either raw `SKILL.md` content or a validated `.skill` bundle.
+- `ArchiveBytes(Vec<u8>)` is for transports that have already committed to the
+  `.skill` upload contract. It bypasses the raw-Markdown fallback, so a renamed
+  Markdown file cannot be accepted as a browser bundle upload.
+
+The web handler and model-facing install tool both use
+`src/skills/install_source.rs` before constructing a `SkillInstallPayload`.
+`non_blank_raw()` rejects missing or whitespace-only inline content while
+preserving the original text for `SKILL.md` installs. `trimmed_non_empty()`
+rejects missing or whitespace-only identifiers and returns the trimmed value for
+URL, name, and slug fields. Multipart source fields use the same helper
+semantics as JSON requests so whitespace-only `content`, `url`, `name`, and
+`slug` fields do not create a second install source.
+
+#### Staged install lifecycle
 
 ```text
-SkillInstallPayload          (Markdown | DownloadedBytes)
+SkillInstallPayload          (Markdown | DownloadedBytes | ArchiveBytes)
         │
         ▼
 prepare_install_to_disk()   creates .<uuid>/ under install_root,
@@ -1352,3 +1368,51 @@ commit_install()             cleanup_prepared_install()
 On commit failure, callers must call `cleanup_prepared_install` as a
 best-effort cleanup and log any cleanup errors with `tracing::warn!` before
 returning the original commit error.
+
+#### Web skill install handler
+
+`skills_install_handler` accepts an Axum `Request` rather than a pre-extracted
+JSON payload because it must branch on `Content-Type` before consuming the body.
+JSON requests are parsed into `SkillInstallRequest`; multipart requests are
+parsed with `Multipart::from_request` and must provide exactly one file field
+named `bundle` with a filename ending in `.skill`.
+
+Example request shapes:
+
+```http
+POST /api/skills/install
+X-Confirm-Action: true
+Content-Type: application/json
+
+{"url":"https://example.invalid/deploy-docs.skill"}
+```
+
+```text
+POST /api/skills/install
+X-Confirm-Action: true
+Content-Type: multipart/form-data; boundary=...
+
+bundle=@deploy-docs.skill
+```
+
+Both request forms enforce exactly one source before fetch or staging. Browser
+uploads become `SkillInstallPayload::ArchiveBytes`; URL downloads become
+`SkillInstallPayload::DownloadedBytes`.
+
+#### Gateway test builder
+
+`TestGatewayBuilder` in `src/channels/web/test_helpers.rs` creates
+`GatewayState` values for in-process handler tests and can also start a full
+Axum gateway on `127.0.0.1:0` for HTTP-level integration tests. Skill tests use
+the `skill_registry()` and `skill_catalog()` builder methods to install
+temporary registry handles without constructing unrelated runtime subsystems.
+
+```rust
+let registry = Arc::new(RwLock::new(
+    SkillRegistry::new(user_dir).with_installed_dir(installed_dir),
+));
+let (addr, _state) = TestGatewayBuilder::new()
+    .skill_registry(Arc::clone(&registry))
+    .start("test-token")
+    .await?;
+```

@@ -161,7 +161,7 @@ packaging.
     prefix and `SKILL.md` at `<root>/SKILL.md`, preserves allowed
     `references/` and `assets/` entries, and rejects unsupported content or
     executable payloads.
-- [ ] 1.3.2. Extend skill installation flows for uploaded bundles and `.skill`
+- [x] 1.3.2. Extend skill installation flows for uploaded bundles and `.skill`
       URLs. Requires 1.3.1.
   - See [RFC 0003 §Summary](./rfcs/0003-skill-bundle-installation.md#summary)
     and
