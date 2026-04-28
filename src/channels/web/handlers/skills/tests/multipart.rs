@@ -110,16 +110,14 @@ async fn upload_skill_bundle_rejects_missing_filename(skills_api_fixture: Skills
     );
 }
 
-#[rstest]
-#[tokio::test]
-async fn upload_skill_bundle_rejects_non_skill_filename(skills_api_fixture: SkillsApiFixture) {
-    let archive = build_bundle_archive(&[(
-        "deploy-docs/SKILL.md",
-        skill_markdown("deploy-docs").as_bytes(),
-    )]);
-    let (content_type, body) = multipart_file_body("bundle", "deploy-docs.zip", &archive);
-
-    let response = skills_router(Arc::clone(&skills_api_fixture.state))
+/// Send a multipart POST to the skills install endpoint and return the status
+/// code and response body text.
+async fn post_skill_bundle_install(
+    state: Arc<crate::channels::web::server::GatewayState>,
+    content_type: String,
+    body: Vec<u8>,
+) -> (StatusCode, String) {
+    let response = skills_router(state)
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -131,11 +129,26 @@ async fn upload_skill_bundle_rejects_non_skill_filename(skills_api_fixture: Skil
         )
         .await
         .expect("request should complete");
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let status = response.status();
     let body = response_text(response).await;
+    (status, body)
+}
+
+#[rstest]
+#[tokio::test]
+async fn upload_skill_bundle_rejects_non_skill_filename(skills_api_fixture: SkillsApiFixture) {
+    let archive = build_bundle_archive(&[(
+        "deploy-docs/SKILL.md",
+        skill_markdown("deploy-docs").as_bytes(),
+    )]);
+    let (content_type, body) = multipart_file_body("bundle", "deploy-docs.zip", &archive);
+
+    let (status, body) =
+        post_skill_bundle_install(Arc::clone(&skills_api_fixture.state), content_type, body).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(
-        body.contains("Uploaded skill bundle must include a filename ending with .skill"),
+        body.contains("Uploaded skill bundle filename must end with .skill"),
         "body was: {body}"
     );
 }
@@ -275,21 +288,10 @@ async fn upload_skill_bundle_reports_archive_shape_errors(skills_api_fixture: Sk
     ]);
     let (content_type, body) = multipart_file_body("bundle", "broken.skill", &archive);
 
-    let response = skills_router(Arc::clone(&skills_api_fixture.state))
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/skills/install")
-                .header("x-confirm-action", "true")
-                .header("content-type", content_type)
-                .body(Body::from(body))
-                .expect("request should build"),
-        )
-        .await
-        .expect("request should complete");
+    let (status, body) =
+        post_skill_bundle_install(Arc::clone(&skills_api_fixture.state), content_type, body).await;
 
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let body = response_text(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(body.contains("invalid_skill_bundle"), "body was: {body}");
     assert!(
         body.contains("expected one top-level path prefix"),

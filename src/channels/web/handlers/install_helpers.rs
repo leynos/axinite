@@ -146,13 +146,16 @@ pub(crate) async fn payload_from_multipart(
                     "Provide exactly one .skill upload".to_string(),
                 ));
             }
-            if !file_name
-                .as_deref()
-                .is_some_and(|name| name.ends_with(".skill"))
-            {
+            let Some(file_name) = file_name else {
                 return Err((
                     StatusCode::BAD_REQUEST,
                     "Uploaded skill bundle must include a filename ending with .skill".to_string(),
+                ));
+            };
+            if !file_name.ends_with(".skill") {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "Uploaded skill bundle filename must end with .skill".to_string(),
                 ));
             }
             upload = Some(contents.to_vec());
