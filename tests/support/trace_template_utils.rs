@@ -5,12 +5,14 @@ use std::collections::{HashMap, HashSet};
 
 use ironclaw::llm::{ChatMessage, Role};
 
+const MAX_TEMPLATE_EXPANSIONS: usize = 128;
+
 #[inline]
-fn json_scalar_to_string(value: &serde_json::Value) -> Option<String> {
+fn json_scalar_to_value(value: &serde_json::Value) -> Option<serde_json::Value> {
     match value {
-        serde_json::Value::String(s) => Some(s.clone()),
-        serde_json::Value::Number(n) => Some(n.to_string()),
-        serde_json::Value::Bool(b) => Some(b.to_string()),
+        serde_json::Value::String(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::Bool(_) => Some(value.clone()),
         _ => None,
     }
 }
@@ -18,7 +20,7 @@ fn json_scalar_to_string(value: &serde_json::Value) -> Option<String> {
 fn flatten_json_root_into_vars(
     call_id: &str,
     json: &serde_json::Value,
-    vars: &mut HashMap<String, String>,
+    vars: &mut HashMap<String, serde_json::Value>,
 ) {
     if let Some(obj) = json.as_object() {
         for (key, value) in obj {
@@ -29,7 +31,9 @@ fn flatten_json_root_into_vars(
     }
 }
 
-pub(super) fn extract_tool_result_vars(messages: &[ChatMessage]) -> HashMap<String, String> {
+pub(super) fn extract_tool_result_vars(
+    messages: &[ChatMessage],
+) -> HashMap<String, serde_json::Value> {
     let mut vars = HashMap::new();
     for message in messages {
         if message.role != Role::Tool {
@@ -47,9 +51,13 @@ pub(super) fn extract_tool_result_vars(messages: &[ChatMessage]) -> HashMap<Stri
     vars
 }
 
-fn flatten_json_vars(path: &str, value: &serde_json::Value, vars: &mut HashMap<String, String>) {
-    if let Some(string_value) = json_scalar_to_string(value) {
-        vars.insert(path.to_string(), string_value);
+fn flatten_json_vars(
+    path: &str,
+    value: &serde_json::Value,
+    vars: &mut HashMap<String, serde_json::Value>,
+) {
+    if let Some(scalar_value) = json_scalar_to_value(value) {
+        vars.insert(path.to_string(), scalar_value);
         return;
     }
 
@@ -82,20 +90,27 @@ fn unwrap_tool_output(content: &str) -> Cow<'_, str> {
     Cow::Borrowed(content)
 }
 
-pub(super) fn substitute_templates(value: &mut serde_json::Value, vars: &HashMap<String, String>) {
+pub(super) fn substitute_templates(
+    value: &mut serde_json::Value,
+    vars: &HashMap<String, serde_json::Value>,
+) {
     match value {
         serde_json::Value::String(s) => {
             if s.starts_with("{{") && s.ends_with("}}") && s.matches("{{").count() == 1 {
                 let key = s[2..s.len() - 2].trim();
                 if let Some(resolved) = vars.get(key) {
-                    *s = resolved.clone();
+                    *value = resolved.clone();
                     return;
                 }
             }
 
             let mut result = s.clone();
             let mut visited_results = HashSet::new();
+            let mut substitutions = 0;
             while let Some(start) = result.find("{{") {
+                if substitutions >= MAX_TEMPLATE_EXPANSIONS {
+                    break;
+                }
                 if !visited_results.insert(result.clone()) {
                     break;
                 }
@@ -105,7 +120,12 @@ pub(super) fn substitute_templates(value: &mut serde_json::Value, vars: &HashMap
                     let key = result[start + 2..end - 2].trim();
 
                     if let Some(resolved) = vars.get(key) {
-                        result = format!("{}{}{}", &result[..start], resolved, &result[end..]);
+                        let replacement = resolved
+                            .as_str()
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| resolved.to_string());
+                        result = format!("{}{}{}", &result[..start], replacement, &result[end..]);
+                        substitutions += 1;
                     } else {
                         break;
                     }
@@ -136,8 +156,8 @@ mod tests {
     #[test]
     fn substitute_templates_stops_on_cyclic_references() {
         let vars = HashMap::from([
-            ("first".to_string(), "{{second}}".to_string()),
-            ("second".to_string(), "{{first}}".to_string()),
+            ("first".to_string(), serde_json::json!("{{second}}")),
+            ("second".to_string(), serde_json::json!("{{first}}")),
         ]);
         let mut value = serde_json::json!("path {{first}}");
 
@@ -148,12 +168,36 @@ mod tests {
 
     #[test]
     fn substitute_templates_allows_repeated_non_cyclic_keys() {
-        let vars = HashMap::from([("name".to_string(), "Ada".to_string())]);
+        let vars = HashMap::from([("name".to_string(), serde_json::json!("Ada"))]);
         let mut value = serde_json::json!("{{name}} meets {{name}}");
 
         substitute_templates(&mut value, &vars);
 
         assert_eq!(value, serde_json::json!("Ada meets Ada"));
+    }
+
+    #[test]
+    fn substitute_templates_preserves_scalar_json_types() {
+        let vars = HashMap::from([
+            ("limit".to_string(), serde_json::json!(3)),
+            ("enabled".to_string(), serde_json::json!(true)),
+        ]);
+        let mut value = serde_json::json!({
+            "limit": "{{limit}}",
+            "enabled": "{{enabled}}",
+            "summary": "limit={{limit}}, enabled={{enabled}}",
+        });
+
+        substitute_templates(&mut value, &vars);
+
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "limit": 3,
+                "enabled": true,
+                "summary": "limit=3, enabled=true",
+            })
+        );
     }
 
     #[test]
@@ -169,7 +213,7 @@ mod tests {
 
         let vars = extract_tool_result_vars(&messages);
 
-        assert_eq!(vars.get("call_array.0"), Some(&"alpha".to_string()));
-        assert_eq!(vars.get("call_array.1"), Some(&"true".to_string()));
+        assert_eq!(vars.get("call_array.0"), Some(&serde_json::json!("alpha")));
+        assert_eq!(vars.get("call_array.1"), Some(&serde_json::json!(true)));
     }
 }
