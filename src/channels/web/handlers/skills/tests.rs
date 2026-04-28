@@ -166,6 +166,37 @@ async fn upload_skill_bundle_preserves_references_and_assets(skills_api_fixture:
 
 #[rstest]
 #[tokio::test]
+async fn upload_skill_bundle_accepts_case_insensitive_content_type(
+    skills_api_fixture: SkillsApiFixture,
+) {
+    let archive = build_bundle_archive(&[(
+        "deploy-docs/SKILL.md",
+        skill_markdown("deploy-docs").as_bytes(),
+    )]);
+    let (content_type, body) = multipart_file_body("bundle", "deploy-docs.skill", &archive);
+    let content_type = content_type.replacen("multipart/form-data", "Multipart/Form-Data", 1);
+
+    let response = skills_router(Arc::clone(&skills_api_fixture.state))
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/skills/install")
+                .header("x-confirm-action", "true")
+                .header("content-type", content_type)
+                .body(Body::from(body))
+                .expect("request should build"),
+        )
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: serde_json::Value =
+        serde_json::from_str(&response_text(response).await).expect("JSON response expected");
+    assert_eq!(body["success"], true);
+}
+
+#[rstest]
+#[tokio::test]
 async fn upload_skill_bundle_rejects_non_skill_filename(skills_api_fixture: SkillsApiFixture) {
     let archive = build_bundle_archive(&[(
         "deploy-docs/SKILL.md",

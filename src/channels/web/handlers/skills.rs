@@ -275,7 +275,12 @@ fn is_multipart_request(headers: &axum::http::HeaderMap) -> bool {
     headers
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.starts_with("multipart/form-data"))
+        .is_some_and(|value| {
+            value
+                .split(';')
+                .next()
+                .is_some_and(|media_type| media_type.eq_ignore_ascii_case("multipart/form-data"))
+        })
 }
 
 async fn parse_json_install_request(
