@@ -101,11 +101,13 @@ impl DefaultSelfRepair {
         Ok(BuildRequirement {
             name: project_name,
             description: format!(
-                "Repair broken WASM tool.\n\n\
-                 Tool name: {}\n\
-                 Previous error: {}\n\
-                 Failure count: {}\n\n\
-                 Analyze the error, fix the implementation, and rebuild.",
+                concat!(
+                    "Repair broken WASM tool.\n\n",
+                    "Tool name: {}\n",
+                    "Previous error: {}\n",
+                    "Failure count: {}\n\n",
+                    "Analyze the error, fix the implementation, and rebuild."
+                ),
                 tool.name,
                 tool.last_error.as_deref().unwrap_or("Unknown error"),
                 tool.failure_count
