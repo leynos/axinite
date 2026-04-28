@@ -248,3 +248,6 @@
 - [ADR 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`](adr-010-consolidate-bootstrap-rename-helpers.md)
   records the single-helper migration decision for `.migrated` rename
   behaviour and explicit non-fatal call-site handling.
+- [ADR 011: Extract register_wasm helpers to reduce cyclomatic complexity](adr-011-extract-register-wasm-helpers-to-reduce-cyclomatic-complexity.md)
+  records the helper split that keeps the WASM registration path within the
+  repository's complexity threshold.

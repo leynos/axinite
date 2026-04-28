@@ -1144,10 +1144,38 @@ its own exported metadata.
 
 ### Two-phase registration flow
 
+WASM tool registration is split between preparation and registry
+insertion. The preparation helpers live in
+`src/tools/registry/wasm_preparation.rs`, and the public registration
+entry points live in `src/tools/registry/loader.rs`.
+
+`prepare_wasm_tool` compiles the component, gathers credential
+mappings, builds the metadata hints and runtime configuration, recovers
+guest metadata when needed, applies overrides, and returns a
+`PreparedWasmTool`.
+
+- `PreparedWasmTool` carries the prepared wrapper and the credential
+  mappings that must be persisted after successful registration.
+- `WasmMetadataHints` bundles the tool name with optional description
+  and schema overrides.
+- `WasmRuntimeConfig` carries the secrets store and OAuth refresh
+  configuration used while applying wrapper overrides.
+- `recover_guest_metadata` asks the compiled wrapper for exported
+  metadata when the caller did not provide both description and schema.
+- `apply_wasm_overrides` applies explicit description and schema
+  overrides, then attaches runtime-scoped secrets and OAuth
+  configuration.
+- `persist_credential_mappings` stores HTTP credential mappings after
+  registration succeeds.
+
+See [ADR 011](adr-011-extract-register-wasm-helpers-to-reduce-cyclomatic-complexity.md)
+for the helper extraction rationale.
+
 1. **`register_wasm`** — the lower-level entry point. Accepts raw WASM
    bytes, a pre-compiled runtime, and optional description/schema
-   overrides. Compiles the component, recovers guest metadata when
-   overrides are absent, and registers the tool.
+   overrides. It calls `prepare_wasm_tool`, registers the prepared
+   wrapper, and persists credential mappings only after successful
+   registration.
 
 2. **`register_wasm_from_storage`** — the database-driven entry point.
    Loads the stored tool record and binary with integrity verification,
@@ -1267,6 +1295,19 @@ assert_eq!(
     "the first LLM request must carry the schema advertised at registration time"
 );
 ```
+
+
+## 32. Expected follow-up changes
+
+This guide documents the environment as of the current branch. The
+compile-time reduction plan is still expected to change some of the
+standard commands further, especially around shared extension build
+artifacts and CI duplication.
+
+When those changes land, this guide must be updated in the same branch
+so local setup instructions stay truthful.
+
+## 33. Phased startup pipeline
 
 ## 31. Bootstrap migration module
 
@@ -1687,6 +1728,39 @@ let (addr, _state) = TestGatewayBuilder::new()
     .await?;
 ```
 
+
+## 34. Borrowed newtypes for schema helper arguments
+
+Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
+schema and parameter helper signatures explicit without changing the string
+values used in validation error messages.
+
+Caption: Schema helper newtypes.
+
+| Type | Purpose |
+| --- | --- |
+| `ParamName<'a>` | A JSON parameter key expected in tool input |
+| `SchemaPath` | A dot-separated location in a JSON schema |
+| `ToolName<'a>` | A registered tool identifier used as the root strict-schema path |
+
+`ParamName<'a>` and `ToolName<'a>` are zero-cost wrappers over `&'a str`.
+`SchemaPath` owns its path string so nested paths can be constructed while
+descending through schema nodes. All three types implement `From<&str>` and
+`From<&String>` so existing `&str` and `String` call sites continue to compile
+unchanged. `ToolName` additionally converts into `SchemaPath` because the
+strict-schema validator roots its path at the tool name.
+
+Use these types in function signatures that previously accepted a bare `&str`
+or `String` for a parameter name, schema path, or tool name. The types prevent
+accidental argument transposition and make the intent of each parameter clear
+at the call site.
+
+`SchemaPath::child(segment)` returns an owned schema path representing the child
+path `"<parent>.<segment>"`. Use this instead of manual string concatenation
+when descending into nested schema nodes.
+
+These types are re-exported from `src/tools/mod.rs` and are publicly available
+as `crate::tools::{ParamName, SchemaPath, ToolName}`.
 ## 34. Borrowed newtypes for schema helper arguments
 
 Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
