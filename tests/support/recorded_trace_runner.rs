@@ -1,13 +1,9 @@
-//! Helpers for shared `TestRig`-based integration tests.
-//!
-//! Provides small utilities around `TestRigBuilder`, `LlmTrace`, and common
-//! recorded-trace execution patterns used by multiple test binaries.
+//! Helpers for replaying recorded traces through a full `TestRig`.
 
 use std::time::Duration;
 
-use crate::support::trace_llm::LlmTrace;
-
-use super::TestRigBuilder;
+use crate::support::test_rig::TestRigBuilder;
+use crate::support::trace_types::LlmTrace;
 
 /// Load a recorded trace fixture, build a rig, run and verify expects, then shut down.
 ///

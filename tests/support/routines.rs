@@ -8,6 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::{Context, Result};
 use chrono::Utc;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -21,7 +22,8 @@ use ironclaw::safety::SafetyLayer;
 use ironclaw::tools::ToolRegistry;
 use ironclaw::workspace::Workspace;
 
-use crate::support::trace_llm::{LlmTrace, TraceLlm};
+use crate::support::trace_provider::TraceLlm;
+use crate::support::trace_types::LlmTrace;
 
 /// Describes a system event to be emitted in tests.
 pub struct SystemEventSpec<'a> {
@@ -44,14 +46,30 @@ mod db {
     use super::*;
 
     /// Create a temp libSQL database with migrations applied.
-    pub async fn create_test_db() -> Result<(Arc<dyn Database>, TempDir), Box<dyn std::error::Error>>
-    {
+    ///
+    /// # Errors
+    ///
+    /// Returns `Result::Err` with a context-wrapped error when:
+    ///
+    /// - `tempfile::tempdir` fails to create the temp directory:
+    ///   `"failed to create routine test tempdir"`.
+    /// - `LibSqlBackend::new_local` fails to initialize the backend:
+    ///   `"failed to create routine test database at {db_path:?}"`, with the
+    ///   formatted database path.
+    /// - `backend.run_migrations` fails to apply migrations:
+    ///   `"failed to run routine test database migrations"`.
+    pub async fn create_test_db() -> Result<(Arc<dyn Database>, TempDir)> {
         use ironclaw::db::libsql::LibSqlBackend;
 
-        let temp_dir = tempfile::tempdir()?;
+        let temp_dir = tempfile::tempdir().context("failed to create routine test tempdir")?;
         let db_path = temp_dir.path().join("test.db");
-        let backend = LibSqlBackend::new_local(&db_path).await?;
-        backend.run_migrations().await?;
+        let backend = LibSqlBackend::new_local(&db_path)
+            .await
+            .with_context(|| format!("failed to create routine test database at {db_path:?}"))?;
+        backend
+            .run_migrations()
+            .await
+            .context("failed to run routine test database migrations")?;
         let db: Arc<dyn Database> = Arc::new(backend);
         Ok((db, temp_dir))
     }

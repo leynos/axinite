@@ -10,7 +10,9 @@ use crate::support::routines::{
     SystemEventSpec, assert_system_event_count, create_test_db, create_workspace,
     make_minimal_engine, register_github_issue_routine,
 };
-use crate::support::trace_llm::{LlmTrace, TraceResponse, TraceStep};
+use ironclaw::llm::recording::{TraceResponse, TraceStep};
+
+use crate::support::trace_types::LlmTrace;
 
 #[tokio::test]
 async fn system_event_trigger_matches_and_filters() -> anyhow::Result<()> {

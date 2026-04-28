@@ -5,7 +5,7 @@ use std::time::Duration;
 use ironclaw::channels::OutgoingResponse;
 
 use crate::support::test_rig::{TestRig, TestRigBuilder};
-use crate::support::trace_llm::LlmTrace;
+use crate::support::trace_types::LlmTrace;
 
 /// Error type for test harness operations.
 #[derive(Debug)]

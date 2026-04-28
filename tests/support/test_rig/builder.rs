@@ -13,13 +13,14 @@ use ironclaw::app::{AppBuilder, AppBuilderFlags, AppComponents};
 use ironclaw::channels::web::log_layer::LogBroadcaster;
 use ironclaw::config::Config;
 use ironclaw::db::Database;
-use ironclaw::llm::recording::{HttpExchange, ReplayingHttpInterceptor};
+use ironclaw::llm::recording::{HttpExchange, ReplayingHttpInterceptor, TraceResponse, TraceStep};
 use ironclaw::llm::{LlmProvider, SessionConfig, SessionManager};
 use ironclaw::tools::Tool;
 
 use crate::support::instrumented_llm::InstrumentedLlm;
 use crate::support::test_channel::TestChannel;
-use crate::support::trace_llm::{LlmTrace, TraceLlm, TraceResponse, TraceStep};
+use crate::support::trace_provider::TraceLlm;
+use crate::support::trace_types::LlmTrace;
 
 use super::{TestChannelHandle, TestRig};
 

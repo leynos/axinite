@@ -24,7 +24,8 @@ use crate::support::assertions::verify_expects;
 use crate::support::instrumented_llm::InstrumentedLlm;
 use crate::support::metrics::{ToolInvocation, TraceMetrics};
 use crate::support::test_channel::TestChannel;
-use crate::support::trace_llm::{LlmTrace, TraceLlm};
+use crate::support::trace_provider::TraceLlm;
+use crate::support::trace_types::LlmTrace;
 
 /// A running test agent with methods to inject messages and inspect results.
 pub struct TestRig {
@@ -113,16 +114,6 @@ impl TestRig {
         self.channel.captured_status_events()
     }
 
-    /// Return a snapshot of all captured status events without panicking on contention.
-    pub async fn captured_status_events_async(&self) -> Vec<StatusUpdate> {
-        self.channel.captured_status_events_async().await
-    }
-
-    /// Clear all captured responses and status events.
-    pub async fn clear(&self) {
-        self.channel.clear().await;
-    }
-
     /// Number of LLM calls made so far.
     pub fn llm_call_count(&self) -> u32 {
         self.instrumented_llm.call_count()
@@ -136,11 +127,6 @@ impl TestRig {
     /// Total output tokens across all LLM calls.
     pub fn total_output_tokens(&self) -> u32 {
         self.instrumented_llm.total_output_tokens()
-    }
-
-    /// Estimated total cost in USD.
-    pub fn estimated_cost_usd(&self) -> f64 {
-        self.instrumented_llm.estimated_cost_usd()
     }
 
     /// Wall-clock time since rig creation.
@@ -295,14 +281,6 @@ impl TestRig {
     #[cfg(feature = "libsql")]
     pub fn trace_llm(&self) -> Option<&Arc<TraceLlm>> {
         self.trace_llm.as_ref()
-    }
-
-    /// Check if any captured status events contain safety/injection warnings.
-    pub fn has_safety_warnings(&self) -> bool {
-        self.captured_status_events().iter().any(|status| {
-            matches!(status, StatusUpdate::Status(message) if message.contains("sanitiz")
-                || message.contains("inject") || message.contains("warning"))
-        })
     }
 }
 

@@ -5,6 +5,7 @@
 // binaries do not compile them through the shared `support` facade.
 #[path = "support/fixtures.rs"]
 mod fixtures;
+#[path = "support/e2e.rs"]
 mod support;
 
 #[path = "e2e_traces/advanced_traces.rs"]

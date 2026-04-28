@@ -1,6 +1,7 @@
 //! Trace LLM request-hint and deserialisation contract tests.
 
-use crate::support::trace_llm::*;
+use crate::support::trace_provider::TraceLlm;
+use crate::support::trace_types::LlmTrace;
 use anyhow::{Context, Result};
 use ironclaw::llm::{ChatMessage, LlmProvider, ToolCompletionRequest};
 use rstest::rstest;
@@ -77,6 +78,7 @@ fn deserialize_flat_steps_as_single_turn() {
     assert_eq!(trace.turns.len(), 1);
     assert_eq!(trace.turns[0].user_input, "(test input)");
     assert_eq!(trace.turns[0].steps.len(), 1);
+    assert_eq!(trace.playable_steps().len(), 1);
 }
 
 #[test]

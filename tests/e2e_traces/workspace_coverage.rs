@@ -3,11 +3,10 @@
 //! Covers chunking, multi-document search, hybrid search, directory tree,
 //! document lifecycle (write/read/overwrite), and identity in system prompt.
 
-use std::time::Duration;
-
+use crate::fixtures::{DEFAULT_TIMEOUT, LONG_TIMEOUT, fixture_path};
 use crate::support::assertions::assert_tool_result_contains;
 use crate::support::test_rig::TestRigBuilder;
-use crate::support::trace_llm::LlmTrace;
+use crate::support::trace_types::LlmTrace;
 
 // -----------------------------------------------------------------------
 // Test 1: write_chunk_search
@@ -15,12 +14,9 @@ use crate::support::trace_llm::LlmTrace;
 
 #[tokio::test]
 async fn write_chunk_search() {
-    let trace = LlmTrace::from_file_async(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/workspace/write_chunk_search.json"
-    ))
-    .await
-    .expect("failed to load write_chunk_search.json");
+    let trace = LlmTrace::from_file_async(fixture_path("workspace", "write_chunk_search.json"))
+        .await
+        .expect("failed to load write_chunk_search.json");
 
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -30,7 +26,7 @@ async fn write_chunk_search() {
 
     rig.send_message("Write a long architecture document and search it")
         .await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     rig.verify_trace_expects(&trace, &responses);
 
@@ -72,12 +68,9 @@ async fn write_chunk_search() {
 
 #[tokio::test]
 async fn multi_document_search() {
-    let trace = LlmTrace::from_file_async(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/workspace/multi_doc_search.json"
-    ))
-    .await
-    .expect("failed to load multi_doc_search.json");
+    let trace = LlmTrace::from_file_async(fixture_path("workspace", "multi_doc_search.json"))
+        .await
+        .expect("failed to load multi_doc_search.json");
 
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -87,7 +80,7 @@ async fn multi_document_search() {
 
     rig.send_message("Write three docs and search across them")
         .await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     rig.verify_trace_expects(&trace, &responses);
 
@@ -116,12 +109,9 @@ async fn multi_document_search() {
 
 #[tokio::test]
 async fn hybrid_search_keyword_pipeline() {
-    let trace = LlmTrace::from_file_async(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/workspace/hybrid_search.json"
-    ))
-    .await
-    .expect("failed to load hybrid_search.json");
+    let trace = LlmTrace::from_file_async(fixture_path("workspace", "hybrid_search.json"))
+        .await
+        .expect("failed to load hybrid_search.json");
 
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -131,7 +121,7 @@ async fn hybrid_search_keyword_pipeline() {
 
     rig.send_message("Write and semantically search for ML content")
         .await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     rig.verify_trace_expects(&trace, &responses);
 
@@ -157,12 +147,9 @@ async fn hybrid_search_keyword_pipeline() {
 
 #[tokio::test]
 async fn directory_tree() {
-    let trace = LlmTrace::from_file_async(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/workspace/directory_tree.json"
-    ))
-    .await
-    .expect("failed to load directory_tree.json");
+    let trace = LlmTrace::from_file_async(fixture_path("workspace", "directory_tree.json"))
+        .await
+        .expect("failed to load directory_tree.json");
 
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -172,7 +159,7 @@ async fn directory_tree() {
 
     rig.send_message("Write files in a hierarchy and show the tree")
         .await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     rig.verify_trace_expects(&trace, &responses);
 
@@ -197,12 +184,9 @@ async fn directory_tree() {
 
 #[tokio::test]
 async fn document_lifecycle() {
-    let trace = LlmTrace::from_file_async(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/workspace/doc_lifecycle.json"
-    ))
-    .await
-    .expect("failed to load doc_lifecycle.json");
+    let trace = LlmTrace::from_file_async(fixture_path("workspace", "doc_lifecycle.json"))
+        .await
+        .expect("failed to load doc_lifecycle.json");
 
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -212,7 +196,7 @@ async fn document_lifecycle() {
 
     rig.send_message("Write, read, overwrite, and read a document")
         .await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    let responses = rig.wait_for_responses(1, LONG_TIMEOUT).await;
 
     rig.verify_trace_expects(&trace, &responses);
 
@@ -250,12 +234,9 @@ async fn document_lifecycle() {
 
 #[tokio::test]
 async fn identity_in_system_prompt() {
-    let trace = LlmTrace::from_file_async(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/llm_traces/workspace/identity_prompt.json"
-    ))
-    .await
-    .expect("failed to load identity_prompt.json");
+    let trace = LlmTrace::from_file_async(fixture_path("workspace", "identity_prompt.json"))
+        .await
+        .expect("failed to load identity_prompt.json");
 
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
@@ -273,7 +254,7 @@ async fn identity_in_system_prompt() {
     .expect("write IDENTITY.md");
 
     rig.send_message("Who are you?").await;
-    let responses = rig.wait_for_responses(1, Duration::from_secs(15)).await;
+    let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;
 
     rig.verify_trace_expects(&trace, &responses);
 

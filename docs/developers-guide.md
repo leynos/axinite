@@ -6,6 +6,51 @@ reproducing the build and test workflows on this branch.
 For the current system architecture and subsystem boundaries, see
 [`docs/axinite-architecture-overview.md`](axinite-architecture-overview.md).
 
+
+## 1. Purpose
+
+Linux continuous integration (CI) on this branch now uses `mold` to
+reduce linker time. The
+compile-time reduction plan assumes local contributors can reproduce
+that setup before they measure anything or change build defaults.
+
+This guide documents the required and optional tools for common
+workflows so contributors do not discover missing prerequisites halfway
+through a build.
+
+## 1. Purpose
+
+Linux continuous integration (CI) on this branch now uses `mold` to
+reduce linker time. The
+compile-time reduction plan assumes local contributors can reproduce
+that setup before they measure anything or change build defaults.
+
+This guide documents the required and optional tools for common
+workflows so contributors do not discover missing prerequisites halfway
+through a build.
+
+## 1. Purpose
+
+Linux continuous integration (CI) on this branch now uses `mold` to
+reduce linker time. The
+compile-time reduction plan assumes local contributors can reproduce
+that setup before they measure anything or change build defaults.
+
+This guide documents the required and optional tools for common
+workflows so contributors do not discover missing prerequisites halfway
+through a build.
+
+## 1. Purpose
+
+Linux continuous integration (CI) on this branch now uses `mold` to
+reduce linker time. The
+compile-time reduction plan assumes local contributors can reproduce
+that setup before they measure anything or change build defaults.
+
+This guide documents the required and optional tools for common
+workflows so contributors do not discover missing prerequisites halfway
+through a build.
+
 ## 1. Purpose
 
 Linux continuous integration (CI) on this branch now uses `mold` to
@@ -25,6 +70,7 @@ because the current branch already uses `mold` in Linux CI.
 
 For compile-time or CI changes, prefer Linux or WSL so local results
 line up with the current CI setup.
+
 
 ## 3. Required tools
 
@@ -46,6 +92,7 @@ repository also includes standalone WebAssembly (WASM) tool and channel
 crates, so WASM tooling is required for more than release-only
 workflows.
 
+
 ## 4. Extra tools for the compile-time reduction effort
 
 Install these extra tools for work on the compile-time reduction plan:
@@ -55,6 +102,7 @@ Install these extra tools for work on the compile-time reduction plan:
 `cargo-nextest` is now part of the standard local test path on this
 branch because `make test` uses it for the root crate. The timing tool
 remains specific to the compile-time reduction work.
+
 
 ## 5. CI build environment
 
@@ -80,6 +128,7 @@ example, the
 `print_startup_info_matches_snapshot` test in `src/startup/boot.rs`. The crate
 is compiled only when running tests and has no effect on the production binary.
 
+
 ## 6. Optional tools by workflow
 
 These tools are not required for every contributor, but they are needed
@@ -93,6 +142,7 @@ for specific work:
 - Python 3.12 plus Playwright for work on `tests/e2e` or the end-to-end
   (E2E) coverage workflow.
 - `cargo-llvm-cov` for local coverage work.
+
 
 ## 7. Linux and WSL setup
 
@@ -125,6 +175,7 @@ For local coverage support:
 cargo install cargo-llvm-cov --locked
 ```
 
+
 ## 8. Local mold configuration
 
 The repository now checks in Linux linker settings in
@@ -148,6 +199,7 @@ A quick verification command is:
 ```bash
 sed -n '1,40p' .cargo/config.toml
 ```
+
 
 ## 9. Repository bootstrap
 
@@ -173,6 +225,7 @@ The current `Makefile` also includes:
   registered channels into the shared `target/wasm-extensions/` cache.
 - `make clean` to remove Cargo build outputs for the root crate and the
   GitHub tool crate.
+
 
 ## 10. Integration test fixture wiring
 
@@ -324,8 +377,7 @@ Common helpers include:
   case-insensitive response text checks
 - `assert_tools_used`, `assert_tools_not_used`, `assert_tool_order`, and
   `assert_max_tool_calls` for tool-call sequencing assertions
-- `assert_all_tools_succeeded` and `assert_tool_succeeded` for completed-tool
-  status checks
+- `assert_all_tools_succeeded` for completed-tool status checks
 - `assert_tool_result_contains` for case-insensitive preview matching against
   the captured `(tool_name, preview)` results emitted by the test rig
 - `verify_expects` for applying `TraceExpects` fixtures to a captured test run
@@ -333,6 +385,156 @@ Common helpers include:
 Keep broad behavioural coverage in the E2E trace fixtures, and place focused
 helper regression tests in `tests/support_unit_tests/assertions_tests.rs` so
 they run once instead of being duplicated across every E2E binary.
+
+
+##### Test-support module architecture
+
+###### Harness-specific support roots
+
+Each top-level Rust file under `tests/` is a separate integration-test crate.
+The crate declares its own support boundary with a `#[path = "support/*.rs"]`
+module instead of importing a single global `tests/support/mod.rs`. That keeps
+trace replay, channel helpers, webhook helpers, and unit-only support code out
+of harnesses that do not need them.
+
+Current support-root mapping:
+
+Table: Support root mapping for test harnesses
+
+| Harness entrypoint | Support root | Intended ownership |
+| --- | --- | --- |
+| `tests/channels.rs` | `tests/support/channels.rs` | Channel-focused helpers, currently `telegram` |
+| `tests/e2e_traces.rs` | `tests/support/e2e.rs` | Trace-driven E2E helpers, `TestRig`, assertions, metrics, and routine helpers |
+| `tests/infrastructure.rs` | `tests/support/infrastructure.rs` | Infrastructure helpers such as `webhook_helpers` |
+| `tests/support_unit_tests.rs` | `tests/support/support_unit.rs` | Tests for support modules and trace-helper internals |
+| `tests/tools_and_config.rs` | `tests/support/tools_and_config.rs` | Trace-format and WASM schema helper imports |
+| `tests/webhook_server.rs` | `tests/support/webhook.rs` | Webhook-server helper modules |
+
+For example, `tests/infrastructure.rs` owns this boundary:
+
+```rust
+#[path = "support/infrastructure.rs"]
+mod support;
+```
+
+The support root in `tests/support/infrastructure.rs` then decides which
+sibling support files are visible to that harness:
+
+```rust
+pub mod webhook_helpers;
+```
+
+An infrastructure test imports through its harness-local root:
+
+```rust
+use crate::support::webhook_helpers;
+```
+
+Channel-focused tests follow the same model. `tests/channels.rs` declares
+`#[path = "support/channels.rs"] mod support;`, and
+`tests/support/channels.rs` exposes channel helper modules. The canonical
+channel helper is conceptually `tests::support::channels::telegram`; inside the
+integration-test crate, import it via the harness-local path:
+
+```rust
+use crate::support::telegram::{
+    create_test_runtime,
+    load_telegram_module,
+    telegram_wasm_path,
+};
+```
+
+Add new channel-specific helpers as public submodules of
+`tests/support/channels.rs` using the channel name as the module name. Keep
+shared helpers private unless another harness root deliberately exposes them.
+
+Trace helpers now live under the support root that needs them. E2E trace tests
+use `tests/support/e2e.rs`, which exposes `trace_types`, `trace_provider`, and
+`test_rig`. Support-module unit tests use `tests/support/support_unit.rs`,
+which exposes the trace modules plus private diagnostic, builder, recorded, and
+runtime extension modules. Tools/config tests use
+`tests/support/tools_and_config.rs`, which exposes only `trace_types` and the
+recorded-trace deserialization extension needed for trace-format tests.
+
+When migrating or adding tests:
+
+- declare `#[path = "support/<domain>.rs"] mod support;` in the harness
+  entrypoint;
+- add helper modules to the narrowest support root that owns the behaviour;
+- import from the real owner, for example `crate::support::trace_types::LlmTrace`
+  or `crate::support::trace_provider::TraceLlm`;
+- import recording data types directly from `ironclaw::llm::recording`;
+- do not recreate a global `tests/support/mod.rs` or a broad re-export facade.
+
+###### Import ownership boundaries
+
+`LlmTrace` now keeps its core data shape in `tests/support/trace_types.rs`, but
+its helper methods are defined in narrower `impl` files:
+
+- `tests/support/trace_types_builders.rs` for constructor-style builders such
+  as `LlmTrace::new(...)`
+- `tests/support/trace_types_runtime.rs` for runtime helpers such as
+  `LlmTrace::single_turn(...)` and `LlmTrace::from_file_async(...)`
+- `tests/support/trace_types_patch.rs` for trace-fixture patching via
+  `LlmTrace::patch_path(...)`
+- `tests/support/trace_types_recorded.rs` for recorded-trace inspection such
+  as `LlmTrace::playable_steps()`
+
+Consumers should import `LlmTrace` from the harness support root that exposes
+it, for example `crate::support::trace_types::LlmTrace`, and let the support
+root decide which helper impl files compile into that test binary. Do not add a
+new re-export shim for these methods.
+
+###### `TraceLlm` diagnostics
+
+`TraceLlm::from_file_async(...)`, `TraceLlm::calls()`, and
+`TraceLlm::hint_mismatches()` live in
+`tests/support/trace_provider_diagnostics.rs` as a separate `impl TraceLlm`
+block. Only support roots that include that file compile those diagnostics.
+Today that means `tests/support/support_unit.rs` opts in so
+`tests/support_unit_tests.rs` can exercise the diagnostic surface without
+forcing unrelated harnesses to compile it.
+
+The same split also defines the internal `pub(super)` field boundary in
+`tests/support/trace_provider.rs`. Only the sibling diagnostics module in
+`tests/support/trace_provider_diagnostics.rs` may read those fields directly;
+external harness code and unrelated support modules should go through the
+public helpers instead. The exposed fields are `TraceLlmState::index`, which
+is the replay cursor, `TraceLlm::inner`, which is the
+`Mutex<TraceLlmState>` protecting replay state, and
+`TraceLlm::hint_mismatches`, which is an `AtomicUsize` tracking hint
+validation mismatches.
+
+`TraceLlmState::index` is a monotonically increasing `usize` replay cursor. It
+must be mutated only while holding `TraceLlm::inner`, and replay code should
+use `TraceLlm::next_step(...)` rather than open-coding its own
+read-modify-write sequence. In normal operation the cursor stays in the range
+`0..=steps.len()`. Any overflow indicates runaway replay or invalid trace data,
+not a recoverable condition.
+
+`captured_requests` is owned by `TraceLlmState` and protected by
+`inner: Mutex<TraceLlmState>`, so request capture and cursor movement remain in
+one critical section. `hint_mismatches` is separate from that mutex because
+hint validation only needs lock-free accounting. Reads happen through
+`TraceLlm::hint_mismatches()`, which uses relaxed ordering, and writes use a
+checked relaxed `fetch_update(...)` increment so overflow fails fast instead
+of wrapping silently. Read-only diagnostic access should therefore stay behind
+`TraceLlm::calls()` and `TraceLlm::hint_mismatches()`, and new direct field
+access should not be added outside `trace_provider_diagnostics.rs`.
+
+See `tests/support_unit_tests/trace_llm_tests.rs` for replay and call-count
+examples, and `tests/support_unit_tests/trace_llm_contract_tests.rs` for the
+request-hint mismatch contract in practice.
+
+###### Rationale
+
+The old `tests/support/mod.rs` compiled into every integration-test harness,
+including binaries that only needed a small subset of the shared helpers. That
+forced broad `#[allow(dead_code)]` and `#[allow(unused_imports)]` suppressions,
+plus touch-style references to keep trace support reachable. The current
+support-root model makes each harness opt in to only the helpers it actually
+uses, which removes those global suppressions and keeps dead-code feedback
+local to the owning harness.
 
 #### AppBuilderFlags
 
@@ -344,6 +546,99 @@ Table: `AppBuilderFlags` fields and effects.
 | --- | --- | --- |
 | `no_db` | `bool` | Skip database initialization |
 | `workspace_import_dir` | `Option<PathBuf>` | Directory to import into the workspace on activation; captured at construction so `RuntimeSideEffects::start()` does not re-read the environment |
+
+
+## 13. Fast local validation loop
+
+For quick host-side iteration on Linux or WSL with the current branch
+assumptions:
+
+```bash
+set -o pipefail
+/usr/bin/time -f 'ELAPSED %E\nMAXRSS_KB %M' \
+  cargo check --no-default-features --features libsql --timings \
+  2>&1 | tee /tmp/check-ironclaw-$(git branch --show-current | tr '/' '-').out
+```
+
+The standard fast host-side test path is now:
+
+```bash
+set -o pipefail
+cargo nextest run --workspace --no-default-features --features libsql \
+  2>&1 | tee /tmp/nextest-ironclaw-$(git branch --show-current | tr '/' '-').out
+```
+
+To compare behaviour against the legacy harness, use `make test-cargo`
+or `make test-matrix-cargo`.
+
+## 13. Fast local validation loop
+
+For quick host-side iteration on Linux or WSL with the current branch
+assumptions:
+
+```bash
+set -o pipefail
+/usr/bin/time -f 'ELAPSED %E\nMAXRSS_KB %M' \
+  cargo check --no-default-features --features libsql --timings \
+  2>&1 | tee /tmp/check-ironclaw-$(git branch --show-current | tr '/' '-').out
+```
+
+The standard fast host-side test path is now:
+
+```bash
+set -o pipefail
+cargo nextest run --workspace --no-default-features --features libsql \
+  2>&1 | tee /tmp/nextest-ironclaw-$(git branch --show-current | tr '/' '-').out
+```
+
+To compare behaviour against the legacy harness, use `make test-cargo`
+or `make test-matrix-cargo`.
+
+## 13. Fast local validation loop
+
+For quick host-side iteration on Linux or WSL with the current branch
+assumptions:
+
+```bash
+set -o pipefail
+/usr/bin/time -f 'ELAPSED %E\nMAXRSS_KB %M' \
+  cargo check --no-default-features --features libsql --timings \
+  2>&1 | tee /tmp/check-ironclaw-$(git branch --show-current | tr '/' '-').out
+```
+
+The standard fast host-side test path is now:
+
+```bash
+set -o pipefail
+cargo nextest run --workspace --no-default-features --features libsql \
+  2>&1 | tee /tmp/nextest-ironclaw-$(git branch --show-current | tr '/' '-').out
+```
+
+To compare behaviour against the legacy harness, use `make test-cargo`
+or `make test-matrix-cargo`.
+
+## 13. Fast local validation loop
+
+For quick host-side iteration on Linux or WSL with the current branch
+assumptions:
+
+```bash
+set -o pipefail
+/usr/bin/time -f 'ELAPSED %E\nMAXRSS_KB %M' \
+  cargo check --no-default-features --features libsql --timings \
+  2>&1 | tee /tmp/check-ironclaw-$(git branch --show-current | tr '/' '-').out
+```
+
+The standard fast host-side test path is now:
+
+```bash
+set -o pipefail
+cargo nextest run --workspace --no-default-features --features libsql \
+  2>&1 | tee /tmp/nextest-ironclaw-$(git branch --show-current | tr '/' '-').out
+```
+
+To compare behaviour against the legacy harness, use `make test-cargo`
+or `make test-matrix-cargo`.
 
 ## 13. Fast local validation loop
 
@@ -403,6 +698,7 @@ When modifying this path, keep three invariants in mind:
   [Jobs and Routines](./jobs-and-routines.md) and the
   [User's Guide](./users-guide.md).
 
+
 ## 15. Database-backed work
 
 For work on the default feature set or PostgreSQL-backed tests, prepare
@@ -430,6 +726,7 @@ export DATABASE_URL=postgres://localhost/ironclaw
 
 Adjust the connection string if the local PostgreSQL instance requires a
 different host, user, or password.
+
 
 ### libSQL test databases
 
@@ -491,6 +788,127 @@ The `busy_timeout` PRAGMA that each store previously ran after connecting
 is now applied once inside `LibSqlDatabase::connect()`, so it is no longer
 necessary — and must not be duplicated — in individual store
 `connect()` methods.
+
+
+## 16. Dispatcher architecture
+
+The dispatcher orchestrates interactive chat turns by preparing an LLM
+`ReasoningContext`, running a tool-aware agentic loop, and converting
+loop outcomes into channel outputs. It is decomposed into three layers:
+
+- Core (`src/agent/dispatcher/core.rs`): builds `RunLoopCtx`, computes
+  iteration thresholds via `compute_loop_thresholds` (yields
+  `LoopThresholds { nudge_at, force_text_at, hard_ceiling }`), prepares
+  prompts and active skills, and instantiates the delegate.
+- Delegate (`src/agent/dispatcher/delegate/*`): per-iteration control
+  — prompt refresh; LLM call; three-phase tool pipeline (preflight →
+  execution → post-flight); status, auth, and image-sentinel handling.
+- Types (`src/agent/dispatcher/types.rs`): pure helpers and simple data
+  structures (preview truncation, auth parsing, message compaction,
+  etc.).
+
+Key dispatcher APIs:
+
+- `RunLoopCtx`: per-run container that carries the session handle,
+  `thread_id`, and the turn's initial messages.
+- `compute_loop_thresholds(max_tool_iterations) -> LoopThresholds`:
+  - `nudge_at`: inject a gentle “prefer text” hint before forcing text.
+  - `force_text_at`: disable tools and force the LLM to produce text.
+  - `hard_ceiling`: safety net that guarantees termination.
+- `ChatDelegate` (internal): implements preflight, execution
+  (inline/parallel), ordered post-flight folding, status broadcast, and
+  auth/image side-effects. Status-send failures are explicitly ignored
+  to keep UI updates non-blocking.
+
+## 16. Dispatcher architecture
+
+The dispatcher orchestrates interactive chat turns by preparing an LLM
+`ReasoningContext`, running a tool-aware agentic loop, and converting
+loop outcomes into channel outputs. It is decomposed into three layers:
+
+- Core (`src/agent/dispatcher/core.rs`): builds `RunLoopCtx`, computes
+  iteration thresholds via `compute_loop_thresholds` (yields
+  `LoopThresholds { nudge_at, force_text_at, hard_ceiling }`), prepares
+  prompts and active skills, and instantiates the delegate.
+- Delegate (`src/agent/dispatcher/delegate/*`): per-iteration control
+  — prompt refresh; LLM call; three-phase tool pipeline (preflight →
+  execution → post-flight); status, auth, and image-sentinel handling.
+- Types (`src/agent/dispatcher/types.rs`): pure helpers and simple data
+  structures (preview truncation, auth parsing, message compaction,
+  etc.).
+
+Key dispatcher APIs:
+
+- `RunLoopCtx`: per-run container that carries the session handle,
+  `thread_id`, and the turn's initial messages.
+- `compute_loop_thresholds(max_tool_iterations) -> LoopThresholds`:
+  - `nudge_at`: inject a gentle “prefer text” hint before forcing text.
+  - `force_text_at`: disable tools and force the LLM to produce text.
+  - `hard_ceiling`: safety net that guarantees termination.
+- `ChatDelegate` (internal): implements preflight, execution
+  (inline/parallel), ordered post-flight folding, status broadcast, and
+  auth/image side-effects. Status-send failures are explicitly ignored
+  to keep UI updates non-blocking.
+
+## 16. Dispatcher architecture
+
+The dispatcher orchestrates interactive chat turns by preparing an LLM
+`ReasoningContext`, running a tool-aware agentic loop, and converting
+loop outcomes into channel outputs. It is decomposed into three layers:
+
+- Core (`src/agent/dispatcher/core.rs`): builds `RunLoopCtx`, computes
+  iteration thresholds via `compute_loop_thresholds` (yields
+  `LoopThresholds { nudge_at, force_text_at, hard_ceiling }`), prepares
+  prompts and active skills, and instantiates the delegate.
+- Delegate (`src/agent/dispatcher/delegate/*`): per-iteration control
+  — prompt refresh; LLM call; three-phase tool pipeline (preflight →
+  execution → post-flight); status, auth, and image-sentinel handling.
+- Types (`src/agent/dispatcher/types.rs`): pure helpers and simple data
+  structures (preview truncation, auth parsing, message compaction,
+  etc.).
+
+Key dispatcher APIs:
+
+- `RunLoopCtx`: per-run container that carries the session handle,
+  `thread_id`, and the turn's initial messages.
+- `compute_loop_thresholds(max_tool_iterations) -> LoopThresholds`:
+  - `nudge_at`: inject a gentle “prefer text” hint before forcing text.
+  - `force_text_at`: disable tools and force the LLM to produce text.
+  - `hard_ceiling`: safety net that guarantees termination.
+- `ChatDelegate` (internal): implements preflight, execution
+  (inline/parallel), ordered post-flight folding, status broadcast, and
+  auth/image side-effects. Status-send failures are explicitly ignored
+  to keep UI updates non-blocking.
+
+## 16. Dispatcher architecture
+
+The dispatcher orchestrates interactive chat turns by preparing an LLM
+`ReasoningContext`, running a tool-aware agentic loop, and converting
+loop outcomes into channel outputs. It is decomposed into three layers:
+
+- Core (`src/agent/dispatcher/core.rs`): builds `RunLoopCtx`, computes
+  iteration thresholds via `compute_loop_thresholds` (yields
+  `LoopThresholds { nudge_at, force_text_at, hard_ceiling }`), prepares
+  prompts and active skills, and instantiates the delegate.
+- Delegate (`src/agent/dispatcher/delegate/*`): per-iteration control
+  — prompt refresh; LLM call; three-phase tool pipeline (preflight →
+  execution → post-flight); status, auth, and image-sentinel handling.
+- Types (`src/agent/dispatcher/types.rs`): pure helpers and simple data
+  structures (preview truncation, auth parsing, message compaction,
+  etc.).
+
+Key dispatcher APIs:
+
+- `RunLoopCtx`: per-run container that carries the session handle,
+  `thread_id`, and the turn's initial messages.
+- `compute_loop_thresholds(max_tool_iterations) -> LoopThresholds`:
+  - `nudge_at`: inject a gentle “prefer text” hint before forcing text.
+  - `force_text_at`: disable tools and force the LLM to produce text.
+  - `hard_ceiling`: safety net that guarantees termination.
+- `ChatDelegate` (internal): implements preflight, execution
+  (inline/parallel), ordered post-flight folding, status broadcast, and
+  auth/image side-effects. Status-send failures are explicitly ignored
+  to keep UI updates non-blocking.
 
 ## 16. Dispatcher architecture
 
@@ -619,6 +1037,71 @@ Migration guidance:
 - add rollback regression coverage for both supported backends before
   releasing new terminal transitions
 
+
+## 17. End-to-end (E2E) prerequisites
+
+For browser-based tests:
+
+```bash
+python3 --version
+cd tests/e2e
+pip install -e .
+playwright install --with-deps chromium
+```
+
+The CI E2E workflow currently builds the binary once, uploads it, and
+fans test slices out from that artifact. That is the closest existing
+example of the faster compile-once, fan-out pattern the compile-time
+reduction effort should reuse elsewhere.
+
+## 17. End-to-end (E2E) prerequisites
+
+For browser-based tests:
+
+```bash
+python3 --version
+cd tests/e2e
+pip install -e .
+playwright install --with-deps chromium
+```
+
+The CI E2E workflow currently builds the binary once, uploads it, and
+fans test slices out from that artifact. That is the closest existing
+example of the faster compile-once, fan-out pattern the compile-time
+reduction effort should reuse elsewhere.
+
+## 17. End-to-end (E2E) prerequisites
+
+For browser-based tests:
+
+```bash
+python3 --version
+cd tests/e2e
+pip install -e .
+playwright install --with-deps chromium
+```
+
+The CI E2E workflow currently builds the binary once, uploads it, and
+fans test slices out from that artifact. That is the closest existing
+example of the faster compile-once, fan-out pattern the compile-time
+reduction effort should reuse elsewhere.
+
+## 17. End-to-end (E2E) prerequisites
+
+For browser-based tests:
+
+```bash
+python3 --version
+cd tests/e2e
+pip install -e .
+playwright install --with-deps chromium
+```
+
+The CI E2E workflow currently builds the binary once, uploads it, and
+fans test slices out from that artifact. That is the closest existing
+example of the faster compile-once, fan-out pattern the compile-time
+reduction effort should reuse elsewhere.
+
 ## 17. End-to-end (E2E) prerequisites
 
 For browser-based tests:
@@ -640,10 +1123,10 @@ reduction effort should reuse elsewhere.
 Three test-support helpers were added in PR `#161` to make replay-based
 and worker-coverage tests more reliable.
 
+
 ### `load_trace_with_mutation`
 
-Declared in `tests/support/trace_types.rs`, re-exported from
-`tests/support/trace_llm.rs`.
+Declared in `tests/support/trace_types.rs`.
 
 Signature:
 
@@ -713,6 +1196,211 @@ pub async fn captured_status_events_async(&self) -> Vec<StatusUpdate>
 Returns a snapshot of all captured `StatusUpdate` values using an
 awaited mutex lock. Use this when contention on the status-event lock
 would cause `captured_status_events` to panic.
+
+
+## 19. WASM-specific notes
+
+The repository contains standalone WASM tool and channel crates. Normal
+host commands such as `cargo check`, `make typecheck`, and `make test`
+no longer auto-build Telegram or other channels from `build.rs`.
+
+The WASM toolchain is still required when intentionally building
+extensions because:
+
+- the GitHub WASM tool is built explicitly by `make build-github-tool-wasm`,
+- channel build scripts rely on `cargo-component` and `wasm-tools`,
+- some CI and release paths rebuild channels or tools as part of
+  validation.
+
+When WIT files, standalone extension crates, or channel code change,
+expect the WASM toolchain requirements to apply even if the main focus
+is the Rust host crate. Common explicit commands are:
+
+- `./scripts/build-wasm-extensions.sh --channels` for all registered
+  channels; by default it reuses the shared
+  `target/wasm-extensions/` target dir,
+- `./channels-src/telegram/build.sh` for a deployable Telegram channel
+  artifact with `telegram.wasm`.
+
+For host-side tests that need a real GitHub WASM component instead of a
+hand-built fixture, use the shared helper in `src/testing/mod.rs`:
+`github_wasm_wrapper() -> anyhow::Result<WasmToolWrapper>`.
+
+This helper:
+
+- builds a `WasmToolWrapper` around the shared GitHub test artifact,
+- recovers the exported description and schema before returning, so the
+  wrapper exposes the same advertised contract used by runtime
+  fallback-guidance tests,
+- avoids duplicating WASM runtime preparation in each test module.
+
+Typical usage from an async test or `rstest` fixture is:
+
+```rust
+use ironclaw::testing::github_wasm_wrapper;
+
+#[tokio::test]
+async fn github_wasm_fixture_executes() -> anyhow::Result<()> {
+    let wrapper = github_wasm_wrapper().await?;
+    let definition = wrapper.definition();
+
+    assert_eq!(definition.name, "github");
+    Ok(())
+}
+```
+
+## 19. WASM-specific notes
+
+The repository contains standalone WASM tool and channel crates. Normal
+host commands such as `cargo check`, `make typecheck`, and `make test`
+no longer auto-build Telegram or other channels from `build.rs`.
+
+The WASM toolchain is still required when intentionally building
+extensions because:
+
+- the GitHub WASM tool is built explicitly by `make build-github-tool-wasm`,
+- channel build scripts rely on `cargo-component` and `wasm-tools`,
+- some CI and release paths rebuild channels or tools as part of
+  validation.
+
+When WIT files, standalone extension crates, or channel code change,
+expect the WASM toolchain requirements to apply even if the main focus
+is the Rust host crate. Common explicit commands are:
+
+- `./scripts/build-wasm-extensions.sh --channels` for all registered
+  channels; by default it reuses the shared
+  `target/wasm-extensions/` target dir,
+- `./channels-src/telegram/build.sh` for a deployable Telegram channel
+  artifact with `telegram.wasm`.
+
+For host-side tests that need a real GitHub WASM component instead of a
+hand-built fixture, use the shared helper in `src/testing/mod.rs`:
+`github_wasm_wrapper() -> anyhow::Result<WasmToolWrapper>`.
+
+This helper:
+
+- builds a `WasmToolWrapper` around the shared GitHub test artifact,
+- recovers the exported description and schema before returning, so the
+  wrapper exposes the same advertised contract used by runtime
+  fallback-guidance tests,
+- avoids duplicating WASM runtime preparation in each test module.
+
+Typical usage from an async test or `rstest` fixture is:
+
+```rust
+use ironclaw::testing::github_wasm_wrapper;
+
+#[tokio::test]
+async fn github_wasm_fixture_executes() -> anyhow::Result<()> {
+    let wrapper = github_wasm_wrapper().await?;
+    let definition = wrapper.definition();
+
+    assert_eq!(definition.name, "github");
+    Ok(())
+}
+```
+
+## 19. WASM-specific notes
+
+The repository contains standalone WASM tool and channel crates. Normal
+host commands such as `cargo check`, `make typecheck`, and `make test`
+no longer auto-build Telegram or other channels from `build.rs`.
+
+The WASM toolchain is still required when intentionally building
+extensions because:
+
+- the GitHub WASM tool is built explicitly by `make build-github-tool-wasm`,
+- channel build scripts rely on `cargo-component` and `wasm-tools`,
+- some CI and release paths rebuild channels or tools as part of
+  validation.
+
+When WIT files, standalone extension crates, or channel code change,
+expect the WASM toolchain requirements to apply even if the main focus
+is the Rust host crate. Common explicit commands are:
+
+- `./scripts/build-wasm-extensions.sh --channels` for all registered
+  channels; by default it reuses the shared
+  `target/wasm-extensions/` target dir,
+- `./channels-src/telegram/build.sh` for a deployable Telegram channel
+  artifact with `telegram.wasm`.
+
+For host-side tests that need a real GitHub WASM component instead of a
+hand-built fixture, use the shared helper in `src/testing/mod.rs`:
+`github_wasm_wrapper() -> anyhow::Result<WasmToolWrapper>`.
+
+This helper:
+
+- builds a `WasmToolWrapper` around the shared GitHub test artifact,
+- recovers the exported description and schema before returning, so the
+  wrapper exposes the same advertised contract used by runtime
+  fallback-guidance tests,
+- avoids duplicating WASM runtime preparation in each test module.
+
+Typical usage from an async test or `rstest` fixture is:
+
+```rust
+use ironclaw::testing::github_wasm_wrapper;
+
+#[tokio::test]
+async fn github_wasm_fixture_executes() -> anyhow::Result<()> {
+    let wrapper = github_wasm_wrapper().await?;
+    let definition = wrapper.definition();
+
+    assert_eq!(definition.name, "github");
+    Ok(())
+}
+```
+
+## 19. WASM-specific notes
+
+The repository contains standalone WASM tool and channel crates. Normal
+host commands such as `cargo check`, `make typecheck`, and `make test`
+no longer auto-build Telegram or other channels from `build.rs`.
+
+The WASM toolchain is still required when intentionally building
+extensions because:
+
+- the GitHub WASM tool is built explicitly by `make build-github-tool-wasm`,
+- channel build scripts rely on `cargo-component` and `wasm-tools`,
+- some CI and release paths rebuild channels or tools as part of
+  validation.
+
+When WIT files, standalone extension crates, or channel code change,
+expect the WASM toolchain requirements to apply even if the main focus
+is the Rust host crate. Common explicit commands are:
+
+- `./scripts/build-wasm-extensions.sh --channels` for all registered
+  channels; by default it reuses the shared
+  `target/wasm-extensions/` target dir,
+- `./channels-src/telegram/build.sh` for a deployable Telegram channel
+  artifact with `telegram.wasm`.
+
+For host-side tests that need a real GitHub WASM component instead of a
+hand-built fixture, use the shared helper in `src/testing/mod.rs`:
+`github_wasm_wrapper() -> anyhow::Result<WasmToolWrapper>`.
+
+This helper:
+
+- builds a `WasmToolWrapper` around the shared GitHub test artifact,
+- recovers the exported description and schema before returning, so the
+  wrapper exposes the same advertised contract used by runtime
+  fallback-guidance tests,
+- avoids duplicating WASM runtime preparation in each test module.
+
+Typical usage from an async test or `rstest` fixture is:
+
+```rust
+use ironclaw::testing::github_wasm_wrapper;
+
+#[tokio::test]
+async fn github_wasm_fixture_executes() -> anyhow::Result<()> {
+    let wrapper = github_wasm_wrapper().await?;
+    let definition = wrapper.definition();
+
+    assert_eq!(definition.name, "github");
+    Ok(())
+}
+```
 
 ## 19. WASM-specific notes
 
@@ -808,6 +1496,83 @@ labels, truncation rules, or input set needs to change. Do not use it as
 a primary schema-transport mechanism: the canonical schema remains the
 advertised `ToolDefinition.parameters` value.
 
+
+## 20. When to use cargo test versus cargo-nextest
+
+Today:
+
+- repository defaults such as `make test` and `make test-matrix` use
+  `cargo-nextest` for the root crate,
+- focused standalone WASM crate checks still use `cargo test`,
+- the GitHub WASM tool crate still uses `cargo test` from the standard
+  repository targets.
+
+For the compile-time reduction effort:
+
+- treat `cargo-nextest` as the normal host-side runner for the root
+  crate,
+- use `make test-cargo` or `make test-matrix-cargo` when comparison
+  against the old harness is needed,
+- do not assume standalone WASM crates or every focused test path has
+  migrated away from `cargo test`.
+
+## 20. When to use cargo test versus cargo-nextest
+
+Today:
+
+- repository defaults such as `make test` and `make test-matrix` use
+  `cargo-nextest` for the root crate,
+- focused standalone WASM crate checks still use `cargo test`,
+- the GitHub WASM tool crate still uses `cargo test` from the standard
+  repository targets.
+
+For the compile-time reduction effort:
+
+- treat `cargo-nextest` as the normal host-side runner for the root
+  crate,
+- use `make test-cargo` or `make test-matrix-cargo` when comparison
+  against the old harness is needed,
+- do not assume standalone WASM crates or every focused test path has
+  migrated away from `cargo test`.
+
+## 20. When to use cargo test versus cargo-nextest
+
+Today:
+
+- repository defaults such as `make test` and `make test-matrix` use
+  `cargo-nextest` for the root crate,
+- focused standalone WASM crate checks still use `cargo test`,
+- the GitHub WASM tool crate still uses `cargo test` from the standard
+  repository targets.
+
+For the compile-time reduction effort:
+
+- treat `cargo-nextest` as the normal host-side runner for the root
+  crate,
+- use `make test-cargo` or `make test-matrix-cargo` when comparison
+  against the old harness is needed,
+- do not assume standalone WASM crates or every focused test path has
+  migrated away from `cargo test`.
+
+## 20. When to use cargo test versus cargo-nextest
+
+Today:
+
+- repository defaults such as `make test` and `make test-matrix` use
+  `cargo-nextest` for the root crate,
+- focused standalone WASM crate checks still use `cargo test`,
+- the GitHub WASM tool crate still uses `cargo test` from the standard
+  repository targets.
+
+For the compile-time reduction effort:
+
+- treat `cargo-nextest` as the normal host-side runner for the root
+  crate,
+- use `make test-cargo` or `make test-matrix-cargo` when comparison
+  against the old harness is needed,
+- do not assume standalone WASM crates or every focused test path has
+  migrated away from `cargo test`.
+
 ## 20. When to use cargo test versus cargo-nextest
 
 Today:
@@ -842,11 +1607,13 @@ For the compile-time reduction effort:
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
 
+
 ## 22. Hot-reload architecture
 
 The `src/reload/` module provides hot-reload capabilities for configuration,
 HTTP listeners, and secrets without restarting the application. This is
 triggered by the Unix hangup signal (SIGHUP) in production environments.
+
 
 ### Core traits
 
@@ -948,6 +1715,31 @@ testing:
 Use these in unit tests to verify manager behaviour without real I/O.
 Example usage is in `src/reload/manager/tests.rs`.
 
+
+## 23. WASM tool schema normalization
+
+WASM tools carry a parameter schema that describes their inputs to the
+language model (LLM). The canonical normalization logic lives in
+`src/tools/registry/schema.rs`.
+
+## 23. WASM tool schema normalization
+
+WASM tools carry a parameter schema that describes their inputs to the
+language model (LLM). The canonical normalization logic lives in
+`src/tools/registry/schema.rs`.
+
+## 23. WASM tool schema normalization
+
+WASM tools carry a parameter schema that describes their inputs to the
+language model (LLM). The canonical normalization logic lives in
+`src/tools/registry/schema.rs`.
+
+## 23. WASM tool schema normalization
+
+WASM tools carry a parameter schema that describes their inputs to the
+language model (LLM). The canonical normalization logic lives in
+`src/tools/registry/schema.rs`.
+
 ## 23. WASM tool schema normalization
 
 WASM tools carry a parameter schema that describes their inputs to the
@@ -985,6 +1777,55 @@ its own exported metadata.
 The storage path is the one that exercises schema normalization, because
 backends may persist placeholder or null schemas that must be stripped
 before the guest-export recovery logic can run.
+
+
+## 24. End-to-end WASM schema regression tests
+
+The `e2e_traces` integration test target includes first-call WASM schema
+regression tests introduced in roadmap item `1.2.4`. These tests live in
+`tests/e2e_traces/wasm_schema_exposure.rs` and require the `test-helpers`
+feature because they import the GitHub test helper
+`ironclaw::testing::github_wasm_wrapper`.
+
+`Cargo.toml` declares `required-features = ["test-helpers"]` for the
+`e2e_traces` target, so Cargo skips it gracefully when the feature is
+absent rather than emitting a compile error.
+
+## 24. End-to-end WASM schema regression tests
+
+The `e2e_traces` integration test target includes first-call WASM schema
+regression tests introduced in roadmap item `1.2.4`. These tests live in
+`tests/e2e_traces/wasm_schema_exposure.rs` and require the `test-helpers`
+feature because they import the GitHub test helper
+`ironclaw::testing::github_wasm_wrapper`.
+
+`Cargo.toml` declares `required-features = ["test-helpers"]` for the
+`e2e_traces` target, so Cargo skips it gracefully when the feature is
+absent rather than emitting a compile error.
+
+## 24. End-to-end WASM schema regression tests
+
+The `e2e_traces` integration test target includes first-call WASM schema
+regression tests introduced in roadmap item `1.2.4`. These tests live in
+`tests/e2e_traces/wasm_schema_exposure.rs` and require the `test-helpers`
+feature because they import the GitHub test helper
+`ironclaw::testing::github_wasm_wrapper`.
+
+`Cargo.toml` declares `required-features = ["test-helpers"]` for the
+`e2e_traces` target, so Cargo skips it gracefully when the feature is
+absent rather than emitting a compile error.
+
+## 24. End-to-end WASM schema regression tests
+
+The `e2e_traces` integration test target includes first-call WASM schema
+regression tests introduced in roadmap item `1.2.4`. These tests live in
+`tests/e2e_traces/wasm_schema_exposure.rs` and require the `test-helpers`
+feature because they import the GitHub test helper
+`ironclaw::testing::github_wasm_wrapper`.
+
+`Cargo.toml` declares `required-features = ["test-helpers"]` for the
+`e2e_traces` target, so Cargo skips it gracefully when the feature is
+absent rather than emitting a compile error.
 
 ## 24. End-to-end WASM schema regression tests
 
@@ -1096,6 +1937,47 @@ assert_eq!(
 );
 ```
 
+
+## 25. Expected follow-up changes
+
+This guide documents the environment as of the current branch. The
+compile-time reduction plan is still expected to change some of the
+standard commands further, especially around shared extension build
+artifacts and CI duplication.
+
+When those changes land, this guide must be updated in the same branch
+so local setup instructions stay truthful.
+
+## 25. Expected follow-up changes
+
+This guide documents the environment as of the current branch. The
+compile-time reduction plan is still expected to change some of the
+standard commands further, especially around shared extension build
+artifacts and CI duplication.
+
+When those changes land, this guide must be updated in the same branch
+so local setup instructions stay truthful.
+
+## 25. Expected follow-up changes
+
+This guide documents the environment as of the current branch. The
+compile-time reduction plan is still expected to change some of the
+standard commands further, especially around shared extension build
+artifacts and CI duplication.
+
+When those changes land, this guide must be updated in the same branch
+so local setup instructions stay truthful.
+
+## 25. Expected follow-up changes
+
+This guide documents the environment as of the current branch. The
+compile-time reduction plan is still expected to change some of the
+standard commands further, especially around shared extension build
+artifacts and CI duplication.
+
+When those changes land, this guide must be updated in the same branch
+so local setup instructions stay truthful.
+
 ## 25. Expected follow-up changes
 
 This guide documents the environment as of the current branch. The
@@ -1107,6 +1989,7 @@ When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
 
 ## 26. Phased startup pipeline
+
 
 ### WebhookServer test helpers
 
@@ -1352,3 +2235,1187 @@ commit_install()             cleanup_prepared_install()
 On commit failure, callers must call `cleanup_prepared_install` as a
 best-effort cleanup and log any cleanup errors with `tracing::warn!` before
 returning the original commit error.
+
+## 8. Local mold configuration
+
+The repository now checks in Linux linker settings in
+`.cargo/config.toml`:
+
+```toml
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+```
+
+That means Linux and WSL contributors only need to install `clang` and
+`mold` locally. Cargo will pick up the linker configuration
+automatically for `x86_64-unknown-linux-gnu`.
+
+Matching shell exports are only needed to override the checked-in
+defaults. Do not assume this setting applies on macOS or Windows.
+
+A quick verification command is:
+
+```bash
+sed -n '1,40p' .cargo/config.toml
+```
+
+
+## 5. CI build environment
+
+CI jobs in this repository set `CARGO_INCREMENTAL="0"` at the job environment
+level for the `test`, `coverage`, and `mutation-testing` workflows. Incremental
+compilation writes per-crate fingerprint and dependency files into
+`target/debug/incremental` and `target/debug/.fingerprint`. Those artefacts grow
+quickly across builds and are rarely reused across cache boundaries in CI, so
+disabling them keeps the action cache compact and prevents "No space left on
+device" failures on hosted runners.
+
+Disk space is also managed explicitly before each build with the
+`jlumbroso/free-disk-space` action. That action removes large optional packages
+(Android SDK, .NET, and Haskell toolchains) before the compile step begins. After
+the build, an `if: always()` trimming step deletes
+`target/debug/incremental`, `target/debug/.fingerprint`, and `target/**/*.d`
+dependency files before the cache is written back to the action store.
+
+The `gag` crate appears as a `[dev-dependencies]` entry in `Cargo.toml`.
+It provides `gag::BufferRedirect::stdout()` to capture standard output
+in tests that assert on printed startup or boot-screen content — for
+example, the
+`print_startup_info_matches_snapshot` test in `src/startup/boot.rs`. The crate
+is compiled only when running tests and has no effect on the production binary.
+
+
+## 18. Trace and channel test helpers
+
+Three test-support helpers were added in PR `#161` to make replay-based
+and worker-coverage tests more reliable.
+
+
+## 4. Extra tools for the compile-time reduction effort
+
+Install these extra tools for work on the compile-time reduction plan:
+
+1. `/usr/bin/time` or an equivalent timing tool.
+
+`cargo-nextest` is now part of the standard local test path on this
+branch because `make test` uses it for the root crate. The timing tool
+remains specific to the compile-time reduction work.
+
+
+## 7. Linux and WSL setup
+
+On Linux or WSL, install the required system packages first. The exact
+package manager varies by distribution, but the important pieces are:
+
+- `clang`
+- `mold`
+- `pkg-config`
+- OpenSSL development headers
+- `cmake`
+- `gcc` and `g++`
+- `jq`
+- `make`
+
+After the system packages are present, install the Rust-side tooling:
+
+```bash
+rustup toolchain install stable
+rustup default stable
+rustup target add wasm32-wasip2
+cargo install wasm-tools --locked
+cargo install cargo-component --locked
+cargo install cargo-nextest --locked
+```
+
+For local coverage support:
+
+```bash
+cargo install cargo-llvm-cov --locked
+```
+
+
+## 6. Optional tools by workflow
+
+These tools are not required for every contributor, but they are needed
+for specific work:
+
+- PostgreSQL 15 or newer with `pgvector` for work on the default
+  feature set, integration tests, or coverage jobs that use the
+  PostgreSQL-backed configuration.
+- Docker for container builds, worker-mode changes,
+  or Docker-based validation.
+- Python 3.12 plus Playwright for work on `tests/e2e` or the end-to-end
+  (E2E) coverage workflow.
+- `cargo-llvm-cov` for local coverage work.
+
+
+## 3. Required tools
+
+Install these tools before running the standard repository commands:
+
+1. Rust `1.92` via `rustup`.
+2. `clang` on Linux or WSL.
+3. `mold` on Linux or WSL.
+4. The `wasm32-wasip2` Rust target.
+5. `wasm-tools`.
+6. `cargo-component`.
+7. `cargo-nextest`.
+8. `jq`.
+9. `make`.
+10. Git.
+
+The root crate declares `rust-version = "1.92"` in `Cargo.toml`. The
+repository also includes standalone WebAssembly (WASM) tool and channel
+crates, so WASM tooling is required for more than release-only
+workflows.
+
+
+## 21. Troubleshooting
+
+- If `cargo` says `wasm32-wasip2` is missing, rerun
+  `rustup target add wasm32-wasip2`.
+- If builds fail because `wasm-tools` or `cargo-component` is missing,
+  reinstall them with `cargo install ... --locked`.
+- If local Linux or WSL timings look much slower than CI, verify that
+  `clang` and `mold` are installed and that `.cargo/config.toml` is
+  present before drawing conclusions.
+- If PostgreSQL-backed tests fail on connection, rerun them with
+  `--no-default-features --features libsql` until the local database is
+  ready.
+- If Playwright is missing browsers, rerun
+  `playwright install --with-deps chromium`.
+
+
+## 26. Phased startup pipeline
+
+
+## 11. Configuration snapshots with EnvContext
+
+The configuration system now supports an explicit snapshot model through
+`crate::config::EnvContext`. Use it whenever a caller already knows the
+exact environment inputs that should participate in config resolution.
+
+The intended call pattern is:
+
+1. Capture ambient inputs once at the application boundary with
+   `EnvContext::capture_ambient()`.
+2. Optionally inject secret overlays into that snapshot with
+   `inject_llm_keys_into_context(...)` and
+   `inject_os_credentials_into_context(...)`.
+3. Build config through `Config::from_context(...)` or
+   `Config::from_context_with_toml(...)`.
+
+This keeps config resolution deterministic because the policy layer reads
+from an explicit snapshot instead of touching ambient process state while
+it resolves individual sub-configs.
+
+Use the older ambient entrypoints only when the caller genuinely wants
+them to do the capture work:
+
+- `Config::from_env*` captures process env and bootstrap overlays for
+  early startup paths.
+- `Config::from_db*` combines DB-backed settings with an ambient env
+  snapshot.
+- `Config::from_context*` should be preferred in tests, pure setup code,
+  and any flow that already owns a stable input snapshot.
+
+For tests, prefer the helpers in `src/testing/test_utils.rs` or
+`Config::for_testing(...)` instead of mutating `std::env`. That keeps
+tests independent of host machine secrets, keychains, and shell state.
+
+## 9. Repository bootstrap
+
+From the repository root:
+
+```bash
+git branch --show-current
+make check-fmt
+make typecheck
+make lint
+make test
+```
+
+The current `Makefile` also includes:
+
+- `make build-github-tool-wasm` to build the GitHub WASM tool used by
+  schema and metadata tests.
+- `make test-matrix` to run the broader host test combinations.
+- `make test-cargo` and `make test-matrix-cargo` to keep the old
+  `cargo test` path available when a harness comparison is needed for
+  the root crate.
+- `./scripts/build-wasm-extensions.sh --channels` to rebuild all
+  registered channels into the shared `target/wasm-extensions/` cache.
+- `make clean` to remove Cargo build outputs for the root crate and the
+  GitHub tool crate.
+
+
+## 22. Hot-reload architecture
+
+The `src/reload/` module provides hot-reload capabilities for configuration,
+HTTP listeners, and secrets without restarting the application. This is
+triggered by the Unix hangup signal (SIGHUP) in production environments.
+
+
+## 2. Supported environments
+
+The repository builds on Linux, macOS, Windows, and Windows Subsystem
+for Linux (WSL). The fastest documented path today is Linux or WSL
+because the current branch already uses `mold` in Linux CI.
+
+For compile-time or CI changes, prefer Linux or WSL so local results
+line up with the current CI setup.
+
+
+## 14. Self-repair internals
+
+The agent loop starts the self-repair subsystem in
+`src/agent/agent_loop.rs` as two cooperating background tasks:
+
+- `RepairTask` runs the periodic detection-and-repair cycle.
+- A notification forwarder receives `RepairNotification` values and converts
+  them into `OutgoingResponse::text("Self-Repair: ...")`, runs the normal
+  `BeforeOutbound` hook path, and then broadcasts them with the routed channel
+  metadata carried on each notification.
+
+The implementation lives in `src/agent/self_repair/` and follows the
+[architecture decision record (ADR) 006](./adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
+dual-trait pattern already used elsewhere in the repository:
+
+- `traits.rs` defines the dyn-safe `SelfRepair` boundary plus the native async
+  sibling trait `NativeSelfRepair`.
+- `default.rs` implements `DefaultSelfRepair`, including threshold-based stuck
+  job detection using `ContextManager::find_stuck_contexts()` and
+  `JobContext::stuck_since()`.
+- `task.rs` owns the periodic repair loop, notification best-effort delivery,
+  and cooperative shutdown through a `oneshot` channel.
+- `types.rs` holds the shared value types such as `StuckJob`, `BrokenTool`,
+  `RepairResult`, and `RepairNotification`.
+
+When modifying this path, keep three invariants in mind:
+
+- `RepairTask` shutdown must remain cooperative, including during active repair
+  awaits.
+- Repair notifications must remain best-effort so a slow consumer cannot stall
+  the repair cycle.
+- User-facing behaviour changes in self-repair should update both
+  [Jobs and Routines](./jobs-and-routines.md) and the
+  [User's Guide](./users-guide.md).
+
+
+## 15. Database-backed work
+
+For work on the default feature set or PostgreSQL-backed tests, prepare
+a local database with `pgvector` enabled:
+
+```bash
+createdb ironclaw
+psql ironclaw -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+Then set the database connection variable:
+
+Variable: `DATABASE_URL`
+Meaning: PostgreSQL connection URL used by the app.
+Default or rule:
+Required for PostgreSQL-backed work. For local development,
+`postgres://localhost/ironclaw` is a typical example; include the correct user,
+password, host, port, and database name when a local setup requires them.
+
+Example:
+
+```bash
+export DATABASE_URL=postgres://localhost/ironclaw
+```
+
+Adjust the connection string if the local PostgreSQL instance requires a
+different host, user, or password.
+
+
+## 4. Extra tools for the compile-time reduction effort
+
+Install these extra tools for work on the compile-time reduction plan:
+
+1. `/usr/bin/time` or an equivalent timing tool.
+
+`cargo-nextest` is now part of the standard local test path on this
+branch because `make test` uses it for the root crate. The timing tool
+remains specific to the compile-time reduction work.
+
+
+## 15. Database-backed work
+
+For work on the default feature set or PostgreSQL-backed tests, prepare
+a local database with `pgvector` enabled:
+
+```bash
+createdb ironclaw
+psql ironclaw -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+Then set the database connection variable:
+
+Variable: `DATABASE_URL`
+Meaning: PostgreSQL connection URL used by the app.
+Default or rule:
+Required for PostgreSQL-backed work. For local development,
+`postgres://localhost/ironclaw` is a typical example; include the correct user,
+password, host, port, and database name when a local setup requires them.
+
+Example:
+
+```bash
+export DATABASE_URL=postgres://localhost/ironclaw
+```
+
+Adjust the connection string if the local PostgreSQL instance requires a
+different host, user, or password.
+
+
+## 5. CI build environment
+
+CI jobs in this repository set `CARGO_INCREMENTAL="0"` at the job environment
+level for the `test`, `coverage`, and `mutation-testing` workflows. Incremental
+compilation writes per-crate fingerprint and dependency files into
+`target/debug/incremental` and `target/debug/.fingerprint`. Those artefacts grow
+quickly across builds and are rarely reused across cache boundaries in CI, so
+disabling them keeps the action cache compact and prevents "No space left on
+device" failures on hosted runners.
+
+Disk space is also managed explicitly before each build with the
+`jlumbroso/free-disk-space` action. That action removes large optional packages
+(Android SDK, .NET, and Haskell toolchains) before the compile step begins. After
+the build, an `if: always()` trimming step deletes
+`target/debug/incremental`, `target/debug/.fingerprint`, and `target/**/*.d`
+dependency files before the cache is written back to the action store.
+
+The `gag` crate appears as a `[dev-dependencies]` entry in `Cargo.toml`.
+It provides `gag::BufferRedirect::stdout()` to capture standard output
+in tests that assert on printed startup or boot-screen content — for
+example, the
+`print_startup_info_matches_snapshot` test in `src/startup/boot.rs`. The crate
+is compiled only when running tests and has no effect on the production binary.
+
+
+## 6. Optional tools by workflow
+
+These tools are not required for every contributor, but they are needed
+for specific work:
+
+- PostgreSQL 15 or newer with `pgvector` for work on the default
+  feature set, integration tests, or coverage jobs that use the
+  PostgreSQL-backed configuration.
+- Docker for container builds, worker-mode changes,
+  or Docker-based validation.
+- Python 3.12 plus Playwright for work on `tests/e2e` or the end-to-end
+  (E2E) coverage workflow.
+- `cargo-llvm-cov` for local coverage work.
+
+
+## 3. Required tools
+
+Install these tools before running the standard repository commands:
+
+1. Rust `1.92` via `rustup`.
+2. `clang` on Linux or WSL.
+3. `mold` on Linux or WSL.
+4. The `wasm32-wasip2` Rust target.
+5. `wasm-tools`.
+6. `cargo-component`.
+7. `cargo-nextest`.
+8. `jq`.
+9. `make`.
+10. Git.
+
+The root crate declares `rust-version = "1.92"` in `Cargo.toml`. The
+repository also includes standalone WebAssembly (WASM) tool and channel
+crates, so WASM tooling is required for more than release-only
+workflows.
+
+
+## 22. Hot-reload architecture
+
+The `src/reload/` module provides hot-reload capabilities for configuration,
+HTTP listeners, and secrets without restarting the application. This is
+triggered by the Unix hangup signal (SIGHUP) in production environments.
+
+
+## 11. Configuration snapshots with EnvContext
+
+The configuration system now supports an explicit snapshot model through
+`crate::config::EnvContext`. Use it whenever a caller already knows the
+exact environment inputs that should participate in config resolution.
+
+The intended call pattern is:
+
+1. Capture ambient inputs once at the application boundary with
+   `EnvContext::capture_ambient()`.
+2. Optionally inject secret overlays into that snapshot with
+   `inject_llm_keys_into_context(...)` and
+   `inject_os_credentials_into_context(...)`.
+3. Build config through `Config::from_context(...)` or
+   `Config::from_context_with_toml(...)`.
+
+This keeps config resolution deterministic because the policy layer reads
+from an explicit snapshot instead of touching ambient process state while
+it resolves individual sub-configs.
+
+Use the older ambient entrypoints only when the caller genuinely wants
+them to do the capture work:
+
+- `Config::from_env*` captures process env and bootstrap overlays for
+  early startup paths.
+- `Config::from_db*` combines DB-backed settings with an ambient env
+  snapshot.
+- `Config::from_context*` should be preferred in tests, pure setup code,
+  and any flow that already owns a stable input snapshot.
+
+For tests, prefer the helpers in `src/testing/test_utils.rs` or
+`Config::for_testing(...)` instead of mutating `std::env`. That keeps
+tests independent of host machine secrets, keychains, and shell state.
+
+## 26. Phased startup pipeline
+
+## 9. Repository bootstrap
+
+From the repository root:
+
+```bash
+git branch --show-current
+make check-fmt
+make typecheck
+make lint
+make test
+```
+
+The current `Makefile` also includes:
+
+- `make build-github-tool-wasm` to build the GitHub WASM tool used by
+  schema and metadata tests.
+- `make test-matrix` to run the broader host test combinations.
+- `make test-cargo` and `make test-matrix-cargo` to keep the old
+  `cargo test` path available when a harness comparison is needed for
+  the root crate.
+- `./scripts/build-wasm-extensions.sh --channels` to rebuild all
+  registered channels into the shared `target/wasm-extensions/` cache.
+- `make clean` to remove Cargo build outputs for the root crate and the
+  GitHub tool crate.
+
+
+## 7. Linux and WSL setup
+
+On Linux or WSL, install the required system packages first. The exact
+package manager varies by distribution, but the important pieces are:
+
+- `clang`
+- `mold`
+- `pkg-config`
+- OpenSSL development headers
+- `cmake`
+- `gcc` and `g++`
+- `jq`
+- `make`
+
+After the system packages are present, install the Rust-side tooling:
+
+```bash
+rustup toolchain install stable
+rustup default stable
+rustup target add wasm32-wasip2
+cargo install wasm-tools --locked
+cargo install cargo-component --locked
+cargo install cargo-nextest --locked
+```
+
+For local coverage support:
+
+```bash
+cargo install cargo-llvm-cov --locked
+```
+
+
+## 21. Troubleshooting
+
+- If `cargo` says `wasm32-wasip2` is missing, rerun
+  `rustup target add wasm32-wasip2`.
+- If builds fail because `wasm-tools` or `cargo-component` is missing,
+  reinstall them with `cargo install ... --locked`.
+- If local Linux or WSL timings look much slower than CI, verify that
+  `clang` and `mold` are installed and that `.cargo/config.toml` is
+  present before drawing conclusions.
+- If PostgreSQL-backed tests fail on connection, rerun them with
+  `--no-default-features --features libsql` until the local database is
+  ready.
+- If Playwright is missing browsers, rerun
+  `playwright install --with-deps chromium`.
+
+
+## 14. Self-repair internals
+
+The agent loop starts the self-repair subsystem in
+`src/agent/agent_loop.rs` as two cooperating background tasks:
+
+- `RepairTask` runs the periodic detection-and-repair cycle.
+- A notification forwarder receives `RepairNotification` values and converts
+  them into `OutgoingResponse::text("Self-Repair: ...")`, runs the normal
+  `BeforeOutbound` hook path, and then broadcasts them with the routed channel
+  metadata carried on each notification.
+
+The implementation lives in `src/agent/self_repair/` and follows the
+[architecture decision record (ADR) 006](./adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
+dual-trait pattern already used elsewhere in the repository:
+
+- `traits.rs` defines the dyn-safe `SelfRepair` boundary plus the native async
+  sibling trait `NativeSelfRepair`.
+- `default.rs` implements `DefaultSelfRepair`, including threshold-based stuck
+  job detection using `ContextManager::find_stuck_contexts()` and
+  `JobContext::stuck_since()`.
+- `task.rs` owns the periodic repair loop, notification best-effort delivery,
+  and cooperative shutdown through a `oneshot` channel.
+- `types.rs` holds the shared value types such as `StuckJob`, `BrokenTool`,
+  `RepairResult`, and `RepairNotification`.
+
+When modifying this path, keep three invariants in mind:
+
+- `RepairTask` shutdown must remain cooperative, including during active repair
+  awaits.
+- Repair notifications must remain best-effort so a slow consumer cannot stall
+  the repair cycle.
+- User-facing behaviour changes in self-repair should update both
+  [Jobs and Routines](./jobs-and-routines.md) and the
+  [User's Guide](./users-guide.md).
+
+
+## 2. Supported environments
+
+The repository builds on Linux, macOS, Windows, and Windows Subsystem
+for Linux (WSL). The fastest documented path today is Linux or WSL
+because the current branch already uses `mold` in Linux CI.
+
+For compile-time or CI changes, prefer Linux or WSL so local results
+line up with the current CI setup.
+
+
+## 8. Local mold configuration
+
+The repository now checks in Linux linker settings in
+`.cargo/config.toml`:
+
+```toml
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+```
+
+That means Linux and WSL contributors only need to install `clang` and
+`mold` locally. Cargo will pick up the linker configuration
+automatically for `x86_64-unknown-linux-gnu`.
+
+Matching shell exports are only needed to override the checked-in
+defaults. Do not assume this setting applies on macOS or Windows.
+
+A quick verification command is:
+
+```bash
+sed -n '1,40p' .cargo/config.toml
+```
+
+
+## 18. Trace and channel test helpers
+
+Three test-support helpers were added in PR `#161` to make replay-based
+and worker-coverage tests more reliable.
+
+
+## 8. Local mold configuration
+
+The repository now checks in Linux linker settings in
+`.cargo/config.toml`:
+
+```toml
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+```
+
+That means Linux and WSL contributors only need to install `clang` and
+`mold` locally. Cargo will pick up the linker configuration
+automatically for `x86_64-unknown-linux-gnu`.
+
+Matching shell exports are only needed to override the checked-in
+defaults. Do not assume this setting applies on macOS or Windows.
+
+A quick verification command is:
+
+```bash
+sed -n '1,40p' .cargo/config.toml
+```
+
+
+## 18. Trace and channel test helpers
+
+Three test-support helpers were added in PR `#161` to make replay-based
+and worker-coverage tests more reliable.
+
+
+## 21. Troubleshooting
+
+- If `cargo` says `wasm32-wasip2` is missing, rerun
+  `rustup target add wasm32-wasip2`.
+- If builds fail because `wasm-tools` or `cargo-component` is missing,
+  reinstall them with `cargo install ... --locked`.
+- If local Linux or WSL timings look much slower than CI, verify that
+  `clang` and `mold` are installed and that `.cargo/config.toml` is
+  present before drawing conclusions.
+- If PostgreSQL-backed tests fail on connection, rerun them with
+  `--no-default-features --features libsql` until the local database is
+  ready.
+- If Playwright is missing browsers, rerun
+  `playwright install --with-deps chromium`.
+
+
+## 6. Optional tools by workflow
+
+These tools are not required for every contributor, but they are needed
+for specific work:
+
+- PostgreSQL 15 or newer with `pgvector` for work on the default
+  feature set, integration tests, or coverage jobs that use the
+  PostgreSQL-backed configuration.
+- Docker for container builds, worker-mode changes,
+  or Docker-based validation.
+- Python 3.12 plus Playwright for work on `tests/e2e` or the end-to-end
+  (E2E) coverage workflow.
+- `cargo-llvm-cov` for local coverage work.
+
+
+## 22. Hot-reload architecture
+
+The `src/reload/` module provides hot-reload capabilities for configuration,
+HTTP listeners, and secrets without restarting the application. This is
+triggered by the Unix hangup signal (SIGHUP) in production environments.
+
+
+## 14. Self-repair internals
+
+The agent loop starts the self-repair subsystem in
+`src/agent/agent_loop.rs` as two cooperating background tasks:
+
+- `RepairTask` runs the periodic detection-and-repair cycle.
+- A notification forwarder receives `RepairNotification` values and converts
+  them into `OutgoingResponse::text("Self-Repair: ...")`, runs the normal
+  `BeforeOutbound` hook path, and then broadcasts them with the routed channel
+  metadata carried on each notification.
+
+The implementation lives in `src/agent/self_repair/` and follows the
+[architecture decision record (ADR) 006](./adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
+dual-trait pattern already used elsewhere in the repository:
+
+- `traits.rs` defines the dyn-safe `SelfRepair` boundary plus the native async
+  sibling trait `NativeSelfRepair`.
+- `default.rs` implements `DefaultSelfRepair`, including threshold-based stuck
+  job detection using `ContextManager::find_stuck_contexts()` and
+  `JobContext::stuck_since()`.
+- `task.rs` owns the periodic repair loop, notification best-effort delivery,
+  and cooperative shutdown through a `oneshot` channel.
+- `types.rs` holds the shared value types such as `StuckJob`, `BrokenTool`,
+  `RepairResult`, and `RepairNotification`.
+
+When modifying this path, keep three invariants in mind:
+
+- `RepairTask` shutdown must remain cooperative, including during active repair
+  awaits.
+- Repair notifications must remain best-effort so a slow consumer cannot stall
+  the repair cycle.
+- User-facing behaviour changes in self-repair should update both
+  [Jobs and Routines](./jobs-and-routines.md) and the
+  [User's Guide](./users-guide.md).
+
+
+## 15. Database-backed work
+
+For work on the default feature set or PostgreSQL-backed tests, prepare
+a local database with `pgvector` enabled:
+
+```bash
+createdb ironclaw
+psql ironclaw -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+Then set the database connection variable:
+
+Variable: `DATABASE_URL`
+Meaning: PostgreSQL connection URL used by the app.
+Default or rule:
+Required for PostgreSQL-backed work. For local development,
+`postgres://localhost/ironclaw` is a typical example; include the correct user,
+password, host, port, and database name when a local setup requires them.
+
+Example:
+
+```bash
+export DATABASE_URL=postgres://localhost/ironclaw
+```
+
+Adjust the connection string if the local PostgreSQL instance requires a
+different host, user, or password.
+
+
+## 5. CI build environment
+
+CI jobs in this repository set `CARGO_INCREMENTAL="0"` at the job environment
+level for the `test`, `coverage`, and `mutation-testing` workflows. Incremental
+compilation writes per-crate fingerprint and dependency files into
+`target/debug/incremental` and `target/debug/.fingerprint`. Those artefacts grow
+quickly across builds and are rarely reused across cache boundaries in CI, so
+disabling them keeps the action cache compact and prevents "No space left on
+device" failures on hosted runners.
+
+Disk space is also managed explicitly before each build with the
+`jlumbroso/free-disk-space` action. That action removes large optional packages
+(Android SDK, .NET, and Haskell toolchains) before the compile step begins. After
+the build, an `if: always()` trimming step deletes
+`target/debug/incremental`, `target/debug/.fingerprint`, and `target/**/*.d`
+dependency files before the cache is written back to the action store.
+
+The `gag` crate appears as a `[dev-dependencies]` entry in `Cargo.toml`.
+It provides `gag::BufferRedirect::stdout()` to capture standard output
+in tests that assert on printed startup or boot-screen content — for
+example, the
+`print_startup_info_matches_snapshot` test in `src/startup/boot.rs`. The crate
+is compiled only when running tests and has no effect on the production binary.
+
+
+## 4. Extra tools for the compile-time reduction effort
+
+Install these extra tools for work on the compile-time reduction plan:
+
+1. `/usr/bin/time` or an equivalent timing tool.
+
+`cargo-nextest` is now part of the standard local test path on this
+branch because `make test` uses it for the root crate. The timing tool
+remains specific to the compile-time reduction work.
+
+
+## 26. Phased startup pipeline
+
+
+## 2. Supported environments
+
+The repository builds on Linux, macOS, Windows, and Windows Subsystem
+for Linux (WSL). The fastest documented path today is Linux or WSL
+because the current branch already uses `mold` in Linux CI.
+
+For compile-time or CI changes, prefer Linux or WSL so local results
+line up with the current CI setup.
+
+
+## 7. Linux and WSL setup
+
+On Linux or WSL, install the required system packages first. The exact
+package manager varies by distribution, but the important pieces are:
+
+- `clang`
+- `mold`
+- `pkg-config`
+- OpenSSL development headers
+- `cmake`
+- `gcc` and `g++`
+- `jq`
+- `make`
+
+After the system packages are present, install the Rust-side tooling:
+
+```bash
+rustup toolchain install stable
+rustup default stable
+rustup target add wasm32-wasip2
+cargo install wasm-tools --locked
+cargo install cargo-component --locked
+cargo install cargo-nextest --locked
+```
+
+For local coverage support:
+
+```bash
+cargo install cargo-llvm-cov --locked
+```
+
+
+## 3. Required tools
+
+Install these tools before running the standard repository commands:
+
+1. Rust `1.92` via `rustup`.
+2. `clang` on Linux or WSL.
+3. `mold` on Linux or WSL.
+4. The `wasm32-wasip2` Rust target.
+5. `wasm-tools`.
+6. `cargo-component`.
+7. `cargo-nextest`.
+8. `jq`.
+9. `make`.
+10. Git.
+
+The root crate declares `rust-version = "1.92"` in `Cargo.toml`. The
+repository also includes standalone WebAssembly (WASM) tool and channel
+crates, so WASM tooling is required for more than release-only
+workflows.
+
+
+## 9. Repository bootstrap
+
+From the repository root:
+
+```bash
+git branch --show-current
+make check-fmt
+make typecheck
+make lint
+make test
+```
+
+The current `Makefile` also includes:
+
+- `make build-github-tool-wasm` to build the GitHub WASM tool used by
+  schema and metadata tests.
+- `make test-matrix` to run the broader host test combinations.
+- `make test-cargo` and `make test-matrix-cargo` to keep the old
+  `cargo test` path available when a harness comparison is needed for
+  the root crate.
+- `./scripts/build-wasm-extensions.sh --channels` to rebuild all
+  registered channels into the shared `target/wasm-extensions/` cache.
+- `make clean` to remove Cargo build outputs for the root crate and the
+  GitHub tool crate.
+
+
+## 11. Configuration snapshots with EnvContext
+
+The configuration system now supports an explicit snapshot model through
+`crate::config::EnvContext`. Use it whenever a caller already knows the
+exact environment inputs that should participate in config resolution.
+
+The intended call pattern is:
+
+1. Capture ambient inputs once at the application boundary with
+   `EnvContext::capture_ambient()`.
+2. Optionally inject secret overlays into that snapshot with
+   `inject_llm_keys_into_context(...)` and
+   `inject_os_credentials_into_context(...)`.
+3. Build config through `Config::from_context(...)` or
+   `Config::from_context_with_toml(...)`.
+
+This keeps config resolution deterministic because the policy layer reads
+from an explicit snapshot instead of touching ambient process state while
+it resolves individual sub-configs.
+
+Use the older ambient entrypoints only when the caller genuinely wants
+them to do the capture work:
+
+- `Config::from_env*` captures process env and bootstrap overlays for
+  early startup paths.
+- `Config::from_db*` combines DB-backed settings with an ambient env
+  snapshot.
+- `Config::from_context*` should be preferred in tests, pure setup code,
+  and any flow that already owns a stable input snapshot.
+
+For tests, prefer the helpers in `src/testing/test_utils.rs` or
+`Config::for_testing(...)` instead of mutating `std::env`. That keeps
+tests independent of host machine secrets, keychains, and shell state.
+
+
+## 7. Linux and WSL setup
+
+On Linux or WSL, install the required system packages first. The exact
+package manager varies by distribution, but the important pieces are:
+
+- `clang`
+- `mold`
+- `pkg-config`
+- OpenSSL development headers
+- `cmake`
+- `gcc` and `g++`
+- `jq`
+- `make`
+
+After the system packages are present, install the Rust-side tooling:
+
+```bash
+rustup toolchain install stable
+rustup default stable
+rustup target add wasm32-wasip2
+cargo install wasm-tools --locked
+cargo install cargo-component --locked
+cargo install cargo-nextest --locked
+```
+
+For local coverage support:
+
+```bash
+cargo install cargo-llvm-cov --locked
+```
+
+
+## 14. Self-repair internals
+
+The agent loop starts the self-repair subsystem in
+`src/agent/agent_loop.rs` as two cooperating background tasks:
+
+- `RepairTask` runs the periodic detection-and-repair cycle.
+- A notification forwarder receives `RepairNotification` values and converts
+  them into `OutgoingResponse::text("Self-Repair: ...")`, runs the normal
+  `BeforeOutbound` hook path, and then broadcasts them with the routed channel
+  metadata carried on each notification.
+
+The implementation lives in `src/agent/self_repair/` and follows the
+[architecture decision record (ADR) 006](./adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
+dual-trait pattern already used elsewhere in the repository:
+
+- `traits.rs` defines the dyn-safe `SelfRepair` boundary plus the native async
+  sibling trait `NativeSelfRepair`.
+- `default.rs` implements `DefaultSelfRepair`, including threshold-based stuck
+  job detection using `ContextManager::find_stuck_contexts()` and
+  `JobContext::stuck_since()`.
+- `task.rs` owns the periodic repair loop, notification best-effort delivery,
+  and cooperative shutdown through a `oneshot` channel.
+- `types.rs` holds the shared value types such as `StuckJob`, `BrokenTool`,
+  `RepairResult`, and `RepairNotification`.
+
+When modifying this path, keep three invariants in mind:
+
+- `RepairTask` shutdown must remain cooperative, including during active repair
+  awaits.
+- Repair notifications must remain best-effort so a slow consumer cannot stall
+  the repair cycle.
+- User-facing behaviour changes in self-repair should update both
+  [Jobs and Routines](./jobs-and-routines.md) and the
+  [User's Guide](./users-guide.md).
+
+
+## 26. Phased startup pipeline
+
+
+## 11. Configuration snapshots with EnvContext
+
+The configuration system now supports an explicit snapshot model through
+`crate::config::EnvContext`. Use it whenever a caller already knows the
+exact environment inputs that should participate in config resolution.
+
+The intended call pattern is:
+
+1. Capture ambient inputs once at the application boundary with
+   `EnvContext::capture_ambient()`.
+2. Optionally inject secret overlays into that snapshot with
+   `inject_llm_keys_into_context(...)` and
+   `inject_os_credentials_into_context(...)`.
+3. Build config through `Config::from_context(...)` or
+   `Config::from_context_with_toml(...)`.
+
+This keeps config resolution deterministic because the policy layer reads
+from an explicit snapshot instead of touching ambient process state while
+it resolves individual sub-configs.
+
+Use the older ambient entrypoints only when the caller genuinely wants
+them to do the capture work:
+
+- `Config::from_env*` captures process env and bootstrap overlays for
+  early startup paths.
+- `Config::from_db*` combines DB-backed settings with an ambient env
+  snapshot.
+- `Config::from_context*` should be preferred in tests, pure setup code,
+  and any flow that already owns a stable input snapshot.
+
+For tests, prefer the helpers in `src/testing/test_utils.rs` or
+`Config::for_testing(...)` instead of mutating `std::env`. That keeps
+tests independent of host machine secrets, keychains, and shell state.
+
+
+## 15. Database-backed work
+
+For work on the default feature set or PostgreSQL-backed tests, prepare
+a local database with `pgvector` enabled:
+
+```bash
+createdb ironclaw
+psql ironclaw -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+Then set the database connection variable:
+
+Variable: `DATABASE_URL`
+Meaning: PostgreSQL connection URL used by the app.
+Default or rule:
+Required for PostgreSQL-backed work. For local development,
+`postgres://localhost/ironclaw` is a typical example; include the correct user,
+password, host, port, and database name when a local setup requires them.
+
+Example:
+
+```bash
+export DATABASE_URL=postgres://localhost/ironclaw
+```
+
+Adjust the connection string if the local PostgreSQL instance requires a
+different host, user, or password.
+
+
+## 4. Extra tools for the compile-time reduction effort
+
+Install these extra tools for work on the compile-time reduction plan:
+
+1. `/usr/bin/time` or an equivalent timing tool.
+
+`cargo-nextest` is now part of the standard local test path on this
+branch because `make test` uses it for the root crate. The timing tool
+remains specific to the compile-time reduction work.
+
+
+## 2. Supported environments
+
+The repository builds on Linux, macOS, Windows, and Windows Subsystem
+for Linux (WSL). The fastest documented path today is Linux or WSL
+because the current branch already uses `mold` in Linux CI.
+
+For compile-time or CI changes, prefer Linux or WSL so local results
+line up with the current CI setup.
+
+
+## 3. Required tools
+
+Install these tools before running the standard repository commands:
+
+1. Rust `1.92` via `rustup`.
+2. `clang` on Linux or WSL.
+3. `mold` on Linux or WSL.
+4. The `wasm32-wasip2` Rust target.
+5. `wasm-tools`.
+6. `cargo-component`.
+7. `cargo-nextest`.
+8. `jq`.
+9. `make`.
+10. Git.
+
+The root crate declares `rust-version = "1.92"` in `Cargo.toml`. The
+repository also includes standalone WebAssembly (WASM) tool and channel
+crates, so WASM tooling is required for more than release-only
+workflows.
+
+
+## 21. Troubleshooting
+
+- If `cargo` says `wasm32-wasip2` is missing, rerun
+  `rustup target add wasm32-wasip2`.
+- If builds fail because `wasm-tools` or `cargo-component` is missing,
+  reinstall them with `cargo install ... --locked`.
+- If local Linux or WSL timings look much slower than CI, verify that
+  `clang` and `mold` are installed and that `.cargo/config.toml` is
+  present before drawing conclusions.
+- If PostgreSQL-backed tests fail on connection, rerun them with
+  `--no-default-features --features libsql` until the local database is
+  ready.
+- If Playwright is missing browsers, rerun
+  `playwright install --with-deps chromium`.
+
+
+## 22. Hot-reload architecture
+
+The `src/reload/` module provides hot-reload capabilities for configuration,
+HTTP listeners, and secrets without restarting the application. This is
+triggered by the Unix hangup signal (SIGHUP) in production environments.
+
+
+## 5. CI build environment
+
+CI jobs in this repository set `CARGO_INCREMENTAL="0"` at the job environment
+level for the `test`, `coverage`, and `mutation-testing` workflows. Incremental
+compilation writes per-crate fingerprint and dependency files into
+`target/debug/incremental` and `target/debug/.fingerprint`. Those artefacts grow
+quickly across builds and are rarely reused across cache boundaries in CI, so
+disabling them keeps the action cache compact and prevents "No space left on
+device" failures on hosted runners.
+
+Disk space is also managed explicitly before each build with the
+`jlumbroso/free-disk-space` action. That action removes large optional packages
+(Android SDK, .NET, and Haskell toolchains) before the compile step begins. After
+the build, an `if: always()` trimming step deletes
+`target/debug/incremental`, `target/debug/.fingerprint`, and `target/**/*.d`
+dependency files before the cache is written back to the action store.
+
+The `gag` crate appears as a `[dev-dependencies]` entry in `Cargo.toml`.
+It provides `gag::BufferRedirect::stdout()` to capture standard output
+in tests that assert on printed startup or boot-screen content — for
+example, the
+`print_startup_info_matches_snapshot` test in `src/startup/boot.rs`. The crate
+is compiled only when running tests and has no effect on the production binary.
+
+
+## 6. Optional tools by workflow
+
+These tools are not required for every contributor, but they are needed
+for specific work:
+
+- PostgreSQL 15 or newer with `pgvector` for work on the default
+  feature set, integration tests, or coverage jobs that use the
+  PostgreSQL-backed configuration.
+- Docker for container builds, worker-mode changes,
+  or Docker-based validation.
+- Python 3.12 plus Playwright for work on `tests/e2e` or the end-to-end
+  (E2E) coverage workflow.
+- `cargo-llvm-cov` for local coverage work.
+
+
+## 9. Repository bootstrap
+
+From the repository root:
+
+```bash
+git branch --show-current
+make check-fmt
+make typecheck
+make lint
+make test
+```
+
+The current `Makefile` also includes:
+
+- `make build-github-tool-wasm` to build the GitHub WASM tool used by
+  schema and metadata tests.
+- `make test-matrix` to run the broader host test combinations.
+- `make test-cargo` and `make test-matrix-cargo` to keep the old
+  `cargo test` path available when a harness comparison is needed for
+  the root crate.
+- `./scripts/build-wasm-extensions.sh --channels` to rebuild all
+  registered channels into the shared `target/wasm-extensions/` cache.
+- `make clean` to remove Cargo build outputs for the root crate and the
+  GitHub tool crate.
+
+
+## 8. Local mold configuration
+
+The repository now checks in Linux linker settings in
+`.cargo/config.toml`:
+
+```toml
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+```
+
+That means Linux and WSL contributors only need to install `clang` and
+`mold` locally. Cargo will pick up the linker configuration
+automatically for `x86_64-unknown-linux-gnu`.
+
+Matching shell exports are only needed to override the checked-in
+defaults. Do not assume this setting applies on macOS or Windows.
+
+A quick verification command is:
+
+```bash
+sed -n '1,40p' .cargo/config.toml
+```
+
+
+## 18. Trace and channel test helpers
+
+Three test-support helpers were added in PR `#161` to make replay-based
+and worker-coverage tests more reliable.

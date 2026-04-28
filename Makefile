@@ -1,5 +1,5 @@
-CARGO ?= cargo
-NEXTEST ?= cargo nextest
+CARGO ?= $(shell command -v cargo 2>/dev/null || printf '%s/.cargo/bin/cargo' "$$HOME")
+NEXTEST ?= $(CARGO) nextest
 TEST_FEATURES ?= --features test-helpers
 NEXTEST_PROFILE ?= default
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)

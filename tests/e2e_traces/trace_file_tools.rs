@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use crate::support::test_rig::TestRigBuilder;
-use crate::support::trace_llm::LlmTrace;
+use crate::support::trace_types::LlmTrace;
 
 const EXPECTED_CONTENT: &str = "Hello, E2E test!";
 
