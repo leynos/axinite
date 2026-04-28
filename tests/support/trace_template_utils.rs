@@ -15,6 +15,20 @@ fn json_scalar_to_string(value: &serde_json::Value) -> Option<String> {
     }
 }
 
+fn flatten_json_root_into_vars(
+    call_id: &str,
+    json: &serde_json::Value,
+    vars: &mut HashMap<String, String>,
+) {
+    if let Some(obj) = json.as_object() {
+        for (key, value) in obj {
+            flatten_json_vars(&format!("{call_id}.{key}"), value, vars);
+        }
+    } else {
+        flatten_json_vars(call_id, json, vars);
+    }
+}
+
 pub(super) fn extract_tool_result_vars(messages: &[ChatMessage]) -> HashMap<String, String> {
     let mut vars = HashMap::new();
     for message in messages {
@@ -28,13 +42,7 @@ pub(super) fn extract_tool_result_vars(messages: &[ChatMessage]) -> HashMap<Stri
         let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
             continue;
         };
-        if let Some(obj) = json.as_object() {
-            for (key, value) in obj {
-                flatten_json_vars(&format!("{call_id}.{key}"), value, &mut vars);
-            }
-        } else {
-            flatten_json_vars(call_id, &json, &mut vars);
-        }
+        flatten_json_root_into_vars(call_id, &json, &mut vars);
     }
     vars
 }
