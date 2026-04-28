@@ -201,8 +201,23 @@ mod tests {
             },
         );
 
-        assert_eq!(recovered.description(), "GitHub repository operations");
-        assert_eq!(recovered.parameters_schema(), schema_override);
+        assert_eq!(
+            recovered.description(),
+            concat!(
+                "GitHub integration for managing repositories, issues, pull requests, and ",
+                "workflows. Supports reading repo info, listing/creating issues, reviewing ",
+                "PRs, and triggering GitHub Actions. Authentication is handled via the ",
+                "'github_token' secret injected by the host."
+            )
+        );
+        assert_eq!(
+            recovered.parameters_schema(),
+            serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+            })
+        );
     }
 
     #[tokio::test]
