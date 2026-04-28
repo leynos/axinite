@@ -219,6 +219,27 @@ harness-local fixture modules into the shared facade merely to make the
 import path look more uniform.
 
 
+### CleanupGuard restructuring
+
+`CleanupGuard` now lives in its own `tests/support/cleanup_guard.rs`
+module instead of being defined inside `tests/support/cleanup.rs`.
+Harness-specific support roots include it only when they exercise
+filesystem cleanup; for example, `tests/support/e2e_traces.rs` compiles
+the full cleanup helpers, while `tests/support/support_unit.rs` wires
+`cleanup_guard.rs` directly as its crate-local `cleanup` module.
+
+This keeps cleanup symbols out of harnesses that never register
+temporary files or directories for removal. The narrower wiring
+eliminated the five per-item `#[allow(dead_code)]` attributes that were
+previously needed because the shared facade compiled cleanup helpers
+into every integration-test binary.
+
+`setup_test_dir_with_suffix` in `tests/support/cleanup.rs` still accepts
+a `&Path` and returns a `String` because the trace fixtures that call it
+serialise the resulting directory into JSON tool arguments. Prefer
+`PathBuf` for new filesystem-facing helpers unless the caller needs a
+UTF-8 string boundary for fixture data or protocol payloads.
+
 ## 11. Tools-and-config harness support
 
 `tests/support/tools_and_config.rs` is a harness-specific support root
@@ -249,7 +270,112 @@ These helpers are not exported for external crates. Their narrow
 visibility keeps integration-test fixture helpers limited to the harness
 submodules that actually use them.
 
-## 12. Configuration snapshots with EnvContext
+
+## 12. Support-unit harness support
+
+`tests/support/support_unit.rs` is a harness-specific support root for
+the `support_unit_tests` integration binary. It exists so support-module
+contract tests can compile the helpers they inspect exactly once,
+without routing fixture-only modules through the shared
+`tests/support/mod.rs` facade.
+
+The root wires these modules publicly for test consumers:
+`assertions`, `cleanup`, `instrumented_llm`, `metrics`, `test_channel`,
+`test_rig`, `trace_llm`, `trace_test_files`, and `trace_types`.
+It also wires `trace_json_patch` and `trace_provider` privately because
+they are implementation details consumed by the public trace helpers.
+
+The `cleanup` module is deliberately backed by
+`tests/support/cleanup_guard.rs` rather than the broader
+`tests/support/cleanup.rs` helper set. The support-unit tests exercise
+the guard contract directly, so compiling only the guard keeps the
+harness focused and avoids dead-code suppressions for directory setup
+helpers it does not use.
+
+
+## 13. E2E-traces harness support
+
+`tests/support/e2e_traces.rs` is a harness-specific support root for
+the `e2e_traces` integration binary. The binary also wires
+`tests/support/fixtures.rs` directly at its top level because fixture
+path constants are local to this harness.
+
+The support root wires these modules publicly for trace test consumers:
+`assertions`, `cleanup`, `instrumented_llm`, `metrics`, `test_channel`,
+`test_rig`, `trace_llm`, and `trace_types`. It exposes `routines`
+publicly only when the `libsql` feature is enabled, matching the
+feature-gated routine tests. `trace_json_patch` and `trace_provider`
+remain private implementation modules behind the trace facade. With the
+`libsql` feature enabled, the root also re-exports
+`test_rig::helpers::run_recorded_trace`.
+
+This root stays separate from `tests/support/mod.rs` because the E2E
+trace binary is the broad replay harness: it needs cleanup, recorded
+trace loading, instrumented LLMs, metrics, routines, and channel
+capture, while many other integration binaries need none of that graph.
+Keeping the graph harness-local prevents unrelated test binaries from
+compiling replay helpers just to share an import path.
+
+
+## 14. Channels harness support
+
+`tests/support/channels.rs` is a harness-specific support root for the
+`channels` integration binary. It wires `tests/support/telegram.rs` as a
+public `telegram` module for channel tests that cover Telegram
+authentication behaviour.
+
+The root remains separate from `tests/support/mod.rs` because the
+Telegram fixtures are channel-harness details, not general test support.
+Keeping them behind the `channels` binary boundary avoids compiling
+Telegram-specific helper code into unrelated integration binaries.
+
+
+## 15. Infrastructure and webhook harness support
+
+`tests/support/infrastructure.rs` is a harness-specific support root for
+the `infrastructure` integration binary. It wires
+`tests/support/webhook_common.rs` as a public `webhook_helpers` module
+so infrastructure tests can reuse the common health-route and HTTP
+client helpers without depending on the full webhook-server harness
+helper graph.
+
+`tests/support/webhook.rs` is the harness-specific support root for the
+`webhook_server` integration binary. It wires
+`tests/support/webhook_helpers.rs` publicly for webhook-server tests and
+keeps `tests/support/webhook_common.rs` private for the shared route and
+client primitives used by those helpers.
+
+`tests/support/webhook_common.rs` intentionally remains a small shared
+helper module rather than a root. The `webhook_server` harness consumes
+it through `webhook.rs`, while the `infrastructure` harness consumes it
+through `infrastructure.rs` under the local `webhook_helpers` name.
+
+This root exists separately from `tests/support/mod.rs` because the
+infrastructure binary only needs the small shared webhook helper
+surface. It must not compile the `webhook_server`-specific startup
+fixture module, and it should not promote those helpers into the shared
+facade merely because two webhook-adjacent harnesses use the same health
+route. The `webhook_server` root is also harness-local because its
+startup helpers belong to that binary's listener lifecycle tests, not to
+general integration-test setup.
+
+
+## 16. Trace-LLM harness support
+
+`tests/support/trace_llm_harness.rs` is the harness-specific support
+root for the `trace_llm_tests` integration binary shape. It wires
+`trace_llm` and `trace_types` publicly for trace contract tests, while
+keeping `trace_json_patch` and `trace_provider` private behind the
+trace facade.
+
+The root exists separately from `tests/support/mod.rs` because trace LLM
+contract tests need the trace parser and provider internals without the
+broader E2E test rig, channel capture, cleanup helpers, or metrics
+graph. The same boundary keeps trace JSON patching crate-local to the
+tests that exercise the trace facade.
+
+
+## 17. Configuration snapshots with EnvContext
 
 The configuration system now supports an explicit snapshot model through
 `crate::config::EnvContext`. Use it whenever a caller already knows the
@@ -283,14 +409,15 @@ For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
 tests independent of host machine secrets, keychains, and shell state.
 
-## 13. AppBuilder
+
+## 18. AppBuilder
 
 `AppBuilder` owns the mechanical bootstrap sequence for host startup.
 It constructs `AppComponents` in phase order and keeps activation of
 runtime side effects separate from construction so tests can avoid
 background I/O.
 
-## 12. Configuration snapshots with EnvContext
+## 17. Configuration snapshots with EnvContext
 
 The configuration system now supports an explicit snapshot model through
 `crate::config::EnvContext`. Use it whenever a caller already knows the
@@ -324,7 +451,48 @@ For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
 tests independent of host machine secrets, keychains, and shell state.
 
-## 13. AppBuilder
+## 18. AppBuilder
+
+`AppBuilder` owns the mechanical bootstrap sequence for host startup.
+It constructs `AppComponents` in phase order and keeps activation of
+runtime side effects separate from construction so tests can avoid
+background I/O.
+
+## 17. Configuration snapshots with EnvContext
+
+The configuration system now supports an explicit snapshot model through
+`crate::config::EnvContext`. Use it whenever a caller already knows the
+exact environment inputs that should participate in config resolution.
+
+The intended call pattern is:
+
+1. Capture ambient inputs once at the application boundary with
+   `EnvContext::capture_ambient()`.
+2. Optionally inject secret overlays into that snapshot with
+   `inject_llm_keys_into_context(...)` and
+   `inject_os_credentials_into_context(...)`.
+3. Build config through `Config::from_context(...)` or
+   `Config::from_context_with_toml(...)`.
+
+This keeps config resolution deterministic because the policy layer reads
+from an explicit snapshot instead of touching ambient process state while
+it resolves individual sub-configs.
+
+Use the older ambient entrypoints only when the caller genuinely wants
+them to do the capture work:
+
+- `Config::from_env*` captures process env and bootstrap overlays for
+  early startup paths.
+- `Config::from_db*` combines DB-backed settings with an ambient env
+  snapshot.
+- `Config::from_context*` should be preferred in tests, pure setup code,
+  and any flow that already owns a stable input snapshot.
+
+For tests, prefer the helpers in `src/testing/test_utils.rs` or
+`Config::for_testing(...)` instead of mutating `std::env`. That keeps
+tests independent of host machine secrets, keychains, and shell state.
+
+## 18. AppBuilder
 
 `AppBuilder` owns the mechanical bootstrap sequence for host startup.
 It constructs `AppComponents` in phase order and keeps activation of
@@ -418,7 +586,7 @@ Table: `AppBuilderFlags` fields and effects.
 | `workspace_import_dir` | `Option<PathBuf>` | Directory to import into the workspace on activation; captured at construction so `RuntimeSideEffects::start()` does not re-read the environment |
 
 
-## 14. Fast local validation loop
+## 19. Fast local validation loop
 
 For quick host-side iteration on Linux or WSL with the current branch
 assumptions:
@@ -441,7 +609,8 @@ cargo nextest run --workspace --no-default-features --features libsql \
 To compare behaviour against the legacy harness, use `make test-cargo`
 or `make test-matrix-cargo`.
 
-## 15. Self-repair internals
+
+## 20. Self-repair internals
 
 The agent loop starts the self-repair subsystem in
 `src/agent/agent_loop.rs` as two cooperating background tasks:
@@ -476,7 +645,8 @@ When modifying this path, keep three invariants in mind:
   [Jobs and Routines](./jobs-and-routines.md) and the
   [User's Guide](./users-guide.md).
 
-## 16. Database-backed work
+
+## 21. Database-backed work
 
 For work on the default feature set or PostgreSQL-backed tests, prepare
 a local database with `pgvector` enabled:
@@ -504,7 +674,7 @@ export DATABASE_URL=postgres://localhost/ironclaw
 Adjust the connection string if the local PostgreSQL instance requires a
 different host, user, or password.
 
-## 14. Fast local validation loop
+## 19. Fast local validation loop
 
 For quick host-side iteration on Linux or WSL with the current branch
 assumptions:
@@ -527,7 +697,7 @@ cargo nextest run --workspace --no-default-features --features libsql \
 To compare behaviour against the legacy harness, use `make test-cargo`
 or `make test-matrix-cargo`.
 
-## 15. Self-repair internals
+## 20. Self-repair internals
 
 The agent loop starts the self-repair subsystem in
 `src/agent/agent_loop.rs` as two cooperating background tasks:
@@ -562,7 +732,93 @@ When modifying this path, keep three invariants in mind:
   [Jobs and Routines](./jobs-and-routines.md) and the
   [User's Guide](./users-guide.md).
 
-## 16. Database-backed work
+## 21. Database-backed work
+
+For work on the default feature set or PostgreSQL-backed tests, prepare
+a local database with `pgvector` enabled:
+
+```bash
+createdb ironclaw
+psql ironclaw -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+Then set the database connection variable:
+
+Variable: `DATABASE_URL`
+Meaning: PostgreSQL connection URL used by the app.
+Default or rule:
+Required for PostgreSQL-backed work. For local development,
+`postgres://localhost/ironclaw` is a typical example; include the correct user,
+password, host, port, and database name when a local setup requires them.
+
+Example:
+
+```bash
+export DATABASE_URL=postgres://localhost/ironclaw
+```
+
+Adjust the connection string if the local PostgreSQL instance requires a
+different host, user, or password.
+
+## 19. Fast local validation loop
+
+For quick host-side iteration on Linux or WSL with the current branch
+assumptions:
+
+```bash
+set -o pipefail
+/usr/bin/time -f 'ELAPSED %E\nMAXRSS_KB %M' \
+  cargo check --no-default-features --features libsql --timings \
+  2>&1 | tee /tmp/check-ironclaw-$(git branch --show-current | tr '/' '-').out
+```
+
+The standard fast host-side test path is now:
+
+```bash
+set -o pipefail
+cargo nextest run --workspace --no-default-features --features libsql \
+  2>&1 | tee /tmp/nextest-ironclaw-$(git branch --show-current | tr '/' '-').out
+```
+
+To compare behaviour against the legacy harness, use `make test-cargo`
+or `make test-matrix-cargo`.
+
+## 20. Self-repair internals
+
+The agent loop starts the self-repair subsystem in
+`src/agent/agent_loop.rs` as two cooperating background tasks:
+
+- `RepairTask` runs the periodic detection-and-repair cycle.
+- A notification forwarder receives `RepairNotification` values and converts
+  them into `OutgoingResponse::text("Self-Repair: ...")`, runs the normal
+  `BeforeOutbound` hook path, and then broadcasts them with the routed channel
+  metadata carried on each notification.
+
+The implementation lives in `src/agent/self_repair/` and follows the
+[architecture decision record (ADR) 006](./adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
+dual-trait pattern already used elsewhere in the repository:
+
+- `traits.rs` defines the dyn-safe `SelfRepair` boundary plus the native async
+  sibling trait `NativeSelfRepair`.
+- `default.rs` implements `DefaultSelfRepair`, including threshold-based stuck
+  job detection using `ContextManager::find_stuck_contexts()` and
+  `JobContext::stuck_since()`.
+- `task.rs` owns the periodic repair loop, notification best-effort delivery,
+  and cooperative shutdown through a `oneshot` channel.
+- `types.rs` holds the shared value types such as `StuckJob`, `BrokenTool`,
+  `RepairResult`, and `RepairNotification`.
+
+When modifying this path, keep three invariants in mind:
+
+- `RepairTask` shutdown must remain cooperative, including during active repair
+  awaits.
+- Repair notifications must remain best-effort so a slow consumer cannot stall
+  the repair cycle.
+- User-facing behaviour changes in self-repair should update both
+  [Jobs and Routines](./jobs-and-routines.md) and the
+  [User's Guide](./users-guide.md).
+
+## 21. Database-backed work
 
 For work on the default feature set or PostgreSQL-backed tests, prepare
 a local database with `pgvector` enabled:
@@ -652,7 +908,7 @@ necessary — and must not be duplicated — in individual store
 `connect()` methods.
 
 
-## 17. Dispatcher architecture
+## 22. Dispatcher architecture
 
 The dispatcher orchestrates interactive chat turns by preparing an LLM
 `ReasoningContext`, running a tool-aware agentic loop, and converting
@@ -682,7 +938,37 @@ Key dispatcher APIs:
   auth/image side-effects. Status-send failures are explicitly ignored
   to keep UI updates non-blocking.
 
-## 17. Dispatcher architecture
+## 22. Dispatcher architecture
+
+The dispatcher orchestrates interactive chat turns by preparing an LLM
+`ReasoningContext`, running a tool-aware agentic loop, and converting
+loop outcomes into channel outputs. It is decomposed into three layers:
+
+- Core (`src/agent/dispatcher/core.rs`): builds `RunLoopCtx`, computes
+  iteration thresholds via `compute_loop_thresholds` (yields
+  `LoopThresholds { nudge_at, force_text_at, hard_ceiling }`), prepares
+  prompts and active skills, and instantiates the delegate.
+- Delegate (`src/agent/dispatcher/delegate/*`): per-iteration control
+  — prompt refresh; LLM call; three-phase tool pipeline (preflight →
+  execution → post-flight); status, auth, and image-sentinel handling.
+- Types (`src/agent/dispatcher/types.rs`): pure helpers and simple data
+  structures (preview truncation, auth parsing, message compaction,
+  etc.).
+
+Key dispatcher APIs:
+
+- `RunLoopCtx`: per-run container that carries the session handle,
+  `thread_id`, and the turn's initial messages.
+- `compute_loop_thresholds(max_tool_iterations) -> LoopThresholds`:
+  - `nudge_at`: inject a gentle “prefer text” hint before forcing text.
+  - `force_text_at`: disable tools and force the LLM to produce text.
+  - `hard_ceiling`: safety net that guarantees termination.
+- `ChatDelegate` (internal): implements preflight, execution
+  (inline/parallel), ordered post-flight folding, status broadcast, and
+  auth/image side-effects. Status-send failures are explicitly ignored
+  to keep UI updates non-blocking.
+
+## 22. Dispatcher architecture
 
 The dispatcher orchestrates interactive chat turns by preparing an LLM
 `ReasoningContext`, running a tool-aware agentic loop, and converting
@@ -810,7 +1096,7 @@ Migration guidance:
   releasing new terminal transitions
 
 
-## 18. End-to-end (E2E) prerequisites
+## 23. End-to-end (E2E) prerequisites
 
 For browser-based tests:
 
@@ -826,12 +1112,13 @@ fans test slices out from that artifact. That is the closest existing
 example of the faster compile-once, fan-out pattern the compile-time
 reduction effort should reuse elsewhere.
 
-## 19. Trace and channel test helpers
+
+## 24. Trace and channel test helpers
 
 Three test-support helpers were added in PR `#161` to make replay-based
 and worker-coverage tests more reliable.
 
-## 18. End-to-end (E2E) prerequisites
+## 23. End-to-end (E2E) prerequisites
 
 For browser-based tests:
 
@@ -847,7 +1134,28 @@ fans test slices out from that artifact. That is the closest existing
 example of the faster compile-once, fan-out pattern the compile-time
 reduction effort should reuse elsewhere.
 
-## 19. Trace and channel test helpers
+## 24. Trace and channel test helpers
+
+Three test-support helpers were added in PR `#161` to make replay-based
+and worker-coverage tests more reliable.
+
+## 23. End-to-end (E2E) prerequisites
+
+For browser-based tests:
+
+```bash
+python3 --version
+cd tests/e2e
+pip install -e .
+playwright install --with-deps chromium
+```
+
+The CI E2E workflow currently builds the binary once, uploads it, and
+fans test slices out from that artifact. That is the closest existing
+example of the faster compile-once, fan-out pattern the compile-time
+reduction effort should reuse elsewhere.
+
+## 24. Trace and channel test helpers
 
 Three test-support helpers were added in PR `#161` to make replay-based
 and worker-coverage tests more reliable.
@@ -927,7 +1235,7 @@ awaited mutex lock. Use this when contention on the status-event lock
 would cause `captured_status_events` to panic.
 
 
-## 20. WASM-specific notes
+## 25. WASM-specific notes
 
 The repository contains standalone WASM tool and channel crates. Normal
 host commands such as `cargo check`, `make typecheck`, and `make test`
@@ -978,7 +1286,58 @@ async fn github_wasm_fixture_executes() -> anyhow::Result<()> {
 }
 ```
 
-## 20. WASM-specific notes
+## 25. WASM-specific notes
+
+The repository contains standalone WASM tool and channel crates. Normal
+host commands such as `cargo check`, `make typecheck`, and `make test`
+no longer auto-build Telegram or other channels from `build.rs`.
+
+The WASM toolchain is still required when intentionally building
+extensions because:
+
+- the GitHub WASM tool is built explicitly by `make build-github-tool-wasm`,
+- channel build scripts rely on `cargo-component` and `wasm-tools`,
+- some CI and release paths rebuild channels or tools as part of
+  validation.
+
+When WIT files, standalone extension crates, or channel code change,
+expect the WASM toolchain requirements to apply even if the main focus
+is the Rust host crate. Common explicit commands are:
+
+- `./scripts/build-wasm-extensions.sh --channels` for all registered
+  channels; by default it reuses the shared
+  `target/wasm-extensions/` target dir,
+- `./channels-src/telegram/build.sh` for a deployable Telegram channel
+  artifact with `telegram.wasm`.
+
+For host-side tests that need a real GitHub WASM component instead of a
+hand-built fixture, use the shared helper in `src/testing/mod.rs`:
+`github_wasm_wrapper() -> anyhow::Result<WasmToolWrapper>`.
+
+This helper:
+
+- builds a `WasmToolWrapper` around the shared GitHub test artifact,
+- recovers the exported description and schema before returning, so the
+  wrapper exposes the same advertised contract used by runtime
+  fallback-guidance tests,
+- avoids duplicating WASM runtime preparation in each test module.
+
+Typical usage from an async test or `rstest` fixture is:
+
+```rust
+use ironclaw::testing::github_wasm_wrapper;
+
+#[tokio::test]
+async fn github_wasm_fixture_executes() -> anyhow::Result<()> {
+    let wrapper = github_wasm_wrapper().await?;
+    let definition = wrapper.definition();
+
+    assert_eq!(definition.name, "github");
+    Ok(())
+}
+```
+
+## 25. WASM-specific notes
 
 The repository contains standalone WASM tool and channel crates. Normal
 host commands such as `cargo check`, `make typecheck`, and `make test`
@@ -1073,7 +1432,7 @@ a primary schema-transport mechanism: the canonical schema remains the
 advertised `ToolDefinition.parameters` value.
 
 
-## 21. When to use cargo test versus cargo-nextest
+## 26. When to use cargo test versus cargo-nextest
 
 Today:
 
@@ -1092,7 +1451,8 @@ For the compile-time reduction effort:
 - do not assume standalone WASM crates or every focused test path has
   migrated away from `cargo test`.
 
-## 22. Troubleshooting
+
+## 27. Troubleshooting
 
 - If `cargo` says `wasm32-wasip2` is missing, rerun
   `rustup target add wasm32-wasip2`.
@@ -1107,13 +1467,14 @@ For the compile-time reduction effort:
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
 
-## 23. Hot-reload architecture
+
+## 28. Hot-reload architecture
 
 The `src/reload/` module provides hot-reload capabilities for configuration,
 HTTP listeners, and secrets without restarting the application. This is
 triggered by the Unix hangup signal (SIGHUP) in production environments.
 
-## 21. When to use cargo test versus cargo-nextest
+## 26. When to use cargo test versus cargo-nextest
 
 Today:
 
@@ -1132,7 +1493,7 @@ For the compile-time reduction effort:
 - do not assume standalone WASM crates or every focused test path has
   migrated away from `cargo test`.
 
-## 22. Troubleshooting
+## 27. Troubleshooting
 
 - If `cargo` says `wasm32-wasip2` is missing, rerun
   `rustup target add wasm32-wasip2`.
@@ -1147,7 +1508,47 @@ For the compile-time reduction effort:
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
 
-## 23. Hot-reload architecture
+## 28. Hot-reload architecture
+
+The `src/reload/` module provides hot-reload capabilities for configuration,
+HTTP listeners, and secrets without restarting the application. This is
+triggered by the Unix hangup signal (SIGHUP) in production environments.
+
+## 26. When to use cargo test versus cargo-nextest
+
+Today:
+
+- repository defaults such as `make test` and `make test-matrix` use
+  `cargo-nextest` for the root crate,
+- focused standalone WASM crate checks still use `cargo test`,
+- the GitHub WASM tool crate still uses `cargo test` from the standard
+  repository targets.
+
+For the compile-time reduction effort:
+
+- treat `cargo-nextest` as the normal host-side runner for the root
+  crate,
+- use `make test-cargo` or `make test-matrix-cargo` when comparison
+  against the old harness is needed,
+- do not assume standalone WASM crates or every focused test path has
+  migrated away from `cargo test`.
+
+## 27. Troubleshooting
+
+- If `cargo` says `wasm32-wasip2` is missing, rerun
+  `rustup target add wasm32-wasip2`.
+- If builds fail because `wasm-tools` or `cargo-component` is missing,
+  reinstall them with `cargo install ... --locked`.
+- If local Linux or WSL timings look much slower than CI, verify that
+  `clang` and `mold` are installed and that `.cargo/config.toml` is
+  present before drawing conclusions.
+- If PostgreSQL-backed tests fail on connection, rerun them with
+  `--no-default-features --features libsql` until the local database is
+  ready.
+- If Playwright is missing browsers, rerun
+  `playwright install --with-deps chromium`.
+
+## 28. Hot-reload architecture
 
 The `src/reload/` module provides hot-reload capabilities for configuration,
 HTTP listeners, and secrets without restarting the application. This is
@@ -1254,13 +1655,19 @@ Use these in unit tests to verify manager behaviour without real I/O.
 Example usage is in `src/reload/manager/tests.rs`.
 
 
-## 24. WASM tool schema normalization
+## 29. WASM tool schema normalization
 
 WASM tools carry a parameter schema that describes their inputs to the
 language model (LLM). The canonical normalization logic lives in
 `src/tools/registry/schema.rs`.
 
-## 24. WASM tool schema normalization
+## 29. WASM tool schema normalization
+
+WASM tools carry a parameter schema that describes their inputs to the
+language model (LLM). The canonical normalization logic lives in
+`src/tools/registry/schema.rs`.
+
+## 29. WASM tool schema normalization
 
 WASM tools carry a parameter schema that describes their inputs to the
 language model (LLM). The canonical normalization logic lives in
@@ -1299,7 +1706,7 @@ backends may persist placeholder or null schemas that must be stripped
 before the guest-export recovery logic can run.
 
 
-## 25. End-to-end WASM schema regression tests
+## 30. End-to-end WASM schema regression tests
 
 The `e2e_traces` integration test target includes first-call WASM schema
 regression tests introduced in roadmap item `1.2.4`. These tests live in
@@ -1311,7 +1718,19 @@ feature because they import the GitHub test helper
 `e2e_traces` target, so Cargo skips it gracefully when the feature is
 absent rather than emitting a compile error.
 
-## 25. End-to-end WASM schema regression tests
+## 30. End-to-end WASM schema regression tests
+
+The `e2e_traces` integration test target includes first-call WASM schema
+regression tests introduced in roadmap item `1.2.4`. These tests live in
+`tests/e2e_traces/wasm_schema_exposure.rs` and require the `test-helpers`
+feature because they import the GitHub test helper
+`ironclaw::testing::github_wasm_wrapper`.
+
+`Cargo.toml` declares `required-features = ["test-helpers"]` for the
+`e2e_traces` target, so Cargo skips it gracefully when the feature is
+absent rather than emitting a compile error.
+
+## 30. End-to-end WASM schema regression tests
 
 The `e2e_traces` integration test target includes first-call WASM schema
 regression tests introduced in roadmap item `1.2.4`. These tests live in
@@ -1422,7 +1841,7 @@ assert_eq!(
 ```
 
 
-## 26. Expected follow-up changes
+## 31. Expected follow-up changes
 
 This guide documents the environment as of the current branch. The
 compile-time reduction plan is still expected to change some of the
@@ -1432,9 +1851,9 @@ artifacts and CI duplication.
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
 
-## 27. Phased startup pipeline
+## 32. Phased startup pipeline
 
-## 26. Expected follow-up changes
+## 31. Expected follow-up changes
 
 This guide documents the environment as of the current branch. The
 compile-time reduction plan is still expected to change some of the
@@ -1444,7 +1863,19 @@ artifacts and CI duplication.
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
 
-## 27. Phased startup pipeline
+## 32. Phased startup pipeline
+
+## 31. Expected follow-up changes
+
+This guide documents the environment as of the current branch. The
+compile-time reduction plan is still expected to change some of the
+standard commands further, especially around shared extension build
+artifacts and CI duplication.
+
+When those changes land, this guide must be updated in the same branch
+so local setup instructions stay truthful.
+
+## 32. Phased startup pipeline
 
 ### WebhookServer test helpers
 
