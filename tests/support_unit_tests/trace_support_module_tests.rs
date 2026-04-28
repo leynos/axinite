@@ -203,9 +203,9 @@ fn trace_llm_diagnostics_start_at_zero() {
 async fn trace_llm_from_file_async_loads_fixture() {
     let file = write_trace_fixture();
 
-    let llm = TraceLlm::from_file_async(file.path()).await;
-
-    assert!(llm.is_ok(), "TraceLlm::from_file_async should load fixture");
+    TraceLlm::from_file_async(file.path())
+        .await
+        .expect("TraceLlm::from_file_async should load fixture from write_trace_fixture()");
 }
 
 #[tokio::test]
