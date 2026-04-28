@@ -240,10 +240,27 @@ fn rename_to_migrated_cases(
     }
 }
 
+#[traced_test]
+#[rstest]
+fn rename_legacy_bootstrap_success_logging(mut rename_fixture: RenameFixture) {
+    rename_fixture.path = rename_fixture.dir.path().join("bootstrap.json");
+    rename_fixture.prepare(RenameSetup::ExistingFile);
+
+    super::super::migration::rename_legacy_bootstrap(rename_fixture.dir.path());
+
+    assert!(
+        rename_fixture
+            .dir
+            .path()
+            .join("bootstrap.json.migrated")
+            .exists()
+    );
+    assert!(logs_contain("Renamed old bootstrap.json to .migrated"));
+}
+
 #[cfg(unix)]
 #[traced_test]
 #[rstest]
-#[case::success(RenameSetup::ExistingFile, false, true)]
 #[case::permission_denied(RenameSetup::ReadOnlyDirectory, true, false)]
 fn rename_legacy_bootstrap_logging_cases(
     mut rename_fixture: RenameFixture,
@@ -256,15 +273,6 @@ fn rename_legacy_bootstrap_logging_cases(
 
     super::super::migration::rename_legacy_bootstrap(rename_fixture.dir.path());
 
-    if matches!(setup, RenameSetup::ExistingFile) {
-        assert!(
-            rename_fixture
-                .dir
-                .path()
-                .join("bootstrap.json.migrated")
-                .exists()
-        );
-    }
     assert_eq!(logs_contain("Failed to rename"), expected_warn_log);
     assert_eq!(
         logs_contain("Renamed old bootstrap.json to .migrated"),
