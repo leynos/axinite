@@ -71,6 +71,8 @@ pub struct Calls {
     pub status_history: Mutex<Vec<StatusCallWithId>>,
     /// Full history of all event calls with job IDs.
     pub event_history: Mutex<Vec<EventCallWithId>>,
+    /// Tool names passed to `mark_tool_repaired`.
+    pub repaired_tools: Mutex<Vec<String>>,
 }
 
 impl Calls {
@@ -122,12 +124,18 @@ impl Calls {
         self.event_history.lock().await.push(history_call);
     }
 
+    /// Record a repaired-tool marker call.
+    pub async fn record_repaired_tool(&self, tool_name: &str) {
+        self.repaired_tools.lock().await.push(tool_name.to_string());
+    }
+
     /// Clear all captured call history.
     pub async fn clear(&self) {
         *self.last_status.lock().await = None;
         *self.last_event.lock().await = None;
         self.status_history.lock().await.clear();
         self.event_history.lock().await.clear();
+        self.repaired_tools.lock().await.clear();
     }
 }
 

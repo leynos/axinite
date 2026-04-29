@@ -11,7 +11,7 @@ use crate::agent::self_repair::default::{DefaultSelfRepair, duration_since};
 use crate::agent::self_repair::{BrokenTool, NativeSelfRepair, RepairResult, StuckJob};
 use crate::context::{ContextManager, JobState};
 use crate::error::{RepairError, ToolError};
-use crate::testing::null_db::NullDatabase;
+use crate::testing::null_db::{CapturingStore, NullDatabase};
 use crate::tools::builder::ProjectName;
 use crate::tools::{BuildRequirement, BuildResult, Language, NativeSoftwareBuilder, SoftwareType};
 use uuid::Uuid;
@@ -439,6 +439,16 @@ fn build_repair_requirement_valid_name_produces_correct_fields() {
     assert_eq!(req.name.as_str(), "my-tool");
     assert_eq!(req.software_type, SoftwareType::WasmTool);
     assert_eq!(req.language, Language::Rust);
+    assert_eq!(
+        req.description,
+        concat!(
+            "Repair broken WASM tool.\n\n",
+            "Tool name: my-tool\n",
+            "Previous error: Unknown error\n",
+            "Failure count: 3\n\n",
+            "Analyze the error, fix the implementation, and rebuild."
+        )
+    );
     assert!(req.capabilities.contains(&"http".to_string()));
     assert!(req.capabilities.contains(&"workspace".to_string()));
     assert!(req.dependencies.is_empty());
@@ -513,7 +523,7 @@ fn build_repair_requirement_rejects_name_with_spaces() {
 async fn handle_build_result_returns_success_when_build_succeeded() {
     let tool = stub_broken_tool("my-tool", None, 0);
     let result = stub_build_result(true, None, 3, false);
-    let store = NullDatabase::new();
+    let store = CapturingStore::new();
 
     let repair = DefaultSelfRepair::handle_build_result(result, &tool, &store)
         .await
@@ -534,6 +544,12 @@ async fn handle_build_result_returns_success_when_build_succeeded() {
             "message should include iteration count"
         );
     }
+
+    assert_eq!(
+        *store.calls().repaired_tools.lock().await,
+        vec!["my-tool".to_string()],
+        "successful repair should mark the tool as repaired"
+    );
 }
 
 #[tokio::test]
@@ -595,7 +611,7 @@ async fn handle_build_result_uses_unknown_error_when_no_error_string() {
 #[tokio::test]
 async fn attempt_repair_build_returns_success_when_builder_succeeds() {
     let tool = stub_broken_tool("my-tool", None, 0);
-    let store = NullDatabase::new();
+    let store = CapturingStore::new();
     let builder = StubSoftwareBuilder(StubBuilderOutcome::BuildSucceeded {
         success: true,
         error: None,
@@ -612,6 +628,11 @@ async fn attempt_repair_build_returns_success_when_builder_succeeds() {
         matches!(repair, RepairResult::Success { .. }),
         "expected RepairResult::Success, got: {:?}",
         repair
+    );
+    assert_eq!(
+        *store.calls().repaired_tools.lock().await,
+        vec!["my-tool".to_string()],
+        "successful build should delegate to handle_build_result"
     );
 }
 
