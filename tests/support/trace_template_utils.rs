@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
+use anyhow::Context;
 use ironclaw::llm::{ChatMessage, Role};
 
 const MAX_TEMPLATE_EXPANSIONS: usize = 128;
@@ -41,8 +42,7 @@ fn flatten_json_root_into_vars(
 /// # Arguments
 ///
 /// - `messages`: Chat messages emitted so far in a trace replay. Only messages
-///   with `Role::Tool`, a `tool_call_id`, and valid JSON content contribute
-///   variables.
+///   with `Role::Tool` and a `tool_call_id` contribute variables.
 ///
 /// # Returns
 ///
@@ -52,8 +52,9 @@ fn flatten_json_root_into_vars(
 ///
 /// # Errors
 ///
-/// This function does not return errors. Messages without a tool call id and
-/// messages whose content cannot be parsed as JSON are ignored.
+/// Returns an error when a tool-result message has a `tool_call_id` but its
+/// content cannot be parsed as JSON. The error context includes the tool call
+/// id so malformed recorded output is diagnosable.
 ///
 /// # Panics
 ///
@@ -72,7 +73,7 @@ fn flatten_json_root_into_vars(
 /// tool-result content.
 pub(super) fn extract_tool_result_vars(
     messages: &[ChatMessage],
-) -> HashMap<String, serde_json::Value> {
+) -> anyhow::Result<HashMap<String, serde_json::Value>> {
     let mut vars = HashMap::new();
     for message in messages {
         if message.role != Role::Tool {
@@ -82,12 +83,12 @@ pub(super) fn extract_tool_result_vars(
             continue;
         };
         let content = unwrap_tool_output(&message.content);
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
-            continue;
-        };
+        let json = serde_json::from_str::<serde_json::Value>(&content).with_context(|| {
+            format!("failed to parse JSON tool output for tool call id `{call_id}`")
+        })?;
         flatten_json_root_into_vars(call_id, &json, &mut vars);
     }
-    vars
+    Ok(vars)
 }
 
 fn flatten_json_vars(
@@ -227,6 +228,15 @@ pub(super) fn substitute_templates(
     }
 }
 
+pub(super) fn value_contains_template(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::String(s) => s.contains("{{") && s.contains("}}"),
+        serde_json::Value::Array(items) => items.iter().any(value_contains_template),
+        serde_json::Value::Object(map) => map.values().any(value_contains_template),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,6 +289,21 @@ mod tests {
     }
 
     #[test]
+    fn value_contains_template_detects_nested_placeholders() {
+        let value = serde_json::json!({
+            "items": [
+                {"plain": "value"},
+                {"templated": "prefix {{call.value}} suffix"}
+            ]
+        });
+
+        assert!(value_contains_template(&value));
+        assert!(!value_contains_template(&serde_json::json!({
+            "items": [{"plain": "value"}]
+        })));
+    }
+
+    #[test]
     fn extract_tool_result_vars_flattens_non_object_roots() {
         let messages = [ChatMessage {
             role: Role::Tool,
@@ -289,9 +314,30 @@ mod tests {
             tool_calls: None,
         }];
 
-        let vars = extract_tool_result_vars(&messages);
+        let vars = extract_tool_result_vars(&messages)
+            .expect("array-root tool output should parse into template vars");
 
         assert_eq!(vars.get("call_array.0"), Some(&serde_json::json!("alpha")));
         assert_eq!(vars.get("call_array.1"), Some(&serde_json::json!(true)));
+    }
+
+    #[test]
+    fn extract_tool_result_vars_reports_malformed_tool_json() {
+        let messages = [ChatMessage {
+            role: Role::Tool,
+            content: "{not json".to_string(),
+            content_parts: Vec::new(),
+            tool_call_id: Some("call_bad_json".to_string()),
+            name: None,
+            tool_calls: None,
+        }];
+
+        let err = extract_tool_result_vars(&messages)
+            .expect_err("malformed tool output should fail template extraction");
+
+        assert!(
+            err.to_string().contains("call_bad_json"),
+            "error should identify the malformed tool call: {err:#}"
+        );
     }
 }

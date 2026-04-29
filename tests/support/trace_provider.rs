@@ -6,13 +6,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use rust_decimal::Decimal;
 
 use ironclaw::error::LlmError;
-use ironclaw::llm::recording::{RequestHint, TraceResponse, TraceStep};
+use ironclaw::llm::recording::{RequestHint, TraceResponse, TraceStep, TraceToolCall};
 use ironclaw::llm::{
     ChatMessage, CompletionRequest, CompletionResponse, FinishReason, Role, ToolCall,
     ToolCompletionRequest, ToolCompletionResponse,
 };
 
-use super::trace_template_utils::{extract_tool_result_vars, substitute_templates};
+use super::trace_template_utils::{
+    extract_tool_result_vars, substitute_templates, value_contains_template,
+};
 use super::trace_types::LlmTrace;
 
 pub(super) struct TraceLlmState {
@@ -131,7 +133,14 @@ impl TraceLlm {
             ref mut tool_calls, ..
         } = step.response
         {
-            let vars = extract_tool_result_vars(messages);
+            if !tool_calls_have_templates(tool_calls) {
+                return Ok(step);
+            }
+            let vars =
+                extract_tool_result_vars(messages).map_err(|err| LlmError::RequestFailed {
+                    provider: self.model_name.clone(),
+                    reason: err.to_string(),
+                })?;
             if !vars.is_empty() {
                 for tool_call in tool_calls.iter_mut() {
                     substitute_templates(&mut tool_call.arguments, &vars);
@@ -189,6 +198,12 @@ impl TraceLlm {
             })
             .unwrap_or_else(|_| panic!("hint_mismatches overflowed"));
     }
+}
+
+fn tool_calls_have_templates(tool_calls: &[TraceToolCall]) -> bool {
+    tool_calls
+        .iter()
+        .any(|tool_call| value_contains_template(&tool_call.arguments))
 }
 
 impl ironclaw::llm::NativeLlmProvider for TraceLlm {

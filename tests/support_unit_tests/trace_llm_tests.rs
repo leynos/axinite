@@ -195,6 +195,39 @@ async fn replays_tool_calls() {
 }
 
 #[tokio::test]
+async fn replays_non_templated_tool_calls_after_plain_text_tool_errors() {
+    let trace = LlmTrace::single_turn(
+        "test-model",
+        "retry write",
+        vec![tool_calls_step(
+            vec![simple_tool_call("write_file")],
+            80,
+            15,
+        )],
+    );
+    let llm = TraceLlm::from_trace(trace);
+    let request = ToolCompletionRequest::new(
+        vec![
+            ChatMessage::user("retry write"),
+            ChatMessage::tool_result(
+                "call_failed_write",
+                "write_file",
+                "<tool_output tool=\"write_file\">Error: failed write</tool_output>",
+            ),
+        ],
+        vec![],
+    );
+
+    let resp = llm
+        .complete_with_tools(request)
+        .await
+        .expect("plain-text tool errors should not be parsed when no templates are present");
+
+    assert_eq!(resp.tool_calls.len(), 1);
+    assert_tool_call(&resp.tool_calls[0], "write_file", "call_write_file");
+}
+
+#[tokio::test]
 async fn advances_through_steps() {
     let trace = LlmTrace::single_turn(
         "test-model",

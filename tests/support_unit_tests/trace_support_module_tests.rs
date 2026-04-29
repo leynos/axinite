@@ -3,7 +3,7 @@
 use std::io::Write;
 
 use ironclaw::llm::recording::{TraceResponse, TraceStep, TraceToolCall};
-use rstest::rstest;
+use rstest::{fixture, rstest};
 
 use crate::support::trace_provider::TraceLlm;
 use crate::support::trace_types::{LlmTrace, TraceExpects, TraceTurn};
@@ -71,7 +71,8 @@ fn minimal_trace_json() -> serde_json::Value {
     })
 }
 
-fn write_trace_fixture() -> tempfile::NamedTempFile {
+#[fixture]
+fn minimal_trace_fixture() -> tempfile::NamedTempFile {
     let json = minimal_trace_json();
     let mut file = tempfile::NamedTempFile::new().expect("should create temp trace fixture");
     write!(file, "{json}").expect("should write trace fixture");
@@ -114,11 +115,10 @@ fn llm_trace_single_turn_builds_one_turn_trace() {
     }
 }
 
+#[rstest]
 #[tokio::test]
-async fn llm_trace_from_file_async_reads_fixture() {
-    let file = write_trace_fixture();
-
-    let trace = LlmTrace::from_file_async(file.path())
+async fn llm_trace_from_file_async_reads_fixture(minimal_trace_fixture: tempfile::NamedTempFile) {
+    let trace = LlmTrace::from_file_async(minimal_trace_fixture.path())
         .await
         .expect("from_file_async should load fixture");
 
@@ -203,13 +203,12 @@ fn trace_llm_diagnostics_start_at_zero() {
     assert_eq!(llm.hint_mismatches(), 0);
 }
 
+#[rstest]
 #[tokio::test]
-async fn trace_llm_from_file_async_loads_fixture() {
-    let file = write_trace_fixture();
-
-    TraceLlm::from_file_async(file.path())
+async fn trace_llm_from_file_async_loads_fixture(minimal_trace_fixture: tempfile::NamedTempFile) {
+    TraceLlm::from_file_async(minimal_trace_fixture.path())
         .await
-        .expect("TraceLlm::from_file_async should load fixture from write_trace_fixture()");
+        .expect("TraceLlm::from_file_async should load fixture from minimal_trace_fixture()");
 }
 
 #[tokio::test]
