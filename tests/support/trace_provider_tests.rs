@@ -103,7 +103,7 @@ async fn next_step_errors_on_cursor_overflow() {
         vec![text_step("hi")],
     ));
     {
-        let mut inner = llm.inner.lock().expect("TraceLlm state lock should open");
+        let mut inner = llm.lock_inner().expect("TraceLlm state lock should open");
         inner.index = usize::MAX;
     }
 
@@ -122,6 +122,39 @@ async fn next_step_errors_on_cursor_overflow() {
     assert!(
         err.to_string().contains("overflowed"),
         "expected overflow diagnostic, got {err}"
+    );
+}
+
+#[test]
+fn next_step_returns_error_when_inner_lock_is_poisoned() {
+    use std::sync::Arc;
+    use std::thread;
+
+    let llm = Arc::new(TraceLlm::from_trace(LlmTrace::single_turn(
+        "poison-model",
+        "hello",
+        vec![text_step("hi")],
+    )));
+
+    // Poison the mutex by panicking while holding it.
+    let llm2 = Arc::clone(&llm);
+    let _ = thread::spawn(move || {
+        let _guard = llm2.inner.lock().unwrap();
+        panic!("intentional poison");
+    })
+    .join();
+
+    // captured_requests() goes through lock_inner() and must return an error,
+    // not panic, when the lock is poisoned.
+    let result = llm.captured_requests();
+    assert!(
+        result.is_err(),
+        "expected LlmError when inner lock is poisoned"
+    );
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("TraceLlm state lock poisoned"),
+        "expected poison diagnostic, got {err}"
     );
 }
 

@@ -151,7 +151,7 @@ impl TraceLlm {
         Ok(step)
     }
 
-    fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, TraceLlmState>, LlmError> {
+    pub(super) fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, TraceLlmState>, LlmError> {
         self.inner.lock().map_err(|_| LlmError::RequestFailed {
             provider: self.model_name.clone(),
             reason: "TraceLlm state lock poisoned".to_string(),

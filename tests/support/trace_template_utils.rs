@@ -1,7 +1,7 @@
 //! Template substitution helpers for replayed trace tool-call arguments.
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use ironclaw::llm::{ChatMessage, Role};
 
@@ -150,48 +150,48 @@ pub(crate) fn substitute_templates(
 ) {
     match value {
         serde_json::Value::String(s) => {
-            let mut result = s.clone();
+            // Whole-string single-template fast path.
             if s.starts_with("{{") && s.ends_with("}}") && s.matches("{{").count() == 1 {
                 let key = s[2..s.len() - 2].trim();
                 if let Some(resolved) = vars.get(key) {
-                    if let Some(resolved_str) = resolved.as_str() {
-                        result = resolved_str.to_owned();
-                    } else {
-                        *value = resolved.clone();
-                        return;
+                    *value = resolved.clone();
+                    // If the resolved value is itself a string, continue
+                    // substitution so that chained templates ({{a}} ->
+                    // "{{b}}" -> 1) are fully resolved.
+                    if matches!(value, serde_json::Value::String(_)) {
+                        substitute_templates(value, vars);
                     }
+                    return;
                 }
             }
 
-            let mut visited_results = HashSet::new();
-            let mut substitutions = 0;
+            // Iterative embedded-placeholder path.
+            let mut result = s.clone();
+            let mut prev: Option<String> = None;
+            let mut substitutions = 0usize;
             while let Some(start) = result.find("{{") {
                 if substitutions >= MAX_TEMPLATE_EXPANSIONS {
                     break;
                 }
-                if !visited_results.insert(result.clone()) {
+                if prev.as_deref() == Some(&result) {
                     break;
                 }
+                prev = Some(result.clone());
 
                 if let Some(end) = result[start..].find("}}") {
                     let end = start + end + 2;
                     let key = result[start + 2..end - 2].trim();
-
                     if let Some(resolved) = vars.get(key) {
-                        if start == 0 && end == result.len() && result.matches("{{").count() == 1 {
-                            if let Some(resolved_str) = resolved.as_str() {
-                                result = resolved_str.to_owned();
-                                substitutions += 1;
-                                continue;
-                            }
-                            *value = resolved.clone();
-                            return;
-                        }
                         let replacement = resolved
                             .as_str()
                             .map(str::to_owned)
                             .unwrap_or_else(|| resolved.to_string());
-                        result = format!("{}{}{}", &result[..start], replacement, &result[end..]);
+                        let mut new_result =
+                            String::with_capacity(result.len() + replacement.len());
+                        new_result.push_str(&result[..start]);
+                        new_result.push_str(&replacement);
+                        new_result.push_str(&result[end..]);
+                        result = new_result;
                         substitutions += 1;
                     } else {
                         break;
@@ -257,19 +257,6 @@ mod tests {
     }
 
     #[test]
-    fn substitute_templates_expands_chained_whole_node_placeholders() {
-        let vars = HashMap::from([
-            ("a".to_string(), serde_json::json!("{{b}}")),
-            ("b".to_string(), serde_json::json!(1)),
-        ]);
-        let mut value = serde_json::json!("{{a}}");
-
-        substitute_templates(&mut value, &vars);
-
-        assert_eq!(value, serde_json::json!(1));
-    }
-
-    #[test]
     fn substitute_templates_preserves_scalar_json_types() {
         let vars = HashMap::from([
             ("limit".to_string(), serde_json::json!(3)),
@@ -290,6 +277,24 @@ mod tests {
                 "enabled": true,
                 "summary": "limit=3, enabled=true",
             })
+        );
+    }
+
+    #[test]
+    fn substitute_templates_resolves_chained_string_templates() {
+        // {{a}} resolves to "{{b}}", which should then resolve to 1.
+        let vars = HashMap::from([
+            ("a".to_string(), serde_json::json!("{{b}}")),
+            ("b".to_string(), serde_json::json!(1)),
+        ]);
+        let mut value = serde_json::json!("{{a}}");
+
+        substitute_templates(&mut value, &vars);
+
+        assert_eq!(
+            value,
+            serde_json::json!(1),
+            "chained template should fully resolve"
         );
     }
 
