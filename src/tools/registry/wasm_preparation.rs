@@ -5,7 +5,7 @@
 //! [`loader::WasmToolRegistration`](super::loader::WasmToolRegistration), which
 //! carries caller-supplied registration inputs, and
 //! [`ToolRegistry`](super::loader::ToolRegistry) insertion, which publishes the
-//! prepared wrapper only after this module has validated and normalised the
+//! prepared wrapper only after this module has validated and normalized the
 //! registration data.
 //!
 //! Inputs include the raw WASM bytes, runtime, [`Capabilities`], optional
@@ -151,13 +151,15 @@ mod tests {
     use rstest::rstest;
 
     use super::{
-        WasmMetadataHints, WasmRuntimeConfig, apply_wasm_overrides,
-        credential_mappings_from_capabilities, recover_guest_metadata,
+        PreparedWasmTool, WasmMetadataHints, WasmRuntimeConfig, apply_wasm_overrides,
+        credential_mappings_from_capabilities, prepare_wasm_tool, recover_guest_metadata,
     };
     use crate::secrets::CredentialMapping;
     use crate::testing::{github_wasm_artifact, metadata_test_runtime};
     use crate::tools::tool::NativeTool;
     use crate::tools::wasm::{Capabilities, HttpCapability, OAuthRefreshConfig, WasmToolWrapper};
+
+    use super::WasmToolRegistration;
 
     #[test]
     fn credential_mappings_from_capabilities_returns_empty_vec_without_http() {
@@ -183,6 +185,68 @@ mod tests {
         assert_eq!(mappings[0].host_patterns, ["admin.example.com"]);
         assert_eq!(mappings[1].secret_name, "api");
         assert_eq!(mappings[1].host_patterns, ["api.example.com"]);
+    }
+
+    #[tokio::test]
+    async fn prepare_wasm_tool_prepares_wrapper_and_collects_credentials() {
+        let runtime = metadata_test_runtime().expect("create metadata test runtime");
+        let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
+        let wasm_bytes = std::fs::read(wasm_path).expect("read github wasm artifact");
+        let capabilities =
+            Capabilities::default().with_http(HttpCapability::default().with_credential(
+                "github",
+                CredentialMapping::bearer("github_token", "api.github.com"),
+            ));
+        let expected_credential_mappings = credential_mappings_from_capabilities(&capabilities);
+        let schema_override = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"}
+            },
+            "required": ["query"]
+        });
+
+        let prepared: PreparedWasmTool = prepare_wasm_tool(WasmToolRegistration {
+            name: "github_prepare",
+            wasm_bytes: &wasm_bytes,
+            runtime: &runtime,
+            capabilities,
+            limits: None,
+            description: None,
+            schema: Some(schema_override.clone()),
+            secrets_store: None,
+            oauth_refresh: None,
+        })
+        .await
+        .expect("prepare WASM tool");
+
+        assert_eq!(prepared.wrapper.name(), "github_prepare");
+        assert_eq!(
+            prepared.wrapper.description(),
+            concat!(
+                "GitHub integration for managing repositories, issues, pull requests, and ",
+                "workflows. Supports reading repo info, listing/creating issues, reviewing ",
+                "PRs, and triggering GitHub Actions. Authentication is handled via the ",
+                "'github_token' secret injected by the host."
+            )
+        );
+        assert_eq!(prepared.wrapper.parameters_schema(), schema_override);
+        assert_eq!(
+            prepared.credential_mappings.len(),
+            expected_credential_mappings.len()
+        );
+        assert_eq!(
+            prepared.credential_mappings[0].secret_name,
+            expected_credential_mappings[0].secret_name
+        );
+        assert_eq!(
+            prepared.credential_mappings[0].host_patterns,
+            expected_credential_mappings[0].host_patterns
+        );
+        assert_eq!(
+            format!("{:?}", prepared.credential_mappings[0].location),
+            format!("{:?}", expected_credential_mappings[0].location)
+        );
     }
 
     #[tokio::test]
