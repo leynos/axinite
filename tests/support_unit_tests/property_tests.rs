@@ -25,7 +25,6 @@ proptest! {
     #[test]
     fn substitute_templates_respects_expansion_limit(
         n_vars in 1usize..=16,
-        _input_len in 0usize..=128,
     ) {
         let vars: HashMap<String, serde_json::Value> = (0..n_vars)
             .map(|i| {

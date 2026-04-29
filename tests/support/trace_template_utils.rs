@@ -202,6 +202,10 @@ pub(crate) fn substitute_templates(
     }
 }
 
+/// Returns whether a JSON value tree contains a template marker.
+///
+/// Recursively inspects the supplied [`serde_json::Value`] and returns `true`
+/// when any string node contains both `{{` and `}}`.
 pub(super) fn value_contains_template(value: &serde_json::Value) -> bool {
     match value {
         serde_json::Value::String(s) => s.contains("{{") && s.contains("}}"),

@@ -13,7 +13,7 @@ impl LlmTrace {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use ironclaw::llm::recording::{TraceResponse, TraceStep};
     ///
     /// use crate::support::trace_types::{LlmTrace, TraceExpects, TraceTurn};

@@ -43,3 +43,7 @@ pub fn setup_test_dir_with_suffix(base: &Path, suffix: &str) -> std::io::Result<
 }
 
 static NEXT_UNIQUE_DIR: AtomicU64 = AtomicU64::new(0);
+// `NEXT_UNIQUE_DIR` overflow in `setup_test_dir_with_suffix` would require
+// exhausting `u64::MAX` successful calls in one process. The path is guarded
+// for correctness, but it cannot be practically triggered in tests without
+// exposing a test-only mutation hook for production cleanup state.

@@ -207,6 +207,12 @@ impl TraceLlm {
     }
 }
 
+// The `hint_mismatches` overflow panic and `inner` lock-poison recovery path
+// are intentionally documented but not directly unit-tested here. Reaching the
+// overflow requires `usize::MAX` mismatches, and poisoning `inner` would require
+// a test-only mutation hook for `TraceLlm` internals that normal replay code
+// never needs.
+
 fn tool_calls_have_templates(tool_calls: &[TraceToolCall]) -> bool {
     tool_calls
         .iter()

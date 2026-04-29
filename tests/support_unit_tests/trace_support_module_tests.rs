@@ -72,15 +72,15 @@ fn minimal_trace_json() -> serde_json::Value {
 }
 
 #[fixture]
-fn minimal_trace_fixture() -> tempfile::NamedTempFile {
+fn minimal_trace_fixture() -> anyhow::Result<tempfile::NamedTempFile> {
     let json = minimal_trace_json();
-    let mut file = tempfile::NamedTempFile::new().expect("should create temp trace fixture");
-    write!(file, "{json}").expect("should write trace fixture");
-    file
+    let mut file = tempfile::NamedTempFile::new()?;
+    write!(file, "{json}")?;
+    Ok(file)
 }
 
 #[test]
-fn llm_trace_new_initialises_empty_optional_fields() {
+fn llm_trace_new_initializes_empty_optional_fields() {
     let turns = vec![TraceTurn {
         user_input: "hello".to_string(),
         steps: vec![text_step("world")],
@@ -117,15 +117,17 @@ fn llm_trace_single_turn_builds_one_turn_trace() {
 
 #[rstest]
 #[tokio::test]
-async fn llm_trace_from_file_async_reads_fixture(minimal_trace_fixture: tempfile::NamedTempFile) {
-    let trace = LlmTrace::from_file_async(minimal_trace_fixture.path())
-        .await
-        .expect("from_file_async should load fixture");
+async fn llm_trace_from_file_async_reads_fixture(
+    minimal_trace_fixture: anyhow::Result<tempfile::NamedTempFile>,
+) -> anyhow::Result<()> {
+    let minimal_trace_fixture = minimal_trace_fixture?;
+    let trace = LlmTrace::from_file_async(minimal_trace_fixture.path()).await?;
 
     assert_eq!(trace.model_name, "trace-model");
     assert_eq!(trace.turns.len(), 1);
     assert_eq!(trace.turns[0].user_input, "hello");
     assert_eq!(trace.turns[0].steps.len(), 1);
+    Ok(())
 }
 
 #[rstest]
@@ -203,46 +205,14 @@ fn trace_llm_diagnostics_start_at_zero() {
     assert_eq!(llm.hint_mismatches(), 0);
 }
 
-#[test]
-fn increment_hint_mismatches_panics_on_overflow() {
-    use std::panic;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    let counter = AtomicUsize::new(usize::MAX);
-    let result = panic::catch_unwind(|| {
-        counter
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                current.checked_add(1)
-            })
-            .unwrap_or_else(|_| panic!("hint_mismatches overflowed"));
-    });
-
-    assert!(result.is_err(), "expected panic on overflow");
-}
-
-#[test]
-fn calls_returns_count_after_lock_poison() {
-    use std::sync::{Arc, Mutex};
-    use std::thread;
-
-    let m = Arc::new(Mutex::new(42usize));
-    let m2 = Arc::clone(&m);
-    let _ = thread::spawn(move || {
-        let _guard = m2.lock().expect("lock should open before poisoning");
-        panic!("poison the lock");
-    })
-    .join();
-
-    let value = m.lock().unwrap_or_else(|p| p.into_inner());
-    assert_eq!(*value, 42);
-}
-
 #[rstest]
 #[tokio::test]
-async fn trace_llm_from_file_async_loads_fixture(minimal_trace_fixture: tempfile::NamedTempFile) {
-    TraceLlm::from_file_async(minimal_trace_fixture.path())
-        .await
-        .expect("TraceLlm::from_file_async should load fixture from minimal_trace_fixture()");
+async fn trace_llm_from_file_async_loads_fixture(
+    minimal_trace_fixture: anyhow::Result<tempfile::NamedTempFile>,
+) -> anyhow::Result<()> {
+    let minimal_trace_fixture = minimal_trace_fixture?;
+    TraceLlm::from_file_async(minimal_trace_fixture.path()).await?;
+    Ok(())
 }
 
 #[tokio::test]

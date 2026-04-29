@@ -2,10 +2,12 @@
 
 use crate::support::trace_provider::TraceLlm;
 use crate::support::trace_types::{LlmTrace, TraceExpects, TraceTurn};
-use ironclaw::llm::recording::{TraceResponse, TraceStep, TraceToolCall};
+use crate::trace_llm_test_fixtures::{
+    make_completion_request, make_request, simple_tool_call, single_text_step_llm, text_step,
+    tool_calls_step,
+};
 use ironclaw::llm::{
-    ChatMessage, CompletionRequest, FinishReason, LlmProvider, Role, ToolCall,
-    ToolCompletionRequest,
+    ChatMessage, FinishReason, LlmProvider, Role, ToolCall, ToolCompletionRequest,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -79,60 +81,6 @@ fn assert_tool_call(call: &ToolCall, expected_name: &str, expected_id: &str) {
     assert_eq!(call.name, expected_name);
     assert_eq!(call.id, expected_id);
     assert_eq!(call.arguments, serde_json::json!({"key": "value"}));
-}
-
-fn text_step(content: &str, input_tokens: u32, output_tokens: u32) -> TraceStep {
-    TraceStep {
-        request_hint: None,
-        response: TraceResponse::Text {
-            content: content.to_string(),
-            input_tokens,
-            output_tokens,
-        },
-        expected_tool_results: Vec::new(),
-    }
-}
-
-fn tool_calls_step(calls: Vec<TraceToolCall>, input: u32, output: u32) -> TraceStep {
-    TraceStep {
-        request_hint: None,
-        response: TraceResponse::ToolCalls {
-            tool_calls: calls,
-            input_tokens: input,
-            output_tokens: output,
-        },
-        expected_tool_results: Vec::new(),
-    }
-}
-
-fn simple_tool_call(name: &str) -> TraceToolCall {
-    TraceToolCall {
-        id: format!("call_{name}"),
-        name: name.to_string(),
-        arguments: serde_json::json!({"key": "value"}),
-    }
-}
-
-fn make_request(user_msg: &str) -> ToolCompletionRequest {
-    ToolCompletionRequest::new(vec![ChatMessage::user(user_msg)], vec![])
-}
-
-fn make_completion_request(user_msg: &str) -> CompletionRequest {
-    CompletionRequest::new(vec![ChatMessage::user(user_msg)])
-}
-
-fn single_text_step_llm(
-    user_msg: &str,
-    content: &str,
-    input_tokens: u32,
-    output_tokens: u32,
-) -> TraceLlm {
-    let trace = LlmTrace::single_turn(
-        "test-model",
-        user_msg,
-        vec![text_step(content, input_tokens, output_tokens)],
-    );
-    TraceLlm::from_trace(trace)
 }
 
 #[tokio::test]
