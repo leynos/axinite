@@ -64,18 +64,32 @@ impl DefaultSelfRepair {
         tool: &BrokenTool,
     ) -> Result<BuilderAndDb<'_>, RepairResult> {
         let Some(ref builder) = self.builder else {
+            tracing::warn!(
+                tool_name = %tool.name,
+                "repair precondition failed: builder not available"
+            );
             return Err(RepairResult::ManualRequired {
                 message: format!("Builder not available for repairing tool '{}'", tool.name),
             });
         };
 
         let Some(ref store) = self.store else {
+            tracing::warn!(
+                tool_name = %tool.name,
+                "repair precondition failed: store not available"
+            );
             return Err(RepairResult::ManualRequired {
                 message: "Store not available for tracking repair".to_string(),
             });
         };
 
         if tool.repair_attempts >= self.max_repair_attempts {
+            tracing::warn!(
+                tool_name = %tool.name,
+                repair_attempts = tool.repair_attempts,
+                max_repair_attempts = self.max_repair_attempts,
+                "repair precondition failed: max repair attempts exceeded"
+            );
             return Err(RepairResult::ManualRequired {
                 message: format!(
                     "Tool '{}' exceeded max repair attempts ({})",
@@ -135,14 +149,21 @@ impl DefaultSelfRepair {
             );
 
             // Mark as repaired in database
-            store
-                .mark_tool_repaired(&tool.name)
-                .await
-                .map_err(|e| RepairError::Failed {
-                    target_type: "tool".to_string(),
-                    target_id: Uuid::nil(),
-                    reason: format!("failed to mark {} as repaired: {}", tool.name, e),
-                })?;
+            match store.mark_tool_repaired(&tool.name).await {
+                Ok(()) => {}
+                Err(e) => {
+                    tracing::error!(
+                        tool_name = %tool.name,
+                        error = %e,
+                        "failed to mark tool as repaired in database after successful build"
+                    );
+                    return Err(RepairError::Failed {
+                        target_type: "tool".to_string(),
+                        target_id: Uuid::nil(),
+                        reason: format!("failed to mark {} as repaired: {}", tool.name, e),
+                    });
+                }
+            }
 
             // Log if the tool was auto-registered
             if result.registered {
