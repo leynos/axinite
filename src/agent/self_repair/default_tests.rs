@@ -580,7 +580,7 @@ async fn handle_build_result_uses_unknown_error_when_no_error_string() {
 // === attempt_repair_build ===
 
 #[rstest]
-#[case(true, None, 2, false, true)]
+#[case(true, None, 2, true, true)]
 #[case(false, Some("linker error"), 4, false, false)]
 #[tokio::test]
 async fn attempt_repair_build_propagates_build_outcome(
@@ -591,7 +591,7 @@ async fn attempt_repair_build_propagates_build_outcome(
     #[case] expect_success: bool,
 ) {
     let tool = stub_broken_tool("my-tool", None, 0);
-    let store = NullDatabase::new();
+    let store = CapturingStore::new();
     let builder = StubSoftwareBuilder(StubBuilderOutcome::BuildSucceeded {
         success,
         error,
@@ -605,14 +605,33 @@ async fn attempt_repair_build_propagates_build_outcome(
         .expect("attempt_repair_build should not error");
 
     if expect_success {
+        let RepairResult::Success { message } = repair else {
+            panic!("expected RepairResult::Success, got: {repair:?}");
+        };
         assert!(
-            matches!(repair, RepairResult::Success { .. }),
-            "expected RepairResult::Success, got: {repair:?}",
+            message.contains("my-tool"),
+            "message should mention tool name"
+        );
+        assert!(
+            message.contains('2'),
+            "message should include iteration count"
+        );
+        assert_eq!(
+            *store.calls().repaired_tools.lock().await,
+            vec!["my-tool".to_string()],
+            "successful build should delegate to handle_build_result"
         );
     } else {
+        let RepairResult::Retry { message } = repair else {
+            panic!("expected RepairResult::Retry, got: {repair:?}");
+        };
         assert!(
-            matches!(repair, RepairResult::Retry { .. }),
-            "expected RepairResult::Retry, got: {repair:?}",
+            message.contains("linker error"),
+            "message should include the build error"
+        );
+        assert!(
+            store.calls().repaired_tools.lock().await.is_empty(),
+            "failed build should not mark the tool as repaired"
         );
     }
 }
