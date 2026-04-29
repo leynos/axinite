@@ -66,28 +66,6 @@ async fn upload_skill_bundle_accepts_case_insensitive_content_type(
     assert_eq!(body["success"], true);
 }
 
-#[rstest]
-#[tokio::test]
-async fn upload_skill_bundle_rejects_missing_filename(skills_api_fixture: SkillsApiFixture) {
-    let archive = build_bundle_archive(&[(
-        "deploy-docs/SKILL.md",
-        skill_markdown("deploy-docs").as_bytes(),
-    )]);
-    let (content_type, body) = multipart_body(&[MultipartPart::FileWithoutFilename {
-        field_name: "bundle",
-        bytes: &archive,
-    }]);
-
-    let (status, body) =
-        post_skill_bundle_install(Arc::clone(&skills_api_fixture.state), content_type, body).await;
-
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(
-        body.contains("Uploaded skill bundle must include a filename ending with .skill"),
-        "body was: {body}"
-    );
-}
-
 /// Send a multipart POST to the skills install endpoint and return the status
 /// code and response body text.
 async fn post_skill_bundle_install(
@@ -112,23 +90,43 @@ async fn post_skill_bundle_install(
     (status, body)
 }
 
+fn body_with_missing_filename(archive: Vec<u8>) -> (String, Vec<u8>) {
+    multipart_body(&[MultipartPart::FileWithoutFilename {
+        field_name: "bundle",
+        bytes: &archive,
+    }])
+}
+
+fn body_with_wrong_extension(archive: Vec<u8>) -> (String, Vec<u8>) {
+    multipart_file_body("bundle", "deploy-docs.zip", &archive)
+}
+
 #[rstest]
+#[case::missing_filename(
+    body_with_missing_filename as fn(Vec<u8>) -> (String, Vec<u8>),
+    "Uploaded skill bundle must include a filename ending with .skill",
+)]
+#[case::wrong_extension(
+    body_with_wrong_extension as fn(Vec<u8>) -> (String, Vec<u8>),
+    "Uploaded skill bundle filename must end with .skill",
+)]
 #[tokio::test]
-async fn upload_skill_bundle_rejects_non_skill_filename(skills_api_fixture: SkillsApiFixture) {
+async fn upload_skill_bundle_rejects_invalid_bundle_filename(
+    skills_api_fixture: SkillsApiFixture,
+    #[case] make_body: fn(Vec<u8>) -> (String, Vec<u8>),
+    #[case] expected_error: &'static str,
+) {
     let archive = build_bundle_archive(&[(
         "deploy-docs/SKILL.md",
         skill_markdown("deploy-docs").as_bytes(),
     )]);
-    let (content_type, body) = multipart_file_body("bundle", "deploy-docs.zip", &archive);
+    let (content_type, body) = make_body(archive);
 
     let (status, body) =
         post_skill_bundle_install(Arc::clone(&skills_api_fixture.state), content_type, body).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(
-        body.contains("Uploaded skill bundle filename must end with .skill"),
-        "body was: {body}"
-    );
+    assert!(body.contains(expected_error), "body was: {body}");
 }
 
 #[rstest]
