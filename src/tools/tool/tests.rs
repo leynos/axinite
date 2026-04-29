@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use insta::assert_snapshot;
 use rstest::rstest;
 
 use super::*;
@@ -468,4 +469,18 @@ fn test_is_blocked_or_default_with_some_delegates() {
         "any",
         ApprovalRequirement::UnlessAutoApproved
     ));
+}
+
+#[test]
+fn test_require_str_missing_error_snapshot() {
+    let params = serde_json::json!({});
+    let err = require_str(&params, "token").unwrap_err().to_string();
+    assert_snapshot!(err);
+}
+
+#[test]
+fn test_require_param_missing_error_snapshot() {
+    let params = serde_json::json!({});
+    let err = require_param(&params, "data").unwrap_err().to_string();
+    assert_snapshot!(err);
 }
