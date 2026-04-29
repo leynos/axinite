@@ -80,7 +80,7 @@ async fn attempt_repair_build_returns_retry_when_builder_itself_errors() {
         .expect("attempt_repair_build should propagate builder errors as Retry");
 
     assert!(
-        matches!(repair, RepairResult::Retry { .. }),
+        matches!(&repair, RepairResult::Retry { .. }),
         "expected RepairResult::Retry, got: {:?}",
         repair
     );
