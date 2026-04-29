@@ -4,7 +4,9 @@ use crate::agent::self_repair::RepairResult;
 use crate::agent::self_repair::default::DefaultSelfRepair;
 use crate::testing::null_db::{CapturingStore, NullDatabase};
 
-use super::helpers::{stub_broken_tool, stub_build_result};
+use super::helpers::{
+    FailingRepairStore, failing_repair_store, stub_broken_tool, stub_build_result,
+};
 
 // === handle_build_result ===
 
@@ -93,4 +95,20 @@ async fn handle_build_result_uses_unknown_error_when_no_error_string() {
             "message should say 'Unknown error' when error field is None"
         );
     }
+}
+
+#[tokio::test]
+async fn handle_build_result_returns_error_when_mark_repaired_fails() {
+    let tool = stub_broken_tool("my-tool", None, 0);
+    let result = stub_build_result(true, None, 1, false);
+    let store: FailingRepairStore = failing_repair_store();
+
+    let err = DefaultSelfRepair::handle_build_result(result, &tool, &store)
+        .await
+        .expect_err("should propagate database error as RepairError");
+
+    assert!(
+        matches!(err, crate::error::RepairError::Failed { .. }),
+        "expected RepairError::Failed when mark_tool_repaired errors, got: {err:?}",
+    );
 }

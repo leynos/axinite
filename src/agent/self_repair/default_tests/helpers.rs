@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::agent::self_repair::BrokenTool;
 use crate::error::ToolError;
+use crate::testing::null_db::CapturingStore;
 use crate::tools::builder::ProjectName;
 use crate::tools::{BuildRequirement, BuildResult, Language, NativeSoftwareBuilder, SoftwareType};
 
@@ -106,4 +107,11 @@ impl NativeSoftwareBuilder for StubSoftwareBuilder {
     async fn repair(&self, _result: &BuildResult, _error: &str) -> Result<BuildResult, ToolError> {
         unimplemented!("not exercised in these unit tests")
     }
+}
+
+pub(super) type FailingRepairStore = CapturingStore;
+
+/// Constructs a store that fails when marking a tool as repaired.
+pub(super) fn failing_repair_store() -> FailingRepairStore {
+    CapturingStore::failing_mark_tool_repaired("simulated mark_tool_repaired failure")
 }

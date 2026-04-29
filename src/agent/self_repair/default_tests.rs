@@ -310,6 +310,55 @@ async fn repair_broken_tool_returns_manual_without_builder() {
     );
 }
 
+#[cfg(any(test, feature = "self_repair_extras"))]
+#[tokio::test]
+async fn repair_broken_tool_end_to_end_returns_success() {
+    use crate::testing::null_db::CapturingStore;
+
+    use self::helpers::{StubBuilderOutcome, StubSoftwareBuilder};
+
+    let cm = Arc::new(ContextManager::new(10));
+    let store = Arc::new(CapturingStore::new());
+    let store_for_repair: Arc<dyn crate::db::Database> = store.clone();
+
+    let builder = Arc::new(StubSoftwareBuilder(StubBuilderOutcome::BuildSucceeded {
+        is_success: true,
+        error: None,
+        iterations: 1,
+        is_registered: false,
+    }));
+    let builder_for_repair: Arc<dyn crate::tools::SoftwareBuilder> = builder;
+    let tools = Arc::new(crate::tools::ToolRegistry::new());
+
+    let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3)
+        .with_store(store_for_repair)
+        .with_builder(builder_for_repair, tools);
+
+    let broken = BrokenTool {
+        name: "my-tool".to_string(),
+        failure_count: 2,
+        last_error: Some("test error".to_string()),
+        first_failure: Utc::now(),
+        last_failure: Utc::now(),
+        last_build_result: None,
+        repair_attempts: 0,
+    };
+
+    let result = NativeSelfRepair::repair_broken_tool(&repair, &broken)
+        .await
+        .expect("repair_broken_tool should not error");
+
+    assert!(
+        matches!(result, RepairResult::Success { .. }),
+        "expected RepairResult::Success end-to-end, got: {result:?}",
+    );
+    assert_eq!(
+        *store.calls().repaired_tools.lock().await,
+        vec!["my-tool".to_string()],
+        "repair_broken_tool should mark the tool repaired in the store",
+    );
+}
+
 #[test]
 fn duration_since_millisecond_precision() {
     use chrono::Duration as ChronoDuration;
