@@ -8,16 +8,33 @@ fn tmp_dir_fixture() -> tempfile::TempDir {
     tempfile::tempdir().expect("should create temp dir")
 }
 
+/// Asserts that `CleanupGuard` removes the resource at `path` when it is dropped.
+///
+/// `register` should attach `path` to the guard using the appropriate
+/// registration method (`.file()` or `.dir()`) and return the updated guard.
+fn assert_guard_removes_at_path<F>(path: &str, register: F)
+where
+    F: FnOnce(CleanupGuard) -> CleanupGuard,
+{
+    {
+        let _guard = register(CleanupGuard::new());
+        assert!(
+            std::path::Path::new(path).exists(),
+            "path should exist while guard is held"
+        );
+    }
+    assert!(
+        !std::path::Path::new(path).exists(),
+        "path should not exist after guard drops"
+    );
+}
+
 #[test]
 fn cleanup_guard_removes_file() {
     let file = tempfile::NamedTempFile::new().expect("should create temp file");
     let path = file.path().to_string_lossy().into_owned();
     std::fs::write(&path, "test").expect("should write test file");
-    {
-        let _guard = CleanupGuard::new().file(path.clone());
-        assert!(std::path::Path::new(&path).exists());
-    }
-    assert!(!std::path::Path::new(&path).exists());
+    assert_guard_removes_at_path(&path, |g| g.file(path.clone()));
 }
 
 #[rstest]
@@ -25,11 +42,7 @@ fn cleanup_guard_removes_dir(tmp_dir_fixture: tempfile::TempDir) {
     let dir = tmp_dir_fixture;
     let path = dir.path().to_string_lossy().into_owned();
     std::fs::write(dir.path().join("file.txt"), "test").expect("should write file in test dir");
-    {
-        let _guard = CleanupGuard::new().dir(path.clone());
-        assert!(std::path::Path::new(&path).exists());
-    }
-    assert!(!std::path::Path::new(&path).exists());
+    assert_guard_removes_at_path(&path, |g| g.dir(path.clone()));
 }
 
 #[rstest]
