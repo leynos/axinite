@@ -241,6 +241,6 @@
 - [ADR 009: Borrowed newtypes for schema helper arguments](adr-009-borrowed-newtypes-for-schema-helper-arguments.md)
   records the schema-helper newtypes that make parameter names, schema paths,
   and tool names explicit at helper call sites.
-- [ADR 010: Extract register_wasm helpers to reduce cyclomatic complexity](adr-010-extract-register-wasm-helpers-to-reduce-cyclomatic-complexity.md)
+- [ADR 010: Extract register_wasm helpers to reduce cyclomatic complexity](adr-010-extract-register-wasm-helpers.md)
   records the helper split that keeps the WASM registration path within the
   repository's complexity threshold.
