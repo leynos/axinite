@@ -1,6 +1,8 @@
 <!-- markdownlint-disable-next-line MD013 -->
 # Architectural decision record (ADR) 010: Extract `register_wasm` helpers to reduce cyclomatic complexity
 
+# Architectural decision record (ADR) 010: Extract `register_wasm` helpers to reduce cyclomatic complexity
+
 ## Status
 
 Accepted.
