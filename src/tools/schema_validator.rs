@@ -215,4 +215,6 @@ fn check_object_schema_at(schema: &serde_json::Value, path: &SchemaPath) -> Vec<
 
     errors
 }
+
+#[cfg(test)]
 mod tests;

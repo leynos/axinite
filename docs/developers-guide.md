@@ -1368,6 +1368,7 @@ commit_install()             cleanup_prepared_install()
 On commit failure, callers must call `cleanup_prepared_install` as a
 best-effort cleanup and log any cleanup errors with `tracing::warn!` before
 returning the original commit error.
+
 #### Web skill install handler
 
 `skills_install_handler` accepts an Axum `Request` rather than a pre-extracted
