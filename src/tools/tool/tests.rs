@@ -186,6 +186,63 @@ fn test_tool_name_preserves_display_value() {
 }
 
 #[test]
+fn test_param_name_from_string_ref_preserves_value() {
+    let s = String::from("body");
+    let name = ParamName::from(&s);
+    assert_eq!(name.as_ref(), "body");
+    assert_eq!(name.to_string(), "body");
+}
+
+#[test]
+fn test_schema_path_from_string_ref_preserves_value() {
+    let s = String::from("tool.params");
+    let path = SchemaPath::from(&s);
+    assert_eq!(path.as_ref(), "tool.params");
+    assert_eq!(path.to_string(), "tool.params");
+}
+
+#[test]
+fn test_tool_name_from_string_ref_preserves_value() {
+    let s = String::from("my_tool");
+    let name = ToolName::from(&s);
+    assert_eq!(name.as_ref(), "my_tool");
+    assert_eq!(name.to_string(), "my_tool");
+}
+
+#[test]
+fn test_tool_name_converts_to_schema_path() {
+    let tool = ToolName::from("converter");
+    let path = SchemaPath::from(tool);
+    assert_eq!(path.as_ref(), "converter");
+    assert_eq!(path.to_string(), "converter");
+}
+
+#[test]
+fn test_validate_tool_schema_nested_path_uses_child() {
+    // validate_tool_schema calls SchemaPath::child() when it descends into
+    // nested objects; verify the resulting error path is correctly formed.
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "config": {
+                "type": "object",
+                "properties": {
+                    "key": { "type": "string" }
+                },
+                "required": ["key", "absent"]
+            }
+        }
+    });
+    let errors = validate_tool_schema(&schema, "root");
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("root.config") && e.contains("\"absent\"")),
+        "child path must be root.config, got: {errors:?}"
+    );
+}
+
+#[test]
 fn test_requires_approval_default() {
     let tool = EchoTool;
     assert_eq!(
