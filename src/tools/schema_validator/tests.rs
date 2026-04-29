@@ -99,7 +99,7 @@ fn test_array_with_items_passes() {
 
 #[test]
 fn test_forbidden_top_level_keywords_fail() {
-    for keyword in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+    for keyword in ["anyOf", "allOf", "enum", "not"] {
         let mut schema = serde_json::json!({
             "type": "object"
         });
@@ -137,6 +137,28 @@ fn test_forbidden_top_level_keywords_fail() {
             "expected top-level {keyword} failure, got: {err:?}"
         );
     }
+}
+
+#[test]
+fn test_top_level_one_of_is_allowed() {
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" },
+            "url": { "type": "string" },
+            "content": { "type": "string" }
+        },
+        "oneOf": [
+            { "required": ["name"] },
+            { "required": ["url"] },
+            { "required": ["content"] }
+        ]
+    });
+
+    assert!(
+        validate_strict_schema(&schema, "test").is_ok(),
+        "root oneOf supports exact-one-source tool contracts"
+    );
 }
 
 #[test]

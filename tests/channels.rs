@@ -7,6 +7,8 @@ mod support;
 mod openai_compat;
 #[path = "channels/relay.rs"]
 mod relay;
+#[path = "channels/skills_upload.rs"]
+mod skills_upload;
 #[path = "channels/telegram_auth.rs"]
 mod telegram_auth;
 #[path = "channels/wasm_channel.rs"]

@@ -123,7 +123,7 @@ function apiFetch(path, options) {
   const opts = options || {};
   opts.headers = opts.headers || {};
   opts.headers['Authorization'] = 'Bearer ' + token;
-  if (opts.body && typeof opts.body === 'object') {
+  if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(opts.body);
   }
@@ -4010,8 +4010,8 @@ function formatTimeAgo(epochMs) {
 }
 
 function installSkill(nameOrSlug, url, btn) {
-  var body = { name: nameOrSlug, slug: nameOrSlug };
-  if (url) body.url = url;
+  var body = url ? { url: url } : { name: nameOrSlug };
+  var label = url || nameOrSlug;
 
   apiFetch('/api/skills/install', {
     method: 'POST',
@@ -4019,7 +4019,7 @@ function installSkill(nameOrSlug, url, btn) {
     body: body,
   }).then(function(res) {
     if (res.success) {
-      showToast('Installed skill "' + nameOrSlug + '"', 'success');
+      showToast('Installed skill "' + label + '"', 'success');
     } else {
       showToast('Install failed: ' + (res.message || 'unknown error'), 'error');
     }
@@ -4050,16 +4050,68 @@ function removeSkill(name) {
 
 function installSkillFromForm() {
   var name = document.getElementById('skill-install-name').value.trim();
-  if (!name) { showToast('Skill name is required', 'error'); return; }
   var url = document.getElementById('skill-install-url').value.trim() || null;
+  if (!name && !url) { showToast('Skill name or URL is required', 'error'); return; }
+  if (name && url) { showToast('Use either skill name or URL, not both', 'error'); return; }
   if (url && !url.startsWith('https://')) {
     showToast('URL must use HTTPS', 'error');
     return;
   }
-  if (!confirm('Install skill "' + name + '"?')) return;
+  var label = url || name;
+  if (!confirm('Install skill "' + label + '"?')) return;
   installSkill(name, url, null);
   document.getElementById('skill-install-name').value = '';
   document.getElementById('skill-install-url').value = '';
+}
+
+function selectedSkillBundleFile(input) {
+  return input && input.files && input.files[0] ? input.files[0] : null;
+}
+
+function isSkillBundleFilename(fileName) {
+  return typeof fileName === 'string' && fileName.endsWith('.skill');
+}
+
+function buildSkillBundleInstallRequest(file) {
+  var body = new FormData();
+  body.append('bundle', file);
+  return {
+    method: 'POST',
+    headers: { 'X-Confirm-Action': 'true' },
+    body: body,
+  };
+}
+
+/**
+ * Install the `.skill` bundle selected in the Skills tab upload control.
+ *
+ * @returns {void} Shows a toast and returns early when no file is selected,
+ *   when the selected filename does not end with `.skill`, or when the
+ *   confirmation dialog is cancelled. Otherwise posts a multipart request to
+ *   `/api/skills/install`, refreshes the skill list, and clears the file input
+ *   after a successful install.
+ */
+function installSkillBundleFromForm() {
+  var input = document.getElementById('skill-bundle-file');
+  var file = selectedSkillBundleFile(input);
+  if (!file) { showToast('Choose a .skill file', 'error'); return; }
+  if (!isSkillBundleFilename(file.name)) {
+    showToast('Bundle filename must end with .skill', 'error');
+    return;
+  }
+  if (!confirm('Install skill bundle "' + file.name + '"?')) return;
+
+  apiFetch('/api/skills/install', buildSkillBundleInstallRequest(file)).then(function(res) {
+    if (res.success) {
+      showToast('Installed skill bundle "' + file.name + '"', 'success');
+      input.value = '';
+    } else {
+      showToast('Install failed: ' + (res.message || 'unknown error'), 'error');
+    }
+    loadSkills();
+  }).catch(function(err) {
+    showToast('Install failed: ' + err.message, 'error');
+  });
 }
 
 // Wire up Enter key on search input

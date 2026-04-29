@@ -1,12 +1,14 @@
-CARGO ?= cargo
-NEXTEST ?= cargo nextest
+CARGO ?= $(shell command -v cargo 2>/dev/null || printf '%s' "$$HOME/.cargo/bin/cargo")
+NEXTEST ?= $(CARGO) nextest
+BUNX ?= $(shell command -v bunx 2>/dev/null || printf '%s' "$$HOME/.bun/bin/bunx")
 TEST_FEATURES ?= --features test-helpers
 NEXTEST_PROFILE ?= default
+MARKDOWNLINT_BASE ?= origin/main
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 
-.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint test test-cargo test-matrix test-matrix-cargo clean
+.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint markdownlint test test-cargo test-matrix test-matrix-cargo clean
 
 all: check-fmt lint test
 
@@ -37,6 +39,14 @@ lint:
 	$(CARGO) clippy --all --benches --tests --examples --no-default-features --features libsql-test-helpers -- -D warnings
 	$(CARGO) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
 	$(CARGO) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
+
+markdownlint:
+	@files="$$(git diff --name-only --diff-filter=ACMR $(MARKDOWNLINT_BASE)...HEAD -- '*.md')"; \
+	if [ -n "$$files" ]; then \
+		$(BUNX) markdownlint-cli2 $$files; \
+	else \
+		echo "No Markdown files changed since $(MARKDOWNLINT_BASE)"; \
+	fi
 
 test:
 	$(MAKE) build-github-tool-wasm

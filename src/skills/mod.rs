@@ -18,6 +18,8 @@ pub mod attenuation;
 pub mod bundle;
 pub mod catalog;
 pub mod gating;
+/// Shared source-field normalisation helpers for skill install adapters.
+pub(crate) mod install_source;
 pub mod parser;
 pub mod registry;
 pub mod selector;

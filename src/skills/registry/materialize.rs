@@ -31,6 +31,9 @@ pub(super) fn materialize_install_artifact(
                 build_markdown_artifact(content)
             }
         }
+        SkillInstallPayload::ArchiveBytes(bytes) => {
+            Ok(build_bundle_artifact(validate_skill_archive(&bytes)?))
+        }
     }
 }
 
