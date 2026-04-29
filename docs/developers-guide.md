@@ -836,7 +836,7 @@ rewriting a hard-coded temp path to the actual test directory:
 
 ```rust
 let trace = load_trace_with_mutation("fixtures/trace.json", |v| {
-    v["steps"][0]["tool_calls"][0]["arguments"]["path"] =
+    v["steps"][0]["response"]["tool_calls"][0]["arguments"]["path"] =
         serde_json::json!(test_dir.path().to_str().unwrap());
 })
 .await?;
