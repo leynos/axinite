@@ -88,3 +88,28 @@ async fn handle_build_result_returns_error_when_mark_repaired_fails() {
         "expected RepairError::Failed when mark_tool_repaired errors, got: {err:?}",
     );
 }
+
+#[tokio::test]
+async fn handle_build_result_records_each_call_independently() {
+    // Calling handle_build_result twice for the same tool records two
+    // mark_tool_repaired entries: there is no deduplication in the helper.
+    // Deduplication is the responsibility of the database or the scheduler.
+    let tool = stub_broken_tool("my-tool", None, 0);
+    let store = CapturingStore::new();
+
+    let result_a = stub_build_result(true, None, 1, false);
+    DefaultSelfRepair::handle_build_result(result_a, &tool, &store)
+        .await
+        .expect("first call should succeed");
+
+    let result_b = stub_build_result(true, None, 2, false);
+    DefaultSelfRepair::handle_build_result(result_b, &tool, &store)
+        .await
+        .expect("second call should succeed");
+
+    assert_eq!(
+        *store.calls().repaired_tools.lock().await,
+        vec!["my-tool".to_string(), "my-tool".to_string()],
+        "each successful build call records mark_tool_repaired independently"
+    );
+}
