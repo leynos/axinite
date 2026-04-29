@@ -171,11 +171,15 @@ fn playable_steps_skips_user_input_markers() {
     let playable = text_step("play me");
     let trace = LlmTrace {
         model_name: "recorded-model".to_string(),
-        turns: Vec::new(),
+        turns: vec![TraceTurn {
+            user_input: "hello".to_string(),
+            steps: vec![user_input_step("hello"), playable.clone()],
+            expects: TraceExpects::default(),
+        }],
         memory_snapshot: Vec::new(),
         http_exchanges: Vec::new(),
         expects: TraceExpects::default(),
-        steps: vec![user_input_step("hello"), playable.clone()],
+        steps: Vec::new(),
     };
 
     let steps = trace.playable_steps();

@@ -31,6 +31,45 @@ fn flatten_json_root_into_vars(
     }
 }
 
+/// Extract template variables from tool-result messages.
+///
+/// Flattens scalar values from JSON tool outputs into dot-separated variable
+/// names keyed by tool call id. Object roots are flattened below the call id
+/// (for example, `call_1.result.id`), while array and scalar roots are
+/// flattened directly under the call id (for example, `call_1.0`).
+///
+/// # Arguments
+///
+/// - `messages`: Chat messages emitted so far in a trace replay. Only messages
+///   with `Role::Tool`, a `tool_call_id`, and valid JSON content contribute
+///   variables.
+///
+/// # Returns
+///
+/// A map of template variable names to JSON scalar values. String, number, and
+/// boolean values are preserved as `serde_json::Value` so full-template
+/// substitutions can keep JSON types intact.
+///
+/// # Errors
+///
+/// This function does not return errors. Messages without a tool call id and
+/// messages whose content cannot be parsed as JSON are ignored.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Examples
+///
+/// A tool result with call id `call_lookup` and content
+/// `{"id": 3, "ok": true}` produces `call_lookup.id = 3` and
+/// `call_lookup.ok = true`.
+///
+/// # Usage Notes
+///
+/// Tool output wrapped in `<tool_output>...</tool_output>` is unwrapped before
+/// parsing so recorded traces can use the same helper for raw and wrapped
+/// tool-result content.
 pub(super) fn extract_tool_result_vars(
     messages: &[ChatMessage],
 ) -> HashMap<String, serde_json::Value> {
@@ -90,6 +129,45 @@ fn unwrap_tool_output(content: &str) -> Cow<'_, str> {
     Cow::Borrowed(content)
 }
 
+/// Substitute trace-template variables into a JSON value in place.
+///
+/// Replaces string placeholders of the form `{{variable.path}}` using values
+/// produced by `extract_tool_result_vars`. When the whole string is a single
+/// placeholder, the replacement keeps the original JSON scalar type. When a
+/// placeholder appears inside surrounding text, the replacement is interpolated
+/// as text.
+///
+/// # Arguments
+///
+/// - `value`: JSON value to mutate. Strings are checked for placeholders;
+///   objects and arrays are traversed recursively.
+/// - `vars`: Template variables keyed by dot-separated paths. Values should be
+///   JSON scalars extracted from previous tool-result messages.
+///
+/// # Returns
+///
+/// This function returns `()`. The supplied `value` is updated in place.
+///
+/// # Errors
+///
+/// This function does not return errors. Missing variables leave the current
+/// string unchanged from the first unresolved placeholder onward.
+///
+/// # Panics
+///
+/// This function does not panic.
+///
+/// # Examples
+///
+/// Given `vars["call.limit"] = 3`, the JSON string `"{{call.limit}}"` becomes
+/// the JSON number `3`, while `"limit={{call.limit}}"` becomes the string
+/// `"limit=3"`.
+///
+/// # Usage Notes
+///
+/// Expansion is capped by `MAX_TEMPLATE_EXPANSIONS` and also tracks previously
+/// seen intermediate strings, preventing cyclic templates from looping
+/// indefinitely.
 pub(super) fn substitute_templates(
     value: &mut serde_json::Value,
     vars: &HashMap<String, serde_json::Value>,
