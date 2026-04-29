@@ -52,9 +52,9 @@ error with `?`, inspect it, or explicitly discard it when a migration path is
 best-effort.
 
 `rename_legacy_bootstrap` is the only call site that treats legacy bootstrap
-renames as non-fatal while also emitting a success `INFO` log. It discards the
-result with `let _ = rename_to_migrated(...)`, and emits the success log only
-when the rename succeeds.
+renames as non-fatal while also emitting a success `INFO` log. It tests
+`rename_to_migrated(...).is_ok()` and only emits the success log when that call
+returns `Ok`.
 
 All other non-fatal migration paths also use explicit `let _ = ...` discards:
 
@@ -71,3 +71,15 @@ All other non-fatal migration paths also use explicit `let _ = ...` discards:
 - The success `INFO` log in `rename_legacy_bootstrap` is emitted only when the
   rename actually succeeds.
 - Existing warn-and-continue behaviour at all call sites is preserved.
+
+
+## Related references
+
+- Issue `#33`: [chore(bootstrap): deduplicate migration helpers](https://github.com/leynos/axinite/issues/33).
+- PR `#166`: [Issue #33: Deduplicate bootstrap migration rename helpers](https://github.com/leynos/axinite/pull/166).
+- Implementation:
+  [`src/bootstrap/migration.rs`](../src/bootstrap/migration.rs), which defines
+  `rename_legacy_bootstrap`.
+- See also: [`docs/contents.md`](contents.md).
+
+# Architectural decision record (ADR) 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`
