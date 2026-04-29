@@ -325,6 +325,26 @@ impl NativeSelfRepair for DefaultSelfRepair {
         }
     }
 
+    /// Attempts to repair a broken tool by building a new version.
+    ///
+    /// # Concurrency model
+    ///
+    /// The three private helpers invoked by this method
+    /// (`build_repair_requirement`, `attempt_repair_build`,
+    /// `handle_build_result`) are static associated functions with no shared
+    /// mutable state. Concurrent calls for *different* tools are therefore
+    /// safe: each call operates on its own `BrokenTool` and `BuildResult`
+    /// values.
+    ///
+    /// Concurrent calls for the *same* tool are not deduplicated: if two
+    /// callers race, both may invoke `store.mark_tool_repaired` and
+    /// `store.increment_repair_attempts` for the same tool name. The
+    /// database layer is responsible for handling such duplicates (e.g. via
+    /// idempotent upsert semantics). Callers that require at-most-once
+    /// repair semantics must enforce that at the scheduling layer.
+    ///
+    /// Cancellation at any `.await` point inside the helper chain is safe:
+    /// the helpers hold no locks and make no in-memory writes.
     async fn repair_broken_tool<'a>(
         &'a self,
         tool: &'a BrokenTool,
