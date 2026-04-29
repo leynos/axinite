@@ -20,21 +20,13 @@ async fn handle_build_result_returns_success_when_build_succeeded() {
         .await
         .expect("handle_build_result should not error");
 
-    assert!(
-        matches!(repair, RepairResult::Success { .. }),
-        "expected RepairResult::Success, got: {:?}",
-        repair
+    let RepairResult::Success { message } = repair else {
+        panic!("expected RepairResult::Success");
+    };
+    assert_eq!(
+        message,
+        "Tool 'my-tool' repaired successfully after 3 iterations"
     );
-    if let RepairResult::Success { message } = repair {
-        assert!(
-            message.contains("my-tool"),
-            "message should mention tool name"
-        );
-        assert!(
-            message.contains('3'),
-            "message should include iteration count"
-        );
-    }
 
     assert_eq!(
         *store.calls().repaired_tools.lock().await,
@@ -53,25 +45,13 @@ async fn handle_build_result_returns_retry_when_build_failed_with_error() {
         .await
         .expect("handle_build_result should not error");
 
-    assert!(
-        matches!(repair, RepairResult::Retry { .. }),
-        "expected RepairResult::Retry, got: {:?}",
-        repair
+    let RepairResult::Retry { message } = repair else {
+        panic!("expected RepairResult::Retry");
+    };
+    assert_eq!(
+        message,
+        "Repair attempt 2 for 'my-tool' failed: compile error"
     );
-    if let RepairResult::Retry { message } = repair {
-        assert!(
-            message.contains("compile error"),
-            "message should include the build error"
-        );
-        assert!(
-            message.contains("my-tool"),
-            "message should mention tool name"
-        );
-        assert!(
-            message.contains('2'),
-            "message should include attempt number"
-        );
-    }
 }
 
 #[tokio::test]
@@ -84,17 +64,13 @@ async fn handle_build_result_uses_unknown_error_when_no_error_string() {
         .await
         .expect("handle_build_result should not error");
 
-    assert!(
-        matches!(repair, RepairResult::Retry { .. }),
-        "expected RepairResult::Retry, got: {:?}",
-        repair
+    let RepairResult::Retry { message } = repair else {
+        panic!("expected RepairResult::Retry");
+    };
+    assert_eq!(
+        message,
+        "Repair attempt 1 for 'my-tool' failed: Unknown error"
     );
-    if let RepairResult::Retry { message } = repair {
-        assert!(
-            message.contains("Unknown error"),
-            "message should say 'Unknown error' when error field is None"
-        );
-    }
 }
 
 #[tokio::test]

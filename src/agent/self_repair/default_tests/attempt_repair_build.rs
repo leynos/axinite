@@ -40,26 +40,22 @@ async fn attempt_repair_build_propagates_build_outcome(
         let RepairResult::Success { message } = repair else {
             panic!("expected RepairResult::Success, got: {repair:?}");
         };
-        assert!(
-            message.contains("my-tool"),
-            "message should mention tool name"
-        );
-        assert!(
-            message.contains('2'),
-            "message should include iteration count"
+        assert_eq!(
+            message,
+            "Tool 'my-tool' repaired successfully after 2 iterations"
         );
         assert_eq!(
             *store.calls().repaired_tools.lock().await,
             vec!["my-tool".to_string()],
-            "successful build should delegate to handle_build_result"
+            "successful build should mark tool as repaired"
         );
     } else {
         let RepairResult::Retry { message } = repair else {
             panic!("expected RepairResult::Retry, got: {repair:?}");
         };
-        assert!(
-            message.contains("linker error"),
-            "message should include the build error"
+        assert_eq!(
+            message,
+            "Repair attempt 1 for 'my-tool' failed: linker error"
         );
         assert!(
             store.calls().repaired_tools.lock().await.is_empty(),
@@ -79,19 +75,11 @@ async fn attempt_repair_build_returns_retry_when_builder_itself_errors() {
         .await
         .expect("attempt_repair_build should propagate builder errors as Retry");
 
-    assert!(
-        matches!(&repair, RepairResult::Retry { .. }),
-        "expected RepairResult::Retry, got: {:?}",
-        repair
+    let RepairResult::Retry { message } = repair else {
+        panic!("expected RepairResult::Retry");
+    };
+    assert_eq!(
+        message,
+        "Repair build error: Tool builder failed: out of memory"
     );
-    if let RepairResult::Retry { message } = repair {
-        assert!(
-            message.contains("Repair build error"),
-            "message should mention repair build error"
-        );
-        assert!(
-            message.contains("out of memory"),
-            "message should include the error text"
-        );
-    }
 }
