@@ -169,6 +169,25 @@ impl<'de> Deserialize<'de> for LlmTrace {
     }
 }
 /// Load a trace from JSON, applying a structured mutation before deserializing.
+///
+/// The `mutate` closure receives the parsed JSON value before it is converted
+/// into an [`LlmTrace`], letting tests tweak fixture fields without maintaining
+/// near-duplicate trace files.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// # use crate::support::trace_types::{LlmTrace, load_trace_with_mutation};
+/// # async fn example() -> anyhow::Result<()> {
+/// let trace: LlmTrace = load_trace_with_mutation("fixtures/trace.json", |value| {
+///     value["timestamp"] = serde_json::json!("2026-04-29T00:00:00Z");
+/// })
+/// .await?;
+///
+/// assert!(!trace.model_name.is_empty());
+/// # Ok(())
+/// # }
+/// ```
 pub async fn load_trace_with_mutation<F>(
     path: impl AsRef<std::path::Path>,
     mutate: F,
@@ -180,9 +199,10 @@ where
     let contents = tokio::fs::read_to_string(path)
         .await
         .with_context(|| format!("reading trace file: {}", path.display()))?;
-    let mut value: serde_json::Value =
-        serde_json::from_str(&contents).context("parsing JSON from file contents")?;
+    let mut value: serde_json::Value = serde_json::from_str(&contents)
+        .with_context(|| format!("parsing JSON from file contents: {}", path.display()))?;
     mutate(&mut value);
-    let trace = serde_json::from_value(value).context("deserializing trace value to LlmTrace")?;
+    let trace = serde_json::from_value(value)
+        .with_context(|| format!("deserializing trace value to LlmTrace: {}", path.display()))?;
     Ok(trace)
 }

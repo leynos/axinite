@@ -37,7 +37,7 @@ fn poison_inner_lock(llm: Arc<TraceLlm>) {
         let _guard = llm
             .inner
             .lock()
-            .expect("failed to lock llm2.inner in poison helper");
+            .expect("failed to lock llm.inner in poison helper");
         panic!("intentional poison");
     })
     .join()
@@ -178,8 +178,7 @@ async fn concurrent_calls_advance_cursor_monotonically() {
 
     assert_eq!(successes, 8);
     let final_cursor = llm
-        .inner
-        .lock()
+        .lock_inner()
         .expect("TraceLlm state lock should open")
         .index;
     assert_eq!(final_cursor, successes);
