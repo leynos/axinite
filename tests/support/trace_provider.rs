@@ -151,6 +151,15 @@ impl TraceLlm {
         Ok(step)
     }
 
+    /// Locks the mutable replay state shared by request capture and cursor advancement.
+    ///
+    /// This `pub(super)` helper returns the `MutexGuard` for [`TraceLlmState`]
+    /// so sibling support modules can inspect or seed replay internals in
+    /// focused tests. If the mutex has been poisoned, the poison error is
+    /// mapped to [`LlmError::RequestFailed`] with `provider` set to
+    /// `self.model_name.clone()` and reason `"TraceLlm state lock poisoned"`.
+    /// Callers must handle that mapped error rather than assuming the lock can
+    /// always be acquired.
     pub(super) fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, TraceLlmState>, LlmError> {
         self.inner.lock().map_err(|_| LlmError::RequestFailed {
             provider: self.model_name.clone(),
@@ -207,9 +216,8 @@ impl TraceLlm {
     }
 }
 
-// The `inner` lock-poison recovery path is intentionally documented but not
-// directly unit-tested here. Poisoning `inner` would require a test-only
-// mutation hook for `TraceLlm` internals that normal replay code never needs.
+// The poisoned-`inner` path is covered in `trace_provider_tests` through both
+// `captured_requests()` and `complete_with_tools()`.
 
 fn tool_calls_have_templates(tool_calls: &[TraceToolCall]) -> bool {
     tool_calls

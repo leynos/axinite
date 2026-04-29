@@ -24,13 +24,29 @@ fn text_step(content: &str) -> TraceStep {
     }
 }
 
+fn trace_llm_from_single_turn(model: &str, prompt: &str, steps: Vec<TraceStep>) -> TraceLlm {
+    TraceLlm::from_trace(LlmTrace::single_turn(model, prompt, steps))
+}
+
+fn make_tool_completion_request(prompt: &str) -> ToolCompletionRequest {
+    ToolCompletionRequest::new(vec![ChatMessage::user(prompt)], vec![])
+}
+
+fn poison_inner_lock(llm: Arc<TraceLlm>) {
+    thread::spawn(move || {
+        let _guard = llm
+            .inner
+            .lock()
+            .expect("failed to lock llm2.inner in poison helper");
+        panic!("intentional poison");
+    })
+    .join()
+    .expect_err("poisoning thread should panic");
+}
+
 #[test]
 fn increment_hint_mismatches_panics_on_overflow() {
-    let llm = TraceLlm::from_trace(LlmTrace::single_turn(
-        "overflow-model",
-        "hello",
-        vec![text_step("hi")],
-    ));
+    let llm = trace_llm_from_single_turn("overflow-model", "hello", vec![text_step("hi")]);
     llm.hint_mismatches.store(usize::MAX, Ordering::Relaxed);
 
     let result = panic::catch_unwind(|| llm.increment_hint_mismatches());
@@ -46,21 +62,12 @@ fn increment_hint_mismatches_panics_on_overflow() {
 
 #[tokio::test]
 async fn poisoned_inner_lock_returns_request_failed() {
-    let llm = Arc::new(TraceLlm::from_trace(LlmTrace::single_turn(
+    let llm = Arc::new(trace_llm_from_single_turn(
         "poison-model",
         "hello",
         vec![text_step("hi")],
-    )));
-    let poison_llm = Arc::clone(&llm);
-    thread::spawn(move || {
-        let _guard = poison_llm
-            .inner
-            .lock()
-            .expect("TraceLlm state lock should open before poisoning");
-        panic!("poison TraceLlm inner lock");
-    })
-    .join()
-    .expect_err("poisoning thread should panic");
+    ));
+    poison_inner_lock(Arc::clone(&llm));
 
     let captured_err = llm
         .captured_requests()
@@ -77,10 +84,7 @@ async fn poisoned_inner_lock_returns_request_failed() {
     );
 
     let completion_err = llm
-        .complete_with_tools(ToolCompletionRequest::new(
-            vec![ChatMessage::user("hello")],
-            vec![],
-        ))
+        .complete_with_tools(make_tool_completion_request("hello"))
         .await
         .expect_err("poisoned lock should reject replay");
     assert!(
@@ -97,21 +101,14 @@ async fn poisoned_inner_lock_returns_request_failed() {
 
 #[tokio::test]
 async fn next_step_errors_on_cursor_overflow() {
-    let llm = TraceLlm::from_trace(LlmTrace::single_turn(
-        "overflow-model",
-        "hello",
-        vec![text_step("hi")],
-    ));
+    let llm = trace_llm_from_single_turn("overflow-model", "hello", vec![text_step("hi")]);
     {
         let mut inner = llm.lock_inner().expect("TraceLlm state lock should open");
         inner.index = usize::MAX;
     }
 
     let err = llm
-        .complete_with_tools(ToolCompletionRequest::new(
-            vec![ChatMessage::user("hello")],
-            vec![],
-        ))
+        .complete_with_tools(make_tool_completion_request("hello"))
         .await
         .expect_err("cursor overflow should fail replay");
 
@@ -128,21 +125,15 @@ async fn next_step_errors_on_cursor_overflow() {
 #[test]
 fn next_step_returns_error_when_inner_lock_is_poisoned() {
     use std::sync::Arc;
-    use std::thread;
 
-    let llm = Arc::new(TraceLlm::from_trace(LlmTrace::single_turn(
+    let llm = Arc::new(trace_llm_from_single_turn(
         "poison-model",
         "hello",
         vec![text_step("hi")],
-    )));
+    ));
 
     // Poison the mutex by panicking while holding it.
-    let llm2 = Arc::clone(&llm);
-    let _ = thread::spawn(move || {
-        let _guard = llm2.inner.lock().unwrap();
-        panic!("intentional poison");
-    })
-    .join();
+    poison_inner_lock(Arc::clone(&llm));
 
     // captured_requests() goes through lock_inner() and must return an error,
     // not panic, when the lock is poisoned.
@@ -163,21 +154,18 @@ async fn concurrent_calls_advance_cursor_monotonically() {
     let steps = (0..64)
         .map(|index| text_step(&format!("response {index}")))
         .collect();
-    let llm = Arc::new(TraceLlm::from_trace(LlmTrace::single_turn(
+    let llm = Arc::new(trace_llm_from_single_turn(
         "concurrent-model",
         "hello",
         steps,
-    )));
+    ));
 
     let handles: Vec<_> = (0..8)
         .map(|index| {
             let llm = Arc::clone(&llm);
             tokio::spawn(async move {
-                llm.complete_with_tools(ToolCompletionRequest::new(
-                    vec![ChatMessage::user(format!("hello {index}"))],
-                    vec![],
-                ))
-                .await
+                llm.complete_with_tools(make_tool_completion_request(&format!("hello {index}")))
+                    .await
             })
         })
         .collect();

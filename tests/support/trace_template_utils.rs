@@ -1,11 +1,16 @@
 //! Template substitution helpers for replayed trace tool-call arguments.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use ironclaw::llm::{ChatMessage, Role};
 
 const MAX_TEMPLATE_EXPANSIONS: usize = 128;
+
+enum TemplateExpansion {
+    String(String),
+    Value(serde_json::Value),
+}
 
 /// Returned when a tool-result message contains content that cannot be parsed
 /// as JSON. Carries the `tool_call_id` of the offending message and the
@@ -70,6 +75,26 @@ fn flatten_json_root_into_vars(
 /// Returns a map of dot-delimited path keys to their [`serde_json::Value`]
 /// scalar leaves. Malformed JSON returns [`ToolResultParseError`] with the
 /// offending call id.
+///
+/// # Examples
+///
+/// ```rust
+/// # use ironclaw::llm::{ChatMessage, Role};
+/// # use crate::support::trace_template_utils::extract_tool_result_vars;
+/// let messages = [ChatMessage {
+///     role: Role::Tool,
+///     content: "<tool_output>{\"id\":7,\"items\":[\"alpha\"]}</tool_output>".to_string(),
+///     content_parts: Vec::new(),
+///     tool_call_id: Some("call_lookup".to_string()),
+///     name: None,
+///     tool_calls: None,
+/// }];
+///
+/// let vars = extract_tool_result_vars(&messages).expect("tool output should parse");
+///
+/// assert_eq!(vars["call_lookup.id"], serde_json::json!(7));
+/// assert_eq!(vars["call_lookup.items.0"], serde_json::json!("alpha"));
+/// ```
 pub(super) fn extract_tool_result_vars(
     messages: &[ChatMessage],
 ) -> Result<HashMap<String, serde_json::Value>, ToolResultParseError> {
@@ -132,6 +157,42 @@ fn unwrap_tool_output(content: &str) -> Cow<'_, str> {
     Cow::Borrowed(content)
 }
 
+fn is_exact_template(
+    s: &str,
+    vars: &HashMap<String, serde_json::Value>,
+) -> Option<serde_json::Value> {
+    if s.starts_with("{{") && s.ends_with("}}") && s.matches("{{").count() == 1 {
+        let key = s[2..s.len() - 2].trim();
+        return vars.get(key).cloned();
+    }
+    None
+}
+
+fn expand_one_template(
+    result: &str,
+    vars: &HashMap<String, serde_json::Value>,
+) -> Option<TemplateExpansion> {
+    let start = result.find("{{")?;
+    let end = result[start..].find("}}").map(|end| start + end + 2)?;
+    let key = result[start + 2..end - 2].trim();
+    let resolved = vars.get(key)?;
+    if start == 0 && end == result.len() && result.matches("{{").count() == 1 {
+        return Some(match resolved.as_str() {
+            Some(resolved_str) => TemplateExpansion::String(resolved_str.to_owned()),
+            None => TemplateExpansion::Value(resolved.clone()),
+        });
+    }
+    let replacement = resolved
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| resolved.to_string());
+    let mut new_result = String::with_capacity(result.len() + replacement.len());
+    new_result.push_str(&result[..start]);
+    new_result.push_str(&replacement);
+    new_result.push_str(&result[end..]);
+    Some(TemplateExpansion::String(new_result))
+}
+
 /// Performs in-place `{{key}}` template substitution over a JSON value tree.
 ///
 /// Recurses through objects and arrays. For each string node:
@@ -144,60 +205,63 @@ fn unwrap_tool_output(content: &str) -> Cow<'_, str> {
 ///   previously-visited intermediate strings.
 ///
 /// Non-string scalar nodes (numbers, booleans, null) are left unchanged.
+///
+/// # Examples
+///
+/// ```rust
+/// # use std::collections::HashMap;
+/// # use crate::support::trace_template_utils::substitute_templates;
+/// let vars = HashMap::from([
+///     ("a".to_string(), serde_json::json!("{{limit}}")),
+///     ("limit".to_string(), serde_json::json!(3)),
+///     ("name".to_string(), serde_json::json!("Ada")),
+/// ]);
+/// let mut value = serde_json::json!({
+///     "limit": "{{a}}",
+///     "message": "hello {{name}}",
+/// });
+///
+/// substitute_templates(&mut value, &vars);
+///
+/// assert_eq!(value["limit"], serde_json::json!(3));
+/// assert_eq!(value["message"], serde_json::json!("hello Ada"));
+/// ```
 pub(crate) fn substitute_templates(
     value: &mut serde_json::Value,
     vars: &HashMap<String, serde_json::Value>,
 ) {
     match value {
         serde_json::Value::String(s) => {
-            // Whole-string single-template fast path.
-            if s.starts_with("{{") && s.ends_with("}}") && s.matches("{{").count() == 1 {
-                let key = s[2..s.len() - 2].trim();
-                if let Some(resolved) = vars.get(key) {
-                    *value = resolved.clone();
-                    // If the resolved value is itself a string, continue
-                    // substitution so that chained templates ({{a}} ->
-                    // "{{b}}" -> 1) are fully resolved.
-                    if matches!(value, serde_json::Value::String(_)) {
-                        substitute_templates(value, vars);
-                    }
+            let mut result = if let Some(resolved) = is_exact_template(s, vars) {
+                if let Some(resolved_str) = resolved.as_str() {
+                    resolved_str.to_owned()
+                } else {
+                    *value = resolved;
                     return;
                 }
-            }
+            } else {
+                s.clone()
+            };
 
-            // Iterative embedded-placeholder path.
-            let mut result = s.clone();
-            let mut prev: Option<String> = None;
+            let mut visited_results = HashSet::new();
             let mut substitutions = 0usize;
-            while let Some(start) = result.find("{{") {
+            while result.contains("{{") {
                 if substitutions >= MAX_TEMPLATE_EXPANSIONS {
                     break;
                 }
-                if prev.as_deref() == Some(&result) {
+                if !visited_results.insert(result.clone()) {
                     break;
                 }
-                prev = Some(result.clone());
-
-                if let Some(end) = result[start..].find("}}") {
-                    let end = start + end + 2;
-                    let key = result[start + 2..end - 2].trim();
-                    if let Some(resolved) = vars.get(key) {
-                        let replacement = resolved
-                            .as_str()
-                            .map(str::to_owned)
-                            .unwrap_or_else(|| resolved.to_string());
-                        let mut new_result =
-                            String::with_capacity(result.len() + replacement.len());
-                        new_result.push_str(&result[..start]);
-                        new_result.push_str(&replacement);
-                        new_result.push_str(&result[end..]);
-                        result = new_result;
+                match expand_one_template(&result, vars) {
+                    Some(TemplateExpansion::String(expanded)) => {
+                        result = expanded;
                         substitutions += 1;
-                    } else {
-                        break;
                     }
-                } else {
-                    break;
+                    Some(TemplateExpansion::Value(resolved)) => {
+                        *value = resolved;
+                        return;
+                    }
+                    None => break,
                 }
             }
             *s = result;
@@ -220,11 +284,11 @@ pub(crate) fn substitute_templates(
 ///
 /// Recursively inspects the supplied [`serde_json::Value`] and returns `true`
 /// when any string node contains both `{{` and `}}`.
-pub(super) fn value_contains_template(value: &serde_json::Value) -> bool {
+pub(super) fn has_template_marker(value: &serde_json::Value) -> bool {
     match value {
         serde_json::Value::String(s) => s.contains("{{") && s.contains("}}"),
-        serde_json::Value::Array(items) => items.iter().any(value_contains_template),
-        serde_json::Value::Object(map) => map.values().any(value_contains_template),
+        serde_json::Value::Array(items) => items.iter().any(has_template_marker),
+        serde_json::Value::Object(map) => map.values().any(has_template_marker),
         _ => false,
     }
 }
@@ -232,6 +296,19 @@ pub(super) fn value_contains_template(value: &serde_json::Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::{fixture, rstest};
+
+    #[fixture]
+    fn tool_message_fixture() -> ChatMessage {
+        ChatMessage {
+            role: Role::Tool,
+            content: serde_json::json!({"value": "default"}).to_string(),
+            content_parts: Vec::new(),
+            tool_call_id: Some("call".to_string()),
+            name: None,
+            tool_calls: None,
+        }
+    }
 
     #[test]
     fn substitute_templates_stops_on_cyclic_references() {
@@ -299,15 +376,24 @@ mod tests {
     }
 
     #[test]
-    fn substitute_templates_preserves_extracted_null_values() {
-        let messages = [ChatMessage {
-            role: Role::Tool,
-            content: serde_json::json!({"optional": null}).to_string(),
-            content_parts: Vec::new(),
-            tool_call_id: Some("call".to_string()),
-            name: None,
-            tool_calls: None,
-        }];
+    fn substitute_templates_stops_whole_node_cycles() {
+        let vars = HashMap::from([
+            ("a".to_string(), serde_json::json!("{{b}}")),
+            ("b".to_string(), serde_json::json!("{{a}}")),
+        ]);
+        let mut value = serde_json::json!("{{a}}");
+
+        substitute_templates(&mut value, &vars);
+
+        assert_eq!(value, serde_json::json!("{{b}}"));
+    }
+
+    #[rstest]
+    fn substitute_templates_preserves_extracted_null_values(
+        mut tool_message_fixture: ChatMessage,
+    ) {
+        tool_message_fixture.content = serde_json::json!({"optional": null}).to_string();
+        let messages = [tool_message_fixture];
         let vars = extract_tool_result_vars(&messages).expect("valid JSON should parse");
         let mut value = serde_json::json!({"optional": "{{call.optional}}"});
 
@@ -316,31 +402,31 @@ mod tests {
         assert_eq!(value, serde_json::json!({"optional": null}));
     }
 
-    #[test]
-    fn value_contains_template_detects_nested_placeholders() {
-        let value = serde_json::json!({
+    #[rstest]
+    #[case(
+        serde_json::json!({
             "items": [
                 {"plain": "value"},
                 {"templated": "prefix {{call.value}} suffix"}
             ]
-        });
-
-        assert!(value_contains_template(&value));
-        assert!(!value_contains_template(&serde_json::json!({
-            "items": [{"plain": "value"}]
-        })));
+        }),
+        true
+    )]
+    #[case(serde_json::json!({"items": [{"plain": "value"}]}), false)]
+    fn has_template_marker_detects_nested_placeholders(
+        #[case] value: serde_json::Value,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(has_template_marker(&value), expected);
     }
 
-    #[test]
-    fn extract_tool_result_vars_flattens_non_object_roots() {
-        let messages = [ChatMessage {
-            role: Role::Tool,
-            content: serde_json::json!(["alpha", true]).to_string(),
-            content_parts: Vec::new(),
-            tool_call_id: Some("call_array".to_string()),
-            name: None,
-            tool_calls: None,
-        }];
+    #[rstest]
+    fn extract_tool_result_vars_flattens_non_object_roots(
+        mut tool_message_fixture: ChatMessage,
+    ) {
+        tool_message_fixture.content = serde_json::json!(["alpha", true]).to_string();
+        tool_message_fixture.tool_call_id = Some("call_array".to_string());
+        let messages = [tool_message_fixture];
 
         let vars = extract_tool_result_vars(&messages).expect("valid JSON should parse");
 
@@ -348,16 +434,11 @@ mod tests {
         assert_eq!(vars.get("call_array.1"), Some(&serde_json::json!(true)));
     }
 
-    #[test]
-    fn extract_tool_result_vars_errors_on_invalid_json() {
-        let messages = [ChatMessage {
-            role: Role::Tool,
-            content: "not json {{{".to_string(),
-            content_parts: Vec::new(),
-            tool_call_id: Some("call_bad".to_string()),
-            name: None,
-            tool_calls: None,
-        }];
+    #[rstest]
+    fn extract_tool_result_vars_errors_on_invalid_json(mut tool_message_fixture: ChatMessage) {
+        tool_message_fixture.content = "not json {{{".to_string();
+        tool_message_fixture.tool_call_id = Some("call_bad".to_string());
+        let messages = [tool_message_fixture];
 
         let result = extract_tool_result_vars(&messages);
 
