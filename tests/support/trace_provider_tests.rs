@@ -3,6 +3,7 @@
 use std::panic;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::thread;
 
 use ironclaw::error::LlmError;
 use ironclaw::llm::recording::{TraceResponse, TraceStep};
@@ -41,6 +42,57 @@ fn increment_hint_mismatches_panics_on_overflow() {
         .or_else(|| panic_payload.downcast_ref::<String>().map(String::as_str))
         .expect("panic payload should be a string");
     assert_eq!(message, "hint_mismatches overflowed");
+}
+
+#[tokio::test]
+async fn poisoned_inner_lock_returns_request_failed() {
+    let llm = Arc::new(TraceLlm::from_trace(LlmTrace::single_turn(
+        "poison-model",
+        "hello",
+        vec![text_step("hi")],
+    )));
+    let poison_llm = Arc::clone(&llm);
+    thread::spawn(move || {
+        let _guard = poison_llm
+            .inner
+            .lock()
+            .expect("TraceLlm state lock should open before poisoning");
+        panic!("poison TraceLlm inner lock");
+    })
+    .join()
+    .expect_err("poisoning thread should panic");
+
+    let captured_err = llm
+        .captured_requests()
+        .expect_err("poisoned lock should reject diagnostics");
+    assert!(
+        matches!(captured_err, LlmError::RequestFailed { .. }),
+        "expected request failure, got {captured_err:?}"
+    );
+    assert!(
+        captured_err
+            .to_string()
+            .contains("TraceLlm state lock poisoned"),
+        "expected poisoned-lock diagnostic, got {captured_err}"
+    );
+
+    let completion_err = llm
+        .complete_with_tools(ToolCompletionRequest::new(
+            vec![ChatMessage::user("hello")],
+            vec![],
+        ))
+        .await
+        .expect_err("poisoned lock should reject replay");
+    assert!(
+        matches!(completion_err, LlmError::RequestFailed { .. }),
+        "expected request failure, got {completion_err:?}"
+    );
+    assert!(
+        completion_err
+            .to_string()
+            .contains("TraceLlm state lock poisoned"),
+        "expected poisoned-lock diagnostic, got {completion_err}"
+    );
 }
 
 #[tokio::test]

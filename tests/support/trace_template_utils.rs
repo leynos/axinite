@@ -150,15 +150,19 @@ pub(crate) fn substitute_templates(
 ) {
     match value {
         serde_json::Value::String(s) => {
+            let mut result = s.clone();
             if s.starts_with("{{") && s.ends_with("}}") && s.matches("{{").count() == 1 {
                 let key = s[2..s.len() - 2].trim();
                 if let Some(resolved) = vars.get(key) {
-                    *value = resolved.clone();
-                    return;
+                    if let Some(resolved_str) = resolved.as_str() {
+                        result = resolved_str.to_owned();
+                    } else {
+                        *value = resolved.clone();
+                        return;
+                    }
                 }
             }
 
-            let mut result = s.clone();
             let mut visited_results = HashSet::new();
             let mut substitutions = 0;
             while let Some(start) = result.find("{{") {
@@ -174,6 +178,15 @@ pub(crate) fn substitute_templates(
                     let key = result[start + 2..end - 2].trim();
 
                     if let Some(resolved) = vars.get(key) {
+                        if start == 0 && end == result.len() && result.matches("{{").count() == 1 {
+                            if let Some(resolved_str) = resolved.as_str() {
+                                result = resolved_str.to_owned();
+                                substitutions += 1;
+                                continue;
+                            }
+                            *value = resolved.clone();
+                            return;
+                        }
                         let replacement = resolved
                             .as_str()
                             .map(str::to_owned)
@@ -241,6 +254,19 @@ mod tests {
         substitute_templates(&mut value, &vars);
 
         assert_eq!(value, serde_json::json!("Ada meets Ada"));
+    }
+
+    #[test]
+    fn substitute_templates_expands_chained_whole_node_placeholders() {
+        let vars = HashMap::from([
+            ("a".to_string(), serde_json::json!("{{b}}")),
+            ("b".to_string(), serde_json::json!(1)),
+        ]);
+        let mut value = serde_json::json!("{{a}}");
+
+        substitute_templates(&mut value, &vars);
+
+        assert_eq!(value, serde_json::json!(1));
     }
 
     #[test]
